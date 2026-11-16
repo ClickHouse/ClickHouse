@@ -41,31 +41,31 @@ struct StorageID
 
     explicit StorageID(const QualifiedTableName & qualified_name) : StorageID(qualified_name.database, qualified_name.table) { }
 
-    [[nodiscard]] String getDatabaseName() const;
+    String getDatabaseName() const;
 
-    [[nodiscard]] String getTableName() const;
+    String getTableName() const;
 
-    [[nodiscard]] String getFullTableName() const;
-    [[nodiscard]] String getFullNameNotQuoted() const;
+    String getFullTableName() const;
+    String getFullNameNotQuoted() const;
 
-    [[nodiscard]] String getNameForLogs() const;
+    String getNameForLogs() const;
 
     explicit operator bool () const
     {
         return !empty();
     }
 
-    [[nodiscard]] bool empty() const
+    bool empty() const
     {
         return table_name.empty() && !hasUUID();
     }
 
-    [[nodiscard]] bool hasUUID() const
+    bool hasUUID() const
     {
         return uuid != UUIDHelpers::Nil;
     }
 
-    [[nodiscard]] bool hasDatabase() const { return !database_name.empty(); }
+    bool hasDatabase() const { return !database_name.empty(); }
 
     bool operator==(const StorageID & rhs) const;
 
@@ -74,16 +74,16 @@ struct StorageID
     /// Avoid implicit construction of empty StorageID. However, it's needed for deferred initialization.
     static StorageID createEmpty() { return {}; }
 
-    [[nodiscard]] QualifiedTableName getQualifiedName() const { return {database_name, getTableName()}; }
+    QualifiedTableName getQualifiedName() const { return {database_name, getTableName()}; }
 
     static StorageID fromDictionaryConfig(const Poco::Util::AbstractConfiguration & config,
                                           const String & config_prefix);
 
     /// If dictionary has UUID, then use it as dictionary name in ExternalLoader to allow dictionary renaming.
     /// ExternalDictnariesLoader::resolveDictionaryName(...) should be used to access such dictionaries by name.
-    [[nodiscard]] String getInternalDictionaryName() const { return getShortName(); }
+    String getInternalDictionaryName() const { return getShortName(); }
     /// Get short, but unique, name.
-    [[nodiscard]] String getShortName() const;
+    String getShortName() const;
 
     /// Calculates hash using only the database and table name of a StorageID.
     struct DatabaseAndTableNameHash

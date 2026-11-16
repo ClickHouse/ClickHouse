@@ -19,11 +19,10 @@ void createTimeSeriesInnerTable(
     const ASTColumns & inner_columns,
     boost::intrusive_ptr<ASTStorage> inner_storage_def,
     const StorageID & time_series_storage_id,
-    UInt64 version,
     ContextPtr context);
 
-/// Returns the name of an inner table.
-String getTimeSeriesInnerTableName(ViewTarget::Kind inner_table_kind, const StorageID & time_series_storage_id, UInt64 version);
+/// Returns a StorageID of an inner table.
+String getTimeSeriesInnerTableName(ViewTarget::Kind inner_table_kind, const StorageID & time_series_storage_id);
 String getTimeSeriesInnerTableName(std::string_view inner_table_kind, const StorageID & time_series_storage_id);
 
 }

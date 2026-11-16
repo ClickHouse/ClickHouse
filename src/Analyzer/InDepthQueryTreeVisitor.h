@@ -42,7 +42,7 @@ public:
     using VisitQueryTreeNodeType = std::conditional_t<const_visitor, const QueryTreeNodePtr, QueryTreeNodePtr>;
 
     /// Return true if visitor should traverse tree top to bottom, false otherwise
-    [[nodiscard]] bool shouldTraverseTopToBottom() const
+    bool shouldTraverseTopToBottom() const
     {
         return true;
     }
@@ -71,7 +71,7 @@ private:
         return *static_cast<Derived *>(this);
     }
 
-    [[nodiscard]] const Derived & getDerived() const
+    const Derived & getDerived() const
     {
         return *static_cast<Derived *>(this);
     }
@@ -119,17 +119,17 @@ public:
         return true;
     }
 
-    [[nodiscard]] const ContextPtr & getContext() const
+    const ContextPtr & getContext() const
     {
         return current_context;
     }
 
-    [[nodiscard]] const Settings & getSettings() const
+    const Settings & getSettings() const
     {
         return current_context->getSettingsRef();
     }
 
-    [[nodiscard]] size_t getSubqueryDepth() const
+    size_t getSubqueryDepth() const
     {
         return subquery_depth;
     }
@@ -137,26 +137,17 @@ public:
     void visit(VisitQueryTreeNodeType & query_tree_node)
     {
         auto current_scope_context_ptr = current_context;
-        bool is_subquery_node = false;
         SCOPE_EXIT(
             current_context = std::move(current_scope_context_ptr);
-            if (is_subquery_node)
-                --subquery_depth;
+            --subquery_depth;
         );
 
         if (auto * query_node = query_tree_node->template as<QueryNode>())
-        {
             current_context = query_node->getContext();
-            is_subquery_node = true;
-        }
         else if (auto * union_node = query_tree_node->template as<UnionNode>())
-        {
             current_context = union_node->getContext();
-            is_subquery_node = true;
-        }
 
-        if (is_subquery_node)
-            ++subquery_depth;
+        ++subquery_depth;
 
         getDerived().enterImpl(query_tree_node);
 
@@ -176,7 +167,7 @@ private:
         return *static_cast<Derived *>(this);
     }
 
-    [[nodiscard]] const Derived & getDerived() const
+    const Derived & getDerived() const
     {
         return *static_cast<Derived *>(this);
     }

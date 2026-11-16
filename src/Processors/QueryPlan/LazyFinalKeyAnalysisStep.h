@@ -29,11 +29,11 @@ public:
         ContextPtr query_context_,
         float min_filtered_ratio_);
 
-    [[nodiscard]] String getName() const override { return "LazyFinalKeyAnalysis"; }
+    String getName() const override { return "LazyFinalKeyAnalysis"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     /// Build a ReadFromMergeTree step without the IN-set filter (for EXPLAIN).
-    [[nodiscard]] std::unique_ptr<ReadFromMergeTree> buildReadingStep() const;
+    std::unique_ptr<ReadFromMergeTree> buildReadingStep() const;
 
 private:
     void updateOutputHeader() override {}

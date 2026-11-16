@@ -24,7 +24,6 @@ struct ServerSettingsImpl;
 #define SERVER_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, AsynchronousMetricsKeyValuesMode) \
     M(CLASS_NAME, Bool) \
-    M(CLASS_NAME, DistributedCachePoolBehaviourOnLimit) \
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, GroupArrayActionWhenLimitReached) \
     M(CLASS_NAME, Float) \
@@ -35,8 +34,6 @@ struct ServerSettingsImpl;
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, UInt64Auto) \
-    M(CLASS_NAME, SeccompMode) \
-    M(CLASS_NAME, FilesystemIsolationMode) \
 
 
 SERVER_SETTINGS_SUPPORTED_TYPES(ServerSettings, DECLARE_SETTING_TRAIT)
@@ -55,15 +52,15 @@ struct ServerSettings
     ServerSettings(const ServerSettings & settings);
     ~ServerSettings();
 
-    [[nodiscard]] Field get(std::string_view name) const;
+    Field get(std::string_view name) const;
 
     void set(std::string_view name, const Field & value);
 
-    [[nodiscard]] std::vector<std::string_view> getAllRegisteredNames() const;
-    [[nodiscard]] std::string_view getDescription(std::string_view name) const;
-    [[nodiscard]] std::string_view getTypeName(std::string_view name) const;
-    [[nodiscard]] String getDefaultValueString(std::string_view name) const;
-    [[nodiscard]] SettingsTierType getTier(std::string_view name) const;
+    std::vector<std::string_view> getAllRegisteredNames() const;
+    std::string_view getDescription(std::string_view name) const;
+    std::string_view getTypeName(std::string_view name) const;
+    String getDefaultValueString(std::string_view name) const;
+    SettingsTierType getTier(std::string_view name) const;
 
     void loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
 
@@ -87,7 +84,7 @@ struct ServerSettings
     /// which still reflects only what was last loaded from the config.
     /// This function returns the live value (as a string) for such settings, or `std::nullopt` when the setting
     /// has no live-value override and the configured value in `*this` is authoritative.
-    [[nodiscard]] std::optional<String> tryGetLiveValueAsString(ContextPtr context, std::string_view name) const;
+    std::optional<String> tryGetLiveValueAsString(ContextPtr context, std::string_view name) const;
 
 private:
     std::unique_ptr<ServerSettingsImpl> impl;

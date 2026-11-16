@@ -27,7 +27,7 @@ struct ShuffleHost
     Priority priority;
     UInt64 random = 0;
 
-    /// Resolved by `ZooKeeper::connect` on every connection attempt, through the DNS cache.
+    /// We should resolve it each time without caching
     mutable std::optional<Poco::Net::SocketAddress> address;
 
     void randomize()

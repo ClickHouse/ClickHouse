@@ -22,10 +22,10 @@ struct PatchIndices
     /// Index of row in patch block to take the updated row from.
     PaddedPODArray<UInt64> patch_row_indices;
 
-    [[nodiscard]] bool empty() const { return patch_blocks.empty(); }
-    [[nodiscard]] size_t getNumSources() const { return patch_blocks.size(); }
+    bool empty() const { return patch_blocks.empty(); }
+    size_t getNumSources() const { return patch_blocks.size(); }
 
-    [[nodiscard]] size_t getNumRows() const
+    size_t getNumRows() const
     {
         chassert(result_row_indices.size() == patch_row_indices.size());
         return result_row_indices.size();
@@ -38,7 +38,7 @@ using PatchesIndices = std::vector<PatchIndicesPtr>;
 struct PatchReadResult
 {
     virtual ~PatchReadResult() = default;
-    [[nodiscard]] virtual bool empty() const = 0;
+    virtual bool empty() const = 0;
 };
 
 using PatchReadResultPtr = std::shared_ptr<const PatchReadResult>;
@@ -46,18 +46,17 @@ using PatchReadResultPtr = std::shared_ptr<const PatchReadResult>;
 struct PatchMergeReadResult : public PatchReadResult
 {
     Block block;
-    /// Offsets of the source part covered by the read range. Not set if the range has no rows of that part.
-    std::optional<UInt64> min_part_offset;
-    std::optional<UInt64> max_part_offset;
+    UInt64 min_part_offset = 0;
+    UInt64 max_part_offset = 0;
 
-    [[nodiscard]] bool empty() const override { return block.rows() == 0; }
+    bool empty() const override { return block.rows() == 0; }
 };
 
 struct PatchJoinReadResult : public PatchReadResult
 {
     PatchJoinCache::Entries entries;
 
-    [[nodiscard]] bool empty() const override { return entries.empty(); }
+    bool empty() const override { return entries.empty(); }
 };
 
 /// v2 patch-read result. Sort-key result columns are materialized on `block` by the reader.
@@ -65,7 +64,7 @@ struct PatchMergeOnKeyReadResult : public PatchReadResult
 {
     Block block;
 
-    [[nodiscard]] bool empty() const override { return block.rows() == 0; }
+    bool empty() const override { return block.rows() == 0; }
 };
 
 /// A read result of a patch part with the set of result-block columns updated from it.

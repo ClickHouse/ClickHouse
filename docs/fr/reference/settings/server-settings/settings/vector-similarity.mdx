@@ -12,15 +12,21 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres configurent le serveur ClickHouse et sont générés automatiquement à partir des sources de ClickHouse.
 
-## vector_similarity_index_cache_max_entries {#vector_similarity_index_cache_max_entries}
+<div id="vector_similarity_index_cache_max_entries">
+  ## vector_similarity_index_cache_max_entries
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" changeable_without_restart="No" />Taille du cache de l’index de similarité vectorielle, en nombre d’entrées. La valeur zéro signifie qu’il est désactivé.
 
-## vector_similarity_index_cache_policy {#vector_similarity_index_cache_policy}
+<div id="vector_similarity_index_cache_policy">
+  ## vector_similarity_index_cache_policy
+</div>
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nom de la politique d’éviction du cache de l’index de similarité vectorielle. Valeurs possibles : `LRU`, `SLRU`, `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="Non" />Nom de la politique du cache de l’index de similarité vectorielle.
 
-## vector_similarity_index_cache_size {#vector_similarity_index_cache_size}
+<div id="vector_similarity_index_cache_size">
+  ## vector_similarity_index_cache_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Oui" />Taille du cache des index de similarité vectorielle. Une valeur de zéro le désactive.
 
@@ -28,7 +34,9 @@ Ces paramètres configurent le serveur ClickHouse et sont générés automatique
   Ce paramètre peut être modifié à l’exécution et prend effet immédiatement.
 </Note>
 
-## vector_similarity_index_cache_size_ratio {#vector_similarity_index_cache_size_ratio}
+<div id="vector_similarity_index_cache_size_ratio">
+  ## vector_similarity_index_cache_size_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="Non" />La taille du segment protégé (dans le cas d’une politique SLRU) du cache d’index de similarité vectorielle, par rapport à la taille totale du cache.
 

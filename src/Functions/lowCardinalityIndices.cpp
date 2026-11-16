@@ -19,23 +19,29 @@ public:
     static constexpr auto name = "lowCardinalityIndices";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionLowCardinalityIndices>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(LowCardinality) -> UInt64";
+        FunctionArgumentDescriptors mandatory_args{
+            {"col", &isLowCardinalityType, nullptr, "LowCardinality"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args);
+
+        return std::make_shared<DataTypeUInt64>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const auto & arg = arguments[0];
         auto indexes_col = typeid_cast<const ColumnLowCardinality *>(arg.column.get())->getIndexesPtr();
@@ -72,23 +78,23 @@ CREATE TABLE test (s LowCardinality(String)) ENGINE = Memory;
 INSERT INTO test VALUES ('ab'), ('cd'), ('ab'), ('ab'), ('df');
 INSERT INTO test VALUES ('ef'), ('cd'), ('ab'), ('cd'), ('ef');
 
--- the order the blocks are read in is not defined, so sort the result to make it reproducible:
-
-SELECT s, lowCardinalityIndices(s) AS index FROM test ORDER BY s, index;
+SELECT s, lowCardinalityIndices(s) FROM test;
         )",
         R"(
-┌─s──┬─index─┐
-│ ab │     1 │
-│ ab │     1 │
-│ ab │     1 │
-│ ab │     3 │
-│ cd │     2 │
-│ cd │     2 │
-│ cd │     2 │
-│ df │     3 │
-│ ef │     1 │
-│ ef │     1 │
-└────┴───────┘
+┌─s──┬─lowCardinalityIndices(s)─┐
+│ ab │                        1 │
+│ cd │                        2 │
+│ ab │                        1 │
+│ ab │                        1 │
+│ df │                        3 │
+└────┴──────────────────────────┘
+┌─s──┬─lowCardinalityIndices(s)─┐
+│ ef │                        1 │
+│ cd │                        2 │
+│ ab │                        3 │
+│ cd │                        2 │
+│ ef │                        1 │
+└────┴──────────────────────────┘
         )"
     }
     };

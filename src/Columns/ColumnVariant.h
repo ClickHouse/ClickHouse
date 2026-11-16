@@ -180,9 +180,7 @@ public:
 
     bool isDefaultAt(size_t n) const override;
     bool isNullAt(size_t n) const override;
-    bool hasOnlyTypeDefaults() const override;
     std::string_view getDataAt(size_t n) const override;
-    bool supportsGetDataAt() const override { return false; }
 
     void insertData(const char * pos, size_t length) override;
     void insert(const Field & x) override;
@@ -220,6 +218,7 @@ public:
     void popBack(size_t n) override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
 
@@ -263,7 +262,6 @@ public:
     void rollback(const ColumnCheckpoint & checkpoint) override;
     void forEachMutableSubcolumn(MutableColumnCallback callback) override;
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
-    ColumnPlanes getPlanes() const override;
     void forEachSubcolumn(ColumnCallback callback) const override;
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
 

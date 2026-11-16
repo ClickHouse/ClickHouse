@@ -89,7 +89,7 @@ public:
     /// Set text to be prepopulated in the next readLine call
     virtual void setInitialText(const String &) {}
 
-    [[nodiscard]] bool hasInputData() const;
+    bool hasInputData() const;
 
 protected:
     enum InputStatus

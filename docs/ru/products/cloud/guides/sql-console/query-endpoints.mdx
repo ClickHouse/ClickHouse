@@ -1,13 +1,15 @@
 ---
-sidebar_title: 'Настройка эндпоинтов Query API'
+sidebar_title: 'эндпоинты Query API'
 slug: /cloud/get-started/query-endpoints
 description: 'Легко создавайте конечные точки REST API из сохранённых запросов'
-keywords: ['api', 'эндпоинты Query API', 'конечные точки запросов', 'query rest api']
+keywords: ['api', 'конечные точки query api', 'конечные точки запросов', 'query rest api']
 title: 'Настройка эндпоинтов Query API'
 doc_type: 'guide'
 ---
 
-Возможность **эндпоинты Query API** позволяет создавать API-конечные точки напрямую из любого сохранённого SQL-запроса в консоли ClickHouse Cloud. Вы сможете обращаться к API-конечным точкам по HTTP, чтобы выполнять сохранённые запросы без необходимости подключаться к своему сервису ClickHouse Cloud через нативный драйвер.
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Возможность **Query API Endpoints** позволяет создавать API-конечные точки напрямую из любого сохранённого SQL-запроса в консоли ClickHouse Cloud. Вы сможете обращаться к API-конечным точкам по HTTP, чтобы выполнять сохранённые запросы без необходимости подключаться к своему сервису ClickHouse Cloud через нативный драйвер.
 
 <div id="quick-start-guide">
   ## Предварительные требования
@@ -66,27 +68,11 @@ doc_type: 'guide'
 
     Давайте быстро выполним этот запрос, чтобы убедиться, что он работает: укажите год `2010` в поле переменных запроса справа в редакторе SQL:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Проверка примера запроса](/images/cloud/sqlconsole/endpoints-testquery.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="Проверка примера запроса" />
 
     Затем сохраните запрос:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Сохранение примера запроса](/images/cloud/sqlconsole/endpoints-savequery.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-savequery.webp" size="md" alt="Сохранение примера запроса" />
 
     Дополнительную информацию о сохраненных запросах можно найти в разделе [&quot;Saving a query&quot;](/ru/products/cloud/features/sql-console-features/sql-console#saving-a-query).
   </Step>
@@ -95,15 +81,7 @@ doc_type: 'guide'
     Эндпоинты Query API можно настраивать прямо из представления запроса: нажмите кнопку **Share** и выберите `API Endpoint`.
     Затем вам будет предложено указать, какие ключ API смогут обращаться к этому эндпоинту Query API:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Настройка конечной точки запроса](/images/cloud/sqlconsole/endpoints-configure.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="Настройка конечной точки запроса" />
 
     После выбора ключа API вам будет предложено:
 
@@ -114,15 +92,7 @@ doc_type: 'guide'
 
     Затем будет показан пример команды `curl`, чтобы вы могли отправить тестовый запрос:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Команда curl для конечной точки](/images/cloud/sqlconsole/endpoints-completed.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="Команда curl для конечной точки" />
 
     Для удобства ниже приведена команда `curl`, отображаемая в интерфейсе:
 
@@ -138,27 +108,11 @@ doc_type: 'guide'
   <Step title="Тестирование и мониторинг" id="testing-and-monitoring">
     После создания эндпоинта Query API вы можете проверить его работу с помощью `curl` или любого другого HTTP-клиента:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![тест curl для конечной точки](/images/cloud/sqlconsole/endpoints-curltest.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="тест curl для конечной точки" />
 
     После отправки первого запроса сразу справа от кнопки **Share** должна появиться новая кнопка. При нажатии на нее откроется выдвижная панель с данными мониторинга по запросу:
 
-    <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Мониторинг конечной точки](/images/cloud/sqlconsole/endpoints-monitoring.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="Мониторинг конечной точки" />
   </Step>
 </Steps>
 

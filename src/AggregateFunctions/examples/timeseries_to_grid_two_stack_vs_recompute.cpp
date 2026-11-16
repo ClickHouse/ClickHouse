@@ -10,15 +10,9 @@
 ///
 /// Run:   `clickhouse-examples timeseries_to_grid_two_stack_vs_recompute`
 
-#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesCompensatedSum.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesLinearRegression.h>
-#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesMax.h>
-#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesMin.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
-#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesVariance.h>
 
-#include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/Stopwatch.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
@@ -27,7 +21,6 @@
 #include <fmt/format.h>
 
 #include <algorithm>
-#include <ctime>
 #include <limits>
 #include <vector>
 
@@ -50,30 +43,23 @@ constexpr int REPEATS = 3;
 constexpr size_t WINDOWS[]
     = {2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 40};
 
-/// Timestamp of grid point `grid_index`.
-DateTime64 gridPoint(size_t grid_index)
-{
-    return DateTime64(static_cast<Int64>(grid_index) * STEP);
-}
-
-/// One bucket map per series. The bucket type is per aggregator family: most store raw samples
-/// (`AggregateFunctionTimeseriesSamples`), while the maximum stores its `Summary` directly.
-template <typename Bucket>
-using Dataset = std::vector<UnorderedMapWithMemoryTracking<size_t, Bucket>>;  /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+/// Every non-invertible sliding aggregator stores its samples in this bucket type (one sample per step here).
+using Bucket = AggregateFunctionTimeseriesSamples<UInt32, Float64>;
+using Buckets = UnorderedMapWithMemoryTracking<size_t, Bucket>;
+using Dataset = std::vector<Buckets>;  /// one Buckets map per series; STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// Creates NUM_SERIES series, each with BASE_GRID single-sample buckets at indices 0..BASE_GRID-1 (dense).
-template <typename Bucket>
-Dataset<Bucket> buildDataset()
+Dataset buildDataset()
 {
-    Dataset<Bucket> dataset(NUM_SERIES);
+    Dataset dataset(NUM_SERIES);
     for (size_t series = 0; series < NUM_SERIES; ++series)
     {
-        auto & buckets = dataset[series];
+        Buckets & buckets = dataset[series];
         buckets.reserve(BASE_GRID);
         for (size_t k = 0; k < BASE_GRID; ++k)
         {
             Bucket bucket;
-            bucket.add(gridPoint(k), static_cast<Float64>((k * 7 + series * 3) % 101));
+            bucket.add(static_cast<UInt32>(static_cast<Int64>(k) * STEP), static_cast<Float64>((k * 7 + series * 3) % 101));
             buckets.emplace(k, std::move(bucket));
         }
     }
@@ -82,8 +68,8 @@ Dataset<Bucket> buildDataset()
 
 /// Returns the best (minimum over REPEATS) ns per grid point for sliding a window of `buckets_per_window` buckets.
 /// `stack_size` controls whether it's two-stack (stack_size > 0) or recompute algorithm (stack_size == 0).
-template <typename Bucket, typename MakeAggregator>
-Float64 measureNanoseconds(size_t buckets_per_window, size_t stack_size, const Dataset<Bucket> & dataset,
+template <typename MakeAggregator>
+Float64 measureNanoseconds(size_t buckets_per_window, size_t stack_size, const Dataset & dataset,
     const MakeAggregator & make_aggregator, Float64 & checksum)
 {
     Float64 best = std::numeric_limits<Float64>::infinity();
@@ -97,10 +83,10 @@ Float64 measureNanoseconds(size_t buckets_per_window, size_t stack_size, const D
             {
                 const auto it = buckets.find(i);
                 if (it != buckets.end())
-                    aggregator.add(it->second, gridPoint(i));
+                    aggregator.add(it->second, static_cast<UInt32>(static_cast<Int64>(i) * STEP));
                 if (i >= buckets_per_window)
-                    aggregator.removeBefore(gridPoint(i - buckets_per_window));
-                const auto result = aggregator.getResult(gridPoint(i));
+                    aggregator.removeBefore(static_cast<UInt32>((static_cast<Int64>(i) - static_cast<Int64>(buckets_per_window)) * STEP));
+                const auto result = aggregator.getResult(static_cast<UInt32>(static_cast<Int64>(i) * STEP));
                 if (result)
                     checksum += static_cast<Float64>(*result);     /// read the result so the work cannot be optimised away
             }
@@ -113,8 +99,8 @@ Float64 measureNanoseconds(size_t buckets_per_window, size_t stack_size, const D
 
 /// Finds AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS and BPW_TO_FORCE_TWO_STACKS
 /// for a specified aggregator.
-template <typename Bucket, typename MakeAggregator>
-void runFunction(const char * name, const Dataset<Bucket> & dataset, const MakeAggregator & make_aggregator, Float64 & checksum)
+template <typename MakeAggregator>
+void runFunction(const char * name, const Dataset & dataset, const MakeAggregator & make_aggregator, Float64 & checksum)
 {
     fmt::println("\n{}: two-stacks vs recompute, ns per grid point ({} series x {} buckets).\n",
         name, NUM_SERIES, BASE_GRID);
@@ -144,40 +130,14 @@ void runFunction(const char * name, const Dataset<Bucket> & dataset, const MakeA
 
 int mainEntryExampleTimeSeriesToGridTwoStackVsRecompute(int, char **)
 {
-    fmt::println("timeSeries*ToGrid: two-stacks vs recompute, measured on {}.", DateLUT::instance().dateToString(time(nullptr)));
-
+    const Dataset dataset = buildDataset();
     Float64 checksum = 0;
 
     /// Linear regression (`timeSeriesDerivToGrid` / `timeSeriesPredictLinearToGrid` share the same `Summary`, so
     /// one measurement covers both).
-    using LinearRegressionTraits = AggregateFunctionTimeseriesLinearRegressionTraits</* TimestampType */ DateTime64, /* ValueType */ Float64, TimeseriesLinearRegressionReturnKind::Slope>;
-    runFunction("timeSeriesDerivToGrid", buildDataset<AggregateFunctionTimeseriesSamples<DateTime64, Float64>>(),
-        [](size_t stack_size) { return LinearRegressionTraits::Aggregator{stack_size, /* grid_start */ DateTime64(0), /* predict_offset */ Float64(0), /* column_to_grid_multiplier */ 1, /* column_ticks_per_second */ 1}; },
-        checksum);
-
-    /// Compensated sum (`timeSeriesSumToGrid` / `timeSeriesAvgToGrid` share the same `Summary`, so one measurement
-    /// covers both).
-    using CompensatedSumTraits = AggregateFunctionTimeseriesCompensatedSumTraits</* TimestampType */ DateTime64, /* ValueType */ Float64, /* is_avg */ false>;
-    runFunction("timeSeriesSumToGrid", buildDataset<typename CompensatedSumTraits::Bucket>(),
-        [](size_t stack_size) { return CompensatedSumTraits::Aggregator{stack_size}; },
-        checksum);
-
-    /// Maximum (`timeSeriesMaxToGrid` / `timeSeriesTimestampOfMaxToGrid` differ only in the result; the buckets are summaries).
-    using MaxTraits = AggregateFunctionTimeseriesMaxTraits</* TimestampType */ DateTime64, /* ValueType */ Float64, /* return_timestamp */ false>;
-    runFunction("timeSeriesMaxToGrid", buildDataset<typename MaxTraits::Bucket>(),
-        [](size_t stack_size) { return typename MaxTraits::Aggregator{stack_size}; },
-        checksum);
-
-    /// Minimum (`timeSeriesMinToGrid` / `timeSeriesTimestampOfMinToGrid` differ only in the result; the buckets are raw samples).
-    using MinTraits = AggregateFunctionTimeseriesMinTraits</* TimestampType */ DateTime64, /* ValueType */ Float64, /* return_timestamp */ false>;
-    runFunction("timeSeriesMinToGrid", buildDataset<typename MinTraits::Bucket>(),
-        [](size_t stack_size) { return typename MinTraits::Aggregator{stack_size}; },
-        checksum);
-
-    /// Variance (`timeSeriesStdvarToGrid` / `timeSeriesStddevToGrid` differ only in the result; the buckets are raw samples).
-    using VarianceTraits = AggregateFunctionTimeseriesVarianceTraits</* TimestampType */ DateTime64, /* ValueType */ Float64, /* is_stddev */ false>;
-    runFunction("timeSeriesStdvarToGrid", buildDataset<typename VarianceTraits::Bucket>(),
-        [](size_t stack_size) { return typename VarianceTraits::Aggregator{stack_size}; },
+    using LinearRegressionTraits = AggregateFunctionTimeseriesLinearRegressionTraits<UInt32, /* IntervalType */ Int32, /* ValueType */ Float64, /* is_predict */ false>;
+    runFunction("timeSeriesDerivToGrid", dataset,
+        [](size_t stack_size) { return LinearRegressionTraits::Aggregator{stack_size, /* base */ UInt32(0), /* predict_offset */ Float64(0), /* timestamp_scale_multiplier */ UInt32(1)}; },
         checksum);
 
     /// Add other non-invertible functions here.

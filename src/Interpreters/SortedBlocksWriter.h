@@ -32,7 +32,7 @@ struct SortedBlocksWriter
         size_t row_count = 0;
         size_t bytes = 0;
 
-        [[nodiscard]] bool empty() const { return blocks.empty(); }
+        bool empty() const { return blocks.empty(); }
 
         void insert(Block && block)
         {
@@ -94,7 +94,7 @@ struct SortedBlocksWriter
     }
 
     void insert(Block && block);
-    [[nodiscard]] TemporaryBlockStreamHolder flush(const BlocksList & blocks) const;
+    TemporaryBlockStreamHolder flush(const BlocksList & blocks) const;
     PremergedFiles premerge();
     SortedFiles finishMerge(std::function<void(const Block &)> callback);
 };

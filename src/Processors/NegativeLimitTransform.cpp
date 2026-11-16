@@ -57,10 +57,6 @@ NegativeLimitTransform::Status NegativeLimitTransform::prepare()
 
     if (stage == Stage::Pull)
     {
-        if (!was_output_needed && !isAnyOutputNeeded())
-            return Status::PortFull;
-        was_output_needed = true;
-
         bool has_data_need = false;
 
         auto process = [&](size_t pos)

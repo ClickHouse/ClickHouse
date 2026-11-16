@@ -54,31 +54,32 @@ public:
     static constexpr auto type_name = "local";
     /// All possible signatures for Local engine with structure argument (for example for local table function).
     StorageLocalConfiguration() = default;
+    StorageLocalConfiguration(const StorageLocalConfiguration & other) = default;
 
-    [[nodiscard]] ObjectStorageType getType() const override { return type; }
-    [[nodiscard]] std::string getTypeName() const override { return type_name; }
-    [[nodiscard]] std::string getEngineName() const override { return "Local"; }
+    ObjectStorageType getType() const override { return type; }
+    std::string getTypeName() const override { return type_name; }
+    std::string getEngineName() const override { return "Local"; }
 
-    [[nodiscard]] Path getRawPath() const override { return path; }
+    Path getRawPath() const override { return path; }
     void setRawPath(const Path & p) override { path = p; }
-    [[nodiscard]] const String & getRawURI() const override { return path.path; }
+    const String & getRawURI() const override { return path.path; }
 
-    [[nodiscard]] String getNamespace() const override { return ""; }
-    [[nodiscard]] String getDataSourceDescription() const override { return ""; }
-    [[nodiscard]] StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
+    const Paths & getPaths() const override { return paths; }
+    void setPaths(const Paths & paths_) override
+    {
+        paths = paths_;
+        path = paths_[0];
+    }
+
+    String getNamespace() const override { return ""; }
+    String getDataSourceDescription() const override { return ""; }
+    StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;
 
     void addStructureAndFormatToArgsIfNeeded(ASTs &, const String &, const String &, ContextPtr, bool) override { }
 
 protected:
-    const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return paths; }
-    void setPathsImpl(const Paths & paths_) override TSA_REQUIRES(paths_mutex)
-    {
-        paths = paths_;
-        path = paths_[0];
-    }
-
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
     void fromDisk(const String & disk_name_, ASTs & args, ContextPtr context, bool with_structure) override;
 
@@ -86,7 +87,7 @@ private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     String disk_name;
     Path path;
-    Paths paths TSA_GUARDED_BY(paths_mutex);
+    Paths paths;
     void initializeFromParsedArguments(const LocalStorageParsedArguments & parsed_arguments);
 };
 

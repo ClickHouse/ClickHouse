@@ -18,10 +18,10 @@ public:
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionColorSRGBToOKLAB>(context_); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
     /// sRGB -> OKLAB conversion. Follows the step-by-step pipeline described in Ottosson's article. See ColorConversion.h
-    [[nodiscard]] ColorConversion::Color convertFromSrgb(const ColorConversion::Color & rgb, Float64 gamma) const
+    ColorConversion::Color convertFromSrgb(const ColorConversion::Color & rgb, Float64 gamma) const
     {
         /// sRGB is already in Cartesian form, so we can directly convert to OKLab
         /// Steps 1-3: sRGB to OKLab (handled by ColorConversion namespace helper)
@@ -37,11 +37,11 @@ Converts a colour encoded in the **sRGB** colour space to the perceptually unifo
 
 If any input channel is outside `[0...255]` or the gamma value is non-positive, the behaviour is implementation-defined.
 
-<Note>
+:::note
 **OKLAB** is a perceptually uniform color space.
 Its three coordinates are `L` (the lightness in the range `[0...1]`), `a (Green-Red axis)` and `b (Blue-Yellow axis)`.
 OKLab is designed to be perceptually uniform while remaining cheap to compute.
-</Note>
+:::
 
 The conversion consists of two stages:
 1) sRGB to Linear sRGB

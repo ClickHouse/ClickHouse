@@ -4,11 +4,6 @@ Prefix sort description: k ASC
 Read type: InOrder
 Virtual row conversions
 Read type: Default
--- INNER JOIN, reverse
-Prefix sort description: k DESC
-Read type: InReverseOrder
-Virtual row conversions
-Read type: Default
 --- ReplacingMergeTree: results
 0	p4
 3	p1
@@ -17,11 +12,6 @@ Read type: Default
 12	p1
 15	p1
 18	p1
-198	p3
-195	p3
-192	p3
-189	p3
-186	p3
 45	p1
 48	p1
 51	p2
@@ -32,9 +22,6 @@ Read type: Default
 48	p1
 49	p1
 50	p4
-151	p3
-150	p4
-149	p3
 --- CollapsingMergeTree
 Prefix sort description: k ASC
 Read type: InOrder
@@ -104,11 +91,6 @@ Read type: Default
 12	p1
 15	p1
 18	p1
-1998	p3
-1995	p3
-1992	p3
-1989	p3
-1986	p3
 735	p2
 738	p2
 741	p2
@@ -128,11 +110,6 @@ Read type: Default
 740	p4
 741	p2
 742	p2
-1254	p3
-1253	p3
-1252	p3
-1251	p3
-1250	p4
 --- ORDER BY a prefix of the primary key, which is a prefix of the sorting key
 -- ORDER BY a
 Prefix sort description: a ASC

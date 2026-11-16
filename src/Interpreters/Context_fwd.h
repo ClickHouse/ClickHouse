@@ -2,7 +2,6 @@
 
 #include <base/types.h>
 
-#include <functional>
 #include <map>
 #include <memory>
 
@@ -14,8 +13,6 @@ class Block;
 
 /// Scalar results of subqueries
 using Scalars = std::map<String, Block>;
-
-using QueryExecutionStartedCallback = std::function<void()>;
 
 class Context;
 
@@ -35,7 +32,7 @@ struct WithContextImpl
     WithContextImpl() = default;
     explicit WithContextImpl(Weak context_) : context(context_) {}
 
-    [[nodiscard]] Shared getContext() const;
+    Shared getContext() const;
 
 protected:
     Weak context;

@@ -406,7 +406,7 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
             const FormatSettings & settings)
         {
             return std::make_shared<JSONEachRowRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings, json_strings);
-        }, /*supports_reset_parser=*/ true);
+        });
     };
 
     register_format("JSONEachRow", false);
@@ -414,19 +414,10 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
     register_format("JSONL", false);
     register_format("NDJSON", false);
 
-    /// `JSONLines`, `JSONL` and `NDJSON` are interchangeable spellings of `JSONEachRow`, and the
-    /// file extensions below are registered only for `JSONEachRow`.
-    factory.registerFormatAlias("JSONLines", "JSONEachRow");
-    factory.registerFormatAlias("JSONL", "JSONEachRow");
-    factory.registerFormatAlias("NDJSON", "JSONEachRow");
-
     factory.registerFileExtension("ndjson", "JSONEachRow");
     factory.registerFileExtension("jsonl", "JSONEachRow");
-    /// NDJSON lakes commonly name their files `.json`, but the `json` extension infers as `JSON`.
-    factory.registerFileExtension("json", "JSONEachRow", /*used_for_format_inference=*/ false);
 
     register_format("JSONStringsEachRow", true);
-    factory.registerFileExtension("json", "JSONStringsEachRow", /*used_for_format_inference=*/ false);
 
     factory.markFormatSupportsSubsetOfColumns("JSONEachRow");
     factory.markFormatSupportsSubsetOfColumns("JSONLines");

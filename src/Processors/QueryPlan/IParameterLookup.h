@@ -13,7 +13,7 @@ struct IParameterLookup : boost::noncopyable
 {
     virtual ~IParameterLookup() = default;
 
-    [[nodiscard]] virtual Field getParameter(const String & name) const = 0;
+    virtual Field getParameter(const String & name) const = 0;
 };
 
 }

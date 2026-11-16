@@ -16,8 +16,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -42,32 +42,21 @@ public:
         return std::make_shared<FunctionIn>(std::move(name), negative, null_is_skipped, ignore_set);
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return function_name;
     }
 
     /// The `IgnoreSet` variants are called with the left operand alone during type analysis, but
     /// `inIgnoreSet(x, set)` written explicitly stays valid, hence the variadic arity.
-    [[nodiscard]] bool isVariadic() const override { return ignore_set; }
+    bool isVariadic() const override { return ignore_set; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return ignore_set ? 0 : 2;
     }
 
-    [[nodiscard]] String getSignatureString() const override
-    {
-        /// The `IgnoreSet` variants are called with the left operand alone during type analysis,
-        /// hence the optional second argument there.
-        return ignore_set ? "(Any, [Any]) -> UInt8" : "(Any, Any) -> UInt8";
-    }
-
-    /// The `Any` matchers document the arity and return type, but they cannot express the legacy
-    /// rejection of an argument with a dynamic structure (`Dynamic`, `JSON`/`Object`, and nested
-    /// forms), nor the exact arity diagnostic of the `IgnoreSet` variants. Restore both here, then
-    /// delegate to the signature.
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (ignore_set && (arguments.empty() || arguments.size() > 2))
             throw Exception(
@@ -76,10 +65,10 @@ public:
                 getName(),
                 arguments.size());
 
-        if (arguments[0].type->hasDynamicStructure())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}", arguments[0].type->getName(), getName());
-        return IFunction::getReturnTypeImpl(arguments);
+        if (arguments[0]->hasDynamicStructure())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
+
+        return std::make_shared<DataTypeUInt8>();
     }
 
     /// We can't use the default constant-folding wrapper because it would wrap a
@@ -87,21 +76,21 @@ public:
     /// would then see a subquery-IN with an unbuilt set as "always false" (the
     /// dry-run path returns 0) and skip the filter entirely. Handle the size-0
     /// ColumnConst arguments produced by `ActionsDAG::addColumn` directly below.
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return false; }
 
-    [[nodiscard]] bool useDefaultImplementationForDynamic() const override
+    bool useDefaultImplementationForDynamic() const override
     {
         return false;
     }
 
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
+    bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// An empty set makes the result independent of the left operand, so the result is constant
     /// even when that operand is not. Reporting it here keeps DAG nodes in agreement with
     /// `executeImpl`, which returns a ColumnConst for the same case.
-    [[nodiscard]] ColumnPtr getConstantResultForNonConstArguments(
+    ColumnPtr getConstantResultForNonConstArguments(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
         /// The -IgnoreSet variants carry no set to inspect: they exist to resolve types without one.
@@ -127,17 +116,17 @@ public:
         return result_type->createColumnConst(1, static_cast<UInt8>(negative));
     }
 
-    [[nodiscard]] ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return executeImpl(arguments, true, input_rows_count);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return executeImpl(arguments, false, input_rows_count);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, bool dry_run, size_t input_rows_count) const
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, bool dry_run, size_t input_rows_count) const
     {
         if (ignore_set)
             return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
@@ -337,7 +326,7 @@ Checks if the left operand is a member of the right operand set. Unlike `in`, NU
     FunctionDocumentation::Syntax syntax_nullIn = "nullIn(x, set)";
     FunctionDocumentation::Arguments arguments_nullIn = {{"x", "The value to check.", {}}, {"set", "The set of values.", {}}};
     FunctionDocumentation::ReturnedValue returned_value_nullIn = {"Returns 1 if x is in the set, 0 otherwise.", {"UInt8"}};
-    FunctionDocumentation::Examples examples_nullIn = {{"Basic usage", "SELECT nullIn(NULL, tuple(1, NULL))", "0"}};
+    FunctionDocumentation::Examples examples_nullIn = {{"Basic usage", "SELECT nullIn(NULL, tuple(1, NULL))", "1"}};
     FunctionDocumentation::IntroducedIn introduced_in_nullIn = {1, 1};
     FunctionDocumentation::Category category_nullIn = FunctionDocumentation::Category::Comparison;
     FunctionDocumentation documentation_nullIn = {description_nullIn, syntax_nullIn, arguments_nullIn, {}, returned_value_nullIn, examples_nullIn, introduced_in_nullIn, category_nullIn};
@@ -357,7 +346,7 @@ Same as `nullIn`, but uses global set distribution in distributed queries. The s
     FunctionDocumentation::Syntax syntax_globalNullIn = "globalNullIn(x, set)";
     FunctionDocumentation::Arguments arguments_globalNullIn = {{"x", "The value to check.", {}}, {"set", "The set of values.", {}}};
     FunctionDocumentation::ReturnedValue returned_value_globalNullIn = {"Returns 1 if x is in the set, 0 otherwise.", {"UInt8"}};
-    FunctionDocumentation::Examples examples_globalNullIn = {{"Basic usage", "SELECT nullIn(NULL, tuple(1, NULL))", "0"}};
+    FunctionDocumentation::Examples examples_globalNullIn = {{"Basic usage", "SELECT nullIn(NULL, tuple(1, NULL))", "1"}};
     FunctionDocumentation::IntroducedIn introduced_in_globalNulllIn = {1, 1};
     FunctionDocumentation::Category category_globalNullIn = FunctionDocumentation::Category::Comparison;
     FunctionDocumentation documentation_globalNullIn = {description_globalNullIn, syntax_globalNullIn, arguments_globalNullIn, {}, returned_value_globalNullIn, examples_globalNullIn, introduced_in_globalNulllIn, category_globalNullIn};
@@ -377,7 +366,7 @@ Checks if the left operand is NOT a member of the right operand set. Unlike `not
     FunctionDocumentation::Syntax syntax_notNullIn = "notNullIn(x, set)";
     FunctionDocumentation::Arguments arguments_notNullIn = {{"x", "The value to check.", {}}, {"set", "The set of values.", {}}};
     FunctionDocumentation::ReturnedValue returned_value_notNullIn = {"Returns 1 if x is not in the set, 0 otherwise.", {"UInt8"}};
-    FunctionDocumentation::Examples examples_notNullIn = {{"Basic usage", "SELECT notNullIn(NULL, tuple(1, NULL))", "1"}};
+    FunctionDocumentation::Examples examples_notNullIn = {{"Basic usage", "SELECT notNullIn(NULL, tuple(1, NULL))", "0"}};
     FunctionDocumentation::IntroducedIn introduced_in_notNulllIn = {1, 1};
     FunctionDocumentation::Category category_notNullIn = FunctionDocumentation::Category::Comparison;
     FunctionDocumentation documentation_notNullIn = {description_notNullIn, syntax_notNullIn, arguments_notNullIn, {}, returned_value_notNullIn, examples_notNullIn, introduced_in_notNulllIn, category_notNullIn};
@@ -397,7 +386,7 @@ Same as `notNullIn`, but uses global set distribution in distributed queries. Th
     FunctionDocumentation::Syntax syntax_globalNotNullIn = "globalNotNullIn(x, set)";
     FunctionDocumentation::Arguments arguments_globalNotNullIn = {{"x", "The value to check.", {}}, {"set", "The set of values.", {}}};
     FunctionDocumentation::ReturnedValue returned_value_globalNotNullIn = {"Returns 1 if x is not in the set, 0 otherwise.", {"UInt8"}};
-    FunctionDocumentation::Examples examples_globalNotNullIn = {{"Basic usage", "SELECT notNullIn(NULL, tuple(1, NULL))", "1"}};
+    FunctionDocumentation::Examples examples_globalNotNullIn = {{"Basic usage", "SELECT notNullIn(NULL, tuple(1, NULL))", "0"}};
     FunctionDocumentation::IntroducedIn introduced_in_globalNotNulllIn = {1, 1};
     FunctionDocumentation::Category category_globalNotNullIn = FunctionDocumentation::Category::Comparison;
     FunctionDocumentation documentation_globalNotNullIn = {description_globalNotNullIn, syntax_globalNotNullIn, arguments_globalNotNullIn, {}, returned_value_globalNotNullIn, examples_globalNotNullIn, introduced_in_globalNotNulllIn, category_globalNotNullIn};

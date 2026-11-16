@@ -29,15 +29,15 @@ public:
         CrosswiseConnectionPtr crosswise_connection_,
         JoinTableSide position_);
 
-    [[nodiscard]] String getName() const override { return "CreateSetAndFilterOnTheFlyStep"; }
+    String getName() const override { return "CreateSetAndFilterOnTheFlyStep"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    [[nodiscard]] SetWithStatePtr getSet() const { return own_set; }
+    SetWithStatePtr getSet() const { return own_set; }
 
-    [[nodiscard]] bool isColumnPartOfSetKey(const String & column_name) const;
+    bool isColumnPartOfSetKey(const String & column_name) const;
 
     /// Set for another stream.
     void setFiltering(SetWithStatePtr filtering_set_) { filtering_set = filtering_set_; }

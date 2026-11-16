@@ -18,9 +18,9 @@ namespace
 class AggregateFunctionCombinatorDistinct final : public IAggregateFunctionCombinator
 {
 public:
-    [[nodiscard]] String getName() const override { return "Distinct"; }
+    String getName() const override { return "Distinct"; }
 
-    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
+    DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -29,7 +29,7 @@ public:
         return arguments;
     }
 
-    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
+    AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,

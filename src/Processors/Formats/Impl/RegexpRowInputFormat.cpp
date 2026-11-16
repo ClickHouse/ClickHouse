@@ -124,7 +124,7 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
         {
             if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
                 read = SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(
-                    *columns[index], field_buf, format_settings, serializations[index], type.get());
+                    *columns[index], field_buf, format_settings, serializations[index]);
             else
             {
                 serializations[index]->deserializeWholeText(*columns[index], field_buf, format_settings);
@@ -226,7 +226,7 @@ void registerInputFormatRegexp(FormatFactory & factory)
             const FormatSettings & settings)
     {
         return std::make_shared<RegexpRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings);
-    }, /*supports_reset_parser=*/ true);
+    });
 
     factory.setDocumentation("Regexp", Documentation{
         .description = R"DOCS_MD(
@@ -300,9 +300,6 @@ When working with the `Regexp` format, you can use the following settings:
 )DOCS_MD"});
 }
 
-/// Rows are split only by `\n`, exactly as in `RegexpFieldExtractor::parseRow`; a `\r` before it
-/// belongs to the row and is stripped by the parser. The number of rows must match the parser,
-/// because parallel parsing uses it to report row numbers in errors.
 static std::pair<bool, size_t> segmentationEngine(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
 {
     char * pos = in.position();
@@ -311,7 +308,7 @@ static std::pair<bool, size_t> segmentationEngine(ReadBuffer & in, DB::Memory<> 
 
     while (loadAtPosition(in, memory, pos) && need_more_data)
     {
-        pos = find_first_symbols<'\n'>(pos, in.buffer().end());
+        pos = find_first_symbols<'\r', '\n'>(pos, in.buffer().end());
         if (pos > in.buffer().end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
         if (pos == in.buffer().end())
@@ -321,7 +318,18 @@ static std::pair<bool, size_t> segmentationEngine(ReadBuffer & in, DB::Memory<> 
         if ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows))
             need_more_data = false;
 
-        ++pos;
+        if (*pos == '\n')
+        {
+            ++pos;
+            if (loadAtPosition(in, memory, pos) && *pos == '\r')
+                ++pos;
+        }
+        else if (*pos == '\r')
+        {
+            ++pos;
+            if (loadAtPosition(in, memory, pos) && *pos == '\n')
+                ++pos;
+        }
     }
 
     saveUpToPosition(in, memory, pos);

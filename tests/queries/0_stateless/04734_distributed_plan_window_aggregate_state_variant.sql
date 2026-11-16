@@ -13,7 +13,7 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
 -- `+ 0` turns `-0` into `0`: `ORDER BY` treats them as equal, so otherwise their order in the output would change.
 
 SELECT round(finalizeAggregation(theilsUState(a, b) OVER (ORDER BY a, b)), 6) + 0 AS s
-FROM t_window_state_variant ORDER BY s SETTINGS distributed_plan_fallback_to_local_execution = 0;
+FROM t_window_state_variant ORDER BY s;
 
 -- The plan only splits into more than one stage for a multi-stage shape, and a single-stage plan is
 -- executed locally without serializing any fragment, so these queries would pass without ever
@@ -26,28 +26,28 @@ FROM (EXPLAIN PIPELINE SELECT finalizeAggregation(theilsUState(a, b) OVER (ORDER
 WHERE explain LIKE '%ReadFromDistributedPlanSource%' LIMIT 1;
 
 SELECT round(finalizeAggregation(cramersVState(a, b) OVER (ORDER BY a, b)), 6) + 0 AS s
-FROM t_window_state_variant ORDER BY s SETTINGS distributed_plan_fallback_to_local_execution = 0;
+FROM t_window_state_variant ORDER BY s;
 
 SELECT round(finalizeAggregation(contingencyState(a, b) OVER (ORDER BY a, b)), 6) + 0 AS s
-FROM t_window_state_variant ORDER BY s SETTINGS distributed_plan_fallback_to_local_execution = 0;
+FROM t_window_state_variant ORDER BY s;
 
 -- Combinators propagate the variant to the wrapping function, and -ForEach nests the state in an Array.
 SELECT round(finalizeAggregation(theilsUStateIf(a, b, a > 1) OVER (ORDER BY a, b)), 6) + 0 AS s
-FROM t_window_state_variant ORDER BY s SETTINGS distributed_plan_fallback_to_local_execution = 0;
+FROM t_window_state_variant ORDER BY s;
 
 SELECT round(finalizeAggregation((theilsUStateForEach([a], [b]) OVER (ORDER BY a, b))[1]), 6) + 0 AS s
-FROM t_window_state_variant ORDER BY s SETTINGS distributed_plan_fallback_to_local_execution = 0;
+FROM t_window_state_variant ORDER BY s;
 
 SELECT 'nested state distributes'
 FROM (EXPLAIN PIPELINE SELECT finalizeAggregation((theilsUStateForEach([a], [b]) OVER (ORDER BY a, b))[1]) FROM t_window_state_variant)
 WHERE explain LIKE '%ReadFromDistributedPlanSource%' LIMIT 1;
 
 SELECT round(finalizeAggregation(theilsUArgMaxState(a, b, a) OVER (ORDER BY a, b)), 6) + 0 AS s
-FROM t_window_state_variant ORDER BY s SETTINGS distributed_plan_fallback_to_local_execution = 0;
+FROM t_window_state_variant ORDER BY s;
 
 -- A step after the window step propagates the state column into its own header check.
 SELECT round(finalizeAggregation(s), 6) + 0 AS f
 FROM (SELECT theilsUState(a, b) OVER (ORDER BY a, b) AS s FROM t_window_state_variant)
-ORDER BY f SETTINGS distributed_plan_fallback_to_local_execution = 0;
+ORDER BY f;
 
 DROP TABLE t_window_state_variant;

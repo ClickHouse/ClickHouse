@@ -27,28 +27,25 @@ public:
         return std::make_shared<FunctionIfNotFinite>(context);
     }
 
-    [[nodiscard]] std::string getName() const override
+    std::string getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
-    /// The result type is that of `if` built in the query context, so it follows
-    /// `use_variant_as_common_type` and `allow_lossy_numeric_supertype`; a declarative
-    /// `leastSupertype` signature would ignore these settings.
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto is_finite_type = is_finite->build({arguments[0]})->getResultType();
         auto if_type = if_function->build({{nullptr, is_finite_type, ""}, arguments[0], arguments[1]})->getResultType();
         return if_type;
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnsWithTypeAndName is_finite_columns{arguments[0]};
         auto is_finite_func = is_finite->build(is_finite_columns);
@@ -88,7 +85,7 @@ You can get a similar result by using the [ternary operator](/reference/function
 - `x` if `x` is finite.
 - `y` if `x` is not finite.
     )"};
-    FunctionDocumentation::Examples examples = {{"Usage example","SELECT 1/0 AS infimum, ifNotFinite(infimum,42)","inf\t42"}};
+    FunctionDocumentation::Examples examples = {{"Usage example","SELECT 1/0 AS infimum, ifNotFinite(infimum,42)","inf  42"}};
     FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

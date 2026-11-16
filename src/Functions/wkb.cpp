@@ -27,20 +27,17 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionWKB>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(Any) -> String";
-    }
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] ColumnPtr
+    ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         auto res_column = ColumnString::create();
@@ -72,7 +69,7 @@ public:
         return res_column;
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 };
 
 }
@@ -87,13 +84,13 @@ REGISTER_FUNCTION(WKB)
         .arguments{{"geometry", "The input geometry type to convert into WKB."}},
         .examples{
             {"first call",
-             "CREATE TABLE IF NOT EXISTS geom1 (a Point) ENGINE = Memory();\n"
-             "INSERT INTO geom1 VALUES((0, 0));\n"
+             "CREATE TABLE IF NOT EXISTS geom1 (a Point) ENGINE = Memory();"
+             "INSERT INTO geom1 VALUES((0, 0));"
              "SELECT hex(wkb(a)) FROM geom1;",
              R"(
-┌─hex(wkb(a))────────────────────────────────┐
-│ 010100000000000000000000000000000000000000 │
-└────────────────────────────────────────────┘
+    ┌─hex(wkb(a))─-----------------------------------------┐
+    │ 010100000000000000000000000000000000003440           │
+    └──────────────────────────────────────────────────────┘
                 )"},
         },
         .introduced_in = {25, 7},

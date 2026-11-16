@@ -4,6 +4,7 @@ SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
 
+SET enable_analyzer = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_text_index_add_hint = 1;
 SET optimize_rewrite_like_perfect_affix = 1;

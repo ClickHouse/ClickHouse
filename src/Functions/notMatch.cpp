@@ -40,9 +40,9 @@ notMatch(haystack, pattern)
         "Usage example",
         "SELECT notMatch('Hello World', 'Hello.*'), 'Hello World' !~ 'goodbye.*'",
         R"(
-┌─notMatch('Hello World', 'Hello.*')─┬─notMatch('Hello World', 'goodbye.*')─┐
-│                                  0 │                                    1 │
-└────────────────────────────────────┴──────────────────────────────────────┘
+┌─notMatch('He⋯ 'Hello.*')─┬─'Hello World⋯goodbye.*'─┐
+│                        0 │                       1 │
+└──────────────────────────┴─────────────────────────┘
         )"
     }
     };

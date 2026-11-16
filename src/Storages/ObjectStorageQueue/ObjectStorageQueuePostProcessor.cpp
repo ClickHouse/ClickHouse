@@ -15,7 +15,6 @@
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMoveDestinationAccess.h>
-#include <base/scope_guard.h>
 
 #include <chrono>
 #include <thread>
@@ -53,7 +52,6 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString google_adc_client_id;
     extern const S3AuthSettingsString google_adc_client_secret;
     extern const S3AuthSettingsString google_adc_refresh_token;
-    extern const S3AuthSettingsString google_service_account_key;
     extern const S3AuthSettingsS3UriStyle uri_style;
 }
 
@@ -66,7 +64,6 @@ namespace S3RequestSetting
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int FAULT_INJECTED;
@@ -88,23 +85,8 @@ ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
     , log(getLogger("ObjectStorageQueuePostProcessor"))
 { }
 
-void ObjectStorageQueuePostProcessor::process(
-    const StoredObjects & objects,
-    UnorderedSetWithMemoryTracking<String> & failed_object_paths) const
+void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) const
 {
-    StoredObjects successful_objects;
-
-    SCOPE_EXIT({
-        UnorderedSetWithMemoryTracking<std::string_view> successful_paths;
-        successful_paths.reserve(successful_objects.size());
-        for (const auto & object : successful_objects)
-            successful_paths.insert(object.remote_path);
-
-        for (const auto & object : objects)
-            if (!successful_paths.contains(object.remote_path))
-                failed_object_paths.insert(object.remote_path);
-    });
-
     const ObjectStorageQueueAction after_processing_action = table_metadata.after_processing.load();
     if (after_processing_action == ObjectStorageQueueAction::DELETE)
     {
@@ -118,7 +100,7 @@ void ObjectStorageQueuePostProcessor::process(
                 fiu_do_on(FailPoints::object_storage_queue_fail_delete, {
                     throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to remove objects");
                 });
-                object_storage->removeObjectsIfExist(objects, &successful_objects);
+                object_storage->removeObjectsIfExist(objects);
             });
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, objects.size());
         }
@@ -137,10 +119,10 @@ void ObjectStorageQueuePostProcessor::process(
         switch (type)
         {
             case ObjectStorageType::Azure:
-                moveAzureBlobs(objects, successful_objects);
+                moveAzureBlobs(objects);
                 break;
             case ObjectStorageType::S3:
-                moveS3Objects(objects, successful_objects);
+                moveS3Objects(objects);
                 break;
             default:
                 throw Exception(
@@ -158,7 +140,7 @@ void ObjectStorageQueuePostProcessor::process(
         try
         {
             doWithRetries([&]{
-                object_storage->tagObjects(objects, tag_key, tag_value, &successful_objects);
+                object_storage->tagObjects(objects, tag_key, tag_value);
             });
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTaggedObjects, objects.size());
         }
@@ -254,28 +236,7 @@ static AzureBlobStorage::ConnectionParams getAzureConnectionParams(
 
 #endif
 
-void ObjectStorageQueuePostProcessor::checkAzureMoveDestination(
-    [[maybe_unused]] const String & move_connection_string, [[maybe_unused]] const String & move_container)
-{
-#if USE_AZURE_BLOB_STORAGE
-    AzureBlobStorage::ConnectionParams params;
-    AzureBlobStorage::processURL(move_connection_string, move_container, params.endpoint, params.auth_method);
-    params.forbid_implicit_credentials = true;
-    params.anonymous_fallback_for_server_credentials = true;
-    if (params.checkOrDropServerManagedCredentials())
-        throw Exception(
-            ErrorCodes::ACCESS_DENIED,
-            "Moving processed blobs to another Azure container requires explicit credentials in "
-            "`after_processing_move_connection_string`: a connection string or a SAS token. "
-            "It may not use the server's own identity.");
-#endif
-}
-
-void ObjectStorageQueuePostProcessor::moveWithinBucket(
-    const StoredObjects & objects,
-    const String & move_prefix,
-    bool preserve_path,
-    StoredObjects & successful_objects) const
+void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & objects, const String & move_prefix, bool preserve_path) const
 {
     auto read_settings = getReadSettings();
     auto write_settings = getWriteSettings();
@@ -289,20 +250,11 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
 
     std::atomic<size_t> moved_objects = 0;
 
-    std::vector<UInt8> succeeded(objects.size(), 0);
-
-    SCOPE_EXIT_SAFE({
-        for (size_t i = 0; i < objects.size(); ++i)
-            if (succeeded[i])
-                successful_objects.emplace_back(objects[i]);
-    });
-
     try
     {
-        size_t objects_index = 0;
         for (const auto & object_from : objects)
         {
-            task_tracker.add([&, objects_index]{
+            task_tracker.add([&]{
                 try
                 {
                     doWithRetries([&]{
@@ -316,9 +268,6 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                         LOG_INFO(log, "Removing object {}", object_from.remote_path);
                         object_storage->removeObjectIfExists(object_from);
                     });
-
-                    succeeded[objects_index] = 1;
-
                     ++moved_objects;
                 }
                 catch (...)
@@ -331,11 +280,8 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                     );
                 }
             });
-
-            ++objects_index;
         }
         task_tracker.waitAll();
-
     }
     catch (...)
     {
@@ -348,14 +294,12 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
 
         task_tracker.safeWaitAll();
 
-        std::erase_if(successful_objects, [](const StoredObject& object) { return object.remote_path.empty(); });
-
         throw;
     }
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, moved_objects);
 }
 
-void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & objects, StoredObjects & successful_objects) const
+void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & objects) const
 {
 #if USE_AWS_S3
     const String & move_uri = settings.after_processing_move_uri;
@@ -400,7 +344,6 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = "";
             s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = "";
             s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = "";
-            s3_settings->auth_settings[S3AuthSetting::google_service_account_key] = "";
             /// The move uses its own explicit keys, so also drop the request-auth material (headers/access
             /// headers and SSE-C/SSE-KMS keys) merged from the server `<s3>` config: otherwise the server's
             /// headers or encryption keys would be sent to the user-supplied move destination.
@@ -460,9 +403,6 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                         LOG_INFO(log, "Removing object {}", object_from.remote_path);
                         object_storage->removeObjectIfExists(object_from);
                     });
-
-                    successful_objects.emplace_back(object_from);
-
                     moved_objects += 1;
                 }
                 catch (...)
@@ -484,7 +424,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
     }
     else if (!move_prefix.empty())
     {
-        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path, successful_objects);
+        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path);
     }
     else
     {
@@ -492,11 +432,10 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
     }
 #else
     UNUSED(objects);
-    UNUSED(successful_objects);
 #endif
 }
 
-void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objects, StoredObjects & successful_objects) const
+void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objects) const
 {
 #if USE_AZURE_BLOB_STORAGE
     const String & move_connection_string = settings.after_processing_move_connection_string;
@@ -517,14 +456,10 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
         {
             auto contextPtr = getContext();
             std::shared_ptr<const AzureBlobStorage::ContainerClient> src_client = azure_storage->getAzureBlobStorageClient();
-            const String src_container = azure_storage->getAzureBlobStorageConnectionParams()->getContainer();
-            checkAzureMoveDestination(move_connection_string, move_container);
             auto connection_params = getAzureConnectionParams(
                 move_connection_string,
                 move_container,
                 contextPtr);
-            connection_params.forbid_implicit_credentials = true;
-            connection_params.anonymous_fallback_for_server_credentials = false;
             const bool is_readonly = true;
             std::shared_ptr<AzureBlobStorage::ContainerClient> dst_client = AzureBlobStorage::getContainerClient(
                 connection_params,
@@ -551,7 +486,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                         copyAzureBlobStorageFile(
                             src_client,
                             dst_client,
-                            src_container,
+                            connection_params.getContainer(),
                             /* src_blob */ object_from.remote_path,
                             blob_size,
                             move_container,
@@ -559,15 +494,11 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                             request_settings,
                             read_settings,
                             std::optional<ObjectAttributes>(),
-                            scheduler,
-                            BlobStorageLogWriter::create(object_storage->getDiskName())
+                            scheduler
                         );
                         LOG_INFO(log, "Removing object {}", object_from.remote_path);
                         object_storage->removeObjectIfExists(object_from);
                     });
-
-                    successful_objects.emplace_back(object_from);
-
                     moved_objects += 1;
                 }
                 catch (...)
@@ -589,7 +520,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
     }
     else if (!move_prefix.empty())
     {
-        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path, successful_objects);
+        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path);
     }
     else
     {
@@ -597,7 +528,6 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
     }
 #else
     UNUSED(objects);
-    UNUSED(successful_objects);
 #endif
 }
 

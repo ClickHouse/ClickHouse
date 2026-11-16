@@ -1,3 +1,0 @@
-{"commitInfo":{"timestamp":1564524299648,"operation":"STREAMING UPDATE","operationParameters":{"outputMode":"Append","queryId":"e4a20b59-dd0e-4c50-b074-e8ae4786df30","epochId":"0"},"readVersion":2,"isBlindAppend":true}}
-{"txn":{"appId":"e4a20b59-dd0e-4c50-b074-e8ae4786df30","version":0,"lastUpdated":1564524299648}}
-{"add":{"path":"part-00000-cb6b150b-30b8-4662-ad28-ff32ddab96d2-c000.snappy.parquet","partitionValues":{},"size":404,"modificationTime":1564524299000,"dataChange":true}}

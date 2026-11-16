@@ -13,11 +13,13 @@
 
 #if USE_JEMALLOC
 #include <Common/Jemalloc.h>
-#include <Common/filesystemHelpers.h>
 #include <Processors/Sources/JemallocProfileSource.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <base/scope_guard.h>
+#include <filesystem>
 #include <optional>
 #endif
 
@@ -95,11 +97,24 @@ try
     }
 
     auto raw_file = std::string(Jemalloc::flushProfile("/tmp/jemalloc_keeper"));
-    SCOPE_EXIT({ FS::tryDelete(raw_file, getLogger("KeeperJemallocProfileHandler")); });
+    SCOPE_EXIT({
+        std::error_code ec;
+        std::filesystem::remove(raw_file, ec);
+        if (ec)
+            LOG_WARNING(getLogger("KeeperJemallocProfileHandler"), "Failed to remove temporary heap profile {}: {}", raw_file, ec.message());
+    });
 
-    /// The dump itself has runtime addresses and the memory map, so even `raw` goes through `JemallocProfileSource`.
-    const auto output_format = format == "collapsed" ? JemallocProfileFormat::Collapsed : JemallocProfileFormat::Raw;
-    std::string output = symbolizeJemallocHeapProfileToString(raw_file, output_format, /* symbolize_with_inline= */ false);
+    std::string output;
+
+    if (format == "collapsed")
+    {
+        output = symbolizeJemallocHeapProfileToString(raw_file, JemallocProfileFormat::Collapsed, /* symbolize_with_inline= */ false);
+    }
+    else
+    {
+        ReadBufferFromFile in(raw_file);
+        readStringUntilEOF(output, in);
+    }
 
     setResponseDefaultHeaders(response);
     response.setContentType("text/plain; charset=UTF-8");

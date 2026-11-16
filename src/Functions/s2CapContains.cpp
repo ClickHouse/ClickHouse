@@ -46,32 +46,48 @@ public:
         return std::make_shared<FunctionS2CapContains>();
     }
 
-    [[nodiscard]] std::string getName() const override
+    std::string getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
+    size_t getNumberOfArguments() const override { return 3; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-    /// row references it, and `0` is not a valid S2 cell id, so executing on the whole dictionary
-    /// would fail on entirely valid data.
-    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(UInt64, Float64, UInt64) -> UInt8";
+        for (size_t index = 0; index < getNumberOfArguments(); ++index)
+        {
+            const auto * arg = arguments[index].get();
+
+            /// Radius
+            if (index == 1)
+            {
+                if (!WhichDataType(arg).isFloat64())
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of argument {} of function {}. Must be Float64",
+                        arg->getName(), 2, getName());
+            }
+            else if (!WhichDataType(arg).isUInt64())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument {} of function {}. Must be UInt64",
+                    arg->getName(), index + 1, getName());
+        }
+
+        return std::make_shared<DataTypeUInt8>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)

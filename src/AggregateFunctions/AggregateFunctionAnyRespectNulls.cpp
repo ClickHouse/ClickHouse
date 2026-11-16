@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Formats/FormatSettings.h>
 #include <AggregateFunctions/SingleValueData.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -30,7 +29,7 @@ struct AggregateFunctionAnyRespectNullsData
     Status status = Status::NotSet;
     Field value;
 
-    [[nodiscard]] bool isSet() const { return status != Status::NotSet; }
+    bool isSet() const { return status != Status::NotSet; }
     void setNull() { status = Status::SetNull; }
     void setOther() { status = Status::SetOther; }
 };
@@ -52,7 +51,7 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         if constexpr (First)
             return "any_respect_nulls";
@@ -60,7 +59,7 @@ public:
             return "anyLast_respect_nulls";
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void addNull(AggregateDataPtr __restrict place) const
     {
@@ -181,7 +180,7 @@ public:
             this->result_type->insertDefaultInto(to);
     }
 
-    [[nodiscard]] AggregateFunctionPtr getOwnNullAdapter(
+    AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & original_function,
         const DataTypes & /*arguments*/,
         const Array & /*params*/,

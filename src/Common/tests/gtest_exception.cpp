@@ -1,18 +1,15 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
-#include <base/scope_guard.h>
 
 #include <gtest/gtest.h>
 
 #include <stdexcept>
-#include <string>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
-    extern const int OK;
     extern const int STD_EXCEPTION;
     extern const int UNSUPPORTED_METHOD;
 }
@@ -56,36 +53,6 @@ TEST(Exception, RecordToSystemErrorsOnlyRecordsSuppressedExceptions)
     EXPECT_EQ(getLocalErrorCount(ErrorCodes::UNSUPPORTED_METHOD), recorded_count + 1);
     recorded.recordToSystemErrors();
     EXPECT_EQ(getLocalErrorCount(ErrorCodes::UNSUPPORTED_METHOD), recorded_count + 1);
-}
-
-
-TEST(Exception, CurrentExceptionWithoutHandledException)
-{
-    EXPECT_EQ(getCurrentExceptionCode(), ErrorCodes::OK);
-    EXPECT_EQ(getCurrentExceptionMessage(false), "");
-    tryLogCurrentException("Exception");
-}
-
-TEST(Exception, CurrentExceptionInDestructorDuringUnwinding)
-{
-    int code = -1;
-    std::string message = "unset";
-    try
-    {
-        SCOPE_EXIT({
-            code = getCurrentExceptionCode();
-            message = getCurrentExceptionMessage(false);
-            tryLogCurrentException("Exception");
-        });
-        throw std::runtime_error("unwinding");
-    }
-    catch (const std::runtime_error &)
-    {
-        EXPECT_EQ(getCurrentExceptionCode(), ErrorCodes::STD_EXCEPTION);
-    }
-
-    EXPECT_EQ(code, ErrorCodes::OK);
-    EXPECT_EQ(message, "");
 }
 
 }

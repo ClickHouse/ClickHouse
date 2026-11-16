@@ -1,5 +1,0 @@
-<clickhouse>
-    <http_forbid_headers>
-        <header>X-Forbidden-Placeholder</header>
-    </http_forbid_headers>
-</clickhouse>

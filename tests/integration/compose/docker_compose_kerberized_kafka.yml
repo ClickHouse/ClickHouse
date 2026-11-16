@@ -36,10 +36,6 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: OUTSIDE
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: "kafka_kerberized_zookeeper:2181"
-      # The default of Kafka 2.2 (6000 ms) is too short for a loaded CI host: slow ZooKeeper fsync
-      # makes the session expire during broker startup, which is fatal for the broker.
-      # 18000 ms is the default since Kafka 2.5 (KIP-537).
-      KAFKA_ZOOKEEPER_SESSION_TIMEOUT_MS: 18000
       KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/secrets/broker_jaas.conf -Djava.security.krb5.conf=/etc/kafka/secrets/krb.conf -Dsun.security.krb5.debug=true"

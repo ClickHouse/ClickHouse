@@ -511,7 +511,7 @@ public:
             *i = result_type(rng_());
     }
 
-    [[nodiscard]] constexpr size_t size() const
+    constexpr size_t size() const
     {
         return (sizeof(typename RngType::result_type) > sizeof(result_type)
                 && RngType::max() > ~size_t(0UL))

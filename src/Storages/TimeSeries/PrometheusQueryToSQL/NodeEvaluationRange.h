@@ -30,13 +30,12 @@ namespace DB::PrometheusQueryToSQL
 
 struct NodeEvaluationRange
 {
-    /// All fields use the scale `ConverterContext::result_timestamp_scale`.
     DateTime64 start_time;
     DateTime64 end_time;
     Decimal64 step;
     Decimal64 window;
 
-    [[nodiscard]] bool empty() const { return start_time > end_time; }  /// If `start_time == end_time` it's one point
+    bool empty() const { return start_time > end_time; }  /// If `start_time == end_time` it's one point
 };
 
 }

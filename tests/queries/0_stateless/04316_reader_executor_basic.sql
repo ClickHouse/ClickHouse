@@ -1,17 +1,15 @@
--- Tags: no-distributed-cache, no-encrypted-storage, no-parallel-replicas
+-- Tags: no-distributed-cache, no-encrypted-storage
 -- The executor does not implement the distributed cache or decryption, so it
 -- falls back on those storage configs and the activation check below would not
 -- hold. Those stages can't be turned off from the test (unlike async prefetch
 -- and the filesystem cache), so skip them; the test still runs on local disk and
 -- plain object storage where the executor engages.
--- no-parallel-replicas: the test does not target parallel replicas yet.
 --
 -- Smoke test for the experimental ReaderExecutor read path. Reads a MergeTree
 -- table with `use_reader_executor = 1`, checks the data comes back correct (full
 -- scan, point lookup, range, string column), and proves the executor path was
 -- taken via `system.text_log` — on local disk and on object storage.
 
-SET use_statistics_for_sum_avg_aggregation = 0;
 DROP TABLE IF EXISTS t_reader_executor;
 
 CREATE TABLE t_reader_executor
@@ -62,7 +60,7 @@ SYSTEM FLUSH LOGS query_log, text_log;
 
 SELECT count() > 0
 FROM system.text_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = 'ReadPipeline'
+WHERE logger_name = 'ReadPipeline'
   AND message LIKE '%using ReaderExecutor%'
   AND query_id IN (
       SELECT query_id

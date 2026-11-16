@@ -10,7 +10,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Parallel replicas move the reads off the initiating thread the same way, hence the no-parallel-replicas
 # tag. The four queries of an arm are sent as one curl invocation with --next, so they share a
 # single keep-alive connection and therefore a single handler thread.
-URL="${CLICKHOUSE_URL}&log_queries=1&log_query_threads=1&log_profile_events=1&use_statistics_for_sum_avg_aggregation=0"
+URL="${CLICKHOUSE_URL}&log_queries=1&log_query_threads=1&log_profile_events=1"
 
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t_progress_src;
@@ -28,13 +28,11 @@ for i in 1 2 3 4; do
 done
 ${CLICKHOUSE_CURL} -sSg "${select_args[@]}" > /dev/null
 
-# async_insert = 0: the async insert queue route writes on the flush thread, so the write-side
-# ProfileEvents belong to the flush query and the last check below would compare against zeros.
 insert_args=()
 for i in 1 2 3 4; do
     [ "$i" -gt 1 ] && insert_args+=(--next)
     insert_args+=("${URL}&query_id=${CLICKHOUSE_DATABASE}_ins_$i"
-                  --data-binary "INSERT INTO t_progress_dst SELECT number FROM numbers(50000) SETTINGS max_insert_threads = 1, max_threads = 1, async_insert = 0")
+                  --data-binary "INSERT INTO t_progress_dst SELECT number FROM numbers(50000) SETTINGS max_insert_threads = 1, max_threads = 1")
 done
 ${CLICKHOUSE_CURL} -sSg "${insert_args[@]}" > /dev/null
 

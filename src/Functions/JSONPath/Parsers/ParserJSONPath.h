@@ -11,7 +11,7 @@ namespace DB
 class ParserJSONPath : public IParserBase
 {
 private:
-    [[nodiscard]] const char * getName() const override { return "ParserJSONPath"; }
+    const char * getName() const override { return "ParserJSONPath"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:

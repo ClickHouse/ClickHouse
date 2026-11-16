@@ -17,7 +17,9 @@ import PrettyFormatSettings from '/snippets/ru/common-pretty-format-settings.mdx
 | ---- | ----- | --------- |
 | ✗    | ✔     |           |
 
-## Описание {#description}
+<div id="description">
+  ## Описание
+</div>
 
 Формат `Pretty` выводит данные в виде таблиц, нарисованных символами Unicode,
 используя ANSI-последовательности экранирования для отображения цветов в терминале.
@@ -27,7 +29,9 @@ import PrettyFormatSettings from '/snippets/ru/common-pretty-format-settings.mdx
 
 [NULL](/ru/reference/syntax) выводится как `ᴺᵁᴸᴸ`.
 
-## Пример использования {#example-usage}
+<div id="example-usage">
+  ## Пример использования
+</div>
 
 Пример (для формата [`PrettyCompact`](/ru/reference/formats/Pretty/PrettyCompact)):
 
@@ -41,30 +45,17 @@ SELECT * FROM t_null
 └───┴──────┘
 ```
 
-Строки не экранируются ни в одном из форматов `Pretty`. Вместо этого непечатаемые управляющие символы (управляющие символы C0 `0x00`-`0x1F` и `DEL` `0x7F`) в значениях и именах столбцов по умолчанию отображаются соответствующими символами Unicode &quot;Control Pictures&quot; (`U+2400`-`U+2421`): так они остаются видимыми и не искажают таблицу. Например, символ NUL отображается как `␀`:
+Строки не экранируются ни в одном из форматов `Pretty`. Ниже приведён пример для формата [`PrettyCompact`](/ru/reference/formats/Pretty/PrettyCompact):
 
 ```sql title="Query"
-SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact
+SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 ```
 
 ```response title="Response"
-┌─Escaping_test─────────────────┐
-│ String with a NUL ␀ character │
-└───────────────────────────────┘
+┌─Escaping_test────────────────────────┐
+│ String with 'quotes' and      character │
+└──────────────────────────────────────┘
 ```
-
-`TAB`, перевод строки и `ESC` являются исключениями: они всегда выводятся как есть, поскольку терминал не поглощает их, а интерпретирует: символ табуляции перемещает курсор к следующей позиции табуляции, а ANSI-последовательность экранирования позволяет встраивать в данные визуализацию. Перевод строки по-прежнему разрывает строку: внутри ячейки таблицы, если включена настройка [`output_format_pretty_multiline_fields`](/ru/reference/settings/formats#output_format_pretty_multiline_fields), и как есть в остальных случаях. Исключением из этого исключения является имя столбца: заголовок и нижний колонтитул выводятся в одну строку, поэтому перевод строки в имени заменяется так же, как любой другой управляющий символ.
-
-Чтобы выводить управляющие символы без изменений, отключите настройку [`output_format_pretty_display_control_characters`](/ru/reference/settings/formats#output_format_pretty_display_control_characters):
-
-```sql title="Query"
-SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact
-SETTINGS output_format_pretty_display_control_characters = 0
-```
-
-В этом случае ответ содержит необработанный байт `NUL`. Терминал его поглощает, поэтому символ
-не отображается, а строка оказывается на одну позицию шире рамки, рассчитанной для неё, — именно такого
-искажения таблицы позволяет избежать отображение символа из блока Control Pictures.
 
 Чтобы не выводить в терминал слишком много данных, печатаются только первые `10,000` строк.
 Если количество строк больше или равно `10,000`, выводится сообщение &quot;Showed first 10 000&quot;.
@@ -109,7 +100,9 @@ Extremes:
 └────────────┴─────────┘
 ```
 
-## Настройки формата {#format-settings}
+<div id="format-settings">
+  ## Настройки формата
+</div>
 
 <PrettyFormatSettings />
 

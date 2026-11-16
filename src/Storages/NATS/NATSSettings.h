@@ -14,7 +14,6 @@ struct NATSSettingsImpl;
 /// List of available types supported in NATSSettings object
 #define NATS_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, ArrowCompression) \
-    M(CLASS_NAME, ArrowUnsupportedTypes) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \
@@ -57,7 +56,7 @@ struct NATSSettings
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection);
 
-    [[nodiscard]] SettingsChanges getFormatSettings() const;
+    SettingsChanges getFormatSettings() const;
 
     static bool hasBuiltin(std::string_view name);
 

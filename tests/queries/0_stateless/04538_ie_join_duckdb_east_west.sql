@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- The East/West example queries from the IEJoin paper
 -- (Khayyat et al., "Lightning Fast and Space Efficient Inequality Joins", PVLDB 8(13), 2015, Fig. 2).
 

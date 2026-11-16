@@ -6,6 +6,8 @@ keywords: ['configuración de ClickStack', 'configuración de observabilidad', '
 doc_type: 'reference'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 Las siguientes opciones de configuración están disponibles para cada componente de ClickStack:
 
 <div id="modifying-settings">
@@ -115,15 +117,7 @@ La UI de ClickStack requiere que el usuario defina una fuente para cada uno de l
 
 Esta configuración puede realizarse dentro de la aplicación desde `Team Settings -> Sources`, como se muestra a continuación para los logs:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Configuración de fuente en HyperDX](/images/use-cases/observability/hyperdx-25.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-25.webp" alt="Configuración de fuente en HyperDX" size="md" />
 
 Cada una de estas fuentes requiere que se especifique al menos una tabla al crearla, así como un conjunto de columnas que permitan a HyperDX consultar los datos.
 
@@ -151,7 +145,6 @@ La siguiente configuración está disponible para cada fuente:
 | `Columna de marca de tiempo`                | Columna o expresión DateTime que forma parte de la clave primaria.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Sí          | Sí                                    | `TimestampTime`                                    |
 | `Selección predeterminada`                  | Columnas que se muestran en los resultados de búsqueda predeterminados.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Sí          | Sí                                    | `Timestamp`, `ServiceName`, `SeverityText`, `Body` |
 | `Expresión del nombre del servicio`         | Expresión o columna para el nombre del servicio.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Sí          | Sí                                    | `ServiceName`                                      |
-| `Expresión de versión del servicio`         | Expresión o columna que identifica la versión en ejecución de un servicio y se utiliza para dibujar [marcadores de versión](/es/clickstack/features/dashboards/release-markers) en los gráficos del dashboard. Si se deja en blanco, se usa de forma predeterminada el atributo de recurso `service.version` de OpenTelemetry.                                                                                                                                                                                                                                                 | No          | No                                    | `ResourceAttributes['service.version']`            |
 | `Expresión de nivel de registro`            | Expresión o columna para el nivel de registro.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Sí          | Sí                                    | `SeverityText`                                     |
 | `Expresión del cuerpo`                      | Expresión o columna para el mensaje de registro.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Sí          | Sí                                    | `Body`                                             |
 | `Expresión de atributos del registro`       | Expresión o columna para atributos de registros personalizados.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Sí          | Sí                                    | `LogAttributes`                                    |
@@ -163,7 +156,7 @@ La siguiente configuración está disponible para cada fuente:
 | `Expresión de ID de span`                   | Expresión o columna utilizada para extraer el ID del span.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Sí          | Sí                                    | `SpanId`                                           |
 | `Expresión de columna implícita`            | Columna utilizada para la búsqueda de texto completo si no se especifica ningún campo (al estilo de Lucene). Normalmente, el cuerpo del registro.                                                                                                                                                                                                                                                                                                                                                                                                                           | Sí          | Sí                                    | `Body`                                             |
 | `Lista de columnas conocidas`               | Para fuentes basadas en una tabla [`Distributed`](/es/reference/engines/table-engines/special/distributed) o [`Merge`](/es/reference/engines/table-engines/special/merge) cuyas tablas de destino tienen conjuntos de columnas diferentes. Lista separada por comas de las columnas disponibles en todas las tablas de destino, que se utiliza en lugar de `SELECT *` al recuperar datos completos de una fila (por ejemplo, en el panel lateral de la fila). Déjelo en blanco para seleccionar todas las columnas. Solo nombres de columnas; no se admiten expresiones ni alias. | No          | No                                    | –                                                  |
-| `Usar índice de texto`                      | Indica si las búsquedas basadas en Lucene emiten `hasAllTokens` al buscar en la columna implícita.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | No          | No                                    | `Automático (detectado a partir del esquema)`      |
+| `Usar índice de texto`                      | Indica si las búsquedas basadas en Lucene emiten `hasAllTokens` al buscar en la columna implícita.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | No          | No                                    | `Automático (detectar según el esquema)`           |
 | `Atributos destacados`                      | Expresiones o columnas que se muestran al abrir los detalles del registro. Las expresiones que devuelven URL se mostrarán como enlaces.                                                                                                                                                                                                                                                                                                                                                                                                                                     | No          | No                                    | –                                                  |
 | `Atributos destacados de las trazas`        | Expresiones o columnas extraídas de cada registro de una traza, mostradas encima del waterfall de la traza. Las expresiones que devuelven URL se mostrarán como enlaces.                                                                                                                                                                                                                                                                                                                                                                                                    | No          | No                                    | –                                                  |
 | `Vistas materializadas`                     | [vistas materializadas](/es/clickstack/managing/materialized-views) preagregadas registradas para esta fuente, que se utilizan automáticamente para acelerar las consultas compatibles. Consulte [Vistas materializadas](#materialized-views-settings).                                                                                                                                                                                                                                                                                                                        | No          | No                                    | –                                                  |
@@ -198,7 +191,6 @@ La siguiente configuración está disponible para cada fuente:
 | `Status Code Expression`         | Expresión para el código de estado del span.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Sí        | Sí                                    | `StatusCode`                                                                                          |
 | `Status Message Expression`      | Expresión para el mensaje de estado del span.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Sí        | Sí                                    | `StatusMessage`                                                                                       |
 | `Service Name Expression`        | Expresión o columna para el nombre del servicio.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Sí        | Sí                                    | `ServiceName`                                                                                         |
-| `Service Version Expression`     | Expresión o columna que identifica la versión en ejecución de un servicio, utilizada para mostrar [marcadores de versiones](/es/clickstack/features/dashboards/release-markers) en gráficos de dashboard. De forma predeterminada, se usa el atributo de recurso `service.version` de OpenTelemetry cuando se deja en blanco.                                                                                                                                                                                                                             | No        | No                                    | `ResourceAttributes['service.version']`                                                               |
 | `Resource Attributes Expression` | Expresión o columna para los atributos a nivel de recurso.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Sí        | Sí                                    | `ResourceAttributes`                                                                                  |
 | `Event Attributes Expression`    | Expresión o columna para los atributos del evento.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Sí        | Sí                                    | `SpanAttributes`                                                                                      |
 | `Sample Rate Expression`         | Columna o expresión que contiene el peso de muestreo de origen (`1/N`). Cuando se configura, las agregaciones (`count`, `avg`, `sum`, `quantile`) se corrigen según el muestreo. Los percentiles usan entonces `quantileTDigestWeighted`, que es una aproximación, por lo que los valores exactos pueden diferir ligeramente. Déjalo vacío si los spans no se muestrean.                                                                                                                                                                               | No        | No                                    | –                                                                                                     |
@@ -302,39 +294,15 @@ Cada atributo se configura con las siguientes opciones:
 
 Por ejemplo, esta fuente de trazas se ha configurado con un Atributo destacado y un Atributo de traza destacado:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Configuración de atributos destacados](/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp" alt="Configuración de atributos destacados" size="md" />
 
 Estos atributos se muestran en el panel lateral después de hacer clic en un log o span:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Atributos destacados](/images/use-cases/observability/hyperdx-highlighted-attributes.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes.webp" alt="Atributos destacados" size="md" />
 
 Al hacer clic en un atributo, se ofrecen opciones para usarlo como valor de búsqueda. Si se proporciona la expresión Lucene opcional en la configuración del atributo, se utilizará la expresión Lucene para la búsqueda en lugar de la expresión SQL.
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Búsqueda de atributos destacados](/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp" alt="Búsqueda de atributos destacados" size="md" />
 
 <div id="correlated-sources">
   ### Fuentes correlacionadas
@@ -351,15 +319,7 @@ Configurar estas correlaciones habilita varias funcionalidades. Por ejemplo, Hyp
 
 Por ejemplo, a continuación se muestra la fuente de logs configurada con fuentes correlacionadas:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Fuente correlacionada de HyperDX](/images/use-cases/observability/hyperdx-26.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-26.webp" alt="Fuente correlacionada de HyperDX" size="md" />
 
 <div id="application-configuration-settings">
   ### Opciones de configuración de la aplicación

@@ -73,7 +73,7 @@ public:
     void printStats();
 #endif
 
-    [[nodiscard]] size_t rulesCount() const;
+    size_t rulesCount() const;
 };
 
 /// Wipes sensitive data and cuts to a specified maximum length in one function call.

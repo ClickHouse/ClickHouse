@@ -21,8 +21,8 @@ namespace
 {
 
 /// Membership table for the optional second argument of trim* functions.
-/// Unlike `find_first_symbols` (a SIMD primitive with a compile-time set of at most
-/// 16 symbols), it supports a trim character set of any length and looks up each byte in O(1).
+/// Unlike `SearchSymbols` (a SIMD primitive capped at 16 symbols), it supports
+/// a trim character set of any length and looks up each byte in O(1).
 using TrimCharsTable = std::array<bool, 256>;
 
 class FunctionTrim final : public IFunction
@@ -36,18 +36,28 @@ public:
         return std::make_shared<FunctionTrim>(name, trim_left, trim_right);
     }
 
-    [[nodiscard]] String getName() const override { return function_name; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    String getName() const override { return function_name; }
+    bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(StringOrFixedString, [const String]) -> String";
+        FunctionArgumentDescriptors mandatory_args{
+            {"input_string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
+        };
+
+        FunctionArgumentDescriptors optional_args{
+            {"trim_character", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         std::optional<TrimCharsTable> custom_trim_characters;
         if (arguments.size() == 2 && input_rows_count > 0)
@@ -329,9 +339,9 @@ By default, removes common whitespace (ASCII) characters.
         "Usage example",
         "SELECT trimLeft('ClickHouse', 'Click');",
         R"(
-┌─trimLeft('ClickHouse', 'Click')─┐
-│ House                           │
-└─────────────────────────────────┘
+┌─trimLeft('Cl⋯', 'Click')─┐
+│ House                    │
+└──────────────────────────┘
         )"
     }
     };
@@ -354,9 +364,9 @@ By default, removes common whitespace (ASCII) characters.
         "Usage example",
         "SELECT trimRight('ClickHouse','House');",
         R"(
-┌─trimRight('ClickHouse', 'House')─┐
-│ Click                            │
-└──────────────────────────────────┘
+┌─trimRight('C⋯', 'House')─┐
+│ Click                    │
+└──────────────────────────┘
         )"
     }
     };
@@ -377,9 +387,9 @@ By default, removes common whitespace (ASCII) characters.
         "Usage example",
         "SELECT trimBoth('$$ClickHouse$$', '$')",
         R"(
-┌─trimBoth('$$ClickHouse$$', '$')─┐
-│ ClickHouse                      │
-└─────────────────────────────────┘
+┌─trimBoth('$$⋯se$$', '$')─┐
+│ ClickHouse               │
+└──────────────────────────┘
         )"
     }
     };

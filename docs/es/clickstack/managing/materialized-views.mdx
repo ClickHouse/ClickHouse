@@ -8,6 +8,7 @@ keywords: ['clickstack', 'observabilidad', 'vistas materializadas', 'rendimiento
 ---
 
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/es/components/Image.jsx";
 
 <BetaBadge />
 
@@ -35,15 +36,7 @@ La principal razón para usar vistas materializadas es que los datos escritos en
 
 Las vistas materializadas en ClickHouse se actualizan continuamente a medida que los datos fluyen hacia la tabla de origen, comportándose más como índices siempre actualizados. Esto difiere de muchas otras bases de datos, donde las vistas materializadas son instantáneas estáticas que deben actualizarse periódicamente, de forma similar a las [vistas materializadas actualizables](/es/concepts/features/materialized-views/refreshable-materialized-view) de ClickHouse.
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Diagrama de vista materializada](/images/materialized-view/materialized-view-diagram.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="Diagrama de vista materializada" />
 
 Las vistas materializadas incrementales calculan solo los cambios en la vista a medida que llegan nuevos datos, desplazando el cómputo al tiempo de inserción. Como ClickHouse está altamente optimizado para la ingestión, el costo incremental de mantener la vista para cada bloque insertado es pequeño en relación con el ahorro obtenido durante la ejecución de las consultas. El costo de calcular la agregación se amortiza entre las inserciones, en lugar de pagarse repetidamente en cada lectura. Por lo tanto, consultar los resultados preagregados es mucho menos costoso que volver a calcularlos, lo que se traduce en un menor costo operativo y un rendimiento casi en tiempo real para las visualizaciones posteriores, incluso a escala de petabytes.
 
@@ -131,15 +124,7 @@ En esta etapa, **concéntrate en las consultas** que ejecutarán las visualizaci
 
 Una vez que hayas identificado una visualización, o un conjunto de visualizaciones, que quieras acelerar, el siguiente paso es identificar las consultas subyacentes. En la práctica, esto implica inspeccionar la configuración de la visualización y revisar el SQL generado, prestando especial atención a las métricas de agregación utilizadas y a las funciones aplicadas.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![SQL generado](/images/clickstack/materialized_views/generated_sql.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/materialized_views/generated_sql.webp" size="lg" alt="SQL generado" />
 
 <Note>
   En los casos en que no haya un panel de depuración disponible dentro de HyperDX para un componente, los usuarios pueden inspeccionar la consola del navegador, donde se registran todas las consultas.
@@ -244,29 +229,13 @@ Las vistas materializadas deben registrarse en la **fuente** de HyperDX que corr
   <Step title="Editar la fuente" id="edit-the-source">
     Vaya a la **fuente** correspondiente en HyperDX y abra el cuadro de diálogo **Edit configuration**. Desplácese hasta la sección de vistas materializadas.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Editar fuentes](/images/clickstack/materialized_views/edit_source.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/materialized_views/edit_source.webp" size="lg" alt="Editar fuentes" />
   </Step>
 
   <Step title="Agregar la vista materializada" id="add-the-materialized-view">
     Seleccione **Add materialized view** y, a continuación, elija la base de datos y la tabla de destino que sustentan la vista materializada.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Editar fuentes](/images/clickstack/materialized_views/add_view.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/materialized_views/add_view.webp" size="lg" alt="Editar fuentes" />
   </Step>
 
   <Step title="Seleccionar métricas" id="select-metrics">
@@ -279,29 +248,13 @@ Las vistas materializadas deben registrarse en la **fuente** de HyperDX que corr
 
     Para las dimensiones, especifique todas las columnas, aparte del timestamp, por las que agrupa la vista.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Seleccionar métricas](/images/clickstack/materialized_views/select_metrics.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/materialized_views/select_metrics.webp" size="lg" alt="Seleccionar métricas" />
   </Step>
 
   <Step title="Seleccionar la granularidad temporal" id="select-time-granularity">
     Seleccione la **granularidad temporal** de la vista materializada, por ejemplo, un minuto.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Seleccionar granularidad temporal](/images/clickstack/materialized_views/select_time_granularity.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/materialized_views/select_time_granularity.webp" size="lg" alt="Seleccionar granularidad temporal" />
   </Step>
 
   <Step title="Seleccionar la fecha mínima" id="specify-the-minimum-date">
@@ -312,15 +265,7 @@ Las vistas materializadas deben registrarse en la **fuente** de HyperDX que corr
       Puede encontrar una guía completa sobre la carga de datos históricos en vistas materializadas en [&quot;Carga de datos históricos.&quot;](/es/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables)
     </Note>
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Seleccionar tiempo mínimo](/images/clickstack/materialized_views/select_min_time.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/materialized_views/select_min_time.webp" size="lg" alt="Seleccionar tiempo mínimo" />
 
     Si la hora de inicio exacta no está clara, puede determinarla consultando el timestamp mínimo de la tabla de destino, por ejemplo:
 
@@ -332,15 +277,7 @@ Las vistas materializadas deben registrarse en la **fuente** de HyperDX que corr
   <Step title="Guardar la fuente" id="save-the-source">
     Guarde la configuración de la fuente.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Guardar fuente](/images/clickstack/materialized_views/save_source.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/materialized_views/save_source.webp" size="lg" alt="Guardar fuente" />
   </Step>
 </Steps>
 
@@ -363,15 +300,7 @@ ClickStack proporciona indicadores visuales claros para confirmar si se está us
 * **Rayo verde** indica que la consulta está acelerada mediante una vista materializada.
 * **Rayo naranja** indica que la consulta se ejecuta sobre la tabla de origen.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Visualización acelerada](/images/clickstack/materialized_views/accelerated_visual.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/materialized_views/accelerated_visual.webp" size="lg" alt="Visualización acelerada" />
 
 2. **Inspeccione los detalles de la optimización**  Haga clic en el icono del rayo para abrir un panel de detalles que muestra:
 

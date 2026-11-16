@@ -222,14 +222,6 @@ UInt64 ColumnTuple::getNumberOfDefaultRows() const
     return num_rows - num_non_default;
 }
 
-bool ColumnTuple::hasOnlyTypeDefaults() const
-{
-    for (const auto & col : columns)
-        if (!col->hasOnlyTypeDefaults())
-            return false;
-    return true;
-}
-
 std::string_view ColumnTuple::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
@@ -455,6 +447,18 @@ void ColumnTuple::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::
 
     for (auto & column : columns)
         column->deserializeAndInsertFromArena(in, settings);
+}
+
+void ColumnTuple::skipSerializedInArena(ReadBuffer & in) const
+{
+    if (columns.empty())
+    {
+        in.ignore(1);
+        return;
+    }
+
+    for (const auto & column : columns)
+        column->skipSerializedInArena(in);
 }
 
 void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
@@ -805,13 +809,6 @@ size_t ColumnTuple::capacity() const
 void ColumnTuple::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     const size_t tuple_size = columns.size();
-    for (const auto & source_column : source_columns)
-    {
-        const auto * source_tuple = typeid_cast<const ColumnTuple *>(source_column.get());
-        if (!source_tuple || source_tuple->tupleSize() != tuple_size)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for squashing of {} is not a Tuple of the same size, but {}", getName(), source_column->getName());
-    }
-
     for (size_t i = 0; i < tuple_size; ++i)
     {
         VectorWithMemoryTracking<ColumnPtr> nested_columns;
@@ -977,11 +974,7 @@ void ColumnTuple::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<
 
     for (const auto & source_column : source_columns)
     {
-        const auto * source_tuple = typeid_cast<const ColumnTuple *>(source_column.get());
-        if (!source_tuple || source_tuple->tupleSize() != columns.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for merge of {} is not a Tuple of the same size, but {}", getName(), source_column->getName());
-
-        const auto & nsource_columns = source_tuple->getColumns();
+        const auto & nsource_columns = assert_cast<const ColumnTuple &>(*source_column).getColumns();
         for (size_t i = 0; i != nsource_columns.size(); ++i)
             nested_source_columns[i].push_back(nsource_columns[i]);
     }
@@ -992,12 +985,9 @@ void ColumnTuple::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<
 
 void ColumnTuple::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    const auto * source_tuple = typeid_cast<const ColumnTuple *>(&source);
-    if (!source_tuple || source_tuple->tupleSize() != columns.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot take dynamic structure for {} from {}: it is not a Tuple of the same size", getName(), source.getName());
-
+    const auto & source_tuple = assert_cast<const ColumnTuple &>(source);
     for (size_t i = 0; i != columns.size(); ++i)
-        columns[i]->takeExactDynamicStructureFrom(*source_tuple->getColumnPtr(i));
+        columns[i]->takeExactDynamicStructureFrom(*source_tuple.getColumnPtr(i));
 }
 
 
@@ -1023,8 +1013,8 @@ void ColumnTuple::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<C
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
 
             const auto * source_tuple = typeid_cast<const ColumnTuple *>(source_column.get());
-            if (!source_tuple || source_tuple->tupleSize() != columns.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not a Tuple of the same size, but {}", source_column->getName());
+            if (!source_tuple)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Tuple, but {}", source_column->getName());
 
             elem_source_columns.push_back(source_tuple->columns[i]);
         }
@@ -1062,7 +1052,6 @@ ColumnPtr ColumnTuple::compress(bool force_compression) const
         byte_size += compressed_column->byteSize();
         compressed.emplace_back(std::move(compressed_column));
     }
-    Columns parts = compressed;
 
     return ColumnCompressed::create(size(), byte_size,
         [my_compressed = std::move(compressed)]() mutable
@@ -1072,8 +1061,7 @@ ColumnPtr ColumnTuple::compress(bool force_compression) const
             for (const auto & column : my_compressed)
                 decompressed.push_back(column->decompress());
             return ColumnTuple::create(decompressed);
-        },
-        std::move(parts));
+        });
 }
 
 void ColumnTuple::finalize()
@@ -1087,14 +1075,4 @@ bool ColumnTuple::isFinalized() const
     return std::all_of(columns.begin(), columns.end(), [](const auto & column) { return column->isFinalized(); });
 }
 
-ColumnPlanes ColumnTuple::getPlanes() const
-{
-    /// An element-less tuple keeps only a row count, so its rows have no planes.
-    if (columns.empty())
-        return ColumnPlanes(ColumnPlanes::Shape::Rows, this);
-    ColumnPlanes planes(ColumnPlanes::Shape::Tuple);
-    for (const auto & column : columns)
-        planes.children.push_back(column.get());
-    return planes;
-}
 }

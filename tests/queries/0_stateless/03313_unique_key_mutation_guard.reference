@@ -11,7 +11,6 @@ materialize_non_uk_d
 clear_non_uk_d
 clear_missing_if_exists_noop
 2
-clear_nested_group
-1	[1,2]	['a','b']
-2	[3]	['c']
 2
+uk_on_default_ok
+1

@@ -120,8 +120,7 @@ StorageObjectStorageQuerySettings StorageWebConfiguration::getQuerySettings(cons
         .skip_empty_files = settings[Setting::engine_url_skip_empty_files],
         .list_object_keys_size = settings[Setting::glob_expansion_max_elements],
         .throw_on_zero_files_match = false,
-        .ignore_non_existent_file = false,
-        .skip_hidden_files = false};
+        .ignore_non_existent_file = false};
 }
 
 std::string StorageWebConfiguration::getPathInArchive() const
@@ -140,7 +139,7 @@ void StorageWebConfiguration::check(ContextPtr context)
         for (const auto & url_option : url_shard)
             context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(url_option.base_url + url_option.query_fragment, false));
     }
-    context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers_from_ast);
+    context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_from_ast);
 }
 
 ObjectStoragePtr StorageWebConfiguration::createObjectStorage(ContextPtr context, bool, CredentialsConfigurationCallback) /// NOLINT
@@ -159,7 +158,7 @@ void StorageWebConfiguration::addStructureAndFormatToArgsIfNeeded(
     ContextPtr context,
     bool with_structure)
 {
-    if (auto collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, nullptr, is_replayed_definition))
+    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
         if (collection->getOrDefault<String>("format", "auto") == "auto")
         {
@@ -235,7 +234,7 @@ void StorageWebConfiguration::initializeFromParsedArguments(WebStorageParsedArgu
     headers_from_ast = std::move(parsed_arguments.headers_from_ast);
 
     setNamespaceFromURL(context);
-    setPaths({path});
+    paths = {path};
     setPathForRead(path);
 }
 

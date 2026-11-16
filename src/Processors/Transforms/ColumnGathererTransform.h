@@ -1,7 +1,6 @@
 #pragma once
 
 #include <IO/ReadBuffer.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/PODArray.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/IMergingTransform.h>
@@ -27,10 +26,10 @@ struct RowSourcePart
         setSkipFlag(skip_flag);
     }
 
-    [[nodiscard]] size_t getSourceNum() const { return data & MASK_NUMBER; }
+    size_t getSourceNum() const { return data & MASK_NUMBER; }
 
     /// In CollapsingMergeTree case flag means "skip this rows"
-    [[nodiscard]] bool getSkipFlag() const { return (data & MASK_FLAG) != 0; }
+    bool getSkipFlag() const { return (data & MASK_FLAG) != 0; }
 
     void setSourceNum(size_t source_num)
     {
@@ -65,7 +64,7 @@ public:
         std::optional<size_t> max_dynamic_subcolumns_,
         bool is_result_sparse_);
 
-    [[nodiscard]] const char * getName() const override { return "ColumnGathererStream"; }
+    const char * getName() const override { return "ColumnGathererStream"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
@@ -74,7 +73,7 @@ public:
     template <typename Column>
     void gather(Column & column_res);
 
-    [[nodiscard]] MergedStats getMergedStats() const override { return {.bytes = merged_bytes, .rows = merged_rows, .blocks = merged_blocks}; }
+    MergedStats getMergedStats() const override { return {.bytes = merged_bytes, .rows = merged_rows, .blocks = merged_blocks}; }
 
 private:
     void updateStats(const IColumn & column);
@@ -91,7 +90,7 @@ private:
 
     MutableColumnPtr result_column;
 
-    VectorWithMemoryTracking<Source> sources;
+    std::vector<Source> sources;
     ReadBuffer & row_sources_buf;
 
     const size_t block_preferred_size_rows;

@@ -204,15 +204,15 @@ TEST(ExchangeConnectionsRendezvous, ConnectionAfterReleaseRejected)
 
 namespace
 {
-    /// Drive a v3 SourceHello carrying `auth_token` over `client`, run the server-side
+    /// Drive a v3 SourceHello carrying `jwt_token` over `client`, run the server-side
     /// handshake (with `authenticate`) on `server_side`, and return the error code thrown
     /// by `handleConnection` (nullopt on success). The token captured by `authenticate`
     /// is what the source actually serialized into SourceHello.
-    std::optional<int> runAuthHandshake(
+    std::optional<int> runJwtHandshake(
         Poco::Net::StreamSocket client,
         Poco::Net::StreamSocket server_side,
         const ExchangeConnectionsPtr & connections,
-        const String & auth_token,
+        const String & jwt_token,
         const ExchangeConnectionAuthenticator & authenticate)
     {
         using namespace StreamingExchangeProtocol;
@@ -236,7 +236,7 @@ namespace
             .source_version = PROTOCOL_VERSION,
             .query_id = "query",
             .stream_name = "stream",
-            .auth_token = auth_token,
+            .jwt_token = jwt_token,
         };
         source_hello.write(body);
         body.finalize();
@@ -254,7 +254,7 @@ namespace
 
 /// A valid token (per the injected authenticator) is accepted, the connection is
 /// registered, and the token the source sent round-trips to the authenticator.
-TEST(ExchangeServerHandshake, ValidTokenAcceptedAndRegistered)
+TEST(ExchangeServerHandshake, ValidJwtAcceptedAndRegistered)
 {
     auto connections = std::make_shared<ExchangeConnections>();
     auto [client, server_side] = makeConnectedPair();
@@ -262,7 +262,7 @@ TEST(ExchangeServerHandshake, ValidTokenAcceptedAndRegistered)
     String seen_token;
     ExchangeConnectionAuthenticator authenticate = [&](const String & token) { seen_token = token; };
 
-    auto code = runAuthHandshake(client, server_side, connections, "good-token", authenticate);
+    auto code = runJwtHandshake(client, server_side, connections, "good-token", authenticate);
     EXPECT_FALSE(code.has_value());
     EXPECT_EQ(seen_token, "good-token");
 
@@ -272,7 +272,7 @@ TEST(ExchangeServerHandshake, ValidTokenAcceptedAndRegistered)
 }
 
 /// When the authenticator rejects (throws), the connection must NOT be registered.
-TEST(ExchangeServerHandshake, RejectedTokenNotRegistered)
+TEST(ExchangeServerHandshake, RejectedJwtNotRegistered)
 {
     auto connections = std::make_shared<ExchangeConnections>();
     auto [client, server_side] = makeConnectedPair();
@@ -283,7 +283,7 @@ TEST(ExchangeServerHandshake, RejectedTokenNotRegistered)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "bad exchange token");
     };
 
-    auto code = runAuthHandshake(client, server_side, connections, "bad-token", authenticate);
+    auto code = runJwtHandshake(client, server_side, connections, "bad-token", authenticate);
     ASSERT_TRUE(code.has_value());
     EXPECT_EQ(*code, ErrorCodes::AUTHENTICATION_FAILED);
 
@@ -298,7 +298,7 @@ TEST(ExchangeServerHandshake, NoAuthenticatorIgnoresToken)
     auto connections = std::make_shared<ExchangeConnections>();
     auto [client, server_side] = makeConnectedPair();
 
-    auto code = runAuthHandshake(client, server_side, connections, "whatever", {});
+    auto code = runJwtHandshake(client, server_side, connections, "whatever", {});
     EXPECT_FALSE(code.has_value());
 
     auto future = connections->getConnection("query", "stream");
@@ -306,9 +306,9 @@ TEST(ExchangeServerHandshake, NoAuthenticatorIgnoresToken)
     EXPECT_NO_THROW(future->getSocket());
 }
 
-/// A require-auth authenticator rejects a peer that sends an empty token, so enabling auth
+/// A require-JWT authenticator rejects a peer that sends an empty token, so enabling auth
 /// closes the door on un-credentialed connections.
-TEST(ExchangeServerHandshake, RequireAuthRejectsTokenlessSource)
+TEST(ExchangeServerHandshake, RequireJwtRejectsTokenlessSource)
 {
     auto connections = std::make_shared<ExchangeConnections>();
     auto [client, server_side] = makeConnectedPair();
@@ -319,8 +319,8 @@ TEST(ExchangeServerHandshake, RequireAuthRejectsTokenlessSource)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "missing exchange token");
     };
 
-    auto code = runAuthHandshake(client, server_side, connections,
-        /*auth_token=*/"", require_token);
+    auto code = runJwtHandshake(client, server_side, connections,
+        /*jwt_token=*/"", require_token);
     ASSERT_TRUE(code.has_value());
     EXPECT_EQ(*code, ErrorCodes::AUTHENTICATION_FAILED);
 

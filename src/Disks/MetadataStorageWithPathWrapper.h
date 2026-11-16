@@ -16,7 +16,7 @@ private:
     MetadataTransactionPtr delegate;
     std::string metadata_path;
 
-    [[nodiscard]] String wrappedPath(const String & path) const { return wrappedPath(metadata_path, path); }
+    String wrappedPath(const String & path) const { return wrappedPath(metadata_path, path); }
 
 public:
     static String wrappedPath(const String & path_wrapper, const String & path)
@@ -80,7 +80,7 @@ public:
         delegate->setLastModified(wrappedPath(path), timestamp);
     }
 
-    [[nodiscard]] bool supportsChmod() const override { return delegate->supportsChmod(); }
+    bool supportsChmod() const override { return delegate->supportsChmod(); }
 
     void chmod(const String & path, mode_t mode) override
     {
@@ -159,8 +159,8 @@ private:
     std::string metadata_path;
     std::string metadata_absolute_path;
 
-    [[nodiscard]] String wrappedPath(const String & path) const { return MetadataStorageWithPathWrapperTransaction::wrappedPath(metadata_path, path); }
-    [[nodiscard]] Strings wrappedPaths(const Strings & paths) const
+    String wrappedPath(const String & path) const { return MetadataStorageWithPathWrapperTransaction::wrappedPath(metadata_path, path); }
+    Strings wrappedPaths(const Strings & paths) const
     {
         Strings wrapped_paths;
         wrapped_paths.reserve(paths.size());
@@ -184,104 +184,99 @@ public:
         return std::make_shared<MetadataStorageWithPathWrapperTransaction>(delegate->createTransaction(), metadata_path);
     }
 
-    [[nodiscard]] const std::string & getPath() const override
+    const std::string & getPath() const override
     {
         return metadata_absolute_path;
     }
 
-    [[nodiscard]] MetadataStorageType getType() const override { return delegate->getType(); }
+    MetadataStorageType getType() const override { return delegate->getType(); }
 
     /// Metadata on disk for an empty file can store empty list of blobs and size=0
-    [[nodiscard]] bool supportsEmptyFilesWithoutBlobs() const override { return delegate->supportsEmptyFilesWithoutBlobs(); }
+    bool supportsEmptyFilesWithoutBlobs() const override { return delegate->supportsEmptyFilesWithoutBlobs(); }
 
-    [[nodiscard]] bool supportsInlineData() const override { return delegate->supportsInlineData(); }
+    bool supportsInlineData() const override { return delegate->supportsInlineData(); }
 
-    [[nodiscard]] bool appliesOperationsEagerly() const override { return delegate->appliesOperationsEagerly(); }
+    bool appliesOperationsEagerly() const override { return delegate->appliesOperationsEagerly(); }
 
-    [[nodiscard]] bool areBlobPathsRandom() const override
+    bool areBlobPathsRandom() const override
     {
         return delegate->areBlobPathsRandom();
     }
 
-    [[nodiscard]] bool existsFile(const std::string & path) const override
+    bool existsFile(const std::string & path) const override
     {
         return delegate->existsFile(wrappedPath(path));
     }
 
-    [[nodiscard]] bool existsDirectory(const std::string & path) const override
+    bool existsDirectory(const std::string & path) const override
     {
         return delegate->existsDirectory(wrappedPath(path));
     }
 
-    [[nodiscard]] bool existsFileOrDirectory(const std::string & path) const override
+    bool existsFileOrDirectory(const std::string & path) const override
     {
         return delegate->existsFileOrDirectory(wrappedPath(path));
     }
 
-    [[nodiscard]] uint64_t getFileSize(const String & path) const override
+    uint64_t getFileSize(const String & path) const override
     {
         return delegate->getFileSize(wrappedPath(path));
     }
 
-    [[nodiscard]] Poco::Timestamp getLastModified(const std::string & path) const override
+    Poco::Timestamp getLastModified(const std::string & path) const override
     {
         return delegate->getLastModified(wrappedPath(path));
     }
 
-    [[nodiscard]] time_t getLastChanged(const std::string & path) const override
+    time_t getLastChanged(const std::string & path) const override
     {
         return delegate->getLastChanged(wrappedPath(path));
     }
 
-    [[nodiscard]] bool supportsChmod() const override { return delegate->supportsChmod(); }
+    bool supportsChmod() const override { return delegate->supportsChmod(); }
 
-    [[nodiscard]] bool supportsStat() const override { return delegate->supportsStat(); }
+    bool supportsStat() const override { return delegate->supportsStat(); }
 
-    [[nodiscard]] struct stat stat(const String & path) const override { return delegate->stat(wrappedPath(path)); }
+    struct stat stat(const String & path) const override { return delegate->stat(wrappedPath(path)); }
 
-    [[nodiscard]] std::vector<std::string> listDirectory(const std::string & path) const override
+    std::vector<std::string> listDirectory(const std::string & path) const override
     {
         return delegate->listDirectory(wrappedPath(path));
     }
 
-    [[nodiscard]] DirectoryIteratorPtr iterateDirectory(const std::string & path) const override
+    DirectoryIteratorPtr iterateDirectory(const std::string & path) const override
     {
         return delegate->iterateDirectory(wrappedPath(path));
     }
 
-    [[nodiscard]] std::string readFileToString(const std::string & path) const override
+    std::string readFileToString(const std::string & path) const override
     {
         return delegate->readFileToString(wrappedPath(path));
     }
 
-    [[nodiscard]] std::string readInlineDataToString(const std::string & path) const override
+    std::string readInlineDataToString(const std::string & path) const override
     {
         return delegate->readInlineDataToString(wrappedPath(path));
     }
 
-    [[nodiscard]] std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override
+    std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override
     {
         return delegate->getSerializedMetadata(wrappedPaths(file_paths));
     }
 
-    [[nodiscard]] uint32_t getHardlinkCount(const std::string & path) const override
+    uint32_t getHardlinkCount(const std::string & path) const override
     {
         return delegate->getHardlinkCount(wrappedPath(path));
     }
 
-    [[nodiscard]] StoredObjects getStorageObjects(const std::string & path) const override
+    StoredObjects getStorageObjects(const std::string & path) const override
     {
         return delegate->getStorageObjects(wrappedPath(path));
     }
 
-    [[nodiscard]] bool isReadOnly() const override
+    bool isReadOnly() const override
     {
         return delegate->isReadOnly();
-    }
-
-    [[nodiscard]] bool isRemote() const override
-    {
-        return delegate->isRemote();
     }
 
     void updateCache(const std::vector<std::string> & paths, bool recursive, bool enforce_fresh, std::string * serialized_cache_update_description) override
@@ -314,19 +309,9 @@ public:
         return delegate->recordAsRemoved(blobs);
     }
 
-    [[nodiscard]] bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override
+    bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override
     {
         return delegate->hasPendingRemovalBlobs(blobs);
-    }
-
-    [[nodiscard]] bool hasDeadBlobsQueue() const override
-    {
-        return delegate->hasDeadBlobsQueue();
-    }
-
-    void setDeadBlobsQueuedCallback(std::function<void()> callback) override
-    {
-        delegate->setDeadBlobsQueuedCallback(std::move(callback));
     }
 
     BlobsToReplicate getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count) override
@@ -337,11 +322,6 @@ public:
     int64_t recordAsReplicated(const BlobsToReplicate & blobs) override
     {
         return delegate->recordAsReplicated(blobs);
-    }
-
-    [[nodiscard]] bool hasMissingBlobsQueue() const override
-    {
-        return delegate->hasMissingBlobsQueue();
     }
 };
 

@@ -6,6 +6,8 @@ keywords: ['traza de consulta', 'OTel', 'Grafana']
 description: "Esta guía le muestra cómo recopilar y visualizar trazas de consultas con ClickHouse autogestionado, ya sea con métodos integrados o con Grafana. Esto resulta especialmente útil cuando trabaja con consultas complejas y necesita comprender los mecanismos internos de ejecución más allá de lo que ofrece EXPLAIN."
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 **Requisitos previos**:
 
 * Familiaridad con los [archivos de configuración](/es/concepts/features/configuration/server-config/configuration-files) de ClickHouse
@@ -25,19 +27,32 @@ description: "Esta guía le muestra cómo recopilar y visualizar trazas de consu
         NOTE: this table does not use standard schema with event_date and event_time!
     -->
     <opentelemetry_span_log>
-        <!-- <partition_by>toYYYYMM(event_date)</partition_by> -->
-        <!-- <order_by>event_date, finish_time_us</order_by> -->
-        <!-- <database>system</database> -->
-        <!-- <table>opentelemetry_span_log</table> -->
-        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
-        <!-- <max_size_rows>1048576</max_size_rows> -->
-        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
-        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
-        <!-- <flush_on_crash>false</flush_on_crash> -->
+        <!--
+            The default table creation code is insufficient, this <engine> spec
+            is a workaround. There is no 'event_time' for this log, but two times,
+            start and finish. It is sorted by finish time, to avoid inserting
+            data too far away in the past (probably we can sometimes insert a span
+            that is seconds earlier than the last span in the table, due to a race
+            between several spans inserted in parallel). This gives the spans a
+            global order that we can use to e.g. retry insertion into some external
+            system.
+        -->
+        <engine>
+            engine MergeTree
+            partition by toYYYYMM(finish_date)
+            order by (finish_date, finish_time_us, trace_id)
+        </engine>
+        <database>system</database>
+        <table>opentelemetry_span_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </opentelemetry_span_log>
     ```
 
-    Asegúrate de que el elemento `<opentelemetry_span_log>` en sí no esté comentado; de lo contrario, no podrás ver `system.opentelemetry_span_log` en los pasos siguientes. Los ajustes que contiene están comentados porque coinciden con los valores predeterminados.
+    Asegúrate de que no esté comentado; de lo contrario, no podrás ver `system.opentelemetry_span_log` en los pasos siguientes.
     Esto también puede ocurrir si tu servidor de ClickHouse no está usando el archivo de configuración predeterminado.
 
     Comprueba los logs del servidor para ver algo como esto:
@@ -130,15 +145,7 @@ description: "Esta guía le muestra cómo recopilar y visualizar trazas de consu
     Utiliza el visualizador de trazas alojado en [https://trace-visualizer.clickhouse.com/](https://trace-visualizer.clickhouse.com/).
     Carga el archivo `trace.json` del paso anterior para visualizar la traza.
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Ejemplo del visualizador de trazas de ClickHouse](/images/knowledgebase/trace-visualizer-example.png)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/knowledgebase/trace-visualizer-example.png" size="md" alt="Ejemplo del visualizador de trazas de ClickHouse" />
   </Step>
 
   <Step title="Usar Grafana para visualizar trazas" id="using-grafana">
@@ -167,26 +174,10 @@ description: "Esta guía le muestra cómo recopilar y visualizar trazas de consu
 
     Asegúrate de configurar `Query type` como `Traces`:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Visualización de trazas de ClickHouse en Grafana](/images/knowledgebase/trace-visualization-grafana.png)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/knowledgebase/trace-visualization-grafana.png" size="md" alt="Visualización de trazas de ClickHouse en Grafana" />
 
     Haz clic en &quot;Run Query&quot; e inspecciona el diagrama de trazas:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Visualización de trazas de ClickHouse en Grafana](/images/knowledgebase/trace-visualization-diagram.png)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/knowledgebase/trace-visualization-diagram.png" size="md" alt="Visualización de trazas de ClickHouse en Grafana" />
   </Step>
 </Steps>

@@ -1,11 +1,13 @@
 ---
-sidebar_title: 'Overview'
+sidebar_title: 'Query API endpoints'
 slug: /cloud/features/query-api-endpoints
 description: 'Crie facilmente endpoints de API REST a partir de consultas salvas'
 keywords: ['api', 'query api endpoints', 'query endpoints', 'query rest api']
 title: 'Query API endpoints'
 doc_type: 'guide'
 ---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 Criar aplicações interativas orientadas por dados exige não apenas um banco de dados rápido, dados bem estruturados e consultas otimizadas.
 Seu front-end e seus microsserviços também precisam de uma maneira fácil de consumir os dados retornados por essas consultas, de preferência por meio de APIs bem estruturadas.
@@ -25,27 +27,11 @@ Para restringir quais clientes podem chamar seus Query API endpoints:
   <Step title="Abra as configurações da API key" id="open-settings">
     1. Vá para console do ClickHouse Cloud → **Organization** → **API Keys**
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![API Keys](/images/cloud/guides/query-endpoints/console-api-keys.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/guides/query-endpoints/console-api-keys.webp" size="md" alt="API Keys" />
 
     2. Clique em **Edit** ao lado da API key usada para Query API endpoints
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Edit](/images/cloud/guides/query-endpoints/api-key-edit.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/guides/query-endpoints/api-key-edit.webp" size="md" alt="Edit" />
   </Step>
 
   <Step title="Adicione os endereços IP permitidos" id="add-ips">
@@ -53,15 +39,7 @@ Para restringir quais clientes podem chamar seus Query API endpoints:
     2. Insira endereços IP ou intervalos CIDR (por exemplo, `203.0.113.1` ou `203.0.113.0/24`)
     3. Adicione várias entradas conforme necessário
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Specific locations](/images/cloud/guides/query-endpoints/specific-locations.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="Specific locations" />
 
     A criação de Query API endpoints exige uma Role Admin no Console e uma API key com as permissões adequadas.
   </Step>

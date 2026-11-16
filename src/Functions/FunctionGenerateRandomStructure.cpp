@@ -24,6 +24,8 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -367,6 +369,31 @@ FunctionPtr FunctionGenerateRandomStructure::create(DB::ContextPtr context)
     return std::make_shared<FunctionGenerateRandomStructure>(context->getSettingsRef()[Setting::allow_suspicious_low_cardinality_types].value);
 }
 
+DataTypePtr FunctionGenerateRandomStructure::getReturnTypeImpl(const DataTypes & arguments) const
+{
+    if (arguments.size() > 2)
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Number of arguments for function {} doesn't match: passed {}, expected from 0 to 2",
+            getName(), arguments.size());
+
+
+    for (size_t i = 0; i != arguments.size(); ++i)
+    {
+        if (!isUInt(arguments[i]) && !arguments[i]->onlyNull())
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of the {} argument of function {}, expected unsigned integer or Null",
+                arguments[i]->getName(),
+                i + 1,
+                getName());
+        }
+    }
+
+    return std::make_shared<DataTypeString>();
+}
+
 ColumnPtr FunctionGenerateRandomStructure::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
 {
     size_t seed = randomSeed();
@@ -465,7 +492,7 @@ c1 Map(UInt256, UInt16)
 SELECT generateRandomStructure(NULL, 33)
         )",
         R"(
-c1 DateTime, c2 Enum8(\'c2V0\' = -123, \'c2V1\' = 94, \'c2V2\' = -105, \'c2V3\' = 67), c3 Nullable(UInt8), c4 String, c5 Nested(e1 IPv4, e2 UInt8, e3 UInt16, e4 UInt16, e5 Int32, e6 Map(Date, Decimal256(71))), c6 UInt32, c7 Bool, c8 Float64
+c1 DateTime, c2 Enum8('c2V0' = 0, 'c2V1' = 1, 'c2V2' = 2, 'c2V3' = 3), c3 LowCardinality(Nullable(FixedString(30))), c4 Int16, c5 Enum8('c5V0' = 0, 'c5V1' = 1, 'c5V2' = 2, 'c5V3' = 3), c6 Nullable(UInt8), c7 String, c8 Nested(e1 IPv4, e2 UInt8, e3 UInt16, e4 UInt16, e5 Int32, e6 Map(Date, Decimal256(70)))
         )"
     }
     };

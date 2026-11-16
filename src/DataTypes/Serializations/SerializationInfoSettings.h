@@ -42,9 +42,9 @@ struct SerializationInfoSettings
     /// Downgrade `version` to BASIC when all type-level serialization versions are still at their defaults.
     void tryDowngradeToBasic();
 
-    [[nodiscard]] bool isAlwaysDefault() const { return ratio_of_defaults_for_sparse >= 1.0; }
+    bool isAlwaysDefault() const { return ratio_of_defaults_for_sparse >= 1.0; }
 
-    [[nodiscard]] bool canUseSparseSerialization(const IDataType & type) const;
+    bool canUseSparseSerialization(const IDataType & type) const;
 
     void updateHash(SipHash & hash) const;
 

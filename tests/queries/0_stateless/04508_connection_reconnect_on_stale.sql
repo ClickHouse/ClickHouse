@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel
 -- - no-parallel - the fail point below affects connection establishment globally on the server
 
 -- A pooled connection is no longer pinged before every query. A connection that the server closed

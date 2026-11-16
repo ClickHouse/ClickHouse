@@ -1,43 +1,9 @@
 #include <Common/JSONBuilder.h>
-#include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
-#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 
 namespace DB::JSONBuilder
 {
-
-std::string toCamelCaseKey(std::string_view key)
-{
-    std::string result;
-    result.reserve(key.size());
-
-    size_t pos = 0;
-    while (pos < key.size())
-    {
-        if (!isAlphaNumericASCII(key[pos]))
-        {
-            ++pos;
-            continue;
-        }
-
-        size_t end = pos;
-        bool has_lower = false;
-        while (end < key.size() && isAlphaNumericASCII(key[end]))
-        {
-            has_lower |= isLowerAlphaASCII(key[end]);
-            ++end;
-        }
-
-        /// The first letter of the word decides the case; the rest is kept, unless the word is in capitals only.
-        const bool first_word = result.empty();
-        result += first_word ? toLowerIfAlphaASCII(key[pos]) : toUpperIfAlphaASCII(key[pos]);
-        for (size_t i = pos + 1; i < end; ++i)
-            result += has_lower ? key[i] : toLowerIfAlphaASCII(key[i]);
-        pos = end;
-    }
-    return result;
-}
 
 static bool isArrayOrMap(const IItem & item)
 {
@@ -119,10 +85,7 @@ void JSONMap::format(const FormatSettings & settings, FormatContext & context)
             writeChar('\n', context.out);
             writeChar(' ', context.offset, context.out);
         }
-        if (settings.camel_case_keys)
-            writeJSONString(toCamelCaseKey(value.key), context.out, settings.settings);
-        else
-            writeJSONString(value.key, context.out, settings.settings);
+        writeJSONString(value.key, context.out, settings.settings);
 
         writeChar(':', context.out);
         if (!settings.solid)

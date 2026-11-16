@@ -30,31 +30,31 @@ public:
 
     explicit FunctionGetScalar(ColumnWithTypeAndName scalar_) : scalar(std::move(scalar_)) {}
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override
+    bool useDefaultImplementationForLowCardinalityColumns() const override
     {
         return false;
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] bool isServerConstant() const override { return true; }
+    bool isServerConstant() const override { return true; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
         return scalar.type;
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return ColumnConst::create(scalar.column, input_rows_count);
     }
@@ -79,14 +79,6 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool isServerConstant() const override { return true; }
-
-    /// Documentation-only — internal helper; the result type comes from the
-    /// scalar subquery cached under the const-string name in the query
-    /// context, so the DSL can't resolve it.
-    String getSignatureString() const override
-    {
-        return "(const String) -> Any";
-    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -145,37 +137,30 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return function_name;
     }
 
-    [[nodiscard]] bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    [[nodiscard]] bool isServerConstant() const override { return true; }
+    bool isServerConstant() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForConstantFolding() const override { return !is_distributed; }
+    bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override
     {
         return scalar.type;
     }
 
-    /// Both `shardNum` and `shardCount` are always populated with a `UInt32` scalar
-    /// (either supplied by the distributed-query coordinator or defaulted to `(0, UInt32)`
-    /// in `createScalar`). The declarative signature reflects that — even though the
-    /// `scalar.type` getter is still consulted by the dispatcher, having a signature
-    /// here lets `system.functions` advertise it to users and tooling.
-    [[nodiscard]] String getSignatureString() const override { return "() -> UInt32"; }
-
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto result = ColumnConst::create(scalar.column, input_rows_count);
 

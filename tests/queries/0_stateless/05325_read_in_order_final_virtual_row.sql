@@ -8,7 +8,7 @@ SET optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, read_in_order
 SET query_plan_read_in_order_through_join = 1, max_bytes_ratio_before_external_join = 0, max_bytes_before_external_join = 0;
 SET query_plan_optimize_join_order_limit = 1, query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 0;
 SET join_algorithm = 'hash', enable_join_runtime_filters = 0, enable_parallel_replicas = 0;
-SET max_threads = 3, max_final_threads = 3, optimize_on_insert = 0, optimize_read_in_reverse_order_final = 1;
+SET max_threads = 3, max_final_threads = 3, optimize_on_insert = 0;
 SET do_not_merge_across_partitions_select_final = 0;
 
 DROP TABLE IF EXISTS r;
@@ -28,17 +28,10 @@ SELECT extract(explain, '(?:Prefix sort description|Read type|Virtual row conver
 FROM (EXPLAIN PLAN actions = 1, indexes = 0
     SELECT l.k, l.v FROM t_rep AS l FINAL INNER JOIN r ON l.k = r.k ORDER BY l.k LIMIT 7) WHERE e != '';
 
-SELECT '-- INNER JOIN, reverse';
-SELECT extract(explain, '(?:Prefix sort description|Read type|Virtual row conversions).*') AS e
-FROM (EXPLAIN PLAN actions = 1, indexes = 0
-    SELECT l.k, l.v FROM t_rep AS l FINAL INNER JOIN r ON l.k = r.k ORDER BY l.k DESC LIMIT 5) WHERE e != '';
-
 SELECT '--- ReplacingMergeTree: results';
 SELECT l.k, l.v FROM t_rep AS l FINAL INNER JOIN r ON l.k = r.k ORDER BY l.k LIMIT 7;
-SELECT l.k, l.v FROM t_rep AS l FINAL INNER JOIN r ON l.k = r.k ORDER BY l.k DESC LIMIT 5;
 SELECT l.k, l.v FROM t_rep AS l FINAL INNER JOIN r ON l.k = r.k WHERE l.k >= 45 ORDER BY l.k LIMIT 7;
 SELECT k, v FROM t_rep FINAL ORDER BY k LIMIT 3 OFFSET 48;
-SELECT k, v FROM t_rep FINAL ORDER BY k DESC LIMIT 3 OFFSET 48;
 
 SELECT '--- CollapsingMergeTree';
 DROP TABLE IF EXISTS t_col;
@@ -113,12 +106,10 @@ SELECT countIf(explain LIKE '%filter values in%') > 1, countIf(explain LIKE '%Re
 FROM (EXPLAIN PIPELINE SELECT l.k, l.v FROM t_layers AS l FINAL INNER JOIN r ON l.k = r.k ORDER BY l.k LIMIT 7);
 -- the limit is reached within the first layer: far fewer rows read than the table has
 SELECT l.k, l.v FROM t_layers AS l FINAL INNER JOIN r ON l.k = r.k ORDER BY l.k LIMIT 7 SETTINGS max_rows_to_read = 3200;
-SELECT l.k, l.v FROM t_layers AS l FINAL INNER JOIN r ON l.k = r.k ORDER BY l.k DESC LIMIT 5 SETTINGS max_rows_to_read = 3200;
 -- limits crossing a layer border (740 and 1252 for these parts with max_final_threads = 3)
 SELECT l.k, l.v FROM t_layers AS l FINAL INNER JOIN r ON l.k = r.k WHERE l.k >= 735 ORDER BY l.k LIMIT 6;
 SELECT l.k, l.v FROM t_layers AS l FINAL LEFT JOIN r ON l.k = r.k WHERE l.k >= 1248 ORDER BY l.k LIMIT 8;
 SELECT k, v FROM t_layers FINAL ORDER BY k LIMIT 5 OFFSET 738;
-SELECT k, v FROM t_layers FINAL ORDER BY k DESC LIMIT 5 OFFSET 745;
 
 -- The query orders by a prefix of the primary key, itself a prefix of the sorting key. The virtual
 -- row covers the primary key columns the sort reads; the FINAL merge compares the whole sorting key

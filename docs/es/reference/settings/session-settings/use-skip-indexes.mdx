@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## use_skip_indexes {#use_skip_indexes}
+<div id="use_skip_indexes">
+  ## use_skip_indexes
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -24,7 +26,9 @@ Valores posibles:
 * 0 — Deshabilitado.
 * 1 — Habilitado.
 
-## use_skip_indexes_for_disjunctions {#use_skip_indexes_for_disjunctions}
+<div id="use_skip_indexes_for_disjunctions">
+  ## use_skip_indexes_for_disjunctions
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -38,7 +42,9 @@ Posibles valores:
 * 0 — Deshabilitado.
 * 1 — Habilitado.
 
-## use_skip_indexes_for_top_k {#use_skip_indexes_for_top_k}
+<div id="use_skip_indexes_for_top_k">
+  ## use_skip_indexes_for_top_k
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -53,7 +59,9 @@ Valores posibles:
 * 0 — Deshabilitado.
 * 1 — Habilitado.
 
-## use_skip_indexes_if_final {#use_skip_indexes_if_final}
+<div id="use_skip_indexes_if_final">
+  ## use_skip_indexes_if_final
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -61,14 +69,16 @@ Valores posibles:
 
 Controla si se usan índices de omisión al ejecutar una consulta con el modificador FINAL.
 
-Los índices de omisión pueden excluir filas (gránulos) que contienen los datos más recientes, lo que podría producir resultados incorrectos en una consulta con el modificador FINAL. Cuando esta configuración está habilitada, los índices de omisión se aplican incluso con el modificador FINAL, lo que puede mejorar el rendimiento. Los resultados correctos siguen dependiendo de la configuración `use_skip_indexes_if_final_exact_mode`, que está habilitada de forma predeterminada y examina las partes adicionales que se superponen con los rangos devueltos por el índice de omisión. El riesgo de omitir actualizaciones recientes solo existe si esa configuración está deshabilitada.
+Los índices de omisión pueden excluir filas (gránulos) que contienen los datos más recientes, lo que podría producir resultados incorrectos en una consulta con el modificador FINAL. Cuando esta configuración está habilitada, los índices de omisión se aplican incluso con el modificador FINAL, lo que puede mejorar el rendimiento, pero con el riesgo de omitir actualizaciones recientes. Esta configuración debe habilitarse junto con la configuración use&#95;skip&#95;indexes&#95;if&#95;final&#95;exact&#95;mode (habilitada de forma predeterminada).
 
 Valores posibles:
 
 * 0 — Deshabilitado.
 * 1 — Habilitado.
 
-## use_skip_indexes_if_final_exact_mode {#use_skip_indexes_if_final_exact_mode}
+<div id="use_skip_indexes_if_final_exact_mode">
+  ## use_skip_indexes_if_final_exact_mode
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -83,11 +93,13 @@ Valores posibles:
 * 0 — Deshabilitado.
 * 1 — Habilitado.
 
-## use_skip_indexes_on_data_read {#use_skip_indexes_on_data_read}
+<div id="use_skip_indexes_on_data_read">
+  ## use_skip_indexes_on_data_read
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1"},{"label": "Habilitado de forma predeterminada"}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "El índice de texto ahora es GA"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "Habilitado de forma predeterminada"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
 
 Permite usar índices de omisión de datos durante la lectura de datos.
 

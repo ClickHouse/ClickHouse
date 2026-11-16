@@ -51,15 +51,7 @@
   // and cannot loop.
   function start() {
     rewrite();
-    var scheduled = false;
-    new MutationObserver(function () {
-      if (scheduled) return;
-      scheduled = true;
-      requestAnimationFrame(function () {
-        scheduled = false;
-        rewrite();
-      });
-    }).observe(document.body, {
+    new MutationObserver(rewrite).observe(document.body, {
       childList: true,
       subtree: true,
       attributes: true,

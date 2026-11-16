@@ -11,7 +11,9 @@ import ResourceEstimation from '/snippets/fr/_resource_estimation.mdx';
 
 <ResourceEstimation />
 
-## Affiner les hypothèses de dimensionnement pour votre environnement {#refining-sizing-assumptions}
+<div id="refining-sizing-assumptions">
+  ## Affiner les hypothèses de dimensionnement pour votre environnement
+</div>
 
 Le modèle suppose une moyenne soutenue de 1 QPS depuis ClickStack, tous types de requêtes confondus, y compris la recherche, les dashboards et les alertes.
 
@@ -21,7 +23,9 @@ Les estimations de stockage supposent un taux de compression prudent de 10x. En 
 
 Cela suppose une répartition des requêtes relativement équilibrée. Les charges de travail davantage orientées vers des requêtes historiques ou d’archivage plus lourdes peuvent avoir des besoins en calcul sensiblement différents et doivent être validées par des tests de charge. Nous prévoyons d’introduire un modèle de dimensionnement plus flexible, permettant d’extrapoler les ressources de calcul des requêtes selon différents profils de répartition des requêtes.
 
-### Exemple pratique {#worked-example}
+<div id="worked-example">
+  ### Exemple pratique
+</div>
 
 **Exigences :** ingestion de 1,5 PB/mois, 5 QPS, rétention de 3 mois.
 
@@ -62,11 +66,13 @@ Avec 579 MB/s constants sur 30 jours, l’ingestion brute représente 1 500�
 | Stockage par mois (compressé)         | 150 TB    |
 | Stockage pour une rétention de 3 mois | 450 TB    |
 
-## Isolation des charges de travail d’observabilité {#isolating-workloads}
+<div id="isolating-workloads">
+  ## Isolation des charges de travail d’observabilité
+</div>
 
 Si vous ajoutez ClickStack à un **service ClickHouse Cloud existant** qui prend déjà en charge d’autres charges de travail, comme l’analytique applicative en temps réel, il est fortement recommandé d’isoler le trafic d’observabilité.
 
-Utilisez [**Managed Warehouses**](/fr/products/cloud/features/infrastructure/warehouses) pour créer un **service enfant** dédié à ClickStack. Cela vous permet de :
+Utilisez [**Managed Warehouses**](/fr/products/cloud/features/infrastructure/warehouses) pour créer un **service enfant** dédié à ClickStack. Cela vous permet de :
 
 * Isoler la charge liée à l’ingestion et aux requêtes des applications existantes
 * Faire évoluer indépendamment les charges de travail d’observabilité
@@ -74,7 +80,5 @@ Utilisez [**Managed Warehouses**](/fr/products/cloud/features/infrastructure/war
 * Partager, si nécessaire, les mêmes jeux de données sous-jacents entre les services
 
 Cette approche garantit que vos charges de travail existantes restent inchangées, tout en permettant à ClickStack de monter en charge de manière indépendante à mesure que les données d’observabilité augmentent.
-
-La même fonctionnalité peut être utilisée pour provisionner le calcul pour l’ingestion et la capacité de calcul pour les requêtes estimés ci-dessus sous forme de services distincts, afin que chacun puisse évoluer indépendamment. Consultez notre guide sur l’[isolation des charges de travail de lecture et d’écriture](/fr/clickstack/managing/isolating-read-write).
 
 Pour les déploiements de plus grande envergure ou pour des conseils personnalisés en matière de dimensionnement, veuillez contacter le support afin d’obtenir une estimation plus précise.

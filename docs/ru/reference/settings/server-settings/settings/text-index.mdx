@@ -12,15 +12,21 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки предназначены для конфигурирования сервера ClickHouse и автоматически сгенерированы из исходного кода ClickHouse.
 
-## text_index_header_cache_max_entries {#text_index_header_cache_max_entries}
+<div id="text_index_header_cache_max_entries">
+  ## text_index_header_cache_max_entries
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />Размер кэша заголовка текстового индекса в записях. Ноль означает, что кэш отключён.
 
-## text_index_header_cache_policy {#text_index_header_cache_policy}
+<div id="text_index_header_cache_policy">
+  ## text_index_header_cache_policy
+</div>
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Имя политики вытеснения из кэша заголовков текстового индекса. Возможные значения: `LRU`, `SLRU`, `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Имя политики кэширования заголовка текстового индекса.
 
-## text_index_header_cache_size {#text_index_header_cache_size}
+<div id="text_index_header_cache_size">
+  ## text_index_header_cache_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />Размер кэша для заголовков текстового индекса. Ноль означает, что кэш отключён.
 
@@ -28,19 +34,27 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
   Этот параметр можно изменять во время выполнения, и изменения вступят в силу немедленно.
 </Note>
 
-## text_index_header_cache_size_ratio {#text_index_header_cache_size_ratio}
+<div id="text_index_header_cache_size_ratio">
+  ## text_index_header_cache_size_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />Доля защищённой очереди (в случае политики SLRU) в кэше заголовка текстового индекса относительно общего размера кэша.
 
-## text_index_postings_cache_max_entries {#text_index_postings_cache_max_entries}
+<div id="text_index_postings_cache_max_entries">
+  ## text_index_postings_cache_max_entries
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" changeable_without_restart="No" />Размер кэша списка вхождений текстового индекса в записях. Ноль означает, что кэш отключён.
 
-## text_index_postings_cache_policy {#text_index_postings_cache_policy}
+<div id="text_index_postings_cache_policy">
+  ## text_index_postings_cache_policy
+</div>
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Имя политики вытеснения из кэша списка вхождений текстового индекса. Возможные значения: `LRU`, `SLRU`, `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Имя политики кэширования списка вхождений текстового индекса.
 
-## text_index_postings_cache_size {#text_index_postings_cache_size}
+<div id="text_index_postings_cache_size">
+  ## text_index_postings_cache_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="2147483648" changeable_without_restart="Yes" />Размер кэша для списков вхождений текстового индекса. Ноль означает, что кэш отключён.
 
@@ -48,19 +62,27 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
   Этот параметр можно изменить во время выполнения, и изменения вступят в силу немедленно.
 </Note>
 
-## text_index_postings_cache_size_ratio {#text_index_postings_cache_size_ratio}
+<div id="text_index_postings_cache_size_ratio">
+  ## text_index_postings_cache_size_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />Размер защищённой очереди (при политике SLRU) в кэше списков вхождений текстового индекса относительно общего размера кэша.
 
-## text_index_tokens_cache_max_entries {#text_index_tokens_cache_max_entries}
+<div id="text_index_tokens_cache_max_entries">
+  ## text_index_tokens_cache_max_entries
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" changeable_without_restart="No" />Размер кэша токенов текстового индекса в записях. Ноль означает, что кэш отключён.
 
-## text_index_tokens_cache_policy {#text_index_tokens_cache_policy}
+<div id="text_index_tokens_cache_policy">
+  ## text_index_tokens_cache_policy
+</div>
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Имя политики вытеснения из кэша токенов текстового индекса. Возможные значения: `LRU`, `SLRU`, `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Имя политики кэширования токенов текстового индекса.
 
-## text_index_tokens_cache_size {#text_index_tokens_cache_size}
+<div id="text_index_tokens_cache_size">
+  ## text_index_tokens_cache_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />Размер кэша для токенов текстового индекса. Ноль означает, что кэш отключен.
 
@@ -68,7 +90,9 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
   Этот параметр можно изменять во время выполнения, и изменения вступят в силу немедленно.
 </Note>
 
-## text_index_tokens_cache_size_ratio {#text_index_tokens_cache_size_ratio}
+<div id="text_index_tokens_cache_size_ratio">
+  ## text_index_tokens_cache_size_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />Размер защищённой очереди (при политике SLRU) в кэше токенов текстового индекса относительно общего размера кэша.
 

@@ -1,6 +1,6 @@
 #pragma once
 #include <memory>
-#include <Core/FileCachePolicy.h>
+#include <Core/SettingsEnums.h>
 
 namespace DB
 {
@@ -22,13 +22,6 @@ static constexpr int FILECACHE_DEFAULT_FREE_SPACE_EVICTION_THREADS = 1;
 static constexpr auto FILECACHE_DEFAULT_CONFIG_PATH = "filesystem_caches";
 
 static constexpr auto FILECACHE_DEFAULT_CACHE_POLICY = FileCachePolicy::SLRU;
-
-/// Whether the policy tracks cache usage per client and evicts across clients
-/// proportionally to their weights.
-constexpr bool isOvercommitPolicy(FileCachePolicy policy)
-{
-    return policy == FileCachePolicy::LRU_OVERCOMMIT || policy == FileCachePolicy::SLRU_OVERCOMMIT;
-}
 
 /// SLRU ratio of 0.6 means:
 /// 60% of cache for protected elements.

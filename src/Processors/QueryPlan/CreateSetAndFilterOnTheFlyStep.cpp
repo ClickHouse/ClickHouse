@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
-#include <Formats/FormatSettings.h>
 #include <Processors/Transforms/CreateSetAndFilterOnTheFlyTransform.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>

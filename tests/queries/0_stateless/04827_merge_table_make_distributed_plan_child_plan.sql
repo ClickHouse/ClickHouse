@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: make_distributed_plan requires the analyzer.
+
 -- Distributing the child plans of a `Merge` table under `make_distributed_plan` is supported
 -- (see 04367_distributed_plan_merge_scatter_multishard), with one exception: when the query has
 -- subquery sets (`IN (SELECT ...)`). A `Merge` table materializes its child plans lazily, while
@@ -37,25 +40,6 @@ SELECT x FROM m_merge_dp WHERE x = 3 SETTINGS make_distributed_plan = 1;
 -- With a subquery set the child plan stays local (no exchanges) and the query succeeds.
 SELECT sum(explain LIKE '%Exchange%') FROM (EXPLAIN SELECT x FROM m_merge_dp WHERE x GLOBAL IN (SELECT number FROM numbers(3)) SETTINGS make_distributed_plan = 1);
 SELECT x FROM m_merge_dp WHERE x GLOBAL IN (SELECT number FROM numbers(3)) SETTINGS make_distributed_plan = 1;
-
-SYSTEM FLUSH LOGS query_log;
--- The outer plan over `ReadFromMerge` falls back, so only these task rows show that the child plans distributed.
-WITH (SELECT metadata_modification_time FROM system.tables WHERE database = currentDatabase() AND name = 'm_merge_dp') AS run_start
-SELECT countIf(query = 'main' OR query LIKE 'stage\_%') > 0 AS children_executed_distributed
-FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= toDate(run_start) AND event_time >= run_start
-    AND initial_query_id IN (
-        SELECT query_id FROM system.query_log
-        WHERE type = 'QueryFinish' AND event_date >= toDate(run_start) AND event_time >= run_start AND is_initial_query
-            AND current_database = currentDatabase() AND query LIKE 'SELECT x FROM m\_merge\_dp WHERE x = 3%');
-WITH (SELECT metadata_modification_time FROM system.tables WHERE database = currentDatabase() AND name = 'm_merge_dp') AS run_start
-SELECT countIf(query = 'main' OR query LIKE 'stage\_%') = 0 AS children_stayed_local
-FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= toDate(run_start) AND event_time >= run_start
-    AND initial_query_id IN (
-        SELECT query_id FROM system.query_log
-        WHERE type = 'QueryFinish' AND event_date >= toDate(run_start) AND event_time >= run_start AND is_initial_query
-            AND current_database = currentDatabase() AND query LIKE 'SELECT x FROM m\_merge\_dp WHERE x GLOBAL IN%');
 
 DROP TABLE m_merge_dp;
 DROP TABLE t_merge_dp;

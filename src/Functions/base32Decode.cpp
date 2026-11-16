@@ -41,6 +41,5 @@ If the string is not valid Base32-encoded, an exception is thrown.
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBase32Decode>(documentation);
-    factory.registerAlias("from_base32", "base32Decode", FunctionFactory::Case::Insensitive);
 }
 }

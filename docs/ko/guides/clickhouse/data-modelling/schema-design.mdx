@@ -6,6 +6,8 @@ keywords: ['스키마', '스키마 설계', '쿼리 최적화']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 효과적인 스키마 설계를 이해하는 것은 ClickHouse 성능을 최적화하는 데 핵심적이며, 이를 위해서는 흔히 상충 관계가 있는 선택을 해야 합니다. 최적의 접근 방식은 처리할 쿼리뿐 아니라 데이터 업데이트 빈도, 지연 시간 요구 사항, 데이터 양과 같은 요소에 따라 달라집니다. 이 가이드는 ClickHouse 성능 최적화를 위한 스키마 설계 모범 사례와 데이터 모델링 기법을 개괄적으로 소개합니다.
 
 <div id="stack-overflow-dataset">
@@ -16,15 +18,7 @@ doc_type: 'guide'
 
 > 표시된 기본 키와 관계는 제약 조건으로 강제되지 않으며(Parquet는 테이블 포맷이 아니라 파일 포맷임), 데이터가 어떻게 서로 연결되는지와 어떤 고유 키를 가지는지만 보여줍니다.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Stack Overflow 스키마](/images/data-modeling/stackoverflow-schema.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/data-modeling/stackoverflow-schema.webp" size="lg" alt="Stack Overflow 스키마" />
 
 <br />
 
@@ -43,32 +37,32 @@ Stack Overflow 데이터셋에는 서로 연관된 여러 테이블이 포함되
 ClickHouse는 데이터셋의 타입을 자동으로 식별하는 스키마 추론 기능을 제공합니다. 이 기능은 Parquet를 포함한 모든 데이터 포맷에서 지원됩니다. 이 기능을 활용하면 s3 테이블 함수와 [`DESCRIBE`](/ko/reference/statements/describe-table) 명령을 통해 데이터의 ClickHouse 타입을 식별할 수 있습니다. 아래 예시에서는 `stackoverflow/parquet/posts` 폴더의 모든 파일을 읽기 위해 글롭 패턴 `*.parquet`를 사용합니다.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
 SETTINGS describe_compact_output = 1
 ```
 
 ```response
 ┌─name──────────────────┬─type───────────────────────────┐
-│ Id                    │ Nullable(Int64)                │
-│ PostTypeId            │ Nullable(Int64)                │
-│ AcceptedAnswerId      │ Nullable(Int64)                │
+│ Id                    │ Nullable(Int64)               │
+│ PostTypeId            │ Nullable(Int64)               │
+│ AcceptedAnswerId      │ Nullable(Int64)               │
 │ CreationDate          │ Nullable(DateTime64(3, 'UTC')) │
-│ Score                 │ Nullable(Int64)                │
-│ ViewCount             │ Nullable(Int64)                │
-│ Body                  │ Nullable(String)               │
-│ OwnerUserId           │ Nullable(Int64)                │
-│ OwnerDisplayName      │ Nullable(String)               │
-│ LastEditorUserId      │ Nullable(Int64)                │
-│ LastEditorDisplayName │ Nullable(String)               │
+│ Score                 │ Nullable(Int64)               │
+│ ViewCount             │ Nullable(Int64)               │
+│ Body                  │ Nullable(String)              │
+│ OwnerUserId           │ Nullable(Int64)               │
+│ OwnerDisplayName      │ Nullable(String)              │
+│ LastEditorUserId      │ Nullable(Int64)               │
+│ LastEditorDisplayName │ Nullable(String)              │
 │ LastEditDate          │ Nullable(DateTime64(3, 'UTC')) │
 │ LastActivityDate      │ Nullable(DateTime64(3, 'UTC')) │
-│ Title                 │ Nullable(String)               │
-│ Tags                  │ Nullable(String)               │
-│ AnswerCount           │ Nullable(Int64)                │
-│ CommentCount          │ Nullable(Int64)                │
-│ FavoriteCount         │ Nullable(Int64)                │
-│ ContentLicense        │ Nullable(String)               │
-│ ParentId              │ Nullable(String)               │
+│ Title                 │ Nullable(String)              │
+│ Tags                  │ Nullable(String)              │
+│ AnswerCount           │ Nullable(Int64)               │
+│ CommentCount          │ Nullable(Int64)               │
+│ FavoriteCount         │ Nullable(Int64)               │
+│ ContentLicense        │ Nullable(String)              │
+│ ParentId              │ Nullable(String)              │
 │ CommunityOwnedDate    │ Nullable(DateTime64(3, 'UTC')) │
 │ ClosedDate            │ Nullable(DateTime64(3, 'UTC')) │
 └───────────────────────┴────────────────────────────────┘
@@ -82,7 +76,7 @@ SETTINGS describe_compact_output = 1
 CREATE TABLE posts
 ENGINE = MergeTree
 ORDER BY () EMPTY AS
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
 ```
 
 몇 가지 중요한 사항이 있습니다:
@@ -129,7 +123,7 @@ ORDER BY tuple()
 초기 스키마가 정의되었으므로, 이제 S3 테이블 함수를 사용해 데이터를 읽고 `INSERT INTO SELECT`로 데이터를 적재할 수 있습니다. 다음 예시는 8코어 ClickHouse Cloud 인스턴스에서 약 2분 만에 `posts` 데이터를 적재합니다.
 
 ```sql
-INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
+INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
 ```
 
 ```response
@@ -243,15 +237,7 @@ OLTP 데이터베이스를 사용해 온 사용자는 ClickHouse에서 이에 �
 
 ClickHouse가 주로 사용되는 규모에서는 메모리와 디스크 효율성이 매우 중요합니다. 데이터는 파트(parts)라고 하는 청크 단위로 ClickHouse 테이블에 기록되며, 백그라운드에서 파트를 머지하는 규칙이 적용됩니다. ClickHouse에서는 각 파트가 자체 프라이머리 인덱스를 가집니다. 파트가 머지되면 병합된 파트의 프라이머리 인덱스도 함께 머지됩니다. 파트의 프라이머리 인덱스는 각 행 그룹마다 하나의 인덱스 엔트리를 가지며, 이러한 기법을 희소 인덱싱이라고 합니다.
 
-<div className="ch-image-md">
-
-<Frame>
-
-![ClickHouse의 희소 인덱싱](/images/data-modeling/schema-design-indices.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/data-modeling/schema-design-indices.webp" size="md" alt="ClickHouse의 희소 인덱싱" />
 
 ClickHouse에서 선택한 키는 인덱스뿐 아니라 데이터가 디스크에 기록되는 순서까지 결정합니다. 따라서 압축 수준에 큰 영향을 미칠 수 있고, 이는 다시 쿼리 성능에도 영향을 줄 수 있습니다. 대부분의 컬럼 값이 연속된 순서로 기록되도록 하는 순서 지정 키를 사용하면, 선택한 압축 알고리즘(및 코덱)이 데이터를 더 효과적으로 압축할 수 있습니다.
 
@@ -289,10 +275,10 @@ LIMIT 3
 
 ```response
 ┌───────Id─┬─Title─────────────────────────────────────────────────────────────┬─CommentCount─┐
-│ 78203063 │ How to avoid default initialization of objects in std::vector?    │           74 │
-│ 78183948 │ About memory barrier                                              │           52 │
-│ 77900279 │ Speed Test for Buffer Alignment: IBM's PowerPC results vs. my CPU │           49 │
-└──────────┴───────────────────────────────────────────────────────────────────┴──────────────┘
+│ 78203063 │ How to avoid default initialization of objects in std::vector?     │               74 │
+│ 78183948 │ About memory barrier                                               │               52 │
+│ 77900279 │ Speed Test for Buffer Alignment: IBM's PowerPC results vs. my CPU │        49 │
+└──────────┴───────────────────────────────────────────────────────────────────┴──────────────
 
 10 rows in set. Elapsed: 0.070 sec. Processed 59.82 million rows, 569.21 MB (852.55 million rows/s., 8.11 GB/s.)
 Peak memory usage: 429.38 MiB.
@@ -334,7 +320,7 @@ ENGINE = MergeTree
 ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
 COMMENT 'Ordering Key'
 
---populate table from existing table
+--기존 테이블에서 데이터 채우기
 
 INSERT INTO posts_v3 SELECT * FROM posts_v2
 ```

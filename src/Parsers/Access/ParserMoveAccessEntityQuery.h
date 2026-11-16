@@ -10,11 +10,8 @@ namespace DB
   */
 class ParserMoveAccessEntityQuery : public IParserBase
 {
-public:
-    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
-
 protected:
-    [[nodiscard]] const char * getName() const override { return "MOVE access entity query"; }
+    const char * getName() const override { return "MOVE access entity query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 }

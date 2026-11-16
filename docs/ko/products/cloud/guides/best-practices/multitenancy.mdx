@@ -11,7 +11,9 @@ SaaS 데이터 분석 플랫폼에서는 조직, 고객, 사업부와 같은 여
 
 요구 사항에 따라 멀티 테넌시를 구현하는 방식은 여러 가지가 있습니다. 아래에서는 ClickHouse Cloud에서 이를 구현하는 방법을 안내합니다.
 
-## 공유 테이블 {#shared-table}
+<div id="shared-table">
+  ## 공유 테이블
+</div>
 
 이 접근 방식에서는 모든 테넌트의 데이터를 하나의 공유 테이블에 저장하고, 각 테넌트의 데이터를 식별하는 데 필드(또는 여러 필드의 조합)를 사용합니다. 성능을 극대화하려면 이 필드를 [기본 키(primary key)](/ko/reference/statements/create/table#primary-key)에 포함해야 합니다. 또한 각 테넌트는 자신에게 속한 데이터에만 접근할 수 있어야 하므로 [역할 기반 접근 제어](/ko/concepts/features/security/access-rights)를 사용하며, 이는 [행 정책(row policies)](/ko/concepts/features/security/access-rights#row-policy-management)으로 구현됩니다.
 
@@ -25,7 +27,9 @@ SaaS 데이터 분석 플랫폼에서는 조직, 고객, 사업부와 같은 여
 
 테넌트 간 데이터 양의 차이가 큰 경우, 규모가 작은 테넌트는 불필요하게 쿼리 성능 저하의 영향을 받을 수 있습니다. 다만 이 문제는 테넌트 필드를 기본 키에 포함하면 대부분 완화됩니다.
 
-### 예시 {#shared-table-example}
+<div id="shared-table-example">
+  ### 예시
+</div>
 
 이는 공유 테이블을 사용하는 멀티 테넌시 모델 구현 예시입니다.
 
@@ -109,7 +113,9 @@ FROM events
    └───────────┴──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
 ```
 
-## 별도 테이블 {#separate-tables}
+<div id="separate-tables">
+  ## 별도 테이블
+</div>
 
 이 접근 방식에서는 각 테넌트의 데이터가 동일한 데이터베이스 내의 별도 테이블에 저장되므로, 테넌트를 식별하기 위한 별도의 필드가 필요하지 않습니다. 사용자 액세스는 [GRANT SQL 문](/ko/reference/statements/grant)을 통해 적용되며, 각 사용자는 자신의 테넌트 데이터가 포함된 테이블에만 액세스할 수 있습니다.
 
@@ -119,7 +125,9 @@ FROM events
 
 이 접근 방식은 수천 개의 테넌트로는 확장되지 않는다는 점에 유의하십시오. [usage limits](/ko/products/cloud/guides/best-practices/usagelimits)를 참조하십시오.
 
-### 예시 {#separate-tables-example}
+<div id="shared-table-example">
+  ### 예시
+</div>
 
 다음은 별도 테이블 멀티테넌시(multi-tenancy) 모델 구현의 예시입니다.
 
@@ -203,7 +211,9 @@ FROM default.events_tenant_1
    └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
 ```
 
-## 별도의 데이터베이스 {#separate-databases}
+<div id="separate-databases">
+  ## 별도의 데이터베이스
+</div>
 
 각 테넌트의 데이터는 동일한 ClickHouse 서비스 내의 별도 데이터베이스에 저장됩니다.
 
@@ -213,7 +223,9 @@ FROM default.events_tenant_1
 
 이 방식은 수천 개의 테넌트 규모로는 확장하기 어렵습니다. [usage limits](/ko/products/cloud/guides/best-practices/usagelimits)를 참조하십시오.
 
-### 예시 {#separate-databases-example}
+<div id="shared-table-example">
+  ### 예시
+</div>
 
 이는 데이터베이스를 분리하는 멀티 테넌시 모델 구현의 예시입니다.
 
@@ -305,15 +317,19 @@ FROM tenant_1.events
    └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
 ```
 
-## 컴퓨트-컴퓨트 분리 {#compute-compute-separation}
+<div id="compute-compute-separation">
+  ## 컴퓨트-컴퓨트 분리
+</div>
 
 위에서 설명한 세 가지 접근 방식은 [웨어하우스](/ko/products/cloud/features/infrastructure/warehouses#what-is-a-warehouse)를 사용해 한층 더 격리할 수도 있습니다. 데이터는 공통 객체 스토리지를 통해 공유되지만, [컴퓨트-컴퓨트 분리](/ko/products/cloud/features/infrastructure/warehouses#what-is-compute-compute-separation)를 통해 각 테넌트는 서로 다른 CPU/메모리 비율의 자체 컴퓨트 서비스를 사용할 수 있습니다.
 
 웨어하우스의 모든 서비스가 [액세스 제어를 공유](/ko/products/cloud/features/infrastructure/warehouses#database-credentials)하므로 사용자 관리는 앞서 설명한 방식과 유사합니다.
 
-웨어하우스의 서비스 수 자체에는 별도의 상한이 없지만, 웨어하우스 내 모든 서비스의 레플리카 수 합계는 제한된다는 점에 유의하십시오. 자세한 내용은 [usage limits](/ko/cloud/bestpractices/usage-limits)과 [웨어하우스 스케일링](/ko/products/cloud/features/infrastructure/warehouses#scaling)을 참조하십시오.
+웨어하우스에서 생성할 수 있는 하위 서비스 수는 적은 수로 제한된다는 점에 유의하십시오. 자세한 내용은 [웨어하우스 제한 사항](/ko/products/cloud/features/infrastructure/warehouses#limitations)을 참조하십시오.
 
-## 별도의 클라우드 서비스 {#separate-service}
+<div id="separate-service">
+  ## 별도의 클라우드 서비스
+</div>
 
 가장 극단적인 접근 방식은 테넌트마다 별도의 ClickHouse 서비스를 사용하는 것입니다.
 
@@ -323,7 +339,9 @@ FROM tenant_1.events
 
 이 접근 방식은 각 서비스가 실행에 필요한 자체 인프라를 갖춰야 하므로 관리가 더 어렵고 서비스별 오버헤드도 발생합니다. 서비스는 [ClickHouse Cloud API](/ko/products/cloud/features/admin-features/api/api-overview)를 통해 관리할 수 있으며, [공식 Terraform 프로바이더](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs)를 통해 오케스트레이션할 수도 있습니다.
 
-### 예시 {#separate-service-example}
+<div id="shared-table-example">
+  ### 예시
+</div>
 
 이는 분리된 서비스 멀티 테넌시 모델 구현 예시입니다. 이 예시에서는 하나의 ClickHouse 서비스에서 테이블과 사용자를 생성하는 방법을 보여주며, 동일한 작업을 모든 서비스에서도 수행해야 합니다.
 

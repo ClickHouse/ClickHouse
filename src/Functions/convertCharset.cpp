@@ -24,6 +24,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int CANNOT_CREATE_CHARSET_CONVERTER;
     extern const int CANNOT_CONVERT_CHARSET;
     extern const int ILLEGAL_COLUMN;
@@ -161,29 +162,34 @@ public:
     static constexpr auto name = "convertCharset";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvertCharset>(); }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
+    size_t getNumberOfArguments() const override { return 3; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(String, const String, const String) -> String";
+        for (size_t i : collections::range(0, 3))
+            if (!isString(arguments[i]))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, must be String",
+                    arguments[i]->getName(), getName());
+
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & arg_from = arguments[0];
         const ColumnWithTypeAndName & arg_charset_from = arguments[1];
@@ -230,9 +236,9 @@ Returns string `s` converted from the encoding `from` to encoding `to`.
         "Usage example",
         "SELECT convertCharset('Café', 'UTF-8', 'ISO-8859-1');",
         R"(
-┌─convertCharset('Café', 'UTF-8', 'ISO-8859-1')─┐
-│ Caf�                                           │
-└───────────────────────────────────────────────┘
+┌─convertChars⋯SO-8859-1')─┐
+│ Caf�                     │
+└──────────────────────────┘
         )"
     }
     };

@@ -1,5 +1,5 @@
 -- More tests for use_skip_index_if_final_exact_mode optimization
--- Test when a part does not have the final mark: the optimization falls back to the ranges selected by the primary key
+-- Test when part does not have final mark, optimization will just expand to all ranges
 
 SET use_skip_indexes = 1;
 SET use_skip_indexes_if_final = 1;

@@ -38,7 +38,6 @@ public:
     ~TestKeeper() override;
 
     bool isExpired() const override { return expired; }
-    silk::FiberEvent & getExpiredEvent() override;
     std::optional<int8_t> getConnectedNodeIdx() const override { return 0; }
     String getConnectedHostPort() const override { return "TestKeeper:0000"; }
     int64_t getConnectionXid() const override { return 0; }
@@ -69,12 +68,6 @@ public:
         const String & path,
         uint32_t get_children_recursive_nodes_limit,
         ListRecursiveCallback callback) override;
-
-    void listWithOptions(
-        const String & path,
-        const ListOptions & options,
-        ListWithOptionsCallback callback,
-        WatchCallbackPtrOrEventPtr watch) override;
 
     void exists(
         const String & path,
@@ -142,15 +135,6 @@ public:
 
     using Container = std::map<std::string, Node>;
 
-    /// The callbacks of a path's list requests with children stats or data, and their children filter: `ALL` if they differ.
-    struct ListWithDataWatch
-    {
-        WatchCallbacks callbacks;
-        ListRequestType filter = ListRequestType::ALL;
-    };
-
-    using ListWithDataWatches = std::map<String, ListWithDataWatch>;
-
 private:
     using clock = std::chrono::steady_clock;
 
@@ -174,8 +158,6 @@ private:
 
     Watches watches;
     Watches list_watches; /// Watches for 'list' request (watches on children).
-    /// Same for a 'list' request with children stats or data: also fires on a child's data change.
-    ListWithDataWatches list_with_data_watches;
 
     int64_t last_ttl_cleanup_ms = 0;
 

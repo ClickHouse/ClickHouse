@@ -29,7 +29,6 @@ public:
         QUERIES_DEFAULT,
         QUERIES_CUSTOM,
         CLOUD,
-        ICEBERG_REST_CATALOG,
         END
     };
 
@@ -54,8 +53,8 @@ public:
     static const char * serverTypeToString(Type type);
 
     /// Checks whether provided in the arguments type should be started or stopped based on current server type.
-    [[nodiscard]] bool shouldStart(Type server_type, const std::string & server_custom_name = "") const;
-    [[nodiscard]] bool shouldStop(const std::string & port_name) const;
+    bool shouldStart(Type server_type, const std::string & server_custom_name = "") const;
+    bool shouldStop(const std::string & port_name) const;
 
     Type type{};
     std::string custom_name;

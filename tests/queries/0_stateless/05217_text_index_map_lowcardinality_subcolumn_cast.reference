@@ -1,20 +1,5 @@
 -- the analyzer wraps the subcolumn into a cast to String
 1
--- keyValuePairs: the index prunes granules through the cast
-Granules: 2/2
-Name: idx
-Granules: 1/2
--- keyValuePairs: exact direct read replaces the predicate
-1
--- keyValuePairs: results match the scan
-idx	1
-idx	3
-scan	1
-scan	3
-idx	3
-scan	3
-idx	0
-idx	0
 -- mapValues: the index prunes granules through the cast
 Granules: 2/2
 Name: idx

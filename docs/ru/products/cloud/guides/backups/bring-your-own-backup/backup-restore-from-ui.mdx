@@ -7,8 +7,10 @@ doc_type: 'guide'
 keywords: ['резервные копии', 'аварийное восстановление', 'защита данных', 'восстановление', 'возможности Cloud']
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 <Note>
-  Автоматические резервные копии в ваш внешний бакет являются полными и независимыми. Они выполняются с той частотой и в то время начала, которые настроены для сервиса (по умолчанию каждые 24 часа). ClickHouse также каждые 24 часа создаёт отдельную резервную копию в бакете, управляемом ClickHouse; эта периодичность фиксирована.
+  Автоматические резервные копии в ваш внешний бакет выполняются как &quot;полные&quot; каждые 24 часа, и эту частоту нельзя изменить.
 </Note>
 
 <div id="AWS">
@@ -19,7 +21,9 @@ keywords: ['резервные копии', 'аварийное восстано
   ### Создание резервных копий в AWS
 </div>
 
-#### 1. Шаги, которые нужно выполнить в AWS {#aws-steps}
+<div id="aws-steps">
+  #### 1. Шаги, которые нужно выполнить в AWS
+</div>
 
 <Note>
   Эти шаги похожи на безопасную настройку S3, описанную в разделе [&quot;Безопасный доступ к данным в S3&quot;](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely), однако для разрешений роли также требуются дополнительные действия.
@@ -37,15 +41,7 @@ keywords: ['резервные копии', 'аварийное восстано
 
     * a. Получите ARN на странице настроек сервиса ClickHouse Cloud в разделе Network security information. Он выглядит примерно так:
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![AWS S3 ARN](/images/cloud/manage/backups/arn.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/manage/backups/arn.webp" alt="AWS S3 ARN" size="lg" />
 
     * b. Для этой роли создайте политику доверия следующим образом:
 
@@ -110,7 +106,9 @@ keywords: ['резервные копии', 'аварийное восстано
   </Step>
 </Steps>
 
-#### 2. Шаги, которые нужно выполнить в ClickHouse Cloud {#cloud-steps}
+<div id="cloud-steps">
+  #### 2. Шаги, которые нужно выполнить в ClickHouse Cloud
+</div>
 
 Чтобы настроить внешний бакет, выполните следующие шаги в консоли ClickHouse Cloud:
 
@@ -118,29 +116,13 @@ keywords: ['резервные копии', 'аварийное восстано
   <Step title="Change external backup" id="configure-external-bucket">
     На странице Settings нажмите Set up external backup:
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Change external backup](/images/cloud/manage/backups/change_external_backup.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Change external backup" size="lg" />
   </Step>
 
   <Step title="Настройка ARN роли AWS IAM и параметров S3 бакета" id="configure-aws-iam-role-arn-and-s3-bucket-details">
     На следующем экране укажите ARN только что созданной роли AWS IAM и URL S3 бакета в следующем формате:
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Настройка ARN роли AWS IAM и параметров S3 бакета](/images/cloud/manage/backups/configure_arn_s3_details.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/manage/backups/configure_arn_s3_details.webp" alt="Настройка ARN роли AWS IAM и параметров S3 бакета" size="lg" />
   </Step>
 
   <Step title="Сохранение изменений" id="save-changes">
@@ -150,28 +132,22 @@ keywords: ['резервные копии', 'аварийное восстано
   <Step title="Изменение стандартного расписания резервного копирования" id="changing-the-backup-schedule">
     Теперь внешние резервные копии будут создаваться в вашем бакете по расписанию по умолчанию.
     При необходимости вы можете изменить расписание резервного копирования на странице “Settings”.
-    Если задана другая конфигурация, пользовательское расписание и настройка срока хранения применяются
-    к резервным копиям, записываемым в ваш бакет. Для резервных копий в бакете, управляемом ClickHouse Cloud,
-    используются расписание по умолчанию (резервные копии каждые 24 часа) и политика хранения по умолчанию.
+    Если задано другое расписание, для записи резервных копий в ваш бакет будет использоваться пользовательское расписание,
+    а расписание по умолчанию (резервные копии каждые 24 часа) — для резервных копий в бакете,
+    принадлежащем ClickHouse Cloud.
   </Step>
 
   <Step title="Просмотр резервных копий, сохранённых в вашем бакете" id="view-backups-stored-in-your-bucket">
     На странице Backups эти резервные копии из вашего бакета будут отображаться в отдельной таблице,
     как показано ниже:
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Просмотр резервных копий, сохранённых в вашем бакете](/images/cloud/manage/backups/view_backups.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/manage/backups/view_backups.webp" alt="Просмотр резервных копий, сохранённых в вашем бакете" size="lg" />
   </Step>
 </Steps>
 
-### Восстановление резервных копий из AWS {#restoring-backups-from-aws}
+<div id="restoring-backups-from-aws">
+  ### Восстановление резервных копий из AWS
+</div>
 
 Следуйте приведённым ниже шагам, чтобы восстановить резервные копии из AWS:
 
@@ -191,15 +167,7 @@ keywords: ['резервные копии', 'аварийное восстано
     Нажмите ссылку “access or restore a backup” над списком резервных копий в
     интерфейсе, чтобы получить SQL-команду для восстановления резервной копии. Команда будет выглядеть так:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Получение SQL-команды для восстановления резервной копии](/images/cloud/manage/backups/backup_command.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/manage/backups/backup_command.webp" alt="Получение SQL-команды для восстановления резервной копии" size="md" />
 
     <Warning>
       **Перемещение резервных копий в другое место**
@@ -234,7 +202,9 @@ keywords: ['резервные копии', 'аварийное восстано
 
 Чтобы создать резервные копии в GCP, выполните следующие действия:
 
-#### Шаги в GCP {#gcp-steps-to-follow}
+<div id="gcp-steps-to-follow">
+  #### Шаги в GCP
+</div>
 
 <Steps>
   <Step title="Создайте бакет хранилища в GCP" id="create-a-gcp-storage-bucket">
@@ -263,7 +233,9 @@ keywords: ['резервные копии', 'аварийное восстано
   </Step>
 </Steps>
 
-#### Шаги в ClickHouse Cloud {#gcp-cloud-steps}
+<div id="gcp-cloud-steps">
+  #### Шаги в ClickHouse Cloud
+</div>
 
 Чтобы настроить внешний бакет, выполните следующие действия в консоли ClickHouse Cloud:
 
@@ -271,29 +243,13 @@ keywords: ['резервные копии', 'аварийное восстано
   <Step title="Change external backup" id="gcp-configure-external-bucket">
     На странице `Settings` нажмите `Change external backup`
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Change external backup](/images/cloud/manage/backups/change_external_backup.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Change external backup" size="lg" />
   </Step>
 
   <Step title="Настройка HMAC-ключа и секрета GCP" id="gcp-configure-gcp-hmac-key-and-secret">
     Во всплывающем окне укажите путь к бакету GCP, HMAC-ключ и Secret, созданные в предыдущем разделе.
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Настройка HMAC-ключа и секрета GCP](/images/cloud/manage/backups/gcp_configure.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/manage/backups/gcp_configure.webp" alt="Настройка HMAC-ключа и секрета GCP" size="md" />
   </Step>
 
   <Step title="Save External Bucket" id="gcp-save-external-bucket">
@@ -303,27 +259,21 @@ keywords: ['резервные копии', 'аварийное восстано
   <Step title="Изменение расписания резервного копирования по умолчанию" id="gcp-changing-the-backup-schedule">
     Теперь внешние резервные копии будут создаваться в вашем бакете по расписанию по умолчанию.
     При необходимости вы можете изменить расписание резервного копирования на странице `Settings`.
-    Если задана другая конфигурация, пользовательское расписание и настройка срока хранения применяются к
-    резервным копиям, записываемым в ваш бакет. Для резервных копий в бакете, управляемом ClickHouse Cloud,
-    используются расписание по умолчанию (резервные копии каждые 24 часа) и политика хранения по умолчанию.
+    Если задано другое расписание, резервные копии в ваш
+    бакет будут записываться по пользовательскому расписанию, а расписание по умолчанию (резервные копии каждые 24 часа) будет использоваться для резервных копий в
+    бакете ClickHouse Cloud.
   </Step>
 
-  <Step title="Просмотр резервных копий, сохранённых в вашем бакете" id="gcp-view-backups-stored-in-your-bucket">
+  <Step title="Просмотр резервных копий, хранящихся в вашем бакете" id="gcp-view-backups-stored-in-your-bucket">
     На странице Backups эти резервные копии из вашего бакета должны отображаться в отдельной таблице, как показано ниже:
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Просмотр резервных копий, сохранённых в вашем бакете](/images/cloud/manage/backups/gcp_stored_backups.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/manage/backups/gcp_stored_backups.webp" alt="Просмотр резервных копий, хранящихся в вашем бакете" size="lg" />
   </Step>
 </Steps>
 
-### Восстановление резервных копий из GCP {#gcp-restoring-backups-from-gcp}
+<div id="gcp-restoring-backups-from-gcp">
+  ### Восстановление резервных копий из GCP
+</div>
 
 Чтобы восстановить резервные копии из GCP, выполните следующие шаги:
 
@@ -338,15 +288,7 @@ keywords: ['резервные копии', 'аварийное восстано
     вы можете выбрать нужную резервную копию в раскрывающемся списке, чтобы получить команду восстановления
     именно для неё. В команду также потребуется добавить свой секретный ключ доступа:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Получение SQL-команды для восстановления резервной копии](/images/cloud/manage/backups/gcp_restore_command.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/manage/backups/gcp_restore_command.webp" alt="Получение SQL-команды для восстановления резервной копии" size="md" />
 
     <Warning>
       **Перемещение резервных копий в другое расположение**
@@ -381,7 +323,9 @@ keywords: ['резервные копии', 'аварийное восстано
 
 Чтобы создать резервные копии в Azure, выполните следующие действия:
 
-#### Действия в Azure {#steps-to-follow-in-azure}
+<div id="steps-to-follow-in-azure">
+  #### Действия в Azure
+</div>
 
 <Steps>
   <Step title="Создайте учетную запись хранилища" id="azure-create-a-storage-account">
@@ -395,7 +339,9 @@ keywords: ['резервные копии', 'аварийное восстано
   </Step>
 </Steps>
 
-#### Шаги в ClickHouse Cloud {#azure-cloud-steps}
+<div id="gcp-cloud-steps">
+  #### Шаги в ClickHouse Cloud
+</div>
 
 Чтобы настроить внешний бакет, выполните следующие действия в консоли ClickHouse Cloud:
 
@@ -403,30 +349,14 @@ keywords: ['резервные копии', 'аварийное восстано
   <Step title="Change external backup" id="azure-configure-external-bucket">
     На странице `Settings` нажмите `Change external backup`
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Change external backup](/images/cloud/manage/backups/change_external_backup.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Change external backup" size="lg" />
   </Step>
 
-  <Step title="Укажите строку подключения и имя контейнера для вашей учётной записи хранилища Azure" id="azure-provide-connection-string-and-container-name-azure">
-    На следующем экране укажите Connection String и Container Name для вашей
-    учётной записи хранилища Azure, созданной в предыдущем разделе:
+  <Step title="Укажите строку подключения и имя контейнера для вашего аккаунта хранилища Azure" id="azure-provide-connection-string-and-container-name-azure">
+    На следующем экране укажите Connection String и Container Name для вашего
+    аккаунта хранилища Azure, созданного в предыдущем разделе:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Укажите строку подключения и имя контейнера для вашей учётной записи хранилища Azure](/images/cloud/manage/backups/azure_connection_details.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/manage/backups/azure_connection_details.webp" alt="Укажите строку подключения и имя контейнера для вашего аккаунта хранилища Azure" size="md" />
   </Step>
 
   <Step title="Save External Bucket" id="azure-save-external-bucket">
@@ -435,29 +365,22 @@ keywords: ['резервные копии', 'аварийное восстано
 
   <Step title="Изменение расписания резервного копирования по сравнению с расписанием по умолчанию" id="azure-changing-the-backup-schedule">
     Теперь внешние резервные копии будут создаваться в вашем бакете по расписанию по умолчанию. Либо
-    вы можете настроить расписание резервного копирования на странице `Settings`. Если задана другая конфигурация,
-    пользовательское расписание и настройка срока хранения применяются к резервным копиям, записываемым в ваш бакет.
-    Для резервных копий в бакете, управляемом ClickHouse Cloud, используется расписание по умолчанию (резервные копии каждые
-    24 часа) и политика хранения по умолчанию.
+    вы можете настроить расписание резервного копирования на странице `Settings`. Если задано другое расписание,
+    для записи резервных копий в ваш бакет будет использоваться пользовательское расписание, а расписание по умолчанию
+    (резервные копии каждые 24 часа) — для резервных копий в бакете, управляемом ClickHouse Cloud.
   </Step>
 
   <Step title="Просмотр резервных копий, сохранённых в вашем бакете" id="azure-view-backups-stored-in-your-bucket">
     На странице Backups эти резервные копии из вашего бакета должны отображаться в отдельной таблице,
     как показано ниже:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Просмотр резервных копий, сохранённых в вашем бакете](/images/cloud/manage/backups/view_backups_azure.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/manage/backups/view_backups_azure.webp" alt="Просмотр резервных копий, сохранённых в вашем бакете" size="md" />
   </Step>
 </Steps>
 
-### Восстановление резервных копий из Azure {#azure-restore-steps}
+<div id="azure-restore-steps">
+  ### Восстановление резервных копий из Azure
+</div>
 
 Чтобы восстановить резервные копии из Azure, выполните следующие действия:
 
@@ -474,15 +397,7 @@ keywords: ['резервные копии', 'аварийное восстано
     команду восстановления именно для нее. В команду нужно будет добавить строку подключения
     к вашей учетной записи хранилища Azure.
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Восстановление резервных копий в Azure](/images/cloud/manage/backups/restore_backups_azure.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/manage/backups/restore_backups_azure.webp" alt="Восстановление резервных копий в Azure" size="md" />
 
     <Warning>
       **Перемещение резервных копий в другое место**

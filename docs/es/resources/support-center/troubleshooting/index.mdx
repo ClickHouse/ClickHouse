@@ -22,12 +22,13 @@ description: 'Encuentre soluciones para los problemas más comunes de ClickHouse
 
 ¿Tiene problemas con ClickHouse? Aquí encontrará soluciones a los problemas más comunes.
 
-## Rendimiento y errores {#performance-and-errors}
+<div id="performance-and-errors">
+  ## Rendimiento y errores
+</div>
 
 Consultas lentas, timeouts o mensajes de error específicos como &quot;Memory limit exceeded&quot; o &quot;Connection refused.&quot;
 
 <Accordion title="Mostrar soluciones para rendimiento y errores">
-  <a id="query-performance" />
   ### Rendimiento de las consultas
 
   * [Identifica qué consultas usan más recursos](/es/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries)
@@ -37,7 +38,6 @@ Consultas lentas, timeouts o mensajes de error específicos como &quot;Memory li
 
   <br />
 
-  <a id="data-insertion-performance" />
   ### Rendimiento de la inserción de datos
 
   * [Acelera la inserción de datos](/es/concepts/features/operations/insert/bulkinserts)
@@ -45,7 +45,6 @@ Consultas lentas, timeouts o mensajes de error específicos como &quot;Memory li
 
   <br />
 
-  <a id="advanced-analysis-tools" />
   ### Herramientas avanzadas de análisis
 
   {/* - [Profile with LLVM XRay](/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray) */}
@@ -55,7 +54,6 @@ Consultas lentas, timeouts o mensajes de error específicos como &quot;Memory li
 
   <br />
 
-  <a id="error-messages" />
   ### Mensajes de error
 
   * **&quot;Memory limit exceeded&quot;** → [Depura errores por límite de memoria](/es/concepts/features/performance/troubleshoot/debugging-memory-issues)
@@ -67,12 +65,13 @@ Consultas lentas, timeouts o mensajes de error específicos como &quot;Memory li
   * **&quot;Other issues&quot;** → [Rastrea errores en todo tu clúster](/es/reference/system-tables/errors)
 </Accordion>
 
-## Memoria y recursos {#memory-and-resources}
+<div id="memory-and-resources">
+  ## Memoria y recursos
+</div>
 
 Si tienes un uso elevado de memoria, errores por falta de memoria o necesitas ayuda para dimensionar tu implementación de ClickHouse.
 
 <Accordion title="Mostrar soluciones para memoria">
-  <a id="memory-debugging-and-monitoring" />
   ### Depuración y supervisión de memoria:
 
   * [Identifica qué está usando memoria](/es/concepts/features/performance/troubleshoot/debugging-memory-issues)
@@ -82,7 +81,6 @@ Si tienes un uso elevado de memoria, errores por falta de memoria o necesitas ay
 
   <br />
 
-  <a id="memory-configuration" />
   ### Configuración de memoria:
 
   * [Configura los límites de memoria](/es/concepts/features/configuration/settings/memory-overcommit)
@@ -91,19 +89,19 @@ Si tienes un uso elevado de memoria, errores por falta de memoria o necesitas ay
 
   <br />
 
-  <a id="scaling-and-sizing" />
   ### Escalado y dimensionamiento:
 
   * [Dimensiona correctamente tu servicio](/es/guides/oss/best-practices/tips)
   * [Configura el escalado automático](/es/products/cloud/features/autoscaling/overview)
 </Accordion>
 
-## Conexiones y autenticación {#connections-and-authentication}
+<div id="connections-and-authentication">
+  ## Conexiones y autenticación
+</div>
 
 No se puede conectar a ClickHouse, hay errores de autenticación, errores de certificado SSL o problemas de configuración del cliente.
 
 <Accordion title="Mostrar soluciones de conexión">
-  <a id="basic-connection-issues" />
   ### Problemas básicos de conexión
 
   * [Solucionar problemas de la interfaz HTTP](/es/concepts/features/interfaces/http)
@@ -112,7 +110,6 @@ No se puede conectar a ClickHouse, hay errores de autenticación, errores de cer
 
   <br />
 
-  <a id="client-interfaces" />
   ### Interfaces de cliente
 
   * [Clientes nativos de ClickHouse](/es/concepts/features/interfaces/native-clients-interfaces-index)
@@ -123,19 +120,19 @@ No se puede conectar a ClickHouse, hay errores de autenticación, errores de cer
 
   <br />
 
-  <a id="network-and-data" />
   ### Red y datos
 
   * [Configuración de seguridad de red](/es/reference/settings/server-settings/settings)
   * [Problemas al analizar formatos de datos](/es/reference/formats/index)
 </Accordion>
 
-## Instalación y configuración {#setup-and-configuration}
+<div id="setup-and-configuration">
+  ## Instalación y configuración
+</div>
 
 Instalación inicial, configuración del servidor, creación de bases de datos, problemas de ingestión de datos o configuración de la replicación.
 
 <Accordion title="Mostrar soluciones de instalación y configuración">
-  <a id="initial-setup" />
   ### Configuración inicial
 
   * [Configurar los ajustes del servidor](/es/reference/settings/server-settings/settings)
@@ -144,7 +141,6 @@ Instalación inicial, configuración del servidor, creación de bases de datos, 
 
   <br />
 
-  <a id="database-management" />
   ### Gestión de bases de datos
 
   * [Crear y gestionar bases de datos](/es/reference/statements/create/database)
@@ -154,7 +150,6 @@ Instalación inicial, configuración del servidor, creación de bases de datos, 
 
   <br />
 
-  <a id="data-operations" />
   ### Operaciones de datos
 
   * [Optimizar la inserción masiva de datos](/es/concepts/features/operations/insert/bulkinserts)
@@ -164,7 +159,6 @@ Instalación inicial, configuración del servidor, creación de bases de datos, 
 
   <br />
 
-  <a id="advanced-configuration" />
   ### Configuración avanzada
 
   * [Configurar la replicación de datos](/es/reference/engines/table-engines/mergetree-family/replication)
@@ -176,11 +170,13 @@ Instalación inicial, configuración del servidor, creación de bases de datos, 
   * [Configurar la supervisión](/es/reference/system-tables/overview)
 </Accordion>
 
-## ¿Aún necesitas ayuda? {#still-need-help}
+<div id="still-need-help">
+  ## ¿Aún necesitas ayuda?
+</div>
 
 Si no encuentras una solución:
 
-1. **Pregúntale a la IA** - <button type="button" data-docs-ai-entry="troubleshooting" onClick={() => { if (typeof window !== 'undefined' && window.Kapa && typeof window.Kapa.open === 'function') window.Kapa.open({ mode: 'ai' }); }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>Pregúntale a la IA</button> para obtener respuestas al instante.
+1. **Pregúntale a la IA** - <button type="button" onClick={() => { if (typeof window !== 'undefined' && window.Kapa && typeof window.Kapa.open === 'function') window.Kapa.open({ mode: 'ai' }); }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>Pregúntale a la IA</button> para obtener respuestas al instante.
 2. **Consulta las tablas del sistema** - [Descripción general](/es/reference/system-tables/overview)
 3. **Revisa los registros del servidor** - Busca mensajes de error en los logs de ClickHouse
 4. **Pregunta a la comunidad** - [Únete a nuestro Slack de la comunidad](https://clickhouse.com/slack), [Debates de GitHub](https://github.com/ClickHouse/ClickHouse/discussions)

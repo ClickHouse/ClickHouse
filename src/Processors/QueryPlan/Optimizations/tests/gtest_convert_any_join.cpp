@@ -33,16 +33,15 @@ public:
         : types(std::move(types_))
     {}
 
-    [[nodiscard]] SetPtr get() const override
+    SetPtr get() const override
     {
         return nullptr;
     }
 
-    [[nodiscard]] DataTypes getTypes() const override { return types; }
+    DataTypes getTypes() const override { return types; }
     SetPtr buildOrderedSetInplace(const ContextPtr &) override { return nullptr; }
-    [[nodiscard]] Hash getHash() const override { return Hash{0, 0}; }
-    [[nodiscard]] ASTPtr getSourceAST() const override { return nullptr; }
-    [[nodiscard]] bool isMutableDuringQuery() const override { return false; }
+    Hash getHash() const override { return Hash{0, 0}; }
+    ASTPtr getSourceAST() const override { return nullptr; }
 
 private:
     DataTypes types;
@@ -58,17 +57,17 @@ public:
         return std::make_shared<FunctionTestNotReadySetProbe>();
     }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
-    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool isSuitableForConstantFolding() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         g_test_not_ready_set_probe_triggered = true;
         return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));

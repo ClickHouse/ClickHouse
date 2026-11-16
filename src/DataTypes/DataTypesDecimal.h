@@ -42,16 +42,16 @@ public:
 
     static constexpr auto family_name = "Decimal";
 
-    [[nodiscard]] const char * getFamilyName() const override { return family_name; }
+    const char * getFamilyName() const override { return family_name; }
 
-    [[nodiscard]] std::string doGetName() const override;
-    [[nodiscard]] TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }
-    [[nodiscard]] bool canBePromoted() const override { return true; }
-    [[nodiscard]] DataTypePtr promoteNumericType() const override;
+    std::string doGetName() const override;
+    TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }
+    bool canBePromoted() const override { return true; }
+    DataTypePtr promoteNumericType() const override;
 
-    [[nodiscard]] bool equals(const IDataType & rhs) const override;
+    bool equals(const IDataType & rhs) const override;
     T parseFromString(const String & str) const;
-    [[nodiscard]] SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override;
 };
 
 using DataTypeDecimal32 = DataTypeDecimal<Decimal32>;

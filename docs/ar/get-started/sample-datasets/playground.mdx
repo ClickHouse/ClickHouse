@@ -10,9 +10,11 @@ doc_type: 'guide'
 يتيح [ClickHouse Playground](https://sql.clickhouse.com) للمستخدمين تجربة ClickHouse عبر تشغيل الاستعلامات فورًا، من دون إعداد الخادم أو العنقود الخاص بهم.
 تتوفر عدة مجموعات بيانات تجريبية في Playground.
 
-يمكنك إرسال استعلامات إلى Playground باستخدام أي عميل HTTP، مثل [curl](https://curl.haxx.se) أو [wget](https://www.gnu.org/software/wget/)، أو إعداد اتصال باستخدام برامج تشغيل [JDBC](/ar/integrations/language-clients/java/jdbc) أو [ODBC](/ar/concepts/features/interfaces/odbc). تتوفر [هنا](/ar/integrations/home) مزيد من المعلومات حول المنتجات البرمجية التي تدعم ClickHouse.
+يمكنك إرسال استعلامات إلى Playground باستخدام أي عميل HTTP، مثل [curl](https://curl.haxx.se) أو [wget](https://www.gnu.org/software/wget/)، أو إعداد اتصال باستخدام برامج تشغيل [JDBC](/ar/concepts/features/interfaces/jdbc) أو [ODBC](/ar/concepts/features/interfaces/odbc). تتوفر [هنا](/ar/integrations/home) مزيد من المعلومات حول المنتجات البرمجية التي تدعم ClickHouse.
 
-## بيانات الاعتماد {#credentials}
+<div id="credentials">
+  ## بيانات الاعتماد
+</div>
 
 | المعلمة                | القيمة                             |
 | :--------------------- | :--------------------------------- |
@@ -21,18 +23,20 @@ doc_type: 'guide'
 | المستخدم               | `explorer` أو `play`               |
 | كلمة المرور            | (فارغة)                            |
 
-## القيود {#limitations}
+<div id="limitations">
+  ## القيود
+</div>
 
-تُنفَّذ الاستعلامات بحساب مستخدم للقراءة فقط، لذا تسري القيود التالية:
+تُنفَّذ الاستعلامات باستخدام مستخدم بصلاحية القراءة فقط، وهذا يفرض بعض القيود:
 
-* لا يُسمح باستعلامات DDL
-* لا يُسمح باستعلامات INSERT
+* استعلامات DDL غير مسموح بها
+* استعلامات INSERT غير مسموح بها
 
-تخضع الخدمة أيضًا لحصص استخدام.
+وتُطبَّق أيضًا quotas على استخدام الخدمة.
 
-لتجاوز قيود القراءة فقط وتجربة تحميل بياناتك، يمكنك التسجيل للحصول على [فترة تجريبية مجانية من ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-playground) أو [تثبيت ClickHouse](/ar/get-started/setup/install) محليًا.
-
-## أمثلة {#examples}
+<div id="examples">
+  ## أمثلة
+</div>
 
 مثال على نقطة نهاية HTTPS باستخدام `curl`:
 
@@ -40,13 +44,15 @@ doc_type: 'guide'
 curl "https://play.clickhouse.com/?user=explorer" --data-binary "SELECT 'Play ClickHouse'"
 ```
 
-مثال على نقطة نهاية TCP باستخدام [عميل ClickHouse](/ar/concepts/features/interfaces/client):
+مثال على نقطة نهاية TCP باستخدام [CLI](/ar/concepts/features/interfaces/cli):
 
 ```bash
 clickhouse client --secure --host play.clickhouse.com --user explorer
 ```
 
-## مواصفات ClickHouse Playground {#specifications}
+<div id="specifications">
+  ## مواصفات ClickHouse Playground
+</div>
 
 يعمل ClickHouse Playground لدينا بالمواصفات التالية:
 

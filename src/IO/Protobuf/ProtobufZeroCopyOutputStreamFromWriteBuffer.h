@@ -25,7 +25,7 @@ public:
     void BackUp(int count) override;
 
     // Returns the total number of bytes written since this object was created.
-    [[nodiscard]] int64_t ByteCount() const override;
+    int64_t ByteCount() const override;
 
     void finalize();
 

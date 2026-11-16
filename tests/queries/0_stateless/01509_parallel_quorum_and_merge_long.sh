@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database, no-shared-merge-tree
+# Tags: long, no-replicated-database
 # Tag no-replicated-database: Fails due to additional replicas or shards
-# no-shared-merge-tree: depend on download part
-
 
 set -e
 

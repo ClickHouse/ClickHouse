@@ -1,8 +1,0 @@
---- the cluster result matches the single-node result, with and without pruning
-1	1
-1	1
-1	1
---- data files opened: all 5 without pruning, exactly 1 with pruning
-cluster_no_pruning	5
-cluster_pruning	1
-single_pruning	1

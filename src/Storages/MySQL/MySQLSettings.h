@@ -40,7 +40,7 @@ struct MySQLSettings
 
     MYSQL_SETTINGS_SUPPORTED_TYPES(MySQLSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    [[nodiscard]] VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
+    VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
 
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromQuery(const ASTSetQuery & settings_def);

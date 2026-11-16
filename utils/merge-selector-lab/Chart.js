@@ -263,7 +263,7 @@ export class Chart {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chart Module Example</title>
     <script type="module" src="chart.js"></script>
-    <script src="vendor/d3.min.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
 </head>
 <body>
     <div id="chart-container"></div>

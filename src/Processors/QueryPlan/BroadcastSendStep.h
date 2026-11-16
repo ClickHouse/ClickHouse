@@ -17,20 +17,16 @@ public:
     {
         chassert(num_buckets > 0);
         updateInputHeaders({std::move(input_header_)});
-        /// The exchange name in `EXPLAIN`, to join the step with the exchanges of the query fragments.
-        setStepDescription(exchange_id, exchange_id.size());
     }
 
-    [[nodiscard]] String getName() const override { return "BroadcastSend"; }
+    String getName() const override { return "BroadcastSend"; }
 
-    [[nodiscard]] const String & getExchangeId() const { return exchange_id; }
-
-    [[nodiscard]] bool hasOutputStream() const { return false; }
+    bool hasOutputStream() const { return false; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
     void serialize(Serialization & ctx) const override;
-    [[nodiscard]] bool isSerializable() const override { return true; }
+    bool isSerializable() const override { return true; }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 

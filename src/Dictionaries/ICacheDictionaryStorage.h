@@ -26,14 +26,14 @@ struct KeyState
         : state(state_)
     {}
 
-    [[nodiscard]] bool isFound() const { return state == State::found; }
-    [[nodiscard]] bool isExpired() const { return state == State::expired; }
-    [[nodiscard]] bool isNotFound() const { return state == State::not_found; }
-    [[nodiscard]] bool isDefault() const { return is_default; }
+    bool isFound() const { return state == State::found; }
+    bool isExpired() const { return state == State::expired; }
+    bool isNotFound() const { return state == State::not_found; }
+    bool isDefault() const { return is_default; }
     void setDefault() { is_default = true; }
     void setDefaultValue(bool is_default_value) { is_default = is_default_value; }
     /// Valid only if keyState is found or expired
-    [[nodiscard]] size_t getFetchedColumnIndex() const { return fetched_column_index; }
+    size_t getFetchedColumnIndex() const { return fetched_column_index; }
     void setFetchedColumnIndex(size_t fetched_column_index_value) { fetched_column_index = fetched_column_index_value; }
 private:
     State state = not_found;
@@ -70,13 +70,13 @@ public:
     virtual ~ICacheDictionaryStorage() = default;
 
     /// Necessary if all keys are found we can return result to client without additional aggregation
-    [[nodiscard]] virtual bool returnsFetchedColumnsInOrderOfRequestedKeys() const = 0;
+    virtual bool returnsFetchedColumnsInOrderOfRequestedKeys() const = 0;
 
     /// Name of storage
-    [[nodiscard]] virtual String getName() const = 0;
+    virtual String getName() const = 0;
 
     /// Does storage support simple keys
-    [[nodiscard]] virtual bool supportsSimpleKeys() const = 0;
+    virtual bool supportsSimpleKeys() const = 0;
 
     /// Fetch columns for keys, this method is not write thread safe
     virtual SimpleKeysStorageFetchResult fetchColumnsForKeys(
@@ -91,10 +91,10 @@ public:
     virtual void insertDefaultKeys(const PaddedPODArray<UInt64> & keys) = 0;
 
     /// Return cached simple keys
-    [[nodiscard]] virtual PaddedPODArray<UInt64> getCachedSimpleKeys() const = 0;
+    virtual PaddedPODArray<UInt64> getCachedSimpleKeys() const = 0;
 
     /// Does storage support complex keys
-    [[nodiscard]] virtual bool supportsComplexKeys() const = 0;
+    virtual bool supportsComplexKeys() const = 0;
 
     /// Fetch columns for keys, this method is not write thread safe
     virtual ComplexKeysStorageFetchResult fetchColumnsForKeys(
@@ -110,16 +110,16 @@ public:
 
     /// Return cached complex keys.
     /// It is client responsibility to ensure keys proper lifetime.
-    [[nodiscard]] virtual PaddedPODArray<std::string_view> getCachedComplexKeys() const = 0;
+    virtual PaddedPODArray<std::string_view> getCachedComplexKeys() const = 0;
 
     /// Return size of keys in storage
-    [[nodiscard]] virtual size_t getSize() const = 0;
+    virtual size_t getSize() const = 0;
 
     /// Returns storage load factor
-    [[nodiscard]] virtual double getLoadFactor() const = 0;
+    virtual double getLoadFactor() const = 0;
 
     /// Return bytes allocated in storage
-    [[nodiscard]] virtual size_t getBytesAllocated() const = 0;
+    virtual size_t getBytesAllocated() const = 0;
 
 };
 

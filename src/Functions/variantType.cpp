@@ -29,33 +29,14 @@ public:
     static constexpr auto enum_name_for_null = "None";
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionVariantType>(); }
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// Documentation-only — the result Enum8 is built dynamically from the
-    /// variant's type-name list, so the exact set of enum values varies.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(Variant) -> Enum8";
-    }
-
-    /// The signature is documentation-only because the Enum8 members are
-    /// derived from the Variant alternatives. Route the types-only path to the
-    /// same resolver instead of attempting to construct a bare Enum8.
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-        return getReturnTypeImpl(columns);
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"variant", isVariant, nullptr, "Variant"}
@@ -73,7 +54,7 @@ public:
         return std::make_shared<DataTypeEnum<Int8>>(enum_values);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnVariant * variant_column = checkAndGetColumn<ColumnVariant>(arguments[0].column.get());
         if (!variant_column)

@@ -75,14 +75,14 @@ template <size_t MaxNumHints = 1>
 class IHints
 {
 public:
-    [[nodiscard]] virtual VectorWithMemoryTracking<String> getAllRegisteredNames() const = 0;
+    virtual VectorWithMemoryTracking<String> getAllRegisteredNames() const = 0;
 
-    [[nodiscard]] VectorWithMemoryTracking<String> getHints(const String & name) const
+    VectorWithMemoryTracking<String> getHints(const String & name) const
     {
         return prompter.getHints(name, getAllRegisteredNames());
     }
 
-    [[nodiscard]] VectorWithMemoryTracking<String> getHints(const String & name, const VectorWithMemoryTracking<String> & prompting_strings) const
+    VectorWithMemoryTracking<String> getHints(const String & name, const VectorWithMemoryTracking<String> & prompting_strings) const
     {
         return prompter.getHints(name, prompting_strings);
     }
@@ -93,7 +93,7 @@ public:
         DB::appendHintsMessage(error_message, hints);
     }
 
-    [[nodiscard]] String getHintsMessage(const String & name) const
+    String getHintsMessage(const String & name) const
     {
         return getHintsErrorMessageSuffix(getHints(name));
     }

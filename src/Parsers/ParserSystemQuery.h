@@ -8,11 +8,8 @@ namespace DB
 
 class ParserSystemQuery : public IParserBase
 {
-public:
-    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
-
 protected:
-    [[nodiscard]] const char * getName() const override { return "SYSTEM query"; }
+    const char * getName() const override { return "SYSTEM query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

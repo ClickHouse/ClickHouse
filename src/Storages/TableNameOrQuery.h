@@ -29,16 +29,16 @@ public:
     TableNameOrQuery() : type(Type::TABLE) {}
     TableNameOrQuery(Type type_, const String & target_) : type(type_), target(target_) {}
 
-    [[nodiscard]] Type getType() const { return type; }
+    Type getType() const { return type; }
 
-    [[nodiscard]] const String & getTableName() const;
-    [[nodiscard]] const String & getQuery() const;
+    const String & getTableName() const;
+    const String & getQuery() const;
 
-    [[nodiscard]] bool isTable() const { return type == Type::TABLE; }
-    [[nodiscard]] bool isQuery() const { return type == Type::QUERY; }
+    bool isTable() const { return type == Type::TABLE; }
+    bool isQuery() const { return type == Type::QUERY; }
 
     /// Human-readable representation for error messages and logging.
-    [[nodiscard]] String format() const;
+    String format() const;
 
 private:
     Type type;
@@ -53,23 +53,14 @@ private:
   *
   * The subquery form is parsed by the ClickHouse parser and re-serialized before being sent to the external
   * database, so it is formatted with the external database's identifier-quoting and string-literal-escaping
-  * style (e.g. double quotes for PostgreSQL, backticks for MySQL/SQLite). Syntax that cannot be represented as
+  * style (e.g. double quotes for PostgreSQL/SQLite, backticks for MySQL). Syntax that cannot be represented as
   * ClickHouse SQL must use the `query('...')` form instead, which is passed through verbatim.
-  *
-  * The round trip through the ClickHouse parser also loses the information of whether an identifier was
-  * quoted: `"Foo"` and `Foo` parse to the same identifier. For an external database that folds unquoted
-  * identifiers (PostgreSQL), a mixed-case name is therefore always emitted unquoted and ends up folded, so a
-  * source that has to address a case-sensitive mixed-case object must use the `query('...')` form too.
   */
 std::optional<String> tryGetExternalDatabaseQuery(
     const ASTPtr & argument,
     const ContextPtr & context,
     IdentifierQuotingStyle identifier_quoting_style,
-    LiteralEscapingStyle literal_escaping_style,
-    IdentifierQuotingRule identifier_quoting_rule = IdentifierQuotingRule::WhenNecessary);
-
-/// Returns the evaluated string argument of a `query('...')` call, or std::nullopt if the argument is not such a call.
-std::optional<String> tryGetQueryFunctionArgument(const ASTPtr & argument, const ContextPtr & context);
+    LiteralEscapingStyle literal_escaping_style);
 
 /** Build `SELECT <columns> FROM (<query>) AS __subquery`, projecting the requested columns from the result
   * of a user-provided query. Identifiers are quoted according to the given style of the external database.

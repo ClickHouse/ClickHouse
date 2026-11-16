@@ -45,7 +45,7 @@ FROM
                 k,
                 contingencyTupleIfState((b_any, c_any), (c_any, d_any), b_any != 1) OVER w AS s_tuple_if,
                 contingencyTupleArrayState([(b_any, c_any)], [(c_any, d_any)]) OVER w AS s_tuple_array,
-                contingencyMergeMapState(s0, k % 3) OVER w AS s_merge_map,
+                contingencyMergeMapState(map(k % 3, s0)) OVER w AS s_merge_map,
                 contingencyMergeForEachState(if(k % 2 = 0, [s0], [s0, s1])) OVER w AS s_merge_for_each
             FROM
             (
@@ -63,7 +63,7 @@ SELECT '-- whole partition: window merges of window states, then the plain aggre
 SELECT DISTINCT p, round((contingencyMergeMapMerge(s) OVER (PARTITION BY p))[0], 6)
 FROM
 (
-    SELECT p, contingencyMergeMapState(s0, 0) OVER (PARTITION BY p) AS s
+    SELECT p, contingencyMergeMapState(map(0, s0)) OVER (PARTITION BY p) AS s
     FROM (SELECT p, k, contingencyState(b, c) AS s0 FROM t_crosstab_window_wrapped GROUP BY p, k)
 )
 ORDER BY p;

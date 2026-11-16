@@ -45,18 +45,11 @@ public:
         return std::make_shared<FunctionAiClassify>(context_);
     }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    String getName() const override { return name; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return
-            "(const String, Nullable(String), const Array(String), [const Number]) -> Nullable(String)"
-            " OR (const String, String, const Array(String), [const Number]) -> String";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
@@ -66,6 +59,7 @@ public:
             {"params", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringToStringMap), &isColumnConst, "const Map(String, String)"},
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
         return wrapReturnTypeForNullablePrompt(arguments, 0, std::make_shared<DataTypeString>());
     }
 
@@ -73,7 +67,7 @@ private:
     static constexpr float default_temp = 0.0f;
     static constexpr size_t categories_arg_index = 1;
 
-    [[nodiscard]] AIParamSpecs functionParams() const override
+    AIParamSpecs functionParams() const override
     {
         return {{"temperature", AIParamKind::Float, Field(static_cast<Float64>(default_temp))}};
     }
@@ -88,7 +82,7 @@ private:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "aiClassify: 'categories' must contain at least one label");
     }
 
-    [[nodiscard]] String buildSystemPrompt(const ColumnsWithTypeAndName & arguments, const AIParams &) const override
+    String buildSystemPrompt(const ColumnsWithTypeAndName & arguments, const AIParams &) const override
     {
         const auto & col_categories = assert_cast<const ColumnConst &>(*arguments[categories_arg_index].column);
         auto categories = (*col_categories.getDataColumnPtr())[0].safeGet<Array>();
@@ -108,7 +102,7 @@ private:
             + ". Respond with ONLY the category label, nothing else.";
     }
 
-    [[nodiscard]] String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
+    String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
     {
         return String(arguments[0].column->getDataAt(row));
     }
@@ -130,7 +124,7 @@ private:
     ///       }
     ///     }
     ///   }
-    [[nodiscard]] Poco::JSON::Object::Ptr buildResponseFormat(const ColumnsWithTypeAndName & arguments) const override
+    Poco::JSON::Object::Ptr buildResponseFormat(const ColumnsWithTypeAndName & arguments) const override
     {
         Poco::JSON::Array::Ptr enum_array = new Poco::JSON::Array;
 
@@ -170,7 +164,7 @@ private:
     /// practice the response parses as an object with a `category` key. Anything else (model ignored the schema,
     /// returned a bare label, or returned truncated/invalid JSON) falls through to `raw_response`. Parse errors are
     /// swallowed on purpose — the user will see the output anyway.
-    [[nodiscard]] String postProcessResponse(const String & raw_response) const override
+    String postProcessResponse(const String & raw_response) const override
     {
         if (raw_response.empty() || raw_response.front() != '{')
             return raw_response;

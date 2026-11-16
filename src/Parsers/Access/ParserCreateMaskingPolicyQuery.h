@@ -12,10 +12,8 @@ class ParserCreateMaskingPolicy : public IParserBase
 public:
     void useAttachMode(bool attach_mode_ = true) { attach_mode = attach_mode_; }
 
-    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
-
 protected:
-    [[nodiscard]] const char * getName() const override { return "CREATE MASKING POLICY or ALTER MASKING POLICY query"; }
+    const char * getName() const override { return "CREATE MASKING POLICY or ALTER MASKING POLICY query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 private:

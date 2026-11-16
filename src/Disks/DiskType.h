@@ -53,15 +53,12 @@ struct DataSourceDescription
     String zookeeper_name;
 
     bool operator==(const DataSourceDescription & other) const;
-    [[nodiscard]] bool sameKind(const DataSourceDescription & other) const;
+    bool sameKind(const DataSourceDescription & other) const;
 
-    [[nodiscard]] String name() const;
+    String name() const;
 
     /// Returns a string with the name and all the fields of the DataSourceDescription
-    [[nodiscard]] String toString() const;
+    String toString() const;
 };
-
-class IDisk;
-bool isDiskObjectStorage(std::shared_ptr<const IDisk> disk);
 
 }

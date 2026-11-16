@@ -9,7 +9,9 @@ doc_type: 'guide'
 
 Ce document présente un aperçu des concepts clés et des cas d’utilisation du ClickHouse Operator.
 
-## Qu’est-ce que le ClickHouse Operator {#what-is-the-clickhouse-operator}
+<div id="what-is-the-clickhouse-operator">
+  ## Qu’est-ce que le ClickHouse Operator
+</div>
 
 Le ClickHouse Operator est un opérateur Kubernetes qui automatise le déploiement et la gestion des clusters ClickHouse sur Kubernetes. Reposant sur le modèle Operator, il étend l’API Kubernetes avec des ressources personnalisées représentant les clusters ClickHouse et leurs dépendances.
 
@@ -22,11 +24,15 @@ L’opérateur prend en charge :
 * Les mises à jour progressives et les mises à niveau
 * Le provisionnement du stockage
 
-## Ressources personnalisées {#custom-resources}
+<div id="custom-resources">
+  ## Ressources personnalisées
+</div>
 
 L’opérateur fournit deux principales définitions de ressources personnalisées (CRD) :
 
-### ClickHouseCluster {#clickhousecluster}
+<div id="clickhousecluster">
+  ### ClickHouseCluster
+</div>
 
 Représente un cluster ClickHouse avec des répliques et des shards configurables.
 
@@ -46,7 +52,9 @@ spec:
         storage: 100Gi
 ```
 
-### KeeperCluster {#keepercluster}
+<div id="keepercluster">
+  ### KeeperCluster
+</div>
 
 Représente un cluster ClickHouse Keeper pour la coordination distribuée (en remplacement de ZooKeeper).
 
@@ -63,33 +71,35 @@ spec:
         storage: 10Gi
 ```
 
-## Coordination {#coordination}
+<div id="coordination">
+  ## Coordination
+</div>
 
-### ClickHouse Keeper est requis {#clickhouse-keeper-is-required}
+<div id="clickhouse-keeper-is-required">
+  ### ClickHouse Keeper est requis
+</div>
 
 Chaque ClickHouseCluster nécessite un cluster ClickHouse Keeper pour assurer la coordination distribuée.
-Référencez un KeeperCluster géré par l’opérateur dans la spécification du ClickHouseCluster à l’aide de `keeperClusterRef`. Par défaut, l’opérateur recherche dans l’espace de noms du ClickHouseCluster, mais vous pouvez également définir `keeperClusterRef.namespace` pour pointer vers un KeeperCluster dans un autre espace de noms surveillé.
-Pour utiliser un ensemble Keeper qui n’est pas géré par l’opérateur, indiquez plutôt la liste de ses serveurs dans `externalKeeper`. Consultez [Keeper géré en externe](/fr/products/kubernetes-operator/guides/configuration#external-keeper).
+Le cluster Keeper doit être référencé dans la spécification du ClickHouseCluster à l’aide de `keeperClusterRef`. Par défaut, l’opérateur recherche dans l’espace de noms du ClickHouseCluster, mais vous pouvez également définir `keeperClusterRef.namespace` pour pointer vers un KeeperCluster dans un autre espace de noms surveillé.
 
-### Relation un à un avec Keeper {#one-to-one-keeper-relationship}
+<div id="one-to-one-keeper-relationship">
+  ### Relation un à un avec Keeper
+</div>
 
-Par défaut, chaque ClickHouseCluster nécessite son propre KeeperCluster dédié.
+Chaque ClickHouseCluster doit disposer de son propre KeeperCluster dédié. Vous ne pouvez pas partager un même KeeperCluster entre plusieurs ClickHouseClusters.
 
-**Pourquoi ?** L’opérateur génère automatiquement une clé d’authentification unique pour chaque ClickHouseCluster afin d’accéder à son Keeper. Cette clé est stockée dans un Secret.
+**Pourquoi ?** L’opérateur génère automatiquement une clé d’authentification unique pour chaque ClickHouseCluster afin d’accéder à son Keeper. Cette clé est stockée dans un Secret et ne peut pas être partagée.
 
-**Conséquences** :
+**Conséquences** :
 
-* Plusieurs ClickHouseClusters ne peuvent pas référencer le même KeeperCluster sans la configuration décrite ci-dessous
+* Plusieurs ClickHouseClusters ne peuvent pas référencer le même KeeperCluster
 * Recréer un ClickHouseCluster implique de recréer son KeeperCluster
-
-Pour partager un même cluster Keeper, définissez un `zookeeper.root` distinct dans `settings.extraConfig` pour chaque ClickHouseCluster,
-et créez ce znode avant le démarrage de ClickHouse. Consultez [Keeper géré en externe](/fr/products/kubernetes-operator/guides/configuration#external-keeper).
 
 <Note>
   Les volumes persistants ne sont pas supprimés automatiquement lorsque les ressources ClickHouseCluster ou KeeperCluster sont supprimées.
 </Note>
 
-Lors de la recréation d’un cluster :
+Lors de la recréation d’un cluster :
 
 1. Supprimez la ressource ClickHouseCluster
 2. Supprimez la ressource KeeperCluster
@@ -99,11 +109,15 @@ Lors de la recréation d’un cluster :
 
 Pour éviter les erreurs d’authentification, supprimez manuellement les volumes persistants ou recréez les deux clusters ensemble avec un stockage neuf.
 
-## Réplication du schéma {#schema-replication}
+<div id="schema-replication">
+  ## Réplication du schéma
+</div>
 
 Le ClickHouse Operator réplique automatiquement les définitions de bases de données sur toutes les répliques d’un cluster.
 
-### Ce qui est répliqué {#what-gets-replicated}
+<div id="what-gets-replicated">
+  ### Ce qui est répliqué
+</div>
 
 L’opérateur synchronise :
 
@@ -116,7 +130,9 @@ L’opérateur ne synchronise **pas** :
 * Les tables locales dans les bases de données non répliquées
 * Les données des tables (gérées par la réplication ClickHouse)
 
-### Recommandé : utiliser le moteur de base de données Replicated {#recommended-use-replicated-database-engine}
+<div id="recommended-use-replicated-database-engine">
+  ### Recommandé : utiliser le moteur de base de données Replicated
+</div>
 
 <Tip>
   **Bonne pratique**
@@ -137,7 +153,9 @@ Créez des bases de données avec un DDL distribué :
 CREATE DATABASE my_database ON CLUSTER 'default' ENGINE = Replicated;
 ```
 
-### Évitez les moteurs autres que Replicated {#avoid-non-replicated-engines}
+<div id="avoid-non-replicated-engines">
+  ### Évitez les moteurs autres que Replicated
+</div>
 
 Les moteurs de base de données non répliqués (Atomic, Lazy, SQLite, Ordinary) nécessitent une gestion manuelle du schéma :
 
@@ -145,15 +163,21 @@ Les moteurs de base de données non répliqués (Atomic, Lazy, SQLite, Ordinary)
 * Une dérive du schéma peut survenir entre les nœuds
 * L&#39;opérateur ne peut pas synchroniser automatiquement les nouvelles répliques
 
-### Désactiver la réplication du schéma {#disable-schema-replication}
+<div id="disable-schema-replication">
+  ### Désactiver la réplication du schéma
+</div>
 
 Pour désactiver la réplication automatique du schéma, définissez `spec.settings.enableDatabaseSync` sur `false` dans la ressource ClickHouseCluster.
 
-## Gestion du stockage {#storage-management}
+<div id="storage-management">
+  ## Gestion du stockage
+</div>
 
 L’opérateur gère le stockage à l’aide des PersistentVolumeClaims (PVC) de Kubernetes.
 
-### Configuration du volume de données {#data-volume-configuration}
+<div id="data-volume-configuration">
+  ### Configuration du volume de données
+</div>
 
 Indiquez les besoins de stockage dans `dataVolumeClaimSpec` :
 
@@ -166,7 +190,9 @@ spec:
         storage: 500Gi
 ```
 
-### Cycle de vie du stockage {#storage-lifecycle}
+<div id="storage-lifecycle">
+  ### Cycle de vie du stockage
+</div>
 
 * **Création** : les PVC sont créés automatiquement avec le cluster
 * **Extension** : prise en charge si la StorageClass autorise l’extension des volumes
@@ -186,7 +212,9 @@ kubectl wait --for=delete pod -l app.kubernetes.io/instance=my-cluster-clickhous
 kubectl delete pvc -l app.kubernetes.io/instance=my-cluster-clickhouse
 ```
 
-## Principaux éléments de la configuration par défaut {#default-configuration-highlights}
+<div id="default-configuration-highlights">
+  ## Principaux éléments de la configuration par défaut
+</div>
 
 * **Cluster préconfiguré :** cluster nommé &#39;default&#39; contenant tous les nœuds ClickHouse.
 * **Macros par défaut :** certaines macros utiles sont prédéfinies :
@@ -196,7 +224,9 @@ kubectl delete pvc -l app.kubernetes.io/instance=my-cluster-clickhouse
 * **Stockage répliqué pour les entités de contrôle d’accès basé sur les rôles (RBAC)**
 * **Stockage répliqué pour les fonctions définies par l’utilisateur (UDF)**
 
-## Étapes suivantes {#next-steps}
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
 
 * [Guide de configuration](/fr/products/kubernetes-operator/guides/configuration) - Options de configuration détaillées
 * [Référence de l’API](/fr/products/kubernetes-operator/reference/api-reference) - Documentation complète de l’API

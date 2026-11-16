@@ -8,7 +8,6 @@
 #include <base/types.h>
 #include <base/unaligned.h>
 
-#include <bit>
 #include <type_traits>
 
 
@@ -131,8 +130,8 @@ inline UInt64 intHashCRC32(T x, UInt64 updated_value)
 /// Default initial value for `updateWeakHash32` hashing chains (all bits set).
 inline constexpr UInt32 WEAK_HASH32_INITIAL_VALUE = ~UInt32(0);
 
-/// Canonical cross-column combiner for routing hashes (`grace_hash` joins, parallel-window
-/// partitioning, hash-join scatter).
+/// Canonical cross-column combiner for routing hashes (sharded aggregation, `grace_hash` joins,
+/// parallel-window partitioning, hash-join scatter).
 ///
 /// Chains a FINALIZED per-row hash `value` with the prior accumulator `prior` using one
 /// hardware CRC32C step. Every column type combines its own finalized per-row hash with
@@ -498,7 +497,7 @@ struct TrivialHash
 
 /** A relatively good non-cryptographic hash function from UInt64 to UInt32.
   * But worse (both in quality and speed) than just cutting intHash64.
-  * Taken from here: https://web.archive.org/web/20071223173210/http://www.concentric.net/~Ttwang/tech/inthash.htm
+  * Taken from here: http://www.concentric.net/~ttwang/tech/inthash.htm
   *
   * Slightly changed compared to the function by link: shifts to the right are accidentally replaced by a cyclic shift to the right.
   * This change did not affect the smhasher test results.
@@ -519,11 +518,11 @@ inline UInt32 intHash32(UInt64 key)
     key ^= salt;
 
     key = (~key) + (key << 18);
-    key = key ^ std::rotr(key, 31);
+    key = key ^ ((key >> 31) | (key << 33));
     key = key * 21;
-    key = key ^ std::rotr(key, 11);
+    key = key ^ ((key >> 11) | (key << 53));
     key = key + (key << 6);
-    key = key ^ std::rotr(key, 22);
+    key = key ^ ((key >> 22) | (key << 42));
 
     return static_cast<UInt32>(key);
 }

@@ -17,7 +17,7 @@ struct Stats
         Sampler sampler;
 
         /// requests/second, bytes/second
-        [[nodiscard]] std::pair<double, double> getThroughput(double elapsed_seconds) const;
+        std::pair<double, double> getThroughput(double elapsed_seconds) const;
         double getPercentile(double percent);
 
         void add(uint64_t microseconds, size_t requests_inc, size_t bytes_inc);
@@ -26,10 +26,6 @@ struct Stats
     };
 
     std::atomic<size_t> errors{0};
-    /// "Node doesn't exist" / "node already exists" errors on requests drawing
-    /// paths from dynamic path sets; expected (the set may lag behind the real
-    /// state), so not treated as errors.
-    std::atomic<size_t> ignored_errors{0};
     std::atomic<size_t> watches_fired{0};
 
     Stopwatch elapsed;

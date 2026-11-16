@@ -1,4 +1,8 @@
--- The bug and its fix are in the Analyzer's Planner (`collectSets`).
+-- Tags: no-old-analyzer
+-- The bug and its fix are in the Analyzer's Planner (`collectSets`), and the old analyzer cannot
+-- execute these mutations at all (the ALIAS -> ALIAS -> IN chain in a mutation predicate throws
+-- UNKNOWN_IDENTIFIER). Background mutations run with server-default settings, so a session-level
+-- `SET enable_analyzer = 1` is not enough and the test must be skipped in old-analyzer runs.
 
 -- ALTER validation and mutations must not abort with LOGICAL_ERROR "No set is registered
 -- for key" when the table has an ALIAS column referencing another ALIAS column that uses an
@@ -7,6 +11,7 @@
 -- are collected. Covers the DROP COLUMN validator and the DELETE/UPDATE mutation paths.
 
 SET mutations_sync = 2;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_alias_in_set;
 

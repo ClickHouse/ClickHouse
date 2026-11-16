@@ -1,13 +1,15 @@
 ---
-sidebar_title: 'Query API endpoint 설정'
+sidebar_title: 'Query API 엔드포인트'
 slug: /cloud/get-started/query-endpoints
 description: '저장된 쿼리로부터 REST API 엔드포인트를 손쉽게 생성합니다'
 keywords: ['api', 'query api 엔드포인트', 'query 엔드포인트', 'query rest api']
-title: 'Query API endpoint 설정'
+title: 'Query API 엔드포인트 설정'
 doc_type: 'guide'
 ---
 
-**Query API endpoint** 기능을 사용하면 ClickHouse Cloud 콘솔에 저장된 모든 SQL 쿼리로부터 API 엔드포인트를 직접 생성할 수 있습니다. 네이티브 드라이버로 ClickHouse Cloud 서비스에 연결하지 않아도 HTTP를 통해 API 엔드포인트에 액세스하여 저장된 쿼리를 실행할 수 있습니다.
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+**Query API 엔드포인트** 기능을 사용하면 ClickHouse Cloud 콘솔에 저장된 모든 SQL 쿼리로부터 API 엔드포인트를 직접 생성할 수 있습니다. 네이티브 드라이버로 ClickHouse Cloud 서비스에 연결하지 않아도 HTTP를 통해 API 엔드포인트에 액세스하여 저장된 쿼리를 실행할 수 있습니다.
 
 <div id="quick-start-guide">
   ## 사전 요구 사항
@@ -66,27 +68,11 @@ doc_type: 'guide'
 
     Let&#39;s quickly run this query to make sure that it works by specifying the year `2010` in the 쿼리 변수 input box on the right side of the SQL editor:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Test the example query](/images/cloud/sqlconsole/endpoints-testquery.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="Test the example query" />
 
     Next, save the query:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Save example query](/images/cloud/sqlconsole/endpoints-savequery.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-savequery.webp" size="md" alt="Save example query" />
 
     More documentation around 저장된 쿼리 can be found in section [&quot;Saving a query&quot;](/ko/products/cloud/features/sql-console-features/sql-console#saving-a-query).
   </Step>
@@ -95,15 +81,7 @@ doc_type: 'guide'
     Query API endpoint can be configured directly from query view by clicking the **Share** button and selecting `API Endpoint`.
     You&#39;ll be prompted to specify which API Keys should be able to access the endpoint:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Configure query endpoint](/images/cloud/sqlconsole/endpoints-configure.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="Configure query endpoint" />
 
     After selecting an API Key, you will be asked to:
 
@@ -114,15 +92,7 @@ doc_type: 'guide'
 
     An example `curl` command will be displayed so you can send a test request:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Endpoint curl command](/images/cloud/sqlconsole/endpoints-completed.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="Endpoint curl command" />
 
     The curl command displayed in the interface is given below for convenience:
 
@@ -138,27 +108,11 @@ doc_type: 'guide'
   <Step title="Testing and monitoring" id="testing-and-monitoring">
     Once a Query API 엔드포인트 is created, you can test that it works by using `curl` or any other HTTP client:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![endpoint curl test](/images/cloud/sqlconsole/endpoints-curltest.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="endpoint curl test" />
 
     After you&#39;ve sent your first request, a new button should appear immediately to the right of the **Share** button. Clicking it will open a flyout containing monitoring data about the query:
 
-    <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Endpoint monitoring](/images/cloud/sqlconsole/endpoints-monitoring.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="Endpoint monitoring" />
   </Step>
 </Steps>
 

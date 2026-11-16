@@ -11,7 +11,7 @@ namespace MySQLParser
 class ParserDeclareTableOptions : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "table options declaration"; }
+    const char * getName() const override { return "table options declaration"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

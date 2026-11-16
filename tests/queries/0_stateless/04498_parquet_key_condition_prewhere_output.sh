@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: needs Parquet support.
 
 # Regression test for a logical error 'KeyCondition uses PREWHERE output' in the
 # Parquet v3 reader (src/Processors/Formats/Impl/Parquet/Reader.cpp). It fired when a
@@ -27,4 +29,4 @@ ${CLICKHOUSE_LOCAL} -q "INSERT INTO FUNCTION file('${FILE}') SELECT number::Stri
 # The original AST-fuzzer shape: \`match\` with the column as the (non-constant) pattern.
 
 # The analyzer accepts the same query and must keep returning correct results.
-${CLICKHOUSE_LOCAL} -q "SELECT count() FROM file('${FILE}') PREWHERE indexHint(s = 'x') WHERE indexHint(s = 'y');"
+${CLICKHOUSE_LOCAL} -q "SELECT count() FROM file('${FILE}') PREWHERE indexHint(s = 'x') WHERE indexHint(s = 'y') SETTINGS enable_analyzer = 1;"

@@ -8,9 +8,9 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-<BetaBadge />
+<ExperimentalBadge />
 
 <Note>
 Integration with the SeaweedFS catalog works with Iceberg tables only.
@@ -24,10 +24,8 @@ SeaweedFS is an open-source distributed file and object store with an S3-compati
 - **Server-side maintenance** - automatic Parquet compaction and snapshot expiration, with no external maintenance service
 
 <Note>
-This feature is in beta. Enable it with:
-`SET allow_database_iceberg = 1;`
-
-On versions before 25.8, where the feature is experimental, use `SET allow_experimental_database_iceberg = 1;` instead.
+As this feature is experimental, you will need to enable it using:
+`SET allow_experimental_database_iceberg = 1;`
 </Note>
 
 ## Local development setup {#local-development-setup}
@@ -148,7 +146,7 @@ docker exec -it seaweedfs-clickhouse clickhouse-client
 Then create the database connection to the SeaweedFS catalog:
 
 ```sql
-SET allow_database_iceberg = 1;
+SET allow_experimental_database_iceberg = 1;
 
 CREATE DATABASE lake
 ENGINE = DataLakeCatalog('http://seaweedfs:8181/v1', 'tutorialkey', 'tutorialsecret')
@@ -205,8 +203,8 @@ ORDER BY total DESC;
 You can also create tables in the SeaweedFS catalog and write to them directly from ClickHouse:
 
 ```sql
-SET allow_database_iceberg = 1;
-SET allow_insert_into_iceberg = 1;
+SET allow_experimental_database_iceberg = 1;
+SET allow_experimental_insert_into_iceberg = 1;
 SET write_full_path_in_iceberg_metadata = 1;
 
 CREATE TABLE lake.`sales.returns` (id Int64, reason String)
@@ -226,13 +224,11 @@ SELECT * FROM lake.`sales.returns` ORDER BY id;
 
 The `IcebergS3` engine clause names the storage path for the new table, and `write_full_path_in_iceberg_metadata` makes ClickHouse register the full table location with the catalog.
 
-On versions before 26.2, the insert setting is named `allow_experimental_insert_into_iceberg`.
-
 <Note>
 Creating tables through a catalog requires ClickHouse 26.8 or later. Versions 26.4 through 26.7 write the table files before registering the namespace, which SeaweedFS rejects unless the namespace already exists in the catalog; versions before 26.4 appear to succeed, but the table files are written to object storage without being registered in the catalog.
 </Note>
 
-SeaweedFS 4.42 or later adds or corrects metadata when ClickHouse commits an insert, allowing PyIceberg and Spark to read the inserted data. This includes filling in missing field IDs, converting bucket-relative file paths to absolute locations, and adding a default column name mapping.
+When ClickHouse commits an insert, the SeaweedFS catalog repairs metadata the experimental writer does not yet produce: it fills in missing field IDs in manifests, rewrites bucket-relative file paths as absolute locations, and stamps a default name mapping on the table. Strict readers such as PyIceberg and Spark can then read the rows ClickHouse wrote. This requires SeaweedFS 4.42 or later.
 
 ## Loading data from your Data Lake into ClickHouse {#loading-data-from-your-data-lake-into-clickhouse}
 

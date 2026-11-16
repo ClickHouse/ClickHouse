@@ -4,8 +4,7 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 
 # This status is a marker that the sync process can be started. We set it from
-# the `Style check` job because that job always runs for PRs, whereas the
-# `Code Review` job can be skipped.
+# the `Code Review` job because that job always runs for PRs.
 
 
 def main():

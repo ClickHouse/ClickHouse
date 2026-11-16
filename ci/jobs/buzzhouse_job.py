@@ -5,16 +5,16 @@ from pathlib import Path
 
 from ci.jobs.ast_fuzzer_job import run_fuzz_job
 from ci.jobs.ci_utils import is_extended_run
-from ci.praktika.info import Info
 from ci.praktika.utils import Utils
 
 
-def generate_buzz_config(
-    workspace_path: Path, log_path: str, time_to_run: int | None = None
-):
-    """`time_to_run` is in minutes, by default 30, or 60 for feature/improvement/performance PRs."""
-    if time_to_run is None:
-        time_to_run = 60 if is_extended_run() else 30
+def main():
+    temp_dir = Path(f"{Utils.cwd()}/ci/tmp/")
+    workspace_path = temp_dir / "workspace"
+    buzz_config_file = workspace_path / "fuzz.json"
+
+    workspace_path.mkdir(parents=True, exist_ok=True)
+
     # Sometimes disallow SQL types to reduce number of combinations
     disabled_types_str = ""
     if random.randint(1, 2) == 1:
@@ -115,10 +115,6 @@ def generate_buzz_config(
             "alias",
             "kafka",
             "backup",
-            "clusterdatabase",
-            "remotedatabase",
-            "overlay",
-            "timeseries",
         ]
         random.shuffle(disabled_engines)
         disabled_engines_str = ",".join(
@@ -133,7 +129,7 @@ def generate_buzz_config(
     # https://play.clickhouse.com/play?user=play&run=1#U0VMRUNUIGNoZWNrX3N0YXJ0X3RpbWUsIGNoZWNrX25hbWUsIHRlc3RfbmFtZSwgcmVwb3J0X3VybApGUk9NIGNoZWNrcwpXSEVSRSAxCiAgICBBTkQgY2hlY2tfc3RhcnRfdGltZSA+PSBub3coKSAtIElOVEVSVkFMIDEwIERBWQogICAgQU5EIChoZWFkX3JlZiA9ICdtYXN0ZXInIEFORCBzdGFydHNXaXRoKGhlYWRfcmVwbywgJ0NsaWNrSG91c2UvJykpCiAgICBBTkQgdGVzdF9zdGF0dXMgIT0gJ1NLSVBQRUQnCiAgICBBTkQgKHRlc3Rfc3RhdHVzIExJS0UgJ0YlJyBPUiB0ZXN0X3N0YXR1cyBMSUtFICdFJScpCiAgICBBTkQgY2hlY2tfc3RhdHVzICE9ICdzdWNjZXNzJwogICAgQU5EIGNoZWNrX25hbWUgTk9UIExJS0UgJ2xpYkZ1enplciUnCiAgICBBTkQgY2hlY2tfbmFtZSAhPSAnQ2xpY2tIb3VzZSBLZWVwZXIgSmVwc2VuJwogICAgQU5EIHRlc3RfbmFtZSBMSUtFICclYXNzZXJ0SGFzVmFsaWRWZXJzaW9uTWV0YWRhdGElJwpPUkRFUiBCWSBjaGVja19zdGFydF90aW1lIERFU0M=
     allow_transactions = False
     disallowed_settings = [
-        # Obsolete: the analyzer cannot be disabled, so a generated value is refused
+        # Disable old analyzer always
         "enable_analyzer",
         # Don't always apply settings from the server
         "apply_settings_from_server",
@@ -164,8 +160,6 @@ def generate_buzz_config(
         "temporary_files_buffer_size",
         "trace_profile_events",
         "unknown_packet_in_send_data",
-        "use_query_cache",
-        "enable_writes_to_query_cache",
     ]
     if allow_transactions:
         # Doesn't work well with transactions
@@ -210,8 +204,7 @@ def generate_buzz_config(
         "max_dictionaries": random.randint(0, 10),
         "max_functions": random.randint(0, 8),
         "max_policies": random.randint(0, 8),
-        "max_hypothetical_indexes": random.randint(0, 4),
-        "max_hypothetical_projections": random.randint(0, 4),
+        "max_hypotheticals": random.randint(0, 0),
         "max_columns": random.randint(1, 8),
         "min_nested_rows": min_nested_rows,
         "max_nested_rows": random.randint(min_nested_rows, max_nested_rows),
@@ -246,12 +239,10 @@ def generate_buzz_config(
         "enable_sync_settings": random.randint(1, 4) == 1,
         "enable_backups": random.randint(1, 4) == 1,
         "enable_renames": random.randint(1, 4) == 1,
-        # Some fail points abort or hang the server by design
-        "enable_failpoints": False,
         "allow_hardcoded_inserts": allow_hardcoded_inserts,
         "client_file_path": "/var/lib/clickhouse/user_files",
         "server_file_path": "/var/lib/clickhouse/user_files",
-        "log_path": log_path,
+        "log_path": "/workspace/fuzzerout.sql",
         "read_log": False,
         "allow_memory_tables": random.choice([True, False]),
         "allow_client_restarts": random.choice([True, False]),
@@ -270,7 +261,8 @@ def generate_buzz_config(
         "allow_transactions": allow_transactions,
         # Run query oracles sometimes
         "allow_query_oracles": random.randint(1, 4) == 1,
-        "time_to_run": time_to_run,
+        # Run for 30 minutes by default, or 60 minutes for feature/improvement/performance PRs
+        "time_to_run": 60 if is_extended_run() else 30,
         "remote_servers": ["localhost:9000"],
         "remote_secure_servers": ["localhost:9440"],
         "http_servers": ["localhost:8123"],
@@ -278,6 +270,8 @@ def generate_buzz_config(
         "disallowed_settings": disallowed_settings,
         # MergeTree settings to set more often
         "hot_table_settings": [
+            "add_minmax_index_for_block_number_column",
+            "add_minmax_index_for_block_offset_column",
             "add_minmax_index_for_numeric_columns",
             "add_minmax_index_for_string_columns",
             "add_minmax_index_for_temporal_columns",
@@ -285,46 +279,45 @@ def generate_buzz_config(
             "allow_commit_order_projection",
             "allow_experimental_text_index_phrase_search",
             "allow_nullable_key",
+            "allow_part_offset_column_in_projections",
             "allow_suspicious_indices",
             "allow_tuple_element_aggregation",
+            "allow_vertical_merges_from_compact_to_wide_parts",
             "auto_statistics_types",
+            "compress_marks",
+            "compress_primary_key",
             "dynamic_serialization_version",
             "enable_block_number_column",
             "enable_block_offset_column",
+            "enable_index_granularity_compression",
+            "enable_vertical_merge_algorithm",
             "index_granularity",
             "index_granularity_bytes",
             "map_buckets_strategy",
             "map_serialization_version",
             "merge_max_block_size",
+            "merge_use_batch_sorting_queue",
             "min_bytes_for_full_part_storage",
             "min_bytes_for_wide_part",
             "nullable_serialization_version",
             "object_serialization_version",
             "object_shared_data_buckets_for_compact_part",
             "object_shared_data_buckets_for_wide_part",
-            "optimize_row_order",
+            "primary_key_lazy_load",
             "ratio_of_defaults_for_sparse_serialization",
             "serialization_info_version",
-            "skip_empty_columns_on_insert",
+            "share_nested_offsets",
             "string_serialization_version",
+            "use_compact_variant_discriminators_serialization",
             "use_const_adaptive_granularity",
             "vertical_merge_algorithm_min_bytes_to_activate",
+            "vertical_merge_optimize_ttl_delete",
+            "write_marks_for_substreams_in_compact_parts",
         ],
     }
-    if random.randint(1, 3) == 1:
-        # Formats to pick more often. MSan builds have no Vortex, see `rust/workspace/CMakeLists.txt`
-        buzz_config["hot_formats"] = ["Avro", "ORC", "Parquet"]
-        if "msan" not in Info().job_name:
-            buzz_config["hot_formats"].append("Vortex")
-    with open(workspace_path / "fuzz.json", "w") as outfile:
+    with open(buzz_config_file, "w") as outfile:
         outfile.write(json.dumps(buzz_config))
 
-
-def main():
-    workspace_path = Path(f"{Utils.cwd()}/ci/tmp/workspace")
-    workspace_path.mkdir(parents=True, exist_ok=True)
-    # The log path BuzzHouse gets inside Docker, where the workspace is mounted at /workspace
-    generate_buzz_config(workspace_path, log_path="/workspace/fuzzerout.sql")
     run_fuzz_job("BuzzHouse")
 
 

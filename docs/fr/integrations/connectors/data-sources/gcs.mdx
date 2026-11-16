@@ -8,6 +8,7 @@ keywords: ['Google Cloud Storage ClickHouse', 'intégration ClickHouse à GCS', 
 ---
 
 import BucketDetails from '/snippets/fr/_GCS_authentication_and_bucket.mdx';
+import { Image } from "/snippets/fr/components/Image.jsx";
 
 <Note>
   Si vous utilisez ClickHouse Cloud sur [Google Cloud](https://cloud.google.com), cette page ne vous concerne pas, car vos services utilisent déjà [Google Cloud Storage](https://cloud.google.com/storage). Si vous cherchez à `SELECT` ou `INSERT` des données depuis GCS, veuillez consulter la [fonction de table `gcs`](/fr/reference/functions/table-functions/gcs).
@@ -164,7 +165,7 @@ SETTINGS storage_policy='gcs_main'
 ```
 
 ```sql
-INSERT INTO trips_gcs SELECT trip_id, pickup_date, pickup_datetime, dropoff_datetime, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count, trip_distance, tip_amount, total_amount, payment_type FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 1000000;
+INSERT INTO trips_gcs SELECT trip_id, pickup_date, pickup_datetime, dropoff_datetime, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count, trip_distance, tip_amount, total_amount, payment_type FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames') LIMIT 1000000;
 ```
 
 Selon la configuration matérielle, cette dernière insertion de 1m lignes peut prendre quelques minutes. Vous pouvez en suivre la progression dans la table system.processes. N&#39;hésitez pas à ajuster le nombre de lignes jusqu&#39;à 10m et à essayer quelques exemples de requêtes.
@@ -642,7 +643,7 @@ INSERT INTO trips SELECT
     tip_amount,
     total_amount,
     payment_type
-FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', NOSIGN, 'TabSeparatedWithNames')
+FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames')
 LIMIT 1000000
 ```
 
@@ -684,26 +685,10 @@ En examinant les buckets, vous verrez qu’un dossier a été créé dans chacun
   #### Bucket de la réplique 1
 </div>
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Bucket de la réplique 1 dans Google Cloud Storage, montrant l’arborescence des dossiers avec les partitions de données](/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp" size="lg" border alt="Bucket de la réplique 1 dans Google Cloud Storage, montrant l’arborescence des dossiers avec les partitions de données" />
 
 <div id="bucket-for-replica-two">
   #### Bucket de la réplique deux
 </div>
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Bucket de la réplique deux dans Google Cloud Storage, montrant l’arborescence des dossiers avec des partitions de données](/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp" size="lg" border alt="Bucket de la réplique deux dans Google Cloud Storage, montrant l’arborescence des dossiers avec des partitions de données" />

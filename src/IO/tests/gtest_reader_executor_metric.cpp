@@ -76,8 +76,8 @@ struct Metric
 
     double cost_ms = 0.0;                 /// modeled I/O cost
 
-    [[nodiscard]] size_t overRead() const { return from_source >= requested ? from_source - requested : 0; }
-    [[nodiscard]] double costPerMiB() const
+    size_t overRead() const { return from_source >= requested ? from_source - requested : 0; }
+    double costPerMiB() const
     {
         return requested ? cost_ms / (static_cast<double>(requested) / (1024 * 1024)) : 0.0;
     }

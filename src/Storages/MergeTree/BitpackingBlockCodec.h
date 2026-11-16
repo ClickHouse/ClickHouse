@@ -18,6 +18,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static constexpr size_t BLOCK_SIZE = 128;
+
 namespace impl
 {
 
@@ -31,18 +33,15 @@ static constexpr bool has_simdcomp = true;
 template<>
 struct BitpackingBlockCodecImpl<true>
 {
-    static constexpr size_t BLOCK_SIZE = 128;
-
     static size_t bitpackingCompressedBytes(size_t count, uint32_t bits) noexcept
     {
         /// Type cast is required by simdcomp function signature (expects int).
-        /// This conversion is safe because count never exceeds BLOCK_SIZE in current usage.
+        /// This conversion is safe because count never exceeds 128 (BLOCK_SIZE) in current usage.
         return static_cast<size_t>(simdpack_compressedbytes(static_cast<int>(count), bits));
     }
-
     /// Returns {compressed_bytes, bits} where bits is the max bit-width required
     /// to represent all values in [0..n).
-    static std::pair<size_t, uint32_t> calculateNeededBytesAndMaxBits(std::span<const uint32_t> data) noexcept
+    static std::pair<size_t, uint32_t> calculateNeededBytesAndMaxBits(std::span<uint32_t> & data) noexcept
     {
         uint32_t n = static_cast<uint32_t>(data.size());
         auto bits = maxbits_length(data.data(), n);
@@ -50,7 +49,7 @@ struct BitpackingBlockCodecImpl<true>
         return {bytes, bits};
     }
 
-    static size_t encode(std::span<const uint32_t> in, int32_t max_bits, std::span<char> & out)
+    static size_t encode(std::span<uint32_t> & in, int32_t max_bits, std::span<char> & out)
     {
         if (max_bits > 32)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
@@ -87,12 +86,9 @@ static constexpr bool has_simdcomp = false;
 template<>
 struct BitpackingBlockCodecImpl<false>
 {
-    /// Must match simdcomp's `SIMDBlockSize`: full blocks and the tail are laid out differently.
-    static constexpr size_t BLOCK_SIZE = 128;
-
     /// Non-SSE version: equivalent to SIMDComp maxbits_length.
     /// It OR-reduces all values to compute required bit width.
-    [[maybe_unused]] static uint32_t maxbitsLength(std::span<const uint32_t> in) noexcept
+    [[maybe_unused]] static uint32_t maxbitsLength(const std::span<uint32_t> & in) noexcept
     {
         size_t n = in.size();
         uint32_t xored_in = 0;
@@ -133,7 +129,7 @@ struct BitpackingBlockCodecImpl<false>
 
     /// Returns {compressed_bytes, bits} where bits is the max bit-width required
     /// to represent all values in [0..n).
-    [[maybe_unused]] static std::pair<size_t, uint32_t> calculateNeededBytesAndMaxBits(std::span<const uint32_t> data) noexcept
+    [[maybe_unused]] static std::pair<size_t, uint32_t> calculateNeededBytesAndMaxBits(const std::span<uint32_t> & data) noexcept
     {
         size_t n = data.size();
         uint32_t bits = maxbitsLength(data);
@@ -148,7 +144,7 @@ struct BitpackingBlockCodecImpl<false>
     /// - `out`: destination buffer; the function writes the packed stream into it
     ///          and advances `out` to point past the written bytes.
     /// Returns: number of bytes written into `out` (the packed payload size).
-    [[maybe_unused]] static size_t encode(std::span<const uint32_t> in, uint32_t max_bits, std::span<char> & out)
+    [[maybe_unused]] static size_t encode(std::span<uint32_t> & in, uint32_t max_bits, std::span<char> & out)
     {
         if (max_bits > 32)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
@@ -378,7 +374,7 @@ struct BitpackingBlockCodecImpl<false>
         return p;
     }
 
-    /// Pack a tail segment (0 < tail < BLOCK_SIZE) into the SIMDComp-compatible
+    /// Pack a tail segment (0 < tail < COMPRESSED_BLOCK_SIZE) into the SIMDComp-compatible
     /// horizontal 4-lane bitpacked byte stream.
     ///
     /// This is used for the final partial block when the total number of input integers is
@@ -507,7 +503,7 @@ struct BitpackingBlockCodecImpl<false>
         return p;
     }
 
-    /// Unpack (decode) a tail segment (0 < tail < BLOCK_SIZE) from a
+    /// Unpack (decode) a tail segment (0 < tail < COMPRESSED_BLOCK_SIZE) from a
     /// SIMDComp-compatible horizontal 4-lane bitpacked *byte stream*.
     ///
     /// This is the counterpart of packTail<Bits>(). It decodes the last partial block

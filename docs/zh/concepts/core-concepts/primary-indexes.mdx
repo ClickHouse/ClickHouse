@@ -6,6 +6,8 @@ keywords: ['稀疏主索引', '主索引', '索引']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 <Tip>
   **想了解更高级的索引详情？**
 
@@ -30,15 +32,7 @@ ClickHouse 中的稀疏主索引有助于高效识别可能包含与查询在表
 
 [回顾一下](/zh/concepts/core-concepts/parts)，在我们的 ① 示例表中，主键为 (town, street)，② 插入的数据会 ③ 按主键列值排序后存储到磁盘上，并按列分别压缩保存到独立文件中：
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![](/images/managing-data/core-concepts/primary-index-light_01.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg" />
 
 <br />
 
@@ -48,15 +42,7 @@ ClickHouse 中的稀疏主索引有助于高效识别可能包含与查询在表
 
 这种粒度结构也是主索引之所以是**稀疏**的原因：ClickHouse 不会为每一行建立索引，而是 ⑤ 每个粒度只存储一行的主键值——更准确地说，是该粒度的第一行。因此，每个粒度都会对应一个索引条目：
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![](/images/managing-data/core-concepts/primary-index-light_02.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/primary-index-light_02.webp" size="lg" />
 
 <br />
 
@@ -70,37 +56,19 @@ ClickHouse 中的稀疏主索引有助于高效识别可能包含与查询在表
 
 我们通过另一个动画来说明稀疏主索引如何用于加速查询：
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![](/images/managing-data/core-concepts/primary-index-light_03.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg" />
 
 <br />
 
 <br />
 
-<Steps>
-  <Step title="解析查询谓词">
-    示例查询同时包含针对两个主键列的谓词：`town = 'LONDON' AND street = 'OXFORD STREET'`。
-  </Step>
+① 示例查询同时包含针对两个主键列的谓词：`town = 'LONDON' AND street = 'OXFORD STREET'`。
 
-  <Step title="加载主索引">
-    为了加速查询，ClickHouse 会将表的主索引加载到内存中。
-  </Step>
+② 为了加速查询，ClickHouse 会将表的主索引加载到内存中。
 
-  <Step title="识别匹配的粒度">
-    然后，它会扫描索引条目，以确定哪些粒度可能包含与该谓词匹配的行——也就是说，哪些粒度不能跳过。
-  </Step>
+③ 然后，它会扫描索引条目，以确定哪些粒度可能包含与该谓词匹配的行——也就是说，哪些粒度不能跳过。
 
-  <Step title="加载并处理粒度">
-    随后，这些可能相关的粒度会被加载到内存中，并与查询所需的其他列中对应的粒度一起进行[处理](/zh/concepts/core-concepts/query-parallelism)。
-  </Step>
-</Steps>
+④ 随后，这些可能相关的粒度会被加载到内存中，并与查询所需的其他列中对应的粒度一起进行[处理](/zh/concepts/core-concepts/query-parallelism)。
 
 <div id="monitoring-primary-indexes">
   ## 监控主索引

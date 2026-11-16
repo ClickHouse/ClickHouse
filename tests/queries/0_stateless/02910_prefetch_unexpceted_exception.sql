@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-darwin, no-fasttest
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-darwin
 -- no-parallel -- enables failpoint
 -- no-random-settings -- depend on type of part, should always fail
 -- no-darwin -- there is no preadv2 on Darwin, so the default local_filesystem_read_method is switched

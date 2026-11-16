@@ -13,25 +13,31 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.merge&#95;tree&#95;settings](/ar/reference/system-tables/merge_tree_settings)، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-## object_shared_data_buckets_for_compact_part {#object_shared_data_buckets_for_compact_part}
+<div id="object_shared_data_buckets_for_compact_part">
+  ## object_shared_data_buckets_for_compact_part
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "8"},{"label": "إضافة إعداد للتحكم في عدد الحاويات المستخدمة للبيانات المشتركة في تسلسل JSON داخل الأجزاء المضغوطة"}]}]} />
 
-عدد الحاويات المستخدمة في تسلسل البيانات المشتركة بتنسيق JSON داخل الأجزاء المضغوطة. يعمل مع تسلسلات البيانات المشتركة `map_with_buckets` و`advanced` و`advanced_chunked`.
+عدد الحاويات المستخدمة في تسلسل البيانات المشتركة بتنسيق JSON داخل الأجزاء المضغوطة. يعمل مع تسلسلي البيانات المشتركة `map_with_buckets` و`advanced`.
 الحد الأقصى المسموح به للقيمة هو 256.
 
-## object_shared_data_buckets_for_wide_part {#object_shared_data_buckets_for_wide_part}
+<div id="object_shared_data_buckets_for_wide_part">
+  ## object_shared_data_buckets_for_wide_part
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "32"},{"label": "إضافة إعداد للتحكم في عدد الحاويات للبيانات المشتركة في تسلسل JSON في الأجزاء الواسعة"}]}]} />
 
-عدد الحاويات المستخدمة في تسلسل البيانات المشتركة بصيغة JSON في الأجزاء الواسعة. يعمل هذا الإعداد مع تسلسلات البيانات المشتركة `map_with_buckets` و`advanced` و`advanced_chunked`.
+عدد الحاويات المستخدمة في تسلسل البيانات المشتركة بصيغة JSON في الأجزاء الواسعة. يعمل هذا الإعداد مع تسلسلي البيانات المشتركة `map_with_buckets` و`advanced`.
 الحد الأقصى المسموح به هو 256.
 
-## object_shared_data_serialization_version {#object_shared_data_serialization_version}
+<div id="object_shared_data_serialization_version">
+  ## object_shared_data_serialization_version
+</div>
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="advanced" />
 
@@ -45,12 +51,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * `map_with_buckets` - تخزين البيانات المشتركة في عدة أعمدة منفصلة من `Map(String, String)`. يساهم استخدام الحاويات في تحسين قراءة المسارات الفردية من البيانات المشتركة.
 * `advanced` - تسلسل خاص للبيانات المشتركة، صُمم لتحسين قراءة المسارات الفردية من البيانات المشتركة بشكل كبير.
   لاحظ أن هذا التسلسل يزيد حجم تخزين البيانات المشتركة على القرص لأننا نخزّن قدرًا كبيرًا من المعلومات الإضافية.
-* `advanced_chunked` - مثل `advanced` تمامًا لكن مع دعم تقسيم الصفوف إلى مقاطع أصغر أثناء التسلسل لتقليل ذروة الذاكرة أثناء دمج أعمدة JSON التي تحتوي على عدد كبير من المسارات الفريدة. يتم التحكم في حجم المقطع عبر الإعداد [object&#95;shared&#95;data&#95;target&#95;chunk&#95;rows](/ar/reference/settings/merge-tree-settings/object-shared#object_shared_data_target_chunk_rows).
 
-يُحدَّد عدد الحاويات لتسلسلات `map_with_buckets` و`advanced` و`advanced_chunked` من خلال الإعدادات
+يُحدَّد عدد الحاويات لتسلسلي `map_with_buckets` و`advanced` من خلال الإعدادات
 [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/ar/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_compact_part)/[object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/ar/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part).
 
-## object_shared_data_serialization_version_for_zero_level_parts {#object_shared_data_serialization_version_for_zero_level_parts}
+<div id="object_shared_data_serialization_version_for_zero_level_parts">
+  ## object_shared_data_serialization_version_for_zero_level_parts
+</div>
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="map_with_buckets" />
 
@@ -58,18 +65,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 يتيح هذا الإعداد تحديد إصدار تسلسل مختلف للبيانات المشتركة
 داخل نوع JSON لأجزاء المستوى الصفري التي يتم إنشاؤها أثناء عمليات الإدراج.
-يُنصح بعدم استخدام تسلسل البيانات المشتركة `advanced` أو `advanced_chunked` لأجزاء المستوى الصفري لأنه قد يزيد
+يُنصح بعدم استخدام تسلسل البيانات المشتركة `advanced` لأجزاء المستوى الصفري لأنه قد يزيد
 وقت الإدراج بشكل ملحوظ.
-
-## object_shared_data_target_chunk_rows {#object_shared_data_target_chunk_rows}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="8192" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "8192"},{"label": "New setting"}]}]} />
-
-العدد المستهدف من الصفوف في كل مقطع أثناء تسلسل البيانات المشتركة لـ JSON بنمط `advanced_chunked`.
-وهذا ليس حدًا صارمًا: فإذا كان المقطع الأخير أصغر من نصف القيمة المستهدفة، فيُدمج مع المقطع السابق،
-ومن ثم تتراوح أحجام المقاطع الفعلية بين `target/2` و`1.5 * target`.
-القيم الأصغر تقلّل ذروة استهلاك الذاكرة أثناء عمليات دمج أعمدة JSON التي تحتوي على عدد كبير من المسارات الفريدة، لكن مقابل زيادة عدد المقاطع.
 
 {/*AUTOGENERATED_END*/}

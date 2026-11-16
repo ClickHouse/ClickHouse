@@ -126,7 +126,7 @@ public:
         return add(delta, [](UInt64){}, create_if_need);
     }
 
-    [[nodiscard]] const std::string & getPath() const
+    const std::string & getPath() const
     {
         return path;
     }

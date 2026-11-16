@@ -44,9 +44,9 @@ namespace
             return std::make_shared<FunctionCurrentRoles>(context, kind);
         }
 
-        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-        [[nodiscard]] String getName() const override { return toString(kind); }
+        String getName() const override { return toString(kind); }
 
         explicit FunctionCurrentRoles(const ContextPtr & context, Kind kind_)
             : kind(kind_)
@@ -72,15 +72,15 @@ namespace
             ::sort(role_names.begin(), role_names.end());
         }
 
-        [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-        [[nodiscard]] bool isDeterministic() const override { return false; }
+        size_t getNumberOfArguments() const override { return 0; }
+        bool isDeterministic() const override { return false; }
 
-        [[nodiscard]] String getSignatureString() const override
+        DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
         {
-            return "() -> Array(String)";
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
         }
 
-        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
         {
             auto res_strings_column = ColumnString::create();
             auto res_offsets_column = ColumnArray::ColumnOffsets::create();
@@ -114,9 +114,9 @@ Returns an array of the roles which are assigned to the current user.
 SELECT currentRoles();
         )",
         R"(
-┌─currentRoles()─┐
-│ []             │
-└────────────────┘
+┌─currentRoles()─────────────────────────────────┐
+│ ['sql-console-role:jane.smith@clickhouse.com'] │
+└────────────────────────────────────────────────┘
         )"
     }
     };
@@ -137,9 +137,9 @@ Returns an array of the roles which are enabled for the current user.
 SELECT enabledRoles();
         )",
         R"(
-┌─enabledRoles()─┐
-│ []             │
-└────────────────┘
+┌─enabledRoles()─────────────────────────────────────────────────┐
+│ ['general_data', 'sql-console-role:jane.smith@clickhouse.com'] │
+└────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -160,9 +160,9 @@ Returns an array of default roles for the current user.
 SELECT defaultRoles();
         )",
         R"(
-┌─defaultRoles()─┐
-│ []             │
-└────────────────┘
+┌─defaultRoles()─────────────────────────────────┐
+│ ['sql-console-role:jane.smith@clickhouse.com'] │
+└────────────────────────────────────────────────┘
         )"
     }
     };

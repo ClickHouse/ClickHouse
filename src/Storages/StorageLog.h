@@ -80,7 +80,6 @@ public:
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
     bool supportsSubcolumns() const override { return true; }
-    size_t getMaxReadStreams(size_t num_streams, ContextPtr) override;
     ColumnSizeByName getColumnSizes() const override;
 
     std::optional<UInt64> totalRows(ContextPtr) const override;
@@ -119,10 +118,6 @@ private:
 
     /// Recalculates the number of rows stored in this table.
     void updateTotalRows(const WriteLock &);
-
-    /// Whether this table holds nothing on disk: no recorded bytes, and no rows according to the
-    /// engine's row signal. Must be called under the rwlock, after loadMarks().
-    bool hasNothingToBackUp() const;
 
     /// Restores the data of this table from backup.
     void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, std::chrono::seconds lock_timeout);
@@ -176,7 +171,7 @@ private:
             : file_checker_tasks(std::move(file_checker_tasks_)), lock(std::move(lock_))
         {}
 
-        [[nodiscard]] size_t size() const override { return file_checker_tasks->size(); }
+        size_t size() const override { return file_checker_tasks->size(); }
 
         FileChecker::DataValidationTasksPtr file_checker_tasks;
         /// Lock to prevent table modification while checking
@@ -205,9 +200,9 @@ public:
     ReadFromStorageLogStep(const ReadFromStorageLogStep &) = default;
     ReadFromStorageLogStep(ReadFromStorageLogStep &&) = default;
 
-    [[nodiscard]] String getName() const override { return "ReadFromStorageLog"; }
+    String getName() const override { return "ReadFromStorageLog"; }
 
-    [[nodiscard]] QueryPlanStepPtr clone() const override
+    QueryPlanStepPtr clone() const override
     {
         return std::make_unique<ReadFromStorageLogStep>(*this);
     }

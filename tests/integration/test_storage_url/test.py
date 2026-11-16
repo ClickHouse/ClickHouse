@@ -5,11 +5,11 @@ import os
 import json
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV, assert_eq_with_retry
+from helpers.test_tools import TSV
 from helpers.mock_servers import start_mock_servers
 
 cluster = ClickHouseCluster(__file__)
-URL_WILDCARD_EXPERIMENTAL_SETTING = "allow_url_wildcard_from_index_pages=1"
+URL_WILDCARD_EXPERIMENTAL_SETTING = "allow_experimental_url_wildcard_from_index_pages=1"
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/conf.xml", "configs/named_collections.xml", "configs/query_log.xml"],
@@ -17,8 +17,6 @@ node1 = cluster.add_instance(
     with_nginx=True,
     with_minio=True,
 )
-# The worker of `test_cluster_node2`; `forbidden_authorization` changes only node1's configuration.
-node2 = cluster.add_instance("node2", main_configs=["configs/conf.xml"])
 
 @pytest.fixture(scope="module", autouse=True)
 def setup_node():
@@ -62,11 +60,6 @@ def with_url_wildcard_setting(query):
     if "SETTINGS" in query:
         return f"{query}, {URL_WILDCARD_EXPERIMENTAL_SETTING}"
     return f"{query} SETTINGS {URL_WILDCARD_EXPERIMENTAL_SETTING}"
-
-
-def server_part_of_error(error):
-    # The client appends "(query: ...)" with the query text as sent, credentials included.
-    return error.split("(query: ")[0]
 
 
 def test_partition_by():
@@ -190,7 +183,7 @@ def test_url_wildcard_engine_checks_headers_before_reading():
         "'http://resolver:8087/data/**/part*.tsv', "
         "'TSV', "
         "headers('X-Forbidden-Url-Wildcard'='1'))",
-        settings={"allow_url_wildcard_from_index_pages": 1},
+        settings={"allow_experimental_url_wildcard_from_index_pages": 1},
     )
     assert "HTTP header" in error
     assert "X-Forbidden-Url-Wildcard" in error
@@ -291,12 +284,9 @@ def test_url_wildcard_missing_listing():
 
 def test_url_wildcard_oversize_index_page():
     error = node1.query_and_get_error(
-        with_url_wildcard_setting("SELECT count() FROM url('http://user:pass@resolver:8087/data/oversize/**/part*.tsv', 'TSV', 'x UInt64')")
+        with_url_wildcard_setting("SELECT count() FROM url('http://resolver:8087/data/oversize/**/part*.tsv', 'TSV', 'x UInt64')")
     )
     assert "exceeds max_http_index_page_size" in error
-    server_error = server_part_of_error(error)
-    assert "user:pass@" not in server_error
-    assert "'http://[HIDDEN]@resolver:8087/data/oversize/'" in server_error
 
 
 def test_url_wildcard_query_fragment_matching():
@@ -692,7 +682,7 @@ def test_url_engine_wildcard_preserves_failover_options():
         node1.query(
             f"CREATE TABLE {table_name} (x UInt64) "
             "ENGINE = URL('http://resolver:8087/data/source_query/**/part*.tsv?token={bad|abc}', 'TSV')",
-            settings={"allow_url_wildcard_from_index_pages": 1},
+            settings={"allow_experimental_url_wildcard_from_index_pages": 1},
         )
         result = node1.query(f"SELECT sum(x) FROM {table_name}")
         assert result.strip() == "13"
@@ -707,12 +697,12 @@ def test_url_engine_wildcard_limit_uses_query_setting():
         node1.query(
             f"CREATE TABLE {table_name} (x UInt64) "
             "ENGINE = URL('http://resolver:8087/data/deep/**/part*.tsv', 'TSV')",
-            settings={"allow_url_wildcard_from_index_pages": 1},
+            settings={"allow_experimental_url_wildcard_from_index_pages": 1},
         )
 
         error = node1.query_and_get_error(
             f"SELECT count() FROM {table_name} "
-            "SETTINGS allow_url_wildcard_from_index_pages=1, url_wildcard_max_directories_to_read=3"
+            "SETTINGS allow_experimental_url_wildcard_from_index_pages=1, url_wildcard_max_directories_to_read=3"
         )
         assert "Too many directories while expanding URL wildcard" in error
         assert "url_wildcard_max_directories_to_read" in error
@@ -735,11 +725,6 @@ def test_url_wildcard_rejects_cross_origin_index_redirect():
         )
     )
     assert "redirected to a different origin" in error
-    server_error = server_part_of_error(error)
-    assert "user:pass@" not in server_error
-    assert "redirect_pass" not in server_error
-    assert "'http://[HIDDEN]@resolver:8087/data/cross_origin_redirect/'" in server_error
-    assert "'http://[HIDDEN]@resolver:8088/data/cross_origin_target/'" in server_error
 
     redirect_target_stats = get_index_page_server_stats(8088)
     assert "GET /data/cross_origin_target/" not in redirect_target_stats
@@ -772,18 +757,18 @@ def test_url_engine_wildcard_redirect_uses_query_setting():
         node1.query(
             f"CREATE TABLE {table_name} (x UInt64) "
             "ENGINE = URL('http://resolver:8087/data/redirect/part*.tsv', 'TSV')",
-            settings={"allow_url_wildcard_from_index_pages": 1},
+            settings={"allow_experimental_url_wildcard_from_index_pages": 1},
         )
 
         error = node1.query_and_get_error(
             f"SELECT sum(x) FROM {table_name} "
-            "SETTINGS allow_url_wildcard_from_index_pages=1, max_http_get_redirects=0"
+            "SETTINGS allow_experimental_url_wildcard_from_index_pages=1, max_http_get_redirects=0"
         )
         assert "Too many redirects while trying to access" in error
 
         result = node1.query(
             f"SELECT sum(x) FROM {table_name} "
-            "SETTINGS allow_url_wildcard_from_index_pages=1, max_http_get_redirects=1"
+            "SETTINGS allow_experimental_url_wildcard_from_index_pages=1, max_http_get_redirects=1"
         )
         assert result.strip() == "19"
     finally:
@@ -794,7 +779,7 @@ def test_url_wildcard_is_experimental():
     error = node1.query_and_get_error(
         "SELECT sum(x) FROM url('http://resolver:8087/data/**/part*.tsv', 'TSV', 'x UInt64')"
     )
-    assert "allow_url_wildcard_from_index_pages" in error
+    assert "allow_experimental_url_wildcard_from_index_pages" in error
 
 
 def test_table_function_url_access_rights():
@@ -865,265 +850,3 @@ SETTINGS remote_read_min_bytes_for_seek = 1, max_read_buffer_size = 1, max_downl
             expected_result += f"{i}\t{i + 1}\t{i + 2}\n"
 
         assert result == expected_result
-
-
-CONF_PATH = "/etc/clickhouse-server/config.d/conf.xml"
-FORBIDDEN_HEADER = "<header>X-Forbidden-Url-Wildcard</header>"
-
-
-class forbidden_authorization:
-    """Forbids the `Authorization` header in `http_forbid_headers` for the duration of the block."""
-
-    def __enter__(self):
-        node1.replace_in_config(
-            CONF_PATH, FORBIDDEN_HEADER, FORBIDDEN_HEADER + "<header>Authorization</header>"
-        )
-        node1.query("SYSTEM RELOAD CONFIG")
-
-    def __exit__(self, *args):
-        node1.replace_in_config(CONF_PATH, "<header>Authorization</header>", "")
-        node1.query("SYSTEM RELOAD CONFIG")
-
-
-def authorization_requests(port=8087):
-    return get_index_page_server_stats(port).get("Authorization", 0)
-
-
-def assert_authorization_forbidden(error, secret="user:pass"):
-    assert 'HTTP header "Authorization" is forbidden' in error, error
-    assert secret not in server_part_of_error(error), error
-
-
-@pytest.mark.parametrize(
-    "query",
-    [
-        pytest.param(
-            "SELECT sum(x) FROM url('http://user:pass@resolver:8087/data/2025/part1.tsv', 'TSV', 'x UInt64')",
-            id="userinfo",
-        ),
-        # The first option is unreachable, so the read moves on to the second one.
-        pytest.param(
-            "SELECT sum(x) FROM url("
-            "'http://127.0.0.1:1/data/2025/part1.tsv|http://user:pass@resolver:8087/data/2025/part1.tsv', "
-            "'TSV', 'x UInt64') SETTINGS http_max_tries = 1",
-            id="failover",
-        ),
-        # The second option is usable, so the read must not move on to it.
-        pytest.param(
-            "SELECT sum(x) FROM url("
-            "'http://user:pass@resolver:8087/data/2025/part1.tsv|http://resolver:8087/data/2025/part1.tsv', "
-            "'TSV', 'x UInt64') SETTINGS http_max_tries = 1",
-            id="failover_first",
-        ),
-        pytest.param(
-            "SELECT sum(x) FROM urlCluster('test_cluster_two_shards', "
-            "'http://user:pass@resolver:8087/data/2025/part1.tsv', 'TSV', 'x UInt64')",
-            id="url_cluster",
-        ),
-        pytest.param(
-            with_url_wildcard_setting(
-                "SELECT sum(x) FROM url('http://user:pass@resolver:8087/data/2025/part*.tsv', 'TSV', 'x UInt64')"
-            ),
-            id="wildcard",
-        ),
-        # Requests with the `Authorization` header get 403 there, so the read moves on to the second option.
-        pytest.param(
-            with_url_wildcard_setting(
-                "SELECT sum(x) FROM url('http://{user:pass@resolver:8087|resolver:8087}/data/auth_failover/part*.tsv', "
-                "'TSV', 'x UInt64')"
-            ),
-            id="wildcard_failover_first",
-        ),
-    ],
-)
-def test_url_userinfo_with_forbidden_authorization(query):
-    # The userinfo is sent as Basic credentials in the `Authorization` header.
-    reset_index_page_server_stats()
-    node1.query(query)
-    assert authorization_requests() > 0
-
-    reset_index_page_server_stats()
-    with forbidden_authorization():
-        assert_authorization_forbidden(node1.query_and_get_error(query))
-    assert authorization_requests() == 0
-
-
-def test_url_cluster_userinfo_refused_by_initiator():
-    # node1 refuses the URL before node2, which does not forbid the header, gets it. The userinfo is in the second
-    # failover option, so the URL as a whole has none.
-    query = (
-        "SELECT sum(x) FROM urlCluster('test_cluster_node2', "
-        "'http://127.0.0.1:1/data/2025/part1.tsv|http://user:pass@resolver:8087/data/2025/part1.tsv', "
-        "'TSV', 'x UInt64') SETTINGS http_max_tries = 1"
-    )
-    reset_index_page_server_stats()
-    assert node1.query(query) == "3\n"
-    assert authorization_requests() > 0
-
-    reset_index_page_server_stats()
-    with forbidden_authorization():
-        assert_authorization_forbidden(node1.query_and_get_error(query))
-    assert authorization_requests() == 0
-
-
-def test_url_userinfo_without_username_with_forbidden_authorization():
-    # Credentials without a username are not sent, so they are not refused.
-    reset_index_page_server_stats()
-    with forbidden_authorization():
-        assert (
-            node1.query("SELECT sum(x) FROM url('http://:pass@resolver:8087/data/2025/part1.tsv', 'TSV', 'x UInt64')")
-            == "3\n"
-        )
-    assert authorization_requests() == 0
-
-
-def test_stored_url_wildcard_table_with_forbidden_authorization():
-    # A stored table loads after the header is forbidden, but its reads do not send the userinfo.
-    table_name = "url_wildcard_userinfo"
-    node1.query(f"DROP TABLE IF EXISTS {table_name}")
-    node1.query(
-        f"CREATE TABLE {table_name} (x UInt64) "
-        "ENGINE = URL('http://user:pass@resolver:8087/data/2025/part*.tsv', 'TSV')",
-        settings={"allow_url_wildcard_from_index_pages": 1},
-    )
-    try:
-        reset_index_page_server_stats()
-        assert node1.query(f"SELECT sum(x) FROM {table_name}") == "12\n"
-        assert authorization_requests() > 0
-
-        with forbidden_authorization():
-            node1.query(f"DETACH TABLE {table_name}")
-            node1.query(f"ATTACH TABLE {table_name}")
-            reset_index_page_server_stats()
-            assert_authorization_forbidden(node1.query_and_get_error(f"SELECT sum(x) FROM {table_name}"))
-            assert authorization_requests() == 0
-    finally:
-        node1.query(f"DROP TABLE IF EXISTS {table_name}")
-
-
-def test_web_index_disk_userinfo_with_forbidden_authorization():
-    # Creating a table on a `web_index` disk probes `format_version.txt` with a HEAD request, before any listing.
-    table_name = "web_index_userinfo"
-    query = (
-        f"CREATE TABLE {table_name} (x UInt64) ENGINE = MergeTree ORDER BY x "
-        "SETTINGS disk = disk(type = web, endpoint = 'http://user:pass@resolver:8087/data/web_index_userinfo/', "
-        "metadata_type = web_index)"
-    )
-    try:
-        reset_index_page_server_stats()
-        node1.query(query)
-        assert authorization_requests() > 0
-        node1.query(f"DROP TABLE {table_name} SYNC")
-
-        reset_index_page_server_stats()
-        with forbidden_authorization():
-            assert_authorization_forbidden(node1.query_and_get_error(query))
-        assert authorization_requests() == 0
-    finally:
-        node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
-
-
-def test_url_redirect_userinfo_is_not_sent_with_forbidden_authorization():
-    # The redirect has a userinfo in its `Location`, which does not become the credentials of the request.
-    reset_index_page_server_stats(8088)
-    with forbidden_authorization():
-        node1.query(
-            "SELECT * FROM url('http://resolver:8087/data/cross_origin_redirect/', 'LineAsString') "
-            "SETTINGS max_http_get_redirects = 1"
-        )
-    stats = get_index_page_server_stats(8088)
-    assert stats["GET /data/cross_origin_target/"] > 0
-    assert "Authorization" not in stats
-
-
-def test_http_dictionary_credentials_with_forbidden_authorization():
-    def create_dictionary(name):
-        node1.query(
-            f"CREATE DICTIONARY {name} (id UInt64, name String) PRIMARY KEY id "
-            "SOURCE(HTTP(url 'http://resolver:8087/data/dictionary/data.tsv' format 'TabSeparated' "
-            "credentials(user 'user' password 'dict_secret_pw'))) "
-            "LIFETIME(0) LAYOUT(FLAT())"
-        )
-
-    allowed, forbidden = "http_credentials_allowed", "http_credentials_forbidden"
-    try:
-        create_dictionary(allowed)
-        reset_index_page_server_stats()
-        assert node1.query(f"SELECT dictGet('{allowed}', 'name', toUInt64(1))") == "one\n"
-        assert authorization_requests() > 0
-
-        with forbidden_authorization():
-            create_dictionary(forbidden)
-            reset_index_page_server_stats()
-            assert_authorization_forbidden(
-                node1.query_and_get_error(f"SELECT dictGet('{forbidden}', 'name', toUInt64(1))"),
-                secret="dict_secret_pw",
-            )
-            assert authorization_requests() == 0
-    finally:
-        node1.query(f"DROP DICTIONARY IF EXISTS {allowed}")
-        node1.query(f"DROP DICTIONARY IF EXISTS {forbidden}")
-
-
-def test_loaded_http_dictionary_credentials_with_forbidden_authorization():
-    # A loaded dictionary keeps its source across its updates, so the credentials are checked per request.
-    name = "http_credentials_loaded"
-    node1.query(
-        f"CREATE DICTIONARY {name} (id UInt64, name String) PRIMARY KEY id "
-        "SOURCE(HTTP(url 'http://resolver:8087/data/dictionary/data.tsv' format 'TabSeparated' "
-        "credentials(user 'user' password 'dict_secret_pw'))) "
-        "LIFETIME(MIN 1 MAX 1) LAYOUT(FLAT())"
-    )
-    try:
-        reset_index_page_server_stats()
-        assert node1.query(f"SELECT dictGet('{name}', 'name', toUInt64(1))") == "one\n"
-        assert authorization_requests() > 0
-
-        with forbidden_authorization():
-            assert_eq_with_retry(
-                node1,
-                f"SELECT last_exception LIKE '%Authorization%is forbidden%' FROM system.dictionaries WHERE name = '{name}'",
-                "1",
-                retry_count=60,
-                sleep_time=0.5,
-            )
-    finally:
-        node1.query(f"DROP DICTIONARY IF EXISTS {name}")
-
-
-@pytest.mark.parametrize(
-    "registry_url",
-    [
-        pytest.param("http://user:pass@resolver:8087/", id="userinfo"),
-        # Without an authority the URL has no userinfo, but the schema is requested from
-        # `http://user:pass@resolver:8087/schemas/ids/1`, which its path resolves to.
-        pytest.param("http:http://user:pass@resolver:8087/", id="without_authority"),
-    ],
-)
-def test_avro_schema_registry_userinfo_with_forbidden_authorization(registry_url):
-    # The data is the magic byte and the schema id 1, so the schema is requested. The server has no
-    # schema registry, so the request fails anyway: only the header it was sent with matters.
-    query = (
-        "SELECT * FROM format(AvroConfluent, 'a UInt8', '\\x00\\x00\\x00\\x00\\x01') "
-        f"SETTINGS format_avro_schema_registry_url = '{registry_url}'"
-    )
-    reset_index_page_server_stats()
-    node1.query_and_get_error(query)
-    assert authorization_requests() > 0
-
-    reset_index_page_server_stats()
-    with forbidden_authorization():
-        assert_authorization_forbidden(node1.query_and_get_error(query))
-    assert authorization_requests() == 0
-
-
-def test_avro_schema_registry_output_userinfo_with_forbidden_authorization():
-    # Writing `AvroConfluent` registers the schema, with the userinfo of the registry URL as Basic credentials.
-    # Over HTTP the server writes the output, `clickhouse client` would write it itself.
-    query = (
-        "SELECT toInt64(1) AS a FORMAT AvroConfluent "
-        "SETTINGS format_avro_schema_registry_url = 'http://user:pass@resolver:8087/', "
-        "output_format_avro_confluent_subject = 'subject'"
-    )
-    with forbidden_authorization():
-        assert_authorization_forbidden(node1.http_query_and_get_error(query))

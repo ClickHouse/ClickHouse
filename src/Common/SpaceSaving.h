@@ -153,14 +153,14 @@ public:
 
     ~SpaceSaving() { destroyElements(); }
 
-    [[nodiscard]] bool empty() const { return counter_list.empty(); }
+    bool empty() const { return counter_list.empty(); }
 
-    [[nodiscard]] size_t size() const
+    size_t size() const
     {
         return counter_list.size();
     }
 
-    [[nodiscard]] size_t capacity() const { return requested_capacity; }
+    size_t capacity() const { return requested_capacity; }
 
     void clear()
     {
@@ -195,13 +195,13 @@ public:
         // Key doesn't exist, but can fit in the top K
         if (unlikely(counter_list.size() < capacity()))
         {
-            push(arena.emplace(key), increment, error, hash);
+            push(Counter{arena.emplace(key), increment, error, hash});
             return;
         }
 
         const UInt64 alpha_mask = alpha_map.size() - 1;
         auto & alpha = alpha_map[hash & alpha_mask];
-        push(arena.emplace(key), alpha + increment, alpha + error, hash);
+        push(Counter{arena.emplace(key), alpha + increment, alpha + error, hash});
     }
 
     /*
@@ -272,7 +272,7 @@ public:
         truncateIfNeeded(true);
     }
 
-    [[nodiscard]] std::vector<Counter> topK(size_t k) const
+    std::vector<Counter> topK(size_t k) const
     {
         std::vector<Counter> new_list;
         new_list.reserve(counter_list.size());
@@ -397,13 +397,11 @@ public:
     }
 
 protected:
-    /// Fields by value: a `Counter` temporary would escape into this `NO_INLINE` call and give the
-    /// per-row `insert` a `-fstack-protector-strong` canary.
-    NO_INLINE void push(TKey key, UInt64 count, UInt64 error, size_t hash)
+    NO_INLINE void push(Counter && counter)
     {
         size_t pos = counter_list.size();
-        counter_map.insertIfNotPresent(key, hash, pos);
-        counter_list.push_back(Counter{key, count, error, hash});
+        counter_map.insertIfNotPresent(counter.key, counter.hash, pos);
+        counter_list.push_back(std::move(counter));
         truncateIfNeeded(false);
     }
 

@@ -17,19 +17,19 @@ namespace
 class UnknownSizeObjectStorage final : public DB::IObjectStorage
 {
 public:
-    [[nodiscard]] std::string getName() const override { return "UnknownSize"; }
-    [[nodiscard]] DB::ObjectStorageType getType() const override { return DB::ObjectStorageType::Web; }
-    [[nodiscard]] std::string getCommonKeyPrefix() const override { return ""; }
-    [[nodiscard]] std::string getDescription() const override { return "unknown size test storage"; }
-    [[nodiscard]] bool exists(const DB::StoredObject &) const override { return true; }
+    std::string getName() const override { return "UnknownSize"; }
+    DB::ObjectStorageType getType() const override { return DB::ObjectStorageType::Web; }
+    std::string getCommonKeyPrefix() const override { return ""; }
+    std::string getDescription() const override { return "unknown size test storage"; }
+    bool exists(const DB::StoredObject &) const override { return true; }
 
-    [[nodiscard]] DB::ObjectMetadata getObjectMetadata(const std::string &, bool) const override { return makeMetadata(); }
-    [[nodiscard]] DB::ObjectMetadata getObjectMetadata(const DB::RelativePathWithMetadata &, bool) const override { return makeMetadata(); }
+    DB::ObjectMetadata getObjectMetadata(const std::string &, bool) const override { return makeMetadata(); }
+    DB::ObjectMetadata getObjectMetadata(const DB::RelativePathWithMetadata &, bool) const override { return makeMetadata(); }
 
-    [[nodiscard]] std::optional<DB::ObjectMetadata> tryGetObjectMetadata(const std::string &, bool) const override { return makeMetadata(); }
-    [[nodiscard]] std::optional<DB::ObjectMetadata> tryGetObjectMetadata(const DB::RelativePathWithMetadata &, bool) const override { return makeMetadata(); }
+    std::optional<DB::ObjectMetadata> tryGetObjectMetadata(const std::string &, bool) const override { return makeMetadata(); }
+    std::optional<DB::ObjectMetadata> tryGetObjectMetadata(const DB::RelativePathWithMetadata &, bool) const override { return makeMetadata(); }
 
-    [[nodiscard]] std::unique_ptr<DB::ReadBufferFromFileBase> readObject(
+    std::unique_ptr<DB::ReadBufferFromFileBase> readObject(
         const DB::StoredObject &,
         const DB::ReadSettings &,
         std::optional<size_t>,
@@ -49,11 +49,9 @@ public:
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected write");
     }
 
-    [[nodiscard]] bool isRemote() const override { return true; }
+    bool isRemote() const override { return true; }
     void removeObjectIfExists(const DB::StoredObject &) override {}
-    void removeObjectsIfExist(
-        const DB::StoredObjects &,
-        DB::StoredObjects *) override {}
+    void removeObjectsIfExist(const DB::StoredObjects &) override {}
 
     void copyObject(
         const DB::StoredObject &,
@@ -67,8 +65,8 @@ public:
 
     void shutdown() override {}
     void startup() override {}
-    [[nodiscard]] std::string getObjectsNamespace() const override { return ""; }
-    [[nodiscard]] DB::ObjectStorageKeyGeneratorPtr createKeyGenerator() const override { return nullptr; }
+    std::string getObjectsNamespace() const override { return ""; }
+    DB::ObjectStorageKeyGeneratorPtr createKeyGenerator() const override { return nullptr; }
 
 private:
     static DB::ObjectMetadata makeMetadata()

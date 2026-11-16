@@ -31,7 +31,7 @@ public:
     /// Whether the step can execute this join type.
     static bool isSupportedJoinType(JoinKind kind, JoinStrictness strictness);
 
-    [[nodiscard]] String getName() const override { return "IEJoin"; }
+    String getName() const override { return "IEJoin"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
@@ -43,7 +43,7 @@ public:
 private:
     void updateOutputHeader() override;
 
-    [[nodiscard]] String formatConditions() const;
+    String formatConditions() const;
 
     /// Conditions in the query orientation (`left` refers to the query's left table).
     IEJoinConditions conditions;
@@ -55,11 +55,6 @@ private:
     /// derived from the query kind/strictness.
     IEJoinKind kind = IEJoinKind::Inner;
     bool swap_inputs = false;
-
-    /// The join type as written in the query. `system.query_log` is filled from it, because `kind` above
-    /// is an `IEJoinKind` and the column reports the `JoinKind` and the `JoinStrictness` separately.
-    JoinKind query_kind;
-    JoinStrictness query_strictness;
 
     /// The planner pre-sorted each input by its first-condition key with a `SortingStep`
     /// (always ascending, NULLS LAST); selects the merge-based L1 build in the operator.

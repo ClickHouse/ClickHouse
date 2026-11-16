@@ -1,0 +1,4 @@
+<clickhouse>
+    <io_thread_pool_queue_size>18446744073709551615</io_thread_pool_queue_size>
+    <backups_io_thread_pool_queue_size>18446744073709551615</backups_io_thread_pool_queue_size>
+</clickhouse>

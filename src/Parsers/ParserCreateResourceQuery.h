@@ -9,7 +9,7 @@ namespace DB
 class ParserCreateResourceQuery : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "CREATE RESOURCE query"; }
+    const char * getName() const override { return "CREATE RESOURCE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

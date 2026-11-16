@@ -13,7 +13,7 @@ JOIN (SELECT number AS id, toFixedString(toString(number % 10), 64) AS k FROM nu
 ON l.id = r.id
 GROUP BY g
 FORMAT Null
-SETTINGS log_comment = 'aggregation_memory_tracker';
+SETTINGS log_comment = 'aggregation_memory_tracker', use_aggregation_memory_tracker = 1;
 
 SELECT r.k AS g, groupArray(l.s)
 FROM (SELECT number AS id, leftPad(toString(number), 10, '0') AS s FROM numbers(1000)) AS l

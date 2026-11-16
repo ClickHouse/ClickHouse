@@ -18,13 +18,6 @@ SELECT damerauLevenshteinDistance(randomString(power(2, 17)), 'abc'); -- { serve
 SELECT jaroSimilarity(randomString(power(2, 17)), 'abc'); -- { serverError TOO_LARGE_STRING_SIZE}
 SELECT jaroWinklerSimilarity(randomString(power(2, 17)), 'abc'); -- { serverError TOO_LARGE_STRING_SIZE}
 
-SELECT '-- Empty input bypasses size limit';
-SELECT
-    jaroSimilarity('', repeat('a', 65537)),
-    jaroSimilarity(repeat('a', 65537), ''),
-    jaroWinklerSimilarity('', repeat('a', 65537)),
-    jaroWinklerSimilarity(repeat('a', 65537), '');
-
 DROP TABLE IF EXISTS t;
 CREATE TABLE t
 (
@@ -147,90 +140,4 @@ SELECT levenshteinDistance('Zwx0QyNE2AfZBlLE5oel5LvXaNryAXXqtuuBfUGbu6k5NCXMqLoU
 SELECT levenshteinDistanceUTF8('詳で恥総げちうづ住池高そもぽょ宗2合ルヨ変板ゅ果治モコ場午っ任球ょじすり相嗅アトナ供政祥ゃイ万科うが秋フが女消ノワロキ見風ヤヒシス配供は否挑ワレク銀出ハヘイヤ治残ヌ', '道スミチ上天よラルべ健市ホネ現提ど場池ッ分異ヌヨ傷南イナ散一ルクょ河9観ウエリ現盤ラフ作強マ同張え。6木ミセソ作止スフ野写で必般イ欠誕温スソ去毎ク建身っつんド度粉ご前19調まひ後博たを携約禁72報日聞市ヒヤハホ経北傘をぞ。観ツス手建ぐか察禁ヌホヲシ育') AS actual, 120 AS expected;
 SELECT levenshteinDistanceUTF8('半テ絶力へじづひ情日ヲフオマ型読9緊覧だづや田立だリ九高わす二申むドい生著るべや断彰ユカツ複95済モナス稿国ネサナユ近無メエ飯承ぱ項天法ら抜乾凍刷くゃイあ。公当記てあ茂全ー間仙サエ藤96送域エチキル資属企済7開フリセラ高5数なル名惑もせむ春午く済並めぜれ数なル名惑もせむ春午く済並めぜ', '話ゅへ成写ミヨ異読サ週製事ぼげ成権ク公地ウコトヘ録物内ンで手制ぜ江務たほ沼部よイとげ所46入ぽ閉載ハウ強集ヘ立問えろ後応披ぜやまよ裁捕藤やこも。京チ食相つてふば予真りぞ熱4一発ヤヒリ月能まぽどお曜主ずンぴ載告キヱ界未ヨセラ意古林ぐめ勝禁ヘヱナワ際無えくちゃ話稿けび文担達リ。公全ツハネレ失16変え軽将ケムトリ量4紙ミカ説海ちレろし年邦健ルチタ養未8既杉乾凍つンろめ。問えろ後応披ぜやまよJapanese Lorem Ipsum is based') AS actual, 215 AS expected;
 
-SELECT '-- jaroSimilarity/jaroWinklerSimilarity: AVX2 kernel boundary and match-order coverage';
--- jaroSimilarity dispatches on the shorter of the two arguments: <= 64 bytes uses the jaroSmall
--- kernel, > 64 uses the jaroScan sliding-window kernel. All strings below contain repeated
--- bytes with overlapping match windows, so a matcher that picks a different (but still valid)
--- occurrence than the leftmost one changes the transposition count and therefore the result.
--- needle length 64 (jaroSmall, exactly at the boundary)
-SELECT jaroSimilarity(materialize('ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB'), materialize('BABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABA'));
-SELECT jaroWinklerSimilarity(materialize('ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB'), materialize('BABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABA'));
--- needle length 65 (jaroScan, just past the boundary)
-SELECT jaroSimilarity(materialize('ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABC'), materialize('BABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAC'));
-SELECT jaroWinklerSimilarity(materialize('ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABC'), materialize('BABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAC'));
--- needle length 199 (jaroScan, crosses the 128-byte unrolled window and the 32-byte/tail loops)
-SELECT jaroSimilarity(materialize('XYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZQ'), materialize('ZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXQ'));
-SELECT jaroWinklerSimilarity(materialize('XYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZQ'), materialize('ZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXQ'));
--- haystack longer than 64, needle (kernel selector) at exactly 60: still jaroSmall
-SELECT jaroSimilarity(materialize('CDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCD'), materialize('DCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDC'));
-SELECT jaroWinklerSimilarity(materialize('CDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCD'), materialize('DCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDC'));
--- haystack 40 bytes, needle 70 bytes: the needle is the longer side, so the arguments are
--- swapped internally to reach jaroSmall; also exercises the jaroWinklerSimilarity
--- common-prefix boost, which must still be computed on the original argument order
-SELECT jaroSimilarity(materialize('ABCDABCDABCDABCDABCDABCDABCDABCDABCDABCD'), materialize('ABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDAB'));
-SELECT jaroWinklerSimilarity(materialize('ABCDABCDABCDABCDABCDABCDABCDABCDABCDABCD'), materialize('ABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDAB'));
-
--- Which of the two arguments arrives as the needle is not under the control of the
--- implementation: `FunctionStringDistanceImpl::vectorConstant` forwards
--- `jaroSimilarity(column, const)` through `constantVector(const, column)`, so a row value can
--- arrive as the needle. The kernel must therefore be selected by the shorter side, and all four
--- shapes below - both argument orders, `column, const` and `const, column` - must give exactly
--- the same result as the plain `column, column` call.
-SELECT jaroSimilarity(materialize(h), materialize(n)) FROM (SELECT repeat('AB', 60) AS h, repeat('BA', 21) AS n);
-SELECT
-    jaroSimilarity(materialize(n), materialize(h)) = jaroSimilarity(materialize(h), materialize(n)) AS symmetric,
-    jaroSimilarity(materialize(h), n) = jaroSimilarity(materialize(h), materialize(n)) AS vector_constant,
-    jaroSimilarity(h, materialize(n)) = jaroSimilarity(materialize(h), materialize(n)) AS constant_vector,
-    jaroWinklerSimilarity(materialize(h), n) = jaroWinklerSimilarity(materialize(h), materialize(n)) AS winkler_vector_constant,
-    jaroWinklerSimilarity(h, materialize(n)) = jaroWinklerSimilarity(materialize(h), materialize(n)) AS winkler_constant_vector
-FROM (SELECT repeat('AB', 60) AS h, repeat('BA', 21) AS n);
--- Same, with the long string as the second argument, so the swap happens on the other side.
-SELECT
-    jaroSimilarity(materialize(n), materialize(h)) = jaroSimilarity(materialize(h), materialize(n)) AS symmetric,
-    jaroSimilarity(materialize(n), h) = jaroSimilarity(materialize(h), materialize(n)) AS vector_constant,
-    jaroSimilarity(n, materialize(h)) = jaroSimilarity(materialize(h), materialize(n)) AS constant_vector
-FROM (SELECT repeat('XYZ', 40) AS h, repeat('ZYX', 7) AS n);
-
 DROP TABLE t;
-
-SELECT '-- editDistanceRatio and stringSimilarityRatio';
--- editDistanceRatio: 1 - editDistance(s1, s2) / max(length(s1), length(s2))
-SELECT editDistanceRatio('kitten', 'sitting'), levenshteinRatio('kitten', 'sitting');
-SELECT editDistanceRatio('', ''), editDistanceRatio('abc', ''), editDistanceRatio('', 'abc'), editDistanceRatio('abc', 'abc'), editDistanceRatio('abc', 'xyz');
-SELECT editDistanceRatioUTF8('我是谁', '我是我'), levenshteinRatioUTF8('我是谁', '我是我'), editDistanceRatio('我是谁', '我是我');
--- An empty string against a multi-byte one: the lengths are code points, not bytes
-SELECT editDistanceRatioUTF8('', 'é'), editDistanceRatioUTF8('我是谁', ''), stringSimilarityRatioUTF8('', 'é'), stringSimilarityRatioUTF8('我是谁', '');
-
--- stringSimilarityRatio: 2 * LCS / (length(s1) + length(s2)), the same value as Python's Levenshtein.ratio
-SELECT stringSimilarityRatio('kitten', 'sitting'), stringSimilarityRatio('clickhouse', 'mouse'), stringSimilarityRatio('mouse', 'clickhouse');
-SELECT stringSimilarityRatio('', ''), stringSimilarityRatio('abc', ''), stringSimilarityRatio('', 'abc'), stringSimilarityRatio('abc', 'abc'), stringSimilarityRatio('abc', 'xyz');
-SELECT stringSimilarityRatioUTF8('我是谁', '我是我'), stringSimilarityRatio('我是谁', '我是我');
-
--- Strings longer than 64 symbols: the bit vector spans several words and the carry crosses word boundaries
-SELECT stringSimilarityRatio(repeat('ab', 100), repeat('ba', 100));
-SELECT stringSimilarityRatio(repeat('a', 1000), repeat('a', 999) || 'b');
-SELECT stringSimilarityRatio(repeat('a', 64) || 'b', 'b' || repeat('a', 64));
-SELECT stringSimilarityRatioUTF8(repeat('ő', 130), repeat('ő', 65) || repeat('ű', 65));
-
--- Constant and column arguments in every combination
-SELECT s, stringSimilarityRatio(s, 'mouse'), stringSimilarityRatio('mouse', s), stringSimilarityRatio(s, s || 'x'), editDistanceRatio(s, 'mouse'), editDistanceRatio('mouse', s)
-FROM (SELECT arrayJoin(['clickhouse', 'mouse', '', 'house']) AS s) ORDER BY s;
-
--- Errors: a truncated UTF-8 sequence, also when the other string is empty, and too long strings
-SELECT stringSimilarityRatioUTF8('\xC3', 'a'); -- { serverError BAD_ARGUMENTS }
-SELECT stringSimilarityRatioUTF8('', '\xC3'); -- { serverError BAD_ARGUMENTS }
-SELECT editDistanceRatioUTF8('\xC3', 'a'); -- { serverError BAD_ARGUMENTS }
-SELECT editDistanceRatioUTF8('', '\xC3'); -- { serverError BAD_ARGUMENTS }
-SELECT stringSimilarityRatio(repeat('a', 70000), 'a'); -- { serverError TOO_LARGE_STRING_SIZE }
-SELECT editDistanceRatio(repeat('a', 70000), 'a'); -- { serverError TOO_LARGE_STRING_SIZE }
-
--- A byte from 0x80 to 0xBF without a lead byte does not throw: it is one symbol, as in editDistanceUTF8
-SELECT editDistanceRatioUTF8('a\xB0', 'b');
-SELECT stringSimilarityRatioUTF8('\x80', 'a');
-SELECT stringSimilarityRatioUTF8('', '\x80');
-SELECT editDistanceRatioUTF8('\x80', 'a');
-SELECT editDistanceRatioUTF8('', '\x80');
-
--- The size limit protects the computation, which does not run when one string is empty
-SELECT editDistanceRatio(repeat('a', 70000), '');
-SELECT stringSimilarityRatio(repeat('a', 70000), '');

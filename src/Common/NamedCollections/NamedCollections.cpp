@@ -45,17 +45,17 @@ public:
         return std::unique_ptr<Impl>(new Impl(collection_config, keys));
     }
 
-    [[nodiscard]] bool has(const Key & key) const
+    bool has(const Key & key) const
     {
         return Configuration::hasConfigValue(*config, key);
     }
 
-    template <typename T> [[nodiscard]] T get(const Key & key) const
+    template <typename T> T get(const Key & key) const
     {
         return Configuration::getConfigValue<T>(*config, key);
     }
 
-    template <typename T> [[nodiscard]] T getOrDefault(const Key & key, const T & default_value) const
+    template <typename T> T getOrDefault(const Key & key, const T & default_value) const
     {
         return Configuration::getConfigValueOrDefault<T>(*config, key, &default_value);
     }
@@ -76,7 +76,7 @@ public:
         return default_value;
     }
 
-    [[nodiscard]] ImplPtr createCopy(const std::string & collection_name_) const
+    ImplPtr createCopy(const std::string & collection_name_) const
     {
         return create(*config, collection_name_, "", keys);
     }
@@ -88,7 +88,7 @@ public:
         chassert(removed);
     }
 
-    [[nodiscard]] Keys getKeys(ssize_t depth, const std::string & prefix) const
+    Keys getKeys(ssize_t depth, const std::string & prefix) const
     {
         std::queue<std::string> enumerate_input;
 
@@ -113,17 +113,17 @@ public:
         return result;
     }
 
-    [[nodiscard]] Keys::const_iterator begin() const
+    Keys::const_iterator begin() const
     {
         return keys.begin();
     }
 
-    [[nodiscard]] Keys::const_iterator end() const
+    Keys::const_iterator end() const
     {
         return keys.end();
     }
 
-    [[nodiscard]] std::string dumpStructure() const
+    std::string dumpStructure() const
     {
         /// Convert a collection config like
         /// <collection>

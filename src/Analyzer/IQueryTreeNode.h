@@ -77,11 +77,6 @@ struct ConvertToASTOptions
     /// Add _CAST if constant literal type is different from column type
     bool add_cast_for_constants = true;
 
-    /// Render a `DateTime` constant as its raw Unix timestamp instead of local date-time text, which two
-    /// instants share across a DST overlap. Valid wherever the consumer re-applies the literal's declared
-    /// type; clear it for a consumer that parses the text itself, such as an external database.
-    bool date_time_constants_as_numbers = true;
-
     bool use_source_expression_for_constants = false;
 
     /// Identifiers are fully qualified (`database.table.column`), otherwise names are just column names (`column`)
@@ -100,10 +95,10 @@ public:
     virtual ~IQueryTreeNode() = default;
 
     /// Get query tree node type
-    [[nodiscard]] virtual QueryTreeNodeType getNodeType() const = 0;
+    virtual QueryTreeNodeType getNodeType() const = 0;
 
     /// Get query tree node type name
-    [[nodiscard]] const char * getNodeTypeName() const
+    const char * getNodeTypeName() const
     {
         return toString(getNodeType());
     }
@@ -112,7 +107,7 @@ public:
       * If node does not support this method exception is thrown.
       * TODO: Maybe this can be a part of ExpressionQueryTreeNode.
       */
-    [[nodiscard]] virtual DataTypePtr getResultType() const
+    virtual DataTypePtr getResultType() const
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query tree node", getNodeTypeName());
     }
@@ -135,7 +130,7 @@ public:
       * With default compare options aliases of query tree nodes are compared during isEqual call.
       * Original ASTs of query tree nodes are not compared during isEqual call.
       */
-    [[nodiscard]] bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
+    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
 
     using Hash = CityHash_v1_0_2::uint128;
     using HashState = SipHash;
@@ -155,36 +150,36 @@ public:
       * the lookup explicitly for the empty case (see `QueryAnalyzer::resolveExpressionNode`
       * and `PlannerActionsVisitorImpl::visitColumn`).
       */
-    [[nodiscard]] Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
+    Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
 
     /// Get a deep copy of the query tree
-    [[nodiscard]] QueryTreeNodePtr clone() const;
+    QueryTreeNodePtr clone() const;
 
     /** Get a deep copy of the query tree.
       * If node to clone is key in replacement map, then instead of clone it
       * use value node from replacement map.
       */
     using ReplacementMap = std::unordered_map<const ITableExpressionNode *, TableExpressionNodePtr>;
-    [[nodiscard]] QueryTreeNodePtr cloneAndReplace(const ReplacementMap & replacement_map) const;
+    QueryTreeNodePtr cloneAndReplace(const ReplacementMap & replacement_map) const;
 
     /** Get a deep copy of the query tree.
       * If node to clone is node to replace, then instead of clone it use replacement node.
       */
-    [[nodiscard]] QueryTreeNodePtr cloneAndReplace(const TableExpressionNodePtr & node_to_replace, TableExpressionNodePtr replacement_node) const;
+    QueryTreeNodePtr cloneAndReplace(const TableExpressionNodePtr & node_to_replace, TableExpressionNodePtr replacement_node) const;
 
     /// Returns true if node has alias, false otherwise
-    [[nodiscard]] bool hasAlias() const
+    bool hasAlias() const
     {
         return !alias.empty();
     }
 
     /// Get node alias
-    [[nodiscard]] const String & getAlias() const
+    const String & getAlias() const
     {
         return alias;
     }
 
-    [[nodiscard]] const String & getOriginalAlias() const
+    const String & getOriginalAlias() const
     {
         return original_alias.empty() ? alias : original_alias;
     }
@@ -205,7 +200,7 @@ public:
     }
 
     /// Returns true if the expression was parenthesized in the original query
-    [[nodiscard]] bool isParenthesized() const
+    bool isParenthesized() const
     {
         return parenthesized;
     }
@@ -217,13 +212,13 @@ public:
     }
 
     /// Returns true if query tree node has original AST, false otherwise
-    [[nodiscard]] bool hasOriginalAST() const
+    bool hasOriginalAST() const
     {
         return original_ast != nullptr;
     }
 
     /// Get query tree node original AST
-    [[nodiscard]] const ASTPtr & getOriginalAST() const
+    const ASTPtr & getOriginalAST() const
     {
         return original_ast;
     }
@@ -239,19 +234,19 @@ public:
     /** If query tree has original AST format it for error message.
       * Otherwise exception is thrown.
       */
-    [[nodiscard]] String formatOriginalASTForErrorMessage() const;
+    String formatOriginalASTForErrorMessage() const;
 
     /// Convert query tree to AST
-    [[nodiscard]] ASTPtr toAST(const ConvertToASTOptions & options = {}) const;
+    ASTPtr toAST(const ConvertToASTOptions & options = {}) const;
 
     /// Convert query tree to AST and then format it for error message.
-    [[nodiscard]] String formatConvertedASTForErrorMessage() const;
+    String formatConvertedASTForErrorMessage() const;
 
     /** Format AST for error message.
       * If original AST exists use `formatOriginalASTForErrorMessage`.
       * Otherwise use `formatConvertedASTForErrorMessage`.
       */
-    [[nodiscard]] String formatASTForErrorMessage() const
+    String formatASTForErrorMessage() const
     {
         if (original_ast)
             return formatOriginalASTForErrorMessage();
@@ -260,7 +255,7 @@ public:
     }
 
     /// Dump query tree to string
-    [[nodiscard]] String dumpTree() const;
+    String dumpTree() const;
 
     /// Dump query tree to buffer
     void dumpTree(WriteBuffer & buffer) const;
@@ -287,14 +282,14 @@ public:
     }
 
     /// Get query tree node children
-    [[nodiscard]] const QueryTreeNodes & getChildren() const
+    const QueryTreeNodes & getChildren() const
     {
         return children;
     }
 
-    [[nodiscard]] virtual const ITableExpressionNode * asTableExpression() const { return nullptr; }
+    virtual const ITableExpressionNode * asTableExpression() const { return nullptr; }
 
-    const ITableExpressionNode & assertTableExpression() const /// NOLINT(modernize-use-nodiscard): often called only for its side effect
+    const ITableExpressionNode & assertTableExpression() const
     {
         const auto * ptr = asTableExpression();
         if (!ptr)
@@ -310,7 +305,7 @@ protected:
     /** Subclass must compare its internal state with rhs node internal state and do not compare children or weak pointers to other
       * query tree nodes.
       */
-    [[nodiscard]] virtual bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const = 0;
+    virtual bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const = 0;
 
     /** Subclass must update tree hash with its internal state and do not update tree hash for children or weak pointers to other
       * query tree nodes.
@@ -320,10 +315,10 @@ protected:
     /** Subclass must clone its internal state and do not clone children or weak pointers to other
       * query tree nodes.
       */
-    [[nodiscard]] virtual QueryTreeNodePtr cloneImpl() const = 0;
+    virtual QueryTreeNodePtr cloneImpl() const = 0;
 
     /// Subclass must convert its internal state and its children to AST
-    [[nodiscard]] virtual ASTPtr toASTImpl(const ConvertToASTOptions & options) const = 0;
+    virtual ASTPtr toASTImpl(const ConvertToASTOptions & options) const = 0;
 
     QueryTreeNodes children;
 
@@ -342,7 +337,7 @@ class ITableExpressionNode : public IQueryTreeNode
 public:
     using IQueryTreeNode::IQueryTreeNode;
 
-    [[nodiscard]] const ITableExpressionNode * asTableExpression() const final { return this; }
+    const ITableExpressionNode * asTableExpression() const final { return this; }
 };
 
 }

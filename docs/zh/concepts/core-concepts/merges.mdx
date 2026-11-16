@@ -6,6 +6,8 @@ keywords: ['合并']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 <div id="what-are-part-merges-in-clickhouse">
   ## ClickHouse 中的分片合并是什么？
 </div>
@@ -24,15 +26,7 @@ ClickHouse [速度很快](/zh/get-started/about/why-clickhouse-is-so-fast)，不
 
 下图概述了这一后台合并过程：
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![分片合并](/images/managing-data/core-concepts/merges_01.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_01.webp" size="lg" alt="分片合并" />
 
 <br />
 
@@ -75,15 +69,7 @@ ORDER BY name ASC;
 
 在 ClickHouse 24.10 中，内置的[监控仪表盘](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards)新增了一个[合并仪表盘](https://presentations.clickhouse.com/2024-release-24.10/index.html#17)。在 OSS 和 Cloud 中都可通过 `/merges` HTTP handler 访问，我们可以用它来可视化示例表中的所有分片合并：
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![part 合并](/images/managing-data/core-concepts/merges-dashboard.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges-dashboard.webp" size="lg" alt="part 合并" />
 
 <br />
 
@@ -101,33 +87,19 @@ ORDER BY name ASC;
 
 单个 ClickHouse server 会使用多个后台[合并线程](/zh/reference/settings/server-settings/settings/background#background_pool_size)并发执行分片合并：
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![parts 合并](/images/managing-data/core-concepts/merges_02.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="PART MERGES" />
 
 <br />
 
 每个合并线程都会执行以下循环：
 
-<Steps>
-  <Step title="将分片加载到内存">
-    决定下一步要合并哪些分片，并将这些分片加载到内存中。
-  </Step>
+① 决定下一步要合并哪些分片，并将这些分片加载到内存中。
 
-  <Step title="合并分片">
-    在内存中将这些分片合并为一个更大的分片。
-  </Step>
+② 在内存中将这些分片合并为一个更大的分片。
 
-  <Step title="写入磁盘">
-    将合并后的分片写入磁盘，然后返回步骤 1。
-  </Step>
-</Steps>
+③ 将合并后的分片写入磁盘。
+
+返回 ①
 
 请注意，增加 CPU 核心数量和 RAM 容量可以提升后台合并吞吐量。
 
@@ -143,41 +115,23 @@ ClickHouse 不一定会像[前面的示例](/zh/concepts/core-concepts/merges#co
 
 下图说明了 ClickHouse 中单个后台[合并线程](/zh/concepts/core-concepts/merges#concurrent-merges)如何合并分片 (默认情况下，不使用[垂直合并](/zh/concepts/core-concepts/merges#memory-optimized-merges)) ：
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![parts 合并](/images/managing-data/core-concepts/merges_03.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_03.webp" size="lg" alt="分片 合并" />
 
 <br />
 
 分片合并分为以下几个步骤：
 
-<Steps>
-  <Step title="解压与加载">
-    待合并分片中的[压缩二进制列文件](/zh/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)会先解压并加载到内存中。
-  </Step>
+**① 解压与加载**：待合并分片中的[压缩二进制列文件](/zh/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)会先解压并加载到内存中。
 
-  <Step title="合并">
-    数据会被合并成更大的列文件。
-  </Step>
+**② 合并**：数据会被合并成更大的列文件。
 
-  <Step title="索引">
-    系统会为合并后的列文件生成新的[稀疏主索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。
-  </Step>
+**③ 索引**：系统会为合并后的列文件生成新的[稀疏主索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。
 
-  <Step title="压缩与存储">
-    新的列文件和索引会被[压缩](/zh/reference/statements/create/table/codec)，并保存在一个新的[目录](/zh/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)中，该目录表示合并后的数据分区片段。
-  </Step>
-</Steps>
+**④ 压缩与存储**：新的列文件和索引会被[压缩](/zh/reference/statements/create/table/codec)，并保存在一个新的[目录](/zh/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)中，该目录表示合并后的数据分区片段。
 
 数据分区片段中的其他[元数据](/zh/concepts/core-concepts/parts) (如二级数据跳过索引、列统计信息、校验和以及 min-max 索引) 也会基于合并后的列文件重新创建。为简化说明，我们省略了这些细节。
 
-合并步骤的具体机制取决于所使用的 [MergeTree 引擎](/zh/reference/engines/table-engines/mergetree-family/index)，因为不同引擎处理合并的方式不同。例如，行可能会被聚合；如果数据已过期，也可能会被替换。正如前文所述，这种方法会**将所有数据处理都交由后台合并完成**，从而让写入操作保持轻量高效，实现**超高速插入**。
+步骤 ② 的具体机制取决于所使用的 [MergeTree 引擎](/zh/reference/engines/table-engines/mergetree-family/index)，因为不同引擎处理合并的方式不同。例如，行可能会被聚合；如果数据已过期，也可能会被替换。正如前文所述，这种方法会**将所有数据处理都交由后台合并完成**，从而让写入操作保持轻量高效，实现**超高速插入**。
 
 接下来，我们将简要介绍 MergeTree 家族中几种特定引擎的合并机制。
 
@@ -187,15 +141,7 @@ ClickHouse 不一定会像[前面的示例](/zh/concepts/core-concepts/merges#co
 
 下图说明了标准 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 表中的分片是如何合并的：
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![part 合并](/images/managing-data/core-concepts/merges_04.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_04.webp" size="lg" alt="part 合并" />
 
 <br />
 
@@ -209,15 +155,7 @@ ClickHouse 不一定会像[前面的示例](/zh/concepts/core-concepts/merges#co
 
 在 [ReplacingMergeTree](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree) 表中，分片合并的工作方式与[标准合并](/zh/concepts/core-concepts/merges#standard-merges)类似，但每一行只会保留最新版本，旧版本会被丢弃：
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![part 合并](/images/managing-data/core-concepts/merges_05.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_05.webp" size="lg" alt="part 合并" />
 
 <br />
 
@@ -235,15 +173,7 @@ ClickHouse 不一定会像[前面的示例](/zh/concepts/core-concepts/merges#co
 
 在 [SummingMergeTree](/zh/reference/engines/table-engines/mergetree-family/summingmergetree) 表的 分片合并期间，数值数据会被自动汇总：
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![分片 合并](/images/managing-data/core-concepts/merges_06.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_06.webp" size="lg" alt="分片 合并" />
 
 <br />
 
@@ -257,15 +187,7 @@ ClickHouse 不一定会像[前面的示例](/zh/concepts/core-concepts/merges#co
 
 上面的 `SummingMergeTree` 表示例是 [AggregatingMergeTree](/zh/reference/engines/table-engines/mergetree-family/aggregatingmergetree) 表的一种特化变体，它支持在 分片合并期间应用 [90+](/zh/reference/functions/aggregate-functions/reference-index) 种聚合函数中的任意一种，从而实现[自动增量数据转换](https://www.youtube.com/watch?v=QDAJTKZT8y4)：
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![part 合并](/images/managing-data/core-concepts/merges_07.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_07.webp" size="lg" alt="part 合并" />
 
 <br />
 

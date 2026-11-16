@@ -59,7 +59,7 @@ ${CLICKHOUSE_LOCAL} --config-file "${config}" --query "
     SET log_comment = '04550_full';
     SELECT count() FROM system.user_query_log FORMAT Null;
     SET log_comment = '04550_pruned';
-    SELECT count() FROM system.user_query_log WHERE event_date > today() + 1 FORMAT Null;
+    SELECT count() FROM system.user_query_log WHERE event_date > today() + 1 SETTINGS enable_analyzer = 1 FORMAT Null;
 
     -- The '>=' and '<=' operators (named 'greaterOrEquals' / 'lessOrEquals') must also be pushed down,
     -- so a bounded predicate that excludes every partition still reads no rows from the backing table.

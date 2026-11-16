@@ -49,6 +49,7 @@ for local_plan in 0 1; do
     $CLICKHOUSE_CLIENT --query_id "$query_id" --query "
     USE default;
 
+    SET enable_analyzer = 1;
     SET allow_experimental_parallel_reading_from_replicas = 2;
     SET max_parallel_replicas = 3;
     SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
@@ -56,11 +57,6 @@ for local_plan in 0 1; do
     SET automatic_parallel_replicas_mode = 0;
     SET parallel_replicas_min_number_of_rows_per_replica = 0;
     SET parallel_replicas_local_plan = ${local_plan};
-    -- The regression guarded here is in the query-based dispatch: each replica re-plans the outer
-    -- query, so a follower can build several read pools under one replica_num and announce twice.
-    -- The implementation is left at its default: the plan-based one used to keep this shape local,
-    -- because the GLOBAL IN subquery left a DelayedCreatingSetsStep that the split refused to cross,
-    -- and it now ships the subquery with the fragment instead.
 
     SELECT count() FROM default.${table}
     WHERE idx GLOBAL IN (i NOT IN (SELECT i FROM merge('^${table}\$') WHERE dt >= -2147483648));

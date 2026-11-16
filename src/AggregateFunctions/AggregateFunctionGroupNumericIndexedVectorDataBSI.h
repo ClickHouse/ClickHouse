@@ -79,8 +79,6 @@ public:
     using IndexType = IT;
     using ValueType = VT;
 
-    static_assert(sizeof(IndexType) <= 4, "IndexType must be at most 32 bits in BSI format");
-
     static constexpr auto type = "BSI";
 
     /** For Float ValueType:
@@ -176,7 +174,7 @@ public:
         initialize(integer_bit_num, fraction_bit_num);
     }
 
-    [[nodiscard]] std::string shortDebugString() const
+    std::string shortDebugString() const
     {
         JSONBuilder::JSONMap debug_info_map;
 
@@ -237,7 +235,7 @@ public:
                 MAX_TOTAL_BIT_NUM);
     }
 
-    [[nodiscard]] bool isEmpty() const
+    bool isEmpty() const
     {
         if (zero_indexes->size() > 0)
             return false;
@@ -250,7 +248,7 @@ public:
         return true;
     }
 
-    [[nodiscard]] bool isValueTypeSigned() const
+    bool isValueTypeSigned() const
     {
         WhichDataType second_which(DataTypeNumber<ValueType>().getTypeId());
         if (second_which.isInt() || second_which.isFloat())
@@ -336,7 +334,7 @@ public:
         }
     }
 
-    [[nodiscard]] std::shared_ptr<Roaring> getAllNonZeroIndex() const
+    std::shared_ptr<Roaring> getAllNonZeroIndex() const
     {
         auto bm = std::make_shared<Roaring>();
         const UInt32 total_bit_num = getTotalBitNum();
@@ -347,22 +345,11 @@ public:
         return bm;
     }
 
-    [[nodiscard]] std::shared_ptr<Roaring> getAllIndex() const
+    std::shared_ptr<Roaring> getAllIndex() const
     {
         auto bm = getAllNonZeroIndex();
         bm->rb_or(*zero_indexes);
         return bm;
-    }
-
-    /// Whether any bit slice holds the index, that is, whether its value is not zero. `lookup` is the
-    /// index mapped through `make_unsigned`, the domain in which `rb_contains` compares it.
-    [[nodiscard]] bool hasNonZeroValue(UInt64 lookup) const
-    {
-        const UInt32 total_bit_num = getTotalBitNum();
-        for (size_t i = 0; i < total_bit_num; ++i)
-            if (getDataArrayAt(i)->rb_contains(lookup))
-                return true;
-        return false;
     }
 
     void deepCopyFrom(const BSINumericIndexedVector & rhs)
@@ -389,7 +376,7 @@ public:
         data_array = rhs.data_array;
     }
 
-    [[nodiscard]] inline UInt32 getTotalBitNum() const
+    inline UInt32 getTotalBitNum() const
     {
         checkIntergerFractionBitNum(integer_bit_num, fraction_bit_num);
         return integer_bit_num + fraction_bit_num;
@@ -468,29 +455,32 @@ public:
         return max_integer_bit_num + max_fraction_bit_num;
     }
 
-    /// The throw path is kept out of line: `getDataArrayAt` is inlined into thousands of call
-    /// sites across all template instantiations, and inlining the exception construction into
-    /// each of them bloats the object file and slows down compilation.
-    [[noreturn]] NO_INLINE void throwDataArrayIndexOutOfBounds(size_t index) const
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Array index out of bounds. index: {}; integer_bit_num: {}; fraction_bit_num: {}; data_array_size: {}",
-            index,
-            integer_bit_num,
-            fraction_bit_num,
-            data_array.size());
-    }
     std::shared_ptr<Roaring> & getDataArrayAt(size_t index)
     {
         if (index >= data_array.size())
-            throwDataArrayIndexOutOfBounds(index);
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Array index out of bounds. index: {}; integer_bit_num: {}; fraction_bit_num: {}; data_array_size: {}",
+                index,
+                integer_bit_num,
+                fraction_bit_num,
+                data_array.size());
+        }
         return data_array[index];
     }
-    [[nodiscard]] const std::shared_ptr<Roaring> & getDataArrayAt(size_t index) const
+    const std::shared_ptr<Roaring> & getDataArrayAt(size_t index) const
     {
         if (index >= data_array.size())
-            throwDataArrayIndexOutOfBounds(index);
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Array index out of bounds in const. index: {}; integer_bit_num: {}; fraction_bit_num: {}; data_array_size: {}",
+                index,
+                integer_bit_num,
+                fraction_bit_num,
+                data_array.size());
+        }
         return data_array[index];
     }
 
@@ -650,7 +640,7 @@ public:
         res.pointwiseSubtractInplace(rhs_vec);
     }
 
-    [[nodiscard]] bool allValuesEqualOne() const
+    bool allValuesEqualOne() const
     {
         if (zero_indexes->size() > 0)
             return false;
@@ -700,12 +690,11 @@ public:
         res.zero_indexes->rb_and(bm);
     }
 
-    /// Records an explicit zero for every index the result carries without a non-zero value. Both
-    /// operands keep all of their indexes: `pointwiseRawBinaryOperate` computes only the intersection
-    /// of the non-zero indexes and treats a missing value as zero, while the all-ones fast path uses
-    /// `andBitmap`, which keeps only the intersection. So the indexes left over, together with those
-    /// whose result came out as zero, are explicit zeros - the rule `pointwiseAddInplace` applies as
-    /// well. `res` already holds the (non-zero) results.
+    /// Records an explicit zero for every index present in only one of the operands.
+    /// The general `pointwiseRawBinaryOperate` multiply path treats a missing value as zero, so
+    /// such indexes become explicit zeros in its result. The all-ones fast path uses `andBitmap`,
+    /// which keeps only the intersection; this restores the dropped indexes as zeros so the fast
+    /// path stays equivalent to the general path. `res` already holds the (non-zero) products.
     static void addUnionZeroIndexes(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, BSINumericIndexedVector & res)
     {
         auto result_zero_indexes = lhs.getAllIndex();
@@ -1186,11 +1175,12 @@ public:
             }
             toVector(indexes, res_values, indexes_size, container_id, res);
         }
-        /// Deriving the zero indexes from the result, rather than from the indexes the operands
-        /// disagree on, also keeps an index whose result came out as zero - `1 / 2` in an integer
-        /// type, or `UInt8(128) * 2`, which wraps around. Such an index is present with a value of
-        /// zero, and dropping it made it indistinguishable from an index that was never there.
-        addUnionZeroIndexes(lhs, rhs, res);
+        /// zero indexes;
+        res.zero_indexes = std::make_shared<Roaring>();
+        res.zero_indexes->rb_or(*lhs_non_zero_indexes);
+        res.zero_indexes->rb_xor(*rhs_non_zero_indexes);
+        res.zero_indexes->rb_or(*lhs.zero_indexes);
+        res.zero_indexes->rb_or(*rhs.zero_indexes);
     }
 
     /** Performs pointwise multiplication and division of the original vector and a scalar.
@@ -1256,13 +1246,7 @@ public:
             }
             toVector(indexes, res_values, indexes_size, container_id, res);
         }
-
-        /// Every index of `lhs` is still present in the result, so the ones whose result came out as
-        /// zero - `1 / 2` in an integer type, or `UInt8(128) * 2`, which wraps around - are explicit
-        /// zeros and not indexes that dropped out.
-        auto result_zero_indexes = lhs.getAllIndex();
-        result_zero_indexes->rb_andnot(*res.getAllNonZeroIndex());
-        res.zero_indexes = result_zero_indexes;
+        res.zero_indexes->merge(*lhs.zero_indexes);
     }
 
     /** Performs pointwise multiplication of two original vectors.
@@ -1311,13 +1295,7 @@ public:
     {
         if (rhs.allValuesEqualOne())
         {
-            /// Dividing by one is the identity, but only where `rhs` actually holds a one: a missing
-            /// divisor behaves as a zero and the general path then gives zero, so copying `lhs` whole
-            /// answered with its own value on those indexes. Keep `lhs` on the indexes `rhs` carries
-            /// and record the rest as explicit zeros, the way the all-ones fast path of
-            /// `pointwiseMultiply` just above does.
-            lhs.andBitmap(*rhs.getDataArrayAt(rhs.fraction_bit_num), res);
-            addUnionZeroIndexes(lhs, rhs, res);
+            res.deepCopyFrom(lhs);
             return;
         }
         UInt32 max_integer_bit_num = std::max(lhs.integer_bit_num, rhs.integer_bit_num);
@@ -1740,25 +1718,22 @@ public:
     {
         checkValidValue(value);
 
-        /// `rb_contains` compares in the unsigned domain of the bitmap element type, so map the
-        /// index through `make_unsigned` instead of sign-extending it to the storage width.
-        const UInt64 lookup = static_cast<std::make_unsigned_t<IndexType>>(index);
+        if (sizeof(IndexType) > 4)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "IndexType must be at most 32 bits in BSI format");
+        }
 
         if (value == 0)
         {
-            /// Adding zero leaves the value alone, but it does make the index exist. `zero_indexes` is
-            /// exactly the set of present indexes whose value is zero - that is what
-            /// `pointwiseAddInplace` recomputes when it merges two states, and `pointwiseEqual` against
-            /// a zero scalar answers straight out of it - so an index that already carries a non-zero
-            /// value has to stay out of it. Otherwise a `0` row after a `5` row would report the index
-            /// as both `5` and equal to zero, and the answer would again depend on how the rows were
-            /// split between the states.
-            if (!hasNonZeroValue(lookup))
-                zero_indexes->add(index);
+            zero_indexes->add(index);
             return;
         }
 
         const UInt32 total_bit_num = getTotalBitNum();
+
+        /// `rb_contains` compares in the unsigned domain of the bitmap element type, so map the
+        /// index through `make_unsigned` instead of sign-extending it to the storage width.
+        const UInt64 lookup = static_cast<std::make_unsigned_t<IndexType>>(index);
 
         /** This converts a floating-point value into a fixed-point representation, then store it in data_array using bit-sliced index.
           * - When value is an UInt/Int, fraction_bit_num is usually set to 0. So when integer_bit_num is set to the number of
@@ -1803,7 +1778,6 @@ public:
         }
 
         UInt8 cin = 0;
-        bool any_bit_set = false;
         for (size_t j = 0; j < total_bit_num; ++j)
         {
             UInt8 augend = getDataArrayAt(j)->rb_contains(lookup) ? 1 : 0;
@@ -1814,38 +1788,18 @@ public:
 
             UInt8 sum = augend ^ addend ^ cin;
 
-            /// The bit of the sum replaces the bit of the augend, so it has to be cleared as well as
-            /// set: leaving a bit that the addition turned off stores `old | (old + new)` instead of
-            /// the sum, and a repeated index then reads back too large a value (5 plus 3 gives 13).
-            /// This is what `pointwiseAddInplace` does with whole bit slices, so the two paths -
-            /// adding rows into one state and merging states - agree, including on the wrap-around of
-            /// a sum that does not fit into `total_bit_num` bits.
             if ((sum & 1) == 1)
             {
                 getDataArrayAt(j)->add(index);
-                any_bit_set = true;
-            }
-            else if (augend)
-            {
-                getDataArrayAt(j)->remove(index);
             }
 
             cin = cin & x_xor_y;
             cin = cin | x_and_y;
         }
-
-        /// The accumulated value can reach zero (`5` and then `-5`), and no bit slice holds the index
-        /// then. `pointwiseAddInplace` records such an index in `zero_indexes` so that the merged state
-        /// still reports it with a value of zero; do the same here, so that the result does not depend
-        /// on how the rows were split between the states.
-        if (any_bit_set)
-            zero_indexes->remove(index);
-        else
-            zero_indexes->add(index);
     }
 
     /// return origin_vector(this)[index]
-    [[nodiscard]] ValueType getValue(IndexType index) const
+    ValueType getValue(IndexType index) const
     {
         /// `zero_indexes` is not consulted: an index with no bits set is zero anyway, and the set is
         /// not cleared when a later update makes the value non-zero. Deriving the value from the bit
@@ -1868,7 +1822,7 @@ public:
     }
 
     /// sum(origin_vector(this))
-    [[nodiscard]] Float64 getAllValueSum() const
+    Float64 getAllValueSum() const
     {
         const UInt32 total_bit_num = getTotalBitNum();
         if (total_bit_num == 0)
@@ -1931,7 +1885,7 @@ public:
     }
 
     /// return the number of unique indexes in the vector whose value is exist
-    [[nodiscard]] UInt64 getCardinality() const
+    UInt64 getCardinality() const
     {
         Roaring total_bm;
         const UInt32 total_bit_num = getTotalBitNum();

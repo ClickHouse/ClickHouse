@@ -25,9 +25,9 @@ Checks whether a string begins with the provided string.
         "Usage example",
         "SELECT startsWith('ClickHouse', 'Click');",
         R"(
-┌─startsWith('ClickHouse', 'Click')─┐
-│                                 1 │
-└───────────────────────────────────┘
+┌─startsWith('⋯', 'Click')─┐
+│                        1 │
+└──────────────────────────┘
         )"
     }
     };
@@ -36,7 +36,6 @@ Checks whether a string begins with the provided string.
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionStartsWith>(documentation);
-    factory.registerAlias("starts_with", NameStartsWith::name, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(StartsWithCaseInsensitive)
@@ -55,9 +54,9 @@ Checks whether a string begins with the provided case-insensitive string.
         "Usage example",
         "SELECT startsWithCaseInsensitive('ClickHouse', 'CLICK');",
         R"(
-┌─startsWithCaseInsensitive('ClickHouse', 'CLICK')─┐
-│                                                1 │
-└──────────────────────────────────────────────────┘
+┌─startsWithCaseInsensitive('⋯', 'CLICK')─┐
+│                                       1 │
+└─────────────────────────────────────────┘
         )"
     }
     };

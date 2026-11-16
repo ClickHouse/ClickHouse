@@ -10,7 +10,7 @@ namespace DB
 {
 struct SettingsConstraintsAndProfileIDs;
 
-/// Information about the default settings which are applied to a user on login.
+/// Information about the default settings which are applied to an user on login.
 struct SettingsProfilesInfo
 {
     SettingsChanges settings;
@@ -34,13 +34,13 @@ struct SettingsProfilesInfo
     {
     }
 
-    [[nodiscard]] std::shared_ptr<const SettingsConstraintsAndProfileIDs> getConstraintsAndProfileIDs(
+    std::shared_ptr<const SettingsConstraintsAndProfileIDs> getConstraintsAndProfileIDs(
         const std::shared_ptr<const SettingsConstraintsAndProfileIDs> & previous = nullptr) const;
 
     friend bool operator ==(const SettingsProfilesInfo & lhs, const SettingsProfilesInfo & rhs);
     friend bool operator !=(const SettingsProfilesInfo & lhs, const SettingsProfilesInfo & rhs) { return !(lhs == rhs); }
 
-    [[nodiscard]] Strings getProfileNames() const;
+    Strings getProfileNames() const;
 
 private:
     const AccessControl & access_control;

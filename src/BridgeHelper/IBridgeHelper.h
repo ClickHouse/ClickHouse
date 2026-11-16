@@ -11,7 +11,7 @@
 namespace DB
 {
 
-/// Base class for server-side bridge helpers, e.g. xdbc-bridge.
+/// Base class for server-side bridge helpers, e.g. xdbc-bridge and library-bridge.
 /// Contains helper methods to check/start bridge sync
 class IBridgeHelper: protected WithContext
 {
@@ -28,9 +28,9 @@ public:
 
     virtual ~IBridgeHelper() = default;
 
-    [[nodiscard]] virtual Poco::URI getMainURI() const = 0;
+    virtual Poco::URI getMainURI() const = 0;
 
-    [[nodiscard]] virtual Poco::URI getPingURI() const = 0;
+    virtual Poco::URI getPingURI() const = 0;
 
     void startBridgeSync();
 
@@ -38,25 +38,32 @@ protected:
     /// Check bridge is running. Can also check something else in the mean time.
     virtual bool bridgeHandShake() = 0;
 
-    [[nodiscard]] virtual String serviceAlias() const = 0;
+    virtual String serviceAlias() const = 0;
 
-    [[nodiscard]] virtual String serviceFileName() const = 0;
+    virtual String serviceFileName() const = 0;
 
-    [[nodiscard]] virtual unsigned getDefaultPort() const = 0;
+    virtual unsigned getDefaultPort() const = 0;
 
-    [[nodiscard]] virtual bool startBridgeManually() const = 0;
+    virtual bool startBridgeManually() const = 0;
 
     virtual void startBridge(std::unique_ptr<ShellCommand> cmd) const = 0;
 
-    [[nodiscard]] virtual String configPrefix() const = 0;
+    virtual String configPrefix() const = 0;
 
-    [[nodiscard]] virtual const Poco::Util::AbstractConfiguration & getConfig() const = 0;
+    virtual const Poco::Util::AbstractConfiguration & getConfig() const = 0;
 
-    [[nodiscard]] virtual LoggerPtr getLog() const = 0;
+    virtual LoggerPtr getLog() const = 0;
 
-    [[nodiscard]] virtual Poco::Timespan getHTTPTimeout() const = 0;
+    virtual Poco::Timespan getHTTPTimeout() const = 0;
 
-    [[nodiscard]] virtual Poco::URI createBaseURI() const = 0;
+    virtual Poco::URI createBaseURI() const = 0;
+
+    /// The single directory or file the bridge is allowed to `dlopen`, passed to it as `--libraries-path`.
+    /// An empty optional means the bridge does not load shared libraries at all, so it needs no sandbox.
+    /// A bridge that does load them must never be started without one, so the override is expected to
+    /// throw instead of returning an empty optional when the sandbox is not configured.
+    virtual std::optional<String> getLibrariesSandboxPath() const { return {}; }
+
 
 private:
     std::unique_ptr<ShellCommand> startBridgeCommand();

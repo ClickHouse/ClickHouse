@@ -66,29 +66,29 @@ Para mejorar la gestión de recursos y el rendimiento:
 ```python
 import chdb
 
-# Create connection (":memory:" is a temporary, non-persistent database)
+# Crear conexión (en memoria por defecto)
 conn = chdb.connect(":memory:")
-# Or use file-based: conn = chdb.connect("mydata.db")
+# O usar basada en archivo: conn = chdb.connect("mydata.db")
 
-# Create cursor for query execution
+# Crear cursor para ejecución de consultas
 cur = conn.cursor()
 
-# Execute queries
+# Ejecutar consultas
 cur.execute("SELECT number, toString(number) as str FROM system.numbers LIMIT 3")
 
-# Fetch results in different ways
-print(cur.fetchone())    # Single row: (0, '0')
-print(cur.fetchmany(2))  # Multiple rows: ((1, '1'), (2, '2'))
+# Obtener resultados de distintas formas
+print(cur.fetchone())    # Una fila: (0, '0')
+print(cur.fetchmany(2))  # Múltiples filas: ((1, '1'), (2, '2'))
 
-# Get metadata
+# Obtener metadatos
 print(cur.column_names())  # ['number', 'str']
 print(cur.column_types())  # ['UInt64', 'String']
 
-# Use cursor as iterator
+# Usar el cursor como iterador
 for row in cur:
     print(row)
 
-# Always close resources
+# Cerrar siempre los recursos
 cur.close()
 conn.close()
 ```

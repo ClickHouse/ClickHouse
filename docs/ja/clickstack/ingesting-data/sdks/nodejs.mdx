@@ -6,18 +6,25 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'ログ', 'インテグレーション', 'アプリケーション監視']
 ---
 
-import { ClickStackIntegrates } from '/snippets/ja/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
-
 ClickStack は、テレメトリーデータ (ログ、メトリクス、
 トレース、例外) の収集に OpenTelemetry 標準を採用しています。トレースは自動インストルメンテーションによって生成されるため、
 トレーシングを活用するうえで手動の
 インストルメンテーションは必要ありません。
 
-<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+このガイドでは、以下を統合します:
 
-## はじめに {#getting-started}
+* **ログ**
+* **メトリクス**
+* **トレース**
+* **例外**
 
-### HyperDX OpenTelemetry インストルメンテーション パッケージをインストールする {#install-hyperdx-opentelemetry-instrumentation-package}
+<div id="getting-started">
+  ## はじめに
+</div>
+
+<div id="install-hyperdx-opentelemetry-instrumentation-package">
+  ### HyperDX OpenTelemetry インストルメンテーション パッケージをインストールする
+</div>
 
 以下のコマンドを使用して、[ClickStack OpenTelemetry パッケージ](https://www.npmjs.com/package/@hyperdx/node-opentelemetry)をインストールします。
 
@@ -35,7 +42,9 @@ ClickStack は、テレメトリーデータ (ログ、メトリクス、
   </Tab>
 </Tabs>
 
-### SDK の初期化 {#initializin-the-sdk}
+<div id="initializin-the-sdk">
+  ### SDK の初期化
+</div>
 
 SDK を初期化するには、アプリケーションのエントリポイントの先頭で `init` 関数を呼び出します。
 
@@ -45,8 +54,8 @@ SDK を初期化するには、アプリケーションのエントリポイン�
     const HyperDX = require('@hyperdx/node-opentelemetry');
 
     HyperDX.init({
-        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
-        apiKey: '<YOUR_INGESTION_API_KEY>', // Managed ClickStack の場合は省略
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // Managed ClickStack の場合は省略
         service: 'my-service'
     });
     ```
@@ -57,8 +66,8 @@ SDK を初期化するには、アプリケーションのエントリポイン�
     import * as HyperDX from '@hyperdx/node-opentelemetry';
 
     HyperDX.init({
-        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
-        apiKey: '<YOUR_INGESTION_API_KEY>', // Managed ClickStack の場合は省略
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // Managed ClickStack の場合は省略
         service: 'my-service'
     });
     ```
@@ -67,7 +76,9 @@ SDK を初期化するには、アプリケーションのエントリポイン�
 
 これにより、Node.js アプリケーションのトレース、メトリクス、ログが自動的に収集されます。
 
-### ログ収集の設定 {#setup-log-collection}
+<div id="setup-log-collection">
+  ### ログ収集の設定
+</div>
 
 デフォルトでは、`console.*` のログが収集されます。`winston` や `pino` などのロガーを使用している場合は、ClickStack にログを送信するためのトランスポートをロガーに追加する必要があります。別の種類のロガーを使用している場合は、[お問い合わせ](mailto:support@clickhouse.com)いただくか、該当する場合はプラットフォームのインテグレーション (たとえば [Kubernetes](/ja/clickstack/integration-examples/kubernetes)) を確認してください。
 
@@ -123,7 +134,9 @@ SDK を初期化するには、アプリケーションのエントリポイン�
   </Tab>
 </Tabs>
 
-### エラー収集の設定 {#setup-error-collection}
+<div id="setup-error-collection">
+  ### エラー収集の設定
+</div>
 
 ClickStack SDK は、アプリケーション内の未捕捉の例外やエラーを、完全なスタックトレースとコードコンテキスト付きで自動的に収集できます。
 
@@ -134,8 +147,8 @@ ClickStack SDK は、アプリケーション内の未捕捉の例外やエラ�
     ```javascript
     const HyperDX = require('@hyperdx/node-opentelemetry');
     HyperDX.init({
-        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
-        apiKey: '<YOUR_INGESTION_API_KEY>', // Managed ClickStack の場合は省略
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // Managed ClickStack の場合は省略
         service: 'my-service'
     });
     const app = express();
@@ -156,8 +169,8 @@ ClickStack SDK は、アプリケーション内の未捕捉の例外やエラ�
     const Router = require("@koa/router");
     const HyperDX = require('@hyperdx/node-opentelemetry');
     HyperDX.init({
-        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
-        apiKey: '<YOUR_INGESTION_API_KEY>', // Managed ClickStack の場合は省略
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // Managed ClickStack の場合は省略
         service: 'my-service'
     });
 
@@ -184,7 +197,9 @@ ClickStack SDK は、アプリケーション内の未捕捉の例外やエラ�
   </Tab>
 </Tabs>
 
-## トラブルシューティング {#troubleshooting}
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
 
 SDK で問題が発生している場合は、`OTEL_LOG_LEVEL` 環境変数を `debug` に
 設定すると、詳細なログ出力を有効にできます。
@@ -193,9 +208,13 @@ SDK で問題が発生している場合は、`OTEL_LOG_LEVEL` 環境変数を `
 export OTEL_LOG_LEVEL=debug
 ```
 
-## 高度なインストルメンテーションの設定 {#advanced-instrumentation-configuration}
+<div id="advanced-instrumentation-configuration">
+  ## 高度なインストルメンテーションの設定
+</div>
 
-### コンソールログの取得 {#capture-console-logs}
+<div id="capture-console-logs">
+  ### コンソールログの取得
+</div>
 
 デフォルトでは、ClickStack SDK はコンソールログを取得します。これを無効にするには、
 環境変数 `HDX_NODE_CONSOLE_CAPTURE` を 0 に設定します。
@@ -204,7 +223,9 @@ export OTEL_LOG_LEVEL=debug
 export HDX_NODE_CONSOLE_CAPTURE=0
 ```
 
-### ユーザー情報またはメタデータを付加する {#attach-user-information-or-metadata}
+<div id="attach-user-information-or-metadata">
+  ### ユーザー情報またはメタデータを付加する
+</div>
 
 特定の属性や識別子 (例: user id
 または email) に関連するすべてのイベントへ簡単にタグ付けするには、`setTraceAttributes` 関数を呼び出します。これにより、呼び出し以降、現在の trace に関連付けられたすべての
@@ -244,7 +265,9 @@ app.use((req, res, next) => {
 export HDX_NODE_BETA_MODE=1
 ```
 
-### Google Cloud Run {#google-cloud-run}
+<div id="google-cloud-run">
+  ### Google Cloud Run
+</div>
 
 Google Cloud Run でアプリケーションを実行している場合、Cloud Trace は
 受信リクエストにサンプリング用ヘッダーを自動的に挿入します。現在は、
@@ -261,7 +284,9 @@ Google Cloud Run でアプリケーションを実行している場合、Cloud 
 詳細、および特定のリクエストでトレースを強制的に有効にする方法については、
 [Google Cloud Run documentation](https://cloud.google.com/run/docs/trace) を参照してください。
 
-### 自動インストルメントされるライブラリ {#auto-instrumented-libraries}
+<div id="auto-instrumented-libraries">
+  ### 自動インストルメントされるライブラリ
+</div>
 
 以下のライブラリは、SDK によって自動的にインストルメントされ、トレースが収集されます。
 
@@ -283,9 +308,13 @@ Google Cloud Run でアプリケーションを実行している場合、Cloud 
 * [`redis`](https://www.npmjs.com/package/redis)
 * [`winston`](https://www.npmjs.com/package/winston)
 
-## 代替のインストール方法 {#alternative-installation}
+<div id="alternative-installation">
+  ## 代替のインストール方法
+</div>
 
-### ClickStack OpenTelemetry CLI でアプリケーションを実行する {#run-the-application-with-cli}
+<div id="run-the-application-with-cli">
+  ### ClickStack OpenTelemetry CLI でアプリケーションを実行する
+</div>
 
 また、`opentelemetry-instrument` CLI や Node.js の `--require` フラグを使えば、コードを変更することなくアプリケーションを自動インストルメントできます。CLI をインストールすると、自動インストルメンテーションに対応するライブラリやフレームワークの対象がより広がります。
 
@@ -298,7 +327,7 @@ Google Cloud Run でアプリケーションを実行している場合、Cloud 
     </Info>
 
     ```shell
-    HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' npx opentelemetry-instrument index.js
+    HYPERDX_API_KEY='<YOUR_INGESTION_KEY>' OTEL_SERVICE_NAME='<YOUR_APP_NAME>' npx opentelemetry-instrument index.js
     ```
   </Tab>
 
@@ -310,7 +339,7 @@ Google Cloud Run でアプリケーションを実行している場合、Cloud 
     </Info>
 
     ```shell
-    HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' ts-node -r '@hyperdx/node-opentelemetry/build/src/tracing' index.js
+    HYPERDX_API_KEY='<YOUR_INGESTION_KEY>' OTEL_SERVICE_NAME='<YOUR_APP_NAME>' ts-node -r '@hyperdx/node-opentelemetry/build/src/tracing' index.js
     ```
   </Tab>
 
@@ -330,7 +359,9 @@ Google Cloud Run でアプリケーションを実行している場合、Cloud 
 
 *`OTEL_SERVICE_NAME` 環境変数は、HyperDX アプリでサービスを識別するために使用されます。値には任意の名前を指定できます。*
 
-### 例外のキャプチャを有効にする {#enabling-exception-capturing}
+<div id="enabling-exception-capturing">
+  ### 例外のキャプチャを有効にする
+</div>
 
 未処理の例外のキャプチャを有効にするには、`HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE` 環境変数を 1 に設定する必要があります。
 
@@ -340,7 +371,9 @@ HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE=1
 
 その後、Express や Koa の例外を自動的に収集する場合、または例外を手動でキャッチする場合は、上記の[エラー収集の設定](#setup-error-collection)セクションの手順に従ってください。
 
-### 自動インストルメントされるライブラリ {#auto-instrumented-libraries-2}
+<div id="auto-instrumented-libraries">
+  ### 自動インストルメントされるライブラリ
+</div>
 
 以下のライブラリは、上記のインストール方法を使用すると自動的にインストルメントされ (トレースされ) ます。
 

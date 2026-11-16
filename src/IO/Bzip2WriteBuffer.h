@@ -2,7 +2,6 @@
 
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <IO/CompressionLibraryErrors.h>
 #include <IO/WriteBufferDecorator.h>
 
 #include "config.h"
@@ -39,9 +38,8 @@ public:
         if (ret != BZ_OK)
             throw Exception(
                 ErrorCodes::BZIP2_STREAM_ENCODER_FAILED,
-                "bzip2 stream encoder init failed for compression level {}: {}",
-                compression_level,
-                bzip2ErrorToString(ret));
+                "bzip2 stream encoder init failed: error code: {}",
+                ret);
     }
 
     ~Bzip2WriteBuffer() override;

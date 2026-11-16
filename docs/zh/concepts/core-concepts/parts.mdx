@@ -6,6 +6,8 @@ keywords: ['part']
 doc_type: 'reference'
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 <div id="what-are-table-parts-in-clickhouse">
   ## 什么是 ClickHouse 中的表 parts？
 </div>
@@ -32,37 +34,19 @@ ORDER BY (town, street);
 
 每当一组行被插入到该表中时，就会创建一个数据分区片段。下图对此进行了示意：
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![](/images/managing-data/core-concepts/part.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/part.webp" size="lg" />
 
 <br />
 
 当 ClickHouse server 处理上图中示意的包含 4 行的示例插入 (例如通过 [INSERT INTO 语句](/zh/reference/statements/insert-into)) 时，会执行以下几个步骤：
 
-<Steps>
-  <Step title="排序">
-    按表的排序键 `(town, street)` 对这些行进行排序，并为排序后的行生成一个[稀疏主索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。
-  </Step>
+① **排序**：按表的排序键 `(town, street)` 对这些行进行排序，并为排序后的行生成一个[稀疏主索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。
 
-  <Step title="拆分">
-    将排序后的数据拆分为各列。
-  </Step>
+② **拆分**：将排序后的数据拆分为各列。
 
-  <Step title="压缩">
-    对每一列进行[压缩](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)。
-  </Step>
+③ **压缩**：对每一列进行[压缩](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)。
 
-  <Step title="写入磁盘">
-    压缩后的各列会以二进制列文件的形式保存到一个新目录中，该目录对应此次插入生成的数据分区片段。稀疏主索引也会被压缩并存储在同一目录中。
-  </Step>
-</Steps>
+④ **写入磁盘**：压缩后的各列会以二进制列文件的形式保存到一个新目录中，该目录对应此次插入生成的数据分区片段。稀疏主索引也会被压缩并存储在同一目录中。
 
 根据表使用的具体引擎，在排序的同时还[可能](/zh/reference/settings/session-settings)会发生其他转换。
 
@@ -74,15 +58,7 @@ ORDER BY (town, street);
 
 为了控制每个表中的 parts 数量，[后台合并](/zh/concepts/core-concepts/merges)任务会定期将较小的 parts 合并成较大的 parts，直到其达到[可配置](/zh/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool)的压缩大小 (通常约为 150 GB) 。合并后的 parts 会被标记为非活动，并在经过一个[可配置](/zh/reference/settings/merge-tree-settings/other#old_parts_lifetime)的时间间隔后删除。随着时间推移，这一过程会形成合并后 parts 的层级结构，这也正是它被称为 MergeTree 表的原因：
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![](/images/managing-data/core-concepts/merges.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
 
 <br />
 

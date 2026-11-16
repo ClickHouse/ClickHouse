@@ -28,25 +28,25 @@ class DiskWithPath
 public:
     explicit DiskWithPath(DiskPtr disk_, std::optional<String> path_ = std::nullopt);
 
-    [[nodiscard]] String getAbsolutePath(const String & any_path) const { return normalizePath(fs::path(path) / any_path); }
+    String getAbsolutePath(const String & any_path) const { return normalizePath(fs::path(path) / any_path); }
 
-    [[nodiscard]] String getCurrentPath() const { return path; }
+    String getCurrentPath() const { return path; }
 
-    [[nodiscard]] bool isDirectory(const String & any_path) const
+    bool isDirectory(const String & any_path) const
     {
         return disk->existsDirectory(getRelativeFromRoot(any_path)) || (getRelativeFromRoot(any_path).empty() && (disk->existsDirectory("/")));
     }
 
-    [[nodiscard]] std::vector<String> listAllFilesByPath(const String & any_path) const;
+    std::vector<String> listAllFilesByPath(const String & any_path) const;
 
     /// If ignore_exception is true, then the function will not throw an exception but can return incomplete result (though all returned paths are valid). This is useful for autocomplete which should not fail if there are any problems with disks.
-    [[nodiscard]] std::vector<String> getAllFilesByPrefix(const String & prefix, bool ignore_exception) const;
+    std::vector<String> getAllFilesByPrefix(const String & prefix, bool ignore_exception) const;
 
-    [[nodiscard]] DiskPtr getDisk() const { return disk; }
+    DiskPtr getDisk() const { return disk; }
 
     void setPath(const String & any_path);
 
-    [[nodiscard]] String getRelativeFromRoot(const String & any_path) const { return normalizePathAndGetAsRelative(getAbsolutePath(any_path)); }
+    String getRelativeFromRoot(const String & any_path) const { return normalizePathAndGetAsRelative(getAbsolutePath(any_path)); }
 
 private:
     static String validatePathAndGetAsRelative(const String & path);
@@ -66,32 +66,32 @@ class DisksClient
 public:
     DisksClient(const Poco::Util::AbstractConfiguration & config_, ContextPtr context_);
 
-    [[nodiscard]] const DiskWithPath & getDiskWithPath(const String & disk) const;
+    const DiskWithPath & getDiskWithPath(const String & disk) const;
 
     DiskWithPath & getDiskWithPath(const String & disk);
 
     DiskWithPath & getDiskWithPathLazyInitialization(const String & disk);
 
-    [[nodiscard]] const DiskWithPath & getCurrentDiskWithPath() const;
+    const DiskWithPath & getCurrentDiskWithPath() const;
 
     DiskWithPath & getCurrentDiskWithPath();
 
-    [[nodiscard]] DiskPtr getCurrentDisk() const { return getCurrentDiskWithPath().getDisk(); }
+    DiskPtr getCurrentDisk() const { return getCurrentDiskWithPath().getDisk(); }
 
-    [[nodiscard]] DiskPtr getDisk(const String & disk) const { return getDiskWithPath(disk).getDisk(); }
+    DiskPtr getDisk(const String & disk) const { return getDiskWithPath(disk).getDisk(); }
 
     void switchToDisk(const String & disk_, const std::optional<String> & path_);
 
-    [[nodiscard]] std::vector<String> getInitializedDiskNames() const;
-    [[nodiscard]] std::vector<String> getUninitializedDiskNames() const;
-    [[nodiscard]] std::vector<String> getAllDiskNames() const;
+    std::vector<String> getInitializedDiskNames() const;
+    std::vector<String> getUninitializedDiskNames() const;
+    std::vector<String> getAllDiskNames() const;
 
     /// If ignore_exception is true, then the function will not throw an exception but can return incomplete result (though all returned paths are valid). This is useful for autocomplete which should not fail if there are any problems with disks.
-    [[nodiscard]] std::vector<String> getAllFilesByPrefixFromInitializedDisks(const String & prefix, bool ignore_exception) const;
+    std::vector<String> getAllFilesByPrefixFromInitializedDisks(const String & prefix, bool ignore_exception) const;
 
     void addDisk(String disk_name, std::optional<String> path);
 
-    [[nodiscard]] bool isDiskInitialized(const String & disk_name) const { return initialized_disks.contains(disk_name); }
+    bool isDiskInitialized(const String & disk_name) const { return initialized_disks.contains(disk_name); }
 
 private:
     String current_disk;

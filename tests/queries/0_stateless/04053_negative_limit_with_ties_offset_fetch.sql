@@ -1,5 +1,6 @@
 -- { echo }
 
+SET enable_analyzer=1;
 SELECT 'Analyzer:';
 
 SELECT 'Negative FETCH and negative OFFSET';

@@ -36,29 +36,29 @@ public:
     void cancel();
     void clearAllDataFiles() const;
 
-    [[nodiscard]] UInt64 getResultBytes() const;
+    UInt64 getResultBytes() const;
 
-    [[nodiscard]] const std::vector<Iceberg::IcebergPathFromMetadata> & getDataFiles() const
+    const std::vector<Iceberg::IcebergPathFromMetadata> & getDataFiles() const
     {
         return data_file_names;
     }
 
-    [[nodiscard]] const std::vector<UInt64> & getDataFileRowCounts() const
+    const std::vector<UInt64> & getDataFileRowCounts() const
     {
         return data_file_row_counts;
     }
 
-    [[nodiscard]] const std::vector<UInt64> & getDataFileByteCounts() const
+    const std::vector<UInt64> & getDataFileByteCounts() const
     {
         return data_file_byte_counts;
     }
 
-    [[nodiscard]] const DataFileStatistics & getResultStatistics() const
+    const DataFileStatistics & getResultStatistics() const
     {
         return stats;
     }
 
-    [[nodiscard]] const std::vector<DataFileStatisticsPtr> & getPerFileStatistics() const
+    const std::vector<DataFileStatisticsPtr> & getPerFileStatistics() const
     {
         return completed_file_stats;
     }
@@ -66,14 +66,16 @@ public:
 private:
     UInt64 max_data_file_num_rows;
     UInt64 max_data_file_num_bytes;
+    Poco::JSON::Array::Ptr schema;
+    DataFileStatistics stats;
+    DataFileStatisticsPtr current_file_stats;
+    std::vector<DataFileStatisticsPtr> completed_file_stats;
     /// Pre-built ColumnMapper for `startNewFile`. Traversing the Iceberg schema is invariant
     /// for the lifetime of the writer, so we compute the mapping once and reuse it across
     /// every rolled-over data file instead of recomputing it on each rollover.
     ColumnMapperPtr column_mapper;
-    DataFileStatistics stats;
-    DataFileStatisticsPtr current_file_stats;
-    std::vector<DataFileStatisticsPtr> completed_file_stats;
     std::optional<size_t> current_file_num_rows = std::nullopt;
+    std::optional<size_t> current_file_num_bytes = std::nullopt;
     std::vector<Iceberg::IcebergPathFromMetadata> data_file_names;
     std::vector<UInt64> data_file_row_counts;
     std::vector<UInt64> data_file_byte_counts;

@@ -14,7 +14,7 @@ namespace DB
 class ParserShowEnginesQuery : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "SHOW ENGINES query"; }
+    const char * getName() const override { return "SHOW ENGINES query"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {

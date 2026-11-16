@@ -33,11 +33,11 @@ public:
 
     std::optional<size_t> tryGetFileSize() override;
 
-    [[nodiscard]] String getFileName() const override;
+    String getFileName() const override;
 
     off_t getPosition() override;
 
-    [[nodiscard]] size_t getFileOffsetOfBufferEnd() const override;
+    size_t getFileOffsetOfBufferEnd() const override;
 
 private:
     bool nextImpl() override;

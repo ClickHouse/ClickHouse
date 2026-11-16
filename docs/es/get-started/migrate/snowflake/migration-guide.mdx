@@ -8,6 +8,8 @@ show_related_blogs: false
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 > Esta guía le muestra cómo migrar datos de Snowflake a ClickHouse.
 
 La migración de datos entre Snowflake y ClickHouse requiere el uso de un almacenamiento de objetos,
@@ -17,15 +19,7 @@ de ClickHouse.
 
 <Steps>
   <Step title="Exportar datos desde Snowflake" id="1-exporting-data-from-snowflake">
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Migración de Snowflake a ClickHouse](/images/migrations/migrate_snowflake_clickhouse.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/migrations/migrate_snowflake_clickhouse.webp" size="md" alt="Migración de Snowflake a ClickHouse" />
 
     Exportar datos desde Snowflake requiere usar un stage externo, como se muestra en el diagrama anterior.
 

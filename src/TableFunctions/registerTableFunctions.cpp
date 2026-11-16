@@ -30,7 +30,6 @@ void registerTableFunctions()
 #endif
     registerTableFunctionRedis(factory);
     registerTableFunctionBigQuery(factory);
-    registerTableFunctionElasticsearch(factory);
 
 #if USE_ARROWFLIGHT
     registerTableFunctionArrowFlight(factory);
@@ -56,8 +55,6 @@ void registerTableFunctions()
     registerTableFunctionView(factory);
     registerTableFunctionViewIfPermitted(factory);
 
-    registerTableFunctionObfuscate(factory);
-
 #if USE_MYSQL
     registerTableFunctionMySQL(factory);
 #endif
@@ -74,7 +71,6 @@ void registerTableFunctions()
 
     registerTableFunctionFormat(factory);
     registerTableFunctionExplain(factory);
-    registerTableFunctionTraceView(factory);
     registerTableFunctionTimeSeries(factory);
 
     registerTableFunctionObjectStorage(factory);

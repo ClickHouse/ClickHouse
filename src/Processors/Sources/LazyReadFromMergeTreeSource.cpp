@@ -21,7 +21,6 @@ namespace Setting
     extern const SettingsUInt64 preferred_max_column_in_block_size_bytes;
     extern const SettingsBool merge_tree_use_const_size_tasks_for_remote_reading;
     extern const SettingsBool use_uncompressed_cache;
-    extern const SettingsBool use_columns_cache;
 }
 
 namespace ErrorCodes
@@ -143,12 +142,17 @@ IProcessor::Status LazyReadFromMergeTreeSource::prepare(const UpdatedInputPorts 
         return Status::Finished;
     }
 
+    if (!output.canPush())
+        return Status::PortFull;
+
+    if (lazy_materializing_rows)
+        return Status::UpdatePipeline;
+
     /// Here we reading inputs as long as they are ready, to parallelize reading.
     /// But the chunks should be processed in the order of parts and ranges.
     /// So we keep the chunks in the list to keep the order.
-    /// It is done before checking the output: an updated port is reported only once, and a reader whose chunk
-    /// is left in its port does not read further until its turn in the loop below.
-    if (!lazy_materializing_rows && next_input_to_process != inputs.end())
+
+    if (next_input_to_process != inputs.end())
     {
         for (const auto * input_port : updated_input_ports)
         {
@@ -161,12 +165,6 @@ IProcessor::Status LazyReadFromMergeTreeSource::prepare(const UpdatedInputPorts 
             }
         }
     }
-
-    if (!output.canPush())
-        return Status::PortFull;
-
-    if (lazy_materializing_rows)
-        return Status::UpdatePipeline;
 
     while (next_input_to_process != inputs.end())
     {
@@ -233,7 +231,6 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
         .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
         .preferred_block_size_bytes = ctx_settings[Setting::preferred_block_size_bytes],
         .use_uncompressed_cache = ctx_settings[Setting::use_uncompressed_cache],
-        .use_columns_cache = ctx_settings[Setting::use_columns_cache],
         .use_const_size_tasks_for_remote_reading = ctx_settings[Setting::merge_tree_use_const_size_tasks_for_remote_reading],
         .total_query_nodes = 1,
     };
@@ -291,7 +288,6 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
             lazy_materializing_rows);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), log_name);
-        source->keepReadingOnPartialResult();
         source->addTotalRowsApprox(total_rows);
 
         processors.emplace_back(std::move(source));

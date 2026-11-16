@@ -6,6 +6,7 @@
 -- { echo }
 
 SET engine_file_truncate_on_insert = 1;
+SET enable_nullable_tuple_type = 1;
 
 INSERT INTO FUNCTION file(currentDatabase() || '_05617.orc', 'ORC') SELECT
     number AS id,
@@ -80,9 +81,6 @@ SELECT id, `t.l`, t FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt
 SELECT id, tb, `tb.l` FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, tb Tuple(l Array(Tuple(q Nullable(Int32)))), `tb.l` Array(Tuple(b Nullable(Tuple(q Int32))))') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT id, `tb.l`, tb FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, `tb.l` Array(Tuple(b Nullable(Tuple(q Int32)))), tb Tuple(l Array(Tuple(q Nullable(Int32))))') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT id, tb, `tb.a` FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, tb Tuple(l Array(Tuple(q Nullable(Int32)))), `tb.a` Int32') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
-SELECT id, `tb.l`, `tb.l.b` FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, `tb.l` Array(Tuple(q Nullable(Int32))), `tb.l.b` Array(Nullable(Tuple(r Nullable(String), s Nullable(Int32))))') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
-SELECT id, `tb.l.b`, `tb.l` FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, `tb.l.b` Array(Nullable(Tuple(r Nullable(String), s Nullable(Int32)))), `tb.l` Array(Tuple(q Nullable(Int32)))') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
-SELECT id, `tb.l`, `tb.l.b` FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, `tb.l` Array(Tuple(b Nullable(Tuple(q Nullable(Int32))))), `tb.l.b` Array(Nullable(Tuple(r Nullable(String), s Nullable(Int32))))') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
 
 -- A top-level struct keeps its presence too, also when missing columns are not allowed.
 SELECT id, ts FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, ts Nullable(Tuple(q Int32))') ORDER BY id;
@@ -101,7 +99,3 @@ SELECT id, l FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, l A
 SELECT id, l FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, l Nested(q Int32)') ORDER BY id SETTINGS flatten_nested = 0;
 SELECT id, ln FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, ln Nested(q Nullable(Int32))') ORDER BY id SETTINGS flatten_nested = 0;
 SELECT id, ln FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, ln Nested(a Nullable(Int32), q Nullable(Int32))') ORDER BY id SETTINGS flatten_nested = 0;
-
--- A subcolumn of a Nested column that is a path through a struct keeps its values.
-SELECT id, `an.x.v` FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, `an.x.v` Array(Int32)') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
-SELECT id, `an.w`, `an.x.v` FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, `an.w` Array(Int32), `an.x.v` Array(Int32)') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;

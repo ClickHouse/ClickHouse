@@ -15,11 +15,9 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/ProfileEvents.h>
-#include <Common/logger_useful.h>
 #include <Disks/IDisk.h>
 
 namespace fs = std::filesystem;
@@ -61,7 +59,7 @@ struct statvfs getStatVFS(String path)
             continue;
         }
 
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STATVFS, path, "Could not get disk stat (statvfs)");
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STATVFS, path, "Could not calculate available disk space (statvfs)");
     }
     return fs;
 }
@@ -312,34 +310,6 @@ Int64 getINodeNumberFromPath(const String & path)
     return file_stat.st_ino;
 }
 
-String computeFileCacheVersionToken(const struct stat & file_stat)
-{
-#if defined(OS_DARWIN)
-    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-    const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
-#else
-    const auto mtim_sec = file_stat.st_mtim.tv_sec;
-    const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
-#endif
-    return fmt::format(
-        "{}.{:09}_{}_{}",
-        static_cast<Int64>(mtim_sec),
-        static_cast<Int64>(mtim_nsec),
-        static_cast<Int64>(file_stat.st_ino),
-        file_stat.st_size);
-}
-
-bool isFileCacheVersionTokenSettled(const struct stat & file_stat)
-{
-#if defined(OS_DARWIN)
-    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-#else
-    const auto mtim_sec = file_stat.st_mtim.tv_sec;
-#endif
-    static constexpr Int64 file_version_settle_seconds = 3;
-    return static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
-}
-
 std::optional<size_t> tryGetSizeFromFilePath(const String & path)
 {
     std::error_code ec;
@@ -481,15 +451,6 @@ fs::path readSymlink(const fs::path & path)
     if (path.filename().empty())
         return fs::read_symlink(path.parent_path());        /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
     return fs::read_symlink(path);      /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
-}
-
-bool tryDelete(const fs::path & path, LoggerPtr log)
-{
-    std::error_code ec;
-    bool removed = fs::remove(path, ec);
-    if (ec)
-        LOG_WARNING(log, "Cannot remove {}: {}", path.string(), ec.message());
-    return removed;
 }
 
 }

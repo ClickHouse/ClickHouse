@@ -7,8 +7,6 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Storages/IStorage_fwd.h>
 
-#include <optional>
-
 namespace DB
 {
 
@@ -31,12 +29,6 @@ struct TreeRewriterResult
 
     NamesAndTypesList source_columns;
     NameSet source_columns_set; /// Set of names of source_columns.
-    /// The names to suggest as `maybe you meant` for an unknown identifier when there is no storage to ask.
-    /// Unset means every source column is a candidate; an empty list means nothing can be suggested.
-    /// A caller sets it when only a part of the source columns is accepted by the check that follows the
-    /// analysis - e.g. an expression added to the sorting key by `ALTER TABLE` may use only the columns
-    /// added by the same `ALTER` - so that the hint does not lead the user straight to the next error.
-    std::optional<Names> hint_columns;
     /// Set of columns that are enough to read from the table to evaluate the expression. It does not include joined columns.
     NamesAndTypesList required_source_columns;
     /// Same as above but also record alias columns which are expanded. This is for RBAC access check.
@@ -66,6 +58,9 @@ struct TreeRewriterResult
     /// Note: not used further.
     NameToNameMap array_join_name_to_alias;
 
+    /// Predicate optimizer overrides the sub queries
+    bool rewrite_subqueries = false;
+
     /// Whether the query contains explicit columns like "SELECT column1 + column2 FROM table1".
     /// Queries like "SELECT count() FROM table1", "SELECT 1" don't contain explicit columns.
     bool has_explicit_columns = false;
@@ -89,9 +84,9 @@ struct TreeRewriterResult
 
     void collectSourceColumns(bool add_special);
     bool collectUsedColumns(const ASTPtr & query, bool is_select, bool no_throw = false);
-    [[nodiscard]] Names requiredSourceColumns() const { return required_source_columns.getNames(); }
-    [[nodiscard]] const Names & requiredSourceColumnsForAccessCheck() const { return required_source_columns_before_expanding_alias_columns; }
-    [[nodiscard]] NameSet getArrayJoinSourceNameSet() const;
+    Names requiredSourceColumns() const { return required_source_columns.getNames(); }
+    const Names & requiredSourceColumnsForAccessCheck() const { return required_source_columns_before_expanding_alias_columns; }
+    NameSet getArrayJoinSourceNameSet() const;
 };
 
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
@@ -112,13 +107,6 @@ public:
         : WithContext(context_)
         , no_throw(no_throw_)
     {}
-
-    /// Restrict the `maybe you meant` hints for unknown identifiers to these names. @sa TreeRewriterResult::hint_columns.
-    TreeRewriter & setHintColumns(Names hint_columns_)
-    {
-        hint_columns = std::move(hint_columns_);
-        return *this;
-    }
 
     /// Analyze and rewrite not select query
     TreeRewriterResultPtr analyze(
@@ -145,8 +133,6 @@ private:
 
     /// Do not throw exception from analyze on unknown identifiers, but only return nullptr.
     bool no_throw = false;
-
-    std::optional<Names> hint_columns;
 };
 
 }

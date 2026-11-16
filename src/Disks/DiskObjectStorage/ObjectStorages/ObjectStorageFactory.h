@@ -6,7 +6,6 @@ namespace DB
 {
 
 /// How the endpoint of an object storage is checked against remote_url_allow_hosts.
-/// Anything but `None` also means the disk comes from user SQL, which Azure uses to restrict the server's identity.
 enum class RemoteHostFilterCheck : uint8_t
 {
     /// Endpoint from the server config: not checked.
@@ -25,21 +24,19 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool run_access_check,
-        bool run_local_paths_check,
+        bool skip_access_check,
         RemoteHostFilterCheck remote_host_filter_check)>;
 
     static ObjectStorageFactory & instance();
 
     void registerObjectStorageType(const std::string & type, Creator creator);
 
-    [[nodiscard]] ObjectStoragePtr create(
+    ObjectStoragePtr create(
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool run_access_check,
-        bool run_local_paths_check,
+        bool skip_access_check,
         RemoteHostFilterCheck remote_host_filter_check) const;
 
     void clearRegistry();

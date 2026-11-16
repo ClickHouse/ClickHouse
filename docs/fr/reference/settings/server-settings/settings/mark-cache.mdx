@@ -12,15 +12,21 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres configurent le serveur ClickHouse et sont générés automatiquement à partir du code source de ClickHouse.
 
-## mark_cache_policy {#mark_cache_policy}
+<div id="mark_cache_policy">
+  ## mark_cache_policy
+</div>
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nom de la politique d&#39;éviction du mark cache. Valeurs possibles : `LRU`, `SLRU`, `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nom de la politique du mark cache.
 
-## mark_cache_prewarm_ratio {#mark_cache_prewarm_ratio}
+<div id="mark_cache_prewarm_ratio">
+  ## mark_cache_prewarm_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.95" changeable_without_restart="No" />Le ratio de la taille totale du mark cache à préremplir lors du préchauffage.
 
-## mark_cache_size {#mark_cache_size}
+<div id="mark_cache_size">
+  ## mark_cache_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />
 
@@ -30,7 +36,9 @@ Taille maximale du mark cache (index des tables de la famille [`MergeTree`](/fr/
   Ce paramètre peut être modifié à l’exécution et prendra effet immédiatement.
 </Note>
 
-## mark_cache_size_ratio {#mark_cache_size_ratio}
+<div id="mark_cache_size_ratio">
+  ## mark_cache_size_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />La taille de la file d’attente protégée (dans le cas de la politique SLRU) du mark cache, par rapport à la taille totale du cache.
 

@@ -28,7 +28,7 @@ struct SingleStatisticsDescription
     ASTPtr ast;
     bool is_implicit = false;
 
-    [[nodiscard]] String getTypeName() const;
+    String getTypeName() const;
 
     SingleStatisticsDescription() = delete;
     SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_, bool is_implicit_);
@@ -39,9 +39,6 @@ struct SingleStatisticsDescription
     SingleStatisticsDescription & operator=(SingleStatisticsDescription && other) noexcept;
 
     bool operator==(const SingleStatisticsDescription & other) const;
-
-    /// The memory retained by `ast` (an upper bound), not including the object itself.
-    [[nodiscard]] size_t allocatedBytes() const;
 };
 
 class ColumnsDescription;
@@ -50,11 +47,11 @@ struct ColumnStatisticsDescription
 {
     bool operator==(const ColumnStatisticsDescription & other) const;
 
-    [[nodiscard]] bool empty() const;
+    bool empty() const;
 
-    [[nodiscard]] bool hasExplicitStatistics() const;
+    bool hasExplicitStatistics() const;
 
-    [[nodiscard]] bool contains(const String & stat_type) const;
+    bool contains(const String & stat_type) const;
 
     void merge(const ColumnStatisticsDescription & other, const String & column_name, DataTypePtr column_type, bool if_not_exists);
 
@@ -62,9 +59,9 @@ struct ColumnStatisticsDescription
 
     void clear();
 
-    [[nodiscard]] ASTPtr getAST() const;
+    ASTPtr getAST() const;
 
-    [[nodiscard]] String getNameForLogs() const;
+    String getNameForLogs() const;
 
     /// get a vector of <column name, statistics desc> pair
     static std::vector<std::pair<String, ColumnStatisticsDescription>> fromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns);

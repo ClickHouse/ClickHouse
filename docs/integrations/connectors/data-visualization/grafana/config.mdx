@@ -10,6 +10,8 @@ integration:
   - category: 'data_visualization'
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
+
 import { ClickHouseSupportedBadge } from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge/>
@@ -23,15 +25,7 @@ For a quick overview of all the options, a full list of config options can be fo
 ## Common settings {#common-settings}
 
 Example configuration screen:
-<div className="ch-image-sm">
-
-<Frame>
-
-![Example secure native config](/images/integrations/data-visualization/grafana/config_common.webp)
-
-</Frame>
-
-</div>
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_common.webp" alt="Example secure native config" border />
 
 Example configuration YAML for common settings:
 ```yaml
@@ -62,15 +56,7 @@ Note that a `version` property is added when the configuration is saved from the
 
 More settings will be displayed if you choose to connect via the HTTP protocol.
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Extra HTTP config options](/images/integrations/data-visualization/grafana/config_http.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="Extra HTTP config options" border />
 
 #### HTTP path {#http-path}
 
@@ -113,15 +99,7 @@ secureJsonData:
 
 These additional settings are optional.
 
-<div className="ch-image-sm">
-
-<Frame>
-
-![Example additional settings](/images/integrations/data-visualization/grafana/config_additional.webp)
-
-</Frame>
-
-</div>
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_additional.webp" alt="Example additional settings" border />
 
 Example YAML:
 ```yaml
@@ -152,15 +130,7 @@ This will automatically override the default columns to use the selected OTel sc
 While OpenTelemetry isn't required for logs, using a single logs/trace dataset helps to enable a smoother observability workflow with [data linking](/integrations/connectors/data-visualization/grafana/query-builder#data-links).
 
 Example logs configuration screen:
-<div className="ch-image-sm">
-
-<Frame>
-
-![Logs config](/images/integrations/data-visualization/grafana/config_logs.webp)
-
-</Frame>
-
-</div>
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_logs.webp" alt="Logs config" border />
 
 Example logs config YAML:
 ```yaml
@@ -172,20 +142,11 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
-    showLogLinks: true # set to false to hide the "View logs" data links on trace ID fields.
-
     # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
     timeColumn:       <string> # the primary time column for the log.
     levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
     messageColumn: <string> # the log's message/content.
 ```
-
-#### Disabling "View logs" links {#disabling-view-logs-links}
-
-The **Trace ID correlation** section of the logs configuration contains the **Show "View logs" links** toggle.
-This toggle controls whether the plugin attaches "View logs" [data links](/integrations/connectors/data-visualization/grafana/query-builder#data-links) to trace ID fields in query results.
-The toggle is enabled by default. A same-query-type "View logs" link doesn't require configured log defaults; a cross-signal "View logs" link from trace query results does.
-Turn the toggle off, or set `showLogLinks: false` in YAML, to hide them.
 
 ### Traces {#traces}
 
@@ -196,15 +157,7 @@ This will automatically override the default columns to use the selected OTel sc
 While OpenTelemetry isn't required, this feature works best when using its schema for traces.
 
 Example trace configuration screen:
-<div className="ch-image-sm">
-
-<Frame>
-
-![Traces config](/images/integrations/data-visualization/grafana/config_traces.webp)
-
-</Frame>
-
-</div>
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_traces.webp" alt="Traces config" border />
 
 Example trace config YAML:
 ```yaml
@@ -215,8 +168,6 @@ jsonData:
 
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
-
-    showTraceLinks: true # set to false to hide the "View trace" data links on trace ID fields.
 
     # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
     traceIdColumn:       <string>    # trace ID column.
@@ -230,13 +181,6 @@ jsonData:
     tagsColumn:          <string>    # tags column. This is expected to be a map type.
     serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
-
-#### Disabling "View trace" links {#disabling-view-trace-links}
-
-The **Trace ID correlation** section of the traces configuration contains the **Show "View trace" links** toggle.
-This toggle controls whether the plugin attaches "View trace" [data links](/integrations/connectors/data-visualization/grafana/query-builder#data-links) to trace ID fields in query results.
-The toggle is enabled by default. A same-query-type "View trace" link doesn't require configured trace defaults; a cross-signal "View trace" link from log query results does.
-Turn the toggle off, or set `showTraceLinks: false` in YAML, to hide them.
 
 ### Column aliases {#column-aliases}
 
@@ -298,26 +242,10 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 ```
 
 We can then configure this table to be used in Grafana. Note that the name can be anything, or even defined in a separate database:
-<div className="ch-image-md">
-
-<Frame>
-
-![Example alias table config](/images/integrations/data-visualization/grafana/alias_table_config_example.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_config_example.webp" alt="Example alias table config" border />
 
 Now Grafana will see the results of the alias table instead of the results from `DESC example_table`:
-<div className="ch-image-md">
-
-<Frame>
-
-![Example alias table select](/images/integrations/data-visualization/grafana/alias_table_select_example.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_select_example.webp" alt="Example alias table select" border />
 
 Both types of aliasing can be used to perform complex type conversions or JSON field extraction.
 
@@ -358,7 +286,6 @@ datasources:
         defaultTable: otel_logs
         otelEnabled: false
         otelVersion: latest
-        showLogLinks: <boolean>
         timeColumn: <string>
         levelColumn: <string>
         messageColumn: <string>
@@ -367,7 +294,6 @@ datasources:
         defaultTable: otel_traces
         otelEnabled: false
         otelVersion: latest
-        showTraceLinks: <boolean>
         traceIdColumn: <string>
         spanIdColumn: <string>
         operationNameColumn: <string>

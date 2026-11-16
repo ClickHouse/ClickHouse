@@ -6,8 +6,9 @@ doc_type: 'guide'
 keywords: ['ClickStack embedded', 'ClickHouse embedded', 'ClickStack ClickHouse server', 'built-in observability']
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
 
-ClickStack is bundled directly into the ClickHouse server binary. This means you can access the ClickStack UI from your ClickHouse instance without deploying any additional components. This deployment is similar to the public demo at [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com), but running against your own ClickHouse instance and data.
+ClickStack is bundled directly into the ClickHouse server binary. This means you can access the ClickStack UI (HyperDX) from your ClickHouse instance without deploying any additional components. This deployment is similar to the public demo at [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com), but running against your own ClickHouse instance and data.
 
 ### Suitable for {#suitable-for}
 
@@ -54,15 +55,7 @@ Open [http://localhost:8123](http://localhost:8123) in your browser and click **
 
 Enter the username `default` and the password `password` to connect to the local instance.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Authenticate](/images/clickstack/deployment/embedded/authenticate.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/deployment/embedded/authenticate.webp" alt="Authenticate" size="lg"/>
 </Step>
 <Step title="Create a source" id="create-a-source-docker">
 
@@ -70,17 +63,9 @@ If you have existing OpenTelemetry tables, ClickStack will detect them and creat
 
 On a fresh installation, you will be prompted to create a source. Complete the **Table** field with the appropriate table name (e.g. `otel_logs`) and click **Save New Source**.
 
-<div className="ch-image-lg">
+<Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="Create Source" size="lg"/>
 
-<Frame>
-
-![Create Source](/images/clickstack/deployment/embedded/inferred-source.webp)
-
-</Frame>
-
-</div>
-
-If you don't have data yet, see [Ingesting data](/clickstack/ingesting-data/overview) for available options.
+If you don't have data yet, see [Ingesting data](/clickstack/ingesting-data/index) for available options.
 </Step>
 </Steps>
 
@@ -151,17 +136,9 @@ Open [http://localhost:8123](http://localhost:8123) in your browser and click **
 
 If you have existing OpenTelemetry tables, ClickStack will detect them and create sources automatically.
 
-If you don't have data yet, see [Ingesting data](/clickstack/ingesting-data/overview) for available options.
+If you don't have data yet, see [Ingesting data](/clickstack/ingesting-data/index) for available options.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Create Source](/images/clickstack/deployment/embedded/inferred-source.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="Create Source" size="lg"/>
 </Step>
 </Steps>
 
@@ -175,4 +152,4 @@ If you're ready to move beyond evaluation, consider a production-ready deploymen
 - [All-in-One](/clickstack/deployment/all-in-one) — single container with all components, including persistence and authentication
 - [Docker Compose](/clickstack/deployment/docker-compose) — individual components for more control
 - [Helm](/clickstack/deployment/helm) — recommended for production Kubernetes deployments
-- [Self-managed ClickHouse Observability](/clickstack/self-configured/getting-started/managed) — manage your ingestion and schemas on ClickHouse Cloud
+- [Managed ClickStack](/clickstack/getting-started/managed) — fully managed on ClickHouse Cloud

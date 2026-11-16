@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['レプリケーション', '高可用性', 'クラスター構成', 'データ冗長化', 'フォールトトレランス']
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 import ConfigExplanation from '/snippets/ja/_config_explanation.mdx';
 import ListenHost from '/snippets/ja/_listen_host.mdx';
 import ServerParameterTable from '/snippets/ja/_server_parameter_table.mdx';
@@ -15,22 +17,13 @@ import KeeperConfigExplanation from '/snippets/ja/_keeper_explanation.mdx';
 import VerifyKeeperStatus from '/snippets/ja/_verify_keeper_using_mntr.mdx';
 import DedicatedKeeperServers from '/snippets/ja/_dedicated_keeper_servers.mdx';
 import ExampleFiles from '/snippets/ja/_working_example.mdx';
-
 import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 
 > この例では、データをレプリケーションするシンプルな ClickHouse クラスターのセットアップ方法を学びます。サーバーは 5 台構成です。うち 2 台はデータのコピーを保持するために使用されます。残りの 3 台は、データのレプリケーションを調整するために使用されます。
 
 これからセットアップするクラスターのアーキテクチャを以下に示します。
 
-<div className="ch-image-md">
-
-<Frame>
-
-![ReplicatedMergeTree を使用した 1 分片 2 レプリカのアーキテクチャ図](/images/deployment-guides/replication-sharding-examples/replication.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/replication-sharding-examples/replication.webp" size="md" alt="ReplicatedMergeTree を使用した 1 分片 2 レプリカのアーキテクチャ図" />
 
 <DedicatedKeeperServers />
 
@@ -144,7 +137,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
   </Step>
 
   <Step title="ClickHouseノードの設定" id="configure-clickhouse-servers">
-### サーバーのセットアップ
+    ### サーバーのセットアップ
 
     次に、`fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d` にある空の設定ファイル `config.xml` をそれぞれ編集します。以下でハイライトされている行は、各ノード固有の値に変更してください。
 
@@ -216,7 +209,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 
     上記の設定ファイルの各セクションについて、以下で詳しく説明します。
 
-#### ネットワークとログ
+    #### ネットワークとログ
 
     <ListenHost />
 
@@ -234,7 +227,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 
     ロギング設定の詳細については、デフォルトの ClickHouse [設定ファイル](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml)に含まれるコメントを参照してください。
 
-#### クラスターの設定
+    #### クラスターの設定
 
     クラスターの設定は `<remote_servers>` ブロックで行います。
     ここでクラスター名 `cluster_1S_2R` を定義します。
@@ -266,7 +259,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 
     <ServerParameterTable />
 
-#### Keeperの設定
+    #### Keeperの設定
 
     `<ZooKeeper>` セクションでは、ClickHouse Keeper (または ZooKeeper) の実行場所を ClickHouse に指定します。
     ClickHouse Keeper クラスターを使用する場合、クラスター内の各 `<node>` に対して、`<host>` タグおよび `<port>` タグでそれぞれホスト名とポート番号を指定する必要があります。
@@ -295,7 +288,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
       本番環境では、ClickHouse Keeper は専用ホストで実行することを強く推奨します。
     </Note>
 
-#### マクロの設定
+    #### マクロの設定
 
     また、`<macros>` セクションはレプリケートテーブル向けのパラメータ置換を定義するために使用されます。これらは `system.macros` に一覧表示され、クエリ内で `{shard}` や `{replica}` などの置換を利用できます。
 
@@ -311,7 +304,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
       これらは、クラスターの構成に応じてそれぞれ個別に定義されます。
     </Note>
 
-### ユーザー設定
+    ### ユーザー設定
 
     次に、`fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` にある空の設定ファイル `users.xml` をそれぞれ以下の内容に変更します。
 
@@ -328,6 +321,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
         </profiles>
         <users>
             <default>
+                <access_management>1</access_management>
                 <profile>default</profile>
                 <networks>
                     <ip>::/0</ip>
@@ -335,6 +329,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
                 <quota>default</quota>
                 <access_management>1</access_management>
                 <named_collection_control>1</named_collection_control>
+                <show_named_collections>1</show_named_collections>
                 <show_named_collections_secrets>1</show_named_collections_secrets>
             </default>
         </users>
@@ -367,7 +362,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
   </Step>
 
   <Step title="ClickHouse Keeperの設定" id="configure-clickhouse-keeper-nodes">
-### Keeperのセットアップ
+    ### Keeperのセットアップ
 
     <KeeperConfig />
 

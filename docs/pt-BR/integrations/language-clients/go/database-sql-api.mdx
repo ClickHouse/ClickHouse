@@ -16,7 +16,9 @@ A API `database/sql`, ou API &quot;padrão&quot;, permite usar o cliente em cen�
 
 Além disso, este cliente oferece suporte ao uso de HTTP como camada de transporte — os dados ainda serão codificados no formato Native para desempenho ideal.
 
-## Conexão {#connecting}
+<div id="connecting">
+  ## Conexão
+</div>
 
 A conexão pode ser feita por meio de uma string DSN no formato `clickhouse://<host>:<port>?<query_option>=<value>` com o método `Open`, ou por meio do método `clickhouse.OpenDB`. Este último não faz parte da especificação `database/sql`, mas retorna uma instância de `sql.DB`. Esse método oferece funcionalidades como profiling, para as quais não há uma forma óbvia de exposição pela especificação `database/sql`.
 
@@ -54,7 +56,9 @@ func ConnectDSN() error {
 
 **Em todos os exemplos a seguir, salvo indicação explícita em contrário, assumimos que a variável `conn` do ClickHouse já foi criada e está disponível.**
 
-### Configurações de conexão {#connection-settings}
+<div id="connection-settings">
+  ### Configurações de conexão
+</div>
 
 A maioria das opções de configuração é compartilhada com a ClickHouse API. Consulte [Configuração](/pt-BR/integrations/language-clients/go/configuration) para ver as configurações compartilhadas. Os seguintes parâmetros de DSN específicos de SQL estão disponíveis:
 
@@ -92,7 +96,9 @@ func ConnectSettings() error {
 
 [Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/connect_settings.go)
 
-### Conexão via HTTP {#connecting-over-http}
+<div id="connecting-over-http">
+  ### Conexão via HTTP
+</div>
 
 Por padrão, as conexões são estabelecidas pelo protocolo nativo. Para usuários que precisem de HTTP, isso pode ser habilitado modificando o DSN para incluir o protocolo HTTP ou especificando o protocolo nas opções de conexão.
 
@@ -129,7 +135,9 @@ func ConnectDSNHTTP() error {
 
 [Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/connect_http.go)
 
-### Sessões {#sessions}
+<div id="sessions">
+  ### Sessões
+</div>
 
 <Info>
   **Somente HTTP**
@@ -203,7 +211,9 @@ if err := rows.Err(); err != nil {
 
 [Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/session.go)
 
-## Execução {#execution}
+<div id="execution">
+  ## Execução
+</div>
 
 Após obter uma conexão, você pode executar instruções `sql` por meio do método Exec.
 
@@ -225,7 +235,9 @@ _, err = conn.Exec("INSERT INTO example VALUES (1, 'test-1')")
 
 Este método não aceita um contexto — por padrão, ele é executado com o contexto em segundo plano. Se necessário, você pode usar `ExecContext` — consulte [Usando contexto](#using-context).
 
-## Inserção em lote {#batch-insert}
+<div id="batch-insert">
+  ## Inserção em lote
+</div>
 
 É possível obter a semântica de lote criando um `sql.Tx` por meio do método `Being`. A partir dele, é possível obter um lote usando o método `Prepare` com a instrução `INSERT`. Isso retorna um `sql.Stmt`, ao qual é possível adicionar linhas usando o método `Exec`. O lote será acumulado na memória até que `Commit` seja executado no `sql.Tx` original.
 
@@ -259,7 +271,9 @@ return scope.Commit()
 
 [Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/batch.go)
 
-## Consultando linhas {#querying-rows}
+<div id="querying-rows">
+  ## Consultando linhas
+</div>
 
 É possível consultar uma única linha usando o método `QueryRow`. Isso retorna um *sql.Row, no qual é possível invocar Scan com ponteiros para variáveis nas quais as colunas devem ser atribuídas. Uma variante `QueryRowContext` permite passar um contexto diferente de background - veja [Usando Context](#using-context).
 
@@ -311,9 +325,11 @@ if err := rows.Err(); err != nil {
 
 [Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/query_rows.go)
 
-## Inserção assíncrona {#async-insert}
+<div id="async-insert">
+  ## Inserção assíncrona
+</div>
 
-As inserções assíncronas podem ser feitas executando uma inserção por meio do método `ExecContext`. Para isso, passe a ele um contexto com o modo assíncrono habilitado, como mostrado abaixo. Isso permite que o usuário especifique se o cliente deve aguardar o servidor concluir a inserção ou responder assim que os dados forem recebidos. Isso controla efetivamente o parâmetro [wait&#95;for&#95;async&#95;insert](/pt-BR/reference/settings/session-settings#wait_for_async_insert).
+As inserções assíncronas podem ser feitas executando uma inserção por meio do método `ExecContext`. Para isso, passe a ele um contexto com o modo assíncrono habilitado, como mostrado abaixo. Isso permite que o usuário especifique se o cliente deve aguardar o servidor concluir a inserção ou responder assim que os dados forem recebidos. Isso controla efetivamente o parâmetro [wait&#95;for&#95;async&#95;insert](/pt-BR/reference/settings/session-settings/wait-for#wait_for_async_insert).
 
 ```go
 const ddl = `
@@ -342,29 +358,9 @@ ctx := clickhouse.Context(context.Background(), clickhouse.WithStdAsync(false))
 
 [Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/async.go)
 
-## Parâmetros de consulta do lado do servidor {#server-side-query-parameters}
-
-A API padrão oferece suporte a parâmetros de consulta do lado do servidor do ClickHouse por meio de marcadores tipados `{name:Type}` e valores `clickhouse.Named`:
-
-```go
-row := conn.QueryRowContext(ctx,
-    "SELECT {user_id:UInt64}, {message:String}",
-    clickhouse.Named("user_id", uint64(12345)),
-    clickhouse.Named("message", `line 1\nline 2`),
-)
-```
-
-Um `string`/`*string` ou `[]byte`/`*[]byte` passado via `clickhouse.Named` é tratado como valor literal e escapado pelo driver, de modo que faz a ida e volta byte a byte sem alterações. Use uma quebra de linha ou tabulação real no valor Go quando for isso que você quiser no wire:
-
-```go
-clickhouse.Named("message", "line 1\nline 2") // literal newline — round-trips
-```
-
-Para texto de parâmetros já serializado no formato `Escaped` do ClickHouse, use `WithParameters`; consulte [Parâmetros de consulta do lado do servidor](/pt-BR/integrations/language-clients/go/clickhouse-api#server-side-query-parameters) para uma explicação completa sobre tipos, escaping e as diferenças entre `{name:Type}` e a vinculação do lado do cliente.
-
-[Exemplo completo com a API padrão](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/query_parameters.go)
-
-## Vinculação de parâmetros {#parameter-binding}
+<div id="parameter-binding">
+  ## Vinculação de parâmetros
+</div>
 
 A API padrão oferece os mesmos recursos de vinculação de parâmetros da [ClickHouse API](/pt-BR/integrations/language-clients/go/clickhouse-api#parameter-binding), permitindo passar parâmetros aos métodos `Exec`, `Query` e `QueryRow` (e às variantes equivalentes de [Context](#using-context)). Há suporte a parâmetros posicionais, nomeados e numerados.
 
@@ -394,7 +390,9 @@ fmt.Printf("Named bind count: %d\n", count)
 
 Observe que os [casos especiais](/pt-BR/integrations/language-clients/go/clickhouse-api#special-cases) ainda se aplicam.
 
-## Usando contexto {#using-context}
+<div id="using-context">
+  ## Usando contexto
+</div>
 
 A API padrão oferece a mesma capacidade de transmitir prazos, sinais de cancelamento e outros valores com escopo de requisição por meio do contexto que a [ClickHouse API](/pt-BR/integrations/language-clients/go/clickhouse-api#using-context). Diferentemente da ClickHouse API, isso é feito usando variantes `Context` dos métodos; ou seja, métodos como `Exec`, que usam o contexto de background por padrão, têm uma variante `ExecContext`, à qual um contexto pode ser passado como primeiro parâmetro. Isso permite passar um contexto em qualquer etapa do fluxo de uma aplicação. Por exemplo, você pode passar um contexto ao estabelecer uma conexão via `ConnContext` ou ao solicitar uma linha de consulta via `QueryRowContext`. Exemplos de todos os métodos disponíveis são mostrados abaixo.
 
@@ -477,7 +475,9 @@ if err := rows.Err(); err != nil {
 
 [Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/context.go)
 
-## Escaneamento dinâmico {#dynamic-scanning}
+<div id="dynamic-scanning">
+  ## Escaneamento dinâmico
+</div>
 
 Assim como na [ClickHouse API](/pt-BR/integrations/language-clients/go/clickhouse-api#dynamic-scanning), as informações sobre o tipo da coluna ficam disponíveis para que você possa criar, em tempo de execução, instâncias de variáveis com a tipagem correta que podem ser passadas para o Scan. Isso permite ler colunas mesmo quando o tipo não é conhecido.
 
@@ -522,7 +522,9 @@ if err := rows.Err(); err != nil {
 
 [Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/dynamic_scan_types.go)
 
-## Tabelas externas {#external-tables}
+<div id="external-tables">
+  ## Tabelas externas
+</div>
 
 [Tabelas externas](/pt-BR/reference/engines/table-engines/special/external-data) permitem que o cliente envie dados ao ClickHouse com uma consulta `SELECT`. Esses dados são colocados em uma tabela temporária e podem ser usados na própria consulta para avaliação.
 
@@ -593,7 +595,9 @@ fmt.Printf("external_table_1 UNION external_table_2: %d\n", count)
 
 [Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/external_data.go)
 
-## OpenTelemetry {#open-telemetry}
+<div id="open-telemetry">
+  ## OpenTelemetry
+</div>
 
 O ClickHouse oferece suporte à [propagação de contexto de rastreamento](/pt-BR/guides/oss/deployment-and-scaling/monitoring/opentelemetry) nos transportes TCP e HTTP. Use `clickhouse.WithSpan` para associar um span a uma consulta por meio do contexto.
 
@@ -623,7 +627,9 @@ fmt.Printf("count: %d\n", count)
 
 [Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/open_telemetry.go)
 
-## Compressão {#compression}
+<div id="compression">
+  ## Compressão
+</div>
 
 A API padrão oferece suporte aos mesmos algoritmos de compressão da [ClickHouse API](/pt-BR/integrations/language-clients/go/configuration#compression), ou seja, compressão `lz4` e `zstd` no nível de bloco. Além disso, `gzip`, `deflate` e `br` também são compatíveis com conexões HTTP. Se qualquer um deles estiver habilitado, a compressão será aplicada aos blocos durante a inserção e às respostas de consulta. Outras requisições, como pings ou requisições de consulta, permanecerão sem compressão. Isso é consistente com as opções `lz4` e `zstd`.
 

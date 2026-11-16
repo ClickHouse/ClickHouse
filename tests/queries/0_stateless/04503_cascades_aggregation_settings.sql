@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: distributed planning requires the analyzer.
+
 -- `distributed_plan_force_shuffle_aggregation` and `distributed_aggregation_memory_efficient`
 -- apply to the aggregation alternatives built by the cost-based optimizer.
 
@@ -13,6 +16,7 @@ SET make_distributed_plan = 1;
 SET enable_cascades_optimizer = 1;
 SET distributed_plan_execute_locally = 1;
 SET enable_parallel_replicas = 0;
+SET automatic_parallel_replicas_mode = 0;
 SET max_rows_to_group_by = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET param__internal_cascades_cluster_node_count = 4;
