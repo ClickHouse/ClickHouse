@@ -151,37 +151,37 @@ public:
                 switch (max_unit) /// A kind of Duff Device.
                 {
                     case Years:
-                        processUnit(365 * 24 * 3600, 0, " year", 5, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Years);
+                        processUnit(secondsPerUnit(Years), 0, " year", 5, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Years);
                         if (min_unit == Years)
                             break;
                         [[fallthrough]];
 
                     case Months:
-                        processUnit(static_cast<UInt64>(30.5 * 24 * 3600), 0, " month", 6, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Months);
+                        processUnit(secondsPerUnit(Months), 0, " month", 6, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Months);
                         if (min_unit == Months)
                             break;
                         [[fallthrough]];
 
                     case Days:
-                        processUnit(24 * 3600, 0, " day", 4, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Days);
+                        processUnit(secondsPerUnit(Days), 0, " day", 4, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Days);
                         if (min_unit == Days)
                             break;
                         [[fallthrough]];
 
                     case Hours:
-                        processUnit(3600, 0, " hour", 5, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Hours);
+                        processUnit(secondsPerUnit(Hours), 0, " hour", 5, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Hours);
                         if (min_unit == Hours)
                             break;
                         [[fallthrough]];
 
                     case Minutes:
-                        processUnit(60, 0, " minute", 7, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Minutes);
+                        processUnit(secondsPerUnit(Minutes), 0, " minute", 7, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Minutes);
                         if (min_unit == Minutes)
                             break;
                         [[fallthrough]];
 
                     case Seconds:
-                        processUnit(1, 0, " second", 7, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Seconds);
+                        processUnit(secondsPerUnit(Seconds), 0, " second", 7, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Seconds);
                         if (min_unit == Seconds)
                             break;
                         [[fallthrough]];
@@ -237,7 +237,7 @@ public:
             {
                 /// Zero units, no need to print. But if it's seconds and no other unit is printed, print "0 seconds" nevertheless.
                 if (unit_multiplier != 1 || has_output
-                    || fractional_str.substr(0, (4 - min_unit) * 3) != std::string((4 - min_unit) * 3, '0'))
+                    || fractional_str.substr(0, subSecondDigits(min_unit)) != std::string(subSecondDigits(min_unit), '0'))
                     return;
             }
 
@@ -288,29 +288,26 @@ public:
     }
 
 private:
-    /// Number of seconds in one unit, for units of seconds and above. Sub-second units return 1
-    /// and are never queried through this function (they are handled via `subSecondDigits`).
-    static Float64 secondsPerUnit(Unit unit)
+    /// Number of seconds in one unit. Sub-second units return 1, as their `processUnit` calls take whole seconds.
+    static constexpr UInt64 secondsPerUnit(Unit unit)
     {
         switch (unit)
         {
-            case Years: return 365.0 * 24 * 3600;
-            case Months: return static_cast<Float64>(static_cast<UInt64>(30.5 * 24 * 3600));
-            case Days: return 24.0 * 3600;
+            case Years: return 365 * 24 * 3600;
+            case Months: return static_cast<UInt64>(30.5 * 24 * 3600);
+            case Days: return 24 * 3600;
             case Hours: return 3600;
             case Minutes: return 60;
-            default: return 1; /// Seconds and sub-second units.
+            default: return 1;
         }
     }
 
-    /// Number of fractional (sub-second) digits shown for a sub-second minimum unit: three decimal
-    /// digits per unit below seconds (milliseconds, microseconds, nanoseconds). The caller must only
-    /// pass a `min_unit` below `Seconds`, so the result is always in the range 3..9.
+    /// Number of fractional digits shown down to `min_unit`: three per unit below seconds, 0 from seconds up.
     static size_t subSecondDigits(Unit min_unit)
     {
-        /// `Seconds - min_unit` is 1..3 here (the caller only passes a `min_unit` below `Seconds`).
-        const int units_below_seconds = Seconds - min_unit;
-        return static_cast<size_t>(units_below_seconds) * 3;
+        if (min_unit >= Seconds)
+            return 0;
+        return static_cast<size_t>(Seconds - min_unit) * 3;
     }
 
     /// Whether the current unit is the last one that will be printed, i.e. the value remaining after it
@@ -320,7 +317,7 @@ private:
     {
         if (min_unit >= Seconds)
             /// Sub-second digits are never shown, so only remaining whole seconds can produce more output.
-            return whole_part < secondsPerUnit(min_unit);
+            return whole_part < static_cast<Float64>(secondsPerUnit(min_unit));
 
         /// A sub-second minimum unit: there is more to show if there are whole seconds left,
         /// or any of the shown fractional digits is non-zero.
