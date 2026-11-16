@@ -517,9 +517,9 @@ struct GatherColumn
     size_t emit_rows = 0;
 };
 
-/// `byteSize` of `column` once the join emits it: a `ColumnReplicated`, `ColumnSparse` or `ColumnConst`, also below another
-/// column, repeats the average row of its nested column, where a `LowCardinality` costs its indexes per row and its
-/// non-shared dictionary once.
+/// `byteSize` of `column` once the join emits it: a `ColumnReplicated` or `ColumnConst`, also below another column, repeats
+/// the average row of its nested column and a `ColumnSparse` its default, where a `LowCardinality` costs its indexes per
+/// row and its non-shared dictionary once.
 size_t getMaterializedByteSize(const IColumn & column);
 
 /// One column an emit table is asked for. `position` is the column's position in the saved block

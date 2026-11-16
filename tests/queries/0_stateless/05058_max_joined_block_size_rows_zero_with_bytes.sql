@@ -101,8 +101,38 @@ FROM
 SETTINGS max_block_size = 4096, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 65536,
          join_use_nulls = 1, join_algorithm = 'hash';
 
+-- The same key source replicated by `ARRAY JOIN` keeps the sparse element below `ColumnReplicated`.
+SELECT max(bs * b) <= 65536, count()
+FROM
+(
+    SELECT blockSize() AS bs, byteSize(r.k) AS b
+    FROM (SELECT k FROM t_05058_sparse ARRAY JOIN range(2) AS n) AS l
+    LEFT JOIN t_05058_dense AS r ON l.k = r.k
+)
+SETTINGS max_block_size = 4096, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 65536,
+         join_use_nulls = 1, enable_lazy_columns_replication = 1, join_algorithm = 'hash';
+
 DROP TABLE t_05058_sparse;
 DROP TABLE t_05058_dense;
+
+-- One wide value among the defaults of a sparse key source is held by one row only, so the byte budget must not
+-- split the output as if every row held it.
+DROP TABLE IF EXISTS t_05058_sparse_string;
+CREATE TABLE t_05058_sparse_string (k String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.1;
+INSERT INTO t_05058_sparse_string SELECT if(number = 0, repeat('x', 4096), '') FROM numbers(4096);
+
+SELECT max(bs) > 1024, count(b)
+FROM
+(
+    SELECT blockSize() AS bs, byteSize(r.k) AS b
+    FROM t_05058_sparse_string AS l
+    LEFT JOIN (SELECT '' AS k FROM numbers(8)) AS r ON l.k = r.k
+)
+SETTINGS max_block_size = 4096, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 65536,
+         join_use_nulls = 1, join_algorithm = 'hash';
+
+DROP TABLE t_05058_sparse_string;
 
 -- A right column stored as `ColumnReplicated` (from `ARRAY JOIN`) is emitted materialized, so the byte
 -- budget must count the full value of every emitted row, not the replicated column's compact size.

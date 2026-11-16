@@ -383,11 +383,18 @@ static size_t getDictionariesByteSize(const IColumn & column)
 
 size_t getMaterializedByteSize(const IColumn & column)
 {
+    if (const auto * sparse = typeid_cast<const ColumnSparse *>(&column))
+    {
+        /// Row 0 of the values is the default, the other rows are the non-default rows.
+        const IColumn & sparse_values = sparse->getValuesColumn();
+        const size_t values_bytes = getMaterializedByteSize(sparse_values);
+        const size_t default_bytes = std::min(values_bytes, sparse_values.byteSizeAt(0));
+        return values_bytes - default_bytes + default_bytes * sparse->getNumberOfDefaultRows();
+    }
+
     const IColumn * values = nullptr;
     if (const auto * replicated = typeid_cast<const ColumnReplicated *>(&column))
         values = replicated->getNestedColumn().get();
-    else if (const auto * sparse = typeid_cast<const ColumnSparse *>(&column))
-        values = &sparse->getValuesColumn();
     else if (const auto * const_column = typeid_cast<const ColumnConst *>(&column))
         values = &const_column->getDataColumn();
     else
@@ -406,7 +413,7 @@ size_t getMaterializedByteSize(const IColumn & column)
     if (values->empty())
         return column.byteSize();
 
-    const size_t values_bytes = values->byteSize();
+    const size_t values_bytes = getMaterializedByteSize(*values);
     const size_t dictionaries_bytes = std::min(values_bytes, getDictionariesByteSize(*values));
     return (values_bytes - dictionaries_bytes) / values->size() * column.size() + dictionaries_bytes;
 }
