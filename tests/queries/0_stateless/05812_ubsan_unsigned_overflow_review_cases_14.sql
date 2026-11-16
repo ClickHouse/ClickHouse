@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: Protobuf is not available in the fast test build.
+
 -- Boundary cases that previously wrapped around an unsigned integer (which UBSan reports) or allocated for a claim.
 
 -- A Protobuf field that declares 4 GiB without the bytes fails on the missing data without allocating for it.
