@@ -48,23 +48,7 @@ GCPOAuthToken postTokenRequest(
     auto log = getLogger("GCPOAuth");
     LOG_DEBUG(log, "Requesting GCP bearer token from {}", url.getHost());
 
-    HTTPSessionPtr session;
-    std::exception_ptr last_exception;
-    for (size_t i = 0; i < 5; ++i)
-    {
-        try
-        {
-            session = makeHTTPSession(group, url, timeouts);
-            break;
-        }
-        catch (...)
-        {
-            last_exception = std::current_exception();
-            tryLogCurrentException(log);
-        }
-    }
-    if (!session)
-        std::rethrow_exception(last_exception);
+    auto session = makeGCPTokenEndpointSession(group, url, timeouts, log);
 
     Poco::Net::HTTPRequest request(
         Poco::Net::HTTPRequest::HTTP_POST,
@@ -125,6 +109,28 @@ void checkGCPOAuthAccessToken(const std::string & access_token)
 {
     if (access_token.find_first_of("\r\n") != std::string::npos)
         throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "GCP access token contains CR or LF");
+}
+
+HTTPSessionPtr makeGCPTokenEndpointSession(
+    HTTPConnectionGroupType group,
+    const Poco::URI & url,
+    const ConnectionTimeouts & timeouts,
+    LoggerPtr log)
+{
+    std::exception_ptr last_exception;
+    for (size_t i = 0; i < 5; ++i)
+    {
+        try
+        {
+            return makeHTTPSession(group, url, timeouts);
+        }
+        catch (...)
+        {
+            last_exception = std::current_exception();
+            tryLogCurrentException(log);
+        }
+    }
+    std::rethrow_exception(last_exception);
 }
 
 GCPOAuthToken fetchGCPOAuthToken(

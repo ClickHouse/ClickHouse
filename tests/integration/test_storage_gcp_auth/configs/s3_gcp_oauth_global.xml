@@ -1,0 +1,25 @@
+<clickhouse>
+    <s3>
+        <!-- Global qualifiers must not be mistaken for query overrides. -->
+        <impersonation_scopes>https://www.googleapis.com/auth/cloud-platform</impersonation_scopes>
+        <impersonation_delegates>root-delegate@test-project.iam.gserviceaccount.com</impersonation_delegates>
+
+        <!-- Query targets must not inherit the global qualifiers. -->
+        <gcp_oauth_endpoint>
+            <endpoint>http://resolver:22234/test/</endpoint>
+            <http_client>gcp_oauth</http_client>
+            <service_account>impersonation-source</service_account>
+            <metadata_service>resolver</metadata_service>
+            <iam_credentials_endpoint>http://resolver:22235</iam_credentials_endpoint>
+        </gcp_oauth_endpoint>
+
+        <!-- No target: use the source token. Keep IAM requests, if any, inside the mock. -->
+        <gcp_oauth_no_target_endpoint>
+            <endpoint>http://resolver:22237/test/</endpoint>
+            <http_client>gcp_oauth</http_client>
+            <service_account>impersonation-source</service_account>
+            <metadata_service>resolver</metadata_service>
+            <iam_credentials_endpoint>http://resolver:22235</iam_credentials_endpoint>
+        </gcp_oauth_no_target_endpoint>
+    </s3>
+</clickhouse>

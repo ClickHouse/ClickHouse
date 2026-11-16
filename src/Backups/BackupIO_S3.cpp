@@ -73,6 +73,11 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString google_adc_client_secret;
     extern const S3AuthSettingsString google_adc_refresh_token;
     extern const S3AuthSettingsString google_service_account_key;
+    extern const S3AuthSettingsString impersonate_service_account;
+    extern const S3AuthSettingsString impersonation_delegates;
+    extern const S3AuthSettingsString impersonation_scopes;
+    extern const S3AuthSettingsUInt64 impersonation_lifetime_seconds;
+    extern const S3AuthSettingsString iam_credentials_endpoint;
 }
 
 namespace S3RequestSetting
@@ -245,6 +250,11 @@ private:
         client_configuration.google_adc_client_secret = settings.auth_settings[S3AuthSetting::google_adc_client_secret];
         client_configuration.google_adc_refresh_token = settings.auth_settings[S3AuthSetting::google_adc_refresh_token];
         client_configuration.google_service_account_key = settings.auth_settings[S3AuthSetting::google_service_account_key];
+        client_configuration.impersonate_service_account = settings.auth_settings[S3AuthSetting::impersonate_service_account];
+        client_configuration.impersonation_delegates = settings.auth_settings[S3AuthSetting::impersonation_delegates];
+        client_configuration.impersonation_scopes = settings.auth_settings[S3AuthSetting::impersonation_scopes];
+        client_configuration.impersonation_lifetime_seconds = settings.auth_settings[S3AuthSetting::impersonation_lifetime_seconds];
+        client_configuration.iam_credentials_endpoint = settings.auth_settings[S3AuthSetting::iam_credentials_endpoint];
 
         /// Drop a server-inherited `gcp_oauth` (so the backup uses its explicit keys). The ADC triple or service
         /// account key is only ever supplied by a named collection, which also sets `gcp_oauth_supplied_by_query`; so
@@ -263,6 +273,13 @@ private:
             client_configuration.google_adc_client_secret.clear();
             client_configuration.google_adc_refresh_token.clear();
             client_configuration.google_service_account_key.clear();
+            /// The impersonation target goes with it: without the source `gcp_oauth` there is nothing to
+            /// impersonate from, and keeping it would let a server-configured target reach a user endpoint.
+            client_configuration.impersonate_service_account.clear();
+            client_configuration.impersonation_delegates.clear();
+            client_configuration.impersonation_scopes.clear();
+            client_configuration.impersonation_lifetime_seconds = S3::DEFAULT_GCP_IMPERSONATION_LIFETIME_SECONDS;
+            client_configuration.iam_credentials_endpoint.clear();
         }
 
         S3::ClientSettings client_settings{

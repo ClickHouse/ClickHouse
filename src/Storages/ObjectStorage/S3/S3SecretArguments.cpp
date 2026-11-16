@@ -19,13 +19,15 @@ namespace
 /// (`role_arn`) is a non-secret identifier passed inside `extra_credentials` and stays visible
 /// (see isNonSecretExtraCredentialsKey).
 /// The keys of the `extra_credentials(..)` nested map whose value stays visible when the map is masked.
-/// Only `role_arn` qualifies: it names the role to assume, like `access_key_id` names a key. The other two
-/// keys of the assume-role triple are secrets: `external_id` is its shared secret, and `role_session_name`
+/// `role_arn` qualifies: it names the role to assume, like `access_key_id` names a key. The GCP impersonation
+/// keys qualify likewise: they name the target service account, the delegation chain and the OAuth scopes.
+/// The other two keys of the assume-role triple are secrets: `external_id` is its shared secret, and `role_session_name`
 /// can be one too, because a trust policy can require a specific value through the `sts:RoleSessionName`
 /// condition (the ClickHouse Cloud guide documents exactly this use). Any other key fails closed.
 /// The `.backup` metadata is a different matter: its `<base_backup>` locator keeps `role_session_name`
 /// on purpose, so that a role-authenticated backup chain stays restorable (see `BackupInfo.cpp`).
-constexpr std::string_view extra_credentials_visible_keys[] = {"role_arn"};
+constexpr std::string_view extra_credentials_visible_keys[]
+    = {"role_arn", "impersonate_service_account", "impersonation_delegates", "impersonation_scopes"};
 
 constexpr std::string_view s3_secret_keys[]
     = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "google_service_account_key",

@@ -46,7 +46,7 @@ S3StorageParsedArguments parseCollection(const String & name, const String & col
 
     auto collection = NamedCollectionFactoryFriend::instance().get(name);
     S3StorageParsedArguments parsed;
-    parsed.fromNamedCollection(*collection, getContext().context);
+    parsed.fromNamedCollection(*collection, getContext().context, /*is_loading_from_existing_metadata=*/ false);
     return parsed;
 }
 

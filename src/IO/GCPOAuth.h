@@ -2,6 +2,7 @@
 
 #include <string>
 #include <base/types.h>
+#include <Common/Logger.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 
@@ -16,6 +17,13 @@ struct GCPOAuthToken
 
 /// Throws if the access token from a token endpoint cannot be sent in an `Authorization` header.
 void checkGCPOAuthAccessToken(const std::string & access_token);
+/// Open a session to a Google token endpoint. A session taken from the pool may have been closed by the peer
+/// meanwhile, which `makeHTTPSession` reports by throwing, so retry a few times before giving up.
+HTTPSessionPtr makeGCPTokenEndpointSession(
+    HTTPConnectionGroupType group,
+    const Poco::URI & url,
+    const ConnectionTimeouts & timeouts,
+    LoggerPtr log);
 
 /// Exchange a Google OAuth2 refresh token for an access token by POSTing to
 /// https://oauth2.googleapis.com/token.
