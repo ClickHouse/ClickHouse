@@ -44,7 +44,7 @@ size_t parseDemandRetentionMs(const String & value)
         const auto declared_ms = std::min<UInt64>(parse<UInt64>(value.substr(0, sep)), 60000);
         return std::min(std::max<UInt64>(declared_ms, 1) * demand_retention_factor, max_retention_ms);
     }
-    catch (...)
+    catch (...) /// Ok: a malformed declared interval falls back to the default retention
     {
         return default_retention_ms;
     }
@@ -561,9 +561,8 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
             == lockless_active_replicas.end();
     });
 
-    /// Reserve free partitions for the lockless replicas that may still take some: those in
-    /// their initial rounds, and those whose demand changed recently enough that its
-    /// publisher's next retry may still come (the value declares the retry interval).
+    /// Reserve free partitions for the lockless replicas: those in their initial rounds, and
+    /// those whose demand changed within its declared retention (a still-trying replica).
     const auto now = std::chrono::steady_clock::now();
     size_t lockless_replicas_to_reserve_for = 0;
     for (const auto & entry : lockless_rounds_by_replica)
@@ -609,8 +608,7 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     {
         tmp_locks_quota = std::min(available_topic_partitions.size(), tmp_locks_quota + 1);
     }
-    /// The reservation limits only this round's take, not the accumulated quota, so the
-    /// quota keeps growing and coverage resumes in full once the reservation is gone.
+    /// The reservation limits only this round's take; the accumulated quota survives it.
     const size_t locks_to_take = std::min(tmp_locks_quota, available_topic_partitions.size() - reserved_for_lockless);
     if (reserved_for_lockless)
         LOG_TRACE(log, "Reserving {} free partitions for lockless replicas", reserved_for_lockless);
