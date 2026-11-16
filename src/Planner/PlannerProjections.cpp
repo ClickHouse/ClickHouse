@@ -1,18 +1,24 @@
 #include <Planner/PlannerProjections.h>
 
 #include <Analyzer/AggregationUtils.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/LambdaNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Core/Settings.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/getEffectiveMaxThreads.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Planner/CollectSets.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerAggregation.h>
@@ -28,8 +34,15 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageDummy.h>
 
+#include <ranges>
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace Setting
 {
@@ -62,34 +75,96 @@ private:
     Chunk chunk;
 };
 
-/// collects the name that the projection stores each expression of node under
+/// the value of a literal, or of an array or a tuple of literals, which has the name of one literal
+std::optional<Field> tryGetLiteral(const QueryTreeNodePtr & node)
+{
+    if (const auto * constant_node = node->as<ConstantNode>())
+    {
+        if (constant_node->hasSourceExpression())
+            return tryGetLiteral(constant_node->getSourceExpression());
+        return getFieldFromColumnForASTLiteral(
+            constant_node->getColumn(), 0, constant_node->getResultType(), /*date_time_as_numbers=*/false);
+    }
+
+    const auto * function_node = node->as<FunctionNode>();
+    if (!function_node || (function_node->getFunctionName() != "array" && function_node->getFunctionName() != "tuple"))
+        return {};
+
+    FieldVector values;
+    for (const auto & argument : function_node->getArguments().getNodes())
+    {
+        auto value = tryGetLiteral(argument);
+        if (!value)
+            return {};
+        values.push_back(std::move(*value));
+    }
+    return function_node->getFunctionName() == "array" ? Field(Array(values.begin(), values.end())) : Field(Tuple(values.begin(), values.end()));
+}
+
+/// the name that a projection part stores the expression of node under
+String calculateStoredName(const QueryTreeNodePtr & node)
+{
+    if (auto literal = tryGetLiteral(node))
+    {
+        WriteBufferFromOwnString buffer;
+        ASTLiteral::appendColumnNameOfValue(*literal, buffer);
+        return buffer.str();
+    }
+
+    switch (node->getNodeType())
+    {
+        case QueryTreeNodeType::COLUMN:
+            return node->as<ColumnNode &>().getColumnName();
+        case QueryTreeNodeType::CONSTANT:
+            /// a constant folded from an expression takes the name of that expression
+            return calculateStoredName(node->as<ConstantNode &>().getSourceExpression());
+        case QueryTreeNodeType::FUNCTION:
+        {
+            const auto & function_node = node->as<FunctionNode &>();
+            const auto * function_ast = node->hasOriginalAST() ? node->getOriginalAST()->as<ASTFunction>() : nullptr;
+
+            const auto & arguments = function_node.getArguments().getNodes();
+            Strings argument_names(arguments.size());
+            for (size_t i = 0; i < arguments.size(); ++i)
+            {
+                /// the analysis replaces the right side of IN, and the name of a subquery has the hash of its AST
+                if (function_ast && isTableExpressionNodeType(arguments[i]->getNodeType()))
+                    argument_names[i] = function_ast->arguments->children.at(i)->getColumnName();
+                else
+                    argument_names[i] = calculateStoredName(arguments[i]);
+            }
+
+            /// the analysis replaces the name of an aggregate function and clears its nulls action
+            String result = function_node.isAggregateFunction() ? function_node.getSourceFunctionName() : function_node.getFunctionName();
+            if (const auto & parameters = function_node.getParameters().getNodes(); !parameters.empty())
+                result += fmt::format("({})", fmt::join(parameters | std::views::transform(calculateStoredName), ", "));
+            result += fmt::format("({})", fmt::join(argument_names, ", "));
+            if (function_node.getSourceNullsAction() == NullsAction::RESPECT_NULLS)
+                result += " RESPECT NULLS";
+            else if (function_node.getSourceNullsAction() == NullsAction::IGNORE_NULLS)
+                result += " IGNORE NULLS";
+            return result;
+        }
+        case QueryTreeNodeType::LAMBDA:
+        {
+            const auto & lambda_node = node->as<LambdaNode &>();
+            return fmt::format(
+                "lambda(tuple({}), {})", fmt::join(lambda_node.getArguments().getNames(), ", "), calculateStoredName(lambda_node.getExpression()));
+        }
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected {} node in a projection", node->getNodeTypeName());
+    }
+}
+
 void collectStoredNodeNames(const QueryTreeNodePtr & node, QueryTreeNodeToName & result)
 {
     auto node_type = node->getNodeType();
     if (node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::CONSTANT || node_type == QueryTreeNodeType::FUNCTION)
-    {
-        /// a constant folded from an expression takes the name of that expression
-        const auto * constant_node = node->as<ConstantNode>();
-        const auto & written_node = constant_node && constant_node->hasSourceExpression() ? constant_node->getSourceExpression() : node;
-
-        if (written_node->getNodeType() == QueryTreeNodeType::FUNCTION && written_node->hasOriginalAST())
-        {
-            /// the analysis renames some functions, the AST has the name that the query writes
-            result.emplace(node, written_node->getOriginalAST()->getColumnName());
-        }
-        else
-        {
-            /// the analysis made this node: a column has no table prefix and a constant is a plain literal
-            ConvertToASTOptions ast_options;
-            ast_options.use_source_expression_for_constants = true;
-            ast_options.add_cast_for_constants = false;
-            ast_options.fully_qualified_identifiers = false;
-            result.emplace(node, node->toAST(ast_options)->getColumnName());
-        }
-    }
+        result.emplace(node, calculateStoredName(node));
 
     for (const auto & child : node->getChildren())
-        if (child)
+        /// a subquery has its own plan with its own names
+        if (child && child->getNodeType() != QueryTreeNodeType::QUERY && child->getNodeType() != QueryTreeNodeType::UNION)
             collectStoredNodeNames(child, result);
 }
 

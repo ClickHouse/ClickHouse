@@ -12,7 +12,7 @@ CREATE TABLE t_projection_stored_query
     PROJECTION p_alias (SELECT al, sum(al), SUM(a), count() IGNORE NULLS, any(al) RESPECT NULLS, sum(NULL), quantile(0.5)(a), countDistinct(b) GROUP BY al),
     PROJECTION p_tuple (SELECT sum(a) GROUP BY (b, c)),
     PROJECTION p_keys (SELECT sum(a) GROUP BY b, c),
-    PROJECTION p_expressions (SELECT sum(a) GROUP BY a IN (1, 2), a + 1, toIntervalSecond(300) + toDateTime(a), arrayMap(x -> x + 1, n.k), arrayMap(x -> x + a, n.k), CAST(a, 'String'))
+    PROJECTION p_expressions (SELECT sum(a) GROUP BY a IN (1, 2), a + 1, toIntervalSecond(300) + toDateTime(a), arrayMap(x -> x + 1, n.k), arrayMap(x -> x + a, n.k), CAST(a, 'String'), has(array(1, 2), a))
 )
 ENGINE = MergeTree ORDER BY a
 SETTINGS materialize_projections_on_insert = 1;
@@ -32,6 +32,7 @@ SELECT toUnixTimestamp(toIntervalSecond(300) + toDateTime(a) AS k), sum(a) FROM 
 SELECT arrayMap(x -> x + 1, n.k) AS k, sum(a) FROM t_projection_stored_query GROUP BY k ORDER BY k SETTINGS force_optimize_projection_name = 'p_expressions';
 SELECT arrayMap(x -> x + a, n.k) AS k, sum(a) FROM t_projection_stored_query GROUP BY k ORDER BY k SETTINGS force_optimize_projection_name = 'p_expressions';
 SELECT CAST(a, 'String') AS k, sum(a) FROM t_projection_stored_query GROUP BY k ORDER BY k SETTINGS force_optimize_projection_name = 'p_expressions';
+SELECT has(array(1, 2), a) AS k, sum(a) FROM t_projection_stored_query GROUP BY k ORDER BY k SETTINGS force_optimize_projection_name = 'p_expressions';
 
 SELECT name, column FROM system.projection_parts_columns
 WHERE database = currentDatabase() AND table = 't_projection_stored_query' AND active
