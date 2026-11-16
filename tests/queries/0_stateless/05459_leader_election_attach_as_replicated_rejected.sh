@@ -31,3 +31,28 @@ $CLICKHOUSE_CLIENT -q "ATTACH TABLE t_le_attach_as_replicated AS REPLICATED" 2>&
 $CLICKHOUSE_CLIENT -q "ATTACH TABLE t_le_attach_as_replicated"
 $CLICKHOUSE_CLIENT -q "SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 't_le_attach_as_replicated'"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_le_attach_as_replicated SYNC"
+
+# The setting may be repeated in the definition. The last occurrence wins, as it does for the table itself, so the
+# preflight must refuse the conversion here as well instead of rewriting the definition.
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t_le_attach_as_replicated_repeated (x UInt64)
+    ENGINE = MergeTree ORDER BY x
+    SETTINGS
+        disk = disk(
+            name = '05459_le_repeated_${CLICKHOUSE_DATABASE}',
+            type = s3_plain_rewritable,
+            enable_hard_links = 0,
+            metadata_snapshot_enabled = 0,
+            endpoint = 'http://localhost:11111/test/05459_le_repeated_${CLICKHOUSE_DATABASE}/',
+            access_key_id = clickhouse,
+            secret_access_key = clickhouse),
+        leader_election = false,
+        leader_election = true
+"
+
+$CLICKHOUSE_CLIENT -q "DETACH TABLE t_le_attach_as_replicated_repeated"
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE t_le_attach_as_replicated_repeated AS REPLICATED" 2>&1 | grep -o 'it would have `leader_election = 1`' | head -n 1
+
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE t_le_attach_as_replicated_repeated"
+$CLICKHOUSE_CLIENT -q "SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 't_le_attach_as_replicated_repeated'"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_le_attach_as_replicated_repeated SYNC"

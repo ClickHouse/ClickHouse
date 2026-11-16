@@ -151,13 +151,18 @@ static void checkReplicaPathExists(const TableZnodeInfo & znode_info, const Stor
 
 /// Resolved the way `registerStorageMergeTree` resolves the settings of a `ReplicatedMergeTree`:
 /// the definition's own `SETTINGS` over the `merge_tree` and `replicated_merge_tree` config defaults.
+/// A setting may be repeated in the definition; the settings loader applies the changes in order, so the last one wins.
 static bool isBoolSettingEnabledAsReplicated(
     const ASTCreateQuery & create_query, ContextPtr local_context, std::string_view name, MergeTreeSettingsBool setting)
 {
     if (create_query.storage && create_query.storage->settings)
     {
-        if (const Field * value = create_query.storage->settings->changes.tryGet(name))
-            return SettingFieldBool{*value}.value;
+        const auto & changes = create_query.storage->settings->changes;
+        for (auto it = changes.rbegin(); it != changes.rend(); ++it)
+        {
+            if (it->name == name)
+                return SettingFieldBool{it->value}.value;
+        }
     }
 
     return local_context->getReplicatedMergeTreeSettings()[setting];
