@@ -339,9 +339,10 @@ private:
         const String & path, size_t list_depth);
     [[nodiscard]] ColumnUInt8::Ptr buildNullMap(const Slice & validity, size_t rows, Int64 null_count) const;
     /// Nullable structs retain their null maps when tuples are nullable, a tuple conversion is requested, or
-    /// the struct (at the dotted `path`) is decoded for a requested column and a requested subcolumn of it:
-    /// the subcolumn is taken from the decoded struct and converted after decoding, which needs the null map
-    /// to tell the hidden rows. The reader applies the destination nullability after converting visible rows.
+    /// the struct (at the dotted `path`) carries a requested subcolumn together with a requested column that
+    /// encloses it (`t` and `t.s`, or `t.u` and `t.u.s`, for the struct `t`): the subcolumn is taken from the
+    /// decoded struct and converted after decoding, which needs the null map to tell the hidden rows. The
+    /// reader applies the destination nullability after converting visible rows.
     [[nodiscard]] bool wrapsInNullable(
         const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint, const String & path) const;
     /// Decodes a RunEndEncoded field (which has no buffers of its own) into a column of its values type, with each

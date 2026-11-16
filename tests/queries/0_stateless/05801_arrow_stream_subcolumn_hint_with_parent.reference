@@ -28,7 +28,17 @@ map keys and values
 {'abcdefghijklmnop':1}	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
 {1:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}	['abcdefghijklmnop']
 {1:'abcdefghijklmnop'}	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+nested map keys and values
+{('6162:6364:6566:6768:696a:6b6c:6d6e:6f70'):1}	['abcdefghijklmnop']
+{('abcdefghijklmnop'):1}	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+{1:('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')}	['abcdefghijklmnop']
+{1:('abcdefghijklmnop')}	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
 null struct row
+(\'abcdefghijklmnop\')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+(\'\')	::
+('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	abcdefghijklmnop
+('::')	
+null outer struct row
 (\'abcdefghijklmnop\')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
 (\'\')	::
 ('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	abcdefghijklmnop

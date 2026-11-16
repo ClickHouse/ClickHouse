@@ -53,9 +53,22 @@ $CLICKHOUSE_LOCAL -q "SELECT map(1, 'abcdefghijklmnop') AS t FORMAT ArrowStream"
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(UInt8, IPv6), \`t.values\` Array(String)')"
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(UInt8, String), \`t.values\` Array(IPv6)')"
 
+echo "nested map keys and values"
+$CLICKHOUSE_LOCAL -q "SELECT CAST(map(tuple('abcdefghijklmnop'), 1) AS Map(Tuple(s String), UInt8)) AS t FORMAT ArrowStream" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(Tuple(s IPv6), UInt8), \`t.keys.s\` Array(String)')"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(Tuple(s String), UInt8), \`t.keys.s\` Array(IPv6)')"
+$CLICKHOUSE_LOCAL -q "SELECT CAST(map(1, tuple('abcdefghijklmnop')) AS Map(UInt8, Tuple(s String))) AS t FORMAT ArrowStream" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(UInt8, Tuple(s IPv6)), \`t.values.s\` Array(String)')"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(UInt8, Tuple(s String)), \`t.values.s\` Array(IPv6)')"
+
 echo "null struct row"
 $CLICKHOUSE_LOCAL -q "SELECT CAST(if(number = 1, NULL, tuple('abcdefghijklmnop')) AS Nullable(Tuple(s String))) AS t FROM numbers(2) FORMAT ArrowStream SETTINGS enable_nullable_tuple_type = 1" > "$file"
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't String, \`t.s\` IPv6') SETTINGS enable_nullable_tuple_type = 0"
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Tuple(s IPv6), \`t.s\` String') SETTINGS enable_nullable_tuple_type = 0"
+
+echo "null outer struct row"
+$CLICKHOUSE_LOCAL -q "SELECT CAST(if(number = 1, NULL, tuple(tuple('abcdefghijklmnop'))) AS Nullable(Tuple(u Tuple(s String)))) AS t FROM numbers(2) FORMAT ArrowStream SETTINGS enable_nullable_tuple_type = 1" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.u\` String, \`t.u.s\` IPv6') SETTINGS enable_nullable_tuple_type = 0"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.u\` Tuple(s IPv6), \`t.u.s\` String') SETTINGS enable_nullable_tuple_type = 0"
 
 rm -f "$file"
