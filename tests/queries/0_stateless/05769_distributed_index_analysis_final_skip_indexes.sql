@@ -14,7 +14,7 @@ DROP TABLE IF EXISTS t_dia_final_pk;
 -- `toYYYYMM(d)` in the primary key makes the filter on `d` reach the replicas, where `idx_d` can use it
 CREATE TABLE t_dia_final (k UInt64, d Date, ver UInt64, INDEX idx_d d TYPE minmax GRANULARITY 1)
 ENGINE = ReplacingMergeTree(ver) ORDER BY (toYYYYMM(d), k)
-SETTINGS distributed_index_analysis_min_parts_to_activate = 1, distributed_index_analysis_min_indexes_bytes_to_activate = 0;
+SETTINGS add_minmax_index_for_numeric_columns = 0, distributed_index_analysis_min_parts_to_activate = 1, distributed_index_analysis_min_indexes_bytes_to_activate = 0;
 
 SYSTEM STOP MERGES t_dia_final;
 
@@ -34,7 +34,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_dia_final FIN
 
 CREATE TABLE t_dia_final_pk (k UInt64, d Date, ver UInt64)
 ENGINE = ReplacingMergeTree(ver) ORDER BY (toYYYYMM(d), k)
-SETTINGS distributed_index_analysis_min_parts_to_activate = 1, distributed_index_analysis_min_indexes_bytes_to_activate = 0;
+SETTINGS add_minmax_index_for_numeric_columns = 0, distributed_index_analysis_min_parts_to_activate = 1, distributed_index_analysis_min_indexes_bytes_to_activate = 0;
 INSERT INTO t_dia_final_pk SELECT * FROM t_dia_final;
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_dia_final_pk FINAL WHERE d = '2026-01-01' SETTINGS use_skip_indexes_if_final = 0, distributed_index_analysis = 1, distributed_index_analysis_for_non_shared_merge_tree = 1) WHERE explain LIKE '%Distributed:%';
 

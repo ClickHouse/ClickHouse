@@ -13,7 +13,7 @@ DROP TABLE IF EXISTS statistics_parallel_probe;
 
 CREATE TABLE statistics_parallel_probe (key UInt64, value UInt64, flag UInt8)
 ENGINE = MergeTree ORDER BY key PARTITION BY intDiv(key, 10000)
-SETTINGS index_granularity = 16, index_granularity_bytes = '10Mi', auto_statistics_types = 'basic, uniq_v2',
+SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 16, index_granularity_bytes = '10Mi', auto_statistics_types = 'basic, uniq_v2',
     prewarm_statistics_cache = 0, primary_key_lazy_load = 1, use_primary_key_cache = 0, prewarm_primary_key_cache = 0;
 
 SYSTEM STOP MERGES statistics_parallel_probe;
