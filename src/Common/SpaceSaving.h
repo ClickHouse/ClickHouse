@@ -136,7 +136,7 @@ public:
         }
 
         /// The weights are modular (see `insert`), so `count` may be less than `error`.
-        UInt64 countMinusError() const { return common::subIgnoreOverflow(count, error); }
+        [[nodiscard]] UInt64 countMinusError() const { return common::subIgnoreOverflow(count, error); }
 
         // greater() taking error into account
         bool operator> (const Counter & b) const
