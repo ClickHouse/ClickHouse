@@ -1932,18 +1932,10 @@ void MergeTreeData::checkMetadataProperties(
         local_context);
 }
 
-void MergeTreeData::setProperties(
-    const StorageInMemoryMetadata & new_metadata_,
-    const StorageInMemoryMetadata & old_metadata,
-    bool attach,
-    ContextPtr local_context)
+std::optional<StorageInMemoryMetadata> MergeTreeData::removeForeignImplicitIndices(
+    const StorageInMemoryMetadata & new_metadata,
+    const StorageInMemoryMetadata & old_metadata) const
 {
-    /// Route the table-level metadata clones produced here (the new `StorageInMemoryMetadata`
-    /// stored in `metadata.set(...)`, the cloned `ColumnsDescription`, `VirtualColumnsDescription`,
-    /// and key/index AST trees, plus any expressions built by `checkProperties`) into the
-    /// dedicated MergeTree arena. This state lives as long as the table object itself.
-    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-
     /// An implicit index is identified only by its name, which is derived from the column name. Removing
     /// it from the metadata does not remove its files from the existing parts: dropping an `ALIAS` column
     /// schedules no mutation at all. So when a later `ALTER` adds a column under the same name (for
@@ -1966,77 +1958,91 @@ void MergeTreeData::setProperties(
     /// of a type change may be killed before it rewrites every part. A column without such files, e.g. `String`
     /// becoming `UInt64`, gets the index.
     std::optional<StorageInMemoryMetadata> metadata_without_foreign_implicit_indices;
+    static const std::string_view implicit_index_prefix = IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX;
+
+    const auto is_redefined_alias = [](const ColumnDescription & old_column, const ColumnDescription & new_column)
     {
-        static const std::string_view implicit_index_prefix = IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX;
+        return (old_column.default_desc.kind == ColumnDefaultKind::Alias || new_column.default_desc.kind == ColumnDefaultKind::Alias)
+            && (!old_column.type->equals(*new_column.type) || !(old_column.default_desc == new_column.default_desc));
+    };
 
-        const auto is_redefined_alias = [](const ColumnDescription & old_column, const ColumnDescription & new_column)
+    NameSet redefined_alias_columns;
+    for (const auto & new_column : new_metadata.columns)
+    {
+        const auto * old_column = old_metadata.columns.tryGet(new_column.name);
+        if (old_column && is_redefined_alias(*old_column, new_column))
+            redefined_alias_columns.insert(new_column.name);
+    }
+
+    NameSet dependent_alias_columns;
+    if (!redefined_alias_columns.empty())
+        dependent_alias_columns = new_metadata.getExpressionAliasesDependingOn(redefined_alias_columns);
+
+    NameSet new_implicit_indices;
+    for (const auto & index : new_metadata.secondary_indices)
+    {
+        if (!index.isImplicitlyCreated() || !index.name.starts_with(implicit_index_prefix))
+            continue;
+
+        const String column_name = index.name.substr(implicit_index_prefix.size());
+        const auto * new_column = new_metadata.columns.tryGet(column_name);
+        if (!new_column)
+            continue;
+
+        const auto * old_column = old_metadata.columns.tryGet(column_name);
+        if (!old_column)
         {
-            return (old_column.default_desc.kind == ColumnDefaultKind::Alias || new_column.default_desc.kind == ColumnDefaultKind::Alias)
-                && (!old_column.type->equals(*new_column.type) || !(old_column.default_desc == new_column.default_desc));
-        };
-
-        NameSet redefined_alias_columns;
-        for (const auto & new_column : new_metadata_.columns)
-        {
-            const auto * old_column = old_metadata.columns.tryGet(new_column.name);
-            if (old_column && is_redefined_alias(*old_column, new_column))
-                redefined_alias_columns.insert(new_column.name);
-        }
-
-        NameSet dependent_alias_columns;
-        if (!redefined_alias_columns.empty())
-            dependent_alias_columns = new_metadata_.getExpressionAliasesDependingOn(redefined_alias_columns);
-
-        NameSet new_implicit_indices;
-        for (const auto & index : new_metadata_.secondary_indices)
-        {
-            if (!index.isImplicitlyCreated() || !index.name.starts_with(implicit_index_prefix))
-                continue;
-
-            const String column_name = index.name.substr(implicit_index_prefix.size());
-            const auto * new_column = new_metadata_.columns.tryGet(column_name);
-            if (!new_column)
-                continue;
-
-            const auto * old_column = old_metadata.columns.tryGet(column_name);
-            if (!old_column)
-            {
-                if (!old_metadata.secondary_indices.has(index.name))
-                    new_implicit_indices.insert(index.name);
-            }
-            else if (redefined_alias_columns.contains(column_name) || dependent_alias_columns.contains(column_name))
-            {
+            if (!old_metadata.secondary_indices.has(index.name))
                 new_implicit_indices.insert(index.name);
-            }
-            else if (!old_metadata.secondary_indices.has(index.name)
-                && (!old_column->type->equals(*new_column->type) || !(old_column->default_desc == new_column->default_desc)))
-            {
-                new_implicit_indices.insert(index.name);
-            }
         }
-
-        if (!new_implicit_indices.empty())
+        else if (redefined_alias_columns.contains(column_name) || dependent_alias_columns.contains(column_name))
         {
-            NameSet foreign_implicit_indices;
-            for (const auto & part : getDataPartsVectorForInternalUsage())
-            {
-                for (const auto & index_name : new_implicit_indices)
-                {
-                    if (!foreign_implicit_indices.contains(index_name) && part->hasSecondaryIndex(index_name, new_metadata_.escape_index_filenames))
-                        foreign_implicit_indices.insert(index_name);
-                }
-            }
-
-            if (!foreign_implicit_indices.empty())
-            {
-                LOG_INFO(log, "Not creating implicit indices {} because existing parts have files of previous indices with the same names",
-                    fmt::join(foreign_implicit_indices, ", "));
-                metadata_without_foreign_implicit_indices.emplace(new_metadata_);
-                std::erase_if(metadata_without_foreign_implicit_indices->secondary_indices,
-                    [&](const IndexDescription & index) { return foreign_implicit_indices.contains(index.name); });
-            }
+            new_implicit_indices.insert(index.name);
+        }
+        else if (!old_metadata.secondary_indices.has(index.name)
+            && (!old_column->type->equals(*new_column->type) || !(old_column->default_desc == new_column->default_desc)))
+        {
+            new_implicit_indices.insert(index.name);
         }
     }
+
+    if (!new_implicit_indices.empty())
+    {
+        NameSet foreign_implicit_indices;
+        for (const auto & part : getDataPartsVectorForInternalUsage())
+        {
+            for (const auto & index_name : new_implicit_indices)
+            {
+                if (!foreign_implicit_indices.contains(index_name) && part->hasSecondaryIndex(index_name, new_metadata.escape_index_filenames))
+                    foreign_implicit_indices.insert(index_name);
+            }
+        }
+
+        if (!foreign_implicit_indices.empty())
+        {
+            LOG_INFO(log, "Not creating implicit indices {} because existing parts have files of previous indices with the same names",
+                fmt::join(foreign_implicit_indices, ", "));
+            metadata_without_foreign_implicit_indices.emplace(new_metadata);
+            std::erase_if(metadata_without_foreign_implicit_indices->secondary_indices,
+                [&](const IndexDescription & index) { return foreign_implicit_indices.contains(index.name); });
+        }
+    }
+    return metadata_without_foreign_implicit_indices;
+}
+
+void MergeTreeData::setProperties(
+    const StorageInMemoryMetadata & new_metadata_,
+    const StorageInMemoryMetadata & old_metadata,
+    bool attach,
+    ContextPtr local_context)
+{
+    /// Route the table-level metadata clones produced here (the new `StorageInMemoryMetadata`
+    /// stored in `metadata.set(...)`, the cloned `ColumnsDescription`, `VirtualColumnsDescription`,
+    /// and key/index AST trees, plus any expressions built by `checkProperties`) into the
+    /// dedicated MergeTree arena. This state lives as long as the table object itself.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
+    const auto metadata_without_foreign_implicit_indices = removeForeignImplicitIndices(new_metadata_, old_metadata);
     const StorageInMemoryMetadata & new_metadata = metadata_without_foreign_implicit_indices ? *metadata_without_foreign_implicit_indices : new_metadata_;
 
     checkProperties(
@@ -15598,12 +15604,15 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & lock)
 }
 
 void MergeTreeData::setPropertiesAndResetSerializationHints(
-    const StorageInMemoryMetadata & new_metadata,
+    const StorageInMemoryMetadata & new_metadata_,
     const StorageInMemoryMetadata & old_metadata,
     bool attach,
     ContextPtr local_context)
 {
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
+    const auto metadata_without_foreign_implicit_indices = removeForeignImplicitIndices(new_metadata_, old_metadata);
+    const StorageInMemoryMetadata & new_metadata = metadata_without_foreign_implicit_indices ? *metadata_without_foreign_implicit_indices : new_metadata_;
 
     checkProperties(new_metadata, old_metadata, attach, /*allow_empty_sorting_key=*/false, allow_nullable_key, local_context);
 

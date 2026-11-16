@@ -2090,6 +2090,13 @@ protected:
         bool attach = false,
         ContextPtr local_context = nullptr);
 
+    /// A copy of `new_metadata` without the implicit indices that would reuse the files of an earlier index with
+    /// the same name in the active parts, or `std::nullopt` if there are none. `setProperties` and
+    /// `setPropertiesAndResetSerializationHints` publish this copy instead of `new_metadata`.
+    [[nodiscard]] std::optional<StorageInMemoryMetadata> removeForeignImplicitIndices(
+        const StorageInMemoryMetadata & new_metadata,
+        const StorageInMemoryMetadata & old_metadata) const;
+
     /// The part of `setProperties` that runs after `new_metadata` is published.
     void updateCachesAfterMetadataPublish(
         const StorageInMemoryMetadata & new_metadata,
