@@ -30,6 +30,14 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 إجمالي عدد العناوين المحظورة بسبب تعطلها عند إنشاء اتصالات مع مجمعات الاتصالات
 
+### AddressToLineCacheBytes {#addresstolinecachebytes}
+
+الحجم التقريبي للذاكرة، بالبايتات، التي تستهلكها ذاكرة التخزين المؤقت للمواضع في الشفرة المصدرية المُحدَّد مسارها النهائي (file:line:column)، والمستخدمة في حلّ الرموز ضمن تتبّعات مكدس الاستدعاءات.
+
+### AddressToLineCacheEntries {#addresstolinecacheentries}
+
+عدد عناوين الشيفرة في ذاكرة التخزين المؤقت للمواضع المُحدَّدة في الشفرة المصدرية (file:line:column)، والتي تُستخدم لحلّ الرموز في تتبّعات مكدس الاستدعاءات في system.trace&#95;log وsystem.errors وsystem.error&#95;log.
+
 ### AggregatorThreads {#aggregatorthreads}
 
 عدد سلاسل التنفيذ في مجمّع خيوط التنفيذ الخاص بـ Aggregator.
@@ -357,6 +365,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### ConcurrencyControlAcquiredNonCompeting {#concurrencycontrolacquirednoncompeting}
 
 إجمالي عدد فتحات CPU المُكتسبة التي لا تُعدّ متنافسة (أول خيط تنفيذ إذا كان المُجدول fair&#95;round&#95;robin قيد الاستخدام)
+
+### ConcurrencyControlParked {#concurrencycontrolparked}
+
+العدد الحالي لخيوط التنفيذ التي علّقت (حرّرت) وحدة CPU الخاصة بها لانتظارٍ لا يتعلق بالمعالج، مثل عمليات الإدخال/الإخراج الحاجبة أو عدم وجود مهمة لتنفيذها
 
 ### ConcurrencyControlPreempted {#concurrencycontrolpreempted}
 
@@ -710,6 +722,14 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 عدد المهام الموضوعة في قائمة الانتظار أو النشطة في تجمّع مؤشرات ترابط المصافحة في خادم exchange الموزّع.
 
+### ExternalSetCacheBytes {#externalsetcachebytes}
+
+إجمالي حجم الكتل، بالبايتات، المحفوظة في ذاكرات التخزين المؤقت لمجموعات `IN` في الذاكرة الخارجية
+
+### ExternalSetCacheCells {#externalsetcachecells}
+
+إجمالي عدد الكتل المحفوظة في ذاكرات التخزين المؤقت لمجموعات `IN` في الذاكرة الخارجية
+
 ### FiberStackBytes {#fiberstackbytes}
 
 إجمالي حجم مكدسات الألياف (fiber stacks) المخصصة حاليًا.
@@ -833,6 +853,14 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### GlobalThreadScheduled {#globalthreadscheduled}
 
 عدد المهام الموجودة في قائمة الانتظار أو النشطة في مجمع سلاسل التنفيذ العام.
+
+### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+
+حجم ذاكرة التخزين المؤقت لأنواع حقول مخطط Iceberg الحالي في كتالوجات Glue، بالبايتات
+
+### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+
+عدد العناصر في ذاكرة التخزين المؤقت لأنواع حقول مخطط Iceberg الحالي في كتالوجات Glue
 
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
@@ -1098,6 +1126,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 عدد الطلبات قيد الانتظار
 
+### KeeperRaftThreadsWaitingForLogsPreprocessing {#keeperraftthreadswaitingforlogspreprocessing}
+
+عدد خيوط التنفيذ في حلقة أحداث Raft التي تنتظر اكتمال المعالجة المسبقة لإدخالات السجل المحلية بعد بدء التشغيل. ولأن حلقة أحداث Raft تتولى أيضًا تشغيل المستمع ومؤقتات الانتخاب وheartbeat وجميع عمليات إكمال RPC، فينبغي أن تظل هذه القيمة صفرًا أو واحدًا.
+
 ### KeeperReadThreads {#keeperreadthreads}
 
 عدد خيوط التنفيذ في مجمّع الخيوط لعمليات القراءة في خادم Keeper.
@@ -1169,6 +1201,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### MemoryReservationDemand {#memoryreservationdemand}
 
 إجمالي عدد البايتات في طلبات زيادة حجز الذاكرة المعلّقة
+
+### MemoryReservationReclaimable {#memoryreservationreclaimable}
+
+إجمالي حجم الذاكرة القابلة للاسترداد
 
 ### MemoryTracking {#memorytracking}
 
@@ -1362,6 +1398,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 عدد المهام الموجودة في قائمة الانتظار أو قيد التنفيذ في مجمّع خيوط التنفيذ لـ AzureObjectStorage.
 
+### ObjectStorageExclusiveLeases {#objectstorageexclusiveleases}
+
+عدد عقود الإيجار الحصرية التي يحتفظ بها هذا الخادم حاليًا في التخزين الكائني، مثل تلك الخاصة بعملية دمج جدول Iceberg.
+
 ### ObjectStorageQueueMetadataCacheSizeBytes {#objectstoragequeuemetadatacachesizebytes}
 
 حجم ذاكرة التخزين المؤقت للبيانات الوصفية الخاصة بـ ObjectStorageQueue، بالبايت.
@@ -1398,6 +1438,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 عدد وحدات العمل قيد الانتظار أو النشطة في مجموعة مؤشرات الترابط S3ObjectStorage.
 
+### ObjectStorageSharedLeases {#objectstoragesharedleases}
+
+عدد المفاتيح المؤجَّرة حاليًا في التخزين الكائني من قِبل استعلامات هذا الخادم، مثل لقطات Iceberg قيد القراءة.
+
 ### OpenFileForRead {#openfileforread}
 
 عدد الملفات المفتوحة للقراءة
@@ -1429,6 +1473,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### OutdatedPartsLoadingThreadsScheduled {#outdatedpartsloadingthreadsscheduled}
 
 عدد المهام النشطة أو المدرجة في قائمة الانتظار في مجمّع الخيوط المسؤول عن تحميل أجزاء البيانات المتقادمة.
+
+### PackedPartsBufferedBytes {#packedpartsbufferedbytes}
+
+مقدار الذاكرة (بالبايتات) المخصَّصة للبيانات المخزَّنة مؤقتًا لأجزاء البيانات المحزَّمة قيد الكتابة، ولا يشمل ذلك البيانات المنقولة إلى الملفات المؤقتة.
 
 ### PageCacheBytes {#pagecachebytes}
 
@@ -1962,6 +2010,14 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 عدد المهام قيد الانتظار أو النشطة في مجمّع خيوط العامل عديم الحالة.
 
+### StatisticsCacheBytes {#statisticscachebytes}
+
+الحجم الإجمالي لذاكرة التخزين المؤقت للإحصاءات بالبايتات. تحتوي على إحصاءات الأعمدة لأجزاء البيانات في جداول MergeTree، بواقع إدخال واحد لكل جزء بيانات وعمود.
+
+### StatisticsCacheCells {#statisticscachecells}
+
+إجمالي عدد الإدخالات (إدخال واحد لكل جزء بيانات وعمود) في ذاكرة التخزين المؤقت للإحصاءات
+
 ### StorageBufferBytes {#storagebufferbytes}
 
 عدد البايتات في المخازن المؤقتة للجداول من نوع Buffer
@@ -2126,6 +2182,14 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 عدد الملفات المؤقتة المستخدمة في الدمج العمودي
 
+### TemporaryFilesForPackedParts {#temporaryfilesforpackedparts}
+
+عدد الملفات المؤقتة التي تحتوي على البيانات المخزَّنة مؤقتًا لأجزاء البيانات المحزَّمة الجاري كتابتها
+
+### TemporaryFilesForSet {#temporaryfilesforset}
+
+عدد الملفات المؤقتة المُنشأة لمجموعات `IN` في الذاكرة الخارجية
+
 ### الملفات المؤقتة للفرز {#temporaryfilesforsort}
 
 عدد الملفات المؤقتة التي أُنشئت للفرز الخارجي
@@ -2245,6 +2309,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### VersionInteger {#versioninteger}
 
 إصدار الخادم ممثلًا كعدد صحيح واحد بنظام الأساس 1000. على سبيل المثال، يُترجم الإصدار 11.22.33 إلى 11022033.
+
+### WaitingQuery {#waitingquery}
+
+عدد الاستعلامات التي تنتظر اكتمال التحميل غير المتزامن أو بدء التشغيل، ويحدّ إعداد الخادم &#39;max&#95;waiting&#95;queries&#39; من هذا العدد
 
 ### الكتابة {#write}
 

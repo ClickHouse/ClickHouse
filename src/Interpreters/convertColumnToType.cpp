@@ -1,12 +1,17 @@
 #include <Interpreters/convertColumnToType.h>
+#include <Formats/FormatSettings.h>
 
 #include <Interpreters/convertFieldToType.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnVector.h>
+#include <Core/AccurateComparison.h>
+#include <Core/callOnTypeIndex.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVariant.h>
-#include <Core/AccurateComparison.h>
+#include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/IDataType.h>
@@ -19,6 +24,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/TypeTree.h>
 #include <base/DayNum.h>
 #include <Common/Exception.h>
 #include <Common/FieldAccurateComparison.h>
@@ -42,91 +48,80 @@ namespace ErrorCodes
 namespace
 {
 
-/// Convert row 0 of a native-number or wide-integer column to `To` exactly as `convertNumericTypeImpl` in
-/// `convertFieldToType` does: widen the value to its `Field` storage type (`UInt64`/`Int64`/`Float64`, or the wide
-/// integer itself) and call `accurate::convertNumeric<FieldType, To, true>` (out of range or inexact -> not
-/// representable). No `CAST` is built, so converting many constants one by one (a literal `IN` set) costs no
-/// per-value function construction.
-template <typename To>
-ColumnPtr convertNumberColumnTo(const IColumn & value, const WhichDataType & which_from, const DataTypePtr & to)
+/// Column-native conversion for native-numeric and wide-integer (`Int128`/`Int256`/`UInt128`/`UInt256`)
+/// values: the same `accurate::convertNumeric` that `convertFieldToType` applies (it dispatches wide
+/// integers through that same template), evaluated directly on the scalar instead of through a CAST
+/// function - building and executing a CAST per single-row conversion dominated callers such as the `IN`
+/// set builder, which converts every literal of the right-hand side separately. `exact` repeats the
+/// predicate of `convertNumericTypeImpl`: an out-of-range value is never representable, and the
+/// additional round-trip check that rejects an inexact conversion is relaxed only for a floating-point
+/// target under `convert_inexact_floats` - conversions to an integer target stay exact in every mode, so
+/// the flag must not disable the fast path wholesale (the `values` table function passes it for every
+/// conversion). The equivalence with `convertFieldToType` across `strict` / `convert_inexact_floats` is
+/// pinned by `gtest_convert_column_to_type`. Returns:
+///   - the converted size-1 column of `to` on success,
+///   - a null `ColumnPtr{}` when not representable,
+///   - std::nullopt when this fast path does not apply (caller falls back to the `Field` path).
+/// Excluded: `Bool` (clamp/validity semantics), `Decimal`/`BFloat16`, and anything non-numeric
+/// (Date/Enum/String/wrappers/composite).
+std::optional<ColumnPtr> tryConvertNumericColumnNative(
+    const IColumn & value,
+    const DataTypePtr & from,
+    const DataTypePtr & to,
+    bool strict,
+    bool convert_inexact_floats)
 {
-    To result{};
-    const auto convert = [&]<typename From>(From source)
+    /// `Decimal` and `BFloat16` stay on the `Field` path (a strict `Decimal` must reject scale loss;
+    /// `BFloat16` has its own rounding semantics).
+    auto is_native_or_wide_number = [](const DataTypePtr & type) { return isNativeNumber(type) || isInteger(type); };
+    if (!is_native_or_wide_number(from) || !is_native_or_wide_number(to) || isBool(from) || isBool(to))
+        return std::nullopt;
+
+    ColumnPtr result;
+    auto convert = [&](const auto & types)
     {
+        using Types = std::decay_t<decltype(types)>;
+        using From = typename Types::LeftType;
+        using To = typename Types::RightType;
+
+        const From source = assert_cast<const ColumnVector<From> &>(value).getData()[0];
+
         /// A `NaN` or infinity is not representable in an integer type, and `accurate::convertNumeric` would cast a
         /// `NaN` before noticing (undefined behavior). The same guard as in the accurate `CAST` (`convertNumericGeneral`).
         if constexpr (is_floating_point<From> && !is_floating_point<To>)
         {
             if (!isFinite(source))
-                return false;
+                return true; /// Not representable: `result` stays null.
         }
-        return accurate::convertNumeric<From, To, true>(source, result);
+
+        const bool exact = strict || !convert_inexact_floats || !is_floating_point<To>;
+
+        To converted{};
+        const bool representable = exact
+            ? accurate::convertNumeric<From, To, true>(source, converted)
+            : accurate::convertNumeric<From, To, false>(source, converted);
+
+        if (representable)
+        {
+            auto column = ColumnVector<To>::create();
+            column->insertValue(converted);
+            result = std::move(column);
+        }
+        return true;
     };
 
-    bool converted = false;
-    if (which_from.isNativeUInt())
-        converted = convert(value.getUInt(0));
-    else if (which_from.isNativeInt())
-        converted = convert(value.getInt(0));
-    else if (which_from.isNativeFloat())
-        converted = convert(value.getFloat64(0));
-    else if (which_from.isUInt128())
-        converted = convert(assert_cast<const ColumnUInt128 &>(value).getElement(0));
-    else if (which_from.isInt128())
-        converted = convert(assert_cast<const ColumnInt128 &>(value).getElement(0));
-    else if (which_from.isUInt256())
-        converted = convert(assert_cast<const ColumnUInt256 &>(value).getElement(0));
-    else
-        converted = convert(assert_cast<const ColumnInt256 &>(value).getElement(0));
-
-    if (!converted)
-        return ColumnPtr{};
-    auto column = to->createColumn();
-    assert_cast<ColumnVector<To> &>(*column).getData().push_back(result);
-    return column;
+    if (!callOnBasicTypes<true, true, false, false>(from->getTypeId(), to->getTypeId(), convert))
+        return std::nullopt;
+    return result;
 }
 
-/// Column-native conversion between native numbers and wide integers (`Int128`/`Int256`/`UInt128`/`UInt256`),
-/// in the default AND `strict` modes. It is `convertFieldToType`'s own numeric conversion (see
-/// `convertNumberColumnTo`), so the two agree by construction; `strict` only rejects additional cases for types
-/// excluded here - `Bool` (10 is not a valid `Bool`) and `Decimal` (scale reduction). Pinned by
-/// `gtest_convert_column_to_type`. Returns:
-///   - the converted size-1 column of `to` on success,
-///   - a null `ColumnPtr{}` when not representable,
-///   - std::nullopt when this fast path does not apply (caller falls back to the `Field` path).
-/// Excluded: `convert_inexact_floats` mode (accepts the nearest float), `Bool` (clamp/validity semantics),
-/// `Decimal`/`BFloat16`, and anything non-numeric (Date/Enum/String/wrappers/composite).
-std::optional<ColumnPtr> tryConvertNumericColumnNative(
-    const IColumn & value,
-    const DataTypePtr & from,
-    const DataTypePtr & to,
-    bool convert_inexact_floats)
+/// `Bool` anywhere in the type tree (the shapes `retagBoolInField` normalizes, and any other nesting).
+/// `Dynamic` and `JSON` count as containing `Bool`: their payload types are not children the type tree
+/// exposes (`DataTypeDynamic` has no subtypes, `DataTypeObject::getChildren` lists typed paths only),
+/// yet a row of either may hold a `Bool`.
+bool containsBool(const IDataType & type)
 {
-    if (convert_inexact_floats)
-        return std::nullopt;
-    auto is_native_or_wide_number = [](const DataTypePtr & type) { return isNativeNumber(type) || isInteger(type); };
-    if (!is_native_or_wide_number(from) || !is_native_or_wide_number(to) || isBool(from) || isBool(to))
-        return std::nullopt;
-
-    const WhichDataType which_from(from);
-    switch (WhichDataType(to).idx)
-    {
-        case TypeIndex::UInt8: return convertNumberColumnTo<UInt8>(value, which_from, to);
-        case TypeIndex::UInt16: return convertNumberColumnTo<UInt16>(value, which_from, to);
-        case TypeIndex::UInt32: return convertNumberColumnTo<UInt32>(value, which_from, to);
-        case TypeIndex::UInt64: return convertNumberColumnTo<UInt64>(value, which_from, to);
-        case TypeIndex::UInt128: return convertNumberColumnTo<UInt128>(value, which_from, to);
-        case TypeIndex::UInt256: return convertNumberColumnTo<UInt256>(value, which_from, to);
-        case TypeIndex::Int8: return convertNumberColumnTo<Int8>(value, which_from, to);
-        case TypeIndex::Int16: return convertNumberColumnTo<Int16>(value, which_from, to);
-        case TypeIndex::Int32: return convertNumberColumnTo<Int32>(value, which_from, to);
-        case TypeIndex::Int64: return convertNumberColumnTo<Int64>(value, which_from, to);
-        case TypeIndex::Int128: return convertNumberColumnTo<Int128>(value, which_from, to);
-        case TypeIndex::Int256: return convertNumberColumnTo<Int256>(value, which_from, to);
-        case TypeIndex::Float32: return convertNumberColumnTo<Float32>(value, which_from, to);
-        case TypeIndex::Float64: return convertNumberColumnTo<Float64>(value, which_from, to);
-        default: return std::nullopt;
-    }
+    return anyInTypeTree(type, [](const IDataType & t) { return t.getName() == "Bool" || isDynamic(t) || isObject(t); });
 }
 
 /// Faithful column-native `X -> Decimal` conversion. Reuses the exact public primitives that
@@ -263,12 +258,12 @@ std::optional<ColumnPtr> tryConvertToDateColumnNative(
     /// `Date` (UInt16): accurate range-checked conversion, identical to `convertNumericType<UInt16>`.
     /// A `UInt16` result column is exactly a `Date` column.
     if (which_to.isDate())
-        return tryConvertNumericColumnNative(value, from, std::make_shared<DataTypeUInt16>(), convert_inexact_floats);
+        return tryConvertNumericColumnNative(value, from, std::make_shared<DataTypeUInt16>(), /*strict=*/ false, convert_inexact_floats);
 
     /// `Date32` (Int32 day number): accurate to `Int64`, then restrict to the representable window.
     if (which_to.isDate32())
     {
-        auto as_int64 = tryConvertNumericColumnNative(value, from, std::make_shared<DataTypeInt64>(), convert_inexact_floats);
+        auto as_int64 = tryConvertNumericColumnNative(value, from, std::make_shared<DataTypeInt64>(), /*strict=*/ false, convert_inexact_floats);
         if (!as_int64 || !*as_int64)
             return as_int64;  // std::nullopt (n/a) or null `ColumnPtr` (out of `Int64` range)
         const Int64 day_num = (*as_int64)->getInt(0);
@@ -284,7 +279,7 @@ std::optional<ColumnPtr> tryConvertToDateColumnNative(
     /// A `UInt32` result column is exactly a `DateTime` column. `Int64` sources are not handled there,
     /// so leave them on the `Field` path.
     if (which_to.isDateTime() && which_from.isNativeUInt())
-        return tryConvertNumericColumnNative(value, from, std::make_shared<DataTypeUInt32>(), convert_inexact_floats);
+        return tryConvertNumericColumnNative(value, from, std::make_shared<DataTypeUInt32>(), /*strict=*/ false, convert_inexact_floats);
 
     return std::nullopt;
 }
@@ -460,12 +455,25 @@ ColumnPtr convertColumnToTypeOrNull(
     chassert(value.size() == 1);
 
     /// Callers usually pass a `ColumnConst` (e.g. from `evaluateConstantExpressionAsColumn`); operate
-    /// on the underlying full column so the fast paths read row 0 of a plain (non-const) column and the
-    /// `Field` fallback reads the value directly.
-    const ColumnPtr full = value.convertToFullColumnIfConst();
+    /// on the underlying full column so both the native fast path and the `Field` fallback read the
+    /// value directly.
+    ColumnPtr full = value.convertToFullColumnIfConst();
     const IColumn & unwrapped = *full;
 
-    if (auto native = tryConvertNumericColumnNative(unwrapped, from, to, convert_inexact_floats))
+    /// Same as `convertFieldToType`, which returns the value untouched when `from` equals `to` - but
+    /// only for genuinely identical types that do not involve `Bool`. `IDataType::equals` ignores
+    /// custom names, so it also holds for `Bool` and its storage type `UInt8` (and for wrapper pairs
+    /// such as `Nullable(Bool)` and `Nullable(UInt8)`); like the identity check of `CAST`, require the
+    /// custom names to match too, comparing the full names so every nesting level is covered. And a
+    /// `Bool` column is a plain `ColumnUInt8` that may hold a raw byte such as 2 (e.g. from
+    /// `reinterpret`), which the `Field` path below normalizes to `true` through `retagBoolInField`
+    /// (and which `strict` rejects for a `Bool` target) - so a type containing `Bool` is never returned
+    /// untouched, not even for `Bool -> Bool`; `CAST` likewise treats `Bool -> Bool` as
+    /// `UInt8 -> Bool` normalization rather than identity.
+    if (from->equals(*to) && from->getName() == to->getName() && !containsBool(*from))
+        return full;
+
+    if (auto native = tryConvertNumericColumnNative(unwrapped, from, to, strict, convert_inexact_floats))
         return std::move(*native);
 
     /// `X -> Decimal` column-native (an engaged optional whose value may be a null `ColumnPtr`, meaning
@@ -572,6 +580,21 @@ ColumnPtr convertColumnToTypeOrThrow(
     }
 
     return result;
+}
+
+ColumnPtr convertColumnToTypeOrNull(const IColumn & value, const DataTypePtr & from, const DataTypePtr & to)
+{
+    return convertColumnToTypeOrNull(value, from, to, FormatSettings{});
+}
+
+ColumnPtr tryConvertColumnToTypeOrNull(const IColumn & value, const DataTypePtr & from, const DataTypePtr & to)
+{
+    return tryConvertColumnToTypeOrNull(value, from, to, FormatSettings{});
+}
+
+ColumnPtr convertColumnToTypeOrThrow(const IColumn & value, const DataTypePtr & from, const DataTypePtr & to)
+{
+    return convertColumnToTypeOrThrow(value, from, to, FormatSettings{});
 }
 
 }

@@ -8,7 +8,7 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS tab"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE tab (x UInt64) ENGINE = Memory"
 
 # We should have correct env vars from shell_config.sh to run this test
-python3 "$CUR_DIR"/05473_sparse_truncated_values_native_protocol.python
+CLICKHOUSE_CLIENT_BINARY="$CLICKHOUSE_CLIENT_BINARY" python3 "$CUR_DIR"/05473_sparse_truncated_values_native_protocol.python
 
 # The server must still be alive after rejecting the malformed block.
 $CLICKHOUSE_CLIENT -q "SELECT 'server alive', count() FROM tab"

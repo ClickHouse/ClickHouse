@@ -27,13 +27,21 @@
         <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
     </settings>
 
-    <!-- The threshold keeps the layout of each algorithm as older versions build it: `hash` serial, `parallel_hash` parallel. -->
+    <!-- `hash_join_layout` keeps the layout of each algorithm as older versions build it: `hash` serial, `parallel_hash` parallel. -->
     <substitutions>
         <substitution>
             <name>algo</name>
             <values>
-                <value>join_algorithm = 'hash', parallel_hash_join_threshold = 18446744073709551615</value>
-                <value>join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 0</value>
+                <value>join_algorithm = 'hash', hash_join_layout = 'serial'</value>
+                <value>join_algorithm = 'parallel_hash', hash_join_layout = 'parallel'</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>part</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+                <value>2</value>
             </values>
         </substitution>
     </substitutions>
@@ -48,12 +56,18 @@
         CREATE TABLE pl_inorder_spill (id UInt64, payload String) ENGINE = MergeTree ORDER BY tuple()
     </create_query>
 
+    <!-- The same layout on every server: each left table gets three parts that interleave in 64Ki-row ranges of `t`,
+         written with merges stopped. The no-LIMIT queries merge the parts' ordered streams, so the layout sets their work. -->
+    <fill_query>SYSTEM STOP MERGES ev_inorder_spill</fill_query>
+    <fill_query>SYSTEM STOP MERGES ev_inorder_spill_scattered</fill_query>
     <!-- Every left row has exactly one match, so the LIMIT fills up from the first blocks. -->
-    <fill_query>INSERT INTO ev_inorder_spill SELECT number, number % 2000000 FROM numbers_mt(20000000)</fill_query>
+    <fill_query>INSERT INTO ev_inorder_spill SELECT number, number % 2000000 FROM numbers_mt(20000000) WHERE intDiv(number, 65536) % 3 = {part} SETTINGS max_insert_threads = 1, min_insert_block_size_rows = 10000000, min_insert_block_size_bytes = 0</fill_query>
     <!-- Uncorrelated ids: the matches of consecutive left rows land in arbitrary right blocks. -->
-    <fill_query>INSERT INTO ev_inorder_spill_scattered SELECT number, cityHash64(number) % 2000000 FROM numbers_mt(20000000)</fill_query>
-    <!-- The build side (~90 MB in the hash table) crosses the 20 MB spill threshold early. -->
-    <fill_query>INSERT INTO pl_inorder_spill SELECT number, toString(cityHash64(number)) FROM numbers_mt(2000000)</fill_query>
+    <fill_query>INSERT INTO ev_inorder_spill_scattered SELECT number, cityHash64(number) % 2000000 FROM numbers_mt(20000000) WHERE intDiv(number, 65536) % 3 = {part} SETTINGS max_insert_threads = 1, min_insert_block_size_rows = 10000000, min_insert_block_size_bytes = 0</fill_query>
+    <!-- The build side (~90 MB in the hash table) crosses the 20 MB spill threshold early. Its rows are in a fixed
+         shuffled order: runs of consecutive ids would let the spilled sort pass blocks through unmerged, as far as the
+         fill and the read order happen to allow. -->
+    <fill_query>INSERT INTO pl_inorder_spill SELECT number, toString(cityHash64(number)) FROM numbers_mt(2000000) ORDER BY cityHash64(number) SETTINGS max_insert_threads = 1, min_insert_block_size_rows = 10000000, min_insert_block_size_bytes = 0</fill_query>
 
     <query>
         SELECT t, payload FROM ev_inorder_spill INNER JOIN pl_inorder_spill ON ev_inorder_spill.id = pl_inorder_spill.id

@@ -32,8 +32,8 @@ ResultRows: 1
 Join: m[1000] ⋈ t[no_stats~10]
 ResultRows: ~~10
 --- T6: position deletes, 100 rows, 20 deleted
-Join: m[1000] ⋈ d[no_stats~100]
-ResultRows: ~~100
+Join: m[1000] ⋈ d[no_stats~80]
+ResultRows: ~~80
 --- T6: rows of the join
 80
 --- T7: files pruned by min/max when T2 runs

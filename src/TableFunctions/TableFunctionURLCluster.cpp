@@ -59,7 +59,7 @@ StoragePtr TableFunctionURLCluster::getStorage(
         format,
         compression_method,
         StorageID(getDatabaseName(), table_name),
-        getActualTableStructure(context, true),
+        is_structure_not_overridable ? ColumnsDescription{} : columns,
         ConstraintsDescription{},
         configuration);
 }

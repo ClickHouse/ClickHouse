@@ -45,6 +45,7 @@
 #include <utility>
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
