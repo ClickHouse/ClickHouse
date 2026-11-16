@@ -86,17 +86,26 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
         initPrimaryIndex();
 
     initSkipIndices();
+
+    for (const auto & column : columns_list)
+    {
+        UInt64 min_compress_block_size = settings.min_compress_block_size;
+        const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), column.getNameInStorage());
+        /// Honor an explicit column override even when it is 0 ("start a new block at every boundary");
+        /// inheritance is expressed by not setting it (or RESET SETTING), i.e. tryGet returning null.
+        if (column_desc)
+            if (const auto * value = column_desc->settings.tryGet("min_compress_block_size"))
+                min_compress_block_size = value->safeGet<UInt64>();
+        min_compress_block_sizes.emplace(column.name, min_compress_block_size);
+    }
 }
 
 UInt64 MergeTreeDataPartWriterOnDisk::getEffectiveMinCompressBlockSize(const NameAndTypePair & name_and_type) const
 {
-    const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
-    /// Honor an explicit column override even when it is 0 ("start a new block at every boundary");
-    /// inheritance is expressed by not setting it (or RESET SETTING), i.e. tryGet returning null.
-    if (column_desc)
-        if (const auto * value = column_desc->settings.tryGet("min_compress_block_size"))
-            return value->safeGet<UInt64>();
-    return settings.min_compress_block_size;
+    const auto it = min_compress_block_sizes.find(name_and_type.name);
+    if (it == min_compress_block_sizes.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is not in the columns list of the part writer", name_and_type.name);
+    return it->second;
 }
 
 void MergeTreeDataPartWriterOnDisk::cancel() noexcept

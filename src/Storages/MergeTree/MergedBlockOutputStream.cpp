@@ -84,11 +84,11 @@ public:
     }
     void finish(bool) override { }
     void cancel() noexcept override { }
-    size_t getNumberOfOpenStreams() const override { return 0; }
-    const Block & getColumnsSample() const override { return columns_sample; }
-    const ColumnsSubstreams & getColumnsSubstreams() const override { return finished.columns_substreams; }
+    [[nodiscard]] size_t getNumberOfOpenStreams() const override { return 0; }
+    [[nodiscard]] const Block & getColumnsSample() const override { return columns_sample; }
+    [[nodiscard]] const ColumnsSubstreams & getColumnsSubstreams() const override { return finished.columns_substreams; }
 
-    const MergedBlockOutputStream::FinishedColumns & getFinishedColumns() const { return finished; }
+    [[nodiscard]] const MergedBlockOutputStream::FinishedColumns & getFinishedColumns() const { return finished; }
 
 private:
     MergedBlockOutputStream::FinishedColumns finished;

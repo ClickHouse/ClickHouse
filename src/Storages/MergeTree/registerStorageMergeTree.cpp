@@ -983,7 +983,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         /// After the constraints, so a forbidden `storage_policy` is reported as such and not as an unknown policy.
         if ((*storage_settings)[MergeTreeSetting::storage_policy].changed)
-            args.getStoragePolicy((*storage_settings)[MergeTreeSetting::storage_policy]);
+            (void)args.getStoragePolicy((*storage_settings)[MergeTreeSetting::storage_policy]);
 
         /// `MergeTreeData` runs `sanityCheck` on the settings it is given when the mode says `CREATE`, so a
         /// full-definition `ATTACH` is the fresh definition left to check. Without this it can state a value
@@ -1241,6 +1241,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 "Please set setting 'deduplicate_merge_projection_mode' to 'drop' or 'rebuild'",
                 merging_params.getModeName());
     }
+
+    if (metadata.secondary_indices.hasType("vector_similarity") && args.mode == LoadingStrictnessLevel::CREATE && !is_ddl_replay
+        && !is_stored_definition)
+        MergeTreeData::checkVectorSimilarityIndexIsAllowed(merging_params, *storage_settings);
 
     if (arg_num != arg_cnt)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong number of engine arguments.");

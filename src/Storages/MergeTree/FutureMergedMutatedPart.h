@@ -28,8 +28,8 @@ struct FutureMergedMutatedPart
     MergeType merge_type = MergeType::Regular;
     bool final = false;
 
-    const MergeTreePartition & getPartition() const { return parts.front()->partition; }
-    bool isResultPatch() const { return !parts.empty() && parts.front()->info.isPatch();}
+    [[nodiscard]] const MergeTreePartition & getPartition() const { return parts.front()->partition; }
+    [[nodiscard]] bool isResultPatch() const { return !parts.empty() && parts.front()->info.isPatch();}
 
     /// `inherited_codec` is the codec that the result is written with if it does not come from the current settings
     /// of the table, see `MergeTreeData::choosePartFormat`.
