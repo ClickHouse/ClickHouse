@@ -30,7 +30,11 @@ public:
 
     [[nodiscard]] size_t getMaxThreads() const { return max_threads; }
     [[nodiscard]] bool isNarrowingAllowed() const { return allow_narrowing; }
-    void disableNarrowing() { allow_narrowing = false; }
+    void disableNarrowing()
+    {
+        allow_narrowing = false;
+        narrow_to_max_threads = false;
+    }
 
     /// Always narrow the output to `max_threads` streams. For a union that replaced a scatter above its
     /// exchange-receiver branches: no consumer relies on per-branch streams, and keeping them would

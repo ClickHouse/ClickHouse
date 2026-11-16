@@ -75,6 +75,10 @@ FROM (EXPLAIN actions = 0 SELECT k FROM (SELECT k, v FROM t1 UNION ALL SELECT k,
 SELECT k FROM (SELECT k, v FROM t1 UNION ALL SELECT k, v FROM t2) ORDER BY k LIMIT 20;
 SELECT k FROM (SELECT k, v FROM t1 UNION ALL SELECT k, v FROM t2) ORDER BY k LIMIT 20 SETTINGS make_distributed_plan = 0;
 
+-- P6c: read-in-order disables forced narrowing, preserving each sorted input stream.
+SELECT k FROM (SELECT k FROM t1 UNION ALL SELECT k FROM t1) ORDER BY k LIMIT 5 SETTINGS optimize_read_in_order = 1;
+SELECT k FROM (SELECT k FROM t1 UNION ALL SELECT k FROM t1) ORDER BY k LIMIT 5 SETTINGS make_distributed_plan = 0, optimize_read_in_order = 1;
+
 -- P7: below `distributed_plan_min_rows_per_reader` rows per branch, a keyed scatter stays above the union;
 -- a keyless scatter is still removed.
 SELECT 'P7a', countIf(explain LIKE '%ShuffleExchange%'), countIf(explain LIKE '%GatherExchange%'), countIf(explain LIKE '%ScatterExchange%')
@@ -82,5 +86,33 @@ FROM (EXPLAIN actions = 0 SELECT count() FROM (SELECT k, v FROM t1 UNION ALL SEL
 SELECT count() FROM (SELECT k, v FROM t1 UNION ALL SELECT k, v FROM t2) u JOIN t3 ON u.k = t3.k SETTINGS distributed_plan_min_rows_per_reader = 5000;
 SELECT 'P7b', countIf(explain LIKE '%ShuffleExchange%'), countIf(explain LIKE '%GatherExchange%'), countIf(explain LIKE '%ScatterExchange%')
 FROM (EXPLAIN actions = 0 SELECT k, count() FROM (SELECT k, v FROM t1 UNION ALL SELECT k, v FROM t2) GROUP BY k SETTINGS distributed_plan_min_rows_per_reader = 5000, make_distributed_plan = 1) SETTINGS make_distributed_plan = 0;
+
+-- P16: forced narrowing also respects stricter explicit and ratio-based stream limits.
+SELECT count() FROM (SELECT k FROM t1 UNION ALL SELECT k FROM t1)
+SETTINGS max_threads = 4, max_streams_for_union_step = 1, max_streams_for_union_step_to_max_threads_ratio = 0, log_comment = '05453_union_scatter_p16a';
+SYSTEM FLUSH LOGS;
+SELECT 'P16a', max(streams) FROM
+(
+    SELECT query_id, count() AS streams FROM system.processors_profile_log
+    WHERE name = 'AggregatingTransform' AND initial_query_id IN
+    (
+        SELECT query_id FROM system.query_log
+        WHERE current_database = currentDatabase() AND log_comment = '05453_union_scatter_p16a' AND type = 'QueryFinish'
+    )
+    GROUP BY query_id
+);
+SELECT count() FROM (SELECT k FROM t1 UNION ALL SELECT k FROM t1)
+SETTINGS max_threads = 4, max_streams_for_union_step = 0, max_streams_for_union_step_to_max_threads_ratio = 0.25, log_comment = '05453_union_scatter_p16b';
+SYSTEM FLUSH LOGS;
+SELECT 'P16b', max(streams) FROM
+(
+    SELECT query_id, count() AS streams FROM system.processors_profile_log
+    WHERE name = 'AggregatingTransform' AND initial_query_id IN
+    (
+        SELECT query_id FROM system.query_log
+        WHERE current_database = currentDatabase() AND log_comment = '05453_union_scatter_p16b' AND type = 'QueryFinish'
+    )
+    GROUP BY query_id
+);
 
 DROP TABLE t1, t2, t3, t_small;

@@ -138,19 +138,7 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
             "Invalid value for `max_streams_for_union_step_to_max_threads_ratio`: {}. Must be a finite non-negative number.",
             max_streams_ratio);
 
-    if (narrow_to_max_threads)
-    {
-        if (pipeline->getNumStreams() > new_max_threads)
-        {
-            QueryPipelineProcessorsCollector collector(*pipeline, this);
-            pipeline->narrow(new_max_threads);
-            auto added_processors = collector.detachProcessors();
-            processors.insert(processors.end(), added_processors.begin(), added_processors.end());
-        }
-        return pipeline;
-    }
-
-    if (!allow_narrowing)
+    if (!allow_narrowing && !narrow_to_max_threads)
         return pipeline;
 
     size_t effective_max_streams = settings.max_streams_for_union_step;
@@ -170,6 +158,9 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
         else
             effective_max_streams = max_streams_from_ratio;
     }
+
+    if (narrow_to_max_threads)
+        effective_max_streams = effective_max_streams ? std::min(effective_max_streams, new_max_threads) : new_max_threads;
 
     if (effective_max_streams && pipeline->getNumStreams() > effective_max_streams)
     {
