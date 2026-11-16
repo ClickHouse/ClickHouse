@@ -54,6 +54,7 @@ def started_cluster():
                 "configs/custom_local_disks.xml",
                 "configs/allowed_disks_for_table_engines.xml",
                 "configs/url_only_collection_endpoint.xml",
+                "configs/virtual_hosted_url.xml",
             ],
             with_gcs=True,
             stay_alive=True,
@@ -404,6 +405,39 @@ def test_url_only_named_collection_reads_anonymously(started_cluster):
         )
     finally:
         node.query("DROP NAMED COLLECTION IF EXISTS gcs_url_only")
+
+
+def test_virtual_hosted_url_after_scheme_mapping_and_endpoint_section(started_cluster):
+    """The virtual-hosted form of the default GCS host, `https://<bucket>.storage.googleapis.com/<key>`,
+    takes the bucket from the host:
+
+    - also when a `url_scheme_mappers` entry (`configs/virtual_hosted_url.xml`) produces it. A 2-character
+      bucket in the host shows which one was taken: it is rejected, while the first path component would be
+      a valid bucket;
+    - and the `<s3>` endpoint section for that host still applies. The section sets `storage_class_name`,
+      which the native backend rejects.
+
+    `EXPLAIN` with an explicit structure only builds the configuration, so nothing is sent to GCS.
+    """
+    node = started_cluster.instances["node"]
+    settings = {"use_native_gcs": 1}
+
+    error = node.query_and_get_error(
+        "EXPLAIN SELECT * FROM gcs('gsvh://ab/bucket-b/file.tsv', NOSIGN, 'TSV', 'x UInt8')",
+        settings=settings,
+    )
+    assert "Bucket name length is out of bounds in GCS URI" in error
+    node.query(
+        "EXPLAIN SELECT * FROM gcs('gsvh://bucket-a/b/file.tsv', NOSIGN, 'TSV', 'x UInt8')",
+        settings=settings,
+    )
+
+    section_url = "https://endpoint-section-05.storage.googleapis.com/file.tsv"
+    error = node.query_and_get_error(
+        f"EXPLAIN SELECT * FROM gcs('{section_url}', NOSIGN, 'TSV', 'x UInt8')",
+        settings=settings,
+    )
+    assert "`storage_class_name` is not supported by the native GCS backend" in error
 
 
 def test_dynamic_gcs_disk_renews_a_refresh_token_credential(started_cluster):
