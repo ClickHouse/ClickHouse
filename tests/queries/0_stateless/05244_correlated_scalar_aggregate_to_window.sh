@@ -44,6 +44,12 @@ check "key types differ" "SELECT u64.k AS k, t.v AS v, (SELECT max(v) FROM t AS 
 
 run_all
 
+# Below the window a condition runs on every row of the table, so a condition that may throw is not copied there.
+$CLICKHOUSE_CLIENT --optimize_correlated_scalar_aggregate_to_window=1 -q "
+    SELECT 'key condition that may throw: rewritten', countIf(explain LIKE '%function_type: window%') > 0,
+        'only in the enclosing query', countIf(explain LIKE '%function_name: intDiv%') = 1
+    FROM (EXPLAIN QUERY TREE SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE t.k > 0 AND intDiv(10, t.k) > 2)"
+
 # The condition on the key is put into the derived table, so the read below the window takes only its granules.
 $CLICKHOUSE_CLIENT -q "
 CREATE TABLE pk (k Int32, v Int32) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;

@@ -126,4 +126,5 @@ NULL key and a condition that may throw without short-circuit: rewritten	0
 1	30	30
 2	5	1e308
 2	1e308	1e308
+key condition that may throw: rewritten	1	only in the enclosing query	1
 key condition below the window: rewritten	1	reads only some granules	1

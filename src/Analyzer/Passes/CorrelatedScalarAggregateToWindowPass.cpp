@@ -24,6 +24,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageSnapshot.h>
 
+#include <string_view>
 #include <unordered_set>
 
 namespace DB
@@ -484,9 +485,15 @@ private:
     /// The deterministic conditions on `keys` only, which all the windows are partitioned by. They are also put below
     /// the windows, where a condition on the keys removes whole partitions only: the filter push-down does not pass a
     /// window. A non-deterministic condition is not taken, because it would also remove rows inside the partitions it
-    /// keeps, and neither is one with a correlated subquery.
+    /// keeps, and neither is one with a correlated subquery. Below the window a condition runs on every row of the
+    /// table, also on rows the enclosing query never evaluates it on, so only comparisons and logical functions, which
+    /// do not throw, are taken.
     static QueryTreeNodes collectKeyConditions(const IQueryTreeNode * target, const QueryTreeNodes & enforced, const Names & keys)
     {
+        static const std::unordered_set<std::string_view> functions_that_do_not_throw = {
+            "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals", "and", "or", "not", "isNull", "isNotNull",
+            "in", "notIn"};
+
         QueryTreeNodes result;
         for (const auto & conjunct : enforced)
         {
@@ -497,6 +504,12 @@ private:
                 node,
                 [&](QueryTreeNodePtr & current)
                 {
+                    if (const auto * function = current->as<FunctionNode>())
+                    {
+                        if (!functions_that_do_not_throw.contains(function->getFunctionName()))
+                            only_keys = false;
+                        return;
+                    }
                     const auto * column = current->as<ColumnNode>();
                     if (!column)
                         return;
