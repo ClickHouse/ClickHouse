@@ -1,3 +1,4 @@
+import subprocess
 import threading
 import uuid
 
@@ -142,3 +143,36 @@ def test_shutdown_kill_distributed_plan_query(start_cluster):
 
     long_query.join()
     assert "QUERY_WAS_CANCELLED" in query_result["answer"][1]
+
+
+def test_shutdown_does_not_wait_for_idle_connection(start_cluster):
+    node = node_wait_queries
+    if node.get_process_pid("clickhouse") is None:
+        node.start_clickhouse()
+
+    # Connects, then waits on its stdin, so its connection stays idle until it is killed.
+    idle_client = subprocess.Popen(
+        node.client.command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        # The idle connection and the one of this query.
+        assert_eq_with_retry(
+            node,
+            "SELECT value >= 2 FROM system.metrics WHERE metric = 'TCPConnection'",
+            "1",
+        )
+        waiting = r"Closed all listening sockets\. Waiting for"
+        # Logged only when no connection is left after the wait.
+        closed = r"Closed connections\.$"
+        waiting_before = int(node.count_in_log(waiting).strip())
+        closed_before = int(node.count_in_log(closed).strip())
+        # Longer than `shutdown_wait_unfinished`, so the helper never kills the server itself.
+        assert node.stop_clickhouse(kill=False, stop_wait_sec=90)
+        assert int(node.count_in_log(waiting).strip()) == waiting_before + 1
+        assert int(node.count_in_log(closed).strip()) == closed_before + 1
+    finally:
+        idle_client.kill()
+        idle_client.wait()
