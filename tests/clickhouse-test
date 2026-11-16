@@ -7405,7 +7405,10 @@ def main(args):
     # Remember that suppression came from the storage rule, not from the user: an explicit
     # --no-random-settings must stay fully suppressive (see TestCase.__init__).
     args.random_settings_suppressed_by_storage = False
-    if args.s3_storage and (BuildFlags.RELEASE not in args.build_flags):
+    # The parallel replicas jobs keep randomizing on a debug build: they exist to put the parallel replicas code
+    # under the assertions of that build, and the randomized settings, `max_threads` above all, are what makes
+    # `automatic_parallel_replicas_mode` switch a broad share of the queries.
+    if args.s3_storage and (BuildFlags.RELEASE not in args.build_flags) and not args.no_parallel_replicas:
         args.random_settings_suppressed_by_storage = not args.no_random_settings
         args.no_random_settings = True
 
