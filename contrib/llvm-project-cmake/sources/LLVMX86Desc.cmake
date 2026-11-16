@@ -10,6 +10,7 @@ set(LLVMX86DESC_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86MachObjectWriter.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86MCAsmInfo.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86MCCodeEmitter.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86MCLFIRewriter.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86MCTargetDesc.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86MnemonicTables.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86ShuffleDecode.cpp

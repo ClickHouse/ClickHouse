@@ -205,7 +205,7 @@ void BackupWriterDisk::removeEmptyDirectoriesImpl(const fs::path & current_dir)
         disk->removeDirectory(current_dir);
 }
 
-void BackupWriterDisk::copyFileFromDisk(
+void BackupWriterDisk::copyFileFromDiskWithFallback(
     const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
     /// Use `IDisk::copyFile` as a more optimal way to copy a file if it's possible.
@@ -227,7 +227,7 @@ void BackupWriterDisk::copyFileFromDisk(
     }
 
     /// Fallback to copy through buffers.
-    BackupWriterDefault::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
+    BackupWriterDefault::copyFileFromDiskWithFallback(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
 }
 
 void BackupWriterDisk::copyFile(const String & destination, const String & source, size_t /*size*/)
