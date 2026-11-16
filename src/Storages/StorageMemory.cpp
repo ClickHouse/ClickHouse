@@ -18,6 +18,7 @@
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnConst.h>
@@ -548,31 +549,159 @@ static bool nameOrParentIn(const NameSet & names, const String & name)
     }
 }
 
-/// Physical columns at the types the current metadata stores. An `ALIAS` is omitted so a
-/// replacement default expands that expression instead of a value left from when the column was physical.
-static Block logicalDefaultInputs(const Block & stored, const ColumnsDescription & columns, ContextPtr context)
+/// Inputs of the defaults this statement materializes.
+/// A physical column that the block does not store is filled with the type default: that is the value
+/// a read of `Memory` returns for a column added after the block was written. An `ALIAS` is expanded
+/// instead, so a replacement does not keep a value left from when the column was physical.
+/// Only those inputs are converted. An unrelated column whose stored bytes no longer match its type
+/// stays untouched, and a read of the materialized column still succeeds.
+static Block logicalDefaultInputs(
+    const Block & stored,
+    const ColumnsDescription & columns,
+    const NamesAndTypesList & materialized,
+    size_t rows,
+    ContextPtr context)
 {
-    Block logical;
-    for (const auto & column : stored)
+    struct DependencyWalker
     {
-        if (!columns.tryGetPhysical(column.name))
+        const ColumnsDescription & columns;
+        const Block & stored;
+        const NameSet & materialized_names;
+        NameSet inputs;
+        NameSet alias_parents;
+        NameSet subcolumns;
+        NameSet expanded;
+
+        void expand(const String & name)
+        {
+            if (!expanded.insert(name).second)
+                return;
+
+            const auto def = columns.getDefault(name);
+            if (!def || !def->expression)
+                return;
+
+            RequiredSourceColumnsVisitor::Data data;
+            auto expression = def->expression->clone();
+            RequiredSourceColumnsVisitor(data).visit(expression);
+            for (const auto & required_name : data.requiredColumns())
+                consider(required_name);
+        }
+
+        void recordSubcolumn(const String & name, const String & parent)
+        {
+            /// `a.v` has to be a column of the block before the default that names it is analyzed.
+            subcolumns.insert(name);
+            if (!columns.tryGetPhysical(parent) && columns.hasDefault(parent))
+                alias_parents.insert(parent);
+            consider(parent);
+        }
+
+        void consider(const String & name)
+        {
+            if (auto subcolumn = columns.tryGetSubcolumn(name); subcolumn && subcolumn->isSubcolumn())
+            {
+                recordSubcolumn(name, subcolumn->getNameInStorage());
+                return;
+            }
+
+            /// A named tuple element is not always registered as a subcolumn. `a Tuple(v UInt64) ALIAS ...`
+            /// still has element `v`, and a default `a.v + 1` names that element.
+            if (name.contains('.'))
+            {
+                for (const auto & [parent_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+                {
+                    const auto parent = String(parent_name);
+                    const auto parent_column = columns.tryGetColumn(GetColumnsOptions::All, parent);
+                    if (!parent_column || !parent_column->type->tryGetSubcolumnType(subcolumn_name))
+                        continue;
+
+                    recordSubcolumn(name, parent);
+                    return;
+                }
+            }
+
+            if (columns.tryGetPhysical(name))
+            {
+                /// A column this statement itself materializes is computed from its default.
+                /// A column already stored, or one the read path would fill with the type default, is an input.
+                if (materialized_names.contains(name) && !stored.has(name))
+                    expand(name);
+                else
+                    inputs.insert(name);
+                return;
+            }
+
+            if (columns.hasDefault(name))
+                expand(name);
+        }
+    };
+
+    NameSet materialized_names;
+    for (const auto & column : materialized)
+        materialized_names.insert(column.name);
+
+    DependencyWalker walker{columns, stored, materialized_names, {}, {}, {}, {}};
+    for (const auto & column : materialized)
+        walker.consider(column.name);
+
+    Block logical;
+    NamesAndTypesList to_convert;
+    for (const auto & name : walker.inputs)
+    {
+        const auto physical = columns.tryGetPhysical(name);
+        if (!physical)
             continue;
 
-        /// `decompress` shares the column when it is already plain. Clone so evaluation cannot rewrite storage.
-        auto plain = column.column->decompress();
-        logical.insert({plain->cloneResized(plain->size()), column.type, column.name});
-    }
-
-    NamesAndTypesList to_convert;
-    for (const auto & column : logical)
-    {
-        const auto physical = columns.tryGetPhysical(column.name);
-        if (physical && !column.type->equals(*physical->type))
-            to_convert.emplace_back(column.name, physical->type);
+        if (stored.has(name))
+        {
+            const auto & column = stored.getByName(name);
+            /// `decompress` shares the column when it is already plain. Clone so evaluation cannot rewrite storage.
+            auto plain = column.column->decompress();
+            logical.insert({plain->cloneResized(plain->size()), column.type, column.name});
+            if (!column.type->equals(*physical->type))
+                to_convert.emplace_back(column.name, physical->type);
+        }
+        else if (rows > 0)
+        {
+            auto filled = physical->type->createColumnConstWithDefaultValue(rows)->convertToFullColumnIfConst();
+            logical.insert({std::move(filled), physical->type, name});
+        }
     }
 
     if (!to_convert.empty())
         performRequiredConversions(logical, to_convert, context, columns.getDefaults());
+
+    /// `a.v` needs the tuple `a` in the block. An `ALIAS` parent is not stored; evaluate it before extraction.
+    if (!walker.alias_parents.empty() && rows > 0)
+    {
+        NamesAndTypesList alias_required;
+        for (const auto & column : logical)
+            alias_required.emplace_back(column.name, column.type);
+        for (const auto & parent : walker.alias_parents)
+        {
+            if (logical.has(parent))
+                continue;
+            const auto & parent_column = columns.get(parent);
+            alias_required.emplace_back(parent, parent_column.type);
+        }
+
+        auto alias_dag = addMissingDefaults(logical, alias_required, columns, context);
+        auto alias_actions = std::make_shared<ExpressionActions>(
+            std::move(alias_dag), ExpressionActionsSettings(context->getSettingsRef()));
+        alias_actions->execute(logical);
+    }
+
+    /// Extraction runs before `addMissingDefaults`. A default such as `a.v + 1` is rejected
+    /// when `a.v` is still only a subcolumn of a tuple that the block already holds.
+    if (!walker.subcolumns.empty() && rows > 0)
+    {
+        Names subcolumn_names(walker.subcolumns.begin(), walker.subcolumns.end());
+        auto extracting = createSubcolumnsExtractionActions(logical, subcolumn_names, context);
+        auto extract_actions = std::make_shared<ExpressionActions>(
+            std::move(extracting), ExpressionActionsSettings(context->getSettingsRef()));
+        extract_actions->execute(logical);
+    }
 
     return logical;
 }
@@ -668,7 +797,7 @@ static void applyStoredColumnIdentity(
         return;
 
     /// Evaluate on a copy. Stored columns keep the bytes the read path already converts.
-    Block logical = logicalDefaultInputs(block, metadata.columns, context);
+    Block logical = logicalDefaultInputs(block, metadata.columns, materialized, rows, context);
 
     /// With no physical inputs, `logical.rows()` is 0. One placeholder keeps `rows`.
     /// The name has to miss every real column: a user column may itself be called `_dummy`.
