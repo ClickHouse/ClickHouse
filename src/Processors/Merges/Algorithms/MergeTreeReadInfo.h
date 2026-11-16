@@ -3,6 +3,7 @@
 #include <Processors/Chunk.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -32,7 +33,7 @@ bool isVirtualRow(const Chunk & chunk);
 
 /// The values which the query filter fixes primary key columns to, by the position of the column in the key,
 /// e.g. `a = 1` for `WHERE a = 1 ORDER BY b` over the key `(a, b)`.
-using VirtualRowFixedKeys = std::vector<std::pair<size_t, Field>>;
+using VirtualRowFixedKeys = VectorWithMemoryTracking<std::pair<size_t, Field>>;
 
 /// Whether the index entry `pk_block` has these values; true if there are none. An entry with another value belongs
 /// to a filtered-out row: its later key columns do not bound the rows after the filter, so it gives no virtual row.
