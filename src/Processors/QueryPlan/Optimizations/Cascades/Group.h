@@ -46,30 +46,30 @@ public:
     /// Returns the expression that the group keeps: the given one, or an equal expression that
     /// the group already has (the given one is then dropped).
     GroupExpressionPtr addPhysicalExpression(GroupExpressionPtr group_expression);
-    bool isExplored() const { return is_explored; }
+    [[nodiscard]] bool isExplored() const { return is_explored; }
     void setExplored() { is_explored = true; }
-    bool isOptimizedFor(const ExpressionProperties & required_properties) const;
+    [[nodiscard]] bool isOptimizedFor(const ExpressionProperties & required_properties) const;
     void setOptimizedFor(const ExpressionProperties & required_properties);
-    bool isEnforcedFor(const ExpressionProperties & required_properties) const;
+    [[nodiscard]] bool isEnforcedFor(const ExpressionProperties & required_properties) const;
     void setEnforcedFor(const ExpressionProperties & required_properties);
 
     /// Tracks whether optimization for a given property set is fully complete
     /// (all stages: explore, implement, enforce - have finished).
-    bool isFullyDoneFor(const ExpressionProperties & required_properties) const;
+    [[nodiscard]] bool isFullyDoneFor(const ExpressionProperties & required_properties) const;
     void setFullyDoneFor(const ExpressionProperties & required_properties);
     void updateBestImplementation(GroupExpressionPtr expression, const CostConfig & cost_config);
 
     /// The cheapest best implementation that answers `required_properties` (see
     /// `GroupExpression::answers`) and is not in `excluded`. Plan extraction excludes the
     /// expressions of the chain that it is building, so the chain cannot come back to itself.
-    ExpressionWithCost getBestImplementation(
+    [[nodiscard]] ExpressionWithCost getBestImplementation(
         const ExpressionProperties & required_properties,
         const CostConfig & cost_config,
         const UnorderedSetWithMemoryTracking<GroupExpression *> & excluded = {}) const;
 
 
     void dump(WriteBuffer & out, const CostConfig & cost_config, String indent = {}) const;
-    String dump(const CostConfig & cost_config) const;
+    [[nodiscard]] String dump(const CostConfig & cost_config) const;
 
     VectorWithMemoryTracking<GroupExpressionPtr> logical_expressions;
     VectorWithMemoryTracking<GroupExpressionPtr> physical_expressions;

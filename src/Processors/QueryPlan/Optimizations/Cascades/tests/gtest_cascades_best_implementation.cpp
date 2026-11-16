@@ -90,10 +90,10 @@ SharedHeader makeHeader()
 class TestEnforcerRule : public IOptimizationRule
 {
 public:
-    String getName() const override { return "TestEnforcer"; }
-    bool checkPattern(GroupExpressionPtr, const ExpressionProperties &, const Memo &) const override { return true; }
-    Promise getPromise() const override { return 1; }
-    bool isTransformation() const override { return false; }
+    [[nodiscard]] String getName() const override { return "TestEnforcer"; }
+    [[nodiscard]] bool checkPattern(GroupExpressionPtr, const ExpressionProperties &, const Memo &) const override { return true; }
+    [[nodiscard]] Promise getPromise() const override { return 1; }
+    [[nodiscard]] bool isTransformation() const override { return false; }
     using IOptimizationRule::addPhysicalToMemo;
 
 protected:

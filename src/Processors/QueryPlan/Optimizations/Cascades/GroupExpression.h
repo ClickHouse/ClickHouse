@@ -39,20 +39,20 @@ public:
         , is_partial_of_two_stage_aggregation(other_.is_partial_of_two_stage_aggregation)
     {}
 
-    String getName() const;
-    String getDescription() const;
-    const IQueryPlanStep * getQueryPlanStep() const;
-    bool isApplied(const IOptimizationRule & rule, const ExpressionProperties & required_properties) const;
+    [[nodiscard]] String getName() const;
+    [[nodiscard]] String getDescription() const;
+    [[nodiscard]] const IQueryPlanStep * getQueryPlanStep() const;
+    [[nodiscard]] bool isApplied(const IOptimizationRule & rule, const ExpressionProperties & required_properties) const;
     void setApplied(const IOptimizationRule & rule, const ExpressionProperties & required_properties);
 
     void dump(WriteBuffer & out, const CostConfig & cost_config) const;
-    String dump(const CostConfig & cost_config) const;
-    size_t fingerprint() const;
+    [[nodiscard]] String dump(const CostConfig & cost_config) const;
+    [[nodiscard]] size_t fingerprint() const;
 
     /// Structural identity used to deduplicate physical expressions. Compares the same
     /// components the fingerprint hashes, so a fingerprint hash collision does not
     /// silently drop a distinct alternative.
-    bool structurallyEqualTo(const GroupExpression & other) const;
+    [[nodiscard]] bool structurallyEqualTo(const GroupExpression & other) const;
 
     GroupId group_id = INVALID_GROUP_ID;
     std::shared_ptr<const IQueryPlanStep> plan_step;
@@ -74,13 +74,13 @@ public:
     /// properties equal to its own (see `answers`).
     VectorWithMemoryTracking<ExpressionProperties> enforced_for;
 
-    bool isEnforcer() const { return !enforced_for.empty(); }
+    [[nodiscard]] bool isEnforcer() const { return !enforced_for.empty(); }
 
     /// Whether the group can use this expression as an implementation for `required_properties`.
     /// The properties of the expression must satisfy them. An enforcer adds an operator to get
     /// some properties, so it also satisfies weaker required properties, among them the ones of
     /// its own input in the same group. It is not an answer to those: the plan below it is.
-    bool answers(const ExpressionProperties & required_properties) const;
+    [[nodiscard]] bool answers(const ExpressionProperties & required_properties) const;
 
     /// Set on the partial half of a two-stage aggregation split. Its promise of bucket order is kept
     /// for the merge half of the same plan, which reads the gathered inputs one stream per node, so
