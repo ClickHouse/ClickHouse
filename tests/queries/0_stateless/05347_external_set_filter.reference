@@ -1,0 +1,21 @@
+UInt64	10000	99990000
+String	10000	99990000
+UInt256	10000	99990000
+misses	0
+misses	0
+misses	0
+misses	0
+misses	0
+misses	0
+UInt64	1
+String	1
+UInt256	1
+filter	1
+3 bits	1
+2 bits	1
+budget too small	1
+no filter	1
+repeated misses	1
+1	1	1	1
+[10000]	1	1	1	1	1
+10000	1	1

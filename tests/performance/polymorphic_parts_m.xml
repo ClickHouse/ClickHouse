@@ -27,6 +27,8 @@
     <settings>
         <max_block_size>100</max_block_size>
         <min_insert_block_size_rows>100</min_insert_block_size_rows>
+        <!-- Write the parts in one thread: parallel writers make each run wait for the disk writes of the runs before it -->
+        <max_insert_threads>1</max_insert_threads>
     </settings>
 
     <!-- 100 parts -->
