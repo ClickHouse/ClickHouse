@@ -1,8 +1,10 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/RenameColumnVisitor.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Storages/ColumnsDescription.h>
@@ -55,6 +57,25 @@ bool isRenamedReference(const IAST & ast, const RenameColumnData & data)
     const auto * identifier = ast.as<ASTIdentifier>();
     return identifier && IdentifierSemantic::getColumnName(*identifier) == data.column_name
         && !findBindingParameter(*identifier, data.lambda_parameters, data.new_analyzer_binding);
+}
+
+/// The arguments of an index type are options, except the text index `preprocessor` and `postprocessor` expressions.
+std::vector<ASTPtr *> getIndexOptionExpressions(const ASTIndexDeclaration & index)
+{
+    std::vector<ASTPtr *> expressions;
+    const auto type = index.getType();
+    if (!type || !type->arguments)
+        return expressions;
+    for (const auto & argument : type->arguments->children)
+    {
+        auto * function = argument->as<ASTFunction>();
+        if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2)
+            continue;
+        const auto * key = function->arguments->children[0]->as<ASTIdentifier>();
+        if (key && (key->name() == "preprocessor" || key->name() == "postprocessor"))
+            expressions.push_back(&function->arguments->children[1]);
+    }
+    return expressions;
 }
 
 /// Checks one analysis scope: the expressions whose aliases are visible to each other.
@@ -176,10 +197,13 @@ private:
 
 }
 
-bool RenameColumnMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &, const Data &)
+bool RenameColumnMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child, const Data &)
 {
     /// A subquery resolves its identifiers against its own tables.
-    return !asLambda(node) && !node->as<ASTSubquery>();
+    if (asLambda(node) || node->as<ASTSubquery>())
+        return false;
+    const auto * index = node->as<ASTIndexDeclaration>();
+    return !index || child.get() != index->getType().get();
 }
 
 void RenameColumnMatcher::visit(ASTPtr & ast, Data & data)
@@ -192,6 +216,21 @@ void RenameColumnMatcher::visit(ASTPtr & ast, Data & data)
     }
     else if (auto * identifier = ast->as<ASTIdentifier>())
         data.visit(*identifier, ast);
+    else if (auto * ttl_element = ast->as<ASTTTLElement>())
+    {
+        /// The `SET` assignments of a `GROUP BY` rule are not its children.
+        for (auto & assignment : ttl_element->group_by_assignments)
+        {
+            RenameColumnVisitor(data).visit(assignment);
+            if (auto & target = assignment->as<ASTAssignment &>().column_name; target == data.column_name)
+                target = data.rename_to;
+        }
+    }
+    else if (const auto * index = ast->as<ASTIndexDeclaration>())
+    {
+        for (auto * expression : getIndexOptionExpressions(*index))
+            RenameColumnVisitor(data).visit(*expression);
+    }
 }
 
 void RenameColumnData::visit(ASTIdentifier & identifier, ASTPtr & ast) const
@@ -243,6 +282,16 @@ void RenameColumnConflicts::addColumnDefaults(const std::vector<std::pair<ASTPtr
 
 void RenameColumnConflicts::add(const ASTPtr & ast, const String & where)
 {
+    if (const auto * index = ast->as<ASTIndexDeclaration>())
+    {
+        add(index->getExpression(), where);
+        for (auto * expression : getIndexOptionExpressions(*index))
+            add(*expression, where);
+        return;
+    }
+    if (const auto * ttl_element = ast->as<ASTTTLElement>())
+        for (const auto & assignment : ttl_element->group_by_assignments)
+            add(assignment, where);
     if (ast->as<ASTTTLElement>() || (ast->as<ASTExpressionList>() && !ast->children.empty() && ast->children.front()->as<ASTTTLElement>()))
     {
         for (const auto & child : ast->children)

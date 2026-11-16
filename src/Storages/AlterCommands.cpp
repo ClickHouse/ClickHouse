@@ -35,11 +35,9 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageDummy.h>
 #include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -47,7 +45,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSQLSecurity.h>
-#include <Parsers/ASTTTLElement.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/SubcolumnCodecs.h>
@@ -1409,17 +1406,7 @@ void AlterCommand::apply(
             });
         }
         if (metadata.table_ttl.definition_ast)
-        {
             rename_in(metadata.table_ttl.definition_ast, "the table TTL");
-            for (const auto & element : metadata.table_ttl.definition_ast->children)
-                if (auto * ttl_element = element->as<ASTTTLElement>())
-                    for (auto & assignment : ttl_element->group_by_assignments)
-                    {
-                        rename_in(assignment, "the table TTL");
-                        if (auto & target = assignment->as<ASTAssignment &>().column_name; target == column_name)
-                            target = rename_to;
-                    }
-        }
 
         auto constraints_data = metadata.constraints.getConstraints();
         for (auto & constraint : constraints_data)
@@ -1455,26 +1442,7 @@ void AlterCommand::apply(
                     index.column_names = {rename_to};
             }
             else
-            {
-                const auto & declaration = index.definition_ast->as<const ASTIndexDeclaration &>();
-                const String where = fmt::format("index {}", backQuote(index.name));
-                ASTPtr expression = declaration.getExpression();
-                rename_in(expression, where);
-
-                /// The other arguments of the index type are options, not column expressions.
-                if (auto index_type = declaration.getType(); index_type && index_type->arguments)
-                {
-                    for (const auto & argument : index_type->arguments->children)
-                    {
-                        const auto * function = argument->as<ASTFunction>();
-                        if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2)
-                            continue;
-                        const auto * key = function->arguments->children[0]->as<ASTIdentifier>();
-                        if (key && (key->name() == "preprocessor" || key->name() == "postprocessor"))
-                            rename_in(function->arguments->children[1], where);
-                    }
-                }
-            }
+                rename_in(index.definition_ast, fmt::format("index {}", backQuote(index.name)));
         }
 
         if (!isSecondaryDDLReplay(context))

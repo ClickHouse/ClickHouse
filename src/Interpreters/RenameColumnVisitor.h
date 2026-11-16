@@ -47,7 +47,8 @@ public:
     explicit RenameColumnConflicts(const RenameColumnData & data_);
     /// The defaults of all columns: one scope, resolved by the analyzer. Each element: the expression and the text naming it.
     void addColumnDefaults(const std::vector<std::pair<ASTPtr, String>> & defaults);
-    /// One expression resolved by `TreeRewriter`; a table TTL list is split into one scope per element TTL / WHERE expression.
+    /// One expression resolved by `TreeRewriter`; a table TTL is split into one scope per expression of each element, an
+    /// index declaration into its expression and text index processors.
     void add(const ASTPtr & ast, const String & where);
     /// Throws BAD_ARGUMENTS for the first conflict found.
     void throwIfAny() const;
