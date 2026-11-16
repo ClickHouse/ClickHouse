@@ -106,7 +106,8 @@ private:
     Chunk parseEntries(UnitState & unit);
 
     void checkAttributeEnd(
-        const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t offset, const UnitState & unit) const;
+        const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t attr_offset, uint64_t offset,
+        const UnitState & unit) const;
     llvm::DWARFFormValue parseAttribute(
         const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t * offset,
         const UnitState & unit) const;

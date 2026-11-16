@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-msan
 # Tag no-fasttest: the `DWARF` format is not built in the fast test.
+# Tag no-msan: the `DWARF` format is not built with MSan.
 
 # An attribute whose length goes past the end of `.debug_info` must be rejected by the `DWARF` format.
 
@@ -11,7 +12,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 prefix="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 # A minimal ELF with one compilation unit with two attributes of form DW_FORM_exprloc either in the unit entry
-# or in its child. The length of the first expression is either 1 (valid) or 0xFFFFFFFF (past the end of the section).
+# or in its child. The length of the first expression is either 1 (valid), 0xFFFFFFFF (past the end of the section)
+# or 0xFFFFFFFFFFFFFFFF (makes the offset wrap around to before the attribute).
 python3 - "$prefix" <<'PYEOF'
 import struct
 import sys
@@ -54,14 +56,17 @@ def make_elf(exprloc, nested):
 
 valid = bytes([0x01, 0x30])  # length 1: DW_OP_lit0
 invalid = bytes([0xFF, 0xFF, 0xFF, 0xFF, 0x0F, 0x30])
+wraparound = bytes([0xFF] * 9 + [0x01, 0x30])
 for nested in [False, True]:
     suffix = '_nested' if nested else ''
     open(sys.argv[1] + suffix + '_valid.elf', 'wb').write(make_elf(valid, nested))
     open(sys.argv[1] + suffix + '_invalid.elf', 'wb').write(make_elf(invalid, nested))
+    open(sys.argv[1] + suffix + '_wraparound.elf', 'wb').write(make_elf(wraparound, nested))
 PYEOF
 
 for kind in '' '_nested'; do
     $CLICKHOUSE_LOCAL -q "SELECT tag, attr_name, attr_form FROM file('${prefix}${kind}_valid.elf', DWARF) ARRAY JOIN attr_name, attr_form"
     $CLICKHOUSE_LOCAL -q "SELECT count() FROM file('${prefix}${kind}_invalid.elf', DWARF)" 2>&1 | grep -o -m1 'CANNOT_PARSE_DWARF'
-    rm -f "${prefix}${kind}_valid.elf" "${prefix}${kind}_invalid.elf"
+    $CLICKHOUSE_LOCAL -q "SELECT count() FROM file('${prefix}${kind}_wraparound.elf', DWARF)" 2>&1 | grep -o -m1 'CANNOT_PARSE_DWARF'
+    rm -f "${prefix}${kind}_valid.elf" "${prefix}${kind}_invalid.elf" "${prefix}${kind}_wraparound.elf"
 done

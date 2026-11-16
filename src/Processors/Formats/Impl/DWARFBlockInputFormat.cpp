@@ -160,11 +160,13 @@ static void checkUnitDie(
         return;
     for (const auto & attr : abbrev->attributes())
     {
+        const uint64_t attr_offset = offset;
         if (auto size = attr.getByteSize(unit))
             offset += *size;
         else if (!llvm::DWARFFormValue::skipValue(attr.Form, data, &offset, unit.getFormParams()))
             return;
-        if (offset > end)
+        /// A huge length makes the offset wrap around.
+        if (offset < attr_offset || offset > end)
             throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
                 "Attribute {} of form {} of the unit entry goes past the end of the unit: offset {}, end of unit {}",
                 llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, offset, end_offset);
@@ -392,11 +394,12 @@ static inline void throwIfError(llvm::Error & e, const char * what)
 
 /// LLVM advances the offset by the length of a block or a fixed-size form without checking it against the
 /// section (LEB128 decoding checks the offset only with an assertion), so every following read would start
-/// past the end of the section. Check the offset after each attribute.
+/// past the end of the section. Check the offset after each attribute. The offset is advanced with plain unsigned
+/// addition, so a huge length makes it wrap around to before the start of the attribute.
 void DWARFBlockInputFormat::checkAttributeEnd(
-    const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t offset, const UnitState & unit) const
+    const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t attr_offset, uint64_t offset, const UnitState & unit) const
 {
-    if (offset > unit.end_offset || offset > extractor->size())
+    if (offset < attr_offset || offset > unit.end_offset || offset > extractor->size())
         throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
             "Attribute {} of form {} goes past the end of the unit: offset {}, end of unit {}",
             llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, offset, unit.end_offset);
@@ -406,13 +409,14 @@ llvm::DWARFFormValue DWARFBlockInputFormat::parseAttribute(
     const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t * offset,
     const UnitState & unit) const
 {
+    const uint64_t attr_offset = *offset;
     auto val = llvm::DWARFFormValue::createFromSValue(
         attr.Form, attr.isImplicitConst() ? attr.getImplicitConstValue() : 0);
     if (!val.extractValue(*extractor, offset, unit.dwarf_unit->getFormParams(), unit.dwarf_unit))
         throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
             "Failed to parse attribute {} of form {} at offset {}",
                 llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, *offset);
-    checkAttributeEnd(attr, *offset, unit);
+    checkAttributeEnd(attr, attr_offset, *offset, unit);
     return val;
 }
 
@@ -429,12 +433,13 @@ void DWARFBlockInputFormat::skipAttribute(
     }
     else
     {
+        const uint64_t attr_offset = *offset;
         if (!llvm::DWARFFormValue::skipValue(
             attr.Form, *extractor, offset, unit.dwarf_unit->getFormParams()))
                 throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
                     "Failed to skip attribute {} of form {} at offset {}",
                     llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, *offset);
-        checkAttributeEnd(attr, *offset, unit);
+        checkAttributeEnd(attr, attr_offset, *offset, unit);
     }
 }
 
