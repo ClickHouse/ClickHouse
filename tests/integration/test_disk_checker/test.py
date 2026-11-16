@@ -204,3 +204,79 @@ EOF""",
 
     assert node.query("SELECT is_broken FROM system.disks WHERE name = 'unusable'") == "1\n"
     assert node.contains_in_log("Skip access check for disk unusable (disk is broken)")
+
+
+def test_broken_local_disk_is_skipped(started_cluster):
+    """Operations that look for a table's files on every disk must skip a broken disk."""
+    node = cluster.instances["test_disk_checker_unusable_path"]
+
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "ln -sfn loop_b /var/lib/clickhouse/loop_a && ln -sfn loop_a /var/lib/clickhouse/loop_b",
+        ]
+    )
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            """cat > /etc/clickhouse-server/config.d/looped_disk.xml << 'EOF'
+<clickhouse>
+    <enable_system_unfreeze>true</enable_system_unfreeze>
+    <storage_configuration>
+        <disks>
+            <looped>
+                <type>local</type>
+                <path>/var/lib/clickhouse/loop_a/disk/</path>
+            </looped>
+            <spare>
+                <type>local</type>
+                <path>/var/lib/clickhouse/spare_disk/</path>
+            </spare>
+        </disks>
+        <policies>
+            <with_looped>
+                <volumes>
+                    <main><disk>default</disk></main>
+                    <broken><disk>looped</disk></broken>
+                    <last><disk>spare</disk></last>
+                </volumes>
+                <move_factor>0</move_factor>
+            </with_looped>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+EOF""",
+        ]
+    )
+
+    node.restart_clickhouse()
+    assert node.query("SELECT is_broken FROM system.disks WHERE name = 'looped'") == "1\n"
+
+    node.query("CREATE TABLE t (x UInt8) ENGINE = MergeTree ORDER BY x")
+    node.query("DROP TABLE t SYNC", settings={"max_execution_time": 30})
+
+    node.query(
+        "CREATE DATABASE ordinary_db ENGINE = Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
+    )
+    node.query("CREATE TABLE ordinary_db.t (x UInt8) ENGINE = MergeTree ORDER BY x")
+    node.query("DROP TABLE ordinary_db.t")
+    node.query("DROP DATABASE ordinary_db")
+
+    node.query(
+        "CREATE TABLE t2 (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'with_looped'"
+    )
+    node.query("INSERT INTO t2 VALUES (1)")
+    part = node.query("SELECT name FROM system.parts WHERE table = 't2' AND active").strip()
+    node.query(f"ALTER TABLE t2 MOVE PART '{part}' TO DISK 'spare'")
+    node.query(f"ALTER TABLE t2 DETACH PART '{part}'")
+    assert node.query("SELECT count() FROM system.detached_parts WHERE table = 't2'") == "1\n"
+    node.query(f"ALTER TABLE t2 ATTACH PART '{part}'")
+    assert node.query("SELECT count() FROM t2") == "1\n"
+
+    node.query("ALTER TABLE t2 FREEZE WITH NAME 'looped_backup'")
+    node.query("ALTER TABLE t2 UNFREEZE WITH NAME 'looped_backup'")
+    node.query("SYSTEM UNFREEZE WITH NAME 'looped_backup'")
+    node.query("DROP TABLE t2 SYNC", settings={"max_execution_time": 30})
