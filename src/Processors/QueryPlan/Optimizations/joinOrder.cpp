@@ -228,8 +228,10 @@ static void cleanupJoinPredicates(
             return {};
 
         /// Merge equivalence classes from both children.
-        auto equiv = process(entry->left);
-        equiv.merge(process(entry->right));
+        auto left_equiv = process(entry->left);
+        auto right_equiv = process(entry->right);
+        auto equiv = left_equiv;
+        equiv.merge(right_equiv);
 
         /// Phase 1: Remove redundant predicates.
         auto & expressions = entry->join_operator.expression;
@@ -330,7 +332,19 @@ static void cleanupJoinPredicates(
             }
         }
 
-        return equiv;
+        /// An outer join fills the columns of an unmatched side with defaults or NULLs, so the equalities of that side do
+        /// not hold on every row above the join.
+        switch (entry->join_operator.kind)
+        {
+            case JoinKind::Left:
+                return left_equiv;
+            case JoinKind::Right:
+                return right_equiv;
+            case JoinKind::Full:
+                return {};
+            default:
+                return equiv;
+        }
     };
 
     process(root);
