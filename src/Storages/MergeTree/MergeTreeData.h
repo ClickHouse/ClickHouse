@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <mutex>
 #include <span>
 #include <string_view>
@@ -103,7 +104,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 class MergeTreeDeduplicationLog;
 class UniqueKeyDenseIndexOps;
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+using PartitionIdToMaxBlock = UnorderedMapWithMemoryTracking<String, Int64>;
 
 namespace ErrorCodes
 {
@@ -2072,6 +2073,19 @@ protected:
         bool attach = false,
         ContextPtr local_context = nullptr);
 
+    /// The part of `setProperties` that runs after `new_metadata` is published.
+    void updateCachesAfterMetadataPublish(
+        const StorageInMemoryMetadata & new_metadata,
+        const StorageInMemoryMetadata & old_metadata);
+
+    /// Same as `setProperties`, but publishes the metadata and rebuilds `serialization_hints` under one `parts_lock`:
+    /// a committing part reads both under that lock and must not see new column types with old-typed hints.
+    void setPropertiesAndResetSerializationHints(
+        const StorageInMemoryMetadata & new_metadata,
+        const StorageInMemoryMetadata & old_metadata,
+        bool attach = false,
+        ContextPtr local_context = nullptr);
+
     void checkMinMaxIndexForJSON(const IndexDescription & index) const;
 
     void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key);
@@ -2197,6 +2211,9 @@ protected:
 
     /// Attaches restored parts to the storage.
     virtual void attachRestoredParts(MutableDataPartsVector && parts, const ContextPtr & query_context, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) = 0;
+
+    /// Aggregates the active parts' serialization infos for `storage_columns` without publishing.
+    SerializationInfoByName buildSerializationHints(const ColumnsDescription & storage_columns, const DataPartsLock & lock) const;
 
     void resetSerializationHints(const DataPartsLock & lock);
 

@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Cette page présente des recommandations concrètes pour éviter les JOIN lorsque c’est possible et en réduire le coût lorsqu’ils sont indispensables. Pour la syntaxe et la sémantique, consultez la [référence de la clause `JOIN`](/fr/reference/statements/select/join). Pour les algorithmes d’exécution et le choix de l’algorithme, consultez [Jointure de tables](/fr/concepts/features/operations/select/joining-tables).
 
 ## Privilégier l’absence de JOIN {#prefer-avoiding-joins}
@@ -54,7 +52,15 @@ Si votre principal critère d&#39;optimisation est la performance et que vous so
 
 <br />
 
-<Image img="/images/guides/joins-4.webp" size="lg" alt="Arbre de décision pour l'optimisation des performances des jointures" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Arbre de décision pour l'optimisation des performances des jointures](/images/guides/joins-4.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -78,7 +84,15 @@ Si vous souhaitez optimiser une jointure pour minimiser l&#39;utilisation de la 
 
 <br />
 
-<Image img="/images/guides/joins-5.webp" size="lg" alt="Arbre de décision pour l'optimisation de la mémoire des jointures" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Arbre de décision pour l'optimisation de la mémoire des jointures](/images/guides/joins-5.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
