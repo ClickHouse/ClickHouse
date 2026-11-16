@@ -19,6 +19,7 @@
 #include <DataTypes/TypeTree.h>
 #include <Databases/TablesDependencyGraph.h>
 #include <Databases/enableAllExperimentalSettings.h>
+#include <Databases/removeWhereConditionPlaceholder.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/ConnectionTimeouts.h>
@@ -1365,8 +1366,9 @@ ASTPtr localDictionarySourceQuery(const ASTDictionary & dictionary)
         return nullptr;
     try
     {
+        /// The source replaces `{condition}` before it runs the query, so the query parses only without it.
         ParserSelectWithUnionQuery parser;
-        return parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        return parseQuery(parser, removeWhereConditionPlaceholder(query), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     }
     catch (const Exception &)
     {
@@ -2163,6 +2165,34 @@ NamedCollectionDependencies namedCollectionsOfCreate(const String & create_query
 
 ASTPtr tryParseCreate(const String & create_query);
 
+/// Whether some combination of the typing settings gives every column of the minmax index a comparable type of one kind.
+bool minmaxIndexFitsSomeTyping(const ASTPtr & index, const ColumnsDescription & columns, const ContextPtr & context)
+{
+    for (int combination = 0; combination < 4; ++combination)
+    {
+        auto typing_context = Context::createCopy(context);
+        typing_context->setSetting("allow_lossy_numeric_supertype", (combination & 1) != 0);
+        typing_context->setSetting("enable_named_columns_in_function_tuple", (combination & 2) != 0);
+        try
+        {
+            const auto description = IndexDescription::getIndexFromAST(
+                index, columns, /* is_implicitly_created= */ false, /* escape_filenames= */ true, typing_context);
+            bool fits = true;
+            for (const auto & column : description.sample_block)
+            {
+                fits &= column.type->isComparable();
+                forEachInTypeTree(*column.type, [&](const IDataType & part) { fits &= !isDynamic(part) && !isVariant(part); });
+            }
+            if (fits)
+                return true;
+        }
+        catch (const Exception &) // NOLINT(bugprone-empty-catch)
+        {
+        }
+    }
+    return false;
+}
+
 /// What a secondary index of a `MergeTree` table declares that `MergeTreeIndexFactory::validate` and the index validators
 /// accept only on ATTACH, which loads a table the server already has, such as one an older version created, and refuse on
 /// CREATE whatever the settings. Only the checks the statement alone decides are mirrored: those of the expression, and
@@ -2249,11 +2279,14 @@ std::optional<String> indexOnlyAttachAccepts(const ASTCreateQuery & create, cons
                     return what + " computes the constant " + backQuote(column.name);
                 if (description->type == "minmax")
                 {
+                    bool mixed = false;
+                    forEachInTypeTree(*column.type, [&](const IDataType & part) { mixed |= isDynamic(part) || isVariant(part); });
+                    /// The type follows the table's typing settings, which are picked later.
+                    if ((mixed || !column.type->isComparable()) && minmaxIndexFitsSomeTyping(child, columns, context))
+                        continue;
                     if (!column.type->isComparable())
                         return what + " of type `minmax` computes " + backQuote(column.name) + " of the type "
                             + column.type->getName() + ", which is not comparable";
-                    bool mixed = false;
-                    forEachInTypeTree(*column.type, [&](const IDataType & part) { mixed |= isDynamic(part) || isVariant(part); });
                     if (mixed)
                         return what + " of type `minmax` computes " + backQuote(column.name) + " of the type "
                             + column.type->getName() + ", which holds values of different types";
@@ -6101,7 +6134,14 @@ void markTypingSettings(
             if (create->columns_list->indices)
                 for (const auto & child : create->columns_list->indices->children)
                     if (const auto * index = child->as<ASTIndexDeclaration>(); index && index->getExpression())
-                        add(index->getExpression().get(), index->getExpression()->formatWithSecretsOneLine(), storage_expressions);
+                    {
+                        String text = index->getExpression()->formatWithSecretsOneLine();
+                        /// A minmax index cannot hold `Variant` or `Dynamic`, so its probe fails analysis on such a type.
+                        if (const auto type = index->getType(); type && equalsCaseInsensitive(type->name, "minmax"))
+                            text = "CAST(1, if(match(toTypeName(" + text
+                                + "), '(^|[(, ])(Variant[(]|Dynamic)'), 'NotAllowedInIndex', 'UInt8'))";
+                        add(index->getExpression().get(), text, storage_expressions);
+                    }
             /// CREATE analyzes no constraint, but runs its scalar subqueries, which are probed apart from the rest.
             if (create->columns_list->constraints)
             {

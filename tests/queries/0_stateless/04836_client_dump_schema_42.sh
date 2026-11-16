@@ -2,8 +2,8 @@
 # Tags: no-fasttest, no-replicated-database
 # Tag no-replicated-database: the dump of a `Replicated` database names macros that the replaying `clickhouse-local` does not have.
 
-# --dump-schema replays a table whose key needs a typing setting, constraint subqueries with a nested correlated
-# subquery or an `eval` JOIN on a Dynamic key, a dictionary whose source table WHERE reads a view, and a reserved column name.
+# --dump-schema replays objects that need a typing or analyzer setting, eager dictionaries whose source
+# reads another table, and a reserved column name.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -72,6 +72,26 @@ CREATE VIEW d.zzz_src AS SELECT id FROM d.base;
 CREATE DICTIONARY d.aaa_dict (id UInt64, v UInt64) PRIMARY KEY id
     SOURCE(CLICKHOUSE(DB 'd' TABLE 'base' WHERE 'id IN (SELECT id FROM merge(''d'', ''^zzz_src\$''))'))
     LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 0);"
+
+echo '--- an eager dictionary comes after the table its source QUERY with a condition placeholder reads through merge ---'
+round_trip dictionary_query "
+CREATE DATABASE d;
+CREATE TABLE d.zzz_src (id UInt64, v UInt64) ENGINE = Memory;
+CREATE DICTIONARY d.aaa_dict (id UInt64, v UInt64) PRIMARY KEY id
+    SOURCE(CLICKHOUSE(QUERY 'SELECT id, v FROM merge(''d'', ''^zzz_src\$'') WHERE {condition}'))
+    LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 0);"
+
+# The dump runs on default settings here, unlike the source and the target.
+echo '--- a minmax index that is a Variant without lossy numeric promotion ---'
+rm -rf "$work/src" "$work/dst"
+$CLICKHOUSE_LOCAL --path "$work/src" --allow_lossy_numeric_supertype=1 -n -q "
+CREATE DATABASE d;
+CREATE TABLE d.t (a UInt64, INDEX i if(a > 0, toDecimal64(a, 2), 0.5) TYPE minmax) ENGINE = MergeTree ORDER BY a;"
+$CLICKHOUSE_LOCAL --path "$work/src" --dump-schema d > "$work/lossy_index.sql" 2> "$work/lossy_index.err"
+echo "lossy_index: dump rc=$?"
+grep -c '^SET allow_lossy_numeric_supertype = 1;' "$work/lossy_index.sql"
+$CLICKHOUSE_LOCAL --path "$work/dst" --allow_lossy_numeric_supertype=1 -n --queries-file "$work/lossy_index.sql" > "$work/lossy_index.out" 2>&1
+echo "lossy_index: replay rc=$?"
 
 echo '--- a column named like a virtual column ---'
 round_trip reserved_name "

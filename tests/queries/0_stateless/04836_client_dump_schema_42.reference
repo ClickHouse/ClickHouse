@@ -13,6 +13,13 @@ lossy_key: replay rc=0
 --- an eager dictionary comes after the view its source table WHERE reads through merge ---
 dictionary_where: dump rc=0
 dictionary_where: replay rc=0
+--- an eager dictionary comes after the table its source QUERY with a condition placeholder reads through merge ---
+dictionary_query: dump rc=0
+dictionary_query: replay rc=0
+--- a minmax index that is a Variant without lossy numeric promotion ---
+lossy_index: dump rc=0
+1
+lossy_index: replay rc=0
 --- a column named like a virtual column ---
 reserved_name: dump rc=0
 reserved_name: replay rc=0
