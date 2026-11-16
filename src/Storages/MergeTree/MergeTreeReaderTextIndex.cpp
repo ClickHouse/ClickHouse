@@ -1005,7 +1005,7 @@ struct MergeTreeReaderTextIndex::PhraseTokens
         return phrase;
     }
 
-    bool canUseRankCursors() const
+    [[nodiscard]] bool canUseRankCursors() const
     {
         return std::ranges::all_of(unique_infos, [](const TokenPostingsInfo * info) { return canUseRankCursor(*info); });
     }
