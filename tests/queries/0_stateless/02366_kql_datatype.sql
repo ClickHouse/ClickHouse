@@ -1,4 +1,4 @@
-set allow_experimental_kusto_dialect=1;
+set enable_kusto_dialect=1;
 -- A KQL timespan is an Interval; this is how Kusto renders one.
 set interval_output_format='kusto';
 set dialect = 'kusto';

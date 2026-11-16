@@ -14,9 +14,7 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 هذه الإعدادات متوفّرة في [system.settings](/ar/reference/system-tables/settings)، وقد وُلِّدت تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="table_engine_read_through_distributed_cache">
-  ## table_engine_read_through_distributed_cache
-</div>
+## table_engine_read_through_distributed_cache {#table_engine_read_through_distributed_cache}
 
 <CloudOnlyBadge />
 
@@ -24,11 +22,9 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
-لا يكون لهذا أي تأثير إلا في ClickHouse Cloud. يتيح القراءة من distributed cache عبر محركات الجداول / دوال الجداول (S3 وazure وما إلى ذلك)
+لا يكون لهذا أي تأثير إلا في ClickHouse Cloud. يتيح القراءة من distributed cache عبر محركات الجداول / دوال الجداول (S3 وazure وما إلى ذلك). تستخدم ذاكرة التخزين المؤقت قيمة ETag الخاصة بالكائن مفتاحًا لها، حتى لا تُقدَّم نسخة متقادمة من كائن جرت الكتابة فوقه في مكانه. أما الكائن الذي تكون قيمة ETag الخاصة به مفقودة أو لا تمثّل معرّفًا قويًا للمحتوى، فيُقرأ مباشرةً من التخزين الكائني.
 
-<div id="table_function_remote_max_addresses">
-  ## table_function_remote_max_addresses
-</div>
+## table_function_remote_max_addresses {#table_function_remote_max_addresses}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 

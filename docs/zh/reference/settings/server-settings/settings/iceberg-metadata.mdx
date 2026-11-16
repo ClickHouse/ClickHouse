@@ -12,27 +12,19 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse 服务器，由 ClickHouse 源代码自动生成。
 
-<div id="iceberg_metadata_files_cache_max_entries">
-  ## iceberg_metadata_files_cache_max_entries
-</div>
+## iceberg_metadata_files_cache_max_entries {#iceberg_metadata_files_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="No" />Iceberg 元数据文件缓存的最大条目数。零表示禁用。
 
-<div id="iceberg_metadata_files_cache_policy">
-  ## iceberg_metadata_files_cache_policy
-</div>
+## iceberg_metadata_files_cache_policy {#iceberg_metadata_files_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Iceberg 元数据缓存策略名称。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Iceberg 元数据缓存淘汰策略名称。可选值：`LRU`、`SLRU`、`SIEVE`。
 
-<div id="iceberg_metadata_files_cache_size">
-  ## iceberg_metadata_files_cache_size
-</div>
+## iceberg_metadata_files_cache_size {#iceberg_metadata_files_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="134217728" changeable_without_restart="Yes" />Iceberg 元数据缓存的最大容量 (以字节为单位) 。值为 0 表示禁用。
 
-<div id="iceberg_metadata_files_cache_size_ratio">
-  ## iceberg_metadata_files_cache_size_ratio
-</div>
+## iceberg_metadata_files_cache_size_ratio {#iceberg_metadata_files_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />Iceberg 元数据缓存中受保护队列的大小 (在使用 SLRU 策略时) 占缓存总大小的比例。
 

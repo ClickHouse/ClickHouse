@@ -64,11 +64,14 @@ struct LastElementCacheStats
 
 /// The rows of the block a hashing state will be asked about. A `SubRangeState` skips whole-column
 /// precomputation outside them, so a caller building one state per sub-range of a block does not pay
-/// whole-block work per sub-range; other states ignore it. `end` defaults to the whole block.
+/// whole-block work per sub-range; a state that hashes rows ahead of the asked ones stops at `end`;
+/// other states ignore it. `end` defaults to the whole block.
 struct RowRange
 {
     size_t begin = 0;
     size_t end = std::numeric_limits<size_t>::max();
+    /// Some rows of the range are never asked about (e.g. the rows with a NULL key), so no state hashes rows ahead of the asked ones.
+    bool skips_rows = false;
 };
 
 /// The state type to build over a sub-range of a block. It differs from `State` only where `State` does
@@ -98,7 +101,7 @@ struct LastElementCacheBase
         ++misses;
     }
 
-    bool hasOnlyOneValue() const { return found && misses == 1; }
+    [[nodiscard]] bool hasOnlyOneValue() const { return found && misses == 1; }
 };
 
 template <typename Value, bool nullable> struct LastElementCache;
@@ -110,9 +113,9 @@ struct LastElementCache<Value, true> : public LastElementCacheBase
     bool is_null = false;
 
     template <typename Key>
-    bool check(const Key & key) const { return !is_null && value.first == key; }
+    [[nodiscard]] bool check(const Key & key) const { return !is_null && value.first == key; }
 
-    bool check(const Value & rhs) const { return !is_null && value == rhs; }
+    [[nodiscard]] bool check(const Value & rhs) const { return !is_null && value == rhs; }
 };
 
 template <typename Value>
@@ -121,9 +124,9 @@ struct LastElementCache<Value, false> : public LastElementCacheBase
     Value value{};
 
     template <typename Key>
-    bool check(const Key & key) const { return value.first == key; }
+    [[nodiscard]] bool check(const Key & key) const { return value.first == key; }
 
-    bool check(const Value & rhs) const { return value == rhs; }
+    [[nodiscard]] bool check(const Value & rhs) const { return value == rhs; }
 };
 
 template <typename Mapped, typename Value>
@@ -145,9 +148,9 @@ public:
     {
     }
 
-    bool isInserted() const { return inserted; }
-    auto & getMapped() const { return value; }
-    const Key & getKey() const { return key; }
+    [[nodiscard]] bool isInserted() const { return inserted; }
+    [[nodiscard]] auto & getMapped() const { return value; }
+    [[nodiscard]] const Key & getKey() const { return key; }
 
     void setMapped(const Mapped & mapped)
     {
@@ -167,8 +170,8 @@ class EmplaceResultImpl<void, Value>
 
 public:
     explicit EmplaceResultImpl(bool inserted_, Key key_ = {}) : inserted(inserted_), key(std::move(key_)) {}
-    bool isInserted() const { return inserted; }
-    const Key & getKey() const { return key; }
+    [[nodiscard]] bool isInserted() const { return inserted; }
+    [[nodiscard]] const Key & getKey() const { return key; }
 };
 
 /// FindResult optionally may contain pointer to value and offset in hashtable buffer.
@@ -180,7 +183,7 @@ class FindResultImplBase
 
 public:
     explicit FindResultImplBase(bool found_) : found(found_) {}
-    bool isFound() const { return found; }
+    [[nodiscard]] bool isFound() const { return found; }
 };
 
 template <bool need_offset = false>
@@ -199,7 +202,7 @@ public:
     constexpr static bool has_offset = true;
 
     explicit FindResultImplOffsetBase(size_t off) : offset(off) {}
-    ALWAYS_INLINE size_t getOffset() const { return offset; }
+    [[nodiscard]] ALWAYS_INLINE size_t getOffset() const { return offset; }
 };
 
 template <typename Mapped, bool need_offset = false>
@@ -214,7 +217,7 @@ public:
 
     FindResultImpl(Mapped * value_, bool found_, size_t off)
         : FindResultImplBase(found_), FindResultImplOffsetBase<need_offset>(off), value(value_) {}
-    Mapped & getMapped() const { return *value; }  /// NOLINT(clang-analyzer-core.uninitialized.UndefReturn)
+    [[nodiscard]] Mapped & getMapped() const { return *value; }  /// NOLINT(clang-analyzer-core.uninitialized.UndefReturn)
 };
 
 template <bool need_offset>
@@ -238,6 +241,10 @@ public:
     static constexpr bool has_pre_computed_hashes = false;
 
     static HashMethodContextPtr createContext(const HashMethodContextSettings &) { return nullptr; }
+
+    /// Whether borrowed key bytes survive later `getKeyHolder` calls and key discards within this block.
+    /// Methods that reuse serialization scratch or roll back key allocations override this contract.
+    [[nodiscard]] bool keyViewsAreBlockStable() const { return true; }
 
     template <typename Data>
     ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
@@ -374,21 +381,21 @@ public:
         }
     }
 
-    ALWAYS_INLINE bool hasOnlyOneValueSinceLastReset() const
+    [[nodiscard]] ALWAYS_INLINE bool hasOnlyOneValueSinceLastReset() const
     {
         if constexpr (consecutive_keys_optimization)
             return cache.hasOnlyOneValue();
         return false;
     }
 
-    ALWAYS_INLINE UInt64 getCacheMissesSinceLastReset() const
+    [[nodiscard]] ALWAYS_INLINE UInt64 getCacheMissesSinceLastReset() const
     {
         if constexpr (consecutive_keys_optimization)
             return cache.misses;
         return 0;
     }
 
-    ALWAYS_INLINE bool isNullAt(size_t row) const
+    [[nodiscard]] ALWAYS_INLINE bool isNullAt(size_t row) const
     {
         if constexpr (nullable)
         {
@@ -608,19 +615,19 @@ protected:
     /// Return the columns which actually contain the values of the keys.
     /// For a given key column, if it is nullable, we return its nested
     /// column. Otherwise we return the key column itself.
-    const ColumnRawPtrs & getActualColumns() const
+    [[nodiscard]] const ColumnRawPtrs & getActualColumns() const
     {
         return actual_columns;
     }
 
-    const ColumnRawPtrs & getNullMaps() const
+    [[nodiscard]] const ColumnRawPtrs & getNullMaps() const
     {
         return null_maps;
     }
 
     /// Create a bitmap that indicates whether, for a particular row,
     /// a key column bears a null value or not.
-    KeysNullMap<Key> createBitmap(size_t row) const
+    [[nodiscard]] KeysNullMap<Key> createBitmap(size_t row) const
     {
         KeysNullMap<Key> bitmap{};
 
@@ -653,9 +660,9 @@ class BaseStateKeysFixed<Key, false>
 protected:
     explicit BaseStateKeysFixed(const ColumnRawPtrs & columns) : actual_columns(columns) {}
 
-    const ColumnRawPtrs & getActualColumns() const { return actual_columns; }
+    [[nodiscard]] const ColumnRawPtrs & getActualColumns() const { return actual_columns; }
 
-    KeysNullMap<Key> createBitmap(size_t) const
+    [[nodiscard]] KeysNullMap<Key> createBitmap(size_t) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal error: calling createBitmap() for non-nullable keys is forbidden");
     }

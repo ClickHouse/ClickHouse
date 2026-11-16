@@ -9,11 +9,14 @@ namespace
     class AggregateFunctionCombinatorSimpleState final : public IAggregateFunctionCombinator
     {
     public:
-        String getName() const override { return "SimpleState"; }
+        [[nodiscard]] String getName() const override { return "SimpleState"; }
 
-        DataTypes transformArguments(const DataTypes & arguments) const override { return arguments; }
+        /// The rows are passed to the nested function one by one, so the arguments are converted around.
+        [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
 
-        AggregateFunctionPtr transformAggregateFunction(
+        [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override { return arguments; }
+
+        [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
             const AggregateFunctionPtr & nested_function,
             const AggregateFunctionProperties &,
             const DataTypes & arguments,

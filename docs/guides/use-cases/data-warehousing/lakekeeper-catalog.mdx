@@ -9,9 +9,9 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <Note>
 Integration with the Lakekeeper Catalog works with Iceberg tables only.
@@ -26,8 +26,10 @@ Lakekeeper is an open-source REST catalog implementation for Apache Iceberg that
 - **Cloud storage** integration with S3-compatible storage
 
 <Note>
-As this feature is experimental, you will need to enable it using:
-`SET allow_experimental_database_iceberg = 1;`
+This feature is in beta. Enable it with:
+`SET allow_database_iceberg = 1;`
+
+On versions before 25.8, where the feature is experimental, use `SET allow_experimental_database_iceberg = 1;` instead.
 </Note>
 
 ## Local Development Setup {#local-development-setup}
@@ -238,7 +240,7 @@ docker exec -it lakekeeper-clickhouse clickhouse-client
 Then create the database connection to the Lakekeeper catalog:
 
 ```sql
-SET allow_experimental_database_iceberg = 1;
+SET allow_database_iceberg = 1;
 
 CREATE DATABASE demo
 ENGINE = DataLakeCatalog('http://lakekeeper:8181/catalog', 'minio', 'ClickHouse_Minio_P@ssw0rd')

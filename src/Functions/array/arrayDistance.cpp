@@ -11,7 +11,7 @@
 
 #include <cmath>
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
 #include <immintrin.h>
 #endif
 
@@ -25,7 +25,7 @@ namespace ErrorCodes
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
 /// Widen 16 packed `BFloat16` to `Float32` without AVX512-BF16: a `BFloat16` is the upper 16 bits of the
 /// corresponding `Float32`, so zero-extend each 16-bit value to 32 bits and shift it into the high half.
 /// Uses only AVX-512F/BW, so it runs on all `x86-64-v4` CPUs (not just AVX512-BF16 ones), and it is faster
@@ -92,7 +92,7 @@ struct L2Distance
         state.sum += other_state.sum;
     }
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     template <typename ResultType>
     X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineF32F64(
         const ResultType * __restrict data_x,
@@ -272,7 +272,7 @@ struct CosineDistance
         state.y_squared += other_state.y_squared;
     }
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     template <typename ResultType>
     X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineF32F64(
         const ResultType * __restrict data_x,
@@ -475,7 +475,7 @@ void executeDistance(
     size_t row_count,
     const typename Kernel::ConstParams & params)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
         return executeDistanceImpl_x86_64_v4<Kernel, ResultType>(data_x, data_y, offsets, result, row_count, params);
     if (isArchSupported(TargetArch::x86_64_v3))
@@ -550,7 +550,7 @@ void executeDistanceMixed(
     size_t row_count,
     const typename Kernel::ConstParams & params)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if constexpr (is_common_mixed_pair<LeftType, RightType>)
     {
         if (isArchSupported(TargetArch::x86_64_v4))
@@ -628,7 +628,7 @@ void executeDistanceConst(
     size_t row_count,
     const typename Kernel::ConstParams & params)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
         return executeDistanceConstImpl_x86_64_v4<Kernel, ResultType>(data_x, array_size, data_y, offsets, result, row_count, params);
     if (isArchSupported(TargetArch::x86_64_v3))
@@ -700,7 +700,7 @@ void executeDistanceConstMixed(
     size_t row_count,
     const typename Kernel::ConstParams & params)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if constexpr (is_common_mixed_pair<LeftType, RightType>)
     {
         if (isArchSupported(TargetArch::x86_64_v4))
@@ -720,18 +720,18 @@ template <typename Kernel>
 class FunctionArrayDistance : public IFunction
 {
 public:
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         static auto name = String("array") + Kernel::name + "Distance";
         return name;
     }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayDistance<Kernel>>(); }
-    size_t getNumberOfArguments() const override { return 2; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Result is `Float32` when the common type of the two array element
         /// types is `BFloat16` or `Float32`, otherwise `Float64`. (We do not
@@ -743,7 +743,7 @@ public:
                " -> selectIf(isFloat32OrSmaller(leastSupertype(A, B)), Float32, Float64)";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// The declarative signature above only constrains the *type* of `p`. Its value range
         /// `[1, inf)` is still validated here, so that analysis-only paths (e.g. `toTypeName`)
@@ -755,7 +755,7 @@ public:
         return result_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         switch (result_type->getTypeId())
         {
@@ -805,7 +805,7 @@ private:
     }
 
     template <typename ResultType>
-    ColumnPtr executeWithResultType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeWithResultType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         DataTypePtr type_x = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
 
@@ -830,7 +830,7 @@ private:
     }
 
     template <typename ResultType, typename LeftType>
-    ColumnPtr executeWithResultTypeAndLeftType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeWithResultTypeAndLeftType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         DataTypePtr type_y = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
 
@@ -861,7 +861,7 @@ private:
     }
 
     template <typename ResultType, typename LeftType, typename RightType>
-    ColumnPtr executeWithResultTypeAndLeftTypeAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] ColumnPtr executeWithResultTypeAndLeftTypeAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
     {
         if (col_x->isConst())
             return executeWithLeftArgConst<ResultType, LeftType, RightType>(col_x, col_y, input_rows_count, arguments);
@@ -896,7 +896,7 @@ private:
 
     /// Special case when the 1st parameter is Const
     template <typename ResultType, typename LeftType, typename RightType>
-    ColumnPtr executeWithLeftArgConst(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] ColumnPtr executeWithLeftArgConst(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
     {
         col_x = assert_cast<const ColumnConst *>(col_x.get())->getDataColumnPtr();
         col_y = col_y->convertToFullColumnIfConst();
@@ -925,7 +925,7 @@ private:
 
         /// Hand-written AVX-512 intrinsics for L2/Cosine with Float32/Float64/BFloat16.
         /// These outperform compiler auto-vectorization for these specific kernels.
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if constexpr (std::is_same_v<Kernel, L2Distance> || std::is_same_v<Kernel, CosineDistance>)
         {
             if constexpr ((std::is_same_v<ResultType, Float32> && std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>)
@@ -984,7 +984,7 @@ private:
         return result;
     }
 
-    typename Kernel::ConstParams initConstParams(const ColumnsWithTypeAndName &) const { return {}; }
+    [[nodiscard]] typename Kernel::ConstParams initConstParams(const ColumnsWithTypeAndName &) const { return {}; }
 };
 
 

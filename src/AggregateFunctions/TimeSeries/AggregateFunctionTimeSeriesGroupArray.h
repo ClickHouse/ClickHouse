@@ -43,7 +43,7 @@ public:
     using TimestampColumnType = ColumnVectorOrDecimal<TimestampType>;
     using ValueColumnType = ColumnVectorOrDecimal<ValueType>;
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return "timeSeriesGroupArray";
     }
@@ -183,9 +183,16 @@ public:
 
     static DataTypePtr createResultType(const DataTypes & argument_types_)
     {
-        /// With the single argument form the result type is the same as the type of that argument.
         if (argument_types_.size() == 1)
-            return argument_types_[0];
+        {
+            /// This function can be called with `SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp_type, value_type)))`
+            /// as its only argument, in this case it should return `Array(Tuple(timestamp_type, value_type))`.
+            const auto & array_type = typeid_cast<const DataTypeArray &>(*argument_types_[0]);
+            const auto & tuple_type = typeid_cast<const DataTypeTuple &>(*array_type.getNestedType());
+            if (tuple_type.hasExplicitNames())
+                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(tuple_type.getElements(), tuple_type.getElementNames()));
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(tuple_type.getElements()));
+        }
 
         const bool arrays_passed = (argument_types_[1]->getTypeId() == TypeIndex::Array);
         const auto & timestamp_type = arrays_passed ? typeid_cast<const DataTypeArray *>(argument_types_[0].get())->getNestedType() : argument_types_[0];
@@ -193,19 +200,19 @@ public:
         return std::make_shared<DataTypeArray>(make_shared<DataTypeTuple>(DataTypes{timestamp_type, value_type}));
     }
 
-    bool allocatesMemoryInArena() const override { return true; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return true; }
 
-    bool hasTrivialDestructor() const override
+    [[nodiscard]] bool hasTrivialDestructor() const override
     {
         return std::is_trivially_destructible_v<Data>;
     }
 
-    size_t alignOfData() const override
+    [[nodiscard]] size_t alignOfData() const override
     {
         return alignof(Data);
     }
 
-    size_t sizeOfData() const override
+    [[nodiscard]] size_t sizeOfData() const override
     {
         return sizeof(Data);
     }

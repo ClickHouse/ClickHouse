@@ -140,7 +140,7 @@ public:
 
     /// Access the output buffer directly (for custom writes).
     WriteBuffer & getOut() { return out; }
-    const FormatSettings & getFormatSettings() const { return fs; }
+    [[nodiscard]] const FormatSettings & getFormatSettings() const { return fs; }
 
 private:
     WriteBuffer & out;

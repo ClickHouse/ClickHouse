@@ -153,7 +153,7 @@ struct Impl
 
 template <typename T> Impl<T> impl;
 
-DECLARE_MULTITARGET_CODE(
+DECLARE_X86_64_MULTITARGET_CODE(
 
 namespace
 {
@@ -343,7 +343,7 @@ private:
     }
 };
 
-) // DECLARE_MULTITARGET_CODE
+) // DECLARE_X86_64_MULTITARGET_CODE
 
 /// The implementation is picked once, from what the CPU supports. Everything except execution comes from
 /// the default implementation, which this class derives from.
@@ -354,7 +354,7 @@ public:
     explicit FunctionGeoDistance(ContextPtr context)
         : TargetSpecific::Default::FunctionGeoDistance<method>(context)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionGeoDistance<method>>(context);
@@ -364,7 +364,7 @@ public:
         impl = std::make_unique<TargetSpecific::Default::FunctionGeoDistance<method>>(context);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return impl->executeImpl(arguments, result_type, input_rows_count);
     }

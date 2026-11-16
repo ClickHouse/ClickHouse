@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-msan
 -- Random settings limits: index_granularity=(8192, None)
 -- A tiny index_granularity over S3 storage explodes the per-granule read count
 -- (one S3 GET per granule for multi-column reads), making this long test time out.
