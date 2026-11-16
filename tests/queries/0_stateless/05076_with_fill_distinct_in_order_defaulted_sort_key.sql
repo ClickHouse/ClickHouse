@@ -122,3 +122,18 @@ FROM (EXPLAIN PIPELINE
     )
     ORDER BY s ASC COLLATE 'en', i ASC, t ASC, d ASC
 ) SETTINGS max_threads = 1, optimize_sorting_by_input_stream_properties = 1;
+
+-- H: a window over B's shape. Its own sort must not be skipped: peers are found by comparing neighbours.
+SELECT o, number, rank() OVER w AS r FROM (
+    SELECT number, number % 2 AS o FROM numbers(6)
+    ORDER BY o ASC, number ASC WITH FILL
+) WINDOW w AS (ORDER BY o ASC, number ASC)
+ORDER BY o ASC, number ASC, r ASC
+SETTINGS use_with_fill_by_sorting_prefix = 0, optimize_sorting_by_input_stream_properties = 1;
+
+-- I: an outer `ORDER BY` over the same shape must still sort.
+SELECT o, number FROM (
+    SELECT number, number % 2 AS o FROM numbers(6)
+    ORDER BY o ASC, number ASC WITH FILL
+) ORDER BY o ASC, number ASC
+SETTINGS use_with_fill_by_sorting_prefix = 0, optimize_sorting_by_input_stream_properties = 1;
