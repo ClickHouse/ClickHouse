@@ -7,15 +7,21 @@ description: '在您自有的云基础设施上部署 ClickHouse'
 doc_type: '参考'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <div id="key-concepts">
   ## 关键概念
 </div>
 
 下图展示了 ClickHouse Cloud 组织、云账户和 BYOC 基础设施之间的关系。
 
-<Image img="/images/cloud/reference/byoc-organization-hierarchy.svg" size="lg" alt="BYOC 组织层级" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![BYOC 组织层级](/images/cloud/reference/byoc-organization-hierarchy.svg)
+
+</Frame>
+
+</div>
 
 * **ClickHouse Cloud 组织：** ClickHouse Cloud 中的顶层实体，用于管理用户、计费以及非 BYOC 的 ClickHouse 服务。组织中的用户既可以访问标准 Cloud 服务，也可以访问 BYOC 服务。
 * **ClickHouse BYOC 组织：** 一个专门用于管理 BYOC 部署的独立组织。它与 Cloud 组织共享用户，但会关联到一个或多个部署了 BYOC 基础设施的云账户。
@@ -43,7 +49,15 @@ BYOC 将运行在 ClickHouse VPC 中的 **ClickHouse 控制平面** 与完全运
 
 <br />
 
-<Image img="/images/cloud/reference/byoc-architecture.svg" size="lg" alt="BYOC 架构：位于 ClickHouse VPC 中的 ClickHouse 控制平面管理客户云账户内的 Kubernetes 数据平面；ClickHouse 数据、备份、日志和监控数据均保留在客户账户中，仅导出有限的运维遥测数据。" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![BYOC 架构：位于 ClickHouse VPC 中的 ClickHouse 控制平面管理客户云账户内的 Kubernetes 数据平面；ClickHouse 数据、备份、日志和监控数据均保留在客户账户中，仅导出有限的运维遥测数据。](/images/cloud/reference/byoc-architecture.svg)
+
+</Frame>
+
+</div>
 
 <br />
 

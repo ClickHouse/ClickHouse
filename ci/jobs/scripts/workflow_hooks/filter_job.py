@@ -50,6 +50,13 @@ PRELIMINARY_JOBS = [
     JobNames.FAST_TEST,
 ]
 
+# A draft pull request runs only the fast test (and the docker images it runs in).
+DRAFT_PR_JOBS = [
+    JobNames.FAST_TEST,
+    JobNames.DOCKER_BUILDS_ARM,
+    JobNames.DOCKER_BUILDS_AMD,
+]
+
 # The `arm_binary` jobs that run in pull requests instead of the LLVM coverage jobs
 # (see `ci/workflows/pull_request.py`).
 FUNCTIONAL_COVERAGE_REPLACEMENT_JOBS = [
@@ -80,20 +87,32 @@ BUILDS_FOR_TESTS = [
     + JobConfigs.release_build_jobs
 ]
 
-# Keep this in sync with the build jobs configured in
-# ci/workflows/pull_request.py. Unlike a name-based check, this excludes jobs
-# such as `Build profile diff` that are not builds despite their names.
-REVIEW_THREADS_BUILD_JOBS = [
+# The jobs that run while the PR has unresolved review threads, besides the
+# preliminary checks and `Code Review`. The code is expected to change again, so
+# the run is limited to the cheapest useful signal: the ASan builds (they catch
+# compilation errors on both architectures), the clang-tidy builds, and one
+# targeted suite of functional and of integration tests on the `amd_asan_ubsan`
+# build. Both test jobs are core blocking jobs, so they do not wait for any of
+# the skipped jobs.
+REVIEW_THREADS_BUILD_JOBS = [j.name for j in JobConfigs.tidy_build_arm_jobs] + [
     j.name
-    for j in JobConfigs.tidy_build_arm_jobs
-    + JobConfigs.build_jobs
-    + JobConfigs.extra_validation_build_jobs
-    + JobConfigs.release_build_jobs_with_examples
-    + JobConfigs.special_build_jobs
-    + JobConfigs.build_llvm_coverage_job
-    + JobConfigs.toolchain_build_jobs
-    + JobConfigs.wasm_parser_build_jobs
+    for j in JobConfigs.build_jobs
+    if j.parameter in (BuildTypes.AMD_ASAN_UBSAN, BuildTypes.ARM_ASAN_UBSAN)
 ]
+REVIEW_THREADS_TEST_JOBS = [
+    j.name
+    for j in JobConfigs.functional_tests_pr_jobs
+    + JobConfigs.integration_test_targeted_pr_jobs
+    if j.parameter.startswith(f"{BuildTypes.AMD_ASAN_UBSAN}, db disk")
+    and j.parameter.endswith(", targeted")
+]
+assert (
+    len(REVIEW_THREADS_BUILD_JOBS) == len(JobConfigs.tidy_build_arm_jobs) + 2
+), f"unexpected review-threads build jobs: {REVIEW_THREADS_BUILD_JOBS}"
+assert (
+    len(REVIEW_THREADS_TEST_JOBS) == 2
+), f"expected one functional and one integration job, got: {REVIEW_THREADS_TEST_JOBS}"
+REVIEW_THREADS_JOBS = REVIEW_THREADS_BUILD_JOBS + REVIEW_THREADS_TEST_JOBS
 
 INTEGRATION_TEST_FLAKY_CHECK_JOBS = [
     "Build (amd_asan_ubsan)",
@@ -312,16 +331,11 @@ SMALL_PR_WORKFLOW = "PR"
 
 # The `targeted` AST fuzzer variants fuzz the tests that exercise the PR's changed
 # symbols, i.e. they are designed for exactly the small PRs this rule skips the
-# untargeted fuzzers on, so they keep running. `SQLLogic test` and `SQLStorm test`
-# run fixed third-party suites unrelated to the change: over the 30 days before
-# 2026-09-19 their only PR failures were infrastructure (`Start ClickHouse`,
-# `Download dataset`), at 108 and 19 minutes per run.
+# untargeted fuzzers on, so they keep running.
 _STRESS_AND_FUZZER_JOB_PREFIXES = (
     JobNames.STRESS,
     JobNames.ASTFUZZER,
     JobNames.LACASADELDOLOR,
-    JobNames.SQL_LOGIC_TEST,
-    JobNames.SQL_STORM_TEST,
 )
 
 # Digest inputs of the skippable jobs that must not switch the skip off: a fifth
@@ -610,6 +624,14 @@ REVERT_PR_NOTE = (
     f"`{Labels.CI_FORCE_ALL}` label to run the full CI."
 )
 
+DRAFT_PR_SKIP_REASON = (
+    f"Skipped: draft PR, only the fast test runs unless labeled '{Labels.CI_FORCE_ALL}'"
+)
+DRAFT_PR_NOTE = (
+    "Draft PR: only the fast test runs. Mark the PR ready for review to run the full CI, "
+    f"or add the `{Labels.CI_FORCE_ALL}` label and re-run the workflow."
+)
+
 
 def revert_depth(title):
     """Number of nested `Revert "..."` wrappers in the pull request title; see
@@ -634,6 +656,7 @@ def is_net_revert_pr(title):
 
 
 _revert_note_added = False
+_draft_note_added = False
 
 
 def _add_revert_note():
@@ -643,6 +666,15 @@ def _add_revert_note():
         return
     _revert_note_added = True
     _info_cache.add_workflow_note(REVERT_PR_NOTE)
+
+
+def _add_draft_note():
+    """Explain the skipped jobs once on the workflow report page."""
+    global _draft_note_added
+    if _draft_note_added or _info_cache is None:
+        return
+    _draft_note_added = True
+    _info_cache.add_workflow_note(DRAFT_PR_NOTE)
 
 _PIPELINE_NOTES = {
     Labels.CI_BUILD: "Label `ci-build` runs build jobs and preliminary checks only.",
@@ -916,6 +948,20 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped for release PR"
 
+    # A draft is work in progress: the fast test gives the author quick feedback, and the
+    # full CI starts when the PR is marked ready for review (the PR workflow also runs on
+    # `ready_for_review`). The `ci-force-all` label, checked above, runs everything.
+    # Only the main PR workflow, whose `can_be_merged.py` post-hook blocks the merge of a
+    # draft-only run: `BackportPR` has no fast test and no merge gate but has automerge,
+    # so a draft backport must still run its full CI.
+    if (
+        _info_cache.pr_is_draft
+        and _info_cache.workflow_name == SMALL_PR_WORKFLOW
+        and job_name not in DRAFT_PR_JOBS
+    ):
+        _add_draft_note()
+        return True, DRAFT_PR_SKIP_REASON
+
     if (
         _info_cache.pr_number > 0
         and job_name != JobNames.STYLE_CHECK
@@ -951,9 +997,9 @@ def should_skip_job(job_name):
     ):
         return True, f"Skipped, not labeled with '{Labels.CI_TOOLCHAIN}'"
 
-    # While the PR has unresolved review threads, run only builds and the
-    # preliminary checks - the code is expected to change again, so the full
-    # test suite would be wasted (https://github.com/ClickHouse/ClickHouse/issues/114724).
+    # While the PR has unresolved review threads, run only `REVIEW_THREADS_JOBS`
+    # and the preliminary checks - the code is expected to change again, so the
+    # full test suite would be wasted (https://github.com/ClickHouse/ClickHouse/issues/114724).
     # The `Code Review` job keeps running so the AI review re-checks the new
     # code and resolves its own addressed threads, which re-triggers the full
     # suite via rerun_on_review_threads.yml. The kv data is stored by the
@@ -965,7 +1011,7 @@ def should_skip_job(job_name):
     )
     if (
         limited_by_review_threads
-        and job_name not in REVIEW_THREADS_BUILD_JOBS
+        and job_name not in REVIEW_THREADS_JOBS
         and job_name not in PRELIMINARY_JOBS
         and job_name != JobNames.CODE_REVIEW
     ):
@@ -973,7 +1019,8 @@ def should_skip_job(job_name):
             _pipeline_note_labels.add("unresolved-review-threads")
             _info_cache.add_workflow_note(
                 f"The PR has {unresolved_threads} unresolved review thread(s): only "
-                "builds and preliminary checks run, and merge is blocked. Resolve the "
+                "the preliminary checks, the ASan and clang-tidy builds, and one targeted "
+                "ASan suite of functional and of integration tests run, and merge is blocked. Resolve the "
                 "threads before this run finishes to re-run the full test suite automatically; "
                 "otherwise re-run CI manually, or add the "
                 f"`{Labels.IGNORE_UNRESOLVED_THREADS}` label to bypass the gate."

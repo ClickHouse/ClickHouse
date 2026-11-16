@@ -5,6 +5,8 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #include <stack>
+#include <Common/StackWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -20,7 +22,7 @@ namespace
 struct PruningFrame
 {
     QueryPlan::Node * node = nullptr;
-    std::vector<size_t> unneeded_outputs;
+    VectorWithMemoryTracking<size_t> unneeded_outputs;
     size_t depth = 0;
 
     /// A step that cannot drop columns needs all its children produce, and outputs all it did. So does a
@@ -28,10 +30,10 @@ struct PruningFrame
     bool can_prune = false;
     IQueryPlanStep::UnneededInputPositions unneeded_inputs;
 
-    std::vector<IQueryPlanStep::PrunedInput> children;
+    VectorWithMemoryTracking<IQueryPlanStep::PrunedInput> children;
 };
 
-PruningFrame makeFrame(QueryPlan::Node & node, std::vector<size_t> unneeded_outputs, size_t depth)
+PruningFrame makeFrame(QueryPlan::Node & node, VectorWithMemoryTracking<size_t> unneeded_outputs, size_t depth)
 {
     PruningFrame frame;
     frame.node = &node;
@@ -50,7 +52,7 @@ PruningFrame makeFrame(QueryPlan::Node & node, std::vector<size_t> unneeded_outp
 
 /// Whether `new_header` has the columns of `old_header` that are not at `dropped_positions` first, in their order.
 /// Columns appended after them are allowed, such as the dummy column a join adds.
-bool keepsRemainingColumnsFirst(const Block & old_header, const std::vector<size_t> & dropped_positions, const Block & new_header)
+bool keepsRemainingColumnsFirst(const Block & old_header, const VectorWithMemoryTracking<size_t> & dropped_positions, const Block & new_header)
 {
     size_t new_position = 0;
     size_t next_dropped = 0;
@@ -105,7 +107,7 @@ size_t removeUnusedColumns(QueryPlan::Node & root, RemoveUnusedColumnsMode mode)
     const bool is_local = mode == RemoveUnusedColumnsMode::Local;
 
     /// The root keeps all its outputs: nothing above it is looked at.
-    std::stack<PruningFrame> stack;
+    StackWithMemoryTracking<PruningFrame> stack;
     stack.push(makeFrame(root, {}, 0));
     if (is_local && !stack.top().can_prune)
         return 0;

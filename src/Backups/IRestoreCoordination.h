@@ -24,7 +24,7 @@ public:
     /// Sets that the restore query was sent to other hosts.
     /// Function waitOtherHostsFinish() will check that to find out if it should really wait or not.
     virtual void setRestoreQueryIsSentToOtherHosts() = 0;
-    virtual bool isRestoreQuerySentToOtherHosts() const = 0;
+    [[nodiscard]] virtual bool isRestoreQuerySentToOtherHosts() const = 0;
 
     /// Sets the current stage and waits for other hosts to come to this stage too.
     virtual Strings setStage(const String & new_stage, const String & message, bool sync) = 0;
@@ -33,7 +33,7 @@ public:
     virtual void setError(std::exception_ptr exception, bool throw_if_error) = 0;
 
     /// Returns true if some host (the current host or one of the other hosts) has encountered an error.
-    virtual bool isErrorSet() const = 0;
+    [[nodiscard]] virtual bool isErrorSet() const = 0;
 
     /// Waits until all the other hosts finish their work.
     /// Stops waiting and throws an exception if another host encounters an error or if some host gets cancelled.
@@ -43,10 +43,10 @@ public:
     virtual void finish(bool throw_if_error) = 0;
 
     /// Returns true if this host finished its work (i.e. finish() was called successfully).
-    virtual bool finished() const = 0;
+    [[nodiscard]] virtual bool finished() const = 0;
 
     /// Returns true if all the hosts finished their work.
-    virtual bool allHostsFinished() const = 0;
+    [[nodiscard]] virtual bool allHostsFinished() const = 0;
 
     /// Removes temporary nodes in ZooKeeper.
     virtual void cleanup(bool throw_if_error) = 0;
@@ -85,14 +85,14 @@ public:
     virtual void addReplicatedNamedCollectionsDir(const String & replication_id, const String & dir_path) = 0;
 
     /// Returns all the directories added for the given storage by addReplicatedNamedCollectionsDir.
-    virtual Strings getReplicatedNamedCollectionsDirs(const String & replication_id) const = 0;
+    [[nodiscard]] virtual Strings getReplicatedNamedCollectionsDirs(const String & replication_id) const = 0;
 
     /// Whether the initiating host of the RESTORE ON CLUSTER query requires the right restoring
     /// named collections needs (`CREATE NAMED COLLECTION`) of the initiating user before
     /// dispatching the query. An internal restore must not restore the collections when the
     /// initiator predates that check, because the dispatched query may be executed with full
     /// access (see `restoreNamedCollections`).
-    virtual bool doesInitiatorCheckNamedCollectionsRestoreRights() const = 0;
+    [[nodiscard]] virtual bool doesInitiatorCheckNamedCollectionsRestoreRights() const = 0;
 
     /// Sets that this table is going to restore data into Keeper for all KeeperMap tables defined on root_zk_path.
     /// The function returns false if data for this specific root path is already being restored by another table.
@@ -106,13 +106,13 @@ public:
     /// when it is the owner, or when the owner is not a writable table (an all-read_only group has no common
     /// live view, so each table restores its own). Must be called only after all tables sharing the directory
     /// have registered via addRocksDBTable().
-    virtual String getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const = 0;
+    [[nodiscard]] virtual String getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const = 0;
 
     /// Generates a new UUID for a table. The same UUID must be used for a replicated table on each replica,
     /// (because otherwise the macro "{uuid}" in the ZooKeeper path will not work correctly).
     virtual void generateUUIDForTable(ASTCreateQuery & create_query) = 0;
 
-    virtual ZooKeeperRetriesInfo getOnClusterInitializationKeeperRetriesInfo() const = 0;
+    [[nodiscard]] virtual ZooKeeperRetriesInfo getOnClusterInitializationKeeperRetriesInfo() const = 0;
 };
 
 }

@@ -16,7 +16,7 @@ public:
     explicit ParserUserNameWithHost(bool allow_query_parameter, bool parse_host_pattern = true);
 
 protected:
-    const char * getName() const override { return "UserNameWithHost"; }
+    [[nodiscard]] const char * getName() const override { return "UserNameWithHost"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 private:
@@ -31,7 +31,7 @@ public:
     explicit ParserUserNamesWithHost(bool allow_query_parameter, bool parse_host_pattern = true);
 
 protected:
-    const char * getName() const override { return "UserNamesWithHost"; }
+    [[nodiscard]] const char * getName() const override { return "UserNamesWithHost"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 private:

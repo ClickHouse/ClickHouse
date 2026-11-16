@@ -31,22 +31,22 @@ public:
     explicit DataFileStatistics(Poco::JSON::Array::Ptr schema_);
 
     /// Every statistic is accumulated in written-block order, so `field_ids[i]` must be the id of
-    /// block column `i` rather than of schema field `i`. An empty `written_field_ids` keeps the schema's ids.
-    DataFileStatistics(Poco::JSON::Array::Ptr schema_, std::vector<Int64> written_field_ids);
+    /// block column `i` rather than of schema field `i`.
+    explicit DataFileStatistics(std::vector<Int64> written_field_ids);
 
     void update(const Chunk & chunk);
     void addColumnSizesOnDisk(const UnorderedMapWithMemoryTracking<String, size_t> & sizes_by_column_name, const Block & sample_block);
     void setSplitOffsets(VectorWithMemoryTracking<UInt64> split_offsets_) { split_offsets = std::move(split_offsets_); }
     void merge(const DataFileStatistics & other);
 
-    std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
-    std::vector<std::pair<size_t, size_t>> getNullCounts() const;
-    std::vector<std::pair<size_t, size_t>> getNanCounts() const;
-    std::vector<std::pair<size_t, Field>> getLowerBounds() const;
-    std::vector<std::pair<size_t, Field>> getUpperBounds() const;
+    [[nodiscard]] std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
+    [[nodiscard]] std::vector<std::pair<size_t, size_t>> getNullCounts() const;
+    [[nodiscard]] std::vector<std::pair<size_t, size_t>> getNanCounts() const;
+    [[nodiscard]] std::vector<std::pair<size_t, Field>> getLowerBounds() const;
+    [[nodiscard]] std::vector<std::pair<size_t, Field>> getUpperBounds() const;
 
-    const std::vector<Int64> & getFieldIds() const { return field_ids; }
-    const VectorWithMemoryTracking<UInt64> & getSplitOffsets() const { return split_offsets; }
+    [[nodiscard]] const std::vector<Int64> & getFieldIds() const { return field_ids; }
+    [[nodiscard]] const VectorWithMemoryTracking<UInt64> & getSplitOffsets() const { return split_offsets; }
 private:
     static Range uniteRanges(const Range & left, const Range & right);
 

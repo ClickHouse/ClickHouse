@@ -518,6 +518,7 @@ namespace DB
     MR_MACROS(SCHEME, "SCHEME") \
     MR_MACROS(SECOND, "SECOND") \
     MR_MACROS(SECONDS, "SECONDS") \
+    MR_MACROS(SEGMENTS, "SEGMENTS") \
     MR_MACROS(SELECT, "SELECT") \
     MR_MACROS(SEMI, "SEMI") \
     MR_MACROS(SEQUENTIAL, "SEQUENTIAL") \
@@ -532,6 +533,7 @@ namespace DB
     MR_MACROS(SET, "SET") \
     MR_MACROS(SETTING, "SETTING") \
     MR_MACROS(SETTINGS, "SETTINGS") \
+    MR_MACROS(SHARDS, "SHARDS") \
     MR_MACROS(SHARED, "SHARED") \
     MR_MACROS(SHOW_ACCESS, "SHOW ACCESS") \
     MR_MACROS(SHOW_CREATE, "SHOW CREATE") \
@@ -729,9 +731,9 @@ public:
 
     explicit ParserKeyword(Keyword keyword);
 
-    constexpr const char * getName() const override { return s.data(); }
+    [[nodiscard]] constexpr const char * getName() const override { return s.data(); }
 
-    Highlight highlight() const override { return Highlight::keyword; }
+    [[nodiscard]] Highlight highlight() const override { return Highlight::keyword; }
 
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -746,7 +748,7 @@ public:
     ParserToken(TokenType token_type_) : token_type(token_type_) {} /// NOLINT
 
 protected:
-    const char * getName() const override { return "token"; }
+    [[nodiscard]] const char * getName() const override { return "token"; }
 
     bool parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected) override
     {
@@ -768,7 +770,7 @@ public:
     ParserTokenSequence(const std::vector<TokenType> & token_types_) : token_types(token_types_) {} /// NOLINT
 
 protected:
-    const char * getName() const override { return "token sequence"; }
+    [[nodiscard]] const char * getName() const override { return "token sequence"; }
 
     bool parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected) override
     {
@@ -791,7 +793,7 @@ protected:
 class ParserNothing : public IParserBase
 {
 public:
-    const char * getName() const override { return "nothing"; }
+    [[nodiscard]] const char * getName() const override { return "nothing"; }
 
     bool parseImpl(Pos & /*pos*/, ASTPtr & /*node*/, Expected & /*expected*/) override { return true; }
 };

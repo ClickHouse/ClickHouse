@@ -15,7 +15,7 @@ class ActionBlocker
 public:
     ActionBlocker() : counter(std::make_shared<Counter>(0)) {}
 
-    bool isCancelled() const { return *counter > 0; }
+    [[nodiscard]] bool isCancelled() const { return *counter > 0; }
 
     /// Temporary blocks corresponding actions (while the returned object is alive)
     friend class ActionLock;
@@ -25,7 +25,7 @@ public:
     void cancelForever() { ++(*counter); }
 
     /// Returns reference to counter to allow to watch on it directly.
-    const std::atomic<int> & getCounter() const { return *counter; }
+    [[nodiscard]] const std::atomic<int> & getCounter() const { return *counter; }
 
 private:
     using Counter = std::atomic<int>;

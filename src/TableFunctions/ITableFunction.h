@@ -118,7 +118,7 @@ public:
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
 
     /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by `ITableFunctionCluster`.
-    virtual bool isClusterFunction() const { return false; }
+    [[nodiscard]] virtual bool isClusterFunction() const { return false; }
 
     /// The name of the named collection the table function arguments were resolved from, or an empty
     /// string. When a permanent table is created from the table function (`CREATE TABLE ... AS f(...)`),
@@ -174,7 +174,7 @@ public:
 
     /// The function returns the name of the table engine that this function uses, as the `TABLE ENGINE` grant names it:
     /// a cluster function is checked as its non-clustered engine. It is empty when the function has no engine.
-    String getEngineNameForAccessCheck() const;
+    [[nodiscard]] String getEngineNameForAccessCheck() const;
 
     /// `uri` normalized by Poco; an unparsable URI becomes empty.
     static String normalizeURIForAccessCheck(const String & uri);
