@@ -144,19 +144,4 @@
         format Null
     </query>
 
-    <!-- Several ORDER BY keys with a low-cardinality leading key: a ROWS frame tracks no peer groups. -->
-    <query>
-        select sum(number) over (order by intDiv(number, 100000), number
-            rows between unbounded preceding and current row)
-        from numbers(10000000)
-        format Null
-    </query>
-
-    <!-- The same keys where peer groups are read. -->
-    <query>
-        select rank() over (order by intDiv(number, 100000), number)
-        from numbers(10000000)
-        format Null
-    </query>
-
 </test>

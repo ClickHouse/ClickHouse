@@ -1,6 +1,4 @@
 #include <Processors/QueryPlan/FillingStep.h>
-#include <Formats/FormatSettings.h>
-#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/FillingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -83,10 +81,6 @@ void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
             header, sort_description, fill_description, std::move(interpolate_description),
             use_with_fill_by_sorting_prefix, settings.process_list_element);
     });
-
-    if (dataflow_cache_updater)
-        pipeline.addSimpleTransform([&](const SharedHeader & header)
-                                    { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
 }
 
 void FillingStep::describeActions(FormatSettings & settings) const
@@ -134,7 +128,7 @@ void FillingStep::serialize(Serialization & ctx) const
             "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP);
 
     /// The fill columns are derived from the sort description, so only the latter travels.
-    serializeSortDescription(sort_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
+    serializeSortDescription(sort_description, ctx.out, ctx.version);
 
     UInt8 flags = 0;
     if (use_with_fill_by_sorting_prefix)
@@ -146,7 +140,7 @@ void FillingStep::serialize(Serialization & ctx) const
     if (!interpolate_description)
         return;
 
-    interpolate_description->actions.serialize(ctx.out, ctx.registry, ctx.input_header);
+    interpolate_description->actions.serialize(ctx.out, ctx.registry);
 
     /// The reader rebuilds `result_columns_order` from the DAG's outputs, which is exactly how
     /// `InterpolateDescription` built it - unless the query's aliases renamed an output. Only the analyzer
@@ -169,7 +163,7 @@ void FillingStep::serialize(Serialization & ctx) const
     /// from `actions` on the other side, so a stream cannot describe a fill that disagrees with its own DAG.
     /// The pairs are sorted because the map has no stable order and these bytes are also a plan cache key.
     /// Keys are unique, so ordering the pairs orders them by key.
-    VectorWithMemoryTracking<std::pair<std::string_view, std::string_view>> required_columns;
+    std::vector<std::pair<std::string_view, std::string_view>> required_columns;
     required_columns.reserve(interpolate_description->required_columns_map.size());
     for (const auto & [key, name_and_type] : interpolate_description->required_columns_map)
         required_columns.emplace_back(key, name_and_type.name);
@@ -178,10 +172,8 @@ void FillingStep::serialize(Serialization & ctx) const
     writeVarUInt(required_columns.size(), ctx.out);
     for (const auto & [key, name] : required_columns)
     {
-        /// With no alias, `InterpolateDescription` fills this map straight from
-        /// `actions.getRequiredColumns()`, so both halves can be planner-composed names.
-        ctx.writeColumnName(String{key});
-        ctx.writeColumnName(String{name});
+        writeStringBinary(key, ctx.out);
+        writeStringBinary(name, ctx.out);
     }
 }
 
@@ -266,16 +258,8 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
 
         /// One entry per DAG output, in output order - the pairing `FillingTransform` relies on.
         VectorWithMemoryTracking<std::string> result_columns_order;
-        NameSet result_column_names;
         for (const auto & column : actions.getResultColumns())
         {
-            /// `FillingTransform` inserts every output into the header column of its name, so a repeated
-            /// output would grow that column once per occurrence and break the row count of the chunk.
-            /// The planner never repeats a column in INTERPOLATE.
-            if (!result_column_names.insert(column.name).second)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "FillingStep: INTERPOLATE column '{}' occurs more than once", column.name);
-
             if (!input_header.has(column.name))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "FillingStep: INTERPOLATE column '{}' is not present in the input header", column.name);

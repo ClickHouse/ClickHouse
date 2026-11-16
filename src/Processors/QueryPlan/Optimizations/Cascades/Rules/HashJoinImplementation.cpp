@@ -104,6 +104,7 @@ bool HashJoinImplementation::checkPattern(GroupExpressionPtr expression, const E
 static bool allowsHashFamilyAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms)
 {
     return TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
+        || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARALLEL_HASH)
         || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::GRACE_HASH)
         || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::AUTO);
 }

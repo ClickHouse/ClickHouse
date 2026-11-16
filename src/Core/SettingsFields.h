@@ -27,8 +27,6 @@ struct SettingFieldOps
     void (*set_changed)(void * setting, bool);
     String (*to_string)(const void * setting);
     void (*parse_from_string)(void * setting, const String & str);
-    /// Binary serialization is only implemented by the types used in settings which are serialized
-    /// with `BaseSettings::writeChangedBinary` (object storage settings); null for the other types.
     void (*write_binary)(const void * setting, WriteBuffer & out);
     void (*read_binary)(void * setting, ReadBuffer & in);
     /// Typed copy, used to reset a setting to its declared default by copying from a canonical
@@ -58,31 +56,6 @@ template <typename T> Field settingFieldCastValue(const Field & f) { T temp; tem
 template <typename T> String settingFieldValueToString(const Field & f) { T temp; temp = f; return temp.toString(); }
 template <typename T> Field settingFieldStringToValue(const String & s) { T temp; temp.parseFromString(s); return static_cast<Field>(temp); }
 
-template <typename T>
-concept SettingFieldWithBinarySerialization = requires(const T & c, T & m, WriteBuffer & out, ReadBuffer & in)
-{
-    c.writeBinary(out);
-    m.readBinary(in);
-};
-
-template <typename T>
-constexpr auto settingFieldWriteBinaryOp()
-{
-    if constexpr (SettingFieldWithBinarySerialization<T>)
-        return &settingFieldWriteBinary<T>;
-    else
-        return static_cast<void (*)(const void *, WriteBuffer &)>(nullptr);
-}
-
-template <typename T>
-constexpr auto settingFieldReadBinaryOp()
-{
-    if constexpr (SettingFieldWithBinarySerialization<T>)
-        return &settingFieldReadBinary<T>;
-    else
-        return static_cast<void (*)(void *, ReadBuffer &)>(nullptr);
-}
-
 /// Generate a SettingFieldOps instance for a concrete SettingField type.
 /// Instantiated once per type (not per setting) — the static local is shared.
 template <typename T>
@@ -91,7 +64,7 @@ const SettingFieldOps & settingFieldOps()
     static const SettingFieldOps ops =
     {
         &settingFieldAssignFromField<T>, &settingFieldToField<T>, &settingFieldIsChanged<T>, &settingFieldSetChanged<T>,
-        &settingFieldToString<T>, &settingFieldParseFromString<T>, settingFieldWriteBinaryOp<T>(), settingFieldReadBinaryOp<T>(),
+        &settingFieldToString<T>, &settingFieldParseFromString<T>, &settingFieldWriteBinary<T>, &settingFieldReadBinary<T>,
         &settingFieldTypedCopy<T>,
         &settingFieldCastValue<T>, &settingFieldValueToString<T>, &settingFieldStringToValue<T>,
     };
@@ -146,6 +119,11 @@ using SettingFieldDouble = SettingFieldNumber<double>;
 using SettingFieldBool = SettingFieldNumber<bool>;
 
 /** Wraps any SettingField to support special value 'auto' that can be checked with `is_auto` flag.
+  * Note about serialization:
+  * The new versions with `SettingsWriteFormat::STRINGS_WITH_FLAGS` serialize values as a string.
+  * In legacy SettingsWriteFormat mode, functions `read/writeBinary` would serialize values as a binary, and 'is_auto' would be ignored.
+  * It's possible to upgrade settings from regular type to wrapped ones and keep compatibility with old versions,
+  * but when serializing 'auto' old version will see binary representation of the default value.
   */
 template <typename Base>
 struct SettingAutoWrapper final
@@ -202,7 +180,12 @@ struct SettingAutoWrapper final
             base.writeBinary(out);
     }
 
-    /// Settings are serialized only if changed, and a changed setting holds an explicit value instead of `auto`.
+    /*
+     * That it is fine to reset `is_auto` here and to use default value in case `is_auto`
+     * because settings will be serialized only if changed.
+     * If they were changed they were requested to use explicit value instead of `auto`.
+     * And so interactions between client-server, and server-server (distributed queries), should be OK.
+     */
     void readBinary(ReadBuffer & in) { changed = true; is_auto = false; base.readBinary(in); }
 
     Type valueOr(Type default_value) const { return is_auto ? default_value : base.value; }
@@ -224,6 +207,8 @@ template <typename Keyword>
 struct SettingFieldTriBool
 {
     constexpr static std::string_view keyword = Keyword::value;
+    /// In the binary format a Bool is a varint 0/1 and a string starts with its length (see `readBinary`).
+    static_assert(keyword.size() > 1);
 
     SettingFieldBool base;
     bool is_keyword = false;
@@ -241,6 +226,9 @@ struct SettingFieldTriBool
     explicit operator Field() const;
     String toString() const;
     void parseFromString(const String & str);
+
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
 };
 
 struct SettingFieldKeywordForce
@@ -279,6 +267,9 @@ struct SettingFieldMaxThreads final
     /// Writes "auto(<number>)" instead of simple "<number>" if `is_auto == true`.
     String toString() const;
     void parseFromString(const String & str);
+
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
 
 private:
     static UInt64 getAuto();
@@ -394,6 +385,9 @@ public:
 
     String toString() const;
     void parseFromString(const String & str);
+
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
 };
 
 struct SettingFieldChar final
@@ -430,15 +424,15 @@ struct SettingFieldURI final
     bool changed = false;
 
     explicit SettingFieldURI(const Poco::URI & uri = {}) : value(uri) {}
-    explicit SettingFieldURI(const String & str) : SettingFieldURI(parseURI(str)) {}
-    explicit SettingFieldURI(const char * str) : SettingFieldURI(parseURI(str)) {}
+    explicit SettingFieldURI(const String & str) : SettingFieldURI(Poco::URI{str}) {}
+    explicit SettingFieldURI(const char * str) : SettingFieldURI(Poco::URI{str}) {}
     explicit SettingFieldURI(const Field & f) : SettingFieldURI(f.safeGet<String>()) {}
     SettingFieldURI(const SettingFieldURI &) = default;
     SettingFieldURI & operator=(const SettingFieldURI &) = default;
 
     SettingFieldURI & operator =(const Poco::URI & x) { value = x; changed = true; return *this; }
-    SettingFieldURI & operator =(const String & str) { *this = parseURI(str); return *this; }
-    SettingFieldURI & operator =(const char * str) { *this = parseURI(str); return *this; }
+    SettingFieldURI & operator =(const String & str) { *this = Poco::URI{str}; return *this; }
+    SettingFieldURI & operator =(const char * str) { *this = Poco::URI{str}; return *this; }
     SettingFieldURI & operator =(const Field & f) { *this = f.safeGet<String>(); return *this; }
 
     bool isChanged() const { return changed; }
@@ -453,11 +447,6 @@ struct SettingFieldURI final
 
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
-
-    /// `Poco::URI` reports a malformed string with a `Poco::SyntaxException`, which is not a `DB::Exception`, so
-    /// the name of the setting could not be added to it and the user would see a bare "Syntax error: ...".
-    /// Convert it here so that a rejected URI is reported like any other rejected setting value.
-    static Poco::URI parseURI(const String & str);
 };
 
 
@@ -569,6 +558,9 @@ struct SettingFieldMultiEnum final
     }
     void parseFromString(const String & str) { *this = parseValueFromString(str); }
 
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
+
 private:
     static ValueType parseValueFromString(const std::string_view str)
     {
@@ -599,6 +591,18 @@ private:
         return result;
     }
 };
+
+template <typename EnumT, typename Traits>
+void SettingFieldMultiEnum<EnumT, Traits>::writeBinary(WriteBuffer & out) const
+{
+    SettingFieldEnumHelpers::writeBinary(toString(), out);
+}
+
+template <typename EnumT, typename Traits>
+void SettingFieldMultiEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
+{
+    parseFromString(SettingFieldEnumHelpers::readBinary(in));
+}
 
 /// Setting field for specifying user-defined timezone. It is basically a string, but it needs validation.
 struct SettingFieldTimezone final
@@ -655,6 +659,9 @@ struct SettingFieldCustom final
 
     String toString(bool show_secrets = true) const;
     void parseFromString(const String & str);
+
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
 };
 
 struct SettingFieldNonZeroUInt64 : public SettingFieldUInt64
@@ -673,24 +680,6 @@ private:
     void checkValueNonZero() const;
 };
 
-/// For quantities that are bounded by a 32-bit counter, where a wider value could only ever be
-/// narrowed on use. Unlike `SettingFieldUInt32`, an out-of-range value is rejected rather than
-/// silently wrapped: `readIntText` defaults to `DO_NOT_CHECK_OVERFLOW`, so `SettingFieldUInt32`
-/// turns "10000000000" into 1410065408, which is exactly the wrap this type exists to prevent.
-struct SettingFieldNonZeroUInt32 : public SettingFieldUInt32
-{
-public:
-    explicit SettingFieldNonZeroUInt32(UInt32 x = 1);
-    explicit SettingFieldNonZeroUInt32(const Field & f);
-
-    SettingFieldNonZeroUInt32 & operator=(UInt32 x);
-    SettingFieldNonZeroUInt32 & operator=(const Field & f);
-
-    void parseFromString(const String & str);
-    void readBinary(ReadBuffer & in);
-
-private:
-    void checkValueNonZero() const;
-};
+bool stringToBool(const String & str);
 
 }

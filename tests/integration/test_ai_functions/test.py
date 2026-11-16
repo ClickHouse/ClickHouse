@@ -64,23 +64,21 @@ def get_profile_events(query_id, query_type="QueryFinish"):
     """AI counters from `system.query_log`. A query that threw logs `ExceptionWhileProcessing`
     rather than `QueryFinish`, so the throwing paths pass that type explicitly."""
     instance.query("SYSTEM FLUSH LOGS")
-    result = instance.query(f"""
+    result = instance.query(
+        f"""
         SELECT
             ProfileEvents['AIAPICalls'] AS api_calls,
             ProfileEvents['AIInputTokens'] AS input_tokens,
             ProfileEvents['AIOutputTokens'] AS output_tokens,
             ProfileEvents['AIRowsProcessed'] AS rows_processed,
             ProfileEvents['AIRowsSkipped'] AS rows_skipped,
-            ProfileEvents['AICacheReadTokens'] AS cache_read_tokens,
-            ProfileEvents['AICacheWriteTokens'] AS cache_write_tokens,
-            ProfileEvents['AIRequestMicroseconds'] AS request_us,
-            ProfileEvents['AIRetryBackoffMicroseconds'] AS retry_backoff_us,
             peak_threads_usage AS peak_threads
         FROM system.query_log
         WHERE query_id = '{query_id}' AND type = '{query_type}'
         LIMIT 1
         FORMAT JSONEachRow
-        """).strip()
+        """
+    ).strip()
     assert (
         result
     ), f"no system.query_log row found for query_id={query_id} type={query_type}"
@@ -97,15 +95,6 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"CREATE NAMED COLLECTION ai_mock AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/completions', "
-            f"model = 'test-model', "
-            f"api_key = 'test-key'"
-        )
-        # Endpoint that always replies with plain text, ignoring `response_format`, as a
-        # model/gateway that doesn't support structured output would.
-        instance.query(
-            f"CREATE NAMED COLLECTION ai_mock_no_structured_output AS "
-            f"provider = 'openai', "
-            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/completions_no_structured_output', "
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
@@ -336,185 +325,6 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
         yield cluster
     finally:
         cluster.shutdown()
-
-
-# ---------------------------------------------------------------------------
-# AI metrics
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def metrics_collection(started_cluster):
-    collections = []
-
-    def create(provider, mode="cached"):
-        name = unique_query_id("ai_metrics")
-        instance.query(
-            f"CREATE NAMED COLLECTION {name} AS provider = '{provider}', "
-            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/metrics/{provider}?mode={mode}', "
-            "model = 'test-model'"
-        )
-        collections.append(name)
-        return name
-
-    yield create
-    for name in collections:
-        instance.query(f"DROP NAMED COLLECTION {name}")
-
-
-@pytest.mark.parametrize("provider,write_tokens", [("openai", 0), ("anthropic", 30)])
-@pytest.mark.parametrize("mode", ["cached", "malformed", "truncated"])
-@pytest.mark.parametrize("throw_on_error", [0, 1])
-def test_ai_metrics_cache_and_latency(
-    metrics_collection, provider, write_tokens, mode, throw_on_error
-):
-    collection = metrics_collection(provider, mode)
-    qid = unique_query_id("cache_metrics")
-    query = f"SELECT aiGenerate('hello', map('credentials', '{collection}'))"
-    settings = {
-        "ai_function_throw_on_error": throw_on_error,
-        "ai_function_max_retries": 0,
-    }
-    throws = mode != "cached" and throw_on_error
-    if throws:
-        error = instance.query_and_get_error(query, settings=settings, query_id=qid)
-        assert (
-            "MALFORMED_AI_PROVIDER_RESPONSE"
-            if mode == "malformed"
-            else "AI_PROVIDER_RESPONSE_TRUNCATED"
-        ) in error
-    else:
-        instance.query(query, settings=settings, query_id=qid)
-    events = get_profile_events(
-        qid, "ExceptionWhileProcessing" if throws else "QueryFinish"
-    )
-    assert int(events["api_calls"]) == 1
-    # Both providers report 100 total input tokens, using different usage fields.
-    assert int(events["input_tokens"]) == 100
-    assert int(events["output_tokens"]) == 5
-    assert int(events["cache_read_tokens"]) == 60
-    assert int(events["cache_write_tokens"]) == write_tokens
-    assert int(events["rows_processed"]) == (1 if mode == "cached" else 0)
-    assert int(events["request_us"]) >= 20000
-    assert int(events["retry_backoff_us"]) == 0
-
-
-@pytest.mark.parametrize(
-    "mode", ["no_usage", "no_details", "null_details", "empty_details"]
-)
-def test_ai_metrics_optional_cache_usage(metrics_collection, mode):
-    collection = metrics_collection("openai", mode)
-    qid = unique_query_id("optional_cache_metrics")
-    instance.query(
-        f"SELECT aiGenerate('hello', map('credentials', '{collection}'))", query_id=qid
-    )
-    events = get_profile_events(qid)
-    assert int(events["input_tokens"]) == (0 if mode == "no_usage" else 100)
-    assert int(events["cache_read_tokens"]) == 0
-    assert int(events["cache_write_tokens"]) == 0
-
-
-def test_ai_metrics_anthropic_cache_counts_towards_quota(metrics_collection):
-    collection = metrics_collection("anthropic")
-    qid = unique_query_id("cached_quota_metrics")
-    instance.query(
-        f"SELECT aiGenerate(toString(number), map('credentials', '{collection}')) FROM numbers(3)",
-        settings={
-            "max_threads": 1,
-            # One request at a time, so the token quota is seen before the next request.
-            "ai_function_max_concurrent_requests_per_thread": 1,
-            "ai_function_max_input_tokens_per_query": 100,
-            "ai_function_throw_on_quota_exceeded": 0,
-        },
-        query_id=qid,
-    )
-    events = get_profile_events(qid)
-    assert int(events["api_calls"]) == 1
-    assert int(events["input_tokens"]) == 100
-    assert int(events["cache_read_tokens"]) == 60
-    assert int(events["cache_write_tokens"]) == 30
-    assert int(events["rows_processed"]) == 1
-    assert int(events["rows_skipped"]) == 2
-
-
-@pytest.mark.parametrize(
-    "expression,calls,processed",
-    [
-        ("aiGenerate(x, map('credentials', 'ai_mock'))", 4, 4),
-        ("aiEmbed(x, 'test-model', map('credentials', 'ai_embed'))", 2, 3),
-        ("aiSimilarity(x, x, 'test-model', map('credentials', 'ai_embed'))", 3, 3),
-    ],
-)
-def test_ai_metrics_rows_and_batches(started_cluster, expression, calls, processed):
-    qid = unique_query_id("rows_metrics")
-    instance.query(
-        f"SELECT {expression} FROM (SELECT arrayJoin(['a', '', NULL, 'b', 'c']) AS x)",
-        settings={"max_threads": 1, "ai_function_embedding_max_batch_size": 2},
-        query_id=qid,
-    )
-    events = get_profile_events(qid)
-    assert int(events["rows_processed"]) == processed
-    assert int(events["rows_skipped"]) == 0
-    assert int(events["api_calls"]) == calls
-    assert int(events["request_us"]) > 0
-    assert int(events["retry_backoff_us"]) == 0
-
-
-@pytest.mark.parametrize(
-    "expression",
-    [
-        "aiGenerate(toString(number), map('credentials', 'ai_mock'))",
-        "aiEmbed(toString(number), 'test-model', map('credentials', 'ai_embed'))",
-        "aiSimilarity(toString(number), toString(number), 'test-model', map('credentials', 'ai_embed'))",
-    ],
-)
-@pytest.mark.parametrize("rows", [0, 9])
-def test_ai_metrics_multiple_blocks(started_cluster, expression, rows):
-    qid = unique_query_id("blocks_metrics")
-    instance.query(
-        f"SELECT {expression} FROM numbers({rows})",
-        settings={"max_threads": 1, "max_block_size": 2},
-        query_id=qid,
-    )
-    events = get_profile_events(qid)
-    assert int(events["rows_processed"]) == rows
-    if rows == 0:
-        assert int(events["api_calls"]) == 0
-        assert int(events["request_us"]) == 0
-
-
-@pytest.mark.parametrize(
-    "expression",
-    [
-        "aiGenerate('hello', map('credentials', 'ai_error'))",
-        "aiEmbed('hello', 'test-model', map('credentials', 'ai_embed_error'))",
-        "aiSimilarity('hello', 'world', 'test-model', map('credentials', 'ai_embed_error'))",
-    ],
-)
-@pytest.mark.parametrize("throw_on_error", [0, 1])
-def test_ai_metrics_retry_latency(started_cluster, expression, throw_on_error):
-    qid = unique_query_id("retry_metrics")
-    settings = {
-        "ai_function_max_retries": 2,
-        "ai_function_retry_initial_delay_ms": 10,
-        "ai_function_throw_on_error": throw_on_error,
-    }
-    if throw_on_error:
-        error = instance.query_and_get_error(
-            f"SELECT {expression}", settings=settings, query_id=qid
-        )
-        assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
-    else:
-        instance.query(f"SELECT {expression}", settings=settings, query_id=qid)
-    events = get_profile_events(
-        qid, "ExceptionWhileProcessing" if throw_on_error else "QueryFinish"
-    )
-    assert int(events["api_calls"]) == 3
-    assert int(events["input_tokens"]) == 0
-    assert int(events["cache_read_tokens"]) == 0
-    assert int(events["request_us"]) > 0
-    # Two backoffs: 10 ms and 20 ms.
-    assert int(events["retry_backoff_us"]) >= 30000
 
 
 # ---------------------------------------------------------------------------
@@ -982,7 +792,7 @@ def test_classify_null_input(started_cluster):
 
 
 def test_filter_basic(started_cluster):
-    """aiFilter constrains the model to a JSON-schema boolean `match` field.
+    """aiFilter asks the model for a bare true/false response.
     The mock returns true for ordinary messages."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('The package never arrived')")
@@ -1085,8 +895,8 @@ def test_filter_truncated_response_graceful(started_cluster):
     assert result.strip() == ""
 
 
-def test_filter_response_format(started_cluster):
-    """aiFilter sends a JSON-schema response_format constraining the model to a boolean `match` field."""
+def test_filter_no_response_format(started_cluster):
+    """aiFilter does not send a JSON-schema response_format; it asks for bare true/false."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('hello')")
     instance.query(
@@ -1098,41 +908,9 @@ def test_filter_response_format(started_cluster):
         )
     )
     body = json.loads(last["body"])
-    assert body["response_format"]["type"] == "json_schema"
-    schema = body["response_format"]["json_schema"]["schema"]
-    assert schema["properties"]["match"]["type"] == "boolean"
-    assert schema["required"] == ["match"]
+    assert "response_format" not in body
     system = next(m["content"] for m in body["messages"] if m["role"] == "system")
-    assert "boolean text filter" in system.lower()
-
-
-def test_filter_no_structured_output(started_cluster):
-    """aiFilter still sends `response_format`, but a provider that ignores it and replies with plain
-    text must still be handled correctly by the fallback in `FunctionAiFilter::postProcessResponse`:
-    a bare `true` matches, `false` doesn't, and an unrecognized reply (neither) fails closed to no
-    match rather than matching."""
-    instance.query("TRUNCATE TABLE test_input")
-    instance.query(
-        "INSERT INTO test_input VALUES ('great product'), ('does not match'), ('gibberish reply')"
-    )
-    result = instance.query(
-        "SELECT x, aiFilter(x, 'positive feedback', map('credentials', 'ai_mock_no_structured_output')) "
-        "FROM test_input ORDER BY x",
-    )
-    lines = result.strip().split("\n")
-    assert lines == [
-        "does not match\t0",
-        "gibberish reply\t0",
-        "great product\t1",
-    ]
-
-    last = json.loads(
-        instance.exec_in_container(
-            ["curl", "-s", f"http://localhost:{MOCK_PORT}/last-request"]
-        )
-    )
-    body = json.loads(last["body"])
-    assert body["response_format"]["type"] == "json_schema"
+    assert "lowercase text true or false" in system.lower()
 
 
 def test_filter_null_input(started_cluster):
