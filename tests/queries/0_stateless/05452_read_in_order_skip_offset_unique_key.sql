@@ -1,4 +1,5 @@
--- Tags: no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-random-merge-tree-settings
+-- Tags: no-fasttest, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-random-merge-tree-settings
+-- no-fasttest: a `UNIQUE KEY` INSERT writes the dense-index SST, which needs RocksDB.
 
 -- `UNIQUE KEY` reads drop overwritten rows through a delete bitmap, which only prunes wholly dead granules,
 -- so the OFFSET-skip read-in-order optimization must not use the physical granule row counts to drop
