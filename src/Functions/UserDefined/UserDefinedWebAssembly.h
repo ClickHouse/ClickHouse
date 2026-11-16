@@ -52,7 +52,7 @@ public:
     [[nodiscard]] virtual bool requiresGuestLinearMemory() const = 0;
 
     /// COLUMNAR_V1 returns false to pass LowCardinality arguments to the guest as is.
-    virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
+    [[nodiscard]] virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
 
     /// True when a call writes the whole input block to guest memory, so batches are split by its size.
     [[nodiscard]] virtual bool serializesInputBlockToGuestMemory() const = 0;
