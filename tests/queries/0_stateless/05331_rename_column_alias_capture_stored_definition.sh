@@ -21,6 +21,7 @@ CREATE TABLE db.t_subquery_outer_alias (d DateTime, c0 UInt64, x UInt64) ENGINE 
 CREATE TABLE db.t_constraint_own_definition (a Int64, CONSTRAINT k CHECK (a + 1) > 0) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE db.t_ttl_set_other_alias (d Date, key UInt64, c0 UInt64, c1 UInt64, value UInt64) ENGINE = MergeTree ORDER BY key TTL d + INTERVAL 1 YEAR GROUP BY key SET value = any(c0 + c1);
 CREATE TABLE db.t_index_other_alias (keyword String, s String, INDEX i lower(s) TYPE text(tokenizer = keyword)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE db.t_index_processor_alias (keyword String, s String, INDEX i s TYPE text(tokenizer = keyword, preprocessor = lower(s))) ENGINE = MergeTree ORDER BY tuple();
 "
 
 metadata() { grep -rl 'ENGINE = MergeTree' "${WORKING_DIR}" --include="$1.sql"; }
@@ -29,10 +30,10 @@ sed -i 's/any(c0 + c1)/any((c0 AS c1) + c1)/' "$(metadata t_ttl_set_alias)"
 sed -i 's/WHERE (c0 > 0)/WHERE ((c0 AS u) > 0)/' "$(metadata t_subquery_outer_alias)"
 sed -i 's/CHECK (a + 1) > 0/CHECK (a + 1 AS b) > 0/' "$(metadata t_constraint_own_definition)"
 sed -i 's/any(c0 + c1)/any((c0 AS z) + c1)/' "$(metadata t_ttl_set_other_alias)"
-sed -i 's/lower(s)/lower(s AS z)/' "$(metadata t_index_other_alias)"
+sed -i 's/lower(s)/lower(s AS z)/' "$(metadata t_index_other_alias)" "$(metadata t_index_processor_alias)"
 # Without this the renames below would run against definitions without the aliases.
 cat "$(metadata t_constraint_lambda_alias)" "$(metadata t_ttl_set_alias)" "$(metadata t_subquery_outer_alias)" "$(metadata t_constraint_own_definition)" \
-    "$(metadata t_ttl_set_other_alias)" "$(metadata t_index_other_alias)" \
+    "$(metadata t_ttl_set_other_alias)" "$(metadata t_index_other_alias)" "$(metadata t_index_processor_alias)" \
     | grep -c -F -e 'x + 1 AS b' -e '(c0 AS c1) + c1' -e '(c0 AS u) > 0' -e 'a + 1 AS b' -e '(c0 AS z) + c1' -e 'lower(s AS z)'
 
 # Outside column defaults an alias inside a lambda is visible in the whole expression.
@@ -58,6 +59,8 @@ ALTER TABLE db.t_ttl_set_other_alias RENAME COLUMN c1 TO v;
 SELECT position(create_table_query, 'SET value = any((c0 AS z) + v)') > 0 FROM system.tables WHERE database = 'db' AND name = 't_ttl_set_other_alias';
 ALTER TABLE db.t_index_other_alias RENAME COLUMN keyword TO array;
 SELECT position(create_table_query, 'TYPE text(tokenizer = keyword)') > 0 FROM system.tables WHERE database = 'db' AND name = 't_index_other_alias';
+ALTER TABLE db.t_index_processor_alias RENAME COLUMN keyword TO array;
+SELECT position(create_table_query, 'TYPE text(tokenizer = keyword, preprocessor = lower(s AS z))') > 0 FROM system.tables WHERE database = 'db' AND name = 't_index_processor_alias';
 "
 
 rm -rf "${WORKING_DIR}"

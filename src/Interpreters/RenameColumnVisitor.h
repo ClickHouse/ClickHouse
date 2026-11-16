@@ -40,6 +40,9 @@ struct RenameColumnMatcher
 
 using RenameColumnVisitor = InDepthNodeVisitor<RenameColumnMatcher, true, /*need_child_accept_data=*/ true>;
 
+/// Renames as `RenameColumnVisitor` does in an index declaration, in the arguments of its type alone.
+void renameColumnInIndexArguments(const ASTPtr & arguments, RenameColumnData & data);
+
 /// Finds the renames `RenameColumnVisitor` would do that change what a renamed identifier refers to.
 class RenameColumnConflicts
 {

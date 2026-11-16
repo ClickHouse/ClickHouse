@@ -60,13 +60,12 @@ bool isRenamedReference(const IAST & ast, const RenameColumnData & data)
 }
 
 /// The arguments of an index type are options, except the text index `preprocessor` and `postprocessor` expressions.
-std::vector<ASTPtr *> getIndexOptionExpressions(const ASTIndexDeclaration & index)
+std::vector<ASTPtr *> getIndexOptionExpressions(const ASTPtr & arguments)
 {
     std::vector<ASTPtr *> expressions;
-    const auto type = index.getType();
-    if (!type || !type->arguments)
+    if (!arguments)
         return expressions;
-    for (const auto & argument : type->arguments->children)
+    for (const auto & argument : arguments->children)
     {
         auto * function = argument->as<ASTFunction>();
         if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2)
@@ -76,6 +75,12 @@ std::vector<ASTPtr *> getIndexOptionExpressions(const ASTIndexDeclaration & inde
             expressions.push_back(&function->arguments->children[1]);
     }
     return expressions;
+}
+
+std::vector<ASTPtr *> getIndexOptionExpressions(const ASTIndexDeclaration & index)
+{
+    const auto type = index.getType();
+    return type ? getIndexOptionExpressions(type->arguments) : std::vector<ASTPtr *>{};
 }
 
 /// Checks one analysis scope: the expressions whose aliases are visible to each other.
@@ -231,6 +236,12 @@ void RenameColumnMatcher::visit(ASTPtr & ast, Data & data)
         for (auto * expression : getIndexOptionExpressions(*index))
             RenameColumnVisitor(data).visit(*expression);
     }
+}
+
+void renameColumnInIndexArguments(const ASTPtr & arguments, RenameColumnData & data)
+{
+    for (auto * expression : getIndexOptionExpressions(arguments))
+        RenameColumnVisitor(data).visit(*expression);
 }
 
 void RenameColumnData::visit(ASTIdentifier & identifier, ASTPtr & ast) const
