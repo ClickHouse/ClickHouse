@@ -1494,8 +1494,11 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                 stream_cursor = object_storage->loadRefreshCursor(refresh_context);
             }
 
+            /// Start from the cursor of the previous refresh: a part of the source that is not read this time (e.g. a table
+            /// of a `Merge` table that does not match its regexp for a while, or a partition without new data that the read
+            /// does not report) keeps its position instead of being read again from the beginning.
             auto cursor = std::make_shared<StreamingCursor>();
-            cursor->tree = std::make_shared<CursorTreeNode>();
+            cursor->tree = stream_cursor ? buildCursorTree(cursorTreeToMap(stream_cursor)) : std::make_shared<CursorTreeNode>();
             refresh_context->setStreamingCursor(std::move(cursor));
         }
 
