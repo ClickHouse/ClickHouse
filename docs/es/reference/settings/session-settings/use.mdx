@@ -14,6 +14,14 @@ import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/Exp
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+## use_aggregation_memory_tracker {#use_aggregation_memory_tracker}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "La conversión a dos niveles de `GROUP BY` compara `group_by_two_level_threshold_bytes` únicamente con la memoria del estado de agregación, medida por un rastreador de memoria dedicado (https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/107490). Antes de la 26.7 se utilizaba el crecimiento del uso de memoria de toda la consulta."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Nueva configuración para elegir cómo mide la memoria de agregación la conversión a dos niveles de `GROUP BY`. El cambio que controla se publicó en la 26.7 y su regresión de memoria se corrigió en la 26.9."}]}]} />
+
+Mide con el rastreador de memoria dedicado a la agregación el tamaño del estado de agregación que se compara con `group_by_two_level_threshold_bytes`. Cuando está deshabilitado, el tamaño se mide como el crecimiento del uso de memoria de toda la consulta desde que se creó la agregación, por lo que una agregación con un estado pequeño puede acabar convirtiéndose a dos niveles.
+
 ## use_async_executor_for_materialized_views {#use_async_executor_for_materialized_views}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -53,6 +61,8 @@ Actualmente, la caché solo se aplica a las partes anchas (wide): los datos de l
 
 Cada entrada contiene un rango contiguo de gránulos de un mismo segmento: un gránulo solo entra en la caché una vez que se ha leído de la primera a la última fila, las lecturas se sirven desde la caché gránulo a gránulo y los rangos escritos por distintas lecturas se fusionan, de modo que las lecturas que dividen una parte en distintos rangos de marcas comparten las mismas entradas.
 
+La caché también se aplica a los archivos `Parquet` leídos desde el sistema de archivos local (la función de tabla `file` y el motor de tabla `File`), desde sistemas de almacenamiento de objetos (`s3`, `azureBlobStorage` y sus motores de tabla) y por tablas de data lake. En este caso, cada entrada contiene una columna completa de un grupo de filas, y su clave se compone de la ruta del archivo, su versión (el ETag de un objeto, o la hora de modificación, el inode y el tamaño de un archivo local), la columna del archivo y el tipo con el que se lee. Una columna de un grupo de filas solo se escribe en la caché cuando se leen todas las filas del grupo, antes de aplicarles cualquier filtro: con `PREWHERE`, esto ocurre con las columnas del filtro, mientras que las demás columnas solo se leen para las filas que lo cumplen. Un archivo local solo se almacena en caché cuando lleva unos segundos sin modificarse, de modo que su versión identifique su contenido.
+
 ## use_concurrency_control {#use_concurrency_control}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -60,6 +70,18 @@ Cada entrada contiene un rango contiguo de gránulos de un mismo segmento: un gr
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "Habilita el control de concurrencia de forma predeterminada"}]}]} />
 
 Respeta el control de concurrencia del servidor (consulta los ajustes globales del servidor `concurrent_threads_soft_limit_num` y `concurrent_threads_soft_limit_ratio_to_cores`). Si se desactiva, permite usar un mayor número de hilos incluso si el servidor está sobrecargado (no se recomienda para el uso normal y se necesita principalmente para pruebas).
+
+## use_concurrency_control_for_max_threads {#use_concurrency_control_for_max_threads}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nueva configuración para determinar el paralelismo de una consulta a partir de la cuota equitativa de slots de CPU del control de concurrencia"}]}]} />
+
+Determina el paralelismo de una consulta (el número de flujos y threads con los que se planifica) a partir de la cuota equitativa de slots de CPU del control de concurrencia del Servidor, en lugar del número de núcleos de CPU. La cuota equitativa es el límite de slots (consulte los ajustes globales del Servidor `concurrent_threads_soft_limit_num` y `concurrent_threads_soft_limit_ratio_to_cores`) repartido a partes iguales entre las canalizaciones que se están ejecutando y la nueva consulta.
+
+De este modo, cuando se ejecutan muchas consultas de forma concurrente, cada una se planifica con menos flujos: usa menos memoria y dedica menos CPU a la fusión de los resultados parciales de sus threads (p. ej., estados de agregación), lo que aumenta el caudal total. Una consulta que se planifica mientras el Servidor está inactivo sigue usando todos los núcleos de CPU, como hasta ahora.
+
+Solo se aplica si `max_threads` es `auto` (es decir, no se ha establecido explícitamente) y `use_concurrency_control` está habilitado.
 
 ## use_constant_folding_in_index_analysis {#use_constant_folding_in_index_analysis}
 

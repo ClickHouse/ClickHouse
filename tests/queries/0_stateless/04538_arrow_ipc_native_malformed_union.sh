@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: the native Arrow IPC reader is only built with the Arrow contrib.
 
 # The native Arrow IPC reader chooses a branch on a FlatBuffers union discriminant
 # (`Message.header_type`, `Field.type_type`) and then dereferences the matching typed

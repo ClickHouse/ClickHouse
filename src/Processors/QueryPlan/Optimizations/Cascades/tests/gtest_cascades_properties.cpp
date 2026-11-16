@@ -32,6 +32,20 @@ ExpressionProperties sorted(SortDescription sorting)
     return properties;
 }
 
+ExpressionProperties singleStream()
+{
+    ExpressionProperties properties;
+    properties.stream_layout = StreamLayout::Single;
+    return properties;
+}
+
+ExpressionProperties disjointStreams(DistributionColumns columns)
+{
+    ExpressionProperties properties;
+    properties.setDisjointStreams(std::move(columns));
+    return properties;
+}
+
 ExpressionProperties distributed(size_t node_count, bool is_replicated, DistributionColumns columns = {}, Names hash_type_names = {})
 {
     ExpressionProperties properties;
@@ -145,4 +159,82 @@ TEST(CascadesProperties, DistributionSatisfaction)
     const auto required_a = distributed(4, false, {NameSet{"a"}}).distribution;
     const auto existing_equiv = distributed(4, false, {NameSet{"a", "b"}}).distribution;
     EXPECT_TRUE(ExpressionProperties::isDistributionSatisfiedBy(required_a, existing_equiv));
+}
+
+TEST(CascadesProperties, StreamLayoutSatisfaction)
+{
+    const auto unknown = ExpressionProperties{};
+    const auto single = singleStream();
+    const auto by_a = disjointStreams({NameSet{"a"}});
+    const auto by_ab = disjointStreams({NameSet{"a"}, NameSet{"b"}});
+
+    /// An unknown requirement accepts every layout.
+    EXPECT_TRUE(ExpressionProperties::isStreamLayoutSatisfiedBy(unknown, unknown));
+    EXPECT_TRUE(ExpressionProperties::isStreamLayoutSatisfiedBy(unknown, single));
+    EXPECT_TRUE(ExpressionProperties::isStreamLayoutSatisfiedBy(unknown, by_a));
+
+    /// One stream keeps every group whole, so Single satisfies everything.
+    EXPECT_TRUE(ExpressionProperties::isStreamLayoutSatisfiedBy(single, single));
+    EXPECT_TRUE(ExpressionProperties::isStreamLayoutSatisfiedBy(by_a, single));
+    EXPECT_TRUE(ExpressionProperties::isStreamLayoutSatisfiedBy(by_ab, single));
+
+    /// Unknown and Disjoint do not satisfy a Single requirement.
+    EXPECT_FALSE(ExpressionProperties::isStreamLayoutSatisfiedBy(single, unknown));
+    EXPECT_FALSE(ExpressionProperties::isStreamLayoutSatisfiedBy(single, by_a));
+
+    /// Streams disjoint on a subset of the required columns keep the required groups whole;
+    /// a superset splits them.
+    EXPECT_FALSE(ExpressionProperties::isStreamLayoutSatisfiedBy(by_a, unknown));
+    EXPECT_TRUE(ExpressionProperties::isStreamLayoutSatisfiedBy(by_a, by_a));
+    EXPECT_TRUE(ExpressionProperties::isStreamLayoutSatisfiedBy(by_ab, by_a));
+    EXPECT_FALSE(ExpressionProperties::isStreamLayoutSatisfiedBy(by_a, by_ab));
+
+    /// Different columns do not satisfy each other.
+    const auto by_c = disjointStreams({NameSet{"c"}});
+    EXPECT_FALSE(ExpressionProperties::isStreamLayoutSatisfiedBy(by_a, by_c));
+
+    /// An equivalent name in the existing set matches the required set.
+    const auto by_a_equiv = disjointStreams({NameSet{"x", "a"}});
+    EXPECT_TRUE(ExpressionProperties::isStreamLayoutSatisfiedBy(by_a, by_a_equiv));
+}
+
+/// `setDisjointStreams` orders the column sets canonically, so the same disjointness
+/// written in a different key order stays one goal for the memo bookkeeping.
+TEST(CascadesProperties, StreamLayoutHashAndEquality)
+{
+    const auto ab = disjointStreams({NameSet{"a"}, NameSet{"b"}});
+    const auto ba = disjointStreams({NameSet{"b"}, NameSet{"a"}});
+    EXPECT_EQ(ab, ba);
+    EXPECT_EQ(hashOf(ab), hashOf(ba));
+
+    /// Sets that share their smallest name still get one canonical order.
+    const auto shared_min = disjointStreams({NameSet{"a", "b"}, NameSet{"a", "c"}});
+    const auto shared_min_swapped = disjointStreams({NameSet{"a", "c"}, NameSet{"a", "b"}});
+    EXPECT_EQ(shared_min, shared_min_swapped);
+    EXPECT_EQ(hashOf(shared_min), hashOf(shared_min_swapped));
+
+    EXPECT_NE(disjointStreams({NameSet{"a"}}), disjointStreams({NameSet{"b"}}));
+    EXPECT_NE(hashOf(disjointStreams({NameSet{"a"}})), hashOf(disjointStreams({NameSet{"b"}})));
+
+    EXPECT_NE(ExpressionProperties{}, singleStream());
+    EXPECT_NE(hashOf(ExpressionProperties{}), hashOf(singleStream()));
+    EXPECT_NE(singleStream(), disjointStreams({NameSet{"a"}}));
+}
+
+/// The layout takes part in full-properties satisfaction alongside sorting and distribution.
+TEST(CascadesProperties, StreamLayoutInIsSatisfiedBy)
+{
+    auto required = sorted(sortBy({sortColumn("k")}));
+    required.setDisjointStreams({NameSet{"k"}});
+
+    auto existing_plain = sorted(sortBy({sortColumn("k")}));
+    EXPECT_FALSE(required.isSatisfiedBy(existing_plain));
+
+    auto existing_single = existing_plain;
+    existing_single.stream_layout = StreamLayout::Single;
+    EXPECT_TRUE(required.isSatisfiedBy(existing_single));
+
+    auto existing_disjoint = sorted(sortBy({sortColumn("k")}));
+    existing_disjoint.setDisjointStreams({NameSet{"k"}});
+    EXPECT_TRUE(required.isSatisfiedBy(existing_disjoint));
 }

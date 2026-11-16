@@ -36,27 +36,27 @@ public:
         , force_compatibility(force_compatibility_)
     {}
 
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    bool isSuitableForConstantFolding() const override { return false; }
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// Change it to never return LowCardinality, making it consistent when using __groupingForRollup / groupingForforCube
     /// with __grouping_set
-    bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
+    [[nodiscard]] bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
     template <typename AggregationKeyChecker>
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, AggregationKeyChecker checker) const
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, AggregationKeyChecker checker) const
     {
         /// The analyzer passes `__grouping_set` as a full column, but a direct call of the
         /// function can pass a constant.
@@ -89,9 +89,9 @@ public:
         : FunctionGroupingBase(ColumnNumbers(), force_compatibility_)
     {}
 
-    String getName() const override { return "grouping"; }
+    [[nodiscard]] String getName() const override { return "grouping"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t) const override
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Method executeImpl is not supported for 'grouping' function");
@@ -105,9 +105,9 @@ public:
         : FunctionGroupingBase(std::move(arguments_indexes_), force_compatibility_)
     {}
 
-    String getName() const override { return "__groupingOrdinary"; }
+    [[nodiscard]] String getName() const override { return "__groupingOrdinary"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (likely(force_compatibility))
             return ColumnUInt64::create(input_rows_count, 0);
@@ -126,9 +126,9 @@ public:
         , aggregation_keys_number(aggregation_keys_number_)
     {}
 
-    String getName() const override { return "__groupingForRollup"; }
+    [[nodiscard]] String getName() const override { return "__groupingForRollup"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return FunctionGroupingBase::executeImpl(arguments, input_rows_count,
             [this](UInt64 set_index, UInt64 arg_index)
@@ -163,9 +163,9 @@ public:
         , aggregation_keys_number(aggregation_keys_number_)
     {}
 
-    String getName() const override { return "__groupingForCube"; }
+    [[nodiscard]] String getName() const override { return "__groupingForCube"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return FunctionGroupingBase::executeImpl(arguments, input_rows_count,
             [this](UInt64 set_index, UInt64 arg_index)
@@ -201,9 +201,9 @@ public:
             grouping_sets.emplace_back(set.begin(), set.end());
     }
 
-    String getName() const override { return "__groupingForGroupingSets"; }
+    [[nodiscard]] String getName() const override { return "__groupingForGroupingSets"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return FunctionGroupingBase::executeImpl(arguments, input_rows_count,
             [this](UInt64 set_index, UInt64 arg_index)

@@ -72,6 +72,7 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString google_adc_client_id;
     extern const S3AuthSettingsString google_adc_client_secret;
     extern const S3AuthSettingsString google_adc_refresh_token;
+    extern const S3AuthSettingsString google_service_account_key;
 }
 
 namespace S3RequestSetting
@@ -218,7 +219,7 @@ private:
             local_settings[Setting::s3_slow_all_threads_after_network_error],
             local_settings[Setting::backup_slow_all_threads_after_retryable_s3_error],
             local_settings[Setting::enable_s3_requests_logging],
-            /* for_disk_s3 = */ false,
+            /* group = */ HTTPConnectionGroupType::STORAGE,
             /* opt_disk_name = */ {},
             request_settings.request_throttler,
             s3_uri.uri.getScheme());
@@ -239,15 +240,16 @@ private:
         client_configuration.service_account = settings.auth_settings[S3AuthSetting::service_account];
         client_configuration.metadata_service = settings.auth_settings[S3AuthSetting::metadata_service];
         client_configuration.request_token_path = settings.auth_settings[S3AuthSetting::request_token_path];
-        /// Propagate the explicit Google ADC triple so a user-supplied `gcp_oauth` is accepted by the restriction.
+        /// Propagate the explicit Google ADC triple or service account key so a user-supplied `gcp_oauth` is accepted by the restriction.
         client_configuration.google_adc_client_id = settings.auth_settings[S3AuthSetting::google_adc_client_id];
         client_configuration.google_adc_client_secret = settings.auth_settings[S3AuthSetting::google_adc_client_secret];
         client_configuration.google_adc_refresh_token = settings.auth_settings[S3AuthSetting::google_adc_refresh_token];
+        client_configuration.google_service_account_key = settings.auth_settings[S3AuthSetting::google_service_account_key];
 
-        /// Drop a server-inherited `gcp_oauth` (so the backup uses its explicit keys). The ADC triple is only
-        /// ever supplied by a named collection, which also sets `gcp_oauth_supplied_by_query`; so when the
-        /// `gcp_oauth` is not query-supplied, the triple here is server config too and must be dropped with it.
-        /// Otherwise a server `<s3>` `gcp_oauth` plus a full ADC triple would be treated as explicit and mint a
+        /// Drop a server-inherited `gcp_oauth` (so the backup uses its explicit keys). The ADC triple or service
+        /// account key is only ever supplied by a named collection, which also sets `gcp_oauth_supplied_by_query`; so
+        /// when the `gcp_oauth` is not query-supplied, the credential here is server config too and must be dropped
+        /// with it. Otherwise a server `<s3>` `gcp_oauth` plus a full ADC triple or a key would be treated as explicit and mint a
         /// server bearer token to the user-chosen endpoint. A query-supplied `gcp_oauth` is left in place (and
         /// reaches the central `getCredentialsProvider` rejection when it has no ADC triple).
         if (boost::iequals(client_configuration.http_client, "gcp_oauth")
@@ -260,6 +262,7 @@ private:
             client_configuration.google_adc_client_id.clear();
             client_configuration.google_adc_client_secret.clear();
             client_configuration.google_adc_refresh_token.clear();
+            client_configuration.google_service_account_key.clear();
         }
 
         S3::ClientSettings client_settings{
@@ -394,6 +397,7 @@ BackupReaderS3::BackupReaderS3(
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false, ""}
+    , disk_client_factory(S3BackupClientCreator(context_))
 {
     s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
 
@@ -482,9 +486,16 @@ void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset
                                 blob_path.size(), mode);
 
             const auto src_key = fs::path(s3_uri.key) / path_in_backup;
-            auto dest_client = destination_disk->getS3StorageClient();
+            /// The native copy below issues its requests with the backup client, so `backup_restore_s3_retry_*`
+            /// already covers it. `dest_client` is used only by the fallback, which uploads to the destination
+            /// with it, so it is cloned with the same settings instead of keeping the ones of the disk.
+            auto dest_client = disk_client_factory.getOrCreate(destination_disk);
             auto runner = threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_READER);
-            auto create_read_buffer = [&, this] { return readFile(path_in_backup); };
+            auto create_read_buffer = [&, this]
+            {
+                LOG_TRACE(log, "Falling back to copy file {} from S3 to disk {} through buffers", path_in_backup, destination_disk->getName());
+                return readFile(path_in_backup);
+            };
             auto copy_blob_storage_log = BlobStorageLogWriter::create(destination_disk->getName());
             if (copy_blob_storage_log)
                 copy_blob_storage_log->local_path = destination_path;
@@ -571,7 +582,7 @@ BackupWriterS3::BackupWriterS3(
     }
 }
 
-void BackupWriterS3::copyFileFromDisk(
+bool BackupWriterS3::copyFileFromDiskNatively(
     const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
     /// Use the native copy as a more optimal way to copy a file from S3 to S3 if it's possible.
@@ -587,16 +598,6 @@ void BackupWriterS3::copyFileFromDisk(
 
             auto src_client = disk_client_factory.getOrCreate(src_disk);
             auto runner = threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_WRITER);
-            auto create_read_buffer = [&, this]
-            {
-                LOG_TRACE(log, "Falling back to copy file {} from disk {} to S3 through buffers", src_path, src_disk->getName());
-
-                if (copy_encrypted)
-                    return src_disk->readEncryptedFile(src_path, read_settings);
-
-                return src_disk->readFile(src_path, read_settings);
-            };
-
             /// A copy is whole-object only if it covers the entire source; `start_pos != 0` is not a sound
             /// test, because a prefix [0, length) of a bigger file is a range too. `length` counts the bytes
             /// actually copied, so an encrypted source must be measured with its encrypted size.
@@ -605,24 +606,93 @@ void BackupWriterS3::copyFileFromDisk(
             const bool whole_object = (start_pos == 0) && (length == source_size);
 
             if (whole_object)
-                copyS3File(
+                return copyS3File(
                     src_client, /* src_bucket */ blob_path[1], /* src_key */ blob_path[0], length,
                     /* dest_s3_client */ client, /* dest_bucket */ s3_uri.bucket,
                     /* dest_key */ fs::path(s3_uri.key) / path_in_backup,
-                    s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer);
+                    s3_settings.request_settings, read_settings, blob_storage_log, runner, {});
             else
-                copyS3FileRange(
+                return copyS3FileRange(
                     src_client, /* src_bucket */ blob_path[1], /* src_key */ blob_path[0], start_pos, length,
                     /* src_object_size= */ source_size,
                     /* dest_s3_client */ client, /* dest_bucket */ s3_uri.bucket,
                     /* dest_key */ fs::path(s3_uri.key) / path_in_backup,
-                    s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer);
-            return; /// copied!
+                    s3_settings.request_settings, read_settings, blob_storage_log, runner, {});
         }
     }
 
-    /// Fallback to copy through buffers.
-    BackupWriterDefault::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
+    return false;
+}
+
+void BackupWriterS3::copyFileFromDiskWithFallback(
+    const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
+{
+    LOG_TRACE(log, "Falling back to copy file {} from disk {} to S3 through buffers", src_path, src_disk->getName());
+    BackupWriterDefault::copyFileFromDiskWithFallback(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
+}
+
+bool BackupWriterS3::copyFileFromBlobPath(
+    const String & path_in_backup,
+    DiskPtr src_disk,
+    const String & src_blob_key,
+    const String & src_blob_namespace,
+    bool copy_encrypted,
+    UInt64 start_pos,
+    UInt64 length,
+    UInt64 src_object_size,
+    const CreateReadBufferFunction & create_fallback_read_buffer)
+{
+    /// Check if we can use native S3 copy
+    auto source_data_source_description = src_disk->getDataSourceDescription();
+    if (!source_data_source_description.sameKind(data_source_description)
+        || (source_data_source_description.is_encrypted != copy_encrypted))
+        return false;
+
+    LOG_TRACE(log, "Copying blob {} from disk {} to S3", src_blob_key, src_disk->getName());
+
+    auto runner = threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_WRITER);
+    auto create_read_buffer = [&, this]
+    {
+        LOG_TRACE(log, "Native copy of blob {} to S3 failed; falling back to copy through buffers", src_blob_key);
+        return create_fallback_read_buffer();
+    };
+
+    /// A copy is whole-object only if it covers the entire source; `start_pos != 0` is not a sound
+    /// test, because a prefix [0, length) of a bigger blob is a range too.
+    const bool whole_object = (start_pos == 0) && (length == src_object_size);
+
+    auto src_client = disk_client_factory.getOrCreate(src_disk);
+
+    if (whole_object)
+        return copyS3File(
+            /* src_s3_client */ src_client,
+            /* src_bucket */ src_blob_namespace,
+            /* src_key */ src_blob_key,
+            length,
+            /* dest_s3_client */ client,
+            /* dest_bucket */ s3_uri.bucket,
+            /* dest_key */ fs::path(s3_uri.key) / path_in_backup,
+            s3_settings.request_settings,
+            read_settings,
+            blob_storage_log,
+            runner,
+            create_read_buffer);
+    else
+        return copyS3FileRange(
+            /* src_s3_client */ src_client,
+            /* src_bucket */ src_blob_namespace,
+            /* src_key */ src_blob_key,
+            start_pos,
+            length,
+            src_object_size,
+            /* dest_s3_client */ client,
+            /* dest_bucket */ s3_uri.bucket,
+            /* dest_key */ fs::path(s3_uri.key) / path_in_backup,
+            s3_settings.request_settings,
+            read_settings,
+            blob_storage_log,
+            runner,
+            create_read_buffer);
 }
 
 void BackupWriterS3::copyFile(const String & destination, const String & source, size_t size)
@@ -728,7 +798,7 @@ void BackupWriterS3::removeFiles(const Strings & file_names)
     size_t batch_size = 1000;
 
     deleteFilesFromS3(client, s3_uri.bucket, keys, /* if_exists = */ true,
-                      s3_capabilities, batch_size, blob_storage_log);
+                      s3_capabilities, s3_settings.request_settings, batch_size, blob_storage_log);
 }
 
 }

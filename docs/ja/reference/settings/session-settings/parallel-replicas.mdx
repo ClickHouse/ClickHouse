@@ -111,13 +111,13 @@ true の場合、IN のサブクエリは各フォロワー レプリカで実�
 
 ## parallel_replicas_filter_pushdown {#parallel_replicas_filter_pushdown}
 
-<BetaBadge />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "新しい設定"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "デフォルトで有効"}]}]} />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "新しい設定"}]}]} />
+並列レプリカが実行するクエリ部分より上位にある条件を、その部分およびレプリカに送信されるクエリにプッシュダウンし、レプリカ側でもその条件でフィルタリングされるようにします。
 
-並列レプリカが実行するよう選択するクエリの一部へのフィルタのプッシュダウンを許可します
+無効にすると、26.10 より前のバージョンと同様に、条件はイニシエーター上で読み取りより上位に残されます。プッシュダウンが正しく動作しない場合の回避策として利用できます。どちらの場合もクエリ結果は変わらず、変わるのはレプリカの処理量と、その処理を行うタイミングだけです。
 
 ## parallel_replicas_for_cluster_engines {#parallel_replicas_for_cluster_engines}
 
@@ -153,6 +153,8 @@ true の場合、ClickHouse はレプリケートされていない MergeTree �
 
 索引解析は replica-coordinator でのみ実行され、他のレプリカではスキップされます。parallel&#95;replicas&#95;local&#95;plan が有効な場合にのみ適用されます
 
+この設定の対象となるのは、読み取り時に通知されるマーク範囲を選択する索引解析です。コーディネーターはこのマーク範囲をもとに割り当てを行います。`enable_join_runtime_filters_index_analysis` によるグラニュールの枝刈りのように、データの読み取り中に行われる枝刈りは対象外です。JOINランタイムフィルタはビルド側の読み取りが完了して初めて生成されるため、各レプリカが自身のフィルタを評価し、自身の担当分を除外します。これをコーディネーターが代行することはできません。
+
 ## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -174,6 +176,8 @@ true の場合、ClickHouse はレプリケートされていない MergeTree �
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 クエリで使用するレプリカ数を、 (読み取ると推定される行数 / min&#95;number&#95;of&#95;rows&#95;per&#95;replica) に制限します。なお、最大値は引き続き &#39;max&#95;parallel&#95;replicas&#39; によって制限されます
+
+`automatic_parallel_replicas_mode` が有効な場合、この設定は無視されます。自動モードでは独自のコストモデルに基づいて判断が行われます。
 
 ## parallel_replicas_mode {#parallel_replicas_mode}
 

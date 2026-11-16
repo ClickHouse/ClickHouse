@@ -43,12 +43,23 @@ FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const Action
     if (!filter_node)
         return FilterResult::UNKNOWN;
 
+    /// For the same reason `assumeNotNull` over a pre-join constant returns at runtime the value computed
+    /// under the null map, which the constant fold below never computes, so only conjuncts free of it decide.
+    ActionsDAG::NodeRawConstPtrs targets = {filter_node};
+    if (nodeReadsUnspecifiedValueUnderNull(filter_node))
+    {
+        targets = ActionsDAG::extractConjunctionAtoms(filter_node);
+        std::erase_if(targets, nodeReadsUnspecifiedValueUnderNull);
+        if (targets.empty())
+            return FilterResult::UNKNOWN;
+    }
+
     ColumnsWithTypeAndName filter_output;
     try
     {
         filter_output = ActionsDAG::evaluatePartialResult(
             combined_dag_input,
-            { filter_node },
+            targets,
             /*input_rows_count=*/1,
             { .skip_materialize = true });
     }
@@ -58,7 +69,14 @@ FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const Action
         return FilterResult::UNKNOWN;
     }
 
-    return getFilterResult(filter_output[0]);
+    if (targets.front() == filter_node)
+        return getFilterResult(filter_output[0]);
+
+    /// A conjunct that is FALSE on its own makes the whole filter FALSE.
+    for (const auto & conjunct : filter_output)
+        if (getFilterResult(conjunct) == FilterResult::FALSE)
+            return FilterResult::FALSE;
+    return FilterResult::UNKNOWN;
 }
 
 namespace
