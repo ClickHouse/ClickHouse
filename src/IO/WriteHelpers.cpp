@@ -1,4 +1,5 @@
 #include <IO/WriteHelpers.h>
+#include <Formats/FormatSettings.h>
 #include <base/DecomposedFloat.h>
 #include <Common/Hex.h>
 #include <Common/formatIPv6.h>
@@ -52,17 +53,17 @@ std::array<char, 36> formatUUID(const UUID & uuid)
 
 void writeIPv4Text(const IPv4 & ip, WriteBuffer & buf)
 {
-    size_t idx = (ip >> 24);
-    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    std::string_view text = oneByteToString(static_cast<UInt8>(ip >> 24));
+    buf.write(text.data(), text.size());
     buf.write('.');
-    idx = (ip >> 16) & 0xFF;
-    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    text = oneByteToString(static_cast<UInt8>(ip >> 16));
+    buf.write(text.data(), text.size());
     buf.write('.');
-    idx = (ip >> 8) & 0xFF;
-    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    text = oneByteToString(static_cast<UInt8>(ip >> 8));
+    buf.write(text.data(), text.size());
     buf.write('.');
-    idx = ip & 0xFF;
-    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    text = oneByteToString(static_cast<UInt8>(ip));
+    buf.write(text.data(), text.size());
 }
 
 void writeIPv6Text(const IPv6 & ip, WriteBuffer & buf)
@@ -533,4 +534,120 @@ void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings, boo
 template void writeFloatText(Float64 x, WriteBuffer & buf, const FormatSettings & settings, bool force_decimal_point);
 template void writeFloatText(Float32 x, WriteBuffer & buf, const FormatSettings & settings, bool force_decimal_point);
 template void writeFloatText(BFloat16 x, WriteBuffer & buf, const FormatSettings & settings, bool force_decimal_point);
+
+void writeJSONString(const char * begin, const char * end, WriteBuffer & buf, const FormatSettings & settings)
+{
+    /// A byte with a nonzero entry never gets copied verbatim; it always reaches the switch below.
+    /// 0xE2 needs an entry because it leads U+2028 and U+2029: a bulk copy would swallow the lead byte and
+    /// emit the sequence raw. Their continuation bytes need none, being written unchanged either way.
+    static constexpr auto stop_tables = []
+    {
+        std::array<std::array<UInt8, 256>, 2> tables{};
+        for (auto & table : tables)
+        {
+            for (size_t i = 0; i <= 0x1F; ++i)
+                table[i] = 1;
+            table['"'] = 1;
+            table['\\'] = 1;
+            table[0xE2] = 1;
+        }
+        tables[true]['/'] = 1;
+        return tables;
+    }();
+    const auto & stop = stop_tables[settings.json.escape_forward_slashes];
+
+    writeChar('"', buf);
+
+    const char * it = begin;
+
+    while (true)
+    {
+        const char * run_end = it;
+        while (run_end != end && !stop[static_cast<UInt8>(*run_end)])
+            ++run_end;
+
+        if (run_end != it)
+        {
+            buf.write(it, static_cast<size_t>(run_end - it));
+            it = run_end;
+        }
+
+        if (it == end)
+            break;
+
+        switch (*it)
+        {
+            case '\b':
+                writeChar('\\', buf);
+                writeChar('b', buf);
+                break;
+            case '\f':
+                writeChar('\\', buf);
+                writeChar('f', buf);
+                break;
+            case '\n':
+                writeChar('\\', buf);
+                writeChar('n', buf);
+                break;
+            case '\r':
+                writeChar('\\', buf);
+                writeChar('r', buf);
+                break;
+            case '\t':
+                writeChar('\\', buf);
+                writeChar('t', buf);
+                break;
+            case '\\':
+                writeChar('\\', buf);
+                writeChar('\\', buf);
+                break;
+            case '/':
+                if (settings.json.escape_forward_slashes)
+                    writeChar('\\', buf);
+                writeChar('/', buf);
+                break;
+            case '"':
+                writeChar('\\', buf);
+                writeChar('"', buf);
+                break;
+            default:
+                UInt8 c = *it;
+                if (c <= 0x1F)
+                {
+                    /// Escaping of ASCII control characters.
+
+                    UInt8 higher_half = c >> 4;
+                    UInt8 lower_half = c & 0xF;
+
+                    writeCString("\\u00", buf);
+                    writeChar('0' + higher_half, buf);
+
+                    if (lower_half <= 9)
+                        writeChar('0' + lower_half, buf);
+                    else
+                        writeChar('A' + lower_half - 10, buf);
+                }
+                else if (end - it >= 3 && it[0] == '\xE2' && it[1] == '\x80' && (it[2] == '\xA8' || it[2] == '\xA9'))
+                {
+                    /// This is for compatibility with JavaScript, because unescaped line separators are prohibited in string literals,
+                    ///  and these code points are alternative line separators.
+
+                    if (it[2] == '\xA8')
+                        writeCString("\\u2028", buf);
+                    if (it[2] == '\xA9')
+                        writeCString("\\u2029", buf);
+
+                    /// Byte sequence is 3 bytes long. We have additional two bytes to skip.
+                    it += 2;
+                }
+                else
+                    writeChar(*it, buf);
+        }
+
+        ++it;
+    }
+
+    writeChar('"', buf);
+}
+
 }

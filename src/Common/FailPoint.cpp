@@ -41,8 +41,12 @@ static struct InitFiu
     PAUSEABLE_ONCE(mt_pause_before_outdating_detached_empty_parts) \
     PAUSEABLE_ONCE(mt_pause_after_detach_operations_lock) \
     REGULAR(executing_graph_add_node_fail) \
+    ONCE(transaction_metadata_store_fail) \
+    ONCE(transaction_mutation_csn_store_fail) \
     REGULAR(executing_graph_build_fail) \
     PAUSEABLE_ONCE(polling_queue_before_try_poll) \
+    ONCE(transaction_mutation_csn_store_fail_after_write) \
+    ONCE(local_directory_sync_fail) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
@@ -69,6 +73,7 @@ static struct InitFiu
     REGULAR(stripe_log_sink_write_fallpoint) \
     REGULAR(file_checker_update_and_save_fail_reading_sizes) \
     REGULAR(file_checker_update_and_save_fail_persisting) \
+    REGULAR(file_checker_repair_memory_limit_exceeded) \
     ONCE(rocksdb_rename_throw_filesystem_error) \
     REGULAR(rocksdb_rename_fail_reopen) \
     ONCE(smt_commit_merge_mutate_zk_fail_after_op) \
@@ -79,6 +84,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_open) \
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_close) \
     PAUSEABLE_ONCE(smt_get_status_pause_before_keeper_read) \
+    PAUSEABLE_ONCE(smt_parts_killer_pause_before_staging_part_removal) \
     ONCE(smt_commit_merge_change_version_before_op) \
     ONCE(smt_merge_mutate_intention_freeze_in_destructor) \
     ONCE(smt_detach_part_replica_set_change_before_commit) \
@@ -188,6 +194,7 @@ static struct InitFiu
     REGULAR(smt_outdated_parts_exception_response) \
     REGULAR(object_storage_queue_fail_in_the_middle_of_file) \
     PAUSEABLE_ONCE(object_storage_queue_pause_after_commit) \
+    PAUSEABLE_ONCE(object_storage_queue_pause_in_direct_select) \
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
     PAUSEABLE_ONCE(columns_cache_reader_pause_before_later_range) \
     ONCE(replicated_merge_tree_restore_attach_retry) \
@@ -235,6 +242,8 @@ static struct InitFiu
     ONCE(terminate_with_std_exception) \
     ONCE(libcxx_hardening_out_of_bounds_assertion) \
     ONCE(trigger_sanitizer_error) \
+    ONCE(segfault_read_access) \
+    ONCE(segfault_write_access) \
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(unexpected_packet_in_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
@@ -254,6 +263,8 @@ static struct InitFiu
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     ONCE(space_saving_copy_arena_throw) \
     ONCE(adaptive_aggregation_drain_create_states_throw) \
+    ONCE(aggregator_merge_collect_states_throw) \
+    ONCE(aggregator_merge_batch_throw) \
     REGULAR(adaptive_aggregation_spill_no_room_to_append) \
     REGULAR(keepermap_fail_drop_data) \
     PAUSEABLE_ONCE(keepermap_create_pause_before_drop_lock_version) \
@@ -314,8 +325,10 @@ static struct InitFiu
     REGULAR(slowdown_index_analysis_per_part) \
     ONCE(iceberg_writes_cleanup) \
     PAUSEABLE_ONCE(iceberg_writes_pause_before_commit) \
+    PAUSEABLE_ONCE(glue_catalog_pause_before_update_table) \
     REGULAR(iceberg_slow_manifest_read) \
     PAUSEABLE_ONCE(iceberg_drop_partition_pause_after_discovery) \
+    PAUSEABLE_ONCE(iceberg_metadata_prefetch_pause) \
     PAUSEABLE_ONCE(hudi_pause_before_iterate) \
     PAUSEABLE_ONCE(hudi_pause_in_listing_data_files) \
     PAUSEABLE_ONCE(hudi_pause_after_listing_timeline) \
@@ -361,8 +374,12 @@ static struct InitFiu
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
     PAUSEABLE(mt_mutate_task_pause_before_rename_part) \
     PAUSEABLE_ONCE(merge_task_pause_after_reserving_tmp_dir) \
+    ONCE(merge_checkpoint_abort_before_last_column) \
+    PAUSEABLE_ONCE(merge_checkpoint_pause_after_column) \
+    PAUSEABLE_ONCE(merge_checkpoint_pause_before_column_commit) \
     REGULAR(mutate_task_random_sleep_in_prepare) \
     PAUSEABLE(merge_task_projection_stage_pause) \
+    PAUSEABLE(merge_mutate_task_pause_after_part_handoff) \
     REGULAR(merge_task_throw_while_preparing_next_column) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE(rmt_mutate_task_pause_before_rename_part) \
@@ -379,6 +396,9 @@ static struct InitFiu
     PAUSEABLE_ONCE(mt_alter_settings_pause_before_metadata_commit) \
     PAUSEABLE_ONCE(mt_alter_readonly_pause_after_metadata_commit) \
     PAUSEABLE_ONCE(mt_move_partition_pause_before_commit) \
+    PAUSEABLE_ONCE(mt_drop_partition_pause_after_merges_stopped) \
+    PAUSEABLE(mt_merge_selecting_task_pause_after_selection) \
+    PAUSEABLE_ONCE(mt_merge_task_pause_before_transaction_commit) \
     PAUSEABLE_ONCE(mt_pause_before_loading_outdated_part) \
     PAUSEABLE(mt_pause_before_loading_queued_outdated_part) \
     ONCE(mt_alter_readonly_throw_in_start_background_workers) \
@@ -386,6 +406,7 @@ static struct InitFiu
     ONCE(mt_alter_throw_after_mutation_registered) \
     ONCE(mt_throw_after_mutation_commit) \
     ONCE(mt_alter_throw_in_durable_rollback) \
+    PAUSEABLE(mt_alter_pause_after_metadata_publish) \
     REGULAR(rmt_merge_selecting_task_no_free_threads) \
     REGULAR(rmt_merge_selecting_task_max_part_size) \
     REGULAR(merge_tree_load_statistics_throw) \
@@ -454,6 +475,7 @@ static struct InitFiu
     ONCE(thread_group_switcher_post_attach_failure) \
     REGULAR(tx_log_abort_cleanup_multi) \
     PAUSEABLE(transaction_after_commit_pause) \
+    PAUSEABLE(transaction_pause_before_mutation_csn_store) \
     PAUSEABLE(transaction_rollback_pause_after_mark) \
     PAUSEABLE(version_metadata_store_pause_before_rename) \
     REGULAR(transaction_slow_resolve_removal_csn) \
