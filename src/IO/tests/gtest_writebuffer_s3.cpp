@@ -175,7 +175,7 @@ public:
     }
 
 
-    const std::vector<std::pair<MPU_ID, MPUParts>> & GetCompletedPartUploads() const
+    [[nodiscard]] const std::vector<std::pair<MPU_ID, MPUParts>> & GetCompletedPartUploads() const
     {
         return CompletedPartUploads;
     }
@@ -222,7 +222,7 @@ struct EventCounts
     size_t uploadPartCopy = 0;
     size_t writtenSize = 0;
 
-    size_t totalRequestsCount() const
+    [[nodiscard]] size_t totalRequestsCount() const
     {
         return headObject + getObject + putObject + multiUploadCreate + multiUploadComplete + uploadParts;
     }
@@ -316,7 +316,7 @@ struct Client : DB::S3::Client
             /* s3_slow_all_threads_after_network_error = */ true,
             /* s3_slow_all_threads_after_retryable_error = */ true,
             /* enable_s3_requests_logging = */ true,
-            /* for_disk_s3 = */ false,
+            /* group = */ DB::HTTPConnectionGroupType::STORAGE,
             /* opt_disk_name = */ {},
             /* request_throttler = */ {});
         /// createClientConfiguration leaves retryStrategy unset; ClientFactory::create() normally
@@ -903,8 +903,8 @@ struct BaseSyncPolicy
     virtual void execute(size_t) {}
     virtual void setAutoExecute(bool) {}
 
-    virtual size_t size() const { return 0; }
-    virtual bool empty() const { return size() == 0; }
+    [[nodiscard]] virtual size_t size() const { return 0; }
+    [[nodiscard]] virtual bool empty() const { return size() == 0; }
 };
 
 struct SimpleAsyncTasks : BaseSyncPolicy
@@ -950,7 +950,7 @@ struct SimpleAsyncTasks : BaseSyncPolicy
             execute(0);
     }
 
-    size_t size() const override { return queue.size(); }
+    [[nodiscard]] size_t size() const override { return queue.size(); }
 };
 
 }
