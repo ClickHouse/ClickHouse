@@ -42,7 +42,7 @@ private:
     LimitReadBuffer(ReadBuffer * in_, bool owns, size_t limit_, bool throw_exception_, std::optional<size_t> exact_limit_, std::string exception_message_);
 
     bool nextImpl() override;
-    size_t getEffectiveBufferSize() const;
+    [[nodiscard]] size_t getEffectiveBufferSize() const;
 };
 
 }

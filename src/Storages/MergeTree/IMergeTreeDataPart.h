@@ -15,6 +15,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
+#include <Storages/MergeTree/SecondaryIndexColumnTypes.h>
 #include <Storages/MergeTree/SharedPartColumns.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -74,7 +75,7 @@ public:
 
     const SharedPartColumns & operator*() const { return *bundle; }
     const SharedPartColumns * operator->() const { return bundle.get(); }
-    const SharedPartColumns * get() const { return bundle.get(); }
+    [[nodiscard]] const SharedPartColumns * get() const { return bundle.get(); }
 
 private:
     friend class MergeTreeData;
@@ -243,6 +244,9 @@ public:
 
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
 
+    const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes() const { return secondary_index_column_types; }
+    void setSecondaryIndexColumnTypes(SecondaryIndexColumnTypes value) { secondary_index_column_types = std::move(value); }
+
     const PartSerializations & getSerializations() const { return *serializations; }
 
     SerializationPtr getSerialization(const String & column_name) const;
@@ -269,6 +273,9 @@ public:
     /// before are read. The result may contain the estimates of other columns as well.
     Estimates getEstimates(const NameSet & required_columns = {}) const;
     void setEstimates(const Estimates & new_estimates);
+    /// Whether `loadStatistics(required_columns, cache)` would not read anything from disk,
+    /// because the statistics of these columns are cached or the part has none for them.
+    bool areStatisticsCached(const NameSet & required_columns, const StatisticsCache * cache) const;
     /// The result of `loadStatistics(required_columns, cache)` if every statistics file it would read is in the cache,
     /// otherwise `std::nullopt`. It never reads from disk.
     std::optional<ColumnsStatistics> tryLoadStatisticsFromCache(const NameSet & required_columns, StatisticsCache * cache) const;
@@ -531,6 +538,8 @@ public:
     void setIndex(Columns index_columns);
     void unloadIndex();
     bool isIndexLoaded() const;
+    /// Whether `getIndex` returns the index without reading it from disk: it is loaded, or in the primary index cache.
+    bool isIndexInMemory() const;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
@@ -690,6 +699,10 @@ public:
     /// and information that helps to choose kind of serialization later during merging
     /// (number of rows, number of rows with default values, etc).
     static constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
+
+    /// See SecondaryIndexColumnTypes. Present only when a skip index was materialized over a column
+    /// type the part has not materialized itself (a JSON type hint applied lazily).
+    static constexpr auto SECONDARY_INDEX_COLUMN_TYPES_FILE_NAME = "secondary_index_column_types.json";
 
     static constexpr auto METADATA_VERSION_FILE_NAME = "metadata_version.txt";
 
@@ -930,6 +943,9 @@ private:
     /// Map from name of column to its serialization info.
     /// Kept per-part: it holds the row/default counters of this part's data.
     SerializationInfoByName serialization_infos{{}};
+
+    /// See SecondaryIndexColumnTypes. Empty for almost every part.
+    SecondaryIndexColumnTypes secondary_index_column_types;
 
     /// Serializations for every columns and subcolumns by their names.
     /// Shared across parts of the table with the same serialization kinds; the per-column pieces

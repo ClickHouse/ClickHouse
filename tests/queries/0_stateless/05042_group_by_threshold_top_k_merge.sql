@@ -13,7 +13,6 @@ SET max_threads = 4;
 SET group_by_two_level_threshold = 1;
 SET group_by_two_level_threshold_bytes = 1;
 SET max_block_size = 4096;
-SET max_rows_to_group_by = 0;
 SET query_plan_enable_optimizations = 1;
 SET query_plan_push_down_limit = 1;
 

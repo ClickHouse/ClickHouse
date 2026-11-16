@@ -24,8 +24,8 @@ public:
     std::string getJWT() override;
 
 private:
-    std::string getAudience() const override;
-    bool preferCompleteVerificationURI() const override;
+    [[nodiscard]] std::string getAudience() const override;
+    [[nodiscard]] bool preferCompleteVerificationURI() const override;
 
     struct AuthEndpoints
     {

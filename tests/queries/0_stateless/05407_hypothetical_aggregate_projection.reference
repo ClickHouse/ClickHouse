@@ -1,0 +1,77 @@
+-- two parts, each with its own groups
+Baseline (after PK + partition + existing indexes):
+marks: 200
+rows: 20000
+With p (aggregate projection, hypothetical):
+marks: 6
+rows: 600
+verdict: chosen
+real: 6 marks, 600 rows
+-- the merged part has the groups of both parts once
+Baseline (after PK + partition + existing indexes):
+marks: 200
+rows: 20000
+With p (aggregate projection, hypothetical):
+marks: 3
+rows: 300
+verdict: chosen
+real: 3 marks, 300 rows
+-- the optimizer also takes an aggregate projection at the marks of the base table
+Baseline (after PK + partition + existing indexes):
+marks: 1
+With p_e (aggregate projection, hypothetical):
+marks: 1
+verdict: chosen
+reason: the same 1 mark would be read, of aggregated rows
+real: from the projection
+-- DISTINCT on the keys of the projection
+Baseline (after PK + partition + existing indexes):
+marks: 200
+With p (aggregate projection, hypothetical):
+marks: 3
+verdict: chosen
+real: 3 marks, 300 rows
+-- the projection does not apply
+status: not_applicable
+reason: the projection cannot compute the aggregation keys and functions of the query
+status: not_applicable
+reason: The optimizer weighs an aggregate projection only for a query with GROUP BY or DISTINCT on this table
+empirical_status: unsupported
+empirical_reason: EXPLAIN WHATIF estimates an aggregate projection only from a full scan, because a sample cannot show the number of groups of a part (see projection_scan_budget_rows)
+-- states of different sizes
+Baseline (after PK + partition + existing indexes):
+marks: 30
+With p_u (aggregate projection, hypothetical):
+marks: 1
+verdict: too close to call
+-- no GROUP BY keys
+With p_total (aggregate projection, hypothetical):
+status: not_applicable
+reason: Aggregate projection has no GROUP BY keys, which EXPLAIN WHATIF does not estimate yet
+-- a projection with WHERE
+Baseline (after PK + partition + existing indexes):
+marks: 100
+rows: 10000
+With p_w (aggregate projection, hypothetical):
+marks: 2
+rows: 200
+verdict: chosen
+real: 2 marks, 200 rows
+-- an exact count of whole ranges
+Baseline (after PK + partition + existing indexes):
+marks: 2
+rows: 200
+With p_c (aggregate projection, hypothetical):
+marks: 3
+rows: 90
+verdict: chosen
+real: 3 marks, 90 rows
+-- a key expression
+Baseline (after PK + partition + existing indexes):
+marks: 300
+rows: 30000
+With p_h (aggregate projection, hypothetical):
+marks: 1
+rows: 100
+verdict: chosen
+real: 1 marks, 100 rows
