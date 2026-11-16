@@ -1479,6 +1479,31 @@ void registerStorageNATS(StorageFactory & factory)
         if ((*nats_settings)[NATSSetting::nats_consumer_name].changed && !(*nats_settings)[NATSSetting::nats_stream].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "To use NATS jet stream, you must specify `nats_stream` setting");
 
+        /// The consumers are counted by a semaphore that takes a positive `int`. Checked for every definition:
+        /// a value outside of it fails anyway when the semaphore is created, or wraps to billions of consumers.
+        const UInt64 num_consumers = (*nats_settings)[NATSSetting::nats_num_consumers].value;
+        if (num_consumers < 1 || num_consumers > std::numeric_limits<int>::max())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `nats_num_consumers` must be between 1 and {}, got {}",
+                std::numeric_limits<int>::max(),
+                num_consumers);
+
+        /// Older versions accepted these values, so check only a new definition to keep existing tables loadable.
+        if (isFreshTableDefinition(args.mode, args.query.attach_short_syntax))
+        {
+            if ((*nats_settings)[NATSSetting::nats_max_rows_per_message].value < 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `nats_max_rows_per_message` can not be lower than 1");
+
+            const UInt64 reconnect_wait = (*nats_settings)[NATSSetting::nats_reconnect_wait].value;
+            if (reconnect_wait > std::numeric_limits<int>::max())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Setting `nats_reconnect_wait` can not be bigger than {}, got {}",
+                    std::numeric_limits<int>::max(),
+                    reconnect_wait);
+        }
+
         return std::make_shared<StorageNATS>(
             args.table_id,
             args.getContext(),

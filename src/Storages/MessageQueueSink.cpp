@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 MessageQueueSink::MessageQueueSink(
     SharedHeader header,
     const String & format_name_,
@@ -84,6 +89,15 @@ void MessageQueueSink::onStart()
 
     format = FormatFactory::instance().getOutputFormat(format_name, *buffer, *format_header, context, format_settings);
     row_format = dynamic_cast<IRowOutputFormat *>(format.get());
+
+    /// With no rows per message, `consume` would produce empty messages forever without moving to the next row.
+    /// Checked after the producer started: `onException` finishes it, which waits for its task.
+    if (row_format && max_rows_per_message == 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The maximum number of rows per message for the {} table engine must be at least 1. "
+            "Check the `*_max_rows_per_message` setting of the table, or `output_format_avro_rows_in_file` for the `Avro` format",
+            storage_name);
 }
 
 void MessageQueueSink::onFinish()

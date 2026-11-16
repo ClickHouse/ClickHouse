@@ -1625,6 +1625,27 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         if (!(*rabbitmq_settings)[RabbitMQSetting::rabbitmq_format].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `rabbitmq_format` setting");
 
+        /// The consumers are counted by a semaphore that takes a positive `int`. Checked for every definition:
+        /// a value outside of it fails anyway when the semaphore is created, or wraps to billions of consumers.
+        const UInt64 num_consumers = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_num_consumers].value;
+        if (num_consumers < 1 || num_consumers > std::numeric_limits<int>::max())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `rabbitmq_num_consumers` must be between 1 and {}, got {}",
+                std::numeric_limits<int>::max(),
+                num_consumers);
+
+        /// Older versions accepted these values, so check only a new definition to keep existing tables loadable.
+        if (isFreshTableDefinition(args.mode, args.query.attach_short_syntax))
+        {
+            if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_max_rows_per_message].value < 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `rabbitmq_max_rows_per_message` can not be lower than 1");
+
+            /// Without queues the table declares nothing to consume from, and the broker drops every message.
+            if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_num_queues].value < 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `rabbitmq_num_queues` can not be lower than 1");
+        }
+
         return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, args.comment, std::move(rabbitmq_settings), args.mode);
     };
 

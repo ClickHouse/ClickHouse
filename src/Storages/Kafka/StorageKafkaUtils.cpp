@@ -253,6 +253,12 @@ void registerStorageKafka(StorageFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "kafka_max_block_size can not be lower than 1");
         }
 
+        /// Older versions accepted it, so check only a new definition to keep existing tables loadable.
+        if (is_fresh_definition && (*kafka_settings)[KafkaSetting::kafka_max_rows_per_message].value < 1)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "kafka_max_rows_per_message can not be lower than 1");
+        }
+
         if ((*kafka_settings)[KafkaSetting::kafka_poll_max_batch_size].changed && (*kafka_settings)[KafkaSetting::kafka_poll_max_batch_size].value < 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "kafka_poll_max_batch_size can not be lower than 1");
