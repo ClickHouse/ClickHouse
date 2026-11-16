@@ -67,7 +67,8 @@ bool canBeAccurateCastOrNullTarget(const DataTypePtr & type)
     return findUnsupportedTypeForAccurateCastOrNull(type) == nullptr;
 }
 
-VectorWithMemoryTracking<std::optional<size_t>> getTupleCastElementPositions(const DataTypeTuple & from, const DataTypeTuple & to)
+std::optional<VectorWithMemoryTracking<std::optional<size_t>>> tryGetTupleCastElementPositions(
+    const DataTypeTuple & from, const DataTypeTuple & to)
 {
     VectorWithMemoryTracking<std::optional<size_t>> positions;
     positions.reserve(to.getElements().size());
@@ -100,13 +101,21 @@ VectorWithMemoryTracking<std::optional<size_t>> getTupleCastElementPositions(con
     }
 
     if (from.getElements().size() != to.getElements().size())
-        throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple types "
-                        "with the same number of elements or from String.\nLeft type: {}, right type: {}",
-                        from.getName(), to.getName());
+        return std::nullopt;
 
     for (size_t i = 0; i < to.getElements().size(); ++i)
         positions.emplace_back(i);
     return positions;
+}
+
+VectorWithMemoryTracking<std::optional<size_t>> getTupleCastElementPositions(const DataTypeTuple & from, const DataTypeTuple & to)
+{
+    auto positions = tryGetTupleCastElementPositions(from, to);
+    if (!positions)
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple types "
+                        "with the same number of elements or from String.\nLeft type: {}, right type: {}",
+                        from.getName(), to.getName());
+    return std::move(*positions);
 }
 
 static void validateNestedTypesForAccurateCastOrNull(const DataTypePtr & type)

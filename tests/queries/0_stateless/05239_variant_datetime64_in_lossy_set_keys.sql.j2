@@ -24,4 +24,12 @@ FROM
 )
 ORDER BY id
 SETTINGS transform_null_in = {{ mode }};
+
+-- The conversion to the key type leaves NULL the rows of an alternative that it cannot convert, like a tuple
+-- of another size, so they match nothing and need no timestamp check.
+SELECT {{ mode }}, 'tuple of another size',
+    (v, 1) IN (SELECT tuple(toUInt8(1)), 1) AS tuple_key,
+    (v, 1) NOT IN (SELECT tuple(toUInt8(1)), 1) AS not_tuple_key
+FROM (SELECT materialize(CAST((toUInt8(1), toUInt8(2)), 'Variant(Tuple(UInt8, UInt8), UInt8)')) AS v)
+SETTINGS transform_null_in = {{ mode }};
 {% endfor %}

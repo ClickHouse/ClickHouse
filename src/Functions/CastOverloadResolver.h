@@ -47,6 +47,11 @@ bool canBeAccurateCastOrNullTarget(const DataTypePtr & type);
 /// into a column whose tuple elements are named differently).
 VectorWithMemoryTracking<std::optional<size_t>> getTupleCastElementPositions(const DataTypeTuple & from, const DataTypeTuple & to);
 
+/// The same mapping, or no mapping when the tuples are matched by position and have different numbers of
+/// elements, where `getTupleCastElementPositions` throws `TYPE_MISMATCH` because `CAST` cannot convert them.
+std::optional<VectorWithMemoryTracking<std::optional<size_t>>> tryGetTupleCastElementPositions(
+    const DataTypeTuple & from, const DataTypeTuple & to);
+
 FunctionOverloadResolverPtr createCastOverloadResolver(ContextPtr context, CastType cast_type, std::optional<CastDiagnostic> diagnostic);
 
 }

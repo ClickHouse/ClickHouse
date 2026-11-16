@@ -178,7 +178,13 @@ ColumnPtr getDateTime64CastLossMap(
     {
         if (const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to_type.get()))
         {
-            const auto positions = getTupleCastElementPositions(*from_tuple, *to_tuple);
+            /// Tuples without a mapping are reached only inside a `Variant` alternative that
+            /// `accurateCastOrNull` cannot convert, because every other cast throws on them. That cast leaves
+            /// the rows of the alternative NULL (see `createVariantToColumnWrapper`), so they need no check.
+            const auto mapping = tryGetTupleCastElementPositions(*from_tuple, *to_tuple);
+            if (!mapping)
+                return {};
+            const auto & positions = *mapping;
             const auto & elements = assert_cast<const ColumnTuple &>(*column).getColumns();
             ColumnPtr result;
             for (size_t i = 0; i < positions.size(); ++i)
