@@ -130,7 +130,8 @@ void HashJoinImplementation::StrategyEnumerator::extractEquiJoinKeys()
             hash_type_name = key.hash_type->getName();
             needs_hash_cast = true;
         }
-        equi_keys.push_back({key.left.getColumnName(), key.right.getColumnName(), std::move(hash_type_name), key.left.getType()->getName()});
+        equi_keys.push_back(
+            {key.left.getColumnName(), key.right.getColumnName(), std::move(hash_type_name), key.left.getType()->getName()});
     }
 }
 

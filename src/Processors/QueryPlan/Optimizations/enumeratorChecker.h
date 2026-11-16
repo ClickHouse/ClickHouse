@@ -64,7 +64,7 @@ private:
     /// Offers the plans of a distributed hash join of the two sides, for every pair of their plans and every way to
     /// distribute it, see `DPSubJoinOrderOptimizer::useDistribution`.
     void acceptDistributedJoins(UInt result_subset, UInt lhs_subset, UInt rhs_subset, JoinKind kind, JoinStrictness strictness,
-        const SelectivityEstimate & selectivity, const std::vector<JoinActionRef *> & edges);
+        const SelectivityEstimate & selectivity, const VectorWithMemoryTracking<JoinActionRef *> & edges);
     /// Keeps the plan as the cheapest plan of the subset and as its cheapest plan in its state, where that state is
     /// interesting.
     void offerPlan(UInt subset, const Plan & plan);
@@ -85,7 +85,7 @@ private:
         UInt32 right_relation = 0;
         Int8 state = Optimizer::any_partitioning_state; /// the state of the result
     };
-    std::vector<SplitShuffle> split_shuffles; /// scratch of `acceptDistributedJoins`
+    VectorWithMemoryTracking<SplitShuffle> split_shuffles; /// scratch of `acceptDistributedJoins`
 
     /// Offers the sort-merge joins of the two sides, one per equivalence class they may be merged on.
     void acceptMergeJoins(UInt result_subset, UInt lhs_subset, UInt rhs_subset, JoinKind kind, JoinStrictness strictness,
@@ -250,7 +250,7 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::prunePartitionedPlans(con
 template <class TDPTable, class TOptimizer>
 void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
     const UInt result_subset, const UInt lhs_subset, const UInt rhs_subset, const JoinKind kind, const JoinStrictness strictness,
-    const SelectivityEstimate & selectivity, const std::vector<JoinActionRef *> & edges)
+    const SelectivityEstimate & selectivity, const VectorWithMemoryTracking<JoinActionRef *> & edges)
 {
     /// The plans of a side: its cheapest plan (-1) and its plans in the other states.
     prunePartitionedPlans(lhs_subset);
@@ -305,7 +305,8 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
             .left_relation = lhs_on_left ? key.lhs_relation : key.rhs_relation,
             .right_relation = lhs_on_left ? key.rhs_relation : key.lhs_relation,
             .state = key.raw
-                ? optimizer.partitionState(key_class, (static_cast<UInt32>(1) << key.lhs_relation) | (static_cast<UInt32>(1) << key.rhs_relation))
+                ? optimizer.partitionState(
+                    key_class, (static_cast<UInt32>(1) << key.lhs_relation) | (static_cast<UInt32>(1) << key.rhs_relation))
                 : any_partitioning});
     }
 
@@ -374,13 +375,15 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
             /// The cheapest plan of a side shuffled into a state whose own plan was dropped, then broadcast to.
             if (right_index == -1)
                 for (const Int8 state : dp_table[rhs_subset].pruned_states)
-                    offer(join_cost.toNewPartitioning(right_state, right_rows, right_bytes) + join_cost.toReplicated(left_state, left_rows, left_bytes)
+                    offer(join_cost.toNewPartitioning(right_state, right_rows, right_bytes)
+                            + join_cost.toReplicated(left_state, left_rows, left_bytes)
                             + join_cost.joinWork(right_rows, left_rows, left_bytes, joined_rows, nodes, 1),
                         state);
             plan.partitioned_side = 0;
             if (left_index == -1)
                 for (const Int8 state : dp_table[lhs_subset].pruned_states)
-                    offer(join_cost.toNewPartitioning(left_state, left_rows, left_bytes) + join_cost.toReplicated(right_state, right_rows, right_bytes)
+                    offer(join_cost.toNewPartitioning(left_state, left_rows, left_bytes)
+                            + join_cost.toReplicated(right_state, right_rows, right_bytes)
                             + join_cost.joinWork(left_rows, right_rows, right_bytes, joined_rows, nodes, 1),
                         state);
 

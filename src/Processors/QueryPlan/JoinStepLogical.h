@@ -156,10 +156,10 @@ public:
     [[nodiscard]] std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
     /// Whether the join order search chose this join with the costs of Cascades (`query_plan_join_order_distribution`),
     /// so that Cascades must cost it with `getResultRowsEstimation` as it is, not only as a lower bound.
-    bool isRowsEstimationFromDistributedCosts() const { return rows_estimation_from_distributed_costs; }
+    [[nodiscard]] bool isRowsEstimationFromDistributedCosts() const { return rows_estimation_from_distributed_costs; }
     /// The rows that search costed the join with, also when it has no `getResultRowsEstimation`. They are not an estimate:
     /// only a later search costs a join of this result with them.
-    double getDistributedCostingRows() const { return distributed_costing_rows; }
+    [[nodiscard]] double getDistributedCostingRows() const { return distributed_costing_rows; }
     void setRowsEstimationFromDistributedCosts(double costing_rows)
     {
         rows_estimation_from_distributed_costs = true;

@@ -221,7 +221,7 @@ struct QueryGraph
         bool can_read_on_every_node = false;
     };
     /// Per relation, with `distribution_node_count`.
-    std::vector<DistributionInput> distribution_inputs;
+    VectorWithMemoryTracking<DistributionInput> distribution_inputs;
 
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();
