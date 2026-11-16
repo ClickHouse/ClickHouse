@@ -32,20 +32,20 @@ class WindowFunctionFactory final : private boost::noncopyable, public IFactoryW
 {
     using Functions = std::unordered_map<String, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
-    const Value & find(const String & name) const;
-    const Functions & getMap() const override;
-    const Functions & getCaseInsensitiveMap() const override;
-    String getFactoryName() const override;
+    [[nodiscard]] const Value & find(const String & name) const;
+    [[nodiscard]] const Functions & getMap() const override;
+    [[nodiscard]] const Functions & getCaseInsensitiveMap() const override;
+    [[nodiscard]] String getFactoryName() const override;
 
 public:
     static WindowFunctionFactory & instance();
 
     void registerFunction(const String & name, Value registration, Case case_sensitiveness = Case::Sensitive);
 
-    bool isWindowFunctionName(const String & name) const;
-    DataTypes bindArgumentTypes(const String & name, DataTypes argument_types) const;
-    GeneralWindowFunctionPtr get(const String & name, const DataTypes & argument_types, const Array & parameters) const;
-    FunctionDocumentation getDocumentation(const String & name) const;
+    [[nodiscard]] bool isWindowFunctionName(const String & name) const;
+    [[nodiscard]] DataTypes bindArgumentTypes(const String & name, DataTypes argument_types) const;
+    [[nodiscard]] GeneralWindowFunctionPtr get(const String & name, const DataTypes & argument_types, const Array & parameters) const;
+    [[nodiscard]] FunctionDocumentation getDocumentation(const String & name) const;
 
 private:
     Functions functions;

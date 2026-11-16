@@ -154,7 +154,7 @@ public:
       * If function is not resolved nullptr returned.
       * If function is resolved as non window function nullptr returned.
       */
-    GeneralWindowFunctionPtr getWindowFunction() const;
+    [[nodiscard]] GeneralWindowFunctionPtr getWindowFunction() const;
 
     /// Is function node resolved
     [[nodiscard]] bool isResolved() const { return function != nullptr; }
