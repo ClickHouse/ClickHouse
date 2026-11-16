@@ -8,8 +8,6 @@ sidebarTitle: 'Часть 1'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 > Это **часть 1** руководства по миграции с PostgreSQL на ClickHouse. На практическом примере показано, как эффективно выполнить миграцию с помощью репликации в реальном времени (CDC). Многие из рассмотренных здесь концепций также применимы к ручному массовому переносу данных из PostgreSQL в ClickHouse.
 
 <div id="dataset">
@@ -18,7 +16,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 В качестве примера, демонстрирующего типичную миграцию из Postgres в ClickHouse, мы используем набор данных Stack Overflow, описанный [здесь](/ru/get-started/sample-datasets/stackoverflow). Он содержит все `post`, `vote`, `user`, `comment` и `badge`, появившиеся на Stack Overflow с 2008 года по апрель 2024 года. Схема PostgreSQL для этих данных показана ниже:
 
-<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="Схема Stack Overflow в PostgreSQL" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Схема Stack Overflow в PostgreSQL](/images/migrations/postgres-stackoverflow-schema.webp)
+
+</Frame>
+
+</div>
 
 *DDL-команды для создания таблиц в PostgreSQL доступны [здесь](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==).*
 

@@ -53,11 +53,35 @@ SETTINGS use_query_condition_cache = true;
 프레디케이트를 만족하지 않는 테이블의 범위를 저장합니다.
 이후 동일한 쿼리를 다시 실행할 때도 매개변수 `use_query_condition_cache = true`를 사용하면 쿼리 조건 캐시를 활용해 스캔하는 데이터를 줄일 수 있습니다.
 
+### Parquet 파일 {#parquet-files}
+
+쿼리 조건 캐시는 `File`, `S3`, `AzureBlobStorage`, `URL` 및 데이터 레이크 테이블 엔진을 통해 읽는 Parquet 파일에도 적용됩니다(캐시 엔트리는 테이블에 속하므로 테이블 함수를 통해 읽을 때는 적용되지 않습니다).
+이러한 파일에서는 캐시가 그래뉼 대신 행 그룹(row groups)을 기억합니다.
+파일의 엔트리는 해당 파일의 버전에 연결되므로, 파일이 수정되면 새로 읽습니다. 버전은 객체 스토리지에서는 ETag로, 로컬 파일과 `URL`에서는 수정 시간과 크기로 식별합니다.
+웹 서버는 수정 시간(`Last-Modified`)을 1초 단위의 정밀도로만 보고하므로, `URL`을 통해 읽는 파일은 웹 서버의 시계(응답의 `Date`)를 기준으로 수정된 지 1분이 넘었고, 서버가 수정 시간, 크기, 날짜를 모두 보고하는 경우에만 캐시를 사용합니다.
+
+### 현재 시간이 포함된 조건 {#time-conditions}
+
+`WHERE time >= now() - INTERVAL 10 DAY`와 같은 조건은 비결정적입니다. `now()`의 폴딩된 값이 쿼리마다 바뀌므로 이러한 조건은 그대로 캐시할 수 없습니다.
+대신 ClickHouse는 현재 시간 상수를 시간 그리드에 맞춰 반올림하여 결정적 조건을 도출합니다. 예를 들어 `time >= '2026-08-09 12:34:56'`은 `time >= '2026-08-09 00:00:00'`으로 캐시됩니다(캐시를 읽을 때는 내림하고 기록할 때는 올림하므로 캐시된 정보의 정확성이 유지됩니다).
+그리드 간격은 상수와 현재 시간 사이의 거리에 비례합니다. 10일 전까지 조회하는 조건이면 1일, 90분 전까지 조회하는 조건이면 1시간이며, 1초에서 1일 사이로 제한됩니다. 비례 계수는 `query_condition_cache_time_condition_grid_factor` 설정(기본값: 1.0)으로 구성할 수 있습니다.
+
+`WHERE time >= today() - 10` 또는 `WHERE time >= toStartOfDay(now()) - INTERVAL 10 DAY`처럼 상수가 이미 그리드에 정렬되어 있으면 바로 다음 쿼리부터 캐시를 재사용할 수 있으며, 상수가 바뀔 때까지(예: 하루가 끝날 때까지) 캐시가 계속 유효합니다.
+`WHERE time >= now() - INTERVAL 10 DAY`처럼 상수가 정렬되어 있지 않으면, 한 그리드 칸 동안 기록된 캐시 엔트리가 다음 칸의 쿼리에 사용됩니다. 즉, 어제의 쿼리가 오늘의 쿼리를 위해 캐시를 미리 채워 둡니다.
+이러한 재사용은 시간의 하한에만 적용됩니다. `WHERE time < now()`와 같은 상한은 단독으로 쓰이든, `WHERE time >= now() - INTERVAL 10 DAY AND time < now()`처럼 양쪽 경계가 모두 현재 시간 기준인 슬라이딩 윈도우에 쓰이든, 상수가 그리드에 정렬된 경우(예: `WHERE time < today()` 또는 `WHERE time >= today() - 10 AND time < today()`)에만 재사용됩니다. 상수가 정렬되어 있지 않으면 이후 쿼리의 조건이 이전 쿼리의 조건에 포함되지 않으므로, 그리드와 관계없이 이전 쿼리의 캐시 엔트리를 안전하게 적용할 수 없습니다.
+
+이 도출 기능은 [`use_query_condition_cache_for_time_conditions`](/ko/reference/settings/session-settings/use-query) 설정(기본값: 활성화됨)으로 비활성화할 수 있으며, 이 설정은 `use_query_condition_cache`도 활성화되어 있을 때만 적용됩니다.
+이 기능은 `MergeTree` 테이블에 적용됩니다. 파일 및 객체 스토리지(`file`, `s3` 등)에서 읽을 때는 여전히 결정적 조건에 대해서만 쿼리 조건 캐시를 사용합니다.
+동적 필터링(`use_top_k_dynamic_filtering`)을 사용하는 `ORDER BY ... LIMIT N` 형태의 쿼리는 동일한 조건을 가진 다른 쿼리가 기록한 엔트리를 재사용합니다.
+동적 필터가 `PREWHERE`에 추가되거나 조건이 `WHERE`에 남아 있으면, 이러한 쿼리는 현재 시간이 포함된 조건에 대한 엔트리를 직접 기록하지 않습니다. 이러한 쿼리가 건너뛰는 행은 조건과 일치하는 상위 `N`개 행에 따라 달라지는데, 동일한 그리드 지점에 매핑된 두 조건이라도 이 상위 행은 서로 다를 수 있기 때문입니다.
+동적 필터를 `PREWHERE`에 추가할 수 없는 경우(예: 정렬 컬럼이 특정 타입인 경우), 현재 시간이 포함된 조건을 가진 `PREWHERE`가 건너뛴 그래뉼은 상위 `N`개 행과 무관하므로 도출된 조건으로 기록됩니다. 이 엔트리는 동일한 TopK 계획을 사용하는 쿼리에서만 재사용됩니다([아래](#top-k-queries) 참조).
+
 ### `ORDER BY ... LIMIT n` (TopK) 쿼리 {#top-k-queries}
 
 TopK 최적화(`ORDER BY <column> LIMIT n`, 동적 필터링 또는 정렬 컬럼의 minmax 스킵 인덱스로 가속됨)를 사용하는 쿼리도 쿼리 조건 캐시를 사용합니다.
 TopK 읽기는 쿼리 실행 중 변하는 임계값을 기준으로 그래뉼을 건너뛸 수 있으므로, 해당 캐시 엔트리는 TopK 계획 매개변수와 읽은 파트 집합에 따라 분할됩니다. 동일한 파트에서 동일한 계획을 사용하는 쿼리만 이를 재사용합니다.
 이는 `File` 테이블 엔진을 통해 Parquet 파일을 TopK 방식으로 읽는 경우에도 적용됩니다. 이때 캐시는 결과 행이 하나도 없는 행 그룹(row groups)을 기억하며, 엔트리는 TopK 계획 매개변수, 필터 조건(filter condition)(있는 경우), 읽은 파일 집합과 각 파일의 버전에 따라 분할됩니다. 따라서 파일 중 하나라도 수정되면 새 엔트리가 생성됩니다.
+Parquet 데이터 파일을 사용하는 데이터 레이크 테이블(예: `Iceberg`, `DeltaLake`, `Paimon`)을 TopK 방식으로 읽는 경우에도 마찬가지입니다. 이 경우 엔트리는 TopK 계획 매개변수, 필터 조건(있는 경우), 테이블 스냅샷에 따라 분할되므로 새 스냅샷이 생길 때마다 새 엔트리가 생성됩니다.
 다른 읽기와 달리 이러한 TopK 읽기는 필터 조건(filter condition)이 없어도 캐시를 사용합니다(예: `SELECT * FROM hits ORDER BY EventTime LIMIT 10`).
 이러한 읽기는 [`use_query_condition_cache_for_top_k`](/ko/reference/settings/session-settings/use-query) 설정(기본값: 활성화됨)을 통해 캐시에서 완전히 제외할 수 있으며, 이 설정은 `use_query_condition_cache`도 활성화된 경우에만 적용됩니다.
 

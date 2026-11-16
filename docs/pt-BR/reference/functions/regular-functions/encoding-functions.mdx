@@ -404,6 +404,84 @@ SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x
 └────────┘
 ```
 
+## decodeQuotedPrintable {#decodeQuotedPrintable}
+
+Introduzido em: v26.10.0
+
+Decodifica uma string codificada em [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable), conforme a [RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7).
+
+`=XX` (dígitos hexadecimais em maiúsculas ou minúsculas) é substituído pelo byte que representa.
+Um `=` seguido de `\r` ou `\n` é uma quebra de linha flexível: ele é removido junto com o restante da linha até o próximo `\n`, inclusive.
+Outras sequências de escape malformadas (como `=ZZ` ou `=4` no final da string) são mantidas como estão; a exceção é um `=` isolado no final exato da string, que é removido.
+O comportamento corresponde ao de `quopri.decodestring` do Python.
+
+**Sintaxe**
+
+```sql
+decodeQuotedPrintable(s)
+```
+
+**Argumentos**
+
+* `s` — String codificada em Quoted-Printable. [`String`](/pt-BR/reference/data-types/string)
+
+**Valor retornado**
+
+Retorna a string decodificada. [`String`](/pt-BR/reference/data-types/string)
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT decodeQuotedPrintable('Caf=C3=A9 =3D 3 =E2=82=AC') AS decoded
+```
+
+```response title=Response
+┌─decoded────┐
+│ Café = 3 € │
+└────────────┘
+```
+
+## encodeQuotedPrintable {#encodeQuotedPrintable}
+
+Introduzido em: v26.10.0
+
+Codifica uma string usando a codificação [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable), conforme a [RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7), utilizada em e-mails.
+
+Caracteres ASCII imprimíveis, exceto `=`, são mantidos inalterados; os demais bytes são gravados como `=XX`, com dígitos hexadecimais em maiúsculas.
+Uma quebra de linha `\r\n` é preservada, enquanto um `\r` ou `\n` isolado é codificado. Um espaço ou tabulação é codificado quando ficaria no final de uma linha.
+As linhas são limitadas a no máximo 76 caracteres por meio de quebras de linha flexíveis (`=\r\n`).
+`decodeQuotedPrintable(encodeQuotedPrintable(s))` retorna a string original `s` para qualquer `s`.
+
+**Sintaxe**
+
+```sql
+encodeQuotedPrintable(s)
+```
+
+**Argumentos**
+
+* `s` — String a ser codificada. [`String`](/pt-BR/reference/data-types/string)
+
+**Valor retornado**
+
+Retorna a string codificada em Quoted-Printable. [`String`](/pt-BR/reference/data-types/string)
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT encodeQuotedPrintable('Café = 3 €') AS encoded
+```
+
+```response title=Response
+┌─encoded───────────────────┐
+│ Caf=C3=A9 =3D 3 =E2=82=AC │
+└───────────────────────────┘
+```
+
 ## hex {#hex}
 
 Introduzido em: v1.1.0
@@ -426,6 +504,8 @@ A função usa letras maiúsculas `A-F` e não usa prefixos (como `0x`) nem sufi
 ```sql
 hex(arg)
 ```
+
+**aliases**: `to_hex`
 
 **Argumentos**
 
@@ -1074,9 +1154,11 @@ Para um argumento numérico, `unhex()` não executa o inverso de `hex(N)`.
 unhex(arg)
 ```
 
+**aliases**: `from_hex`
+
 **Argumentos**
 
-* `arg` — Uma sequência de caracteres contendo qualquer quantidade de dígitos hexadecimais. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring)
+* `arg` — Uma string contendo qualquer quantidade de dígitos hexadecimais. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring)
 
 **Valor retornado**
 

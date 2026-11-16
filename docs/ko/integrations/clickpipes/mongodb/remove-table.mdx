@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 경우에 따라 MongoDB ClickPipe에서 특정 테이블을 제외하는 것이 적절할 수 있습니다. 예를 들어, 어떤 테이블이 분석 워크로드에 필요하지 않다면 이를 제외하여 ClickHouse의 스토리지 및 복제 비용을 줄일 수 있습니다.
 
 <div id="remove-tables-steps">
@@ -27,7 +25,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 <br />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp)
+
+</Frame>
+
+</div>
 
 5. Update를 클릭합니다.
 6. 업데이트가 성공하면 **Metrics** 탭의 상태가 **Running**으로 표시됩니다. 이후 이 테이블은 이 ClickPipe에서 더 이상 복제되지 않습니다.

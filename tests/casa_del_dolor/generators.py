@@ -11,7 +11,11 @@ from pathlib import Path
 
 from environment import set_environment_variables
 from properties import (
+    KAFKA_INTERNAL_PORT,
     KEEPER_SESSION_EXPIRE_SLEEP_SECONDS,
+    MONGO_INTERNAL_PORT,
+    NGINX_INTERNAL_PORT,
+    REDIS_INTERNAL_PORT,
     SERVER_SETTLE_SLEEP_SECONDS,
     SERVER_START_WAIT_SECONDS,
     SERVER_STOP_WAIT_SECONDS,
@@ -164,7 +168,8 @@ class BuzzHouseGenerator(Generator):
                 "query_log_file": os.path.join(args.tmp_files_dir, "mongodb.doc"),
                 "database": "test",
                 "server_hostname": cluster.mongo_host,
-                "port": cluster.mongo_port,
+                "client_hostname": cluster.get_instance_ip(cluster.mongo_host),
+                "port": MONGO_INTERNAL_PORT,
                 "user": "root",
                 "password": urllib.parse.quote_plus(mongo_pass),
                 "named_collection": "mongo_remote",
@@ -172,14 +177,14 @@ class BuzzHouseGenerator(Generator):
         if args.with_redis:
             buzz_config["redis"] = {
                 "server_hostname": cluster.redis_host,
-                "port": cluster.redis_port,
+                "port": REDIS_INTERNAL_PORT,
                 "user": "",
                 "password": "clickhouse",
             }
         if args.with_nginx:
             buzz_config["http"] = {
                 "server_hostname": cluster.nginx_host,
-                "port": cluster.nginx_port,
+                "port": NGINX_INTERNAL_PORT,
             }
         if args.with_azurite:
             buzz_config["azurite"] = {
@@ -196,6 +201,7 @@ class BuzzHouseGenerator(Generator):
             buzz_config["keeper_map_path_prefix"] = "/keeper_map_tables"
         # Set SMT disk only when property.py doesn't do it
         buzz_config["set_smt_disk"] = root.find("shared_merge_tree") is None
+        buzz_config["has_distributed_cache"] = args.with_distributed_cache
         # Dolor stops the servers itself and requires a graceful shutdown. A failpoint left enabled
         # can park a background task in a sleep, and shutdown waits on that task's mutex forever
         buzz_config["enable_failpoints"] = False
@@ -237,7 +243,7 @@ class BuzzHouseGenerator(Generator):
             if args.with_kafka:
                 buzz_config["kafka"] = {
                     "server_hostname": cluster.kafka_host,
-                    "port": cluster.kafka_port,
+                    "port": KAFKA_INTERNAL_PORT,
                     "user": "",
                     "password": "",
                 }

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/QueryProcessingStage.h>
 #include <Client/IConnections.h>
 #include <Common/GetPriorityForLoadBalancing.h>
@@ -8,6 +10,7 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Core/UUID.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -54,6 +57,8 @@ public:
     void enforceAggregationInOrder(const SortDescription & sort_description);
 
     bool hasSerializedPlan() const;
+
+    [[nodiscard]] bool hasTotals() const;
 
     void allowReadingShardFromSeveralReplicas(bool allow) { allow_reading_shard_from_several_replicas = allow; }
 
@@ -120,12 +125,12 @@ public:
         Tables external_tables_,
         LoggerPtr log_,
         std::shared_ptr<const StorageLimitsList> storage_limits_,
-        std::vector<ConnectionPoolPtr> pools_to_use,
+        VectorWithMemoryTracking<ConnectionPoolPtr> pools_to_use,
         std::optional<size_t> exclude_pool_index_ = std::nullopt,
         ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr,
         std::shared_ptr<const QueryPlan> query_plan_ = nullptr);
 
-    String getName() const override { return "ReadFromRemoteParallelReplicas"; }
+    [[nodiscard]] String getName() const override { return "ReadFromRemoteParallelReplicas"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
@@ -135,14 +140,14 @@ public:
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder(const SortDescription & sort_description);
 
-    StorageID getStorageID() const { return storage_id; }
-    ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }
+    [[nodiscard]] StorageID getStorageID() const { return storage_id; }
+    [[nodiscard]] ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }
 
     /// The connection pools (sized to the coordinator's replica count) and the local replica's index
     /// within them. Captured before this step is dropped from the local INSERT SELECT plan so the
     /// remote-pool pass can reuse the exact same replica set the coordinator was created with.
-    const std::vector<ConnectionPoolPtr> & getPools() const { return pools_to_use; }
-    std::optional<size_t> getExcludePoolIndex() const { return exclude_pool_index; }
+    [[nodiscard]] const VectorWithMemoryTracking<ConnectionPoolPtr> & getPools() const { return pools_to_use; }
+    [[nodiscard]] std::optional<size_t> getExcludePoolIndex() const { return exclude_pool_index; }
 
 private:
     Pipes addPipes(ASTPtr ast, const SharedHeader & out_header);
@@ -164,7 +169,7 @@ private:
     Tables external_tables;
     std::shared_ptr<const StorageLimitsList> storage_limits;
     LoggerPtr log;
-    std::vector<ConnectionPoolPtr> pools_to_use;
+    VectorWithMemoryTracking<ConnectionPoolPtr> pools_to_use;
     std::optional<size_t> exclude_pool_index;
     ConnectionPoolWithFailoverPtr connection_pool_with_failover;
     std::shared_ptr<const QueryPlan> query_plan;
@@ -172,12 +177,12 @@ private:
 
 ASTPtr tryBuildAdditionalFilterAST(
     const ActionsDAG & dag,
-    const std::unordered_set<std::string> & projection_names,
-    const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
+    const NameSet & projection_names,
+    const UnorderedMapWithMemoryTracking<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
     ContextMutablePtr & context,
     /// The conjuncts the conversion leaves out of a positive `AND`, when asked.
-    std::vector<const ActionsDAG::Node *> * dropped_conjuncts = nullptr);
+    VectorWithMemoryTracking<const ActionsDAG::Node *> * dropped_conjuncts = nullptr);
 
 /// The conjuncts of `condition` (`ActionsDAG::extractConjunctionAtoms`) the splice would leave out of the
 /// remote query - all of them where it does not run.
