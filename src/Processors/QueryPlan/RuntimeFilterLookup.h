@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/ColumnWithTypeAndName.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Range.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
@@ -15,6 +16,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -63,8 +65,8 @@ struct RuntimeFilterBuildState
     void assertCanInsert() const;
     void assertCanFind() const;
     void assertCanMerge() const;
-    bool hasPendingMerges() const { return filters_to_merge != 0; }
-    bool isFinished() const { return inserts_are_finished; }
+    [[nodiscard]] bool hasPendingMerges() const { return filters_to_merge != 0; }
+    [[nodiscard]] bool isFinished() const { return inserts_are_finished; }
     void finishMerge();
     void finishInserts() { inserts_are_finished = true; }
 
@@ -82,12 +84,12 @@ public:
 
     void enable() { enabled = true; }
     void disable() { enabled = false; }
-    bool isEnabled() const { return enabled; }
-    bool canUseExactValues() const { return enabled && positive_filter; }
+    [[nodiscard]] bool isEnabled() const { return enabled; }
+    [[nodiscard]] bool canUseExactValues() const { return enabled && positive_filter; }
     void insert(const IColumn & values);
     void mergeFrom(const RuntimeFilterIndexAnalysis & source);
     void setRange(const Range & range);
-    std::optional<Range> getRange() const;
+    [[nodiscard]] std::optional<Range> getRange() const;
 
 private:
     static bool supportsDataType(const DataTypePtr & data_type);
@@ -148,7 +150,7 @@ public:
 
     ExactSetRuntimeFilter(const DataTypePtr & filter_column_target_type_, UInt64 bytes_limit_, UInt64 exact_values_limit_);
 
-    bool isFull() const noexcept { return is_full; }
+    [[nodiscard]] bool isFull() const noexcept { return is_full; }
 
     /// Bound the bytes of the stored keys instead of the hash table buffer. Call before inserts.
     void boundKeyBytes() { bound_key_bytes = true; }
@@ -159,11 +161,11 @@ public:
     /// `rows_passed` is set only when the probe can count the passed rows for free while producing
     /// the mask; otherwise it is left untouched and the caller derives the count from the mask.
     ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
-    ColumnPtr getValuesColumn() const;
+    [[nodiscard]] ColumnPtr getValuesColumn() const;
     void mergeFrom(const ExactSetRuntimeFilter & source);
     void releaseExactValues();
-    ColumnPtr getRecordedKeyValues() const;
-    DataTypePtr getTargetType() const { return filter_column_target_type; }
+    [[nodiscard]] ColumnPtr getRecordedKeyValues() const;
+    [[nodiscard]] DataTypePtr getTargetType() const { return filter_column_target_type; }
 
 private:
     struct Empty
@@ -184,10 +186,13 @@ private:
     using LookupState = std::variant<Empty, Single, Many>;
 
     Set & getExactValues();
-    const Set & getExactValues() const;
+    [[nodiscard]] const Set & getExactValues() const;
+    [[nodiscard]] ColumnPtr toFilterColumnType(const ColumnPtr & set_elements) const;
 
     const DataTypePtr filter_column_target_type;
     const bool argument_can_have_nulls;
+    /// The set holds only the non-NULL keys, as values of the nested type.
+    const bool drop_null_keys;
     const UInt64 bytes_limit;
     const UInt64 exact_values_limit;
 
@@ -216,7 +221,7 @@ public:
     /// matches while filling the mask, so the caller must not rescan the mask to collect stats.
     ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
     void mergeFrom(const ApproximateSetRuntimeFilter & source);
-    bool isWorthUsing(Float64 max_ratio_of_set_bits_in_bloom_filter) const;
+    [[nodiscard]] bool isWorthUsing(Float64 max_ratio_of_set_bits_in_bloom_filter) const;
 
     /// Writes the bloom filter parameters followed by its raw bits.
     void serialize(WriteBuffer & out) const;
@@ -250,8 +255,8 @@ public:
     /// Forwards `rows_passed` to the underlying exact/approximate filter (see their docs).
     ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
     void mergeFrom(const AdaptiveSetRuntimeFilter & source);
-    ColumnPtr getRecordedKeyValues() const;
-    DataTypePtr getTargetType() const { return filter_column_target_type; }
+    [[nodiscard]] ColumnPtr getRecordedKeyValues() const;
+    [[nodiscard]] DataTypePtr getTargetType() const { return filter_column_target_type; }
 
     /// Records the range of the inserted keys, so that it is serialized and merged with the state. A
     /// transported partial needs it: no `RuntimeFilter` is around it to record the range for index
@@ -263,7 +268,7 @@ public:
     /// reach that bound long before the keys do. A local filter keeps the buffer bound. Call before inserts.
     void boundExactSetByKeyBytes();
     /// Empty if tracking is off or the range is not known.
-    std::optional<Range> getKeyRange() const { return key_range.getRange(); }
+    [[nodiscard]] std::optional<Range> getKeyRange() const { return key_range.getRange(); }
 
     /// Writes the raw filter state (exact values or bloom filter bits, and the key range) so that a
     /// partial filter can be sent to another server and merged there. Captures the state: further
@@ -446,7 +451,7 @@ struct IRuntimeFilterLookup : boost::noncopyable
     virtual void replace(const String & name, UniqueRuntimeFilterPtr runtime_filter) = 0;
 
     /// Return a registered filter, which may still be building. Check `isReady` before probing.
-    virtual RuntimeFilterConstPtr find(const String & name) const = 0;
+    [[nodiscard]] virtual RuntimeFilterConstPtr find(const String & name) const = 0;
 
     /// Log various RuntimeFilter usage statistics such as number of filtered rows
     virtual void logStats() const { }
@@ -462,7 +467,40 @@ struct RuntimeFilterIndexAnalysisDescriptor
     String filter_id;
     String key_column_name;
     DataTypePtr key_column_type;
+    /// The probe key is `_part_starting_offset + _part_offset` (the global row index of the read), not a column.
+    /// `key_column_name` is then only a display name.
+    bool is_global_row_index = false;
 };
+using RuntimeFilterIndexAnalysisDescriptors = VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor>;
+
+/// The `buildRuntimeRangePredicate` DAG of the JOIN runtime filters every row of a read passes, built once all of them are.
+/// Shared by everything that prunes the read by them: the data files of an Iceberg table and the Parquet row groups.
+class RuntimeFilterPruningPredicate
+{
+public:
+    RuntimeFilterPruningPredicate(RuntimeFilterIndexAnalysisDescriptors descriptors_, RuntimeFilterLookupPtr lookup_, ContextPtr context_);
+
+    /// nullopt while some filter is not built; then the predicate, or nullptr if no filter gives an `IN` set or a range.
+    [[nodiscard]] std::optional<std::shared_ptr<const ActionsDAG>> tryGet() const;
+
+    [[nodiscard]] const RuntimeFilterIndexAnalysisDescriptors & getDescriptors() const { return descriptors; }
+
+private:
+    const RuntimeFilterIndexAnalysisDescriptors descriptors;
+    const RuntimeFilterLookupPtr lookup;
+    const ContextPtr context;
+
+    mutable std::mutex mutex;
+    mutable bool built TSA_GUARDED_BY(mutex) = false;
+    mutable std::shared_ptr<const ActionsDAG> predicate_dag TSA_GUARDED_BY(mutex);
+};
+
+/// Display name of the `_part_starting_offset + _part_offset` key of a global row index descriptor.
+inline constexpr std::string_view runtime_filter_global_row_index_key_name = "_part_starting_offset + _part_offset";
+
+/// Name of the `_part_offset + _part_starting_offset` node of the pruning predicate of a global row index descriptor.
+/// The reader recognizes the key by this name, in a predicate on the global row index only.
+inline constexpr std::string_view runtime_filter_global_row_index_node_name = "plus(_part_offset, _part_starting_offset)";
 
 /// Whether a runtime filter over a key of this type tracks the [min, max] envelope, i.e.
 /// can produce a range predicate even after the exact value set overflows into a bloom filter.
@@ -471,7 +509,7 @@ bool runtimeFilterKeySupportsMinMaxRange(const DataTypePtr & type);
 /// AND the descriptors into one pruning predicate; nullptr if none (fail-open).
 const ActionsDAG::Node * buildRuntimeRangePredicate(
     const IRuntimeFilterLookup & lookup,
-    const std::vector<RuntimeFilterIndexAnalysisDescriptor> & descriptors,
+    const VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> & descriptors,
     ActionsDAG & dag,
     const ContextPtr & context);
 

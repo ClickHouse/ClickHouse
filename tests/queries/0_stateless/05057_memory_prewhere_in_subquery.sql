@@ -1,8 +1,6 @@
 -- The row-level security filter and `PREWHERE` are evaluated inside the `Memory` reading source,
 -- so a condition with `IN (subquery)` needs its set prepared before the source starts.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_memory_prewhere_in;
 DROP TABLE IF EXISTS t_memory_prewhere_in_keys;
 

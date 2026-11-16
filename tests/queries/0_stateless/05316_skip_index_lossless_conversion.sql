@@ -3,7 +3,6 @@
 -- in pushed-down filters, or as `CAST`), at any depth of `Array`. The same was done for the text index before.
 
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 0;
 SET use_query_condition_cache = 0;

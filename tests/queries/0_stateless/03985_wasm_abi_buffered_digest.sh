@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
+${CLICKHOUSE_CLIENT} << EOF
 
 DROP FUNCTION IF EXISTS digest_csv;
 DROP FUNCTION IF EXISTS digest_tsv;
@@ -21,7 +21,7 @@ cat ${CUR_DIR}/wasm/buffered_abi.wasm | ${CLICKHOUSE_CLIENT} --query "INSERT INT
 # Verify that data is properly serialized and deserialized with ABI BUFFERED_V1 and memory layout is correct
 # Guest will just calculate hash of the input data, so if serialization or memory layout is broken, the result will be different
 
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
+${CLICKHOUSE_CLIENT} << EOF
 
 SET webassembly_udf_max_fuel = 1000000;
 

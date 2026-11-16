@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
+#include <Formats/FormatSettings.h>
 
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/ColumnsDescription.h>
@@ -8,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
+#include <Storages/SubcolumnCodecs.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Common/CurrentThread.h>
@@ -19,7 +21,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
-#include <Compression/CompressionCodecAdaptive.h>
+#include <Compression/Adaptive/CompressionCodecAdaptive.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
@@ -656,6 +658,9 @@ Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const
 
 void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
 {
+    for (auto & column : block)
+        column.column = column.column->convertToFullColumnIfConst();
+
     /// If block sample is empty, initialize it using current block (it will be the first block to write).
     if (block_sample.empty())
     {
@@ -725,10 +730,7 @@ void MergeTreeDataPartWriterOnDisk::initStreamsIfNeeded()
     }
 
     for (const auto & column : columns_list)
-    {
-        auto compression = getCodecDescriptionOrDefault(column.name, default_codec);
-        addStreams(column, compression);
-    }
+        addStreams(column);
 
     streams_initialized = true;
 }
@@ -769,18 +771,32 @@ void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
 }
 
 CompressionCodecPtr MergeTreeDataPartWriterOnDisk::getSubstreamCodec(
-    const ASTPtr & effective_codec_desc, const ISerialization::SubstreamPath & substream_path, bool column_uses_default_codec) const
+    const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path) const
 {
+    const auto & column_name = name_and_type.getNameInStorage();
+    const ColumnDescription * column_desc = metadata_snapshot->columns.tryGet(column_name);
+    if (!column_desc)
+        column_desc = metadata_snapshot->virtuals.tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+    if (!column_desc)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
+
+    ASTPtr declared_codec_desc = getSubstreamCodecDescription(substream_path, *column_desc);
+    /// No declaration, or an explicit lone `CODEC(Default)`.
+    const bool use_default_codec = CompressionCodecFactory::isDefaultCodec(declared_codec_desc);
+    /// `default_codec` comes from `MergeTreeData::getCompressionCodecForPart` and already accounts for
+    /// the `default_compression_codec` setting and `TTL ... RECOMPRESS`, so it is not re-read from the settings here.
+    const ASTPtr & effective_codec_desc = declared_codec_desc ? declared_codec_desc : default_codec->getFullCodecDescription();
+
     const auto & substream_type = substream_path.back().data.type;
-    /// The column's codec is meant for its values. Structural substreams keep only its generic codecs (`only_generic`).
+    /// The declared codec is meant for the values. Structural substreams keep only its generic codecs (`only_generic`).
     /// The type is omitted so the codecs about to be dropped are not validated against it.
     const bool is_data_substream = ISerialization::isSpecialCompressionAllowed(substream_path);
     auto codec = CompressionCodecFactory::instance().get(
         effective_codec_desc, is_data_substream ? substream_type.get() : nullptr, default_codec, /*only_generic=*/!is_data_substream);
 
     /// Adaptive could pick an unencrypted codec for some blocks and drop the encryption. Thus skip adaptivity for an encrypting codec.
-    if (settings.apply_adaptive_codec && column_uses_default_codec && !codec->isEncryption())
-        return std::make_shared<CompressionCodecAdaptive>(substream_type, codec);
+    if (settings.apply_adaptive_codec && use_default_codec && !codec->isEncryption())
+        return std::make_shared<CompressionCodecAdaptive>(substream_type, codec, settings.adaptive_codec_selection_period);
 
     return codec;
 }
