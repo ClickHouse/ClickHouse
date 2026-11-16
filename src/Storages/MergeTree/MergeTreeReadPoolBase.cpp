@@ -339,8 +339,13 @@ static const String * findColumnForOffsetsOfMissingNestedInParquetPart(
 /// Returns 0 when nothing is known about the columns (they are absent from the part), so that
 /// such a read is not charged for the whole part. The sizes of the columns of a compact part are
 /// not known, so the whole part is charged: an overestimate, which only makes the gate stricter.
+/// `alter_conversions` resolves the pending renames of the columns of a `Parquet` part (may be null).
 static size_t getUncompressedSizeOfColumns(
-    const IMergeTreeDataPart & part, const Names & columns_to_read, const ColumnsDescription & storage_columns, const Settings & settings)
+    const IMergeTreeDataPart & part,
+    const Names & columns_to_read,
+    const ColumnsDescription & storage_columns,
+    const AlterConversionsPtr & alter_conversions,
+    const Settings & settings)
 {
     if (part.getType() == MergeTreeDataPartType::Compact)
         return part.getBytesUncompressedOnDisk();
@@ -360,7 +365,19 @@ static size_t getUncompressedSizeOfColumns(
 
         for (const auto & col_name : columns_to_read)
         {
-            if (auto column = part.tryGetColumn(col_name))
+            /// `columns_to_read` has the names of the current metadata, and a column with a pending rename is stored
+            /// in the part under its old name, which the reader reads (and caches) instead, see
+            /// `IMergeTreeReader::getStorageAndSubcolumnNameInPart`.
+            String name_in_part = col_name;
+            if (alter_conversions)
+            {
+                auto column_in_storage = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, col_name);
+                String name_in_storage = column_in_storage ? column_in_storage->getNameInStorage() : col_name;
+                if (alter_conversions->isColumnRenamed(name_in_storage))
+                    name_in_part = alter_conversions->getColumnOldName(name_in_storage);
+            }
+
+            if (auto column = part.tryGetColumn(name_in_part))
             {
                 charge_column(column->getNameInStorage());
                 continue;
@@ -395,13 +412,17 @@ static size_t getUncompressedSizeOfColumns(
 /// that would trip the estimate budget on a tiny read and defeat the cache exactly where it
 /// helps. The caller multiplies this rate by the marks the query selected in the part.
 static double estimateUncompressedColumnsSizePerMark(
-    const IMergeTreeDataPart & part, const Names & columns, const ColumnsDescription & storage_columns, const Settings & settings)
+    const IMergeTreeDataPart & part,
+    const Names & columns,
+    const ColumnsDescription & storage_columns,
+    const AlterConversionsPtr & alter_conversions,
+    const Settings & settings)
 {
     const size_t total_marks = part.getMarksCount();
     if (total_marks == 0)
         return 0;
 
-    return static_cast<double>(getUncompressedSizeOfColumns(part, columns, storage_columns, settings)) / static_cast<double>(total_marks);
+    return static_cast<double>(getUncompressedSizeOfColumns(part, columns, storage_columns, alter_conversions, settings)) / static_cast<double>(total_marks);
 }
 
 /// Mirror the cache-write eligibility predicate in `IMergeTreeReader::initColumnsCache`: only parts
@@ -663,7 +684,8 @@ void MergeTreeReadPoolBase::stageColumnsCacheWriteEstimate(
         if (all_read_columns.empty())
             return;
 
-        bytes_per_mark += estimateUncompressedColumnsSizePerMark(*part_with_ranges.data_part, all_read_columns, storage_snapshot->metadata->getColumns(), settings);
+        bytes_per_mark += estimateUncompressedColumnsSizePerMark(
+            *part_with_ranges.data_part, all_read_columns, storage_snapshot->metadata->getColumns(), read_task_info.alter_conversions, settings);
     }
 
     /// `getAllColumnNames` covers only the main and prewhere columns, which are read
@@ -703,7 +725,7 @@ void MergeTreeReadPoolBase::stageColumnsCacheWriteEstimate(
 
         if (base_part_marks != 0)
             bytes_per_mark
-                += static_cast<double>(getUncompressedSizeOfColumns(patch_part, patch_column_names, storage_snapshot->metadata->getColumns(), settings))
+                += static_cast<double>(getUncompressedSizeOfColumns(patch_part, patch_column_names, storage_snapshot->metadata->getColumns(), /*alter_conversions=*/ nullptr, settings))
                 / static_cast<double>(base_part_marks);
     }
 
