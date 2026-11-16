@@ -1706,14 +1706,15 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
 
     auto & logical_plan = analyzer_interpreter->getQueryPlan();
 
-    /// The bodies of views expanded while building the plan and the row-policy filters are analyzed
-    /// separately, so the check above did not see them; `StorageView::readImpl` and
-    /// `buildRowPolicyFilterIfNeeded` check them and record the result. Such a plan is just as
-    /// ineligible as the caller's query tree would be.
+    /// The bodies of views expanded while building the plan, the row-policy filters and the table
+    /// constraints used by the constraint-based optimizations are analyzed separately, so the check
+    /// above did not see them; `StorageView::readImpl`, `buildRowPolicyFilterIfNeeded` and
+    /// `ConstraintsDescription::getQueryTreeData` check them and record the result. Such a plan is
+    /// just as ineligible as the caller's query tree would be.
     if (planning_identities->hasIneligibleQueryTree())
     {
         LOG_DEBUG(getLogger("QueryPlanCache"),
-            "Not caching plan: the body of an expanded view or a row-policy filter uses non-deterministic functions, scalar subqueries "
+            "Not caching plan: the body of an expanded view, a row-policy filter or a table constraint uses non-deterministic functions, scalar subqueries "
             "(see query_plan_cache_allow_scalar_subqueries), table functions or temporary tables");
         return nullptr;
     }

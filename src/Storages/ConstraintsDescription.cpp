@@ -25,6 +25,7 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/Cache/QueryPlanCacheUtils.h>
 
 namespace DB
 {
@@ -270,6 +271,18 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
         }
         auto query_tree = buildQueryTree(expr, context);
         pass.run(query_tree, context);
+
+        /// The constraint-based optimizations fold the analyzed constraint into the rewritten query
+        /// predicate, and the constraint never appears in the query tree checked by
+        /// `queryTreeIsEligibleForPlanCache`. The raw constraint AST checked when the plan is stored
+        /// (`constraintsContainFunctionsUnsafeForQueryPlanCache`) does not show calls of niladic
+        /// functions spelled without parentheses (`ASSUME d <= today`) or the expressions of `ALIAS`
+        /// columns the constraint reads (`cutoff DateTime ALIAS now`), so check the resolved tree, the
+        /// same way `buildRowPolicyFilterIfNeeded` does for row-policy filters. The collector of
+        /// storage identities is set only while a cacheable logical plan is being built.
+        if (auto identities = context->getPlanCacheStorageIdentities();
+            identities && !queryTreeIsEligibleForPlanCache(query_tree, context, /*allow_scalar_subqueries=*/ false))
+            identities->markIneligible();
 
         const auto cnf = Analyzer::CNF::toCNF(query_tree, context)
             .pullNotOutFunctions(context);
