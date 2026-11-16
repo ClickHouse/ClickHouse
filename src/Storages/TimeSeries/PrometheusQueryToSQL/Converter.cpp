@@ -143,9 +143,17 @@ ColumnsDescription Converter::getResultColumns() const
 
 ASTPtr Converter::getSQL(Annotations * annotations) const
 {
+    if (annotations)
+    {
+        /// Prometheus evaluates every operand and retains its annotations even if the final vector is empty, so collect
+        /// them from the original tree, independently of the result-only pushdown of label matchers.
+        ConverterContext annotation_context{promql_tree, settings};
+        annotation_context.annotations = annotations;
+        visitNode(promql_tree->getRoot(), annotation_context);
+    }
+
     auto promql_tree_to_convert = settings.push_down_label_matchers ? pushDownLabelMatchers(promql_tree) : promql_tree;
     ConverterContext context{promql_tree_to_convert, settings};
-    context.annotations = annotations;
     auto query_piece = visitNode(promql_tree_to_convert->getRoot(), context);
     query_piece.type = result_type;
     return finalizeSQL(std::move(query_piece), context);

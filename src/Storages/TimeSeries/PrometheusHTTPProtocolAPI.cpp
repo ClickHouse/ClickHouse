@@ -445,7 +445,17 @@ Strings PrometheusHTTPProtocolAPI::executeAnnotationProbe(const ASTPtr & probe)
     auto query_context = Context::createCopy(getContext());
     StoragePrometheusQuery::applySettingsForPrometheusQuery(*query_context);
 
-    auto [ast, io] = executeQuery(probe->formatWithSecretsOneLine(), query_context, serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
+    /// The probe rows only build the annotation text: they must not hit the request's public result-size limits,
+    /// while the helper work keeps running under the request's resource limits.
+    query_context->setSetting("max_result_rows", Field(UInt64(0)));
+    query_context->setSetting("max_result_bytes", Field(UInt64(0)));
+
+    /// The probe is a helper of the request's query: it must not be charged against the user's quotas, so the
+    /// request stays a single external query, but it keeps the server-owned query parsing of the generated SQL and
+    /// the query result cache, so that a repeated probe is served from the cache.
+    QueryFlags probe_flags = serverGeneratedQueryFlags();
+    probe_flags.ignore_quota = true;
+    auto [ast, io] = executeQuery(probe->formatWithSecretsOneLine(), query_context, probe_flags, QueryProcessingStage::Complete);
 
     Strings names;
     try
@@ -461,6 +471,10 @@ Strings PrometheusHTTPProtocolAPI::executeAnnotationProbe(const ASTPtr & probe)
             for (size_t i = 0; i != column->size(); ++i)
                 names.emplace_back(column->getDataAt(i));
         }
+
+        /// Store the buffered result in the query result cache now (no-op if no cache writers exist in the pipeline):
+        /// the executor's destructor cancels the pipeline processors, after which the pending write would be discarded.
+        io.pipeline.finalizeWriteInQueryResultCache();
     }
     catch (...)
     {

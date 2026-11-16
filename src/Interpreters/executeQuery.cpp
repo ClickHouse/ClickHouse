@@ -3562,7 +3562,9 @@ static BlockIO executeQueryImpl(
                         result_details.result_column_origins = result_column_origins;
                 }
 
-                if (interpreter && interpreter->ignoreQuota())
+                /// A helper query (see `QueryFlags::ignore_quota`) is exempt from the user's quotas even when
+                /// no interpreter claims the exemption, so it must be counted once per request, not per helper.
+                if (flags.ignore_quota || (interpreter && interpreter->ignoreQuota()))
                     quota_ignored = true;
 
                 if (!quota_ignored && !quota_checked)

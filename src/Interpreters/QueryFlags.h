@@ -31,6 +31,11 @@ struct QueryFlags
     /// If true, `QueryResultDetails::result_column_origins` is filled for `SELECT` queries, so that a protocol
     /// can report which table column each result column comes from (e.g. the MySQL protocol does).
     bool collect_result_column_origins = false;
+    /// If true, the query is a helper of a user query: it must not be charged against the user's quotas
+    /// (select-query count, profile events) and must not be counted as a separate external query, while still
+    /// running under the user's resource limits (memory, execution time, etc.). The caller is responsible for
+    /// keeping the helper's own result-size limits sensible.
+    bool ignore_quota = false;
 };
 
 }
