@@ -90,6 +90,11 @@ ORDER BY k NULLS FIRST SETTINGS enable_lazy_columns_replication = 0;
 SELECT i, toInt8(assumeNotNull(arr[i])) FROM (SELECT materialize([CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)')]) AS arr)
 ARRAY JOIN [CAST(NULL, 'Nullable(UInt64)'), 1, 5] AS i ORDER BY i NULLS FIRST SETTINGS enable_lazy_columns_replication = 1;
 
+SELECT 'tuple with nothing';
+SELECT tupleElement(arrayZip(CAST([], 'Array(Enum8(\'a\' = -1, \'z\' = 0))'), CAST([], 'Array(Nothing)'))[number + 1], 1) FROM numbers(1);
+SELECT arrayMap(x -> tupleElement(x, 1), arrayZip(CAST([], 'Array(Enum8(\'a\' = -1, \'z\' = 0))'), CAST([], 'Array(Nothing)'))[[number + 1]]) FROM numbers(1);
+SELECT tupleElement(m.key_k, 1) FROM (SELECT mapFromArrays(CAST([], 'Array(String)'), arrayZip(CAST([], 'Array(Enum8(\'a\' = -1, \'z\' = 0))'), CAST([], 'Array(Nothing)'))) AS m);
+
 DROP TABLE t_enum_elem;
 DROP TABLE t_enum_elem_buckets;
 DROP TABLE t_enum_elem_memory;

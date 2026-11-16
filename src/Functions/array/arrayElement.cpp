@@ -379,7 +379,6 @@ private:
 namespace
 {
 
-/// `Nothing` has a trivial default, but its `insertDefaultInto` throws.
 void insertTypeDefault(IColumn & column, const IDataType & type, bool trivial_default)
 {
     if (trivial_default)

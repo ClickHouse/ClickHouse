@@ -307,7 +307,6 @@ void extractValuesGeneric(
     const IDataType & value_type,
     const PaddedPODArray<size_t> & matched_positions)
 {
-    /// `Nothing` has a trivial default, but its `insertDefaultInto` throws.
     const bool trivial_default = value_type.isDefaultInsertTrivial();
     result.reserve(result.size() + matched_positions.size());
     for (size_t pos : matched_positions)
