@@ -4174,6 +4174,12 @@ def test_rabbitmq_insert_into_missing_exchange(rabbitmq_cluster, db, unique):
         error = instance.query_and_get_error(f"INSERT INTO {db}.{table} {source}", timeout=30)
         assert f"no exchange '{unique}_{table}'" in error, error
 
+    # The INSERT reports the error of its SELECT, not the failed publish of the rows produced before it.
+    error = instance.query_and_get_error(
+        f"INSERT INTO {db}.deleted SELECT throwIf(number = 1) FROM numbers(2) SETTINGS max_block_size = 1", timeout=30
+    )
+    assert "FUNCTION_THROW_IF_VALUE_IS_NON_ZERO" in error, error
+
 
 @pytest.mark.parametrize("async_insert", [0, 1])
 def test_rabbitmq_kill_insert(rabbitmq_cluster, db, unique, async_insert):
