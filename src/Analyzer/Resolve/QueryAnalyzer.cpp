@@ -3088,6 +3088,95 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
     auto * group_by_keys_scope = findNearestScopeWithNonEmpty(scope, &IdentifierResolveScope::nullable_group_by_keys);
 
+    /// A call `resolveFunction` resolves to an aggregate function: a scoped lambda, a user defined or an ordinary
+    /// function of the same name takes precedence, and a window function is evaluated after aggregation.
+    auto is_aggregate_function = [&](const FunctionNode & function)
+    {
+        const auto & name = function.getFunctionName();
+        return !function.isWindowFunction()
+            && AggregateFunctionFactory::instance().isAggregateFunctionName(name)
+            && !FunctionFactory::instance().hasNameOrAlias(name)
+            && !UserDefinedSQLFunctionFactory::instance().has(name)
+            && !UserDefinedExecutableFunctionFactory::has(name, scope.context)
+            && !tryResolveIdentifier({Identifier{name}, IdentifierLookupContext::FUNCTION}, scope).resolved_identifier;
+    };
+
+    enum class AggregateUse : uint8_t { NONE, INPUT_ONLY_IN_AGGREGATE_FUNCTIONS, OTHER };
+    auto get_aggregate_use = [&](const ApplyColumnTransformerNode & apply)
+    {
+        if (apply.getApplyTransformerType() == ApplyColumnTransformerType::FUNCTION)
+            return is_aggregate_function(apply.getExpressionNode()->as<const FunctionNode &>())
+                ? AggregateUse::INPUT_ONLY_IN_AGGREGATE_FUNCTIONS : AggregateUse::NONE;
+
+        const auto & lambda = apply.getExpressionNode()->as<const LambdaNode &>();
+        const auto & argument_names = lambda.getArguments().getNames();
+        if (argument_names.size() != 1)
+            return AggregateUse::OTHER;
+
+        enum class Place : uint8_t { OUTSIDE, IN_AGGREGATE_FUNCTION, IN_SUBQUERY };
+        bool has_aggregate_function = false;
+        bool is_used_in_aggregate_function = false;
+        bool is_used_elsewhere = false;
+        std::vector<std::pair<const IQueryTreeNode *, Place>> nodes_to_process{{lambda.getExpression().get(), Place::OUTSIDE}};
+        while (!nodes_to_process.empty())
+        {
+            auto [subtree_node, place] = nodes_to_process.back();
+            nodes_to_process.pop_back();
+
+            /// The body's aliases are resolved in the lambda scope first: `(y -> y) AS sum` makes `sum(x)` a lambda call.
+            if (subtree_node->hasAlias())
+                return AggregateUse::OTHER;
+
+            if (const auto * identifier = subtree_node->as<IdentifierNode>())
+            {
+                if (identifier->getIdentifier().at(0) == argument_names[0])
+                    (place == Place::IN_AGGREGATE_FUNCTION ? is_used_in_aggregate_function : is_used_elsewhere) = true;
+                continue;
+            }
+
+            if (const auto * nested_lambda = subtree_node->as<LambdaNode>();
+                nested_lambda && std::ranges::find(nested_lambda->getArguments().getNames(), argument_names[0]) != nested_lambda->getArguments().getNames().end())
+                continue;
+
+            /// A subquery reads the argument after aggregation, and aggregates its own rows.
+            if (isQueryOrUnionNode(subtree_node))
+                place = Place::IN_SUBQUERY;
+            else if (const auto * function = subtree_node->as<FunctionNode>(); function && place != Place::IN_SUBQUERY && is_aggregate_function(*function))
+            {
+                has_aggregate_function = true;
+                place = Place::IN_AGGREGATE_FUNCTION;
+            }
+
+            for (const auto & child : subtree_node->getChildren())
+                if (child)
+                    nodes_to_process.emplace_back(child.get(), place);
+        }
+
+        if (!has_aggregate_function)
+            return AggregateUse::NONE;
+        return is_used_in_aggregate_function && !is_used_elsewhere ? AggregateUse::INPUT_ONLY_IN_AGGREGATE_FUNCTIONS : AggregateUse::OTHER;
+    };
+
+    /// `* APPLY f APPLY sum` is `sum(f(x))`: when the first APPLY that calls an aggregate function uses its input only
+    /// as an argument of aggregate functions, the APPLY transformers before it build aggregate function arguments.
+    const IQueryTreeNode * first_aggregate_apply_transformer = nullptr;
+    bool earlier_apply_transformers_build_aggregate_arguments = false;
+    if (group_by_keys_scope && has_aggregate_apply_transformer)
+    {
+        for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
+        {
+            const auto * apply = transformer->as<ApplyColumnTransformerNode>();
+            if (!apply)
+                continue;
+            auto aggregate_use = get_aggregate_use(*apply);
+            if (aggregate_use == AggregateUse::NONE)
+                continue;
+            first_aggregate_apply_transformer = transformer.get();
+            earlier_apply_transformers_build_aggregate_arguments = aggregate_use == AggregateUse::INPUT_ONLY_IN_AGGREGATE_FUNCTIONS;
+            break;
+        }
+    }
+
     if (group_by_keys_scope && !isInAggregateOrGroupingFunctionScope(scope) && !has_aggregate_apply_transformer)
     {
         for (auto & [node, _] : matched_expression_nodes_with_names)
@@ -3134,6 +3223,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         bool replace_transformer_was_used = false;
         bool execute_apply_transformer = false;
         bool execute_replace_transformer = false;
+        bool aggregate_apply_transformer_reached = false;
 
         auto projection_name_it = node_to_projection_name.find(node);
         if (projection_name_it != node_to_projection_name.end())
@@ -3160,6 +3250,16 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
             if (auto * apply_transformer = transformer->as<ApplyColumnTransformerNode>())
             {
+                if (transformer.get() == first_aggregate_apply_transformer)
+                    aggregate_apply_transformer_reached = true;
+                const bool resolve_as_aggregate_function_argument = earlier_apply_transformers_build_aggregate_arguments && !aggregate_apply_transformer_reached;
+                if (resolve_as_aggregate_function_argument)
+                    scope.expressions_in_resolve_process_stack.enterAggregateFunctionArguments();
+                SCOPE_EXIT({
+                    if (resolve_as_aggregate_function_argument)
+                        scope.expressions_in_resolve_process_stack.leaveAggregateFunctionArguments();
+                });
+
                 const auto & expression_node = apply_transformer->getExpressionNode();
                 apply_transformer_was_used = true;
                 apply_column_name_prefix = apply_transformer->getColumnNamePrefix();
