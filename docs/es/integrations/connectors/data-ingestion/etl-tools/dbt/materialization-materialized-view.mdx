@@ -17,9 +17,7 @@ La materialización `materialized_view` debe ser un `SELECT` sobre una tabla de 
   Para consultar los conceptos generales de materialización y las configuraciones compartidas (engine, order&#95;by, partition&#95;by, etc.), consulta la página [Materializaciones](/es/integrations/connectors/data-ingestion/etl-tools/dbt/materializations).
 </Note>
 
-<div id="target-table-management">
-  ## Cómo se gestiona la tabla de destino
-</div>
+## Cómo se gestiona la tabla de destino {#target-table-management}
 
 Cuando usas la materialización `materialized_view`, dbt-clickhouse necesita crear tanto una **vista materializada** como una **tabla de destino** donde se insertan las filas transformadas. Hay dos formas de gestionar la tabla de destino:
 
@@ -30,9 +28,7 @@ Cuando usas la materialización `materialized_view`, dbt-clickhouse necesita cre
 
 El enfoque que elijas afecta a cómo se gestionan los cambios de esquema, los `full refresh` y las configuraciones con varias MV. Las siguientes secciones describen cada enfoque en detalle.
 
-<div id="implicit-target">
-  ## Materialización con tabla de destino implícita
-</div>
+## Materialización con tabla de destino implícita {#implicit-target}
 
 Este es el comportamiento predeterminado. Cuando se define un modelo `materialized_view`, el adaptador hará lo siguiente:
 
@@ -65,9 +61,7 @@ Consulta el [archivo de pruebas](https://github.com/ClickHouse/dbt-clickhouse/bl
   También puedes definir `codec` y `ttl` a nivel de columna en la tabla de destino al aplicar un contrato de modelo. Consulta [Configuración de columnas](/es/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#column-configuration) para más detalles.
 </Tip>
 
-<div id="multiple-materialized-views">
-  ### Múltiples vistas materializadas
-</div>
+### Múltiples vistas materializadas {#multiple-materialized-views}
 
 ClickHouse permite que más de una vista materializada escriba registros en la misma tabla de destino. Para admitirlo en dbt-clickhouse con el enfoque de destino implícito, puedes construir una `UNION` en tu archivo de modelo, delimitando el SQL de cada vista materializada con comentarios del tipo `--my_mv_name:begin` y `--my_mv_name:end`.
 
@@ -91,9 +85,7 @@ select a,b,c from {{ source('raw', 'table_2') }}
   `Warning - Table <previous table name> was detected with the same pattern as model name <your model name> but was not found in this run. In case it is a renamed mv that was previously part of this model, drop it manually (!!!) `
 </Warning>
 
-<div id="how-to-iterate-the-target-table-schema">
-  ### Cómo actualizar el esquema de la tabla de destino
-</div>
+### Cómo actualizar el esquema de la tabla de destino {#how-to-iterate-the-target-table-schema}
 
 A partir de la **versión 1.9.8 de dbt-clickhouse**, puede controlar cómo se actualiza el esquema de la tabla de destino cuando `dbt run` encuentra columnas distintas en el SQL de la MV.
 
@@ -110,25 +102,25 @@ De forma predeterminada, dbt no aplicará ningún cambio a la tabla de destino (
 
 Además, puede usar esta configuración como mecanismo de seguridad. Si la establece en `fail`, la compilación fallará si las columnas de la consulta SQL de la MV difieren de las de la tabla de destino que se creó con el primer `dbt run`.
 
-<div id="data-catch-up">
-  ### Puesta al día de los datos
-</div>
+### Puesta al día de los datos {#data-catch-up}
 
 De forma predeterminada, al crear o volver a crear una vista materializada (MV), la tabla de destino se rellena primero con datos históricos antes de crear la propia MV (`catchup=True`). Puede desactivar este comportamiento estableciendo la configuración `catchup` en `False`.
+
+Para las vistas materializadas actualizables, `catchup` determina quién puebla la tabla de destino al crearla; consulte [Datos iniciales de las vistas materializadas actualizables](#refreshable-initial-data).
 
 ```python
 {{config(
     materialized='materialized_view',
     engine='MergeTree()',
     order_by='(id)',
-    catchup=False  # esta configuración
+    catchup=False  # this setting
 )}}
 ```
 
 | Operación                                         | `catchup: True` (predeterminado)                  | `catchup: False`                                                     |
 | ------------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------- |
-| Implementación inicial (`dbt run`)                | Tabla de destino poblada con datos históricos     | Tabla de destino creada vacía                                        |
-| Actualización completa (`dbt run --full-refresh`) | Tabla de destino reconstruida y poblada           | Tabla de destino recreada vacía, **se pierden los datos existentes** |
+| Implementación inicial (`dbt run`)                | Tabla de destino con carga de datos históricos     | Tabla de destino creada vacía                                        |
+| Actualización completa (`dbt run --full-refresh`) | Tabla de destino reconstruida y con carga de datos históricos           | Tabla de destino recreada vacía, **se pierden los datos existentes** |
 | Funcionamiento normal                             | La vista materializada captura nuevas inserciones | La vista materializada captura nuevas inserciones                    |
 
 <Warning>
@@ -137,9 +129,7 @@ De forma predeterminada, al crear o volver a crear una vista materializada (MV),
   Usar `catchup: False` con `dbt run --full-refresh` **descartará todos los datos existentes** de la tabla de destino. La tabla se volverá a crear vacía y, a partir de ese momento, solo capturará datos nuevos. Asegúrate de tener copias de seguridad si los datos históricos podrían necesitarse más adelante.
 </Warning>
 
-<div id="explicit-target">
-  ## Materialización con destino explícito (Beta)
-</div>
+## Materialización con destino explícito (Beta) {#explicit-target}
 
 <Warning>
   **Beta**
@@ -156,18 +146,14 @@ De forma predeterminada, dbt-clickhouse crea y administra tanto la tabla de dest
 
 La funcionalidad de **destino explícito** te permite definir la tabla de destino por separado como una materialización `table` normal y luego hacer referencia a ella desde tus modelos de vista materializada.
 
-<div id="explicit-target-benefits">
-  ### Beneficios
-</div>
+### Beneficios {#explicit-target-benefits}
 
 * **Recursos totalmente separados**: Ahora cada recurso puede definirse por separado, lo que mejora la legibilidad.
 * **Recursos 1:1 entre dbt y CH**: Ahora puedes usar las herramientas de dbt para gestionarlos y modificarlos por separado.
 * **Ahora hay distintas configuraciones disponibles**: Ahora se puede aplicar una configuración diferente a cada uno.
 * **Ya no es necesario mantener convenciones de nomenclatura**: Ahora todos los recursos se crean con el nombre que les des, no con el nombre personalizado añadido con &#95;mv para las MV.
 
-<div id="explicit-target-limitations">
-  ### Limitaciones
-</div>
+### Limitaciones {#explicit-target-limitations}
 
 * La definición de la tabla de destino no es natural en dbt: no es un SQL que lea de una tabla de origen, por lo que aquí se pierden las validaciones de dbt. El SQL de la MV se seguirá validando mediante las utilidades de dbt, y su compatibilidad con las columnas de la tabla de destino se validará a nivel de CH.
 * **Hemos encontrado algunos problemas relacionados con las limitaciones de la función `ref()`**: Necesitamos usarla para referenciar modelos entre sí, pero solo puede usarse para referenciar modelos upstream, no downstream. Esto genera algunos problemas en esta implementación. Hemos creado una incidencia en el repositorio de dbt-core y actualmente estamos hablando con ellos [para buscar posibles soluciones (dbt-labs/dbt-core#12319)](https://github.com/dbt-labs/dbt-core/issues/12319):
@@ -175,9 +161,7 @@ La funcionalidad de **destino explícito** te permite definir la tabla de destin
   * `ref()` nos funciona porque fuerza que la tabla de destino se cree primero, pero en el gráfico de dependencias de la documentación generada, la tabla de destino aparecerá como otra dependencia upstream, no downstream, lo que hace que sea algo difícil de entender.
   * `unit-test` también nos obliga a definir algunos datos para la tabla de destino, incluso cuando la idea no es leer de ella. La solución alternativa es simplemente dejar vacíos los datos de esta tabla.
 
-<div id="explicit-target-usage">
-  ### Uso
-</div>
+### Uso {#explicit-target-usage}
 
 **Paso 1: Defina la tabla de destino como un modelo de tabla estándar**
 
@@ -234,9 +218,7 @@ FROM {{ source('raw', 'mobile_events') }}
 GROUP BY event_date, event_type
 ```
 
-<div id="explicit-target-configuration">
-  ### Opciones de configuración
-</div>
+### Opciones de configuración {#explicit-target-configuration}
 
 Al usar tablas de destino explícitas, además de las [configuraciones generales de materialización](/es/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#general-materialization-configurations) y las [configuraciones específicas de la tabla](/es/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-table), se aplican las siguientes configuraciones:
 
@@ -249,21 +231,17 @@ Al usar tablas de destino explícitas, además de las [configuraciones generales
 
 **En la vista materializada (`materialized='materialized_view'`):**
 
-| Opción    | Descripción                                           | Predeterminado |
-| --------- | ----------------------------------------------------- | -------------- |
-| `catchup` | Si se deben rellenar datos históricos al crear la MV. | `True`         |
+| Opción    | Descripción                                                                                                                          | Predeterminado |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------- |
+| `catchup` | Si se debe realizar la carga de datos históricos al crear la MV. Para MVs actualizables, consulta [Datos iniciales](#refreshable-initial-data). | `True`         |
 
 <Note>
   Normalmente, solo querrás establecer `catchup` en `True` en las MVs o `repopulate_from_mvs_on_full_refresh` en `True` en sus tablas de destino. Si estableces ambos en `True`, es posible que se dupliquen los datos.
 </Note>
 
-<div id="explicit-target-common-operations">
-  ### Operaciones habituales
-</div>
+### Operaciones habituales {#explicit-target-common-operations}
 
-<div id="explicit-target-full-refresh">
-  #### Actualización completa con tablas de destino explícitas
-</div>
+#### Actualización completa con tablas de destino explícitas {#explicit-target-full-refresh}
 
 Al usar `--full-refresh`, las tablas de destino explícitas se volverán a crear (por lo que podrías perder datos si se está ingestando información durante este proceso). Esto se comportará de distintas maneras según la configuración:
 
@@ -306,9 +284,7 @@ Así, tu tabla no quedará vacía mientras se vuelven a crear las MV.
 ...
 ```
 
-<div id="explicit-target-changing">
-  #### Cambiar la tabla de destino
-</div>
+#### Cambiar la tabla de destino {#explicit-target-changing}
 
 No puedes cambiar la tabla de destino de una MV sin un `--full-refresh`. Si intentas ejecutar un `dbt run` normal después de cambiar la referencia de `materialization_target_table()`, la compilación fallará con un mensaje de error que indica que el destino ha cambiado.
 
@@ -317,48 +293,34 @@ Para cambiar el destino:
 1. Actualiza la llamada a `materialization_target_table()`
 2. Ejecuta `dbt run --full-refresh -s your_mv_model`
 
-<div id="explicit-target-troubleshooting">
-  ### Solución de problemas comunes
-</div>
+### Solución de problemas comunes {#explicit-target-troubleshooting}
 
-<div id="target-table-empty">
-  #### La tabla de destino está vacía mientras/después de ejecutar `run`
-</div>
+#### La tabla de destino está vacía mientras/después de ejecutar `run` {#target-table-empty}
 
 Hay varias razones por las que esto puede ocurrir:
 
 * Las vistas materializadas pueden estar configuradas con `catchup=False` o la tabla de destino puede estar configurada con `repopulate_from_mvs_on_full_refresh=False`, por lo que no se realizará ningún relleno de datos históricos cuando se creen las vistas materializadas o cuando se vuelva a crear la tabla de destino. Este es el comportamiento esperado, así que, si quiere volver a insertar los datos usando el SQL de las vistas materializadas, asegúrese de establecer `catchup=True` en la vista materializada (este es el valor predeterminado) o `repopulate_from_mvs_on_full_refresh=True` en la tabla de destino. Asegúrese de no activar ambas opciones al mismo tiempo para evitar duplicados. Consulte la [sección de configuración](#explicit-target-configuration) para obtener más detalles.
 * Mientras se ejecuta `dbt run --full-refresh`, si las vistas materializadas usan el valor predeterminado `catchup=True`, el destino se volverá a crear y las MV volverán a insertar los datos de forma secuencial. Para evitar esta situación, consulte [Full refresh con destinos explícitos](#explicit-target-full-refresh).
 
-<div id="full-refresh-with-repopulate-from-mvs-on-full-refresh">
-  #### `dbt run --full-refresh` en una tabla de destino con `repopulate_from_mvs_on_full_refresh=True` usa la lógica de versiones anteriores de la vista materializada, no la del SQL que está actualmente en el proyecto
-</div>
+#### `dbt run --full-refresh` en una tabla de destino con `repopulate_from_mvs_on_full_refresh=True` usa la lógica de versiones anteriores de la vista materializada, no la del SQL que está actualmente en el proyecto {#full-refresh-with-repopulate-from-mvs-on-full-refresh}
 
 `repopulate_from_mvs_on_full_refresh=True` usa el SQL de la MV existente que ya está definida en ClickHouse. Para asegurarte de que se use la nueva definición de la vista materializada, ejecuta `dbt run` para cada vista materializada antes de ejecutar `dbt run --full-refresh` en la tabla de destino.
 
-<div id="duplicate-data">
-  #### Hay datos duplicados tras ejecutar una ejecución
-</div>
+#### Hay datos duplicados tras ejecutar una ejecución {#duplicate-data}
 
 Posibles razones:
 
 * Tanto `catchup=True` en las vistas materializadas como `repopulate_from_mvs_on_full_refresh=True` en la tabla de destino pueden estar habilitados: mantén solo uno de ellos, según las operaciones que quieras ejecutar. Consulta la [sección de configuración](#explicit-target-configuration) para obtener más detalles.
 * La tabla de destino no está definida con `WHERE 0`: la tabla de destino debe crearse vacía, pero la consulta interna puede insertar datos si no se incluye `WHERE 0`. Asegúrate de que la cláusula esté incluida.
 
-<div id="data-loss-active-ingestion">
-  #### Pérdida de datos durante la ingestión activa después de ejecutar `dbt run --full-refresh`
-</div>
+#### Pérdida de datos durante la ingestión activa después de ejecutar `dbt run --full-refresh` {#data-loss-active-ingestion}
 
 Después de ejecutar `dbt run --full-refresh`, faltan algunas filas de la tabla de origen en la tabla de destino.
 Las vistas materializadas de ClickHouse actúan como disparadores de inserción: solo capturan datos mientras existen. Durante una actualización completa, hay un breve intervalo en el que la MV se elimina y se vuelve a crear (la &quot;ventana ciega&quot;). Las filas insertadas en la tabla de origen durante este intervalo no se capturan. Consulta la sección [Comportamiento durante la ingestión activa](#behavior-during-active-ingestion) para más detalles.
 
-<div id="debugging-techniques">
-  ### Técnicas de depuración
-</div>
+### Técnicas de depuración {#debugging-techniques}
 
-<div id="check-mv-target">
-  #### Verifica el destino actual de una MV en ClickHouse
-</div>
+#### Verifica el destino actual de una MV en ClickHouse {#check-mv-target}
 
 Consulta `system.tables` para ver dónde escribe una vista materializada:
 
@@ -375,9 +337,7 @@ WHERE database = 'your_schema'
   AND engine = 'MaterializedView'
 ```
 
-<div id="check-dbt-recognition">
-  #### Comprueba si dbt reconoce una tabla como destino de una vista materializada
-</div>
+#### Comprueba si dbt reconoce una tabla como destino de una vista materializada {#check-dbt-recognition}
 
 Durante una ejecución de dbt, busca este mensaje en el log:
 
@@ -389,9 +349,7 @@ Si aparece este mensaje, dbt ha detectado que la tabla es el destino de al menos
 * El modelo de vista materializada tiene `materialized='materialized_view'` en su configuración
 * Tanto la vista materializada como la tabla de destino se han ejecutado al menos una vez
 
-<div id="migration-implicit-to-explicit">
-  ### Migración de destino implícito a destino explícito
-</div>
+### Migración de destino implícito a destino explícito {#migration-implicit-to-explicit}
 
 Si tiene modelos de vista materializada existentes que usan el enfoque de destino implícito y quiere migrar al enfoque de destino explícito, siga estos pasos:
 
@@ -457,13 +415,9 @@ select a, b, c from {{ source('raw', 'table_2') }}
 
 **3. Ajústelos según sea necesario siguiendo las instrucciones de la sección [destino explícito](#explicit-target).**
 
-<div id="behavior-comparison">
-  ## Comparación del comportamiento entre los enfoques de destino implícito y destino explícito
-</div>
+## Comparación del comportamiento entre los enfoques de destino implícito y destino explícito {#behavior-comparison}
 
-<div id="general-behavior">
-  ### Comportamiento general
-</div>
+### Comportamiento general {#general-behavior}
 
 | Operación                  | Destino implícito                                                                                                                                                                                                                                                                                                                                                                                       | Destino explícito                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -471,9 +425,7 @@ select a, b, c from {{ source('raw', 'table_2') }}
 | Siguiente ejecución de dbt | **Los recursos individuales no se pueden gestionar; todo se aplica en conjunto:**<br /><br />**tabla de destino**: <br /> los cambios se gestionan con la configuración `on_schema_change`. De forma predeterminada, usa la configuración `ignore`, por lo que las columnas nuevas no se procesan.<br /><br />**Vistas materializadas**: todas se actualizan con operaciones `alter table modify query` | **Los cambios se pueden aplicar individualmente:<br /><br />tabla de destino**: <br />detección automática para identificar si son tablas de destino de vistas materializadas definidas por dbt. Si lo son, la evolución de las columnas se gestiona de forma predeterminada con la configuración `mv_on_schema_change` con el valor `fail`, por lo que fallará si hay cambios en las columnas. Añadimos este valor predeterminado como capa de protección<br /><br />**Vistas materializadas**: su SQL se actualiza con operaciones `alter table modify query`. |
 | dbt run --full-refresh     | **Los recursos individuales no se pueden gestionar; todo se aplica en conjunto:<br /><br />tabla de destino**: <br />la tabla de destino se vuelve a crear vacía. `catchup` está disponible para configurar un relleno de datos históricos con el SQL de todas las vistas materializadas a la vez. `catchup` es `True` de forma predeterminada<br /><br />**Vistas materializadas**: todas se vuelven a crear.             | **Los cambios se aplicarán individualmente:<br /><br />tabla de destino:** se volverá a crear como de costumbre.<br /><br />**Vistas materializadas**: se eliminan y se vuelven a crear. `catchup` está disponible para un relleno de datos históricos inicial. `catchup` es `True` de forma predeterminada. <br /><br />**Nota: Durante el proceso, la tabla de destino estará vacía o cargada parcialmente hasta que se vuelvan a crear las vistas materializadas. Para evitarlo, consulta la siguiente sección sobre cómo iterar sobre la tabla de destino.**                    |
 
-<div id="behavior-during-active-ingestion">
-  ### Comportamiento durante la ingestión activa
-</div>
+### Comportamiento durante la ingestión activa {#behavior-during-active-ingestion}
 
 Al iterar los modelos, debe tener en cuenta cómo interactúan las distintas operaciones con los datos que se están insertando:
 
@@ -482,9 +434,7 @@ Al iterar los modelos, debe tener en cuenta cómo interactúan las distintas ope
 
 La siguiente tabla resume la seguridad de cada operación cuando se están realizando inserciones activamente en la tabla de origen.
 
-<div id="ingestion-implicit-target">
-  #### Operaciones con destino implícito
-</div>
+#### Operaciones con destino implícito {#ingestion-implicit-target}
 
 | Operación                | Proceso interno                                                                                                                                                                               | Seguridad mientras se realizan inserciones                                                                                                                              |
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -492,38 +442,37 @@ La siguiente tabla resume la seguridad de cada operación cuando se están reali
 | `dbt run` posteriores    | `ALTER TABLE ... MODIFY QUERY`                                                                                                                                                                | ✅ Seguro. La vista materializada se actualiza de forma atómica.                                                                                                         |
 | `dbt run --full-refresh` | 1. Crear una tabla de respaldo<br />2. Insertar datos (si `catchup=True`)<br />3. Eliminar vistas materializadas<br />4. Intercambiar tablas<br />5. Volver a crear las vistas materializadas | ⚠️ **La vista materializada no capta datos durante la recreación.** Los datos insertados en el origen entre los pasos 3 y 5 no aparecerán en la nueva tabla de destino. |
 
-<div id="ingestion-explicit-target">
-  #### Operaciones con destino explícito
-</div>
+Las vistas materializadas actualizables siguen los mismos pasos, pero no tienen un desencadenador de inserción, por lo que los intervalos «ciegos» descritos arriba no les afectan. Sus datos iniciales se describen en [Datos iniciales](#refreshable-initial-data).
+
+#### Operaciones con destino explícito {#ingestion-explicit-target}
 
 **Modelos de vistas materializadas:**
 
-| Operación                       | Proceso interno                                                                        | Seguridad mientras se realizan inserciones                                                                                                                                                                                                                                                                 |
-| ------------------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Primer `dbt run`                | 1. Crear la MV (con la cláusula `TO`)<br />2. Ejecutar el catch-up (si `catchup=True`) | ✅ La MV se crea primero, por lo que las nuevas inserciones se capturan de inmediato.<br />⚠️ **El catch-up puede duplicar datos** — la consulta de relleno de datos históricos puede solaparse con filas que la MV ya esté procesando. Es seguro si se usa un motor con desduplicación (p. ej., `ReplacingMergeTree`). |
-| `dbt run` posterior             | `ALTER TABLE ... MODIFY QUERY`                                                         | ✅ Seguro. La MV se actualiza de forma atómica.                                                                                                                                                                                                                                                             |
-| `dbt run --full-refresh` en MVs | 1. Eliminar y volver a crear la MV<br />2. Ejecutar el catch-up (si `catchup=True`)    | ⚠️ **La MV no captura datos durante la recreación** (entre la eliminación y la creación).<br />⚠️ **El catch-up puede duplicar datos** si se están realizando inserciones de forma concurrente.                                                                                                            |
+| Operación                                                | Proceso interno                                                                                                                                                                                                | Seguridad mientras se realizan inserciones                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Primer `dbt run`                                         | 1. Crear la MV (con la cláusula `TO`)<br />2. Ejecutar la puesta al día (si `catchup=True`)                                                                                                                         | ✅ La MV se crea primero, por lo que las nuevas inserciones se capturan de inmediato.<br />⚠️ **La puesta al día puede duplicar datos** — la consulta de carga de datos históricos puede solaparse con filas que la MV ya esté procesando. Es seguro si se usa un motor con desduplicación (p. ej., `ReplacingMergeTree`).                                                                                                                                                    |
+| `dbt run` posterior                                      | `ALTER TABLE ... MODIFY QUERY`                                                                                                                                                                                 | ✅ Seguro. La MV se actualiza de forma atómica.                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `dbt run --full-refresh` en MVs                          | 1. Eliminar y volver a crear la MV<br />2. Ejecutar la puesta al día (si `catchup=True`)                                                                                                                            | ⚠️ **La MV no captura datos durante la recreación** (entre la eliminación y la creación).<br />⚠️ **La puesta al día puede duplicar datos** si se están realizando inserciones de forma concurrente.                                                                                                                                                                                                                                                                           |
+| Primer `dbt run` o `--full-refresh` en MVs actualizables | 1. Eliminar la MV (solo en actualización completa)<br />2. Ejecutar la puesta al día (si `catchup=True`)<br />3. Crear la MV, con `EMPTY` si `catchup=True` (consulta [Datos iniciales](#refreshable-initial-data)) | ✅ Seguro. No hay desencadenador de inserción, por lo que no se pierde nada, y la puesta al día no puede solaparse con una actualización.<br />⚠️ Con `--full-refresh`, si la tabla de destino aún contiene datos, la puesta al día añade filas a las ya existentes. En las vistas que no son `append`, la siguiente actualización programada las reemplaza; en las vistas `append` se conservan, así que realiza también una actualización completa del modelo de tabla de destino. |
 
 **Modelo de tabla de destino:**
 
 | Operación                                                               | Proceso interno                                                                                                                 | Seguridad mientras se realizan inserciones                                                                                                                                    |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dbt run`                                                               | Los cambios de schema se aplican según la configuración `mv_on_schema_change`                                                   | ✅ Seguro. No hay movimiento de datos.                                                                                                                                         |
-| `dbt run --full-refresh` (predeterminado)                               | Volver a crear la tabla (la deja vacía)                                                                                         | ⚠️ **La tabla de destino queda vacía** hasta que las MVs la rellenen. Las MVs siguen insertando en la nueva tabla una vez que existe.                                         |
+| `dbt run`                                                               | Los cambios de esquema se aplican según la configuración `mv_on_schema_change`                                                   | ✅ Seguro. No hay movimiento de datos.                                                                                                                                         |
+| `dbt run --full-refresh` (predeterminado)                               | Volver a crear la tabla (la deja vacía)                                                                                         | ⚠️ **La tabla de destino queda vacía** hasta que las MVs realicen la carga de datos históricos en ella. Las MVs siguen insertando en la nueva tabla una vez que existe.                                         |
 | `dbt run --full-refresh` con `repopulate_from_mvs_on_full_refresh=True` | 1. Crear una tabla de respaldo<br />2. Insertar datos usando el SQL de cada MV<br />3. Intercambiar las tablas de forma atómica | ⚠️ **La MV no captura datos durante la recreación.** Los datos insertados entre los pasos 1 y 3 no aparecerán en la nueva tabla. **Esto puede cambiar en versiones futuras**. |
 
 <Tip>
   **Recomendaciones para entornos de producción con ingestión activa**
 
   * **Pausa la ingestión durante las operaciones de dbt si es posible**: así, todas las operaciones serán seguras y no se perderán datos.
-  * **Usa un motor con desduplicación si es posible** (p. ej., `ReplacingMergeTree`) en la tabla de destino para gestionar posibles duplicados por solapamientos durante el catch-up.
+  * **Usa un motor con desduplicación si es posible** (p. ej., `ReplacingMergeTree`) en la tabla de destino para gestionar posibles duplicados por solapamientos durante la puesta al día.
   * **Prioriza `ALTER TABLE ... MODIFY QUERY`** (`dbt run` normal sin `--full-refresh`) siempre que sea posible — esta opción siempre es segura.
   * **Ten en cuenta los periodos de riesgo** durante las operaciones de dbt.
 </Tip>
 
-<div id="refreshable-materialized-views">
-  ## Vistas materializadas actualizables
-</div>
+## Vistas materializadas actualizables {#refreshable-materialized-views}
 
 Las [vistas materializadas actualizables](/es/concepts/features/materialized-views/refreshable-materialized-view) son un tipo especial de vista materializada en ClickHouse que vuelve a ejecutar periódicamente la consulta y almacena el resultado, de forma similar a como funcionan las vistas materializadas en otras bases de datos. Esto resulta útil en escenarios en los que se necesitan instantáneas periódicas o agregaciones, en lugar de desencadenadores de inserción en tiempo real.
 
@@ -541,9 +490,7 @@ Para usar una vista materializada actualizable, agrega un objeto de configuraci�
 | depends&#95;on                | Una lista de dependencias para la MV actualizable. Proporciona las dependencias con el siguiente formato: `{schema}.{view_name}`                                                          |             |                      |
 | depends&#95;on&#95;validation | Indica si se debe validar la existencia de las dependencias proporcionadas en `depends_on`. Si una dependencia no incluye un esquema, la validación se realiza sobre el esquema `default` |             | False                |
 
-<div id="refreshable-implicit-example">
-  ### Ejemplo con destino implícito
-</div>
+### Ejemplo con destino implícito {#refreshable-implicit-example}
 
 ```python
 {{
@@ -568,9 +515,7 @@ FROM {{ source('raw', 'events') }}
 GROUP BY event_date
 ```
 
-<div id="refreshable-explicit-example">
-  ### Ejemplo con destino explícito
-</div>
+### Ejemplo con destino explícito {#refreshable-explicit-example}
 
 ```python
 {{
@@ -592,9 +537,21 @@ FROM {{ source('raw', 'events') }}
 GROUP BY event_date, event_type
 ```
 
-<div id="refreshable-updating-parameters">
-  ### Actualización de los parámetros de refresco
-</div>
+### Datos iniciales {#refreshable-initial-data}
+
+En las vistas materializadas actualizables, `catchup` determina si dbt puebla el destino por sí mismo o lo delega en la primera actualización de ClickHouse.
+
+La puesta al día se ejecuta:
+
+* Con un destino implícito, cuando dbt crea la tabla de destino o la reconstruye con `--full-refresh`.
+* Con un destino explícito, cuando dbt crea o recrea la MV, independientemente de lo que contenga la tabla de destino.
+
+| `catchup`               | Comportamiento                                                                                                                                                                                                                                                                                  |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `True` (predeterminado) | dbt ejecuta el SQL de la MV como una inserción en el destino y, a continuación, crea la vista con `EMPTY` para que ClickHouse no ejecute una primera actualización sobre esos datos. La siguiente actualización se produce a la hora programada y el modelo finaliza con el destino ya poblado. |
+| `False`                 | La vista se crea sin `EMPTY` y ClickHouse puebla el destino con su actualización inicial en segundo plano. dbt no espera a que termine, por lo que el destino puede seguir vacío cuando el modelo finaliza.                                                                                     |
+
+### Actualización de los parámetros de refresco {#refreshable-updating-parameters}
 
 A partir de dbt-clickhouse 1.10.2, los cambios en los parámetros de refresco (`interval`, `randomize` y `depends_on`) de una vista materializada actualizable existente se aplican directamente durante una ejecución normal de `dbt run`, mediante `ALTER TABLE ... MODIFY REFRESH`. La vista materializada no se elimina ni se vuelve a crear, por lo que no se pierden datos ni hay una «ventana ciega» mientras se aplica el cambio.
 
@@ -605,9 +562,7 @@ Algunas transiciones no pueden aplicarse directamente. En lugar de ignorarlas si
 
 Tenga en cuenta que `--full-refresh` elimina y vuelve a crear la vista materializada, con las implicaciones descritas en [Comportamiento durante la ingestión activa](#behavior-during-active-ingestion).
 
-<div id="explicit-target-limitations">
-  ### Limitaciones
-</div>
+### Limitaciones {#refreshable-limitations}
 
 * Al crear una vista materializada actualizable (MV) en ClickHouse que tiene una dependencia, ClickHouse no devuelve un
   error si la dependencia especificada no existe en el momento de la creación. En su lugar, la MV actualizable permanece en un
