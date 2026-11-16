@@ -2327,7 +2327,14 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         /// loader's attach (server startup) as a metadata load so a now-restricted catalog is left unavailable
         /// instead of aborting startup. The loader flag, not `internal`, is the discriminator: wrappers such as
         /// `PARALLEL WITH` run user statements as internal ones, and a user `ATTACH DATABASE` stays fail-closed.
-        const bool is_loading_from_existing_metadata = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
+        ///
+        /// A catalog of databases replicated through a coordination service replays the stored definition as a
+        /// `CREATE` query marked with `isRecoveryFromStoredMetadata`. It is an existing definition as well: it was
+        /// already validated where it was created, and an unreachable or unauthorized catalog (for example, a deleted
+        /// IAM role of an S3 Tables catalog) must not abort the whole replay and block startup.
+        const bool is_recovery_from_stored_metadata = args.context->isRecoveryFromStoredMetadata();
+        const bool is_loading_from_existing_metadata
+            = (args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH) || is_recovery_from_stored_metadata;
 
         return std::make_shared<DatabaseDataLake>(
             args.database_name,
@@ -2342,7 +2349,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             /// definition. They shouldn't do network I/O: an unreachable or unauthorized catalog must not block them.
             /// Keyed on the attach and restore flags, not `internal`: a user `CREATE` wrapped in `PARALLEL WITH` or
             /// `EXECUTE AS` runs as an internal query and must still build the catalog eagerly.
-            /*is_existing_definition=*/args.create_query.attach || args.is_restore_from_backup);
+            /*is_existing_definition=*/args.create_query.attach || args.is_restore_from_backup || is_recovery_from_stored_metadata);
     };
     /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
     /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism
