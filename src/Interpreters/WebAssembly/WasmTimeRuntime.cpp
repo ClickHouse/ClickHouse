@@ -52,14 +52,16 @@ auto wasmtimeToNative(const wasmtime::Val & val)
         static_assert(false, "Unsupported WasmValKind");
 }
 
-wasmtime::ValKind toWasmTimeValKind(WasmValKind value)
+wasmtime::ValType toWasmTimeValType(WasmValKind value)
 {
-    #define M(T) \
-        if (value == WasmValKind::T) \
-            return wasmtime::ValKind::T;
-
-    APPLY_FOR_WASM_TYPES(M)
-    #undef M
+    switch (value)
+    {
+        case WasmValKind::I32: return wasmtime::ValType::i32();
+        case WasmValKind::I64: return wasmtime::ValType::i64();
+        case WasmValKind::F32: return wasmtime::ValType::f32();
+        case WasmValKind::F64: return wasmtime::ValType::f64();
+        case WasmValKind::V128: return wasmtime::ValType::v128();
+    }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
@@ -71,6 +73,16 @@ WasmValKind fromWasmTimeValKind(wasmtime::ValKind val_type)
 
     APPLY_FOR_WASM_TYPES(M)
     #undef M
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
+}
+
+WasmValKind fromWasmTimeValType(wasmtime::ValType::Ref ref)
+{
+    if (ref == wasmtime::ValType::i32()) return WasmValKind::I32;
+    if (ref == wasmtime::ValType::i64()) return WasmValKind::I64;
+    if (ref == wasmtime::ValType::f32()) return WasmValKind::F32;
+    if (ref == wasmtime::ValType::f64()) return WasmValKind::F64;
+    if (ref == wasmtime::ValType::v128()) return WasmValKind::V128;
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
@@ -112,14 +124,14 @@ wasmtime::FuncType toWasmFunctionType(const WasmFunctionDeclaration & host_funct
     param_types.reserve(argument_types.size());
     for (auto & argument_type : argument_types)
     {
-        param_types.emplace_back(toWasmTimeValKind(argument_type));
+        param_types.emplace_back(toWasmTimeValType(argument_type));
     }
 
     std::vector<wasmtime::ValType> result_type;
     result_type.reserve(1);
     if (auto return_type = host_function_decl.getReturnType())
     {
-        result_type.emplace_back(toWasmTimeValKind(return_type.value()));
+        result_type.emplace_back(toWasmTimeValType(return_type.value()));
     }
 
     return wasmtime::FuncType::from_iters(param_types, result_type);
@@ -344,14 +356,14 @@ WasmFunctionDeclaration buildFunctionDeclaration(std::string_view module_name, s
     std::optional<WasmValKind> return_type;
     if (function_info.results().size() == 1)
     {
-        return_type = fromWasmTimeValKind(function_info.results().begin()->kind());
+        return_type = fromWasmTimeValType(*function_info.results().begin());
     }
 
     std::vector<WasmValKind> argument_types;
     argument_types.reserve(function_info.params().size());
     for (auto function_argument : function_info.params())
     {
-        argument_types.emplace_back(fromWasmTimeValKind(function_argument.kind()));
+        argument_types.emplace_back(fromWasmTimeValType(function_argument));
     }
 
     return WasmFunctionDeclaration(module_name, function_name, std::move(argument_types), return_type);

@@ -23,7 +23,7 @@ endif()
 # * default-engine: Needed for its s3 client (we can't pass our own s3 client via ffi)
 clickhouse_import_crate(
     MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml"
-    FEATURES "default-engine-rustls, test-ffi, tracing"
+    FEATURES "default-engine-rustls, test-ffi, tracing, arrow"
 )
 clickhouse_config_crate_flags(delta_kernel_ffi)
 
@@ -37,6 +37,13 @@ corrosion_set_env_vars(delta_kernel_ffi
         "OPENSSL_STATIC=1"
         "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/"
         "OPENSSL_INCLUDE_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/common/")
+
+# aws-lc-sys's memcmp_check links a small test binary via cc; clang adds
+# -lgcc_s / -lgcc_eh by default but the bundled Linux sysroot ships only
+# libgcc.a.
+if (OS_LINUX)
+    corrosion_set_env_vars(delta_kernel_ffi "LDFLAGS=-nodefaultlibs -lc -lgcc")
+endif()
 
 target_include_directories(delta_kernel_ffi INTERFACE "${DELTA_KERNEL_TARGET_PATH}/")
 target_link_libraries(delta_kernel_ffi INTERFACE OpenSSL::Crypto OpenSSL::SSL)

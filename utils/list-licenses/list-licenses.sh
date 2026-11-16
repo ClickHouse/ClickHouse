@@ -137,6 +137,7 @@ process_rust_crate() {
       "LICENSE_A2"
       "LICENSE_CC0"
       "LICENSE_A2LLVM"
+      "LICENSE-0BSD.txt"
     )
     for possible_path in "${arr[@]}"
     do
@@ -155,6 +156,7 @@ process_rust_crate() {
            [ "$LICENSE_TYPE" == "MIT/Apache-2.0" ] ||
            [ "$LICENSE_TYPE" == "MIT OR Apache-2.0 OR LGPL-2.1-or-later" ] ||
            [ "$LICENSE_TYPE" == "Zlib OR Apache-2.0 OR MIT" ] ||
+           [ "$LICENSE_TYPE" == "Zlib OR MIT OR Apache-2.0" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 OR BSL-1.0 OR MIT" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception" ] ||

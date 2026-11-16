@@ -19,10 +19,6 @@ COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
   /etc/ssl/
 
 RUN apt-get update \
-    && apt-get install software-properties-common --yes --no-install-recommends --verbose-versions
-
-RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
-    && apt-get update \
     && apt-get install --yes \
         binutils-dev \
         build-essential \
