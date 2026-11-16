@@ -1,6 +1,5 @@
 #include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/castColumn.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/memcpySmall.h>
@@ -431,17 +430,11 @@ static size_t getCopiedRightKeysBytesPerRow(const Block & block, const HashJoinR
         const auto & source = block.getByPosition(source_position);
         const size_t source_bytes_per_row = source.column->allocatedBytes() / block.rows();
         size_t copy_bytes_per_row = source_bytes_per_row;
-        if (const auto * const_source = typeid_cast<const ColumnConst *>(source.column.get()))
-            copy_bytes_per_row = const_source->getDataColumn().byteSize();
-        else if ((source.column->isReplicated() || recursiveHasSparse(source.column))
-                 && (isNullableOrLowCardinalityNullable(right_key.type) || source.column->isNullable()))
-        {
-            /// Correcting the copy's nullability materializes a replicated or sparse source.
-            size_t materialized_bytes = 0;
-            for (size_t row = 0; row < block.rows(); ++row)
-                materialized_bytes += source.column->byteSizeAt(row);
-            copy_bytes_per_row = materialized_bytes / block.rows();
-        }
+        /// A constant source is copied materialized, and so is a replicated or sparse one whose nullability the copy corrects.
+        if (source.column->isConst()
+            || ((source.column->isReplicated() || recursiveHasSparse(source.column))
+                && (isNullableOrLowCardinalityNullable(right_key.type) || source.column->isNullable())))
+            copy_bytes_per_row = getMaterializedByteSize(*source.column) / block.rows();
         if (right_key.type->isNullable() && !source.type->isNullable())
             copy_bytes_per_row += 1;
 
