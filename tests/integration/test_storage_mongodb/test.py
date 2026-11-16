@@ -1945,6 +1945,7 @@ def test_limit_after_local_processing(started_cluster):
     )
     node.query(f"CREATE TABLE {reference} ({structure}) ENGINE = Memory")
     node.query(f"INSERT INTO {reference} SELECT * FROM {collection_name}")
+    policy_user = f"{collection_name}_user"
     try:
         queries = (
             ("SELECT count() FROM {source} WHERE isNotNull(n) LIMIT 1", "3\n"),
@@ -1962,22 +1963,58 @@ def test_limit_after_local_processing(started_cluster):
                 "3\n",
             ),
             ("SELECT count() OVER () FROM {source} LIMIT 1", "3\n"),
+            ("SELECT id FROM {source} OFFSET 1", "2\n3\n"),
+            ("SELECT id FROM {source} LIMIT 0.5", None),
+            ("SELECT id FROM {source} OFFSET 0.5", None),
+            ("SELECT id FROM {source} LIMIT 1 OFFSET 0.5", None),
+            ("SELECT id FROM {source} LIMIT -1", None),
+            ("SELECT id FROM {source} LIMIT 9223372036854775808", "1\n2\n3\n"),
+            ("SELECT id FROM {source} LIMIT 2 OFFSET 1", "2\n3\n"),
+            ("SELECT id FROM {source} LIMIT 0", ""),
+            (
+                "SELECT id FROM {source} AS limited LIMIT 1 "
+                "SETTINGS additional_table_filters = {'limited': 'id = 3'}",
+                "3\n",
+            ),
         )
         results = {}
         expected_results = {}
         for source in (collection_name, f"mongodb({arguments}, '{structure}')"):
             for query, expected in queries:
                 settings = {"max_threads": 1}
-                assert (
-                    node.query(query.format(source=reference), settings=settings)
-                    == expected
+                reference_result = node.query(
+                    query.replace("{source}", reference), settings=settings
                 )
-                results[source, query] = node.query(
-                    query.format(source=source), settings=settings
+                if expected is not None:
+                    assert reference_result == expected
+                answer, error = node.query_and_get_answer_with_error(
+                    query.replace("{source}", source), settings=settings
                 )
-                expected_results[source, query] = expected
-        assert results == expected_results
+                results[source, query] = answer if not error else error.splitlines()[0]
+                expected_results[source, query] = reference_result
+
+        node.query(f"CREATE USER {policy_user}")
+        node.query(f"GRANT SELECT ON {collection_name} TO {policy_user}")
+        node.query(
+            f"CREATE ROW POLICY {collection_name}_policy ON {collection_name} "
+            f"USING id = 3 TO {policy_user}"
+        )
+        query = f"SELECT id FROM {collection_name} LIMIT 1"
+        answer, error = node.query_and_get_answer_with_error(
+            query, user=policy_user, settings={"max_threads": 1}
+        )
+        results[policy_user, query] = answer if not error else error.splitlines()[0]
+        expected_results[policy_user, query] = "3\n"
+        assert results == expected_results, "\n".join(
+            f"{case}: expected {expected!r}, got {results[case]!r}"
+            for case, expected in expected_results.items()
+            if results[case] != expected
+        )
     finally:
+        node.query(
+            f"DROP ROW POLICY IF EXISTS {collection_name}_policy ON {collection_name}"
+        )
+        node.query(f"DROP USER IF EXISTS {policy_user}")
         node.query(f"DROP TABLE {reference}")
         node.query(f"DROP TABLE {collection_name}")
         collection.drop()

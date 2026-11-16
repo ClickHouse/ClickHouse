@@ -42,6 +42,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMongoDB.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <bsoncxx/json.hpp>
 #include <mongocxx/exception/logic_error.hpp>
@@ -82,7 +83,7 @@ public:
                 || getFunctionCanonicalNameIfAny(function->getFunctionName()) == "arrayJoin";
     }
 
-    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child) const
+    [[nodiscard]] bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child) const
     {
         return !unsafe && child->getNodeType() != QueryTreeNodeType::QUERY
             && child->getNodeType() != QueryTreeNodeType::UNION;
@@ -1228,7 +1229,10 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
         }
     }
 
-    if (limit || offset)
+    if (limit && limit->getValue().getType() == Field::Types::UInt64
+        && (!offset || offset->getValue().getType() == Field::Types::UInt64)
+        && !query.additional_filter_ast && query.filter_asts.empty() && !query.row_level_filter && !query.prewhere_info
+        && !getEffectiveRowPolicyFilter(*this, context) && !context->canUseParallelReplicasCustomKey())
     {
         CheckMongoDBLimitFunctionsVisitor visitor;
         visitor.visit(query.query_tree);
@@ -1240,10 +1244,12 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
             && !query_tree.hasHaving() && !query_tree.hasWindow() && !query_tree.hasQualify()
             && !query_tree.hasPrewhere() && !query_tree.hasLimitBy() && !query_tree.isShuffle())
         {
-            auto limit_value = limit ? limit->getValue().safeGet<UInt64>() : 0;
-            auto offset_value = offset ? offset->getValue().safeGet<UInt64>() : 0;
+            const auto limit_value = limit->getValue().safeGet<UInt64>();
+            const auto offset_value = offset ? offset->getValue().safeGet<UInt64>() : 0;
+            constexpr auto max_remote_limit = static_cast<UInt64>(std::numeric_limits<Int64>::max());
 
-            options.limit(limit_value + offset_value);
+            if (limit_value <= max_remote_limit && offset_value <= max_remote_limit - limit_value)
+                options.limit(static_cast<Int64>(limit_value + offset_value));
         }
     }
 
