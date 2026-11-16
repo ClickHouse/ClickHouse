@@ -29,7 +29,7 @@ public:
     void shrink(FileCacheEfficiency & cache_efficiency, size_t old_range_size, size_t range_size, Int64 reserved_bytes, bool was_large, bool large) const;
     void remove(FileCacheEfficiency & cache_efficiency, size_t range_size, Int64 reserved_bytes, bool large) const;
 
-    FileSegmentEfficiencyInfo getInfo(FileCacheEfficiency::Window current_window, size_t range_size, size_t downloaded_size) const;
+    [[nodiscard]] FileSegmentEfficiencyInfo getInfo(FileCacheEfficiency::Window current_window, size_t range_size, size_t downloaded_size) const;
 
 private:
     /// Granules `[first, last]`.
@@ -37,9 +37,9 @@ private:
 
     static std::optional<Granules> getGranules(ByteRange range, ByteRange read);
     /// The bytes of `granules` not set yet, or of all of them if `new_window`.
-    size_t getNewActiveBytes(Granules granules, size_t range_size, bool new_window) const;
+    [[nodiscard]] size_t getNewActiveBytes(Granules granules, size_t range_size, bool new_window) const;
     void setGranules(Granules granules);
-    size_t getActiveBytes(size_t range_size) const;
+    [[nodiscard]] size_t getActiveBytes(size_t range_size) const;
     void startWindow(FileCacheEfficiency::Window new_window, size_t range_size);
 
     std::vector<bool> active_granules;
