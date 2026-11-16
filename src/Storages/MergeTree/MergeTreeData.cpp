@@ -13399,6 +13399,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     auto filter_column = ColumnUInt8::create();
     auto & filter_column_data = filter_column->getData();
 
+    /// published only when the block is returned, otherwise the ordinary read counts the same parts
+    size_t granules_dropped_by_partition_key = 0;
     DataPartsVector real_parts;
     real_parts.reserve(rows);
     for (size_t row = 0, part_idx = 0; row < rows; ++row, ++part_idx)
@@ -13428,13 +13430,13 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
 
         if (minmax_idx_condition && !minmax_idx_condition->generateForPart(part).checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
         {
-            ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, part->index_granularity->getMarksCountWithoutFinal());
+            granules_dropped_by_partition_key += part->index_granularity->getMarksCountWithoutFinal();
             continue;
         }
 
         if (partition_pruner && partition_pruner->canBePruned(*part))
         {
-            ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, part->index_granularity->getMarksCountWithoutFinal());
+            granules_dropped_by_partition_key += part->index_granularity->getMarksCountWithoutFinal();
             continue;
         }
 
@@ -13564,6 +13566,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 name);
     }
 
+    ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, granules_dropped_by_partition_key);
     return res;
 }
 
