@@ -45,9 +45,9 @@ struct PlainPolicy
 {
     using Listener = Poco::Net::ServerSocket;
 
-    Listener makeListener() const { return Listener(Poco::Net::SocketAddress("127.0.0.1", 0), 1); }
+    [[nodiscard]] Listener makeListener() const { return Listener(Poco::Net::SocketAddress("127.0.0.1", 0), 1); }
 
-    Poco::Net::StreamSocketImpl * makeClient() const { return new Silk::FiberStreamSocketImpl; }
+    [[nodiscard]] Poco::Net::StreamSocketImpl * makeClient() const { return new Silk::FiberStreamSocketImpl; }
 };
 
 struct SecurePolicy
@@ -58,9 +58,9 @@ struct SecurePolicy
     Poco::Net::Context::Ptr server_ctx{cert.makeContext(Poco::Net::Context::SERVER_USE)};
     Poco::Net::Context::Ptr client_ctx{cert.makeContext(Poco::Net::Context::CLIENT_USE)};
 
-    Listener makeListener() const { return Listener(Poco::Net::SocketAddress("127.0.0.1", 0), 1, server_ctx); }
+    [[nodiscard]] Listener makeListener() const { return Listener(Poco::Net::SocketAddress("127.0.0.1", 0), 1, server_ctx); }
 
-    Poco::Net::StreamSocketImpl * makeClient() const { return new Silk::SecureFiberStreamSocketImpl(client_ctx); }
+    [[nodiscard]] Poco::Net::StreamSocketImpl * makeClient() const { return new Silk::SecureFiberStreamSocketImpl(client_ctx); }
 };
 
 struct RetryOnceWriteBIOState
