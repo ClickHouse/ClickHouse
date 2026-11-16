@@ -224,6 +224,7 @@ query($owner: String!, $name: String!, $number: Int!, $after: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       viewerDidAuthor
+      headRefOid
       reviews(states: [APPROVED], first: 100, after: $after) {
         pageInfo { hasNextPage endCursor }
         nodes { databaseId viewerDidAuthor commit { oid } }
@@ -251,7 +252,9 @@ def _review_approves():
 def _update_approval(info):
     """Record the verdict as a GitHub review of the app: approve the reviewed commit on `✅ Approve`,
     otherwise dismiss the app's approvals left by earlier runs, so that a PR which needs changes does not
-    keep an approval. Raises on failure, failing the job."""
+    keep an approval. A run for a commit that is no longer the PR head changes nothing: overlapping runs
+    for different commits may finish in any order, and only the head commit's verdict is current.
+    Raises on failure, failing the job."""
     repo = _pr_repository(info)
     owner, name = repo.split("/")
     variables = {"owner": owner, "name": name, "number": int(info.pr_number)}
@@ -266,6 +269,11 @@ def _update_approval(info):
         if not page["hasNextPage"]:
             break
         variables["after"] = page["endCursor"]
+
+    # The last fetched page has the latest head, closest to the update below.
+    if pr["headRefOid"] != info.sha:
+        print(f"Commit {info.sha} is superseded by the PR head {pr['headRefOid']}, keeping the approval state")
+        return
 
     if _review_approves():
         if any((r.get("commit") or {}).get("oid") == info.sha for r in own_approvals):
