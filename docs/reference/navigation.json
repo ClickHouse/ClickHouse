@@ -671,6 +671,7 @@
                 "reference/functions/aggregate-functions/sumMapWithOverflow",
                 "reference/functions/aggregate-functions/sumWithOverflow",
                 "reference/functions/aggregate-functions/theilsU",
+                "reference/functions/aggregate-functions/timeSeriesAvgOverGroup",
                 "reference/functions/aggregate-functions/timeSeriesAvgToGrid",
                 "reference/functions/aggregate-functions/timeSeriesBottomKMasks",
                 "reference/functions/aggregate-functions/timeSeriesChangesToGrid",
