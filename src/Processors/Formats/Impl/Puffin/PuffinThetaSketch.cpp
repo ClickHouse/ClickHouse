@@ -1,10 +1,16 @@
 #include <Processors/Formats/Impl/Puffin/PuffinThetaSketch.h>
 
+#include "config.h"
+
+#include <Common/Exception.h>
+
 #if USE_DATASKETCHES
 
+#include <Processors/Formats/Impl/Puffin/PuffinCommon.h>
 #include <Processors/Formats/Impl/Puffin/PuffinWriter.h>
 
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -27,6 +33,7 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
+#include <theta_sketch.hpp>
 #include <theta_union.hpp>
 
 #include <unordered_set>
@@ -133,6 +140,38 @@ PuffinBlob makeThetaSketchBlobMetadata(Int32 field_id, Int64 snapshot_id, Int64 
     blob.properties.emplace("ndv", toString(ndv));
     return blob;
 }
+
+class PuffinThetaSketchBuilder final : public IPuffinBlobBuilder
+{
+public:
+    PuffinThetaSketchBuilder(const Block & header, const FormatSettings & format_settings);
+
+    void consume(const Chunk & chunk) override;
+    void write(PuffinWriter & writer) override;
+    void reset() override;
+
+private:
+    class ColumnSketch
+    {
+    public:
+        ColumnSketch(const String & column_name, const DataTypePtr & type);
+
+        void add(const IColumn & column);
+        const datasketches::update_theta_sketch & get() const { return sketch; }
+        void reset() { sketch.reset(); }
+
+    private:
+        void update(const void * data, size_t size);
+
+        DataTypePtr type;
+        datasketches::update_theta_sketch sketch;
+    };
+
+    VectorWithMemoryTracking<ColumnSketch> sketches;
+    VectorWithMemoryTracking<Int32> field_ids;
+    Int64 snapshot_id = -1;
+    Int64 sequence_number = -1;
+};
 
 }
 
@@ -342,3 +381,24 @@ void PuffinThetaSketchBuilder::reset()
 }
 
 #endif
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+PuffinBlobBuilderPtr createPuffinThetaSketchBuilder(const Block & header, const FormatSettings & format_settings)
+{
+#if USE_DATASKETCHES
+    return std::make_unique<PuffinThetaSketchBuilder>(header, format_settings);
+#else
+    UNUSED(header, format_settings);
+    throw Exception(
+        ErrorCodes::SUPPORT_IS_DISABLED, "Writing Theta sketches to Puffin files is disabled, ClickHouse was built without DataSketches");
+#endif
+}
+
+}

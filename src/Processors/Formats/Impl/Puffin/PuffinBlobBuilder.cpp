@@ -12,7 +12,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 PuffinBlobBuilderPtr createPuffinBlobBuilder(const Block & header, const FormatSettings & format_settings)
@@ -20,18 +19,10 @@ PuffinBlobBuilderPtr createPuffinBlobBuilder(const Block & header, const FormatS
     const String & blob_type = format_settings.puffin.output_blob_type;
 
     if (blob_type == PUFFIN_DELETION_VECTOR_BLOB_TYPE)
-        return std::make_unique<PuffinDeletionVectorBuilder>(header);
+        return createPuffinDeletionVectorBuilder(header);
 
     if (blob_type == PUFFIN_DATASKETCHES_THETA_BLOB_TYPE)
-    {
-#if USE_DATASKETCHES
-        return std::make_unique<PuffinThetaSketchBuilder>(header, format_settings);
-#else
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "Writing Theta sketches to Puffin files is disabled, ClickHouse was built without DataSketches");
-#endif
-    }
+        return createPuffinThetaSketchBuilder(header, format_settings);
 
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,

@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/Puffin/PuffinDeletionVector.h>
+#include <Processors/Formats/Impl/Puffin/PuffinCommon.h>
 #include <Processors/Formats/Impl/Puffin/PuffinWriter.h>
 
 #include <Columns/ColumnArray.h>
@@ -11,6 +12,7 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Chunk.h>
 
+#include <roaring/roaring64map.hh>
 #include <zlib.h>
 
 namespace DB
@@ -70,6 +72,23 @@ void validateDeletionVectorPosition(UInt64 position)
             position,
             DELETION_VECTOR_MAX_POSITION);
 }
+
+class PuffinDeletionVectorBuilder final : public IPuffinBlobBuilder
+{
+public:
+    explicit PuffinDeletionVectorBuilder(const Block & header);
+
+    void consume(const Chunk & chunk) override;
+    void write(PuffinWriter & writer) override;
+    void reset() override;
+
+private:
+    void addPositions(roaring::Roaring64Map & bitmap, const IColumn & positions, size_t begin, size_t end) const;
+
+    bool positions_are_arrays = false;
+    bool positions_are_unsigned = false;
+    MapWithMemoryTracking<String, roaring::Roaring64Map> deletion_vectors;
+};
 
 }
 
@@ -166,6 +185,12 @@ void PuffinDeletionVectorBuilder::write(PuffinWriter & writer)
 void PuffinDeletionVectorBuilder::reset()
 {
     deletion_vectors.clear();
+}
+
+
+PuffinBlobBuilderPtr createPuffinDeletionVectorBuilder(const Block & header)
+{
+    return std::make_unique<PuffinDeletionVectorBuilder>(header);
 }
 
 }
