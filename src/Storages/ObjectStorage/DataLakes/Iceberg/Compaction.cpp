@@ -212,7 +212,6 @@ static Plan getPlan(
         persistent_table_components.metadata_compression_method,
         /* force_fetch_latest_metadata */ true,
         /* ignore_metadata_pointer_overrides */ true);
-    plan.generator.setVersion(metadata_version + 1);
 
     /// continue the table's metadata version sequence
     plan.generator.setVersion(metadata_version + 1);
