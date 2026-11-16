@@ -1165,7 +1165,7 @@ static bool writeMetadataFiles(
     };
     std::unordered_map<Int64, LiveTotals> snapshot_id_to_live_totals;
 
-    /// Snapshot id -> nearest snapshot at or above it that the rewrite keeps.
+    /// Snapshot id -> the parent that its children get in the rewritten history. -1 means no parent.
     std::unordered_map<Int64, Int64> nearest_kept;
 
     for (const auto & history_record : plan.history)
@@ -1176,12 +1176,16 @@ static bool writeMetadataFiles(
             kept_parent_id = it->second;
 
         auto append = tryGetAppendUpdate(history_record);
-        nearest_kept[history_record.snapshot_id] = append ? history_record.snapshot_id : kept_parent_id;
         if (!append)
         {
+            /// A `delete` snapshot removes files, so its ancestors hold rows that its children do not. Children start a new chain.
+            /// TODO: Keep `delete` snapshots in the rewritten history. Then their children keep the real parent.
+            const bool removes_files = history_record.snapshot_summary->getOperation() == SnapshotSummaryOperation::DELETE;
+            nearest_kept[history_record.snapshot_id] = removes_files ? -1 : kept_parent_id;
             new_snapshots.push_back(MetadataGenerator::NextMetadataResult{});
             continue;
         }
+        nearest_kept[history_record.snapshot_id] = history_record.snapshot_id;
 
         LiveTotals live;
         for (const auto & data_file : plan.snapshot_id_to_data_files[history_record.snapshot_id])
