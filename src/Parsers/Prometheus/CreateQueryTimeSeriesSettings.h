@@ -51,13 +51,18 @@ bool isTimeSeriesRecentSamplesTargetEnabled(const ASTCreateQuery & query, bool f
 bool isTimeSeriesTimeRangesTargetEnabled(const ASTCreateQuery & query, bool for_restore = false);
 
 
+/// Whether a CREATE TABLE ... ENGINE=TimeSeries query enables the optional "histograms" target table:
+/// by a HISTOGRAMS clause or by the `store_native_histograms` setting.
+bool isTimeSeriesHistogramsTargetEnabled(const ASTCreateQuery & query);
+
+
 /// Whether a CREATE TABLE ... ENGINE=TimeSeries query declares a target in a form written by users: inner columns,
 /// an inner engine, or an external table. An inner UUID doesn't count: it's stamped by UUID generation,
 /// which can happen before normalization (e.g. for an ON CLUSTER query using an old DDL entry format).
 bool hasTimeSeriesTargetDefinition(const ASTCreateQuery & query, ViewTarget::Kind kind);
 
 /// Returns the number of inner target tables created by a CREATE TABLE ... ENGINE=TimeSeries query: the mandatory targets
-/// ("samples", "tags", "metric families") and the optional targets enabled by the settings (see the two functions above,
+/// ("samples", "tags", "metric families") and the optional targets enabled by the settings (see the functions above,
 /// also for `for_restore`), without the targets which are external tables.
 /// The function reads the settings of the query only: for a query with an `AS source_table` clause it doesn't check the
 /// definition of the source table, the settings copied from it are seen once the query is normalized (see normalizeTimeSeriesDefinition).
@@ -70,6 +75,7 @@ namespace detail
     /// (see TimeSeriesSettings.cpp, which asserts that they are equal).
     constexpr UInt64 TIME_SERIES_RECENT_SAMPLES_TTL_SECONDS_DEFAULT = 345600;
     constexpr bool TIME_SERIES_STORE_TIME_RANGES_DEFAULT = true;
+    constexpr bool TIME_SERIES_STORE_NATIVE_HISTOGRAMS_DEFAULT = false;
 }
 
 }

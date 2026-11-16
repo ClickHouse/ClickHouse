@@ -1,0 +1,16 @@
+-- schema 0, positive buckets [1,2]x3 and [2,4]x1, count 4, sum 4*sqrt(2) so mean = sqrt(2)
+1.4142135623730951	0.7071067811865476	0.5000000000000001
+-- count = 0: 0/0 -> NaN for all three (upstream behavior, no special-casing)
+nan	nan	nan
+-- NULL in -> NULL out (default null handling)
+\N	\N	\N
+-- row-wise NULLs inside a Nullable column are kept per row (second row: the doc-example histogram)
+\N	\N	\N
+2	1	1
+-- custom buckets (schema -53), bounds [1,2,4]; the [-Inf,1) bucket has count 0 and is skipped
+2.625	0.649519052838329	0.421875
+-- negative-only buckets [-2,-1]x3 and [-4,-2]x1: mirror of the first case, mean = -sqrt(2)
+-1.4142135623730951	0.7071067811865476	0.5000000000000001
+-- zero bucket + zero-threshold clamping of the nearest exponential buckets, zero_threshold 0.6
+0	0.6324555320336759	0.4000000000000001
+-- an invalid exponential schema (9 > 8) is rejected
