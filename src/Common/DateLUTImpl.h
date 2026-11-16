@@ -1050,7 +1050,13 @@ public:
         /// `roundDown` would return a `:30` boundary.
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(t)))
-                return roundDown(t, 3600);
+            {
+                /// The values of a day outside the lookup table have no offset change. Count the hour on the local
+                /// clock instead: the seconds since the local midnight, plus the offset change since then.
+                const Time date = outOfRangeValues(t).date;
+                const Time clock = (static_cast<Time>(t) - date) + (timezoneOffsetOutOfRange(t) - timezoneOffsetOutOfRange(date));
+                return static_cast<DateOrTime>(static_cast<Time>(t) - clock % 3600);
+            }
 
         if (static_cast<Time>(t) >= 0 && offset_is_whole_number_of_hours_during_epoch) [[likely]]
             return roundDownToMultiple(t, 3600);
