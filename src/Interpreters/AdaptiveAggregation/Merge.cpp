@@ -87,17 +87,6 @@ namespace
         table.emplace(stagedKeyHolder<copy_keys>(key, arena), it, inserted, routing_hash);
     }
 
-    /// Emplaces the key of a source table's cell into `table` with the cell's hash. The key of a string table is a view
-    /// its iteration handed out (see `forEachMappedCellWithHash`), which goes in with `emplaceIteratedKey`.
-    template <typename Table, typename Key>
-    void ALWAYS_INLINE emplaceSourceKey(Table & table, const Key & key, typename Table::LookupResult & it, bool & inserted, size_t hash)
-    {
-        if constexpr (requires { table.emplaceIteratedKey(key, it, inserted, hash); })
-            table.emplaceIteratedKey(key, it, inserted, hash);
-        else
-            table.emplace(key, it, inserted, hash);
-    }
-
     /// Prefetches the table slot of a staged record ahead of its emplace: hash-organized tables
     /// by the routing hash, string tables from the key bytes and the hash.
     template <typename Key, typename Table>
@@ -129,7 +118,7 @@ namespace
     {
         const bool * alive_bins;
 
-        bool ALWAYS_INLINE takes(UInt64 hash) const { return alive_bins[DB::bucketCountBin(hash)]; }
+        [[nodiscard]] bool ALWAYS_INLINE takes(UInt64 hash) const { return alive_bins[DB::bucketCountBin(hash)]; }
     };
 
     /// The filter of the best groups of a count-first unit: their hashes, sorted, and a bitset on 12 bits of them. A
@@ -148,12 +137,12 @@ namespace
                 bits[(hash >> 6) & 63] |= UInt64{1} << (hash & 63);
         }
 
-        bool ALWAYS_INLINE contains(UInt64 hash) const
+        [[nodiscard]] bool ALWAYS_INLINE contains(UInt64 hash) const
         {
             return ((bits[(hash >> 6) & 63] >> (hash & 63)) & 1) && std::binary_search(hashes.begin(), hashes.end(), hash);
         }
 
-        bool ALWAYS_INLINE takes(UInt64 hash) const { return contains(hash); }
+        [[nodiscard]] bool ALWAYS_INLINE takes(UInt64 hash) const { return contains(hash); }
 
     private:
         const DB::PaddedPODArray<UInt64> & hashes;
@@ -302,7 +291,7 @@ namespace
         }
 
         /// The record count of partition `sub` of the bucket, in the producers' chunks and in its spill stream.
-        size_t recordsOf(size_t sub) const
+        [[nodiscard]] size_t recordsOf(size_t sub) const
         {
             size_t records = spilledOf(sub).recordCount();
             for (const auto & producer : session.producer_buffers)
@@ -353,7 +342,7 @@ namespace
         }
 
     private:
-        DB::AdaptiveAggregationSession::SpilledPartition & spilledOf(size_t sub) const
+        [[nodiscard]] DB::AdaptiveAggregationSession::SpilledPartition & spilledOf(size_t sub) const
         {
             return session.spilled_partitions[first_partition + sub];
         }
@@ -378,7 +367,7 @@ namespace
     {
         if (source.isTwoLevel())
             return DB::getDataVariant<Method>(source).data.impls[bucket].size();
-        return source.indexedCellCount(layout.firstPartition(bucket), layout.firstPartition(bucket + 1));
+        return source.cellIndex().cellCount(layout.firstPartition(bucket), layout.firstPartition(bucket + 1));
     }
 
     /// Visits the cells of `bucket` of a source of a map method like `forEachMappedCellWithHash`.
@@ -389,14 +378,16 @@ namespace
         if (source.isTwoLevel())
             forEachMappedCellWithHash(DB::getDataVariant<Method>(source).data.impls[bucket], callback);
         else
-            source.forEachIndexedCell<Method>(layout.firstPartition(bucket), layout.firstPartition(bucket + 1), callback);
+            source.cellIndex().forEachCell<DB::AdaptiveBucketTable<Method>>(
+                layout.firstPartition(bucket), layout.firstPartition(bucket + 1), callback);
     }
 
-    /// The source cells of the merge units of one bucket (see `DB::Aggregator::mergeAndConvertAdaptiveBucketImpl`), a unit
-    /// being a run of the partitions of the bucket. The partitions of the cell index of a source are those of the layout,
-    /// so an indexed source has the cells of a unit in one run of its index, read in place. A two-level source keeps the
-    /// cells of the bucket in one table, which the constructor routes to the units by the same hash bits that partitioned
-    /// the staged records.
+    /// The source cells of the merge units of one bucket (see
+    /// `DB::Aggregator::mergeAndConvertAdaptiveBucketImpl`), a unit being a run of the partitions of the
+    /// bucket. The partitions of the cell index of a source are those of the layout, so an indexed source has
+    /// the cells of a unit in one run of positions per key class of its index, read in place. A two-level
+    /// source keeps the cells of the bucket in one table, which the constructor routes to the units by the
+    /// same hash bits that partitioned the staged records.
     template <typename Method>
     class AdaptiveUnitSourceCells
     {
@@ -419,7 +410,7 @@ namespace
             {
                 if (!data[i]->isTwoLevel())
                 {
-                    chassert(data[i]->numCellIndexPartitions() == layout.numPartitions());
+                    chassert(data[i]->cellIndex().numPartitions() == layout.numPartitions());
                     continue;
                 }
                 auto & table = DB::getDataVariant<Method>(*data[i]).data.impls[bucket];
@@ -445,7 +436,7 @@ namespace
             {
                 if (data[i]->isTwoLevel())
                     continue;
-                data[i]->forEachIndexedCell<Method>(
+                data[i]->cellIndex().forEachCell<BucketTable>(
                     unit_first_partition,
                     unit_end_partition,
                     [&](const auto & key, [[maybe_unused]] auto && mapped, size_t hash)
@@ -461,19 +452,19 @@ namespace
         }
 
         /// How many source cells `unit` has.
-        size_t count(size_t unit) const
+        [[nodiscard]] size_t count(size_t unit) const
         {
             const size_t unit_first_partition = first_partition + unit * partitions_per_unit;
             size_t cells = routed[unit].size();
             for (size_t i = 1; i < data.size(); ++i)
                 if (!data[i]->isTwoLevel())
-                    cells += data[i]->indexedCellCount(unit_first_partition, unit_first_partition + partitions_per_unit);
+                    cells += data[i]->cellIndex().cellCount(unit_first_partition, unit_first_partition + partitions_per_unit);
             return cells;
         }
 
     private:
         /// The bucket tables of the two-level variant of the method, whose cells the index of a single-level table holds.
-        using BucketTable = std::decay_t<decltype(std::declval<typename Method::Data &>().impls[0])>;
+        using BucketTable = DB::AdaptiveBucketTable<Method>;
 
         struct RoutedCell
         {
@@ -725,7 +716,7 @@ void Aggregator::adoptSourceCells(Table & table, const ForEachCell & for_each_ce
 
         typename Table::LookupResult it;
         bool inserted = false;
-        emplaceSourceKey(table, key, it, inserted, hash);
+        table.emplaceIteratedKey(key, it, inserted, hash);
         if constexpr (MapAggregationMethod<Method>)
         {
             AggregateDataPtr & source_place = *mapped;
@@ -784,7 +775,7 @@ size_t Aggregator::selectCountFirstBestGroups(
             return;
         typename Table::LookupResult it;
         bool inserted = false;
-        emplaceSourceKey(counting_table, key, it, inserted, hash);
+        counting_table.emplaceIteratedKey(key, it, inserted, hash);
         const UInt64 count = getCountState(*mapped + rank_offset);
         UInt64 & group_count = getInlineCountState(it->getMapped());
         if (inserted)

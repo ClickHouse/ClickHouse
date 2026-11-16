@@ -130,7 +130,7 @@ Aggregator::Params getAggregatorParams(const ContextPtr & query_context, const N
         settings[Setting::min_bytes_before_external_group_by],
         settings[Setting::empty_result_for_aggregation_by_empty_set],
         tmp_data_scope,
-        getEffectiveMaxThreads(settings),
+        getEffectiveMaxThreads(*query_context),
         settings[Setting::min_free_disk_space_for_temporary_data],
         settings[Setting::compile_aggregate_expressions],
         settings[Setting::min_count_to_compile_aggregate_expression],

@@ -130,7 +130,7 @@ private:
 
     // Helper function to compute the total seconds represented by the LocalTime.
     // For negative times, the total seconds is negative.
-    inline int64_t totalSeconds() const
+    [[nodiscard]] inline int64_t totalSeconds() const
     {
         // Compute total seconds from hours, minutes, and seconds.
         int64_t total = static_cast<int64_t>(m_hour) * 3600
@@ -197,10 +197,10 @@ public:
     LocalTime & operator= (const LocalTime &) noexcept = default;
 
     // Accessor methods
-    bool negative() const { return is_negative; }
+    [[nodiscard]] bool negative() const { return is_negative; }
     uint64_t hour() const { return m_hour; } /// NOLINT
-    unsigned char minute() const { return m_minute; }
-    unsigned char second() const { return m_second; }
+    [[nodiscard]] unsigned char minute() const { return m_minute; }
+    [[nodiscard]] unsigned char second() const { return m_second; }
 
     // Mutator methods
     void negative(bool b) { is_negative = b; }

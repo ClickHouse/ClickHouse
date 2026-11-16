@@ -371,7 +371,7 @@ public:
                 if (function_node.isWindowFunction())
                 {
                     buffer << " OVER (";
-                    buffer << calculateWindowNodeActionName(node, function_node.getWindowNode());
+                    buffer << calculateWindowNodeActionName(function_node.getWindowNode());
                     buffer << ')';
                 }
 
@@ -450,9 +450,8 @@ public:
         return name + "_" + constant_node.getResultType()->getName();
     }
 
-    String calculateWindowNodeActionName(const QueryTreeNodePtr & function_nodew_node_, const QueryTreeNodePtr & window_node_)
+    String calculateWindowNodeActionName(const QueryTreeNodePtr & window_node_)
     {
-        const auto & function_node = function_nodew_node_->as<const FunctionNode&>();
         const auto & window_node = window_node_->as<const WindowNode &>();
         WriteBufferFromOwnString buffer;
 
@@ -520,10 +519,9 @@ public:
             }
         }
 
-        auto window_frame_opt = extractWindowFrame(function_node);
-        if (window_frame_opt)
+        const WindowFrame & window_frame = window_node.getWindowFrame();
+        if (!window_frame.is_default)
         {
-            auto & window_frame = *window_frame_opt;
             if (window_node.hasPartitionBy() || window_node.hasOrderBy())
                 buffer << ' ';
 
@@ -555,7 +553,7 @@ public:
     ActionsScopeNode & operator=(const ActionsScopeNode &) = delete;
     ActionsScopeNode & operator=(ActionsScopeNode &&) = delete;
 
-    const QueryTreeNodePtr & getScopeNode() const
+    [[nodiscard]] const QueryTreeNodePtr & getScopeNode() const
     {
         return scope_node;
     }
@@ -745,7 +743,7 @@ private:
 
         void add(Levels levels) { mask |= levels.mask; }
 
-        size_t max() const { return 64 - getLeadingZeroBits(mask); }
+        [[nodiscard]] size_t max() const { return 64 - getLeadingZeroBits(mask); }
 
     private:
         uint64_t mask = 0;
@@ -1499,11 +1497,11 @@ String calculateConstantActionNodeName(const Field & constant_literal)
     return ActionNodeNameHelper::calculateConstantActionNodeName(constant_literal);
 }
 
-String calculateWindowNodeActionName(const QueryTreeNodePtr & function_node, const QueryTreeNodePtr & window_node, const PlannerContext & planner_context, bool use_column_identifier_as_action_node_name)
+String calculateWindowNodeActionName(const QueryTreeNodePtr & window_node, const PlannerContext & planner_context, bool use_column_identifier_as_action_node_name)
 {
     QueryTreeNodeToName empty_map;
     ActionNodeNameHelper helper(empty_map, planner_context, use_column_identifier_as_action_node_name);
-    return helper.calculateWindowNodeActionName(function_node, window_node);
+    return helper.calculateWindowNodeActionName(window_node);
 }
 
 }

@@ -28,7 +28,7 @@ private:
     const char * end;
     bool allow_settings_after_format_in_insert;
 
-    const char * getName() const override { return "INSERT query"; }
+    [[nodiscard]] const char * getName() const override { return "INSERT query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 public:
     explicit ParserInsertQuery(const char * end_, bool allow_settings_after_format_in_insert_)
@@ -36,7 +36,7 @@ public:
         , allow_settings_after_format_in_insert(allow_settings_after_format_in_insert_)
     {}
 
-    std::map<String, Documentation> getDocumentation() const override;
+    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
 };
 
 /** Insert accepts an identifier and an asterisk with variants.
@@ -44,7 +44,7 @@ public:
 class ParserInsertElement : public IParserBase
 {
 protected:
-    const char * getName() const override { return "insert element"; }
+    [[nodiscard]] const char * getName() const override { return "insert element"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

@@ -239,7 +239,7 @@ QueryPlan ProjectionPlanner::buildPlanForAggregateProjection(Block source)
 
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
-    auto max_threads = getEffectiveMaxThreads(settings);
+    auto max_threads = getEffectiveMaxThreads(*query_context);
     plan.addStep(std::make_unique<AggregatingStep>(
         plan.getCurrentHeader(),
         getAggregatorParams(query_context, aggregation_keys, aggregates),
