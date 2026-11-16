@@ -228,13 +228,8 @@ AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const
 /// function instead.
 ///
 /// Azure Blob Storage and every known compatible implementation send the header in every
-/// `GetProperties`, `ListBlobs` and `Download` answer, so its absence means the endpoint is not
-/// what it claims to be: in practice a fake server set up to probe this server (every hit of this
-/// condition in production so far was a deliberately non-conformant endpoint under an
-/// `azureBlobStorage(...)` call with an attacker-controlled URL). The absence is deliberately
-/// reported as `LOGICAL_ERROR`, not handled gracefully, so that it stays on the logical-error
-/// radar of monitoring; note that debug and sanitizer builds abort when such an exception is
-/// constructed, so tests of this behavior only run in release builds.
+/// `GetProperties`, `ListBlobs` and `Download` answer, so its absence means the endpoint is  not
+/// behaving correctly.
 String getETag(const Azure::ETag & etag, const String & blob_path);
 
 #endif
