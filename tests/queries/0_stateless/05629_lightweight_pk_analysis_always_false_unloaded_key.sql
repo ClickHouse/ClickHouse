@@ -8,9 +8,9 @@ DROP TABLE IF EXISTS t_empty;
 DROP TABLE IF EXISTS t_null;
 
 CREATE TABLE t_unloaded (id UInt64, c String) ENGINE = MergeTree ORDER BY (id, c)
-SETTINGS index_granularity = 1, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0.9, primary_key_lazy_load = 0, use_primary_key_cache = 0;
+SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 1, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0.9, primary_key_lazy_load = 0, use_primary_key_cache = 0;
 CREATE TABLE t_loaded (id UInt64, c String) ENGINE = MergeTree ORDER BY (id, c)
-SETTINGS index_granularity = 1, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0, primary_key_lazy_load = 0, use_primary_key_cache = 0;
+SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 1, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0, primary_key_lazy_load = 0, use_primary_key_cache = 0;
 CREATE TABLE t_empty (c String) ENGINE = Null;
 CREATE TABLE t_null (c Nullable(String)) ENGINE = Memory;
 
