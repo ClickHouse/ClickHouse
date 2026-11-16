@@ -195,8 +195,10 @@ bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & ri
 ///      so later predicates at the same step can also be detected as redundant.
 ///   2. At an inner join, synthesize one predicate per equivalence class spanning the left
 ///      and right subtrees that the remaining predicates do not connect. If predicates remain,
-///      only for classes whose members have one type up to Nullable and LowCardinality
-///      (equality across types is not transitive), and not when a side is a prepared storage.
+///      not when a side is a prepared storage.
+/// Both phases use only classes whose members have one type up to Nullable and LowCardinality:
+/// equality across types is not transitive. `Int32` 0 equals `Enum8('a' = 0)`, which equals the
+/// `String` 'a', which equals `Enum8('a' = 1)`, which equals `Int32` 1.
 static void cleanupJoinPredicates(
     const DPJoinEntryPtr & root,
     const EquivalenceClasses<JoinActionRef> & column_equivalences,
@@ -260,7 +262,7 @@ static void cleanupJoinPredicates(
             /// Only propagate equivalences from inner joins to the parent;
             /// outer join equality holds only for matching rows
             /// and would be invalid for NULL-padded non-matching rows.
-            if (is_inner)
+            if (is_inner && has_single_type({*lhs_resolved, *rhs_resolved}))
                 equiv.add(*lhs_resolved, *rhs_resolved);
             return false;
         });
@@ -305,7 +307,7 @@ static void cleanupJoinPredicates(
                 if (!equiv_class || !visited.insert(equiv_class).second)
                     continue;
 
-                if (has_predicates && (is_connected(*equiv_class) || !has_single_type(*equiv_class)))
+                if (!has_single_type(*equiv_class) || (has_predicates && is_connected(*equiv_class)))
                     continue;
 
                 for (const auto & other : *equiv_class)

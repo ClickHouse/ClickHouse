@@ -153,6 +153,10 @@ private:
     }
     /// The equivalence classes with columns on both sides: one key of the join each.
     [[nodiscard]] UInt64 spanningClasses(UInt32 left_mask, UInt32 right_mask) const;
+    /// The spanning classes that a merge join gets an added key of: those of one type. In a class of several types two
+    /// columns can differ (`Int32` 0 and 1 joined through `Enum8('a' = 0)`, `String` and `Enum8('a' = 1)`), and the join
+    /// keeps the edges of such a class as its keys instead.
+    [[nodiscard]] UInt64 mergeKeysClasses(UInt32 left_mask, UInt32 right_mask) const;
     /// The classes of all keys of a join, in the order a single relation can be read in, starting with the merge key;
     /// empty if it cannot be read in an order that covers them.
     [[nodiscard]] VectorWithMemoryTracking<Int32> keyOrder(UInt32 relation_mask, UInt64 key_classes, Int32 order_class) const;
@@ -857,6 +861,18 @@ bool DPSubJoinOrderOptimizer::hasConstantShardKey(UInt32 relation_mask, UInt64 k
     return used > 0;
 }
 
+UInt64 DPSubJoinOrderOptimizer::mergeKeysClasses(UInt32 left_mask, UInt32 right_mask) const
+{
+    UInt64 key_classes = 0;
+    for (UInt64 classes = spanningClasses(left_mask, right_mask); classes; classes &= classes - 1)
+    {
+        const auto key_class = std::countr_zero(classes);
+        if (dpsub_data.class_single_type[key_class])
+            key_classes |= static_cast<UInt64>(1) << key_class;
+    }
+    return key_classes;
+}
+
 UInt64 DPSubJoinOrderOptimizer::spanningClasses(UInt32 left_mask, UInt32 right_mask) const
 {
     UInt64 classes = 0;
@@ -1112,7 +1128,7 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
         add_key(entry.merge_class);
 
         /// On several keys, the others follow in the order an input is sorted by, as `mergeJoinCost` assumed.
-        const UInt64 key_classes = spanningClasses(entry.left, entry.right);
+        const UInt64 key_classes = mergeKeysClasses(entry.left, entry.right);
         if (std::popcount(key_classes) > 1)
         {
             auto key_order = keyOrder(entry.left, key_classes, entry.merge_class);
