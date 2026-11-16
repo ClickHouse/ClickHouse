@@ -10,7 +10,7 @@ namespace DB
 class HTTPPathHints : public IHints<>
 {
 public:
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
     void add(const String & http_path);
 
 private:
