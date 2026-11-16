@@ -187,6 +187,36 @@ static bool isCurrentManifestListAboveThreshold(
     return manifest_list_deserializer.rows() > threshold;
 }
 
+/// Puts every parent before its children. The `snapshots` array of the metadata file has no defined order.
+static IcebergHistory sortParentsFirst(IcebergHistory history)
+{
+    std::unordered_set<Int64> pending;
+    for (const auto & record : history)
+        pending.insert(record.snapshot_id);
+
+    IcebergHistory sorted;
+    sorted.reserve(history.size());
+    /// Writers usually append snapshots in commit order. Such a history needs one pass and keeps its order.
+    while (!pending.empty())
+    {
+        size_t sorted_before = sorted.size();
+        for (auto & record : history)
+        {
+            /// A snapshot is ready when its parent is absent or already emitted.
+            if (pending.contains(record.snapshot_id) && !pending.contains(record.parent_id))
+            {
+                pending.erase(record.snapshot_id);
+                sorted.push_back(std::move(record));
+            }
+        }
+
+        if (sorted.size() == sorted_before)
+            throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parent links of the snapshots form a cycle");
+    }
+
+    return sorted;
+}
+
 static Plan getPlan(
     IcebergHistory snapshots_info,
     const DataLakeStorageSettings & data_lake_settings,
@@ -237,6 +267,8 @@ static Plan getPlan(
         }
     }
     plan.initial_metadata_object = initial_metadata_object;
+
+    snapshots_info = sortParentsFirst(std::move(snapshots_info));
 
     /// A snapshot's manifest list also lists the manifests of the earlier snapshots.
     std::vector<ProcessedManifestFileEntryPtr> all_positional_delete_files;
