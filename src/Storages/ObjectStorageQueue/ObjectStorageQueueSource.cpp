@@ -89,6 +89,7 @@ namespace FailPoints
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int FILE_DOESNT_EXIST;
     extern const int QUERY_WAS_CANCELLED;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_COMPILE_REGEXP;
@@ -1290,6 +1291,29 @@ void ObjectStorageQueueSource::onFinish() { parser_shared_resources->finishStrea
 
 Chunk ObjectStorageQueueSource::generateImpl()
 {
+    /// The tags of the version that is read: a version selected by the URL has its own tags, which S3 returns
+    /// only when the `versionId` is passed, while the key alone gives the tags of the latest version.
+    auto fetch_tags_of_consumed_version = [&](const String & path) -> ObjectAttributes
+    {
+#if USE_AWS_S3
+        if (object_storage->getType() == ObjectStorageType::S3)
+        {
+            const auto & s3_storage = assert_cast<const S3ObjectStorage &>(*object_storage);
+            const auto & selected_version_id = s3_storage.getURI().version_id;
+            if (!selected_version_id.empty())
+            {
+                auto selected = s3_storage.tryGetObjectVersionMetadata(path, selected_version_id, /*with_tags=*/true);
+                if (!selected)
+                    throw Exception(
+                        ErrorCodes::FILE_DOESNT_EXIST,
+                        "The version {} of the object {} does not exist, cannot get its tags", selected_version_id, path);
+                return std::move(selected->tags);
+            }
+        }
+#endif
+        return object_storage->getObjectMetadata(path, /*with_tags=*/true).tags;
+    };
+
 #if USE_AWS_S3
     /// Claims the current S3 version of the file with a `HEAD`; returns an error if it was rewritten or removed.
     auto claim_current_version = [&](const String & path) -> std::optional<String>
@@ -1584,8 +1608,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                                     "Failpoint-triggered tag fetch failure for file: {}", file_metadata->getPath());
                             });
 
-                            metadata_with_tags->tags
-                                = object_storage->getObjectMetadata(object_info_for_tags->getPath(), /*with_tags=*/true).tags;
+                            metadata_with_tags->tags = fetch_tags_of_consumed_version(object_info_for_tags->getPath());
                             object_info_for_tags->setObjectMetadata(*metadata_with_tags);
                         }
                         catch (...)
