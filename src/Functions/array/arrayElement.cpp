@@ -363,9 +363,9 @@ public:
 
     /// Rows the caller makes NULL afterwards (a NULL index): a missing element there keeps the column default.
     void initMask(const UInt8 * mask_) { mask = mask_; }
-    const UInt8 * getMask() const { return mask; }
-    const UInt8 * getSinkNullMap() const { return sink_null_map; }
-    bool isMasked(size_t row) const { return mask && mask[row]; }
+    [[nodiscard]] const UInt8 * getMask() const { return mask; }
+    [[nodiscard]] const UInt8 * getSinkNullMap() const { return sink_null_map; }
+    [[nodiscard]] bool isMasked(size_t row) const { return mask && mask[row]; }
 
 private:
     const UInt8 * src_null_map = nullptr;
