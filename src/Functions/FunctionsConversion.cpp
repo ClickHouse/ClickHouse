@@ -2071,6 +2071,8 @@ DataTypePtr withPairedDateTimesInUTC(const DataTypeObject & object, const DataTy
             return std::make_shared<DataTypeDateTime64>(date_time64->getScale(), "UTC");
         return leaf;
     };
+    /// Whether a pair matches does not depend on its leaves, so the walk from `other` only checks it.
+    auto keep = [](const DataTypePtr & leaf, const DataTypePtr &) { return leaf; };
     const auto & other_paths = other.getTypedPaths();
     auto typed_paths = object.getTypedPaths();
     for (auto & [path, path_type] : typed_paths)
@@ -2081,7 +2083,7 @@ DataTypePtr withPairedDateTimesInUTC(const DataTypeObject & object, const DataTy
         if (it == other_paths.end() || std::ranges::any_of(object.getTypedPaths(), overlaps) || std::ranges::any_of(other_paths, overlaps))
             continue;
         auto relabeled = replaceNestedTypesInPair(path_type, it->second, to_utc, /*left_is_common_type=*/ false, /*as_json_text=*/ true);
-        if (relabeled && replaceNestedTypesInPair(it->second, path_type, to_utc, /*left_is_common_type=*/ false, /*as_json_text=*/ true))
+        if (relabeled && replaceNestedTypesInPair(it->second, path_type, keep, /*left_is_common_type=*/ false, /*as_json_text=*/ true))
             path_type = relabeled;
     }
     return std::make_shared<DataTypeObject>(object.getSchemaFormat(), std::move(typed_paths), object.getPathsToSkip(),
