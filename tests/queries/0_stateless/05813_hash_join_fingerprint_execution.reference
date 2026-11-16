@@ -1,0 +1,5 @@
+forced 1: ALL and SEMI
+forced 2: ALL and SEMI
+scoped outer 0, inner 2: subquery, CTE and view
+scoped outer 2, inner 0: subquery, CTE and view
+automatic architecture-specific assertions passed

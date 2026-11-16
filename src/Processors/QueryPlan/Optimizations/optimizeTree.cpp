@@ -1,4 +1,3 @@
-#include <Core/Settings.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -6,6 +5,7 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -43,11 +43,6 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-extern const SettingsUInt64 experimental_join_fingerprint_mode;
-}
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
 namespace
@@ -124,10 +119,8 @@ static bool containsFilterAffectingProbeBudget(const IQueryPlanStep & step)
 
 static void invalidateAutoFingerprintProbeEstimates(QueryPlan::Node & root, bool runtime_filters_added)
 {
-    const auto query_context = CurrentThread::tryGetQueryContext();
-    if (!query_context || query_context->getSettingsRef()[Setting::experimental_join_fingerprint_mode] != 4)
-        return;
-
+    /// Nested queries can choose a different fingerprint mode from the outer query.
+    /// Inspect each join's captured settings instead of the thread's outer context.
     Stack stack;
     bool probe_budget_invalid = runtime_filters_added;
     traverseQueryPlan(stack, root, [&](const auto & node)
@@ -148,10 +141,14 @@ static void invalidateAutoFingerprintProbeEstimates(QueryPlan::Node & root, bool
     traverseQueryPlan(stack, root, [](auto & node)
     {
         if (auto * logical = typeid_cast<JoinStepLogical *>(node.step.get()))
-            logical->invalidateAutoFingerprintProbeEstimate();
+        {
+            if (logical->getJoinSettings().experimental_join_fingerprint_mode == 4)
+                logical->invalidateAutoFingerprintProbeEstimate();
+        }
         else if (const auto * physical = typeid_cast<const JoinStep *>(node.step.get()))
         {
-            if (auto * hash_join = typeid_cast<HashJoin *>(physical->getJoin().get()))
+            if (auto * hash_join = typeid_cast<HashJoin *>(physical->getJoin().get());
+                hash_join && hash_join->getTableJoin().getFingerprintMode() == 4)
                 hash_join->invalidateAutoFingerprintProbeEstimate();
         }
     });

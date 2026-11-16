@@ -100,12 +100,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 experimental_join_fingerprint_mode;
-}
-
-
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
@@ -566,10 +560,10 @@ HashJoin::HashJoin(
     }
 
     const auto query_context = CurrentThread::tryGetQueryContext();
-    const UInt64 fingerprint_mode = query_context ? query_context->getSettingsRef()[Setting::experimental_join_fingerprint_mode] : 0;
+    const UInt64 fingerprint_mode = table_join->getFingerprintMode();
     if (fingerprint_mode > 4 || fingerprint_mode == 3)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `experimental_join_fingerprint_mode` must be 0, 1, 2 or 4");
-    if (fingerprint_mode == 4 && query_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
+    if (fingerprint_mode == 4 && query_context && query_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
         && !build_layout.two_level && table_join->oneDisjunct()
         && data->type == Type::key64 && table_join->getMixedJoinExpression() == nullptr
         && ((kind == JoinKind::Inner && strictness == JoinStrictness::All)
