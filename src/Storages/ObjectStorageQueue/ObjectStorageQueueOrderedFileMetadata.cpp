@@ -1094,10 +1094,15 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     /// Reads Keeper nodes in batches of keeper_multiread_batch_size, like the
     /// cleanup threads do, so a large listing never turns into one oversized
     /// multi-read request.
+    struct NodeValue
+    {
+        Coordination::Error error = Coordination::Error::ZOK;
+        std::string data;
+    };
     auto multi_try_get = [&](const std::vector<std::string> & node_paths)
     {
-        zkutil::ZooKeeper::MultiTryGetResponse all_responses;
-        all_responses.reserve(node_paths.size());
+        std::vector<NodeValue> values;
+        values.reserve(node_paths.size());
         const size_t batch_size = std::max<size_t>(keeper_multiread_batch_size, 1);
         for (size_t offset = 0; offset < node_paths.size(); offset += batch_size)
         {
@@ -1117,9 +1122,15 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
                     "Unexpected size of Keeper response, expected {}, got {}",
                     batch.size(), responses.size());
             }
-            all_responses.insert(all_responses.end(), responses.begin(), responses.end());
+            for (size_t i = 0; i < responses.size(); ++i)
+            {
+                auto & response = responses[i];
+                auto & value = values.emplace_back();
+                value.error = response.error;
+                value.data = response.data;
+            }
         }
-        return all_responses;
+        return values;
     };
 
     const bool use_buckets_for_processing = buckets_num > 1;
