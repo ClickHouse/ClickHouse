@@ -133,6 +133,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int ILLEGAL_COLUMN;
@@ -1564,7 +1565,7 @@ void checkExpectedColumnsAreDeclared(const StoragePtr & table, const StorageMeta
 }
 
 /// A column the user may not see is neither looked up nor named in an error, here or by a shard.
-void checkAccessToExpectedColumns(const ContextPtr & context, const StorageID & table_id)
+void checkAccessToExpectedColumns(const ContextPtr & context, const StorageID & table_id, const IStorage & table)
 {
     const auto & expected_types = context->getSettingsRef()[Setting::insert_expected_column_types].value;
     if (expected_types.empty())
@@ -1573,6 +1574,17 @@ void checkAccessToExpectedColumns(const ContextPtr & context, const StorageID & 
     for (const auto & expected_type : expected_types)
         expected_names.push_back(expected_type.safeGet<Tuple>().at(0).safeGet<String>());
     context->checkAccess(AccessType::SHOW_COLUMNS, table_id, expected_names);
+
+    /// An Alias table has the columns of its target, so the user must see them there too.
+    const auto * alias = table.as<StorageAlias>();
+    if (!alias)
+        return;
+    const NameSet unique_names(expected_names.begin(), expected_names.end());
+    if (alias->filterColumnsGrantedThroughChain(context, AccessType::SHOW_COLUMNS, expected_names).size() != unique_names.size())
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Not enough privileges to check the columns of the target of {} (insert_expected_column_types)",
+            table_id.getNameForLogs());
 }
 
 }

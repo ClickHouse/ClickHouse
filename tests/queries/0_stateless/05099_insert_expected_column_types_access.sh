@@ -8,6 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 user="u_05099_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS a_expected_access;
     DROP TABLE IF EXISTS d_expected_access;
     DROP TABLE IF EXISTS n_expected_access;
     DROP TABLE IF EXISTS t_expected_access;
@@ -19,6 +20,8 @@ $CLICKHOUSE_CLIENT -q "
     GRANT INSERT ON ${CLICKHOUSE_DATABASE}.n_expected_access TO $user;
     GRANT INSERT(x) ON ${CLICKHOUSE_DATABASE}.t_expected_access TO $user;
     GRANT INSERT(x) ON ${CLICKHOUSE_DATABASE}.d_expected_access TO $user;
+    CREATE TABLE a_expected_access ENGINE = Alias(${CLICKHOUSE_DATABASE}, t_expected_access) SETTINGS allow_experimental_alias_table_engine = 1;
+    GRANT INSERT ON ${CLICKHOUSE_DATABASE}.a_expected_access TO $user;
 "
 
 run() { $CLICKHOUSE_CLIENT --user "$user" --async_insert 0 -q "$1" 2>&1 | grep -oE 'ACCESS_DENIED|INCOMPATIBLE_SCHEMA' | head -1 | grep . || echo OK; }
@@ -41,9 +44,15 @@ echo "narrow distributed, shard-only column: $(run "$narrow, insert_expected_col
 echo "narrow distributed, declared column: $(run "$narrow, insert_expected_column_types = {'x': 'UInt8'} VALUES (10)")"
 $CLICKHOUSE_CLIENT -q "SELECT 'queued files', count() FROM system.distribution_queue WHERE database = currentDatabase() AND table = 'd_expected_access' AND data_files > 0"
 
+# An Alias table has the columns of its target: a grant on the whole alias shows none the target hides.
+echo "alias, hidden target column: $(run "INSERT INTO a_expected_access (x) SETTINGS insert_expected_column_types = {'secret': 'String'} VALUES (11)")"
+echo "alias, granted target column, wrong type: $(run "INSERT INTO a_expected_access (x) SETTINGS insert_expected_column_types = {'x': 'String'} VALUES (12)")"
+
 $CLICKHOUSE_CLIENT -q "GRANT INSERT ON ${CLICKHOUSE_DATABASE}.t_expected_access TO $user"
 echo "table grant, wrong type: $(run "INSERT INTO t_expected_access (x) SETTINGS insert_expected_column_types = {'secret': 'String'} VALUES (4)")"
 echo "table grant, right type: $(run "INSERT INTO t_expected_access (x) SETTINGS insert_expected_column_types = {'secret': 'UUID'} VALUES (5)")"
 
+echo "alias, table grant, right type: $(run "INSERT INTO a_expected_access (x) SETTINGS insert_expected_column_types = {'secret': 'UUID'} VALUES (13)")"
+
 $CLICKHOUSE_CLIENT -q "SELECT groupArray(x) FROM (SELECT x FROM t_expected_access ORDER BY x)"
-$CLICKHOUSE_CLIENT -q "DROP TABLE d_expected_access; DROP TABLE n_expected_access; DROP TABLE t_expected_access; DROP USER $user"
+$CLICKHOUSE_CLIENT -q "DROP TABLE a_expected_access; DROP TABLE d_expected_access; DROP TABLE n_expected_access; DROP TABLE t_expected_access; DROP USER $user"
