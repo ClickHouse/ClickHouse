@@ -100,26 +100,17 @@ public:
     {
         DB::NamesAndTypesList names_and_types;
         DB::NameToNameMap physical_names_map;
-        std::unordered_set<String> timestamp_ntz_paths;
-        /// A Delta field name may contain a dot, so two leaves can flatten to one writer path: a path
-        /// that a Delta `timestamp` leaf also takes is ambiguous and keeps the default annotation.
-        std::unordered_set<String> timestamp_writer_paths;
     };
     SchemaResult getSchemaResult();
     const DB::Names & getPartitionColumns() const { return partition_columns; }
 
 private:
     struct Field;
-    /// `element`/`key`/`value` are the Parquet writer's words for array and map children; the kernel's differ.
-    enum class ParentKind { Struct, Array, Map };
-
     DB::NamesAndTypesList getNamesAndTypesFromList(
         size_t list_idx,
         const std::string & parent_logical_path,
         const std::string & parent_physical_path,
-        const std::string & parent_writer_path,
-        ParentKind parent_kind,
-        SchemaResult & result);
+        DB::NameToNameMap & physical_names_map);
 
     struct Field
     {
@@ -152,8 +143,6 @@ private:
         /// There is no TypeIndex::Bool, so we need to tell
         /// when it is int8 and when it is bool.
         bool is_bool = false;
-
-        bool is_timestamp_ntz = false;
     };
     using Fields = std::vector<Field>;
 
@@ -294,7 +283,7 @@ private:
             .visit_binary = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::String>>,
             .visit_date = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Date32>>,
             .visit_timestamp = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::DateTime64>>,
-            .visit_timestamp_ntz = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::DateTime64, false, true>>,
+            .visit_timestamp_ntz = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::DateTime64>>,
             .visit_variant = &visitorWrapper<visitVariant>,
         };
     }
@@ -326,7 +315,7 @@ private:
         return physical_name ? std::unique_ptr<std::string>(physical_name) : nullptr;
     }
 
-    template <DB::TypeIndex type, bool is_bool = false, bool is_timestamp_ntz = false>
+    template <DB::TypeIndex type, bool is_bool = false>
     static void simpleTypeVisitor(
         void * data,
         uintptr_t sibling_list_id,
@@ -354,7 +343,6 @@ private:
 
         SchemaVisitorData::Field field(column_name, std::move(type), nullable, physical_name);
         field.is_bool = is_bool;
-        field.is_timestamp_ntz = is_timestamp_ntz;
         it->second->push_back(std::move(field));
     }
 
@@ -477,10 +465,8 @@ private:
 SchemaVisitorData::SchemaResult SchemaVisitorData::getSchemaResult()
 {
     SchemaResult result;
-    result.names_and_types = getNamesAndTypesFromList(0, "", "", "", ParentKind::Struct, result);
+    result.names_and_types = getNamesAndTypesFromList(0, "", "", result.physical_names_map);
     chassert(result.names_and_types.size() == type_lists[0]->size());
-    for (const auto & path : result.timestamp_writer_paths)
-        result.timestamp_ntz_paths.erase(path);
     return result;
 }
 
@@ -488,23 +474,11 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
     size_t list_idx,
     const std::string & parent_logical_path,
     const std::string & parent_physical_path,
-    const std::string & parent_writer_path,
-    ParentKind parent_kind,
-    SchemaResult & result)
+    DB::NameToNameMap & physical_names_map)
 {
     DB::NamesAndTypesList names_and_types;
-    size_t child_index = 0;
     for (const auto & field : *type_lists[list_idx])
     {
-        std::string writer_component = field.name;
-        if (parent_kind == ParentKind::Array)
-            writer_component = "element";
-        else if (parent_kind == ParentKind::Map)
-            writer_component = child_index == 0 ? "key" : "value";
-        ++child_index;
-        const std::string field_writer_path
-            = parent_writer_path.empty() ? writer_component : parent_writer_path + "." + writer_component;
-
         DB::DataTypePtr type;
         if (field.is_bool)
         {
@@ -542,21 +516,21 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             DB::WhichDataType which(field.type);
             /// Compute full ancestor paths for this field so children at any
             /// depth use the complete logical/physical path as the map key/value.
-            const std::string field_logical_path = appendToLogicalPath(parent_logical_path, field.name);
+            const std::string field_logical_path = parent_logical_path.empty()
+                ? field.name
+                : parent_logical_path + "." + field.name;
             const std::string field_physical_path = (!field.physical_name.empty() && !parent_physical_path.empty())
                 ? parent_physical_path + "." + field.physical_name
                 : field.physical_name;
 
             if (which.isTuple())
             {
-                auto child_names_and_types = getNamesAndTypesFromList(
-                    field.child_list_id, field_logical_path, field_physical_path, field_writer_path, ParentKind::Struct, result);
+                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id, field_logical_path, field_physical_path, physical_names_map);
                 type = std::make_shared<DB::DataTypeTuple>(child_names_and_types.getTypes(), child_names_and_types.getNames());
             }
             else if (which.isArray())
             {
-                auto child_types = getNamesAndTypesFromList(
-                    field.child_list_id, field_logical_path, field_physical_path, field_writer_path, ParentKind::Array, result);
+                auto child_types = getNamesAndTypesFromList(field.child_list_id, field_logical_path, field_physical_path, physical_names_map);
                 if (child_types.size() != 1)
                 {
                     throw DB::Exception(
@@ -569,8 +543,7 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             }
             else if (which.isMap())
             {
-                auto child_names_and_types = getNamesAndTypesFromList(
-                    field.child_list_id, field_logical_path, field_physical_path, field_writer_path, ParentKind::Map, result);
+                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id, field_logical_path, field_physical_path, physical_names_map);
                 auto child_types = child_names_and_types.getTypes();
                 if (child_types.size() != 2)
                 {
@@ -589,39 +562,32 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             }
         }
         chassert(type);
-        /// A partition column is top-level and never written to a data file, so it takes no writer path.
-        const bool in_data_file = !parent_writer_path.empty()
-            || std::find(partition_columns.begin(), partition_columns.end(), field.name) == partition_columns.end();
-        if (in_data_file && field.is_timestamp_ntz)
-            result.timestamp_ntz_paths.insert(field_writer_path);
-        else if (in_data_file && field.type == DB::TypeIndex::DateTime64)
-            result.timestamp_writer_paths.insert(field_writer_path);
-
         if (!field.physical_name.empty())
         {
             /// Use the full ancestor path as the map key so that lookups in
             /// replaceTypeNamesToPhysicalRecursively work at any nesting depth.
             /// key:   "grandparent.parent.field"  (full logical path)
             /// value: "grandparent_phys.parent_phys.field_phys" (full physical path)
-            const std::string logical_path = appendToLogicalPath(parent_logical_path, field.name);
+            const std::string logical_path = parent_logical_path.empty()
+                ? field.name
+                : parent_logical_path + "." + field.name;
             const std::string physical_path = parent_physical_path.empty()
                 ? field.physical_name
                 : parent_physical_path + "." + field.physical_name;
-            result.physical_names_map.emplace(logical_path, physical_path);
+            physical_names_map.emplace(logical_path, physical_path);
         }
         names_and_types.emplace_back(field.name, type);
     }
     return names_and_types;
 }
 
-TableSchemaResult getTableSchemaFromSnapshot(
+std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(
     ffi::SharedSnapshot * snapshot, ffi::SharedExternEngine * engine)
 {
     SchemaVisitorData data(engine);
     SchemaVisitor::visitTableSchema(snapshot, data);
-    SchemaVisitor::visitPartitionColumns(snapshot, data);
     auto result = data.getSchemaResult();
-    return {std::move(result.names_and_types), std::move(result.physical_names_map), std::move(result.timestamp_ntz_paths)};
+    return {result.names_and_types, result.physical_names_map};
 }
 
 DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan, ffi::SharedExternEngine * engine)
@@ -631,12 +597,11 @@ DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan, ffi::Sha
     return data.getSchemaResult().names_and_types;
 }
 
-WriteSchemaResult getWriteSchema(ffi::SharedWriteContext * write_context, ffi::SharedExternEngine * engine)
+DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context, ffi::SharedExternEngine * engine)
 {
     SchemaVisitorData data(engine);
     SchemaVisitor::visitWriteSchema(write_context, data);
-    auto result = data.getSchemaResult();
-    return {std::move(result.names_and_types), std::move(result.timestamp_ntz_paths)};
+    return data.getSchemaResult().names_and_types;
 }
 
 DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel-replicas, no-flaky-check, no-msan
+# Tags: long, no-fasttest, no-parallel-replicas, no-flaky-check
 # Test for https://github.com/ClickHouse/ClickHouse/issues/113003
 # Skip-index condition building matched a filter column name against JSONAllPaths(...) index
 # columns by enumerating every dot split of the name and formatting a lookup key per split. The

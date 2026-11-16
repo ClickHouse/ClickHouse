@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block_fwd.h>
 #include <base/types.h>
 #include <boost/noncopyable.hpp>
 #include <memory>
@@ -47,18 +46,13 @@ struct IExchangeLookup : boost::noncopyable
 {
     virtual ~IExchangeLookup() = default;
 
-    /// The sink of one stream. Its input is the output of the processors of `createSerializer`: the
-    /// packets they make, or the data chunks as they are when there are no such processors.
-    /// `advisory`: the data is optional for the receiver (a runtime filter); a lost receiver ends
-    /// the delivery instead of throwing. Only streaming sinks use it.
-    virtual std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool advisory) = 0;
+    /// `input_is_serialized`: the sink's input chunks are the packets made by the processors of
+    /// `createSerializer`, which is only true for an exchange kind that returns such processors.
+    virtual std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool input_is_serialized) = 0;
     /// `output_is_serialized`: the source hands out the packets of the exchange as they are, one per
     /// chunk, for the processors of `createDeserializer` to turn into data; only an exchange kind that
     /// returns such processors accepts true.
-    /// `advisory`: the data is optional (a runtime filter); a producer lost after the handshake ends
-    /// the stream instead of throwing. Only streaming sources use it.
-    virtual std::shared_ptr<ISource>
-    createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized, bool advisory) = 0;
+    virtual std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) = 0;
 
     /// A processor that turns data chunks into the form the sinks of exchange `exchange_id` send.
     /// The send steps put one on every stream in front of a sink, so serialization runs on all

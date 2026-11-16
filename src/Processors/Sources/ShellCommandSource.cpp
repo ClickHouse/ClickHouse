@@ -11,8 +11,6 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ErrnoException.h>
-#include <Common/LockMemoryExceptionInThread.h>
-#include <Common/scope_guard_safe.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -309,7 +307,7 @@ public:
 
         if (bytes_read > 0)
         {
-            setWorkingBufferFromInternal();
+            working_buffer = internal_buffer;
             working_buffer.resize(bytes_read);
         }
         else
@@ -491,7 +489,7 @@ namespace
     {
     public:
 
-        using SendDataTask = std::function<void()>;
+        using SendDataTask = std::function<void(void)>;
 
         ShellCommandSource(
             ContextPtr context_,
@@ -501,7 +499,7 @@ namespace
             bool check_exit_code_,
             SharedHeader sample_block_,
             std::unique_ptr<ShellCommand> && command_,
-            VectorWithMemoryTracking<SendDataTask> && send_data_tasks = {},
+            std::vector<SendDataTask> && send_data_tasks = {},
             const ShellCommandSourceConfiguration & configuration_ = {},
             std::unique_ptr<ShellCommandHolder> && command_holder_ = nullptr,
             std::shared_ptr<ProcessPool> process_pool_ = nullptr)
@@ -512,29 +510,27 @@ namespace
             , command(std::move(command_))
             , configuration(configuration_)
             , timeout_command_out(command->out.getFD(), command->err.getFD(), command_read_timeout_milliseconds, stderr_reaction, configuration_.sampler.get())
+            , command_holder(std::move(command_holder_))
             , process_pool(process_pool_)
             , check_exit_code(check_exit_code_)
         {
+            auto context_for_reading = Context::createCopy(context);
+            /// Currently parallel parsing input format cannot read exactly max_block_size rows from input,
+            /// so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
+            if (configuration.read_fixed_number_of_rows)
+                context_for_reading->setSetting("input_format_parallel_parsing", false);
+            /// Here header auto detection can only cause troubles, since if it
+            /// will find "header" the number of input and output rows will not
+            /// match.
+            context_for_reading->setSetting("input_format_csv_detect_header", false);
+            context_for_reading->setSetting("input_format_tsv_detect_header", false);
+            context_for_reading->setSetting("input_format_custom_detect_header", false);
+            context = context_for_reading;
+
+            auto thread_group = CurrentThread::getGroup();
+
             try
             {
-                /// Not in the initializer list: if a member throws, the caller still owns the holder and returns it.
-                command_holder = std::move(command_holder_);
-
-                auto context_for_reading = Context::createCopy(context);
-                /// Currently parallel parsing input format cannot read exactly max_block_size rows from input,
-                /// so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
-                if (configuration.read_fixed_number_of_rows)
-                    context_for_reading->setSetting("input_format_parallel_parsing", false);
-                /// Here header auto detection can only cause troubles, since if it
-                /// will find "header" the number of input and output rows will not
-                /// match.
-                context_for_reading->setSetting("input_format_csv_detect_header", false);
-                context_for_reading->setSetting("input_format_tsv_detect_header", false);
-                context_for_reading->setSetting("input_format_custom_detect_header", false);
-                context = context_for_reading;
-
-                auto thread_group = CurrentThread::getGroup();
-
                 for (auto && send_data_task : send_data_tasks)
                 {
                     send_data_threads.emplace_back([thread_group, task = std::move(send_data_task), this]() mutable
@@ -659,27 +655,12 @@ namespace
 
             if (command_holder && process_pool)
             {
-                /// The default row count is not final until the output header has been read.
-                /// `prepare` intentionally keeps the old check: it must not wait on a live pooled worker.
-                bool valid_command = configuration.read_fixed_number_of_rows
-                    && (!configuration.read_number_of_rows_from_process_output || executor)
-                    && current_read_rows >= configuration.number_of_rows_to_read;
+                bool valid_command = configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read;
 
-                LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-
-                /// A worker that will not be reused is reaped before its slot is published.
                 if (command && valid_command)
                     command_holder->returnCommand(std::move(command));
-                else
-                    command = nullptr;
-                try
-                {
-                    process_pool->returnObject(std::move(command_holder));
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("ShellCommandSource");
-                }
+
+                process_pool->returnObject(std::move(command_holder));
             }
         }
 
@@ -741,8 +722,7 @@ namespace
                                   "Executable generates stderr: {}", timeout_command_out.getStderr());
                 }
 
-                /// Do not wait for a command whose output was not read to the end: it may never exit while its pipes stay open.
-                if (check_exit_code && finished)
+                if (check_exit_code)
                 {
                     try
                     {
@@ -807,7 +787,7 @@ namespace
         QueryPipeline pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
 
-        VectorWithMemoryTracking<ThreadFromGlobalPool> send_data_threads;
+        std::vector<ThreadFromGlobalPool> send_data_threads;
 
         std::mutex send_data_lock;
         std::exception_ptr exception_during_send_data;
@@ -850,7 +830,7 @@ ShellCommandSourceCoordinator::ShellCommandSourceCoordinator(const Configuration
 Pipe ShellCommandSourceCoordinator::createPipe(
     const std::string & command,
     const VectorWithMemoryTracking<std::string> & arguments,
-    Pipes && input_pipes,
+    std::vector<Pipe> && input_pipes,
     Block sample_block,
     ContextPtr context,
     const ShellCommandSourceConfiguration & source_configuration)
@@ -863,14 +843,6 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 
     std::unique_ptr<ShellCommand> process;
     std::unique_ptr<ShellCommandHolder> process_holder;
-
-    SCOPE_EXIT_SAFE({
-        if (process_holder && process_pool)
-        {
-            process.reset();
-            process_pool->returnObject(std::move(process_holder));
-        }
-    });
 
     auto destructor_strategy = ShellCommand::DestructorStrategy{true /*terminate_in_destructor*/, SIGTERM, configuration.command_termination_timeout_seconds};
     command_config.terminate_in_destructor_strategy = destructor_strategy;
@@ -950,7 +922,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             source_configuration.sampler->recordExecutablePid(process->getPid());
     }
 
-    VectorWithMemoryTracking<ShellCommandSource::SendDataTask> tasks;
+    std::vector<ShellCommandSource::SendDataTask> tasks;
     tasks.reserve(input_pipes.size());
 
     for (size_t i = 0; i < input_pipes.size(); ++i)

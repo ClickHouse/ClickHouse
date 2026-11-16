@@ -1,7 +1,6 @@
 #include <Processors/Formats/Impl/AvroRowOutputFormat.h>
 #if USE_AVRO
 
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -286,7 +285,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         case TypeIndex::Enum8:
         {
             auto schema = avro::EnumSchema("enum8_" + toString(type_name_increment));    /// type names must be different for different types.
-            UnorderedMapWithMemoryTracking<DataTypeEnum8::FieldType, size_t> enum_mapping;
+            std::unordered_map<DataTypeEnum8::FieldType, size_t> enum_mapping;
             const auto & enum_values = assert_cast<const DataTypeEnum8 &>(*data_type).getValues();
             for (size_t i = 0; i < enum_values.size(); ++i)
             {
@@ -305,7 +304,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         case TypeIndex::Enum16:
         {
             auto schema = avro::EnumSchema("enum16" + toString(type_name_increment));
-            UnorderedMapWithMemoryTracking<DataTypeEnum16::FieldType, size_t> enum_mapping;
+            std::unordered_map<DataTypeEnum16::FieldType, size_t> enum_mapping;
             const auto & enum_values = assert_cast<const DataTypeEnum16 &>(*data_type).getValues();
             for (size_t i = 0; i < enum_values.size(); ++i)
             {
@@ -405,7 +404,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             avro::UnionSchema union_schema;
             const auto & nested_types = variant_type.getVariants();
 
-            VectorWithMemoryTracking<SerializeFn> nested_serializers;
+            std::vector<SerializeFn> nested_serializers;
             nested_serializers.reserve(nested_types.size());
 
             for (const auto & nested_type : nested_types)
@@ -446,7 +445,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             const auto & tuple_type = assert_cast<const DataTypeTuple &>(*data_type);
             const auto & nested_types = tuple_type.getElements();
             const auto & nested_names = tuple_type.getElementNames();
-            VectorWithMemoryTracking<SerializeFn> nested_serializers;
+            std::vector<SerializeFn> nested_serializers;
             nested_serializers.reserve(nested_types.size());
             /// We should use unique names for records. Otherwise avro will reuse schema of this record later
             /// for all records with the same name.
@@ -581,7 +580,7 @@ void AvroSerializer::setIcebergFieldIds(const avro::NodePtr & node, const String
             const auto & encoding = column_mapper->getStorageColumnEncoding();
             const size_t num_fields = node->leaves();
 
-            std::vector<int> field_ids(num_fields, -1); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- built for `avro::NodeRecord::setFieldIds`, which takes std::vector
+            std::vector<int> field_ids(num_fields, -1);
             for (size_t i = 0; i < num_fields; ++i)
             {
                 const String field_path = Nested::concatenateName(path, node->nameAt(static_cast<int>(i)));
@@ -646,14 +645,6 @@ static avro::Codec getCodec(const std::string & codec_name)
 #ifdef SNAPPY_CODEC_AVAILABLE
     if (codec_name == "snappy")
         return avro::Codec::SNAPPY_CODEC;
-#endif
-#ifdef BZIP2_CODEC_AVAILABLE
-    if (codec_name == "bzip2")
-        return avro::Codec::BZIP2_CODEC;
-#endif
-#ifdef XZ_CODEC_AVAILABLE
-    if (codec_name == "xz")
-        return avro::Codec::XZ_CODEC;
 #endif
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Avro codec {} is not available", codec_name);

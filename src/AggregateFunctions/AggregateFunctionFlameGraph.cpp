@@ -1,10 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Access/ContextAccess.h>
-#include <Common/CurrentThread.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/ThreadStatus.h>
 #include <Common/SymbolIndex.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnArray.h>
@@ -14,7 +11,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/Operators.h>
-#include <Interpreters/Context.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
@@ -33,19 +29,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
-static ContextPtr tryGetCurrentQueryContext()
-{
-    return CurrentThread::isInitialized() ? CurrentThread::get().tryGetQueryContext() : nullptr;
-}
-
-static void checkIntrospectionAllowed(const ContextPtr & context)
-{
-    if (!context->getSettingsRef()[Setting::allow_introspection_functions])
-        throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED,
-        "Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0");
-    context->getAccess()->checkAccess(AccessType::INTROSPECTION);
 }
 
 struct AggregateFunctionFlameGraphTree
@@ -93,9 +76,8 @@ struct AggregateFunctionFlameGraphTree
         for (size_t i = 0; i < stack_size; ++i)
         {
             UInt64 ptr = stack[i];
-            /// A frame that is not published (outside the main executable). 0 is the root's id, so skip it.
             if (ptr == 0)
-                continue;
+                break;
 
             if (!node->children)
             {
@@ -242,20 +224,11 @@ static void dumpFlameGraphImpl(
     PaddedPODArray<UInt8> & chars,
     PaddedPODArray<UInt64> & offsets)
 {
-    /// Checked here as well as on creation: a stored state reuses the function created with the table.
-    if (!id_to_string)
-    {
-        const ContextPtr context = tryGetCurrentQueryContext();
-        if (!context)
-            throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Function flameGraph cannot resolve symbols without a query context");
-        checkIntrospectionAllowed(context);
-    }
-
     WriteBufferFromOwnString out;
 
     UnorderedMapWithMemoryTracking<uintptr_t, size_t> mapping;
 
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
     const SymbolIndex & symbol_index = SymbolIndex::instance();
 #endif
 
@@ -271,21 +244,16 @@ static void dumpFlameGraphImpl(
 
             if (id_to_string)
             {
-                /// trace.frames[i] is a 1-based id into id_to_string (0 is reserved for the root).
+                /// trace.frames[i] is a 1-based id into id_to_string (0 is reserved as a stack terminator).
                 writeString((*id_to_string)[trace.frames[i] - 1], out);
                 continue;
             }
 
             const void * ptr = reinterpret_cast<const void *>(trace.frames[i]);
 
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
             if (const auto * symbol = symbol_index.findSymbol(ptr))
-            {
-                if (const char * symbol_name = symbol_index.getSymbolNameCString(*symbol); *symbol_name)
-                    writeString(demangle(symbol_name), out);
-                else
-                    writePointerHex(ptr, out);
-            }
+                writeString(demangle(symbol->name), out);
             else
                 writePointerHex(ptr, out);
 #else
@@ -322,8 +290,8 @@ struct AggregateFunctionFlameGraphData
 
     /// String interning support for Array(String) traces.
     /// When a trace is provided as Array(String), each unique symbol is interned to a 1-based id and
-    /// the id (rather than a pointer) is stored in TreeNode::ptr. The id 0 stays reserved for the root,
-    /// so `tree.find` skips it, and `dumpFlameGraphImpl` looks up the original string from
+    /// the id (rather than a pointer) is stored in TreeNode::ptr. The id 0 stays reserved as a stack
+    /// terminator inside `tree.find`, and `dumpFlameGraphImpl` looks up the original string from
     /// `id_to_string` instead of running symbol resolution.
     bool is_string_mode = false;
     UnorderedMapWithMemoryTracking<std::string_view, UInt64> string_pool;
@@ -721,11 +689,13 @@ static void check(const std::string & name, const DataTypes & argument_types, co
             name, argument_types[2]->getName());
 }
 
-static AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
+static AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
 {
-    /// Without a query context (e.g. attaching a table on startup) there is no principal to authorize.
-    if (const ContextPtr context = tryGetCurrentQueryContext())
-        checkIntrospectionAllowed(context);
+    /// The factory passes null when there is no query context to take settings from, and with no
+    /// principal there is nothing to authorize.
+    if (settings && !(*settings)[Setting::allow_introspection_functions])
+        throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED,
+        "Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0");
 
     check(name, argument_types, params);
     return std::make_shared<AggregateFunctionFlameGraph>(argument_types);
@@ -737,7 +707,6 @@ void registerAggregateFunctionFlameGraph(AggregateFunctionFactory & factory)
     FunctionDocumentation::Description description = R"DOC(
 Builds a [flamegraph](https://www.brendangregg.com/flamegraphs.html) using the list of stacktraces.
 Outputs an array of strings which can be used by the [flamegraph.pl](https://github.com/brendangregg/FlameGraph) utility to render an SVG of the flamegraph.
-Requires the `INTROSPECTION` grant and `allow_introspection_functions = 1`.
 
 <Note>
 In the case where `ptr != 0`, a flameGraph will map allocations (size > 0) and deallocations (size < 0) with the same size and ptr.

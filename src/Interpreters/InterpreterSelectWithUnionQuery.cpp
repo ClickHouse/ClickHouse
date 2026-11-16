@@ -1,6 +1,7 @@
 #include <Access/AccessControl.h>
 
 #include <Columns/getLeastSuperColumn.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
@@ -24,16 +25,16 @@
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/getEffectiveMaxThreads.h>
 
 #include <fmt/ranges.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
 {
 namespace Setting
 {
+    extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool optimize_distinct_in_order;
 }
 
@@ -287,7 +288,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
     }
     else
     {
-        VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans(num_plans);
+        std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
         SharedHeaders headers(num_plans);
 
         for (size_t i = 0; i < num_plans; ++i)
@@ -310,7 +311,8 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
             headers[i] = plans[i]->getCurrentHeader();
         }
 
-        auto max_threads = getEffectiveMaxThreads(settings);
+        auto max_threads = getMaxThreadsForAvailableMemory(
+            settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
         auto union_step = std::make_unique<UnionStep>(std::move(headers), max_threads, /* allow_narrowing = */ true);
 
         query_plan.unitePlans(std::move(union_step), std::move(plans));

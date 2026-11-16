@@ -1,13 +1,13 @@
 #include <gtest/gtest.h>
 
 #include <config.h>
-#if USE_ARROW_LIBRARY
+#if USE_PARQUET
 
 #    include <Columns/ColumnsNumber.h>
 #    include <DataTypes/DataTypesNumber.h>
 #    include <IO/WriteBufferFromFile.h>
 #    include <Processors/Executors/CompletedPipelineExecutor.h>
-#    include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
+#    include <Processors/Executors/Runtime/PipelineExecutor.h>
 #    include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
 #    include <Processors/ISource.h>
 #    include <Processors/Sources/SourceFromChunks.h>

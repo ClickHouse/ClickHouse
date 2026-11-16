@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/ISimpleTransform.h>
 #include "config.h"
 
@@ -22,42 +20,28 @@ namespace DB
 
 #if USE_AVRO
 
-/// `Range::less`, except that -0.0 sorts before +0.0, as the Iceberg spec requires for bounds.
-bool icebergBoundLess(const Field & lhs, const Field & rhs);
-
 class DataFileStatistics
 {
 public:
     explicit DataFileStatistics(Poco::JSON::Array::Ptr schema_);
 
-    /// Every statistic is accumulated in written-block order, so `field_ids[i]` must be the id of
-    /// block column `i` rather than of schema field `i`. An empty `written_field_ids` keeps the schema's ids.
-    DataFileStatistics(Poco::JSON::Array::Ptr schema_, std::vector<Int64> written_field_ids);
-
     void update(const Chunk & chunk);
-    void addColumnSizesOnDisk(const UnorderedMapWithMemoryTracking<String, size_t> & sizes_by_column_name, const Block & sample_block);
-    void setSplitOffsets(VectorWithMemoryTracking<UInt64> split_offsets_) { split_offsets = std::move(split_offsets_); }
+    void addColumnSizesOnDisk(const std::unordered_map<String, size_t> & sizes_by_column_name, const Block & sample_block);
     void merge(const DataFileStatistics & other);
 
     std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
     std::vector<std::pair<size_t, size_t>> getNullCounts() const;
-    std::vector<std::pair<size_t, size_t>> getNanCounts() const;
     std::vector<std::pair<size_t, Field>> getLowerBounds() const;
     std::vector<std::pair<size_t, Field>> getUpperBounds() const;
 
     const std::vector<Int64> & getFieldIds() const { return field_ids; }
-    const VectorWithMemoryTracking<UInt64> & getSplitOffsets() const { return split_offsets; }
 private:
     static Range uniteRanges(const Range & left, const Range & right);
 
     std::vector<Int64> field_ids;
     std::vector<Int64> column_sizes;
     std::vector<Int64> null_counts;
-    std::vector<Int64> nan_counts;
-    /// False if column is not `Float32`/`Float64`: then no `nan_value_counts` entry is written for it.
-    std::vector<bool> can_count_nan;
     Ranges ranges;
-    VectorWithMemoryTracking<UInt64> split_offsets;
 };
 
 using DataFileStatisticsPtr = std::shared_ptr<DataFileStatistics>;
