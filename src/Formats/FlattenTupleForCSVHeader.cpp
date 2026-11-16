@@ -133,12 +133,30 @@ void collapseCSVHeaderTupleNames(
         return true;
     };
 
+    /// A name that is a column keeps mapping to it, so a run holding one is not collapsed.
+    auto names_a_column = [&](const Candidate & candidate, size_t pos)
+    {
+        for (size_t k = 0; k < candidate.num_leaves; ++k)
+            if (column_indexes_by_names.get(names[pos + k]) != CaseAwareBlockNameMap::NOT_FOUND)
+                return true;
+        return false;
+    };
+
     auto find_candidate = [&](size_t pos, bool ignore_case) -> const Candidate *
     {
+        const Candidate * found = nullptr;
         for (const auto & candidate : candidates)
-            if (spells(candidate, pos, ignore_case))
-                return &candidate;
-        return nullptr;
+        {
+            if (!spells(candidate, pos, ignore_case) || names_a_column(candidate, pos))
+                continue;
+            if (found)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Ambiguous field (`{}`) in format header: it can be an element of Tuple column `{}` or `{}`",
+                    names[pos], found->column->name, candidate.column->name);
+            found = &candidate;
+        }
+        return found;
     };
 
     using MatchingMode = FormatSettings::InputFormatColumnMatchingCaseSensitivity;
@@ -149,12 +167,6 @@ void collapseCSVHeaderTupleNames(
         const Candidate * match = matching_mode == MatchingMode::IGNORE_CASE ? nullptr : find_candidate(pos, false);
         if (!match && matching_mode != MatchingMode::MATCH_CASE)
             match = find_candidate(pos, true);
-        if (!match)
-            return nullptr;
-        /// A name that is a column keeps mapping to it.
-        for (size_t k = 0; k < match->num_leaves; ++k)
-            if (column_indexes_by_names.get(names[pos + k]) != CaseAwareBlockNameMap::NOT_FOUND)
-                return nullptr;
         return match;
     };
 

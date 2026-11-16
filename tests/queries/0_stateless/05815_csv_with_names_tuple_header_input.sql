@@ -25,5 +25,11 @@ SELECT * FROM format(CSVWithNames, 'id UInt64, t Tuple(UInt64, String)', $$"id",
 SELECT * FROM format(CSVWithNames, 'id UInt64, t Tuple(`a.b` UInt8, a Tuple(b UInt8))', $$"id","t.a.b","t.a.b"
 1,1,2$$);
 SELECT * FROM format(CSV, 'Name String, name String, t Tuple(UInt8)', $$NAME,foo,1$$);
+SELECT * FROM format(CSVWithNames, '`t.a` Tuple(b UInt8), t Tuple(a Tuple(b UInt8, c UInt8))', $$"t.a.b","t.a.c"
+1,2$$); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(CSVWithNames, 'Ta Tuple(a UInt8), tA Tuple(a UInt8)', $$"Ta.a","tA.a"
+1,2$$);
+SELECT * FROM format(CSVWithNames, 'Ta Tuple(a UInt8), tA Tuple(a UInt8)', $$"ta.a"
+1$$); -- { serverError INCORRECT_DATA }
 
 DROP TABLE tr;
