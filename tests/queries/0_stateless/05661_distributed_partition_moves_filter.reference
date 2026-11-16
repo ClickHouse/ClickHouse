@@ -35,3 +35,8 @@ This JOIN is not supported for table
 7
 is read directly by a query
 is read directly by a query
+-- a table as the right argument of IN and another Distributed table replaced by its local table fail
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+7

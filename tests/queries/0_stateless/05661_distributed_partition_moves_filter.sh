@@ -92,7 +92,25 @@ $CLICKHOUSE_CLIENT -q "SELECT count() FROM dist_same WHERE x IN (SELECT x FROM $
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM dist_same AS l INNER JOIN ${CLICKHOUSE_DATABASE}.local_data AS r USING (x)" 2>&1 \
     | grep -o -m1 'is read directly by a query'
 
+echo '-- a table as the right argument of IN and another Distributed table replaced by its local table fail'
 $CLICKHOUSE_CLIENT -m -q "
+    CREATE TABLE other_data (d Date, x UInt64) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY x;
+    INSERT INTO other_data SELECT '2024-01-15', number FROM numbers(1, 3);
+    CREATE TABLE plain_same (d Date, x UInt64) ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), local_data);
+    CREATE TABLE plain_other (d Date, x UInt64) ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), other_data);
+"
+$CLICKHOUSE_CLIENT --distributed_product_mode local -q "SELECT count() FROM dist_same WHERE (d, x) IN dist_same" 2>&1 \
+    | grep -o -m1 'NOT_IMPLEMENTED'
+$CLICKHOUSE_CLIENT --distributed_product_mode local -q "SELECT count() FROM dist_same WHERE x IN (SELECT x FROM plain_same)" 2>&1 \
+    | grep -o -m1 'NOT_IMPLEMENTED'
+$CLICKHOUSE_CLIENT --distributed_product_mode local -q "SELECT count() FROM plain_other AS a INNER JOIN dist_same AS b USING (x)" 2>&1 \
+    | grep -o -m1 'NOT_IMPLEMENTED'
+$CLICKHOUSE_CLIENT --distributed_product_mode global -q "SELECT count() FROM dist_same WHERE x IN (SELECT x FROM plain_same)"
+
+$CLICKHOUSE_CLIENT -m -q "
+    DROP TABLE plain_same;
+    DROP TABLE plain_other;
+    DROP TABLE other_data;
     DROP TABLE dist_same;
     DROP TABLE local_data;
     DROP VIEW v;

@@ -65,7 +65,19 @@ public:
 
     bool supportsReplication() const override { return supports_replication; }
 
+    /// The `Distributed` table that this table replaced in the query for a shard, and whether it skips partitions now.
+    void setReplacedDistributedTable(const StorageID & table, bool skips_partitions)
+    {
+        replaced_distributed_table = table;
+        replaced_distributed_table_skips_partitions = skips_partitions;
+    }
+    [[nodiscard]] const std::optional<StorageID> & getReplacedDistributedTable() const { return replaced_distributed_table; }
+    [[nodiscard]] bool replacedDistributedTableSkipsPartitions() const { return replaced_distributed_table_skips_partitions; }
+
 private:
+    std::optional<StorageID> replaced_distributed_table;
+    bool replaced_distributed_table_skips_partitions = false;
+
     /// The original storage snapshot which is replaced during planning. See collectFiltersForAnalysis for example.
     StorageSnapshotPtr original_storage_snapshot;
     const bool supports_replication;

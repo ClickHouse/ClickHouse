@@ -445,9 +445,16 @@ void SelectStreamFactory::createForShard(
                 "Cannot find table {} in the query for a shard while its partitions are moved between shards", main_table.getNameForLogs());
 
         /// A direct read of the table by the query is not told from a read through the `Distributed` table by its name.
-        if (found > countTablesOfDistributedTable(query_tree, main_table))
+        const size_t replaced = countTablesOfDistributedTable(query_tree, main_table);
+        if (found > replaced)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Table {} is read directly by a query that reads it through a `Distributed` table while its partitions are moved between shards",
+                main_table.getNameForLogs());
+
+        /// A table that is the right argument of `IN` has no `WHERE` to put the condition to.
+        if (found < replaced)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Table {} is read by a query for a shard without a `FROM` clause while its partitions are moved between shards",
                 main_table.getNameForLogs());
     }
 

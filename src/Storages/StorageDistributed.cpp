@@ -1165,6 +1165,33 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
 }
 
+/// `distributed_product_mode = 'local'` replaces other `Distributed` tables of the query by their local tables.
+/// The partitions skipped while they are moved between shards are known only for the tables of `distributed_table` itself.
+static void checkPartitionMovesOfReplacedTables(const QueryTreeNodePtr & node, const StorageID & distributed_table, const String * remote_table_with_moves)
+{
+    if (!node)
+        return;
+
+    const auto * table_node = node->as<TableNode>();
+    const auto * dummy = table_node ? typeid_cast<const StorageDummy *>(table_node->getStorage().get()) : nullptr;
+    if (dummy && dummy->getReplacedDistributedTable() && !(*dummy->getReplacedDistributedTable() == distributed_table))
+    {
+        const auto & other_table = *dummy->getReplacedDistributedTable();
+        if (dummy->replacedDistributedTableSkipsPartitions())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Table {} cannot be read by a query of table {} with `distributed_product_mode = 'local'` while its partitions are moved between shards",
+                other_table.getNameForLogs(), distributed_table.getNameForLogs());
+
+        if (remote_table_with_moves && dummy->getStorageID().table_name == *remote_table_with_moves)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Table {} cannot be read by a query of table {} with `distributed_product_mode = 'local'` while the partitions of {} are moved between shards",
+                other_table.getNameForLogs(), distributed_table.getNameForLogs(), distributed_table.getNameForLogs());
+    }
+
+    for (const auto & child : node->getChildren())
+        checkPartitionMovesOfReplacedTables(child, distributed_table, remote_table_with_moves);
+}
+
 void StorageDistributed::checkLocalShardAccess(const AccessFlags & access, const ContextPtr & local_context) const
 {
     if (!is_remote_database_proxy)
@@ -1239,6 +1266,9 @@ void StorageDistributed::read(
     /// Taken once, so all shards skip the copies of the same version of the moves.
     if (partition_moves_watcher)
         modified_query_info.partitions_to_skip_by_shard = getPartitionsToSkipByShard(getCluster());
+
+    const bool skips_partitions = modified_query_info.partitions_to_skip_by_shard && !modified_query_info.partitions_to_skip_by_shard->empty();
+    checkPartitionMovesOfReplacedTables(modified_query_info.query_tree, getStorageID(), skips_partitions ? &remote_table : nullptr);
 
     ClusterProxy::SelectStreamFactory select_stream_factory =
         ClusterProxy::SelectStreamFactory(
@@ -2202,6 +2232,11 @@ ClusterPtr StorageDistributed::getCluster() const
     return owned_cluster ? owned_cluster : getContext()->getCluster(cluster_name);
 }
 
+bool StorageDistributed::skipsPartitions() const
+{
+    return partition_moves_watcher && !partition_moves_watcher->get()->partitions_to_skip_by_shard.empty();
+}
+
 std::shared_ptr<const std::unordered_map<UInt32, Strings>> StorageDistributed::getPartitionsToSkipByShard(const ClusterPtr & cluster) const
 {
     auto moves = partition_moves_watcher->get();
@@ -3008,7 +3043,7 @@ format version: 1
 202401 1 3 source
 ```
 
-Every line after the header is a move: the partition ID (`partition_id` in `system.parts`), the source and the destination shard numbers (`shard_num` in [system.clusters](/reference/system-tables/clusters)), and the copy that queries read, `source` or `destination`. The other copy is skipped with a condition on the `_partition_id` virtual column in the query sent to the shard, so a query where the table is on the left of a `RIGHT`, `FULL` or `PASTE` join fails while a shard has a copy to skip, and so does a query that also reads the remote table directly. On a remote shard, the user of the query needs a `SELECT` grant on `_partition_id` of the table. A partition can be in one move at a time. A `Remote` table over a table function does not accept the setting. When the table is created, an empty node is created if it does not exist. The table watches the node, and the loaded version is shown in [system.distributed_partition_moves](/reference/system-tables/distributed_partition_moves).
+Every line after the header is a move: the partition ID (`partition_id` in `system.parts`), the source and the destination shard numbers (`shard_num` in [system.clusters](/reference/system-tables/clusters)), and the copy that queries read, `source` or `destination`. The other copy is skipped with a condition on the `_partition_id` virtual column in the query sent to the shard, so a query where the table is on the left of a `RIGHT`, `FULL` or `PASTE` join fails while a shard has a copy to skip, and so does a query that also reads the remote table directly or has the table as the right argument of `IN` without a subquery. With `distributed_product_mode = 'local'` a query cannot read another `Distributed` table over the same remote table, and a query of another `Distributed` table cannot read this table. On a remote shard, the user of the query needs a `SELECT` grant on `_partition_id` of the table. A partition can be in one move at a time. A `Remote` table over a table function does not accept the setting. When the table is created, an empty node is created if it does not exist. The table watches the node, and the loaded version is shown in [system.distributed_partition_moves](/reference/system-tables/distributed_partition_moves).
 
 To move partition `202401` from shard 1 to shard 3:
 

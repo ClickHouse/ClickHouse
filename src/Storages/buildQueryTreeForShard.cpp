@@ -415,6 +415,7 @@ private:
 
             const auto & distributed_storage_columns = table_node_typed.getStorageSnapshot()->metadata->getColumns();
             auto storage = std::make_shared<StorageDummy>(*resolved_remote_storage_id, distributed_storage_columns);
+            storage->setReplacedDistributedTable(distributed_storage->getStorageID(), distributed_storage->skipsPartitions());
             auto replacement_table_expression = std::make_shared<TableNode>(std::move(storage), getContext());
             if (auto table_expression_modifiers = table_node_typed.getTableExpressionModifiers())
                 replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);

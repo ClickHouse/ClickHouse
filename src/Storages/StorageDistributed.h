@@ -157,6 +157,9 @@ public:
     /// Used by StorageSystemDistributedPartitionMoves. Returns nullptr if the table does not have partition moves.
     DistributedPartitionMovesWatcher * getPartitionMovesWatcher() const { return partition_moves_watcher.get(); }
 
+    /// Whether the queries of the table skip partitions on some shards now.
+    [[nodiscard]] bool skipsPartitions() const;
+
     bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
 
 private:
