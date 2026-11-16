@@ -484,7 +484,7 @@ void IdentifierResolver::checkAccessToTableMetadata(
         for (const auto access_type : {AccessType::SELECT, AccessType::SHOW_COLUMNS})
         {
             if (!columns.getSubcolumnsWithExplicitGrant(
-                     *access_rights, access_type, storage_id.database_name, storage_id.table_name, column.name).empty())
+                     *access_rights, access_type, access_database, access_table_name, column.name).empty())
                 return;
         }
     }
