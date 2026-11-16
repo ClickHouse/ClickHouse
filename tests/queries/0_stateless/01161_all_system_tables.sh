@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, long, no-object-storage, no-distributed-cache, no-flaky-check
+# Tags: no-parallel, long, no-object-storage, no-distributed-cache, no-flaky-check, no-msan
 # Tag no-parallel: since someone may create table in system database
 # Tag no-object-storage: it is slow under S3 (and Azure for sure)
 # Tag no-distributed-cache: times out

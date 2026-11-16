@@ -99,9 +99,9 @@ public:
 
         explicit SubcolumnCreator(const ColumnPtr & offsets_) : offsets(offsets_) {}
 
-        DataTypePtr create(const DataTypePtr & prev) const override;
-        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
-        ColumnPtr create(const ColumnPtr & prev) const override;
+        [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override;
+        [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
+        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override;
     };
 
     const SerializationPtr & getNestedSerialization() const { return nested; }
