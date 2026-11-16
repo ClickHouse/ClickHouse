@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/Formats/Impl/PuffinBlobBuilder.h>
 #include <Processors/Formats/Impl/PuffinCommon.h>
 
 #include <roaring/roaring64map.hh>
@@ -7,16 +8,23 @@
 namespace DB
 {
 
-class PuffinWriter;
+class IColumn;
 
-inline constexpr Int32 ICEBERG_ROW_POSITION_FIELD_ID = std::numeric_limits<Int32>::max() - 2;
+class PuffinDeletionVectorBuilder final : public IPuffinBlobBuilder
+{
+public:
+    explicit PuffinDeletionVectorBuilder(const Block & header);
 
-void validateDeletionVectorPosition(UInt64 position);
+    void consume(const Chunk & chunk) override;
+    void write(PuffinWriter & writer) override;
+    void reset() override;
 
-String serializeDeletionVectorBlob(roaring::Roaring64Map & positions);
+private:
+    void addPositions(roaring::Roaring64Map & bitmap, const IColumn & positions, size_t begin, size_t end) const;
 
-PuffinBlob makeDeletionVectorBlobMetadata(const String & referenced_data_file, UInt64 cardinality);
-
-PuffinBlob writeDeletionVectorBlob(PuffinWriter & writer, const String & referenced_data_file, roaring::Roaring64Map & positions);
+    bool positions_are_arrays = false;
+    bool positions_are_unsigned = false;
+    MapWithMemoryTracking<String, roaring::Roaring64Map> deletion_vectors;
+};
 
 }

@@ -16,8 +16,20 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Core/Block.h>
+#include <Formats/FormatSettings.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/Chunk.h>
 #include <base/unaligned.h>
+
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
+
+#include <theta_union.hpp>
+
+#include <unordered_set>
 
 namespace DB
 {
@@ -64,9 +76,67 @@ size_t storeMinimalBigEndian(char * buf, NativeType value)
     return size;
 }
 
+VectorWithMemoryTracking<Int32> parseFieldIds(const String & setting, const Block & header)
+{
+    if (header.columns() == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin output format requires at least one column to write Theta sketches");
+
+    VectorWithMemoryTracking<Int32> field_ids;
+    if (setting.empty())
+    {
+        for (size_t i = 0; i < header.columns(); ++i)
+            field_ids.push_back(static_cast<Int32>(i + 1));
+        return field_ids;
+    }
+
+    std::vector<String> parts;
+    boost::split(parts, setting, boost::is_any_of(","));
+    std::unordered_set<Int32> seen;
+    for (auto & part : parts)
+    {
+        boost::trim(part);
+        Int32 field_id = 0;
+        if (!tryParse(field_id, part) || field_id <= 0)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `output_format_puffin_field_ids` must be a comma-separated list of positive integers, got '{}'",
+                setting);
+        if (!seen.insert(field_id).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `output_format_puffin_field_ids` contains field id {} twice", field_id);
+        field_ids.push_back(field_id);
+    }
+
+    if (field_ids.size() != header.columns())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting `output_format_puffin_field_ids` has {} field ids, but {} columns are written: {}",
+            field_ids.size(),
+            header.columns(),
+            header.dumpNames());
+    return field_ids;
 }
 
-PuffinThetaSketch::PuffinThetaSketch(const String & column_name, const DataTypePtr & type_)
+datasketches::compact_theta_sketch compactThetaSketch(const datasketches::update_theta_sketch & sketch)
+{
+    auto sketch_union = datasketches::theta_union::builder().build();
+    sketch_union.update(sketch);
+    return sketch_union.get_result();
+}
+
+PuffinBlob makeThetaSketchBlobMetadata(Int32 field_id, Int64 snapshot_id, Int64 sequence_number, UInt64 ndv)
+{
+    PuffinBlob blob;
+    blob.type = PUFFIN_DATASKETCHES_THETA_BLOB_TYPE;
+    blob.fields = {field_id};
+    blob.snapshot_id = snapshot_id;
+    blob.sequence_number = sequence_number;
+    blob.properties.emplace("ndv", toString(ndv));
+    return blob;
+}
+
+}
+
+PuffinThetaSketchBuilder::ColumnSketch::ColumnSketch(const String & column_name, const DataTypePtr & type_)
     : type(removeNullable(removeLowCardinality(type_)))
     , sketch(datasketches::update_theta_sketch::builder().build())
 {
@@ -111,13 +181,13 @@ PuffinThetaSketch::PuffinThetaSketch(const String & column_name, const DataTypeP
     }
 }
 
-void PuffinThetaSketch::update(const void * data, size_t size)
+void PuffinThetaSketchBuilder::ColumnSketch::update(const void * data, size_t size)
 {
     if (size != 0)
         sketch.update(data, size);
 }
 
-void PuffinThetaSketch::add(const IColumn & column_)
+void PuffinThetaSketchBuilder::ColumnSketch::add(const IColumn & column_)
 {
     ColumnPtr column = column_.convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     const NullMap * null_map = nullptr;
@@ -234,25 +304,39 @@ void PuffinThetaSketch::add(const IColumn & column_)
     }
 }
 
-PuffinBlob PuffinThetaSketch::write(PuffinWriter & writer, Int32 field_id, Int64 snapshot_id, Int64 sequence_number) const
+PuffinThetaSketchBuilder::PuffinThetaSketchBuilder(const Block & header, const FormatSettings & format_settings)
+    : field_ids(parseFieldIds(format_settings.puffin.output_field_ids, header))
+    , snapshot_id(format_settings.puffin.output_snapshot_id)
+    , sequence_number(format_settings.puffin.output_sequence_number)
 {
-    auto sketch_union = datasketches::theta_union::builder().build();
-    sketch_union.update(sketch);
-    const auto compact = sketch_union.get_result();
-    const auto bytes = compact.serialize();
-
-    PuffinBlob blob;
-    blob.type = PUFFIN_DATASKETCHES_THETA_BLOB_TYPE;
-    blob.fields = {field_id};
-    blob.snapshot_id = snapshot_id;
-    blob.sequence_number = sequence_number;
-    blob.properties.emplace("ndv", toString(static_cast<UInt64>(compact.get_estimate())));
-    return writer.addBlob(std::move(blob), std::string_view(reinterpret_cast<const char *>(bytes.data()), bytes.size()));
+    sketches.reserve(header.columns());
+    for (const auto & column : header)
+        sketches.emplace_back(column.name, column.type);
 }
 
-void PuffinThetaSketch::reset()
+void PuffinThetaSketchBuilder::consume(const Chunk & chunk)
 {
-    sketch.reset();
+    const auto & columns = chunk.getColumns();
+    for (size_t i = 0; i < columns.size(); ++i)
+        sketches[i].add(*columns[i]);
+}
+
+void PuffinThetaSketchBuilder::write(PuffinWriter & writer)
+{
+    for (size_t i = 0; i < sketches.size(); ++i)
+    {
+        const auto compact = compactThetaSketch(sketches[i].get());
+        const auto bytes = compact.serialize();
+        writer.addBlob(
+            makeThetaSketchBlobMetadata(field_ids[i], snapshot_id, sequence_number, static_cast<UInt64>(compact.get_estimate())),
+            std::string_view(reinterpret_cast<const char *>(bytes.data()), bytes.size()));
+    }
+}
+
+void PuffinThetaSketchBuilder::reset()
+{
+    for (auto & sketch : sketches)
+        sketch.reset();
 }
 
 }
