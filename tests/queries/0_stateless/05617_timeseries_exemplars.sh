@@ -17,6 +17,7 @@ DROP TABLE IF EXISTS ts_normalized;
 DROP TABLE IF EXISTS ts_ns;
 DROP TABLE IF EXISTS ts_policy;
 DROP TABLE IF EXISTS ts_copy;
+DROP TABLE IF EXISTS ts_tag_column;
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS store_exemplars = 1;
 CREATE TABLE ts_plain ENGINE = TimeSeries;
 "
@@ -38,6 +39,11 @@ $CLIENT -q "CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS version = 11, store
 $CLIENT -q "CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS version = 11 EXEMPLARS INNER ENGINE = MergeTree ORDER BY (id, timestamp)" 2>&1 | grep -o -m1 "INCORRECT_QUERY"
 $CLIENT -q "CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS store_exemplars = 0 EXEMPLARS INNER ENGINE = MergeTree ORDER BY (id, timestamp)" 2>&1 | grep -o -m1 "INCORRECT_QUERY"
 $CLIENT -q "ALTER TABLE ts MODIFY SETTING store_exemplars = 0" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
+
+echo "-- a tag column can't take the name of the exemplars column"
+$CLIENT -q "CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS store_exemplars = 1, tags_to_columns = {'job': 'exemplars'}" 2>&1 | grep -o -m1 "is reserved for the exemplars"
+$CLIENT -q "CREATE TABLE ts_tag_column ENGINE = TimeSeries SETTINGS tags_to_columns = {'job': 'exemplars'}"
+$CLIENT -q "SELECT count() FROM ts_tag_column"
 
 echo "-- a copy made ON CLUSTER gets the UUID of its exemplars table from the initiator, also with the old entry format"
 $CLIENT --distributed_ddl_output_mode=none --distributed_ddl_entry_format_version=2 -q "CREATE TABLE ts_copy ON CLUSTER test_shard_localhost AS ts ENGINE = TimeSeries"
@@ -226,6 +232,7 @@ DROP TABLE ts_normalized;
 DROP TABLE ts_ns;
 DROP TABLE ts_policy;
 DROP TABLE ts_copy;
+DROP TABLE ts_tag_column;
 DROP ROW POLICY policy_05617 ON ${CLICKHOUSE_DATABASE}.ts_policy;
 DROP USER ${USER_PREFIX}_granted, ${USER_PREFIX}_revoked, ${USER_PREFIX}_policy, ${USER_PREFIX}_none;
 "

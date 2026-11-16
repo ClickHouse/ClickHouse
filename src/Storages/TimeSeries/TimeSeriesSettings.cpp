@@ -317,6 +317,10 @@ void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
             if (reserved_column_names.contains(column_name))
                 throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
                     "Setting `tags_to_columns`: column name `{}` is reserved for the TimeSeries tags table", column_name);
+            /// A read of the table joins the tags with the exemplars, so the name would mean two columns.
+            if (settings.isExemplarsTargetEnabled() && column_name == TimeSeriesColumnNames::Exemplars)
+                throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                    "Setting `tags_to_columns`: column name `{}` is reserved for the exemplars of the TimeSeries table", column_name);
             if (!seen_tag_names.insert(tag_name).second)
                 throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
                     "Setting `tags_to_columns` has duplicate tag name `{}`", tag_name);

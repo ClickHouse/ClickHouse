@@ -15,6 +15,9 @@ INVALID_SETTING_VALUE
 INCORRECT_QUERY
 INCORRECT_QUERY
 NOT_IMPLEMENTED
+-- a tag column can't take the name of the exemplars column
+is reserved for the exemplars
+0
 -- a copy made ON CLUSTER gets the UUID of its exemplars table from the initiator, also with the old entry format
 1
 write ts 204

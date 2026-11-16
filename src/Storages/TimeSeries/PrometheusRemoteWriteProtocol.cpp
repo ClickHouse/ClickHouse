@@ -87,7 +87,7 @@ void insertTimestamp(Int64 timestamp_ms, UInt32 scale, IColumn & column)
     if (typeid_cast<ColumnDecimal<DateTime64> *>(&column))
     {
         /// The conversion to a bigger scale multiplies without a check.
-        Int64 scaled;
+        Int64 scaled = 0;
         if ((scale > 3) && common::mulOverflow(timestamp_ms, DecimalUtils::scaleMultiplier<Int64>(scale - 3), scaled))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp {} ms does not fit into DateTime64({})", timestamp_ms, scale);
         column.insert(DecimalUtils::convertTo<DateTime64>(scale, DateTime64{timestamp_ms}, 3));
