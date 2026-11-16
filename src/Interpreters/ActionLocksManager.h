@@ -24,9 +24,20 @@ class ActionLocksManager : WithContext
 public:
     explicit ActionLocksManager(ContextPtr context);
 
-    /// Add new lock for a table if it has not been already added
+    using OwnerReleaseCheck = std::function<bool(const StorageID & owner_id)>;
+
+    /// Add new lock for a table if it has not been already added.
+    /// A lock requested through an `Alias` is taken on the storage the alias resolves to. Each target is checked
+    /// with `may_resolve` (when set) before it is looked up, and no lock is taken when a target is not allowed:
+    /// blocking the target needs the caller's access there, and the lookup may reach an external database on
+    /// behalf of the user. The target is looked up with `lookup_context` (the caller's query context), so the
+    /// source access checks of the target's database apply to the caller, as when the target is named directly.
     void add(const StorageID & table_id, StorageActionBlockType action_type);
-    void add(const StoragePtr & requested_table, StorageActionBlockType action_type);
+    void add(
+        const StoragePtr & requested_table,
+        StorageActionBlockType action_type,
+        const ContextPtr & lookup_context,
+        const OwnerReleaseCheck & may_resolve = {});
 
     /// Removes a lock for a table if it exists.
     /// Also removes the locks of the same type held on the storage the lock resolved to, when it was taken
@@ -41,7 +52,6 @@ public:
     /// allows it for that storage: the caller checks its access there. When a forwarding storage is resolved,
     /// each target it names is checked before it is looked up, and the resolution stops at the first target
     /// that is not allowed: the lookup may reach an external database on behalf of the user.
-    using OwnerReleaseCheck = std::function<bool(const StorageID & owner_id)>;
     void remove(const StorageID & table_id, StorageActionBlockType action_type);
     void remove(
         const StoragePtr & requested_table,

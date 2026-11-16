@@ -86,8 +86,13 @@ StoragePtr resolveActionLockOwner(
 }
 
 /// The storage a chain of aliases resolves to, or the storage itself when it is not an alias. Null when an
-/// alias in the chain has no target.
-StoragePtr resolveAliases(StoragePtr table)
+/// alias in the chain has no target or names a target that `may_resolve` (when set) does not allow: the lookup
+/// may load the target or reach an external database, which the caller is not allowed to make it do. Each
+/// target is looked up with `lookup_context`, the caller's context, rather than with the alias's own global
+/// one, so that the source access checks of the target's database (for example, `READ ON URL` for a `URL`
+/// database) apply to the caller, as when the target is named directly.
+StoragePtr resolveAliases(
+    StoragePtr table, const ActionLocksManager::OwnerReleaseCheck & may_resolve, const ContextPtr & lookup_context)
 {
     /// Bound the walk in case of a cycle of aliases.
     for (size_t depth = 0; depth < 16 && table; ++depth)
@@ -95,7 +100,10 @@ StoragePtr resolveAliases(StoragePtr table)
         const auto * alias = typeid_cast<const StorageAlias *>(table.get());
         if (!alias)
             break;
-        table = alias->tryGetTargetTable();
+        const StorageID target_id = alias->getTargetTableId();
+        if (may_resolve && !may_resolve(target_id))
+            return nullptr;
+        table = DatabaseCatalog::instance().tryGetTable(target_id, lookup_context);
     }
     return table;
 }
@@ -109,10 +117,14 @@ ActionLocksManager::ActionLocksManager(ContextPtr context_) : WithContext(contex
 void ActionLocksManager::add(const StorageID & table_id, StorageActionBlockType action_type)
 {
     if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext()))
-        add(table, action_type);
+        add(table, action_type, getContext());
 }
 
-void ActionLocksManager::add(const StoragePtr & requested_table, StorageActionBlockType action_type)
+void ActionLocksManager::add(
+    const StoragePtr & requested_table,
+    StorageActionBlockType action_type,
+    const ContextPtr & lookup_context,
+    const OwnerReleaseCheck & may_resolve)
 {
     /// Take the lock and determine its owner from one resolution of the aliases. `StorageAlias::getActionLock`
     /// resolves its target by name on its own, so asking the alias for the lock and resolving the owner
@@ -122,7 +134,7 @@ void ActionLocksManager::add(const StoragePtr & requested_table, StorageActionBl
     /// A materialized view is asked for the lock itself, because it also stops or pauses its refresher for
     /// the corresponding lock types, and it reports the inner table it took the lock on: the inner table of a
     /// non-`APPEND` refreshable view is bound by name, so resolving it again could see another storage.
-    const auto lock_source = resolveAliases(requested_table);
+    const auto lock_source = resolveAliases(requested_table, may_resolve, lookup_context);
     if (!lock_source)
         return;
 

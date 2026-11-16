@@ -8,6 +8,7 @@
 # The lookup runs with the caller's context, so the source access checks of the target's database apply as
 # when the target is named directly: a user granted `SYSTEM MERGES` on both names of a table in a `URL`
 # database, but not `READ ON FILE`, is rejected rather than making the alias read the protected file.
+# `SYSTEM STOP MERGES` through an `Alias` resolves its target the same way to take the lock on it.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -37,6 +38,10 @@ ${CLICKHOUSE_CLIENT} --user "${ALIAS_USER}" -q "SYSTEM START MERGES ${CLICKHOUSE
 # The control: a user who may run the statement on the target makes the lookup reach the external database.
 echo "alias and target"
 ${CLICKHOUSE_CLIENT} --user "${FULL_USER}" -q "SYSTEM START MERGES ${CLICKHOUSE_DATABASE}.a" 2>&1 | grep -o -m1 "POSTGRESQL_CONNECTION_FAILURE"
+echo "stop, alias only"
+${CLICKHOUSE_CLIENT} --user "${ALIAS_USER}" -q "SYSTEM STOP MERGES ${CLICKHOUSE_DATABASE}.a" && echo "OK"
+echo "stop, alias and target"
+${CLICKHOUSE_CLIENT} --user "${FULL_USER}" -q "SYSTEM STOP MERGES ${CLICKHOUSE_DATABASE}.a" 2>&1 | grep -o -m1 "POSTGRESQL_CONNECTION_FAILURE"
 
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${ALIAS_USER}, ${FULL_USER}"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE a"
@@ -59,6 +64,9 @@ ${CLICKHOUSE_CLIENT} -q "GRANT SYSTEM MERGES ON ${URL_DB}.\`${DATA_FILE}\` TO ${
 echo "alias and target without the source grant"
 ${CLICKHOUSE_CLIENT} --user "${URL_USER}" -q "SYSTEM START MERGES ${URL_DB}.\`${DATA_FILE}\`" 2>&1 | grep -o -m1 "ACCESS_DENIED"
 ${CLICKHOUSE_CLIENT} --user "${URL_USER}" -q "SYSTEM START MERGES ${CLICKHOUSE_DATABASE}.a_url" 2>&1 | grep -o -m1 "ACCESS_DENIED"
+echo "stop, alias and target without the source grant"
+${CLICKHOUSE_CLIENT} --user "${URL_USER}" -q "SYSTEM STOP MERGES ${URL_DB}.\`${DATA_FILE}\`" 2>&1 | grep -o -m1 "ACCESS_DENIED"
+${CLICKHOUSE_CLIENT} --user "${URL_USER}" -q "SYSTEM STOP MERGES ${CLICKHOUSE_DATABASE}.a_url" 2>&1 | grep -o -m1 "ACCESS_DENIED"
 
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${URL_USER}"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE a_url"
