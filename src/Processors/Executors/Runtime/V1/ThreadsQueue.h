@@ -33,9 +33,9 @@ struct ThreadsQueue
         }
     }
 
-    bool has(size_t thread) const { return thread_pos_in_stack[thread] < stack_size; }
-    size_t size() const { return stack_size; }
-    bool empty() const { return stack_size == 0; }
+    [[nodiscard]] bool has(size_t thread) const { return thread_pos_in_stack[thread] < stack_size; }
+    [[nodiscard]] size_t size() const { return stack_size; }
+    [[nodiscard]] bool empty() const { return stack_size == 0; }
 
     void push(size_t thread)
     {
