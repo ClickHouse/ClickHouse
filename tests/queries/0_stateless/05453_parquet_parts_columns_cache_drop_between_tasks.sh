@@ -22,8 +22,10 @@ function cleanup()
 trap cleanup EXIT
 
 # One part of 100 row groups, read in many tasks, so that a reader reads more than one task.
+# One thread: a reader of another thread that is created after the drop captures the post-drop
+# invalidation generation and legitimately populates the cache.
 QUERY="SELECT sum(id), sum(length(value)) FROM t_parquet_cache_drop
-    SETTINGS enable_parallel_replicas = 0, use_columns_cache = 1, max_threads = 2, max_block_size = 1000,
+    SETTINGS enable_parallel_replicas = 0, use_columns_cache = 1, max_threads = 1, max_block_size = 1000,
         merge_tree_min_read_task_size = 1, merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 0"
 
 $CLICKHOUSE_CLIENT --allow_experimental_parquet_parts=1 --query "
