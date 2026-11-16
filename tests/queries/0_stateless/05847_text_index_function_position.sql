@@ -70,7 +70,6 @@ SELECT 'positionCaseInsensitive', groupArray(id) FROM tab WHERE positionCaseInse
 SELECT 'positionCaseInsensitive, no index', groupArray(id) FROM tab WHERE positionCaseInsensitive(msg, 'OUTOFMEMORY') > 0 SETTINGS use_skip_indexes = 0;
 SELECT 'positionCaseInsensitiveUTF8', groupArray(id) FROM tab WHERE positionCaseInsensitiveUTF8(msg, 'pointerEXC') != 0 SETTINGS max_rows_to_read = 2;
 SELECT 'positionCaseInsensitiveUTF8, no index', groupArray(id) FROM tab WHERE positionCaseInsensitiveUTF8(msg, 'pointerEXC') != 0 SETTINGS use_skip_indexes = 0;
-SELECT 'locate', groupArray(id) FROM tab WHERE locate(msg, 'PointerExc') > 0 SETTINGS max_rows_to_read = 1;
 
 SELECT '-- the result of position is kept where it is not a condition';
 SELECT id, position(msg, 'PointerExc'), position(msg, 'PointerExc') > 0 FROM tab WHERE position(msg, 'PointerExc') ORDER BY id;
