@@ -2373,11 +2373,6 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
                     shards.insert(static_cast<int>(previous_shard_num - 1));
     }
 
-    /// A bucket map can leave only shards with zero weight, and a cluster of such shards cannot be made: no shard is skipped.
-    const auto & shards_info = cluster->getShardsInfo();
-    if (bucket_map_watcher && !shards.empty() && std::ranges::none_of(shards, [&](int shard) { return shards_info[shard].weight; }))
-        return nullptr;
-
     /// The `IN` rewrite for every shard must use the same slots as the choice of the shards.
     query_info.slot_to_shard = std::move(slot_to_shard);
     query_info.bucket_map = std::move(bucket_map);
@@ -2599,20 +2594,29 @@ static void checkExperimentalDistributedSettings(const DistributedSettings & dis
             "The bucket map of `Distributed` tables is experimental. Set `allow_experimental_distributed_bucket_map` to enable it");
 }
 
-/// A bucket map setting taken from the server configuration is not kept in the table definition, so it is refused.
-static void checkBucketMapSettingsAreInDefinition(const DistributedSettings & distributed_settings, const StorageFactory::Arguments & args)
+/// A bucket map setting taken from the server configuration is not kept in the table definition, so it is refused for a new table
+/// and ignored for a table that already exists, which routes by the shard weights as it did when it was created.
+static void checkBucketMapSettingsAreInDefinition(DistributedSettings & distributed_settings, const StorageFactory::Arguments & args)
 {
-    if (distributed_settings[DistributedSetting::bucket_map_zookeeper_path].value.empty()
-        || !isFreshTableDefinition(args.mode, args.query.attach_short_syntax))
+    if (distributed_settings[DistributedSetting::bucket_map_zookeeper_path].value.empty())
         return;
 
     const auto * settings_ast = args.storage_def->settings;
     auto in_definition = [&](std::string_view name) { return settings_ast && settings_ast->changes.tryGet(name); };
-    if (!in_definition("bucket_map_zookeeper_path")
-        || (distributed_settings[DistributedSetting::bucket_map_buckets].changed && !in_definition("bucket_map_buckets")))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Settings `bucket_map_zookeeper_path` and `bucket_map_buckets` must be set in the `SETTINGS` clause of the table, "
-            "not in the server configuration");
+    if (in_definition("bucket_map_zookeeper_path")
+        && (!distributed_settings[DistributedSetting::bucket_map_buckets].changed || in_definition("bucket_map_buckets")))
+        return;
+
+    if (!isFreshTableDefinition(args.mode, args.query.attach_short_syntax))
+    {
+        distributed_settings[DistributedSetting::bucket_map_zookeeper_path] = "";
+        distributed_settings[DistributedSetting::bucket_map_buckets] = 0;
+        return;
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Settings `bucket_map_zookeeper_path` and `bucket_map_buckets` must be set in the `SETTINGS` clause of the table, "
+        "not in the server configuration");
 }
 
 namespace
@@ -3084,7 +3088,7 @@ buckets: 4
 
 Every line after the header assigns an inclusive range of buckets to a shard number, as `shard_num` in [system.clusters](/reference/system-tables/clusters). The ranges go in order and cover all buckets. The table watches the node and uses a new version of the map as soon as it is written, for example with `INSERT INTO system.zookeeper`. A new version with a different number of buckets is rejected: the table keeps the map it has loaded and shows the error in `last_exception` of `system.distributed_bucket_maps`. A new version changes the shard only of the rows inserted after it: the existing rows stay where they are, so the shards of the moved buckets no longer match the map for them, as after a change of the shard weights. The loaded maps are shown in [system.distributed_bucket_maps](/reference/system-tables/distributed_bucket_maps).
 
-`optimize_skip_unused_shards` and `optimize_skip_unused_shards_rewrite_in` use the bucket map as well. Shards are not skipped when all the shards left have zero weight. An `INSERT ... SELECT` into the table or from the table goes through the initiator with `parallel_distributed_insert_select = 2` too. `DROP TABLE` does not remove the map from ZooKeeper. The `remote`, `remoteSecure`, `cluster` and `clusterAllReplicas` table functions do not accept `bucket_map_zookeeper_path`.
+`optimize_skip_unused_shards` and `optimize_skip_unused_shards_rewrite_in` use the bucket map as well. An `INSERT ... SELECT` into the table or from the table goes through the initiator with `parallel_distributed_insert_select = 2` too. `DROP TABLE` does not remove the map from ZooKeeper. The `remote`, `remoteSecure`, `cluster` and `clusterAllReplicas` table functions do not accept `bucket_map_zookeeper_path`.
 
 To keep these settings correct when buckets are assigned to another shard, list the shards that keep their rows after `previous`. For example, to assign bucket 3 of the map above to a new shard 3:
 
