@@ -1609,6 +1609,8 @@ public:
             }
         }
 
+        build_paths = with_paths || skip_matcher;
+
         if (arguments.size() > 2)
         {
             String arrays_mode = getConstantStringOption(function_name, arguments[2]);
@@ -1672,12 +1674,15 @@ private:
         for (const auto & [key, value] : object_element.getObject())
         {
             size_t old_path_size = path.size();
-            if (has_parent)
-                path += '.';
-            if (format_settings.json.json_type_escape_dots_in_keys && key.find('.') != std::string_view::npos)
-                path += escapeDotInJSONKey(String(key));
-            else
-                path.append(key);
+            if (build_paths)
+            {
+                if (has_parent)
+                    path += '.';
+                if (format_settings.json.json_type_escape_dots_in_keys && key.find('.') != std::string_view::npos)
+                    path += escapeDotInJSONKey(String(key));
+                else
+                    path.append(key);
+            }
 
             walkValue(value, path, dest, format_settings);
             path.resize(old_path_size);
@@ -1711,9 +1716,12 @@ private:
                 size_t index = 0;
                 for (const auto & array_element : value.getArray())
                 {
-                    path += '[';
-                    path += std::to_string(index++);
-                    path += ']';
+                    if (build_paths)
+                    {
+                        path += '[';
+                        path += std::to_string(index++);
+                        path += ']';
+                    }
                     walkValue(array_element, path, dest, format_settings);
                     path.resize(old_path_size);
                 }
@@ -1759,6 +1767,8 @@ private:
     }
 
     std::unique_ptr<re2::RE2> skip_matcher;
+    /// The path is needed only for the result and for `skip_regex`; building it costs a string append per member.
+    bool build_paths = with_paths;
     ArraysMode arrays = ArraysMode::Elements;
 };
 
