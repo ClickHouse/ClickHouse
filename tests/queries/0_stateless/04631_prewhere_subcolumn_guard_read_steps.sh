@@ -53,6 +53,21 @@ ${CLICKHOUSE_CLIENT} -q "
   OPTIMIZE TABLE t_steps_top_k FINAL;
 "
 
+# A string key looked up in the keys of an Enum keyed Map is converted to the Enum, which may throw.
+${CLICKHOUSE_CLIENT} -q "
+  DROP TABLE IF EXISTS t_steps_enum;
+
+  CREATE TABLE t_steps_enum (id UInt64, em Map(Enum8('a' = 1, 'b' = 2), String))
+  ENGINE = MergeTree ORDER BY id
+  SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0,
+           ratio_of_defaults_for_sparse_serialization = 1.0,
+           map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
+
+  INSERT INTO t_steps_enum SELECT number, map('a', toString(number), 'b', toString(number + 1)) FROM numbers(100000);
+
+  OPTIMIZE TABLE t_steps_enum FINAL;
+"
+
 query_id_group=group_$CLICKHOUSE_DATABASE
 query_id_throwing=throwing_$CLICKHOUSE_DATABASE
 query_id_interleaved=interleaved_$CLICKHOUSE_DATABASE
@@ -61,6 +76,12 @@ query_id_nested_split=nested_split_$CLICKHOUSE_DATABASE
 query_id_read_ahead=read_ahead_$CLICKHOUSE_DATABASE
 query_id_top_k_where=top_k_where_$CLICKHOUSE_DATABASE
 query_id_top_k_prewhere=top_k_prewhere_$CLICKHOUSE_DATABASE
+query_id_starts_with=starts_with_$CLICKHOUSE_DATABASE
+query_id_like=like_$CLICKHOUSE_DATABASE
+query_id_like_column=like_column_$CLICKHOUSE_DATABASE
+query_id_like_invalid=like_invalid_$CLICKHOUSE_DATABASE
+query_id_starts_with_lower=starts_with_lower_$CLICKHOUSE_DATABASE
+query_id_enum_key=enum_key_$CLICKHOUSE_DATABASE
 
 opts=(
   --optimize_functions_to_subcolumns 1
@@ -152,6 +173,34 @@ steps_top_k_prewhere=$(read_steps "$query_id_top_k_prewhere" "
   SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1
 ")
 
+# startsWith and LIKE with a constant pattern on a String cannot throw, so they share the step of the condition
+# before them, while a condition containing a function that is not known to be unable to throw keeps its own step.
+steps_starts_with=$(read_steps "$query_id_starts_with" "
+  SELECT count() FROM t_steps_group PREWHERE tags['k0'] != '' AND startsWith(tags['k1'], '1') FORMAT Null
+")
+
+steps_like=$(read_steps "$query_id_like" "
+  SELECT count() FROM t_steps_group PREWHERE tags['k0'] != '' AND tags['k1'] LIKE '1%' FORMAT Null
+")
+
+# A pattern that is not constant is compiled for every row.
+steps_like_column=$(read_steps "$query_id_like_column" "
+  SELECT count() FROM t_steps_group PREWHERE tags['k0'] != '' AND tags['k1'] LIKE tags['k2'] FORMAT Null
+")
+
+# The pattern 1\ ends with an escape character, so building it throws. The first condition rejects every row.
+steps_like_invalid=$(read_steps "$query_id_like_invalid" "
+  SELECT count() FROM t_steps_group PREWHERE tags['k0'] = 'none' AND tags['k1'] LIKE '1\\\\' FORMAT Null
+")
+
+steps_starts_with_lower=$(read_steps "$query_id_starts_with_lower" "
+  SELECT count() FROM t_steps_group PREWHERE tags['k0'] != '' AND startsWith(lower(tags['k1']), '1') FORMAT Null
+")
+
+steps_enum_key=$(read_steps "$query_id_enum_key" "
+  SELECT count() FROM t_steps_enum PREWHERE em['a'] != '' AND startsWith(em['b'], '1') FORMAT Null
+")
+
 ${CLICKHOUSE_CLIENT} -q "
   SYSTEM FLUSH LOGS query_log;
 
@@ -193,7 +242,18 @@ ${CLICKHOUSE_CLIENT} -q "
   SELECT 'top-k where steps', '$steps_top_k_where' = '2';
   SELECT 'top-k prewhere steps', '$steps_top_k_prewhere' = '2';
 
+  -- Conditions that cannot throw share one step: the Map is read once.
+  SELECT 'startsWith grouped steps', '$steps_starts_with' = '1' AND ProfileEvents['RowsReadByPrewhereReaders'] = 100000
+    FROM system.query_log
+   WHERE current_database = currentDatabase() AND query_id = '$query_id_starts_with' AND type = 'QueryFinish';
+  SELECT 'like grouped steps', '$steps_like' = '1';
+  SELECT 'like column pattern split steps', '$steps_like_column' = '2';
+  SELECT 'like invalid pattern split steps', '$steps_like_invalid' = '2';
+  SELECT 'startsWith lower split steps', '$steps_starts_with_lower' = '2';
+  SELECT 'enum key split steps', '$steps_enum_key' = '2';
+
   DROP TABLE t_steps_group;
   DROP TABLE t_steps_throwing;
   DROP TABLE t_steps_top_k;
+  DROP TABLE t_steps_enum;
 "

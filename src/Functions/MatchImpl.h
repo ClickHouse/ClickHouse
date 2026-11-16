@@ -1,6 +1,7 @@
 #pragma once
 
 #include <limits>
+#include <optional>
 #include <type_traits>
 #include <absl/base/attributes.h>
 #include <base/types.h>
@@ -11,6 +12,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnNumbers.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/JIT/CompileRegexp.h>
 
@@ -99,6 +102,33 @@ struct MatchImpl
     static constexpr bool negate = (result_ == MatchTraits::Result::Negate);
 
     using Searcher = std::conditional_t<case_insensitive, VolnitskyCaseInsensitiveUTF8, VolnitskyUTF8>;
+
+    /// See `IFunction::canThrowIfKnown`. With a constant pattern, [I]LIKE throws only while building it, see `vectorConstant`.
+    static std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments)
+    {
+        if constexpr (!is_like)
+            return {};
+        else
+        {
+            /// An `Enum` haystack is converted per row and throws for an unknown value.
+            if (arguments.size() != 2 || !isStringOrFixedString(removeLowCardinalityAndNullable(arguments[0].type)))
+                return true;
+
+            const ColumnConst * pattern = arguments[1].column ? checkAndGetColumnConstStringOrFixedString(arguments[1].column) : nullptr;
+            if (!pattern)
+                return true;
+
+            try
+            {
+                Regexps::createRegexp<is_like, is_similar_to, /*no_capture*/ true, case_insensitive>(pattern->getValue<String>());
+            }
+            catch (const Exception &)
+            {
+                return true;
+            }
+            return false;
+        }
+    }
 
 #ifndef NDEBUG
     /// Assert that the JIT-compiled matcher agrees with RE2 for every row. Debug builds only.

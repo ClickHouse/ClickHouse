@@ -122,6 +122,16 @@ public:
     [[nodiscard]] bool useDefaultImplementationForDynamic() const override { return true; }
     [[nodiscard]] bool useDefaultImplementationForVariant() const override { return true; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// A `Map` lookup returns the default value for a missing key, but a string key is converted to the keys of an `Enum` keyed map.
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
+    {
+        if (arguments.size() == 2)
+            if (const auto * map_type = typeid_cast<const DataTypeMap *>(arguments[0].type.get()))
+                return isEnum(map_type->getKeyType());
+        return {};
+    }
+
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
     /// Keep the inherited getReturnTypeImpl(ColumnsWithTypeAndName) visible alongside the
