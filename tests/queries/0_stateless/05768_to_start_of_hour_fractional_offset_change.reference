@@ -25,6 +25,14 @@ the start never decreases and is at most an hour before the time, also in the re
 a shift of more than an hour that is not a whole number of hours (Asia/Rangoon, 1945) is monotonic too
 0
 0
+dates outside the lookup table (after 2299) follow the offset changes too
+2400-04-02 12:00:00
+2400-10-01 12:00:00
+2400-04-02 12:00:00
+2400-04-02 12:00:00
+0
+0
+0
 time windows are a fixed hour long, so each one contains its time
 0
 0
