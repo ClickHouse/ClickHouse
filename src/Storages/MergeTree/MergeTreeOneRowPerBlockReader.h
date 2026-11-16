@@ -24,7 +24,7 @@ class MergeTreeOneRowPerBlockReader
 public:
     MergeTreeOneRowPerBlockReader(OneRowPerBlockLayout layout_, UInt64 part_rows_, String path_for_logs_);
 
-    const OneRowPerBlockLayout & getLayout() const { return layout; }
+    [[nodiscard]] const OneRowPerBlockLayout & getLayout() const { return layout; }
 
     /// Appends the rows [`first_row`, `first_row + num_rows`) of the part to `result`, an array column of the type of the
     /// column: the rows that are in `selected_rows` with their values, read from `stream`, the stream of the file of the
