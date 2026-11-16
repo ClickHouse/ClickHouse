@@ -1,6 +1,7 @@
 #include <Access/AccessBackup.h>
 #include <Access/AccessControl.h>
 #include <Access/AccessEntityIO.h>
+#include <Access/AccessRights.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/User.h>
 #include <Access/Role.h>
@@ -177,6 +178,23 @@ namespace
             }
         }
     };
+
+    AccessRights getRequiredAccessToRestoreGrants(const AccessRights & access)
+    {
+        AccessRights required_access;
+        for (const auto & element : access.getElements())
+        {
+            /// Restoring a grant requires `GRANT OPTION` even if the backed-up entity does not have it.
+            if (element.is_partial_revoke && element.grant_option)
+                continue;
+
+            if (element.is_partial_revoke)
+                required_access.revoke(element);
+            else
+                required_access.grantWithGrantOption(element);
+        }
+        return required_access;
+    }
 }
 
 
@@ -339,12 +357,14 @@ void AccessRestorerFromBackup::loadFromBackup()
 }
 
 
-AccessRightsElements AccessRestorerFromBackup::getRequiredAccess() const
+AccessRights AccessRestorerFromBackup::getRequiredAccess() const
 {
     if (!loaded)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Access entities not loaded");
 
-    AccessRightsElements res;
+    AccessRights res;
+    /// Like `CREATE ... OR REPLACE`, replacement requires `DROP` even if the entity does not exist.
+    const bool replace = (creation_mode == RestoreAccessCreationMode::kReplace);
     for (const auto & [id, entity_info] : entity_infos)
     {
         if (!entity_info.restore)
@@ -356,57 +376,56 @@ AccessRightsElements AccessRestorerFromBackup::getRequiredAccess() const
             case User::TYPE:
             {
                 const auto & user = typeid_cast<const User &>(*entity);
-                res.emplace_back(AccessType::CREATE_USER, user.getName());
+                AccessFlags flags = AccessType::CREATE_USER;
+                if (replace)
+                    flags |= AccessType::DROP_USER;
+                res.grant(flags, user.getName());
                 if (!restore_with_current_grants)
-                {
-                    auto elements = user.access.getElements();
-                    for (auto & element : elements)
-                    {
-                        if (!element.is_partial_revoke)
-                            element.grant_option = true;
-                        res.emplace_back(element);
-                    }
-                }
+                    res.makeUnion(getRequiredAccessToRestoreGrants(user.access));
                 if (!user.granted_roles.isEmpty())
-                    res.emplace_back(AccessType::ROLE_ADMIN);
+                    res.grant(AccessType::ROLE_ADMIN);
                 break;
             }
 
             case Role::TYPE:
             {
                 const auto & role = typeid_cast<const Role &>(*entity);
-                res.emplace_back(AccessType::CREATE_ROLE, role.getName());
+                AccessFlags flags = AccessType::CREATE_ROLE;
+                if (replace)
+                    flags |= AccessType::DROP_ROLE;
+                res.grant(flags, role.getName());
                 if (!restore_with_current_grants)
-                {
-                    auto elements = role.access.getElements();
-                    for (auto & element : elements)
-                    {
-                        if (!element.is_partial_revoke)
-                            element.grant_option = true;
-                        res.emplace_back(element);
-                    }
-                }
+                    res.makeUnion(getRequiredAccessToRestoreGrants(role.access));
                 if (!role.granted_roles.isEmpty())
-                    res.emplace_back(AccessType::ROLE_ADMIN);
+                    res.grant(AccessType::ROLE_ADMIN);
                 break;
             }
 
             case SettingsProfile::TYPE:
             {
-                res.emplace_back(AccessType::CREATE_SETTINGS_PROFILE);
+                AccessFlags flags = AccessType::CREATE_SETTINGS_PROFILE;
+                if (replace)
+                    flags |= AccessType::DROP_SETTINGS_PROFILE;
+                res.grant(flags);
                 break;
             }
 
             case RowPolicy::TYPE:
             {
                 const auto & policy = typeid_cast<const RowPolicy &>(*entity);
-                res.emplace_back(AccessType::CREATE_ROW_POLICY, policy.getDatabase(), policy.getTableName());
+                AccessFlags flags = AccessType::CREATE_ROW_POLICY;
+                if (replace)
+                    flags |= AccessType::DROP_ROW_POLICY;
+                res.grant(flags, policy.getDatabase(), policy.getTableName());
                 break;
             }
 
             case Quota::TYPE:
             {
-                res.emplace_back(AccessType::CREATE_QUOTA);
+                AccessFlags flags = AccessType::CREATE_QUOTA;
+                if (replace)
+                    flags |= AccessType::DROP_QUOTA;
+                res.grant(flags);
                 break;
             }
 

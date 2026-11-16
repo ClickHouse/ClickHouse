@@ -57,6 +57,11 @@ IOutputFormat::Status IOutputFormat::prepare()
         return Status::Ready;
     }
 
+    finished = true;
+
+    if (!finalized)
+        return Status::Ready;
+
     return Status::Finished;
 }
 
@@ -124,6 +129,17 @@ void IOutputFormat::work()
     writeProgressIfNeededUnlocked();
 
     writePrefixIfNeeded();
+
+    if (finished && !finalized)
+    {
+        if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedStep())
+            setRowsBeforeLimit(rows_before_limit_counter->get());
+        if (rows_before_aggregation_counter && rows_before_aggregation_counter->hasAppliedStep())
+            setRowsBeforeAggregation(rows_before_aggregation_counter->get());
+
+        finalizeUnlocked();
+        return;
+    }
 
     switch (current_block_kind)
     {
@@ -273,16 +289,6 @@ void IOutputFormat::finalize()
 {
     std::lock_guard lock(writing_mutex);
     finalizeUnlocked();
-}
-
-void IOutputFormat::onPipelineFinished()
-{
-    if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedStep())
-        setRowsBeforeLimit(rows_before_limit_counter->get());
-    if (rows_before_aggregation_counter && rows_before_aggregation_counter->hasAppliedStep())
-        setRowsBeforeAggregation(rows_before_aggregation_counter->get());
-
-    finalize();
 }
 
 void IOutputFormat::setTotals(const Block & totals)

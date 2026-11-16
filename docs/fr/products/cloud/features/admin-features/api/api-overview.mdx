@@ -7,13 +7,17 @@ doc_type: 'reference'
 keywords: ['ClickHouse Cloud', 'présentation de l’API', 'Cloud API', 'REST API', 'accès programmatique']
 ---
 
-## Vue d’ensemble {#overview}
+<div id="overview">
+  ## Vue d’ensemble
+</div>
 
 L’API ClickHouse Cloud est une API REST conçue pour permettre aux développeurs de gérer facilement les organisations et les services sur ClickHouse Cloud. Avec notre Cloud API, vous pouvez créer et gérer des services, provisionner des clés API, ajouter ou supprimer des membres de votre organisation, et bien plus encore.
 
 [Découvrez comment créer votre première clé API et commencer à utiliser l’API ClickHouse Cloud.](/fr/products/cloud/features/admin-features/api/openapi)
 
-## Point de terminaison Swagger (OpenAPI) et UI {#swagger-openapi-endpoint-and-ui}
+<div id="swagger-openapi-endpoint-and-ui">
+  ## Point de terminaison Swagger (OpenAPI) et UI
+</div>
 
 L&#39;API ClickHouse Cloud s&#39;appuie sur la [spécification OpenAPI](https://www.openapis.org/)
 open source afin de permettre une utilisation prévisible côté client. Si vous devez
@@ -28,11 +32,15 @@ la [Swagger UI](/fr/products/cloud/api-reference/organization/get-list-of-availa
   Cela affectera les objets renvoyés par les requêtes de service `POST`, `GET` et `PATCH`. Par conséquent, tout code qui utilise ces API devra peut-être être adapté pour prendre en compte ces modifications.
 </Note>
 
-## Limites de débit {#rate-limits}
+<div id="rate-limits">
+  ## Limites de débit
+</div>
 
 Les développeurs peuvent créer jusqu’à 100 clés API par organisation. Chaque clé API est limitée à 10 requêtes sur une période de 10 secondes. Si vous souhaitez augmenter le nombre de clés API ou de requêtes par période de 10 secondes pour votre organisation, veuillez contacter support@clickhouse.com
 
-## Provider Terraform {#terraform-provider}
+<div id="terraform-provider">
+  ## Provider Terraform
+</div>
 
 Le provider Terraform officiel de ClickHouse vous permet d’utiliser l’[infrastructure en tant que code](https://www.redhat.com/en/topics/automation/what-is-infrastructure-as-code-iac)
 pour créer des configurations prévisibles et gérées par version, afin de rendre les déploiements beaucoup
@@ -49,11 +57,15 @@ le code source [dans le dépôt GitHub](https://github.com/ClickHouse/terraform-
   Vous pourrez désormais également spécifier le champ `num_replicas` comme propriété de la ressource de service.
 </Note>
 
-## Releases des providers Terraform {#terraform-provider-releases}
+<div id="terraform-provider-releases">
+  ## Releases des providers Terraform
+</div>
 
 ClickHouse maintient deux providers Terraform officiels : le provider ClickHouse Cloud pour l’infrastructure cloud et le provider DBops pour les objets au niveau de la base de données. Ils suivent tous deux le même modèle de version.
 
-### Ressources GA et Bêta {#ga-vs-beta-resources}
+<div id="ga-vs-beta-resources">
+  ### Ressources GA et Bêta
+</div>
 
 Chaque version est une build unique qui contient toutes les ressources. Les ressources correspondant à des fonctionnalités qui n&#39;ont pas encore atteint la disponibilité générale sont livrées avec les ressources GA et marquées **bêta** — il n&#39;existe pas de build distincte et rien n&#39;est à épingler pour les utiliser.
 
@@ -68,23 +80,31 @@ Bêta signifie que le schéma et le comportement peuvent changer dans une future
   Avant la v3.25.2, le provider marquait ces ressources comme *alpha* plutôt que *bêta*, et l&#39;avertissement lors de la planification indiquait `Alpha Resource`. Seul le libellé a changé — aucun schéma, comportement ou migration d&#39;état n&#39;est concerné — mais les outils qui recherchent `Alpha Resource` dans la sortie du plan cesseront silencieusement de trouver des correspondances. Les versions antérieures publiaient également une build alpha distincte.
 </Note>
 
-### Gestion des versions {#versioning}
+<div id="versioning">
+  ### Gestion des versions
+</div>
 
 Les deux providers utilisent le versionnage sémantique (MAJEUR.MINEUR.CORRECTIF). La version majeure est incrémentée en cas de breaking changes, la version mineure pour les nouvelles fonctionnalités ou ressources, et la version corrective pour les corrections de bugs. Les versions sont publiées à la demande plutôt que selon une cadence fixe.
 
 Les versions comportant le suffixe `-alphaN` (par ex. `3.15.0-alpha3`) sont antérieures au modèle de build unique. Elles restent disponibles, mais ne sont plus produites.
 
-### Passage de la bêta à la GA {#promotion}
+<div id="promotion">
+  ### Passage de la bêta à la GA
+</div>
 
 Lorsqu’une fonctionnalité atteint la disponibilité générale, la ressource correspondante perd son marqueur bêta dans la version suivante du provider : l’avertissement lors de la planification cesse de s’afficher et l’encadré de la documentation est supprimé. Rien d’autre ne change — aucune modification de configuration, aucune migration d’état et aucun basculement entre les builds.
 
-## Nouveau modèle tarifaire Terraform et OpenAPI : explication des paramètres de répliques {#terraform-and-openapi-new-pricing---replica-settings-explained}
+<div id="terraform-and-openapi-new-pricing---replica-settings-explained">
+  ## Nouveau modèle tarifaire Terraform et OpenAPI : explication des paramètres de répliques
+</div>
 
 Le nombre de répliques avec lequel chaque service est créé est de 3 par défaut pour les tiers Scale et Enterprise, contre 1 par défaut pour le tier Basic.
 Pour les tiers Scale et Enterprise, il est possible de l&#39;ajuster en transmettant un champ `numReplicas` dans la requête de création du service.
-La valeur du champ `numReplicas` doit être d&#39;au moins 2 pour le premier service d&#39;un warehouse. Les services créés dans un warehouse existant peuvent avoir seulement 1 réplique. Pour connaître le nombre maximal de répliques, consultez [Limites d&#39;utilisation](/fr/cloud/bestpractices/usage-limits).
+La valeur du champ `numReplicas` doit être comprise entre 2 et 20 pour le premier service d&#39;un warehouse. Les services créés dans un warehouse existant peuvent avoir seulement 1 réplique.
 
-## Assistance {#support}
+<div id="support">
+  ## Assistance
+</div>
 
 Nous vous recommandons de consulter d&#39;abord [notre canal Slack](https://clickhouse.com/slack) pour obtenir rapidement de l&#39;aide. Si
 vous souhaitez une assistance supplémentaire ou davantage d&#39;informations sur notre API et ses fonctionnalités,

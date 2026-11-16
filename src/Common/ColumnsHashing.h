@@ -404,7 +404,7 @@ struct HashMethodSerialized
     bool use_batch_serialize = false;
     IColumn::SerializationSettings serialization_settings;
     PaddedPODArray<char> serialized_buffer;
-    PODArray<std::string_view> serialized_keys;
+    std::vector<std::string_view> serialized_keys;
     /// Scratch for the non-batch `getKeyHolder`: the serialized key bytes must
     /// outlive `emplaceKey`, because the pre-emplace key snapshot returned in
     /// `EmplaceResult` is consumed after it returns (the top-K heap persists it).
@@ -478,8 +478,8 @@ struct HashMethodSerialized
 
                 const size_t rows = row_sizes.size();
                 char * memory = serialized_buffer.data();
-                PODArray<char *> memories(rows);
-                serialized_keys.resize_exact(rows);
+                VectorWithMemoryTracking<char *> memories(rows);
+                serialized_keys.resize(rows);
                 for (size_t i = 0; i < row_sizes.size(); ++i)
                 {
                     memories[i] = memory;
@@ -534,7 +534,7 @@ struct HashMethodSerialized
         /// it a key-only table (`GROUP BY` without aggregate functions) would wait for the byte
         /// threshold of a table twice as wide, and so start prefetching at twice the cardinality.
         const size_t min_bytes = minBytesForPrefetch<Data, Base::has_mapped>(min_bytes_for_prefetch);
-        if (min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= min_bytes)
+        if (min_bytes_for_prefetch != 0 && bytesForPrefetch(data) <= min_bytes)
         {
             can_precompute_hashes = false;
             return;

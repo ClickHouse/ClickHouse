@@ -187,7 +187,7 @@ mysql({host:port, database, table, user, password[, replace_query, on_duplicate_
 
 | Argument            | Description                                                                                                                                                                                                                                                           |
 |---------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `host:port`         | MySQL server address.                                                                                                                                                                                                                                                 |
+| `host:port`         | MySQL server address. The host must be a plain host name or IP address and is reached over TCP at the given port, also for `localhost`: Unix sockets are not supported. Other host syntax of the MySQL client library, such as connection strings or comma-separated host lists, is rejected. |
 | `database`          | Remote database name.                                                                                                                                                                                                                                                 |
 | `table`             | Remote table name, or a query passed to MySQL as is (see [Passing a query instead of a table name](#passing-a-query)).                                                                                                                                                  |
 | `user`              | MySQL user.                                                                                                                                                                                                                                                           |
@@ -222,14 +222,6 @@ Instead of a table name, the third argument can be a `SELECT` query that is pass
 ```sql
 SELECT * FROM mysql('localhost:3306', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
 SELECT * FROM mysql('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
-```
-
-Passing a query is supported starting from version 26.7. ClickHouse wraps the query into `SELECT ... FROM (<query>)` before sending it to MySQL, so it must not end with a semicolon.
-
-With a [named collection](/concepts/features/configuration/server-config/named-collections) such as `creds` from the [examples](#examples), pass the query in the `query` key instead of `table`, either in the collection itself or as a key-value argument. `query` and `table` cannot be specified together:
-
-```sql
-SELECT * FROM mysql(creds, query = 'SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0');
 ```
 
 This is useful to push down joins, aggregations or any other processing to MySQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`MySQL`](/reference/engines/table-engines/integrations/mysql) table engine.

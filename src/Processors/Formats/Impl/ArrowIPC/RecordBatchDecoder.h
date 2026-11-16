@@ -109,16 +109,6 @@ size_t rawByteWidth(const WhichDataType & which);
 /// then left as String for the subsequent cast (matching the library reader's text-parse fallback).
 MutableColumnPtr reinterpretStringLeaf(const ColumnString & str, const NullMap * null_map, const DataTypePtr & to_no_null);
 
-/// Decodes a column the writer had no Arrow mapping for and wrote with `serializeBinary`, back into the type
-/// its `clickhouse.opaque` tag names. Returns null when the field is not one, or names a type other than
-/// `to_no_null`, leaving the bytes to be read as `String`.
-MutableColumnPtr deserializeOpaqueBinaryLeaf(
-    const ColumnString & str,
-    const NullMap * null_map,
-    const DataTypePtr & to_no_null,
-    const ArrowField & field,
-    const FormatSettings & format_settings);
-
 /// Navigation helpers for requested-type hints, shared between the decoder's hint recursion and the
 /// post-decode raw-byte rewrite in `ArrowIPCBlockInputFormat` — both must resolve the target of a
 /// nested field by the same rules, or a leaf the decoder converted comes back to a rewrite that
@@ -172,9 +162,6 @@ public:
         String name;
         DataTypePtr type;
         ColumnPtr column;
-        /// The schema field this came from, so the post-decode rewrite can read its metadata. Points into
-        /// the decoder's schema, which outlives every batch.
-        const ArrowField * field = nullptr;
     };
 
     using DecodedColumns = VectorWithMemoryTracking<DecodedColumn>;
@@ -304,6 +291,7 @@ private:
     /// Advances the node/buffer/variadic cursors over `field` exactly as `decodeField` would, without
     /// materializing its data. With `validate_lengths`, checks buffer sizes and row-aligned child
     /// lengths before decoding. Otherwise, skips unrequested values without reading their buffers.
+    /// With `validate_lengths`, also collects the non-nullable fields with nulls into `undeclared_null_fields`.
     void advanceField(const ArrowField & field, bool validate_lengths = false);
     ColumnPtr decodeInner(
         const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path,
@@ -351,7 +339,7 @@ private:
     /// sit at the position of the field encoding the dictionary.
     DecodedColumn decodeBatchColumn(
         const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
-        ColumnUInt8::Ptr * decoded_null_map = nullptr);
+        bool read_undeclared_nulls, ColumnUInt8::Ptr * decoded_null_map = nullptr);
     /// Verifies that the batch's nodes, buffers and variadic counts were consumed exactly, then releases the
     /// per-batch state `beginBatch` set up.
     void finishBatch();
@@ -383,6 +371,7 @@ private:
     /// For BinaryView/Utf8View columns: the per-field count of variadic data buffers.
     VectorWithMemoryTracking<Int64> variadic_counts;
     size_t variadic_index = 0;
+    UnorderedSetWithMemoryTracking<const ArrowField *> undeclared_null_fields;
 };
 
 }

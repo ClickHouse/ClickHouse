@@ -440,16 +440,13 @@ void applyActionsToSortDescription(
         if (output == output_to_skip)
             continue;
 
-        /// An output that is not computed from a sort column (a constant, a function of several columns or of
-        /// a column the input is not sorted by) says nothing about the sort columns, so it is skipped. Stopping
-        /// here instead would keep the order only when the sort columns happen to lead the list of outputs.
         auto chain = buildPossiblyMonitinicChain(output);
         if (!chain.input_node)
-            continue;
+            break;
 
         auto it = input_to_sort_column.find(chain.input_node);
         if (it == input_to_sort_column.end())
-            continue;
+            break;
 
         SortColumn & sort_column = sort_columns[it->second];
 
@@ -457,16 +454,14 @@ void applyActionsToSortDescription(
         bool has_functions = !chain.non_const_arg_pos.empty();
         bool is_monotonicity_improved = !has_functions && sort_column.is_monotonic_chain;
         if (sort_column.output && !is_monotonicity_improved && sort_column.is_strict)
-            continue;
+            break;
 
-        /// A non-monotonic function of a sort column (e.g. `toMonth(k)`) is unusable as well, but a later
-        /// output may still carry the column itself.
         if (has_functions && !isMonotonicChain(output, chain))
-            continue;
+            break;
 
         bool is_strictness_improved = chain.is_strict && !sort_column.is_strict;
         if (sort_column.output && !is_strictness_improved)
-            continue;
+            break;
 
         sort_column.output = output;
         sort_column.is_monotonic_chain = has_functions;
@@ -660,9 +655,18 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
     return result;
 }
 
+ColumnsWithTypeAndName getFunctionArgumentColumns(const ActionsDAG::Node & node)
+{
+    ColumnsWithTypeAndName arguments;
+    arguments.reserve(node.children.size());
+    for (const auto & child : node.children)
+        arguments.push_back({child->column, child->result_type, child->result_name});
+    return arguments;
+}
+
 bool isInjectiveFunction(const ActionsDAG::Node * node)
 {
-    if (node->function_base->isInjective({}))
+    if (node->function_base->isInjective(getFunctionArgumentColumns(*node)))
         return true;
 
     const auto & name = node->function_base->getName();

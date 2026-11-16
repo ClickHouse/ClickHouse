@@ -41,11 +41,7 @@ namespace DB
  * Let's consider how a single resource is implemented. Every workload is represented by corresponding WorkloadNode.
  * Every WorkloadNode manages its own subtree of ISchedulerNode objects (see details in WorkloadNode.h)
  * WorkloadNode for workload w/o children has a queue, which provide a ResourceLink for consumption.
- * A resource may have several root workloads (workloads created without a parent). They are not
- * attached to the scheduler directly; instead each resource has one implicit anonymous root workload
- * that is the scheduler's single child, and every parentless workload is attached as a child of it.
- * This keeps the scheduler single-child while letting the otherwise-root workloads be scheduled with
- * fairness/priorities via the normal workload policy machinery.
+ * Parent of the root workload for a resource is the scheduler with its own thread.
  * So every resource has its dedicated thread for processing of resource request and other events (see EventQueue).
  *
  * Here is an example of SQL and corresponding hierarchy of scheduler nodes:
@@ -56,9 +52,7 @@ namespace DB
  *
  *             root                - TimeSharedScheduler (with a thread and an EventQueue)
  *               |
- *           (implicit)            - anonymous root WorkloadNode with an empty name (the scheduler's single child)
- *               |
- *              all                - WorkloadNode (has no explicit parent, so a child of the implicit root)
+ *              all                - WorkloadNode
  *               |
  *            p0_fair              - FairPolicy (part of parent WorkloadNode internal structure)
  *            /     \
@@ -193,13 +187,6 @@ private:
     private:
         void updateCurrentVersion();
 
-        /// The implicit anonymous root workload, stored in node_for_workload under the empty-string key.
-        WorkloadNodePtr implicitRoot()
-        {
-            auto it = node_for_workload.find("");
-            return it == node_for_workload.end() ? nullptr : it->second;
-        }
-
         template <class Task>
         void executeInSchedulerThread(Task && task)
         {
@@ -244,24 +231,6 @@ private:
                     std::static_pointer_cast<typename Node::Base>(result)
                 };
             };
-
-            // Create the implicit anonymous root workload as the scheduler's single child. Every
-            // workload without an explicit parent becomes a child of it (see createNode()), so the
-            // scheduler always has exactly one child and the otherwise-root workloads are scheduled
-            // with fairness/priorities by the normal workload policy machinery.
-            auto implicit = std::make_shared<Node>(scheduler->event_queue, WorkloadSettings{}, unit, resource_name);
-            // Anonymous root: an empty basename, which getPath() skips, so a workload directly under
-            // the implicit root renders as "/all".
-            implicit->basename = {};
-            // Store the implicit root under the empty-string key so a parentless workload (parent == "")
-            // attaches through the same node_for_workload[parent] path as any other child.
-            node_for_workload[""] = std::static_pointer_cast<IWorkloadNode>(implicit);
-            auto implicit_scheduler_node = std::static_pointer_cast<typename Node::Base>(implicit);
-            executeInSchedulerThread([&, this]
-            {
-                scheduler->attachChild(implicit_scheduler_node);
-                updateCurrentVersion();
-            });
         }
 
         // Type-erasure for time-shared vs. space-shared resources
@@ -275,11 +244,8 @@ private:
 
         // TODO(serxa): consider using resource_manager->mutex + scheduler thread for updates and mutex only for reading to avoid slow acquire/release of classifier
         /// These field should be accessed only by the scheduler thread
-        /// Maps workload name to its node. The implicit anonymous root workload (the scheduler's
-        /// single child, empty basename) is stored under the empty-string key: every workload without
-        /// an explicit parent is its child, so multiple SQL "root" workloads form one hierarchy under
-        /// it, scheduled with fairness/priorities by the normal policy machinery.
         std::unordered_map<String, WorkloadNodePtr> node_for_workload;
+        WorkloadNodePtr root_node;
         VersionPtr current_version;
     };
 

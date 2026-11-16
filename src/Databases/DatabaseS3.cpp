@@ -75,7 +75,7 @@ bool DatabaseS3::checkUrl(const std::string & url, ContextPtr context_, bool thr
     try
     {
         S3::URI uri(url);
-        context_->getGlobalContext()->getRemoteHostFilter().checkURL(uri.uri);
+        uri.checkRemoteHostFilter(context_->getGlobalContext()->getRemoteHostFilter());
     }
     catch (...)
     {

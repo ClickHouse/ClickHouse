@@ -36,7 +36,7 @@ In your **Customer BYOC VPC**, ClickHouse provisions a Kubernetes cluster (for e
 
 <br />
 
-<Image img="/images/cloud/reference/byoc-architecture.svg" size="lg" alt="BYOC architecture: the ClickHouse control plane in the ClickHouse VPC manages a Kubernetes data plane inside the customer cloud account; ClickHouse data, backups, logs and monitoring data stay in the customer account and only bounded operational telemetry is exported." />
+<Image img="/images/cloud/reference/byoc-1.webp" size="lg" alt="BYOC Architecture" background='black'/>
 
 <br />
 
@@ -50,7 +50,7 @@ The main cloud resources ClickHouse Cloud will deploy in your account are:
 By default, ClickHouse Cloud provisions a new, dedicated VPC and sets up the necessary IAM roles to ensure secure operation of Kubernetes services. For organizations with advanced networking or security needs, there is also the option to manage the VPC and IAM roles independently. This approach allows for greater customization of network configurations and more precise control over permissions. However, choosing to self-manage these resources will increase your operational responsibilities.
 
 ### Data Storage {#data-storage}
-Your ClickHouse data, backups, logs, and monitoring data stay in your cloud account; the only data exported elsewhere is the bounded usage and health telemetry listed in [network boundaries](/products/bring-your-own-cloud/reference/network-security#outbound-connections). Data parts and backups are stored in your object storage (for example, Amazon S3), while logs are stored on the storage volumes attached to your ClickHouse nodes. In a future update, logs will be written to LogHouse, a ClickHouse-based logging service that also runs inside your BYOC VPC. Metrics can be stored locally or, for long-term retention, in a dedicated bucket in your own account — object storage sits outside the VPC/VNet and is reached over the provider's storage API path. Control-plane connectivity between the ClickHouse VPC and your BYOC VPC is used only for management operations, never for query traffic. By default, ClickHouse management services reach your cluster's Kubernetes API over its public endpoint, which is never left open: it is restricted by IP allowlist to ClickHouse egress ranges on AWS, authorized by Google Cloud IAM on GCP, and authorized by Microsoft Entra ID together with Azure RBAC on Azure. A private connection can be enabled per deployment instead — AWS VPC Lattice, the GKE DNS-based control-plane endpoint on GCP, or Azure Private Link — as shown in the diagram. Tailscale carries ClickHouse engineer troubleshooting access along with metrics and dashboards on every cloud, and stays in place even where the Kubernetes API path is private.
+Your ClickHouse data, backups, logs, and monitoring data stay in your cloud account; the only data exported elsewhere is the bounded usage and health telemetry listed in [network boundaries](/products/bring-your-own-cloud/reference/network-security#outbound-connections). Data parts and backups are stored in your object storage (for example, Amazon S3), while logs are stored on the storage volumes attached to your ClickHouse nodes. In a future update, logs will be written to LogHouse, a ClickHouse-based logging service that also runs inside your BYOC VPC. Metrics can be stored locally or, for long-term retention, in a dedicated bucket in your own account — object storage sits outside the VPC/VNet and is reached over the provider's storage API path. Control-plane connectivity between the ClickHouse VPC and your BYOC VPC is provided over a secure, tightly scoped channel (for example, via Tailscale as shown in the diagram); this is used only for management operations, not for query traffic.
 
 ### Control Plane communication {#control-plane-communication}
 The ClickHouse VPC communicates with your BYOC VPC over HTTPS (port 443) for service management operations including configuration changes, health checks, and deployment commands. This traffic carries only control plane data for orchestration. Critical telemetry and alerts flow from your BYOC VPC to the ClickHouse VPC to enable resource utilization and health monitoring.
@@ -72,21 +72,19 @@ These permissions are granted through a cross-account IAM role (AWS), service ac
 For detailed information about the specific permissions required, see the [BYOC Privilege Reference](/products/bring-your-own-cloud/reference/privilege).
 
 ### Tailscale Private Network Connection {#tailscale-private-network}
-Tailscale provides a secure, zero-trust private network between ClickHouse Cloud and your BYOC deployment. It carries ClickHouse engineer troubleshooting access and the metrics and dashboards ClickHouse uses to monitor your deployment, and it carries Kubernetes API traffic when a private API endpoint is enabled. This connection enables:
+Tailscale provides a secure, zero-trust private network connection between ClickHouse Cloud's management services and your BYOC deployment. This connection enables:
 
 - **Continuous monitoring**: ClickHouse engineers can access the Prometheus monitoring stack deployed in your BYOC VPC to monitor service health and performance
 - **Proactive maintenance**: Engineers can perform routine maintenance, upgrades, and troubleshooting operations
 - **Emergency support**: In case of service issues, engineers can quickly access your environment to diagnose and resolve problems
-- **Infrastructure management**: When a private Kubernetes API endpoint is enabled, management services reach the Kubernetes API over this connection rather than over its public endpoint
+- **Infrastructure management**: Management services can coordinate with your BYOC infrastructure for automated operations
 
-The Tailscale agents in your cluster make **outbound-only** connections: no inbound security group, firewall, or network security group rule is needed for Tailscale itself, which reduces your exposure. All access is:
+The Tailscale connection is **outbound-only** from your BYOC VPC—no inbound connections are required, reducing your security exposure. All access is:
 
 - **Approved and audited**: Engineers must request access through an internal approval system
 - **Time-bound**: Access automatically expires after a set period
 - **Restricted**: Engineers can only access system tables and infrastructure components, never customer data
 - **Encrypted**: All communication is encrypted end-to-end
-
-This outbound-only property applies to Tailscale itself, not to every management path. Your cluster's Kubernetes API server still accepts connections from ClickHouse management services on TCP 443, whether over the public endpoint or a private connection; see the [inbound connections](/products/bring-your-own-cloud/reference/network-security#inbound-connections) inventory for the complete list of listeners.
 
 For detailed information about how Tailscale works in BYOC and security controls, see the [Network Security documentation](/products/bring-your-own-cloud/reference/network-security#tailscale-private-network).
 

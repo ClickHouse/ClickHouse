@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -156,10 +155,9 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
         }
     };
 
+    validate_callback(*type_to_check);
     if (settings.validate_nested_types)
-        forEachInTypeTree(*type_to_check, validate_callback);
-    else
-        validate_callback(*type_to_check);
+        type_to_check->forEachChild(validate_callback);
 }
 
 ColumnsDescription parseColumnsListFromString(const std::string & structure, const ContextPtr & context)

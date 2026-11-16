@@ -230,6 +230,42 @@ String canonicalizeTypeSpacing(const String & s)
     return result;
 }
 
+/// Calls `callback(id, type)` for `field_id` and for the ids of the fields, list elements and map keys/values nested in it.
+/// `type` is a JSON string (primitive leaf) or object (complex type) describing `field_id`.
+template <typename Callback>
+void forEachFieldId(const Poco::Dynamic::Var & type, Int64 field_id, Callback && callback)
+{
+    checkStackSize();
+    callback(field_id, type);
+    if (type.isString())
+        return;
+
+    const auto & type_object = type.extract<Poco::JSON::Object::Ptr>();
+    auto type_str = type_object->getValue<String>(f_type);
+    if (type_str == "map")
+    {
+        if (type_object->has(f_key))
+            forEachFieldId(type_object->get(f_key), type_object->getValue<Int64>(f_key_id), callback);
+        if (type_object->has(f_value))
+            forEachFieldId(type_object->get(f_value), type_object->getValue<Int64>(f_value_id), callback);
+    }
+    else if (type_str == "list")
+    {
+        if (type_object->has(f_element))
+            forEachFieldId(type_object->get(f_element), type_object->getValue<Int64>(f_element_id), callback);
+    }
+    else if (type_str == "struct")
+    {
+        auto fields = type_object->getArray(f_fields);
+        for (UInt32 i = 0; i < fields->size(); ++i)
+        {
+            auto field = fields->getObject(i);
+            if (field->has(f_type))
+                forEachFieldId(field->get(f_type), field->getValue<Int64>(f_id), callback);
+        }
+    }
+}
+
 /// Compare two Iceberg type descriptors for the same field. A type is either a primitive
 /// string ("long", "decimal(20, 0)", ...) or a nested object ("struct" with a fields array,
 /// or "list" / "map" wrappers whose element/key/value members are themselves types).
@@ -960,6 +996,20 @@ std::unordered_map<String, Int64> IcebergSchemaProcessor::traverseSchema(Poco::J
         if (current_object->isObject(Iceberg::f_type))
             traverseComplexType(current_object->getObject(Iceberg::f_type), result, cur_name);
         result[cur_name] = field_id;
+    }
+    return result;
+}
+
+Int64 IcebergSchemaProcessor::getMaxFieldId(Poco::JSON::Array::Ptr schema)
+{
+    Int64 result = 0;
+    for (UInt32 i = 0; i < schema->size(); ++i)
+    {
+        auto current_object = schema->getObject(i);
+        if (current_object->has(Iceberg::f_type))
+            forEachFieldId(
+                current_object->get(Iceberg::f_type), current_object->getValue<Int64>(Iceberg::f_id),
+                [&](Int64 field_id, const Poco::Dynamic::Var &) { result = std::max(result, field_id); });
     }
     return result;
 }

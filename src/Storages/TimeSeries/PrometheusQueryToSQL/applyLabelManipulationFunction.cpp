@@ -4,8 +4,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
-#include <Common/isValidUTF8.h>
-#include <Common/quoteString.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -26,34 +24,6 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    /// Checks that a label name argument is a valid label name.
-    /// Reads the text from the string literal node, because `SQLQueryPiece::string_value` isn't set
-    /// if the evaluation range of the literal is empty (see `fromLiteral`).
-    void checkLabelName(const PrometheusQueryTree::Function * function_node, size_t argument_index)
-    {
-        const auto & function_name = function_node->function_name;
-        const auto * argument_node = function_node->getArguments().at(argument_index);
-        if (argument_node->node_type != PrometheusQueryTree::NodeType::StringLiteral)
-        {
-            throw Exception(
-                ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                "Function '{}' expects a string literal in argument #{}",
-                function_name,
-                argument_index + 1);
-        }
-
-        const auto & label_name = static_cast<const PrometheusQueryTree::StringLiteral *>(argument_node)->string;
-        if (label_name.empty() || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(label_name.data()), label_name.size()))
-        {
-            throw Exception(
-                ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                "Function '{}' received invalid label name {} in argument #{}",
-                function_name,
-                quoteString(label_name),
-                argument_index + 1);
-        }
-    }
-
     /// Checks if the types of the specified arguments are valid for a label manipulation function.
     void checkArgumentTypes(
         const PrometheusQueryTree::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
@@ -95,18 +65,6 @@ namespace
                                 "Function '{}' expects argument #{} of type {}, but expression {} has type {}",
                                 function_name, i + 1, ResultType::STRING, getPromQLText(argument, context), argument.type);
             }
-        }
-
-        if (function_name == "label_replace")
-        {
-            checkLabelName(function_node, 1);
-        }
-        else
-        {
-            for (size_t i = 3; i < arguments.size(); ++i)
-                checkLabelName(function_node, i);
-
-            checkLabelName(function_node, 1);
         }
     }
 
@@ -171,16 +129,6 @@ SQLQueryPiece applyLabelManipulationFunction(
     const auto * impl_info = getImplInfo(function_name);
     chassert(impl_info);
 
-    /// Prometheus doesn't validate the source label of `label_replace`, and a label with an empty or invalid UTF-8 name
-    /// can't exist there, so such a source label always behaves like a missing label. The tags stored in a `TimeSeries` table
-    /// can have invalid UTF-8 names, so we replace such a source label with the empty name, which can't be stored.
-    if (function_name == "label_replace")
-    {
-        auto & src_label = arguments[3].string_value;
-        if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(src_label.data()), src_label.size()))
-            src_label.clear();
-    }
-
     chassert(arguments.size() >= 2);
     auto & first_argument = arguments[0];
     const String & dest_label = arguments[1].string_value;
@@ -233,7 +181,7 @@ SQLQueryPiece applyLabelManipulationFunction(
             else
             {
                 ASTPtr value = (first_argument.store_method == StoreMethod::CONST_SCALAR)
-                    ? timeSeriesScalarToAST(first_argument.scalar_value)
+                    ? timeSeriesScalarToAST(first_argument.scalar_value, context.scalar_data_type)
                     : make_intrusive<ASTIdentifier>(ColumnNames::Value);
 
                 values = makeASTFunction(

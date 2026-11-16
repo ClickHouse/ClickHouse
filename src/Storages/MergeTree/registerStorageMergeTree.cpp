@@ -83,7 +83,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString marks_compression_codec;
     extern const MergeTreeSettingsString primary_key_compression_codec;
     extern const MergeTreeSettingsString storage_policy;
-    extern const MergeTreeSettingsBool table_readonly;
 }
 
 namespace ServerSetting
@@ -101,7 +100,6 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ILLEGAL_STATISTICS;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -804,27 +802,29 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.storage_def->unique_key)
         {
-            /// Fresh definitions only; previously validated metadata loads with the setting off.
-            /// `isFreshTableDefinition` and not `mode <= CREATE`: a short-syntax ATTACH replaying
-            /// stored metadata is not a fresh definition, and gating it makes such a table
-            /// unattachable -- and therefore undroppable.
-            if (is_fresh_definition && !local_settings[Setting::enable_unique_key])
+            /// Gate on CREATE only; ATTACH must load existing metadata regardless of session setting.
+            if (args.mode <= LoadingStrictnessLevel::CREATE
+                && !local_settings[Setting::enable_unique_key])
             {
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "UNIQUE KEY is an experimental feature. "
                     "Set the session setting `enable_unique_key = 1` to enable it.");
             }
 
-            if (is_fresh_definition && merging_params.mode != MergeTreeData::MergingParams::Ordinary)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "UNIQUE KEY is only supported on the plain MergeTree engine, not on {}MergeTree",
-                    merging_params.getModeName());
-            }
-
             /// Reject expression-style elements at parse time: runtime consumers
             /// look up keys via `block.getByName(<column name>)`, so an
             /// expression-style UK passes DDL but crashes the first INSERT.
+            ///
+            /// Also reject a UK element that names a non-stored column: an existing
+            /// ALIAS / EPHEMERAL column, or a virtual column (`_part`, ...). The
+            /// INSERT-time SST write (`block.getByName(...)`) and the load-time
+            /// dense-index rebuild (`part->getColumns()`) both read the stored
+            /// block, so such a column would be absent at runtime. `getKeyFromAST`
+            /// below resolves against physical + virtual columns, so it would let a
+            /// virtual element pass DDL entirely, and reject an ALIAS/EPHEMERAL one
+            /// only with a confusing UNKNOWN_IDENTIFIER ("missing column"); this
+            /// gives a clear reason. A name that matches no column at all (not
+            /// physical, not virtual) is left for `getKeyFromAST` (UNKNOWN_IDENTIFIER).
             {
                 const ASTPtr & uk_ast = args.storage_def->unique_key->ptr();
                 auto is_plain_identifier = [](const ASTPtr & node) -> const ASTIdentifier *
@@ -956,11 +956,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// restart or `UNDROP TABLE`), security checks inside `getDiskConfigurationFromAST` are
         /// intentionally skipped because the disk configuration was already validated when the
         /// table was originally created.
-        /// User-initiated `ATTACH TABLE` queries use `LoadingStrictnessLevel::ATTACH` and must
-        /// still be subject to these checks.
+        /// User-initiated `ATTACH TABLE` queries, with a definition or in the short form, use
+        /// `LoadingStrictnessLevel::ATTACH` and must still be subject to these checks.
         storage_settings->loadFromQuery(
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
-            args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
+            args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE, /* stored_definition */ args.query.attach_short_syntax);
 
         /// What this query changes from the settings the server has in effect, which already include the
         /// `merge_tree` config section and `compatibility`: those are not changes made by the query. A
@@ -968,6 +968,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (is_fresh_definition)
             args.getLocalContext()->checkMergeTreeSettingsConstraints(
                 initial_storage_settings, storage_settings->changesFrom(initial_storage_settings));
+
+        /// After the constraints, so a forbidden `storage_policy` is reported as such and not as an unknown policy.
+        if ((*storage_settings)[MergeTreeSetting::storage_policy].changed)
+            args.getStoragePolicy((*storage_settings)[MergeTreeSetting::storage_policy]);
 
         /// `MergeTreeData` runs `sanityCheck` on the settings it is given when the mode says `CREATE`, so a
         /// full-definition `ATTACH` is the fresh definition left to check. Without this it can state a value
@@ -1090,9 +1094,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 {
                     if (args.mode < LoadingStrictnessLevel::FORCE_ATTACH)
                         throw;
-                    /// Only the analyzed description, which query execution needs, is missing. The declaration itself
-                    /// stays in the metadata, so a later rewrite of the CREATE query still contains it.
-                    metadata.projections.addUnavailable(projection_ast->clone());
                     tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format(
                         "Cannot parse projection {} during server startup, skipping it. "
                         "It may be caused by a dependency on a dropped dictionary or a missing object. "
@@ -1183,9 +1184,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table TTL is not allowed for MergeTree in old syntax");
     }
 
-    /// Only a fresh definition, so that a table stored by an earlier version keeps loading.
-    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay && !args.columns.empty())
-        MergeTreeData::checkColumnTTLsForKeyColumns(metadata, metadata);
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay)
+        MergeTreeData::checkStoredExpressions(metadata, args.getLocalContext());
 
     DataTypes data_types = metadata.partition_key.data_types;
     if (args.mode <= LoadingStrictnessLevel::CREATE && !(*storage_settings)[MergeTreeSetting::allow_floating_point_partition_key])
@@ -1228,18 +1228,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
-        /** `table_readonly` is not supported for `ReplicatedMergeTree`, so a definition that states it
-          * is refused. Only a fresh definition is: a table that already exists has to keep loading,
-          * however its metadata came to carry the setting - which the `convert_to_replicated` flag
-          * produced before it learned to refuse such a table. That covers a short `ATTACH TABLE t`,
-          * `SECONDARY_CREATE` (`RESTORE` from a backup) and the startup levels, as well as the replays
-          * of a definition an older initiator committed. `ALTER TABLE ... RESET SETTING table_readonly`
-          * is the way out of that state.
-          */
-        if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay
-            && (*storage_settings)[MergeTreeSetting::table_readonly])
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
-
         bool need_check_table_structure = true;
         if (auto txn = args.getLocalContext()->getZooKeeperMetadataTransaction())
             need_check_table_structure = txn->isInitialQuery();
@@ -1882,7 +1870,6 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)                                          | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)                                      | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [mapContainsKeyValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyValue)                                        | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 
 Functions with a constant argument that is less than ngram size can't be used by `ngrambf_v1` for query optimization.
 
@@ -2013,7 +2000,7 @@ TTL date_time + INTERVAL 15 HOUR
 
 When the values in the column expire, ClickHouse replaces them with the default values for the column data type. If all the column values in the data part expire, ClickHouse deletes this column from the data part in a filesystem.
 
-The `TTL` clause can't be used for key columns, or for columns whose subcolumns are used in the sorting or partition key.
+The `TTL` clause can't be used for key columns.
 
 **Examples**
 
@@ -2268,6 +2255,7 @@ Tags:
 - `disk` — a disk within a volume.
 - `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume's disks. If the a size of a merged part estimated to be bigger than `max_data_part_size_bytes` then this part will be written to a next volume. Basically this feature allows to keep new/small parts on a hot (SSD) volume and move them to a cold (HDD) volume when they reach large size. Do not use this setting if your policy has only one volume.
 - `move_factor` — when the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1). ClickHouse sorts existing parts by size from largest to smallest (in descending order) and selects parts with the total size that is sufficient to meet the `move_factor` condition. If the total size of all parts is insufficient, all parts will be moved.
+- `backup_metadata_only` — the data of tables on this policy is provided by the storage itself, e.g. a shared read-only dataset (by default, `false`). All volumes of the policy must be read-only. `BACKUP` stores only the definitions of such tables, and `RESTORE` recreates them without restoring data and keeps their UUIDs from the backup, so that they find their data on the storage again. `BACKUP` and `RESTORE` of specific partitions of such a table fail. Only the plain `MergeTree` family is supported: a replicated or shared `MergeTree` table, or a materialized view or a `TimeSeries` table with an inner table on such a policy, is backed up and restored as usual, with a warning.
 - `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default (if enabled) if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3). If disabled then already expired data part is written into a default volume and then right after moved to TTL volume.
 - `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
 - `least_used_ttl_ms` - Configure timeout (in milliseconds) for the updating available space on all disks (`0` - update always, `-1` - never update, default is `60000`). Note, if the disk can be used by ClickHouse only and is not subject to a online filesystem resize/shrink you can use `-1`, in all other cases it is not recommended, since eventually it will lead to incorrect space distribution.
@@ -2546,9 +2534,7 @@ They can be used for prewhere optimization only if we enable `set use_statistics
 #### Part Pruning with Statistics {#part-pruning-with-statistics}
 
 When `use_statistics_for_part_pruning` is enabled, statistics can be used for part pruning.
-Currently, only `basic` statistics (and the deprecated `minmax` statistics) support part pruning.
-On numeric and temporal columns, `basic` (and explicit `minmax`) track the minimum and maximum values in each part, so range predicates can skip parts whose bounds cannot match.
-For `Nullable` columns of any type, `basic` also tracks the number of `NULL` values in each part. That enables pruning based on `IS NULL` / `IS NOT NULL` predicates. On numeric and temporal columns it also tightens range bounds for parts that contain no `NULL` values.
+Currently, only `basic` statistics (and the deprecated `minmax` statistics) support part pruning. When such statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
 Part pruning allows to skip reading entire data parts when the query filter condition cannot match any rows in that part.
 
 **Example:**
@@ -4698,7 +4684,7 @@ If you had a `MergeTree` table that was manually replicated, you can convert it 
 
 [ATTACH TABLE ... AS REPLICATED](/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree) statement allows to attach detached `MergeTree` table as `ReplicatedMergeTree`.
 
-`MergeTree` table can be automatically converted on server restart if `convert_to_replicated` flag is set at the table's data directory (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` for an `Atomic` database or `/data/database_name/table_name/` for an `Ordinary` database).
+`MergeTree` table can be automatically converted on server restart if `convert_to_replicated` flag is set at the table's data directory (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` for `Atomic` database).
 Create empty `convert_to_replicated` file and the table will be loaded as replicated on next server restart.
 
 This query can be used to get the table's data path. If table has many data paths, you have to use the first one.
@@ -4708,7 +4694,6 @@ SELECT data_paths FROM system.tables WHERE table = 'table_name' AND database = '
 ```
 
 Note that ReplicatedMergeTree table will be created with values of `default_replica_path` and `default_replica_name` settings.
-For an `Ordinary` database, the conversion generates a UUID and expands `default_replica_path` once with it. The stored path keeps no `{uuid}` macro, so the znode such a table owns is found by matching the path against `default_replica_path` again on every load; the conversion is refused when that template cannot be matched back (for example, when it expands `{uuid}` more than once). `{database}` and `{table}` in `default_replica_name` are unfolded into the stored replica name, the same way `CREATE TABLE` unfolds them, so the table can still be renamed. `{uuid}` in `default_replica_name` is not supported for any conversion.
 To create a converted table on other replicas, you will need to explicitly specify its path in the first argument of the `ReplicatedMergeTree` engine. The following query can be used to get its path.
 
 ```sql

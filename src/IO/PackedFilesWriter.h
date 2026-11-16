@@ -39,10 +39,14 @@ public:
 
     /// Creates memory buffer for the data of file
     /// and returns fake WriteBufferFromFileBase.
+    /// Throws if the file is already written.
     OutBufferPtr writeFile(const String & file_name);
 
     /// The same as above, but also updated settings to write file with archive.
     OutBufferPtr writeFile(const String & file_name, const WriteSettings & settings);
+
+    /// The same as above, but replaces the file if it is already written, like rewriting a file on a disk.
+    OutBufferPtr rewriteFile(const String & file_name, const WriteSettings & settings);
 
     /// Common operations with files which modify only @files map.
     void moveFile(const String & from_name, const String & to_name);

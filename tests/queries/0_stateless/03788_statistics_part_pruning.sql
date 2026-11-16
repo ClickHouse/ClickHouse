@@ -20,6 +20,7 @@ SET use_statistics_for_part_pruning = 1;
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
 SET materialize_statistics_on_insert = 1;
 
 -- Part 1: 202501, id [0, 99], value [0, 99], version [0, 99]
@@ -87,13 +88,12 @@ SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), ex
 SELECT count() FROM test_stats_pruning WHERE dt = '2025-01-11' AND value = 1000;
 
 -- =============================================================================
--- Test 6: Nullable column pruning - Part 3 (all NULL) IS pruned via NULL count
+-- Test 6: Nullable column pruning - Part 3 (all NULL) should NOT be pruned
 -- =============================================================================
 -- Query: value_nullable >= 3000 AND value_nullable <= 3050
--- basic statistics track the NULL count: an all-NULL part gets the [+inf, +inf]
--- sentinel range, which does not intersect ordinary comparison ranges, so
--- Part 3 is pruned and only Part 4 ([3000, 3099]) survives.
-SELECT '-- Nullable column pruning, Part 3 has only NULL values, IS pruned via NULL count';
+-- All-NULL parts use whole-universe range for safety (to avoid issues with
+-- POSITIVE_INFINITY in checkInRange/getMonotonicityForRange/invert)
+SELECT '-- Nullable column pruning, Part 3 has NULL values, should NOT be pruned (whole-universe range for safety)';
 WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE value_nullable >= 3000 AND value_nullable <= 3050) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
 SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE value_nullable >= 3000 AND value_nullable <= 3050) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
 SELECT count() FROM test_stats_pruning WHERE value_nullable >= 3000 AND value_nullable <= 3050;

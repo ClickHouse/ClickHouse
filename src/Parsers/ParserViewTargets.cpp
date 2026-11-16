@@ -47,15 +47,13 @@ namespace
         {
             if (ParserKeyword{Keyword::INNER_COLUMNS}.ignore(pos, expected))
             {
-                ASTPtr inner_columns;
+                ASTPtr col_list;
                 if (ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected)
-                    && ParserTablePropertiesDeclarationList{}.parse(pos, inner_columns, expected)
+                    && ParserColumnDeclarationList{}.parse(pos, col_list, expected)
                     && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
-                    const auto & columns = inner_columns->as<ASTColumns &>();
-                    if (columns.constraints || columns.projections || columns.primary_key || columns.primary_key_from_columns)
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only columns and indexes are supported in INNER COLUMNS");
-
+                    auto inner_columns = make_intrusive<ASTColumns>();
+                    inner_columns->set(inner_columns->columns, col_list);
                     if (!res)
                         res = make_intrusive<ASTViewTargets>();
                     res->setInnerColumns(kind, inner_columns);

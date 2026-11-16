@@ -3,11 +3,9 @@
 
 namespace DB
 {
-FileLogDirectoryWatcher::FileLogDirectoryWatcher(
-    const std::string & path_, StorageFileLog & storage_, std::unordered_map<uint64_t, std::string> read_files_, ContextPtr context_)
+FileLogDirectoryWatcher::FileLogDirectoryWatcher(const std::string & path_, StorageFileLog & storage_, ContextPtr context_)
     : path(path_)
     , storage(storage_)
-    , read_files(std::move(read_files_))
     , log(getLogger("FileLogDirectoryWatcher(" + path + ")"))
     , dw(std::make_unique<DirectoryWatcherBase>(*this, path, context_))
 {
@@ -37,13 +35,15 @@ const std::string & FileLogDirectoryWatcher::getPath() const
 
 void FileLogDirectoryWatcher::onItemAdded(DirectoryWatcherBase::DirectoryEvent ev)
 {
-    pending.emplace_back(ev.path, EventInfo{ev.event, "onItemAdded"});
+    std::lock_guard lock(mutex);
+    events.emplace_back(ev.path, EventInfo{ev.event, "onItemAdded"});
 }
 
 
 void FileLogDirectoryWatcher::onItemRemoved(DirectoryWatcherBase::DirectoryEvent ev)
 {
-    pending.emplace_back(ev.path, EventInfo{ev.event, "onItemRemoved"});
+    std::lock_guard lock(mutex);
+    events.emplace_back(ev.path, EventInfo{ev.event, "onItemRemoved"});
 }
 
 /// Optimize for MODIFY event, during a streamToViews period, since the log files
@@ -54,29 +54,22 @@ void FileLogDirectoryWatcher::onItemRemoved(DirectoryWatcherBase::DirectoryEvent
 /// because it is equal to just record and handle one MODIY event
 void FileLogDirectoryWatcher::onItemModified(DirectoryWatcherBase::DirectoryEvent ev)
 {
-    pending.emplace_back(ev.path, EventInfo{ev.event, "onItemModified"});
+    std::lock_guard lock(mutex);
+    if (!modified_seen.insert(ev.path).second)
+        return;
+    events.emplace_back(ev.path, EventInfo{ev.event, "onItemModified"});
 }
 
 void FileLogDirectoryWatcher::onItemMovedFrom(DirectoryWatcherBase::DirectoryEvent ev)
 {
-    pending.emplace_back(ev.path, EventInfo{ev.event, "onItemMovedFrom", ev.cookie});
+    std::lock_guard lock(mutex);
+    events.emplace_back(ev.path, EventInfo{ev.event, "onItemMovedFrom"});
 }
 
 void FileLogDirectoryWatcher::onItemMovedTo(DirectoryWatcherBase::DirectoryEvent ev)
 {
-    pending.emplace_back(ev.path, EventInfo{ev.event, "onItemMovedTo", ev.cookie});
-}
-
-void FileLogDirectoryWatcher::commitEvents()
-{
     std::lock_guard lock(mutex);
-    for (auto & event : pending)
-    {
-        if (event.second.type == DirectoryWatcherBase::DW_ITEM_MODIFIED && !modified_seen.insert(event.first).second)
-            continue;
-        events.push_back(std::move(event));
-    }
-    pending.clear();
+    events.emplace_back(ev.path, EventInfo{ev.event, "onItemMovedTo"});
 }
 
 void FileLogDirectoryWatcher::onError(Exception e)

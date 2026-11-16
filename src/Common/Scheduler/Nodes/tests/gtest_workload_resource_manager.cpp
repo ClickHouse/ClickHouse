@@ -14,6 +14,8 @@
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
+#include <Common/ThreadStatus.h>
+#include <Common/CurrentThread.h>
 #include <Common/Scheduler/CPUSlotsAllocation.h>
 #include <Common/Scheduler/CPULeaseAllocation.h>
 #include <Common/Scheduler/ISpaceSharedNode.h>
@@ -66,6 +68,7 @@ namespace ProfileEvents
 {
     extern const Event ConcurrencyControlUpscales;
     extern const Event ConcurrencyControlDownscales;
+    extern const Event ConcurrencyControlWaitMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -351,104 +354,6 @@ TEST(SchedulerWorkloadResourceManager, Smoke)
     }
 }
 
-// Multiple root workloads (workloads created without a parent): each becomes a child of the
-// resource's implicit anonymous root workload, so several SQL roots coexist and are scheduled
-// among each other.
-TEST(SchedulerWorkloadResourceManager, MultipleRoots)
-{
-    ResourceTest t;
-
-    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
-    t.query("CREATE WORKLOAD root_a SETTINGS max_io_requests = 10");
-    t.query("CREATE WORKLOAD a_child IN root_a SETTINGS weight = 3");
-    t.query("CREATE WORKLOAD root_b SETTINGS max_io_requests = 10");
-    t.query("CREATE WORKLOAD b_child IN root_b");
-
-    ClassifierPtr c_a = t.manager->acquire("a_child");
-    ClassifierPtr c_b = t.manager->acquire("b_child");
-
-    // Both independent trees consume the shared resource.
-    for (int i = 0; i < 10; i++)
-    {
-        ResourceGuard g_a(ResourceGuard::Metrics::getIOWrite(), c_a->get("res1"), 1, ResourceGuard::Lock::Defer);
-        g_a.lock();
-        g_a.consume(1);
-        g_a.unlock();
-
-        ResourceGuard g_b(ResourceGuard::Metrics::getIOWrite(), c_b->get("res1"), 1, ResourceGuard::Lock::Defer);
-        g_b.lock();
-        g_b.consume(1);
-        g_b.unlock();
-    }
-
-    // Dropping one whole tree leaves the other working.
-    t.query("DROP WORKLOAD a_child");
-    t.query("DROP WORKLOAD root_a");
-
-    ClassifierPtr c_b2 = t.manager->acquire("b_child");
-    ResourceGuard g(ResourceGuard::Metrics::getIOWrite(), c_b2->get("res1"), 1, ResourceGuard::Lock::Defer);
-    g.lock();
-    g.consume(1);
-    g.unlock();
-}
-
-// Changing the priority of a parentless workload via CREATE OR REPLACE re-positions it among the
-// implicit root's children: two equal-priority parentless workloads share one fair branch, and
-// giving one a distinct priority introduces a "prio" policy node under the implicit root.
-TEST(SchedulerWorkloadResourceManager, UpdateParentlessWorkloadPriorityReattaches)
-{
-    ResourceTest t;
-
-    t.query("CREATE RESOURCE res (WRITE DISK d, READ DISK d)");
-    t.query("CREATE WORKLOAD a");
-    t.query("CREATE WORKLOAD b");
-
-    auto has_priority_node = [&]
-    {
-        bool seen = false;
-        t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode *)
-        {
-            if (path.contains("/prio/"))
-                seen = true;
-        });
-        return seen;
-    };
-
-    // Equal priority: both parentless workloads sit under one fair branch, no priority node.
-    EXPECT_FALSE(has_priority_node());
-
-    // Distinct priority must re-position b under a newly created priority node.
-    t.query("CREATE OR REPLACE WORKLOAD b SETTINGS priority = 1");
-    EXPECT_TRUE(has_priority_node())
-        << "priority change on a parentless workload was not re-positioned under the implicit root";
-}
-
-// The implicit anonymous root workload is exposed by forEachNode so system.scheduler is complete:
-// it has an empty basename and renders at the root path "/".
-TEST(SchedulerWorkloadResourceManager, ImplicitRootExposedInIntrospection)
-{
-    ResourceTest t;
-
-    t.query("CREATE RESOURCE res (WRITE DISK d, READ DISK d)");
-    t.query("CREATE WORKLOAD a");
-    t.query("CREATE WORKLOAD b");
-
-    bool seen_root = false;
-    String root_type;
-    t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode * node)
-    {
-        if (path == "/")
-        {
-            seen_root = true;
-            root_type = String(node->getTypeName());
-        }
-    });
-    EXPECT_TRUE(seen_root)
-        << "implicit root workload was not exposed in system.scheduler introspection";
-    EXPECT_EQ(root_type, "workload")
-        << "the node exposed at \"/\" should be the implicit root workload";
-}
-
 TEST(SchedulerWorkloadResourceManager, Fairness)
 {
     // Total cost for A and B cannot differ for more than 1 (every request has cost equal to 1).
@@ -574,6 +479,45 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueue)
 // failed the request), the thread-local `Request` must be reset back to `Finished`. Otherwise
 // the next `ResourceGuard` on the same thread chasserts in `enqueue` because the request is
 // still in `Dequeued` state with `exception` set.
+TEST(SchedulerWorkloadResourceManager, DropWorkloadFailsPendingRequests)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
+    t.query("CREATE WORKLOAD all SETTINGS max_io_requests = 1");
+    t.query("CREATE WORKLOAD intermediate IN all");
+
+    std::barrier<std::__empty_completion> sync_before_enqueue(2);
+    std::barrier<std::__empty_completion> sync_before_drop(3);
+    std::barrier<std::__empty_completion> sync_after_drop(2);
+    t.async("intermediate", "res1", [&] (ResourceLink link)
+    {
+        TestGuard g(t, link, 1);
+        sync_before_enqueue.arrive_and_wait();
+        sync_before_drop.arrive_and_wait(); // 1st resource request is consuming
+        sync_after_drop.arrive_and_wait(); // 1st resource request is still consuming
+    });
+
+    sync_before_enqueue.arrive_and_wait(); // to maintain correct order of resource requests
+
+    t.async("intermediate", "res1", [&] (ResourceLink link)
+    {
+        {
+            TestGuard g(t, link, 1, EnqueueOnly);
+            sync_before_drop.arrive_and_wait(); // 2nd resource request is enqueued
+            g.waitFailed("is about to be destructed");
+        }
+        // The dropped workload's queue is kept alive by this classifier, but it must not accept new requests.
+        EXPECT_THROW(ResourceGuard(ResourceGuard::Metrics::getIOWrite(), link, 1), DB::Exception);
+    });
+
+    sync_before_drop.arrive_and_wait();
+    t.query("DROP WORKLOAD intermediate");
+    sync_after_drop.arrive_and_wait();
+
+    t.wait(); // Wait for threads to finish before destructing locals
+}
+
 TEST(SchedulerWorkloadResourceManager, ResourceGuardDefaultLockResetsOnFailure)
 {
     ResourceTest t;
@@ -1389,6 +1333,41 @@ TEST(SchedulerWorkloadResourceManager, CPUSchedulingRoundRobin)
     }
 
     t.wait();
+}
+
+/// The wait for a CPU slot is accounted to the query even when the allocation outlives the thread that created it
+/// (here: destroyed on another thread while its request is still queued, like a `KILL QUERY` of a waiting query).
+TEST(SchedulerWorkloadResourceManager, CPUSlotsWaitTimerOutlivesCreatingThread)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 1");
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("cpu");
+
+    /// Takes the only slot, so the next allocation keeps its request queued.
+    auto blocker = std::make_shared<CPUSlotsAllocation>(1, 0, link, link);
+    auto blocker_slot = blocker->acquire();
+
+    std::weak_ptr<ThreadGroup> weak_group;
+    SlotAllocationPtr allocation;
+    std::thread([&]
+    {
+        DB::ThreadStatus thread_status;
+        auto group = std::make_shared<ThreadGroup>(Context::getGlobalContextInstance(), 0);
+        weak_group = group;
+        CurrentThread::attachToGroupIfDetached(group);
+        allocation = std::make_shared<CPUSlotsAllocation>(1, 0, link, link);
+        CurrentThread::detachFromGroupIfNotDetached();
+    }).join();
+
+    ASSERT_TRUE(allocation->isRequesting());
+    /// The creating thread is gone, so only the allocation can still own the group.
+    ThreadGroupPtr group = weak_group.lock();
+    ASSERT_NE(group, nullptr);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    allocation.reset();
+    EXPECT_GE(group->performance_counters[ProfileEvents::ConcurrencyControlWaitMicroseconds], 10'000);
 }
 
 TEST(SchedulerWorkloadResourceManager, CPUSchedulingFairness)
@@ -2442,38 +2421,6 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseDecrease)
     }
 }
 
-// Multiple root workloads on a space-shared resource (MEMORY RESERVATION). Each parentless workload
-// becomes a child of the resource's implicit anonymous root workload (the scheduler's single child)
-// and enforces its own limit independently.
-TEST(SchedulerWorkloadResourceManager, MultipleRootsMemoryReservation)
-{
-    ResourceTest t;
-
-    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
-    t.query("CREATE WORKLOAD root_a SETTINGS max_memory = 100");
-    t.query("CREATE WORKLOAD root_b SETTINGS max_memory = 100");
-
-    ClassifierPtr c_a = t.manager->acquire("root_a");
-    ClassifierPtr c_b = t.manager->acquire("root_b");
-
-    for (int i = 0; i < 3; i++)
-    {
-        ResourceLink link_a = c_a->get("memory");
-        ResourceLink link_b = c_b->get("memory");
-
-        // Both trees allocate and resize concurrently within their own per-root limits.
-        TestAllocation a(link_a, "A", 80);
-        TestAllocation b(link_b, "B", 80);
-        a.waitSync();
-        b.waitSync();
-
-        a.setSize(20);
-        b.setSize(60);
-        a.waitSync();
-        b.waitSync();
-    }
-}
-
 TEST(SchedulerWorkloadResourceManager, MemoryReservationZeroSize)
 {
     ResourceTest t;
@@ -2826,6 +2773,102 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationDropQueueWhilePending)
     for (auto & th : waiters)
         th.join();
     EXPECT_EQ(threw.load(), waiter_count);
+}
+
+TEST(SchedulerWorkloadResourceManager, RetiredAllocationQueueOutlivesWorkload)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    // This branch allows a single root workload, so `A` and `B` share a parent.
+    t.query("CREATE WORKLOAD all");
+    t.query("CREATE WORKLOAD A IN all SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD B IN all SETTINGS max_memory = 100");
+
+    // Only `B`'s classifier retains the old hierarchy version after the temporary classifier for `A` is released.
+    ClassifierPtr classifier_b = t.manager->acquire("B");
+    auto * retired_queue = t.manager->acquire("A")->get("memory").allocation_queue;
+    ASSERT_NE(retired_queue, nullptr);
+    t.executeFromScheduler("memory", [&]
+    {
+        EXPECT_EQ(retired_queue->getWorkloadName(), "A");
+    });
+
+    t.query("CREATE WORKLOAD child IN A");
+    t.executeFromScheduler("memory", [&]
+    {
+        // Check retirement while `A` is still alive: this fails deterministically without relying on
+        // ASan or on the contents of freed memory when the retired queue is eventually destroyed.
+        EXPECT_TRUE(retired_queue->getWorkloadName().empty());
+    });
+
+    t.query("DROP WORKLOAD child");
+    EXPECT_NE(retired_queue, t.manager->acquire("A")->get("memory").allocation_queue);
+    t.query("DROP WORKLOAD A");
+
+    // Destroy the original queue after its workload, through the classifier for a different workload.
+    classifier_b.reset();
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationDropWorkloadFailsRunningAllocation)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD A IN all");
+    t.query("CREATE WORKLOAD B IN all");
+
+    ClassifierPtr c_a = t.manager->acquire("A");
+    TestAllocation a(c_a->get("memory"), "a", 60);
+    a.waitSync();
+
+    // The classifier keeps `A`'s queue alive, but the allocation must not keep running outside the limits of `all`.
+    t.query("DROP WORKLOAD A");
+    EXPECT_THROW(a.waitSync(), Exception);
+    a.setSize(80);
+    EXPECT_THROW(a.waitSync(), Exception);
+
+    // The memory of the failed allocation is available to the rest of the hierarchy.
+    ClassifierPtr c_b = t.manager->acquire("B");
+    TestAllocation b(c_b->get("memory"), "b", 100);
+    b.waitSync();
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationDropWorkloadWhileAllocating)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD A SETTINGS max_memory = 100, max_waiting_queries = 0");
+
+    ClassifierPtr c_a = t.manager->acquire("A");
+    ResourceLink link = c_a->get("memory");
+
+    // Keep inserting allocations into `A`'s queue while `A` is dropped. Every one is rejected and the rejection reads
+    // the workload's name: by `max_waiting_queries` before the purge, as an unusable queue after it. This lets TSan
+    // check those reads against the drop and the destruction of the workload node.
+    std::atomic<bool> dropped{false};
+    std::atomic<size_t> rejected{0};
+    std::thread allocator([&]
+    {
+        while (!dropped.load() || rejected.load() < 100)
+        {
+            try
+            {
+                TestAllocation allocation(link, "racer", 10);
+            }
+            catch (const Exception &)
+            {
+                rejected.fetch_add(1);
+            }
+        }
+    });
+
+    t.query("DROP WORKLOAD A");
+    dropped.store(true);
+    allocator.join();
+    EXPECT_GE(rejected.load(), 100);
 }
 
 // Regression: simulate the race where the owner's destructor reaches `queue.removeAllocation`

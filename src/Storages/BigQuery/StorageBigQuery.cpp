@@ -11,6 +11,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Storages/BigQuery/BigQueryClient.h>
 #include <Storages/BigQuery/BigQueryConversions.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/Exception.h>
@@ -656,6 +657,10 @@ void registerStorageBigQuery(StorageFactory & factory)
         [](const StorageFactory::Arguments & args)
         {
             auto configuration = StorageBigQuery::getConfiguration(args.engine_args, args.getLocalContext(), &args.table_id);
+            /// Skipped for a stored definition so that a forbidden header does not block server startup;
+            /// requests still check it.
+            if (isFreshTableDefinition(args.mode, args.query.attach_short_syntax) && !args.getLocalContext()->isRecoveryFromStoredMetadata())
+                configuration.checkHeaders(args.getLocalContext());
             return std::make_shared<StorageBigQuery>(
                 args.table_id, std::move(configuration), args.columns, args.constraints, args.comment, args.getLocalContext());
         },

@@ -18,7 +18,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS writer SYNC"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS reader SYNC"
 
-disk_path="${CLICKHOUSE_DISKS_FILES}/04089/${CLICKHOUSE_DATABASE}/"
+disk_path="disks/04089/${CLICKHOUSE_DATABASE}/"
 
 ${CLICKHOUSE_CLIENT} --query "
 CREATE TABLE writer (s String) ORDER BY ()

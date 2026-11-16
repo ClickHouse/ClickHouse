@@ -20,7 +20,9 @@ Kinesis ClickPipes можно развертывать и настраивать
 
 Вы уже ознакомились с [введением в ClickPipes](/ru/integrations/clickpipes/home) и настроили [учетные данные IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) или [роль IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html). Сведения о том, как настроить роль для работы с ClickHouse Cloud, см. в [руководстве по ролевому доступу Kinesis](/ru/integrations/clickpipes/kinesis/auth).
 
-## Создание первого ClickPipe {#creating-your-first-clickpipe}
+<div id="creating-your-first-clickpipe">
+  ## Создание первого ClickPipe
+</div>
 
 1. Откройте SQL Console для вашего сервиса ClickHouse Cloud.
 
@@ -38,9 +40,7 @@ Kinesis ClickPipes можно развертывать и настраивать
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="Заполнение сведений о подключении" size="lg" border />
 
-5. Выберите поток Kinesis, **Data format** и начальное смещение. Для `Protobuf` загрузите файл `.proto` или сериализованный `FileDescriptorSet` (максимум 768 КиБ). Schema registry не требуется.
-
-   В интерфейсе отображаются примеры данных из выбранного потока. Параметр **Use Kinesis Enhanced Fan-Out** включён по умолчанию. Подробнее см. в [документации Amazon Kinesis](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html).
+5. Выберите Kinesis Stream и начальное смещение. В интерфейсе отобразится образец документа из выбранного источника (топика Kafka и т. д.). Вы также можете включить Enhanced Fan-out для потоков Kinesis, чтобы повысить производительность и стабильность ClickPipe (подробнее об Enhanced Fan-out читайте [здесь](https://aws.amazon.com/blogs/aws/kds-enhanced-fanout))
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="Настройка формата данных и топика" size="lg" border />
 
@@ -88,7 +88,6 @@ Kinesis ClickPipes можно развертывать и настраивать
 Поддерживаются следующие форматы:
 
 * [JSON](/ru/reference/formats/JSON/JSON)
-* [Protobuf](/ru/reference/formats/Protobuf/Protobuf)
 
 <div id="compression">
   ## Сжатие
@@ -201,7 +200,13 @@ ClickPipes выполняет вставку данных в ClickHouse батч
   ### Активные сегменты
 </div>
 
-Большое число активных сегментов может снизить пропускную способность ClickPipe, если ClickPipe не [масштабирован](#scaling) для их обработки.
+Мы настоятельно рекомендуем ограничивать число одновременно активных сегментов в соответствии с требованиями к пропускной способности. Для потока Kinesis типа &quot;On Demand&quot; AWS автоматически назначает соответствующее количество сегментов на основе пропускной способности,
+но для потоков &quot;Provisioned&quot; выделение слишком большого количества сегментов может вызывать задержки, как описано ниже, а также увеличивать затраты, поскольку для таких потоков тарификация Kinesis рассчитывается &quot;за сегмент&quot;.
+
+Если приложение-производитель непрерывно записывает данные в большое число активных сегментов, это может вызывать задержки, если ваш пайп масштабирован недостаточно для их эффективной обработки. С учётом ограничений Kinesis по пропускной способности
+ClickPipes назначает определённое количество &quot;воркеров&quot; на реплику для чтения данных из сегментов. Например, в минимальной конфигурации реплика ClickPipes имеет 4 таких воркера. Если производитель записывает
+одновременно более чем в 4 сегмента, данные из &quot;лишних&quot; сегментов не будут обрабатываться, пока не освободится воркер. В частности, если пайп использует &quot;enhanced fanout&quot;, каждый воркер будет подписан на
+один сегмент в течение 5 минут и в это время не сможет читать данные из других сегментов. Это может вызывать &quot;всплески&quot; задержки с интервалом в 5 минут.
 
 <div id="scaling">
   ### Масштабирование
@@ -216,6 +221,8 @@ ClickPipes обеспечивает высокую доступность за �
 Если потребитель или лежащая в его основе инфраструктура выйдет из строя,
 ClickPipe автоматически перезапустит потребителя и продолжит обработку сообщений.
 
-## Аутентификация {#authentication}
+<div id="authentication">
+  ## Аутентификация
+</div>
 
 Для доступа к потокам Amazon Kinesis можно использовать [учетные данные IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) или [роль IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html). Подробнее о настройке роли IAM см. в [этом руководстве](/ru/integrations/clickpipes/kinesis/auth), где описано, как настроить роль для работы с ClickHouse Cloud

@@ -111,13 +111,6 @@ bool isS3WrongSigningRegionBadRequest(int status_code, const Poco::Net::HTTPMess
     return !response.get("x-amz-bucket-region").empty();
 }
 
-String httpResponseCodeToString(Aws::Http::HttpResponseCode response_code)
-{
-    if (response_code == Aws::Http::HttpResponseCode::REQUEST_NOT_MADE)
-        return "none (no response from the server)";
-    return std::to_string(static_cast<std::underlying_type_t<Aws::Http::HttpResponseCode>>(response_code));
-}
-
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     std::function<ProxyConfiguration()> per_request_configuration_,
     const String & force_region_,
@@ -940,9 +933,12 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
         throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
             "Unexpected structure of response. Expected Bearer token, got {}", token_type);
 
+    auto token = object->getValue<String>("access_token");
+    checkGCPOAuthAccessToken(token);
+
     return
     {
-        .token = object->getValue<String>("access_token"),
+        .token = std::move(token),
         .is_valid_to = std::chrono::system_clock::now() + std::chrono::seconds(object->getValue<Int64>("expires_in"))
     };
 }

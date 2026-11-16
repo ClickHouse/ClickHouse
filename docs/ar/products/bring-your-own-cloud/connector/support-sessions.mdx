@@ -6,35 +6,34 @@ keywords: ['BYOC', 'cloud', 'Bring Your Own Cloud', 'connector']
 doc_type: 'guide'
 ---
 
-import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-<PrivatePreviewBadge />
+تتيح لك جلسات الدعم منح ClickHouse وصولًا مؤقتًا لأغراض التشخيص عبر ClickHouse Connector. تشرح هذه الصفحة ماهية الجلسة، وكيفية تفعيلها وإيقافها، وما يمكن لمشغّلي ClickHouse فعله أثناء تفعيلها، وكيفية تدقيق كل ما جرى.
 
-تمنح جلسة الدعم ClickHouse وصولًا مؤقتًا لأغراض التشخيص عبر ClickHouse Connector. تغطي هذه الصفحة ماهية الجلسة، وكيفية تفعيلها وإيقافها، وما يمكن لمهندسي دعم ClickHouse فعله أثناءها، وكيفية تدقيقها.
+<div id="what-a-support-session-is">
+  ## ماهية جلسة الدعم
+</div>
 
-## ما هي جلسة الدعم {#what-a-support-session-is}
+جلسة الدعم نافذة زمنية محددة يقبل خلالها troubleshooter الأوامر من مهندسي دعم ClickHouse. عند عدم وجود جلسة نشطة، يرفض troubleshooter جميع الأوامر، حتى إذا كان اتصال WebSocket الصادر قائمًا. ولا يوجد أي مسار تنفيذ آخر: فلا شيء يعمل من دون جلسة، ولا يمكن لـ ClickHouse فتح جلسة نيابةً عنك. لا تتصل control plane الخاصة بـ ClickHouse ببيئتك مطلقًا؛ بل لا تتلقى إلا ما يرسله troubleshooter عبر قناته الصادرة، ولا تنقل هذه القناة الأوامر إلا عندما تسمح حالة جلستك بذلك.
 
-جلسة الدعم هي نافذة زمنية محددة المدة يقبل فيها مستكشف الأخطاء ومصلحها الأوامر من مهندسي دعم ClickHouse. أما خارج الجلسة فيرفض كل أمر، حتى مع بقاء اتصال WebSocket الصادر الخاص به قائماً. ولا يوجد أي مسار تنفيذ آخر، ولا تستطيع ClickHouse فتح جلسة نيابةً عنك. كما أن ClickHouse Cloud لا تتصل إطلاقاً ببيئتك من الخارج؛ فهي لا تتلقى سوى ما يرسله مستكشف الأخطاء ومصلحها عبر قناته الصادرة.
+<Image img="/images/cloud/reference/byoc-connector-session-trust.svg" size="lg" alt="تدفق الثقة لجلسة دعم ClickHouse Connector" />
 
-تحكم الجلسات عمليات التشخيص فقط. أما أوامر دورة الحياة للخدمات في الوضع Managed فتنتقل عبر القناة المنفصلة الخاصة بالمنفّذ، وهي قناة لا تفتحها جلسة الدعم ولا تتحكم بها؛ راجع [الخدمات المُدارة](/ar/products/bring-your-own-cloud/connector/managed-services#service-lifecycle).
+تتحكم في الجلسات عبر واجهتين:
 
-<Image img="/images/cloud/reference/byoc-connector-session-trust.svg" size="lg" alt="ClickHouse Connector support session trust flow" />
+* **بوابة الجلسة**، وهي واجهة برمجة تطبيقات موثّقة مضمّنة في troubleshooter، تتضمن نقاط النهاية `enable` و`disable` و`status`. يتطلب كل استدعاء للبوابة رمز معرّف OIDC قصير العمر، على أن يكون بريده الإلكتروني مدرجًا في قائمة السماح للمشغّلين لديك.
+* **ملف الجلسة المحلي** في عمليات التثبيت على أجهزة Linux VM، ويُكتب مباشرةً على المضيف باستخدام صلاحيات root.
 
-يمكنك التحكم بالجلسات عبر واجهتين:
+يعتمد نقل بوابة الجلسة على الهدف. تقدم بوابة VM اتصال TLS بشهادة موقعة ذاتيًا، ويثبّت كل مشغّل بصمتها. تستمع بوابة Kubernetes محليًا داخل pod عبر HTTP، ويمكن الوصول إليها باستخدام `kubectl port-forward` (يمر النفق عبر TLS الخاص بخادم API) أو عبر Ingress ينهي TLS باستخدام شهادة صادرة عن CA.
 
-* **بوابة الجلسة (session gateway)**، وهي واجهة برمجة تطبيقات مُوثَّقة الهوية ومدمجة في مستكشف الأخطاء ومصلحها، وتوفّر `POST /v1/clctl/session/enable` و`POST /v1/clctl/session/disable` و`GET /v1/clctl/session/status`. ويتطلب كل استدعاء رمز هوية OIDC قصير الأجل يكون بريده الإلكتروني مُدرجاً في قائمة السماح الخاصة بالمشغّلين لديك.
-* **ملف الجلسة المحلي** في عمليات التثبيت على جهاز افتراضي يعمل بنظام Linux، ويُكتب على المضيف بصلاحيات الجذر.
+تختار سياسة جلستك، بما في ذلك قائمة السماح للمشغّلين، أثناء `clicklink clctl init`.
 
-يعتمد أسلوب نقل البوابة على الهدف. فبوابة الجهاز الافتراضي توفّر TLS موقّعة ذاتياً يثبّت كل مشغّل بصمتها. أما بوابة Kubernetes فتستمع محلياً داخل الـ pod عبر HTTP؛ ويمكنك الوصول إليها عبر `kubectl port-forward` (حيث ينتقل النفق عبر TLS الخاص بخادم API) أو عبر Ingress ينهي TLS بشهادة صادرة عن CA.
-
-وتختار وضعية الجلسة لديك، بما في ذلك قائمة السماح الخاصة بالمشغّلين، أثناء تنفيذ `clicklink clctl init`.
-
-## تمكين الجلسات وتعطيلها {#enabling-and-disabling-sessions}
+<div id="enabling-and-disabling-sessions">
+  ## تمكين الجلسات وتعطيلها
+</div>
 
 <Tabs>
-  <Tab title="Kubernetes" id="sessions-kubernetes">
-    تستمع البوابة على المنفذ 8443 في حاوية pod الخاصة بـ مستكشف الأخطاء ومصلحها. مع وجود وصول إلى العنقود، فصِل إليها عبر إعادة توجيه المنفذ:
+  <Tab title="Kubernetes">
+    تستمع البوابة على المنفذ 8443 في حاوية pod الخاصة بـ troubleshooter. إذا كان لديك وصول إلى الكتلة، فصِل إليها عبر إعادة توجيه المنفذ؛ إذ يمر النفق عبر TLS الخاص بخادم API في Kubernetes:
 
     ```bash
     CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
@@ -57,11 +56,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     clicklink clctl troubleshoot session disable --gateway-url http://localhost:8443
     ```
 
-    يجب أن تكون هوية OIDC الخاصة بالمستدعي ضمن قائمة السماح للمشغّل. يتلقى المستدعون غير المصادَق عليهم أو غير المدرجين استجابة 401 أو 403، وتسجّل البوابة المحاولة. للسماح للمشغّلين بالعمل دون بيانات اعتماد العنقود، أتِح البوابة عبر Ingress الاختياري الخاص بـ chart، والذي ينهي TLS باستخدام شهادة صادرة عن CA؛ راجع [تهيئة](/ar/products/bring-your-own-cloud/connector/configuration).
+    يجب أن تكون هوية OIDC الخاصة بالمستدعي ضمن قائمة السماح للمشغّل؛ إذ يتلقى المستدعون غير المصادَق عليهم أو غير المدرجين استجابة 401 أو 403، وتُسجَّل المحاولة. إذا كنت تفضّل عدم اشتراط بيانات اعتماد الكتلة، فيمكن لـ chart إتاحة البوابة عبر Ingress اختياري ينهي TLS باستخدام شهادة صادرة عن CA؛ راجع [الإعدادات](/ar/products/bring-your-own-cloud/connector/configuration).
   </Tab>
 
-  <Tab title="Linux VM" id="sessions-vm">
-    مع صلاحية root على المضيف، أدر الجلسة مباشرةً. يقرأ البرنامج الخفي وواجهة CLI ملف الحالة `/var/lib/clicklink/session.json` ويكتبانه ذريًا:
+  <Tab title="Linux VM">
+    مع صلاحية root على المضيف، أدر الجلسة مباشرةً. تُحفَظ الحالة في `/var/lib/clicklink/session.json`، ويقرأها البرنامج الخفي وواجهة CLI ويكتبانها ذريًا:
 
     ```bash
     sudo clicklink clctl troubleshoot session enable --duration 4h --reason "<ticket reference>"
@@ -77,60 +76,60 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       --gateway-fingerprint <sha256-fingerprint>
     ```
 
-    يُخزَّن التثبيت في `~/.clicklink/clctl.yaml`. ويفشل الاتصال بشكل آمن عندما لا تتطابق الشهادة المقدَّمة معه. أما إذا قدّمت البوابة شهادة صادرة عن CA خاصة بك، فمرّر حزمة CA تلك باستخدام `--gateway-ca` مع كل أمر جلسة.
+    يُخزَّن التثبيت في `~/.clicklink/clctl.yaml`، وتفشل الاتصالات بشكل آمن إذا لم تتطابق الشهادة المقدَّمة معه.
   </Tab>
 </Tabs>
 
-## انتهاء صلاحية الجلسة {#session-expiry}
+<div id="session-expiry">
+  ## انتهاء صلاحية الجلسة
+</div>
 
-تنتهي صلاحية الجلسات تلقائيًا. المدة الافتراضية هي 4 ساعات؛ ويقبل الأمر `session enable --duration` مدة تصل إلى 24 ساعة. عند انتهاء الصلاحية أو فور تشغيل `session disable`، تتوقف أداة مستكشف الأخطاء ومصلحها عن قبول الأوامر. يؤدي التعطيل إلى إلغاء الوصول فورًا: لا إعادة تشغيل، ولا تنسيق مع ClickHouse.
+تنتهي صلاحية الجلسات تلقائيًا. المدة الافتراضية هي 4 ساعات؛ ويمكن للأمر `session enable --duration` ضبط أي مدة تصل إلى 24 ساعة. عند انتهاء صلاحية الجلسة أو فور تشغيل `session disable`، تتوقف أداة troubleshooter عن قبول الأوامر. تعطيل الجلسة هو مسار الإلغاء الفوري: لا يتطلب إعادة تشغيل أو تنسيقًا مع ClickHouse.
 
-## قائمة السماح بالمشغّلين {#operator-allowlist}
+<div id="operator-allowlist">
+  ## قائمة السماح بالمشغّلين
+</div>
 
-يُصرَّح بكل استدعاء للبوابة بناءً على قائمة سماح بعناوين البريد الإلكتروني للمشغّلين. وتستخدم المطابقة عنوان البريد الإلكتروني المثبت في رمز OIDC الذي تم التحقق من صحته، وليس أي قيمة يوفرها العميل.
+يُصرَّح بكل استدعاء للبوابة بناءً على قائمة سماح بعناوين البريد الإلكتروني للمشغّلين، إذ تُطابَق مع عنوان البريد الإلكتروني المثبت في رمز OIDC الذي تم التحقق من صحته، وليس مع أي معلومات يدّعيها العميل عن نفسه.
 
-* **Kubernetes:** اضبط `clctl.gateway.allowedOperators` في طبقة values الخاصة بك. يُضمِّن المخطط القائمة في ConfigMap، لذا يؤدي تغيير values وتشغيل `helm upgrade` إلى تدوير قائمة السماح دون إعادة تشغيل pod.
+* **Kubernetes:** اضبط `clctl.gateway.allowedOperators` في طبقة values الخاصة بك. تُضمَّن القائمة في ConfigMap تعيد البوابة قراءته كل 30 ثانية، لذا يؤدي تغيير values وتشغيل `helm upgrade` إلى تدوير قائمة السماح دون إعادة تشغيل pod.
 * **Linux VM:** توجد قائمة السماح في `/etc/clicklink/allowed-operators.txt`، ويكتبها `clicklink clctl init` باستخدام عناوين البريد الإلكتروني للمشغّلين التي توفرها.
 
-وفي كلا الهدفين تعيد البوابة قراءة الملف عند الطلب التالي بعد مرور 30 ثانية على آخر قراءة. وتدخل التعديلات حيز التنفيذ دون إعادة تشغيل.
+<div id="what-operators-can-do">
+  ## ما يمكن للمشغّلين فعله أثناء الجلسة
+</div>
 
-## ما الذي يمكن للمشغّلين فعله أثناء الجلسة {#what-operators-can-do}
+أثناء الجلسة النشطة، يستطيع مهندسو دعم ClickHouse تنفيذ ما يلي:
 
-ما دامت الجلسة نشطة، يمكن لمهندسي دعم ClickHouse تنفيذ نوعين من الأوامر.
+* **استعلامات SQL للقراءة فقط** على مجموعاتك باستخدام المستخدم `pcm_troubleshooter`، والمقيّد بقائمة سماح صريحة للجداول. تشمل قائمة السماح الافتراضية جداول `system` في ClickHouse، مثل `system.parts` و`system.merges` و`system.replicas` و`system.metrics` و`system.settings`؛ بينما يُحظر الوصول إلى `system.query_log` و`system.text_log` دون أي استثناء، لذا لا يغادر سجل الاستعلامات مطلقًا. تشمل قائمة السماح الافتراضية أيضًا `system.processes`، حيث يعرض العمود `query` نص العبارات التي تكون قيد التنفيذ في تلك اللحظة؛ أزِله من قائمة سماح جداول الجلسة (`troubleshooter.allowedTables` في تراكب Helm، و`troubleshooter.allowed_tables` في ملف تهيئة VM) إذا كان يجب ألا يظهر نص الاستعلامات المباشرة مطلقًا خلال أي جلسة. لا يملك المستخدم سوى صلاحيات `SELECT` على مستوى كل جدول، ولا يملك أي صلاحيات للكتابة أو DDL أو الإدارة.
+* **طرق عرض Kubernetes للقراءة فقط** على كل عملية نشر تم توفيرها (ترتبط حزم الوصول بحسابات خدمة Kubernetes على كلا هدفي التثبيت): الأوامر `get` و`list` و`watch` على pods وسجلات pods والخدمات وconfigmaps والأحداث وPersistentVolumeClaims وعمليات النشر وstatefulsets وreplicasets في مساحات الأسماء الممنوحة. ومن دون حزمة تم توفيرها، يرفض troubleshooter أوامر من نوع kubectl تمامًا.
 
-**عبارات SQL للقراءة فقط** تُنفَّذ على عناقيدك بصفة المستخدم `pcm_troubleshooter`، الذي تقتصر أذوناته على قائمة الجداول المسموح بها في الجلسة. كما يرفض مستكشف الأخطاء ومصلحها أي عبارة لا تبدأ بـ `SELECT` أو `WITH` أو `SHOW` أو `DESCRIBE` أو `EXPLAIN`. ويملك هذا المستخدم أذونات `SELECT` على مستوى كل جدول فقط، دون أي امتيازات كتابة أو DDL أو إدارة.
+لا يتضمن RBAC الخاص بـ troubleshooter أي صلاحية `exec` أو `delete` أو `patch`، لذا لا يمكن للمشغّلين فتح shell داخل pods لديك أو تغيير أي شيء عبر الموصل. تتوفر القائمة الكاملة للصلاحيات وRBAC في مرجع [نموذج الامتيازات](/ar/products/bring-your-own-cloud/connector/reference/privilege-model).
 
-تشمل قائمة السماح الافتراضية جداول `system` مثل `system.parts` و`system.merges` و`system.replicas` و`system.metrics` و`system.settings`. أما `system.query_log` و`system.text_log` فلا يمكن إضافتهما إليها: إذ يرفض برنامج خفي أي تهيئة تدرجهما، ومن ثم لا يُجهَّز أي إذن عليهما إطلاقًا. وتتضمن قائمة السماح الافتراضية `system.processes`، الذي يعرض عمود `query` فيه نص العبارات الجاري تنفيذها. فاحذفه من `troubleshooter.allowedTables` (طبقة Helm) أو `troubleshooter.allowed_tables` (ملف تهيئة الجهاز الافتراضي) إذا كان يجب ألا يظهر نص الاستعلامات الحيّة في أي جلسة.
+<div id="audit-log">
+  ## سجل التدقيق
+</div>
 
-**عروض Kubernetes للقراءة فقط** هي `get` و`list` و`watch` على الحاويات (pods) وحالتها وسجلاتها، والخدمات، وconfigmaps، والأحداث، وPersistentVolumeClaims، وعمليات النشر، وstatefulsets، وreplicasets ضمن مساحات الأسماء الممنوحة. وتُربط حزم الوصول بحسابات خدمة Kubernetes (ServiceAccounts) في هدفَي التثبيت كليهما. وما لم تكن هناك حزمة مُجهَّزة، يرفض مستكشف الأخطاء ومصلحها أوامر kubectl رفضًا تامًا. ويجهّز المنفّذ أداة الجمع للخدمة المُدارة دون مستكشف الأخطاء ومصلحها؛ راجع [جلسات الدعم للخدمة المُدارة](/ar/products/bring-your-own-cloud/connector/managed-services#support-sessions).
-
-لا تتضمن قواعد RBAC الخاصة بمستكشف الأخطاء ومصلحها أي إذن `exec` أو `delete` أو `patch`، لذا لا يستطيع المشغّلون فتح shell داخل حاوياتك أو تغيير أي شيء عبر الجلسة. وتجد القائمة الكاملة للأذونات وقواعد RBAC في مرجع [نموذج الامتيازات](/ar/products/bring-your-own-cloud/connector/reference/privilege-model).
-
-## سجل التدقيق {#audit-log}
-
-يُضاف كل أمر يُنفَّذ خلال الجلسة إلى الملف `/var/log/clicklink/troubleshoot-audit.log` على هيئة كائن JSON واحد في كل سطر (NDJSON). وتُسجَّل الأوامر المحظورة أيضًا، مع ذكر السبب في `blocked_by` (مثل `session inactive`). أما `submitted_by` فهو معرّف المؤسسة على قناة الأوامر: أي معرّف مؤسستك أنت. ويُسجَّل اسم مهندس ClickHouse المعني في جانب ClickHouse Cloud، لا في هذا الملف. وفيما يلي مثال على إدخال خاص بأمر جلسة:
+يُضاف كل استدعاء للبوابة وكل أمر يُنفَّذ أثناء جلسة إلى `/var/log/clicklink/troubleshoot-audit.log` على شكل كائن JSON واحد في كل سطر (NDJSON). يسجّل الحقل `submitted_by` الهوية المرتبطة بكل إدخال، ويعتمد ذلك على مصدر الإدخال: إذ تتضمن استدعاءات البوابة البريد الإلكتروني الذي يؤكده الرمز المميز المتحقق منه، وليس قيمة يقدّمها العميل مطلقًا؛ وتسجّل تغييرات الجلسة التي تُجرى محليًا على جهاز VM مستخدم المضيف الذي استدعاها؛ بينما تسجّل الأوامر المنفذة أثناء الجلسة هوية المؤسسة المنقولة عبر قناة الأوامر المُصادَق عليها. يبدو إدخال تمكين جلسة عبر البوابة كما يلي:
 
 ```json
 {
   "timestamp": "2026-06-22T22:30:00.123456789Z",
   "command_id": "11111111-2222-4333-8444-555555555555",
-  "submitted_by": "<org-id>",
-  "command_type": "sql",
-  "command_text": "SELECT database, table, active, count() FROM system.parts GROUP BY ALL",
-  "instance_id": "analytics",
-  "status": "completed",
+  "submitted_by": "operator@clickhouse.com",
+  "command_type": "clctl.session.enable",
+  "command_text": "ticket #1234",
+  "instance_id": "",
+  "status": "ok",
   "duration_ms": 42,
-  "output_lines": 12
+  "output_lines": 0,
+  "remote_addr": "10.20.30.40"
 }
 ```
 
-يحمل `status` نتيجة الأمر: `completed` أو `error` أو `rejected`.
+تستخدم إدخالات دورة حياة الجلسة أنواع الأوامر `clctl.session.enable` و`clctl.session.disable` و`clctl.session.status`، ويُسجَّل الخيار `--reason` عند التفعيل بوصفه `command_text`؛ كما تُسجَّل الأوامر التي تُنفَّذ أثناء الجلسة بالمخطط نفسه. يميّز `status` بين الاستدعاءات الناجحة ومحاولات `unauthorized` و`forbidden` و`rate_limited`، لذا يظهر الوصول المرفوض في السجل أيضًا.
 
-تُسجَّل استدعاءات بوابة بشكل منفصل. فكل استدعاء، بما في ذلك الاستدعاءات المرفوضة، يُصدر كسطر `clctl.gateway` مهيكل ضمن سجل مستكشف الأخطاء ومصلحها نفسه: journal على الجهاز الافتراضي، وسجل الحاوية على Kubernetes. ويحمل السطر `submitted_by` (البريد الإلكتروني المُوثَّق عبر الرمز الذي تم التحقق منه، وليس قيمة يوفرها العميل)، و`command_type` (`clctl.session.enable` أو `clctl.session.disable` أو `clctl.session.status`). كما يحمل `reason` (قيمة `--reason` المُمرَّرة عند التفعيل)، و`remote_addr`، و`status`. وتكون قيمة `status` إحدى التالي: `ok` أو `unauthorized` أو `forbidden` أو `rate_limited` أو `bad_request` أو `conflict` أو `error`، وبذلك يظهر الوصول المرفوض في السجل أيضًا.
-
-أما تغييرات الجلسة المحلية على الجهاز الافتراضي فليست إدخالات في سجل التدقيق. إذ يُسجَّل مستخدم المضيف الذي نفّذ الأمر في الحقل `enabled_by` ضمن `/var/lib/clicklink/session.json`، ويظهر عبر `session status`.
-
-على الجهاز الافتراضي، اقرأ سجل التدقيق باستخدام `clicklink clctl troubleshoot audit tail`. أما على Kubernetes فيوجد السجل داخل pod مستكشف الأخطاء ومصلحها، ولا تتضمن صورة الحاوية أي shell، لذا استدعِ قارئ الـ binary الخاص به عبر `kubectl exec`:
+على جهاز افتراضي، اقرأ الملف مباشرةً باستخدام `clicklink clctl troubleshoot audit tail`. في Kubernetes، يوجد السجل داخل pod أداة troubleshooter، ولا تحتوي صورة الحاوية على shell، لذا استدعِ القارئ المدمج في الملف التنفيذي عبر `kubectl exec`:
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
@@ -138,13 +137,17 @@ kubectl -n "${CONNECTOR_NAMESPACE}" exec statefulset/clicklink-connector-trouble
   /clicklink clctl troubleshoot audit tail
 ```
 
-سجل التدقيق هو ملف عادي داخل بيئتك؛ يمكنك إرساله إلى نظام SIEM الخاص بك كما تفعل مع أي سجل مضيف أو حاوية آخر.
+سجل التدقيق هو ملف عادي ضمن بيئتك؛ أرسله إلى نظام SIEM الخاص بك كما تفعل مع أي سجل لمضيف أو حاوية.
 
-## إخفاء المعلومات الحساسة {#redaction}
+<div id="redaction">
+  ## إخفاء المعلومات الحساسة
+</div>
 
-يُخفى كل ما يعيده مستكشف الأخطاء ومصلحها قبل أن يغادر بيئتك. تغطي الأنماط المضمّنة عناوين IPv4 وIPv6، ورموز Bearer، ومفاتيح وصول AWS، وعناوين البريد الإلكتروني، ورموز JWT، والمفاتيح الخاصة لـ SSH، وبيانات الاعتماد المضمّنة في سلاسل الاتصال. يمكنك توسيع هذه الأنماط أو تجاوزها في `/etc/clicklink/redaction-patterns.yaml`؛ ويستبدل الإدخال الذي يحمل الاسم نفسه لنمط مضمّن ذلك النمط. يرفض البرنامج الخفي بدء التشغيل إذا كان ملف الأنماط غير صالح، ويتحقق `clicklink clctl preflight` منه، لذا يفشل تهيئة إخفاء المعلومات الحساسة المعطّل بشكل واضح.
+يُخفى كل ما يعيده troubleshooter قبل أن يغادر بيئتك. تغطي الأنماط المضمّنة عناوين IPv4 وIPv6، ورموز Bearer، ومفاتيح وصول AWS، وعناوين البريد الإلكتروني، ورموز JWT، والمفاتيح الخاصة لـ SSH، وبيانات الاعتماد المضمّنة في سلاسل الاتصال. يمكنك توسيع هذه الأنماط أو تجاوزها في `/etc/clicklink/redaction-patterns.yaml`؛ ويستبدل الإدخال الذي يحمل الاسم نفسه لنمط مضمّن ذلك النمط. يرفض البرنامج الخفي بدء التشغيل إذا كان ملف الأنماط غير صالح، ويتحقق `clicklink clctl preflight` منه، لذا يفشل إعداد إخفاء المعلومات الحساسة المعطّل بشكل واضح بدلًا من تمرير البيانات بصمت.
 
-## صفحات ذات صلة {#related-pages}
+<div id="related-pages">
+  ## صفحات ذات صلة
+</div>
 
 * [المعمارية](/ar/products/bring-your-own-cloud/connector/architecture): جميع الاتصالات التي ينشئها الموصل وتدفق البيانات المرتبط بالجلسات.
 * [التهيئة](/ar/products/bring-your-own-cloud/connector/configuration): إعدادات البوابة وقائمة السماح وإخفاء المعلومات الحساسة.

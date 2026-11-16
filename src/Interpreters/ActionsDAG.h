@@ -121,8 +121,7 @@ public:
         bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
         UInt64 getHash() const;
-        /// See `ActionsDAG::updateHash` for `with_variable_size_constant_values`.
-        void updateHash(SipHash & hash_state, bool with_variable_size_constant_values = true) const;
+        void updateHash(SipHash & hash_state) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -169,7 +168,13 @@ public:
     /// max_type_complexity guards binary type decoding (0 == unlimited). Callers pass the effective
     /// input_format_binary_max_type_complexity for client-reachable QueryPlan packets, or leave it at the
     /// default 0 for trusted internal metadata (e.g. data-lake schema transforms).
-    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context, size_t max_type_complexity = 0);
+    /// `nesting_depth` is the depth of lambda captures, it is used internally to limit the recursion.
+    static ActionsDAG deserialize(
+        ReadBuffer & in,
+        DeserializedSetsRegistry & registry,
+        const ContextPtr & context,
+        size_t max_type_complexity = 0,
+        size_t nesting_depth = 0);
 
     static Node createAlias(const Node & child, std::string alias);
 
@@ -276,12 +281,6 @@ public:
     size_t removeNodes(const std::unordered_set<const Node *> & to_remove);
 
     void removeAliasesForFilter(const std::string & filter_name);
-
-    /// Fold a filter predicate that reaches a Const through `materialize`/`alias` wrappers.
-    /// Limited to value-only predicate functions (equals/and/or/comparisons) so the result
-    /// is safe to re-emit as a single Const COLUMN at the filter root - other outputs and
-    /// representation-observing parents elsewhere in the DAG are never touched
-    void foldFilterPredicateThroughMaterialize(const std::string & filter_column_name);
 
     /// Collapse structurally equivalent subtrees (aliased duplicates, equal constants, functions with identical arguments)
     /// outputs preserve their names via aliases when needed, dead nodes are pruned
@@ -474,10 +473,9 @@ public:
 
     struct SplitArrayJoinResult;
 
-    /// Split out the first `arrayJoin` so it can become an ArrayJoinStep between `before` and `after`, nullopt if none.
-    /// With `nondeterministic_before_expansion`, a non-deterministic node that does not depend on the join
-    /// goes to `before` too, so it is drawn once per source row.
-    std::optional<SplitArrayJoinResult> extractFirstArrayJoin(bool nondeterministic_before_expansion = false) const;
+    /// Extract one `arrayJoin` function so it can become an ArrayJoinStep between `before` and `after`.
+    /// Picks an ARRAY_JOIN node whose argument does not itself contain an array join; returns nullopt if none.
+    std::optional<SplitArrayJoinResult> extractFirstArrayJoin() const;
 
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of
     /// column_name and additional_split_nodes. Outputs of initial actions must contain column_name.
@@ -582,15 +580,7 @@ public:
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
 
     UInt64 getHash() const;
-    /// With `with_variable_size_constant_values = false` a constant whose value has no fixed size
-    /// (`IColumn::valuesHaveFixedSize` is false: a string, an array, an aggregate function state) is
-    /// hashed by its name and type but not by its value, which can be arbitrarily large - a folded
-    /// scalar subquery can carry a `groupBitmap` state of millions of elements. Fixed-size values are
-    /// always hashed. Two such constants that share a name then collide even when their values differ,
-    /// e.g. a string passed through a subquery column (named `__table1.s`, not by its value) or a
-    /// heavy scalar subquery over changed data (named `__getScalar('<hash of the subquery>')`). Meant
-    /// for keys where a wrong match only costs a worse estimate, such as the hash-table-stats key.
-    void updateHash(SipHash & hash_state, bool with_variable_size_constant_values = true) const;
+    void updateHash(SipHash & hash_state) const;
 
     friend class QueryPlanOptimizations::TextIndexDAGReplacer;
 

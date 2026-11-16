@@ -1,19 +1,14 @@
 #include <algorithm>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/TypeTree.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
-#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/misc.h>
-#include <Parsers/ASTCreateWasmFunctionQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -29,6 +24,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsBool move_all_conditions_to_prewhere;
     extern const SettingsBool move_primary_key_columns_to_end_of_prewhere;
     extern const SettingsBool allow_reorder_prewhere_conditions;
@@ -107,22 +103,6 @@ NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names
     return table_columns;
 }
 
-bool typeContainsFloat(const DataTypePtr & type)
-{
-    return anyInTypeTree(*type, [](const IDataType & node) { return isFloat(node); });
-}
-
-/// -0.0 compares equal to 0.0 and NaN payloads compare equal to each other, so a condition
-/// over a float sorting key column can tell apart rows of one dedup group and drop its winner
-NameSet getSortingKeyNamesSafeBeforeFinal(const KeyDescription & sorting_key)
-{
-    NameSet names;
-    for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
-        if (!typeContainsFloat(sorting_key.data_types[i]))
-            names.insert(sorting_key.column_names[i]);
-    return names;
-}
-
 }
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
@@ -138,7 +118,8 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
     , supported_columns_include_subcolumns{supported_columns_include_subcolumns_}
-    , sorting_key_names{getSortingKeyNamesSafeBeforeFinal(storage_snapshot->metadata->getSortingKey())}
+    , sorting_key_names{NameSet(
+          storage_snapshot->metadata->getSortingKey().column_names.begin(), storage_snapshot->metadata->getSortingKey().column_names.end())}
     , primary_key_names_positions(fillNamesPositions(storage_snapshot->metadata->getPrimaryKey().column_names))
     , storage_metadata(storage_snapshot->metadata)
     , log{log_}
@@ -153,6 +134,46 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
 
     if (estimator)
         total_rows = estimator->getTotalRows();
+}
+
+void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, const ContextPtr & context) const
+{
+    auto & select = select_query_info.query->as<ASTSelectQuery &>();
+    if (!select.where() || select.prewhere())
+        return;
+
+    auto block_with_constants = KeyCondition::getBlockWithConstants(select_query_info.query->clone(),
+        select_query_info.syntax_analyzer_result,
+        context);
+
+    WhereOptimizerContext where_optimizer_context;
+    where_optimizer_context.context = context;
+    where_optimizer_context.array_joined_names = determineArrayJoinedNames(select);
+    where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef()[Setting::move_all_conditions_to_prewhere];
+    where_optimizer_context.move_primary_key_columns_to_end_of_prewhere
+        = context->getSettingsRef()[Setting::move_primary_key_columns_to_end_of_prewhere];
+    where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
+    where_optimizer_context.is_final = select.final();
+    where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
+
+    RPNBuilderTreeContext tree_context(context, std::move(block_with_constants), {} /*prepared_sets*/);
+    RPNBuilderTreeNode node(select.where().get(), tree_context);
+    auto optimize_result = optimizeImpl(node, where_optimizer_context);
+    if (!optimize_result)
+        return;
+
+    /// Rewrite the SELECT query.
+
+    auto where_filter_ast = reconstructAST(optimize_result->where_conditions);
+    auto prewhere_filter_ast = reconstructAST(optimize_result->prewhere_conditions);
+
+    select.setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter_ast));
+    select.setExpression(ASTSelectQuery::Expression::PREWHERE, std::move(prewhere_filter_ast));
+
+    LOG_DEBUG(
+        log,
+        "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE",
+        select.prewhere()->formatForLogging(context->getSettingsRef()[Setting::log_queries_cut_to_length]));
 }
 
 MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::optimize(const ActionsDAG & filter_dag,
@@ -170,7 +191,8 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     where_optimizer_context.is_final = is_final;
     where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
 
-    RPNBuilderTreeNode node(&filter_dag.findInOutputs(filter_column_name), context);
+    RPNBuilderTreeContext tree_context(context);
+    RPNBuilderTreeNode node(&filter_dag.findInOutputs(filter_column_name), tree_context);
 
     auto optimize_result = optimizeImpl(node, where_optimizer_context);
     if (!optimize_result)
@@ -364,13 +386,10 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     {
         RPNBuilderTreeNode node;
         NameSet columns;
-        /// Column names resolved to their physical storage names (subcolumn suffix stripped).
-        /// Used for grouping: conditions on subcolumns of the same storage column
-        /// (e.g. `map.key_k0` and `map.key_k1`) are grouped and moved to PREWHERE together.
-        NameSet storage_columns;
         bool has_invalid_column = false;
         bool may_use_primary_index = true;
         bool viable = false;
+        bool expensive = false;
     };
 
     std::vector<ConjunctInfo> infos;
@@ -378,19 +397,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
 
     for (const auto & conjunct : conjuncts)
     {
-        ConjunctInfo info{conjunct, {}, {}, false, true, false};
+        ConjunctInfo info{conjunct, {}, false, true, false, false};
         collectColumns(conjunct, nullptr, table_columns, info.columns, info.has_invalid_column, info.may_use_primary_index);
-
-        /// Resolve each column to its physical storage name so that subcolumns
-        /// of the same column (e.g. `map.key_k0`, `map.key_k1`) share one group.
-        const auto & storage_columns_description = storage_metadata->getColumns();
-        for (const auto & col : info.columns)
-        {
-            if (auto resolved = storage_columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, col))
-                info.storage_columns.insert(resolved->getNameInStorage());
-            else
-                info.storage_columns.insert(col);
-        }
 
         /// Is it possible to use primary index for this condition? For conditions like `lower(country) = 'xx'`, may_use_primary_index will be false.
         info.viable =
@@ -400,26 +408,26 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             && !cannotBeMoved(conjunct, where_optimizer_context)
             /// When use final, do not take into consideration the conditions with non-sorting keys. Because final select
             /// need to use all sorting keys, it will cause correctness issues if we filter other columns before final merge.
-            && (!where_optimizer_context.is_final || isDeterministicExpressionOverSortingKey(conjunct, where_optimizer_context.context))
+            && (!where_optimizer_context.is_final || isExpressionOverSortingKey(conjunct))
             /// Some identifiers can unable to support PREWHERE (usually because of different types in Merge engine)
             && columnsSupportPrewhere(info.columns)
             /// Do not move conditions involving all queried columns.
             && info.columns.size() < queried_columns.size();
 
+        info.expensive = isExpensiveExpression(conjunct);
+
         infos.push_back(std::move(info));
     }
 
-    /// Group viable conjuncts by their required storage column set so same-column conditions
+    /// Group viable conjuncts by their required column set so same-column conditions
     /// are treated as a single unit and their combined selectivity can be estimated.
-    /// Grouping by storage columns (rather than the exact column set) keeps subcolumns of the
-    /// same column (e.g. `map.key_k0` and `map.key_k1`) in one group, so they are moved to
-    /// PREWHERE together and arrive adjacent for the prewhere-splitting step.
     /// Non-viable conjuncts stay as individual Conditions.
+    /// 'expensive' conjuncts each get their own group.
     ///
     /// We use a simple linear search to find groups (WHERE clauses are short).
     struct Group
     {
-        NameSet storage_columns;
+        NameSet columns;
         std::vector<size_t> indices;
     };
     std::vector<Group> groups;
@@ -427,20 +435,29 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     auto find_group_idx = [&](const NameSet & cols) -> std::optional<size_t>
     {
         for (size_t g = 0; g < groups.size(); ++g)
-            if (groups[g].storage_columns == cols)
+            if (groups[g].columns == cols && !infos[groups[g].indices.front()].expensive)
                 return g;
         return std::nullopt;
     };
+
+    /// Index of the group of each viable conjunct.
+    std::vector<size_t> group_of(infos.size());
 
     for (size_t i = 0; i < infos.size(); ++i)
     {
         if (!infos[i].viable)
             continue;
-        auto g = find_group_idx(infos[i].storage_columns);
+        auto g = infos[i].expensive ? std::nullopt : find_group_idx(infos[i].columns);
         if (!g.has_value())
-            groups.push_back({infos[i].storage_columns, {i}});
+        {
+            group_of[i] = groups.size();
+            groups.push_back({infos[i].columns, {i}});
+        }
         else
+        {
+            group_of[i] = *g;
             groups[*g].indices.push_back(i);
+        }
     }
 
     /// Emit Conditions in the original AND-chain order:
@@ -469,8 +486,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         else
         {
             /// Emit the whole column-set group at the position of the first conjunct.
-            auto g_idx = find_group_idx(info.storage_columns);
-            const auto & group = groups[*g_idx];
+            const auto & group = groups[group_of[i]];
 
             for (size_t idx : group.indices)
                 emitted[idx] = true;
@@ -494,6 +510,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             cond.columns_size = getColumnsSize(group_columns);
             cond.viable = true;
             cond.good = group_good;
+            cond.expensive = info.expensive;
 
             if (where_optimizer_context.use_statistics)
             {
@@ -557,7 +574,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
                 !has_invalid_column
                 && !columns.empty()
                 && !cannotBeMoved(conjunct, where_optimizer_context)
-                && (!where_optimizer_context.is_final || isDeterministicExpressionOverSortingKey(conjunct, where_optimizer_context.context))
+                && (!where_optimizer_context.is_final || isExpressionOverSortingKey(conjunct))
                 && columnsSupportPrewhere(columns)
                 && columns.size() < queried_columns.size();
             res.emplace_back(std::move(cond));
@@ -589,6 +606,35 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
     }
 
     return res;
+}
+
+/// Transform Conditions list to WHERE or PREWHERE expression.
+ASTPtr MergeTreeWhereOptimizer::reconstructAST(const Conditions & conditions)
+{
+    if (conditions.empty())
+        return {};
+
+    std::vector<const IAST *> all_nodes;
+    for (const auto & cond : conditions)
+        for (const auto & n : cond.nodes)
+            all_nodes.push_back(n.getASTNode());
+
+    if (all_nodes.empty())
+        return {};
+
+    if (all_nodes.size() == 1)
+        return all_nodes.front()->clone();
+
+    const auto function = make_intrusive<ASTFunction>();
+
+    function->name = "and";
+    function->arguments = make_intrusive<ASTExpressionList>();
+    function->children.push_back(function->arguments);
+
+    for (const auto * ast : all_nodes)
+        function->arguments->children.push_back(ast->clone());
+
+    return function;
 }
 
 std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::optimizeImpl(const RPNBuilderTreeNode & node,
@@ -634,6 +680,10 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
         auto it = std::min_element(where_conditions.begin(), where_conditions.end());
 
         if (!it->viable)
+            break;
+
+        /// If any non-expensive conditions stay in WHERE then don't move expensive conditions to PREWHERE
+        if (it->expensive && std::ranges::any_of(where_conditions, [](const Condition & cond) { return !cond.expensive; }))
             break;
 
         if (!where_optimizer_context.move_all_conditions_to_prewhere)
@@ -733,57 +783,11 @@ bool MergeTreeWhereOptimizer::columnsSupportPrewhere(const NameSet & columns) co
     return true;
 }
 
-/// Constant folding turns a lambda whose captured columns are all constants into a constant
-/// ColumnFunction: a function object, not a value, so its body still has to be checked
-static bool isConstantDeterministicInScopeOfQuery(const RPNBuilderTreeNode & node)
-{
-    const auto * dag_node = node.getDAGNode();
-    if (!dag_node)
-        return true; /// AST constants are scalar literals, lambdas are not folded into them
-
-    while (dag_node->type == ActionsDAG::ActionType::ALIAS)
-        dag_node = dag_node->children.front();
-
-    if (!dag_node->column)
-        return true;
-
-    return allColumnFunctions(*dag_node->column, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
-}
-
-static bool isFunctionDeterministicInScopeOfQuery(const RPNBuilderFunctionTreeNode & function_node, const ContextPtr & context)
-{
-    if (auto function_base = function_node.getFunctionBase())
-        return function_base->isDeterministicInScopeOfQuery();
-
-    /// For an AST-based tree there is no resolved function, mirror the legacy analyzer's lookup order
-    const auto function_name = function_node.getFunctionName();
-
-    /// executable UDFs are never stable within a query
-    if (UserDefinedExecutableFunctionFactory::has(function_name, context))
-        return false;
-
-    /// WASM UDFs are stable only when declared deterministic, plain SQL UDFs are inlined before this point
-    if (auto create_function_query = UserDefinedSQLFunctionFactory::instance().tryGet(function_name))
-    {
-        const auto * create_wasm_function_query = create_function_query->as<ASTCreateWasmFunctionQuery>();
-        return create_wasm_function_query && create_wasm_function_query->is_deterministic;
-    }
-
-    auto function_resolver = FunctionFactory::instance().tryGet(function_name, context);
-    return function_resolver && function_resolver->isDeterministicInScopeOfQuery();
-}
-
-bool MergeTreeWhereOptimizer::isDeterministicExpressionOverSortingKey(const RPNBuilderTreeNode & node, const ContextPtr & context) const
+bool MergeTreeWhereOptimizer::isExpressionOverSortingKey(const RPNBuilderTreeNode & node) const
 {
     if (node.isFunction())
     {
         auto function_node = node.toFunctionNode();
-
-        /// functions like rand can give different results for row versions of the same key,
-        /// query-scoped-stable ones (e.g. runtime filters) are fine to evaluate before the merge
-        if (!isFunctionDeterministicInScopeOfQuery(function_node, context))
-            return false;
-
         size_t arguments_size = function_node.getArgumentsSize();
 
         for (size_t i = 0; i < arguments_size; ++i)
@@ -791,18 +795,10 @@ bool MergeTreeWhereOptimizer::isDeterministicExpressionOverSortingKey(const RPNB
             auto argument = function_node.getArgumentAt(i);
             auto argument_column_name = argument.getColumnName();
 
-            if (argument.isConstant())
-            {
-                /// a folded lambda hides its body behind a constant
-                if (!isConstantDeterministicInScopeOfQuery(argument))
-                    return false;
-                continue;
-            }
-
-            if (sorting_key_names.contains(argument_column_name))
+            if (argument.isConstant() || sorting_key_names.contains(argument_column_name))
                 continue;
 
-            if (!isDeterministicExpressionOverSortingKey(argument, context))
+            if (!isExpressionOverSortingKey(argument))
                 return false;
         }
 
@@ -860,6 +856,40 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
         if (where_optimizer_context.array_joined_names.contains(column_name) ||
             where_optimizer_context.array_joined_names.contains(Nested::extractTableName(column_name)) ||
             (table_columns.contains(column_name) && where_optimizer_context.is_final && !isSortingKey(column_name)))
+            return true;
+    }
+
+    return false;
+}
+
+NameSet MergeTreeWhereOptimizer::determineArrayJoinedNames(const ASTSelectQuery & select)
+{
+    auto [array_join_expression_list, _] = select.arrayJoinExpressionList();
+
+    /// much simplified code from ExpressionAnalyzer::getArrayJoinedColumns()
+    if (!array_join_expression_list)
+        return {};
+
+    NameSet array_joined_names;
+    for (const auto & ast : array_join_expression_list->children)
+        array_joined_names.emplace(ast->getAliasOrColumnName());
+
+    return array_joined_names;
+}
+
+bool MergeTreeWhereOptimizer::isExpensiveExpression(const RPNBuilderTreeNode & node)
+{
+    if (!node.isFunction())
+        return false;
+
+    auto function_node = node.toFunctionNode();
+    if (auto function_base = function_node.getFunctionBase(); function_base && function_base->isExpensive())
+        return true;
+
+    size_t arguments_size = function_node.getArgumentsSize();
+    for (size_t i = 0; i < arguments_size; ++i)
+    {
+        if (isExpensiveExpression(function_node.getArgumentAt(i)))
             return true;
     }
 

@@ -60,8 +60,7 @@ SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
 -- cannot be cloned); the count runs as a distributed read instead.
 SELECT '-- 6. Trivial count works under Cascades';
 SELECT count() FROM t_gating
-SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_execute_locally = 1,
-    distributed_plan_fallback_to_local_execution = 0;
+SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_execute_locally = 1;
 
 -- Reads without clone support (e.g. the `viewExplain` table function) are rejected up front.
 SELECT '-- 7. A read without clone support is rejected (fail-close)';
@@ -93,8 +92,7 @@ SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
     distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 SELECT count() FROM t_gating_dist
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
-    prefer_localhost_replica = 1, distributed_plan_execute_locally = 1,
-    distributed_plan_fallback_to_local_execution = 0;
+    prefer_localhost_replica = 1, distributed_plan_execute_locally = 1;
 DROP TABLE t_gating_dist;
 
 -- `WITH FILL` is not supported yet; without `make_distributed_plan` the same query runs single-node.
@@ -122,18 +120,18 @@ SELECT '-- 12. optimize_aggregation_in_order works via hash aggregation, force_ 
 -- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, so pin it to 0.
 SELECT k, sum(x) FROM t_gating GROUP BY k ORDER BY k
 SETTINGS optimize_aggregation_in_order = 1, make_distributed_plan = 1, enable_cascades_optimizer = 0,
-    distributed_plan_execute_locally = 1, max_rows_to_group_by = 0,
-    distributed_plan_fallback_to_local_execution = 0;
+    distributed_plan_execute_locally = 1, max_rows_to_group_by = 0;
 SELECT k, sum(x) FROM t_gating GROUP BY k ORDER BY k
 SETTINGS force_aggregation_in_order = 1, make_distributed_plan = 1, enable_cascades_optimizer = 0,
     distributed_plan_execute_locally = 1, max_rows_to_group_by = 0,
     distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 
--- Below the broadcast threshold the plan has no exchange and ships as one fragment, so the window step must serialize.
-SELECT '-- 13. Exchange-free plan with a window distributes';
+-- A plan that receives no exchanges (the read stays below the broadcast threshold) but carries
+-- a step without serialization support must run via the local fallback, not fail on the
+-- fragment serializability check.
+SELECT '-- 13. Exchange-free plan with a window falls back to local execution';
 SELECT DISTINCT sum(x) OVER () FROM t_gating
-SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 0, distributed_plan_execute_locally = 1,
-    distributed_plan_fallback_to_local_execution = 0;
+SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 0, distributed_plan_execute_locally = 1;
 
 -- `join_any_take_last_row` pins which matching row an ANY join keeps: the last one built into
 -- the hash table. A commutativity swap changes the build side, so it would change the result;
@@ -149,8 +147,7 @@ CREATE TABLE t_gating_one (k UInt32) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_gating_one VALUES (1);
 SELECT v FROM t_gating_one ANY LEFT JOIN t_gating_any USING (k)
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
-    join_algorithm = 'hash', join_any_take_last_row = 1, max_threads = 1,
-    distributed_plan_fallback_to_local_execution = 0;
+    join_algorithm = 'hash', join_any_take_last_row = 1, max_threads = 1;
 DROP TABLE t_gating_any;
 DROP TABLE t_gating_one;
 

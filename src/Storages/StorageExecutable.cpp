@@ -23,6 +23,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -200,7 +201,15 @@ void StorageExecutable::readImpl(
 
     for (auto & input_query : input_queries)
     {
-        QueryPipelineBuilder builder = InterpreterSelectQueryAnalyzer(input_query, context, {}).buildQueryPipeline();
+        QueryPipelineBuilder builder;
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        {
+            /// The analyzer substitutes the inserted block of a materialized view for its source table only when given it.
+            builder = InterpreterSelectQueryAnalyzer(
+                input_query, context, {}, context->isViewInnerQuery() ? nullptr : context->getViewSource()).buildQueryPipeline();
+        }
+        else
+            builder = InterpreterSelectWithUnionQuery(input_query, context, {}).buildQueryPipeline();
         inputs.emplace_back(QueryPipelineBuilder::getPipe(std::move(builder), resources));
     }
 
