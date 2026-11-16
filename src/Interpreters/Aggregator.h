@@ -671,9 +671,9 @@ public:
     /// double-destroy. The NULL key of the single-key nullable methods belongs to partition 0. `destination_size_hint`
     /// pre-sizes the destination table; the caller derives it from the source tables before any partition starts, since
     /// once the workers run, the source tables are mutated concurrently and may not be read outside the partitions that
-    /// a worker claimed. `parallel_merge` tells when the states of one group of indexed tables merge together on the
-    /// pool. The tables walked source by source defer their large pairs of states to the pool (see
-    /// `mergeDeferredLargeStates`).
+    /// a worker claimed. In the merge by cell index (see `mergesByCellIndex`), `parallel_merge` tells when the states
+    /// of one group merge together on the pool. The tables walked source by source defer their large pairs of states
+    /// to the pool (see `mergeDeferredLargeStates`).
     AggregatedChunk mergeSingleLevelPartitionsAndConvertToChunk(
         ManyAggregatedDataVariants & non_empty_data,
         bool final,
