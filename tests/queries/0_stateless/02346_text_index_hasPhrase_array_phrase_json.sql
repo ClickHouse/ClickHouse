@@ -113,6 +113,42 @@ CREATE TABLE tab_array_path_sparse_grams
 ENGINE = MergeTree
 ORDER BY id;
 
+CREATE TABLE tab_case_mapping
+(
+  id UInt32,
+  data JSON(key String),
+  INDEX idx JSONAllValues(data) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(JSONAllValues(data)))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+CREATE TABLE tab_case_mapping_letter_separator
+(
+  id UInt32,
+  data JSON(key String),
+  INDEX idx JSONAllValues(data) TYPE text(tokenizer = splitByString(['X']), preprocessor = lower(JSONAllValues(data)))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+CREATE TABLE tab_case_mapping_postprocessor
+(
+  id UInt32,
+  data JSON(key String),
+  INDEX idx JSONAllValues(data) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(JSONAllValues(data)), postprocessor = replaceAll(JSONAllValues(data), 'B', 'a'))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+CREATE TABLE tab_utf8_case_mapping
+(
+  id UInt32,
+  data JSON(key String),
+  INDEX idx JSONAllValues(data) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lowerUTF8(JSONAllValues(data)))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
 INSERT INTO tab_split_by_string VALUES (1, '{"key": "the quick brown fox"}'), (2, '{"key": "lazy dog"}'), (3, '{"key": "brown quick"}');
 INSERT INTO tab_split_by_non_alpha SELECT * FROM tab_split_by_string;
 INSERT INTO tab_array SELECT * FROM tab_split_by_string;
@@ -124,6 +160,10 @@ INSERT INTO tab_array_path_separator VALUES (1, '{"key": ["the quick()brown fox"
 INSERT INTO tab_preprocessor VALUES (1, '{"key": "QUICK BROWN fox"}'), (2, '{"key": "lazy dog"}');
 INSERT INTO tab_regexp_preprocessor SELECT * FROM tab_preprocessor;
 INSERT INTO tab_array_path_sparse_grams VALUES (1, '{"key": ["quick brown"]}'), (2, '{"key": ["lazy dog"]}');
+INSERT INTO tab_case_mapping SELECT * FROM tab_preprocessor;
+INSERT INTO tab_case_mapping_letter_separator VALUES (1, '{"key": "aXb"}'), (2, '{"key": "cXd"}');
+INSERT INTO tab_case_mapping_postprocessor VALUES (1, '{"key": "a"}'), (2, '{"key": "c"}');
+INSERT INTO tab_utf8_case_mapping VALUES (1, '{"key": "ΟΔΟΣ''Α"}'), (2, '{"key": "dog"}');
 INSERT INTO tab_array_path_postprocessor VALUES (1, '{"key": ["CAT"]}'), (2, '{"key": ["dog"]}');
 
 SELECT 'splitByString';
@@ -217,10 +257,40 @@ SELECT groupArray(id) FROM (SELECT id FROM tab_preprocessor WHERE hasPhrase(data
 SELECT 'case mapping preprocessor, index condition';
 SELECT trim(explain) FROM (
   EXPLAIN indexes = 1
-  SELECT id FROM tab_preprocessor WHERE hasAnyTokens(data.key, ['QUICK', 'CAT'])
+  SELECT id FROM tab_case_mapping WHERE hasAnyTokens(data.key, ['QUICK', 'CAT'])
 )
 WHERE explain LIKE '%tokens:%'
 SETTINGS enable_parallel_replicas = 0;
+
+SELECT 'case mapping preprocessor, array needles';
+SELECT groupArray(id) FROM (SELECT id FROM tab_case_mapping WHERE hasPhrase(data.key, ['QUICK', 'BROWN']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_case_mapping WHERE hasPhrase(data.key, ['QUICK', 'BROWN']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_case_mapping WHERE hasAnyTokens(data.key, ['QUICK', 'CAT']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_case_mapping WHERE hasAnyTokens(data.key, ['QUICK', 'CAT']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_case_mapping WHERE hasAllTokens(data.key, ['QUICK', 'BROWN']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_case_mapping WHERE hasAllTokens(data.key, ['QUICK', 'BROWN']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+
+SELECT 'case mapping preprocessor, tokenizer with a letter separator';
+SELECT groupArray(id) FROM (SELECT id FROM tab_case_mapping_letter_separator WHERE hasPhrase(data.key, ['a']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_case_mapping_letter_separator WHERE hasPhrase(data.key, ['a']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_case_mapping_letter_separator WHERE hasAnyTokens(data.key, ['a']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_case_mapping_letter_separator WHERE hasAnyTokens(data.key, ['a']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_case_mapping_letter_separator WHERE hasAllTokens(data.key, ['a', 'b']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_case_mapping_letter_separator WHERE hasAllTokens(data.key, ['a', 'b']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+
+SELECT 'case mapping preprocessor with a postprocessor';
+SELECT groupArray(id) FROM (SELECT id FROM tab_case_mapping_postprocessor WHERE hasPhrase(data.key, ['B']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_case_mapping_postprocessor WHERE hasPhrase(data.key, ['B']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_case_mapping_postprocessor WHERE hasAnyTokens(data.key, ['B']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_case_mapping_postprocessor WHERE hasAnyTokens(data.key, ['B']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_case_mapping_postprocessor WHERE hasAllTokens(data.key, ['B']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_case_mapping_postprocessor WHERE hasAllTokens(data.key, ['B']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+
+SELECT 'UTF-8 case mapping preprocessor';
+SELECT groupArray(id) FROM (SELECT id FROM tab_utf8_case_mapping WHERE hasAnyTokens(data.key, ['ΟΔΟΣ']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_utf8_case_mapping WHERE hasAnyTokens(data.key, ['ΟΔΟΣ']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_utf8_case_mapping WHERE hasPhrase(data.key, ['ΟΔΟΣ']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_utf8_case_mapping WHERE hasPhrase(data.key, ['ΟΔΟΣ']) ORDER BY id) SETTINGS use_skip_indexes = 0;
 
 SELECT 'other preprocessor, array needles';
 SELECT groupArray(id) FROM (SELECT id FROM tab_regexp_preprocessor WHERE hasPhrase(data.key, ['QUICK', 'BROWN']) ORDER BY id);
@@ -243,5 +313,9 @@ DROP TABLE tab_array_path_split_by_string;
 DROP TABLE tab_array_path_separator;
 DROP TABLE tab_array_path_postprocessor;
 DROP TABLE tab_preprocessor;
+DROP TABLE tab_case_mapping;
+DROP TABLE tab_case_mapping_letter_separator;
+DROP TABLE tab_case_mapping_postprocessor;
+DROP TABLE tab_utf8_case_mapping;
 DROP TABLE tab_regexp_preprocessor;
 DROP TABLE tab_array_path_sparse_grams;

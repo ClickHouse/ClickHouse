@@ -1348,8 +1348,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         bool has_verbatim_needles = has_preprocessor && value_field.getType() == Field::Types::Array;
 
         /// Direct read does not apply the preprocessor to a JSON path, so the row-level function sees the raw value and the index
-        /// only has to return a superset of its rows. A case mapping preserves token boundaries, so the preprocessed needles do.
-        if (is_special_text_index_function && has_verbatim_needles && !is_array_valued_path && preprocessor->isCaseMapping())
+        /// only has to return a superset of its rows. The preprocessed needles do when the preprocessor maps each token of the value
+        /// to the same token of the preprocessed value: ASCII `lower` or `upper` maps byte to byte and changes no separator of these
+        /// tokenizers. The UTF-8 variants are context-sensitive (final sigma), and a postprocessor may map the two needles differently.
+        const auto tokenizer_type = tokenizer->getType();
+        const bool tokenizer_keeps_case_mapped_tokens = tokenizer_type == ITokenizer::Type::SplitByNonAlpha
+            || tokenizer_type == ITokenizer::Type::Array || tokenizer_type == ITokenizer::Type::Ngrams;
+        if (is_special_text_index_function && has_verbatim_needles && !is_array_valued_path && !has_postprocessor
+            && preprocessor->isASCIILowerOrUpper() && tokenizer_keeps_case_mapped_tokens)
         {
             Array processed_needles;
             for (const Field & element : value_field.safeGet<Array>())
@@ -1365,8 +1371,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// The index cannot prune when:
         /// - the path is array-valued: `JSONAllValues` stores an array value as a single serialized string, while these functions
         ///   search inside its elements;
-        /// - array needles meet a preprocessor other than a case mapping: the index stores preprocessed tokens, while the array
-        ///   needles are taken verbatim.
+        /// - array needles meet any other preprocessor: the index stores preprocessed tokens, while the array needles are taken verbatim.
         /// Still return a query: direct read uses it to inject the index tokenizer and postprocessor.
         if (is_special_text_index_function && (is_array_valued_path || has_verbatim_needles))
         {

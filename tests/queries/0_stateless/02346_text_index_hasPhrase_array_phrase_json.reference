@@ -72,6 +72,32 @@ preprocessor, array needles
 [1]
 case mapping preprocessor, index condition
 Condition: (mode: Any; tokens: ["cat", "quick"])
+case mapping preprocessor, array needles
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+case mapping preprocessor, tokenizer with a letter separator
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+case mapping preprocessor with a postprocessor
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+UTF-8 case mapping preprocessor
+[1]
+[1]
+[1]
+[1]
 other preprocessor, array needles
 [1]
 [1]
