@@ -760,6 +760,7 @@ private:
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     String getSignatureString() const override
     {
@@ -1066,13 +1067,10 @@ private:
 
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                 {
-                    if (string_size > 0)
-                    {
-                        if (string_size < tag_size)
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted data is smaller than the size of additional data for AEAD mode, cannot decrypt.");
+                    if (string_size < tag_size)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted data is smaller than the size of additional data for AEAD mode, cannot decrypt.");
 
-                        resulting_size -= tag_size;
-                    }
+                    resulting_size -= tag_size;
                 }
             }
 
@@ -1102,15 +1100,12 @@ private:
 
             if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
             {
-                if (!input_value.empty())
-                {
-                    // empty plaintext results in empty ciphertext + tag, means there should be at least tag_size bytes.
-                    if (input_value.size() < tag_size)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted data is too short: only {} bytes, "
-                                "should contain at least {} bytes of a tag.",
-                                input_value.size(), tag_size);
-                    input_value.remove_suffix(tag_size);
-                }
+                // empty plaintext results in empty ciphertext + tag, means there should be at least tag_size bytes.
+                if (input_value.size() < tag_size)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted data is too short: only {} bytes, "
+                            "should contain at least {} bytes of a tag.",
+                            input_value.size(), tag_size);
+                input_value.remove_suffix(tag_size);
             }
 
             if constexpr (mode != CipherMode::MySQLCompatibility)
