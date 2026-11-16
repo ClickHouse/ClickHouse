@@ -30,6 +30,7 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
         binutils-dev \
         build-essential \
         zlib1g-dev \
+        libzstd-dev \
         python3-boto3 \
         yasm \
         zstd \

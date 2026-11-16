@@ -303,6 +303,27 @@ String getBuildIDFromProgramHeaders(DynamicLinkingProgramHeaderInfo * info)
 }
 #endif
 
+/// The end of the address range occupied by the loadable segments of the object, relative to its load address.
+/// It is taken from the program headers of the loaded object rather than from the size of its file,
+/// because the file we read symbols from may be a separate debug file, which can be smaller than the code
+/// (e.g. when its debug sections are compressed).
+uintptr_t getLoadedSegmentsEnd(DynamicLinkingProgramHeaderInfo * info)
+{
+    __msan_unpoison(&info->phnum, sizeof(info->phnum));
+    __msan_unpoison(&info->phdr, sizeof(info->phdr));
+    uintptr_t end = 0;
+    for (size_t header_index = 0; header_index < info->phnum; ++header_index)
+    {
+        const ElfProgramHeader & phdr = info->phdr[header_index];
+        __msan_unpoison(&phdr, sizeof(phdr));
+        if (phdr.type != ProgramHeaderType::LOAD)
+            continue;
+
+        end = std::max<uintptr_t>(end, phdr.vaddr + phdr.memsz);
+    }
+    return end;
+}
+
 
 void collectSymbolsFromELFSymbolTable(
     const Elf & elf,
@@ -600,7 +621,7 @@ bool collectSymbolsFromELF(
     }
 
     object.address_begin = reinterpret_cast<const void *>(info->addr);
-    object.address_end = reinterpret_cast<const void *>(info->addr + object.elf->size());
+    object.address_end = reinterpret_cast<const void *>(info->addr + getLoadedSegmentsEnd(info));
     object.name = object_name;
     objects.push_back(std::move(object));
 
