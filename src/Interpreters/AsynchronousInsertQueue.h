@@ -15,6 +15,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/defines.h>
 
+#include <functional>
 #include <future>
 #include <optional>
 #include <variant>
@@ -252,6 +253,8 @@ private:
 
         ~InsertData()
         {
+            finishFlushOfKey();
+
             /// Each entry's data already went back to whoever is charged for it (see `resetChunk`); what remains,
             /// the entries and list themselves, is queue bookkeeping not charged to whichever query flushes it.
             for (auto & entry : entries)
@@ -275,6 +278,14 @@ private:
             ++counter;
         }
 
+        /// Tells the queue shard that the flush of this batch is finished, at most once: either before the clients are
+        /// notified of its success, or when the batch is destroyed on any other path.
+        void finishFlushOfKey()
+        {
+            if (auto callback = std::exchange(flush_of_key_finished, {}))
+                callback();
+        }
+
         using EntryPtr = std::shared_ptr<Entry>;
 
         std::list<EntryPtr> entries;
@@ -283,6 +294,9 @@ private:
         size_t size_in_bytes = 0;
         Milliseconds timeout_ms = Milliseconds::zero();
         std::atomic<size_t> * in_flight_flushes = nullptr;
+        std::function<void()> flush_of_key_finished;
+        /// The batch was flushed at once because inserts with its key are not batched (see `QueueShard::key_states`).
+        bool flushed_without_batching = false;
     };
 
     using InsertDataPtr = std::unique_ptr<InsertData>;
@@ -317,14 +331,17 @@ private:
         OptionalTimePoint last_insert_time TSA_GUARDED_BY(mutex);
         std::chrono::milliseconds busy_timeout_ms TSA_GUARDED_BY(mutex) {};
 
-        /// A key whose last batch was flushed by its deadline with a single entry, whose client waits for the flush:
-        /// waiting did not batch anything. The next insert with the key is flushed at once if every earlier one is flushed.
-        struct KeyWithoutBatching
+        struct KeyState
         {
-            std::chrono::steady_clock::time_point last_insert_time;
-            OptionalTimePoint last_flush_time;
+            /// The last batch with this key flushed by its deadline had a single entry, whose client waits for the flush:
+            /// waiting did not batch anything.
+            bool waited_alone = false;
+            /// Batches with this key taken from the queue whose flush is not finished, including those waiting for the pool.
+            size_t flushes_in_progress = 0;
         };
-        std::unordered_map<UInt128, KeyWithoutBatching> keys_without_batching TSA_GUARDED_BY(mutex);
+        /// Keys with a flush in progress or with `waited_alone`. An insert with a key that waited alone and has no flush
+        /// in progress is flushed at once: every earlier insert with the key is finished, and none is waiting to be batched.
+        std::unordered_map<UInt128, KeyState> key_states TSA_GUARDED_BY(mutex);
     };
 
     /// Times of the two most recent queue flushes.
@@ -382,6 +399,9 @@ private:
 
     void preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context);
 
+    /// Call it for every batch taken from the queue to be flushed, under the shard mutex.
+    static void startFlushOfKey(QueueShard & shard, UInt128 key_hash, InsertData & data) TSA_REQUIRES(shard.mutex);
+
     void processBatchDeadlines(size_t shard_num);
     void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num, ThreadGroupPtr current_query_thread_group = nullptr);
 
@@ -391,12 +411,7 @@ private:
     static void discountFromQueueMetrics(const InsertData & data);
 
     void processData(
-        const InsertQuery & key,
-        InsertDataPtr data,
-        ContextPtr global_context,
-        ThreadGroupPtr current_query_thread_group,
-        QueueShard & queue_shard,
-        QueueShardFlushTimeHistory & queue_shard_flush_time_history);
+        const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, ThreadGroupPtr current_query_thread_group, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
 
     template <typename LogFunc>
     static Chunk processEntriesWithParsing(
