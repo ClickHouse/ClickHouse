@@ -37,6 +37,8 @@ INSERT INTO t_def_time_params VALUES (2, {ts:DateTime64(3, 'UTC')}, {t:Time64(3)
 SELECT 'DEFAULT and VALUES', * FROM t_def_time_params ORDER BY k;
 
 SELECT 'in query', {ts:DateTime64(3, 'UTC')}, {neg:DateTime64(3, 'UTC')}, {t:Time64(3)}, {arr:Array(DateTime64(3, 'UTC'))}, {map:Map(String, DateTime64(3, 'UTC'))}, toUnixTimestamp(tupleElement({tup:Tuple(DateTime('America/New_York'), DateTime64(3, 'UTC'))}, 1));
+SET param_f = '1.14', param_ftup = '(1.14, 1500)', param_fmap = '{1.14:1500}';
+SELECT 'Float64 beside Time64', {f:Float64} = tupleElement({ftup:Tuple(Float64, Time64(3))}, 1), {f:Float64} = mapKeys({fmap:Map(Float64, Time64(3))})[1] SETTINGS precise_float_parsing = 0;
 SELECT 'remote', {ts:DateTime64(3, 'UTC')} AS x, toTypeName(x) FROM remote('127.0.0.{1,2}', system.one);
 SELECT 'remote', {t:Time64(3)} FROM remote('127.0.0.{1,2}', system.one);
 
