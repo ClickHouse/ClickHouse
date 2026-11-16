@@ -255,14 +255,21 @@ EOF""",
     assert node.query("SELECT is_broken FROM system.disks WHERE name = 'looped'") == "1\n"
 
     node.query("CREATE TABLE t (x UInt8) ENGINE = MergeTree ORDER BY x")
+    t_uuid = node.query("SELECT uuid FROM system.tables WHERE database = 'default' AND name = 't'").strip()
+    t_spare = f"/var/lib/clickhouse/spare_disk/store/{t_uuid[:3]}/{t_uuid}"
+    node.exec_in_container(["bash", "-c", f"mkdir -p {t_spare}/sentinel"])
     node.query("DROP TABLE t SYNC", settings={"max_execution_time": 30})
+    assert node.exec_in_container(["bash", "-c", f"[ -e {t_spare} ] && echo present || echo absent"]) == "absent\n"
 
     node.query(
         "CREATE DATABASE ordinary_db ENGINE = Ordinary",
         settings={"allow_deprecated_database_ordinary": 1},
     )
     node.query("CREATE TABLE ordinary_db.t (x UInt8) ENGINE = MergeTree ORDER BY x")
+    ordinary_spare = "/var/lib/clickhouse/spare_disk/data/ordinary_db/t"
+    node.exec_in_container(["bash", "-c", f"mkdir -p {ordinary_spare}/sentinel"])
     node.query("DROP TABLE ordinary_db.t")
+    assert node.exec_in_container(["bash", "-c", f"[ -e {ordinary_spare} ] && echo present || echo absent"]) == "absent\n"
     assert "INCORRECT_DATA" in node.query_and_get_error(
         "CREATE TABLE ordinary_db.t2 (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'with_looped'"
     )
