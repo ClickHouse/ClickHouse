@@ -3077,14 +3077,20 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// substituted at `CREATE`, so their names may change.
             if (inlines_sql_udf)
             {
-                /// A lambda argument is resolved only inside the body. Its text names it unless the text holds a secret.
+                /// A lambda argument is resolved only inside the body. Its text names it, masked if it holds a secret.
                 for (size_t i = 0; i < function_arguments_size; ++i)
                 {
                     if (arguments_projection_names[i] != PROJECTION_NAME_PLACEHOLDER)
                         continue;
                     auto lambda_ast = function_arguments[i]->toAST();
                     if (!lambda_ast->hasSecretParts())
+                    {
                         arguments_projection_names[i] = lambda_ast->getColumnName();
+                        continue;
+                    }
+                    auto & mask_map = *scope.projection_mask_map;
+                    auto mask = mask_map.insert({function_arguments[i]->getTreeHash(), mask_map.size() + 1}).first->second;
+                    arguments_projection_names[i] = "[HIDDEN id: " + std::to_string(mask) + "]";
                 }
 
                 result_projection_names = { calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names) };
