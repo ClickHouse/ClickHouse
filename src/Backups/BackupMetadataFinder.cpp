@@ -143,11 +143,12 @@ void BackupMetadataFinder::applyCustomStoragePolicy(ASTPtr)
 std::vector<fs::path> BackupMetadataFinder::selectRootPaths(
     const IBackup & backup, UInt64 shard, UInt64 replica, SelectionPolicy policy, UInt64 default_shard, UInt64 default_replica)
 {
+    /// Start with "/" as the root path and then we will add shard- and replica-related part to it.
     fs::path root = "/";
     std::vector<fs::path> roots{root};
     auto select = [&](const char * directory, const char * setting, const char * axis, UInt64 requested, UInt64 fallback)
     {
-        auto entries = backup.listFiles(root / directory, false);
+        auto entries = backup.listFiles(root / directory, /*recursive*/ false);
         if (entries.empty())
         {
             if (requested > 1)
@@ -176,8 +177,16 @@ std::vector<fs::path> BackupMetadataFinder::selectRootPaths(
         root /= chosen;
         roots.push_back(root);
     };
+    /// Add shard-related part to the root path.
     select("shards", "shard_num_in_backup", "shard", shard, default_shard);
+
+    /// Add replica-related part to the root path.
     select("replicas", "replica_num_in_backup", "replica", replica, default_replica);
+
+    /// Revert the list of root paths, because we need it in the following order:
+    /// "/shards/<shard_num>/replicas/<replica_num>/" (first we search tables here)
+    /// "/shards/<shard_num>/" (then here)
+    /// "/" (and finally here)
     std::reverse(roots.begin(), roots.end());
     return roots;
 }
