@@ -500,32 +500,10 @@ UseProjectionsResult optimizeUseNormalProjections(
     NormalProjectionCandidate * best_candidate = nullptr;
 
     const auto & query_info = reading->getQueryInfo();
+    /// Even over the row limit, this is the analysis the read executes with: the projections below prune it, not a copy of it.
     auto parent_reading_select_result = reading->getAnalyzedResult();
     if (!parent_reading_select_result)
         parent_reading_select_result = reading->selectRangesToRead();
-
-    /// parent parts (non-projection result) exceeded limits
-    /// construct a base AnalysisResult with all parts to analyze projection candidates
-    if (!parent_reading_select_result->isUsable())
-    {
-        const auto & parts = reading->getParts();
-
-        parent_reading_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>();
-        parent_reading_select_result->parts_with_ranges = parts;
-        parent_reading_select_result->selected_parts = parts.size();
-        parent_reading_select_result->exceeded_row_limits = true;
-
-        size_t total_marks = 0;
-        size_t total_rows = 0;
-        for (const auto & part : parts)
-        {
-            total_marks += part.data_part->getMarksCount();
-            total_rows += part.data_part->rows_count;
-        }
-        parent_reading_select_result->selected_marks = total_marks;
-        parent_reading_select_result->selected_rows = total_rows;
-        parent_reading_select_result->selected_ranges = parts.size();
-    }
 
     if (!relax_projection_checks)
     {
