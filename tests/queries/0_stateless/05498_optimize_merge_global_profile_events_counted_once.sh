@@ -14,7 +14,7 @@ ${CLICKHOUSE_LOCAL} --multiquery "
 CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t SELECT number FROM numbers(1000)
     SETTINGS max_insert_block_size = 100000, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_insert_threads = 1;
-SELECT count() FROM system.parts WHERE table = 't' AND active;
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't' AND active;
 CREATE TABLE merged_rows_before ENGINE = Memory AS SELECT sum(value) AS v FROM system.events WHERE event = 'MergedRows';
 OPTIMIZE TABLE t FINAL;
 SELECT (SELECT sum(value) FROM system.events WHERE event = 'MergedRows') - (SELECT v FROM merged_rows_before);
