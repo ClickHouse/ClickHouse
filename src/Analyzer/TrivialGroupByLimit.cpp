@@ -4,6 +4,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Columns/IColumn.h>
 #include <Core/Settings.h>
@@ -106,6 +107,15 @@ std::optional<UInt64> getTrivialGroupByLimit(const QueryNode & query, const Sett
     /// `n + offset` arbitrary groups can stop it before the boundary key ever appears, so the
     /// window would be empty while the groups exist (the `04343` bug class).
     if (query.hasLimitAfter() || query.hasLimitUntil())
+        return std::nullopt;
+
+    /// `LIMIT` of a correlated subquery applies to each outer row, but after decorrelation one aggregation
+    /// serves all of them.
+    if (query.isCorrelated())
+        return std::nullopt;
+
+    /// The aggregation can run once more for a correlated subquery in the projection, and the two runs can keep different keys.
+    if (containsCorrelatedSubquery(query.getProjectionNode()))
         return std::nullopt;
 
     /// Window functions and `arrayJoin` in the projection consume the aggregated rows after

@@ -30,6 +30,17 @@ SELECT 'function merge', k FROM merge(currentDatabase(), '^v$') WHERE m = 999 GR
 SELECT 'subquery', k FROM (SELECT k, max(x) AS m FROM t GROUP BY k) WHERE m = 999 GROUP BY k LIMIT 5;
 SELECT 'scalar subquery', (SELECT k FROM v WHERE m = 999 GROUP BY k LIMIT 1);
 
+-- `LIMIT` of a correlated subquery is for each outer row.
+SELECT 'correlated aggregate', max(k) FROM v AS a WHERE m = (SELECT max(u.x) FROM t AS u WHERE u.k = a.k GROUP BY u.k LIMIT 1)
+SETTINGS enable_group_by_top_k_optimization = 0;
+SELECT 'correlated aggregate in EXISTS', max(k) FROM v AS a WHERE EXISTS (SELECT 1 FROM (SELECT max(u.x) AS y FROM t AS u WHERE u.k = a.k GROUP BY u.k LIMIT 1) WHERE y >= 900)
+SETTINGS enable_group_by_top_k_optimization = 0;
+SELECT 'correlated aggregate in LATERAL', max(a.k) FROM v AS a JOIN LATERAL (SELECT max(u.x) AS y FROM t AS u WHERE u.k = a.k GROUP BY u.k LIMIT 1) AS l ON true WHERE y = m
+SETTINGS enable_group_by_top_k_optimization = 0, allow_experimental_lateral_join = 1;
+-- No limit on groups if the query can be evaluated twice for a correlated subquery.
+SELECT k, (SELECT max(number) FROM numbers(3) WHERE number = a.k) FROM t AS a GROUP BY k LIMIT 5
+SETTINGS max_rows_to_group_by = 50, optimize_aggregation_in_order = 0, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0; -- { serverError TOO_MANY_ROWS }
+
 SELECT 'view on shards', k FROM remote('127.0.0.{1,2}', currentDatabase(), v) WHERE m = 999 GROUP BY k LIMIT 5;
 SELECT 'IN on shards', k FROM remote('127.0.0.{1,2}', currentDatabase(), t) WHERE k IN (SELECT k FROM t GROUP BY k HAVING max(x) = 999) GROUP BY k LIMIT 5;
 SELECT 'JOIN on shards', k FROM remote('127.0.0.{1,2}', currentDatabase(), t) AS l JOIN (SELECT k FROM t GROUP BY k HAVING max(x) = 999) AS r USING k GROUP BY k LIMIT 5;

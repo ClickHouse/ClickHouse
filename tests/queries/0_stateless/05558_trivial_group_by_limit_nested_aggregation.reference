@@ -7,6 +7,9 @@ function view	99
 function merge	99
 subquery	99
 scalar subquery	99
+correlated aggregate	99
+correlated aggregate in EXISTS	99
+correlated aggregate in LATERAL	99
 view on shards	99
 IN on shards	99
 JOIN on shards	99
