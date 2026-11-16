@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 某些聚合函数不仅可以接受作为实参的列 (用于压缩) ，还可以接受一组参数——即用于初始化的常量。其语法使用两对括号，而不是一对：第一对用于参数，第二对用于实参。
 
-<div id="histogram">
-  ## histogram
-</div>
+## histogram {#histogram}
 
 计算自适应直方图。结果不保证精确。
 
@@ -84,9 +82,7 @@ FROM
 
 在这种情况下，需要注意的是，你并不知道直方图各个分箱的边界。
 
-<div id="sequencematch">
-  ## sequenceMatch
-</div>
+## sequenceMatch {#sequencematch}
 
 检查序列中是否包含与模式匹配的事件链。
 
@@ -97,16 +93,16 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 ```
 
 <Note>
-  在同一秒发生的事件在序列中的先后顺序可能不确定，这会影响结果。
+  时间戳相同的事件在序列中的先后顺序可能不确定，这会影响结果。`DateTime64` 时间戳还会按秒以下的部分排序，因此只有处于同一 tick 的事件顺序才不确定。
 </Note>
 
 **参数**
 
-* `timestamp` — 视为包含时间数据的列。典型数据类型为 `Date` 和 `DateTime`。你也可以使用任何受支持的 [UInt](/zh/reference/data-types/int-uint) 数据类型。
+* `timestamp` — 视为包含时间数据的列。典型数据类型为 `Date`、`DateTime` 和 `DateTime64`。你也可以使用任何受支持的 [UInt](/zh/reference/data-types/int-uint) 数据类型。
 
 * `cond1`, `cond2` — 描述事件链的条件。数据类型：`UInt8`。最多可传入 32 个条件参数。函数只会考虑这些条件所描述的事件。如果序列中包含未在任何条件中描述的数据，函数会跳过它们。
 
-**参数**
+**参数设置**
 
 * `pattern` — 模式字符串。请参见[模式语法](#pattern-syntax)。
 
@@ -117,15 +113,13 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 
 类型：`UInt8`。
 
-<div id="pattern-syntax">
-  #### 模式语法
-</div>
+#### 模式语法 {#pattern-syntax}
 
 * `(?N)` — 匹配位置 `N` 处的条件参数。条件的编号范围为 `[1, 32]`。例如，`(?1)` 匹配传递给 `cond1` 参数的值。
 
 * `.*` — 匹配任意数量的事件。匹配模式中的这一元素时，无需提供条件参数。
 
-* `(?t operator value)` — 设置两个事件之间应间隔的时间 (以秒为单位) 。例如，模式 `(?1)(?t>1800)(?2)` 匹配彼此相隔超过 1800 秒的事件。这两个事件之间可以穿插任意数量的其他事件。你可以使用 `>=`、`>`、`<`、`<=`、`==` 运算符。
+* `(?t operator value)` — 设置两个事件之间应间隔的时间。例如，模式 `(?1)(?t>1800)(?2)` 匹配彼此相隔超过 1800 秒的事件。这两个事件之间可以穿插任意数量的其他事件。你可以使用 `>=`、`>`、`<`、`<=`、`==` 运算符。对于 `DateTime` 或 `DateTime64` 时间戳，无论 `DateTime64` 的精度如何，该值都以秒为单位，因此当列在 `DateTime` 和任意标度的 `DateTime64` 之间切换时，同一模式的含义保持不变。对于 `Date` 时间戳，该值以天为单位；对于无符号整数时间戳，则以该整数的单位为准。
 
 **示例**
 
@@ -179,14 +173,12 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 
 * [sequenceCount](#sequencecount)
 
-<div id="sequencecount">
-  ## sequenceCount
-</div>
+## sequenceCount {#sequencecount}
 
 统计与模式匹配的事件链数量。该函数会查找彼此不重叠的事件链。当前事件链匹配完成后，才会开始查找下一条事件链。
 
 <Note>
-  在同一秒内发生的事件在序列中的顺序可能是未定义的，这会影响结果。
+  时间戳相同的事件在序列中的顺序可能不确定，从而影响结果。`DateTime64` 时间戳还会按秒以下的部分排序，因此只有时间戳处于同一 tick 的事件，其顺序才不确定。
 </Note>
 
 **语法**
@@ -197,11 +189,11 @@ sequenceCount(pattern)(timestamp, cond1, cond2, ...)
 
 **参数**
 
-* `timestamp` — 视为包含时间数据的列。典型的数据类型有 `Date` 和 `DateTime`。你也可以使用任何受支持的 [UInt](/zh/reference/data-types/int-uint) 数据类型。
+* `timestamp` — 视为包含时间数据的列。典型的数据类型有 `Date`、`DateTime` 和 `DateTime64`。你也可以使用任何受支持的 [UInt](/zh/reference/data-types/int-uint) 数据类型。
 
 * `cond1`, `cond2` — 用于描述事件链的条件。数据类型：`UInt8`。最多可以传入 32 个条件参数。函数只会考虑这些条件中描述的事件。如果序列中包含未被任何条件描述的数据，函数会跳过这些数据。
 
-**参数**
+**参数设置**
 
 * `pattern` — 模式字符串。请参见 [模式语法](#pattern-syntax)。
 
@@ -238,14 +230,12 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="sequencematchevents">
-  ## sequenceMatchEvents
-</div>
+## sequenceMatchEvents {#sequencematchevents}
 
 返回与模式匹配的最长事件链中各事件的时间戳。
 
 <Note>
-  在同一秒内发生的事件，在序列中的先后顺序可能不确定，从而影响结果。
+  时间戳相同的事件，在序列中的先后顺序可能不确定，从而影响结果。`DateTime64` 时间戳还会按秒以下的部分排序，因此只有时间戳处于同一 tick 的事件，其先后顺序才不确定。
 </Note>
 
 **语法**
@@ -256,11 +246,11 @@ sequenceMatchEvents(pattern)(timestamp, cond1, cond2, ...)
 
 **参数**
 
-* `timestamp` — 视为包含时间数据的列。典型的数据类型包括 `Date` 和 `DateTime`。您也可以使用任意受支持的 [UInt](/zh/reference/data-types/int-uint) 数据类型。
+* `timestamp` — 视为包含时间数据的列。典型的数据类型包括 `Date`、`DateTime` 和 `DateTime64`。您也可以使用任意受支持的 [UInt](/zh/reference/data-types/int-uint) 数据类型。
 
 * `cond1`, `cond2` — 用于描述事件链的条件。数据类型：`UInt8`。最多可传入 32 个条件参数。函数只会考虑这些条件中描述的事件。如果序列中包含未在任何条件中描述的数据，函数会跳过这些数据。
 
-**参数**
+**参数设置**
 
 * `pattern` — 模式字符串。请参见 [模式语法](#pattern-syntax)。
 
@@ -297,13 +287,11 @@ SELECT sequenceMatchEvents('(?1).*(?2).*(?1)(?3)')(time, number = 1, number = 2,
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**另请参阅**
+**另请参见**
 
 * [sequenceMatch](#sequencematch)
 
-<div id="windowfunnel">
-  ## windowFunnel
-</div>
+## windowFunnel {#windowfunnel}
 
 在滑动时间窗口中搜索事件链，并计算该事件链内已发生事件的最大数量。
 
@@ -427,9 +415,7 @@ GROUP BY level
 ORDER BY level ASC;
 ```
 
-<div id="retention">
-  ## retention
-</div>
+## retention {#retention}
 
 该函数接受一组条件作为参数，参数数量为 1 到 32 个，类型均为 `UInt8`，用于指示某个事件是否满足某一条件。
 任何条件都可以作为参数指定 (如 [WHERE](/zh/reference/statements/select/where) 中所示) 。
@@ -576,9 +562,7 @@ FROM
 * `r2`- 在 2020-01-01 至 2020-01-02 之间某个特定时间段内访问网站的独立访客数量 (`cond1` 和 `cond2` 条件) 。
 * `r3`- 在 2020-01-01 和 2020-01-03 的某个特定时间段内访问网站的独立访客数量 (`cond1` 和 `cond3` 条件) 。
 
-<div id="uniquptonx">
-  ## uniqUpTo(N)(x)
-</div>
+## uniqUpTo(N)(x) {#uniquptonx}
 
 计算参数中不同值的数量，最多到指定上限 `N`。如果参数的不同值个数大于 `N`，此函数返回 `N` + 1；否则返回精确值。
 
@@ -598,9 +582,7 @@ HAVING uniqUpTo(4)(UserID) >= 5
 
 `uniqUpTo(4)(UserID)` 会为每个 `SearchPhrase` 计算唯一 `UserID` 值的数量，但最多只统计 4 个不同值。如果某个 `SearchPhrase` 的唯一 `UserID` 值超过 4 个，该函数会返回 5 (4 + 1) 。随后，`HAVING` 子句会过滤掉唯一 `UserID` 值数量少于 5 的 `SearchPhrase` 值。这样，你就会得到一个至少被 5 个不同用户使用过的搜索关键词列表。
 
-<div id="summapfiltered">
-  ## sumMapFiltered
-</div>
+## sumMapFiltered {#summapfiltered}
 
 此函数的行为与 [sumMap](/zh/reference/functions/aggregate-functions/sumMap) 相同，不同之处在于它还接受一个作为参数的键数组，并据此进行过滤。这在处理高基数键时尤其有用。
 
@@ -646,9 +628,7 @@ SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) FROM sum_
    └─────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="summapfilteredwithoverflow">
-  ## sumMapFilteredWithOverflow
-</div>
+## sumMapFilteredWithOverflow {#summapfilteredwithoverflow}
 
 此函数的行为与 [sumMap](/zh/reference/functions/aggregate-functions/sumMap) 相同，但它还额外接受一个用于过滤的键数组参数。在处理高基数键时，这一点尤其有用。它与 [sumMapFiltered](#summapfiltered) 函数的不同之处在于，它按溢出语义进行求和——也就是说，求和结果返回的数据类型与参数的数据类型相同。
 
@@ -706,9 +686,7 @@ SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) as summap
    └──────────────────────┴────────────────────────────────────┘
 ```
 
-<div id="sequencenextnode">
-  ## sequenceNextNode
-</div>
+## sequenceNextNode {#sequencenextnode}
 
 返回与某个事件链匹配的下一个事件的值。
 

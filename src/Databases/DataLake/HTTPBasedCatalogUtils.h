@@ -16,7 +16,7 @@ struct AccessToken
     std::string token;
     std::optional<std::chrono::system_clock::time_point> expires_at;
 
-    bool isExpired() const
+    [[nodiscard]] bool isExpired() const
     {
         if (!expires_at.has_value())
             return false;
@@ -59,7 +59,7 @@ DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
     const Poco::URI::QueryParameters & params = {},
     const DB::HTTPHeaderEntries & headers = {},
     const std::string & method = Poco::Net::HTTPRequest::HTTP_GET,
-    std::function<void(std::ostream &)> out_stream_callaback = {});
+    std::function<void(DB::WriteBuffer &)> out_stream_callaback = {});
 
 std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
     const std::string & endpoint,
@@ -68,7 +68,7 @@ std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
     const Poco::URI::QueryParameters & params = {},
     const DB::HTTPHeaderEntries & headers = {},
     const std::string & method = Poco::Net::HTTPRequest::HTTP_GET,
-    std::function<void(std::ostream &)> out_stream_callaback = {});
+    std::function<void(DB::WriteBuffer &)> out_stream_callaback = {});
 
 /// Validate a bearer token as the `Authorization: Bearer <token>` header that
 /// `createWithBearerToken` synthesizes, applying the same `http_forbid_headers` and

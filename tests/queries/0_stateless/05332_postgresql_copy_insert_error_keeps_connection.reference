@@ -1,0 +1,7 @@
+SET
+ERROR:  COPY FROM STDIN failed: VIOLATED_CONSTRAINT
+connection is usable|3
+COPY 2
+2
+2
+3

@@ -63,7 +63,7 @@ def test_iceberg_disk_setting_does_not_replace_disk_client(started_cluster):
 def test_iceberg_engine_on_disk_works(started_cluster):
     node.query("DROP TABLE IF EXISTS t_ice SYNC")
     node.query(
-        "CREATE TABLE t_ice (k UInt64) ENGINE = Iceberg(path = 'iceberg_tbl') "
+        "CREATE TABLE t_ice (k Int64) ENGINE = Iceberg(path = 'iceberg_tbl') "
         "SETTINGS disk = 's3_disk_repro'"
     )
 
@@ -80,7 +80,7 @@ def test_disk_config_change_propagates(started_cluster):
 
     node.query("DROP TABLE IF EXISTS t_ice2 SYNC")
     node.query(
-        "CREATE TABLE t_ice2 (k UInt64) ENGINE = Iceberg(path = 'iceberg_tbl2') "
+        "CREATE TABLE t_ice2 (k Int64) ENGINE = Iceberg(path = 'iceberg_tbl2') "
         "SETTINGS disk = 's3_disk_repro'"
     )
     node.query(
@@ -116,7 +116,7 @@ def test_disk_config_change_propagates_through_cache_disk(started_cluster):
 
     node.query("DROP TABLE IF EXISTS t_ice3 SYNC")
     node.query(
-        "CREATE TABLE t_ice3 (k UInt64) ENGINE = Iceberg(path = 'iceberg_tbl3') "
+        "CREATE TABLE t_ice3 (k Int64) ENGINE = Iceberg(path = 'iceberg_tbl3') "
         "SETTINGS disk = 's3_cache_repro'"
     )
     node.query(
@@ -156,7 +156,7 @@ def test_client_rebuilt_only_on_client_affecting_change(started_cluster):
 
     node.query("DROP TABLE IF EXISTS t_ice4 SYNC")
     node.query(
-        "CREATE TABLE t_ice4 (k UInt64) ENGINE = Iceberg(path = 'iceberg_tbl4') "
+        "CREATE TABLE t_ice4 (k Int64) ENGINE = Iceberg(path = 'iceberg_tbl4') "
         "SETTINGS disk = 's3_disk_repro'"
     )
     node.query(
@@ -212,11 +212,11 @@ def test_disk_resource_applies_to_table(started_cluster):
     node.query("DROP TABLE IF EXISTS t_ice5 SYNC")
     node.query("DROP TABLE IF EXISTS t_ice6 SYNC")
     node.query(
-        "CREATE TABLE t_ice5 (k UInt64) ENGINE = Iceberg(path = 'iceberg_tbl5') "
+        "CREATE TABLE t_ice5 (k Int64) ENGINE = Iceberg(path = 'iceberg_tbl5') "
         "SETTINGS disk = 's3_disk_repro'"
     )
     node.query(
-        "CREATE TABLE t_ice6 (k UInt64) ENGINE = Iceberg(path = 'iceberg_tbl6') "
+        "CREATE TABLE t_ice6 (k Int64) ENGINE = Iceberg(path = 'iceberg_tbl6') "
         "SETTINGS disk = 's3_cache_repro'"
     )
     node.query(
@@ -257,7 +257,7 @@ def test_disk_resource_applies_to_table(started_cluster):
 def test_query_settings_do_not_leak_into_disk_client(started_cluster):
     node.query("DROP TABLE IF EXISTS t_ice8 SYNC")
     node.query(
-        "CREATE TABLE t_ice8 (k UInt64) ENGINE = Iceberg(path = 'iceberg_tbl8') "
+        "CREATE TABLE t_ice8 (k Int64) ENGINE = Iceberg(path = 'iceberg_tbl8') "
         "SETTINGS disk = 's3_disk_repro'"
     )
     node.query(
@@ -287,7 +287,7 @@ def test_disk_config_change_propagates_through_locations_disk(started_cluster):
 
     node.query("DROP TABLE IF EXISTS t_ice7 SYNC")
     node.query(
-        "CREATE TABLE t_ice7 (k UInt64) ENGINE = Iceberg(path = 'iceberg_tbl7') "
+        "CREATE TABLE t_ice7 (k Int64) ENGINE = Iceberg(path = 'iceberg_tbl7') "
         "SETTINGS disk = 's3_locations_repro'"
     )
     node.query(

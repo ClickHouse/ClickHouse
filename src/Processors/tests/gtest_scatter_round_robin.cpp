@@ -232,9 +232,9 @@ TEST(ScatterByPartition, DoesNotPullAnotherChunkWhileOneIsPending)
     ASSERT_TRUE(accepting.hasData());
     ASSERT_FALSE(refusing.hasData());
 
-    /// Once the refusing output accepts, the pending bucket is handed over and input is wanted again.
+    /// Once the refusing output accepts, both output ports hold data and no further input is needed.
     refusing.setNeeded();
-    EXPECT_EQ(scatter->prepare(), IProcessor::Status::NeedData);
+    EXPECT_EQ(scatter->prepare(), IProcessor::Status::PortFull);
     ASSERT_TRUE(refusing.hasData());
 
     std::vector<UInt64> routed;
@@ -250,4 +250,83 @@ TEST(ScatterByPartition, DoesNotPullAnotherChunkWhileOneIsPending)
     std::vector<UInt64> expected(rows);
     std::iota(expected.begin(), expected.end(), 0);
     EXPECT_EQ(routed, expected);
+}
+
+TEST(ScatterByPartition, WaitsForDownstreamDemand)
+{
+    for (bool round_robin : {false, true})
+    {
+        SCOPED_TRACE(round_robin);
+        const auto header = makeHeader();
+        auto scatter = round_robin ? ScatterByPartitionTransform::createRoundRobin(header, 2, 0)
+                                   : std::make_shared<ScatterByPartitionTransform>(header, 2, ColumnNumbers{0});
+        OutputPort upstream(header);
+        connect(upstream, scatter->getInputs().front());
+        InputPort first(header);
+        InputPort second(header);
+        auto output = scatter->getOutputs().begin();
+        connect(*output++, first);
+        connect(*output, second);
+
+        EXPECT_EQ(scatter->prepare(), IProcessor::Status::PortFull);
+        EXPECT_FALSE(upstream.canPush());
+
+        first.setNeeded();
+        EXPECT_EQ(scatter->prepare(), IProcessor::Status::NeedData);
+        EXPECT_TRUE(upstream.canPush());
+
+        first.setNotNeeded();
+        EXPECT_EQ(scatter->prepare(), IProcessor::Status::PortFull);
+        EXPECT_FALSE(upstream.canPush());
+
+        first.setNeeded();
+        first.close();
+        EXPECT_EQ(scatter->prepare(), IProcessor::Status::PortFull);
+        EXPECT_FALSE(upstream.canPush());
+
+        second.setNeeded();
+        EXPECT_EQ(scatter->prepare(), IProcessor::Status::NeedData);
+        EXPECT_TRUE(upstream.canPush());
+
+        second.close();
+        EXPECT_EQ(scatter->prepare(), IProcessor::Status::Finished);
+        EXPECT_TRUE(upstream.isFinished());
+    }
+}
+
+/// A rowless chunk with a `ChunkInfo` (such as a watermark of a streaming read) reaches every output
+/// of the hash scatter, also with no key columns.
+TEST(ScatterByPartition, BroadcastsRowlessChunkInfo)
+{
+    for (const auto & key_columns : {ColumnNumbers{0}, ColumnNumbers{}})
+    {
+        SCOPED_TRACE(key_columns.size());
+        const auto header = makeHeader();
+        auto scatter = std::make_shared<ScatterByPartitionTransform>(header, 2, key_columns);
+        OutputPort upstream(header);
+        connect(upstream, scatter->getInputs().front());
+        InputPort first(header);
+        InputPort second(header);
+        auto output = scatter->getOutputs().begin();
+        connect(*output++, first);
+        connect(*output, second);
+        first.setNeeded();
+        second.setNeeded();
+
+        ASSERT_EQ(scatter->prepare(), IProcessor::Status::NeedData);
+        auto marker = makeChunk(0);
+        marker.getChunkInfos().add(std::make_shared<TestChunkInfo>());
+        upstream.push(std::move(marker));
+        ASSERT_EQ(scatter->prepare(), IProcessor::Status::Ready);
+        scatter->work();
+        scatter->prepare();
+
+        for (auto * port : {&first, &second})
+        {
+            ASSERT_TRUE(port->hasData());
+            const auto chunk = port->pull();
+            EXPECT_EQ(chunk.getNumRows(), 0);
+            EXPECT_TRUE(chunk.getChunkInfos().has<TestChunkInfo>());
+        }
+    }
 }

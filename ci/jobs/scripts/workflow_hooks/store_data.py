@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.clickhouse_version import CHVersion
+from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.settings_history import (
     SETTINGS_DECLARATION_FILES,
     parse_declaration_changes,
@@ -26,6 +27,16 @@ def _is_commit_sha(value):
     `gh api -q` prints an absent field as an empty line and a present non-id field verbatim,
     both at exit code 0, so a successful read is not by itself a revision."""
     return bool(_COMMIT_SHA_RE.fullmatch(value or ""))
+
+
+def new_stateless_test_files(statuses):
+    # A renamed test is not new.
+    return [
+        path
+        for path, status in statuses.items()
+        if status in (GH.FileStatus.ADDED, GH.FileStatus.COPIED)
+        and Path(path).parent == Path("tests/queries/0_stateless")
+    ]
 
 
 # How many first-parent master commits to record in `master_track_commits_sha`,
@@ -205,7 +216,6 @@ PRODUCT_CODE_PATHS = (
     "src/",
     "base/",
     "programs/",
-    "rust/",
     "cmake/",
     "CMakeLists.txt",
     "PreLoad.cmake",
@@ -271,12 +281,29 @@ if __name__ == "__main__":
     # store changed files
     # Fail-close for PR and merge-queue runs: the merge-queue flaky check
     # selects tests from this list, so an empty fallback would silently skip
-    # it. Do not fail for master/release CI workflows.
-    changed_files = (
-        GH.get_changed_files(strict=bool(info.pr_number) or info.is_merge_queue_event)
-        or []
+    # it. Do not fail for master/release CI workflows. For a push, unknown
+    # changed files stay `None`, so no job is filtered by them.
+    changed_files = GH.get_changed_files(
+        strict=bool(info.pr_number) or info.is_merge_queue_event
     )
+    if changed_files is None and not info.is_push_event:
+        changed_files = []
     info.store_kv_data("changed_files", changed_files)
+    if info.pr_number > 0:
+        info.store_kv_data(
+            "new_stateless_test_files",
+            new_stateless_test_files(GH.get_changed_file_statuses()),
+        )
+
+    # The merge-queue flaky check (stateless) and targeted integration check also
+    # rerun the tests that `master` changed after the PR's last CI run. Computed
+    # here, because only this job has the commit history. Fail-close: those jobs
+    # require this key.
+    if info.is_merge_queue_event:
+        info.store_kv_data(
+            "merge_queue_drift_tests",
+            Targeting.get_merge_queue_drift_tests(changed_files),
+        )
 
     # For the settings-history style check (check_style.py): when a settings declaration file
     # changed in a PR or merge-queue run, record which history records and declarations the

@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SELECT '=====================================================================';
 SELECT 'Test : ClickHouse NULL-safe comparison';
 SELECT '(1) <=> (IS NOT DISTINCT FROM)';
