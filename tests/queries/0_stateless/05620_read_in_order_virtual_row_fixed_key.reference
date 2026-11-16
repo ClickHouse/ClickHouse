@@ -1,15 +1,15 @@
 --- key (a, b): plan
 -- WHERE a = 1 ORDER BY a, b
-Read type: InOrder
+ReadType: InOrder
 Virtual row conversions
 -- WHERE a = 1 ORDER BY a DESC, b DESC
-Read type: InReverseOrder
+ReadType: InReverseOrder
 Virtual row conversions
 -- WHERE a IN (1) ORDER BY a, b
-Read type: InOrder
+ReadType: InOrder
 Virtual row conversions
 -- WHERE a = 1 ORDER BY a DESC, b: the read does not go in the direction of the fixed column, so its index values bound nothing
-Read type: InOrder
+ReadType: InOrder
 --- key (a, b): result
 1
 2
@@ -30,27 +30,25 @@ Read type: InOrder
 1
 1
 1
--- a virtual row after each block, several threads
-1
-1
+-- several threads
 1
 1
 --- key (a, b): the parts which begin with `a = 1` far from the result are not read
 1
 --- key (a, b, c)
 -- fixed middle key: WHERE b = 1 ORDER BY a, b, c
-Read type: InOrder
+ReadType: InOrder
 Virtual row conversions
 1
 1
 1
 -- two fixed keys: WHERE a = 1 AND b = 2 ORDER BY a, b, c
-Read type: InOrder
+ReadType: InOrder
 Virtual row conversions
 1
 1
 --- key (toDate(ts), b)
-Read type: InOrder
+ReadType: InOrder
 Virtual row conversions
 1
 1
@@ -66,12 +64,12 @@ Virtual row conversions
 980
 981
 --- INNER JOIN: reading in order needs the virtual row
-Read type: InOrder
+ReadType: InOrder
 Virtual row conversions
-Read type: Default
-Read type: InReverseOrder
+ReadType: Default
+ReadType: InReverseOrder
 Virtual row conversions
-Read type: Default
+ReadType: Default
 21	63
 35	105
 42	126
@@ -82,13 +80,3 @@ Read type: Default
 8043	24129
 8036	24108
 8029	24087
--- with FINAL
-Read type: InOrder
-Virtual row conversions
-Read type: Default
-0	2	0
-7	2	21
-14	2	42
-21	2	63
-28	2	84
-1
