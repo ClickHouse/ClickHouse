@@ -1776,7 +1776,7 @@ std::pair<size_t, size_t> sampleAutoFingerprintKeys(
 
 }
 
-void HashJoin::selectAutoFingerprints(const ScatteredBlock & block)
+void HashJoin::selectAutoFingerprints([[maybe_unused]] const ScatteredBlock & block)
 {
     auto reject = [&](const char * reason)
     {
@@ -1786,7 +1786,7 @@ void HashJoin::selectAutoFingerprints(const ScatteredBlock & block)
 #if !defined(__aarch64__)
     reject("no native performance calibration for this architecture");
     return;
-#endif
+#else
     if (!build_phase_finished || build_layout.two_level || data->maps.size() != 1
         || data->type != Type::key64 || from_storage_join || data.use_count() != 1)
     {
@@ -1871,6 +1871,7 @@ void HashJoin::selectAutoFingerprints(const ScatteredBlock & block)
     recomputeBucketBytes();
     updatePeakBuildBytes(getTotalByteCount());
     ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintSelected);
+#endif
 }
 
 void HashJoin::monitorAutoFingerprints(const ScatteredBlock & block)
