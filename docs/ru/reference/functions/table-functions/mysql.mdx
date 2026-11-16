@@ -33,7 +33,7 @@ mysql({host:port, database, table, user, password[, replace_query, on_duplicate_
 
 Простые секции `WHERE`, такие как `=, !=, >, >=, <, <=`, в настоящее время выполняются на сервере MySQL.
 
-Остальные условия и ограничение выборки `LIMIT` выполняются в ClickHouse только после завершения запроса к MySQL.
+Остальные условия выполняются в ClickHouse после завершения запроса к MySQL. Ограничение выборки `LIMIT` передаётся в MySQL, только если это безопасно и включена настройка [external&#95;storage&#95;push&#95;down&#95;limit](/ru/reference/settings/session-settings/external-storage#external_storage_push_down_limit); в противном случае оно выполняется в ClickHouse.
 
 ## TLS/SSL {#tls-ssl}
 

@@ -462,12 +462,27 @@ doc_type: 'reference'
   주요 기능:
 
   * 네이티브 ClickHouse 타입을 지원하는 데이터베이스, 테이블, 뷰 탐색. data-skipping 인덱스의 타입, 컬럼, 세분화 수준도 함께 확인 가능
-  * Monaco 기반 SQL Editor로 자동 완성, 다중 SQL 문 실행, 페이지네이션된 결과 제공
+  * Monaco 기반 SQL Editor로 자동 완성, 다중 SQL 문(statements) 실행, 페이지네이션된 결과 제공
   * 데이터 그리드에서 Inline 삽입, UPDATE, 삭제 수행. `CREATE TABLE`, `ALTER TABLE ... ADD/MODIFY/RENAME COLUMN`, `ADD INDEX`에 대한 DDL 생성
-  * 내장 MCP Server를 통해 AI agents가 동일한 앱에서 스키마를 읽고 쿼리를 실행 가능
+  * 내장 MCP 서버를 통해 AI agents가 동일한 앱에서 스키마를 읽고 쿼리를 실행 가능
   * 하나의 윈도우에서 ClickHouse와 함께 PostgreSQL, MySQL, SQLite, DuckDB, Redis, MongoDB 등 다양한 엔진 사용 가능
 
   [Tabularis ClickHouse plugin](https://github.com/TabularisDB/tabularis-clickhouse-plugin) · [웹사이트](https://tabularis.dev)
+</Accordion>
+
+<Accordion title="DBine">
+  [DBine](https://github.com/addlayer-io/dbine)은 Windows, macOS, Linux를 지원하는 무료 오픈소스(Apache 2.0) 데스크톱 데이터베이스 관리 도구입니다. HTTP 인터페이스(`8123`, TLS 사용 시 `8443`)를 통해 ClickHouse에 연결하며, 130개 이상의 데이터베이스 및 클라우드 서비스를 하나의 윈도우에서 함께 다룰 수 있습니다.
+
+  주요 기능:
+
+  * ClickHouse 방언을 지원하는 SQL Editor. 테이블 및 컬럼 자동 완성과 `KILL QUERY`를 이용한 쿼리 취소 기능 제공
+  * 데이터베이스, 테이블, 뷰, 컬럼 탐색. 결과 그리드와 차트를 제공하며 CSV, JSON, XLSX, SQL 형식으로 내보내기 지원
+  * `ENGINE`, `ORDER BY`, `PARTITION BY`, TTL, 코덱을 설정할 수 있는 테이블 디자이너. 셀을 편집하면 `ALTER TABLE ... UPDATE` 뮤테이션이 생성되며, 실행 전에 검토 가능
+  * `EXPLAIN json = 1, indexes = 1` 기반 쿼리 계획, `system.processes` 기반 프로세스 목록, `system.query_log` 기반 프로파일러 제공
+  * 스키마 비교, 데이터 비교, 그리고 여러 데이터베이스를 쿼리한 뒤 DuckDB로 결과를 조인하는 노트북 기능
+  * SSH 터널, 시크릿 매니저 연동 비밀번호, 읽기 전용 연결, MCP 서버, 그리고 쿼리를 제안하되 사용자가 승인하기 전에는 아무것도 실행하지 않는 AI 어시스턴트 제공
+
+  [웹사이트](https://dbine.com) · [다운로드](https://github.com/addlayer-io/dbine/releases)
 </Accordion>
 
 ## 상용 {#commercial}

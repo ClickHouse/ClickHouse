@@ -46,11 +46,11 @@ public:
     static KeyPair generateRSA(uint32_t bits = 2048, uint32_t exponent = RSA_F4);
 
     /// Returns keys in PEM format.
-    std::string publicKey() const;
-    std::string privateKey() const;
+    [[nodiscard]] std::string publicKey() const;
+    [[nodiscard]] std::string privateKey() const;
 
-    std::vector<unsigned char> modulus() const;
-    std::vector<unsigned char> encryptionExponent() const;
+    [[nodiscard]] std::vector<unsigned char> modulus() const;
+    [[nodiscard]] std::vector<unsigned char> encryptionExponent() const;
 
 private:
     EVP_PKEY * key;

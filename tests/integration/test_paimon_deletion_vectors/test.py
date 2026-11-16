@@ -119,7 +119,7 @@ def create_engine_table(node, table_dir, table):
         f"CREATE TABLE {table} ENGINE = PaimonLocal('{table_dir}') SETTINGS "
         f"paimon_incremental_read = 1, paimon_keeper_path = '/clickhouse/paimon/{table}', "
         "paimon_replica_name = 'r1'",
-        settings={"allow_experimental_paimon_storage_engine": 1},
+        settings={"enable_paimon_storage_engine": 1},
     )
 
 

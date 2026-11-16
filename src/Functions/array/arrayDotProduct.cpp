@@ -55,7 +55,10 @@ MULTITARGET_FUNCTION_X86_V4(
                 for (auto & partial_sum : partial_sums)
                     sum += partial_sum;
 
-                /// Tail: process remaining elements that don't fill a full unroll block
+                /// Tail: process remaining elements that don't fill a full unroll block.
+                /// clang 22 unrolled it by 4 on its own and clang 23 does not, which made `dotProduct` of 150-element
+                /// `BFloat16` arrays 15% slower on the x86 CI machines; the order of the additions stays the same.
+                _Pragma("clang loop vectorize(disable) unroll_count(4)")
                 for (; i < array_size; ++i)
                     sum += static_cast<ResultType>(data_x[prev + i]) * static_cast<ResultType>(data_y[prev + i]);
 
@@ -151,13 +154,13 @@ class FunctionArrayScalarProduct final : public IFunction
 public:
     static constexpr auto name = Kernel::name;
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayScalarProduct>(); }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override { return String(Kernel::signature); }
+    [[nodiscard]] String getSignatureString() const override { return String(Kernel::signature); }
 
 #define SUPPORTED_TYPES(ACTION) \
     ACTION(UInt8) \
@@ -172,7 +175,7 @@ public:
     ACTION(Float32) \
     ACTION(Float64)
 
-    ColumnPtr
+    [[nodiscard]] ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         DataTypePtr type_x = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
@@ -199,7 +202,7 @@ public:
 
 private:
     template <typename LeftType>
-    ColumnPtr executeWithLeftType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeWithLeftType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         DataTypePtr type_y = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
 
@@ -224,7 +227,7 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    ColumnPtr executeWithLeftAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeWithLeftAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
     {
         /// Compute the result type from the input types; this must match the declarative
         /// `signature` (`additionMultiplicationResult`, with the `Float32`/`BFloat16` same-type
@@ -239,7 +242,7 @@ private:
     }
 
     template <typename ResultType, typename LeftType, typename RightType>
-    ColumnPtr executeWithResultTypeAndLeftTypeAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeWithResultTypeAndLeftTypeAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
     {
         if (typeid_cast<const ColumnConst *>(col_x.get()))
         {
@@ -270,7 +273,7 @@ private:
                 || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<ResultType, Float32>)))
         {
             /// SIMD-optimized path: one batched call over all rows keeps the load stream continuous.
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
             if (isArchSupported(TargetArch::x86_64_v4))
                 dotProductBatchImpl_x86_64_v4<ResultType, LeftType>(data_x.data(), data_y.data(), offsets_x.data(), result_data.data(), input_rows_count);
             else
@@ -317,7 +320,7 @@ private:
     }
 
     template <typename ResultType, typename LeftType, typename RightType>
-    ColumnPtr executeWithLeftArgConst(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeWithLeftArgConst(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
     {
         col_x = assert_cast<const ColumnConst *>(col_x.get())->getDataColumnPtr();
         col_y = col_y->convertToFullColumnIfConst();
@@ -356,7 +359,7 @@ private:
                 || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<ResultType, Float32>)))
         {
             /// SIMD-optimized path: one batched call over all rows keeps the column load stream continuous.
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
             if (isArchSupported(TargetArch::x86_64_v4))
                 dotProductConstBatchImpl_x86_64_v4<ResultType, LeftType>(data_x.data(), data_y.data(), array_size, result.data(), input_rows_count);
             else

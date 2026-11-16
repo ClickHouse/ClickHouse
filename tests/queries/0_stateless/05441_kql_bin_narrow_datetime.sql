@@ -15,7 +15,7 @@ INSERT INTO t_kql_bin_narrow VALUES
     (1, '2026-08-01 12:34:56', '2026-08-01 12:34:56', '2026-08-01', '1950-03-04'),
     (2, '2026-08-02 00:00:01', NULL, '2026-08-02', '1950-03-05');
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 t_kql_bin_narrow | project id, b = bin(dt, 1h), bd = bin(dt, 1d) | sort by id asc;

@@ -97,7 +97,7 @@ public:
         return "http://" + server_socket->address().toString();
     }
 
-    const Poco::Net::MessageHeader & getLastRequestHeader() const
+    [[nodiscard]] const Poco::Net::MessageHeader & getLastRequestHeader() const
     {
         return last_request_header;
     }
@@ -131,17 +131,19 @@ public:
         response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
         auto & out = response.send();
 
+        /// The response element names follow the action: `AssumeRole` or `AssumeRoleWithWebIdentity`.
+        const std::string action = form.get("Action", "AssumeRole");
         std::string result_xml = fmt::format(R"(
-<AssumeRoleResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
-<AssumeRoleResult>
+<{0}Response xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
+<{0}Result>
     <Credentials>
-        <AccessKeyId>{}</AccessKeyId>
-        <SecretAccessKey>{}</SecretAccessKey>
+        <AccessKeyId>{1}</AccessKeyId>
+        <SecretAccessKey>{2}</SecretAccessKey>
         <SessionToken>session_token</SessionToken>
         <Expiration>2030-01-01T00:00:00Z</Expiration>
     </Credentials>
-</AssumeRoleResult>
-</AssumeRoleResponse>)", role_access_key, role_secret_key);
+</{0}Result>
+</{0}Response>)", action, role_access_key, role_secret_key);
         out << result_xml;
         out.flush();
     }
@@ -207,17 +209,17 @@ public:
         last_request_info.reset();
     }
 
-    bool hasLastRequest() const
+    [[nodiscard]] bool hasLastRequest() const
     {
         return last_request_info.has_value();
     }
 
-    const Poco::Net::MessageHeader & getLastRequestHeader() const
+    [[nodiscard]] const Poco::Net::MessageHeader & getLastRequestHeader() const
     {
         return last_request_info->headers;
     }
 
-    const auto & getLastQueryParams() const
+    [[nodiscard]] const auto & getLastQueryParams() const
     {
         return last_request_info->query_params;
     }

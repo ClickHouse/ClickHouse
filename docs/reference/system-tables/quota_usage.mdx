@@ -49,6 +49,8 @@ Quota usage by the current user: how much is used and how much is left.
 - `max_failed_sequential_authentications` ([Nullable(UInt64)](/reference/data-types/nullable)) — The maximum number of consecutive authentication failures allowed within the specified period of time.
 - `queries_per_normalized_hash` ([Nullable(UInt64)](/reference/data-types/nullable)) — The current maximum number of executions of any single normalized query within the current period of time.
 - `max_queries_per_normalized_hash` ([Nullable(UInt64)](/reference/data-types/nullable)) — The maximum number of executions of any single normalized query allowed within the specified period of time.
+- `profile_events` ([Map(String, UInt64)](/reference/data-types/map)) — The current consumption of each profile event the quota defines a limit over.
+- `max_profile_events` ([Map(String, UInt64)](/reference/data-types/map)) — Maximum allowed consumption of each profile event the quota defines a limit over. A value of 0 means the event is only tracked, without a limit.
 
 ## See Also {#see-also}
 

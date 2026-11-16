@@ -24,7 +24,7 @@ struct MarkRange
     MarkRange() = default;
     MarkRange(size_t begin_, size_t end_);
 
-    size_t getNumberOfMarks() const;
+    [[nodiscard]] size_t getNumberOfMarks() const;
 
     bool operator==(const MarkRange & rhs) const;
     bool operator<(const MarkRange & rhs) const;
@@ -41,11 +41,11 @@ struct MarkRanges : public DevectorWithMemoryTracking<MarkRange>
 
     using DevectorWithMemoryTracking<MarkRange>::devector;
 
-    size_t getNumberOfMarks() const;
-    bool isOneRangeForWholePart(size_t num_marks_in_part) const;
+    [[nodiscard]] size_t getNumberOfMarks() const;
+    [[nodiscard]] bool isOneRangeForWholePart(size_t num_marks_in_part) const;
 
     void serialize(WriteBuffer & out) const;
-    String describe() const;
+    [[nodiscard]] String describe() const;
     void deserialize(ReadBuffer & in);
 
     SearchAlgorithm search_algorithm = {SearchAlgorithm::Unknown};

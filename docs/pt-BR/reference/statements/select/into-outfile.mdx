@@ -22,13 +22,13 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 
 `level` é um literal numérico. Há suporte para inteiros positivos nos seguintes intervalos: `1-12` para os tipos `gzip`, `deflate` e `lz4`, `1-22` para o tipo `zstd` e `1-9` para os demais tipos de compressão. Para `gzip` e `deflate`, níveis acima de `9` exigem a compilação padrão com `libdeflate`; uma compilação sem `libdeflate` oferece suporte aos níveis `1-9`.
 
-## Detalhes de implementação
+## Detalhes de implementação {#implementation-details}
 
 * Esta funcionalidade está disponível no [cliente de linha de comando](/pt-BR/concepts/features/interfaces/client) e no [clickhouse-local](/pt-BR/concepts/features/tools-and-utilities/clickhouse-local). Portanto, uma consulta enviada pela [interface HTTP](/pt-BR/concepts/features/interfaces/http) falhará.
 * A consulta falhará se já existir um arquivo com o mesmo nome.
 * O [formato de saída](/pt-BR/reference/formats/index) padrão é `TabSeparated` (como no modo batch do cliente de linha de comando). Use a cláusula [FORMAT](/pt-BR/reference/statements/select/format) para alterá-lo.
 * Se `AND STDOUT` for mencionado na consulta, a saída gravada no arquivo também será exibida na saída padrão. Se usado com compressão, o conteúdo sem compressão será exibido na saída padrão.
-* Se `APPEND` for mencionado na consulta, a saída será acrescentada a um arquivo existente. Se a compressão for usada, `APPEND` não poderá ser usado.
+* Se `APPEND` for mencionado na consulta, a saída será acrescentada a um arquivo existente. Se a compressão for usada, `APPEND` não poderá ser usado. Formatos que não suportam acréscimo, como `JSON`, `Parquet`, `Arrow`, `ORC` e `Avro`, não podem ser usados para acrescentar dados a um arquivo não vazio: a consulta falha com `CANNOT_APPEND_TO_FILE`. Ao acrescentar dados a um arquivo não vazio, o cabeçalho de formatos como `CSVWithNames` não é gravado novamente.
 * Ao gravar em um arquivo que já existe, é obrigatório usar `APPEND` ou `TRUNCATE`.
 
 **Exemplo**

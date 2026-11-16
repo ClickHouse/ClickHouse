@@ -96,7 +96,7 @@ struct QuantileExactWeighted
     }
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
-    Value get(Float64 level) const
+    [[nodiscard]] Value get(Float64 level) const
     {
         if constexpr (interpolated)
             return getInterpolatedImpl(level);
@@ -114,7 +114,7 @@ struct QuantileExactWeighted
             getManyImpl(levels, indices, num_levels, result);
     }
 
-    Float64 getFloat(Float64 level) const
+    [[nodiscard]] Float64 getFloat(Float64 level) const
     {
         if constexpr (interpolated)
             return getFloatInterpolatedImpl(level);
@@ -132,7 +132,7 @@ struct QuantileExactWeighted
 
 private:
     /// get implementation without interpolation
-    Value getImpl(Float64 level) const
+    [[nodiscard]] Value getImpl(Float64 level) const
     requires(!interpolated)
     {
         size_t size = map.size();
@@ -245,7 +245,7 @@ private:
     }
 
     /// getFloat implementation without interpolation
-    Float64 getFloatImpl(Float64) const
+    [[nodiscard]] Float64 getFloatImpl(Float64) const
     requires(!interpolated)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat is not implemented for QuantileExact");
@@ -259,7 +259,7 @@ private:
     }
 
     /// get implementation with interpolation
-    Value getInterpolatedImpl(Float64 level) const
+    [[nodiscard]] Value getInterpolatedImpl(Float64 level) const
     requires interpolated
     {
         size_t size = map.size();
@@ -321,7 +321,7 @@ private:
     }
 
     /// getFloat implementation with interpolation
-    Float64 getFloatInterpolatedImpl(Float64 level) const
+    [[nodiscard]] Float64 getFloatInterpolatedImpl(Float64 level) const
     requires interpolated
     {
         size_t size = map.size();
@@ -363,7 +363,7 @@ private:
         }
     }
 
-    UnderlyingType getNativeInterpolatedImpl(Float64 level) const
+    [[nodiscard]] UnderlyingType getNativeInterpolatedImpl(Float64 level) const
     requires interpolated
     {
         size_t size = map.size();
@@ -516,7 +516,7 @@ void registerAggregateFunctionsQuantileExactWeighted(AggregateFunctionFactory & 
 void registerAggregateFunctionsQuantileExactWeighted(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
 
     FunctionDocumentation::Description description = R"(
 Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence, taking into account the weight of each element.
@@ -570,7 +570,7 @@ SELECT quantileExactWeighted(n, val) FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileExactWeighted::name, {createAggregateFunctionQuantile<FuncQuantileExactWeighted, false>, documentation});
+    factory.registerFunction(NameQuantileExactWeighted::name, {createAggregateFunctionQuantile<FuncQuantileExactWeighted, false>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Exactly computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously, taking into account the weight of each element.
@@ -669,7 +669,7 @@ FROM numbers(9)
     FunctionDocumentation::Category category_interpolated = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_interpolated = {description_interpolated, syntax_interpolated, arguments_interpolated, parameters_interpolated, returned_value_interpolated, examples_interpolated, introduced_in_interpolated, category_interpolated};
 
-    factory.registerFunction(NameQuantileExactWeightedInterpolated::name, {createAggregateFunctionQuantile<FuncQuantileExactWeighted, true>, documentation_interpolated});
+    factory.registerFunction(NameQuantileExactWeightedInterpolated::name, {createAggregateFunctionQuantile<FuncQuantileExactWeighted, true>, documentation_interpolated, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
     FunctionDocumentation::Description description_quantiles_interpolated = R"(
 Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using linear interpolation at different levels simultaneously, taking into account the weight of each element.
 

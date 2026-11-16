@@ -1,17 +1,21 @@
 #pragma once
 
 #include <Analyzer/IQueryTreeNode.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Analyzer/TableExpressionModifiers.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
 #include <memory>
 
 namespace DB
 {
+
+struct QueryPlanStepSerialization;
+struct QueryPlanStepDeserialization;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -52,7 +56,7 @@ struct PrewhereInfo
         UInt64 key;
         String condition;
         /// Hashes of the leading conjuncts of the PREWHERE condition that the key covers.
-        std::vector<UInt64> conjunct_hashes;
+        VectorWithMemoryTracking<UInt64> conjunct_hashes;
     };
     std::optional<QueryConditionCacheAttribution> query_condition_cache_attribution;
 
@@ -60,12 +64,12 @@ struct PrewhereInfo
     explicit PrewhereInfo(ActionsDAG prewhere_actions_, String prewhere_column_name_)
             : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
 
-    std::string dump() const;
+    [[nodiscard]] std::string dump() const;
 
-    PrewhereInfo clone() const;
+    [[nodiscard]] PrewhereInfo clone() const;
 
-    void serialize(IQueryPlanStep::Serialization & ctx) const;
-    static PrewhereInfo deserialize(IQueryPlanStep::Deserialization & ctx);
+    void serialize(QueryPlanStepSerialization & ctx) const;
+    static PrewhereInfo deserialize(QueryPlanStepDeserialization & ctx);
 };
 
 /// Same as FilterInfo, but with ActionsDAG.
@@ -75,10 +79,10 @@ struct FilterDAGInfo
     String column_name;
     bool do_remove_column = false;
 
-    std::string dump() const;
+    [[nodiscard]] std::string dump() const;
 
-    void serialize(IQueryPlanStep::Serialization & ctx) const;
-    static FilterDAGInfo deserialize(IQueryPlanStep::Deserialization & ctx);
+    void serialize(QueryPlanStepSerialization & ctx) const;
+    static FilterDAGInfo deserialize(QueryPlanStepDeserialization & ctx);
 };
 
 struct InputOrderInfo
@@ -144,6 +148,11 @@ struct SelectQueryInfo
     /// Storage table expression
     /// It's guaranteed to be present in JOIN TREE of `query_tree`
     TableExpressionNodePtr table_expression;
+
+    /// A parallel-replicas read through a table function is coordinated under the name of the storage the call
+    /// resolved to, not under the identity of the call: set for a read shipped in a plan fragment, which a replica
+    /// rebuilds from the storage alone. Kept here so that every step rebuilt from this read inherits it.
+    bool parallel_replicas_coordinated_under_storage_name = false;
 
     /// Table expression modifiers for storage
     std::optional<TableExpressionModifiers> table_expression_modifiers;
@@ -211,7 +220,7 @@ struct SelectQueryInfo
     /// If query has aggregate functions
     bool has_aggregates = false;
 
-    ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
+    [[nodiscard]] ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
     bool settings_limit_offset_done = false;
     bool is_internal = false;
@@ -227,19 +236,19 @@ struct SelectQueryInfo
     /// For IStorageSystemOneBlock
     std::vector<UInt8> columns_mask;
 
-    bool isFinal() const;
+    [[nodiscard]] bool isFinal() const;
 
     /// Whether the table expression has the STREAM modifier.
-    bool isStream() const;
+    [[nodiscard]] bool isStream() const;
 
     /// The `SAMPLE` and `SAMPLE ... OFFSET` ratios of the table expression.
-    std::optional<TableExpressionModifiers::Rational> getSampleSizeRatio() const;
-    std::optional<TableExpressionModifiers::Rational> getSampleOffsetRatio() const;
+    [[nodiscard]] std::optional<TableExpressionModifiers::Rational> getSampleSizeRatio() const;
+    [[nodiscard]] std::optional<TableExpressionModifiers::Rational> getSampleOffsetRatio() const;
 
     /// Analyzer generates unique ColumnIdentifiers like __table1.__partition_id in filter nodes,
     /// while key analysis still requires unqualified column names.
     /// This function generates a map that maps the unique names to table column names,
     /// for the current table (`table_expression`).
-    std::unordered_map<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
+    [[nodiscard]] UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
 };
 }
