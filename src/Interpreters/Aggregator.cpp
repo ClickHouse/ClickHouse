@@ -3963,7 +3963,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
         }
     };
 
-    /// The working memory of the merges of the states of indexed tables, which every partition reuses.
+    /// The working memory of `mergeSourceStates` in the merge by cell index, which every partition reuses.
     PaddedPODArray<UInt32> order;
     AggregateDataPtrs group;
 
