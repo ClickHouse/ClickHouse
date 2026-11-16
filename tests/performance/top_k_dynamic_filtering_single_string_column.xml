@@ -11,6 +11,7 @@
     <fill_query>INSERT INTO hits_lc_top_k SELECT SearchPhrase, MobilePhoneModel, Title FROM hits_10m_single</fill_query>
 
     <query>SELECT SearchPhrase FROM hits_100m_single WHERE SearchPhrase != '' ORDER BY SearchPhrase LIMIT 10 FORMAT Null</query>
+    <query>SELECT SearchPhrase FROM hits_100m_single WHERE SearchPhrase != 'zzzz' ORDER BY SearchPhrase LIMIT 10 FORMAT Null</query>
     <query>SELECT Title FROM hits_100m_single WHERE Title != '' ORDER BY Title DESC LIMIT 10 FORMAT Null</query>
     <query>SELECT MobilePhoneModel FROM hits_100m_single ORDER BY MobilePhoneModel LIMIT 300 FORMAT Null</query>
     <query>SELECT SearchPhrase FROM hits_lc_top_k WHERE SearchPhrase != '' ORDER BY SearchPhrase LIMIT 10 FORMAT Null</query>

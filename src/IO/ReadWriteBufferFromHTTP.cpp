@@ -5,6 +5,7 @@
 #include <IO/parseHTTPDate.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/NetException.h>
 #include <Common/maskURIPassword.h>
 #include <Poco/Net/NetException.h>
@@ -729,7 +730,7 @@ bool ReadWriteBufferFromHTTP::nextImpl()
                 }
                 else
                 {
-                    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+                    setWorkingBuffer(impl->buffer(), impl->offset());
                 }
             }
 
@@ -744,7 +745,7 @@ bool ReadWriteBufferFromHTTP::nextImpl()
 
             next_result = impl->next();
 
-            BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+            setWorkingBuffer(impl->buffer(), impl->offset());
 
             offset_from_begin_pos += working_buffer.size();
 
@@ -1124,7 +1125,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
     return ptr;
 }
 
-void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri)
+void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri, const HTTPHeaderFilter & header_filter)
 {
     credentials.clear();
 
@@ -1142,6 +1143,8 @@ void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const 
     {
         credentials.setUsername(user_info);
     }
+
+    header_filter.checkBasicCredentials(credentials);
 }
 
 }
