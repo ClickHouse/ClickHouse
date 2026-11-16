@@ -16,9 +16,9 @@ ASTWithAlias::ASTWithAlias(const ASTWithAlias &) = default;
 ASTWithAlias & ASTWithAlias::operator=(const ASTWithAlias &) = default;
 
 static void writeAlias(const String & name, WriteBuffer & ostr, const ASTWithAlias::FormatSettings & settings,
-    IASTFormatState & state, size_t indent)
+    IASTFormatState & state, const IAST::FormatStateStacked & frame)
 {
-    writeASTFormattingOptionalBreak(ostr, state, 4 * indent);
+    writeASTFormattingOptionalBreak(ostr, state, frame, 0);
     ostr << "AS ";
     settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
 }
@@ -28,7 +28,7 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
 {
     std::optional<ASTFormattingGroup> group;
     if (!alias.empty())
-        group.emplace(ostr, state);
+        group.emplace(ostr, state, frame);
 
     /// This is needed for distributed queries with the old analyzer. Remove it after removing the old analyzer.
     /// If we have previously output this node elsewhere in the query, now it is enough to output only the alias.
@@ -49,7 +49,7 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
         inner.need_parens = false;
         formatImplWithoutAlias(ostr, settings, state, inner);
         ostr.write(')');
-        writeAlias(alias, ostr, settings, state, frame.indent);
+        writeAlias(alias, ostr, settings, state, frame);
     }
     else
     {
@@ -71,7 +71,7 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
         }
         formatImplWithoutAlias(ostr, settings, state, frame);
         if (!alias.empty())
-            writeAlias(alias, ostr, settings, state, frame.indent);
+            writeAlias(alias, ostr, settings, state, frame);
         if (wrap_around_alias)
             ostr.write(')');
     }

@@ -1,4 +1,5 @@
 #include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitorToStringWriter.h>
 #include <Common/checkStackSize.h>
 #include <Common/FieldVisitorToJSONElement.h>
 
@@ -111,66 +112,18 @@ String FieldVisitorToString::operator() (const bool & x) const { return x ? "tru
 String FieldVisitorToString::operator() (const CustomType & x) const { return x.toString(); }
 String FieldVisitorToString::operator() (const NumberLiteral & x) const { return x.value; }
 
-String FieldVisitorToString::operator() (const Array & x) const
+template <typename Container>
+static String formatContainer(const Container & value)
 {
-    checkStackSize();
-    WriteBufferFromOwnString wb;
-
-    wb << '[';
-    for (Array::const_iterator it = x.begin(); it != x.end(); ++it)
-    {
-        if (it != x.begin())
-            wb.write(", ", 2);
-        wb << applyVisitor(*this, *it);
-    }
-    wb << ']';
-
-    return wb.str();
+    WriteBufferFromOwnString out;
+    const FieldLiteralFormatting formatting;
+    FieldVisitorToStringWriter<>(out, formatting)(value);
+    return out.str();
 }
 
-String FieldVisitorToString::operator() (const Tuple & x) const
-{
-    checkStackSize();
-    WriteBufferFromOwnString wb;
-
-    // For single-element tuples we must use the explicit tuple() function,
-    // or they will be parsed back as plain literals.
-    if (x.size() > 1)
-    {
-        wb << '(';
-    }
-    else
-    {
-        wb << "tuple(";
-    }
-
-    for (auto it = x.begin(); it != x.end(); ++it)
-    {
-        if (it != x.begin())
-            wb << ", ";
-        wb << applyVisitor(*this, *it);
-    }
-    wb << ')';
-
-    return wb.str();
-}
-
-String FieldVisitorToString::operator() (const Map & x) const
-{
-    checkStackSize();
-    WriteBufferFromOwnString wb;
-
-    wb << '[';
-    for (auto it = x.begin(); it != x.end(); ++it)
-    {
-        if (it != x.begin())
-            wb << ", ";
-        wb << applyVisitor(*this, *it);
-    }
-    wb << ']';
-
-    return wb.str();
-}
+String FieldVisitorToString::operator() (const Array & x) const { return formatContainer(x); }
+String FieldVisitorToString::operator() (const Tuple & x) const { return formatContainer(x); }
+String FieldVisitorToString::operator() (const Map & x) const { return formatContainer(x); }
 
 String FieldVisitorToString::operator() (const Object & x) const
 {

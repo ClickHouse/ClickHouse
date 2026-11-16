@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <Parsers/ASTFormatting.h>
 #include <Common/SipHash.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -168,7 +169,7 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
     frame.current_select = this;
     frame.expression_list_prepend_whitespace = true;
 
-    std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
+    const ASTFormattingIndent indent_str{state, frame, !s.one_line};
 
     if (with())
     {

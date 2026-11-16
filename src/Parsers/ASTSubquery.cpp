@@ -1,4 +1,5 @@
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTFormatting.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -89,7 +90,8 @@ void ASTSubquery::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         return;
     }
 
-    std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
+    ASTFormattingGroup group(ostr, state, frame);
+    const ASTFormattingIndent indent_str{state, frame, !settings.one_line};
     std::string nl_or_nothing = settings.one_line ? "" : "\n";
 
     ostr << "(" << nl_or_nothing;

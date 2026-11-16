@@ -84,7 +84,8 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("hilite,highlight", "add syntax highlight with ANSI terminal escape sequences (can also use --highlight)")
             ("oneline", "format in single line")
             ("max_line_length", po::value<size_t>()->default_value(0), "format in single line queries with length less than specified")
-            ("line_length", po::value<std::string>()->default_value("120"), "wrap multiline queries at this display width (0 disables wrapping)")
+            ("wrap_width", po::value<std::string>()->default_value("0"), "wrap multiline queries at this display width (0 disables wrapping)")
+            ("line_length", po::value<std::string>(), "alias for wrap_width")
             ("quiet,q", "just check syntax, no output on success")
             ("multiquery,n", "allow multiple queries in the same file")
             ("obfuscate", "obfuscate instead of formatting")
@@ -116,14 +117,26 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         bool quiet = options.contains("quiet");
         bool multiple = options.contains("multiquery");
         size_t max_line_length = options["max_line_length"].as<size_t>();
-        const auto & line_length_string = options["line_length"].as<std::string>();
-        size_t line_length = 0;
-        auto [line_length_end, line_length_error] = std::from_chars(
-            line_length_string.data(), line_length_string.data() + line_length_string.size(), line_length);
-        if (line_length_error != std::errc{} || line_length_end != line_length_string.data() + line_length_string.size())
+        size_t wrap_width = 0;
+        for (const auto * option_name : {"wrap_width", "line_length"})
         {
-            std::cerr << "Option 'line_length' must be a nonnegative integer." << std::endl;
-            return 2;
+            if (!options.contains(option_name))
+                continue;
+
+            const auto & value_string = options[option_name].as<std::string>();
+            size_t value = 0;
+            auto [end, error] = std::from_chars(value_string.data(), value_string.data() + value_string.size(), value);
+            if (error != std::errc{} || end != value_string.data() + value_string.size())
+            {
+                std::cerr << "Option '" << option_name << "' must be a nonnegative integer." << std::endl;
+                return 2;
+            }
+            if (std::string_view(option_name) == "line_length" && !options["wrap_width"].defaulted() && value != wrap_width)
+            {
+                std::cerr << "Options 'wrap_width' and 'line_length' must have the same value when used together." << std::endl;
+                return 2;
+            }
+            wrap_width = value;
         }
         bool obfuscate = options.contains("obfuscate");
         bool backslash = options.contains("backslash");
@@ -314,7 +327,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         IAST::FormatSettings settings(oneline_current_query);
                         settings.show_secrets = show_secrets;
                         settings.print_pretty_type_names = !oneline_current_query;
-                        String formatted_query = formatASTWithLineLength(*res, settings, line_length);
+                        String formatted_query = formatASTWithLineLength(*res, settings, wrap_width);
 #if USE_REPLXX
                         if (hilite)
                             formatted_query = highlighted(formatted_query, *context, rainbow_parentheses);
@@ -366,7 +379,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         IAST::FormatSettings settings(oneline_current_query);
                         settings.show_secrets = show_secrets;
                         settings.print_pretty_type_names = !oneline_current_query;
-                        String formatted_query = formatASTWithLineLength(*res, settings, line_length);
+                        String formatted_query = formatASTWithLineLength(*res, settings, wrap_width);
                         str_buf.write(formatted_query.data(), formatted_query.size());
 
                         if (insert_query_payload)

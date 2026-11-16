@@ -2,6 +2,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitorToStringWriter.h>
 #include <Common/FieldVisitorHash.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFormatting.h>
@@ -301,68 +302,22 @@ public:
 namespace
 {
 
-class FieldVisitorWithLineBreaks : public StaticVisitor<void>
+struct FieldLiteralASTFormatting
 {
-public:
-    FieldVisitorWithLineBreaks(WriteBuffer & ostr_, IASTFormatState & state_, size_t indent_)
-        : ostr(ostr_), state(state_), indent(indent_)
-    {
-    }
-
-    template <typename T>
-    void operator() (const T & x) const
-    {
-        ostr << FieldVisitorToString()(x);
-    }
-
-    void operator() (const Array & x) const
-    {
-        formatContainer(x, "[", ']');
-    }
-
-    void operator() (const Tuple & x) const
-    {
-        formatContainer(x, x.size() > 1 ? "(" : "tuple(", ')');
-    }
-
-    void operator() (const Map & x) const
-    {
-        formatContainer(x, "[", ']');
-    }
-
-private:
-    WriteBuffer & ostr;
     IASTFormatState & state;
-    size_t indent;
+    IAST::FormatStateStacked frame;
 
-    template <typename Container>
-    void formatContainer(const Container & x, const char * prefix, char suffix) const
+    ASTFormattingGroup startGroup(WriteBuffer & out) const
     {
-        checkStackSize();
-        ASTFormattingGroup group(ostr, state);
-        if (!group)
-        {
-            ostr << FieldVisitorToString()(x);
-            return;
-        }
-
-        ostr << prefix;
-        if (!x.empty())
-        {
-            writeASTFormattingBreak(ostr, state, indent + 4, '\0');
-            FieldVisitorWithLineBreaks nested(ostr, state, indent + 4);
-            for (auto it = x.begin(); it != x.end(); ++it)
-            {
-                if (it != x.begin())
-                {
-                    ostr << ',';
-                    writeASTFormattingBreak(ostr, state, indent + 4);
-                }
-                applyVisitor(nested, *it);
-            }
-            writeASTFormattingBreak(ostr, state, indent, '\0');
-        }
-        ostr << suffix;
+        return ASTFormattingGroup(out, state, frame);
+    }
+    void writeBreak(WriteBuffer & out, size_t nest, char flat) const
+    {
+        writeASTFormattingBreak(out, state, frame, nest, flat);
+    }
+    void writeFillBreak(WriteBuffer & out) const
+    {
+        writeASTFormattingFillBreak(out, state, frame);
     }
 };
 
@@ -371,7 +326,10 @@ private:
 void ASTLiteral::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
 {
     if (settings.literal_escaping_style == LiteralEscapingStyle::Regular && !settings.one_line && state.formatting)
-        applyVisitor(FieldVisitorWithLineBreaks(ostr, state, 4 * frame.indent), value);
+    {
+        const FieldLiteralASTFormatting formatting{state, frame};
+        applyVisitor(FieldVisitorToStringWriter<FieldLiteralASTFormatting>(ostr, formatting), value);
+    }
     else if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
         ostr << applyVisitor(FieldVisitorToString(), value);
     else if (settings.literal_escaping_style == LiteralEscapingStyle::PostgreSQL)

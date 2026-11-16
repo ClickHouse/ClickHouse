@@ -84,7 +84,7 @@ void ASTWindowDefinition::updateTreeHashImpl(SipHash & hash_state, bool ignore_a
 void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & settings,
                                      FormatState & state, FormatStateStacked format_frame) const
 {
-    ASTFormattingGroup formatting_group(ostr, state);
+    ASTFormattingGroup formatting_group(ostr, state, format_frame);
     format_frame.expression_list_prepend_whitespace = false;
     bool need_space = false;
 
@@ -99,7 +99,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
     {
         if (need_space)
         {
-            writeASTFormattingBreak(ostr, state, 4 * format_frame.indent);
+            writeASTFormattingBreak(ostr, state, format_frame, 0);
         }
 
         ostr << "PARTITION BY ";
@@ -112,7 +112,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
     {
         if (need_space)
         {
-            writeASTFormattingBreak(ostr, state, 4 * format_frame.indent);
+            writeASTFormattingBreak(ostr, state, format_frame, 0);
         }
 
         ostr << "ORDER BY ";
@@ -124,7 +124,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
     if (!frame_is_default)
     {
         if (need_space)
-            writeASTFormattingBreak(ostr, state, 4 * format_frame.indent);
+            writeASTFormattingBreak(ostr, state, format_frame, 0);
 
         /// The frame offset grammar requires the offset to be wrapped in parentheses
         /// when it is an aliased expression (e.g. `((1 + 1) AS x) PRECEDING`),
@@ -149,7 +149,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
             ostr << " "
                 << (!frame_begin_preceding ? "FOLLOWING" : "PRECEDING");
         }
-        writeASTFormattingBreak(ostr, state, 4 * format_frame.indent);
+        writeASTFormattingBreak(ostr, state, format_frame);
         ostr << "AND ";
         if (frame_end_type == WindowFrame::BoundaryType::Current)
         {
@@ -210,9 +210,12 @@ void ASTWindowListElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_
 void ASTWindowListElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings,
                                       FormatState & state, FormatStateStacked frame) const
 {
+    ASTFormattingGroup group(ostr, state, frame);
     ostr << backQuoteIfNeed(name);
     ostr << " AS (";
+    writeASTFormattingBreak(ostr, state, frame, 1, '\0');
     definition->format(ostr, settings, state, frame);
+    writeASTFormattingBreak(ostr, state, frame, 0, '\0');
     ostr << ")";
 }
 

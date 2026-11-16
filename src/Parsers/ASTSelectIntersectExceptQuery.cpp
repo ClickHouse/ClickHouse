@@ -1,4 +1,5 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTFormatting.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -37,7 +38,7 @@ void ASTSelectIntersectExceptQuery::updateTreeHashImpl(SipHash & hash_state, boo
 
 void ASTSelectIntersectExceptQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+    const ASTFormattingIndent indent_str{state, frame, !settings.one_line};
 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {

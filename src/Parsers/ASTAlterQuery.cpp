@@ -1,4 +1,5 @@
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTFormatting.h>
 
 #include <Databases/DataLake/DataLakeConstants.h>
 #include <IO/Operators.h>
@@ -21,7 +22,6 @@
 #include <Parsers/ASTRefreshStrategy.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Storages/DataDestinationType.h>
-#include <base/scope_guard.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <base/EnumReflection.h>
@@ -697,8 +697,9 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
 
 void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    ASTFormattingGroup formatting_group(ostr, state, frame);
     ostr << "(";
-    auto closing_bracket_guard = make_scope_guard(std::function<void()>([&ostr]() { ostr << ")"; }));
+    writeASTFormattingBreak(ostr, state, frame, 1, '\0');
 
     if (type == ASTAlterCommand::ADD_COLUMN)
     {
@@ -1006,7 +1007,7 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
                 }
                 ostr << backQuoteIfNeed(to_table)
                              ;
-                return;
+                break;
             default:
                 break;
         }
@@ -1096,7 +1097,8 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             partition->format(ostr, settings, state, frame);
         }
 
-        ostr << " WHERE ";
+        writeASTFormattingBreak(ostr, state, frame);
+        ostr << "WHERE ";
         predicate->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::UPDATE)
@@ -1118,7 +1120,8 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             partition->format(ostr, settings, state, frame);
         }
 
-        ostr << " WHERE ";
+        writeASTFormattingBreak(ostr, state, frame);
+        ostr << "WHERE ";
         predicate->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_TTL)
@@ -1237,6 +1240,9 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     }
     else
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");
+
+    writeASTFormattingBreak(ostr, state, frame, 0, '\0');
+    ostr << ")";
 }
 
 void ASTAlterCommand::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
@@ -1539,7 +1545,7 @@ void ASTAlterQuery::readJSON(const Poco::JSON::Object & json)
 
 void ASTAlterQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
+    ASTFormattingIndent indent_str{state, frame, !settings.one_line};
     ostr << indent_str;
 
     switch (alter_object)

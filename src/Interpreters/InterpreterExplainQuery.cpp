@@ -481,7 +481,9 @@ namespace
 
                 if (auto replaced = secret_arguments.replaced_arguments.find(i); replaced != secret_arguments.replaced_arguments.end())
                 {
-                    replaceWithMaskedText(arguments[i], replaced->second);
+                    const auto & replacement = replaced->second;
+                    const auto text = replacement.name ? *replacement.name + " = " + replacement.value : replacement.value;
+                    replaceWithMaskedText(arguments[i], text);
                     continue;
                 }
 

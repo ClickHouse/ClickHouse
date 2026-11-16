@@ -37,39 +37,69 @@ bool fitsLineLength(std::string_view query, size_t line_length)
 
 struct FlatWidth
 {
-    /// Tabs advance to multiples of eight columns, so width depends on the starting column modulo eight.
+    /// Tabs use eight starting-column residues; later physical lines retain their widest and final widths.
     std::array<size_t, 8> columns{};
+    size_t last_line_width = 0;
+    size_t max_after_first_line = 0;
     bool multiline = false;
 
     void append(const FlatWidth & other)
     {
-        multiline |= other.multiline;
+        if (multiline)
+        {
+            size_t joined_width = last_line_width + other.columns[last_line_width % columns.size()];
+            max_after_first_line = std::max({max_after_first_line, joined_width, other.max_after_first_line});
+            last_line_width = other.multiline ? other.last_line_width : joined_width;
+        }
+        else if (other.multiline)
+        {
+            last_line_width = other.last_line_width;
+            max_after_first_line = other.max_after_first_line;
+        }
         if (multiline)
             return;
         for (size_t prefix = 0; prefix < columns.size(); ++prefix)
             columns[prefix] += other.columns[(prefix + columns[prefix]) % columns.size()];
+        multiline = other.multiline;
     }
 
     void append(std::string_view text)
     {
-        multiline |= text.contains('\n');
-        if (multiline)
-            return;
-
+        size_t newline = text.find('\n');
+        auto first_line = text.substr(0, newline);
         FlatWidth width;
-        width.columns.fill(displayWidth(text));
-        if (text.contains('\t'))
+        width.columns.fill(displayWidth(first_line));
+        if (first_line.contains('\t'))
             for (size_t prefix = 1; prefix < columns.size(); ++prefix)
-                width.columns[prefix] = displayWidth(text, prefix);
+                width.columns[prefix] = displayWidth(first_line, prefix);
+        width.multiline = newline != std::string_view::npos;
+        while (newline != std::string_view::npos)
+        {
+            text.remove_prefix(newline + 1);
+            newline = text.find('\n');
+            width.last_line_width = displayWidth(text.substr(0, newline));
+            width.max_after_first_line = std::max(width.max_after_first_line, width.last_line_width);
+        }
         append(width);
+    }
+
+    bool fits(size_t column, size_t limit) const
+    {
+        return column <= limit && columns[column % columns.size()] <= limit - column;
     }
 };
 
 struct FormattingGroup
 {
     size_t parent;
-    FlatWidth width;
-    std::array<size_t, 8> suffix_columns{};
+    size_t source_indent;
+    ASTFormattingGroup::Mode mode;
+    size_t source_line_indent = 0;
+    size_t end_offset = 0;
+    size_t end_event = 0;
+    FlatWidth width{};
+    FlatWidth suffix{};
+    size_t indent = 0;
     bool broken = false;
 };
 
@@ -80,15 +110,16 @@ struct FormattingEvent
         Open,
         Close,
         Break,
+        Indent,
     };
-
     Kind kind;
     size_t offset;
     size_t group;
     size_t indent = 0;
+    size_t nest = 0;
     size_t length = 0;
-    /// Optional breaks check the following fragment instead of inheriting the group's layout.
-    bool optional = false;
+    bool fill = false;
+    FlatWidth following{};
 };
 
 }
@@ -96,39 +127,68 @@ struct FormattingEvent
 class ASTFormatting
 {
 public:
-    explicit ASTFormatting(WriteBuffer & out_)
-        : out(out_)
+    explicit ASTFormatting(WriteBuffer & out_) : out(out_)
     {
     }
 
     WriteBuffer & out;
     std::vector<FormattingGroup> groups;
-    /// Events have nondecreasing byte offsets in `out`; groups open and close in stack order.
+    /// Offsets are monotonic; close positions are stored in groups so destruction never allocates.
     std::vector<FormattingEvent> events;
     size_t current_group = no_group;
-    size_t open_groups = 0;
 
-    void reserveEvents(size_t extra)
+    String layout(std::string_view query, size_t line_length)
     {
-        /// Reserve pending group closures so `ASTFormattingGroup` destruction cannot allocate.
-        size_t required = events.size() + open_groups + extra;
-        if (required > events.capacity())
-            events.reserve(std::max(required, events.capacity() * 2));
-    }
-
-    static String
-    layout(std::string_view query, size_t line_length, std::vector<FormattingGroup> & groups, const std::vector<FormattingEvent> & events)
-    {
-        size_t cursor = 0;
+        chassert(current_group == no_group);
+        std::vector<FormattingEvent> ordered;
+        ordered.reserve(events.size() + groups.size());
         size_t group = no_group;
-        for (const auto & event : events)
+        for (size_t i = 0; i <= events.size(); ++i)
+        {
+            while (group != no_group && groups[group].end_event == i)
+            {
+                ordered.push_back({.kind = FormattingEvent::Close, .offset = groups[group].end_offset, .group = group});
+                group = groups[group].parent;
+            }
+            if (i == events.size())
+                break;
+            ordered.push_back(events[i]);
+            if (events[i].kind == FormattingEvent::Open)
+            {
+                chassert(groups[events[i].group].parent == group);
+                group = events[i].group;
+            }
+        }
+        chassert(group == no_group);
+
+        size_t cursor = 0;
+        size_t source_line_indent = 0;
+        bool source_line_has_content = false;
+        for (const auto & event : ordered)
         {
             chassert(cursor <= event.offset && event.offset <= query.size());
+            auto fragment = query.substr(cursor, event.offset - cursor);
             if (group != no_group)
-                groups[group].width.append(query.substr(cursor, event.offset - cursor));
+                groups[group].width.append(fragment);
+            size_t newline = fragment.rfind('\n');
+            if (newline != std::string_view::npos)
+            {
+                source_line_indent = 0;
+                source_line_has_content = false;
+                fragment.remove_prefix(newline + 1);
+            }
+            if (!source_line_has_content)
+            {
+                size_t content = fragment.find_first_not_of(" \t");
+                source_line_indent += displayWidth(fragment.substr(0, content), source_line_indent);
+                source_line_has_content = content != std::string_view::npos;
+            }
             cursor = event.offset;
             if (event.kind == FormattingEvent::Open)
+            {
                 group = event.group;
+                groups[group].source_line_indent = source_line_indent;
+            }
             else if (event.kind == FormattingEvent::Close)
             {
                 group = groups[event.group].parent;
@@ -137,25 +197,29 @@ public:
             }
         }
 
-        /// Include text after each group up to the next break or newline, such as closing brackets and commas.
+        /// Lookahead ends at the next break in the same scope; nested groups remain whole fitting candidates.
         FlatWidth suffix;
         cursor = query.size();
-        for (auto it = events.rbegin(); it != events.rend(); ++it)
+        for (auto it = ordered.rbegin(); it != ordered.rend(); ++it)
         {
-            auto text = query.substr(it->offset, cursor - it->offset);
-            if (size_t newline = text.find('\n'); newline != std::string_view::npos)
-            {
-                text = text.substr(0, newline);
-                suffix = {};
-            }
             FlatWidth preceding;
-            preceding.append(text);
+            preceding.append(query.substr(it->offset, cursor - it->offset));
             preceding.append(suffix);
             suffix = preceding;
             if (it->kind == FormattingEvent::Close)
-                groups[it->group].suffix_columns = suffix.columns;
+            {
+                groups[it->group].suffix = suffix;
+            }
+            else if (it->kind == FormattingEvent::Open)
+            {
+                suffix = groups[it->group].width;
+                suffix.append(groups[it->group].suffix);
+            }
             else if (it->kind == FormattingEvent::Break)
+            {
+                it->following = suffix;
                 suffix = {};
+            }
             cursor = it->offset;
         }
 
@@ -163,140 +227,153 @@ public:
         result.reserve(query.size());
         size_t column = 0;
         size_t line_start = 0;
+        size_t line_indent = 0;
         bool line_has_content = false;
+        bool line_indent_assigned = false;
         auto append = [&](std::string_view text)
         {
             size_t newline = text.rfind('\n');
-            if (newline == std::string_view::npos)
-            {
-                column += displayWidth(text, column);
-                line_has_content |= text.find_first_not_of(" \t") != std::string_view::npos;
-            }
-            else
+            if (newline != std::string_view::npos)
             {
                 line_start = result.size() + newline + 1;
-                text = text.substr(newline + 1);
-                column = displayWidth(text);
-                line_has_content = text.find_first_not_of(" \t") != std::string_view::npos;
+                column = 0;
+                line_indent = 0;
+                line_has_content = false;
+                line_indent_assigned = false;
             }
+            auto tail = newline == std::string_view::npos ? text : text.substr(newline + 1);
+            if (!line_has_content)
+            {
+                size_t content = tail.find_first_not_of(" \t");
+                line_indent = column + displayWidth(tail.substr(0, content), column);
+                line_has_content = content != std::string_view::npos;
+            }
+            column += displayWidth(tail, column);
+            result.append(text);
         };
 
         cursor = 0;
-        for (size_t i = 0; i < events.size(); ++i)
+        for (const auto & event : ordered)
         {
-            const auto & event = events[i];
-            auto text = query.substr(cursor, event.offset - cursor);
-            append(text);
-            result.append(text);
+            append(query.substr(cursor, event.offset - cursor));
             cursor = event.offset;
-
             if (event.kind == FormattingEvent::Open)
             {
                 auto & current = groups[event.group];
-                size_t width = current.width.columns[column % 8];
-                current.broken = current.width.multiline || column > line_length || width > line_length - column
-                    || current.suffix_columns[(column + width) % 8] > line_length - column - width;
+                current.indent = line_indent;
+                FlatWidth width = current.width;
+                width.append(current.suffix);
+                current.broken = !current.width.multiline && !width.fits(column, line_length);
+                if (current.width.multiline && current.mode == ASTFormattingGroup::Mode::ConsistentLines)
+                {
+                    /// Call arguments break together when the opening line or the tail after a subquery does not fit.
+                    size_t tail_column = current.width.last_line_width;
+                    size_t widest_column = current.width.max_after_first_line;
+                    if (current.indent != current.source_line_indent)
+                    {
+                        tail_column = current.indent + (tail_column >= current.source_indent ? tail_column - current.source_indent : 0);
+                        widest_column = current.indent + (widest_column >= current.source_indent ? widest_column - current.source_indent : 0);
+                    }
+                    current.broken = !current.width.fits(column, line_length) || widest_column > line_length
+                        || !current.suffix.fits(tail_column, line_length);
+                }
+            }
+            else if (event.kind == FormattingEvent::Indent)
+            {
+                size_t indent = event.indent;
+                if (event.group != no_group && !line_has_content)
+                {
+                    const auto & owner = groups[event.group];
+                    if (owner.indent != owner.source_line_indent)
+                        indent = owner.indent + (indent >= owner.source_indent ? indent - owner.source_indent : 0);
+                }
+                append(String(indent, ' '));
+                line_indent_assigned = !line_has_content;
+                cursor += event.length;
             }
             else if (event.kind == FormattingEvent::Break)
             {
-                bool broken = event.group != no_group && groups[event.group].broken;
-                if (event.group == no_group || event.optional)
-                {
-                    size_t next_break = query.size();
-                    for (size_t j = i + 1; j < events.size(); ++j)
-                    {
-                        if (events[j].kind == FormattingEvent::Break)
-                        {
-                            next_break = events[j].offset;
-                            break;
-                        }
-                    }
-                    auto following = query.substr(cursor, next_break - cursor);
-                    following = following.substr(0, following.find('\n'));
-                    broken = column > line_length || displayWidth(following, column) > line_length - column;
-                }
-
+                bool independent = event.fill || event.group == no_group
+                    || (groups[event.group].width.multiline && !groups[event.group].broken);
+                bool broken = independent ? !event.following.fits(column, line_length) : groups[event.group].broken;
                 if (broken)
                 {
+                    size_t indent = event.group == no_group ? event.indent : groups[event.group].indent;
+                    indent += 4 * event.nest;
+                    /// A leading break shares an indentation already supplied by the enclosing group.
+                    if (!line_has_content && line_indent_assigned && !event.length && event.nest)
+                    {
+                        indent = line_indent;
+                        if (event.group != no_group)
+                        {
+                            auto & owner = groups[event.group];
+                            size_t nest = 4 * event.nest;
+                            owner.indent = std::min(owner.indent, indent >= nest ? indent - nest : 0);
+                        }
+                    }
                     if (line_has_content)
                     {
+                        while (result.size() > line_start && (result.back() == ' ' || result.back() == '\t'))
+                            result.pop_back();
                         result += '\n';
                         line_start = result.size();
                     }
                     else
-                    {
                         result.resize(line_start);
-                    }
-                    result.append(event.indent, ' ');
-                    column = event.indent;
+                    result.append(indent, ' ');
+                    column = line_indent = indent;
                     line_has_content = false;
+                    line_indent_assigned = true;
                 }
                 else
-                {
-                    text = query.substr(cursor, event.length);
-                    append(text);
-                    result.append(text);
-                }
+                    append(query.substr(cursor, event.length));
                 cursor += event.length;
             }
         }
-        result.append(query.substr(cursor));
+        append(query.substr(cursor));
         return result;
     }
 };
 
-ASTFormattingGroup::ASTFormattingGroup(WriteBuffer & out, IASTFormatState & state)
+void ASTFormattingGroup::start(
+    WriteBuffer & out, IASTFormatState & state, const IAST::FormatStateStacked & frame, Mode mode)
 {
-    if (!state.formatting || &state.formatting->out != &out)
+    if (&state.formatting->out != &out)
         return;
-
-    formatting = state.formatting;
-    formatting->reserveEvents(2);
-    index = formatting->groups.size();
-    formatting->groups.push_back({.parent = formatting->current_group, .width = {}});
-    formatting->events.push_back({FormattingEvent::Open, out.count(), index});
-    formatting->current_group = index;
-    ++formatting->open_groups;
+    auto & collector = *state.formatting;
+    index = collector.groups.size();
+    collector.groups.push_back({.parent = collector.current_group, .source_indent = size_t{4} * frame.indent, .mode = mode});
+    collector.events.push_back({.kind = FormattingEvent::Open, .offset = out.count(), .group = index});
+    collector.current_group = index;
+    formatting = &collector;
 }
 
-ASTFormattingGroup::~ASTFormattingGroup()
+void ASTFormattingGroup::close() noexcept
 {
-    finish();
-}
-
-void ASTFormattingGroup::finish() noexcept
-{
-    if (!formatting)
-        return;
-
     chassert(formatting->current_group == index);
-    formatting->events.push_back({FormattingEvent::Close, formatting->out.count(), index});
-    formatting->current_group = formatting->groups[index].parent;
-    --formatting->open_groups;
+    auto & group = formatting->groups[index];
+    group.end_offset = formatting->out.count();
+    group.end_event = formatting->events.size();
+    formatting->current_group = group.parent;
     formatting = nullptr;
 }
 
-static void writeASTFormattingBreakImpl(WriteBuffer & out, IASTFormatState & state, size_t indent, char flat, bool optional)
+void ASTFormattingDetail::writeBreak(WriteBuffer & out, IASTFormatState & state, size_t indent, size_t nest, char flat, bool fill)
 {
-    if (state.formatting && &state.formatting->out == &out)
-    {
-        auto & formatting = *state.formatting;
-        formatting.reserveEvents(1);
-        formatting.events.push_back(
-            {FormattingEvent::Break, out.count(), formatting.current_group, indent, flat ? size_t{1} : size_t{0}, optional});
-    }
+    if (&state.formatting->out == &out)
+        state.formatting->events.push_back({.kind = FormattingEvent::Break, .offset = out.count(),
+            .group = state.formatting->current_group, .indent = 4 * indent, .nest = nest, .length = flat ? size_t{1} : size_t{0}, .fill = fill});
     if (flat)
         out.write(flat);
 }
 
-void writeASTFormattingBreak(WriteBuffer & out, IASTFormatState & state, size_t indent, char flat)
+void ASTFormattingDetail::writeIndent(WriteBuffer & out, IASTFormatState & state, size_t indent)
 {
-    writeASTFormattingBreakImpl(out, state, indent, flat, false);
-}
-
-void writeASTFormattingOptionalBreak(WriteBuffer & out, IASTFormatState & state, size_t indent, char flat)
-{
-    writeASTFormattingBreakImpl(out, state, indent, flat, true);
+    if (&state.formatting->out == &out)
+        state.formatting->events.push_back({.kind = FormattingEvent::Indent, .offset = out.count(),
+            .group = state.formatting->current_group, .indent = 4 * indent, .length = 4 * indent});
+    for (size_t i = 0; i < 4 * indent; ++i)
+        out.write(' ');
 }
 
 String formatASTWithLineLength(const IAST & ast, const IAST::FormatSettings & settings, size_t line_length)
@@ -313,7 +390,7 @@ String formatASTWithLineLength(const IAST & ast, const IAST::FormatSettings & se
     IAST::FormatState state;
     state.formatting = &formatting;
     ast.format(out, settings, state, {});
-    return ASTFormatting::layout(out.stringView(), line_length, formatting.groups, formatting.events);
+    return formatting.layout(out.stringView(), line_length);
 }
 
 }

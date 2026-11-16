@@ -228,7 +228,7 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
 
 void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ASTFormattingGroup formatting_group(ostr, state);
+    ASTFormattingGroup formatting_group(ostr, state, frame);
     ostr << "INSERT INTO" << " ";
     if (table_function)
     {
@@ -236,7 +236,7 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         table_function->format(ostr, settings, state, frame);
         if (partition_by)
         {
-            writeASTFormattingBreak(ostr, state, 4 * frame.indent);
+            writeASTFormattingBreak(ostr, state, frame, 0);
             ostr << "PARTITION BY ";
             partition_by->format(ostr, settings, state, frame);
         }
@@ -269,12 +269,11 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
     if (columns)
     {
-        ASTFormattingGroup columns_group(ostr, state);
-        writeASTFormattingBreak(ostr, state, 4 * frame.indent);
+        writeASTFormattingOptionalBreak(ostr, state, frame, 0);
+        ASTFormattingGroup columns_group(ostr, state, frame);
         ostr << '(';
-        writeASTFormattingBreak(ostr, state, 4 * (frame.indent + 1), '\0');
         columns->format(ostr, settings, state, frame);
-        writeASTFormattingBreak(ostr, state, 4 * frame.indent, '\0');
+        writeASTFormattingBreak(ostr, state, frame, 0, '\0');
         ostr << ')';
     }
 
@@ -320,7 +319,10 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
     if (select)
     {
-        ostr << delim;
+        if (delim == ' ')
+            writeASTFormattingOptionalBreak(ostr, state, frame, 0);
+        else
+            ostr << delim;
         /// Disable FROM-first syntax to avoid parsing ambiguity with INSERT ... FROM INFILE.
         /// Only affects the immediate SELECT, not nested subqueries.
         bool was_disable_from_first_syntax = frame.disable_from_first_syntax;

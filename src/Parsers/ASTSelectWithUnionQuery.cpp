@@ -1,4 +1,5 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTFormatting.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/SelectUnionMode.h>
@@ -77,7 +78,7 @@ void ASTSelectWithUnionQuery::updateTreeHashImpl(SipHash & hash_state, bool igno
 
 void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+    const ASTFormattingIndent indent_str{state, frame, !settings.one_line};
 
     auto mode_to_str = [&](SelectUnionMode mode)
     {

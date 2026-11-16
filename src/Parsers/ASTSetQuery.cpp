@@ -132,7 +132,7 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) 
 
 void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState & state, FormatStateStacked frame) const
 {
-    ASTFormattingGroup formatting_group(ostr, state);
+    ASTFormattingGroup formatting_group(ostr, state, frame);
     if (is_standalone)
         ostr << "SET ";
 
@@ -143,7 +143,7 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
         if (!first)
         {
             ostr << ',';
-            writeASTFormattingBreak(ostr, state, 4 * (frame.indent + 1));
+            writeASTFormattingBreak(ostr, state, frame, 1);
         }
         else
             first = false;
@@ -176,7 +176,7 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
         if (!first)
         {
             ostr << ',';
-            writeASTFormattingBreak(ostr, state, 4 * (frame.indent + 1));
+            writeASTFormattingBreak(ostr, state, frame, 1);
         }
         else
             first = false;
@@ -190,7 +190,7 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
         if (!first)
         {
             ostr << ',';
-            writeASTFormattingBreak(ostr, state, 4 * (frame.indent + 1));
+            writeASTFormattingBreak(ostr, state, frame, 1);
         }
         else
             first = false;

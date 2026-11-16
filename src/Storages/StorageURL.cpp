@@ -3454,7 +3454,7 @@ SecretArgumentsSpec urlSecretArguments(size_t url_offset)
                     if (equals_func->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
                     {
                         if (maskURLCredentials(url))
-                            finder.result.replaced_arguments[i] = "url = " + quoteString(url);
+                            finder.result.replaced_arguments[i] = {quoteString(url), "url"};
                     }
                     else
                         finder.markSecretArgument(i, /* argument_is_named= */ true);
@@ -3473,7 +3473,7 @@ SecretArgumentsSpec urlSecretArguments(size_t url_offset)
         {
             /// A readable url literal: mask only its credentials, keeping the host and path visible.
             if (maskURLCredentials(uri))
-                finder.result.replaced_arguments[url_offset] = quoteString(uri);
+                finder.result.replaced_arguments[url_offset] = {quoteString(uri), std::nullopt};
         }
         else
         {
