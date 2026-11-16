@@ -11,6 +11,7 @@ SET force_primary_key = 1;
 
 DROP VIEW IF EXISTS v;
 DROP TABLE IF EXISTS d;
+DROP TABLE IF EXISTS d_k;
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (number UInt64, k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t SELECT number, number + 1 FROM numbers(3);
@@ -40,12 +41,38 @@ CREATE TABLE d AS t ENGINE = Distributed(test_cluster_two_shards, currentDatabas
 CREATE VIEW v AS SELECT d.k AS a, d.number AS b FROM d;
 SELECT b FROM (SELECT q.a AS b FROM v AS q) WHERE b = 3
 SETTINGS prefer_column_name_to_alias = 1, prefer_localhost_replica = 0, optimize_trivial_view_pushdown_to_distributed = 1;
--- An alias that is not a column is still used: the repeated expression would exceed the limit on the shards.
+-- The table on the shards has a column that the `Distributed` table does not have.
+CREATE TABLE d_k (k UInt64) ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), t);
+SELECT number FROM (SELECT k AS number FROM d_k) WHERE number = 3 SETTINGS prefer_column_name_to_alias = 1, prefer_localhost_replica = 0;
+SELECT number FROM (SELECT k + 1 AS number FROM d_k) WHERE number = 4 SETTINGS prefer_column_name_to_alias = 1, prefer_localhost_replica = 0;
+SELECT k FROM (SELECT k, max(k) AS number FROM d_k GROUP BY k) WHERE number = 3 AND k > 1
+SETTINGS prefer_column_name_to_alias = 1, prefer_localhost_replica = 0, distributed_group_by_no_merge = 1;
+-- The expression inside the filter would exceed the limit on the shards.
+SELECT number FROM (SELECT k + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 AS number FROM d_k) WHERE number + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 = 19
+SETTINGS prefer_column_name_to_alias = 1, prefer_localhost_replica = 0, max_ast_depth = 32;
+SELECT number FROM (SELECT k + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 AS number FROM d_k) WHERE number + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 = 19
+SETTINGS prefer_column_name_to_alias = 0, prefer_localhost_replica = 0, max_ast_depth = 32;
+-- The repeated expression would exceed the limit on the shards.
+SELECT count() FROM (SELECT k, (k, [k]) IN ((1, [1]), (2, [2]), (3, [3]), (4, [4]), (5, [5]), (6, [6]), (7, [7]), (8, [8]), (9, [9])) AS x FROM d_k)
+WHERE k > 1 AND x SETTINGS prefer_column_name_to_alias = 1, prefer_localhost_replica = 0, max_ast_elements = 130;
 SELECT count() FROM (SELECT k, (number + 1) * (number + 2) * (number + 3) * (number + 4) * (number + 5) AS x FROM remote('127.0.0.{2,3}', currentDatabase(), t))
 WHERE k > 1 AND x != 1 AND x > 2 AND x % 2 = 0 AND x % 3 = 0 AND x % 4 = 0 AND x % 5 = 0 AND x % 6 = 0 AND x % 8 = 0
 SETTINGS prefer_column_name_to_alias = 1, max_ast_elements = 200;
 SELECT x FROM (SELECT k, arrayMap(v -> formatRowNoNewline('TSKV', v + number AS a), [1]) AS x FROM remote('127.0.0.{2,3}', currentDatabase(), t))
 WHERE x = ['a=3'] AND k > 1 SETTINGS prefer_column_name_to_alias = 1;
+-- A long literal is one element.
+SELECT count() FROM (SELECT k IN (3, 1000000001, 1000000002, 1000000003, 1000000004, 1000000005, 1000000006, 1000000007, 1000000008) AS number FROM d_k)
+WHERE number SETTINGS prefer_column_name_to_alias = 1, prefer_localhost_replica = 0, max_ast_elements = 130;
+-- The text for the shards is too deep for the parser, but it is not sent.
+SET max_parser_depth = 100;
+SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT x FROM
+    (WITH k + 1 + 1 + 1 AS a, a + 1 + 1 + 1 AS b, b + 1 + 1 + 1 AS c, c + 1 + 1 + 1 AS d, d + 1 + 1 + 1 AS e, e + 1 + 1 + 1 AS f, f + 1 + 1 + 1 AS g, g + 1 + 1 + 1 AS h, h + 1 + 1 + 1 AS i, i + 1 + 1 + 1 AS j SELECT j + 1 AS x FROM d_k)
+    WHERE x = 34 SETTINGS prefer_column_name_to_alias = 1, prefer_localhost_replica = 0);
+SET max_parser_depth = DEFAULT;
+-- A copy of `randConstant` has another value on old servers.
+SELECT countIf(explain LIKE '%Condition: (k in%') FROM (EXPLAIN indexes = 1, distributed = 1
+    SELECT k FROM (SELECT k, randConstant(shardNum()) AS x FROM d_k) WHERE k = x
+    SETTINGS prefer_column_name_to_alias = 1, prefer_localhost_replica = 0, force_primary_key = 0);
 
 SELECT 'functions that use names of arguments';
 SELECT k FROM (SELECT k FROM remote('127.0.0.{2,3}', currentDatabase(), t) ORDER BY k) WHERE formatRowNoNewline('TSKV', k) = 'k=3' AND k > 1;
@@ -60,6 +87,10 @@ SELECT k FROM (SELECT k, number FROM remote('127.0.0.{2,3}', currentDatabase(), 
 WHERE (k, number) IN (SELECT CAST((2, 3), 'Tuple(number UInt64, k UInt64)')) AND k > 1;
 SELECT k FROM (SELECT k, number FROM remote('127.0.0.{2,3}', currentDatabase(), t) ORDER BY k) WHERE (k, number) IN ((3, 2), (9, 9));
 SELECT k FROM (SELECT k, number FROM remote('127.0.0.{2,3}', currentDatabase(), t)) WHERE has([(3, 2)], (k, number));
+SELECT number FROM (SELECT k, (k AS a, k + 1 AS b) AS number FROM d_k) WHERE number.a = 3 AND k > 1
+SETTINGS prefer_column_name_to_alias = 1, prefer_localhost_replica = 0;
+SELECT x FROM (SELECT k, (k AS a, k + 1 AS b) AS x FROM d_k) WHERE toJSONString(x) LIKE '%"b":%4%' AND k > 1
+SETTINGS prefer_column_name_to_alias = 0, prefer_localhost_replica = 0;
 SET enable_named_columns_in_function_tuple = 0;
 
 SELECT 'expressions that are rewritten for the shards';
@@ -76,4 +107,5 @@ SETTINGS enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, max
 
 DROP VIEW v;
 DROP TABLE d;
+DROP TABLE d_k;
 DROP TABLE t;

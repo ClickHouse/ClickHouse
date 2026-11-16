@@ -5,7 +5,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/NestedUtils.h>
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
@@ -27,6 +26,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -71,8 +72,11 @@ namespace Setting
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool enable_named_columns_in_function_tuple;
     extern const SettingsBool extremes;
+    extern const SettingsUInt64 max_ast_elements;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 parallel_replicas_mark_segment_size;
     extern const SettingsBool allow_push_predicate_when_subquery_contains_with;
     extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
@@ -87,6 +91,8 @@ namespace ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_DEEP_RECURSION;
+    extern const int TOO_SLOW_PARSING;
     extern const int UNKNOWN_TABLE;
     extern const int ALL_REPLICAS_ARE_STALE;
     extern const int NOT_IMPLEMENTED;
@@ -584,8 +590,7 @@ static bool addFilters(
     ///   - TableNode (a real table)
     ///   - TableFunctionNode (e.g. `numbers(3)`, `remote(...)`)
     ///   - QueryNode wrapping any of the above (one level of subquery)
-    const auto * inner_query_node = table_expressions.front()->as<QueryNode>();
-    if (inner_query_node)
+    if (const auto * inner_query_node = table_expressions.front()->as<QueryNode>())
     {
         table_expressions = extractTableExpressions(inner_query_node->getJoinTreeNodeTyped());
         /// Case with JOIN is not supported so far.
@@ -593,12 +598,7 @@ static bool addFilters(
             return false;
     }
 
-    StorageSnapshotPtr table_snapshot;
-    if (const auto * table_node = table_expressions.front()->as<TableNode>())
-        table_snapshot = table_node->getStorageSnapshot();
-    else if (const auto * table_function_node = table_expressions.front()->as<TableFunctionNode>())
-        table_snapshot = table_function_node->getStorageSnapshot();
-    else
+    if (!table_expressions.front()->as<TableNode>() && !table_expressions.front()->as<TableFunctionNode>())
         return false;
 
     /// An input of the filter is a column of the result of the remote query. Example:
@@ -609,29 +609,57 @@ static bool addFilters(
     const bool has_projection_names = stage == QueryProcessingStage::Complete;
     const bool named_columns_in_function_tuple = settings[Setting::enable_named_columns_in_function_tuple];
 
-    /// The names that have priority over aliases. Only the part before the dot is kept, it covers subcolumns and `Nested`.
-    NameSet preferred_names;
-    if (has_projection_names && settings[Setting::prefer_column_name_to_alias])
-    {
-        auto add_names = [&](const auto & columns)
-        {
-            for (const auto & column : columns)
-                preferred_names.insert(Nested::splitName(column.name).first);
-        };
-
-        if (inner_query_node)
-            add_names(inner_query_node->getProjectionColumns());
-        else
-            add_names(table_snapshot->getColumns(
-                GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All)));
-    }
-
     auto & select_query = getSelectQuery(query_ast);
     const auto & select_list = select_query.select()->children;
     const auto & projection = query_node->getProjection().getNodes();
     if (select_list.size() != projection.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "The remote query has {} expressions in SELECT, its query tree has {}", select_list.size(), projection.size());
+
+    /// With `prefer_column_name_to_alias` an alias can be resolved to a column, and the columns of the remote table are not known here.
+    /// So an expression gets one more alias in `WITH`. A copy for every use in the filter could exceed the limits of the server.
+    const bool use_internal_aliases = has_projection_names && settings[Setting::prefer_column_name_to_alias];
+    const Names filter_inputs = use_internal_aliases ? pushed_down_filters.getRequiredColumnsNames() : Names{};
+    ASTs with_expressions;
+    ASTPtr parsed_query;
+    size_t ast_elements = 0;
+
+    auto can_copy_to_with = [&](size_t i)
+    {
+        const size_t max_ast_elements = settings[Setting::max_ast_elements];
+        if (!max_ast_elements)
+            return true;
+        if (ast_elements > max_ast_elements / 2)
+            return false;
+
+        /// The text is parsed, because a literal can become many elements.
+        if (!parsed_query)
+        {
+            try
+            {
+                ParserSelectQuery parser;
+                parsed_query = parseQuery(
+                    parser, formattedAST(select_query.ptr()), 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            }
+            catch (const Exception & e)
+            {
+                /// The remote server can have other limits, or not get the query at all.
+                if (e.code() != ErrorCodes::TOO_DEEP_RECURSION && e.code() != ErrorCodes::TOO_SLOW_PARSING)
+                    throw;
+                ast_elements = max_ast_elements;
+                return false;
+            }
+            ast_elements = parsed_query->size();
+        }
+
+        /// The other half of the limit is for the filter.
+        const size_t size = parsed_query->as<ASTSelectQuery &>().select()->children.at(i)->size();
+        if (ast_elements + size > max_ast_elements / 2)
+            return false;
+
+        ast_elements += size;
+        return true;
+    };
 
     UnorderedMapWithMemoryTracking<std::string, ASTPtr> input_name_to_ast;
     for (size_t i = 0; i < projection.size(); ++i)
@@ -640,17 +668,29 @@ static bool addFilters(
             ? query_node->getProjectionColumns()[i].name
             : calculateActionNodeName(projection[i], *planner_context);
 
-        /// The alias, or the expression from the `SELECT` list, where the columns are qualified with the table alias.
-        /// A copy of the expression has no aliases inside, see `dependsOnNamesOfArguments`.
-        ASTPtr ast;
-        if (has_projection_names && !preferred_names.contains(Nested::splitName(name).first))
-            ast = make_intrusive<ASTIdentifier>(name);
-        else if (!hasFunctionNode(projection[i], "formatRow") && !hasFunctionNode(projection[i], "formatRowNoNewline")
-            && !(named_columns_in_function_tuple && hasFunctionNode(projection[i], "tuple")))
-            ast = select_list[i];
-
         /// Columns are received by name, so a repeated name means the first column.
-        input_name_to_ast.emplace(name, std::move(ast));
+        auto [it, inserted] = input_name_to_ast.try_emplace(name);
+        /// The elements of a tuple can have other names on the remote server, see `dependsOnNamesOfArguments`.
+        if (!inserted || (named_columns_in_function_tuple && hasFunctionNode(projection[i], "tuple")))
+            continue;
+
+        /// An alias, or the expression from the `SELECT` list, where the columns are qualified with the table alias.
+        if (has_projection_names && !use_internal_aliases)
+            it->second = make_intrusive<ASTIdentifier>(name);
+        /// Old servers can give another value to a copy of the call.
+        else if (hasFunctionNode(projection[i], "randConstant"))
+            continue;
+        else if (use_internal_aliases && !select_list[i]->as<ASTIdentifier>())
+        {
+            if (std::ranges::contains(filter_inputs, name) && can_copy_to_with(i))
+            {
+                it->second = make_intrusive<ASTIdentifier>(fmt::format("__filter_exp_{}", i + 1));
+                with_expressions.emplace_back(select_list[i]->clone())->setAlias(it->second->getColumnName());
+            }
+        }
+        /// A copy in the filter has no aliases inside.
+        else if (!hasFunctionNode(projection[i], "formatRow") && !hasFunctionNode(projection[i], "formatRowNoNewline"))
+            it->second = select_list[i];
     }
 
     ASTPtr predicate = tryBuildAdditionalFilterAST(
@@ -667,7 +707,17 @@ static bool addFilters(
     TableWithColumnNamesAndTypes no_table({}, {});
     PredicateRewriteVisitor::Data data(rewrite_context, predicates, no_table, optimize_final, optimize_with);
 
-    return data.rewriteSubquery(select_query, {});
+    if (!data.rewriteSubquery(select_query, {}))
+        return false;
+
+    if (!with_expressions.empty())
+    {
+        if (!select_query.with())
+            select_query.setExpression(ASTSelectQuery::Expression::WITH, make_intrusive<ASTExpressionList>());
+        std::ranges::move(with_expressions, std::back_inserter(select_query.with()->children));
+    }
+
+    return true;
 }
 
 ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(

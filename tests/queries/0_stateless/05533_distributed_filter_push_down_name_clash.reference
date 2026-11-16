@@ -21,9 +21,23 @@ prefer_column_name_to_alias
 3
 3
 3
+3
+3
+4
+4
+3
+3
+11
+11
+11
+11
+4
 4
 ['a=3']
 ['a=3']
+2
+1
+0
 functions that use names of arguments
 3
 3
@@ -40,6 +54,10 @@ functions that use names of arguments
 3
 3
 3
+(3,4)
+(3,4)
+(3,4)
+(3,4)
 expressions that are rewritten for the shards
 3
 3
