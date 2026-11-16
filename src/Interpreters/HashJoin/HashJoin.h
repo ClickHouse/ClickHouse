@@ -543,7 +543,7 @@ public:
             UNREACHABLE();
         }
 
-        size_t getTotalByteCountImpl(Type which) const
+        [[nodiscard]] size_t getTotalByteCountImpl(Type which) const
         {
             switch (which)
             {
@@ -554,7 +554,7 @@ public:
             }
         }
 
-        size_t getBufferSizeInCells(Type which) const
+        [[nodiscard]] size_t getBufferSizeInCells(Type which) const
         {
             switch (which)
             {
@@ -590,7 +590,7 @@ public:
             selector_rows = columns ? columns->selector.size() : (this->column ? this->column->size() : 0);
         }
 
-        size_t allocatedBytes() const;
+        [[nodiscard]] size_t allocatedBytes() const;
     };
 
     using NullmapList = std::deque<NullMapHolder>;
@@ -694,7 +694,7 @@ public:
 
         KeyRange key_range;
 
-        size_t avgPerKeyRows() const
+        [[nodiscard]] size_t avgPerKeyRows() const
         {
             if (keys_to_join == 0)
                 return 0;

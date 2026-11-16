@@ -171,7 +171,7 @@ NamesAndAliases TraceLogElement::getNamesAndAliases()
 {
     String build_id_hex;
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
-    build_id_hex = SymbolIndex::getSelfBuildIDHex();
+    build_id_hex = SymbolIndex::instance().getBuildIDHex();
 #endif
     return
     {

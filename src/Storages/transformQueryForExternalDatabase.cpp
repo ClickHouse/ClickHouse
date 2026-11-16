@@ -966,7 +966,7 @@ std::optional<UInt64> getUInt64LiteralValue(const ASTPtr & node)
 /// an OFFSET (the rows it skips are read remotely as well, so the pushed-down limit is
 /// `offset + length`) and a SETTINGS clause (it does not change the data). Everything else
 /// (DISTINCT, GROUP BY, ORDER BY, HAVING, LIMIT BY, WITH TIES, JOIN, ARRAY JOIN, SAMPLE,
-/// FINAL, ...) is applied locally after reading from the external table, so limiting the
+/// FINAL, SHUFFLE, ...) is applied locally after reading from the external table, so limiting the
 /// result remotely could change it. Note that some of these modifiers are flags on
 /// `ASTSelectQuery` rather than children, and some are hidden inside the TABLES child, so
 /// children alone are not a complete proxy and the flags and the table expression are
@@ -974,7 +974,7 @@ std::optional<UInt64> getUInt64LiteralValue(const ASTPtr & node)
 bool isLimitPushDownSafe(const ASTSelectQuery & query)
 {
     if (query.distinct || query.group_by_all || query.group_by_with_totals || query.order_by_all
-        || query.limit_with_ties || query.limit_by_all)
+        || query.limit_with_ties || query.limit_by_all || query.shuffle)
         return false;
 
     if (query.hasJoin() || query.final() || query.sampleSize() || query.arrayJoinExpressionList().first)

@@ -57,16 +57,16 @@ public:
         createAttributes(dictionary_structure);
     }
 
-    bool returnsFetchedColumnsInOrderOfRequestedKeys() const override { return true; }
+    [[nodiscard]] bool returnsFetchedColumnsInOrderOfRequestedKeys() const override { return true; }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if (dictionary_key_type == DictionaryKeyType::Simple)
             return "Cache";
         return "ComplexKeyCache";
     }
 
-    bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::Simple; }
+    [[nodiscard]] bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::Simple; }
 
     SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
@@ -95,7 +95,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for complex key storage");
     }
 
-    PaddedPODArray<UInt64> getCachedSimpleKeys() const override
+    [[nodiscard]] PaddedPODArray<UInt64> getCachedSimpleKeys() const override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             return getCachedKeysImpl();
@@ -103,7 +103,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedSimpleKeys is not supported for complex key storage");
     }
 
-    bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::Complex; }
+    [[nodiscard]] bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::Complex; }
 
     ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<std::string_view> & keys,
@@ -132,7 +132,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for simple key storage");
     }
 
-    PaddedPODArray<std::string_view> getCachedComplexKeys() const override
+    [[nodiscard]] PaddedPODArray<std::string_view> getCachedComplexKeys() const override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             return getCachedKeysImpl();
@@ -140,11 +140,11 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedComplexKeys is not supported for simple key storage");
     }
 
-    size_t getSize() const override { return size; }
+    [[nodiscard]] size_t getSize() const override { return size; }
 
-    double getLoadFactor() const override { return static_cast<double>(size) / static_cast<double>(configuration.max_size_in_cells); }
+    [[nodiscard]] double getLoadFactor() const override { return static_cast<double>(size) / static_cast<double>(configuration.max_size_in_cells); }
 
-    size_t getBytesAllocated() const override
+    [[nodiscard]] size_t getBytesAllocated() const override
     {
         size_t attributes_size_in_bytes = 0;
         size_t attributes_size = attributes.size();
@@ -570,7 +570,7 @@ private:
         }
     }
 
-    PaddedPODArray<KeyType> getCachedKeysImpl() const
+    [[nodiscard]] PaddedPODArray<KeyType> getCachedKeysImpl() const
     {
         PaddedPODArray<KeyType> result;
         result.reserve(size);
@@ -807,7 +807,7 @@ private:
         cell.deadline = std::chrono::system_clock::to_time_t(deadline);
     }
 
-    size_t getCellIndex(const KeyType key) const
+    [[nodiscard]] size_t getCellIndex(const KeyType key) const
     {
         const size_t hash = DefaultHash<KeyType>()(key);
         const size_t index = hash & size_overlap_mask;
@@ -816,7 +816,7 @@ private:
 
     using KeyStateAndCellIndex = std::pair<KeyState::State, size_t>;
 
-    KeyStateAndCellIndex getKeyStateAndCellIndex(const KeyType key, const time_t now) const
+    [[nodiscard]] KeyStateAndCellIndex getKeyStateAndCellIndex(const KeyType key, const time_t now) const
     {
         size_t place_value = getCellIndex(key);
         const size_t place_value_end = place_value + max_collision_length;
@@ -843,7 +843,7 @@ private:
         return std::make_pair(KeyState::not_found, place_value & size_overlap_mask);
     }
 
-    size_t getCellIndexForInsert(const KeyType & key) const
+    [[nodiscard]] size_t getCellIndexForInsert(const KeyType & key) const
     {
         size_t place_value = getCellIndex(key);
         const size_t place_value_end = place_value + max_collision_length;
