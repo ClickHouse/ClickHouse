@@ -370,6 +370,16 @@ void ASTBackupQuery::Element::fillEmptyDatabaseNames(const String & current_data
     }
 }
 
+bool ASTBackupQuery::Element::hasEmptyDatabaseNames() const
+{
+    auto is_unqualified = [](const DatabaseAndTableName & name) { return name.first.empty(); };
+    if (type == ASTBackupQuery::TABLE)
+        return database_name.empty() || new_database_name.empty();
+    if (type == ASTBackupQuery::ALL)
+        return std::ranges::any_of(except_tables, is_unqualified) || std::ranges::any_of(except_data_tables, is_unqualified);
+    return false;
+}
+
 ASTPtr ASTBackupQuery::fromSnapshotQuery(const ASTSnapshotQuery & query)
 {
     auto res = make_intrusive<ASTBackupQuery>();
@@ -801,7 +811,7 @@ namespace
 void ASTBackupQuery::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "BackupQuery");
-    w.writeString("kind", std::string(magic_enum::enum_name(kind)));
+    w.writeString("kind", magic_enum::enum_name(kind));
     w.writeChild("backup_name", backup_name);
     w.writeChild("base_backup_name", base_backup_name);
     w.writeChild("base_snapshot_name", base_snapshot_name);

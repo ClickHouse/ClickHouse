@@ -20,6 +20,10 @@ ASTPtr timeSeriesDurationToAST(Decimal64 duration, const DataTypePtr & timestamp
 /// Converts a scalar value to SQL (a Float64 literal).
 ASTPtr timeSeriesScalarToAST(Float64 value);
 
+/// Converts the group of a time series without tags to SQL: `CAST(0, 'UInt64')`.
+/// Group 0 is reserved for an empty set of tags (see ContextTimeSeriesTagsCollector).
+ASTPtr timeSeriesNoTagsGroupToAST();
+
 /// Makes an AST casting an expression representing a timestamp to a specified `timestamp_data_type`.
 ASTPtr timeSeriesTimestampASTCast(ASTPtr && ast, const DataTypePtr & timestamp_data_type);
 

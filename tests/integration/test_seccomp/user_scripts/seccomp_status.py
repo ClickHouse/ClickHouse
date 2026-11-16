@@ -3,7 +3,8 @@
 # Reports what a process the server started sees of the policy, as a single row of seven fields:
 #  - the seccomp mode it inherited across `fork` and `execve`: 0 is no filter, 2 is a BPF filter;
 #  - what `getxattr`, which the policy does not allow, does here. Without a filter the attribute is
-#    simply missing (`ENODATA`); under the `errno` mode the call is refused (`EPERM`);
+#    simply missing (`ENODATA`); under a filter the call is refused with `ENOSYS`, whatever the
+#    mode, so that the NSS modules of the host, which probe for it, carry on;
 #  - what a `clone` that asks for a user namespace does. The policy refuses it by its flags, so the
 #    `errno` mode answers `EPERM`. The flags also name a combination the kernel rejects on its own
 #    with `EINVAL`, which is what makes the probe safe to run: no process is created either way;

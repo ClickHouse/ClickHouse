@@ -1,30 +1,47 @@
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogHandlerFactory.h>
 
+#include <Common/Exception.h>
+#include <Core/ServerSettings.h>
+#include <Interpreters/Context.h>
 #include <Server/HTTP/HTTPServerRequest.h>
+#include <Server/IServer.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogHandler.h>
-#include <Server/IcebergRESTCatalog/InMemoryIcebergRESTCatalogStore.h>
 
 namespace DB
 {
 
-IcebergRESTCatalogHandlerFactory::IcebergRESTCatalogHandlerFactory(IServer & server_, String warehouse_, IcebergRESTCatalogStorePtr store_)
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool enable_iceberg_rest_catalog;
+}
+
+IcebergRESTCatalogHandlerFactory::IcebergRESTCatalogHandlerFactory(IServer & server_, IcebergRESTCatalogWarehouseRegistryPtr warehouses_)
     : log(getLogger(name))
     , server(server_)
-    , warehouse(std::move(warehouse_))
-    , store(std::move(store_))
+    , warehouses(std::move(warehouses_))
 {
 }
 
 std::unique_ptr<HTTPRequestHandler> IcebergRESTCatalogHandlerFactory::createRequestHandler(const HTTPServerRequest & request)
 {
     LOG_TRACE(log, "HTTP request for {}. {}", name, request.toStringForLogging());
-    return std::make_unique<IcebergRESTCatalogHandler>(server, warehouse, store);
+    return std::make_unique<IcebergRESTCatalogHandler>(server, warehouses);
 }
 
-HTTPRequestHandlerFactoryPtr createIcebergRESTCatalogHandlerFactory(IServer & server, String warehouse)
+HTTPRequestHandlerFactoryPtr createIcebergRESTCatalogHandlerFactory(IServer & server)
 {
-    auto store = getSharedInMemoryIcebergRESTCatalogStore(warehouse);
-    return std::make_shared<IcebergRESTCatalogHandlerFactory>(server, std::move(warehouse), std::move(store));
+    if (!server.context()->getServerSettings()[ServerSetting::enable_iceberg_rest_catalog])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "The Iceberg REST catalog server is experimental. Enable the server setting `enable_iceberg_rest_catalog` to use it");
+
+    auto warehouses = std::make_shared<const IcebergRESTCatalogWarehouseRegistry>(server.context());
+    return std::make_shared<IcebergRESTCatalogHandlerFactory>(server, std::move(warehouses));
 }
 
 }
