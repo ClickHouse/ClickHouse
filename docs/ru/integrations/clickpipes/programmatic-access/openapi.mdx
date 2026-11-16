@@ -32,17 +32,18 @@ https://api.clickhouse.cloud/v1
 
 Все конечные точки ClickPipes привязаны к сервису ClickHouse Cloud:
 
-| Method   | Path                                                                                     | Description                                     |
-| -------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | Получить список всех ClickPipes                 |
-| `POST`   | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | Создать ClickPipe                               |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | Получить ClickPipe                              |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | Обновить ClickPipe                              |
-| `DELETE` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | Удалить ClickPipe                               |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | Получить настройки ClickPipe                    |
-| `PUT`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | Обновить настройки ClickPipe                    |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling`  | Обновить параметры масштабирования ClickPipe    |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state`    | Обновить состояние ClickPipe (запуск/остановка) |
+| Method   | Path                                                                                     | Description                                                  |
+| -------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | Получить список всех ClickPipes                              |
+| `POST`   | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | Создать ClickPipe                                            |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/context`                | Получить возможности сервиса и субъект GCP Workload Identity |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | Получить ClickPipe                                           |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | Обновить ClickPipe                                           |
+| `DELETE` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | Удалить ClickPipe                                            |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | Получить настройки ClickPipe                                 |
+| `PUT`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | Обновить настройки ClickPipe                                 |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling`  | Обновить параметры масштабирования ClickPipe                 |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state`    | Обновить состояние ClickPipe (запуск/остановка)              |
 
 Для CDC ClickPipes (Postgres, MySQL, MongoDB) также доступны дополнительные конечные точки на уровне организации для масштабирования общей CDC-инфраструктуры:
 
@@ -97,13 +98,17 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID"
 ```
 
+## GCP workload identity (бета) {#gcp-workload-identity}
+
+Прежде чем использовать приведённые ниже примеры с workload identity, выполните инструкции из [руководства по GCP workload identity](/ru/integrations/clickpipes/security/gcp-workload-identity#openapi): получите служебную учётную запись, управляемую ClickPipes, и предоставьте ей доступ к источнику.
+
 ## Создание ClickPipes {#creating-clickpipes}
 
 Тело запроса `POST /clickpipes` зависит от типа источника. В примерах ниже показана структура для каждого поддерживаемого типа ClickPipe. Эталонные JSON-схемы см. в [справочнике API](/ru/products/cloud/api-reference/clickpipes/list-clickpipes).
 
 ### Kafka {#create-kafka}
 
-Поддерживаемые источники, совместимые с Kafka: `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`.
+Поддерживаемые источники, совместимые с Kafka: `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`, а также `gcmk` (закрытая предварительная версия).
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -140,6 +145,22 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   }' \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
+
+Для Google Managed Kafka предоставьте субъекту Workload Identity роль `roles/managedkafka.client` в проекте кластера и настройте необходимые ACL Kafka. Затем используйте следующий объект source без поля `credentials`:
+
+```json
+{
+  "kafka": {
+    "type": "gcmk",
+    "format": "JSONEachRow",
+    "brokers": "bootstrap.kafka.us-central1.managedkafka.example-project.cloud.goog:9092",
+    "topics": "events",
+    "authentication": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+  }
+}
+```
+
+Для аутентификации через Workload Identity в Google Managed Kafka требуется TLS.
 
 ### Amazon Kinesis {#create-kinesis}
 
@@ -221,7 +242,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
 
 ### Google Cloud Storage {#create-gcs}
 
-`serviceAccountKey` должен содержать содержимое JSON-файла ключа сервисного аккаунта GCP, закодированное в base64.
+`serviceAccountKey` должен содержать содержимое JSON-файла ключа служебной учётной записи GCP, закодированное в base64.
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -236,6 +257,55 @@ curl -u "$KEY_ID:$KEY_SECRET" \
         "format": "JSONEachRow",
         "authentication": "SERVICE_ACCOUNT",
         "serviceAccountKey": "<base64_encoded_service_account_json>"
+      }
+    },
+    "destination": {
+      "table": "my_table",
+      "managedTable": true,
+      "tableDefinition": {
+        "engine": { "type": "MergeTree" }
+      },
+      "columns": [
+        { "name": "id", "type": "UInt64" },
+        { "name": "message", "type": "String" }
+      ]
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+Чтобы использовать Workload Identity вместо ключа служебной учётной записи, предоставьте субъекту роль `roles/storage.objectViewer` для исходного бакета и используйте следующий объект source:
+
+```json
+{
+  "objectStorage": {
+    "type": "gcs",
+    "url": "gs://my-bucket/data/*.json",
+    "format": "JSONEachRow",
+    "authentication": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+  }
+}
+```
+
+Для неупорядоченной ингестии также выдайте субъекту роли `roles/pubsub.subscriber` и `roles/pubsub.viewer` на подписку для уведомлений. Задайте для `isContinuous` значение `true` и укажите полный `queueUrl` в формате `projects/<project-id>/subscriptions/<subscription-id>`.
+
+### Google Cloud Pub/Sub {#create-pubsub}
+
+В следующем примере используется Workload Identity. Перед созданием ClickPipe предоставьте субъекту [необходимые разрешения Pub/Sub](/ru/integrations/clickpipes/pubsub/auth#required-permissions).
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My Pub/Sub ClickPipe",
+    "source": {
+      "pubsub": {
+        "format": "JSONEachRow",
+        "projectId": "my-gcp-project",
+        "topic": "events",
+        "authentication": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY",
+        "seekType": "latest"
       }
     },
     "destination": {
@@ -394,7 +464,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
 
 ### BigQuery {#create-bigquery}
 
-`serviceAccountFile` должен содержать содержимое JSON-файла ключа сервисного аккаунта GCP в кодировке base64.
+`serviceAccountFile` должен содержать содержимое JSON-файла ключа служебной учётной записи GCP в кодировке base64.
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -425,4 +495,26 @@ curl -u "$KEY_ID:$KEY_SECRET" \
     }
   }' \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+Чтобы использовать Workload Identity вместо ключа служебной учётной записи, предоставьте субъекту [необходимые разрешения для BigQuery и GCS](/ru/integrations/clickpipes/bigquery/overview#permissions) и используйте следующий объект source:
+
+```json
+{
+  "bigquery": {
+    "authentication": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY",
+    "projectId": "my-gcp-project",
+    "snapshotStagingPath": "gs://my-staging-bucket/staging/",
+    "settings": {
+      "replicationMode": "snapshot"
+    },
+    "tableMappings": [
+      {
+        "sourceDatasetName": "my_dataset",
+        "sourceTable": "my_table",
+        "targetTable": "my_bigquery_table"
+      }
+    ]
+  }
+}
 ```

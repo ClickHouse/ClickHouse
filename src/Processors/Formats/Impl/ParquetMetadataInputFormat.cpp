@@ -1,7 +1,9 @@
+#include <span>
 #include <Processors/Formats/Impl/ParquetMetadataInputFormat.h>
 
-#if USE_PARQUET
+#if USE_ARROW_LIBRARY
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <DataTypes/DataTypeString.h>
@@ -129,7 +131,7 @@ static NamesAndTypesList getHeaderForParquetMetadata()
 static void checkHeader(const Block & header)
 {
     auto expected_names_and_types = getHeaderForParquetMetadata();
-    std::unordered_map<String, DataTypePtr> name_to_type;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> name_to_type;
     for (const auto & [name, type] : expected_names_and_types)
         name_to_type[name] = type;
 
@@ -356,7 +358,7 @@ void ParquetMetadataInputFormat::fillColumnsMetadata(const std::shared_ptr<parqu
                         const auto & thrift_encodings = thrift_metadata->row_groups[row_group_i].columns[column_i].meta_data.encodings;
                         if (encoding_i < thrift_encodings.size())
                         {
-                            auto it = Parquet::parq::_Encoding_VALUES_TO_NAMES.find(thrift_encodings[encoding_i]);
+                            auto it = Parquet::parq::_Encoding_VALUES_TO_NAMES.find(Parquet::thriftEnumToInt(thrift_encodings[encoding_i]));
                             if (it != Parquet::parq::_Encoding_VALUES_TO_NAMES.end())
                                 codec_name = it->second;
                         }
@@ -497,7 +499,7 @@ void ParquetMetadataInputFormat::fillColumnSizeStatistics(
         unencoded_bytes.insertDefault();
     }
 
-    auto insert_histogram = [&](const std::vector<int64_t> & histogram, IColumn & histogram_column)
+    auto insert_histogram = [&](std::span<const int64_t> histogram, IColumn & histogram_column)
     {
         auto & array_column = assert_cast<ColumnArray &>(histogram_column);
         auto & data_column = assert_cast<ColumnUInt64 &>(array_column.getData());
@@ -506,9 +508,8 @@ void ParquetMetadataInputFormat::fillColumnSizeStatistics(
         array_column.getOffsets().push_back(data_column.size());
     };
 
-    static const std::vector<int64_t> empty_histogram;
-    insert_histogram(size_statistics ? size_statistics->repetition_level_histogram : empty_histogram, size_statistics_column.getColumn(1));
-    insert_histogram(size_statistics ? size_statistics->definition_level_histogram : empty_histogram, size_statistics_column.getColumn(2));
+    insert_histogram(size_statistics ? std::span<const int64_t>(size_statistics->repetition_level_histogram) : std::span<const int64_t>(), size_statistics_column.getColumn(1));
+    insert_histogram(size_statistics ? std::span<const int64_t>(size_statistics->definition_level_histogram) : std::span<const int64_t>(), size_statistics_column.getColumn(2));
 }
 
 template <typename T>
@@ -662,7 +663,8 @@ void registerInputFormatParquetMetadata(FormatFactory & factory)
            bool /* is_remote_fs */,
            FormatParserSharedResourcesPtr,
            FormatFilterInfoPtr) -> InputFormatPtr
-        { return std::make_shared<ParquetMetadataInputFormat>(buf, std::make_shared<const Block>(sample), settings); });
+        { return std::make_shared<ParquetMetadataInputFormat>(buf, std::make_shared<const Block>(sample), settings); },
+        /*supports_reset_parser=*/ true);
     factory.markFormatSupportsSubsetOfColumns("ParquetMetadata");
 
     factory.setDocumentation("ParquetMetadata", Documentation{

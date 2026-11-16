@@ -25,6 +25,16 @@ class ForeignReadError(Exception):
     """The foreign reader could not read the table. A failure when ClickHouse wrote the table."""
 
 
+def is_tool_error(e):
+    """Any error of a foreign tool. pyo3 raises a Rust panic (delta-rs, pyiceberg-core) as
+    `pyo3_runtime.PanicException`, which derives from `BaseException`, not `Exception`.
+    """
+    t = type(e)
+    return isinstance(e, Exception) or (
+        t.__module__ == "pyo3_runtime" and t.__name__ == "PanicException"
+    )
+
+
 @dataclass
 class Capabilities:
     primitive_kinds: Tuple[str, ...]
@@ -51,6 +61,8 @@ class Capabilities:
         "binary",
         "uuid",
     )
+    # (transform, source kind) pairs that are never generated.
+    excluded_partition_shapes: Tuple[Tuple[str, str], ...] = ()
     partition_on_id: bool = True
     initial_partition_fields: Tuple[int, ...] = (0, 0, 1, 1, 2)
     rename_partition_sources: bool = True

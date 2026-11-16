@@ -563,12 +563,12 @@ TEST(AccessRights, FilterDoesNotMutate)
 
     /// A parameter that is absent from the tree: "URL" shares no first character with
     /// "S3", so the lookup misses and a mutating find-or-create would insert nodes.
-    root.getFilters("URL");
+    (void)root.getFilters("URL");
     ASSERT_EQ(root, before);
     ASSERT_EQ(root.dumpNodes(), nodes_before);
 
     /// A parameter that is present must likewise leave the tree untouched.
-    root.getFilters("S3");
+    (void)root.getFilters("S3");
     ASSERT_EQ(root, before);
     ASSERT_EQ(root.dumpNodes(), nodes_before);
 }
@@ -584,7 +584,7 @@ TEST(AccessRights, FilterDoesNotMutateOnPrefixSplit)
     /// "SQLITE" shares its first character with the existing "S3" node but mismatches
     /// after it, so a mutating find-or-create would rename "S3" in place and splice it
     /// into a new "S" parent. Both are real source names.
-    root.getFilters("SQLITE");
+    (void)root.getFilters("SQLITE");
     ASSERT_EQ(root, before);
     ASSERT_EQ(root.dumpNodes(), nodes_before);
 }
@@ -729,6 +729,21 @@ TEST(AccessRights, RevokeFilterGrantOption)
     root.grantWithGrantOption(AccessType::READ, "S3", "s3://foo/.*");
     root.grant(AccessType::READ, "S3", "s3://bar/.*");
     ASSERT_THROW(root.revokeGrantOption(AccessType::READ, "S3", "s3://bar/.*"), Exception);
+}
+
+TEST(AccessRights, ElementWithNotGrantableFlags)
+{
+    AccessRights root;
+
+    // Grant on a table doesn't grant source filters
+    root.grant(AccessRightsElement{AccessType::ALL, "db", "tbl"});
+    ASSERT_FALSE(root.isGranted(AccessType::READ, "db", "tbl"));
+
+    // Revoke on a table doesn't produce partial revokes of source filters
+    root = {};
+    root.grantWithGrantOption(AccessType::ALL);
+    root.revoke(AccessRightsElement{AccessType::ALL, "db", "tbl"});
+    ASSERT_EQ(root.getGrantableRights(), root);
 }
 
 TEST(AccessRights, RevokeWithParameters)

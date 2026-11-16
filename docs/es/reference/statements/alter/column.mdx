@@ -171,15 +171,22 @@ Esta consulta cambia las propiedades de la columna `name`:
 
 * TTL
 
-* Configuración a nivel de columna
+* Configuración a nivel de Columna
 
 * Valores de enum para los tipos Enum/Enum8/Enum16
 
-Para ver ejemplos de cómo modificar los CODECS de compresión de las columnas, consulte [Column Compression Codecs](/es/reference/statements/create/table/codec).
+Para ver ejemplos de cómo modificar los códecs de compresión de las columnas, consulte [Códecs de compresión de columnas](/es/reference/statements/create/table/codec).
+
+Con la configuración experimental `enable_subcolumn_codecs`, `name` también puede ser una subcolumna, como `payload.ts`. En ese caso, solo se puede modificar o eliminar `CODEC`; consulte [Codecs for subcolumns](/es/reference/statements/create/table#subcolumn-codecs):
+
+```sql
+ALTER TABLE visits MODIFY COLUMN payload.ts CODEC(DoubleDelta, ZSTD);
+ALTER TABLE visits MODIFY COLUMN payload.ts REMOVE CODEC;
+```
 
 Para ver ejemplos de cómo modificar el TTL de las columnas, consulte [Column TTL](/es/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl).
 
-Para ver ejemplos de cómo modificar la configuración a nivel de columna, consulte [Column-level Settings](/es/reference/engines/table-engines/mergetree-family/mergetree#column-level-settings).
+Para ver ejemplos de cómo modificar la configuración a nivel de Columna, consulte [Configuración a nivel de Columna](/es/reference/engines/table-engines/mergetree-family/mergetree#column-level-settings).
 
 Si se especifica la cláusula `IF EXISTS`, la consulta no devolverá un error si la columna no existe.
 
