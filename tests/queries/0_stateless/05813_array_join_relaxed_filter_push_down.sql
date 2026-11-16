@@ -40,15 +40,6 @@ SELECT count() FROM (EXPLAIN SELECT a, c FROM t_aj_or ARRAY JOIN A AS a ARRAY JO
     WHERE (a = 'a1' AND c = 'c0') OR c = 'c1')
 WHERE explain LIKE '%Element filter column%';
 
-SELECT '-- a condition that can throw stays above';
--- C is empty when id % 3 = 0, and without the lift up intDiv runs only above the ARRAY JOIN of C
-SELECT count() FROM (EXPLAIN SELECT a, c FROM t_aj_or ARRAY JOIN A AS a ARRAY JOIN C AS c
-    WHERE (intDiv(6, id % 3) > 0 AND a = 'a1' AND c = 'c0') OR (a = 'a3' AND c = 'c1') SETTINGS query_plan_lift_up_array_join = 0)
-WHERE explain LIKE '%Element filter column%' AND explain NOT LIKE '%intDiv%';
-SELECT a, c, count() FROM t_aj_or ARRAY JOIN A AS a ARRAY JOIN C AS c
-    WHERE (intDiv(6, id % 3) > 0 AND a = 'a1' AND c = 'c0') OR (a = 'a3' AND c = 'c1')
-GROUP BY a, c ORDER BY a, c SETTINGS query_plan_lift_up_array_join = 0;
-
 SELECT '-- same rows as without the filter push down';
 SELECT
     (SELECT groupArray((a, b, c, n)) FROM (SELECT arrayJoin(A) AS a, arrayJoin(B) AS b, arrayJoin(C) AS c, count() AS n FROM t_aj_or

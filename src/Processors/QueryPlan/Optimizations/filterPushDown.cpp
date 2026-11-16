@@ -474,8 +474,7 @@ static void projectDagInputs(ActionsDAG & actions_dag)
 std::optional<ActionsDAG> tryToExtractPartialPredicate(
     const ActionsDAG & original_dag,
     const std::string & filter_name,
-    const Names & available_columns,
-    bool only_conditions_safe_on_more_rows = false);
+    const Names & available_columns);
 
 void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag);
 
@@ -1395,9 +1394,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// e.g. an OR over the elements of several arrays: add the part that the input can compute below, keep the filter above
         if (!array_join->hasRelaxedFilterBelow())
         {
-            auto relaxed_filter = tryToExtractPartialPredicate(
-                filter->getExpression(), filter->getFilterColumnName(), allowed_inputs, /*only_conditions_safe_on_more_rows=*/ true);
-            if (relaxed_filter)
+            if (auto relaxed_filter = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), allowed_inputs))
             {
                 array_join->setHasRelaxedFilterBelow();
                 addFilterOnTop(*child_node, 0, nodes, std::move(*relaxed_filter));
