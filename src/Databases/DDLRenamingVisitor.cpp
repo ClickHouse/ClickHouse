@@ -160,7 +160,7 @@ namespace
             if (!identifier || identifier->isParam())
                 continue;
 
-            QualifiedTableName qualified_name{identifier->getDatabaseName(), identifier->shortName()};
+            QualifiedTableName qualified_name{identifier->getDatabaseName(), identifier->getTableName()};
             if (qualified_name.database.empty() || qualified_name.table.empty())
                 continue;
 
