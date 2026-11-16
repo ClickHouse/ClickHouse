@@ -68,6 +68,22 @@ ${CLICKHOUSE_CLIENT} -q "
   OPTIMIZE TABLE t_steps_enum FINAL;
 "
 
+# When WHERE is moved to PREWHERE, a condition on one subcolumn guards a throwing condition on its sibling,
+# a condition that cannot throw does not need it.
+${CLICKHOUSE_CLIENT} -q "
+  DROP TABLE IF EXISTS t_steps_sibling;
+
+  CREATE TABLE t_steps_sibling (id UInt64, t Tuple(safe String, val String))
+  ENGINE = MergeTree ORDER BY id
+  SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0,
+           ratio_of_defaults_for_sparse_serialization = 1.0;
+
+  INSERT INTO t_steps_sibling
+  SELECT number, if(number % 3 = 0, ('', 'n/a'), (hex(sipHash128(toString(number))), toString(number % 100))) FROM numbers(100000);
+
+  OPTIMIZE TABLE t_steps_sibling FINAL;
+"
+
 query_id_group=group_$CLICKHOUSE_DATABASE
 query_id_throwing=throwing_$CLICKHOUSE_DATABASE
 query_id_interleaved=interleaved_$CLICKHOUSE_DATABASE
@@ -201,6 +217,25 @@ steps_enum_key=$(read_steps "$query_id_enum_key" "
   SELECT count() FROM t_steps_enum PREWHERE em['a'] != '' AND startsWith(em['b'], '1') FORMAT Null
 ")
 
+# The first function inside the PREWHERE conjunction.
+# pretty = 0: the pretty form does not print the conjuncts in the order of the steps.
+first_prewhere_function() {
+  ${CLICKHOUSE_CLIENT} "${opts[@]}" -q "$1" | grep -m1 'Prewhere filter column' \
+    | sed -n 's/.*Prewhere filter column: and(\([a-zA-Z0-9]*\)(.*/\1/p'
+}
+
+order_sibling_safe=$(first_prewhere_function "
+  EXPLAIN actions = 1, pretty = 0 SELECT count() FROM t_steps_sibling WHERE t.safe != '' AND startsWith(t.val, '5')
+  SETTINGS optimize_move_to_prewhere = 1, allow_reorder_prewhere_conditions = 1, move_all_conditions_to_prewhere = 1,
+           use_statistics = 0
+")
+
+order_sibling_throwing=$(first_prewhere_function "
+  EXPLAIN actions = 1, pretty = 0 SELECT count() FROM t_steps_sibling WHERE t.safe != '' AND toUInt64(t.val) > 50
+  SETTINGS optimize_move_to_prewhere = 1, allow_reorder_prewhere_conditions = 1, move_all_conditions_to_prewhere = 1,
+           use_statistics = 0
+")
+
 ${CLICKHOUSE_CLIENT} -q "
   SYSTEM FLUSH LOGS query_log;
 
@@ -252,8 +287,13 @@ ${CLICKHOUSE_CLIENT} -q "
   SELECT 'startsWith lower split steps', '$steps_starts_with_lower' = '2';
   SELECT 'enum key split steps', '$steps_enum_key' = '2';
 
+  -- t.val is smaller than t.safe, so cost order puts the condition on it first unless it is kept behind its guard.
+  SELECT 'sibling cannot throw reordered', '$order_sibling_safe' = 'startsWith';
+  SELECT 'sibling throwing guarded', '$order_sibling_throwing' = 'notEquals';
+
   DROP TABLE t_steps_group;
   DROP TABLE t_steps_throwing;
   DROP TABLE t_steps_top_k;
   DROP TABLE t_steps_enum;
+  DROP TABLE t_steps_sibling;
 "
