@@ -427,10 +427,14 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         projection_column.type->updateHash(state);
     }
 
-    for (const auto & projection_alias : projection_aliases_to_override)
+    /// A resolved node has already applied these aliases to `projection_columns`.
+    if (!isResolved())
     {
-        state.update(projection_alias.size());
-        state.update(projection_alias);
+        for (const auto & projection_alias : projection_aliases_to_override)
+        {
+            state.update(projection_alias.size());
+            state.update(projection_alias);
+        }
     }
 
     state.update(!options.ignore_cte && is_materialized);
