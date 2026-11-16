@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: zookeeper
+# Tags: zookeeper, no-shared-merge-tree
+# Checks the `ReplicatedMergeTreeSink` name, which changes with `SharedMergeTree`.
 
 set -euo pipefail
 
