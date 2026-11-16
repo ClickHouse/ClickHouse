@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <IO/ReadBuffer.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
@@ -176,6 +177,8 @@ private:
         std::vector<String> lockless_active_replicas;
         /// Their published demand values (refreshed on every attempt).
         std::unordered_map<String, String> demand_of_lockless;
+        /// Lockless replicas without the demand_aware capability marker (rolling upgrade).
+        std::unordered_set<String> demand_unaware_lockless;
     };
 
     std::filesystem::path keeper_path;
@@ -243,7 +246,7 @@ private:
 
     LockedTopicPartitionInfo & getTopicPartitionLockLocked(const TopicPartition & topic_partition) TSA_REQUIRES(topic_partition_locks_mutex);
     void updatePermanentLocksLocked(const TopicPartitions & available_topic_partitions, size_t topic_partitions_count, size_t active_replica_count) TSA_REQUIRES(topic_partition_locks_mutex);
-    void lockTemporaryLocksLocked(const TopicPartitions & available_topic_partitions, size_t node_quota, const std::vector<String> & lockless_active_replicas, const std::unordered_map<String, String> & demand_of_lockless) TSA_REQUIRES(topic_partition_locks_mutex);
+    void lockTemporaryLocksLocked(const TopicPartitions & available_topic_partitions, size_t node_quota, const std::vector<String> & lockless_active_replicas, const std::unordered_map<String, String> & demand_of_lockless, const std::unordered_set<String> & demand_unaware_lockless) TSA_REQUIRES(topic_partition_locks_mutex);
 
     void rollbackToCommittedOffsets();
     /// Callable while an exception is propagating, where a throw would terminate the server.

@@ -322,6 +322,11 @@ bool StorageKafka2::activate()
             }
             replica_is_active_node = zkutil::EphemeralNodeHolder::existing(is_active_path, *zookeeper);
 
+            /// Mark this replica as understanding the demand protocol, so that peers can
+            /// distinguish a genuinely idle new-code replica from an old-code one during
+            /// a rolling upgrade (which cannot publish demand).
+            zookeeper->tryCreate(fs::path(replica_path) / "demand_aware", "", zkutil::CreateMode::Persistent);
+
             return true;
         }
         catch (const Coordination::Exception & e)

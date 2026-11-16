@@ -277,7 +277,7 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
             // These operations are expected to be fast, because they only modify in-memory data and read/write to Keeper. For huge number of topic partitions
             const size_t node_quota = std::max<size_t>(all_topic_partitions.size() / active_replicas_info.active_replica_count, 1);
             updatePermanentLocksLocked(available_topic_partitions, all_topic_partitions.size(), active_replicas_info.active_replica_count);
-            lockTemporaryLocksLocked(available_topic_partitions, node_quota, active_replicas_info.lockless_active_replicas, active_replicas_info.demand_of_lockless);
+            lockTemporaryLocksLocked(available_topic_partitions, node_quota, active_replicas_info.lockless_active_replicas, active_replicas_info.demand_of_lockless, active_replicas_info.demand_unaware_lockless);
             poll_count = 0;
 
             assigned_topic_partitions.reserve(permanent_locks.size() + tmp_locks.size());
@@ -469,23 +469,36 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
             lockless_active_replicas.push_back(std::move(candidates[i]));
     }
 
-    /// Read the demand published by lockless replicas (value refreshed on every attempt).
+    /// Read the demand published by lockless replicas, and check which lack the
+    /// demand_aware marker (old-code replicas during a rolling upgrade).
     std::unordered_map<String, String> demand_of_lockless;
+    std::unordered_set<String> demand_unaware_lockless;
     if (!lockless_active_replicas.empty())
     {
         Strings demand_paths;
+        Strings awareness_paths;
         demand_paths.reserve(lockless_active_replicas.size());
+        awareness_paths.reserve(lockless_active_replicas.size());
         for (const auto & replica : lockless_active_replicas)
+        {
             demand_paths.push_back(fs::path(keeper_path) / "replicas" / replica / "demand");
+            awareness_paths.push_back(fs::path(keeper_path) / "replicas" / replica / "demand_aware");
+        }
 
         auto demand_responses = keeper->tryGet(demand_paths);
+        auto awareness_responses = keeper->exists(awareness_paths);
         for (size_t i = 0; i < lockless_active_replicas.size(); ++i)
         {
-            const auto & response = demand_responses[i];
-            if (response.error == Coordination::Error::ZOK)
-                demand_of_lockless.emplace(lockless_active_replicas[i], response.data);
-            else if (response.error != Coordination::Error::ZNONODE)
-                throw Coordination::Exception::fromPath(response.error, demand_paths[i]);
+            const auto & demand_response = demand_responses[i];
+            if (demand_response.error == Coordination::Error::ZOK)
+                demand_of_lockless.emplace(lockless_active_replicas[i], demand_response.data);
+            else if (demand_response.error != Coordination::Error::ZNONODE)
+                throw Coordination::Exception::fromPath(demand_response.error, demand_paths[i]);
+
+            if (awareness_responses[i].error == Coordination::Error::ZNONODE)
+                demand_unaware_lockless.insert(lockless_active_replicas[i]);
+            else if (awareness_responses[i].error != Coordination::Error::ZOK)
+                throw Coordination::Exception::fromPath(awareness_responses[i].error, awareness_paths[i]);
         }
     }
 
@@ -494,7 +507,7 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
     active_replica_count = std::max<size_t>(active_replica_count, 1);
     LOG_TEST(log, "There are {} active replicas, {} of them without locks, out of {} total replicas (shard_count={})",
              active_replica_count, lockless_active_replicas.size(), replica_names.size(), shard_count);
-    return ActiveReplicasInfo{active_replica_count, std::move(lockless_active_replicas), std::move(demand_of_lockless)};
+    return ActiveReplicasInfo{active_replica_count, std::move(lockless_active_replicas), std::move(demand_of_lockless), std::move(demand_unaware_lockless)};
 }
 
 std::pair<KeeperHandlingConsumer::TopicPartitions, KeeperHandlingConsumer::ActiveReplicasInfo>
@@ -563,7 +576,8 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     const TopicPartitions & available_topic_partitions,
     size_t node_quota,
     const std::vector<String> & lockless_active_replicas,
-    const std::unordered_map<String, String> & demand_of_lockless) TSA_REQUIRES(topic_partition_locks_mutex)
+    const std::unordered_map<String, String> & demand_of_lockless,
+    const std::unordered_set<String> & demand_unaware_lockless) TSA_REQUIRES(topic_partition_locks_mutex)
 {
     /// Track how long each still-active replica has been lockless; streaks reset when the
     /// replica takes locks or disappears.
@@ -581,7 +595,8 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     size_t lockless_replicas_to_reserve_for = 0;
     for (const auto & entry : lockless_rounds_by_replica)
     {
-        const bool initial_window = entry.second <= MAX_ROUNDS_TO_YIELD_TO_LOCKLESS_REPLICA;
+        const bool initial_window = entry.second <= MAX_ROUNDS_TO_YIELD_TO_LOCKLESS_REPLICA
+            || demand_unaware_lockless.contains(entry.first);
         bool demanding = false;
         if (const auto demand_it = demand_of_lockless.find(entry.first); demand_it != demand_of_lockless.end())
         {
