@@ -179,7 +179,7 @@ public:
     /// value when the bucket has no such bound: a producer's largest bin saturated, or a table that the merge counts
     /// came without its largest counts. A bucket bounded below the merge's threshold holds no group of the top, so
     /// the merge skips it without summing its bins.
-    UInt64 bucketBound(size_t bucket) const
+    [[nodiscard]] UInt64 bucketBound(size_t bucket) const
     {
         return bucket_is_unbounded[bucket] ? std::numeric_limits<UInt64>::max() : count_bound_per_bucket[bucket];
     }
