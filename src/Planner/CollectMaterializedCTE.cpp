@@ -7,6 +7,7 @@
 #include <Planner/PlannerContext.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/Streaming/hasUnboundedOutput.h>
 #include <Common/Exception.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -15,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_STREAM;
     extern const int LOGICAL_ERROR;
 }
 
@@ -184,6 +186,9 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
                 cte_planner.buildQueryPlanIfNeeded();
 
                 auto cte_plan = std::move(cte_planner).extractQueryPlan();
+                if (hasUnboundedOutput(cte_plan))
+                    throw Exception(ErrorCodes::ILLEGAL_STREAM, "Cannot materialize CTE '{}' over an unbounded STREAM", materialized_cte->cte_name);
+
                 /// The CTE plan is kept aside until `optimize`, after the distributed-plan decision, so its
                 /// contexts have to follow this plan's decision from here.
                 query_plan.takeContextsFrom(cte_plan);

@@ -6,13 +6,13 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreePassManager.h>
-#include <Analyzer/StreamMode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 #include <Planner/Utils.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/Streaming/hasUnboundedOutput.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/Chunk.h>
@@ -101,9 +101,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                                 || (union_node != nullptr && union_node->isCorrelated());
     if (is_correlated_subquery)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot evaluate correlated scalar subquery");
-
-    if (getStreamMode(node).unbounded_input)
-        throw Exception(ErrorCodes::ILLEGAL_STREAM, "Cannot evaluate scalar subquery over an unbounded STREAM");
 
     /// The subquery is executed now, so decide here whether its replaced tables read with parallel replicas.
     restoreReplacedTableStoragesIfNeeded(node);
@@ -289,6 +286,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         {
             BlockIO io;
             auto & query_plan = interpreter->getQueryPlan();
+            if (hasUnboundedOutput(query_plan))
+                throw Exception(ErrorCodes::ILLEGAL_STREAM, "Cannot evaluate scalar subquery over an unbounded STREAM");
+
             bool skip_execution_for_exists = false;
 
             /// A scalar subquery is executed during the analysis of the query, before the quotas of the query are checked,

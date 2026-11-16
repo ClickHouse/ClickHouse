@@ -9,8 +9,6 @@
 #include <Planner/TableExpressionData.h>
 #include <Interpreters/SelectQueryOptions.h>
 
-#include <Analyzer/StreamMode.h>
-
 namespace DB
 {
 
@@ -110,7 +108,7 @@ class PlannerContext
 {
 public:
     /// Create planner context with query context and global planner context
-    PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_, const SelectQueryOptions & select_query_options_, const StreamMode & stream_mode_ = {});
+    PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_, const SelectQueryOptions & select_query_options_);
 
     /// Create planner with modified query_context
     PlannerContext(ContextMutablePtr query_context_, PlannerContextPtr planner_context_);
@@ -217,9 +215,6 @@ public:
     /// See `SelectQueryOptions::view_source_in_subqueries`.
     [[nodiscard]] bool isViewSourceInSubqueries() const { return view_source_in_subqueries; }
 
-    /// Get stream mode of the query node
-    const StreamMode & getStreamMode() const { return stream_mode; }
-
 private:
 
     RawTableExpressionDataMap & getSharedTableExpressionDataMap() noexcept { return global_planner_context->getTableExpressionDataMap(); }
@@ -246,9 +241,6 @@ private:
 
     /// Set key to set
     PreparedSets prepared_sets;
-
-    /// Stream mode of the query node: whether its input and its output are unbounded
-    StreamMode stream_mode;
 };
 
 }
