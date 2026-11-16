@@ -2387,6 +2387,11 @@ std::optional<Field> tryEvaluateConstantNode(const ActionsDAG::Node & node, cons
         return {};
 
     auto dag = ActionsDAG::cloneSubDAG({&node}, /*remove_aliases=*/ false);
+    /// A query does not fold functions like `identity`, `materialize` or `throwIf`, so they are not run here either.
+    for (const auto & dag_node : dag.getNodes())
+        if (dag_node.type == ActionsDAG::ActionType::FUNCTION && !dag_node.function_base->isSuitableForConstantFolding())
+            return {};
+
     ActionsDAG::IntermediateExecutionResult node_to_column;
     for (const auto * input : dag.getInputs())
     {

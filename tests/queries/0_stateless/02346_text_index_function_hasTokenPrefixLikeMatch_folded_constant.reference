@@ -59,3 +59,11 @@ arrayFirst scalar hasTokenMatch	64
 arrayFirst scalar hasTokenMatch, no index	64
 arrayFirst scalar hasTokenMatch array	64
 arrayFirst scalar hasTokenMatch array, no index	64
+not folded throwIf	64
+not folded identity hasTokenPrefix	64
+not folded identity hasTokenPrefix, no index	64
+not folded identity hasTokenPrefix array	64
+not folded identity hasTokenLike	64
+not folded identity hasTokenLike, no index	64
+not folded identity hasTokenMatch	64
+not folded identity hasTokenMatch, no index	64

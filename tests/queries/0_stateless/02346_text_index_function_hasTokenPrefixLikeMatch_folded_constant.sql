@@ -124,3 +124,26 @@ SELECT 'arrayFirst scalar hasTokenMatch array', count() FROM tab_folded_constant
 SELECT 'arrayFirst scalar hasTokenMatch array, no index', count() FROM tab_folded_constant WHERE hasTokenMatch(concat(tag, toString(arrayFirst(y -> 1, ['1']))), '^env:prod-eu1$', 'array') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab_folded_constant;
+
+-- A function that a query does not fold, like `throwIf` or `identity`, is not run when the index expression is named.
+CREATE TABLE tab_folded_constant (id UInt64, tag String, INDEX idx(if(id > 0, tag, toString(throwIf(materialize(1))))) TYPE text(tokenizer = array))
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_folded_constant SELECT number + 1, 'env:prod-eu' FROM numbers(64);
+
+SELECT 'not folded throwIf', count() FROM tab_folded_constant;
+
+DROP TABLE tab_folded_constant;
+
+CREATE TABLE tab_folded_constant (id UInt64, tag String, INDEX idx(concat(tag, identity(materialize('1')))) TYPE text(tokenizer = array))
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_folded_constant SELECT number, 'env:prod-eu' FROM numbers(64);
+
+SELECT 'not folded identity hasTokenPrefix', count() FROM tab_folded_constant WHERE hasTokenPrefix(concat(tag, identity(materialize('1'))), 'env:prod') SETTINGS use_skip_indexes = 1;
+SELECT 'not folded identity hasTokenPrefix, no index', count() FROM tab_folded_constant WHERE hasTokenPrefix(concat(tag, identity(materialize('1'))), 'env:prod') SETTINGS use_skip_indexes = 0;
+SELECT 'not folded identity hasTokenPrefix array', count() FROM tab_folded_constant WHERE hasTokenPrefix(concat(tag, identity(materialize('1'))), 'env:prod', 'array') SETTINGS use_skip_indexes = 1;
+SELECT 'not folded identity hasTokenLike', count() FROM tab_folded_constant WHERE hasTokenLike(concat(tag, identity(materialize('1'))), 'env:prod%') SETTINGS use_skip_indexes = 1;
+SELECT 'not folded identity hasTokenLike, no index', count() FROM tab_folded_constant WHERE hasTokenLike(concat(tag, identity(materialize('1'))), 'env:prod%') SETTINGS use_skip_indexes = 0;
+SELECT 'not folded identity hasTokenMatch', count() FROM tab_folded_constant WHERE hasTokenMatch(concat(tag, identity(materialize('1'))), '^env:prod-eu1$') SETTINGS use_skip_indexes = 1;
+SELECT 'not folded identity hasTokenMatch, no index', count() FROM tab_folded_constant WHERE hasTokenMatch(concat(tag, identity(materialize('1'))), '^env:prod-eu1$') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab_folded_constant;
