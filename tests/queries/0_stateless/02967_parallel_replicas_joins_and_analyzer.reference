@@ -137,7 +137,7 @@ Expression
           Expression
             ReadFromRemoteParallelReplicas
 --
--- ORDER BY in sub3 : the ORDER BY is redundant and removed, so the query is fully pushed
+-- ORDER BY in sub3 : sub1 is fully pushed, sub3 -> WithMergableStage
 with sub1 as (select x, y from tab1 where x != 2),
 sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y order by l.x),
@@ -168,30 +168,33 @@ sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z
 select * from sub5 order by x;
 Expression
   Sorting
-    Union
+    Expression
       Expression
-        Sorting
+        Join
           Expression
-            Expression
-              Join
+            Union
+              Expression
                 Expression
                   Expression
-                    Expression
-                      Join
+                    Join
+                      Expression
                         Expression
                           Expression
-                            Expression
-                              ReadFromMergeTree
+                            ReadFromMergeTree
+                      Expression
                         Expression
-                          Expression
-                            ReadFromMemoryStorage
+                          ReadFromMemoryStorage
+              Expression
+                ReadFromRemoteParallelReplicas
+          Expression
+            Union
+              Expression
                 Expression
-                  Expression
-                    ReadFromMemoryStorage
-      Expression
-        ReadFromRemoteParallelReplicas
+                  ReadFromMergeTree
+              Expression
+                ReadFromRemoteParallelReplicas
 --
--- ORDER BY in sub1 : the ORDER BY is redundant and removed, so the query is fully pushed
+-- ORDER BY in sub1 : sub1 -> WithMergableStage
 with sub1 as (select x, y from tab1 where x != 2 order by y),
 sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
@@ -222,28 +225,35 @@ sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z
 select * from sub5 order by x;
 Expression
   Sorting
-    Union
+    Expression
       Expression
-        Sorting
+        Join
           Expression
             Expression
-              Join
-                Expression
+              Expression
+                Join
                   Expression
-                    Expression
-                      Join
+                    Union
+                      Expression
                         Expression
                           Expression
-                            Expression
-                              ReadFromMergeTree
-                        Expression
-                          Expression
-                            ReadFromMemoryStorage
-                Expression
+                            ReadFromMergeTree
+                      Expression
+                        ReadFromRemoteParallelReplicas
                   Expression
-                    ReadFromMemoryStorage
-      Expression
-        ReadFromRemoteParallelReplicas
+                    Union
+                      Expression
+                        Expression
+                          ReadFromMergeTree
+                      Expression
+                        ReadFromRemoteParallelReplicas
+          Expression
+            Union
+              Expression
+                Expression
+                  ReadFromMergeTree
+              Expression
+                ReadFromRemoteParallelReplicas
 --
 -- RIGHT JOIN in sub3: sub3 -> WithMergableStage
 with sub1 as (select x, y from tab1 where x != 2),
@@ -345,7 +355,8 @@ Expression
                               ReadFromMergeTree
                         Expression
                           Expression
-                            ReadFromMemoryStorage
+                            Expression
+                              ReadFromMergeTree
       Expression
         ReadFromRemoteParallelReplicas
 --
@@ -608,7 +619,7 @@ Expression
           Expression
             ReadFromRemoteParallelReplicas
 --
--- ORDER BY in sub3 : the ORDER BY is redundant and removed, so the query is fully pushed
+-- ORDER BY in sub3 : sub1 is fully pushed, sub3 -> WithMergableStage
 with sub1 as (select x, y from tab1 where x != 2),
 sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y order by l.x),
@@ -639,32 +650,34 @@ sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z
 select * from sub5 order by x;
 Expression
   Sorting
-    Union
+    Expression
       Expression
-        Sorting
+        Join
           Expression
-            Expression
-              Join
+            Union
+              Expression
                 Expression
                   Expression
-                    Expression
-                      Join
+                    Join
+                      Expression
                         Expression
                           Expression
-                            Expression
-                              ReadFromMergeTree
+                            ReadFromMergeTree
+                      Expression
                         Expression
                           Expression
-                            Expression
-                              ReadFromMergeTree
+                            ReadFromMergeTree
+              Expression
+                ReadFromRemoteParallelReplicas
+          Expression
+            Union
+              Expression
                 Expression
-                  Expression
-                    Expression
-                      ReadFromMergeTree
-      Expression
-        ReadFromRemoteParallelReplicas
+                  ReadFromMergeTree
+              Expression
+                ReadFromRemoteParallelReplicas
 --
--- ORDER BY in sub1 : the ORDER BY is redundant and removed, so the query is fully pushed
+-- ORDER BY in sub1 : sub1 -> WithMergableStage
 with sub1 as (select x, y from tab1 where x != 2 order by y),
 sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
@@ -695,30 +708,35 @@ sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z
 select * from sub5 order by x;
 Expression
   Sorting
-    Union
+    Expression
       Expression
-        Sorting
+        Join
           Expression
             Expression
-              Join
-                Expression
+              Expression
+                Join
                   Expression
-                    Expression
-                      Join
+                    Union
+                      Expression
                         Expression
                           Expression
-                            Expression
-                              ReadFromMergeTree
-                        Expression
-                          Expression
-                            Expression
-                              ReadFromMergeTree
-                Expression
+                            ReadFromMergeTree
+                      Expression
+                        ReadFromRemoteParallelReplicas
                   Expression
-                    Expression
-                      ReadFromMergeTree
-      Expression
-        ReadFromRemoteParallelReplicas
+                    Union
+                      Expression
+                        Expression
+                          ReadFromMergeTree
+                      Expression
+                        ReadFromRemoteParallelReplicas
+          Expression
+            Union
+              Expression
+                Expression
+                  ReadFromMergeTree
+              Expression
+                ReadFromRemoteParallelReplicas
 --
 -- RIGHT JOIN in sub3: sub3 -> WithMergableStage
 with sub1 as (select x, y from tab1 where x != 2),
@@ -756,13 +774,16 @@ Union
         Expression
           Join
             Expression
-              ReadFromMergeTree
+              Expression
+                ReadFromMergeTree
             Expression
               BuildRuntimeFilter
                 Expression
-                  ReadFromMergeTree
+                  Expression
+                    ReadFromMergeTree
         Expression
-          ReadFromMergeTree
+          Expression
+            ReadFromMergeTree
   Expression
     ReadFromRemoteParallelReplicas
 --
@@ -803,15 +824,18 @@ Expression
           Expression
             Join
               Expression
-                ReadFromMergeTree
+                Expression
+                  ReadFromMergeTree
               Expression
                 BuildRuntimeFilter
                   Expression
                     Join
                       Expression
-                        ReadFromMergeTree
+                        Expression
+                          ReadFromMergeTree
                       Expression
-                        ReadFromMergeTree
+                        Expression
+                          ReadFromMergeTree
       Expression
         ReadFromRemoteParallelReplicas
 --

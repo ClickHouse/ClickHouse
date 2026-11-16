@@ -3,8 +3,6 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/BSONTypes.h>
 
-#include <Common/StringUtils.h>
-
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -36,32 +34,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// BSON element names (column names, `Tuple` element names, `Map` keys) are NUL-terminated UTF-8 strings. Write
-/// them as they are, only replacing invalid UTF-8; the input format reads them back verbatim. A zero byte would end
-/// the name early and corrupt the document, so it is written as `\u0000`, as before (see `02593_bson_more_types`).
-static String toValidUTF8String(const String & name)
+/// In BSON all names should be valid UTF8 sequences
+static String toValidUTF8String(const String & name, const FormatSettings & settings)
 {
-    /// Nothing to replace or escape, the usual case: this runs per row for every `Tuple` element name and `Map` key.
-    /// (`isAllASCII` accepts the zero byte, hence the second check.)
-    if (isAllASCII(reinterpret_cast<const UInt8 *>(name.data()), name.size()) && !name.contains('\0'))
-        return name;
-
     WriteBufferFromOwnString buf;
     {
         WriteBufferValidUTF8 validating_buf(buf);
-        for (const char c : name)
-        {
-            if (c == '\0')
-                writeCString("\\u0000", validating_buf);
-            else
-                writeChar(c, validating_buf);
-        }
-        /// The destructor of `WriteBufferValidUTF8` catches and suppresses a failure of the final
-        /// flush, which would leave `buf` empty (or partial). Flush explicitly so a failure
-        /// propagates as itself.
-        validating_buf.finalize();
+        writeJSONString(name, validating_buf, settings);
     }
-    return buf.str();
+    /// Return value without quotes
+    return buf.str().substr(1, buf.str().size() - 2);
 }
 
 BSONEachRowRowOutputFormat::BSONEachRowRowOutputFormat(
@@ -71,7 +53,7 @@ BSONEachRowRowOutputFormat::BSONEachRowRowOutputFormat(
     const auto & sample = getPort(PortKind::Main).getHeader();
     fields.reserve(sample.columns());
     for (const auto & field : sample.getNamesAndTypes())
-        fields.emplace_back(toValidUTF8String(field.name), field.type);
+        fields.emplace_back(toValidUTF8String(field.name, settings), field.type);
 }
 
 static void writeBSONSize(size_t size, WriteBuffer & buf)
@@ -133,7 +115,7 @@ static void writeBSONBigInteger(const IColumn & column, size_t row_num, const St
     writeBinaryLittleEndian(assert_cast<const ColumnType &>(column).getElement(row_num), buf);
 }
 
-size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, const DataTypePtr & data_type, size_t row_num, const String & name, const String & path, UnorderedMapWithMemoryTracking<String, size_t> & nested_document_sizes)
+size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, const DataTypePtr & data_type, size_t row_num, const String & name, const String & path, std::unordered_map<String, size_t> & nested_document_sizes)
 {
     size_t size = 1; // Field type
     size += name.size() + 1; // Field name and \0
@@ -248,7 +230,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
             String current_path = path + "." + name;
             for (size_t i = 0; i < nested_columns.size(); ++i)
             {
-                String key_name = toValidUTF8String(nested_names[i]);
+                String key_name = toValidUTF8String(nested_names[i], settings);
                 document_size += countBSONFieldSize(*nested_columns[i], nested_types[i], row_num, key_name, current_path, nested_document_sizes); // Add size of each value from tuple
             }
 
@@ -278,7 +260,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
             for (size_t i = 0; i < map_size; ++i)
             {
                 key_type->getDefaultSerialization()->serializeText(*key_column, offset + i, buf, settings);
-                auto s = countBSONFieldSize(*value_column, value_type, offset + i, toValidUTF8String(buf.str()), current_path, nested_document_sizes);
+                auto s = countBSONFieldSize(*value_column, value_type, offset + i, toValidUTF8String(buf.str(), settings), current_path, nested_document_sizes);
                 document_size += s;
                 buf.restart();
             }
@@ -292,7 +274,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
     }
 }
 
-void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const DataTypePtr & data_type, size_t row_num, const String & name, const String & path, UnorderedMapWithMemoryTracking<String, size_t> & nested_document_sizes)
+void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const DataTypePtr & data_type, size_t row_num, const String & name, const String & path, std::unordered_map<String, size_t> & nested_document_sizes)
 {
     switch (data_type->getTypeId())
     {
@@ -486,7 +468,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             writeBSONSize(document_size, out);
 
             for (size_t i = 0; i < nested_columns.size(); ++i)
-                serializeField(*nested_columns[i], nested_types[i], row_num, toValidUTF8String(nested_names[i]), current_path, nested_document_sizes);
+                serializeField(*nested_columns[i], nested_types[i], row_num, toValidUTF8String(nested_names[i], settings), current_path, nested_document_sizes);
 
             writeChar(BSON_DOCUMENT_END, out);
             break;
@@ -516,7 +498,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             for (size_t i = 0; i < map_size; ++i)
             {
                 key_type->getDefaultSerialization()->serializeText(*key_column, offset + i, buf, settings);
-                serializeField(*value_column, value_type, offset + i, toValidUTF8String(buf.str()), current_path, nested_document_sizes);
+                serializeField(*value_column, value_type, offset + i, toValidUTF8String(buf.str(), settings), current_path, nested_document_sizes);
                 buf.restart();
             }
 
@@ -534,7 +516,7 @@ void BSONEachRowRowOutputFormat::write(const Columns & columns, size_t row_num)
     size_t document_size = sizeof(BSONSizeT);
     /// Remember calculated sizes for nested documents (map document path -> size), so we won't need
     /// to recalculate it while serializing.
-    UnorderedMapWithMemoryTracking<String, size_t> nested_document_sizes;
+    std::unordered_map<String, size_t> nested_document_sizes;
     for (size_t i = 0; i != columns.size(); ++i)
         document_size += countBSONFieldSize(*columns[i], fields[i].type, row_num, fields[i].name, "$", nested_document_sizes);
     document_size += sizeof(BSON_DOCUMENT_END);
@@ -556,7 +538,6 @@ void BSONEachRowRowOutputFormat::write(const Columns & columns, size_t row_num)
             document_size);
 }
 
-void registerOutputFormatBSONEachRow(FormatFactory & factory);
 void registerOutputFormatBSONEachRow(FormatFactory & factory)
 {
     factory.registerOutputFormat(

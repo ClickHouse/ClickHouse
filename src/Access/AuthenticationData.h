@@ -10,8 +10,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 
-#include <ctime>
-#include <optional>
 #include <vector>
 #include <base/types.h>
 
@@ -31,78 +29,64 @@ public:
     AuthenticationData(AuthenticationData && src) = default;
     AuthenticationData & operator =(AuthenticationData && src) = default;
 
-    [[nodiscard]] AuthenticationType getType() const { return type; }
+    AuthenticationType getType() const { return type; }
 
     /// Sets the password and encrypt it using the authentication type set in the constructor.
     void setPassword(const String & password_, std::optional<OneTimePasswordSecret> second_factor, bool validate);
 
     /// Returns the password. Allowed to use only for Type::PLAINTEXT_PASSWORD.
-    [[nodiscard]] String getPassword() const;
+    String getPassword() const;
 
     /// Sets the password as a string of hexadecimal digits.
     void setPasswordHashHex(const String & hash, std::optional<OneTimePasswordSecret> second_factor, bool validate);
-    [[nodiscard]] String getPasswordHashHex() const;
+    String getPasswordHashHex() const;
 
     /// Sets the password in binary form.
     void setPasswordHashBinary(const Digest & hash, std::optional<OneTimePasswordSecret> second_factor, bool validate);
-    [[nodiscard]] const Digest & getPasswordHashBinary() const { return password_hash; }
+    const Digest & getPasswordHashBinary() const { return password_hash; }
 
     /// Sets the salt in String form.
     void setSalt(String salt);
-    [[nodiscard]] String getSalt() const;
+    String getSalt() const;
 
-    [[nodiscard]] const std::optional<OneTimePasswordSecret> & getOneTimePassword() const { return otp_secret; }
+    const std::optional<OneTimePasswordSecret> & getOneTimePassword() const { return otp_secret; }
 
     /// Sets the password using bcrypt hash with specified workfactor
     void setPasswordBcrypt(const String & password_, int workfactor_, std::optional<OneTimePasswordSecret> second_factor, bool validate);
 
     /// Sets the server name for authentication type LDAP.
-    [[nodiscard]] const String & getLDAPServerName() const { return ldap_server_name; }
+    const String & getLDAPServerName() const { return ldap_server_name; }
     void setLDAPServerName(const String & name) { ldap_server_name = name; }
 
     /// Sets the realm name for authentication type KERBEROS.
-    [[nodiscard]] const String & getKerberosRealm() const { return kerberos_realm; }
+    const String & getKerberosRealm() const { return kerberos_realm; }
     void setKerberosRealm(const String & realm) { kerberos_realm = realm; }
 
 #if USE_SSL
-    [[nodiscard]] const X509Certificate::Subjects & getSSLCertificateSubjects() const { return ssl_certificate_subjects; }
+    const X509Certificate::Subjects & getSSLCertificateSubjects() const { return ssl_certificate_subjects; }
     void setSSLCertificateSubjects(X509Certificate::Subjects && ssl_certificate_subjects_);
     void addSSLCertificateSubject(X509Certificate::Subjects::Type type_, String && subject_);
 #endif
 
 #if USE_SSH
-    [[nodiscard]] const std::vector<SSHKey> & getSSHKeys() const { return ssh_keys; }
+    const std::vector<SSHKey> & getSSHKeys() const { return ssh_keys; }
     void setSSHKeys(std::vector<SSHKey> && ssh_keys_) { ssh_keys = std::forward<std::vector<SSHKey>>(ssh_keys_); }
 #endif
 
-    [[nodiscard]] HTTPAuthenticationScheme getHTTPAuthenticationScheme() const { return http_auth_scheme; }
+    HTTPAuthenticationScheme getHTTPAuthenticationScheme() const { return http_auth_scheme; }
     void setHTTPAuthenticationScheme(HTTPAuthenticationScheme scheme) { http_auth_scheme = scheme; }
 
-    [[nodiscard]] const String & getHTTPAuthenticationServerName() const { return http_auth_server_name; }
+    const String & getHTTPAuthenticationServerName() const { return http_auth_server_name; }
     void setHTTPAuthenticationServerName(const String & name) { http_auth_server_name = name; }
 
-    [[nodiscard]] time_t getValidUntil() const { return valid_until; }
+    time_t getValidUntil() const { return valid_until; }
     void setValidUntil(time_t valid_until_) { valid_until = valid_until_; }
-
-    /// If not empty, the access rights of a user authenticated with this method
-    /// are limited to the intersection with these elements (the GRANTS clause).
-    [[nodiscard]] const AccessRightsElements & getGrants() const { return grants; }
-    void setGrants(AccessRightsElements grants_) { grants = std::move(grants_); }
 
     friend bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs);
     friend bool operator !=(const AuthenticationData & lhs, const AuthenticationData & rhs) { return !(lhs == rhs); }
 
-    /// When `now` is provided, it is used as the reference time for a per-authentication
-    /// `VALID FOR <interval>` clause, so that all `VALID FOR` clauses of one statement share one `now`.
-    static AuthenticationData fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate, std::optional<time_t> now = std::nullopt);
-
-    /// In attach mode the result is meant to be parsed back by a server (replicated or disk access
-    /// storage), possibly with a different default time zone and possibly by an older server version,
-    /// so `valid_until` is serialized as a zero-padded Unix timestamp string, which denotes the same
-    /// instant everywhere and which older versions parse the same way (see the comment in `toAST`
-    /// for details, including the clamping of out-of-range deadlines). Otherwise (`SHOW CREATE USER`)
-    /// `valid_until` is formatted in the server time zone for display.
-    [[nodiscard]] boost::intrusive_ptr<ASTAuthenticationData> toAST(bool attach_mode) const;
+    static AuthenticationData fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate);
+    boost::intrusive_ptr<ASTAuthenticationData> toAST() const;
 
     struct Util
     {
@@ -119,8 +103,6 @@ public:
     };
 
 private:
-    static AuthenticationData fromASTImpl(const ASTAuthenticationData & query, ContextPtr context, bool validate, std::optional<time_t> now);
-
     AuthenticationType type = AuthenticationType::NO_PASSWORD;
     Digest password_hash;
     std::optional<OneTimePasswordSecret> otp_secret;
@@ -139,7 +121,6 @@ private:
     String http_auth_server_name;
     HTTPAuthenticationScheme http_auth_scheme = HTTPAuthenticationScheme::BASIC;
     time_t valid_until = 0;
-    AccessRightsElements grants;
 };
 
 }

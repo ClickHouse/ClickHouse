@@ -1,13 +1,12 @@
 #pragma once
 
 #include <base/types.h>
-#include <Core/Types.h>
 
 #include <Interpreters/Context_fwd.h>
 
 #include <Parsers/IAST_fwd.h>
 
-#include <Common/VectorWithMemoryTracking.h>
+#include <vector>
 
 
 namespace DB
@@ -24,29 +23,29 @@ public:
     virtual ~IUserDefinedSQLObjectsStorage() = default;
 
     /// Whether this loader can replicate SQL objects to another node.
-    [[nodiscard]] virtual bool isReplicated() const { return false; }
-    [[nodiscard]] virtual String getReplicationID() const { return ""; }
+    virtual bool isReplicated() const { return false; }
+    virtual String getReplicationID() const { return ""; }
 
     /// Loads all objects. Can be called once - if objects are already loaded the function does nothing.
     virtual void loadObjects() = 0;
 
     /// Get object by name. If no object stored with object_name throws exception.
-    [[nodiscard]] virtual ASTPtr get(const String & object_name) const = 0;
+    virtual ASTPtr get(const String & object_name) const = 0;
 
     /// Get object by name. If no object stored with object_name return nullptr.
-    [[nodiscard]] virtual ASTPtr tryGet(const String & object_name) const = 0;
+    virtual ASTPtr tryGet(const String & object_name) const = 0;
 
     /// Check if object with object_name is stored.
-    [[nodiscard]] virtual bool has(const String & object_name) const = 0;
+    virtual bool has(const String & object_name) const = 0;
 
     /// Get all user defined object names.
-    [[nodiscard]] virtual VectorWithMemoryTracking<String> getAllObjectNames() const = 0;
+    virtual std::vector<String> getAllObjectNames() const = 0;
 
     /// Get all user defined objects.
-    [[nodiscard]] virtual VectorWithMemoryTracking<std::pair<String, ASTPtr>> getAllObjects() const = 0;
+    virtual std::vector<std::pair<String, ASTPtr>> getAllObjects() const = 0;
 
     /// Check whether any UDFs have been stored.
-    [[nodiscard]] virtual bool empty() const = 0;
+    virtual bool empty() const = 0;
 
     /// Stops watching.
     virtual void stopWatching() {}
