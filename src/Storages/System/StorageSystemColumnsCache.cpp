@@ -43,7 +43,7 @@ public:
     {
     }
 
-    std::string getName() const override { return "ReadFromSystemColumnsCache"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromSystemColumnsCache"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
