@@ -306,6 +306,7 @@ void TabSeparatedFormatReader::setReadBuffer(ReadBuffer & in_)
 {
     buf = assert_cast<PeekableReadBuffer *>(&in_);
     FormatWithNamesAndTypesReader::setReadBuffer(*buf);
+    first_row = true;
 }
 
 bool TabSeparatedFormatReader::checkForSuffix()
@@ -419,7 +420,7 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
                 const FormatSettings & settings)
             {
                 return std::make_shared<TabSeparatedRowInputFormat>(std::make_shared<const Block>(sample), buf, std::move(params), with_names, with_types, is_raw, settings);
-            });
+            }, /*supports_reset_parser=*/ true);
         };
 
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
