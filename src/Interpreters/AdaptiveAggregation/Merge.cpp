@@ -1399,7 +1399,8 @@ void Aggregator::releaseAdaptiveMergeSources(ManyAggregatedDataVariants & data, 
     std::atomic<size_t> next_item = 0;
     const auto release = [&]
     {
-        for (size_t i; (i = next_item.fetch_add(1, std::memory_order_relaxed)) < items;)
+        for (size_t i = next_item.fetch_add(1, std::memory_order_relaxed); i < items;
+             i = next_item.fetch_add(1, std::memory_order_relaxed))
         {
             if (i + 1 < data.size())
                 data[i + 1].reset();
