@@ -54,6 +54,7 @@ size_t TopKAggregationHeapBase::initBase(
     collated_skip_sample_keys = 0;
     collated_skip_sample_full = false;
     collated_skip_sample_rows = 0;
+    collated_skip_sample_resume_rows = 0;
     collated_skip_sample_string = heap_key_count == 1 && typeid_cast<const ColumnString *>(key_columns[0]);
     collated_skip_sample_now = has_collators && !is_prefix_mode && profitability_window != 0;
     collated_skip_sample_by_bytes = true;
@@ -152,14 +153,18 @@ void TopKAggregationHeapBase::init(
 
 /// A skipped row costs a collated heap a locale comparison, while without the heap a repeated key costs a lookup in a
 /// table of the distinct keys. So a collated heap freezes once its skipped rows repeat few keys: at least
-/// `collated_skip_repeats` skipped rows per distinct skipped key, estimated from a 1/64 hash sample of those keys, before
-/// the sample holds `collated_skip_sample_cap` keys (about 262K distinct) or `collated_skip_sample_max_rows` rows; past
-/// either cap it stays. Release build, 20M rows: 1K keys in cycles go from 3-6x slower than off to 1.0-1.3x, 10K keys to
-/// 1.1-1.8x; `hits` `URL` streams repeat a key 8-48 times early on, and 32 keeps their heaps.
+/// `collated_skip_repeats` skipped rows per distinct skipped key, estimated from a 1/64 hash sample of those keys. A sample
+/// that holds `collated_skip_sample_cap` keys (about 262K distinct) or `collated_skip_sample_max_rows` rows is dropped, and
+/// a new one, which needs `collated_skip_later_repeats`, starts `collated_skip_sample_pause` skipped rows later.
+/// Release build, 20M rows: 1K keys in cycles go from 3-6x slower than off to 1.0-1.3x, 10K keys to 1.1-1.8x; `hits`
+/// `URL` streams repeat a key 8-48 times in a first sample and up to 128-256 in later ones, so 32 and 256 keep their
+/// heaps, and a 2M-row pause cost them 3-4% of hashing.
 static constexpr size_t collated_skip_sample_shift = 6;
 static constexpr size_t collated_skip_sample_cap = 4096;
 static constexpr UInt64 collated_skip_sample_max_rows = 1ULL << 22;
+static constexpr UInt64 collated_skip_sample_pause = 1ULL << 23;
 static constexpr UInt64 collated_skip_repeats = 32;
+static constexpr UInt64 collated_skip_later_repeats = 256;
 
 bool TopKAggregationHeapBase::shouldFreeze() const
 {
@@ -174,11 +179,16 @@ bool TopKAggregationHeapBase::shouldFreeze() const
         return true;
 
     if (has_collators && !is_prefix_mode && !collated_skip_sample_full && profitability_window
-        && window_observed >= profitability_window
-        && collated_skip_sample_rows >= collated_skip_repeats * ((collated_skip_sample_keys + 1) << collated_skip_sample_shift))
+        && window_observed >= profitability_window && collatedSkipsRepeat())
         return true;
 
     return tie_overflow;
+}
+
+bool TopKAggregationHeapBase::collatedSkipsRepeat() const
+{
+    const UInt64 repeats = collated_skip_sample_resume_rows ? collated_skip_later_repeats : collated_skip_repeats;
+    return collated_skip_sample_rows >= repeats * ((collated_skip_sample_keys + 1) << collated_skip_sample_shift);
 }
 
 void TopKAggregationHeapBase::freezeBase()
@@ -443,11 +453,10 @@ bool TopKAggregationHeapBase::shouldSkipCollated(const ColumnRawPtrs & source_co
 
 void NO_INLINE TopKAggregationHeapBase::sampleCollatedSkip(const ColumnRawPtrs & source_columns, size_t source_row) const
 {
-    if (++collated_skip_sample_rows >= collated_skip_sample_max_rows)
+    /// A sample that already shows the repeats is kept for the freeze check, which runs between blocks.
+    if (++collated_skip_sample_rows >= collated_skip_sample_max_rows && !collatedSkipsRepeat())
     {
-        collated_skip_sample_full = true;
-        collated_skip_sample_now = false;
-        collated_skip_sample = {};
+        dropCollatedSkipSample();
         return;
     }
 
@@ -499,11 +508,17 @@ void NO_INLINE TopKAggregationHeapBase::sampleCollatedSkip(const ColumnRawPtrs &
     }
 
     if (++collated_skip_sample_keys >= collated_skip_sample_cap)
-    {
-        collated_skip_sample_full = true;
-        collated_skip_sample_now = false;
-        collated_skip_sample = {};
-    }
+        dropCollatedSkipSample();
+}
+
+void TopKAggregationHeapBase::dropCollatedSkipSample() const
+{
+    collated_skip_sample_full = true;
+    collated_skip_sample_now = false;
+    collated_skip_sample = {};
+    collated_skip_sample_keys = 0;
+    collated_skip_sample_rows = 0;
+    collated_skip_sample_resume_rows = skipped_rows + collated_skip_sample_pause;
 }
 
 int TopKAggregationHeapBase::compareHeapRowsComposite(size_t a, size_t b) const

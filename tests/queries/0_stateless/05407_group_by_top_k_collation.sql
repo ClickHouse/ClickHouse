@@ -420,6 +420,20 @@ SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimiza
 SELECT s, count() FROM (SELECT toLowCardinality(concat('n', toString(number))) AS s FROM numbers(100000))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_skip_unique_lc';
+-- Enough distinct keys to fill the sample, then one key: a later sample sees the repeats, so it freezes.
+SELECT s, count() FROM (SELECT if(number < 300000, concat('n', toString(number)), 'z') AS s FROM numbers(10000000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (SELECT if(number < 300000, concat('n', toString(number)), 'z') AS s FROM numbers(10000000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_skip_unique_then_repeats';
+-- A block larger than the sample: the repeats it shows still freeze the heap at the check after the block.
+SELECT s, count() FROM (SELECT if(number < 5, concat('n', toString(number)), 'z') AS s FROM numbers(10000000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (SELECT if(number < 5, concat('n', toString(number)), 'z') AS s FROM numbers(10000000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 5000000, enable_group_by_top_k_optimization = 1, log_comment = '05407_skip_repeats_large_block';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -452,7 +466,8 @@ ORDER BY i.log_comment;
 SELECT 'frozen';
 SELECT log_comment, ProfileEvents['AggregationTopKHeapsFrozen'] FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
-    AND log_comment IN ('05407_skip_repeats', '05407_skip_repeats_lc', '05407_skip_unique', '05407_skip_unique_lc')
+    AND log_comment IN ('05407_skip_repeats', '05407_skip_repeats_lc', '05407_skip_unique', '05407_skip_unique_lc',
+        '05407_skip_unique_then_repeats', '05407_skip_repeats_large_block')
 ORDER BY log_comment;
 
 DROP TABLE t_05407;

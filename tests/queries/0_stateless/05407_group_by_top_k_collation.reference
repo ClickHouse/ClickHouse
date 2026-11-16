@@ -395,6 +395,26 @@ n1	1
 n10	1
 n100	1
 n1000	1
+n0	1
+n1	1
+n10	1
+n100	1
+n1000	1
+n0	1
+n1	1
+n10	1
+n100	1
+n1000	1
+n0	1
+n1	1
+n2	1
+n3	1
+n4	1
+n0	1
+n1	1
+n2	1
+n3	1
+n4	1
 engaged
 05407_adaptive_repeats	1	1	1
 05407_composite_later	1	1	1
@@ -425,6 +445,8 @@ engaged
 05407_ties_desc	1	1	1
 frozen
 05407_skip_repeats	1
+05407_skip_repeats_large_block	1
 05407_skip_repeats_lc	1
 05407_skip_unique	0
 05407_skip_unique_lc	0
+05407_skip_unique_then_repeats	1

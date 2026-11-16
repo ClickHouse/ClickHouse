@@ -85,6 +85,11 @@ struct TopKAggregationHeapBase
         skipped_rows += skipped;
         if (boundary_changed)
             publishBoundary();
+        if (collated_skip_sample_full && skipped_rows >= collated_skip_sample_resume_rows)
+        {
+            collated_skip_sample_full = false;
+            collated_skip_sample_now = true;
+        }
     }
 
     [[nodiscard]] bool everRejected() const { return skipped_rows > 0 || evicted_keys > 0; }
@@ -199,12 +204,14 @@ protected:
     bool window_restarted_for_shared = false; /// the window restarted once when the shared boundary first took effect
 
     /// A 1/64 hash sample of the distinct keys a collated heap skipped (open addressing, 0 = empty slot), the number of
-    /// sampled keys, and whether the sample reached its cap; see `shouldFreeze`. Filled by the `const` skip check.
+    /// sampled keys, and whether the sample reached a cap and was dropped; see `shouldFreeze`. Filled by the `const`
+    /// skip check.
     mutable std::vector<UInt64> collated_skip_sample;
     mutable size_t collated_skip_sample_keys = 0;
     mutable bool collated_skip_sample_full = false;
-    mutable bool collated_skip_sample_now = false;  /// sampling, i.e. a collated heap that ranks all keys and has not filled the sample
+    mutable bool collated_skip_sample_now = false;  /// sampling, i.e. a collated heap that ranks all keys and has no full sample
     mutable UInt64 collated_skip_sample_rows = 0;   /// skipped rows seen while sampling
+    mutable UInt64 collated_skip_sample_resume_rows = 0; /// `skipped_rows` at which a new sample starts; 0 before the first is dropped
     bool collated_skip_sample_by_bytes = false; /// every ranked column hashes by `getDataAt`, which is cheaper than `SipHash`
     bool collated_skip_sample_string = false;   /// the only ranked column is a plain `ColumnString`
 
@@ -414,6 +421,8 @@ private:
 
     [[nodiscard]] bool shouldSkipCollated(const ColumnRawPtrs & source_columns, size_t source_row) const;
     void sampleCollatedSkip(const ColumnRawPtrs & source_columns, size_t source_row) const;
+    void dropCollatedSkipSample() const;
+    [[nodiscard]] bool collatedSkipsRepeat() const;
 
     template <bool with_collation>
     [[nodiscard]] bool sourceAboveBoundary(const IColumn & source_column, size_t source_row) const
