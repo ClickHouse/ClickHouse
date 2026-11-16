@@ -45,10 +45,7 @@ struct UniqueKeySSTReaderCacheKey
     String part_id;
     MergeTreeDataPartChecksum::uint128 file_hash;
 
-    bool operator==(const UniqueKeySSTReaderCacheKey & other) const
-    {
-        return part_id == other.part_id && file_hash == other.file_hash;
-    }
+    bool operator==(const UniqueKeySSTReaderCacheKey &) const = default;
 };
 
 struct UniqueKeySSTReaderCacheKeyHash
@@ -79,11 +76,6 @@ public:
         double size_ratio)
         : Base(cache_policy, size_in_bytes_metric, count_metric, max_size_in_bytes, /*max_count=*/0, size_ratio)
     {
-    }
-
-    static UniqueKeySSTReaderCacheKey makeKey(const String & part_id, MergeTreeDataPartChecksum::uint128 file_hash)
-    {
-        return UniqueKeySSTReaderCacheKey{part_id, file_hash};
     }
 };
 

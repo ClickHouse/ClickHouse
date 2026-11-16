@@ -14,9 +14,7 @@
 #include <Common/Exception.h>
 
 #include <algorithm>
-#include <memory>
 #include <utility>
-#include <vector>
 
 #include <base/unaligned.h>
 

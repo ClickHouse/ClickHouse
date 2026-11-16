@@ -1091,8 +1091,8 @@ std::optional<UniqueKeySSTReaderCacheKey> getSSTReaderCacheKey(const IMergeTreeD
     if (it == part.checksums.files.end())
         return std::nullopt;
     /// Same shape as `getPathForCacheKey` (private, so not reusable here).
-    return UniqueKeySSTReaderCache::makeKey(
-        part.getDataPartStorage().getDiskName() + ":" + part.getRelativePathOfActivePart(), it->second.file_hash);
+    return UniqueKeySSTReaderCacheKey{
+        part.getDataPartStorage().getDiskName() + ":" + part.getRelativePathOfActivePart(), it->second.file_hash};
 }
 }
 #endif
