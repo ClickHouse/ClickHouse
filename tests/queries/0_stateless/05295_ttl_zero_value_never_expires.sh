@@ -137,6 +137,28 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE t_modify_column;
 "
 
+echo "-- ttl_only_drop_parts drops the expired rest of a part once ALTER DELETE removes its rows whose TTL is 0"
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t_delete_zero (id UInt64, delete_at DateTime DEFAULT 0) ENGINE = MergeTree ORDER BY id TTL delete_at DELETE
+    SETTINGS merge_with_ttl_timeout = 0, ttl_only_drop_parts = 1, max_number_of_merges_with_ttl_in_pool = 0;
+    INSERT INTO t_delete_zero $FIXTURE;
+    ALTER TABLE t_delete_zero DELETE WHERE delete_at = 0 SETTINGS mutations_sync = 2;
+    SELECT count() FROM t_delete_zero;
+    DROP TABLE t_delete_zero;
+"
+
+echo "-- a merge that replaces the only row whose TTL is 0 recalculates the bound of the rest"
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t_replace_zero (id UInt64, v UInt64, delete_at DateTime) ENGINE = ReplacingMergeTree(v) ORDER BY id TTL delete_at DELETE
+    SETTINGS merge_with_ttl_timeout = 0, max_number_of_merges_with_ttl_in_pool = 0;
+    INSERT INTO t_replace_zero VALUES (0, 1, 0), (1, 1, '2100-01-01 00:00:00');
+    INSERT INTO t_replace_zero VALUES (0, 2, '2100-01-01 00:00:00');
+    OPTIMIZE TABLE t_replace_zero FINAL;
+    SELECT rows, delete_ttl_info_max = toDateTime('2100-01-01 00:00:00') FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_replace_zero' AND active;
+    DROP TABLE t_replace_zero;
+"
+
 # max_number_of_merges_with_ttl_in_pool is compared with the number of TTL merges of the whole server, so the tables
 # below that wait for a background TTL merge raise it to 100. Where the part must be prepared first, it stays 0 until then.
 

@@ -23,6 +23,10 @@
 5	10
 -- column TTL added by MODIFY COLUMN, recalculated only
 5	5
+-- ttl_only_drop_parts drops the expired rest of a part once ALTER DELETE removes its rows whose TTL is 0
+0
+-- a merge that replaces the only row whose TTL is 0 recalculates the bound of the rest
+2	1
 -- background TTL merge
 5	5
 -- ttl_only_drop_parts drops an expired part whose column TTL is 0 for every row
