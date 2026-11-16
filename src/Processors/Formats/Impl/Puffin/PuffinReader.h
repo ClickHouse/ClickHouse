@@ -15,9 +15,9 @@ class PuffinReader
 public:
     explicit PuffinReader(ReadBuffer & in_);
 
-    const VectorWithMemoryTracking<PuffinBlob> & getBlobs() const { return footer.blobs; }
+    [[nodiscard]] const VectorWithMemoryTracking<PuffinBlob> & getBlobs() const { return footer.blobs; }
 
-    std::optional<String> readBlob(const PuffinBlob & blob) const;
+    [[nodiscard]] std::optional<String> readBlob(const PuffinBlob & blob) const;
 
 private:
     ReadBuffer & in;

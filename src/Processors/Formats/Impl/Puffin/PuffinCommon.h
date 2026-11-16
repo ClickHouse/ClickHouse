@@ -29,7 +29,7 @@ struct PuffinBlob
     String compression_codec;
     MapWithMemoryTracking<String, String> properties;
 
-    Poco::JSON::Object::Ptr toJSON(bool in_footer) const;
+    [[nodiscard]] Poco::JSON::Object::Ptr toJSON(bool in_footer) const;
 };
 
 }

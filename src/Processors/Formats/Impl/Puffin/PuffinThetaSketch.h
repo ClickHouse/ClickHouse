@@ -28,7 +28,7 @@ public:
     ~PuffinColumnThetaSketch();
 
     void update(const IColumn & column);
-    Serialized serialize() const;
+    [[nodiscard]] Serialized serialize() const;
     void reset();
 
 private:

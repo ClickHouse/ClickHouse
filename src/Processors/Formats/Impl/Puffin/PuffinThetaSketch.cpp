@@ -18,7 +18,7 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
-#include <unordered_set>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #if USE_DATASKETCHES
 #include <Columns/ColumnDecimal.h>
@@ -47,9 +47,9 @@ namespace ErrorCodes
 namespace
 {
 
-constexpr UInt32 ICEBERG_TIMESTAMP_SCALE = 6;
-
 #if USE_DATASKETCHES
+
+constexpr UInt32 ICEBERG_TIMESTAMP_SCALE = 6;
 
 std::optional<DataTypePtr> getCastType(const DataTypePtr & type)
 {
@@ -154,7 +154,7 @@ struct PuffinColumnThetaSketch::Impl
     {
     }
 
-    ColumnPtr encode(const ColumnPtr & column) const
+    [[nodiscard]] ColumnPtr encode(const ColumnPtr & column) const
     {
         if (cast_to)
             return castColumn({column, type, ""}, cast_to);
@@ -182,7 +182,7 @@ struct PuffinColumnThetaSketch::Impl
         }
     }
 
-    datasketches::compact_theta_sketch compact() const
+    [[nodiscard]] datasketches::compact_theta_sketch compact() const
     {
         auto sketch_union = datasketches::theta_union::builder().build();
         sketch_union.update(sketch);
@@ -283,6 +283,8 @@ PuffinBlob makeThetaSketchBlobMetadata(Int32 field_id, Int64 snapshot_id, Int64 
     return blob;
 }
 
+#if USE_DATASKETCHES
+
 namespace
 {
 
@@ -296,9 +298,9 @@ VectorWithMemoryTracking<Int32> parseFieldIds(const String & setting, const Bloc
         return field_ids;
     }
 
-    std::vector<String> parts;
+    VectorWithMemoryTracking<String> parts;
     boost::split(parts, setting, boost::is_any_of(","));
-    std::unordered_set<Int32> seen;
+    UnorderedSetWithMemoryTracking<Int32> seen;
     for (auto & part : parts)
     {
         boost::trim(part);
@@ -391,6 +393,8 @@ private:
 };
 
 }
+
+#endif
 
 PuffinBlobBuilderPtr createPuffinThetaSketchBuilder(const Block & header, const FormatSettings & format_settings)
 {
