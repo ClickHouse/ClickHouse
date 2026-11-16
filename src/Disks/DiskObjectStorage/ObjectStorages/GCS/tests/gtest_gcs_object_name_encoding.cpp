@@ -49,6 +49,8 @@ public:
         return result;
     }
 
+    bool omit_content_length_of_no_content = false;
+
 private:
     std::mutex mutex;
     std::vector<std::string> targets;
@@ -66,7 +68,10 @@ public:
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_DELETE)
         {
             response.setStatus(Poco::Net::HTTPResponse::HTTP_NO_CONTENT);
-            response.setContentLength(0);
+            /// A `204` need not carry `Content-Length` (RFC 9110, section 8.6); Poco's server omits it
+            /// unless it is set, and still keeps the connection open.
+            if (!recorder.omit_content_length_of_no_content)
+                response.setContentLength(0);
             response.send();
             return;
         }
@@ -166,6 +171,37 @@ TEST(GCSObjectNameEncoding, KeepsSlashesInObjectNamesEncoded)
         ASSERT_EQ(targets.size(), 1u);
         EXPECT_EQ(pathOf(targets.front()), expected_path);
     }
+
+    server.stop();
+}
+
+/// The SDK drops the payload of a successful deletion unread (`RestStub::DeleteObject` returns through
+/// `ReturnEmptyResponse`), and a conforming server answers it with `204 No Content` without
+/// `Content-Length`. The response has no body, so the connection is reusable: two deletions in a row
+/// must go over one connection rather than pay a connection setup (and a TLS handshake) each.
+TEST(GCSObjectNameEncoding, ReusesConnectionAfterNoContentWithoutContentLength)
+{
+    TargetRecorder recorder;
+    recorder.omit_content_length_of_no_content = true;
+
+    Poco::Net::ServerSocket server_socket(Poco::Net::SocketAddress("127.0.0.1", 0));
+    Poco::Net::HTTPServer server(new CapturingHandlerFactory(recorder), server_socket, new Poco::Net::HTTPServerParams);
+    server.start();
+
+    gc::Options options;
+    options.set<gc::UnifiedCredentialsOption>(gc::MakeInsecureCredentials());
+    options.set<gcs::RestEndpointOption>(fmt::format("http://{}", server_socket.address().toString()));
+    options.set<gcs::RetryPolicyOption>(gcs::LimitedErrorCountRetryPolicy(0).clone());
+    gcs::Client client(std::move(options));
+
+    for (const auto * key : {"a/first", "a/second"})
+    {
+        auto status = client.DeleteObject("test-bucket", key);
+        ASSERT_TRUE(status.ok()) << status.message();
+    }
+
+    EXPECT_EQ(recorder.take().size(), 2u);
+    EXPECT_EQ(server.totalConnections(), 1);
 
     server.stop();
 }

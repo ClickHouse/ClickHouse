@@ -880,6 +880,18 @@ class PocoHttpPayload : public HttpPayload {
     static constexpr std::uint64_t kMaxDrainBytes = 128 * 1024;
 
     if (!response_) return;
+    // A response that has no body by definition (`1xx`, `204 No Content`, `304 Not Modified`) need
+    // not carry a `Content-Length` (RFC 9110, section 8.6), and Poco reads it as a zero-length body
+    // (`HTTPClientSession::receiveResponse`), so nothing of it is left on the socket. The SDK drops
+    // such payloads unread, e.g. `RestStub::DeleteObject` through `ReturnEmptyResponse`, so without
+    // this every object deletion would close its connection.
+    auto const status = response_->getStatus();
+    if (status < Poco::Net::HTTPResponse::HTTP_OK
+        || status == Poco::Net::HTTPResponse::HTTP_NO_CONTENT
+        || status == Poco::Net::HTTPResponse::HTTP_NOT_MODIFIED) {
+      finished_ = true;
+      return;
+    }
     auto const content_length = response_->getContentLength64();
     // `UNKNOWN_CONTENT_LENGTH` (-1), or a negative value the peer sent.
     if (content_length < 0) return;
