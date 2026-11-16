@@ -1265,6 +1265,12 @@ public:
                     }
                     break;
                 case ElementType::UINT64:
+                    /// Ticks above the `Int64` range would wrap into a negative time.
+                    if (element.getUInt64() > static_cast<UInt64>(std::numeric_limits<Time64::NativeType>::max()))
+                    {
+                        error = fmt::format("cannot convert UInt64 value {} to Time64", element.getUInt64());
+                        return false;
+                    }
                     value.value = element.getUInt64();
                     break;
                 case ElementType::INT64:
