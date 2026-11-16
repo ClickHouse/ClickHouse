@@ -35,6 +35,7 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <boost/algorithm/string.hpp>
 
 #include "config.h"
@@ -445,7 +446,7 @@ struct PathAndSubcolumn
     String remaining;
 
     /// Reconstruct the full subcolumn (type_hint + "." + remaining).
-    String fullSubcolumn() const
+    [[nodiscard]] String fullSubcolumn() const
     {
         if (type_hint.empty())
             return {};
