@@ -44,7 +44,7 @@ using SQLiteStatementPtr = std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_final
 class SQLiteDatabase
 {
 public:
-    sqlite3 * get() const { return db.get(); }
+    [[nodiscard]] sqlite3 * get() const { return db.get(); }
 
     String serialized_database;
     SQLitePtr db{nullptr, sqlite3_close};
