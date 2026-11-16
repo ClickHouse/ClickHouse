@@ -49,9 +49,10 @@ ${CLICKHOUSE_LOCAL} --config-file "${CONFIG_FILE}" --query "
     ${events_query};"
 
 echo "-- An entry bigger than the whole cache is not stored, the query still works"
+# `uniqExact(*)` reads the columns of the subquery: for a plain `count()` the subquery computes none of them, and its entry fits.
 ${CLICKHOUSE_LOCAL} --config-file "${CONFIG_FILE}" --query "
-    SELECT count() FROM (SELECT number, hex(sipHash64(number)) FROM numbers(10000) SETTINGS use_query_cache = true, query_cache_on_disk_codec = 'NONE', query_cache_on_disk_cache_name = 'lru');
-    SELECT count() FROM (SELECT number, hex(sipHash64(number)) FROM numbers(10000) SETTINGS use_query_cache = true, query_cache_on_disk_codec = 'NONE', query_cache_on_disk_cache_name = 'lru');
+    SELECT uniqExact(*) FROM (SELECT number, hex(sipHash64(number)) FROM numbers(10000) SETTINGS use_query_cache = true, query_cache_on_disk_codec = 'NONE', query_cache_on_disk_cache_name = 'lru');
+    SELECT uniqExact(*) FROM (SELECT number, hex(sipHash64(number)) FROM numbers(10000) SETTINGS use_query_cache = true, query_cache_on_disk_codec = 'NONE', query_cache_on_disk_cache_name = 'lru');
     SELECT event, value FROM system.events WHERE event LIKE 'QueryCacheOnDisk%' ORDER BY event;"
 
 echo "-- An entry which does not fit into the probationary queue of an SLRU cache is not stored and leaves no file segments behind"

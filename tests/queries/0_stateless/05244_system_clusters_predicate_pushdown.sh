@@ -65,7 +65,7 @@ echo "-- filter that cannot be pushed down still gives correct rows"
 run_query "05244_not_pushed" "SELECT cluster = '${DB1}' FROM system.clusters WHERE cluster = '${DB1}' OR is_active = 42"
 
 echo "-- all clusters"
-run_query "05244_all" "SELECT count() >= 2 FROM (SELECT is_active FROM system.clusters)"
+run_query "05244_all" "SELECT countIf(is_active) >= 2 FROM (SELECT is_active FROM system.clusters)"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 

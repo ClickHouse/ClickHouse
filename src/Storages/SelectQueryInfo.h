@@ -248,7 +248,7 @@ struct SelectQueryInfo
     std::optional<TableExpressionModifiers::Rational> getSampleOffsetRatio() const;
 
     /// The name of the column the planner reads from `storage` only to count the rows, if no filter it attaches later reads it too.
-    std::optional<String> getRowCountOnlyColumnName(const IStorage & storage, const ContextPtr & context) const;
+    [[nodiscard]] std::optional<String> getRowCountOnlyColumnName(const IStorage & storage, const ContextPtr & context) const;
 
     /// Analyzer generates unique ColumnIdentifiers like __table1.__partition_id in filter nodes,
     /// while key analysis still requires unqualified column names.

@@ -316,7 +316,7 @@ private:
         ///  required y in data pipeline
         void extendNames(Names &) const;
 
-        bool readsColumn(const String & column_name) const;
+        [[nodiscard]] bool readsColumn(const String & column_name) const;
 
         /// Use storage facilities to filter data
         ///  optimization
