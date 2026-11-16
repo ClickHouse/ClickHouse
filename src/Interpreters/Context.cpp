@@ -89,6 +89,7 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
@@ -1736,6 +1737,7 @@ ContextData::ContextData(const ContextData &o) :
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
     runtime_filter_lookup(o.runtime_filter_lookup),
     columns_cache_write_budget(o.columns_cache_write_budget),
+    query_max_threads_snapshot(o.query_max_threads_snapshot),
     kitchen_sink(o.kitchen_sink),
     query_parameters(o.query_parameters),
     host_context(o.host_context),
@@ -2904,8 +2906,13 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
         /// If setUserID() was never called then this must be the global context with the full access.
         bool full_access = !user_id;
 
+        /// The row policies of the initial user are added to the row policies of the current user. The initiator of
+        /// a secondary query also forwards the current roles of the initial user (after `SET ROLE`); if the initial user
+        /// is the current user, the query still runs with the default roles of the user on a connection without
+        /// an interserver secret, so the row policies of the forwarded roles are needed then too.
         std::optional<UUID> initial_user_id;
-        if (client_info.initial_user != client_info.current_user)
+        if (client_info.initial_user != client_info.current_user
+            || (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && client_info.current_roles.has_value()))
             initial_user_id = getAccessControl().find<User>(client_info.initial_user);
 
         return ContextAccessParams{
@@ -3088,7 +3095,7 @@ namespace
     public:
         bool has(const String &) override { return false; }
         ResourceLink get(const String &) override { return {}; }
-        WorkloadSettings getWorkloadSettings(const String &) const override { return {}; }
+        [[nodiscard]] WorkloadSettings getWorkloadSettings(const String &) const override { return {}; }
     };
 }
 
@@ -4793,6 +4800,7 @@ void Context::makeQueryContext()
     query_execution_counters = std::make_shared<QueryExecutionCounters>();
     runtime_filter_lookup = createRuntimeFilterLookup();
     columns_cache_write_budget = std::make_shared<ColumnsCacheWriteBudget>();
+    query_max_threads_snapshot = std::make_shared<QueryMaxThreadsSnapshot>();
     /// A new query must classify under its own workload and scheduling settings. The ContextData
     /// copy-ctor copies `classifier`, which now carries this query's scheduling identity (weight,
     /// priority, and its per-query `ResourceSchedulingContext`), so a query context created from
@@ -6497,6 +6505,10 @@ void Context::clearQueryResultCache(const std::optional<String> & tag) const
 
 void Context::clearCaches() const
 {
+    /// These take the context mutex themselves.
+    clearPageCache();
+    clearColumnsCache();
+
     std::lock_guard lock(shared->mutex);
 
     /// Each cache is null-checked because some `Context` users intentionally do
@@ -7217,7 +7229,7 @@ public:
     }
 
 private:
-    std::chrono::steady_clock::duration nextStep() const
+    [[nodiscard]] std::chrono::steady_clock::duration nextStep() const
     {
         std::chrono::steady_clock::duration step = std::chrono::milliseconds(100);
         if (deadline)
@@ -9641,6 +9653,9 @@ void Context::setCurrentAddress(const Poco::Net::SocketAddress & current_address
 
 void Context::setInitialUserName(const String & initial_user_name)
 {
+    /// The forwarded current roles are the roles of the initial user, so they cannot be kept for another user.
+    if (client_info.initial_user != initial_user_name)
+        client_info.current_roles.reset();
     client_info.initial_user = initial_user_name;
     need_recalculate_access = true;
 }
@@ -10701,6 +10716,17 @@ RuntimeFilterLookupPtr Context::getRuntimeFilterLookup() const
 ColumnsCacheWriteBudgetPtr Context::getColumnsCacheWriteBudget() const
 {
     return columns_cache_write_budget;
+}
+
+const QueryMaxThreadsSnapshotPtr & Context::getQueryMaxThreadsSnapshot() const
+{
+    return query_max_threads_snapshot;
+}
+
+void Context::shareQueryMaxThreadsSnapshot(const Context & from)
+{
+    if (from.query_max_threads_snapshot)
+        query_max_threads_snapshot = from.query_max_threads_snapshot;
 }
 
 UInt64 Context::getClientProtocolVersion() const

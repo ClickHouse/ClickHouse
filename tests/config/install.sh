@@ -259,6 +259,25 @@ if check_clickhouse_version 25.10; then
     ln -sf $SRC_PATH/config.d/keeper_max_request_size.xml $DEST_SERVER_PATH/config.d/
 fi
 ln -sf $SRC_PATH/config.d/logging_no_rotate.xml $DEST_SERVER_PATH/config.d/
+# The server isolates its filesystem in a new mount namespace (and a user namespace, if it lacks `CAP_SYS_ADMIN`).
+# A container that is not privileged, such as the one of the fast test, does not allow that, and the setting
+# stays at its default, `disabled`, there.
+if check_clickhouse_version 26.11 && command -v unshare >/dev/null \
+    && { unshare --mount true 2>/dev/null || unshare --user --map-root-user --mount true 2>/dev/null; }; then
+    ln -sf $SRC_PATH/config.d/filesystem_isolation.xml $DEST_SERVER_PATH/config.d/
+    # Many tests make files in the directory of the tests and in `CLICKHOUSE_TMP` inside it visible to the server,
+    # with symbolic links from `user_files` or by passing their paths, so the directory is kept visible.
+    if [ -d "$SRC_PATH/../queries" ]; then
+        QUERIES_PATH="$(cd "$SRC_PATH/../queries" && pwd -P)"
+        cat > $DEST_SERVER_PATH/config.d/filesystem_isolation_queries_path.xml <<EOF
+<clickhouse>
+    <filesystem_isolation_paths>
+        <read_write>$QUERIES_PATH</read_write>
+    </filesystem_isolation_paths>
+</clickhouse>
+EOF
+    fi
+fi
 ln -sf $SRC_PATH/config.d/merge_tree.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/lost_forever_check.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/tcp_with_proxy.xml $DEST_SERVER_PATH/config.d/

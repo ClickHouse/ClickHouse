@@ -47,15 +47,15 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadKeys is unsupported for YAMLRegExpTreeDictionarySource");
     }
 
-    bool supportsSelectiveLoad() const override { return false; }
+    [[nodiscard]] bool supportsSelectiveLoad() const override { return false; }
 
-    bool hasUpdateField() const override { return false; }
+    [[nodiscard]] bool hasUpdateField() const override { return false; }
 
-    DictionarySourcePtr clone() const override { return std::make_shared<YAMLRegExpTreeDictionarySource>(*this); }
+    [[nodiscard]] DictionarySourcePtr clone() const override { return std::make_shared<YAMLRegExpTreeDictionarySource>(*this); }
 
-    bool isModified() const override;
+    [[nodiscard]] bool isModified() const override;
 
-    String toString() const override;
+    [[nodiscard]] String toString() const override;
 
 private:
     const String filepath;
@@ -68,7 +68,7 @@ private:
     LoggerPtr logger;
     Poco::Timestamp last_modification;
 
-    Poco::Timestamp getLastModification() const;
+    [[nodiscard]] Poco::Timestamp getLastModification() const;
 
     /// Throws if the dictionary was created from DDL and the file is not inside the user files path.
     /// Checked before every access to the file, not only on creation: a reload opens the path again,
