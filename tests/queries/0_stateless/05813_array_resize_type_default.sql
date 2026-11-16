@@ -11,3 +11,4 @@ SELECT arrayResize([CAST('y', 'Nullable(Enum8(\'x\' = 1, \'y\' = 2))')], 2), arr
 SELECT arraySlice(arrayResize(CAST(arrayMap(i -> (toString(i), 'y'), range(300)), 'Array(Tuple(LowCardinality(String), Enum8(\'x\' = 1, \'y\' = 2)))'), 302), 300);
 SELECT arrayResize([tuple(CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)'), NULL)], 2);
 SELECT length(arrayResize([], 2)), arrayResize([], 0), length(arrayResize(materialize([]), 2)), length(arrayResize([tuple([][1])], 2));
+SELECT a, b FROM (SELECT [CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)')] AS a, [1, 2] AS b) ARRAY JOIN a, b SETTINGS enable_unaligned_array_join = 1;
