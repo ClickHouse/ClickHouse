@@ -4622,7 +4622,7 @@ TEST_F(FileCacheTest, TemporarySegmentRemovedAtLastReleaseUnlessUsed)
     {
         auto holder = fill(held, /*keep_temporary=*/true);
         auto other = cache->getOrSet(held, 0, data.size(), data.size(), CreateFileSegmentSettings{}, 0, user);
-        holder.reset();
+        holder = nullptr;
         EXPECT_TRUE(cached(held));
     }
     EXPECT_FALSE(cached(held));
