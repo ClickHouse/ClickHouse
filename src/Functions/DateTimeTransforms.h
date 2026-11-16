@@ -2313,10 +2313,6 @@ struct ToDayOfYearImpl
 
 struct ToDaysSinceYearZeroImpl
 {
-private:
-    static constexpr auto SECONDS_PER_DAY = 60 * 60 * 24;
-
-public:
     static constexpr auto DAYS_BETWEEN_YEARS_0_AND_1970 = 719'528; /// 01 January, each. Constant taken from Java LocalDate. Consistent with MySQL's TO_DAYS().
 
     static constexpr auto name = "toDaysSinceYearZero";
@@ -2325,9 +2321,9 @@ public:
     {
         return DAYS_BETWEEN_YEARS_0_AND_1970 + static_cast<UInt32>(time_zone.toDayNum(t));
     }
-    static UInt32 execute(UInt32 d, const DateLUTImpl &)
+    static UInt32 execute(UInt32 d, const DateLUTImpl & time_zone)
     {
-        return DAYS_BETWEEN_YEARS_0_AND_1970 + d / SECONDS_PER_DAY;
+        return DAYS_BETWEEN_YEARS_0_AND_1970 + static_cast<UInt32>(time_zone.toDayNum(d));
     }
     static UInt32 execute(Int32 d, const DateLUTImpl &)
     {
