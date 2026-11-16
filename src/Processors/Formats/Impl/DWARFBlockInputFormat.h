@@ -27,8 +27,6 @@ public:
 
     String getName() const override { return "DWARFBlockInputFormat"; }
 
-    void resetParser() override;
-
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
 protected:
@@ -64,7 +62,7 @@ private:
         uint64_t offset = 0;
         VectorWithMemoryTracking<StackEntry> stack;
 
-        bool eof() const { return offset == end_offset; }
+        [[nodiscard]] bool eof() const { return offset == end_offset; }
 
         explicit UnitState(llvm::DWARFUnit * u);
     };
