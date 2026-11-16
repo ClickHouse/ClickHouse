@@ -33,7 +33,8 @@ $CLICKHOUSE_CLIENT -q "
     min_bytes_for_wide_part = 0,
     index_granularity = 8192,
     min_compress_block_size = 65536,
-    max_compress_block_size = 65536"
+    max_compress_block_size = 65536,
+    add_minmax_index_for_numeric_columns = 0"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES t"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t SELECT number, number FROM numbers(1000000)"
