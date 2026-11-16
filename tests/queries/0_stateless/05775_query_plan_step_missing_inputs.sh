@@ -188,21 +188,31 @@ def sendQuery(s, query, stage):
     s.sendall(ba)
 
 
-def buildQueryPlanPacket(plan_version, step_name, payload):
+def buildNode(plan_version, step_name, payload, children):
+    """Serializes a plan node: its children first, then the step itself with an empty output header."""
+    node = bytearray()
+    writeVarUInt(len(children), node)  # num_children
+    for child in children:
+        node += child
+    writeStringBinary(step_name, node)
+    if plan_version >= WITH_STEP_VERSIONS:
+        writeVarUInt(0, node)      # step_version
+    writeStringBinary("", node)    # step_description
+    writeVarUInt(0, node)          # output header: 0 columns
+    writeVarUInt(0, node)          # settings: 0 changed
+    node += payload
+    return bytes(node)
+
+
+def buildQueryPlanPacket(plan_version, step_name, payload, num_children):
     body = bytearray()
     writeVarUInt(plan_version, body)
     if plan_version >= WITH_EXECUTION_LIMITS:
         writeVarUInt(0, body)      # max_threads
         body.append(0)             # concurrency_control
-    # Node tree, a single root step with no children.
-    writeVarUInt(0, body)          # num_children
-    writeStringBinary(step_name, body)
-    if plan_version >= WITH_STEP_VERSIONS:
-        writeVarUInt(0, body)      # step_version
-    writeStringBinary("", body)    # step_description
-    writeVarUInt(0, body)          # output header: 0 columns
-    writeVarUInt(0, body)          # settings: 0 changed
-    body += payload
+    # Node tree: a root step with the given number of `ReadNothing` children.
+    children = [buildNode(plan_version, "ReadNothing", b"", []) for _ in range(num_children)]
+    body += buildNode(plan_version, step_name, payload, children)
 
     packet = bytearray()
     writeVarUInt(13, packet)       # Client::QueryPlan
@@ -219,8 +229,8 @@ def readException(s):
     return code, text
 
 
-def sendPlan(step_name, payload):
-    """Sends a `QueryPlan` packet with a single childless step and returns the exception code, or None if the query is not rejected."""
+def sendPlan(step_name, payload, num_children=0):
+    """Sends a `QueryPlan` packet with a single step having `num_children` children and returns the exception code, or None if the query is not rejected."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(60)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
@@ -229,7 +239,7 @@ def sendPlan(step_name, payload):
         sendAddendum(s)
         # Stage 7 == QueryProcessingStage::QueryPlan: the server then expects a QueryPlan packet.
         sendQuery(s, "SELECT 1", 7)
-        s.sendall(buildQueryPlanPacket(plan_version, step_name, payload))
+        s.sendall(buildQueryPlanPacket(plan_version, step_name, payload, num_children))
 
         # Only the first packet matters: either the exception or the start of the query result.
         packet_type = readVarUInt(s)
@@ -240,8 +250,10 @@ def sendPlan(step_name, payload):
 
 def main():
     # 117 == INCORRECT_DATA
-    for step_name, payload in [("Extremes", b""), ("Limit", b"\x00\x01\x00"), ("Union", b"\x00")]:
+    for step_name, payload in [("Extremes", b""), ("Limit", b"\x00\x01\x00"), ("Union", b"\x00"), ("BlocksMarshalling", b"")]:
         print(step_name, sendPlan(step_name, payload))
+    # A step with more children than it has inputs.
+    print("Extremes with two children", sendPlan("Extremes", b"", num_children=2))
 
 
 main()
