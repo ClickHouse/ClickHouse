@@ -16,6 +16,7 @@ def pages(value):
             yield from pages(value.get(key, []))
 
 groups = {}
+mapping = {}
 for page in sorted(set(pages(json.loads((root / 'clickstack/navigation.json').read_text())))):
     source = root / (page + '.mdx')
     if not source.is_file():
@@ -32,9 +33,11 @@ for page in sorted(set(pages(json.loads((root / 'clickstack/navigation.json').re
             relative = relative.removeprefix(prefix)
             product = label
             break
-    # Fully managed onboarding guides retain their legacy URLs.
-    if relative.startswith('managed-onboarding/') and relative.endswith('-serverless'):
-        product = 'ClickHouse Observability'
+    # All nurture guides target Observability, including self-managed and legacy URLs.
+    # Keep each copy's badge on its own route rather than pairing it with an OSS edition.
+    if relative.startswith('managed-onboarding/'):
+        mapping[slug] = [['ClickHouse Observability', slug]]
+        continue
     key = re.sub(r'(^|/)index$', '', relative).rstrip('/')
     # Demo Days label availability per feature rather than per page.
     if re.match(r'demo-days/\d{4}/', key):
@@ -43,7 +46,6 @@ for page in sorted(set(pages(json.loads((root / 'clickstack/navigation.json').re
         key = 'getting-started'
     groups.setdefault(key, {})[product] = slug
 
-mapping = {}
 for variants in groups.values():
     for slug in variants.values():
         badges = []

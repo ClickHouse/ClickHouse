@@ -807,12 +807,8 @@
   ],
   "/clickstack/managed-onboarding/instrument-application": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/instrument-application"
-    ],
-    [
       "ClickHouse Observability",
-      "/clickstack/observability/managed-onboarding/instrument-application"
+      "/clickstack/managed-onboarding/instrument-application"
     ]
   ],
   "/clickstack/managed-onboarding/instrument-application-serverless": [
@@ -823,12 +819,8 @@
   ],
   "/clickstack/managed-onboarding/managed-getting-started": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/managed-getting-started"
-    ],
-    [
       "ClickHouse Observability",
-      "/clickstack/self-configured/managed-onboarding/managed-getting-started"
+      "/clickstack/managed-onboarding/managed-getting-started"
     ]
   ],
   "/clickstack/managed-onboarding/migrating-from-datadog-serverless": [
@@ -839,12 +831,8 @@
   ],
   "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs"
-    ],
-    [
       "ClickHouse Observability",
-      "/clickstack/observability/managed-onboarding/monitoring-aws-cloudwatch-logs"
+      "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs"
     ]
   ],
   "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs-serverless": [
@@ -855,12 +843,8 @@
   ],
   "/clickstack/managed-onboarding/monitoring-kubernetes": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/monitoring-kubernetes"
-    ],
-    [
       "ClickHouse Observability",
-      "/clickstack/observability/managed-onboarding/monitoring-kubernetes"
+      "/clickstack/managed-onboarding/monitoring-kubernetes"
     ]
   ],
   "/clickstack/managed-onboarding/monitoring-kubernetes-serverless": [
@@ -871,12 +855,8 @@
   ],
   "/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector"
-    ],
-    [
       "ClickHouse Observability",
-      "/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector"
+      "/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector"
     ]
   ],
   "/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless": [
@@ -887,12 +867,8 @@
   ],
   "/clickstack/managed-onboarding/tuning-clickstack-schema": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/tuning-clickstack-schema"
-    ],
-    [
       "ClickHouse Observability",
-      "/clickstack/observability/managed-onboarding/tuning-clickstack-schema"
+      "/clickstack/managed-onboarding/tuning-clickstack-schema"
     ]
   ],
   "/clickstack/managing/config": [
@@ -1749,19 +1725,11 @@
   ],
   "/clickstack/observability/managed-onboarding/instrument-application": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/instrument-application"
-    ],
-    [
       "ClickHouse Observability",
       "/clickstack/observability/managed-onboarding/instrument-application"
     ]
   ],
   "/clickstack/observability/managed-onboarding/monitoring-aws-cloudwatch-logs": [
-    [
-      "Open Source",
-      "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs"
-    ],
     [
       "ClickHouse Observability",
       "/clickstack/observability/managed-onboarding/monitoring-aws-cloudwatch-logs"
@@ -1769,19 +1737,11 @@
   ],
   "/clickstack/observability/managed-onboarding/monitoring-kubernetes": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/monitoring-kubernetes"
-    ],
-    [
       "ClickHouse Observability",
       "/clickstack/observability/managed-onboarding/monitoring-kubernetes"
     ]
   ],
   "/clickstack/observability/managed-onboarding/tuning-clickstack-schema": [
-    [
-      "Open Source",
-      "/clickstack/managed-onboarding/tuning-clickstack-schema"
-    ],
     [
       "ClickHouse Observability",
       "/clickstack/observability/managed-onboarding/tuning-clickstack-schema"
@@ -2029,19 +1989,11 @@
   ],
   "/clickstack/self-configured/managed-onboarding/instrument-application": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/instrument-application"
-    ],
-    [
       "ClickHouse Observability",
       "/clickstack/self-configured/managed-onboarding/instrument-application"
     ]
   ],
   "/clickstack/self-configured/managed-onboarding/managed-getting-started": [
-    [
-      "Open Source",
-      "/clickstack/managed-onboarding/managed-getting-started"
-    ],
     [
       "ClickHouse Observability",
       "/clickstack/self-configured/managed-onboarding/managed-getting-started"
@@ -2049,19 +2001,11 @@
   ],
   "/clickstack/self-configured/managed-onboarding/monitoring-aws-cloudwatch-logs": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs"
-    ],
-    [
       "ClickHouse Observability",
       "/clickstack/self-configured/managed-onboarding/monitoring-aws-cloudwatch-logs"
     ]
   ],
   "/clickstack/self-configured/managed-onboarding/monitoring-kubernetes": [
-    [
-      "Open Source",
-      "/clickstack/managed-onboarding/monitoring-kubernetes"
-    ],
     [
       "ClickHouse Observability",
       "/clickstack/self-configured/managed-onboarding/monitoring-kubernetes"
@@ -2069,19 +2013,11 @@
   ],
   "/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector": [
     [
-      "Open Source",
-      "/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector"
-    ],
-    [
       "ClickHouse Observability",
       "/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector"
     ]
   ],
   "/clickstack/self-configured/managed-onboarding/tuning-clickstack-schema": [
-    [
-      "Open Source",
-      "/clickstack/managed-onboarding/tuning-clickstack-schema"
-    ],
     [
       "ClickHouse Observability",
       "/clickstack/self-configured/managed-onboarding/tuning-clickstack-schema"
