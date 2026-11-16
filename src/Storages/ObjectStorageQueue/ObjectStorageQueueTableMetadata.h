@@ -28,7 +28,7 @@ struct ObjectStorageQueueTableMetadata
         String bucket;
         String path_pattern;
 
-        bool empty() const { return endpoint.empty(); }
+        [[nodiscard]] bool empty() const { return endpoint.empty(); }
         bool operator==(const Source &) const = default;
     };
 

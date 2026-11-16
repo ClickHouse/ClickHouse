@@ -11,7 +11,7 @@ namespace DB
 class ParserShowColumnsQuery : public IParserBase
 {
 protected:
-    const char * getName() const override { return "SHOW COLUMNS query"; }
+    [[nodiscard]] const char * getName() const override { return "SHOW COLUMNS query"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

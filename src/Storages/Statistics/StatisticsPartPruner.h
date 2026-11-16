@@ -24,13 +24,13 @@ public:
     BoolMask checkPartCanMatch(const Estimates & estimates);
 
     /// Returns true if no columns with MinMax statistics are used in the filter, then all parts will match.
-    bool isUseless() const { return useless; }
+    [[nodiscard]] bool isUseless() const { return useless; }
 
     /// Get the list of column names used in the filter condition that have statistics.
-    Names getUsedColumns() const { return {used_column_names.begin(), used_column_names.end()}; }
+    [[nodiscard]] Names getUsedColumns() const { return {used_column_names.begin(), used_column_names.end()}; }
 
     /// Get the columns whose estimates `checkPartCanMatch` may use.
-    NameSet getRequiredColumns() const;
+    [[nodiscard]] NameSet getRequiredColumns() const;
 
 private:
     /// Get or create a KeyCondition for the given columns, using cache to avoid recreating for each part.
