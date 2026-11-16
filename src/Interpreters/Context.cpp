@@ -10299,6 +10299,9 @@ ReadSettings Context::getReadSettings() const
     res.http_settings.retry_max_backoff_ms = settings_ref[Setting::http_retry_max_backoff_ms];
     res.http_settings.skip_not_found_url_for_globs = settings_ref[Setting::http_skip_not_found_url_for_globs];
     res.http_settings.make_head_request = settings_ref[Setting::http_make_head_request];
+    res.http_settings.max_fields = settings_ref[Setting::http_max_fields];
+    res.http_settings.max_field_name_size = settings_ref[Setting::http_max_field_name_size];
+    res.http_settings.max_field_value_size = settings_ref[Setting::http_max_field_value_size];
 
     res.remote_fs_settings.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
     res.remote_fs_settings.enable_blob_storage_log = settings_ref[Setting::enable_blob_storage_log_for_read_operations];

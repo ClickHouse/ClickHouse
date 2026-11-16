@@ -94,6 +94,10 @@ struct HTTPReadSettings
     size_t retry_max_backoff_ms = 1600;
     bool skip_not_found_url_for_globs = true;
     bool make_head_request = true;
+    /// The limits of the response header: `http_max_fields`, `http_max_field_name_size`, `http_max_field_value_size`.
+    size_t max_fields = 1000;
+    size_t max_field_name_size = 4 * 1024;
+    size_t max_field_value_size = 128 * 1024;
 };
 
 /// Settings controlling the in-memory page cache behavior.
