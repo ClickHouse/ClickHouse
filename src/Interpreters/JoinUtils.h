@@ -6,7 +6,6 @@
 #include <Common/PODArray.h>
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/IJoin.h>
 #include <base/FnTraits.h>
 
@@ -64,9 +63,9 @@ public:
 
     bool hasData() { return column != nullptr || kind != Kind::Unknown; }
 
-    size_t getSize() const { return size; }
+    [[nodiscard]] size_t getSize() const { return size; }
 
-    bool isRowFiltered(size_t row) const
+    [[nodiscard]] bool isRowFiltered(size_t row) const
     {
         chassert(!column || row < size);
         return (kind == Kind::AllFalse) || (kind == Kind::Unknown && !assert_cast<const ColumnUInt8 &>(*column).getData()[row]);
@@ -75,13 +74,13 @@ public:
     /// The raw mask bytes when the mask is a real column (kind `Unknown`), nullptr otherwise.
     /// Lets hot loops hoist the pointer into a local instead of re-reading it through the object.
     /// The bytes are boolean-like: 0 = row filtered, any non-zero value = row passes.
-    const UInt8 * getRawDataOrNull() const
+    [[nodiscard]] const UInt8 * getRawDataOrNull() const
     {
         chassert(kind != Kind::Unknown || column);
         return kind == Kind::Unknown ? assert_cast<const ColumnUInt8 &>(*column).getData().data() : nullptr;
     }
 
-    Kind getKind() const { return kind; }
+    [[nodiscard]] Kind getKind() const { return kind; }
 
 private:
     ColumnPtr column;
@@ -106,6 +105,10 @@ private:
   */
 DataTypePtr tryGetCommonSubtypeForJoinKeys(
     const DataTypePtr & left_type, const DataTypePtr & right_type, bool force_support_conversion = false);
+
+/// Replaces a `Bool` of `type`, a common type of two JOIN keys, by `UInt8` where one of the keys has an `UInt8`
+/// in that place, so that a `Bool` key and an integer key are compared by value, as `=` does.
+DataTypePtr compareBoolKeysAsUInt8(DataTypePtr type, const DataTypePtr & left_type, const DataTypePtr & right_type);
 
 /** Removes the `Nullable` wrappers of the elements of a Tuple, recursively. Returns other types unchanged.
   *
@@ -144,11 +147,11 @@ ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_nam
 Int64 getCurrentQueryMemoryUsage();
 Block materializeColumnsFromRightBlock(Block block, const Block & sample_block);
 
-/// Throw an exception if join condition column is not UIint8
+/// Throw an exception if join condition column cannot be used in boolean context
 void checkTypesOfMasks(const Block & block_left, const String & condition_name_left,
                        const Block & block_right, const String & condition_name_right);
 
-/// Throw an exception if blocks have different types of key columns . Compare up to Nullability.
+/// Throw an exception if blocks have different types of key columns. Compare up to Nullability.
 void checkTypesOfKeys(const Block & block_left, const Names & key_names_left,
                       const Block & block_right, const Names & key_names_right);
 
@@ -193,8 +196,9 @@ constexpr bool hasNonJoinedBlocks(JoinKind kind, JoinStrictness strictness)
 
 bool hasNonJoinedBlocks(const TableJoin & table_join);
 
-/// Insert default values for rows marked in filter
-ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false);
+/// Insert default values for rows marked in filter; the defaults of `default_type` if it is set.
+ColumnPtr filterWithBlanks(
+    ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false, const DataTypePtr & default_type = nullptr);
 
 }
 

@@ -31,6 +31,11 @@ FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const Action
     if (dagContainsNonDeterministicFunction(filter_dag) || dagContainsNonDeterministicFunction(pre_actions_dag))
         return FilterResult::UNKNOWN;
 
+    /// Pre-join constants reach the filter as full columns after the join, so a function reading representation cannot be probed.
+    if (const auto * filter = filter_dag.tryFindInOutputs(filter_column_name);
+        filter && !ActionsDAG::getInputsReadByRepresentation(*filter).empty())
+        return FilterResult::UNKNOWN;
+
     auto combined_dag = ActionsDAG::merge(std::move(pre_actions_dag), filter_dag.clone());
     ActionsDAG::IntermediateExecutionResult combined_dag_input;
 
@@ -38,12 +43,23 @@ FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const Action
     if (!filter_node)
         return FilterResult::UNKNOWN;
 
+    /// For the same reason `assumeNotNull` over a pre-join constant returns at runtime the value computed
+    /// under the null map, which the constant fold below never computes, so only conjuncts free of it decide.
+    ActionsDAG::NodeRawConstPtrs targets = {filter_node};
+    if (nodeReadsUnspecifiedValueUnderNull(filter_node))
+    {
+        targets = ActionsDAG::extractConjunctionAtoms(filter_node);
+        std::erase_if(targets, nodeReadsUnspecifiedValueUnderNull);
+        if (targets.empty())
+            return FilterResult::UNKNOWN;
+    }
+
     ColumnsWithTypeAndName filter_output;
     try
     {
         filter_output = ActionsDAG::evaluatePartialResult(
             combined_dag_input,
-            { filter_node },
+            targets,
             /*input_rows_count=*/1,
             { .skip_materialize = true });
     }
@@ -53,7 +69,14 @@ FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const Action
         return FilterResult::UNKNOWN;
     }
 
-    return getFilterResult(filter_output[0]);
+    if (targets.front() == filter_node)
+        return getFilterResult(filter_output[0]);
+
+    /// A conjunct that is FALSE on its own makes the whole filter FALSE.
+    for (const auto & conjunct : filter_output)
+        if (getFilterResult(conjunct) == FilterResult::FALSE)
+            return FilterResult::FALSE;
+    return FilterResult::UNKNOWN;
 }
 
 namespace
@@ -177,7 +200,8 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
     {
         case JoinKind::Left:
         {
-            auto result_for_not_matched_rows = filterResultForNotMatchedRows(filter_dag, filter_column_name, *right_stream_input_header);
+            auto result_for_not_matched_rows = filterResultForNotMatchedRows(
+                filter_dag, filter_column_name, *right_stream_input_header, /*allow_unknown_function_arguments=*/false, child_node->children.back());
             auto result_for_matched_rows = filterResultForMatchedRows(getPreFilterActionsDAG<JoinSide::Right>(child_node, join), filter_dag, filter_column_name);
 
             if (result_for_not_matched_rows == FilterResult::FALSE && semi_can_be_executed)
@@ -208,7 +232,8 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
         }
         case JoinKind::Right:
         {
-            auto result_for_not_matched_rows = filterResultForNotMatchedRows(filter_dag, filter_column_name, *left_stream_input_header);
+            auto result_for_not_matched_rows = filterResultForNotMatchedRows(
+                filter_dag, filter_column_name, *left_stream_input_header, /*allow_unknown_function_arguments=*/false, child_node->children.front());
             auto result_for_matched_rows = filterResultForMatchedRows(getPreFilterActionsDAG<JoinSide::Left>(child_node, join), filter_dag, filter_column_name);
 
             if (result_for_not_matched_rows == FilterResult::FALSE && semi_can_be_executed)

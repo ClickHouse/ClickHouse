@@ -9,6 +9,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/StringUtils.h>
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
@@ -791,14 +792,14 @@ private:
     {
         Info(const String & name_, const std::shared_ptr<const ObjectConfig> & config_) : name(name_), config(config_) {}
 
-        bool loaded() const { return object != nullptr; }
-        bool failed() const { return !object && exception; }
-        bool loadedOrFailed() const { return loaded() || failed(); }
-        bool triedToLoad() const { return loaded() || failed() || isLoading(); }
-        bool failedToReload() const { return loaded() && exception != nullptr; }
-        bool isLoading() const { return loading_id > state_id; }
+        [[nodiscard]] bool loaded() const { return object != nullptr; }
+        [[nodiscard]] bool failed() const { return !object && exception; }
+        [[nodiscard]] bool loadedOrFailed() const { return loaded() || failed(); }
+        [[nodiscard]] bool triedToLoad() const { return loaded() || failed() || isLoading(); }
+        [[nodiscard]] bool failedToReload() const { return loaded() && exception != nullptr; }
+        [[nodiscard]] bool isLoading() const { return loading_id > state_id; }
 
-        Status status() const
+        [[nodiscard]] Status status() const
         {
             if (object)
                 return isLoading() ? Status::LOADED_AND_RELOADING : Status::LOADED;
@@ -807,7 +808,7 @@ private:
             return isLoading() ? Status::LOADING : Status::NOT_LOADED;
         }
 
-        Duration loadingDuration() const
+        [[nodiscard]] Duration loadingDuration() const
         {
             if (isLoading())
                 return std::chrono::duration_cast<Duration>(std::chrono::system_clock::now() - loading_start_time);
@@ -815,7 +816,7 @@ private:
         }
 
         template <typename ReturnType>
-        ReturnType getLoadResult() const
+        [[nodiscard]] ReturnType getLoadResult() const
         {
             if constexpr (std::is_same_v<ReturnType, LoadResult>)
             {
@@ -920,6 +921,24 @@ private:
         return results;
     }
 
+    /// Parks this thread's CPU lease while waiting: the loading may run in the same workload and need its CPU slot.
+    template <typename Pred>
+    void waitForLoading(std::unique_lock<std::mutex> & lock, Duration timeout, Pred & pred)
+    {
+        if (pred() || timeout == NO_WAIT)
+            return;
+
+        /// Parking can block until the scheduler processes the request, so not under `mutex`
+        lock.unlock();
+        CPULeaseParkGuard park_guard;
+        lock.lock();
+
+        if (timeout == WAIT)
+            event.wait(lock, pred);
+        else
+            event.wait_for(lock, timeout, pred);
+    }
+
     Info * loadImpl(const String & name, Duration timeout, bool forced_to_reload, std::unique_lock<std::mutex> & lock)
     {
         /// Detect circular dependencies: if this thread is already loading the requested object
@@ -948,11 +967,7 @@ private:
             return (info->state_id >= min_id);
         };
 
-        if (timeout == WAIT)
-            event.wait(lock, pred);
-        else
-            event.wait_for(lock, timeout, pred);
-
+        waitForLoading(lock, timeout, pred);
         return info;
     }
 
@@ -978,10 +993,7 @@ private:
             return all_ready;
         };
 
-        if (timeout == WAIT)
-            event.wait(lock, pred);
-        else
-            event.wait_for(lock, timeout, pred);
+        waitForLoading(lock, timeout, pred);
     }
 
     /// When state_id >= getMinIDToFinishLoading() the loading is considered as finished.
