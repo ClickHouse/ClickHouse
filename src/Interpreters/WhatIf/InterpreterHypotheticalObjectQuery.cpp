@@ -204,7 +204,7 @@ BlockIO createHypotheticalIndex(
 
     /// some argument checks live in the creator, not the validator (tokenizer bounds for
     /// sparse_grams), so construct once here instead of failing later inside EXPLAIN WHATIF
-    MergeTreeIndexFactory::instance().get(metadata, index_desc, *merge_tree.getSettings());
+    (void)MergeTreeIndexFactory::instance().get(metadata, index_desc, *merge_tree.getSettings());
 
     store.add(table_id, index_desc, HypotheticalBinding::of(index_desc, *metadata), query.if_not_exists);
     return {};
