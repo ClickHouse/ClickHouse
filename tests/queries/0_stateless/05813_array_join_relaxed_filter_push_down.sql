@@ -28,7 +28,7 @@ WHERE explain LIKE '%Element filter column%';
 SELECT '-- each step gets the filter one time, and no filter stays above';
 SELECT count() FROM (EXPLAIN SELECT a, b, c FROM t_aj_or ARRAY JOIN A AS a ARRAY JOIN B AS b ARRAY JOIN C AS c
     WHERE (a = 'a1' AND b = 'b2' AND c = 'c0') OR (a = 'a3' AND b = 'b1' AND c = 'c1'))
-WHERE explain LIKE '%Filter (%';
+WHERE explain LIKE '%Filter%';
 
 SELECT '-- two arrays';
 SELECT count() FROM (EXPLAIN SELECT a, c FROM t_aj_or ARRAY JOIN A AS a ARRAY JOIN C AS c
