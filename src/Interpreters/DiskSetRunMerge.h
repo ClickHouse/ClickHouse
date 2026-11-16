@@ -46,7 +46,7 @@ struct Run
     static Run inFile(TemporaryDataBuffer & file, const Key & first, const Key & last) { return {{}, &file, first, last}; }
 
     /// Returns the number of keys of the run. A file holds raw keys, so its size gives their number.
-    size_t size() const { return file ? file->getStat().uncompressed_size / sizeof(Key) : keys.size(); }
+    [[nodiscard]] size_t size() const { return file ? file->getStat().uncompressed_size / sizeof(Key) : keys.size(); }
 };
 
 /// Runs that follow each other, each starting where or after the previous one ends.
@@ -70,14 +70,14 @@ public:
         readBatch(); /// Makes the first key current
     }
 
-    const Key & firstKey() const { return runs.front().first; }
-    const Key & lastKey() const { return runs.back().last; }
+    [[nodiscard]] const Key & firstKey() const { return runs.front().first; }
+    [[nodiscard]] const Key & lastKey() const { return runs.back().last; }
 
     /// Whether the chain has no more keys.
-    bool ended() const { return position == end; }
+    [[nodiscard]] bool ended() const { return position == end; }
 
     /// The next key of the chain, which exists until the chain ends.
-    const Key & current() const { return *position; }
+    [[nodiscard]] const Key & current() const { return *position; }
 
     /// Takes the current key and returns whether the chain has another.
     bool advance() { return ++position != end || readBatch(); } /// Reads the next batch when this one ends
@@ -97,7 +97,7 @@ public:
 
 private:
     /// The keys of the current batch that the merge has not taken, which are empty once the chain ends.
-    std::span<const Key> batch() const { return {position, end}; }
+    [[nodiscard]] std::span<const Key> batch() const { return {position, end}; }
 
     /// Moves to the next batch of the file being read or to the first batch of the next run, and returns
     /// whether the chain has one.
@@ -475,7 +475,7 @@ private:
     ///                                                         ^ the nodes keep the fourth word
     ///
     /// For hashes, the most significant word differs already, and the nodes keep it.
-    unsigned firstDifferingWord() const
+    [[nodiscard]] unsigned firstDifferingWord() const
     {
         Key smallest_first = chains.front().firstKey();
         Key largest_last = chains.front().lastKey();
@@ -491,7 +491,7 @@ private:
         return Key::_impl::big(shared_words); /// `big` counts words from the most significant
     }
 
-    TreeKey toTreeKey(const Key & key) const
+    [[nodiscard]] TreeKey toTreeKey(const Key & key) const
     {
         if constexpr (sizeof(Key) <= sizeof(UInt64))
             return key;
@@ -501,7 +501,7 @@ private:
             return key.items[tree_word]; /// One word of a 256-bit key
     }
 
-    bool less(TreeKey lhs, UInt32 lhs_chain, TreeKey rhs, UInt32 rhs_chain) const
+    [[nodiscard]] bool less(TreeKey lhs, UInt32 lhs_chain, TreeKey rhs, UInt32 rhs_chain) const
     {
         if constexpr (tree_holds_keys)
             return lhs < rhs; /// The tree keeps whole keys

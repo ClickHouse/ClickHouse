@@ -36,6 +36,7 @@
 #include <Processors/Transforms/ReverseTransform.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/StorageAlias.h>
@@ -101,6 +102,7 @@ namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int INFINITE_LOOP;
@@ -918,7 +920,7 @@ public:
             if (destination)
             {
                 LOG_DEBUG(storage.log, "Writing block with {} rows, {} bytes directly.", rows, bytes);
-                storage.writeBlockToDestination(block, destination);
+                storage.writeBlockToDestination(block, destination, getContext().get());
             }
             return;
         }
@@ -1331,7 +1333,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 }
 
 
-void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table)
+void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table, const Context * query_context)
 {
     if (!destination_id || block.empty())
         return;
@@ -1378,6 +1380,8 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     auto insert_context = Context::createCopy(getContext());
     insert_context->makeQueryContext();
+    if (query_context)
+        insert_context->shareQueryMaxThreadsSnapshot(*query_context);
 
     InterpreterInsertQuery interpreter(
         insert,
@@ -1499,6 +1503,10 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
             && command.type != AlterCommand::Type::COMMENT_TABLE)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
                 command.type, getName());
+
+        if (!command.ignore && tryExtractQuantizedCodecParams(command.codec))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Engine {} doesn't support the Quantized codec of column {}",
+                getName(), backQuote(command.column_name));
 
         if (command.type == AlterCommand::Type::DROP_COLUMN && !command.clear)
         {
@@ -1678,6 +1686,9 @@ void registerStorageBuffer(StorageFactory & factory)
             columns = destination_metadata->getColumns();
             columns.clearColumnTTLs();
         }
+
+        if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()))
+            checkNoQuantizedCodec(columns.getAll(), args.engine_name);
 
         return std::make_shared<StorageBuffer>(
             args.table_id,

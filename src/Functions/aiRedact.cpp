@@ -43,11 +43,11 @@ public:
         return std::make_shared<FunctionAiRedact>(context_);
     }
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
@@ -65,7 +65,7 @@ private:
     static constexpr float default_temp = 0.0f;
     static constexpr size_t categories_arg_index = 1;
 
-    AIParamSpecs functionParams() const override
+    [[nodiscard]] AIParamSpecs functionParams() const override
     {
         return {
             {"temperature", AIParamKind::Float, Field(static_cast<Float64>(default_temp))},
@@ -75,7 +75,7 @@ private:
 
     /// Builds the redaction instruction. An empty `categories` array falls back to a default set of common
     /// PII categories, a non-empty one restricts redaction to the listed categories.
-    String buildSystemPrompt(const ColumnsWithTypeAndName & arguments, const AIParams & params) const override
+    [[nodiscard]] String buildSystemPrompt(const ColumnsWithTypeAndName & arguments, const AIParams & params) const override
     {
         const auto & col_categories = assert_cast<const ColumnConst &>(*arguments[categories_arg_index].column);
         auto categories = (*col_categories.getDataColumnPtr())[0].safeGet<Array>();
@@ -111,7 +111,7 @@ private:
             "- If the text contains no PII to redact, return it unchanged.";
     }
 
-    String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
+    [[nodiscard]] String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
     {
         return String(arguments[0].column->getDataAt(row));
     }
