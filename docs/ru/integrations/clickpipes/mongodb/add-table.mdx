@@ -11,8 +11,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 В некоторых случаях полезно добавить в пайп определённые таблицы. По мере роста транзакционной или аналитической рабочей нагрузки это требуется всё чаще.
 
 <div id="add-tables-steps">
@@ -28,7 +26,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 <br />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp)
+
+</Frame>
+
+</div>
 
 5. Нажмите update.
 6. После успешного обновления пайп последовательно перейдёт в статусы `Setup`, `Snapshot` и `Running`. Начальную загрузку таблицы можно отслеживать на вкладке **Tables**.

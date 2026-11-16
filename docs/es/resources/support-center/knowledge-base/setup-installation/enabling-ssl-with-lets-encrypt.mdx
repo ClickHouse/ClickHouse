@@ -6,8 +6,6 @@ tags: ['Seguridad y autenticación']
 keywords: ['SSL', 'Let/`s Encrypt']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="steps-to-follow">
   ## Pasos a seguir
 </div>
@@ -57,7 +55,15 @@ product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
 
 <br />
 
-<Image img="/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp" size="md" alt="Configuración del grupo de seguridad de AWS que muestra el puerto 80 abierto" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Configuración del grupo de seguridad de AWS que muestra el puerto 80 abierto](/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp)
+
+</Frame>
+
+</div>
 
 3. Instala [`certbot`](https://certbot.eff.org/instructions), por ejemplo, con `apt`
 

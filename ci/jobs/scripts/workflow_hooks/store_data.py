@@ -216,7 +216,6 @@ PRODUCT_CODE_PATHS = (
     "src/",
     "base/",
     "programs/",
-    "rust/",
     "cmake/",
     "CMakeLists.txt",
     "PreLoad.cmake",

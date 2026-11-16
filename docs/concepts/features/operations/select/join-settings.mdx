@@ -76,7 +76,7 @@ This page lists the session settings that affect the semantics, planning, execut
 | [`allow_statistics`](/reference/settings/session-settings/allow-statistics#allow_statistics) | Allows defining columns with statistics and manipulating statistics. |
 | [`materialize_statistics_on_insert`](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert) | Controls whether column statistics are built for newly inserted parts. |
 | [`use_hash_table_stats_for_join_reordering`](/reference/settings/session-settings/use#use_hash_table_stats_for_join_reordering) | Enables using collected hash table statistics for cardinality estimation during JOIN reordering. |
-| [`use_iceberg_manifest_statistics`](/reference/settings/session-settings/use-iceberg#use_iceberg_manifest_statistics) | Enables estimating an Iceberg read for JOIN reordering from the statistics in its manifest files. |
+| [`use_datalake_metadata_statistics`](/reference/settings/session-settings/use) | Enables estimating a data lake read (Iceberg only) for JOIN reordering from the statistics in its table metadata. |
 | [`allow_general_join_planning`](/reference/settings/session-settings/allow#allow_general_join_planning) | Allows a more general JOIN planning algorithm that handles more complex conditions and applies only to hash JOINs. |
 | [`query_plan_filter_push_down`](/reference/settings/session-settings/query-plan#query_plan_filter_push_down) | Enables moving filters down in the query plan, including below a JOIN. |
 | [`query_plan_convert_outer_join_to_inner_join`](/reference/settings/session-settings/query-plan#query_plan_convert_outer_join_to_inner_join) | Allows converting an `OUTER JOIN` to an `INNER JOIN` when a filter after the JOIN always removes the default values of rows without a match. |
@@ -151,3 +151,4 @@ This page lists the session settings that affect the semantics, planning, execut
 - [How ClickHouse executes JOINs](/concepts/features/operations/select/join-execution)
 - [JOIN algorithms](/concepts/features/operations/select/join-algorithms)
 - [JOIN memory management and spilling](/concepts/features/operations/select/join-memory-management)
+- [Minimize and optimize JOINs](/concepts/best-practices/minimize-optimize-joins)
