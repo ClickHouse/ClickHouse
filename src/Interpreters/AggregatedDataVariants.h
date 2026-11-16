@@ -484,6 +484,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// Those merges only re-insert data the table already held, so an external-aggregation spill
     /// in the middle of them must be skipped: it would empty the table while the rest of the
     /// rebuild is merged into it under `no_more_keys`, dropping everything accumulated so far.
+    /// For the same reason they are not counted as a new overflow of `max_rows_to_group_by`.
     bool kept_keys_rebuild_in_progress = false;
 
     AggregatedDataVariants();

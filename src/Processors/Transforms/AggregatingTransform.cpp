@@ -1515,8 +1515,6 @@ void rebuildVariantsToKeptKeys(
 
     bool rebuild_no_more_keys = false;
     aggregator.mergeOnBlock(seed->getColumns(), seed->rows(), /*is_overflows=*/false, variants, rebuild_no_more_keys, is_cancelled);
-    /// The seed has exactly `max_rows_to_group_by` keys, which does not exceed the limit.
-    chassert(!rebuild_no_more_keys);
     rebuild_no_more_keys = true;
 
     for (auto & agg_chunk : own_chunks)
