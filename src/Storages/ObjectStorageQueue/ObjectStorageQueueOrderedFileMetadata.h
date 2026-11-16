@@ -37,6 +37,7 @@ public:
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
+        const ObjectStorageQueueLockOwner & lock_owner_,
         const std::atomic<size_t> & processing_state_cache_ttl_seconds_,
         const std::string & zookeeper_name_,
         ObjectStorageQueueBucketingMode bucketing_mode_,
@@ -55,6 +56,7 @@ public:
     static BucketHolderPtr tryAcquireBucket(
         const std::filesystem::path & zk_path,
         const Bucket & bucket,
+        const ObjectStorageQueueLockOwner & bucket_lock_owner,
         bool use_persistent_processing_nodes_,
         const std::atomic<size_t> & persistent_processing_node_ttl_seconds_,
         const std::string & zookeeper_name_,
@@ -171,6 +173,7 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
         const Bucket & bucket_,
         const std::string & bucket_lock_path_,
         const std::string & processor_info_,
+        const std::string & lock_owner_path_,
         const std::atomic<size_t> & persistent_processing_node_ttl_seconds_,
         LoggerPtr log_,
         const std::string & zookeeper_name_);
@@ -187,7 +190,8 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
     [[nodiscard]] double getAgeSeconds() const { return age_watch.elapsedSeconds(); }
 
     /// Update mtime of the bucket lock node, so that it is not removed as abandoned by
-    /// the TTL cleanup. Throws a logical error on lost ownership, marking the holder released.
+    /// the TTL cleanup. Throws on lost ownership, marking the holder released: a logical error,
+    /// unless the lock was released by cleanup because its lock owner was considered dead.
     void refresh();
 
     bool checkBucketOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
@@ -196,7 +200,12 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
     void release();
 
 private:
+    bool isLockOwnerAlive(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client) const;
+
     BucketInfoPtr bucket_info;
+    /// Path of the owner node of this lock in keeper, empty if lock owners are not used.
+    /// The lock is removed only together with a check that the owner still exists.
+    const std::string lock_owner_path;
     Stopwatch age_watch;
     int32_t bucket_lock_version = 0;
     /// A reference, not a snapshot: the setting is changeable at runtime,

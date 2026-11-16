@@ -26,6 +26,10 @@
 #include <Interpreters/DDLTask.h>
 #include <shared_mutex>
 #include <Core/ServerUUID.h>
+#include <Core/UUID.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Stringifier.h>
 
 
 namespace ProfileEvents
@@ -106,6 +110,37 @@ namespace
         hash.update(path);
         return hash.get128();
     }
+
+    /// Data of a lock or of a lock owner in keeper is a JSON object. Locks written by
+    /// old versions have fewer fields, and a node can also hold something unexpected.
+    Poco::JSON::Object::Ptr tryParseNodeData(const std::string & data)
+    {
+        if (data.empty() || data.front() != '{')
+            return nullptr;
+        try
+        {
+            Poco::JSON::Parser parser;
+            return parser.parse(data).extract<Poco::JSON::Object::Ptr>();
+        }
+        catch (const Poco::Exception &)
+        {
+            return nullptr;
+        }
+    }
+
+    /// Empty for a lock without an owner.
+    std::string getLockOwnerIDFromLock(const std::string & lock_data)
+    {
+        auto json = tryParseNodeData(lock_data);
+        return json ? json->optValue<std::string>("owner_id", "") : "";
+    }
+
+    /// Zero if the owner did not declare a timeout.
+    UInt64 getTimeoutSecondsFromLockOwner(const std::string & owner_data)
+    {
+        auto json = tryParseNodeData(owner_data);
+        return json ? json->optValue<UInt64>("timeout_seconds", 0) : 0;
+    }
 }
 
 ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
@@ -117,6 +152,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     size_t cleanup_interval_max_ms_,
     bool use_persistent_processing_nodes_,
     size_t persistent_processing_nodes_ttl_seconds_,
+    size_t lock_owner_timeout_seconds_,
     size_t processing_state_cache_ttl_seconds_,
     size_t keeper_multiread_batch_size_,
     size_t metadata_cache_size_bytes_,
@@ -129,9 +165,14 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , zookeeper_name(zookeeper_name_)
     , zookeeper_path(zookeeper_path_)
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
+    /// Exclusive mode does not store locks in keeper.
+    , lock_owner_timeout_seconds(isExclusive(mode) || !use_persistent_processing_nodes_ ? 0 : lock_owner_timeout_seconds_)
     , cleanup_processed_files(isUnordered(mode) && table_metadata.hasTrackedFilesLimit())
     , cleanup_failed_files(!isExclusive(mode) && table_metadata.hasTrackedFilesLimit())
-    , cleanup_processing_files(!isExclusive(mode) && use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
+    , cleanup_processing_files(
+        !isExclusive(mode)
+        && use_persistent_processing_nodes_
+        && (persistent_processing_nodes_ttl_seconds_ || lock_owner_timeout_seconds_))
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
     , use_persistent_processing_nodes(use_persistent_processing_nodes_)
@@ -230,6 +271,15 @@ void ObjectStorageQueueMetadata::startup()
             generateRescheduleInterval(
                 cleanup_interval_min_ms, cleanup_interval_max_ms));
     }
+    if (!lock_owner_heartbeat_task && lock_owner_timeout_seconds)
+    {
+        lock_owner_heartbeat_task = Context::getGlobalContextInstance()->getSchedulePool()->createTask(
+            StorageID::createEmpty(), "ObjectStorageQueueLockOwnerHeartbeat",
+            [this] { lockOwnerHeartbeatFunc(); });
+
+        lock_owner_heartbeat_task->activate();
+        lock_owner_heartbeat_task->scheduleAfter(getLockOwnerHeartbeatIntervalMS());
+    }
     if (!update_registry_thread)
         update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
 }
@@ -239,8 +289,158 @@ void ObjectStorageQueueMetadata::shutdown()
     shutdown_called = true;
     if (cleanup_task)
         cleanup_task->deactivate();
+    if (lock_owner_heartbeat_task)
+        lock_owner_heartbeat_task->deactivate();
     if (update_registry_thread && update_registry_thread->joinable())
         update_registry_thread->join();
+
+    /// By this time the tables released the locks they held, so the owner is not needed.
+    /// If the node stays because of an error, cleanup removes it after the timeout.
+    std::string owner_id;
+    {
+        std::lock_guard lock(lock_owner_mutex);
+        owner_id = std::exchange(lock_owner_id, {});
+    }
+    if (!owner_id.empty())
+    {
+        try
+        {
+            getZooKeeper()->tryRemove(getLockOwnerPath(owner_id));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+    }
+}
+
+std::string ObjectStorageQueueMetadata::getLockOwnerPath(const std::string & lock_owner_id_) const
+{
+    if (lock_owner_id_.empty())
+        return {};
+    return zookeeper_path / "owners" / lock_owner_id_;
+}
+
+size_t ObjectStorageQueueMetadata::getLockOwnerHeartbeatIntervalMS() const
+{
+    return std::max<size_t>(1, lock_owner_timeout_seconds / 4) * 1000;
+}
+
+std::string ObjectStorageQueueMetadata::getLockOwnerData() const
+{
+    /// The timeout is stored in the node, so that cleanup on any server uses
+    /// the timeout of the owner and not its own setting.
+    Poco::JSON::Object json;
+    json.set("hostname", DNSResolver::instance().getHostName());
+    json.set("server_uuid", toString(ServerUUID::get()));
+    json.set("timeout_seconds", static_cast<UInt64>(lock_owner_timeout_seconds));
+
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
+    Poco::JSON::Stringifier::stringify(json, oss);
+    return oss.str();
+}
+
+ObjectStorageQueueLockOwner ObjectStorageQueueMetadata::getLockOwner()
+{
+    if (!lock_owner_timeout_seconds)
+        return {};
+
+    std::lock_guard lock(lock_owner_mutex);
+    if (lock_owner_id.empty())
+        registerLockOwner();
+    return {.id = lock_owner_id, .path = getLockOwnerPath(lock_owner_id)};
+}
+
+void ObjectStorageQueueMetadata::registerLockOwner()
+{
+    const auto owners_path = zookeeper_path / "owners";
+    /// The id is never used again, so a removed owner can never come back.
+    const auto owner_id = toString(UUIDHelpers::generateV4());
+    const auto owner_path = owners_path / owner_id;
+    const auto owner_data = getLockOwnerData();
+
+    Coordination::Error code = {};
+    getKeeperRetriesControl(log).retryLoop([&]
+    {
+        auto zk_client = getZooKeeper();
+        /// Ancestors are not created on purpose: the queue path does not exist
+        /// if the table was dropped, and it must not appear again.
+        code = zk_client->tryCreate(owners_path, "", zkutil::CreateMode::Persistent);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+            return;
+        code = zk_client->tryCreate(owner_path, owner_data, zkutil::CreateMode::Persistent);
+    });
+
+    /// ZNODEEXISTS: a retry after the node was created, but the response was lost.
+    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+        throw zkutil::KeeperException::fromPath(code, owner_path);
+
+    lock_owner_id = owner_id;
+    LOG_INFO(log, "Registered lock owner {} with timeout {} seconds", owner_id, lock_owner_timeout_seconds);
+}
+
+void ObjectStorageQueueMetadata::updateLockOwner()
+{
+    std::string owner_id;
+    {
+        std::lock_guard lock(lock_owner_mutex);
+        owner_id = lock_owner_id;
+    }
+    if (owner_id.empty())
+        return;
+
+    const auto owner_path = getLockOwnerPath(owner_id);
+    const auto owner_data = getLockOwnerData();
+
+    Coordination::Error code = {};
+    getKeeperRetriesControl(log).retryLoop([&]
+    {
+        code = getZooKeeper()->trySet(owner_path, owner_data);
+    });
+
+    if (code == Coordination::Error::ZOK)
+        return;
+
+    if (code != Coordination::Error::ZNONODE)
+        throw zkutil::KeeperException::fromPath(code, owner_path);
+
+    /// Cleanup removed the node, because it was not updated in time. Cleanup also
+    /// releases all the locks which point to it, so everything which this process
+    /// holds is lost. The next lock is taken under a new owner.
+    {
+        std::lock_guard lock(lock_owner_mutex);
+        if (lock_owner_id != owner_id)
+            return;
+        lock_owner_id.clear();
+    }
+    ++lock_owner_generation;
+
+    LOG_WARNING(
+        log, "Lock owner {} was removed as dead, because it was not updated for more than {} seconds. "
+        "All the locks held by this server are lost and will be taken again",
+        owner_id, lock_owner_timeout_seconds);
+}
+
+void ObjectStorageQueueMetadata::lockOwnerHeartbeatFunc()
+{
+    if (shutdown_called)
+        return;
+
+    auto component_guard = Coordination::setCurrentComponent("ObjectStorageQueueMetadata::lockOwnerHeartbeatFunc");
+    try
+    {
+        updateLockOwner();
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, "Failed to update lock owner in keeper: {}", getCurrentExceptionMessage(true));
+    }
+
+    if (shutdown_called)
+        return;
+
+    lock_owner_heartbeat_task->scheduleAfter(getLockOwnerHeartbeatIntervalMS());
 }
 
 ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileMetadata(
@@ -265,6 +465,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
+                getLockOwner(),
                 processing_state_cache_ttl_seconds,
                 zookeeper_name,
                 bucketing_mode,
@@ -279,6 +480,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
+                getLockOwner(),
                 processing_state_cache_ttl_seconds,
                 zookeeper_name,
                 log);
@@ -366,7 +568,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
 ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket)
 {
     return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(
-        zookeeper_path, bucket, use_persistent_processing_nodes, persistent_processing_node_ttl_seconds, zookeeper_name, log);
+        zookeeper_path, bucket, getLockOwner(), use_persistent_processing_nodes, persistent_processing_node_ttl_seconds, zookeeper_name, log);
 }
 
 void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, const ContextPtr & context)
@@ -666,6 +868,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     table_metadata.loading_retries,
                     noop,
                     /* use_persistent_processing_nodes */false, /// Processing nodes will not be created.
+                    /* lock_owner */{},
                     noop,
                     zookeeper_name,
                     table_metadata.getBucketingMode(),
@@ -1317,10 +1520,8 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         return;
     }
 
-    /// Check the TTL as well: it is changeable at runtime and zero disables
-    /// the cleanup (otherwise every node would be treated as stale).
-    if (cleanup_processing_files && persistent_processing_node_ttl_seconds)
-        cleanupPersistentProcessingNodes();
+    if (cleanup_processing_files)
+        cleanupPersistentProcessingNodes(zookeeper_cleanup_lock_path);
 
     if (table_metadata.hasTrackedFilesLimit())
     {
@@ -1564,14 +1765,111 @@ void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
     }
 }
 
-void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
+NameSet ObjectStorageQueueMetadata::cleanupLockOwners(Int64 keeper_time_ms)
+{
+    auto zk_retries = getKeeperRetriesControl(log);
+    const fs::path owners_path = zookeeper_path / "owners";
+
+    Strings owner_ids;
+    Coordination::Error code = {};
+    zk_retries.retryLoop([&]
+    {
+        code = getZooKeeper()->tryGetChildren(owners_path, owner_ids);
+    });
+    if (code == Coordination::Error::ZNONODE)
+        return {};
+    if (code != Coordination::Error::ZOK)
+        throw zkutil::KeeperException::fromPath(code, owners_path);
+
+    NameSet alive_owners;
+    for (size_t batch_begin = 0; batch_begin < owner_ids.size(); batch_begin += keeper_multiread_batch_size)
+    {
+        const size_t batch_end = std::min(owner_ids.size(), batch_begin + keeper_multiread_batch_size);
+        Strings owner_paths;
+        for (size_t i = batch_begin; i < batch_end; ++i)
+            owner_paths.push_back(owners_path / owner_ids[i]);
+
+        zkutil::ZooKeeper::MultiTryGetResponse responses;
+        zk_retries.resetFailures();
+        zk_retries.retryLoop([&]
+        {
+            responses = getZooKeeper()->tryGet(owner_paths);
+        });
+
+        for (size_t i = 0; i < responses.size(); ++i)
+        {
+            const auto & owner_id = owner_ids[batch_begin + i];
+            const auto & owner_path = owner_paths[i];
+            const auto & response = responses[i];
+
+            if (response.error == Coordination::Error::ZNONODE)
+                continue;
+            if (response.error != Coordination::Error::ZOK)
+                throw zkutil::KeeperException::fromPath(response.error, owner_path);
+
+            /// An owner is judged by the timeout which it declared itself,
+            /// so that servers with different settings agree.
+            const auto timeout_seconds = getTimeoutSecondsFromLockOwner(response.data);
+            const bool is_silent = timeout_seconds
+                && response.stat.mtime + static_cast<Int64>(timeout_seconds) * 1000 < keeper_time_ms;
+            if (!is_silent)
+            {
+                alive_owners.insert(owner_id);
+                continue;
+            }
+
+            /// The version check keeps an owner which updated its node after it was read.
+            zk_retries.resetFailures();
+            zk_retries.retryLoop([&]
+            {
+                code = getZooKeeper()->tryRemove(owner_path, response.stat.version);
+            });
+
+            if (code == Coordination::Error::ZBADVERSION)
+            {
+                alive_owners.insert(owner_id);
+            }
+            else if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE)
+            {
+                LOG_INFO(
+                    log, "Removed lock owner {} as dead: it was not updated for {} seconds (timeout: {} seconds, owner: {})",
+                    owner_id, (keeper_time_ms - response.stat.mtime) / 1000, timeout_seconds, response.data);
+            }
+            else
+                throw zkutil::KeeperException::fromPath(code, owner_path);
+        }
+    }
+    return alive_owners;
+}
+
+void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(const std::string & cleanup_lock_path)
 {
     auto zk_retries = getKeeperRetriesControl(log);
     const fs::path zookeeper_persistent_processing_path = zookeeper_path / "processing";
 
+    /// Owners are checked before the locks are read. Once an owner is removed, it can
+    /// no longer release its locks itself, so a lock which is read after that and
+    /// points to a missing owner can be removed only here.
+    ///
+    /// The current time is taken from keeper, to compare it with the modification
+    /// time of an owner node without depending on the local clock: the cleanup lock
+    /// was created by keeper a moment ago.
+    std::optional<NameSet> alive_lock_owners;
+    {
+        Coordination::Stat cleanup_lock_stat;
+        bool cleanup_lock_exists = false;
+        zk_retries.retryLoop([&]
+        {
+            cleanup_lock_exists = getZooKeeper()->exists(cleanup_lock_path, &cleanup_lock_stat);
+        });
+        if (cleanup_lock_exists)
+            alive_lock_owners = cleanupLockOwners(cleanup_lock_stat.ctime);
+    }
+
     Strings persistent_processing_nodes;
 
     Coordination::Error code = {};
+    zk_retries.resetFailures();
     zk_retries.retryLoop([&]
     {
         code = getZooKeeper()->tryGetChildren(zookeeper_persistent_processing_path, persistent_processing_nodes);
@@ -1598,7 +1896,14 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     }
 
     auto current_time = getCurrentTime();
-    std::vector<std::pair<String, int32_t>> nodes_to_remove;
+    struct NodeToRemove
+    {
+        String path;
+        int32_t version;
+        /// Set if the node is removed because its owner is dead.
+        String dead_lock_owner_id;
+    };
+    std::vector<NodeToRemove> nodes_to_remove;
     Strings get_batch;
     auto get_paths = [&]
     {
@@ -1617,12 +1922,25 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
                 continue;
             }
 
+            /// A lock with an owner is released together with its owner, no matter how
+            /// old the lock is: an alive owner can hold it for as long as it needs.
+            const auto owner_id_of_lock = getLockOwnerIDFromLock(response[i].data);
+            if (!owner_id_of_lock.empty())
+            {
+                if (alive_lock_owners && !alive_lock_owners->contains(owner_id_of_lock))
+                    nodes_to_remove.push_back({get_batch[i], response[i].stat.version, owner_id_of_lock});
+                continue;
+            }
+
+            /// A lock without an owner was written by an old version.
+            /// The TTL is changeable at runtime and zero disables it.
+            const size_t ttl_seconds = persistent_processing_node_ttl_seconds.load();
             LOG_TEST(
                 log, "Node: {}, mtime: {}, ttl sec: {}, current time: {}",
-                get_batch[i], response[i].stat.mtime, persistent_processing_node_ttl_seconds.load(), current_time);
+                get_batch[i], response[i].stat.mtime, ttl_seconds, current_time);
 
-            if (response[i].stat.mtime / 1000 + persistent_processing_node_ttl_seconds < current_time)
-                nodes_to_remove.emplace_back(get_batch[i], response[i].stat.version);
+            if (ttl_seconds && response[i].stat.mtime / 1000 + ttl_seconds < current_time)
+                nodes_to_remove.push_back({get_batch[i], response[i].stat.version, {}});
         }
         get_batch.clear();
     };
@@ -1652,20 +1970,41 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     }
 
     size_t removed = 0;
-    for (const auto & node_with_version : nodes_to_remove)
+    for (const auto & node_to_remove : nodes_to_remove)
     {
-        const auto & node = node_with_version.first;
-        const auto version = node_with_version.second;
+        const auto & node = node_to_remove.path;
+        const bool has_dead_owner = !node_to_remove.dead_lock_owner_id.empty();
+
         LOG_TRACE(log, "Removing stale processing node: {}", node);
         zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
-            code = getZooKeeper()->tryRemove(node, version);
+            auto zk_client = getZooKeeper();
+            if (!has_dead_owner)
+            {
+                code = zk_client->tryRemove(node, node_to_remove.version);
+                return;
+            }
+
+            /// The owner could register after the owners were listed and before
+            /// the lock was read, so make sure that it does not exist.
+            Coordination::Requests requests;
+            zkutil::addCheckNotExistsRequest(requests, *zk_client, getLockOwnerPath(node_to_remove.dead_lock_owner_id));
+            requests.push_back(zkutil::makeRemoveRequest(node, node_to_remove.version));
+            Coordination::Responses responses;
+            code = zk_client->tryMulti(requests, responses);
         });
+
         if (code == Coordination::Error::ZOK)
+        {
             ++removed;
+            if (has_dead_owner)
+                LOG_INFO(log, "Released lock {} of dead lock owner {}", node, node_to_remove.dead_lock_owner_id);
+        }
         else if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZBADVERSION)
             LOG_TRACE(log, "Processing node {} was already removed or recreated, skipping", node);
+        else if (code == Coordination::Error::ZNODEEXISTS && has_dead_owner)
+            LOG_TRACE(log, "Lock owner {} exists, keeping its lock {}", node_to_remove.dead_lock_owner_id, node);
         else
             throw zkutil::KeeperException::fromPath(code, node);
     }

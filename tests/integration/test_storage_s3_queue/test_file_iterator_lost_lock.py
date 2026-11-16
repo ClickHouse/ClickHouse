@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 import uuid
@@ -28,6 +29,90 @@ def wait_for_processed_files_in_log(node, table_name, expected_count):
             break
         time.sleep(1)
     return count
+
+
+def wait_until(predicate, timeout=30, interval=0.1):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = predicate()
+        if result:
+            return result
+        time.sleep(interval)
+    return None
+
+
+def get_lock_owner_id(zk, path):
+    """The id of the lock owner stored in a bucket lock or in a processing node."""
+    try:
+        data, _ = zk.get(path)
+        return json.loads(data).get("owner_id")
+    except (NoNodeError, ValueError):
+        return None
+
+
+def find_processing_node(zk, keeper_path):
+    """A processing node which has a lock owner: (path, owner id)."""
+    try:
+        for child in zk.get_children(f"{keeper_path}/processing"):
+            path = f"{keeper_path}/processing/{child}"
+            owner_id = get_lock_owner_id(zk, path)
+            if owner_id:
+                return path, owner_id
+    except NoNodeError:
+        pass
+    return None
+
+
+def find_bucket_lock(zk, keeper_path, buckets):
+    """A bucket lock whose lock owner is alive: (path, owner id)."""
+    for bucket in range(buckets):
+        path = f"{keeper_path}/buckets/{bucket}/lock"
+        owner_id = get_lock_owner_id(zk, path)
+        if owner_id and zk.exists(f"{keeper_path}/owners/{owner_id}"):
+            return path, owner_id
+    return None
+
+
+def create_slow_queue(
+    started_cluster, node, table_name, mode, files, sleep_per_row, settings
+):
+    """A queue whose materialized view sleeps on every row, so that
+    files stay in processing long enough to look at their locks."""
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        mode,
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "max_processed_files_before_commit": 1,
+            "polling_min_timeout_ms": 100,
+            **settings,
+        },
+    )
+    generate_random_files(started_cluster, files_path, files, start_ind=0, row_num=1)
+
+    node.query(
+        f"""
+        CREATE TABLE {dst_table_name}
+        (column1 UInt32, column2 UInt32, column3 UInt32, _path String)
+        ENGINE = MergeTree ORDER BY column1
+        """
+    )
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {table_name}_mv TO {dst_table_name} AS
+        SELECT column1, column2, column3, _path
+        FROM {table_name}
+        WHERE ignore(sleepEachRow({sleep_per_row})) = 0
+        """
+    )
+    return keeper_path, dst_table_name
 
 
 @pytest.fixture(scope="module")
@@ -358,6 +443,231 @@ def test_lost_bucket_lock_detected_during_release(started_cluster):
         time.sleep(1)
     assert get_processed_count() == files_to_generate
 
+    assert files_to_generate == wait_for_processed_files_in_log(
+        node, table_name, files_to_generate
+    )
+    assert "" == node.query(
+        f"SELECT file_name, count() FROM system.s3queue_log "
+        f"WHERE table = '{table_name}' AND status = 'Processed' "
+        f"GROUP BY file_name HAVING count() > 1"
+    )
+
+
+def test_locks_of_killed_server_are_released_after_lock_owner_timeout(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_killed_lock_owner_{uuid.uuid4().hex[:8]}"
+    files_to_generate = 10
+    keeper_path, dst_table_name = create_slow_queue(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_to_generate,
+        sleep_per_row=2,
+        settings={
+            "buckets": 2,
+            "processing_threads_num": 1,
+            # The long TTL must not be what releases the locks.
+            "persistent_processing_node_ttl_seconds": 21600,
+            "lock_owner_timeout_seconds": 5,
+            "cleanup_interval_min_ms": 100,
+            "cleanup_interval_max_ms": 100,
+            "s3queue_loading_retries": 10,
+        },
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    bucket_lock = wait_until(lambda: find_bucket_lock(zk, keeper_path, 2), timeout=60)
+    assert bucket_lock is not None
+    lock_path, owner_id = bucket_lock
+    owner_path = f"{keeper_path}/owners/{owner_id}"
+
+    node.stop_clickhouse(kill=True)
+    clickhouse_started = False
+    try:
+        # A killed server does not release anything: its lock and its owner node stay.
+        assert get_lock_owner_id(zk, lock_path) == owner_id
+        assert zk.exists(owner_path)
+
+        node.start_clickhouse()
+        clickhouse_started = True
+
+        # The new server process is another owner. The cleanup removes the owner which is
+        # silent for longer than the timeout and after that releases its locks.
+        assert wait_until(lambda: not zk.exists(owner_path), timeout=60)
+
+        def get_processed_count():
+            return int(node.query(f"SELECT uniqExact(_path) FROM {dst_table_name}"))
+
+        assert wait_until(
+            lambda: get_processed_count() == files_to_generate, timeout=150, interval=1
+        )
+        assert node.contains_in_log(f"Removed lock owner {owner_id} as dead")
+        assert node.contains_in_log(f"of dead lock owner {owner_id}")
+    finally:
+        if not clickhouse_started:
+            node.start_clickhouse()
+
+
+def test_insert_longer_than_lock_owner_timeout_keeps_locks(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_long_insert_{uuid.uuid4().hex[:8]}"
+    keeper_path, dst_table_name = create_slow_queue(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files=1,
+        sleep_per_row=12,
+        settings={
+            "processing_threads_num": 1,
+            "lock_owner_timeout_seconds": 4,
+            "cleanup_interval_min_ms": 100,
+            "cleanup_interval_max_ms": 100,
+        },
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    processing_node = wait_until(lambda: find_processing_node(zk, keeper_path), timeout=30)
+    assert processing_node is not None
+    processing_path, owner_id = processing_node
+    owner_path = f"{keeper_path}/owners/{owner_id}"
+
+    # The insert takes three times longer than the timeout. The owner node is updated by a
+    # background task which does not depend on the insert, so the owner stays alive and the
+    # cleanup, which runs ten times a second here, does not touch the lock.
+    deadline = time.monotonic() + 8
+    while time.monotonic() < deadline:
+        assert zk.exists(owner_path)
+        assert get_lock_owner_id(zk, processing_path) == owner_id
+        time.sleep(0.5)
+
+    assert wait_until(
+        lambda: int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1, timeout=60
+    )
+    assert wait_until(lambda: not zk.exists(processing_path), timeout=30)
+    assert 1 == wait_for_processed_files_in_log(node, table_name, 1)
+    assert not node.contains_in_log(f"Removed lock owner {owner_id} as dead")
+
+
+def test_table_which_does_not_consume_releases_bucket_locks(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_release_locks_{uuid.uuid4().hex[:8]}"
+    files_to_generate = 10
+    buckets = 2
+    keeper_path, dst_table_name = create_slow_queue(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_to_generate,
+        sleep_per_row=2,
+        settings={
+            "buckets": buckets,
+            "processing_threads_num": 1,
+            # Nothing here may be released by the cleanup.
+            "persistent_processing_node_ttl_seconds": 21600,
+            "lock_owner_timeout_seconds": 3600,
+            "s3queue_loading_retries": 10,
+        },
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    def has_bucket_locks():
+        return any(
+            zk.exists(f"{keeper_path}/buckets/{bucket}/lock") for bucket in range(buckets)
+        )
+
+    bucket_lock = wait_until(
+        lambda: find_bucket_lock(zk, keeper_path, buckets), timeout=60
+    )
+    assert bucket_lock is not None
+    _, owner_id = bucket_lock
+    owner_path = f"{keeper_path}/owners/{owner_id}"
+
+    # A stopped table gives its locks back, so that other servers can take the buckets.
+    # The server is alive, so its owner node stays.
+    node.query(f"SYSTEM STOP {table_name}")
+    assert wait_until(lambda: not has_bucket_locks(), timeout=30)
+    assert zk.exists(owner_path)
+
+    node.query(f"SYSTEM START {table_name}")
+    assert wait_until(lambda: find_bucket_lock(zk, keeper_path, buckets), timeout=60)
+
+    # A detached table releases its locks before the query returns.
+    node.query(f"DETACH TABLE {table_name}")
+    assert not has_bucket_locks()
+
+    node.query(f"ATTACH TABLE {table_name}")
+
+    def get_processed_count():
+        return int(node.query(f"SELECT uniqExact(_path) FROM {dst_table_name}"))
+
+    assert wait_until(
+        lambda: get_processed_count() == files_to_generate, timeout=150, interval=1
+    )
+
+
+def test_lock_owner_considered_dead_cannot_commit(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_dead_lock_owner_{uuid.uuid4().hex[:8]}"
+    files_to_generate = 3
+    keeper_path, dst_table_name = create_slow_queue(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_to_generate,
+        sleep_per_row=3,
+        settings={
+            "processing_threads_num": 1,
+            # The cleanup must not remove the owner by itself.
+            "lock_owner_timeout_seconds": 3600,
+            "cleanup_interval_min_ms": 100,
+            "cleanup_interval_max_ms": 100,
+            "s3queue_loading_retries": 10,
+        },
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    processing_node = wait_until(lambda: find_processing_node(zk, keeper_path), timeout=30)
+    assert processing_node is not None
+    _, owner_id = processing_node
+    owner_path = f"{keeper_path}/owners/{owner_id}"
+
+    # Remove the owner while it processes a file, as the cleanup does with an owner which
+    # is silent for too long (a server which is frozen or cannot reach keeper).
+    zk.delete(owner_path)
+
+    # The server finds out that it lost its locks, and takes locks again as a new owner.
+    assert wait_until(
+        lambda: node.contains_in_log(f"Lock owner {owner_id} was removed as dead"),
+        timeout=60,
+    )
+
+    def has_new_owner():
+        owners = zk.get_children(f"{keeper_path}/owners")
+        return owners and owner_id not in owners
+
+    assert wait_until(has_new_owner, timeout=60)
+
+    def get_processed_count():
+        return int(node.query(f"SELECT uniqExact(_path) FROM {dst_table_name}"))
+
+    assert wait_until(
+        lambda: get_processed_count() == files_to_generate, timeout=150, interval=1
+    )
+
+    # The removed owner could not commit the file it was processing, so every file is
+    # committed as processed exactly once, by an owner which is alive.
     assert files_to_generate == wait_for_processed_files_in_log(
         node, table_name, files_to_generate
     )

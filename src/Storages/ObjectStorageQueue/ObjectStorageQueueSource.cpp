@@ -127,6 +127,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     , buckets_num(use_buckets_for_processing ? metadata->getBucketsNum() : 0)
     , shutdown_called(shutdown_called_)
     , log(logger_)
+    , lock_owner_generation(metadata->getLockOwnerGeneration())
 {
     if (configuration->isNamespaceWithGlobs())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression can not have wildcards inside namespace name");
@@ -175,9 +176,14 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     }
 }
 
+bool ObjectStorageQueueSource::FileIterator::isInvalidated() const
+{
+    return iterator_invalidated || metadata->getLockOwnerGeneration() != lock_owner_generation;
+}
+
 bool ObjectStorageQueueSource::FileIterator::isFinished()
 {
-    if (iterator_invalidated)
+    if (isInvalidated())
         return true;
 
     std::lock_guard lock(mutex);
@@ -555,7 +561,7 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
             std::lock_guard lock(mutex);
 
-            if (iterator_invalidated)
+            if (isInvalidated())
             {
                 LOG_WARNING(log, "Bucket lock refresh failed, stopping the file iterator");
                 return {};

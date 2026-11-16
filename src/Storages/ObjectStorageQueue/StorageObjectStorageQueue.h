@@ -215,6 +215,9 @@ private:
     /// executing the whole process of reading from object storage
     /// and pushing result to dependent tables.
     void threadFunc(size_t streaming_tasks_index);
+    /// Release the bucket locks and the processing nodes which the streaming file iterator
+    /// holds. Called when the table does not consume, so that other servers can take them.
+    void releaseStreamingLocks();
     /// A subset of logic executed by threadFunc.
     bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch);
     /// Apply after_processing action to successfully processed files.
