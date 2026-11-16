@@ -1,0 +1,42 @@
+#include <Processors/QueryPlan/Streaming/hasUnboundedOutput.h>
+
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+
+#include <Common/typeid_cast.h>
+
+#include <vector>
+
+namespace DB
+{
+
+bool hasUnboundedOutput(const QueryPlan & query_plan)
+{
+    if (!query_plan.isInitialized())
+        return false;
+
+    std::vector<const QueryPlan::Node *> nodes{query_plan.getRootNode()};
+    while (!nodes.empty())
+    {
+        const auto * node = nodes.back();
+        nodes.pop_back();
+
+        const auto * limit = typeid_cast<const LimitStep *>(node->step.get());
+        if (limit && !limit->alwaysReadTillEnd())
+            continue;
+
+        if (const auto * source = dynamic_cast<const SourceStepWithFilter *>(node->step.get()))
+        {
+            const auto & modifiers = source->getQueryInfo().table_expression_modifiers;
+            if (modifiers && modifiers->hasStream() && modifiers->getStreamSettings()->subscribe_for_updates)
+                return true;
+        }
+
+        nodes.insert(nodes.end(), node->children.begin(), node->children.end());
+    }
+
+    return false;
+}
+
+}
