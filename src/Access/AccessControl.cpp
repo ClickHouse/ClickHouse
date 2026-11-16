@@ -674,7 +674,8 @@ bool AccessControl::insertUnlocked(
     auto storage_for_insertion = storage ? storage : getStorageForInsertion(entity);
 
     /// The same name must not refer to entities in different storages, whether the storage is specified explicitly or not.
-    if (!replace_if_exists && checkNameCollisionInOtherStorage(*storage_for_insertion, entity, throw_if_exists, conflicting_id))
+    /// A replacement replaces only an entity of the destination storage, so it is refused too if another storage holds the name.
+    if (checkNameCollisionInOtherStorage(*storage_for_insertion, entity, throw_if_exists || replace_if_exists, conflicting_id))
         return false;
 
     auto existing_id = storage_for_insertion->find(entity->getType(), entity->getName());

@@ -18,7 +18,6 @@ instance = cluster.add_instance(
     ],
     user_configs=[
         "configs/users.d/users.xml",
-        "configs/users.d/config_experimental_user.xml",
     ],
     stay_alive=True,
 )
@@ -101,9 +100,6 @@ MERGE_TREE_EXPERIMENTAL_SETTING_IN_PROFILE = (
 MERGE_TREE_PRODUCTION_MIN = 536870912
 MERGE_TREE_PRODUCTION_MAX = 2147483648
 MERGE_TREE_PRODUCTION_VALUE = 1073741824
-
-# Defined in configs/users.d/config_experimental_user.xml, with a profile setting `EXPERIMENTAL_SETTING` to 1
-CONFIG_EXPERIMENTAL_USER = "tier_config_experimental_user"
 
 # Allowed by configs/custom_settings_prefix.xml
 CUSTOM_SETTING = "custom_setting_of_this_test"
@@ -1598,7 +1594,8 @@ def test_move_rolls_back_entities_removed_before_failure(start_cluster):
             )
 
 
-def test_create_if_not_exists_notifies_when_shadowing_config_user(start_cluster):
+def test_create_if_not_exists_does_not_shadow_config_user(start_cluster):
+    # The same name must not refer to users of different storages, so a user of the config is not shadowed.
     user = "tier_config_user"
     with entities(instance, users=[user], storage="local_directory"):
         assert read_experimental_setting(instance, user) == "0"
@@ -1610,74 +1607,15 @@ def test_create_if_not_exists_notifies_when_shadowing_config_user(start_cluster)
         storages = instance.query(
             f"SELECT storage FROM system.users WHERE name = '{user}' ORDER BY storage"
         ).splitlines()
-        assert storages == ["local_directory", "users_xml"]
-        assert read_experimental_setting(instance, user) == "1"
-
-
-def test_shadowing_a_config_user_checks_feature_tier(start_cluster):
-    user = CONFIG_EXPERIMENTAL_USER
-    with entities(instance, users=[user], storage="local_directory"):
-        assert read_experimental_setting(instance, user) == "1"
-
-        with feature_tier(instance, "1"):
-            # The new user carries no settings, but it takes over the name and drops the EXPERIMENTAL
-            # setting the config user resolves to.
-            assert_experimental_change_is_blocked(
-                instance,
-                f"CREATE USER IF NOT EXISTS {user} IDENTIFIED WITH no_password",
-            )
-            assert (
-                instance.query(
-                    f"SELECT count() FROM system.users WHERE name = '{user}' AND storage = 'local_directory'"
-                ).strip()
-                == "0"
-            )
-        assert read_experimental_setting(instance, user) == "1"
-
-
-def test_unshadowing_a_config_user_checks_feature_tier(start_cluster):
-    user = CONFIG_EXPERIMENTAL_USER
-    drop_entities(instance, users=[user], storage="local_directory")
-    instance.query(
-        f"CREATE USER IF NOT EXISTS {user} IDENTIFIED WITH no_password "
-        f"SETTINGS {EXPERIMENTAL_SETTING} = 0"
-    )
-    assert read_experimental_setting(instance, user) == "0"
-
-    try:
-        with feature_tier(instance, "1"):
-            # Dropping the user exposes the config user again, which puts the EXPERIMENTAL setting back.
-            assert_experimental_change_is_blocked(
-                instance, f"DROP USER {user} FROM local_directory"
-            )
-            assert_experimental_change_is_blocked(
-                instance, f"ALTER USER {user} RENAME TO tier_renamed_shadow_user"
-            )
+        assert storages == ["users_xml"]
         assert read_experimental_setting(instance, user) == "0"
-    finally:
-        drop_entities(
-            instance,
-            users=[user, "tier_renamed_shadow_user"],
-            storage="local_directory",
-        )
 
-
-def test_moving_a_shadowing_user_checks_feature_tier(start_cluster):
-    user = CONFIG_EXPERIMENTAL_USER
-    with entities(instance, users=[user], storage="local_directory"):
-        with entities(instance, users=[user], storage="memory"):
-            instance.query(
-                f"CREATE USER IF NOT EXISTS {user} IDENTIFIED WITH no_password "
-        f"SETTINGS {EXPERIMENTAL_SETTING} = 0"
+        for create in ["CREATE USER", "CREATE USER OR REPLACE"]:
+            output, error = instance.query_and_get_answer_with_error(
+                f"{create} {user} IDENTIFIED WITH no_password"
             )
-            assert read_experimental_setting(instance, user) == "0"
-
-            with feature_tier(instance, "1"):
-                # `memory` is looked up after `users_xml`, so the move exposes the config user again.
-                assert_experimental_change_is_blocked(
-                    instance, f"MOVE USER {user} TO memory"
-                )
-            assert read_experimental_setting(instance, user) == "0"
+            assert output == ""
+            assert "already exists" in error, error
 
 
 def test_named_storage_collision_is_checked_before_batch_insert(start_cluster):
@@ -1754,31 +1692,6 @@ def test_restore_access_entities_checks_feature_tier(start_cluster):
             )
     finally:
         drop_entities(instance, users=[user])
-
-
-def test_restore_replaces_user_from_readonly_storage(start_cluster):
-    user = "tier_config_user"
-    backup_name = f"tier_restore_collision_{uuid.uuid4().hex}"
-    backup = f"Disk('backups', '{backup_name}')"
-    with entities(instance, users=[user], storage="local_directory"):
-        instance.query(
-            f"CREATE USER IF NOT EXISTS {user} IDENTIFIED WITH no_password "
-            f"SETTINGS {EXPERIMENTAL_SETTING} = 1"
-        )
-        instance.query(f"BACKUP TABLE system.users TO {backup}")
-        drop_entities(instance, users=[user], storage="local_directory")
-
-        instance.query(
-            f"RESTORE TABLE system.users FROM {backup} "
-            "SETTINGS create_access = 'replace'"
-        )
-        assert (
-            instance.query(
-                f"SELECT storage FROM system.users WHERE name = '{user}' ORDER BY storage"
-            ).splitlines()
-            == ["local_directory", "users_xml"]
-        )
-        assert read_experimental_setting(instance, user) == "1"
 
 
 def test_replicated_update_reapplies_after_version_conflict(start_cluster):

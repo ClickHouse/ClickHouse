@@ -487,9 +487,10 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
             return false;
     }
 
-    /// If the updating involves renaming check that the renamed entity will be accessible by name.
+    /// If the updating involves renaming check that the new name is not used in another storage:
+    /// the same name must not refer to entities in different storages.
     auto storages = getStoragesInternal();
-    if ((storages->size() > 1) && (storages->front() != storage_for_updating))
+    if (storages->size() > 1)
     {
         if (auto old_entity = storage_for_updating->tryRead(id))
         {
@@ -499,7 +500,7 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
                 for (const auto & storage : *storages)
                 {
                     if (storage == storage_for_updating)
-                        break;
+                        continue;
                     if (storage->find(new_entity->getType(), new_entity->getName()))
                     {
                         throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: cannot rename to {} because {} already exists in {}",

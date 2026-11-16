@@ -13,7 +13,11 @@ cluster = ClickHouseCluster(__file__)
 
 instance1 = cluster.add_instance(
     "instance1",
-    main_configs=["configs/ldap_with_role_mapping.xml", "configs/remote_servers.xml"],
+    main_configs=[
+        "configs/ldap_with_role_mapping.xml",
+        "configs/memory_user_directory.xml",
+        "configs/remote_servers.xml",
+    ],
     user_configs=["configs/users.xml"],
     macros={"shard": 1, "replica": "instance1"},
     stay_alive=True,
@@ -305,9 +309,18 @@ def delete_ldap_user(ldap_cluster, user_cn):
     assert code == 0
 
 
+def user_storages(name):
+    return instance1.query(
+        f"SELECT storage FROM system.users WHERE name = '{name}' ORDER BY storage",
+        user="common_user",
+        password="qwerty",
+    ).split()
+
+
 def test_same_name_user_in_other_directory(ldap_cluster):
     """
     A user authenticated by LDAP must not share its name with a user from another user directory.
+    The `memory` directory follows the LDAP one, so a login by LDAP credentials reaches LDAP first.
     """
     # A unique name, so that the LDAP user is not yet known to the server even if the test is retried.
     name = f"same_name_{uuid.uuid4().hex[:8]}"
@@ -315,7 +328,7 @@ def test_same_name_user_in_other_directory(ldap_cluster):
 
     try:
         instance1.query(
-            f"CREATE USER {name} IDENTIFIED WITH plaintext_password BY 'local_password' IN local_directory",
+            f"CREATE USER {name} IDENTIFIED WITH plaintext_password BY 'local_password' IN memory",
             user="common_user",
             password="qwerty",
         )
@@ -324,11 +337,13 @@ def test_same_name_user_in_other_directory(ldap_cluster):
         assert instance1.query(
             "SELECT currentUser()", user=name, password="local_password"
         ) == TSV([[name]])
+        assert user_storages(name) == ["memory"]
 
-        # The LDAP directory recognizes the user, but the name is already used in the local directory.
+        # The LDAP directory recognizes the user, but the name is already used in the `memory` directory.
         assert f"{name}: Authentication failed" in instance1.query_and_get_error(
             "SELECT currentUser()", user=name, password="ldap_password"
         )
+        assert user_storages(name) == ["ldap", "memory"]
 
         # Now both directories have a user with this name, so neither can log in.
         assert f"{name}: Authentication failed" in instance1.query_and_get_error(
@@ -336,7 +351,7 @@ def test_same_name_user_in_other_directory(ldap_cluster):
         )
 
         instance1.query(
-            f"DROP USER {name} FROM local_directory",
+            f"DROP USER {name} FROM memory",
             user="common_user",
             password="qwerty",
         )
@@ -347,14 +362,19 @@ def test_same_name_user_in_other_directory(ldap_cluster):
         ) == TSV([[name]])
 
         # A new user with the same name cannot be created in another directory, whether it is specified or not.
-        for query in [f"CREATE USER {name}", f"CREATE USER {name} IN local_directory"]:
+        for query in [
+            f"CREATE USER {name}",
+            f"CREATE USER {name} IN memory",
+            f"CREATE USER OR REPLACE {name} IN memory",
+        ]:
             assert "ACCESS_ENTITY_ALREADY_EXISTS" in instance1.query_and_get_error(
                 query, user="common_user", password="qwerty"
             )
     finally:
-        instance1.query(
-            f"DROP USER IF EXISTS {name} FROM local_directory",
-            user="common_user",
-            password="qwerty",
-        )
+        for storage in ["memory", "local_directory"]:
+            instance1.query(
+                f"DROP USER IF EXISTS {name} FROM {storage}",
+                user="common_user",
+                password="qwerty",
+            )
         delete_ldap_user(ldap_cluster, name)
