@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: they do not support FINAL. -->
     <create_query>
         CREATE TABLE vertical_final_limit (c1 String, c2 String, c3 UInt64)
         ENGINE = ReplacingMergeTree(c3)
@@ -13,7 +14,7 @@
     <fill_query>INSERT INTO vertical_final_limit SELECT if(number = 0, '0000', toString(cityHash64(number * 13))), if(number = 0, 'target', concat('item0 ', toString(number * 13))), 4 FROM numbers(3000)</fill_query>
     <fill_query>SELECT throwIf(count() != 4, 'vertical_final_limit_small_part: expected 4 active parts') FROM system.parts WHERE database = currentDatabase() AND table = 'vertical_final_limit' AND active</fill_query>
 
-    <query>SELECT c1 FROM vertical_final_limit FINAL WHERE c2 = 'target' LIMIT 1 FORMAT Null</query>
+    <!-- One thread: with more, the number of rows read before LIMIT stops the query depends on thread timing. -->
     <query>SELECT c1 FROM vertical_final_limit FINAL WHERE c2 = 'target' LIMIT 1 SETTINGS max_threads = 1 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS vertical_final_limit</drop_query>
