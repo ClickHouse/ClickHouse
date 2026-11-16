@@ -190,14 +190,20 @@ static std::shared_ptr<arrow::Buffer> readAt(arrow::io::RandomAccessFile & file,
     return *buffer;
 }
 
-/// Arrow builds the schema tree recursively (`parquet::SchemaDescriptor`), so a deeply nested schema
-/// exhausts the stack. Check the nesting depth of the schema with a non-recursive walk before giving the
-/// footer to Arrow, with the same limit as the native Parquet reader.
+/// Arrow builds the schema tree recursively (`parquet::schema::Unflatten`, `parquet::SchemaDescriptor`),
+/// so a deeply nested schema exhausts the stack. Unlike the native Parquet reader, which has `checkStackSize`
+/// as a backstop, the recursion in Arrow cannot be guarded, so the depth is always limited by this ceiling,
+/// even if `max_parser_depth` is raised or set to 0 (unlimited). In a release build, Arrow exhausts
+/// an 8 MiB stack at a depth between 30000 and 100000; frames are several times larger in sanitizer
+/// and debug builds, and the ceiling leaves a wide margin for them.
+static constexpr size_t MAX_SCHEMA_DEPTH_FOR_ARROW = 1000;
+
+/// Check the nesting depth of the schema with a non-recursive walk before giving the footer to Arrow,
+/// with the same limit as the native Parquet reader (`max_parser_depth`), capped by `MAX_SCHEMA_DEPTH_FOR_ARROW`.
 static void checkSchemaDepth(arrow::io::RandomAccessFile & file, const FormatSettings & format_settings)
 {
-    const size_t max_depth = format_settings.max_parser_depth;
-    if (max_depth == 0)
-        return;
+    const size_t max_parser_depth = format_settings.max_parser_depth;
+    const size_t max_depth = (max_parser_depth == 0) ? MAX_SCHEMA_DEPTH_FOR_ARROW : std::min(max_parser_depth, MAX_SCHEMA_DEPTH_FOR_ARROW);
 
     auto file_size_or_error = file.GetSize();
     if (!file_size_or_error.ok())
@@ -234,11 +240,18 @@ static void checkSchemaDepth(arrow::io::RandomAccessFile & file, const FormatSet
         {
             children_left.push_back(element.num_children);
             if (children_left.size() > max_depth)
+            {
+                if (max_depth == MAX_SCHEMA_DEPTH_FOR_ARROW)
+                    throw Exception(
+                        ErrorCodes::TOO_DEEP_RECURSION,
+                        "Parquet schema is nested deeper than the limit ({}) of the `ParquetMetadata` format",
+                        max_depth);
                 throw Exception(
                     ErrorCodes::TOO_DEEP_RECURSION,
                     "Parquet schema is nested deeper than the limit ({}). It can be raised with the setting "
                     "'max_parser_depth', but a very deeply nested schema is rarely intentional",
                     max_depth);
+            }
         }
     }
 }
