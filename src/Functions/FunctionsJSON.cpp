@@ -565,6 +565,17 @@ constexpr bool functionForcesTheReturnType()
     return std::is_same_v<Impl<void>, JSONExtractImpl<void>> || std::is_same_v<Impl<void>, JSONExtractKeysAndValuesImpl<void>>;
 }
 
+/// A function with `Impl::ignores_allow_simdjson` uses simdjson whenever it is built, as `JSONArrayLength` does.
+/// The parsers render some numbers differently, so the setting would make the result depend on the session.
+template <template<typename> typename Impl>
+constexpr bool functionIgnoresAllowSimdjson()
+{
+    if constexpr (requires { Impl<DummyJSONParser>::ignores_allow_simdjson; })
+        return Impl<DummyJSONParser>::ignores_allow_simdjson;
+    else
+        return false;
+}
+
 /// If the result cannot be wrapped in Nullable (e.g. Array), set the result of the null rows to the default value
 /// of the return type (e.g. an empty array). The parser still sees the values under the null map, which are not
 /// meaningful: `nullIf(x, x)` keeps `x`, and a null key is an empty string, which is a valid key in JSON.
@@ -720,7 +731,7 @@ private:
     chooseAndRunJSONParser(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
 #if USE_SIMDJSON
-        if (allow_simdjson)
+        if (allow_simdjson || functionIgnoresAllowSimdjson<Impl>())
             return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser, case_insensitive>::run(arguments, result_type, input_rows_count, format_settings);
 #endif
 
@@ -1524,6 +1535,10 @@ public:
     /// The options are constant arguments, see `ExecutableFunctionJSON::getArgumentsThatAreAlwaysConstant`.
     static constexpr size_t number_of_constant_arguments = 2;
 
+    /// The result must not depend on the session, because the function can be an index expression,
+    /// which is computed at insert, at merge and at query time with different settings.
+    static constexpr bool ignores_allow_simdjson = true;
+
     static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
     {
         if (arguments.empty() || arguments.size() > 3)
@@ -1544,8 +1559,7 @@ public:
         if (!isString(removeLowCardinality(arguments[0].type)) && !isNothing(arguments[0].type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The first argument of function {} should be a String containing JSON, illegal type: {}. "
-                "Use the function JSONAllValues for the JSON type",
+                "The first argument of function {} should be a String containing JSON, illegal type: {}",
                 function_name,
                 arguments[0].type->getName());
 
@@ -1621,14 +1635,8 @@ public:
         auto & col_arr = assert_cast<ColumnArray &>(dest);
         size_t old_size = col_arr.getData().size();
 
-        /// A value that cannot be rendered makes the whole row a failure: remove what the walk inserted, and the row gets an empty array.
         String path;
-        if (!walkObject(element, path, false, col_arr.getData(), format_settings))
-        {
-            if (size_t inserted = col_arr.getData().size() - old_size)
-                col_arr.getData().popBack(inserted);
-            return false;
-        }
+        walkObject(element, path, false, col_arr.getData(), format_settings);
 
         col_arr.getOffsets().push_back(col_arr.getOffsets().back() + (col_arr.getData().size() - old_size));
         return true;
@@ -1651,15 +1659,13 @@ private:
         return col_const->getValue<String>();
     }
 
-    /// Always a partial match, independent of `type_json_use_partial_match_to_skip_paths_by_regexp`:
-    /// the result must not depend on the session, because the function can be an index expression,
-    /// which is computed at insert, at merge and at query time with different settings.
+    /// Always a partial match, independent of `type_json_use_partial_match_to_skip_paths_by_regexp`, see `ignores_allow_simdjson`.
     bool isSkipped(const String & path) const
     {
         return skip_matcher && re2::RE2::PartialMatch(path, *skip_matcher);
     }
 
-    bool walkObject(const Element & object_element, String & path, bool has_parent, IColumn & dest, const FormatSettings & format_settings)
+    void walkObject(const Element & object_element, String & path, bool has_parent, IColumn & dest, const FormatSettings & format_settings)
     {
         checkStackSize();
 
@@ -1673,25 +1679,29 @@ private:
             else
                 path.append(key);
 
-            if (!walkValue(value, path, dest, format_settings))
-                return false;
+            walkValue(value, path, dest, format_settings);
             path.resize(old_path_size);
         }
-        return true;
     }
 
-    bool walkValue(const Element & value, String & path, IColumn & dest, const FormatSettings & format_settings)
+    void walkValue(const Element & value, String & path, IColumn & dest, const FormatSettings & format_settings)
     {
         if (value.isNull() || isSkipped(path))
-            return true;
+            return;
 
         if (value.isObject())
-            return walkObject(value, path, true, dest, format_settings);
+        {
+            walkObject(value, path, true, dest, format_settings);
+            return;
+        }
 
         if (value.isArray())
         {
             if (arrays == ArraysMode::String)
-                return insertLeaf(dest, path, value, format_settings);
+            {
+                insertLeaf(dest, path, value, format_settings);
+                return;
+            }
 
             if (arrays == ArraysMode::Elements)
             {
@@ -1704,19 +1714,17 @@ private:
                     path += '[';
                     path += std::to_string(index++);
                     path += ']';
-                    if (!walkValue(array_element, path, dest, format_settings))
-                        return false;
+                    walkValue(array_element, path, dest, format_settings);
                     path.resize(old_path_size);
                 }
             }
-            return true;
+            return;
         }
 
-        return insertLeaf(dest, path, value, format_settings);
+        insertLeaf(dest, path, value, format_settings);
     }
 
-    /// Returns false if the value cannot be rendered (an array deeper than `input_format_json_max_depth`); then nothing is inserted.
-    static bool insertLeaf(IColumn & dest, const String & path, const Element & value, const FormatSettings & format_settings)
+    static void insertLeaf(IColumn & dest, const String & path, const Element & value, const FormatSettings & format_settings)
     {
         ColumnString * col_path = nullptr;
         ColumnString * col_value = nullptr;
@@ -1729,7 +1737,9 @@ private:
         else
             col_value = &assert_cast<ColumnString &>(dest);
 
-        /// The value first: on failure `JSONExtractRawImpl` inserts nothing, so the tuple columns keep equal sizes.
+        if constexpr (with_paths)
+            col_path->insertData(path.data(), path.size());
+
         if (value.isString())
         {
             std::string_view str = value.getString();
@@ -1737,14 +1747,15 @@ private:
         }
         else
         {
-            String error;
-            if (!JSONExtractRawImpl<JSONParser>::insertResultToColumn(*col_value, value, {}, format_settings, error))
-                return false;
+            /// No depth limit, so the result does not depend on `input_format_json_max_depth`.
+            /// The parse limit of simdjson (nesting below 1024) bounds the recursion; `checkStackSize` guards RapidJSON.
+            auto & chars = col_value->getChars();
+            {
+                WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
+                jsonElementToString<JSONParser>(value, buf, format_settings, /* max_depth = */ 0);
+            }
+            col_value->getOffsets().push_back(chars.size());
         }
-
-        if constexpr (with_paths)
-            col_path->insertData(path.data(), path.size());
-        return true;
     }
 
     std::unique_ptr<re2::RE2> skip_matcher;
@@ -2536,11 +2547,13 @@ A match skips the value and everything below it.
 A partial match is enough, as in [`match`](/reference/functions/regular-functions/string-search-functions#match): use `^` and `$` to match the full path.
 Unlike the `SKIP REGEXP` of the `JSON` data type, the setting [`type_json_use_partial_match_to_skip_paths_by_regexp`](/reference/settings/formats/type-json#type_json_use_partial_match_to_skip_paths_by_regexp) does not apply.
 
-If a value cannot be rendered (in the `'string'` mode, an array nested deeper than [`input_format_json_max_depth`](/reference/settings/formats/input-format#input_format_json_max_depth)), the result for the row is an empty array.
+In the `'string'` mode, an array is returned whole, with no depth limit.
 
 :::note
 The paths, and so the `skip_regex` matches, depend on the setting `json_type_escape_dots_in_keys`.
-If the function is used in an index expression, and `skip_regex` can match a dot or `%2E`, use the same value of this setting for inserts, merges and queries.
+An index expression is computed at insert and at merge with the server-level settings: the settings of an `INSERT` query do not apply.
+If the function is used in an index expression, and `skip_regex` can match a dot or `%2E`, queries that use the index must keep the server-level value of this setting.
+Other settings, such as `allow_simdjson` and `input_format_json_max_depth`, do not change the result.
 :::
 
 Use [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues) for columns of the `JSON` data type.
@@ -2603,7 +2616,10 @@ The same as [`JSONExtractLeafValues`](#JSONExtractLeafValues), but returns a tup
 See the description of `JSONExtractLeafValues` for the rules of the paths, the escaping of dots in keys, and the arguments `skip_regex` and `arrays`.
 
 :::note
-With `json_type_escape_dots_in_keys = 0`, a key `a.b` and a nested key `b` inside `a` give the same path.
+The paths, and so the `skip_regex` matches, depend on the setting `json_type_escape_dots_in_keys`.
+An index expression is computed at insert and at merge with the server-level settings: the settings of an `INSERT` query do not apply.
+If the function is used in an index expression, and `skip_regex` can match a dot or `%2E`, queries that use the index must keep the server-level value of this setting.
+Other settings, such as `allow_simdjson` and `input_format_json_max_depth`, do not change the result.
 :::
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractLeafPathsAndValues(json[, skip_regex[, arrays]])";

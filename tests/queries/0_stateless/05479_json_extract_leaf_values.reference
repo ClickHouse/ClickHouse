@@ -38,11 +38,10 @@ Array(String)	Array(Tuple(\n    path String,\n    value String))
 []
 ['1','3']
 ['1','3']
--- an array that cannot be rendered gives an empty array for the row
-[]
-[]
+-- deep arrays: input_format_json_max_depth does not apply
+['[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]','1']
 [('x','1')]
-[]
+[('b','1'),('a','[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]')]
 [('y','[2]')]
 ['1','1']
 -- dots in keys: json_type_escape_dots_in_keys on and off
@@ -86,7 +85,7 @@ Granules: 1/4
 a different regex does not use the index
 Parts: 1 | Granules: 4
 Granules: 4/4
--- an unanchored regex in an index gives the same result when the settings of insert and query differ
+-- an unanchored regex in an index gives the same result when the settings of the query differ
 [2,3]
 [2,3]
 2

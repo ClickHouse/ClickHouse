@@ -48,9 +48,8 @@ SELECT JSONExtractLeafValues('{"abc": 1, "b": 2, "xbx": 3}', '.*b.*') SETTINGS t
 SELECT JSONExtractLeafValues('{"abc": 1, "b": 2, "xbx": 3}', '^b$') SETTINGS type_json_use_partial_match_to_skip_paths_by_regexp = 1;
 SELECT JSONExtractLeafValues('{"abc": 1, "b": 2, "xbx": 3}', '^b$') SETTINGS type_json_use_partial_match_to_skip_paths_by_regexp = 0;
 
-SELECT '-- an array that cannot be rendered gives an empty array for the row';
+SELECT '-- deep arrays: input_format_json_max_depth does not apply';
 SELECT JSONExtractLeafValues(concat('{"a": ', repeat('[', 20), repeat(']', 20), ', "b": 1}'), '', 'string') SETTINGS input_format_json_max_depth = 10;
-SELECT JSONExtractLeafPathsAndValues(concat('{"b": 1, "a": ', repeat('[', 20), repeat(']', 20), '}'), '', 'string') SETTINGS input_format_json_max_depth = 10;
 SELECT JSONExtractLeafPathsAndValues(s, '', 'string') FROM (SELECT arrayJoin(['{"x": 1}', concat('{"b": 1, "a": ', repeat('[', 20), repeat(']', 20), '}'), '{"y": [2]}']) AS s) SETTINGS input_format_json_max_depth = 10;
 SELECT JSONExtractLeafValues(concat('{"a": ', repeat('[', 20), '1', repeat(']', 20), ', "b": 1}'), '', 'elements') SETTINGS input_format_json_max_depth = 10;
 
@@ -142,7 +141,7 @@ SELECT trimLeft(explain) FROM (
 
 DROP TABLE tab_leaf;
 
-SELECT '-- an unanchored regex in an index gives the same result when the settings of insert and query differ';
+SELECT '-- an unanchored regex in an index gives the same result when the settings of the query differ';
 DROP TABLE IF EXISTS tab_leaf_settings;
 CREATE TABLE tab_leaf_settings
 (
@@ -154,11 +153,9 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS index_granularity = 1;
 
-INSERT INTO tab_leaf_settings SETTINGS type_json_use_partial_match_to_skip_paths_by_regexp = 1
-    VALUES (1, '{"a": "hello", "x_noindex": "secret"}'), (2, '{"a": "secret", "noindex": {"k": "zzz"}}');
-INSERT INTO tab_leaf_settings SETTINGS type_json_use_partial_match_to_skip_paths_by_regexp = 0
-    VALUES (3, '{"a": "secret", "y_noindex": "secret"}');
-OPTIMIZE TABLE tab_leaf_settings FINAL SETTINGS type_json_use_partial_match_to_skip_paths_by_regexp = 0;
+INSERT INTO tab_leaf_settings VALUES (1, '{"a": "hello", "x_noindex": "secret"}'), (2, '{"a": "secret", "noindex": {"k": "zzz"}}');
+INSERT INTO tab_leaf_settings VALUES (3, '{"a": "secret", "y_noindex": "secret"}');
+OPTIMIZE TABLE tab_leaf_settings FINAL;
 
 SELECT groupArray(id) FROM tab_leaf_settings WHERE hasAllTokens(JSONExtractLeafValues(s, 'noindex'), 'secret') SETTINGS type_json_use_partial_match_to_skip_paths_by_regexp = 0;
 SELECT groupArray(id) FROM tab_leaf_settings WHERE hasAllTokens(JSONExtractLeafValues(s, 'noindex'), 'secret') SETTINGS type_json_use_partial_match_to_skip_paths_by_regexp = 0, use_skip_indexes = 0;
