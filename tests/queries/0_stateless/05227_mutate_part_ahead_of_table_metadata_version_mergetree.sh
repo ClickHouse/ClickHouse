@@ -19,9 +19,11 @@ trap 'rm -rf "${WORKING_DIR}"' EXIT
 
 local_query() { ${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --query "$1"; }
 
+# `old_parts_lifetime = 0`: `DETACH PARTITION` leaves an empty part with `c` on disk otherwise, and a later run that
+# loads outdated parts keeps it active.
 local_query "
     CREATE TABLE t_part_ahead (id UInt64, val UInt64, p UInt8) ENGINE = MergeTree PARTITION BY p ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, min_bytes_for_full_part_storage = 0;
+    SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, min_bytes_for_full_part_storage = 0, old_parts_lifetime = 0;
     ALTER TABLE t_part_ahead ADD COLUMN c UInt32;
     INSERT INTO t_part_ahead SELECT number, number, 1, 42 FROM numbers(100);
     ALTER TABLE t_part_ahead DETACH PARTITION 1;

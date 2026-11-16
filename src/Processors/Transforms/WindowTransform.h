@@ -1,18 +1,24 @@
 #pragma once
 
-#include <WindowFunctions/IWindowFunction.h>
-
 #include <Interpreters/WindowDescription.h>
+#include <WindowFunctions/Common/WindowBounds.h>
+#include <WindowFunctions/Common/WindowFunctionRequirements.h>
+#include <WindowFunctions/IAggregateWindowFunction.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
 
 #include <Processors/Transforms/Window/Frame.h>
 #include <Processors/Transforms/Window/Partition.h>
 #include <Processors/Transforms/Window/Peers.h>
+#include <Processors/Transforms/Window/SlidingArguments.h>
 #include <Processors/Transforms/Window/SlidingBlocks.h>
 #include <Processors/Transforms/Window/SlidingIndexes.h>
 #include <Processors/Transforms/Window/WindowTransformParams.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 
+#include <Common/AlignedBuffer.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Core/Block.h>
 
 #include <optional>
@@ -20,10 +26,20 @@
 namespace DB
 {
 
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+struct GeneralWindowFunctionSlot
+{
+    GeneralWindowFunctionPtr function;
+    AlignedBuffer state;
+    DataTypePtr result_type;
+    size_t function_index = 0;
+};
 
-class Arena;
+struct AggregateWindowFunctionSlot
+{
+    AggregateWindowFunctionPtr function;
+    DataTypePtr result_type;
+    size_t function_index = 0;
+};
 
 /* Computes several window functions that share one window. The input is sorted by PARTITION BY, then by
  * ORDER BY, and arrives block by block; the transform keeps the blocks it still needs and walks them row by row.
@@ -42,51 +58,50 @@ class Arena;
  */
 class WindowTransform final : public IProcessor
 {
+    void addInputBlock(Chunk chunk);
+    void computeReadyRows();
+    void recordCurrentRowBounds();
+    void evaluateRowsBatch();
+    void startNextPartition();
+    void releaseUnusedBlocks();
+
 public:
     WindowTransform(
         SharedHeader input_header_, SharedHeader output_header_,
-        const WindowDescription & window_description_, const std::vector<WindowFunctionDescription> & functions);
+        const WindowDescription & window_description_, const VectorWithMemoryTracking<WindowFunctionDescription> & functions);
 
     ~WindowTransform() override;
 
     String getName() const override { return "WindowTransform"; }
 
-    static Block transformHeader(Block header, const ExpressionActionsPtr & expression);
-
     Status prepare() override;
     void work() override;
-    void addInputBlock(Chunk chunk);
-    void computeReadyRows();
-    void startNextPartition();
-    void releaseUnusedBlocks();
 
-    void updateAggregationState();
-    void writeOutCurrentRow();
-
-    /// Everything fixed at construction.
+private:
     const WindowTransformParams params;
 
+    /// Processors contract.
     std::optional<Chunk> pending_input;
+    DequeWithMemoryTracking<Chunk> pending_outputs;
     bool input_is_finished = false;
 
-    /// One per window function.
-    std::vector<WindowFunctionWorkspace> workspaces;
-
-    /// Shared by the aggregate states of the current partition and replaced with it, so it does not grow across
-    /// partitions. No result lives in it: a -State result is merged into the arena of the output column.
-    std::unique_ptr<Arena> arena;
-
+    /// Row walk.
     SlidingBlocks blocks;
     SlidingIndexes indexes;
-    /// The first stored block not yet passed to the consumer.
-    Int64 next_output_block_number = 0;
-
+    SlidingArguments arguments;
     Partition partition;
-    Frame frame;
     Peers peers;
+    Frame frame;
 
-    /// The frame the aggregate states hold; the next frame is compared with it to add only the new rows.
-    FrameBounds prev_frame;
+    /// Functions.
+    VectorWithMemoryTracking<GeneralWindowFunctionSlot> general_functions;
+    VectorWithMemoryTracking<AggregateWindowFunctionSlot> aggregate_functions;
+    MutableColumns current_results;
+    Int64 first_row_read_by_functions = 0;
+
+    /// Pending batch for evaluation.
+    WindowBounds bounds;
+    RowNumber batch_start;
 };
 
 }

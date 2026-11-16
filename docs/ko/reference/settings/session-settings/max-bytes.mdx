@@ -54,6 +54,21 @@ Cloud 기본값: 레플리카당 메모리 용량의 절반입니다.
 
 0이 아닌 값으로 설정하고 `join_algorithm`이 `hash`, `parallel_hash`, `default` 또는 `auto`이면, 오른쪽 데이터가 이 바이트 수를 초과할 때 디스크로 스필할 수 있도록 해시 조인이 자동으로 grace hash join으로 변환됩니다. `max_bytes_ratio_before_external_join`과 함께, 이 설정은 `grace_hash`를 포함한 모든 해시 기반 `join_algorithm`에 대한 임계값 기반 스필 트리거이며, `grace_hash`는 둘 중 하나가 0이 아니어야 합니다. 0이 아닌 임계값으로 조인이 스필 가능한 상태가 되면, `enable_adaptive_memory_spill_scheduler`가 임계값에 도달하기 전에도 메모리 압박 상황에서 스필을 강제할 수 있습니다. `0`(기본값)으로 설정하면 이 절대 바이트 임계값은 비활성화되지만, `max_bytes_ratio_before_external_join`(기본값 `0.5`)을 통해 자동 스필이 계속 발생할 수 있습니다. 두 설정이 모두 `0`이면 조인은 절대 스필하지 않으므로 스케줄러가 트리거할 대상이 없습니다. 예외는 `legacy_join_size_limits_trigger_spilling`으로, 이 설정이 켜져 있으면 독립형 `grace_hash`는 두 설정을 모두 무시하고 대신 `max_rows_in_join` / `max_bytes_in_join`을 기준으로 스필합니다. 이 설정을 사용하면 조인을 통한 read in order 최적화는 적용되지 않습니다. 이 임계값은 `join_algorithm`의 설정값과 관계없이 [블록 중첩 루프 조인(block nested loop join)](/ko/reference/statements/select/join#join-with-an-arbitrary-on-condition)이 구체화하는 오른쪽 데이터의 크기도 제한합니다.
 
+## max_bytes_before_external_set {#max_bytes_before_external_set}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "메모리 사용량이 지정된 임계값(바이트 단위)을 초과하면 서브쿼리를 사용하는 `IN`의 집합을 디스크로 스필하도록 하는 새로운 설정입니다. 0이면 `max_bytes_ratio_before_external_set`만 적용됩니다."}]}]} />
+
+서브쿼리를 사용하는 `IN`의 집합(set)을 생성하는 동안 또는 쿼리에서 해당 집합을 사용하는 동안 집합을 디스크로 스필하는 기준이 되는
+쿼리 메모리 임계값(바이트 단위)입니다. 실제 메모리 사용량(memory usage)은 이 임계값을 초과할 수 있습니다. 이 임계값과 16 MiB 중
+더 작은 값보다 메모리를 적게 차지하는 집합은 메모리에 그대로 유지됩니다.
+
+`0`으로 지정하면 이 임계값을 비활성화합니다. `max_bytes_ratio_before_external_set`에서도 임계값이 지정된 경우
+둘 중 더 작은 값이 사용됩니다. 스필을 비활성화하려면 두 설정을 모두 `0`으로 지정하십시오.
+
+자세한 내용은 [외부 메모리에서의 IN](/ko/reference/statements/in#in-in-external-memory)을 참조하십시오.
+
 ## max_bytes_before_external_sort {#max_bytes_before_external_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -74,6 +89,54 @@ Cloud 기본값: 레플리카당 메모리 용량의 절반입니다.
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
 ORDER BY와 LIMIT를 함께 사용하는 경우, 메모리 사용량이 지정된 임계값을 초과하면 상위 LIMIT개 행만 유지하도록 최종 머지 전에 블록을 추가로 머지합니다.
+
+## max_bytes_for_external_set_bloom_filter {#max_bytes_for_external_set_bloom_filter}
+
+<SettingsInfoBlock type="UInt64" default_value="134217728" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "이 설정은 26.10에 백포트되었습니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "134217728"},{"label": "디스크에 저장된 `IN` 집합이 집합에 없는 값에 대한 디스크 읽기를 건너뛰기 위해 유지하는 블룸 필터(Bloom filter)의 메모리를 제한하는 새로운 설정입니다."}]}]} />
+
+디스크에 기록된 각 `IN` 집합(set)이 메모리에 유지하는 블룸 필터(Bloom filter)의 메모리 예산(바이트 단위)입니다.
+이 필터를 사용하면 집합에 없는 값을 조회할 때 디스크 읽기를 건너뛸 수 있습니다. 단, 집합에 있는 값의 조회 속도는
+향상되지 않습니다.
+
+각 집합의 필터는 키당 약 1바이트와 예산 중 더 작은 크기만큼 메모리를 사용합니다. 여기서 집합의 키는
+고유 값(distinct values)을 의미하며, 여러 컬럼을 사용하는 `IN`에서는 고유 튜플을 의미합니다.
+
+* 예산이 키당 1바이트 이상이면 집합은 완전한 필터를 사용하며, 집합에 없는 값 조회의 약 97%가
+  디스크 읽기를 건너뜁니다. 예를 들어 키가 100만 개인 집합은 약 1 MiB를 사용합니다.
+* 예산이 이보다 작으면 집합은 예산에 맞춘 더 취약한 필터를 사용하며, 집합에 없는 값 조회 중 디스크 읽기를
+  건너뛰는 비율이 줄어듭니다. 예를 들어 키당 1/4바이트이면 이러한 조회 중 97%가 아닌 약 60%만
+  디스크 읽기를 건너뜁니다.
+* 예산이 키당 약 1/7바이트 미만이면 집합은 필터를 사용하지 않습니다. 이 정도 크기의 필터로는 디스크 읽기를
+  건너뛰는 조회가 너무 적어 필터 빌드 비용을 상쇄할 수 없기 때문입니다.
+
+기본 예산인 128 MiB에서는 키가 약 1억 3천만 개 이하인 집합은 완전한 필터를 사용하고, 키가 약 9억 5천만 개를
+초과하는 집합은 필터를 사용하지 않습니다. 조회하는 값 대부분이 집합에 없다면 더 큰 집합을 위해 예산을
+늘리십시오. 메모리가 부족하거나, 조회하는 값 대부분이 집합에 있어 필터가 도움이 되지 않는다면 예산을
+줄이십시오. `0`으로 설정하면 필터가 비활성화됩니다.
+
+필터는 `max_memory_usage`와 같은 쿼리의 메모리 사용량(memory usage)에는 포함되지만,
+`max_bytes_in_set`에는 포함되지 않습니다. 예산은 쿼리 단위가 아니라 집합 단위로 적용됩니다.
+
+[외부 메모리에서의 IN](/ko/reference/statements/in#in-in-external-memory)을 참조하십시오.
+
+## max_bytes_for_external_set_cache {#max_bytes_for_external_set_cache}
+
+<SettingsInfoBlock type="UInt64" default_value="134217728" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "이 설정은 26.10으로 백포트되었습니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "134217728"},{"label": "디스크에 저장된 `IN` 집합(set)이 유지하는 블록(Block) 캐시의 메모리를 제한하여, 조회 시 디스크에서 동일한 블록(Block)을 다시 읽지 않도록 하는 새로운 설정입니다."}]}]} />
+
+디스크에 기록된 각 `IN` 집합(set)이 메모리에 유지하는 블록(Block) 캐시의 메모리 예산(바이트 단위)입니다.
+조회(lookup) 시 이전 조회에서 이미 읽은 블록(Block)이 필요하면 디스크에서 다시 읽지 않고 캐시에서 가져옵니다.
+이 캐시는 자주 등장하는 소수의 값을 조회하거나 캐시에 들어갈 만한 크기의 집합을 여러 번 조회할 때처럼
+동일한 블록(Block)이 반복적으로 필요한 경우에 유용합니다. 반면 캐시보다 훨씬 큰 집합 전체에 조회가 고르게 분산되는
+경우에는 효과가 거의 없습니다. `0`으로 설정하면 캐시를 비활성화합니다.
+
+이 예산은 집합별로 적용됩니다. 캐시는 `max_memory_usage`와 같은 쿼리의 메모리 사용량(memory usage)에는
+포함되지만, `max_bytes_in_set`에는 포함되지 않습니다.
+
+[외부 메모리에서의 IN](/ko/reference/statements/in#in-in-external-memory)을 참고하십시오.
 
 ## max_bytes_for_lazy_final {#max_bytes_for_lazy_final}
 
@@ -171,6 +234,21 @@ DISTINCT를 사용할 때 해시 테이블이 사용하는 메모리 내 상태�
 `max_bytes_before_external_join`과 `max_bytes_ratio_before_external_join`이 모두 설정된 경우 계산된 임계값 중 더 작은 값이 사용됩니다. 비율이 `0`이면 절대값 설정만 적용됩니다.
 
 임시 데이터 경로가 구성되어 있다면 `grace_hash`를 포함한 모든 해시 기반 `join_algorithm`에 적용됩니다.
+
+## max_bytes_ratio_before_external_set {#max_bytes_ratio_before_external_set}
+
+<SettingsInfoBlock type="Double" default_value="0.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "기본값을 0.5로 변경한 사항이 26.10에 백포트되었습니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0.5"},{"label": "메모리 사용량(memory usage)이 사용 가능한 메모리의 지정된 비율을 초과하면 서브쿼리가 포함된 `IN`의 집합을 디스크로 스필할 수 있도록 하는 새로운 설정입니다. 0이면 `max_bytes_before_external_set`만 적용됩니다."}]}]} />
+
+서브쿼리가 포함된 `IN`의 집합을 디스크로 스필하는 임계값을 실행 시작 시점에 계산할 때 사용하는,
+사용 가능한 서버 또는 사용자 메모리의 비율입니다. 예를 들어 `0.5`는 사용 가능한 메모리의 절반을 의미합니다.
+
+값은 `0` 이상 `1` 미만이어야 합니다. `0`으로 설정하면 이 임계값이 비활성화됩니다. 적용할 수 있는
+서버 또는 사용자 메모리 제한이 없으면 이 비율은 효과가 없습니다.
+
+`max_memory_usage`는 이 계산에 영향을 주지 않습니다. 해당 제한을 기준으로 스필을 구성하려면
+추가 메모리 사용을 고려해 여유를 두고 `max_bytes_before_external_set`을 사용하십시오.
 
 ## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
 

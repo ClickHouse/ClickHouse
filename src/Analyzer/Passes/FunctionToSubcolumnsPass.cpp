@@ -76,11 +76,12 @@ namespace Setting
 namespace
 {
 
-/// Wrapper storages answer both predicates by walking what they wrap, so they are memoized per visitor.
+/// Wrapper storages answer these predicates by walking what they wrap, so they are memoized per visitor.
 struct SubcolumnSupportAnswers
 {
     bool all_transformers;
     std::optional<bool> tuple_element_only;
+    std::optional<bool> bucketed_map_serialization;
 };
 
 using SubcolumnSupportCache = std::unordered_map<const IStorage *, SubcolumnSupportAnswers>;
@@ -89,7 +90,7 @@ SubcolumnSupportAnswers & getSubcolumnSupportAnswers(const IStorage & storage, S
 {
     auto it = cache.find(&storage);
     if (it == cache.end())
-        it = cache.emplace(&storage, SubcolumnSupportAnswers{storage.supportsOptimizationToSubcolumns(), std::nullopt}).first;
+        it = cache.emplace(&storage, SubcolumnSupportAnswers{storage.supportsOptimizationToSubcolumns(), std::nullopt, std::nullopt}).first;
     return it->second;
 }
 
@@ -174,7 +175,7 @@ struct IdentifiersToOptimize
     /// can be rewritten inside WHERE/PREWHERE.
     ColumnInSourceSet filter_only;
 
-    bool empty() const { return everywhere.empty() && filter_only.empty(); }
+    [[nodiscard]] bool empty() const { return everywhere.empty() && filter_only.empty(); }
 };
 
 /// The correlated columns of every subquery on the way down, one entry per query or union level.
@@ -204,7 +205,7 @@ public:
 
     void leave() { stack.pop_back(); }
 
-    bool contains(const ColumnInSource & column_in_source) const
+    [[nodiscard]] bool contains(const ColumnInSource & column_in_source) const
     {
         for (const auto & columns : stack)
             if (columns.contains(column_in_source))
@@ -1326,6 +1327,16 @@ bool storageAllowsTransformer(
     const IStorage & storage, const IDataType & type, const String & function_name, SubcolumnSupportCache & cache)
 {
     auto & answers = getSubcolumnSupportAnswers(storage, cache);
+
+    /// Without buckets the key subcolumn `m.key_<key>` reads the whole Map, so `m['key']` is not rewritten to it.
+    if (function_name == "arrayElement" && isMap(type))
+    {
+        if (!answers.bucketed_map_serialization)
+            answers.bucketed_map_serialization = storage.hasBucketedMapSerialization();
+        if (!*answers.bucketed_map_serialization)
+            return false;
+    }
+
     if (answers.all_transformers)
         return true;
     if (!answers.tuple_element_only)
@@ -1566,7 +1577,7 @@ public:
         return true;
     }
 
-    IdentifiersToOptimize getIdentifiersToOptimize() const
+    [[nodiscard]] IdentifiersToOptimize getIdentifiersToOptimize() const
     {
         if (can_wrap_result_columns_with_nullable)
         {
