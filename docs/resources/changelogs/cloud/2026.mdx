@@ -8,9 +8,19 @@ keywords: ['changelog', 'release notes', 'updates', 'new features', 'cloud chang
 rss: true
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 In addition to this ClickHouse Cloud changelog, please see the [Cloud Compatibility](/products/cloud/guides/cloud-compatibility) page.
+
+<Update label="Nov 11, 2026">
+
+This week's Cloud updates include major platform additions and smoother operations across data, observability, security, and AI engineering:
+
+- **Build:** [ClickHouse Managed Postgres](/products/managed-postgres/overview) is generally available, with native change data capture into ClickHouse and the `pg_clickhouse` extension. The [Xata acquisition](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion) accelerates the roadmap for instant branching, cloning, and scale-to-zero environments.
+- **Observe:** [ClickHouse Observability](https://clickhouse.com/blog/announcing-clickhouse-observability) is in Public Beta. Send OpenTelemetry data to a managed endpoint and investigate logs, metrics, and traces in ClickStack or with agents. Observability Apps is in Private Preview, bringing prompt-driven, shareable applications over live telemetry.
+- **Secure:** ClickHouse Security is in Private Preview, combining security-data integrations, managed detections, and AI-powered investigations built on [RunReveal technology](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion). Admins can also configure each role's access to in-console monitoring dashboards.
+- **Connect:** The MongoDB CDC connector for [ClickPipes](/integrations/clickpipes/mongodb) is generally available, adding parallel snapshotting, structured ingestion, and new monitoring metrics. Private Preview support for `remoteSecure` lets services in the same organization, region, and cell query each other over ClickHouse Cloud's private network. Approved domains and the new Previews page make onboarding and trying eligible features self-service.
+- **Build with AI:** Langfuse AI Gateway is in Public Beta for tracing model usage and costs. Langfuse also adds versioned agent skills; project API keys can now be limited to full access, viewer, ingestion, or scores-ingestion permissions; and Experiments compares every score in a candidate run with a baseline, highlighting improvements and regressions. Read the [platform announcement](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion) for details.
+
+</Update>
 
 <Update label="Oct 19, 2026">
 
@@ -188,7 +198,7 @@ Billing notifications are now managed through the ClickHouse Cloud Notification 
 
 ### Open Langfuse session traces from ClickHouse Agents {#open-langfuse-session-traces-from-clickhouse-agents}
 
-Organization administrators can now open the corresponding Langfuse session directly from a [ClickHouse Agents](/products/cloud/features/ai-ml/agents/index) chat and inspect traces for the entire conversation. This makes it easier to investigate agent behavior and debug multi-step runs. The improvement is available in Public Beta for newly created chats.
+Organization administrators can now open the corresponding Langfuse session directly from a [ClickHouse Agents](/agents/index) chat and inspect traces for the entire conversation. This makes it easier to investigate agent behavior and debug multi-step runs. The improvement is available in Public Beta for newly created chats.
 
 ### SAML redirects help prevent duplicate accounts {#saml-redirects-help-prevent-duplicate-accounts}
 
@@ -226,7 +236,7 @@ TLS activation and verification levels are now consistent across CDC sources. Th
 Replicated databases are once again selectable in the ClickPipes destination picker.
 
 ### ClickHouse Agents updates (public beta)
-[ClickHouse Agents](/products/cloud/features/ai-ml/agents/index) now support Chat Projects for organizing conversations, a context usage gauge showing token and context-window usage, agent-authored Skills, and bundled ClickHouse best-practice Skills. This release also includes improvements to settings, navigation, shortcuts, and pinning.
+[ClickHouse Agents](/agents/index) now support Chat Projects for organizing conversations, a context usage gauge showing token and context-window usage, agent-authored Skills, and bundled ClickHouse best-practice Skills. This release also includes improvements to settings, navigation, shortcuts, and pinning.
 
 ### ClickHouse BYOC on the Azure Marketplace
 ClickHouse [Bring Your Own Cloud](/products/cloud/guides/infrastructure/deployment-options/byoc/overview) is now listed on the Azure Marketplace, letting customers purchase via private offer and deploy BYOC billed through their Azure account. Billing support for Azure BYOC marketplace listings and product IDs was added on the platform side.
@@ -256,7 +266,7 @@ See the [ClickPipes for GCP Pub/Sub docs](/integrations/clickpipes/pubsub/overvi
 ### ClickHouse Agents: Claude-powered agentic analytics (public beta)
 ClickHouse Agents is now in public beta at [ai.clickhouse.cloud](http://ai.clickhouse.cloud) — a first-party agent platform powered by Claude for conversational, schema-aware analysis over your ClickHouse Cloud data. Build custom agents with a no-code AgentBuilder, plug in MCP servers (Slack, Linear, Notion, and more), compose subagent workflows, and generate queries, pipelines, and apps without leaving the conversation. Includes AWS Bedrock AgentCore integration and managed LibreChat foundations.
 
-Learn more in the [ClickHouse Agents documentation](/products/cloud/features/ai-ml/agents/index).
+Learn more in the [ClickHouse Agents documentation](/agents/index).
 
 ### ClickHouse Managed Postgres (public beta)
 ClickHouse Managed Postgres, fully managed Postgres on local NVMe storage, is now in public beta, delivering 5x+ more TPS than AWS RDS and bridging OLTP and OLAP in one managed stack. A native CDC pipeline streams data directly into ClickHouse with no intermediate infrastructure, and the open-source `pg_clickhouse` extension lets you query ClickHouse tables from standard Postgres sessions.
@@ -446,7 +456,15 @@ curl https://clickhouse.com/cli | sh
   - GCP us-east1 (South Carolina)
 - Crash report collection preferences can now be configured at the organization level. This setting was previously available only at the service level. When disabled at the organization level, all existing and future services will be opted out automatically.
 
-<Image img="/images/cloud/reference/crash-reports-collection.webp" size="md" alt="Crash reports collection" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Crash reports collection](/images/cloud/reference/crash-reports-collection.webp)
+
+</Frame>
+
+</div>
 
 </Update>
 

@@ -21,7 +21,7 @@ insert into Y (id, y_a, y_b) values (4, 'r6', 'nr6'), (6, 'r7', 'nr7'), (7, 'r8'
 create table Z (id Int32, z_a String) engine ReplacingMergeTree order by id settings index_granularity=1;
 insert into Z (id, z_a) select number, toString(number) from numbers(100);
 
-set enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+set enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 
 -- Pin the settings that the flaky/stress randomizer changes and that would otherwise alter the plan:
 -- with automatic_parallel_replicas_mode=2 only statistics are collected and parallel replicas are not

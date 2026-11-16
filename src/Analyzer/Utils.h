@@ -16,6 +16,7 @@
 namespace DB
 {
 
+struct StorageID;
 class FunctionNode;
 class ColumnNode;
 using ColumnNodePtr = std::shared_ptr<ColumnNode>;
@@ -322,5 +323,10 @@ bool verifyMaterializedCTESubqueryMatchesStorage(
     const std::string & cte_name,
     const QueryTreeNodePtr & scope_node,
     bool throw_on_mismatch);
+
+/// Returns true if the table is the data inserted into a table function by `INSERT INTO FUNCTION ... RETURNING`,
+/// which the RETURNING query reads instead of the table function. The access to the table function is checked when it is executed,
+/// and its name is not in the database catalog, so the `SELECT` grants are not checked for it.
+bool isInsertedDataOfTableFunction(const StoragePtr & storage, const StorageID & storage_id, const ContextPtr & context);
 
 }

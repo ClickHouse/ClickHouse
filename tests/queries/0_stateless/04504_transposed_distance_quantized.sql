@@ -5,8 +5,6 @@
 -- so a Float64 query is narrowed to Float32); an Array(Int8) reference is itself dequantized, always at full 8-bit precision (`p`
 -- truncates only the stored QBit), so the comparison is symmetric quantized-vs-quantized only at p = 8.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS qbit_q;
 CREATE TABLE qbit_q (id UInt32, codes Array(Int8), vec QBit(Int8, 8)) ENGINE = Memory;
 
