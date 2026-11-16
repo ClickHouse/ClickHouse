@@ -1506,6 +1506,10 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (isSensitiveToEvaluationCount(filter->getExpression()))
             return 0;
 
+        /// A set operation matches NULL keys whatever lies under the null map, so the cloned filter must not read it.
+        if (dagReadsUnspecifiedValueUnderNull(filter->getExpression()))
+            return 0;
+
         /// In a branch that produces totals the filter could sink below TotalsHaving and change the totals.
         for (auto * branch : child_node->children)
             if (canProduceTotals(*branch))

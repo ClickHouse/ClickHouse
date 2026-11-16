@@ -49,6 +49,13 @@ SELECT 'nondeterministic top filter', countIf(explain LIKE 'Filter%') FROM
 SELECT 'side effect top filter', countIf(explain LIKE 'Filter%') FROM
 (EXPLAIN SELECT a FROM (SELECT a FROM t_intex_l EXCEPT ALL SELECT a FROM t_intex_r) WHERE sleepEachRow(0) = 0);
 
+-- A set operation matches two NULLs whatever values lie under them, which assumeNotNull reads: in each branch the
+-- filter would drop only one of the two NULLs. Pushdown on and off must return the same rows.
+SELECT 'null map EXCEPT ALL', groupArray(isNull(x)) FROM (SELECT nullIf(toUInt8(number + 1), 1) AS x FROM numbers(1) EXCEPT ALL SELECT nullIf(toUInt8(number + 2), 2) FROM numbers(1)) WHERE assumeNotNull(x) = 1;
+SELECT 'null map EXCEPT DISTINCT', groupArray(isNull(x)) FROM (SELECT nullIf(toUInt8(number + 1), 1) AS x FROM numbers(1) EXCEPT DISTINCT SELECT nullIf(toUInt8(number + 2), 2) FROM numbers(1)) WHERE assumeNotNull(x) = 1;
+SELECT 'null map INTERSECT ALL', groupArray(isNull(x)) FROM (SELECT nullIf(toUInt8(number + 1), 1) AS x FROM numbers(1) INTERSECT ALL SELECT nullIf(toUInt8(number + 2), 2) FROM numbers(1)) WHERE assumeNotNull(x) = 1;
+SELECT 'null map INTERSECT DISTINCT', groupArray(isNull(x)) FROM (SELECT nullIf(toUInt8(number + 1), 1) AS x FROM numbers(1) INTERSECT DISTINCT SELECT nullIf(toUInt8(number + 2), 2) FROM numbers(1)) WHERE assumeNotNull(x) = 1;
+
 -- Propagating the condition is not enough: with more than one granule per part, both branches must
 -- actually prune down to a single granule, which is the point of the optimization.
 DROP TABLE IF EXISTS t_intex_g_l;
