@@ -94,16 +94,6 @@ SELECT * FROM remoteSecure(my_producer, table = 'rs_demo_no_grant');
 
 If you used the test queries, you will have noticed that the first query returns results while the second one got an access denied error due to insufficient permissions.
 
-### Check the reverse direction {#check-reverse-direction}
-
-Run the following on the Producer, pointing back at the Consumer:
-
-```sql
-SELECT * FROM remoteSecure('<Consumer hostname>:9440', 'system', 'one', 'default');
-```
-
-The query fails, because connections only go one way. To query in both directions, ask for a second connection.
-
 ## Limitations {#limitations}
 
 ### Scope {#scope}
