@@ -1,0 +1,12 @@
+dst	1	2	42
+dst	7	70	42
+dst	101	102	42
+Row 1:
+──────
+log_comment: 05625_insert_into_source
+columns:     ['default.dst.a','default.mv_declared.a','default.mv_plain.a','default.src.a']
+
+Row 2:
+──────
+log_comment: 05625_insert_into_view
+columns:     ['default.dst.a','default.dst.m','default.mv_declared.a','default.mv_declared.m']

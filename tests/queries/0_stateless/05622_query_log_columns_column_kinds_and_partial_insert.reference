@@ -35,4 +35,4 @@ Row 5:
 log_comment: 05622_target_column_kinds
 tables:      ['default.mv_plain','default.src_plain','default.tgt_wide']
 views:       ['default.mv_plain']
-columns:     ['default.mv_plain.a','default.src_plain.a','default.tgt_wide.a','default.tgt_wide.d','default.tgt_wide.e']
+columns:     ['default.mv_plain.a','default.src_plain.a','default.tgt_wide.a']

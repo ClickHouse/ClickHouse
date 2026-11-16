@@ -542,8 +542,9 @@ public:
         StorageID view_id_, StoragePtr view_storage_, StorageMetadataPtr view_metadata_,
         StorageID inner_id_, StoragePtr inner_storage_, StorageMetadataPtr inner_metadata_,
         ContextPtr context_,
+        ContextMutablePtr query_context_,
         bool async_insert_)
-        : ExceptionKeepingTransform(input_header, output_header)
+        : ExceptionKeepingTransform(input_header, output_header, /* ignore_on_start_and_finish */ false)
         , select_query(select_query_)
         , source_id(source_id_)
         , source_metadata(source_metadata_)
@@ -555,6 +556,7 @@ public:
         , inner_metadata(inner_metadata_)
         , inner_storage(inner_storage_)
         , context(context_)
+        , query_context(query_context_)
         , async_insert(async_insert_)
     {
     }
@@ -588,6 +590,14 @@ protected:
         return res;
     }
 
+    void onFinish() override
+    {
+        /// No block came, so the SELECT was never analyzed. Analyze it once over an empty block, so that the query log
+        /// lists the same columns whether the insert moved rows or not.
+        if (query_context && !written_columns_recorded)
+            process(getInputPort().getHeader().cloneEmpty(), {});
+    }
+
 private:
     ASTPtr select_query;
     StorageID source_id;
@@ -600,6 +610,9 @@ private:
     StorageMetadataPtr inner_metadata;
     StoragePtr inner_storage;
     ContextPtr context;
+    /// The query context of the INSERT, which the query log reads. Null when the insert has none.
+    ContextMutablePtr query_context;
+    bool written_columns_recorded = false;
     bool async_insert = false;
 
     struct State
@@ -638,6 +651,12 @@ private:
                 select_query, local_context, SelectQueryOptions().ignoreAccessCheck(), local_context->getViewSource());
             pipeline = interpreter.buildQueryPipeline();
         }
+
+        /// The view writes the result columns of its SELECT, and the target receives exactly them, converted by name.
+        /// Not the declared columns of the view, which can be wider for a `TO` view, and not the insertable columns of
+        /// the target, which miss a supplied MATERIALIZED column and list DEFAULT columns nobody supplied.
+        Names written_columns = pipeline.getHeader().getNames();
+
         pipeline.resize(1);
         pipeline.dropTotalsAndExtremes();
 
@@ -711,6 +730,15 @@ private:
                     inner_metadata))));
 
         inner_metadata->check(pipeline.getHeader());
+
+        if (query_context && !written_columns_recorded)
+        {
+            /// Known only here, once the SELECT is analyzed. The query log reads the access info again when the query
+            /// finishes, so one record per view is enough.
+            query_context->addQueryAccessInfo(view_id, written_columns);
+            query_context->addQueryAccessInfo(inner_id, written_columns);
+            written_columns_recorded = true;
+        }
 
         const auto & settings = context->getSettingsRef();
         bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits] && !async_insert;
@@ -1524,22 +1552,16 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         materialized_view = dynamic_cast<StorageMaterializedView *>(storages.at(current).get());
     }
 
-    /// What the query log lists as the columns of this table; a dependent view is recorded below.
-    auto record_columns = [&] (const Names & column_names)
+    if (init_context->hasQueryContext())
     {
-        if (init_context->hasQueryContext())
-            init_context->getQueryContext()->addQueryAccessInfo(current, column_names);
-    };
-
-    if (current == init_table_id)
-    {
-        /// Exactly the columns the INSERT statement writes; the sink adds defaults for the rest
-        record_columns(init_header->getNames());
-    }
-    else if (!materialized_view)
-    {
-        /// The target of a view: the same list the INSERT access check below uses
-        record_columns(metadata->getSampleBlockInsertable().getNames());
+        /// The query log lists for every table the columns its writer supplies. The inserted table, and the target of
+        /// an inserted view, get the column list of the INSERT. A dependent view and its target are listed by name
+        /// here, and `ExecutingInnerQueryFromViewTransform` adds the result columns of the view's SELECT once the
+        /// SELECT is analyzed.
+        Names column_names;
+        if (current == init_table_id || (!materialized_view && parent == init_table_id))
+            column_names = init_header->getNames();
+        init_context->getQueryContext()->addQueryAccessInfo(current, column_names);
     }
 
     auto set_defaults_for_root_view = [&] (const StorageIDMaybeEmpty & root_view_, const StorageIDMaybeEmpty & inner_table_)
@@ -1582,21 +1604,6 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         // output_headers is filled at next call observePath(inner_table)
 
         std::tie(select_contexts[current], insert_contexts[current]) = createSelectInsertContext(path);
-
-        if (init_context->hasQueryContext())
-        {
-            /// A view writes the result columns of its SELECT, not its declared columns, which can be wider for a
-            /// `TO` view. The header does not depend on data, so analyze once here, as `CREATE MATERIALIZED VIEW` does.
-            const auto & source_metadata = metadata_snapshots.at(parent);
-            auto analyze_context = Context::createCopy(select_contexts.at(current));
-            analyze_context->addViewSource(std::make_shared<StorageValues>(
-                parent, source_metadata->getColumns(), input_headers.at(current)->cloneEmpty(), source_metadata->virtuals));
-
-            auto select_header = InterpreterSelectQueryAnalyzer::getSampleBlock(
-                select_queries.at(current)->clone(), analyze_context, SelectQueryOptions().ignoreAccessCheck());
-
-            record_columns(select_header->getNames());
-        }
 
         dependent_views[current] = {};
 
@@ -1736,6 +1743,8 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
 
     auto source_table_id = source_tables.at(view_id);
     auto input_header = input_headers.at(view_id);
+    /// Not the view's own context: for a `SQL SECURITY DEFINER` view that one is a separate query context.
+    ContextMutablePtr query_context = init_context->hasQueryContext() ? init_context->getQueryContext() : nullptr;
 
     if (select_context->getSettingsRef()[Setting::use_async_executor_for_materialized_views])
     {
@@ -1746,6 +1755,7 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
             view_id, storages.at(view_id), metadata_snapshots.at(view_id),
             inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
             select_context,
+            query_context,
             async_insert);
 
         executing_inner_query->setRuntimeData(thread_groups.at(view_id));
@@ -1761,6 +1771,7 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
             view_id, storages.at(view_id), metadata_snapshots.at(view_id),
             inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
             select_context,
+            query_context,
             async_insert);
 
         executing_inner_query->setRuntimeData(thread_groups.at(view_id));
