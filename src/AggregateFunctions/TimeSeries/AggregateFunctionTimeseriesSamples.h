@@ -1,15 +1,13 @@
 #pragma once
 
 #include <algorithm>
-#include <iterator>
 #include <utility>
-
-#include <absl/container/inlined_vector.h>
 
 #include <base/sort.h>
 
-#include <Common/AllocatorWithMemoryTracking.h>
+#include <Common/ArenaAllocator.h>
 #include <Common/Exception.h>
+#include <Common/PODArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -29,12 +27,14 @@ template <typename TimestampType, typename ValueType>
 class AggregateFunctionTimeseriesSamples
 {
 public:
-    /// The bucket map (`HashMap`) relocates cells with `memcpy` and abandons the source,
-    /// which is safe here: the buffer's inline single-sample storage is addressed relative to `this` (and the samples are trivially copyable),
-    /// an allocated buffer is reached only through a pointer to the heap - no pointers into itself either way.
+    /// The bucket map (`HashMap`) relocates cells with `memcpy` and abandons the source, which is safe here:
+    /// the buffer is reached only through pointers to arena or heap memory, never through pointers into itself.
     static constexpr bool is_position_independent = true;
 
-    void add(TimestampType timestamp, ValueType value)
+    /// The buffer is allocated in the arena passed to `add`, `addMany`, `merge` and `deserialize`.
+    static constexpr bool allocates_memory_in_arena = true;
+
+    void add(TimestampType timestamp, ValueType value, Arena * arena)
     {
         /// Out-of-order and duplicate timestamps are rare (measured ~1 per 1.5 billion adds on production-shaped multithreaded reads), hence `[[unlikely]]`.
         if (!buffer.empty() && timestamp <= buffer.back().first) [[unlikely]]
@@ -47,16 +47,16 @@ public:
             }
             sorted = false;
         }
-        buffer.emplace_back(timestamp, value);
+        buffer.push_back(Sample{timestamp, value}, arena);
     }
 
-    ALWAYS_INLINE void addMany(const TimestampType * __restrict timestamps, const ValueType * __restrict values, size_t count)
+    ALWAYS_INLINE void addMany(const TimestampType * __restrict timestamps, const ValueType * __restrict values, size_t count, Arena * arena)
     {
         if (count == 0)
             return;
 
         const size_t old_size = buffer.size();
-        buffer.resize(old_size + count);
+        buffer.resize(old_size + count, arena);
         auto * __restrict appended = buffer.data() + old_size;
         for (size_t i = 0; i < count; ++i)
             appended[i] = {timestamps[i], values[i]};
@@ -67,7 +67,7 @@ public:
         sorted = sorted && in_order;
     }
 
-    void merge(const AggregateFunctionTimeseriesSamples & other)
+    void merge(const AggregateFunctionTimeseriesSamples & other, Arena * arena)
     {
         if (other.buffer.empty())
         {
@@ -77,7 +77,7 @@ public:
 
         if (buffer.empty())
         {
-            buffer = other.buffer;
+            buffer.assign(other.buffer.begin(), other.buffer.end(), arena);
             sorted = other.sorted;
             sort();
             return;
@@ -86,32 +86,40 @@ public:
         sort();
 
         /// A rare unsorted argument is sorted into a copy: `other` belongs to another state and is kept intact.
-        const Buffer * rhs = &other.buffer;
-        Buffer sorted_other_buffer;
+        const Sample * rhs_begin = other.buffer.begin();
+        const Sample * rhs_end = other.buffer.end();
+        TemporaryBuffer sorted_other_buffer;
         if (!other.sorted)
         {
-            sorted_other_buffer = other.buffer;
+            sorted_other_buffer.assign(other.buffer.begin(), other.buffer.end());
             sortBuffer(sorted_other_buffer);
-            rhs = &sorted_other_buffer;
+            rhs_begin = sorted_other_buffer.begin();
+            rhs_end = sorted_other_buffer.end();
         }
+        const size_t rhs_size = rhs_end - rhs_begin;
 
         /// Partial states often cover disjoint timestamp ranges - then the merge is a plain append or prepend.
-        if (buffer.back().first < rhs->front().first)
+        if (buffer.back().first < rhs_begin->first)
         {
-            buffer.insert(buffer.end(), rhs->begin(), rhs->end());
+            buffer.insert(rhs_begin, rhs_end, arena);
             return;
         }
-        if (rhs->back().first < buffer.front().first)
+        if ((rhs_end - 1)->first < buffer.front().first)
         {
-            buffer.insert(buffer.begin(), rhs->begin(), rhs->end());
+            Buffer merged;
+            merged.reserve_exact(rhs_size + buffer.size(), arena);
+            merged.insert(rhs_begin, rhs_end, arena);
+            merged.insert(std::as_const(buffer).begin(), std::as_const(buffer).end(), arena);
+            buffer.swap(merged, arena);
             return;
         }
 
         Buffer merged;
-        merged.reserve(buffer.size() + rhs->size());
-        std::merge(buffer.begin(), buffer.end(), rhs->begin(), rhs->end(), std::back_inserter(merged), lessByTimestamp);
+        merged.resize_exact(buffer.size() + rhs_size, arena);
+        Sample * merged_end = std::merge(buffer.begin(), buffer.end(), rhs_begin, rhs_end, merged.begin(), lessByTimestamp);
+        merged.resize_assume_reserved(merged_end - merged.begin());
         deduplicateSorted(merged);
-        buffer = std::move(merged);
+        buffer.swap(merged, arena);
     }
 
     void serialize(WriteBuffer & buf) const
@@ -119,7 +127,7 @@ public:
         /// A rare unsorted state is serialized from a sorted copy, so the state is not mutated behind `const`.
         if (!sorted) [[unlikely]]
         {
-            Buffer sorted_buffer = buffer;
+            TemporaryBuffer sorted_buffer(buffer.begin(), buffer.end());
             sortBuffer(sorted_buffer);
             writeSamples(sorted_buffer, buf);
             return;
@@ -127,7 +135,7 @@ public:
         writeSamples(buffer, buf);
     }
 
-    void deserialize(ReadBuffer & buf)
+    void deserialize(ReadBuffer & buf, Arena * arena)
     {
         /// Deserialize replaces any previous contents.
         buffer.clear();
@@ -138,7 +146,7 @@ public:
         /// The sample count is read from the state and cannot be trusted, so only a bounded amount is reserved
         /// upfront and `add` grows the buffer while the samples are read. That way a corrupted count fails with
         /// an end-of-buffer error instead of allocating memory for the claimed number of samples.
-        buffer.reserve(std::min(sample_count, MAX_SAMPLES_TO_RESERVE));
+        buffer.reserve(std::min(sample_count, MAX_SAMPLES_TO_RESERVE), arena);
         /// No order is assumed on the wire (older peers serialize hash-map iteration order): `add` detects disorder while reading and `sort` restores the invariant if it was violated.
         for (size_t s = 0; s < sample_count; ++s)
         {
@@ -146,7 +154,7 @@ public:
             readBinaryLittleEndian(timestamp, buf);
             ValueType value;
             readBinaryLittleEndian(value, buf);
-            add(timestamp, value);
+            add(timestamp, value, arena);
         }
         sort();
     }
@@ -176,7 +184,7 @@ public:
         /// A rare unsorted state is iterated via a sorted copy, so the state is not mutated behind `const`.
         if (!sorted) [[unlikely]]
         {
-            Buffer sorted_buffer = buffer;
+            TemporaryBuffer sorted_buffer(buffer.begin(), buffer.end());
             sortBuffer(sorted_buffer);
             for (const auto & [timestamp, value] : sorted_buffer)
                 f(timestamp, value);
@@ -190,13 +198,15 @@ private:
     /// How many samples `deserialize` reserves before reading the data. Bigger buckets grow while they are read.
     static constexpr size_t MAX_SAMPLES_TO_RESERVE = 4096;
 
-    /// Some buckets hold a single sample - the inline capacity of 1 keeps it in the state itself with no heap allocation.
-    using Buffer = absl::InlinedVector<
-        std::pair<TimestampType, ValueType>,
-        /* N = */ 1,
-        AllocatorWithMemoryTracking<std::pair<TimestampType, ValueType>>>;
+    using Sample = std::pair<TimestampType, ValueType>;
+    /// Buffers of 4096 bytes and more are allocated with the ordinary allocator, to avoid fragmentation and trash in the arena.
+    using Allocator = MixedAlignedArenaAllocator<alignof(Sample), 4096>;
+    using Buffer = PODArray<Sample, 32, Allocator>;
+    /// For the sorted copies made where no arena is available.
+    using TemporaryBuffer = PODArray<Sample, 32>;
 
-    static void writeSamples(const Buffer & samples, WriteBuffer & buf)
+    template <typename Container>
+    static void writeSamples(const Container & samples, WriteBuffer & buf)
     {
         writeBinaryLittleEndian(samples.size(), buf);
         for (const auto & [timestamp, value] : samples)
@@ -206,13 +216,14 @@ private:
         }
     }
 
-    static bool lessByTimestamp(const std::pair<TimestampType, ValueType> & lhs, const std::pair<TimestampType, ValueType> & rhs)
+    static bool lessByTimestamp(const Sample & lhs, const Sample & rhs)
     {
         return lhs.first < rhs.first;
     }
 
     /// Collapses each equal-timestamp run of a sorted buffer into one sample with `timeseriesMaxValueForDuplicateTimestamp`.
-    static void deduplicateSorted(Buffer & buf)
+    template <typename Container>
+    static void deduplicateSorted(Container & buf)
     {
         size_t last_unique = 0;
         for (size_t i = 1; i < buf.size(); ++i)
@@ -223,10 +234,11 @@ private:
                 buf[++last_unique] = buf[i];
         }
         if (!buf.empty())
-            buf.resize(last_unique + 1);
+            buf.resize_assume_reserved(last_unique + 1);
     }
 
-    static void sortBuffer(Buffer & buf)
+    template <typename Container>
+    static void sortBuffer(Container & buf)
     {
         ::sort(buf.begin(), buf.end(), lessByTimestamp);
         deduplicateSorted(buf);

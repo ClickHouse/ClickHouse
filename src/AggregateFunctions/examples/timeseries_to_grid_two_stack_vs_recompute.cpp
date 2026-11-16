@@ -17,6 +17,7 @@
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesVariance.h>
 
+#include <Common/Arena.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Stopwatch.h>
@@ -62,8 +63,9 @@ template <typename Bucket>
 using Dataset = std::vector<UnorderedMapWithMemoryTracking<size_t, Bucket>>;  /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// Creates NUM_SERIES series, each with BASE_GRID single-sample buckets at indices 0..BASE_GRID-1 (dense).
+/// Buckets that store raw samples allocate them in `arena`, which must outlive the dataset.
 template <typename Bucket>
-Dataset<Bucket> buildDataset()
+Dataset<Bucket> buildDataset(Arena & arena)
 {
     Dataset<Bucket> dataset(NUM_SERIES);
     for (size_t series = 0; series < NUM_SERIES; ++series)
@@ -72,9 +74,12 @@ Dataset<Bucket> buildDataset()
         buckets.reserve(BASE_GRID);
         for (size_t k = 0; k < BASE_GRID; ++k)
         {
-            Bucket bucket;
-            bucket.add(gridPoint(k), static_cast<Float64>((k * 7 + series * 3) % 101));
-            buckets.emplace(k, std::move(bucket));
+            Bucket & bucket = buckets[k];
+            const auto value = static_cast<Float64>((k * 7 + series * 3) % 101);
+            if constexpr (requires { requires Bucket::allocates_memory_in_arena; })
+                bucket.add(gridPoint(k), value, &arena);
+            else
+                bucket.add(gridPoint(k), value);
         }
     }
     return dataset;
@@ -147,36 +152,37 @@ int mainEntryExampleTimeSeriesToGridTwoStackVsRecompute(int, char **)
     fmt::println("timeSeries*ToGrid: two-stacks vs recompute, measured on {}.", DateLUT::instance().dateToString(time(nullptr)));
 
     Float64 checksum = 0;
+    Arena arena;
 
     /// Linear regression (`timeSeriesDerivToGrid` / `timeSeriesPredictLinearToGrid` share the same `Summary`, so
     /// one measurement covers both).
     using LinearRegressionTraits = AggregateFunctionTimeseriesLinearRegressionTraits</* TimestampType */ DateTime64, /* ValueType */ Float64, TimeseriesLinearRegressionReturnKind::Slope>;
-    runFunction("timeSeriesDerivToGrid", buildDataset<AggregateFunctionTimeseriesSamples<DateTime64, Float64>>(),
+    runFunction("timeSeriesDerivToGrid", buildDataset<AggregateFunctionTimeseriesSamples<DateTime64, Float64>>(arena),
         [](size_t stack_size) { return LinearRegressionTraits::Aggregator{stack_size, /* grid_start */ DateTime64(0), /* predict_offset */ Float64(0), /* column_to_grid_multiplier */ 1, /* column_ticks_per_second */ 1}; },
         checksum);
 
     /// Compensated sum (`timeSeriesSumToGrid` / `timeSeriesAvgToGrid` share the same `Summary`, so one measurement
     /// covers both).
     using CompensatedSumTraits = AggregateFunctionTimeseriesCompensatedSumTraits</* TimestampType */ DateTime64, /* ValueType */ Float64, /* is_avg */ false>;
-    runFunction("timeSeriesSumToGrid", buildDataset<typename CompensatedSumTraits::Bucket>(),
+    runFunction("timeSeriesSumToGrid", buildDataset<typename CompensatedSumTraits::Bucket>(arena),
         [](size_t stack_size) { return CompensatedSumTraits::Aggregator{stack_size}; },
         checksum);
 
     /// Maximum (`timeSeriesMaxToGrid` / `timeSeriesTimestampOfMaxToGrid` differ only in the result; the buckets are summaries).
     using MaxTraits = AggregateFunctionTimeseriesMaxTraits</* TimestampType */ DateTime64, /* ValueType */ Float64, /* return_timestamp */ false>;
-    runFunction("timeSeriesMaxToGrid", buildDataset<typename MaxTraits::Bucket>(),
+    runFunction("timeSeriesMaxToGrid", buildDataset<typename MaxTraits::Bucket>(arena),
         [](size_t stack_size) { return typename MaxTraits::Aggregator{stack_size}; },
         checksum);
 
     /// Minimum (`timeSeriesMinToGrid` / `timeSeriesTimestampOfMinToGrid` differ only in the result; the buckets are raw samples).
     using MinTraits = AggregateFunctionTimeseriesMinTraits</* TimestampType */ DateTime64, /* ValueType */ Float64, /* return_timestamp */ false>;
-    runFunction("timeSeriesMinToGrid", buildDataset<typename MinTraits::Bucket>(),
+    runFunction("timeSeriesMinToGrid", buildDataset<typename MinTraits::Bucket>(arena),
         [](size_t stack_size) { return typename MinTraits::Aggregator{stack_size}; },
         checksum);
 
     /// Variance (`timeSeriesStdvarToGrid` / `timeSeriesStddevToGrid` differ only in the result; the buckets are raw samples).
     using VarianceTraits = AggregateFunctionTimeseriesVarianceTraits</* TimestampType */ DateTime64, /* ValueType */ Float64, /* is_stddev */ false>;
-    runFunction("timeSeriesStdvarToGrid", buildDataset<typename VarianceTraits::Bucket>(),
+    runFunction("timeSeriesStdvarToGrid", buildDataset<typename VarianceTraits::Bucket>(arena),
         [](size_t stack_size) { return typename VarianceTraits::Aggregator{stack_size}; },
         checksum);
 

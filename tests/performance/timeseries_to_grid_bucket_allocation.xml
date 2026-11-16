@@ -1,0 +1,50 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_aggregate_functions>1</allow_experimental_time_series_aggregate_functions>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <!--
+        Benchmarks the allocation of the per-bucket sample buffers of the `timeSeries*ToGrid` functions that store raw
+        samples. The number of samples per bucket is swept (window = step, one sample every 10 s, so step/10 samples per
+        bucket): one sample per bucket is the dense-grid case, larger buckets grow their buffers. `ts_alloc_by_time` holds
+        the same data ordered by time, so every thread builds a partial state of every series and the partial states are
+        merged. The last query puts all samples into one state, whose buckets are large.
+    -->
+    <substitutions>
+        <substitution>
+            <name>step</name>
+            <values>
+                <value>10</value>
+                <value>40</value>
+                <value>160</value>
+                <value>640</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE ts_alloc_by_series (id UInt32, timestamp DateTime, value Float64) ENGINE = MergeTree ORDER BY (id, timestamp)</create_query>
+    <create_query>CREATE TABLE ts_alloc_by_time (id UInt32, timestamp DateTime, value Float64) ENGINE = MergeTree ORDER BY (timestamp, id)</create_query>
+
+    <!-- 20000 series, one sample every 10 s over [0, 20000) -> 2000 samples per series; sawtooth counter values. -->
+    <fill_query>
+        INSERT INTO ts_alloc_by_series
+        SELECT number % 20000 AS id, toDateTime(intDiv(number, 20000) * 10) AS timestamp, (intDiv(number, 20000) % 1000)::Float64 AS value
+        FROM numbers_mt(20000 * 2000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE ts_alloc_by_series FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+    <fill_query>INSERT INTO ts_alloc_by_time SELECT * FROM ts_alloc_by_series</fill_query>
+    <fill_query>OPTIMIZE TABLE ts_alloc_by_time FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+    <fill_query>
+        SELECT throwIf(count() != 2, 'timeseries_to_grid_bucket_allocation: expected 1 active part per table; the layout pin is not in effect')
+        FROM system.parts
+        WHERE database = currentDatabase() AND table IN ('ts_alloc_by_series', 'ts_alloc_by_time') AND active
+    </fill_query>
+
+    <query>SELECT id, timeSeriesRateToGrid(0, 20000, {step}, {step})(timestamp, value) FROM ts_alloc_by_series GROUP BY id FORMAT Null</query>
+    <query>SELECT id, timeSeriesRateToGrid(0, 20000, {step}, {step})(timestamp, value) FROM ts_alloc_by_time GROUP BY id FORMAT Null</query>
+    <query>SELECT timeSeriesRateToGrid(0, 20000, 160, 160)(timestamp, value) FROM ts_alloc_by_series FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS ts_alloc_by_series</drop_query>
+    <drop_query>DROP TABLE IF EXISTS ts_alloc_by_time</drop_query>
+</test>
