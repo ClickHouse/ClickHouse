@@ -56,7 +56,9 @@ inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
         /// Converting to `bool` lanes is `!= 0`; a comparison would depend on `-faltivec-src-compat` on PowerPC.
         const BitMask mask = __builtin_convertvector(bytes, BitMask);
 
-        return std::bit_cast<UInt64>(mask);
+        UInt64 res;
+        __builtin_memcpy(&res, &mask, sizeof(res));
+        return res;
     }
     else
     {

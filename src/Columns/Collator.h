@@ -27,10 +27,10 @@ public:
     static const AvailableCollationLocales & instance();
 
     /// Get all collations with names in sorted order
-    [[nodiscard]] LocalesVector getAvailableCollations() const;
+    LocalesVector getAvailableCollations() const;
 
     /// Check that collation is supported
-    [[nodiscard]] bool isCollationSupported(const std::string & locale_name) const;
+    bool isCollationSupported(const std::string & locale_name) const;
 
 private:
     AvailableCollationLocales();
@@ -46,7 +46,7 @@ public:
 
     int compare(const char * str1, size_t length1, const char * str2, size_t length2) const;
 
-    [[nodiscard]] const std::string & getLocale() const;
+    const std::string & getLocale() const;
 
     bool operator==(const Collator & other) const { return this->getLocale() == other.getLocale(); }
 

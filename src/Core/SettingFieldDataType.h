@@ -25,16 +25,18 @@ struct SettingFieldDataType
     SettingFieldDataType & operator =(const String & str);
     SettingFieldDataType & operator =(const Field & f);
 
-    [[nodiscard]] bool isChanged() const { return changed; }
+    bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator const DataTypePtr &() const { return value; } /// NOLINT
     explicit operator bool() const { return value != nullptr; }
     explicit operator Field() const { return toString(); }
 
-    [[nodiscard]] String toString() const;
+    String toString() const;
     void parseFromString(const String & str);
 
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
 };
 
 }

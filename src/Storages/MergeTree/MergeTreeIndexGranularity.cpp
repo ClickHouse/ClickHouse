@@ -6,12 +6,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Core/Block.h>
 #include <Common/typeid_cast.h>
-#include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBuffer.h>
-#include <IO/ReadBuffer.h>
-
 
 namespace DB
 {
@@ -258,30 +253,6 @@ size_t MergeTreeIndexGranularity::getMarksCountForSkipIndex(size_t skip_index_gr
 {
     size_t marks_count = getMarksCountWithoutFinal();
     return (marks_count + skip_index_granularity - 1) / skip_index_granularity;
-}
-
-MergeTreeIndexGranularityPtr readIndexGranularity(ReadBuffer & in)
-{
-    std::string enum_name;
-    in >> "index granularity type: " >> enum_name >> "\n";
-    MergeTreeIndexGranularityType type = magic_enum::enum_cast<MergeTreeIndexGranularityType>(enum_name).value();
-
-    MergeTreeIndexGranularityPtr index_granularity;
-    if (type == MergeTreeIndexGranularityType::ADAPTIVE)
-        index_granularity = std::make_shared<MergeTreeIndexGranularityAdaptive>();
-    else if (type == MergeTreeIndexGranularityType::CONSTANT)
-        index_granularity = std::make_shared<MergeTreeIndexGranularityConstant>();
-    else
-        UNREACHABLE();
-
-    index_granularity->readDataImpl(in);
-    return index_granularity;
-}
-
-void writeIndexGranularity(MergeTreeIndexGranularityPtr index_granularity, WriteBuffer & out)
-{
-    out << "index granularity type: " << magic_enum::enum_name(index_granularity->getType()) << "\n";
-    index_granularity->writeDataImpl(out);
 }
 
 }

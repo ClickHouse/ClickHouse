@@ -2,7 +2,6 @@
 #include <Functions/geometryConverters.h>
 #include <Functions/geometry.h>
 
-#include <boost/geometry/algorithms/length.hpp>
 #include <boost/geometry/algorithms/perimeter.hpp>
 
 namespace DB
@@ -21,10 +20,9 @@ struct PerimeterCalculator
         return static_cast<Float64>(boost::geometry::perimeter(object));
     }
 
-    /// `boost::geometry::perimeter` of a linear geometry is 0, so the perimeter of a line is its length.
     Float64 operator()(const LineString<Point> & object)
     {
-        return static_cast<Float64>(boost::geometry::length(object));
+        return static_cast<Float64>(boost::geometry::perimeter(object));
     }
 
     Float64 operator()(const Polygon<Point> & object)
@@ -34,7 +32,7 @@ struct PerimeterCalculator
 
     Float64 operator()(const MultiLineString<Point> & object)
     {
-        return static_cast<Float64>(boost::geometry::length(object));
+        return static_cast<Float64>(boost::geometry::perimeter(object));
     }
 
     Float64 operator()(const MultiPolygon<Point> & object)
@@ -62,7 +60,7 @@ REGISTER_FUNCTION(Perimeter)
 {
     {
         FunctionDocumentation::Description description = R"(
-    Returns the perimeter of the object. For a `LineString` or a `MultiLineString`, returns its length.
+    Returns the perimeter of the object.
         )";
         FunctionDocumentation::Syntax syntax = "perimeterCartesian(object)";
         FunctionDocumentation::Arguments arguments = {
@@ -82,14 +80,14 @@ REGISTER_FUNCTION(Perimeter)
     }
     {
             FunctionDocumentation::Description description = R"(
-    Returns the perimeter of the object. For a `LineString` or a `MultiLineString`, returns its length.
+    Returns the perimeter of the object.
         )";
         FunctionDocumentation::Syntax syntax = "perimeterSpherical(object)";
         FunctionDocumentation::Arguments arguments = {
             {"object", "geometry object", {"Variant"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
-            "Returns the perimeter on a sphere of radius 1, in radians (coordinates are longitude and latitude in degrees). Multiply by the radius of the sphere to get a length, for example by 6371 for kilometers on the Earth.",
+            "Returns the perimeter of the object.",
             {"Float64"}
         };
         FunctionDocumentation::Examples examples;

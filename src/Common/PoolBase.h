@@ -64,7 +64,7 @@ public:
         data->is_expired->store(true);
     }
 
-    [[nodiscard]] bool isNull() const { return data == nullptr; }
+    bool isNull() const { return data == nullptr; }
 
 private:
     template <typename, typename, typename> friend class PoolBase;
@@ -227,7 +227,7 @@ private:
     static constexpr auto wait_slice = std::chrono::seconds(1);
 
     /** Whether get() could return without waiting. Called under `mutex`. */
-    [[nodiscard]] bool hasAvailableObjectUnlocked() const
+    bool hasAvailableObjectUnlocked() const
     {
         if (items.size() < max_items)
             return true;
@@ -235,7 +235,7 @@ private:
     }
 
     /// A pooled object lives as long as the pool, so a long-lived pool does not charge it to the query that happens to create it.
-    [[nodiscard]] std::optional<MemoryTrackerBlockerInThread> blockQueryTrackingIfPoolOutlivesQuery() const
+    std::optional<MemoryTrackerBlockerInThread> blockQueryTrackingIfPoolOutlivesQuery() const
     {
         if (!pool_outlives_query)
             return {};

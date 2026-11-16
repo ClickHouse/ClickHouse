@@ -15,7 +15,9 @@ doc_type: 'reference'
 
 * [تمثيل العناصر الجغرافية البسيطة](https://en.wikipedia.org/wiki/GeoJSON).
 
-## Point {#point}
+<div id="point">
+  ## Point
+</div>
 
 يُمثَّل `Point` بإحداثيات X وY، ويُخزَّن على هيئة [Tuple](/ar/reference/data-types/tuple)([Float64](/ar/reference/data-types/float), [Float64](/ar/reference/data-types/float)).
 
@@ -33,10 +35,11 @@ SELECT p, toTypeName(p) FROM geo_point;
 └─────────┴───────────────┘
 ```
 
-## MultiPoint {#multipoint}
+<div id="multipoint">
+  ## MultiPoint
+</div>
 
-`MultiPoint` هي مجموعة من النقاط تُخزَّن على شكل [Array](/ar/reference/data-types/array)([Point](#point)).
-يمكن تحويل `Point` إلى `MultiPoint`؛ وتكون النتيجة متضمّنةً تلك النقطة عنصرًا وحيدًا فيها.
+`MultiPoint` هي مجموعة من النقاط تُخزَّن على شكل [Array](/ar/reference/data-types/array)([Point](#point)).
 
 **مثال**
 
@@ -52,7 +55,9 @@ SELECT mp, toTypeName(mp) FROM geo_multipoint;
 └───────────────────────────────┴────────────────┘
 ```
 
-## Ring {#ring}
+<div id="ring">
+  ## Ring
+</div>
 
 `Ring` هو مضلع بسيط من دون ثقوب، يُخزَّن كمصفوفة من النقاط: [Array](/ar/reference/data-types/array)([Point](#point)).
 
@@ -70,7 +75,9 @@ SELECT r, toTypeName(r) FROM geo_ring;
 └───────────────────────────────┴───────────────┘
 ```
 
-## LineString {#linestring}
+<div id="linestring">
+  ## LineString
+</div>
 
 `LineString` هو خط يُخزَّن كمصفوفة من النقاط: [Array](/ar/reference/data-types/array)([Point](#point)).
 
@@ -88,10 +95,11 @@ SELECT l, toTypeName(l) FROM geo_linestring;
 └───────────────────────────────┴───────────────┘
 ```
 
-## MultiLineString {#multilinestring}
+<div id="multilinestring">
+  ## MultiLineString
+</div>
 
 يمثل `MultiLineString` عدة خطوط مخزنة في مصفوفة من `LineString`: [Array](/ar/reference/data-types/array)([LineString](#linestring)).
-يمكن تحويل `LineString` إلى `MultiLineString`، وتكون النتيجة مصفوفة يكون ذلك الخط عنصرها الوحيد.
 
 **مثال**
 
@@ -107,7 +115,9 @@ SELECT l, toTypeName(l) FROM geo_multilinestring;
 └─────────────────────────────────────────────────────┴─────────────────┘
 ```
 
-## Polygon {#polygon}
+<div id="polygon">
+  ## Polygon
+</div>
 
 `Polygon` هو مضلع ذو ثقوب، يُخزَّن كمصفوفة من الحلقات: [Array](/ar/reference/data-types/array)([Ring](#ring)). يمثّل العنصر الأول في المصفوفة الخارجية الشكل الخارجي للمضلع، وتمثّل جميع العناصر التالية الثقوب.
 
@@ -127,10 +137,11 @@ SELECT pg, toTypeName(pg) FROM geo_polygon;
 └───────────────────────────────────────────────────────────────┴────────────────┘
 ```
 
-## MultiPolygon {#multipolygon}
+<div id="multipolygon">
+  ## MultiPolygon
+</div>
 
-يتألف `MultiPolygon` من عدة مضلعات، ويُخزَّن على هيئة مصفوفة من المضلعات: [Array](/ar/reference/data-types/array)([Polygon](#polygon)).
-يمكن تحويل `Polygon` إلى `MultiPolygon`، وتكون النتيجة حينئذٍ مضلعًا متعددًا يضم ذلك المضلع عنصرًا وحيدًا فيه.
+يتألف `MultiPolygon` من عدة مضلعات، ويُخزَّن على هيئة مصفوفة من المضلعات: [Array](/ar/reference/data-types/array)([Polygon](#polygon)).
 
 **مثال**
 
@@ -148,7 +159,9 @@ SELECT mpg, toTypeName(mpg) FROM geo_multipolygon;
 └─────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┘
 ```
 
-## Geometry {#geometry}
+<div id="geometry">
+  ## Geometry
+</div>
 
 يُعد `Geometry` نوعًا عامًا يشمل جميع الأنواع المذكورة أعلاه. وهو يعادل نوع `Variant` من هذه الأنواع.
 
@@ -192,7 +205,9 @@ SELECT * FROM geo_dst;
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## محتوى ذو صلة {#related-content}
+<div id="related-content">
+  ## محتوى ذو صلة
+</div>
 
 * [استكشاف مجموعات بيانات واقعية ضخمة: أكثر من 100 عام من سجلات الطقس في ClickHouse](https://clickhouse.com/blog/real-world-data-noaa-climate-data)
 

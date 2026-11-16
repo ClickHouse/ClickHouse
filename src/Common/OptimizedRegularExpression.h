@@ -98,7 +98,7 @@ public:
     OptimizedRegularExpression(const OptimizedRegularExpression & rhs) = delete;
     ~OptimizedRegularExpression();
 
-    [[nodiscard]] bool match(const std::string & subject) const
+    bool match(const std::string & subject) const
     {
         return match(subject.data(), subject.size());
     }
@@ -138,10 +138,10 @@ public:
 
     unsigned match(const char * subject, size_t subject_size, size_t start_pos, MatchVec & matches, unsigned limit) const;
 
-    [[nodiscard]] unsigned getNumberOfSubpatterns() const { return number_of_subpatterns; }
+    unsigned getNumberOfSubpatterns() const { return number_of_subpatterns; }
 
     /// Get the regexp re2 or nullptr if the pattern is trivial (for output to the log).
-    [[nodiscard]] const std::unique_ptr<re2::RE2> & getRE2() const { return re2; }
+    const std::unique_ptr<re2::RE2> & getRE2() const { return re2; }
 
     void getAnalyzeResult(std::string & out_required_substring, bool & out_is_trivial, bool & out_required_substring_is_prefix) const
     {
@@ -154,16 +154,16 @@ public:
     /// a string contains the string literal(s). If not, we can tell this string can never match the regexp.
     static RegexpAnalysisResult analyze(std::string_view regexp_);
 
-    [[nodiscard]] RegexpMatchKind getMatchKind() const { return match_kind; }
+    RegexpMatchKind getMatchKind() const { return match_kind; }
 
-    [[nodiscard]] std::string_view getRequiredSubstring() const { return required_substring; }
+    std::string_view getRequiredSubstring() const { return required_substring; }
 
     /// Finds `required_substring` in `[haystack, haystack + haystack_size)` with the searcher `match` uses, so
     /// `match` rejects any subject this does not find it in. Returns the end when it does not occur.
     const UInt8 * searchRequiredSubstring(const UInt8 * haystack, size_t haystack_size) const;
 
 private:
-    [[nodiscard]] bool isAnchoredLiteral() const { return isAnchoredLiteralMatchKind(match_kind); }
+    bool isAnchoredLiteral() const { return isAnchoredLiteralMatchKind(match_kind); }
 
     /// Compares the subject against `required_substring` at the only offset where it can occur.
     bool matchAnchoredLiteral(const char * subject, size_t subject_size, size_t & match_offset) const;

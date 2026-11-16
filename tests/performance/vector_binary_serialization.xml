@@ -35,7 +35,7 @@
     <query>SELECT state FROM aov_states FORMAT Null</query>
 
     <!-- Deserialization followed by merging the states. -->
-    <query>SELECT analysisOfVarianceMergeState(state) FROM aov_states GROUP BY key FORMAT Null</query>
+    <query>SELECT analysisOfVarianceMerge(state) FROM aov_states GROUP BY key FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS aov_states</drop_query>
 </test>

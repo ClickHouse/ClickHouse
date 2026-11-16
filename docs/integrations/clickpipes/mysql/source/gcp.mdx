@@ -10,55 +10,31 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { CloudSQLIAMAuthentication } from "/snippets/clickpipes/_cloudsql_iam_authentication.mdx";
+import { Image } from "/snippets/components/Image.jsx";
 
 This is a step-by-step guide on how to configure your Cloud SQL for MySQL instance for replicating its data via the MySQL ClickPipe.
 
 ## Enable binary log retention {#enable-binlog-retention-gcp}
-The binary log is a set of log files that contain information about data modifications made to a MySQL server instance, and binary log files are required for replication.
+The binary log is a set of log files that contain information about data modifications made to an MySQL server instance, and binary log files are required for replication.
 
 ### Enable binary logging via PITR {#enable-binlog-logging-gcp}
 The PITR feature determines whether binary logging is turned on or off for MySQL in Google Cloud. It can be set in the Cloud console, by editing your Cloud SQL instance and scrolling down to the below section.
 
-<div className="ch-image-lg">
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-pitr.webp" alt="Enabling PITR in Cloud SQL" size="lg" border/>
 
-<Frame>
-
-![Enabling PITR in Cloud SQL](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-pitr.webp)
-
-</Frame>
-
-</div>
-
-Set the transaction log retention to at least 3 days. Cloud SQL keeps binary logs for the shorter of this setting and `binlog_expire_logs_seconds`.
+Setting the value to a reasonably long value depending on the replication use-case is advisable.
 
 If not already configured, make sure to set these in the database flags section by editing the Cloud SQL:
-1. `binlog_expire_logs_seconds` to a value >= `259200` (3 days).
+1. `binlog_expire_logs_seconds` to a value >= `86400` (1 day).
 2. `binlog_row_metadata` to `FULL`
 3. `binlog_row_image` to `FULL`
 
 To do this, click on the `Edit` button in the top right corner of the instance overview page.
-<div className="ch-image-lg">
-
-<Frame>
-
-![Edit button in GCP MySQL](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-edit-button.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-edit-button.webp" alt="Edit button in GCP MySQL" size="lg" border/>
 
 Then scroll down to the `Flags` section and add the above flags.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Setting binlog flags in GCP](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-flags.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-flags.webp" alt="Setting binlog flags in GCP" size="lg" border/>
 
 ## Configure a database user {#configure-database-user-gcp}
 
@@ -83,24 +59,12 @@ Connect to your Cloud SQL MySQL instance as the root user and execute the follow
     GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
     ```
 
-## Using IAM database authentication (optional, Beta) {#iam-database-authentication}
-
-<CloudSQLIAMAuthentication engine="mysql" />
-
 ## Configure network access {#configure-network-access-gcp-mysql}
 
 If you want to restrict traffic to your Cloud SQL instance, please add the [documented static NAT IPs](/integrations/clickpipes/networking/static-ips) to the allowlisted IPs of your Cloud SQL MySQL instance.
 This can be done either by editing the instance or by heading over to the `Connections` tab in the sidebar in Cloud console.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![IP allowlisting in GCP MySQL](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-ip.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-ip.webp" alt="IP allowlisting in GCP MySQL" size="lg" border/>
 
 ## Download and use root CA certificate {#download-root-ca-certificate-gcp-mysql}
 To connect to your Cloud SQL instance, you need to download the root CA certificate.
@@ -110,24 +74,8 @@ To connect to your Cloud SQL instance, you need to download the root CA certific
 3. Click on the `Security` tab.
 4. In the `Manage server CA certificates` section, click on the `DOWNLOAD CERTIFICATES` button at the bottom.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Downloading GCP MySQL Cert](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-cert.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-cert.webp" alt="Downloading GCP MySQL Cert" size="lg" border/>
 
 5. In the ClickPipes UI, upload the downloaded certificate when creating a new MySQL ClickPipe.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Using GCP MySQL Cert](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/rootca.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/rootca.webp" alt="Using GCP MySQL Cert" size="lg" border/>

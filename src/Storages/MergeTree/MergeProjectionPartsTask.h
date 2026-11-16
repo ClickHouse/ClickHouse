@@ -46,7 +46,7 @@ public:
 
     void addToChecksums(MergeTreeDataPartChecksums &) override {}
     MutableDataPartsVector extractTemporaryParts() override;
-    [[nodiscard]] String getProjectionName() const override { return name; }
+    String getProjectionName() const override { return name; }
 
     void cancel() noexcept override
     {
@@ -55,7 +55,7 @@ public:
     bool executeStep() override;
 
 private:
-    [[nodiscard]] UInt64 countPartsInAllLevels() const;
+    UInt64 countPartsInAllLevels() const;
     void updatePartsRemaining(UInt64 in_flight = 0);
 
     String name;

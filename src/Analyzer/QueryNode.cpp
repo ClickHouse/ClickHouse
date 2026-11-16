@@ -219,8 +219,6 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (is_limit_by_all)
         buffer << ", is_limit_by_all: " << is_limit_by_all;
 
-    if (is_shuffle)
-        buffer << ", is_shuffle: " << is_shuffle;
     if (is_limit_after_all)
         buffer << ", is_limit_after_all: " << is_limit_after_all;
 
@@ -393,7 +391,6 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_group_by_all == rhs_typed.is_group_by_all &&
         is_order_by_all == rhs_typed.is_order_by_all &&
         is_limit_by_all == rhs_typed.is_limit_by_all &&
-        is_shuffle == rhs_typed.is_shuffle &&
         is_limit_after_all == rhs_typed.is_limit_after_all &&
         projection_columns == rhs_typed.projection_columns &&
         settings_changes == rhs_typed.settings_changes &&
@@ -444,7 +441,6 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     state.update(is_group_by_all);
     state.update(is_order_by_all);
     state.update(is_limit_by_all);
-    state.update(is_shuffle);
     state.update(is_limit_after_all);
 
     state.update(settings_changes.size());
@@ -494,7 +490,6 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_group_by_all = is_group_by_all;
     result_query_node->is_order_by_all = is_order_by_all;
     result_query_node->is_limit_by_all = is_limit_by_all;
-    result_query_node->is_shuffle = is_shuffle;
     result_query_node->is_limit_after_all = is_limit_after_all;
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
@@ -519,7 +514,6 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     select_query->group_by_with_grouping_sets = is_group_by_with_grouping_sets;
     select_query->group_by_all = is_group_by_all;
     select_query->order_by_all = is_order_by_all;
-    select_query->shuffle = is_shuffle;
     select_query->limit_by_all = is_limit_by_all;
     select_query->limit_after_all = is_limit_after_all;
     select_query->is_view_inner_query = getContext()->isViewInnerQuery();
@@ -641,7 +635,6 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (hasOffset())
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, getOffset()->toAST(options));
-
 
     if (hasSettingsChanges())
     {

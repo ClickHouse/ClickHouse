@@ -40,16 +40,13 @@ struct ExternalQueryBuilder
     virtual ~ExternalQueryBuilder() = default;
 
     /** Generate a query to load all data. */
-    [[nodiscard]] std::string composeLoadAllQuery() const;
+    std::string composeLoadAllQuery() const;
 
     /** Generate a query to load data after certain time point */
-    [[nodiscard]] std::string composeUpdateQuery(const std::string & update_field, const std::string & time_point) const;
-
-    /** Same, but `bound` is an SQL expression instead of a time point to quote */
-    [[nodiscard]] std::string composeUpdateQueryWithBound(const std::string & update_field, const std::string & bound) const;
+    std::string composeUpdateQuery(const std::string & update_field, const std::string & time_point) const;
 
     /** Generate a query to load data by set of UInt64 keys. */
-    [[nodiscard]] std::string composeLoadIdsQuery(const VectorWithMemoryTracking<UInt64> & ids) const;
+    std::string composeLoadIdsQuery(const VectorWithMemoryTracking<UInt64> & ids) const;
 
     /** Generate a query to load data by set of composite keys.
       * There are three methods of specification of composite keys in WHERE:
@@ -64,7 +61,7 @@ struct ExternalQueryBuilder
         CASSANDRA_SEPARATE_PARTITION_KEY,
     };
 
-    [[nodiscard]] std::string composeLoadKeysQuery(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix = 0) const;
+    std::string composeLoadKeysQuery(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix = 0) const;
 
 
 protected:
@@ -87,7 +84,7 @@ protected:
     void composeKeyTuple(const Columns & key_columns, size_t row, WriteBuffer & out, size_t beg, size_t end) const;
 
     /// Compose update condition
-    static void composeUpdateCondition(const std::string & update_field, const std::string & bound, WriteBuffer & out);
+    static void composeUpdateCondition(const std::string & update_field, const std::string & time_point, WriteBuffer & out);
 
     /// Compose ids condition
     void composeIdsCondition(const VectorWithMemoryTracking<UInt64> & ids, WriteBuffer & out) const;

@@ -49,9 +49,9 @@ public:
     ~AggregateFunctionSingleValueOrNullData() { data().~SingleValueDataBase(); }
 
     SingleValueDataBase & data() { return v_data.get(); }
-    [[nodiscard]] const SingleValueDataBase & data() const { return v_data.get(); }
+    const SingleValueDataBase & data() const { return v_data.get(); }
 
-    [[nodiscard]] bool isNull() const { return is_null; }
+    bool isNull() const { return is_null; }
 
     void add(const IColumn & column, size_t row_num, Arena * arena)
     {
@@ -250,6 +250,6 @@ SELECT singleValueOrNull(x) FROM test;
     FunctionDocumentation::Category category_singleValueOrNull = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_singleValueOrNull = {description_singleValueOrNull, syntax_singleValueOrNull, arguments_singleValueOrNull, parameters_singleValueOrNull, returned_value_singleValueOrNull, examples_singleValueOrNull, introduced_in_singleValueOrNull, category_singleValueOrNull};
 
-    factory.registerFunction("singleValueOrNull", {createAggregateFunctionSingleValueOrNull, documentation_singleValueOrNull, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction("singleValueOrNull", {createAggregateFunctionSingleValueOrNull, documentation_singleValueOrNull});
 }
 }

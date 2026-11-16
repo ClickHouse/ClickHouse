@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Transforms/Window/WindowTransformParams.h>
 
 #include <cstdint>
@@ -13,8 +12,8 @@ namespace DB
 
 struct SlidingIndex
 {
-    VectorWithMemoryTracking<bool> partition_starts;
-    VectorWithMemoryTracking<int64_t> peer_group_indexes;
+    std::vector<bool> partition_starts;
+    std::vector<int64_t> peer_group_indexes;
 };
 
 class SlidingIndexes

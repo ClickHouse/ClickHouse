@@ -35,10 +35,10 @@ public:
     /// holds raw pointers into params.patterns and its destructor accesses them.
     ~GraphiteRollupSortedAlgorithm() override;
 
-    [[nodiscard]] const char * getName() const override { return "GraphiteRollupSortedAlgorithm"; }
+    const char * getName() const override { return "GraphiteRollupSortedAlgorithm"; }
     Status merge() override;
 
-    [[nodiscard]] MergedStats getMergedStats() const override { return merged_data->getMergedStats(); }
+    MergedStats getMergedStats() const override { return merged_data->getMergedStats(); }
 
     struct ColumnsDefinition
     {
@@ -66,9 +66,9 @@ public:
                             Graphite::RollupRule next_rule, ColumnsDefinition & def);
         void insertRow(time_t time, RowRef & row, ColumnsDefinition & def);
         void accumulateRow(RowRef & row, ColumnsDefinition & def);
-        [[nodiscard]] bool wasGroupStarted() const { return was_group_started; }
+        bool wasGroupStarted() const { return was_group_started; }
 
-        [[nodiscard]] const Graphite::RollupRule & currentRule() const { return current_rule; }
+        const Graphite::RollupRule & currentRule() const { return current_rule; }
         void allocMemForAggregates(size_t size, size_t alignment) { place_for_aggregate_state.reset(size, alignment); }
 
     private:
@@ -114,7 +114,7 @@ private:
     time_t current_time = 0;
     time_t current_time_rounded = 0;
 
-    [[nodiscard]] UInt32 selectPrecision(const Graphite::Retentions & retentions, time_t time) const;
+    UInt32 selectPrecision(const Graphite::Retentions & retentions, time_t time) const;
 
     /// Insert the values into the resulting columns, which will not be changed in the future.
     void startNextGroup(SortCursor & cursor, Graphite::RollupRule next_rule);

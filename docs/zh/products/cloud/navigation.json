@@ -252,6 +252,8 @@
       "group": "AI 工具与智能体",
       "pages": [
         "zh/products/cloud/features/ai-ml/index",
+        "zh/products/cloud/features/ai-ml/aichat/using-ai-chat",
+        "zh/products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
         "zh/products/cloud/features/ai-ml/langfuse",
         {
           "expanded": false,
@@ -259,6 +261,32 @@
           "pages": [
             "zh/products/cloud/features/ai-ml/remote-mcp",
             "zh/products/cloud/features/ai-ml/mcp/remote-mcp"
+          ]
+        },
+        {
+          "group": "ClickHouse 智能体",
+          "pages": [
+            "zh/products/cloud/features/ai-ml/agents/index",
+            "zh/products/cloud/features/ai-ml/agents/quickstart",
+            "zh/products/cloud/features/ai-ml/agents/chat",
+            {
+              "group": "智能体构建器",
+              "pages": [
+                "zh/products/cloud/features/ai-ml/agents/builder/index",
+                "zh/products/cloud/features/ai-ml/agents/builder/model-parameters",
+                "zh/products/cloud/features/ai-ml/agents/builder/code-interpreter",
+                "zh/products/cloud/features/ai-ml/agents/builder/web-search",
+                "zh/products/cloud/features/ai-ml/agents/builder/image-generation",
+                "zh/products/cloud/features/ai-ml/agents/builder/vision",
+                "zh/products/cloud/features/ai-ml/agents/builder/mcp-servers",
+                "zh/products/cloud/features/ai-ml/agents/builder/skills",
+                "zh/products/cloud/features/ai-ml/agents/builder/subagents"
+              ]
+            },
+            "zh/products/cloud/features/ai-ml/agents/prompts",
+            "zh/products/cloud/features/ai-ml/agents/memory",
+            "zh/products/cloud/features/ai-ml/agents/marketplace",
+            "zh/products/cloud/features/ai-ml/agents/sharing-and-access"
           ]
         },
         "zh/products/cloud/features/ai-ml/model-developer-terms"
@@ -328,5 +356,6 @@
       "sourceRef": "ClickHouse/airgap-docs"
     }
   ],
+  "icon": "/images/icons/icon-clickhouse-cloud.svg",
   "item": "ClickHouse Cloud"
 }

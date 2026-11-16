@@ -66,19 +66,14 @@ DROP TABLE t_shared_typed_sub_mem;
 SET enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 1;
 
 DROP TABLE IF EXISTS t_shared_typed_dyn;
-DROP TABLE IF EXISTS t_shared_typed_dyn_compact;
 DROP TABLE IF EXISTS t_shared_typed_dyn_mem;
 
 CREATE TABLE t_shared_typed_dyn (x UInt64, json JSON(SHARED d Dynamic(max_types = 1), SHARED j JSON(max_dynamic_paths = 1)))
 ENGINE = MergeTree ORDER BY x
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 4, index_granularity_bytes = 0, min_compress_block_size = 1;
-CREATE TABLE t_shared_typed_dyn_compact (x UInt64, json JSON(SHARED d Dynamic(max_types = 1), SHARED j JSON(max_dynamic_paths = 1)))
-ENGINE = MergeTree ORDER BY x
-SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, index_granularity = 4, write_marks_for_substreams_in_compact_parts = 1;
 CREATE TABLE t_shared_typed_dyn_mem (x UInt64, json JSON(d Dynamic(max_types = 1), j JSON(max_dynamic_paths = 1))) ENGINE = Memory;
 
 INSERT INTO t_shared_typed_dyn SELECT number, concat('{"d":', multiIf(number % 3 = 0, toString(number), number % 3 = 1, concat('"d', toString(number), '"'), concat('[', toString(number), ']')), ',"j":{"k":', toString(number), ',"p":{"a":', toString(number * 2), ',"b":"b', toString(number % 3), '"}}}') FROM numbers(20);
-INSERT INTO t_shared_typed_dyn_compact SELECT number, concat('{"d":', multiIf(number % 3 = 0, toString(number), number % 3 = 1, concat('"d', toString(number), '"'), concat('[', toString(number), ']')), ',"j":{"k":', toString(number), ',"p":{"a":', toString(number * 2), ',"b":"b', toString(number % 3), '"}}}') FROM numbers(20);
 INSERT INTO t_shared_typed_dyn_mem SELECT number, concat('{"d":', multiIf(number % 3 = 0, toString(number), number % 3 = 1, concat('"d', toString(number), '"'), concat('[', toString(number), ']')), ',"j":{"k":', toString(number), ',"p":{"a":', toString(number * 2), ',"b":"b', toString(number % 3), '"}}}') FROM numbers(20);
 
 -- Granule g holds x in [4 * g, 4 * (g + 1)). A subcolumn cached for granule 2, then the whole column read with it.
@@ -95,15 +90,7 @@ SELECT 'cached', column, row_begin, row_end FROM system.columns_cache WHERE data
 SELECT 'path after the cached whole column', (SELECT arraySort(groupArray((x, toString((json, json.j))))) FROM t_shared_typed_dyn)
     = (SELECT arraySort(groupArray((x, toString((json, json.j))))) FROM t_shared_typed_dyn_mem);
 
--- The same in a Compact part, where only the subcolumns of a column share the decode.
-SYSTEM DROP COLUMNS CACHE;
-SELECT json.j.k FROM t_shared_typed_dyn_compact WHERE x = 10 FORMAT Null SETTINGS optimize_move_to_prewhere = 0;
-SELECT 'cached', column, row_begin, row_end FROM system.columns_cache WHERE database = currentDatabase() AND table = 't_shared_typed_dyn_compact' ORDER BY column;
-SELECT 'compact path after a cached subcolumn', (SELECT arraySort(groupArray((x, toString((json.j.k, json.d))))) FROM t_shared_typed_dyn_compact)
-    = (SELECT arraySort(groupArray((x, toString((json.j.k, json.d))))) FROM t_shared_typed_dyn_mem);
-
 DROP TABLE t_shared_typed_dyn;
-DROP TABLE t_shared_typed_dyn_compact;
 DROP TABLE t_shared_typed_dyn_mem;
 
 -- A sub-object with a Dynamic path, read with a path cached for granule 2.

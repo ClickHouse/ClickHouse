@@ -69,7 +69,7 @@ struct AggregateFunctionSimpleLinearRegressionData final
         readBinary(sum_xy, buf);
     }
 
-    [[nodiscard]] Float64 getK() const
+    Float64 getK() const
     {
         Float64 divisor = sum_xx * static_cast<Float64>(count) - sum_x * sum_x;
 
@@ -79,7 +79,7 @@ struct AggregateFunctionSimpleLinearRegressionData final
         return (sum_xy * static_cast<Float64>(count) - sum_x * sum_y) / divisor;
     }
 
-    [[nodiscard]] Float64 getB(Float64 k) const
+    Float64 getB(Float64 k) const
     {
         if (count == 0)
             return std::numeric_limits<Float64>::quiet_NaN();
@@ -244,7 +244,7 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6]);
     FunctionDocumentation::Category category_simpleLinearRegression = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_simpleLinearRegression = {description_simpleLinearRegression, syntax_simpleLinearRegression, arguments_simpleLinearRegression, parameters_simpleLinearRegression, returned_value_simpleLinearRegression, examples_simpleLinearRegression, introduced_in_simpleLinearRegression, category_simpleLinearRegression};
 
-    factory.registerFunction("simpleLinearRegression", {createAggregateFunctionSimpleLinearRegression, documentation_simpleLinearRegression, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction("simpleLinearRegression", {createAggregateFunctionSimpleLinearRegression, documentation_simpleLinearRegression});
 }
 
 }

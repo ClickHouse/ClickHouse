@@ -77,7 +77,7 @@ struct ProxyConfiguration
     std::string username = std::string{};
     std::string password = std::string{};
 
-    [[nodiscard]] bool isEmpty() const { return host.empty(); }
+    bool isEmpty() const { return host.empty(); }
 };
 
 }

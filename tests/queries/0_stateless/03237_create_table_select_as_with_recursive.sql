@@ -1,4 +1,5 @@
 drop table if exists t;
+SET enable_analyzer = 1;
 create table t1 (a Int64, s DateTime('Asia/Istanbul')) Engine = MergeTree() ORDER BY a;
 create view t AS (
     WITH RECURSIVE 42 as ttt,

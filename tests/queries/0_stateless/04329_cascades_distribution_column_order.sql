@@ -5,6 +5,7 @@
 -- `(a, b)`. A subquery aggregated with `GROUP BY b, a` must be re-shuffled
 -- when the parent join requires distribution by `(a, b)`.
 
+SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;

@@ -9,7 +9,7 @@ class ReadBuffer;
 class WithFileName
 {
 public:
-    [[nodiscard]] virtual String getFileName() const = 0;
+    virtual String getFileName() const = 0;
     virtual ~WithFileName() = default;
 };
 

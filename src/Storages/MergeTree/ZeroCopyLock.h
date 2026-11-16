@@ -16,7 +16,7 @@ struct ZeroCopyLock
 
     ZeroCopyLock(const zkutil::ZooKeeperPtr & zookeeper, const std::string & lock_path, const std::string & lock_message);
 
-    [[nodiscard]] bool isLocked() const { return lock->isLocked(); }
+    bool isLocked() const { return lock->isLocked(); }
     /// Actual lock
     std::unique_ptr<zkutil::ZooKeeperLock> lock;
 };

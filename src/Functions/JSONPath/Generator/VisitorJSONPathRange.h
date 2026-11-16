@@ -16,7 +16,7 @@ public:
         current_index = range_ptr->ranges[current_range].first;
     }
 
-    [[nodiscard]] const char * getName() const override { return "VisitorJSONPathRange"; }
+    const char * getName() const override { return "VisitorJSONPathRange"; }
 
     VisitorStatus apply(typename JSONParser::Element & element) const override
     {

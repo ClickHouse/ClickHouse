@@ -1,5 +1,4 @@
 #include <Core/BaseSettings.h>
-#include <Formats/ParseError.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/FieldVisitorToString.h>
@@ -17,7 +16,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
-    extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int TYPE_MISMATCH;
     extern const int UNKNOWN_SETTING;
@@ -76,11 +74,6 @@ void BaseSettingsHelpers::throwSettingNotFound(std::string_view name)
 void BaseSettingsHelpers::throwTooManySettings(std::string_view what)
 {
     throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many {} received (maximum: {})", String{what}, MAX_SETTINGS_IN_A_SEQUENCE);
-}
-
-void BaseSettingsHelpers::throwNoBinarySerialization(std::string_view name, std::string_view type)
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting '{}' of type {} does not support binary serialization", name, type);
 }
 
 void BaseSettingsHelpers::throwValuelessSettingIsNotBool(std::string_view name, std::string_view type)
@@ -145,15 +138,6 @@ void BaseSettingsHelpers::warningSettingNotFound(std::string_view name)
 
         unknown_settings_warning_logged = true;
     }
-}
-
-bool BaseSettingsHelpers::skipInvalidSettingValue(std::string_view name, const Exception & e)
-{
-    if (e.code() != ErrorCodes::BAD_ARGUMENTS && !isParseError(e.code()))
-        return false;
-
-    LOG_WARNING(getLogger("Settings"), "Cannot parse the value of setting `{}`, skipping it: {}", name, e.message());
-    return true;
 }
 
 void BaseSettingsHelpers::flushWarnings()

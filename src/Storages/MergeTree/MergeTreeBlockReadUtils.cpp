@@ -106,7 +106,7 @@ bool injectRequiredColumnsRecursively(
         if (alter_conversions && alter_conversions->isColumnRenamed(column_name_in_part))
             column_name_in_part = alter_conversions->getColumnOldName(column_name_in_part);
 
-        auto column_in_part = data_part_info_for_reader.getColumnsDescription().tryGetPhysical(column_name_in_part);
+        auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
 
         bool share_nested = true;
         if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage))

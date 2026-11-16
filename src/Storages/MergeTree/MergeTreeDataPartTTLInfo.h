@@ -25,8 +25,8 @@ struct MergeTreeDataPartTTLInfo
     /// to select such parts for TTL again. But make sense to recalculate TTL
     /// again for merge with multiple parts.
     std::optional<bool> ttl_finished;
-    [[nodiscard]] bool finished() const { return ttl_finished.value_or(false); }
-    [[nodiscard]] bool initialized() const { return min != 0 || max != 0; }
+    bool finished() const { return ttl_finished.value_or(false); }
+    bool initialized() const { return min != 0 || max != 0; }
 
     void update(time_t time);
     void update(const MergeTreeDataPartTTLInfo & other_info);
@@ -55,24 +55,24 @@ struct MergeTreeDataPartTTLInfos
     TTLInfoMap group_by_ttl;
 
     /// Return the smallest max recompression TTL value
-    [[nodiscard]] time_t getMinimalMaxRecompressionTTL() const;
+    time_t getMinimalMaxRecompressionTTL() const;
 
     void read(ReadBuffer & in);
     void write(WriteBuffer & out) const;
     void update(const MergeTreeDataPartTTLInfos & other_infos);
 
     /// Has any TTLs which are not calculated on completely expired parts.
-    [[nodiscard]] bool hasAnyNonFinishedTTLs() const;
+    bool hasAnyNonFinishedTTLs() const;
 
     /// Has any row TTL (table, `WHERE` or `GROUP BY`) which is not calculated on a completely expired part.
-    [[nodiscard]] bool hasAnyNonFinishedRowTTLs() const;
+    bool hasAnyNonFinishedRowTTLs() const;
 
     /// Has any column TTL which is not calculated on a completely expired part. A column TTL can only
     /// be honoured by rewriting the part, never by dropping it, so it is tracked separately.
-    [[nodiscard]] bool hasAnyNonFinishedColumnTTLs() const;
+    bool hasAnyNonFinishedColumnTTLs() const;
 
     /// The earliest time at which a column TTL becomes due. Zero if there is no unfinished column TTL.
-    [[nodiscard]] time_t getMinimalNonFinishedColumnTTL() const;
+    time_t getMinimalNonFinishedColumnTTL() const;
 
     void updatePartMinMaxTTL(const MergeTreeDataPartTTLInfo & ttl_info)
     {
@@ -86,7 +86,7 @@ struct MergeTreeDataPartTTLInfos
             part_max_ttl = ttl_info.max;
     }
 
-    [[nodiscard]] bool empty() const
+    bool empty() const
     {
         /// part_min_ttl in minimum of rows, rows_where and group_by TTLs
         return !part_min_ttl && moves_ttl.empty() && recompression_ttl.empty() && columns_ttl.empty() && rows_where_ttl.empty() && group_by_ttl.empty();

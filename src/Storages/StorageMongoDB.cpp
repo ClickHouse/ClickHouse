@@ -715,8 +715,7 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
     if (limit || offset)
     {
         /// Otherwise it was already checked above.
-        /// With `SHUFFLE`, the limit must be applied after shuffling all rows.
-        if (!query_tree.hasGroupBy() && !query_tree.hasLimitBy() && !query_tree.isShuffle())
+        if (!query_tree.hasGroupBy() && !query_tree.hasLimitBy())
         {
             auto limit_value = limit ? limit->getValue().safeGet<UInt64>() : 0;
             auto offset_value = offset ? offset->getValue().safeGet<UInt64>() : 0;

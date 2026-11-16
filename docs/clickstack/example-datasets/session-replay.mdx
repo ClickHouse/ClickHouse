@@ -6,6 +6,8 @@ doc_type: 'guide'
 keywords: ['clickstack', 'session replay', 'browser sdk', 'demo', 'observability', 'instrumentation']
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
+
 <Info>
 **TL;DR**
 
@@ -50,20 +52,12 @@ docker-compose up -d clickstack
 </Step>
 <Step title="Get your API key" id="get-api-key">
 
-1. Open ClickStack UI at [http://localhost:8080](http://localhost:8080)
+1. Open HyperDX at [http://localhost:8080](http://localhost:8080)
 2. Create an account or log in if needed
 3. Navigate to **Team Settings → API Keys**
 4. Copy your **Ingestion API Key**
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![ClickStack API Key](/images/clickstack/api-key.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key"/>
 
 5. Set it as an environment variable:
 
@@ -83,43 +77,19 @@ Ensure you run this command in the same terminal where you exported the `CLICKST
 
 Open [http://localhost:3000](http://localhost:3000) in your browser and interact with the app — search for topics, filter by category, view code examples, and bookmark items.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Session replay demo app](/images/clickstack/session-replay/demo-app.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/session-replay/demo-app.webp" alt="Session replay demo app"/>
 
 All interactions are automatically captured by the ClickStack Browser SDK.
 </Step>
 <Step title="View your session replay" id="view-session-replay">
 
-Return to ClickStack UI at [http://localhost:8080](http://localhost:8080) and navigate to **Client Sessions** from the left sidebar.
+Return to HyperDX at [http://localhost:8080](http://localhost:8080) and navigate to **Client Sessions** from the left sidebar.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Session replay search](/images/clickstack/session-replay/replay-search-view.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="Session replay search"/>
 
 You should see your session listed with its duration and event count. Click the ▶️ button to replay it.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Session replay](/images/clickstack/session-replay/session-replay.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/session-replay/session-replay.webp" alt="Session replay"/>
 
 Switch between **Highlighted** and **All Events** modes to adjust the level of detail on the timeline.
 </Step>
@@ -132,7 +102,7 @@ The demo application shows how little code is needed to enable session replay. T
 **1. Include the SDK (`app/public/index.html`):**
 
 ```html
-<script src="https://unpkg.com/@hyperdx/browser@0.21.0/build/index.js" integrity="sha384-qwXeKpfQhV/97qMbKb9cscCuDW2XD5LgagHyvVlEHHYcem1wqmiey1JnHGTfggTv" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
 ```
 
 **2. Initialize ClickStack (`app/public/js/app.js`):**
@@ -161,7 +131,7 @@ This branch contains the same application without any ClickStack instrumentation
 
 ## Troubleshooting {#troubleshooting}
 
-### Sessions not appearing in ClickStack UI {#sessions-not-appearing}
+### Sessions not appearing in HyperDX {#sessions-not-appearing}
 
 1. Check the browser console for errors
 2. Verify ClickStack is running: `docker-compose ps`
@@ -175,7 +145,7 @@ The API key isn't set correctly. Make sure you:
 
 1. Exported it in your terminal: `export CLICKSTACK_API_KEY='your-key'`
 2. Started the demo app in the **same terminal** where you exported it
-3. Got the key from the ClickStack UI (not a randomly generated string)
+3. Got the key from the HyperDX UI (not a randomly generated string)
 
 ## Cleanup {#cleanup}
 
@@ -195,5 +165,5 @@ docker-compose down -v
 
 - [Session Replay](/clickstack/features/session-replay) — feature overview, SDK options, and privacy controls
 - [Browser SDK Reference](/clickstack/ingesting-data/sdks/browser) — full SDK options and advanced configuration
-- [ClickStack Getting Started](/clickstack/getting-started/oss) — deploy ClickStack and ingest your first data
+- [ClickStack Getting Started](/clickstack/getting-started/index) — deploy ClickStack and ingest your first data
 - [All Sample Datasets](/clickstack/example-datasets/index) — other example datasets and guides

@@ -26,7 +26,7 @@ class IDataTypeCustomName
 public:
     virtual ~IDataTypeCustomName() = default;
 
-    [[nodiscard]] virtual String getName() const = 0;
+    virtual String getName() const = 0;
 
     /// Applies to one nested type the same rewrite that produced `rebuilt` below, returning nullptr
     /// if that rewrite has to be abandoned.
@@ -40,7 +40,7 @@ public:
     /// no longer are.
     /// The default refuses, because a name that cannot be shown to be still correct must not be
     /// reattached: the name is what `toTypeName`, `DESCRIBE` and the binary type encoding report.
-    [[nodiscard]] virtual DataTypeCustomDescPtr rederiveFor(const DataTypePtr & /*rebuilt*/, const RewriteNestedFn & /*rewrite_nested*/) const
+    virtual DataTypeCustomDescPtr rederiveFor(const DataTypePtr & /*rebuilt*/, const RewriteNestedFn & /*rewrite_nested*/) const
     {
         return nullptr;
     }
@@ -72,7 +72,7 @@ private:
     String name;
 public:
     explicit DataTypeCustomFixedName(String name_) : name(name_) {}
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 };
 
 }

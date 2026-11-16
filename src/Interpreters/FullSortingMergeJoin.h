@@ -31,32 +31,32 @@ public:
         LOG_TRACE(getLogger("FullSortingMergeJoin"), "Will use full sorting merge join");
     }
 
-    [[nodiscard]] std::string getName() const override { return "FullSortingMergeJoin"; }
+    std::string getName() const override { return "FullSortingMergeJoin"; }
 
-    [[nodiscard]] std::string getAlgorithm() const override { return toString(JoinAlgorithm::FULL_SORTING_MERGE); }
+    std::string getAlgorithm() const override { return toString(JoinAlgorithm::FULL_SORTING_MERGE); }
 
-    [[nodiscard]] const TableJoin & getTableJoin() const override { return *table_join; }
+    const TableJoin & getTableJoin() const override { return *table_join; }
 
-    [[nodiscard]] bool isCloneSupported() const override
+    bool isCloneSupported() const override
     {
         return getTotals().empty();
     }
 
-    [[nodiscard]] std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
+    std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
         SharedHeader,
         SharedHeader right_sample_block_) const override
     {
         return std::make_shared<FullSortingMergeJoin>(table_join_, right_sample_block_, null_direction, is_parallel);
     }
 
-    [[nodiscard]] int getNullDirection() const { return null_direction; }
+    int getNullDirection() const { return null_direction; }
 
     /// True when `parallel_full_sorting_merge` was the algorithm selected from the `join_algorithm` priority
     /// list, rather than plain `full_sorting_merge`. Both build this same object, so this cannot be recovered
     /// from list membership alone (`full_sorting_merge,parallel_full_sorting_merge` selects the former and
     /// never reaches the latter). `optimizeParallelFullSortingMergeJoin` shards the join only when this is
     /// set, so listing the parallel variant as a fallback does not silently change behavior.
-    [[nodiscard]] bool isParallel() const { return is_parallel; }
+    bool isParallel() const { return is_parallel; }
 
     bool addBlockToJoin(const Block & /* block */, size_t /* num_rows */, JoinBuildContext /* context */) override
     {
@@ -148,33 +148,33 @@ public:
     }
 
     void setTotals(const Block & block) override { totals = block; }
-    [[nodiscard]] const Block & getTotals() const override { return totals; }
+    const Block & getTotals() const override { return totals; }
 
-    [[nodiscard]] size_t getTotalRowCount() const override
+    size_t getTotalRowCount() const override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::getTotalRowCount should not be called");
     }
 
-    [[nodiscard]] size_t getTotalByteCount() const override
+    size_t getTotalByteCount() const override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::getTotalByteCount should not be called");
     }
 
-    [[nodiscard]] bool alwaysReturnsEmptySet() const override { return false; }
+    bool alwaysReturnsEmptySet() const override { return false; }
 
-    [[nodiscard]] StepAnalysisReport getAnalysisReport() const override
+    StepAnalysisReport getAnalysisReport() const override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::getAnalysisReport should not be called");
     }
 
-    [[nodiscard]] IBlocksStreamPtr
+    IBlocksStreamPtr
     getNonJoinedBlocks(const Block & /* left_sample_block */, const Block & /* result_sample_block */, UInt64 /* max_block_size */) const override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::getNonJoinedBlocks should not be called");
     }
 
     /// Left and right streams have the same priority and are processed simultaneously
-    [[nodiscard]] JoinPipelineType pipelineType() const override { return JoinPipelineType::YShaped; }
+    JoinPipelineType pipelineType() const override { return JoinPipelineType::YShaped; }
 
 private:
     std::shared_ptr<TableJoin> table_join;

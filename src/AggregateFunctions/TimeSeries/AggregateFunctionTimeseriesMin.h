@@ -47,7 +47,7 @@ struct AggregateFunctionTimeseriesMinTraits
         ValueType value{};
         bool has_value = false;
 
-        [[nodiscard]] bool empty() const { return !has_value; }
+        bool empty() const { return !has_value; }
 
         void add(TimestampType sample_timestamp, ValueType sample_value)
         {
@@ -66,7 +66,7 @@ struct AggregateFunctionTimeseriesMinTraits
         }
 
     private:
-        [[nodiscard]] bool shouldReplace(TimestampType candidate_timestamp, ValueType candidate_value) const
+        bool shouldReplace(TimestampType candidate_timestamp, ValueType candidate_value) const
         {
             if (!has_value)
                 return true;

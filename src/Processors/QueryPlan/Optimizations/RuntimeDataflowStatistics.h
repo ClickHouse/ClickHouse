@@ -68,7 +68,7 @@ public:
     {
     }
 
-    [[nodiscard]] std::optional<Entry> getStats(size_t key) const;
+    std::optional<Entry> getStats(size_t key) const;
 
     void update(size_t key, RuntimeDataflowStatistics stats);
 
@@ -83,7 +83,7 @@ public:
 
     /// `root_key` combines the single-replica plan's root hash with the settings that can move the boundary
     /// without changing that plan.
-    [[nodiscard]] std::optional<Boundary> getBoundary(UInt64 root_key) const;
+    std::optional<Boundary> getBoundary(UInt64 root_key) const;
 
     void setBoundary(UInt64 root_key, Boundary boundary);
 
@@ -175,7 +175,7 @@ struct RuntimeDataflowStatisticsBlock
 
 class RuntimeDataflowStatisticsCacheUpdater
 {
-    using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- mirrors `IMergeTreeDataPart::ColumnSizeByName`, which the callers pass directly
+    using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using Statistics = RuntimeDataflowStatisticsBlock::Statistics;
     using InputStatisticsType = RuntimeDataflowStatisticsBlock::InputStatisticsType;
     using OutputStatisticsType = RuntimeDataflowStatisticsBlock::OutputStatisticsType;
@@ -261,7 +261,7 @@ private:
         std::optional<size_t> full_bytes = {},
         const KeyOrderProvider & key_order = {});
 
-    [[nodiscard]] KeyOrderProvider keyOrderProviderFor(
+    KeyOrderProvider keyOrderProviderFor(
         const Columns & columns, const ColumnNumbers & keys_positions, const DataTypes & key_types) const;
 
     bool replicas_send_output_in_key_order = false;

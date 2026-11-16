@@ -22,12 +22,13 @@ description: 'Encontre soluções para os problemas mais comuns do ClickHouse, i
 
 Está com problemas no ClickHouse? Encontre aqui soluções para os problemas mais comuns.
 
-## Desempenho e erros {#performance-and-errors}
+<div id="performance-and-errors">
+  ## Desempenho e erros
+</div>
 
 Consultas lentas, timeouts ou mensagens de erro específicas, como &quot;Memory limit exceeded&quot; ou &quot;Connection refused&quot;.
 
 <Accordion title="Mostrar soluções para desempenho e erros">
-  <a id="query-performance" />
   ### Desempenho de consultas
 
   * [Descubra quais consultas estão consumindo mais recursos](/pt-BR/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries)
@@ -37,7 +38,6 @@ Consultas lentas, timeouts ou mensagens de erro específicas, como &quot;Memory 
 
   <br />
 
-  <a id="data-insertion-performance" />
   ### Desempenho da inserção de dados
 
   * [Acelere a inserção de dados](/pt-BR/concepts/features/operations/insert/bulkinserts)
@@ -45,7 +45,6 @@ Consultas lentas, timeouts ou mensagens de erro específicas, como &quot;Memory 
 
   <br />
 
-  <a id="advanced-analysis-tools" />
   ### Ferramentas avançadas de análise
 
   {/* - [Faça profiling com LLVM XRay](/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray) */}
@@ -55,7 +54,6 @@ Consultas lentas, timeouts ou mensagens de erro específicas, como &quot;Memory 
 
   <br />
 
-  <a id="error-messages" />
   ### Mensagens de erro
 
   * **&quot;Memory limit exceeded&quot;** → [Depure erros de limite de memória](/pt-BR/concepts/features/performance/troubleshoot/debugging-memory-issues)
@@ -67,12 +65,13 @@ Consultas lentas, timeouts ou mensagens de erro específicas, como &quot;Memory 
   * **&quot;Other issues&quot;** → [Acompanhe erros em todo o cluster](/pt-BR/reference/system-tables/errors)
 </Accordion>
 
-## Memória e recursos {#memory-and-resources}
+<div id="memory-and-resources">
+  ## Memória e recursos
+</div>
 
 Uso elevado de memória, falhas por falta de memória ou precisa de ajuda para dimensionar sua implantação do ClickHouse.
 
 <Accordion title="Mostrar soluções de memória">
-  <a id="memory-debugging-and-monitoring" />
   ### Depuração e monitoramento de memória:
 
   * [Identifique o que está consumindo memória](/pt-BR/concepts/features/performance/troubleshoot/debugging-memory-issues)
@@ -82,7 +81,6 @@ Uso elevado de memória, falhas por falta de memória ou precisa de ajuda para d
 
   <br />
 
-  <a id="memory-configuration" />
   ### Configuração de memória:
 
   * [Configure limites de memória](/pt-BR/concepts/features/configuration/settings/memory-overcommit)
@@ -91,19 +89,19 @@ Uso elevado de memória, falhas por falta de memória ou precisa de ajuda para d
 
   <br />
 
-  <a id="scaling-and-sizing" />
   ### Escalonamento e dimensionamento:
 
   * [Dimensione corretamente seu serviço](/pt-BR/guides/oss/best-practices/tips)
   * [Configure o escalonamento automático](/pt-BR/products/cloud/features/autoscaling/overview)
 </Accordion>
 
-## Conexões e autenticação {#connections-and-authentication}
+<div id="connections-and-authentication">
+  ## Conexões e autenticação
+</div>
 
 Problemas para se conectar ao ClickHouse, falhas de autenticação, erros de certificado SSL ou problemas de configuração do cliente.
 
 <Accordion title="Mostrar soluções de conexão">
-  <a id="basic-connection-issues" />
   ### Problemas básicos de conexão
 
   * [Corrigir problemas na interface HTTP](/pt-BR/concepts/features/interfaces/http)
@@ -112,7 +110,6 @@ Problemas para se conectar ao ClickHouse, falhas de autenticação, erros de cer
 
   <br />
 
-  <a id="client-interfaces" />
   ### Interfaces de cliente
 
   * [Clientes nativos do ClickHouse](/pt-BR/concepts/features/interfaces/native-clients-interfaces-index)
@@ -123,19 +120,19 @@ Problemas para se conectar ao ClickHouse, falhas de autenticação, erros de cer
 
   <br />
 
-  <a id="network-and-data" />
   ### Rede e dados
 
   * [Configurações de segurança de rede](/pt-BR/reference/settings/server-settings/settings)
   * [Problemas de análise de formatos de dados](/pt-BR/reference/formats/index)
 </Accordion>
 
-## Configuração e instalação {#setup-and-configuration}
+<div id="setup-and-configuration">
+  ## Configuração e instalação
+</div>
 
 Instalação inicial, configuração do servidor, criação de bancos de dados, problemas de ingestão de dados ou configuração da replicação.
 
 <Accordion title="Mostrar soluções de configuração e instalação">
-  <a id="initial-setup" />
   ### Configuração inicial
 
   * [Configurar as definições do servidor](/pt-BR/reference/settings/server-settings/settings)
@@ -144,7 +141,6 @@ Instalação inicial, configuração do servidor, criação de bancos de dados, 
 
   <br />
 
-  <a id="database-management" />
   ### Gerenciamento de bancos de dados
 
   * [Criar e gerenciar bancos de dados](/pt-BR/reference/statements/create/database)
@@ -154,7 +150,6 @@ Instalação inicial, configuração do servidor, criação de bancos de dados, 
 
   <br />
 
-  <a id="data-operations" />
   ### Operações de dados
 
   * [Otimizar a inserção de dados em massa](/pt-BR/concepts/features/operations/insert/bulkinserts)
@@ -164,7 +159,6 @@ Instalação inicial, configuração do servidor, criação de bancos de dados, 
 
   <br />
 
-  <a id="advanced-configuration" />
   ### Configuração avançada
 
   * [Configurar a replicação de dados](/pt-BR/reference/engines/table-engines/mergetree-family/replication)
@@ -176,7 +170,9 @@ Instalação inicial, configuração do servidor, criação de bancos de dados, 
   * [Configurar o monitoramento](/pt-BR/reference/system-tables/overview)
 </Accordion>
 
-## Ainda precisa de ajuda? {#still-need-help}
+<div id="still-need-help">
+  ## Ainda precisa de ajuda?
+</div>
 
 Se você não encontrar uma solução:
 

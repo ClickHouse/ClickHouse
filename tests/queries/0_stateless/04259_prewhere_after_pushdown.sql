@@ -1,9 +1,8 @@
 -- Tags: no-random-settings
 
 SET explain_query_plan_default = 'legacy';
--- Randomized statistics may make the tables look large enough for a sort-merge join, which has no runtime filter.
-SET query_plan_optimize_join_order_randomize = 0;
 
+SET enable_analyzer = 1;
 DROP TABLE IF EXISTS t_prewhere_pushdown;
 
 CREATE TABLE t_prewhere_pushdown

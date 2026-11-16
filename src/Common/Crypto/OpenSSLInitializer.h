@@ -22,11 +22,7 @@ public:
     static void initialize();
     static void cleanup();
 
-    [[nodiscard]] bool isFIPSEnabled() const;
-
-    /// Whether the `MD5` digest can be fetched with the current default properties. It cannot under FIPS.
-    /// The result is cached on the first call.
-    [[nodiscard]] bool isMD5Available() const;
+    bool isFIPSEnabled() const;
 
 private:
     OpenSSLInitializer();

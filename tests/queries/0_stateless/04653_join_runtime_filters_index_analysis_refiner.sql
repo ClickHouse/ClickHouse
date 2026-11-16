@@ -3,6 +3,7 @@
 -- index pruning (its eager per-part build could snapshot a not-yet-published filter), so
 -- the pruning events and the amount of read data must not depend on the setting.
 
+SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 -- The probe side has 2000 rows, so the randomized threshold must not skip the filter.
 SET join_runtime_filter_min_probe_rows = 0;

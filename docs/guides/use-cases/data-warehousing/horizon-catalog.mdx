@@ -28,9 +28,8 @@ Horizon is related to, but not the same as, Snowflake Open Catalog / self-hosted
 
 <Note>
 As this feature is beta, enable it with:
-`SET allow_database_iceberg = 1;`
-
-The `horizon` catalog type is available from version 26.8.
+`SET allow_experimental_database_iceberg = 1;`
+(or `SET allow_database_iceberg = 1;` depending on your ClickHouse version).
 </Note>
 
 ## Prerequisites {#prerequisites}
@@ -51,7 +50,7 @@ The `horizon` catalog type is available from version 26.8.
 ### Option A: Programmatic Access Token (recommended)
 
 ```sql
-SET allow_database_iceberg = 1;
+SET allow_experimental_database_iceberg = 1;
 
 CREATE DATABASE horizon_catalog
 ENGINE = DataLakeCatalog('https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog')

@@ -1,6 +1,7 @@
 -- Tags: no-fasttest, no-parallel-replicas
 -- no-fasttest: the 'icu' tokenizer uses ICU
 
+SET enable_analyzer = 1;
 SET enable_full_text_index = 1;
 SET use_query_condition_cache = 0;
 

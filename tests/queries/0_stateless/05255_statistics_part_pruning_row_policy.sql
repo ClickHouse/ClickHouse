@@ -12,7 +12,6 @@ DROP TABLE IF EXISTS payroll_merge;
 DROP TABLE IF EXISTS payroll_alias;
 DROP TABLE IF EXISTS payroll;
 
-SET min_marks_per_part_to_load_statistics = 0;
 SET use_statistics_for_part_pruning = 1;
 SET materialize_statistics_on_insert = 1;
 SET use_query_condition_cache = 0;
@@ -43,8 +42,8 @@ SELECT count() FROM payroll_merge WHERE salary > 1999 SETTINGS log_comment = 'ro
 DROP ROW POLICY payroll_policy ON payroll;
 CREATE ROW POLICY payroll_alias_policy ON payroll_alias FOR SELECT USING dept = 'public' TO CURRENT_USER;
 
-SELECT count() FROM payroll_alias WHERE salary > 1998 SETTINGS log_comment = 'row_policy_probe_7_alias_policy_1998';
-SELECT count() FROM payroll_alias WHERE salary > 1999 SETTINGS log_comment = 'row_policy_probe_8_alias_policy_1999';
+SELECT count() FROM payroll_alias WHERE salary > 1998 SETTINGS log_comment = 'row_policy_probe_7_alias_policy_1998', enable_analyzer = 1;
+SELECT count() FROM payroll_alias WHERE salary > 1999 SETTINGS log_comment = 'row_policy_probe_8_alias_policy_1999', enable_analyzer = 1;
 
 SYSTEM FLUSH LOGS query_log;
 

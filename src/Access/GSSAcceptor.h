@@ -47,8 +47,8 @@ public:
     GSSAcceptorContext & operator= (const GSSAcceptorContext &) = delete;
     GSSAcceptorContext & operator= (GSSAcceptorContext &&) = delete;
 
-    [[nodiscard]] const String & getRealm() const;
-    [[nodiscard]] bool isFailed() const;
+    const String & getRealm() const;
+    bool isFailed() const;
     MAYBE_NORETURN String processToken(const String & input_token, LoggerPtr log);
 
 private:

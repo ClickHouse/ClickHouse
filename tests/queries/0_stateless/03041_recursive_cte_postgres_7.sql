@@ -32,6 +32,8 @@
 
 -- { echoOn }
 
+SET enable_analyzer = 1;
+
 WITH RECURSIVE foo AS
     (SELECT 1 AS i
     UNION ALL

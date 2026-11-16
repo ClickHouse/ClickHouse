@@ -39,12 +39,12 @@ public:
     void registerDiskType(const String & disk_type, Creator creator, Documentation documentation = {});
 
     /// Returns the names of all registered disk types.
-    [[nodiscard]] std::vector<String> getAllRegisteredNames() const; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    std::vector<String> getAllRegisteredNames() const; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     /// Returns the embedded documentation for a disk type (empty if none was registered).
-    [[nodiscard]] Documentation getDocumentation(const String & disk_type) const;
+    Documentation getDocumentation(const String & disk_type) const;
 
-    [[nodiscard]] DiskPtr create(
+    DiskPtr create(
         const String & name,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,

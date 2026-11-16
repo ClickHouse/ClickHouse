@@ -94,7 +94,7 @@ protected:
 class ParserAlterCommand : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "alter command"; }
+    const char * getName() const override { return "alter command"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

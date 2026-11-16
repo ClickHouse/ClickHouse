@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Processors/Formats/Impl/ORC/Proto.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <memory>
 #include <string>
+#include <vector>
 
 /// Predicates for skipping stripes and row groups by the column statistics and the bloom filters.
 /// The semantics (the truth values, the normalization of the expression, the evaluation of each
@@ -52,7 +52,7 @@ public:
         Int32 nanos = 0;
 
         /// Rounded down, as the nanoseconds are not negative.
-        [[nodiscard]] Int64 getMillis() const { return second * 1000 + nanos / 1000000; }
+        Int64 getMillis() const { return second * 1000 + nanos / 1000000; }
         auto operator<=>(const Timestamp &) const = default;
     };
 
@@ -64,7 +64,7 @@ public:
         /// Parses a decimal number like `-123.45`. Returns false if it is malformed.
         bool parse(std::string_view s);
         /// Without the trailing zeros in the fraction, as in the bloom filters.
-        [[nodiscard]] std::string toString() const;
+        std::string toString() const;
     };
 
     explicit Literal(bool value);
@@ -77,16 +77,16 @@ public:
     Literal(Int64 second, Int32 nanos);
     Literal(Int128 value, Int32 precision, Int32 scale);
 
-    [[nodiscard]] PredicateDataType getType() const { return type; }
-    [[nodiscard]] bool isNull() const { return is_null; }
+    PredicateDataType getType() const { return type; }
+    bool isNull() const { return is_null; }
 
-    [[nodiscard]] bool getBool() const { return int_value != 0; }
-    [[nodiscard]] Int64 getLong() const { return int_value; }
-    [[nodiscard]] Int64 getDate() const { return int_value; }
-    [[nodiscard]] double getFloat() const { return float_value; }
-    [[nodiscard]] const std::string & getString() const { return string_value; }
-    [[nodiscard]] Timestamp getTimestamp() const { return timestamp_value; }
-    [[nodiscard]] Decimal getDecimal() const { return decimal_value; }
+    bool getBool() const { return int_value != 0; }
+    Int64 getLong() const { return int_value; }
+    Int64 getDate() const { return int_value; }
+    double getFloat() const { return float_value; }
+    const std::string & getString() const { return string_value; }
+    Timestamp getTimestamp() const { return timestamp_value; }
+    Decimal getDecimal() const { return decimal_value; }
 
 private:
     PredicateDataType type;
@@ -114,22 +114,22 @@ public:
         IS_NULL,
     };
 
-    PredicateLeaf(Operator op_, PredicateDataType type_, UInt64 column_id_, VectorWithMemoryTracking<Literal> literals_)
+    PredicateLeaf(Operator op_, PredicateDataType type_, UInt64 column_id_, std::vector<Literal> literals_)
         : op(op_), type(type_), column_id(column_id_), literals(std::move(literals_)) {}
 
-    [[nodiscard]] UInt64 getColumnId() const { return column_id; }
+    UInt64 getColumnId() const { return column_id; }
 
     /// `writer_version` is from the postscript of the file. `bloom_filter` can be nullptr.
     TruthValue evaluate(UInt32 writer_version, const Proto::ColumnStatistics & stats, const BloomFilter * bloom_filter) const;
 
 private:
-    [[nodiscard]] TruthValue evaluatePredicateMinMax(const Proto::ColumnStatistics & stats) const;
-    [[nodiscard]] TruthValue evaluatePredicateBloomFilter(const BloomFilter & bloom_filter, bool has_null) const;
+    TruthValue evaluatePredicateMinMax(const Proto::ColumnStatistics & stats) const;
+    TruthValue evaluatePredicateBloomFilter(const BloomFilter & bloom_filter, bool has_null) const;
 
     Operator op;
     PredicateDataType type;
     UInt64 column_id;
-    VectorWithMemoryTracking<Literal> literals;
+    std::vector<Literal> literals;
 };
 
 class ExpressionTree;
@@ -138,14 +138,14 @@ using ExpressionTreePtr = std::shared_ptr<ExpressionTree>;
 class SearchArgument
 {
 public:
-    SearchArgument(ExpressionTreePtr root_, VectorWithMemoryTracking<PredicateLeaf> leaves_);
+    SearchArgument(ExpressionTreePtr root_, std::vector<PredicateLeaf> leaves_);
 
-    [[nodiscard]] const VectorWithMemoryTracking<PredicateLeaf> & getLeaves() const { return leaves; }
-    [[nodiscard]] TruthValue evaluate(const VectorWithMemoryTracking<TruthValue> & leaf_values) const;
+    const std::vector<PredicateLeaf> & getLeaves() const { return leaves; }
+    TruthValue evaluate(const std::vector<TruthValue> & leaf_values) const;
 
 private:
     ExpressionTreePtr root;
-    VectorWithMemoryTracking<PredicateLeaf> leaves;
+    std::vector<PredicateLeaf> leaves;
 };
 
 class SearchArgumentBuilder
@@ -163,7 +163,7 @@ public:
     SearchArgumentBuilder & lessThanEquals(UInt64 column_id, PredicateDataType type, Literal value);
     SearchArgumentBuilder & equals(UInt64 column_id, PredicateDataType type, Literal value);
     SearchArgumentBuilder & nullSafeEquals(UInt64 column_id, PredicateDataType type, Literal value);
-    SearchArgumentBuilder & in(UInt64 column_id, PredicateDataType type, const VectorWithMemoryTracking<Literal> & values);
+    SearchArgumentBuilder & in(UInt64 column_id, PredicateDataType type, const std::vector<Literal> & values);
     SearchArgumentBuilder & isNull(UInt64 column_id, PredicateDataType type);
     SearchArgumentBuilder & between(UInt64 column_id, PredicateDataType type, Literal lower, Literal upper);
 
@@ -173,9 +173,9 @@ private:
     SearchArgumentBuilder & start(UInt8 op);
     SearchArgumentBuilder & addLeaf(PredicateLeaf leaf);
 
-    VectorWithMemoryTracking<ExpressionTreePtr> stack;
+    std::vector<ExpressionTreePtr> stack;
     ExpressionTreePtr root;
-    VectorWithMemoryTracking<PredicateLeaf> leaves;
+    std::vector<PredicateLeaf> leaves;
 };
 
 /// A bloom filter of a row group (or a stripe), from the BLOOM_FILTER_UTF8 stream.
@@ -184,15 +184,15 @@ class BloomFilter
 public:
     explicit BloomFilter(const Proto::BloomFilter & proto);
 
-    [[nodiscard]] bool testLong(Int64 value) const;
-    [[nodiscard]] bool testDouble(double value) const;
+    bool testLong(Int64 value) const;
+    bool testDouble(double value) const;
     bool testBytes(const char * data, size_t size) const;
 
 private:
-    [[nodiscard]] bool testHash(Int64 hash) const;
+    bool testHash(Int64 hash) const;
 
     UInt32 num_hash_functions;
-    VectorWithMemoryTracking<UInt64> bits;
+    std::vector<UInt64> bits;
 };
 
 }

@@ -1,7 +1,0 @@
-Found 0 tables in database 'no_such_db'
-Could not retrieve schema for system.no_such_table
-Tool not found
-SQL query generated successfully
-prepopulated query: SELECT 7
-7
-No SQL query was generated

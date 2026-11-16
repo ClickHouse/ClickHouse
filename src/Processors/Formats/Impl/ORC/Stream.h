@@ -2,12 +2,12 @@
 
 #include <Processors/Formats/Impl/ORC/Compression.h>
 #include <Common/PODArray.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace DB::ORC
 {
@@ -17,11 +17,11 @@ namespace DB::ORC
 class PositionProvider
 {
 public:
-    explicit PositionProvider(const VectorWithMemoryTracking<UInt64> & positions_) : positions(positions_) {}
+    explicit PositionProvider(const std::vector<UInt64> & positions_) : positions(positions_) {}
     UInt64 next();
 
 private:
-    const VectorWithMemoryTracking<UInt64> & positions;
+    const std::vector<UInt64> & positions;
     size_t index = 0;
 };
 
@@ -116,17 +116,17 @@ public:
     void write(const char * data, size_t size);
 
     /// Appends the current position to `positions`, in the format that `InputByteStream::seek` expects.
-    void recordPosition(VectorWithMemoryTracking<UInt64> & positions) const;
+    void recordPosition(std::vector<UInt64> & positions) const;
 
     /// Finishes the stream and returns its size in bytes.
     size_t finish();
 
-    [[nodiscard]] const std::string & getOutput() const { return output; }
+    const std::string & getOutput() const { return output; }
 
     /// Clears the stream to start a new stripe.
     void reset();
 
-    [[nodiscard]] size_t estimateSize() const { return output.size() + buffer.size(); }
+    size_t estimateSize() const { return output.size() + buffer.size(); }
 
 private:
     void flushChunk();

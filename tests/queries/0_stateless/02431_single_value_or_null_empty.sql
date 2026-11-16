@@ -30,6 +30,7 @@ SELECT number
 FROM numbers(0)
     )
 GROUP BY NULL
-WITH CUBE; -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
+WITH CUBE
+SETTINGS enable_analyzer = 1; -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
 
 SELECT anyHeavy('1') FROM (SELECT anyHeavy(1));

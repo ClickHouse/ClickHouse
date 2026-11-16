@@ -32,10 +32,9 @@ node_forwarded = cluster.add_instance(
 
 USER_INTERSERVER_MARKER = " INTERSERVER SECRET "
 
-# The lowest revision accepted in interserver mode (DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2), below
-# DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS (54470): the addendum is only the quota key, so it and a
-# Query packet can follow the Hello directly.
-OLD_REVISION = 54462
+# Below DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM (54458) and DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2 (54462):
+# no addendum and no nonce, so a Query packet can follow the Hello directly.
+OLD_REVISION = 54449
 
 # A distinct PROXY source port per connection identifies its `system.session_log` row.
 source_ports = itertools.count(23001)
@@ -130,15 +129,11 @@ def build_interserver_query(forwarded_for=None):
             encode_varuint(0),  # distributed_depth
             encode_varuint(0) if forwarded_for is None else b"",  # client_version_patch
             b"\x00",  # no OpenTelemetry trace context
-            encode_varuint(0),  # collaborate_with_initiator
-            encode_varuint(0),  # obsolete_count_participating_replicas
-            encode_varuint(0),  # number_of_current_replica
             encode_string(""),  # end of settings
             encode_string(b"\x00" * 32),  # interserver hash, wrong
             encode_varuint(2),  # stage = Complete
             encode_varuint(0),  # compression disabled
             encode_string("SELECT 1"),  # query
-            encode_string(""),  # end of parameters
         ]
     )
 
@@ -306,7 +301,6 @@ def test_query_reject_records_forwarded_address(
         node_forwarded,
         proxy_header(port)
         + build_interserver_hello(True, salt=salt, revision=OLD_REVISION)
-        + encode_string("")  # addendum: quota key
         + build_interserver_query(forwarded_for),
     )
 

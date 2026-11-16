@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Formats/FormatSettings.h>
 #include <Columns/getLeastSuperColumn.h>
 #include <Common/NaNUtils.h>
 #include <IO/ReadHelpers.h>

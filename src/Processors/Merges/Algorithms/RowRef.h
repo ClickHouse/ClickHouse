@@ -103,7 +103,7 @@ struct RowRef
 
     UInt64 source_stream_index = 0;
 
-    [[nodiscard]] bool empty() const { return sort_columns == nullptr; }
+    bool empty() const { return sort_columns == nullptr; }
     void reset() { sort_columns = nullptr; }
 
     void set(SortCursor & cursor);
@@ -112,12 +112,12 @@ struct RowRef
 
     static size_t checkEqualsFirstNonEqual(size_t size, size_t offset, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row);
 
-    [[nodiscard]] size_t firstNonEqualSortColumnsWith(size_t offset, const RowRef & other) const
+    size_t firstNonEqualSortColumnsWith(size_t offset, const RowRef & other) const
     {
         return checkEqualsFirstNonEqual(num_columns, offset, sort_columns, row_num, other.sort_columns, other.row_num);
     }
 
-    [[nodiscard]] bool hasEqualSortColumnsWith(const RowRef & other) const
+    bool hasEqualSortColumnsWith(const RowRef & other) const
     {
         return checkEquals(num_columns, sort_columns, row_num, other.sort_columns, other.row_num);
     }
@@ -149,7 +149,7 @@ struct RowRefWithOwnedChunk
         std::swap(source_stream_index, other.source_stream_index);
     }
 
-    [[nodiscard]] bool empty() const { return owned_chunk == nullptr; }
+    bool empty() const { return owned_chunk == nullptr; }
 
     void clear()
     {
@@ -164,12 +164,12 @@ struct RowRefWithOwnedChunk
     void set(SortCursor & cursor, SharedChunkPtr chunk);
 
 
-    [[nodiscard]] size_t firstNonEqualSortColumnsWith(size_t offset, const RowRefWithOwnedChunk & other) const
+    size_t firstNonEqualSortColumnsWith(size_t offset, const RowRefWithOwnedChunk & other) const
     {
         return RowRef::checkEqualsFirstNonEqual(sort_columns->size(), offset, sort_columns->data(), row_num, other.sort_columns->data(), other.row_num);
     }
 
-    [[nodiscard]] bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other) const
+    bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other) const
     {
         return RowRef::checkEquals(sort_columns->size(), sort_columns->data(), row_num,
                                    other.sort_columns->data(), other.row_num);

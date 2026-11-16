@@ -9,7 +9,7 @@ namespace DB
 class ParserCreateWorkloadQuery : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "CREATE WORKLOAD query"; }
+    const char * getName() const override { return "CREATE WORKLOAD query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

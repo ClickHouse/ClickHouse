@@ -8,7 +8,6 @@
 
 #include <Common/Exception.h>
 #include <Common/Scheduler/MemoryReservation.h>
-#include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Core/Settings.h>
 #include <Interpreters/CancellationChecker.h>
@@ -24,7 +23,6 @@ using namespace DB;
 namespace DB::ErrorCodes
 {
     extern const int TIMEOUT_EXCEEDED;
-    extern const int TOO_SLOW;
 }
 
 namespace
@@ -199,52 +197,4 @@ TEST(ExecutionSpeedLimits, FormatsFractionalMaxExecutionTime)
         EXPECT_EQ(e.code(), ErrorCodes::TIMEOUT_EXCEEDED);
         EXPECT_EQ(e.message(), "Timeout exceeded: elapsed 1000.901 ms, maximum: 1000.900 ms");
     }
-}
-
-/// `max_estimated_execution_time` was converted with `Poco::Timespan::totalSeconds`, which truncates to whole
-/// seconds and returns `int`: 0.5 seconds acted as 0, and a limit above about 68 years overflowed into a negative
-/// one. Either way, every query whose estimated execution time was checked was rejected.
-TEST(ExecutionSpeedLimits, MaxEstimatedExecutionTimeIsNotTruncated)
-{
-    /// `throttle` subtracts the throttler sleeps of the current thread from the elapsed time. Without a `ThreadStatus`
-    /// those are the process-wide counters, which other tests may have increased, so run on a new thread with its own.
-    std::thread([]
-    {
-        ThreadStatus thread_status;
-
-        ExecutionSpeedLimits limits;
-        limits.timeout_before_checking_execution_speed = Poco::Timespan{10'000};
-
-        /// Half of the rows are read in 0.2 seconds, so the estimated execution time is 0.4 seconds.
-        const auto throttle = [&]
-        {
-            limits.throttle(
-                /*read_rows=*/100,
-                /*read_bytes=*/0,
-                /*total_rows_to_read=*/200,
-                /*total_elapsed_microseconds=*/200'000,
-                OverflowMode::THROW);
-        };
-
-        limits.max_estimated_execution_time = Poco::Timespan{500'000};
-        EXPECT_NO_THROW(throttle());
-
-        limits.max_estimated_execution_time = Poco::Timespan{3'000'000'000LL * 1'000'000};
-        EXPECT_NO_THROW(throttle());
-
-        limits.max_estimated_execution_time = Poco::Timespan{300'000};
-        try
-        {
-            throttle();
-            ADD_FAILURE() << "Expected `TOO_SLOW` exception";
-        }
-        catch (const Exception & e)
-        {
-            EXPECT_EQ(e.code(), ErrorCodes::TOO_SLOW);
-            EXPECT_EQ(
-                e.message(),
-                "Estimated query execution time (0.400 seconds) is too long. Maximum: 0.300 seconds. "
-                "Estimated rows to process: 200 (100 read in 0.200 seconds).");
-        }
-    }).join();
 }

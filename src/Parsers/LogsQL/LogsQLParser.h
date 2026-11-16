@@ -39,7 +39,7 @@ public:
     ASTPtr parse();
 
     /// The position right after the parsed query (before the trailing semicolon, if any).
-    [[nodiscard]] const char * getParsedEnd() const { return parsed_end; }
+    const char * getParsedEnd() const { return parsed_end; }
 
 private:
     /// An intermediate representation of one SELECT level.
@@ -146,13 +146,13 @@ private:
     [[noreturn]] void throwNotImplemented(const String & what) const;
 
     /// The identifier for the column backing the given LogsQL field.
-    [[nodiscard]] ASTPtr columnExpr(const String & field_name) const;
+    ASTPtr columnExpr(const String & field_name) const;
     /// The numeric value of the field, for the numeric stats functions.
-    [[nodiscard]] ASTPtr numericValueExpr(const String & field_name) const;
+    ASTPtr numericValueExpr(const String & field_name) const;
     /// The LogsQL string value of the field, with a missing Nullable value treated as empty.
-    [[nodiscard]] ASTPtr stringValueExpr(const String & field_name) const;
-    [[nodiscard]] ASTPtr makeNumericComparison(const String & field_name, const String & function_name, ASTPtr literal, const String & original_text = {}) const;
-    [[nodiscard]] String columnName(const String & field_name) const;
+    ASTPtr stringValueExpr(const String & field_name) const;
+    ASTPtr makeNumericComparison(const String & field_name, const String & function_name, ASTPtr literal, const String & original_text = {}) const;
+    String columnName(const String & field_name) const;
 
     String parseFieldName();
 
@@ -314,7 +314,7 @@ private:
     /// has an expression aliased with this name, the expression itself is used: `ORDER BY alias`
     /// would otherwise resolve to the source table column when a column with the same name exists
     /// (e.g. the bucketed `_time` in `stats by (_time:1d)`).
-    [[nodiscard]] ASTPtr sortKeyExpr(const Layer & layer, const String & field_name) const;
+    ASTPtr sortKeyExpr(const Layer & layer, const String & field_name) const;
 
     StatsFunc parseStatsFunc();
     ASTPtr parseMathExpr(int max_priority);

@@ -319,21 +319,18 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     {
         Exception::SuppressErrorCodesScope suppress_error_codes;
         bool read = true;
-        const auto & type = types[column_idx];
         if (checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf))
         {
-            if (type->isDefaultInsertTrivial())
-                column.insertDefault();
-            else
-                type->insertDefaultInto(column);
+            column.insertDefault();
             read = false;
         }
         else
         {
+            const auto & type = types[column_idx];
             const auto & serialization = serializations[column_idx];
             /// Let Enum conversion functions handle the null value.
             if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type) && !isEnum(type))
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization, type.get());
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization);
             else
                 serialization->deserializeTextQuoted(column, *buf, format_settings);
         }
@@ -780,16 +777,20 @@ void ValuesBlockInputFormat::readSuffix()
 
 void ValuesBlockInputFormat::resetParser()
 {
-    for (size_t i = 0; i < num_columns; ++i)
+    if (got_exception)
     {
-        templates[i].reset();
-        parser_type_for_column[i] = ParserType::Streaming;
-        attempts_to_deduce_template[i] = 0;
-        attempts_to_deduce_template_cached[i] = 0;
-        rows_parsed_using_template[i] = 0;
+        /// In case of exception always reset the templates and parser type,
+        /// because they may be in the invalid state.
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            templates[i].reset();
+            parser_type_for_column[i] = ParserType::Streaming;
+        }
     }
 
     IInputFormat::resetParser();
+    // I'm not resetting parser modes here.
+    // There is a good chance that all messages have the same format.
     total_rows = 0;
 }
 
@@ -892,7 +893,7 @@ void registerInputFormatValues(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<ValuesBlockInputFormat>(buf, std::make_unique<const Block>(header), params, settings);
-    }, /*supports_reset_parser=*/ true);
+    });
 
     factory.setDocumentation("Values", Documentation{
         .description = R"DOCS_MD(

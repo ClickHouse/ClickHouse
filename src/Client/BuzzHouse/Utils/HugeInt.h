@@ -29,7 +29,7 @@ public:
     HugeInt & operator=(const HugeInt & rhs) = default;
     HugeInt & operator=(HugeInt && rhs) = default;
 
-    [[nodiscard]] String toString() const;
+    String toString() const;
 
     /// Comparison operators
     bool operator==(const HugeInt & rhs) const;

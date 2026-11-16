@@ -89,10 +89,10 @@ public:
     {
     }
 
-    [[nodiscard]] std::string_view getModuleName() const { return module_name; }
-    [[nodiscard]] std::string_view getName() const { return function_name; }
-    [[nodiscard]] const std::vector<WasmValKind> & getArgumentTypes() const { return argument_types; }
-    [[nodiscard]] std::optional<WasmValKind> getReturnType() const { return return_type; }
+    std::string_view getModuleName() const { return module_name; }
+    std::string_view getName() const { return function_name; }
+    const std::vector<WasmValKind> & getArgumentTypes() const { return argument_types; }
+    std::optional<WasmValKind> getReturnType() const { return return_type; }
 
 private:
     std::string module_name;

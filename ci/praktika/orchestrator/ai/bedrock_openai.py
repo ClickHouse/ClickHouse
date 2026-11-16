@@ -43,10 +43,6 @@ _PRICING = {
 # the Anthropic provider's cap.
 _MAX_TOOL_ROUNDS = 12
 
-# converse() is non-streaming, so a whole reasoning turn must arrive within one
-# socket read.
-_CONVERSE_READ_TIMEOUT_S = 600
-
 # Appended to the system prompt for the forced final write-up once the model
 # exhausts its tool-call budget: stop investigating and produce the review now,
 # so the loop yields real text instead of another tool call.
@@ -146,7 +142,6 @@ class BedrockOpenAIProvider(AIProvider):
         if self._client is None:
             try:
                 import boto3
-                from botocore.config import Config
             except ImportError as e:  # boto3 is a core dep; guard anyway
                 raise RuntimeError(
                     "boto3 not installed; required for AI_PROVIDER='bedrock-openai'"
@@ -156,14 +151,7 @@ class BedrockOpenAIProvider(AIProvider):
                 raise RuntimeError(
                     "no AWS region for Bedrock; set Settings.AWS_REGION or AWS_REGION"
                 )
-            self._client = boto3.client(
-                "bedrock-runtime",
-                region_name=region,
-                config=Config(
-                    read_timeout=_CONVERSE_READ_TIMEOUT_S,
-                    retries={"max_attempts": 1, "mode": "standard"},
-                ),
-            )
+            self._client = boto3.client("bedrock-runtime", region_name=region)
         return self._client
 
     def complete(

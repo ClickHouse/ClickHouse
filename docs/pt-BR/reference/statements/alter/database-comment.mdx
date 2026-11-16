@@ -12,13 +12,17 @@ doc_type: 'reference'
 Adiciona, modifica ou remove um comentário de banco de dados, independentemente de ele já ter sido definido ou não. A alteração do comentário é refletida tanto em [`system.databases`](/pt-BR/reference/system-tables/databases)
 quanto na consulta `SHOW CREATE DATABASE`.
 
-## Sintaxe {#syntax}
+<div id="syntax">
+  ## Sintaxe
+</div>
 
 ```sql
 ALTER DATABASE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 ```
 
-## Exemplos {#examples}
+<div id="examples">
+  ## Exemplos
+</div>
 
 Para criar um `DATABASE` com comentário:
 
@@ -68,7 +72,9 @@ WHERE  name = 'database_with_comment';
 └─────────┘
 ```
 
-## Conteúdo relacionado {#related-content}
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
 
 * cláusula [`COMMENT`](/pt-BR/reference/statements/create/table#comment-clause)
 * [`ALTER TABLE ... MODIFY COMMENT`](/pt-BR/reference/statements/alter/comment)

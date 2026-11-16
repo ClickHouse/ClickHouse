@@ -28,7 +28,7 @@ public:
 
     void finishPage(const ElasticsearchSearchResponse & response);
 
-    [[nodiscard]] size_t pageSize() const { return page_size; }
+    size_t pageSize() const { return page_size; }
 
 private:
 
@@ -36,7 +36,7 @@ private:
 
     void deletePointInTime();
 
-    [[nodiscard]] std::unique_ptr<ReadBuffer> sendRequest(
+    std::unique_ptr<ReadBuffer> sendRequest(
         const String & method,
         const Poco::URI & uri,
         const String & request_body,

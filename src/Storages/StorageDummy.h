@@ -81,21 +81,21 @@ public:
         const ContextPtr & context_,
         const StorageDummy & storage_);
 
-    [[nodiscard]] const StorageDummy & getStorage() const
+    const StorageDummy & getStorage() const
     {
         return storage;
     }
 
-    [[nodiscard]] const Names & getColumnNames() const
+    const Names & getColumnNames() const
     {
         return column_names;
     }
 
-    [[nodiscard]] String getName() const override { return "ReadFromDummy"; }
+    String getName() const override { return "ReadFromDummy"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
-    [[nodiscard]] QueryPlanStepPtr clone() const override
+    QueryPlanStepPtr clone() const override
     {
         return std::make_unique<ReadFromDummy>(column_names, query_info, storage_snapshot, context, storage);
     }

@@ -1,8 +1,6 @@
 #include <base/types.h>
-#include <Formats/FormatSettings.h>
 
 #include <IO/ReadBufferFromMemory.h>
-#include <DataTypes/Serializations/ISerialization.h>
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
@@ -71,7 +69,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         ///
         /// The fuzzer can be run as follows:
         ///   ../../../build_asan_fuzz/src/DataTypes/fuzzers/decode_data_type_fuzzer corpus \
-        ///       -dict=../../../tests/fuzz/binary_types.dict -jobs=8
+        ///       -dict=../../../tests/fuzz/dictionaries/binary_types.dict -jobs=8
 
         if (size < 1)
             return 0;

@@ -102,7 +102,6 @@ namespace FailPoints
     extern const char object_storage_queue_fail_after_insert[];
     extern const char object_storage_queue_fail_startup[];
     extern const char object_storage_queue_pause_after_commit[];
-    extern const char object_storage_queue_pause_in_direct_select[];
 }
 
 namespace ServerSetting
@@ -251,11 +250,6 @@ namespace
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Move to Azure container requires all of settings: move_connection_string, move_container");
                 }
-                /// A full user `ATTACH` is fresh input as well, so only a definition stored on this server is exempt.
-                if (!is_loading_from_existing_metadata)
-                    ObjectStorageQueuePostProcessor::checkAzureMoveDestination(
-                        queue_settings[ObjectStorageQueueSetting::after_processing_move_connection_string].toString(),
-                        queue_settings[ObjectStorageQueueSetting::after_processing_move_container].toString());
             }
             else if (!move_prefix)
             {
@@ -673,7 +667,7 @@ void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
 {
     const auto prev_storage_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
-    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID(), /* if_exists */ true);
+    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID());
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
@@ -757,10 +751,6 @@ void StorageObjectStorageQueue::read(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. "
                         "To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
     }
-
-    /// The client keeps the creator's allowance for background processing; a direct reader is checked against its own.
-    checkSessionMayUseServerIdentity(*object_storage, local_context);
-
     bool do_commit_on_select = false;
     {
         std::lock_guard lock(mutex);
@@ -771,8 +761,6 @@ void StorageObjectStorageQueue::read(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
                         "Cannot read from {} with attached materialized views and commit_on_select=1", getName());
     }
-
-    FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_in_direct_select);
 
     auto this_ptr = std::static_pointer_cast<StorageObjectStorageQueue>(shared_from_this());
 
@@ -1717,18 +1705,11 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
 
     if (move_destination_changed)
     {
-        const String move_connection_string = get_move_destination_value(&new_settings, "after_processing_move_connection_string");
-        const String move_container = get_move_destination_value(&new_settings, "after_processing_move_container");
-
-        /// A move destination set by this query must carry its own credentials, as at `CREATE`.
-        if (type == ObjectStorageType::Azure && !move_connection_string.empty())
-            ObjectStorageQueuePostProcessor::checkAzureMoveDestination(move_connection_string, move_container);
-
         checkMoveDestinationHost(
             type,
             get_move_destination_value(&new_settings, "after_processing_move_uri"),
-            move_connection_string,
-            move_container,
+            get_move_destination_value(&new_settings, "after_processing_move_connection_string"),
+            get_move_destination_value(&new_settings, "after_processing_move_container"),
             local_context->getRemoteHostFilter());
     }
 }

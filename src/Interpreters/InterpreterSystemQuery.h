@@ -105,7 +105,7 @@ private:
     std::vector<StoragePtr> getAccessibleStreamingStorages();
     void controlBackgroundActivity(const ASTSystemQuery & query);
 
-    [[nodiscard]] AccessRightsElements getRequiredAccessForDDLOnCluster() const;
+    AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);
 
     void prewarmMarkCache();

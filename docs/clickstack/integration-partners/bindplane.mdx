@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['Bindplane', 'OTEL', 'ClickStack', 'OpenTelemetry', 'collector management']
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
+
 import { PartnerBadge } from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge/>
@@ -137,34 +139,18 @@ These processors are applied consistently across your collector fleet before dat
 Bindplane provides safe, one-click rollouts with validation. You can monitor collector health, throughput, and any errors in real-time through the Bindplane interface.
 </Tip>
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Telemetry Signals in ClickStack via Bindplane](/images/clickstack/bindplane/bindplane-configuration.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="Telemetry Signals in ClickStack via Bindplane" size="lg"/>
 </Step>
 <Step title="Verify telemetry in ClickStack" id="verify-telemetry">
 
 Once the configuration is rolled out, telemetry starts flowing into ClickStack from your managed collector fleet:
 
-1. Log into your ClickStack instance (ClickStack UI)
+1. Log into your ClickStack instance (HyperDX UI)
 2. Navigate to the **Logs**, **Metrics**, or **Traces** explorer
 3. You should see telemetry data appearing from your Bindplane-managed collectors
 4. Data arriving in ClickStack is already enriched and structured by Bindplane processors
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Telemetry Signals in ClickStack via Bindplane](/images/clickstack/bindplane/bindplane-hyperdx.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/bindplane/bindplane-hyperdx.webp" alt="Telemetry Signals in ClickStack via Bindplane" size="lg"/>
 </Step>
 </Steps>
 
@@ -193,7 +179,7 @@ Compression reduces bandwidth usage when sending telemetry to ClickStack, especi
 
 Now that you have telemetry flowing from Bindplane to ClickStack, you can:
 
-- **Build dashboards**: Create visualizations in ClickStack UI for logs, metrics, and traces
+- **Build dashboards**: Create visualizations in ClickStack (HyperDX) for logs, metrics, and traces
 - **Set up alerts**: Configure alerts in ClickStack for critical conditions
 - **Scale your deployment**: Add more collectors and sources as your observability needs grow
 - **Optimize your pipeline**: Use Bindplane's pipeline intelligence to identify optimization opportunities

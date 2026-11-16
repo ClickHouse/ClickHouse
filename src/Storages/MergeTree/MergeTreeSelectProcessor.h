@@ -10,7 +10,6 @@
 #include <Interpreters/SetSpillable.h>
 
 #include <unordered_set>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -76,7 +75,7 @@ struct SkipIndexReadInput
     size_t part_starting_offset_in_query = 0;
 };
 using RangesByIndex = std::unordered_map<size_t, SkipIndexReadInput>;
-using ProjectionRangesByIndex = UnorderedMapWithMemoryTracking<size_t, RangesInDataParts>;
+using ProjectionRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
 class MergeTreeIndexReadResultPool;
 using MergeTreeIndexReadResultPoolPtr = std::shared_ptr<MergeTreeIndexReadResultPool>;
 
@@ -119,7 +118,7 @@ struct MergeTreeIndexBuildContext
         MergeTreeIndexReadResultPoolPtr index_reader_pool_,
         PartRemainingMarks part_remaining_marks_);
 
-    [[nodiscard]] MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTask & task) const;
+    MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTask & task) const;
 
     /// Replaces the whole-part ranges the skip indexes of a part are evaluated over with the analyzed ones. Later calls
     /// for the same part extend them: an in-order read splits a part between streams that share this context, and each

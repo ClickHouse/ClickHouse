@@ -50,7 +50,7 @@ struct AggregateFunctionTimeseriesLastToGridTraits
         ValueType value{};
         bool has_value = false;
 
-        [[nodiscard]] bool empty() const { return !has_value; }
+        bool empty() const { return !has_value; }
 
         void add(TimestampType sample_timestamp, ValueType sample_value)
         {
@@ -128,7 +128,7 @@ struct AggregateFunctionTimeseriesLastToGridTraits
                 latest = Summary{};
         }
 
-        [[nodiscard]] std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
+        std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
         {
             if (latest.empty())
                 return std::nullopt;

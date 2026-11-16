@@ -251,26 +251,8 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
     SnapshotState state;
 
     {
-        std::optional<MetadataFileWithInfo> catalog_metadata_file;
-        if (catalog)
-        {
-            catalog_metadata_file = getLatestMetadataFileAndVersionWithCatalog(
-                object_storage,
-                catalog,
-                storage_id.getTableName(),
-                components.table_path,
-                data_lake_settings,
-                components.metadata_cache,
-                context,
-                log.get(),
-                components.table_uuid,
-                components.metadata_compression_method);
-            state.catalog_metadata_location = catalog_metadata_file->catalog_metadata_location;
-        }
-
-        auto [snapshot, table_state] = catalog_metadata_file
-            ? metadata.getRelevantState(context, *catalog_metadata_file)
-            : metadata.getRelevantState(context, /*force_fetch_latest_metadata=*/true, /*ignore_metadata_pointer_overrides=*/true);
+        auto [snapshot, table_state] = catalog ? metadata.getRelevantState(context, catalog, storage_id.getTableName())
+                                               : metadata.getRelevantState(context, /*force_fetch_latest_metadata=*/true);
         if (!snapshot)
             return std::nullopt;
 
@@ -283,14 +265,14 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
     }
 
     auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(state.table_state.metadata_file_path);
-    auto metadata_object = deepCopy(getMetadataJSONObject(
+    auto metadata_object = getMetadataJSONObject(
         state.table_state.metadata_file_path,
         object_storage,
         components.metadata_cache,
         context,
         log,
         compression_method,
-        components.table_uuid));
+        components.table_uuid);
 
     const auto format_version = metadata_object->getValue<Int32>(f_format_version);
     if (format_version != 2)
@@ -393,7 +375,7 @@ AlterDropPartitionExecutor::discoverTargetFilePaths(const SnapshotState & state,
             if (!parsed)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Manifest file entry is not parsed");
 
-            if (partitionEquals(entry->normalized_partition_key_value, target_partition))
+            if (partitionEquals(parsed->partition_key_value, target_partition))
                 targets.emplace(components.path_resolver.resolve(parsed->file_path_key));
         }
     };
@@ -410,7 +392,7 @@ AlterDropPartitionExecutor::discoverTargetFilePaths(const SnapshotState & state,
             if (!entry->parsed_entry)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Manifest file entry is not parsed");
 
-            if (partitionEquals(entry->normalized_partition_key_value, target_partition))
+            if (partitionEquals(entry->parsed_entry->partition_key_value, target_partition))
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED, "DROP PARTITION is not supported when the selected partition has equality deletes");
         }
@@ -434,24 +416,24 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
     /// Paranoia. Partition's key values are converted from iceberg's manifest to clickhouse's representation
     /// We're trying to protect ourselves against ambiguous conversions which might lead to several partitions matches a single clickhouse's defintion
     Row partition_key_value_for_assert;
-    auto assert_on_ambigious_partition_key = [&](const Row & partition_key_value)
+    auto assert_on_ambigious_partition_key = [&](const auto & parsed_entry)
     {
-        if (!partitionEquals(partition_key_value, target_partition))
+        if (!partitionEquals(parsed_entry.partition_key_value, target_partition))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Manifest file entry partition value ({}) is different from target ({})",
-                fmt::join(partition_key_value, ", "),
+                fmt::join(parsed_entry.partition_key_value, ", "),
                 fmt::join(target_partition, ", "));
 
         if (partition_key_value_for_assert.empty())
-            partition_key_value_for_assert = partition_key_value;
-        else if (!std::ranges::equal(partition_key_value_for_assert, partition_key_value))
+            partition_key_value_for_assert = parsed_entry.partition_key_value;
+        else if (!std::ranges::equal(partition_key_value_for_assert, parsed_entry.partition_key_value))
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Manifest file entry partition value ({}) is different from previous one ({})",
                 fmt::join(partition_key_value_for_assert, ", "),
-                fmt::join(partition_key_value, ", "));
+                fmt::join(parsed_entry.partition_key_value, ", "));
         }
     };
 
@@ -470,7 +452,7 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
                 continue;
             }
 
-            assert_on_ambigious_partition_key(entry->normalized_partition_key_value);
+            assert_on_ambigious_partition_key(parsed_entry);
 
             ++entries_to_remove;
             unprocessed_target_file_paths.erase(storage_path);
@@ -570,7 +552,7 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parent snapshot {} has no summary", parent_snapshot_id);
 
     auto parent_summary = parent_snapshot->getObject(f_summary);
-    auto parsed_summary = SnapshotSummary::fromJSON(*parent_summary, /*with_extra_fields=*/false, /*require_totals=*/true);
+    auto parsed_summary = SnapshotSummary::fromJSON(*parent_summary, /*with_extra_fields=*/true, /*require_totals=*/true);
     if (!parsed_summary)
         throw Exception(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
@@ -578,9 +560,8 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
             parent_snapshot_id,
             parsed_summary.error());
 
-    auto summary = SnapshotSummary{plan.snapshot_summary_update, parsed_summary->getTotals()}.toJSON();
-    if (parent_summary->has(f_refresh_cursor))
-        summary->set(f_refresh_cursor, parent_summary->getValue<String>(f_refresh_cursor));
+    /// TODO: copy refresh cursor explicitly
+    auto summary = SnapshotSummary{plan.snapshot_summary_update, parsed_summary->getTotals(), parsed_summary->getExtraFields()}.toJSON();
     new_snapshot->set(f_summary, summary);
 
     const String storage_manifest_list_path = components.path_resolver.resolve(manifest_list_path);
@@ -656,12 +637,8 @@ bool AlterDropPartitionExecutor::commitMetadataJSON(
     {
         auto catalog_filename = components.path_resolver.resolveForCatalog(metadata_info.path);
         const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, state.catalog_metadata_location, new_snapshot, state.metadata_object))
-        {
-            if (!catalog_writes_metadata_file)
-                removeRejectedMetadataFile(components.path_resolver, metadata_info, object_storage);
+        if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
             return false;
-        }
     }
 
     return true;
@@ -688,9 +665,8 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
     /// table can move from uncompressed to e.g. `vN.gz.metadata.json` (external writer or changed
     /// setting), and the replacement metadata must follow the same convention.
     const auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(state.table_state.metadata_file_path);
-    FileNamesGenerator filename_generator(
-        components.path_resolver.getTableLocation(), /* use_uuid_in_metadata */ catalog != nullptr, compression_method, write_format);
-    filename_generator.setBaseMetadataFile(state.table_state.metadata_version, state.table_state.metadata_file_path);
+    FileNamesGenerator filename_generator(components.path_resolver.getTableLocation(), false, compression_method, write_format);
+    filename_generator.setVersion(state.table_state.metadata_version + 1);
     filename_generator.setCompressionMethod(compression_method);
 
     std::vector<std::string> files_for_cleanup;

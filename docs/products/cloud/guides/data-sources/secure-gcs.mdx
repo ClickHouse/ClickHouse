@@ -7,6 +7,8 @@ keywords: ['GCS']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
+
 This guide demonstrates how to securely authenticate with Google Cloud Storage (GCS) and access your data from ClickHouse Cloud.
 
 ## Introduction {#introduction}
@@ -37,27 +39,11 @@ For following this guide you will need:
 
 1. In the Google Cloud Console, navigate to IAM & Admin → Service Accounts
 
-<div className="ch-image-md">
-
-<Frame>
-
-![](/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp" size="md" alt=""/>
 
 2. Click `Service accounts` from the left-hand menu, then click `Create service account`:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![](/images/cloud/guides/accessing-data/GCS/create_service_account.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/guides/accessing-data/GCS/create_service_account.webp" size="md" alt=""/>
 
 Enter a name and description for your service account, for example:
 
@@ -68,27 +54,11 @@ Service account description: Service account for ClickHouse Cloud to access GCS 
 
 Click `Create and continue`
 
-<div className="ch-image-sm">
-
-<Frame>
-
-![](/images/cloud/guides/accessing-data/GCS/create_and_continue.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/guides/accessing-data/GCS/create_and_continue.webp" size="sm" alt=""/>
 
 Grant the service account the `Storage Object User` role:
 
-<div className="ch-image-sm">
-
-<Frame>
-
-![](/images/cloud/guides/accessing-data/GCS/storage_object_user.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/guides/accessing-data/GCS/storage_object_user.webp" size="sm" alt=""/>
 
 This role provides read and write access to GCS objects
 
@@ -101,15 +71,7 @@ Click `Continue`, then `Done`
 
 Make note of the service account email address:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![](/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp" size="md" alt=""/>
 </Step>
 <Step title="Grant bucket access to the service account" id="grant-bucket-access-to-service-account">
 
@@ -146,43 +108,19 @@ Grant access only to the specific buckets that ClickHouse needs to access, rathe
 
 Navigate to `Cloud Storage` → `Settings` → `Interoperability`:
 
-<div className="ch-image-sm">
-
-<Frame>
-
-![](/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp" size="sm" alt=""/>
 
 If you don't see an "Access keys" section, click `Enable interoperability access`
 
 Under "Access keys for service accounts", click `Create a key for a service account`:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![](/images/cloud/guides/accessing-data/GCS/create_key_for_service_account.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/guides/accessing-data/GCS/create_key_for_service_account.webp" size="md" alt=""/>
 
 Select the service account you created earlier (e.g clickhouse-gcs-access@your-project.iam.gserviceaccount.com)
 
 Click `Create key`:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![](/images/cloud/guides/accessing-data/GCS/create_a_key.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/guides/accessing-data/GCS/create_a_key.webp" size="md" alt=""/>
 
 The HMAC key will be displayed.
 Save both the Access Key and Secret immediately - you won't be able to view the secret again.
@@ -238,15 +176,7 @@ When [setting up a GCS ClickPipe](/integrations/clickpipes/object-storage/google
 1. Select `Credentials` under `Authentication method` during ClickPipe setup
 2. Provide HMAC credentials obtained in the previous steps
 
-<div className="ch-image-md">
-
-<Frame>
-
-![](/images/cloud/guides/accessing-data/GCS/clickpipes_hmac_key.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/guides/accessing-data/GCS/clickpipes_hmac_key.webp" size="md" alt=""/>
 
 <Note>
 Service account authentication isn't currently supported - you must use HMAC keys

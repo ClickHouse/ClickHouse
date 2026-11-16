@@ -31,7 +31,7 @@ public:
     /// Whether the step can execute this join type.
     static bool isSupportedJoinType(JoinKind kind, JoinStrictness strictness);
 
-    [[nodiscard]] String getName() const override { return "IEJoin"; }
+    String getName() const override { return "IEJoin"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
@@ -43,7 +43,7 @@ public:
 private:
     void updateOutputHeader() override;
 
-    [[nodiscard]] String formatConditions() const;
+    String formatConditions() const;
 
     /// Conditions in the query orientation (`left` refers to the query's left table).
     IEJoinConditions conditions;

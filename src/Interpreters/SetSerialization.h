@@ -1,7 +1,5 @@
 #pragma once
 #include <Interpreters/PreparedSets.h>
-#include <Common/ListWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -20,7 +18,7 @@ struct SerializedSetsRegistry
 
     /// Set when this serialization is used to compute a plan-step cache key (not for transmission).
     /// MUST be kept in sync with `for_cache_key` on `IQueryPlanStep::Serialization`: this one drives
-    /// `ActionsDAG::serialize` (skips large constant values), that one drives the step's own
+    /// `ActionsDAG::serialize` (skips variable-size constant values), that one drives the step's own
     /// `serialize`. Set both or neither.
     bool for_cache_key = false;
 };
@@ -34,7 +32,7 @@ struct DeserializedSetsRegistry
         UInt64 operator()(const FutureSet::Hash & key) const { return key.low64 ^ key.high64; }
     };
 
-    UnorderedMapWithMemoryTracking<FutureSet::Hash, ListWithMemoryTracking<ColumnSet *>, Hashing> sets;
+    std::unordered_map<FutureSet::Hash, std::list<ColumnSet *>, Hashing> sets;
 };
 
 }

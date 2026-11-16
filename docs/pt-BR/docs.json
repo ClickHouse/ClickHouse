@@ -9,64 +9,37 @@
     {
       "menu": [
         {
-          "href": "#",
-          "icon": "/images/icons/icon-clickhouse.svg",
-          "item": "ClickHouse"
-        },
-        {
           "$ref": "./get-started/navigation.json"
-        },
-        {
-          "$ref": "./guides/navigation.json"
         },
         {
           "$ref": "./concepts/navigation.json"
         },
         {
-          "$ref": "./reference/navigation.json"
+          "$ref": "./guides/navigation.json"
         },
         {
-          "$ref": "./products/managed-postgres/navigation.json"
+          "$ref": "./reference/navigation.json"
         }
       ],
-      "tab": "Bancos de dados"
+      "tab": "Banco de dados"
     },
     {
       "menu": [
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Implantações"
+          "item": "ClickHouse Cloud"
         },
         {
-        "$ref": "./products/cloud/navigation.json"
+          "$ref": "./products/cloud/navigation.json"
         },
         {
-          "item": "BYOC",
-          "pages": [
-            "pt-BR/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
-          ]
-        },
-        {
-          "href": "#",
-          "icon": "/images/icons/section-header.svg",
-          "item": "Aplicações"
-        },
-        {
-          "$ref": "./clickstack/navigation.json"
-        },
-        {
-          "$ref": "./agents/navigation.json"
+          "$ref": "./products/managed-postgres/navigation.json"
         },
         {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
-          "item": "Engenharia de IA"
-        },
-        {
-          "href": "https://docs.runreveal.com/",
-          "icon": "/images/integrations/logos/runreveal.webp",
-          "item": "Segurança"
+          "item": "Langfuse"
         },
         {
           "href": "#",
@@ -74,23 +47,19 @@
           "item": "Código aberto"
         },
         {
-          "item": "ClickStack",
-          "pages": [
-            "pt-BR/clickstack/index"
-          ]
+          "$ref": "./clickstack/navigation.json"
+        },
+        {
+          "$ref": "./products/agentic-data-stack/navigation.json"
         },
         {
           "$ref": "./chdb/navigation.json"
         },
         {
           "$ref": "./products/kubernetes-operator/navigation.json"
-        },
-        {
-          "href": "https://www.librechat.ai/docs",
-          "item": "LibreChat"
         }
       ],
-      "tab": "Produtos"
+      "tab": "Soluções"
     },
     {
       "menu": [

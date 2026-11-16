@@ -12,15 +12,21 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки задают конфигурацию сервера ClickHouse и автоматически генерируются из исходного кода ClickHouse.
 
-## index_mark_cache_policy {#index_mark_cache_policy}
+<div id="index_mark_cache_policy">
+  ## index_mark_cache_policy
+</div>
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Название политики вытеснения кэша меток вторичных индексов. Возможные значения: `LRU`, `SLRU`, `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Название политики кэша меток вторичных индексов.
 
-## index_mark_cache_prewarm_ratio {#index_mark_cache_prewarm_ratio}
+<div id="index_mark_cache_prewarm_ratio">
+  ## index_mark_cache_prewarm_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.95" changeable_without_restart="No" />Доля от общего размера кэша меток вторичных индексов, заполняемая при предварительном прогреве.
 
-## index_mark_cache_size {#index_mark_cache_size}
+<div id="index_mark_cache_size">
+  ## index_mark_cache_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />
 
@@ -32,7 +38,9 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
   Этот параметр можно изменить во время выполнения, и изменения вступят в силу немедленно.
 </Note>
 
-## index_mark_cache_size_ratio {#index_mark_cache_size_ratio}
+<div id="index_mark_cache_size_ratio">
+  ## index_mark_cache_size_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.3" changeable_without_restart="No" />Размер защищённой очереди (в случае политики SLRU) в кэше меток вторичных индексов по отношению к общему размеру кэша.
 

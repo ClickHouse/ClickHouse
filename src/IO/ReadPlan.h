@@ -5,7 +5,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
-#include <optional>
 #include <variant>
 
 namespace DB
@@ -35,21 +34,17 @@ public:
     struct Fetch { ByteRange range; };                                                    /// source-read, then fill
     using PlanRun = std::variant<std::monostate, ServeFromReader, ServeFromWriter, ServeFromMemory, Fetch>;
 
-    [[nodiscard]] bool empty() const { return range_end <= range_start; }
-    [[nodiscard]] size_t begin() const { return range_start; }
-    [[nodiscard]] size_t end() const { return range_end; }
-    [[nodiscard]] bool contains(size_t offset) const { return offset >= range_start && offset < range_end; }
+    bool empty() const { return range_end <= range_start; }
+    size_t begin() const { return range_start; }
+    size_t end() const { return range_end; }
+    bool contains(size_t offset) const { return offset >= range_start && offset < range_end; }
 
     /// How to serve `offset` (see `PlanRun`): the memory hold, the fastest tier covering it, else a
     /// `Fetch` from source, whose range may reach past the asked one on either side.
-    [[nodiscard]] PlanRun runAt(size_t offset, size_t fetch_limit) const;
+    PlanRun runAt(size_t offset, size_t fetch_limit) const;
 
     /// The populating tiers' writers overlapping `range` - the write-up targets for one FETCH read.
-    [[nodiscard]] VectorWithMemoryTracking<CacheWriter *> writersFor(ByteRange range) const;
-
-    /// Given a position `offset`, returns the end of the filesystem-cache (incrementally filled) miss
-    /// segment whose interior contains that position.
-    [[nodiscard]] std::optional<size_t> missSegmentEndFor(size_t offset) const;
+    VectorWithMemoryTracking<CacheWriter *> writersFor(ByteRange range) const;
 
     /// Resolve `[end(), new_end)` across EVERY provider in `chain` (one `PlanTier` per provider,
     /// fastest-first) and append it - so the plan itself guarantees all layers are asked. `object` and

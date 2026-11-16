@@ -29,17 +29,17 @@ namespace ErrorCodes
 
 class FunctionDateOrDateTimeBase : public IFunction
 {
-    [[nodiscard]] bool isVariadic() const override { return true; }
+    bool isVariadic() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    [[nodiscard]] bool hasInformationAboutMonotonicity() const override
+    bool hasInformationAboutMonotonicity() const override
     {
         return true;
     }
@@ -50,7 +50,7 @@ protected:
     /// `EXTRACT(<unit> FROM INTERVAL ...)` on a matching-kind interval. Other
     /// `FunctionDateOrDateTimeToSomething`-shaped transforms (e.g.
     /// `toStartOfDay`, `toUnixTimestamp`) keep rejecting `Interval`.
-    [[nodiscard]] bool acceptsIntervalArgument() const
+    bool acceptsIntervalArgument() const
     {
         IntervalKind unused;
         return IntervalKind::tryParseFromNameOfFunctionExtractTimePart(getName(), unused);
@@ -106,9 +106,9 @@ class IFunctionDateOrDateTime : public FunctionDateOrDateTimeBase
 {
 public:
     static constexpr auto name = Transform::name;
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
         if constexpr (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
         {
@@ -202,7 +202,7 @@ public:
         }
     }
 
-    [[nodiscard]] bool hasInformationAboutPreimage() const override
+    bool hasInformationAboutPreimage() const override
     {
         if constexpr (requires { Transform::hasPreimage(); })
             return Transform::hasPreimage();
@@ -210,7 +210,7 @@ public:
         return false;
     }
 
-    [[nodiscard]] FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
+    FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
     {
         if constexpr (requires { Transform::hasPreimage(); })
         {

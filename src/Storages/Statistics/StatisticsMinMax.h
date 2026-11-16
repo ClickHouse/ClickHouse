@@ -20,14 +20,13 @@ public:
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
-    [[nodiscard]] std::optional<UInt64> getSerializedSize() const override;
 
-    [[nodiscard]] const Field & getMin() const { return min; }
-    [[nodiscard]] const Field & getMax() const { return max; }
+    const Field & getMin() const { return min; }
+    const Field & getMax() const { return max; }
 
-    [[nodiscard]] std::optional<Float64> estimateLess(const Field & val) const override;
-    [[nodiscard]] String getNameForLogs() const override;
-    [[nodiscard]] size_t allocatedBytes() const override;
+    std::optional<Float64> estimateLess(const Field & val) const override;
+    String getNameForLogs() const override;
+    size_t allocatedBytes() const override;
 private:
     Field min; /// null Field means "not initialized"
     Field max; /// null Field means "not initialized"

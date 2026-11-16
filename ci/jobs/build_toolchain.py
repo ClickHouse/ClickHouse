@@ -9,7 +9,7 @@ from ci.praktika.utils import MetaClasses, Shell, Utils
 
 TEMP = "/tmp"
 
-LLVM_VERSION = "23"
+LLVM_VERSION = "22"
 
 LLVM_SOURCE_DIR = f"{TEMP}/llvm-project"
 NINJA_SOURCE_DIR = f"{TEMP}/ninja-src"
@@ -204,7 +204,7 @@ def main():
             f" -DLLVM_ENABLE_LLD=ON"
             f" -DLLVM_ENABLE_TERMINFO=OFF"
             f" -DLLVM_ENABLE_ZLIB=FORCE_ON"
-            f" -DLLVM_ENABLE_ZSTD=FORCE_ON"
+            f" -DLLVM_ENABLE_ZSTD=OFF"
             f" -DCMAKE_INSTALL_PREFIX={STAGE1_INSTALL_DIR}"
             f" -S {LLVM_SOURCE_DIR}/llvm"
             f" -B {STAGE1_BUILD_DIR}"
@@ -411,12 +411,11 @@ def main():
             f" -DCMAKE_CXX_COMPILER=clang++-{LLVM_VERSION}"
             f" -DLLVM_ENABLE_LLD=ON"
             f" -DLLVM_ENABLE_LTO=Thin"
-            # CMake links its compiler checks with these too, so add what jemalloc's C++ part and profiling code need
-            f' -DCMAKE_EXE_LINKER_FLAGS="-Wl,--emit-relocs,-znow -Wl,--whole-archive -ljemalloc_pic -Wl,--no-whole-archive -lstdc++ -lm"'
+            f' -DCMAKE_EXE_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
             f' -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
             f" -DLLVM_ENABLE_TERMINFO=OFF"
             f" -DLLVM_ENABLE_ZLIB=FORCE_ON"
-            f" -DLLVM_ENABLE_ZSTD=FORCE_ON"
+            f" -DLLVM_ENABLE_ZSTD=OFF"
             f" -DLLVM_BINUTILS_INCDIR=/usr/include"
             f' -DLLVM_BUILTIN_TARGETS="{builtin_targets}"'
             f" {builtin_cmake_args}"
@@ -678,19 +677,6 @@ def main():
             )
         )
         res = results[-1].is_ok()
-
-        # The executables link jemalloc statically, and its license must ship with them
-        if res:
-            results.append(
-                Result.from_commands_run(
-                    name="Install jemalloc license",
-                    command=(
-                        f"install -D -m 644 /usr/share/doc/libjemalloc-dev/copyright"
-                        f" {STAGE2_INSTALL_DIR}/share/doc/jemalloc/copyright"
-                    ),
-                )
-            )
-            res = results[-1].is_ok()
 
         if res:
             output_path = f"{OUTPUT_DIR}/clang-pgo-bolt.tar.zst"

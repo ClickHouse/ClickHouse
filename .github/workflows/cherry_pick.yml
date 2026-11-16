@@ -27,7 +27,7 @@ jobs:
     runs-on: [self-hosted, style-checker-aarch64]
     # The loop stops on its own well before this; the timeout only bounds a
     # single hung iteration.
-    timeout-minutes: 380
+    timeout-minutes: 200
     steps:
       - name: Set envs
         # https://docs.github.com/en/actions/learn-github-actions/workflow-commands-for-github-actions#multiline-strings
@@ -54,7 +54,7 @@ jobs:
       - name: Cherry pick
         # Runs from the repo root: praktika resolves `ci/settings` relative to
         # the process working directory.
-        run: python3 ci/tools/cherry_pick.py --loop --loop-duration $((350 * 60))
+        run: python3 ci/tools/cherry_pick.py --loop
       - name: Cleanup
         if: always()
         run: |

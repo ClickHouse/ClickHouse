@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -28,7 +26,7 @@ public:
     /// kept; older ones can be dropped.
     /// Example: {{0, 0}, {1, 12}, {2, 15}} - a stream at global version 11 gets version 0, at 12 to 14
     /// gets version 1, at 15 or later gets version 2.
-    using StepVersions = VectorWithMemoryTracking<StepVersion>;
+    using StepVersions = std::vector<StepVersion>;
 
     QueryPlanStepRegistry() = default;
     QueryPlanStepRegistry(const QueryPlanStepRegistry &) = delete;
@@ -49,7 +47,7 @@ public:
 
     /// The version to write for a stream serialized at `plan_version`: the newest one the peer's
     /// release knows.
-    [[nodiscard]] UInt64 versionToWrite(const std::string & name, UInt64 plan_version) const;
+    UInt64 versionToWrite(const std::string & name, UInt64 plan_version) const;
 
     /// Throws unless `version` is one this binary can read. Called before `createStep`, so an unknown
     /// version is refused up front and never misparsed.
@@ -62,9 +60,9 @@ private:
         StepVersions versions;
     };
 
-    [[nodiscard]] const Entry & getEntry(const std::string & name) const;
+    const Entry & getEntry(const std::string & name) const;
 
-    UnorderedMapWithMemoryTracking<std::string, Entry> steps;
+    std::unordered_map<std::string, Entry> steps;
 
 };
 

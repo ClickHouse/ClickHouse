@@ -16,12 +16,12 @@ namespace
 class AggregateFunctionCombinatorResample final : public IAggregateFunctionCombinator
 {
 public:
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return "Resample";
     }
 
-    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
+    DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -30,16 +30,7 @@ public:
         return DataTypes(arguments.begin(), arguments.end() - 1);
     }
 
-    [[nodiscard]] VectorWithMemoryTracking<size_t> getVariantArgumentsToConvert(const DataTypes & arguments) const override
-    {
-        if (!arguments.empty() && isVariant(arguments.back()))
-            return {arguments.size() - 1};
-        return {};
-    }
-
-    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
-
-    [[nodiscard]] Array transformParameters(const Array & params) const override
+    Array transformParameters(const Array & params) const override
     {
         if (params.size() < 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -48,7 +39,7 @@ public:
         return Array(params.begin(), params.end() - 3);
     }
 
-    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
+    AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,

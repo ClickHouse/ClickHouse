@@ -19,12 +19,12 @@ class BlocksMarshallingStep : public ITransformingStep
 public:
     explicit BlocksMarshallingStep(const SharedHeader & input_header_);
 
-    [[nodiscard]] String getName() const override { return "BlocksMarshalling"; }
+    String getName() const override { return "BlocksMarshalling"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void serialize(Serialization &) const override { }
-    [[nodiscard]] bool isSerializable() const override { return true; }
+    bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 

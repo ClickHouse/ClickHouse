@@ -289,7 +289,7 @@ namespace
         void readStrAndAppend(PaddedPODArray<UInt8> & str) { reader->readStringAndAppend(str); }
 
         template <typename DestType>
-        [[nodiscard]] DestType parseFromStr(std::string_view str) const
+        DestType parseFromStr(std::string_view str) const
         {
             try
             {
@@ -305,7 +305,7 @@ namespace
         }
 
         template <typename DestType, typename SrcType>
-        [[nodiscard]] DestType castNumber(SrcType value) const
+        DestType castNumber(SrcType value) const
         {
             if constexpr (std::is_same_v<DestType, SrcType>)
                 return value;
@@ -1056,7 +1056,7 @@ namespace
 
         void checkEnumDataTypeValue(NumberType value)
         {
-            (void)enum_data_type->getNameForValue(value); /// Throws an exception if the value isn't defined in the DataTypeEnum.
+            enum_data_type->getNameForValue(value); /// Throws an exception if the value isn't defined in the DataTypeEnum.
         }
 
         std::string_view enumDataTypeValueToString(NumberType value) const { return std::string_view{enum_data_type->getNameForValue(value)}; }
@@ -1975,9 +1975,9 @@ namespace
         {
             size_t size_of_state = aggregate_function->sizeOfData();
             AggregateDataPtr data = arena.alignedAlloc(size_of_state, aggregate_function->alignOfData());
-            aggregate_function->create(data);
             try
             {
+                aggregate_function->create(data);
                 ReadBufferFromMemory buf(str.data(), str.length());
                 aggregate_function->deserialize(data, buf, std::nullopt, &arena);
                 return data;
@@ -3199,7 +3199,7 @@ namespace
         std::unique_ptr<ProtobufSerializer> buildMessageSerializer(
             const Strings & column_names,
             const DataTypes & data_types,
-            VectorWithMemoryTracking<size_t> & missing_column_indices,
+            std::vector<size_t> & missing_column_indices,
             const MessageDescriptor & message_descriptor,
             bool with_length_delimiter,
             bool with_envelope,
@@ -4370,7 +4370,7 @@ namespace
 std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     const Strings & column_names,
     const DataTypes & data_types,
-    VectorWithMemoryTracking<size_t> & missing_column_indices,
+    std::vector<size_t> & missing_column_indices,
     const ProtobufSchemas::DescriptorHolder & descriptor,
     bool with_length_delimiter,
     bool with_envelope,
@@ -4398,7 +4398,7 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     bool defaults_for_nullable_google_wrappers,
     ProtobufWriter & writer)
 {
-    VectorWithMemoryTracking<size_t> missing_column_indices;
+    std::vector<size_t> missing_column_indices;
     return ProtobufSerializerBuilder(writer).buildMessageSerializer(
         column_names, data_types, missing_column_indices,
         *descriptor.message_descriptor,

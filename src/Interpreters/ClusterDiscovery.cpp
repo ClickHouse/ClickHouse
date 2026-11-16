@@ -232,19 +232,6 @@ ClusterDiscovery::ClusterDiscovery(
         String zk_root = zkutil::extractZooKeeperPath(zk_name_and_root, true);
         String zk_name = zkutil::extractZooKeeperName(zk_name_and_root);
 
-        /// Advertise the port peers must actually dial: with `secure` enabled that is `tcp_port_secure`, not `tcp_port`.
-        /// Observers do not register themselves, so they only need client-side TLS and no local secure listener.
-        bool is_secure_connection = config.getBool(cluster_config_prefix + ".secure", false);
-        UInt16 advertised_port = context->getTCPPort();
-        if (is_secure_connection && !is_observer)
-        {
-            auto secure_port = context->getTCPPortSecure();
-            if (!secure_port)
-                throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-                    "Cluster '{}' has 'secure' enabled in its discovery config, but 'tcp_port_secure' is not set", key);
-            advertised_port = *secure_port;
-        }
-
         clusters_info.emplace(
             key,
             ClusterInfo(
@@ -255,8 +242,8 @@ ClusterDiscovery::ClusterDiscovery(
                 /* username= */ config.getString(cluster_config_prefix + ".user", context->getUserName()),
                 /* password= */ password,
                 /* cluster_secret= */ cluster_secret,
-                /* port= */ advertised_port,
-                /* secure= */ is_secure_connection,
+                /* port= */ context->getTCPPort(),
+                /* secure= */ config.getBool(cluster_config_prefix + ".secure", false),
                 /* shard_id= */ config.getUInt(cluster_config_prefix + ".shard", 0),
                 /* observer_mode= */ is_observer,
                 /* invisible= */ ConfigHelper::getBool(config, cluster_config_prefix + ".invisible")
@@ -421,13 +408,10 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
     }
 
     bool secure = cluster_info.current_node.secure;
-    /// The port is used to decide which members are this server itself. Without a local secure listener
-    /// (possible for an observer) no member can be this server, so use 0, which never matches: falling back to
-    /// the default secure port would mark another server on the same host listening on it as local.
     ClusterConnectionParameters params{
         /* username= */ cluster_info.username,
         /* password= */ cluster_info.password,
-        /* clickhouse_port= */ secure ? context->getTCPPortSecure().value_or(0) : context->getTCPPort(),
+        /* clickhouse_port= */ secure ? context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort(),
         /* treat_local_as_remote= */ false,
         /* treat_local_port_as_remote= */ false, /// should be set only for clickhouse-local, but cluster discovery is not used there
         /* secure= */ secure,
@@ -910,7 +894,6 @@ String ClusterDiscovery::NodeInfo::serialize() const
     Poco::JSON::Object json;
     json.set("version", data_ver);
     json.set("address", address);
-    json.set("secure", secure);
     json.set("shard_id", shard_id);
 
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM

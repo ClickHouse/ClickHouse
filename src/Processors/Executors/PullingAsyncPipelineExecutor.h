@@ -31,9 +31,6 @@ public:
     /// When set, pull() uses the timeout internally and calls the callback on each iteration.
     void setCancelCallback(std::function<bool()> callback, uint64_t interactive_timeout_ms_);
 
-    /// See `IExecutor::setExceptionCallback`. Must be called before the first `pull`.
-    void setExceptionCallback(std::function<void()> callback);
-
     /// Methods return false if query is finished.
     /// If milliseconds > 0, returns empty object and `true` after timeout exceeded. Otherwise method is blocking.
     /// You can use any pull method.
@@ -71,8 +68,6 @@ private:
 
     std::function<bool()> cancel_callback;
     uint64_t interactive_timeout_ms = 0;
-
-    std::function<void()> exception_callback;
 };
 
 }

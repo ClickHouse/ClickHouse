@@ -1,8 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -42,8 +40,8 @@ struct JoinKeyRow
 
     JoinKeyRow(const FullMergeJoinCursor & cursor, size_t pos);
 
-    [[nodiscard]] bool equals(const FullMergeJoinCursor & cursor) const;
-    [[nodiscard]] bool asofMatch(const FullMergeJoinCursor & cursor, ASOFJoinInequality asof_inequality) const;
+    bool equals(const FullMergeJoinCursor & cursor) const;
+    bool asofMatch(const FullMergeJoinCursor & cursor, ASOFJoinInequality asof_inequality) const;
 
     void reset();
 
@@ -75,7 +73,7 @@ public:
 
     void reset(size_t source_num);
 
-    [[nodiscard]] bool empty() const;
+    bool empty() const;
 
     /// current keys
     JoinKeyRow keys[2];
@@ -141,11 +139,11 @@ public:
         return nextLeft();
     }
 
-    [[nodiscard]] bool finished() const { return lidx >= left.size(); }
+    bool finished() const { return lidx >= left.size(); }
 
-    [[nodiscard]] size_t blocksStored() const { return left.size() + right.size(); }
-    [[nodiscard]] const Range & getLeft() const { return left[lidx]; }
-    [[nodiscard]] const Range & getRight() const { return right[ridx]; }
+    size_t blocksStored() const { return left.size() + right.size(); }
+    const Range & getLeft() const { return left[lidx]; }
+    const Range & getRight() const { return right[ridx]; }
 
     /// Left and right types can be different because of nullable
     JoinKeyRow keys[2];
@@ -174,8 +172,8 @@ private:
         }
         return true;
     }
-    VectorWithMemoryTracking<Range> left;
-    VectorWithMemoryTracking<Range> right;
+    std::vector<Range> left;
+    std::vector<Range> right;
 
     size_t lidx = 0;
     size_t ridx = 0;
@@ -188,7 +186,7 @@ public:
     void set(const FullMergeJoinCursor & rcursor, size_t rpos);
     void reset();
 
-    [[nodiscard]] bool hasMatch(const FullMergeJoinCursor & cursor, ASOFJoinInequality asof_inequality) const
+    bool hasMatch(const FullMergeJoinCursor & cursor, ASOFJoinInequality asof_inequality) const
     {
         if (value.empty())
             return false;
@@ -209,16 +207,16 @@ public:
     constexpr static bool has_null_maps = true;
 
     FullMergeJoinCursor() = default;
-    explicit FullMergeJoinCursor(VectorWithMemoryTracking<size_t> key_indices_, bool is_asof_);
+    explicit FullMergeJoinCursor(std::vector<size_t> key_indices_, bool is_asof_);
 
     FullMergeJoinCursor(FullMergeJoinCursor &&) = default;
     FullMergeJoinCursor & operator=(FullMergeJoinCursor &&) noexcept = default;
     FullMergeJoinCursor(const FullMergeJoinCursor &) = delete;
     FullMergeJoinCursor & operator=(const FullMergeJoinCursor &) = delete;
 
-    [[nodiscard]] bool fullyCompleted() const;
+    bool fullyCompleted() const;
     void setCompleted() { received_all_blocks = true; }
-    [[nodiscard]] const Chunk & getCurrent() const;
+    const Chunk & getCurrent() const;
     void setChunk(Chunk && chunk);
 
     absl::InlinedVector<ColumnPtr, 4> sort_columns;
@@ -228,20 +226,20 @@ public:
     size_t pos = 0;
     size_t rows = 0;
 
-    [[nodiscard]] bool empty() const { return rows == 0; }
-    [[nodiscard]] size_t getRow() const { return pos; }
-    [[nodiscard]] bool isLast() const { return pos + 1 >= rows; }
-    [[nodiscard]] bool isValid() const { return pos < rows; }
+    bool empty() const { return rows == 0; }
+    size_t getRow() const { return pos; }
+    bool isLast() const { return pos + 1 >= rows; }
+    bool isValid() const { return pos < rows; }
     void next() { ++pos; }
-    [[nodiscard]] size_t rowsLeft() const { return rows - pos; }
+    size_t rowsLeft() const { return rows - pos; }
 
-    [[nodiscard]] const IColumn & getSortColumn(size_t index) const { return *sort_columns[index]; }
+    const IColumn & getSortColumn(size_t index) const { return *sort_columns[index]; }
 
 private:
     Chunk current_chunk;
     bool received_all_blocks = false;
 
-    VectorWithMemoryTracking<size_t> key_indices;
+    std::vector<size_t> key_indices;
     bool is_asof = false;
 };
 
@@ -261,7 +259,7 @@ public:
 
     MergeJoinAlgorithm(JoinPtr join_ptr, SharedHeaders & input_headers, size_t max_block_size_);
 
-    [[nodiscard]] const char * getName() const override { return "MergeJoinAlgorithm"; }
+    const char * getName() const override { return "MergeJoinAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
@@ -269,10 +267,10 @@ public:
     void setAsofInequality(ASOFJoinInequality asof_inequality_);
 
     void logElapsed(double seconds);
-    [[nodiscard]] MergedStats getMergedStats() const override;
+    MergedStats getMergedStats() const override;
 
     /// Participation counters for EXPLAIN ANALYZE -- total and matched rows per side
-    [[nodiscard]] JoinAnalysisCounters getJoinAnalysisCounters() const;
+    JoinAnalysisCounters getJoinAnalysisCounters() const;
 
 private:
     std::optional<Status> handleAnyJoinState();
@@ -285,19 +283,19 @@ private:
     Status asofJoin();
 
     void getEmptyResultColumns(MutableColumns & result_cols, size_t pos) const;
-    [[nodiscard]] MutableColumns getEmptyResultColumns() const;
-    [[nodiscard]] Columns getEmptyResultColumns(size_t pos) const;
+    MutableColumns getEmptyResultColumns() const;
+    Columns getEmptyResultColumns(size_t pos) const;
     /// Types of the columns produced by getEmptyResultColumns() (left header ++ right header),
     /// used to fill non-joined rows with the proper type default instead of a raw zero.
-    [[nodiscard]] DataTypes getOutputTypes() const;
+    DataTypes getOutputTypes() const;
 
     Chunk createBlockWithDefaults(size_t source_num);
-    [[nodiscard]] Chunk createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows) const;
+    Chunk createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows) const;
 
     SharedHeaders input_headers;
 
     /// For `USING` join key columns should have values from right side instead of defaults
-    UnorderedMapWithMemoryTracking<size_t, size_t> left_to_right_key_remap;
+    std::unordered_map<size_t, size_t> left_to_right_key_remap;
 
     std::array<FullMergeJoinCursor, 2> cursors;
     ASOFJoinInequality asof_inequality = ASOFJoinInequality::None;

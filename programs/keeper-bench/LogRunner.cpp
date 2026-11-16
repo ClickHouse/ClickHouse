@@ -74,67 +74,67 @@ struct ZooKeeperRequestBlock
         , version_idx(block.getPositionByName("version"))
     {}
 
-    [[nodiscard]] size_t rows() const
+    size_t rows() const
     {
         return block.rows();
     }
 
-    [[nodiscard]] UInt64 getExecutorId(size_t row) const
+    UInt64 getExecutorId(size_t row) const
     {
         return getSessionId(row);
     }
 
-    [[nodiscard]] DB::DateTime64 getRequestEventTime(size_t row) const
+    DB::DateTime64 getRequestEventTime(size_t row) const
     {
         return getField(request_event_time_idx, row).safeGet<DB::DateTime64>();
     }
 
-    [[nodiscard]] DB::DateTime64 getResponseEventTime(size_t row) const
+    DB::DateTime64 getResponseEventTime(size_t row) const
     {
         return getField(response_event_time_idx, row).safeGet<DB::DateTime64>();
     }
 
-    [[nodiscard]] Int64 getSessionId(size_t row) const
+    Int64 getSessionId(size_t row) const
     {
         return getField(session_id_idx, row).safeGet<Int64>();
     }
 
-    [[nodiscard]] bool hasWatch(size_t row) const
+    bool hasWatch(size_t row) const
     {
         return getField(has_watch_idx, row).safeGet<UInt8>();
     }
 
-    [[nodiscard]] Coordination::OpNum getOpNum(size_t row) const
+    Coordination::OpNum getOpNum(size_t row) const
     {
         return static_cast<Coordination::OpNum>(getField(op_num_idx, row).safeGet<Int64>());
     }
 
-    [[nodiscard]] bool isEphemeral(size_t row) const
+    bool isEphemeral(size_t row) const
     {
         return getField(is_ephemeral_idx, row).safeGet<UInt8>();
     }
 
-    [[nodiscard]] bool isSequential(size_t row) const
+    bool isSequential(size_t row) const
     {
         return getField(is_sequential_idx, row).safeGet<UInt8>();
     }
 
-    [[nodiscard]] std::string getPath(size_t row) const
+    std::string getPath(size_t row) const
     {
         return getField(path_idx, row).safeGet<std::string>();
     }
 
-    [[nodiscard]] std::string getData(size_t row) const
+    std::string getData(size_t row) const
     {
         return getField(data_idx, row).safeGet<std::string>();
     }
 
-    [[nodiscard]] UInt64 getRequestsSize(size_t row) const
+    UInt64 getRequestsSize(size_t row) const
     {
         return getField(requests_size_idx, row).safeGet<UInt64>();
     }
 
-    [[nodiscard]] std::optional<Int32> getVersion(size_t row) const
+    std::optional<Int32> getVersion(size_t row) const
     {
         auto field = getField(version_idx, row);
         if (field.isNull())
@@ -142,7 +142,7 @@ struct ZooKeeperRequestBlock
         return static_cast<Int32>(field.safeGet<Int64>());
     }
 
-    [[nodiscard]] std::optional<Coordination::Error> getError(size_t row) const
+    std::optional<Coordination::Error> getError(size_t row) const
     {
         auto field = getField(error_idx, row);
         if (field.isNull())
@@ -151,7 +151,7 @@ struct ZooKeeperRequestBlock
         return static_cast<Coordination::Error>(field.safeGet<Int64>());
     }
 private:
-    [[nodiscard]] DB::Field getField(size_t position, size_t row) const
+    DB::Field getField(size_t position, size_t row) const
     {
         DB::Field field;
         block.getByPosition(position).column->get(row, field);
@@ -560,7 +560,7 @@ struct SetupNodeCollector
         static Coordination::ACLs default_acls = getDefaultACLs();
 
         auto multi_create_request = std::make_shared<Coordination::ZooKeeperMultiRequest>(create_ops, default_acls);
-        initial_storage->preprocessRequest(multi_create_request, 1, 0, next_zxid, /* check_acl = */ false, /*log_idx=*/0);
+        initial_storage->preprocessRequest(multi_create_request, 1, 0, next_zxid, /* check_acl = */ false, /*digest=*/std::nullopt, /*log_idx=*/0);
         auto responses = initial_storage->processRequest(multi_create_request, 1, next_zxid);
         if (responses.size() > 1 || responses[0].response->error != Coordination::Error::ZOK)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid response after trying to create a node {}", responses[0].response->error);

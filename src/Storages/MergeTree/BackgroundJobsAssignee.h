@@ -39,7 +39,7 @@ public:
     virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
     virtual bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) = 0;
     virtual bool scheduleStreamingJob(BackgroundJobsAssignee & /*assignee*/) { return false; }
-    [[nodiscard]] virtual Int32 getBiasBackoffSeconds() const { return 0; }
+    virtual Int32 getBiasBackoffSeconds() const { return 0; }
 
     virtual ~IBackgroundOperation() = default;
 };

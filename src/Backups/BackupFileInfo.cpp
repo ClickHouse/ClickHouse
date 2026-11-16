@@ -77,10 +77,11 @@ namespace
     }
 
     /// We store entries' file names in the backup without leading slashes.
-    void removeLeadingSlash(String & path)
+    String removeLeadingSlash(const String & path)
     {
         if (path.starts_with('/'))
-            path.erase(0, 1);
+            return path.substr(1);
+        return path;
     }
 }
 
@@ -106,27 +107,21 @@ String BackupFileInfo::describe() const
 
 
 BackupFileInfo buildFileInfoForBackupEntry(
-    String file_name,
+    const String & file_name,
     const BackupEntryPtr & backup_entry,
     const BackupPtr & base_backup,
     const ReadSettings & read_settings,
     LoggerPtr log)
 {
-    /// The name is taken by value so that the caller can hand over its own copy: a backup of millions of
-    /// files holds gigabytes of path characters, and one copy of them is enough.
-    BackupFileInfo info;
-    info.file_name = std::move(file_name);
-    removeLeadingSlash(info.file_name);
+    auto adjusted_path = removeLeadingSlash(file_name);
 
-    /// The adjusted path is needed throughout this function - reference the copy stored in `info` instead
-    /// of keeping a second one alive for the whole call.
-    const String & adjusted_path = info.file_name;
+    BackupFileInfo info;
+    info.file_name = adjusted_path;
 
     /// If it's a "reference" just set the target to a concrete file
     if (backup_entry->isReference())
     {
-        info.reference_target = backup_entry->getReferenceTarget();
-        removeLeadingSlash(info.reference_target);
+        info.reference_target = removeLeadingSlash(backup_entry->getReferenceTarget());
         return info;
     }
 
@@ -226,29 +221,14 @@ BackupFileInfo buildFileInfoForBackupEntry(
     return info;
 }
 
-BackupFileInfosAndEntries buildFileInfosForBackupEntries(BackupEntries && backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element)
+BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element)
 {
     LoggerPtr log = getLogger("FileInfosFromBackupEntries");
     LOG_TRACE(log, "Building file infos for backup entries");
     auto timer = CurrentThread::getProfileEvents().timer(ProfileEvents::BackupPreparingFileInfosMicroseconds);
 
-    const size_t num_entries = backup_entries.size();
-
-    /// Take the names and the entries apart and release the pairs. The names are consumed here, one
-    /// into each file info, so they must not outlive this function; the entries go on to the writing
-    /// phase, which holds a pointer per entry instead of a 40-byte pair slot it can no longer read.
-    Strings names;
-    names.reserve(num_entries);
-    BackupFileInfosAndEntries res;
-    res.entries.reserve(num_entries);
-    for (auto & [name, entry] : backup_entries)
-    {
-        names.push_back(std::move(name));
-        res.entries.push_back(std::move(entry));
-    }
-    BackupEntries{}.swap(backup_entries);
-
-    res.file_infos.resize(num_entries);
+    BackupFileInfos infos;
+    infos.resize(backup_entries.size());
 
     /// A task per entry, so that a slow one holds up nothing, bounded so that millions of them do not keep a task
     /// each: `TaskTracker::add` admits one while fewer than this are in flight, and rethrows the first failure.
@@ -266,9 +246,9 @@ BackupFileInfosAndEntries buildFileInfosForBackupEntries(BackupEntries && backup
 
     try
     {
-        for (size_t i = 0; i != num_entries; ++i)
+        for (size_t i = 0; i != backup_entries.size(); ++i)
         {
-            task_tracker.add([&names, &res, &read_settings, &base_backup, &process_list_element, &failed, i, log,
+            task_tracker.add([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, &failed, i, log,
                               current_component = Coordination::getCurrentComponent()]
             {
                 if (failed)
@@ -276,15 +256,15 @@ BackupFileInfosAndEntries buildFileInfosForBackupEntries(BackupEntries && backup
 
                 auto component_guard = Coordination::setCurrentComponent(current_component);
 
-                const auto & entry = res.entries[i];
+                const auto & name = backup_entries[i].first;
+                const auto & entry = backup_entries[i].second;
 
                 try
                 {
                     if (process_list_element)
                         process_list_element->checkTimeLimit();
 
-                    /// The name is moved out: from here on it lives in `res.file_infos[i]`, indexed the same way.
-                    res.file_infos[i] = buildFileInfoForBackupEntry(std::move(names[i]), entry, base_backup, read_settings, log);
+                    infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
                 }
                 catch (...)
                 {
@@ -305,7 +285,7 @@ BackupFileInfosAndEntries buildFileInfosForBackupEntries(BackupEntries && backup
         throw;
     }
 
-    return res;
+    return infos;
 }
 
 }

@@ -195,7 +195,7 @@ SELECT ascii('234')
 
 ## base32Decode {#base32Decode}
 
-Introduit dans : v25.6.0
+Introduit dans : v25.6.0
 
 Décode une chaîne [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6) (RFC 4648).
 Si la chaîne n’est pas encodée en Base32 correctement, une exception est levée.
@@ -205,8 +205,6 @@ Si la chaîne n’est pas encodée en Base32 correctement, une exception est lev
 ```sql
 base32Decode(encoded)
 ```
-
-**Alias** : `from_base32`
 
 **Arguments**
 
@@ -232,7 +230,7 @@ SELECT base32Decode('IVXGG33EMVSA====');
 
 ## base32Encode {#base32Encode}
 
-Introduit dans : v25.6.0
+Introduit dans : v25.6.0
 
 Encode une chaîne à l’aide de [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6).
 
@@ -241,8 +239,6 @@ Encode une chaîne à l’aide de [Base32](https://datatracker.ietf.org/doc/html
 ```sql
 base32Encode(plaintext)
 ```
-
-**Alias** : `to_base32`
 
 **Arguments**
 
@@ -416,7 +412,7 @@ SELECT base64Encode('clickhouse')
 
 ## base64URLDecode {#base64URLDecode}
 
-Introduit dans : v24.6.0
+Introduit dans : v24.6.0
 
 Décode une chaîne à partir d’une représentation [Base64](https://en.wikipedia.org/wiki/Base64) en utilisant un alphabet compatible avec les URL, conformément à la RFC 4648.
 L’alphabet standard (`+` et `/`) est également accepté lors du décodage.
@@ -428,8 +424,6 @@ Lève une exception en cas d’erreur.
 ```sql
 base64URLDecode(encoded)
 ```
-
-**Alias** : `from_base64url`
 
 **Arguments**
 
@@ -455,7 +449,7 @@ SELECT base64URLDecode('aHR0cHM6Ly9jbGlja2hvdXNlLmNvbQ')
 
 ## base64URLEncode {#base64URLEncode}
 
-Introduit dans : v18.16.0
+Introduit dans : v18.16.0
 
 Encode une chaîne à l’aide de la représentation [Base64](https://datatracker.ietf.org/doc/html/rfc4648#section-4) (RFC 4648) en utilisant un alphabet compatible avec les URL.
 
@@ -464,8 +458,6 @@ Encode une chaîne à l’aide de la représentation [Base64](https://datatracke
 ```sql
 base64URLEncode(plaintext)
 ```
-
-**Alias** : `to_base64url`
 
 **Arguments**
 
@@ -1096,7 +1088,7 @@ SELECT editDistance('clickhouse', 'mouse')
 
 ## editDistanceUTF8 {#editDistanceUTF8}
 
-Introduit dans : v24.6.0
+Disponible depuis : v24.6.0
 
 Calcule la [distance d’édition](https://en.wikipedia.org/wiki/Edit_distance) entre deux chaînes UTF8.
 
@@ -1106,7 +1098,7 @@ Calcule la [distance d’édition](https://en.wikipedia.org/wiki/Edit_distance) 
 editDistanceUTF8(s1, s2)
 ```
 
-**Alias** : `levenshteinDistanceUTF8`, `levenshtein_distance`
+**Alias** : `levenshteinDistanceUTF8`
 
 **Arguments**
 
@@ -1169,7 +1161,7 @@ SELECT
 
 ## endsWith {#endsWith}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Indique si une chaîne se termine par le suffixe fourni.
 
@@ -1178,8 +1170,6 @@ Indique si une chaîne se termine par le suffixe fourni.
 ```sql
 endsWith(s, suffix)
 ```
-
-**Alias** : `ends_with`
 
 **Arguments**
 
@@ -2884,7 +2874,7 @@ SELECT sparseGramsUTF8('алиса', 3)
 
 ## startsWith {#startsWith}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Vérifie si une chaîne commence par la chaîne indiquée.
 
@@ -2893,8 +2883,6 @@ Vérifie si une chaîne commence par la chaîne indiquée.
 ```sql
 startsWith(s, prefix)
 ```
-
-**Alias** : `starts_with`
 
 **Arguments**
 

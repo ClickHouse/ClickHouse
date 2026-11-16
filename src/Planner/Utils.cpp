@@ -33,6 +33,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
+#include <WindowFunctions/IWindowFunction.h>
+
 #include <Analyzer/Utils.h>
 #include <Analyzer/traverseQueryTree.h>
 #include <Analyzer/ConstantNode.h>
@@ -47,6 +49,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
+#include <Analyzer/WindowNode.h>
 
 #include <Core/Settings.h>
 
@@ -57,7 +60,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -151,7 +153,7 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
 }
 
 void addConvertingToCommonHeaderActionsIfNeeded(
-    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> & query_plans,
+    std::vector<std::unique_ptr<QueryPlan>> & query_plans,
     const Block & union_common_header,
     SharedHeaders & query_plans_headers,
     ContextPtr context)
@@ -336,8 +338,7 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
     if (!options.ignore_limits)
     {
         limits = getLimitsForStorage(settings, options);
-        if (context.getClientInfo().distributed_depth > 0)
-            leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
+        leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
     }
 
     return {limits, leaf_limits};
@@ -575,59 +576,6 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
     return select_query_info;
 }
 
-NameSet getColumnsSelectableByTrivialQuery(
-    const StoragePtr & storage,
-    const StorageID & storage_id,
-    const ColumnsDescription & columns,
-    const ContextPtr & query_context)
-{
-    auto access = query_context->getAccess();
-    /// A grant on the exact name of a subcolumn (e.g. ``GRANT SELECT(`json.a`)``) takes precedence over its column
-    /// in the `SELECT` check (see `ColumnsDescription::getColumnNamesForSelectAccessCheck`), so such a subcolumn is
-    /// readable even without a grant on its column, and it is enough for a trivial query too.
-    /// Probe the raw rights so that probing does not pollute `used_privileges` of the query log.
-    const auto access_rights = access->getAccessRightsWithImplicit();
-    const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
-
-    /// Through an `Alias` the exact subcolumn grant can also be on a table of its chain, while the alias grants
-    /// its column or the whole table, so candidates are collected from every table of the chain.
-    std::vector<std::pair<String, String>> tables_to_probe{{storage_id.database_name, storage_id.table_name}};
-    if (alias)
-    {
-        auto chain = alias->getTargetChain();
-        tables_to_probe.insert(tables_to_probe.end(), chain.begin(), chain.end());
-    }
-
-    Names candidates;
-    NameSet seen;
-    for (const auto & column : columns)
-    {
-        if (seen.insert(column.name).second)
-            candidates.push_back(column.name);
-        for (const auto & [database, table] : tables_to_probe)
-            for (auto & subcolumn : columns.getSubcolumnsWithExplicitGrant(
-                     *access_rights, AccessType::SELECT, database, table, column.name))
-                if (seen.insert(subcolumn).second)
-                    candidates.push_back(std::move(subcolumn));
-    }
-
-    /// A candidate must be readable on the table itself, checked like a query that reads it, and an `Alias` also requires
-    /// it to be readable on every table of its chain, decided separately on each hop like `StorageAlias::read` does.
-    NameSet selectable;
-    for (const auto & name : candidates)
-        if (access->isGranted(
-                AccessType::SELECT,
-                storage_id.database_name,
-                storage_id.table_name,
-                columns.getColumnNamesForSelectAccessCheck({name}, query_context, storage_id).front()))
-            selectable.insert(name);
-
-    if (alias && !selectable.empty())
-        selectable = alias->filterColumnsSelectableThroughChain(query_context, columns, Names(selectable.begin(), selectable.end()));
-
-    return selectable;
-}
-
 NameSet checkAccessRights(
     const StoragePtr & storage,
     const StorageID & storage_id,
@@ -639,16 +587,30 @@ NameSet checkAccessRights(
     if (typeid_cast<const StorageDummy *>(storage.get()))
         return {};
 
-    if (isInsertedDataOfTableFunction(storage, storage_id, query_context))
-        return {};
-
     if (column_names.empty())
     {
+        NameSet accessible_columns;
         /** For a trivial queries like "SELECT count() FROM table", "SELECT 1 FROM table" access is granted if at least
           * one table column is accessible.
           */
-        auto accessible_columns = getColumnsSelectableByTrivialQuery(
-            storage, storage_id, storage_snapshot->metadata->getColumns(), query_context);
+        auto access = query_context->getAccess();
+        const auto * alias = storage->as<StorageAlias>();
+        NameSet chain_granted;
+        if (alias)
+        {
+            Names all_columns;
+            all_columns.reserve(storage_snapshot->metadata->getColumns().size());
+            for (const auto & column : storage_snapshot->metadata->getColumns())
+                all_columns.push_back(column.name);
+            chain_granted = alias->filterColumnsGrantedThroughChain(query_context, AccessType::SELECT, all_columns);
+        }
+        for (const auto & column : storage_snapshot->metadata->getColumns())
+        {
+            /// An `Alias` also requires access to the selected column of its target table.
+            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
+                && (!alias || chain_granted.contains(column.name)))
+                accessible_columns.insert(column.name);
+        }
 
         if (accessible_columns.empty())
         {
@@ -664,16 +626,7 @@ NameSet checkAccessRights(
     // `storage_id.hasDatabase()` can return false only on the initiator node.
     // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
     if (storage_id.hasDatabase())
-    {
-        /// A query referencing a subcolumn (e.g. `t.a` for a `Tuple` column `t`) resolves to
-        /// the subcolumn name at the analyzer stage. Column-level grants, however, are stored
-        /// and checked against top-level storage column names only. Map each subcolumn name to
-        /// its parent storage column so that `GRANT SELECT(t)` implicitly covers `t.a`, `t.b`, etc.
-        query_context->checkAccess(
-            AccessType::SELECT,
-            storage_id,
-            storage_snapshot->getColumnNamesForSelectAccessCheck(column_names, query_context, storage_id));
-    }
+        query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
 
     return {};
 }
@@ -897,6 +850,22 @@ void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets)
             }
         }
     }
+}
+
+std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node)
+{
+    if (!node.isWindowFunction())
+        return {};
+    auto & window_node = node.getWindowNode()->as<WindowNode &>();
+    const auto & window_frame = window_node.getWindowFrame();
+    if (!window_frame.is_default)
+        return window_frame;
+    auto aggregate_function = node.getAggregateFunction();
+    if (const auto * win_func = dynamic_cast<const IWindowFunction *>(aggregate_function.get()))
+    {
+        return win_func->getDefaultFrame();
+    }
+    return {};
 }
 
 ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate)

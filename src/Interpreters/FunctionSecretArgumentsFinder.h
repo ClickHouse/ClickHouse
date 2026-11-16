@@ -28,9 +28,8 @@ public:
 
     void markSecretArgument(size_t index, bool argument_is_named = false);
 
-    /// Hides every argument, for a shape whose valid slots cannot be established. `keep_identifier_keys` keeps the
-    /// identifier key of a `key = value` argument visible.
-    void maskEveryArgument(bool keep_identifier_keys = false);
+    /// Hides every argument, for a shape whose valid slots cannot be established.
+    void maskEveryArgument();
 
     /// Records the nested map `name(..)` (e.g. `headers(..)`), written at any position, so its values are
     /// hidden with the keys kept, except the values of `visible_keys`.
@@ -64,7 +63,7 @@ public:
     static bool hasOnlyLiteralArguments(const AbstractFunction & function);
 
     /// Whether a specified argument can be the name of a named collection?
-    [[nodiscard]] bool isNamedCollectionName(size_t arg_idx) const;
+    bool isNamedCollectionName(size_t arg_idx) const;
 
 private:
     void findPositionalAndNamedSecretArguments(const SecretArgumentsSpec & spec);

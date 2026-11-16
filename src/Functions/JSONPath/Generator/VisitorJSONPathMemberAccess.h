@@ -13,7 +13,7 @@ public:
     explicit VisitorJSONPathMemberAccess(ASTPtr member_access_ptr_)
         : member_access_ptr(member_access_ptr_->as<ASTJSONPathMemberAccess>()) { }
 
-    [[nodiscard]] const char * getName() const override { return "VisitorJSONPathMemberAccess"; }
+    const char * getName() const override { return "VisitorJSONPathMemberAccess"; }
 
     VisitorStatus apply(typename JSONParser::Element & element) const override
     {

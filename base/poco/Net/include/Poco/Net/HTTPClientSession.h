@@ -20,7 +20,6 @@
 
 #include <istream>
 #include <ostream>
-#include "Poco/Net/HTTPResponseParser.h"
 #include "Poco/Net/HTTPSession.h"
 #include "Poco/Net/HTTPSessionFactory.h"
 #include "Poco/Net/Net.h"
@@ -301,11 +300,6 @@ namespace Net
         void setRequestBodyComplete(bool value) { _requestBodyComplete = value; }
         /// Reports the completion of a request body written by the caller of `sendRequestHeaders`.
 
-        HTTPResponseParser & responseParser() { return _responseParser; }
-        /// The parser of the response to the current request, reset with the default limits by
-        /// `sendRequest` and `sendRequestHeaders`. The response reader continues it until the
-        /// final response header is complete.
-
         bool isResponseBodyComplete();
         /// Whether the body of the last response was read to the end. A connection with an
         /// unread response body must not be reused: the rest of the body would be taken for the
@@ -452,7 +446,6 @@ namespace Net
         bool _expectResponseBody;
         bool _responseReceived;
         bool _requestBodyComplete = true;
-        HTTPResponseParser _responseParser;
         bool _responseBodyComplete = true;
         Poco::SharedPtr<std::ostream> _pRequestStream;
         Poco::SharedPtr<std::istream> _pResponseStream;

@@ -98,7 +98,7 @@ struct PatternInfo
 {
     std::vector<PatternData> patterns;
 
-    [[nodiscard]] bool canUseMultiSearchAny() const
+    bool canUseMultiSearchAny() const
     {
         if (patterns.empty())
             return false;
@@ -131,7 +131,7 @@ struct PatternInfo
             && patterns.size() <= std::numeric_limits<UInt8>::max();
     }
 
-    [[nodiscard]] bool needsCaseInsensitive() const
+    bool needsCaseInsensitive() const
     {
         for (const auto & p : patterns)
             if (p.is_case_insensitive)
@@ -139,7 +139,7 @@ struct PatternInfo
         return false;
     }
 
-    [[nodiscard]] Array getSubstrings() const
+    Array getSubstrings() const
     {
         Array result;
         for (const auto & p : patterns)
@@ -147,7 +147,7 @@ struct PatternInfo
         return result;
     }
 
-    [[nodiscard]] Array getRegexps() const
+    Array getRegexps() const
     {
         Array result;
         for (const auto & p : patterns)
@@ -157,7 +157,7 @@ struct PatternInfo
 
     /// Returns true if all per-pattern lengths and the total length fit within the hyperscan
     /// regexp size limits. A limit value of 0 means "unlimited".
-    [[nodiscard]] bool fitsHyperscanLimits(size_t max_length, size_t max_total_length) const
+    bool fitsHyperscanLimits(size_t max_length, size_t max_total_length) const
     {
         if (max_length == 0 && max_total_length == 0)
             return true;
@@ -176,7 +176,7 @@ struct PatternInfo
     /// guard (`SlowWithHyperscanChecker`). Used to pre-check `reject_expensive_hyperscan_regexps`
     /// so the rewrite cannot turn a previously-working query into a `HYPERSCAN_CANNOT_SCAN_TEXT`
     /// failure: if any pattern is "slow", we fall back to plain `match` instead of `multiMatchAny`.
-    [[nodiscard]] bool hasExpensiveRegexp() const
+    bool hasExpensiveRegexp() const
     {
         SlowWithHyperscanChecker checker;
         for (const auto & p : patterns)
@@ -192,7 +192,7 @@ struct PatternInfo
     /// when any pattern is not valid UTF-8 we must not emit `multiMatchAny`; the combined-`match`
     /// fallback (also RE2) preserves behavior. Only the regexp path is affected: pure-substring
     /// patterns go to the byte-oriented `multiSearchAny*` path, which has no such restriction.
-    [[nodiscard]] bool allRegexpsValidUTF8() const
+    bool allRegexpsValidUTF8() const
     {
         for (const auto & p : patterns)
             if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(p.regexp.data()), p.regexp.size()))
@@ -212,7 +212,7 @@ struct PatternInfo
     /// restricted grammar (literals, `.`, `.*`, escaped metacharacters, optional `(?i)`) that
     /// Vectorscan always accepts, so they stay eligible for `multiMatchAny` (subject only to the
     /// `allRegexpsValidUTF8` byte check).
-    [[nodiscard]] bool hasRawRegexp() const
+    bool hasRawRegexp() const
     {
         for (const auto & p : patterns)
             if (p.is_raw_regexp)
@@ -227,7 +227,7 @@ struct PatternInfo
     /// the full length, so the truncated `multiMatchAny` pattern matches a *broader* set than the original.
     /// When any pattern has an embedded NUL we therefore keep the originals. The byte-oriented
     /// `multiSearchAny*` substring path is length-aware and preserving, so it needs no such guard.
-    [[nodiscard]] bool allRegexpsHaveNoEmbeddedNul() const
+    bool allRegexpsHaveNoEmbeddedNul() const
     {
         for (const auto & p : patterns)
             if (p.regexp.contains('\0'))
@@ -239,7 +239,7 @@ struct PatternInfo
     /// end in an unescaped `%`, and `multiMatchAny` runs it through Vectorscan, whose `$` also matches before
     /// a final newline (PCRE), while the original `like`/`ilike` uses RE2, where `$` is the absolute end. So
     /// rewriting such a chain matches a broader set: `LIKE 'a'` would also match `'a\n'`.
-    [[nodiscard]] bool allRegexpsHaveNoEndAnchor() const
+    bool allRegexpsHaveNoEndAnchor() const
     {
         for (const auto & p : patterns)
             if (p.may_have_end_anchor)

@@ -52,7 +52,7 @@ public:
         has_window_functions = true;
     }
 
-    [[nodiscard]] bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
     {
         if (only_check && has_window_functions)
             return false;
@@ -61,7 +61,7 @@ public:
         return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
     }
 
-    [[nodiscard]] bool hasWindowFunctions() const
+    bool hasWindowFunctions() const
     {
         return has_window_functions;
     }

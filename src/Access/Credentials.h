@@ -30,9 +30,9 @@ public:
 
     virtual ~Credentials() = default;
 
-    [[nodiscard]] const String & getUserName() const;
-    [[nodiscard]] bool isReady() const;
-    [[nodiscard]] virtual bool allowInteractiveBasicAuthenticationInTheBrowser() const { return false; }
+    const String & getUserName() const;
+    bool isReady() const;
+    virtual bool allowInteractiveBasicAuthenticationInTheBrowser() const { return false; }
 
 protected:
     [[noreturn]] static void throwNotReady();
@@ -59,7 +59,7 @@ class SSLCertificateCredentials
 {
 public:
     explicit SSLCertificateCredentials(const String & user_name_, X509Certificate::Subjects && subjects_);
-    [[nodiscard]] const X509Certificate::Subjects & getSSLCertificateSubjects() const;
+    const X509Certificate::Subjects & getSSLCertificateSubjects() const;
 
 private:
     X509Certificate::Subjects certificate_subjects;
@@ -76,8 +76,8 @@ public:
 
     void setUserName(const String & user_name_);
     void setPassword(const String & password_);
-    [[nodiscard]] const String & getPassword() const;
-    [[nodiscard]] bool allowInteractiveBasicAuthenticationInTheBrowser() const override { return allow_interactive_basic_authentication_in_the_browser; }
+    const String & getPassword() const;
+    bool allowInteractiveBasicAuthenticationInTheBrowser() const override { return allow_interactive_basic_authentication_in_the_browser; }
     void enableInteractiveBasicAuthenticationInTheBrowser() { allow_interactive_basic_authentication_in_the_browser = true; }
 
 private:
@@ -94,8 +94,8 @@ public:
         is_ready = true;
     }
 
-    [[nodiscard]] const String & getScramble() const { return scramble; }
-    [[nodiscard]] const String & getScrambledPassword() const { return scrambled_password; }
+    const String & getScramble() const { return scramble; }
+    const String & getScrambledPassword() const { return scrambled_password; }
 
 private:
     String scramble;
@@ -111,17 +111,17 @@ public:
         is_ready = true;
     }
 
-    [[nodiscard]] const String& getClientProof() const
+    const String& getClientProof() const
     {
         return client_proof;
     }
 
-    [[nodiscard]] const String& getAuthMessage() const
+    const String& getAuthMessage() const
     {
         return auth_message;
     }
 
-    [[nodiscard]] int getIterations() const
+    int getIterations() const
     {
         return iterations;
     }
@@ -147,7 +147,7 @@ public:
         is_ready = true;
     }
 
-    [[nodiscard]] const String & getSignature() const
+    const String & getSignature() const
     {
         if (!isReady())
         {
@@ -156,7 +156,7 @@ public:
         return signature;
     }
 
-    [[nodiscard]] const String & getOriginal() const
+    const String & getOriginal() const
     {
         if (!isReady())
         {

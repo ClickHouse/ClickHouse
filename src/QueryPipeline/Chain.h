@@ -31,12 +31,12 @@ public:
     explicit Chain(ProcessorPtr processor);
     explicit Chain(Processors processors);
 
-    [[nodiscard]] bool empty() const { return processors.empty(); }
+    bool empty() const { return processors.empty(); }
 
-    [[nodiscard]] size_t getNumThreads() const { return num_threads; }
+    size_t getNumThreads() const { return num_threads; }
     void setNumThreads(size_t num_threads_) { num_threads = num_threads_; }
 
-    [[nodiscard]] bool getConcurrencyControl() const { return concurrency_control; }
+    bool getConcurrencyControl() const { return concurrency_control; }
     void setConcurrencyControl(bool concurrency_control_) { concurrency_control = concurrency_control_; }
 
     void addSource(ProcessorPtr processor);
@@ -47,15 +47,15 @@ public:
     IProcessor & getSource();
     IProcessor & getSink();
 
-    [[nodiscard]] InputPort & getInputPort() const;
-    [[nodiscard]] OutputPort & getOutputPort() const;
+    InputPort & getInputPort() const;
+    OutputPort & getOutputPort() const;
 
-    [[nodiscard]] const Block & getInputHeader() const;
-    [[nodiscard]] const SharedHeader & getInputSharedHeader() const;
-    [[nodiscard]] const Block & getOutputHeader() const;
-    [[nodiscard]] const SharedHeader & getOutputSharedHeader() const;
+    const Block & getInputHeader() const;
+    const SharedHeader & getInputSharedHeader() const;
+    const Block & getOutputHeader() const;
+    const SharedHeader & getOutputSharedHeader() const;
 
-    [[nodiscard]] const Processors & getProcessors() const { return processors; }
+    const Processors & getProcessors() const { return processors; }
     Processors & getProcessors() { return processors; }
 
     void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }

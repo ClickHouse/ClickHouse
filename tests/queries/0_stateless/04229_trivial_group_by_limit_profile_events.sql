@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 
 -- Verifies that `OptimizeTrivialGroupByLimitPass` actually does work:
 -- when it fires, the aggregator's `OverflowAny` `ProfileEvent` is incremented

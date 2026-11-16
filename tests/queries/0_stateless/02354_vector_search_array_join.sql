@@ -11,6 +11,7 @@
 
 -- The vector-search rewrite is analyzer-only. Pin this so the assertions cannot pass
 -- through an old-analyzer variant where the rewrite never engages.
+SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_04813;

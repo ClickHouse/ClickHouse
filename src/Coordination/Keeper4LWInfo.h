@@ -45,7 +45,7 @@ struct Keeper4LWInfo
     uint64_t cnt_election_time;
     std::optional<uint64_t> last_leader_election_time_ms;
 
-    [[nodiscard]] String getRole() const
+    String getRole() const
     {
         if (is_standalone)
             return "standalone";

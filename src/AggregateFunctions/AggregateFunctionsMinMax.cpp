@@ -1,7 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/SingleValueData.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
@@ -51,7 +50,7 @@ public:
         forEachInTypeTree(*this->result_type, check_not_dynamic_or_variant);
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         if constexpr (isMin)
             return "min";
@@ -136,7 +135,7 @@ public:
         this->data(place).write(buf, *serialization);
     }
 
-    [[nodiscard]] std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
     {
         return singleValueSerializedSizeBound<Data>();
     }
@@ -157,33 +156,15 @@ public:
         this->data(place).read(buf, *serialization, this->result_type, arena);
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
+    bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         this->data(place).insertResultInto(to, this->result_type);
     }
 
-    /// The merged value is exactly the extremum of the partial values (a group's state is never
-    /// empty in GROUP BY: the group exists because at least one row was added to it). This holds
-    /// only for types with a total order that the merge respects: floating point is excluded,
-    /// because the merge skips `NaN` (partials `NaN` and `1` of `max` merge to `1`, which is not
-    /// the maximum of the two under any `NaN` placement), and so are compound types, which may
-    /// contain floating-point elements.
-    [[nodiscard]] MergedValueBound getMergedValueBound() const override
-    {
-        const auto type = removeLowCardinality(this->result_type);
-        const WhichDataType which(type);
-        if (which.isFloat() || !(type->isValueRepresentedByNumber() || which.isStringOrFixedString()))
-            return MergedValueBound::Unknown;
-        return isMin ? MergedValueBound::Minimum : MergedValueBound::Maximum;
-    }
-
-    /// Floating point is excluded: a repeated `NaN` replaces another `NaN` kept as the result.
-    [[nodiscard]] bool ignoresRepeatedValues() const override { return !WhichDataType(removeLowCardinality(this->result_type)).isFloat(); }
-
 #if USE_EMBEDDED_COMPILER
-    [[nodiscard]] bool isCompilable() const override
+    bool isCompilable() const override
     {
         if constexpr (!Data::is_compilable)
             return false;
@@ -289,7 +270,7 @@ SELECT department, min(revenue) FROM sales GROUP BY department ORDER BY departme
     FunctionDocumentation::Category min_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation min_documentation = {min_description, min_syntax, min_arguments, {}, min_returned_value, min_examples, min_introduced_in, min_category};
 
-    factory.registerFunction("min", {createAggregateFunctionMinMax<true>, min_documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("min", {createAggregateFunctionMinMax<true>, min_documentation}, AggregateFunctionFactory::Case::Insensitive);
     /// For boolean arguments, the minimum is the logical AND.
     factory.registerAlias("bool_and", "min", AggregateFunctionFactory::Case::Insensitive);
 
@@ -351,7 +332,7 @@ SELECT greatest(a, b) FROM values('a Int32, b Int32', (1, 2), (5, 3));
     FunctionDocumentation::Category max_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation max_documentation = {max_description, max_syntax, max_arguments, {}, max_returned_value, max_examples, max_introduced_in, max_category};
 
-    factory.registerFunction("max", {createAggregateFunctionMinMax<false>, max_documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("max", {createAggregateFunctionMinMax<false>, max_documentation}, AggregateFunctionFactory::Case::Insensitive);
     /// For boolean arguments, the maximum is the logical OR.
     factory.registerAlias("bool_or", "max", AggregateFunctionFactory::Case::Insensitive);
 }

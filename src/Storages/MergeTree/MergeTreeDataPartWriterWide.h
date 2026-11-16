@@ -2,7 +2,6 @@
 
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Formats/MarkInCompressedFile.h>
-#include <DataTypes/Serializations/ISerialization.h>
 
 
 namespace DB
@@ -47,7 +46,7 @@ public:
     void finish(bool sync) final;
     void cancel() noexcept override;
 
-    [[nodiscard]] size_t getNumberOfOpenStreams() const override { return column_streams.size(); }
+    size_t getNumberOfOpenStreams() const override { return column_streams.size(); }
 
     static ISerialization::EnumerateStreamsSettings getEnumerateSettings(const MergeTreeWriterSettings & settings);
 
@@ -93,7 +92,9 @@ private:
         const NameAndTypePair & name_and_type,
         WrittenOffsetSubstreams & offset_substreams);
 
-    void addStreams(const NameAndTypePair & name_and_type) override;
+    void addStreams(
+        const NameAndTypePair & name_and_type,
+        const ASTPtr & effective_codec_desc) override;
 
     /// The stream count is derived from the substreams inventory and read by addStreams(), so the
     /// three initializations must happen in this order.
@@ -124,14 +125,14 @@ private:
     /// that adjustLastMarkIfNeedAndFlushToDisk completed without a call carrying its rows.
     void completeGranuleWithoutRows();
 
-    [[nodiscard]] ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
+    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
     /// Settings with the getters and callbacks bound to the streams of the column.
-    [[nodiscard]] ISerialization::SerializeBinaryBulkSettings getSerializationSettingsForColumn(
+    ISerialization::SerializeBinaryBulkSettings getSerializationSettingsForColumn(
         const NameAndTypePair & name_and_type, const WrittenOffsetSubstreams & offset_substreams) const;
 
-    [[nodiscard]] ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column,
+    ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column,
         const WrittenOffsetSubstreams & offset_substreams) const;
-    [[nodiscard]] const String & getStreamName(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
+    const String & getStreamName(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
 
     using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;

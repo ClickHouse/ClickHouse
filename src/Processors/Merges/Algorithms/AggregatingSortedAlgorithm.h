@@ -30,12 +30,12 @@ public:
         std::optional<size_t> max_dynamic_subcolumns_,
         bool allow_tuple_element_aggregation_);
 
-    [[nodiscard]] const char * getName() const override { return "AggregatingSortedAlgorithm"; }
+    const char * getName() const override { return "AggregatingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
-    [[nodiscard]] MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
+    MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
 
     /// Stores information for aggregation of SimpleAggregateFunction columns
     struct SimpleAggregateDescription
@@ -132,7 +132,7 @@ private:
         void startGroup(const ColumnRawPtrs & raw_columns, size_t row);
         void finishGroup();
 
-        [[nodiscard]] bool isGroupStarted() const { return is_group_started; }
+        bool isGroupStarted() const { return is_group_started; }
         void addRow(SortCursor & cursor); /// Possible only when group was started.
 
         Chunk pull(); /// Possible only if group was finished.

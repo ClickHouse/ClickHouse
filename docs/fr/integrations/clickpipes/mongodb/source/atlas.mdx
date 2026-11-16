@@ -10,6 +10,8 @@ integration:
   - category: 'clickpipes'
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
+
 <div id="enable-oplog-retention">
   ## Configurer la rétention de l’oplog
 </div>
@@ -18,39 +20,15 @@ Une rétention minimale de l’oplog de 24 heures est requise pour la réplicat
 
 1. Accédez à l’onglet `Overview` de votre cluster dans la console MongoDB Atlas, puis cliquez sur l’onglet `Configuration`.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Accéder à la configuration du cluster](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-cluster-overview-configuration.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-cluster-overview-configuration.webp" alt="Accéder à la configuration du cluster" size="lg" border />
 
 2. Cliquez sur `Additional Settings`, puis faites défiler la page jusqu’à `More Configuration Options`.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Développer les paramètres supplémentaires](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-expand-additional-settings.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-expand-additional-settings.webp" alt="Développer les paramètres supplémentaires" size="lg" border />
 
 3. Cliquez sur `More Configuration Options` et définissez la fenêtre d’oplog minimale sur `72 hours` ou plus.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Définir les heures de rétention de l’oplog](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-set-retention-hours.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-set-retention-hours.webp" alt="Définir les heures de rétention de l’oplog" size="lg" border />
 
 4. Cliquez sur `Review Changes` pour les vérifier, puis sur `Apply Changes` pour déployer les modifications.
 
@@ -62,15 +40,7 @@ Une fois connecté à la console MongoDB Atlas, cliquez sur `Database Access` da
 
 ClickPipes nécessite une authentification par mot de passe :
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Ajouter un utilisateur de base de données](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-add-new-database-user.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-add-new-database-user.webp" alt="Ajouter un utilisateur de base de données" size="lg" border />
 
 ClickPipes nécessite un utilisateur disposant des rôles suivants :
 
@@ -79,27 +49,11 @@ ClickPipes nécessite un utilisateur disposant des rôles suivants :
 
 Vous les trouverez dans la section `Specific Privileges` :
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Configurer les rôles de l’utilisateur](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-database-user-privilege.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-database-user-privilege.webp" alt="Configurer les rôles de l’utilisateur" size="lg" border />
 
 Vous pouvez également préciser les clusters/instances auxquels vous souhaitez accorder l’accès à l’utilisateur ClickPipes :
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Restreindre l’accès au cluster/à l’instance](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-restrict-access.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-restrict-access.webp" alt="Restreindre l’accès au cluster/à l’instance" size="lg" border />
 
 <div id="whats-next">
   ## Que faire ensuite ?

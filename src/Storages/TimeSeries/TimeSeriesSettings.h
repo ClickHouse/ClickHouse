@@ -42,7 +42,7 @@ struct TimeSeriesSettings
     void copyToQuery(ASTStorage & storage_def) const;
 
     /// Returns only the settings that were explicitly changed from their defaults.
-    [[nodiscard]] SettingsChanges changes() const;
+    SettingsChanges changes() const;
 
     /// Applies a list of settings changes, overwriting any existing values.
     void applyChanges(const SettingsChanges & changes);
@@ -50,26 +50,21 @@ struct TimeSeriesSettings
     static bool hasBuiltin(std::string_view name);
 
     /// Whether the setting was explicitly set, even if to its default value.
-    [[nodiscard]] bool isChanged(std::string_view name) const;
+    bool isChanged(std::string_view name) const;
 
     /// Whether the table has the "recent samples" target.
-    [[nodiscard]] bool isRecentSamplesTargetEnabled() const;
+    bool isRecentSamplesTargetEnabled() const;
 
     /// Whether the table has the "time ranges" target.
-    [[nodiscard]] bool isTimeRangesTargetEnabled() const;
-
-    /// Whether the "samples" and "recent samples" tables store buckets of samples: a row keeps the samples of one time series
-    /// within one time bucket (tables of version MIN_WITH_BUCKETED_SAMPLES or later, see TimeSeriesVersion.h).
-    /// The tables of earlier versions store one sample per row.
-    [[nodiscard]] bool hasBucketedSamples() const;
+    bool isTimeRangesTargetEnabled() const;
 
     /// Whether the "tags" table stores the columns `min_time` and `max_time`: tables of earlier versions
     /// with the `store_min_time_and_max_time` setting enabled (see TimeSeriesVersion.h).
-    [[nodiscard]] bool hasMinTimeAndMaxTimeInTagsTable() const;
+    bool hasMinTimeAndMaxTimeInTagsTable() const;
 
     /// Whether the generated sorting key of the inner "tags" table contains `min_time` and `max_time`:
     /// they are stored in that table but not aggregated.
-    [[nodiscard]] bool hasMinTimeAndMaxTimeInTagsSortingKey() const;
+    bool hasMinTimeAndMaxTimeInTagsSortingKey() const;
 
 private:
     std::unique_ptr<TimeSeriesSettingsImpl> impl;

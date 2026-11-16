@@ -52,7 +52,7 @@ struct PartialSortingLessImpl
 
     explicit PartialSortingLessImpl(const ColumnsWithSortDescriptions & columns_) : columns(columns_) { }
 
-    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = 0;
 

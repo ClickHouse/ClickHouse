@@ -11,7 +11,8 @@ runtime filter conjoined with an ordinary condition
 Read type: InOrder
 Prewhere filter column:  tenant = 5
 Runtime filters: RF1(tenant, a from default.b_rf_read_mode)
-Filter column: tenant = 5 AND RF1(tenant, a from default.b_rf_read_mode)
+Filter column:  tenant = 5
+Runtime filters: RF1(tenant, a from default.b_rf_read_mode)
 Filter column: a = 5
 Read type: Default
 5

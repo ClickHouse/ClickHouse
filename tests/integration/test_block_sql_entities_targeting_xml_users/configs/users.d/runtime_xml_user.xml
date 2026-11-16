@@ -1,5 +1,0 @@
-<clickhouse>
-    <users>
-        <!-- Empty placeholder — this file is overwritten at runtime by the test to add `xml-runtime` via SYSTEM RELOAD CONFIG. -->
-    </users>
-</clickhouse>

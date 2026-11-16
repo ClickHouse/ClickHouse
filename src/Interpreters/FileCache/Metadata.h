@@ -39,17 +39,17 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     explicit FileSegmentMetadata(FileSegmentPtr && file_segment_);
 
-    [[nodiscard]] bool releasable() const { return isSharedPtrUnique(file_segment); }
+    bool releasable() const { return isSharedPtrUnique(file_segment); }
 
-    [[nodiscard]] size_t size() const;
+    size_t size() const;
 
-    [[nodiscard]] bool isEvictingOrRemoved(const LockedKey & lock) const { return isRemoved(lock) || isEvicting(lock); }
+    bool isEvictingOrRemoved(const LockedKey & lock) const { return isRemoved(lock) || isEvicting(lock); }
 
     /// Whether queue entry is removed/evicted.
-    [[nodiscard]] bool isRemoved(const LockedKey &) const { return removed; }
+    bool isRemoved(const LockedKey &) const { return removed; }
 
     /// Whether queue entry is in evicting state.
-    [[nodiscard]] bool isEvicting(const LockedKey &) const
+    bool isEvicting(const LockedKey &) const
     {
         auto iterator = getQueueIterator();
         if (!iterator)
@@ -83,7 +83,7 @@ struct FileSegmentMetadata : private boost::noncopyable
         entry->resetFlag(Priority::Entry::State::Evicting);
     }
 
-    [[nodiscard]] Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }
+    Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }
 
     FileSegmentPtr file_segment;
 
@@ -378,28 +378,28 @@ struct LockedKey : private boost::noncopyable
 
     ~LockedKey();
 
-    [[nodiscard]] const Key & getKey() const { return key_metadata->key; }
+    const Key & getKey() const { return key_metadata->key; }
 
-    [[nodiscard]] auto begin() const { return key_metadata->begin(); }
-    [[nodiscard]] auto rbegin() const { return key_metadata->rbegin(); }
+    auto begin() const { return key_metadata->begin(); }
+    auto rbegin() const { return key_metadata->rbegin(); }
 
-    [[nodiscard]] auto end() const { return key_metadata->end(); }
-    [[nodiscard]] auto rend() const { return key_metadata->rend(); }
+    auto end() const { return key_metadata->end(); }
+    auto rend() const { return key_metadata->rend(); }
 
-    [[nodiscard]] bool empty() const { return key_metadata->empty(); }
+    bool empty() const { return key_metadata->empty(); }
     auto lower_bound(size_t size) const { return key_metadata->lower_bound(size); } /// NOLINT
     template< class... Args >
     auto emplace(Args &&... args) { return key_metadata->emplace(std::forward<Args>(args)...); }
 
-    [[nodiscard]] std::shared_ptr<const FileSegmentMetadata> getByOffset(size_t offset) const;
+    std::shared_ptr<const FileSegmentMetadata> getByOffset(size_t offset) const;
     std::shared_ptr<FileSegmentMetadata> getByOffset(size_t offset);
 
-    [[nodiscard]] std::shared_ptr<const FileSegmentMetadata> tryGetByOffset(size_t offset) const;
+    std::shared_ptr<const FileSegmentMetadata> tryGetByOffset(size_t offset) const;
     std::shared_ptr<FileSegmentMetadata> tryGetByOffset(size_t offset);
 
-    [[nodiscard]] KeyMetadata::KeyState getKeyState() const { return key_metadata->key_state; }
+    KeyMetadata::KeyState getKeyState() const { return key_metadata->key_state; }
 
-    [[nodiscard]] std::shared_ptr<const KeyMetadata> getKeyMetadata() const { return key_metadata; }
+    std::shared_ptr<const KeyMetadata> getKeyMetadata() const { return key_metadata; }
     std::shared_ptr<KeyMetadata> getKeyMetadata() { return key_metadata; }
 
     bool removeAllFileSegments();
@@ -422,9 +422,9 @@ struct LockedKey : private boost::noncopyable
 
     bool addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &);
 
-    [[nodiscard]] bool isLastOwnerOfFileSegment(size_t offset) const;
+    bool isLastOwnerOfFileSegment(size_t offset) const;
 
-    [[nodiscard]] std::optional<FileSegment::Range> hasIntersectingRange(const FileSegment::Range & range) const;
+    std::optional<FileSegment::Range> hasIntersectingRange(const FileSegment::Range & range) const;
 
     void removeFromCleanupQueue();
 
@@ -432,7 +432,7 @@ struct LockedKey : private boost::noncopyable
 
     std::vector<FileSegment::Info> sync();
 
-    [[nodiscard]] std::string toString() const;
+    std::string toString() const;
 
 private:
     KeyMetadata::iterator removeFileSegmentImpl(

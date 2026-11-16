@@ -21,11 +21,11 @@ public:
 
     ~TemporaryFileOnDisk();
 
-    [[nodiscard]] DiskPtr getDisk() const { return disk; }
+    DiskPtr getDisk() const { return disk; }
     /// Return absolute path (disk + relative_path)
-    [[nodiscard]] String getAbsolutePath() const;
+    String getAbsolutePath() const;
     /// Return relative path (without disk)
-    [[nodiscard]] const String & getRelativePath() const { return relative_path; }
+    const String & getRelativePath() const { return relative_path; }
 
     /// Sets whether the destructor should show a warning if the temporary file has been already removed.
     /// By default a warning is shown.

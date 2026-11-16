@@ -1,7 +1,5 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
-#include <Core/FormatFactorySettings.h>
-#include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -51,12 +49,10 @@ namespace ErrorCodes
     DECLARE(String, google_adc_refresh_token, "", "Google Application Default Credentials refresh_token for BigLake. Required if using ADC authentication instead of metadata service", 0) \
     DECLARE(String, google_adc_quota_project_id, "", "Google Application Default Credentials quota_project_id for BigLake. Optional, used if google_project_id is not set", 0) \
     DECLARE(String, google_adc_credentials_file, "", "Deprecated setting, will throw an exception if used", 0) \
-    DECLARE(String, google_service_account_key, "", "Content of a Google Cloud service account JSON key file for BigLake. ClickHouse signs a JWT with the key and exchanges it for an access token, which it renews automatically. Used for both the catalog and the data files in Cloud Storage. An alternative to the ADC credentials (google_adc_client_id, google_adc_client_secret, google_adc_refresh_token) that works outside Google Cloud without a user refresh token", 0) \
     DECLARE(String, dlf_access_key_id, "", "Access id of DLF token for Paimon REST Catalog", 0) \
     DECLARE(String, dlf_access_key_secret, "", "Access secret of DLF token for Paimon REST Catalog", 0) \
     DECLARE(Bool, force_add_bucket, false, "When constructing object-storage URLs from the catalog-provided table location and storage_endpoint, prepend the bucket/container name even if the endpoint already contains it. Useful for catalogs that hand back paths without the bucket and expect it to be added at URL construction (Polaris-style paths).", 0) \
     DECLARE(Bool, flat_namespaces, false, "The catalog supports only single-level namespaces, so only top-level namespaces are listed and sub-namespaces are not requested. Set this for Iceberg REST catalogs that reject the `parent` query parameter of the list-namespaces endpoint, such as Apache Polaris federated to AWS Glue, which answers `Glue dataCatalog does not support multipart namespace` with HTTP 400. Some catalogs instead ignore `parent` and echo top-level namespaces back for every parent; without this setting those are listed as fake nested namespaces. Not needed for catalog types that are always flat (`delta_sharing`, BigLake, S3 Tables).", 0) \
-    DECLARE(DatabaseDataLakeSnapshotLoadingMode, snapshot_loading_mode, DatabaseDataLakeSnapshotLoadingMode::AUTO, "Value of the `snapshots` query parameter of the Iceberg REST load-table request: `all` loads every snapshot of the table, `refs` loads only the snapshots referenced by branches and tags. `auto` (the default) uses the `snapshot-loading-mode` that the catalog advertises in its configuration, or `all` if it advertises none. A `snapshot-loading-mode` in the catalog's `overrides` is used even when the setting is set. ClickHouse reads snapshots from the table's metadata file, so `refs` only makes the catalog response smaller, which matters for tables with a long snapshot history. Requires catalog support: some catalogs reject `refs` for tables with statistics files, or omit `metadata-location` from the response.", 0) \
 
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS(M, ALIAS) \
     DATABASE_ICEBERG_RELATED_SETTINGS(M, ALIAS) \
@@ -94,10 +90,8 @@ void DatabaseDataLakeSettings::loadFromQuery(const ASTStorage & storage_def, boo
         {
             for (const auto & change : storage_def.settings->changes)
             {
-                if (!is_attach && change.name.starts_with("iceberg_") && change.name != "iceberg_timezone_for_timestamptz")
+                if (!is_attach && change.name.starts_with("iceberg_"))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting {} is used for storage. Please use the setting without `iceberg_` prefix", change.name);
-                if (change.name == "disk")
-                    DiskFromAST::ensureDiskIsNotInline(change.value);
             }
             impl->applyChanges(storage_def.settings->changes);
         }

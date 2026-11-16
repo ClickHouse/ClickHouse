@@ -165,9 +165,8 @@ void SerializationInfoTuple::deserializeFromKindsBinary(ReadBuffer & in, ISerial
 {
     SerializationInfo::deserializeFromKindsBinary(in, allowed_kinds);
 
-    /// `Detached` and `Replicated` always wrap a whole column, never a single tuple element:
-    /// no writer builds such an element, and both are unwrapped only at the top level of a column.
-    auto elements_allowed_kinds = allowed_kinds.without(ISerialization::Kind::DETACHED).without(ISerialization::Kind::REPLICATED);
+    /// A detached blob always covers a whole column, never a single tuple element.
+    auto elements_allowed_kinds = allowed_kinds.without(ISerialization::Kind::DETACHED);
     for (const auto & elem : elems)
         elem->deserializeFromKindsBinary(in, elements_allowed_kinds);
 }

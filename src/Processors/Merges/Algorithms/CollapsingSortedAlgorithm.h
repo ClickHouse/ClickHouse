@@ -41,7 +41,7 @@ public:
         bool use_average_block_sizes = false,
         bool throw_if_invalid_sign_ = false);
 
-    [[nodiscard]] const char * getName() const override { return "CollapsingSortedAlgorithm"; }
+    const char * getName() const override { return "CollapsingSortedAlgorithm"; }
     Status merge() override;
 
 private:

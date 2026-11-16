@@ -87,9 +87,6 @@ struct AlterCommand
 
     String column_name;
 
-    /// For MODIFY_COLUMN of a subcolumn: its name relative to `column_name`, set by `prepare`. Empty for a column.
-    String subcolumn_name;
-
     /// For DROP/CLEAR COLUMN/INDEX ... IN PARTITION
     ASTPtr partition;
 
@@ -98,8 +95,6 @@ struct AlterCommand
 
     ColumnDefaultKind default_kind{};
     ASTPtr default_expression{};
-    /// The expression of an `EPHEMERAL` column was not written by the user, so it is not formatted back.
-    bool ephemeral_default = false;
 
     /// For COMMENT column or table
     std::optional<String> comment;
@@ -212,22 +207,22 @@ struct AlterCommand
 
     /// Determines whether this command requires a mutation and identifies every setting
     /// that enables a matching lazy metadata conversion.
-    [[nodiscard]] MutationStageDecision getMutationStageDecision(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
+    MutationStageDecision getMutationStageDecision(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
 
     /// Checks that only settings changed by alter
-    [[nodiscard]] bool isSettingsAlter() const;
+    bool isSettingsAlter() const;
 
     /// Checks that only comment changed by alter
-    [[nodiscard]] bool isCommentAlter() const;
+    bool isCommentAlter() const;
 
     /// Checks that any TTL changed by alter
-    [[nodiscard]] bool isTTLAlter(const StorageInMemoryMetadata & metadata) const;
+    bool isTTLAlter(const StorageInMemoryMetadata & metadata) const;
 
     /// Command removing some property from column or table
-    [[nodiscard]] bool isRemovingProperty() const;
+    bool isRemovingProperty() const;
 
     /// Checks that command will drop something or rename column.
-    [[nodiscard]] bool isDropOrRename() const;
+    bool isDropOrRename() const;
 
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
@@ -268,19 +263,19 @@ public:
         const MergeTreeSettings * settings_defaults = nullptr) const;
 
     /// Indices the commands actually add: `ADD INDEX IF NOT EXISTS` of an existing name adds nothing.
-    [[nodiscard]] NameSet getAddedIndexNames(const IndicesDescription & existing) const;
+    NameSet getAddedIndexNames(const IndicesDescription & existing) const;
 
     /// At least one command modify settings or comments.
-    [[nodiscard]] bool hasNonReplicatedAlterCommand() const;
+    bool hasNonReplicatedAlterCommand() const;
 
     /// All commands modify settings or comments.
-    [[nodiscard]] bool areNonReplicatedAlterCommands() const;
+    bool areNonReplicatedAlterCommands() const;
 
     /// All commands modify settings only.
-    [[nodiscard]] bool isSettingsAlter() const;
+    bool isSettingsAlter() const;
 
     /// All commands modify comments only.
-    [[nodiscard]] bool isCommentAlter() const;
+    bool isCommentAlter() const;
 
     /// Return mutation commands which some storages may execute as part of
     /// alter. If alter can be performed as pure metadata update, than result is
@@ -289,7 +284,7 @@ public:
     /// share_nested_offsets is threaded to tryConvertToMutationCommand -> AlterCommand::apply so the
     /// intermediate metadata built while planning mutations matches the real commands.apply() for
     /// IF NOT EXISTS nested adds (see AlterCommand::apply).
-    [[nodiscard]] MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false, bool share_nested_offsets = true) const;
+    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false, bool share_nested_offsets = true) const;
 
     /// Check if commands have a text index
     static bool hasTextIndex(const StorageInMemoryMetadata & metadata);

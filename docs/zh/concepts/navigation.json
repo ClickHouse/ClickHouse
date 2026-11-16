@@ -1,4 +1,5 @@
 {
+  "icon": "/images/icons/icon-concepts.svg",
   "item": "概念",
   "pages": [
     "zh/concepts/index",

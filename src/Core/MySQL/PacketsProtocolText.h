@@ -6,8 +6,6 @@
 
 #include <Core/MySQL/IMySQLReadPacket.h>
 #include <Core/MySQL/IMySQLWritePacket.h>
-#include <Core/ResultColumnOrigin.h>
-#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {
@@ -75,7 +73,7 @@ protected:
     size_t payload_size = 0;
     VectorWithMemoryTracking<String> serialized;
 
-    [[nodiscard]] size_t getPayloadSize() const override;
+    size_t getPayloadSize() const override;
 
     void writePayloadImpl(WriteBuffer & buffer) const override;
 
@@ -110,7 +108,7 @@ public:
     bool is_comm_field_list_response = false;
 
 protected:
-    [[nodiscard]] size_t getPayloadSize() const override;
+    size_t getPayloadSize() const override;
 
     void readPayloadImpl(ReadBuffer & payload) override;
 
@@ -131,11 +129,18 @@ public:
         uint16_t flags_,
         uint8_t decimals_,
         bool with_defaults_ = false);
+
+    /// Should be used when column metadata (original name, table, original table, database) is unknown.
+    ColumnDefinition(
+        String name_,
+        uint16_t character_set_,
+        uint32_t column_length_,
+        ColumnType column_type_,
+        uint16_t flags_,
+        uint8_t decimals_);
 };
 
-/// The definition of a result column of type `data_type`. If `origin` is not null and refers to a table column,
-/// the definition reports that column as the original one, as MySQL does.
-ColumnDefinition getColumnDefinition(const String & column_name, const DataTypePtr & data_type, const ResultColumnOrigin * origin = nullptr);
+ColumnDefinition getColumnDefinition(const String & column_name, const DataTypePtr & data_type);
 
 }
 

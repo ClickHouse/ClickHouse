@@ -123,7 +123,7 @@ private:
                 return second[ind - first.size()];
             }
 
-            [[nodiscard]] size_t size() const
+            size_t size() const
             {
                 return first.size() + second.size();
             }

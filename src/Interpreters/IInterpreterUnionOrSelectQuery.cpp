@@ -53,7 +53,7 @@ IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(const ASTPtr & qu
 
 IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(
     const ASTPtr & query_ptr_, const ContextMutablePtr & context_, const SelectQueryOptions & options_)
-    : query_ptr(query_ptr_), context(context_), options(options_), max_streams(getEffectiveMaxThreads(*context))
+    : query_ptr(query_ptr_), context(context_), options(options_), max_streams(getEffectiveMaxThreads(context->getSettingsRef()))
 {
     if (options.shard_num)
         context->addSpecialScalar(
@@ -119,8 +119,7 @@ StorageLimits IInterpreterUnionOrSelectQuery::getStorageLimits(const Context & c
     if (!options.ignore_limits)
     {
         limits = getLimitsForStorage(settings, options);
-        if (context.getClientInfo().distributed_depth > 0)
-            leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
+        leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
     }
 
     return {limits, leaf_limits};

@@ -52,7 +52,6 @@
 #include <Interpreters/DeadLetterQueue.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
-#include <Interpreters/TraceCollector.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ZooKeeperLog.h>
@@ -663,10 +662,6 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
         if (text_log)
             flushAsyncTextLogsIfPossible();
 
-        /// Not at shutdown (`ignore_errors`), which a stuck collector would delay.
-        if (trace_log && !ignore_errors)
-            TraceCollector::flush();
-
         for (auto * log : getAllLogs())
         {
             log->flushBufferToLog(std::chrono::system_clock::now());
@@ -731,8 +726,6 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
             if (log == text_log.get())
                 flushAsyncTextLogsIfPossible();
-            else if (log == trace_log.get())
-                TraceCollector::flush();
 
             log->flushBufferToLog(std::chrono::system_clock::now());
 
@@ -776,21 +769,9 @@ void SystemLogs::flushAndShutdown()
 
 void SystemLogs::shutdown()
 {
-    /// Shut down every log even if one of them throws: otherwise the saving threads of the remaining logs are not
-    /// joined. Also, the constructor calls this in its `catch` block, where an exception from here would replace the
-    /// original error.
     auto logs = getAllLogs();
     for (auto & log : logs)
-    {
-        try
-        {
-            log->shutdown();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
+        log->shutdown();
 }
 
 void SystemLogs::handleCrash()
@@ -1223,7 +1204,6 @@ void SystemLog<LogElement>::prepareTable()
 
         auto query_context = Context::createCopy(context);
         query_context->makeQueryContext();
-
         addSettingsForQuery(query_context, IAST::QueryKind::Create);
 
         auto create_query_ast = getCreateTableQuery();
@@ -1380,21 +1360,6 @@ void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_cont
         /// with an unlimited query size, so the limit must not fail this internal `ALTER`
         /// (e.g. marking a rotated table as readonly).
         mutable_context->setSetting("max_query_size", Field{UInt64{0}});
-    }
-    else if (query_kind == IAST::QueryKind::Create)
-    {
-        /// Ensure system tables keep a stable schema.
-        /// Disable user-configurable type-related settings to avoid implicit data type changes.
-        /// This applies to the log table as well as to its union table: both are created from
-        /// the same explicit column list, so a session that flips one of these settings would
-        /// otherwise be able to give them different structures, which makes the union table
-        /// mismatch its definition on every check and be recreated on every flush.
-        /// Note: `data_type_default_nullable` is the live half of this pin (several log tables
-        /// declare plain types that it would wrap into `Nullable`), while `flatten_nested` is
-        /// defensive: no system log element currently declares a `Nested` column, so it only
-        /// protects future schema additions and cannot be exercised by a regression test today.
-        mutable_context->setSetting("flatten_nested", false);
-        mutable_context->setSetting("data_type_default_nullable", false);
     }
 }
 

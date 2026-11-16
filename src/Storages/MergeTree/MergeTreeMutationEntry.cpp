@@ -1,6 +1,4 @@
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
-#include <Common/ErrnoException.h>
-#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
@@ -10,7 +8,6 @@
 #include <Interpreters/TransactionManager.h>
 #include <Backups/BackupEntryFromMemory.h>
 
-#include <cerrno>
 #include <utility>
 
 
@@ -20,14 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_WRITE_TO_FILE;
-    extern const int CANNOT_WRITE_TO_OSTREAM;
-}
-
-namespace FailPoints
-{
-    extern const char transaction_mutation_csn_store_fail[];
-    extern const char transaction_mutation_csn_store_fail_after_write[];
 }
 
 String MergeTreeMutationEntry::versionToFileName(UInt64 block_number_)
@@ -71,11 +60,22 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
 {
     try
     {
-        if (tid.isNonTransactional())
-            csn = Tx::NonTransactionalCSN;
-
         auto out = disk->writeFile(std::filesystem::path(path_prefix) / file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
-        writeRecord(*out);
+        *out << "format version: 1\n"
+            << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n";
+        *out << "commands: ";
+        commands->writeText(*out, /* with_pure_metadata_commands = */ false);
+        *out << "\n";
+        if (tid.isNonTransactional())
+        {
+            csn = Tx::NonTransactionalCSN;
+        }
+        else
+        {
+            *out << "tid: ";
+            TransactionID::write(tid, *out);
+            *out << "\n";
+        }
         out->finalize();
         out->sync();
     }
@@ -83,21 +83,6 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
     {
         removeFile();
         throw;
-    }
-}
-
-void MergeTreeMutationEntry::writeRecord(WriteBuffer & out) const
-{
-    out << "format version: 1\n"
-        << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n";
-    out << "commands: ";
-    commands->writeText(out, /* with_pure_metadata_commands = */ false);
-    out << "\n";
-    if (!tid.isNonTransactional())
-    {
-        out << "tid: ";
-        TransactionID::write(tid, out);
-        out << "\n";
     }
 }
 
@@ -123,41 +108,12 @@ void MergeTreeMutationEntry::removeFile()
     }
 }
 
-void MergeTreeMutationEntry::writeCSN(CSN csn_, bool sync_directory)
+void MergeTreeMutationEntry::writeCSN(CSN csn_)
 {
-    /// Fault injection for tests: a transient failure before any I/O, so the old file stays intact.
-    fiu_do_on(FailPoints::transaction_mutation_csn_store_fail,
-    {
-        throw Exception(ErrorCodes::CANNOT_WRITE_TO_OSTREAM, "Injected transient failure while storing mutation CSN");
-    });
-
-    /// The whole record is rewritten through a temporary file instead of appending the
-    /// `csn:` line: a write that fails half-way, or is repeated, must not leave a partial
-    /// or duplicated line behind, because the loader accepts exactly one.
-    /// The name must not collide with the constructor's `tmp_mutation_<N>.txt`, whose
-    /// number comes from a different counter; the `tmp_mutation_` prefix keeps it covered
-    /// by the startup cleanup of leftover temporary files.
-    String tmp_file_name = "tmp_mutation_csn_" + toString(block_number) + ".txt";
-    auto out = disk->writeFile(path_prefix + tmp_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
-    writeRecord(*out);
-    *out << "csn: " << csn_ << "\n";
-    out->finalize();
-    out->sync();
-    /// Fault injection for tests: a disk error after the temporary file is complete, so a retry
-    /// has to overwrite it.
-    fiu_do_on(FailPoints::transaction_mutation_csn_store_fail_after_write,
-    {
-        ErrnoException::throwWithErrno(ErrorCodes::CANNOT_WRITE_TO_FILE, ENOSPC, "Injected transient failure after writing mutation CSN");
-    });
-    /// The rename is durable only once the directory is synced. The sync is explicit: the guard's
-    /// destructor only logs a failure, and the caller must see it to retry the write.
-    SyncGuardPtr sync_guard;
-    if (sync_directory)
-        sync_guard = disk->getDirectorySyncGuard(path_prefix);
-    disk->replaceFile(path_prefix + tmp_file_name, path_prefix + file_name);
-    if (sync_guard)
-        sync_guard->sync();
     csn = csn_;
+    auto out = disk->writeFile(path_prefix + file_name, 256, WriteMode::Append);
+    *out << "csn: " << csn << "\n";
+    out->finalize();
 }
 
 MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_)

@@ -32,7 +32,7 @@ struct ElasticsearchConfiguration
 
     String named_collection_name;
 
-    [[nodiscard]] HTTPHeaderEntries authorizationHeaders() const;
+    HTTPHeaderEntries authorizationHeaders() const;
 
     static ElasticsearchConfiguration fromArguments(ASTs & args, ContextPtr context, const StorageID * table_id = nullptr);
 };

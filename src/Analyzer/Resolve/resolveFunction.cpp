@@ -1526,11 +1526,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             type_inference_scope.projection_mask_map
                 = std::make_shared<std::map<IQueryTreeNode::Hash, size_t>>(*scope.projection_mask_map);
 
-            QueryAnalyzer type_inference_analyzer(
-                /*only_analyze_=*/ false,
-                /*positional_arguments_already_resolved_=*/ false,
-                replaced_storage,
-                view_source_in_subqueries);
+            QueryAnalyzer type_inference_analyzer(/*only_analyze_=*/ false, replaced_storage, view_source_in_subqueries);
             type_inference_analyzer.early_short_circuit_type_inference_in_process = true;
             type_inference_analyzer.subquery_counter = subquery_counter;
 
@@ -2173,7 +2169,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto function_exists = std::make_shared<FunctionExists>();
             function_node_ptr->resolveAsFunction(
                 std::make_shared<FunctionToFunctionBaseAdaptor>(
-                    function_exists, DataTypes{}, function_exists->getReturnTypeImpl(DataTypes{})
+                    function_exists, DataTypes{}, function_exists->getReturnTypeImpl({})
                 )
             );
 
@@ -3125,37 +3121,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             const auto & untuple_argument_projection_name = arguments_projection_names.at(0);
             result_projection_names.clear();
 
-            /// When `untuple` is the body of an inlined lambda (SQL UDF), the alias of the call it replaces applies to it
-            /// and takes priority over an alias inside the body, as in the old analyzer. The call is the top of the parent
-            /// scope's expression stack; nested calls are walked the same way, so the outermost alias wins.
-            String untuple_alias = node->getAlias();
-            const auto * current_scope = &scope;
-            const auto * current_node = node.get();
-            while (current_scope->parent_scope)
-            {
-                const auto * lambda_scope_node = current_scope->scope_node->as<LambdaNode>();
-                if (!lambda_scope_node || lambda_scope_node->getExpression().get() != current_node)
-                    break;
-
-                const auto & parent_expressions_stack = current_scope->parent_scope->expressions_in_resolve_process_stack;
-                if (parent_expressions_stack.empty())
-                    break;
-
-                /// Only a call is inlined; the lambda of an `APPLY` transformer sits under the matcher it expands.
-                const auto & call_node = parent_expressions_stack.getTop();
-                if (call_node->getNodeType() != QueryTreeNodeType::FUNCTION)
-                    break;
-
-                if (call_node->hasAlias())
-                    untuple_alias = call_node->getAlias();
-                current_node = call_node.get();
-                current_scope = current_scope->parent_scope;
-            }
-
             for (const auto & element_name : element_names)
             {
-                if (!untuple_alias.empty())
-                    result_projection_names.push_back(untuple_alias + '.' + element_name);
+                if (node->hasAlias())
+                    result_projection_names.push_back(node->getAlias() + '.' + element_name);
                 else
                     result_projection_names.push_back(fmt::format("tupleElement({}, '{}')", untuple_argument_projection_name, element_name));
             }
@@ -3220,6 +3189,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         bool window_node_is_identifier = function_node.getWindowNode()->getNodeType() == QueryTreeNodeType::IDENTIFIER;
         ProjectionName window_projection_name = resolveWindow(function_node.getWindowNode(), scope);
+
+        if (function_name == "lag" || function_name == "lead")
+        {
+            auto & frame = function_node.getWindowNode()->as<WindowNode>()->getWindowFrame();
+            if (!frame.is_default)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Window function '{}' does not expect window frame to be explicitly specified. In expression {}",
+                    function_name,
+                    function_node.formatASTForErrorMessage());
+            }
+        }
 
         if (window_node_is_identifier)
             result_projection_names[0] += " OVER " + window_projection_name;

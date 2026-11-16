@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: the Parquet format is unavailable in the fast test build.
+
 -- Reading a Buffer whose destination declares a column differently logs a warning per read.
 SET send_logs_level = 'fatal';
 

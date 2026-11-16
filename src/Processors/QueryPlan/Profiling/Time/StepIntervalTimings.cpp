@@ -1,7 +1,4 @@
 #include <Core/Types.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/DequeWithMemoryTracking.h>
 #include <base/defines.h>
 #include <Processors/QueryPlan/Profiling/Time/StepIntervalTimings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -22,7 +19,7 @@ namespace
 struct Frame
 {
     const QueryPlan::Node * node = nullptr;
-    VectorWithMemoryTracking<QueryPlan *> child_plans;
+    std::vector<QueryPlan *> child_plans;
     size_t next_child = 0;
     size_t next_child_plan = 0;
 };
@@ -94,7 +91,7 @@ void StepIntervalTimings::collectPlanSteps(const QueryPlan & plan)
     if (!plan.isInitialized())
         return;
 
-    VectorWithMemoryTracking<const QueryPlan::Node *> stack;
+    std::vector<const QueryPlan::Node *> stack;
 
     stack.push_back(plan.getRootNode());
 
@@ -122,11 +119,11 @@ StepIntervalTimings::TimeIntervalsByStep StepIntervalTimings::collectStepInterva
 
     struct StepIntervalsByThread
     {
-        VectorWithMemoryTracking<TimeIntervals> intervals_by_thread;
+        std::vector<TimeIntervals> intervals_by_thread;
         size_t last_thread = no_thread;
     };
 
-    UnorderedMapWithMemoryTracking<const IQueryPlanStep *, StepIntervalsByThread> step_to_thread_intervals;
+    std::unordered_map<const IQueryPlanStep *, StepIntervalsByThread> step_to_thread_intervals;
     step_to_thread_intervals.reserve(timing_by_step.size());
 
     for (const auto & [step, _] : timing_by_step)
@@ -169,7 +166,7 @@ void StepIntervalTimings::computeBranchTime(const QueryPlan & plan, TimeInterval
         return;
 
     /// We use deque in order for the reference to the last element does not get invalidated during push back
-    DequeWithMemoryTracking<Frame> stack;
+    std::deque<Frame> stack;
 
     const auto push_frame = [&](const QueryPlan::Node * node)
     {
@@ -220,9 +217,9 @@ void StepIntervalTimings::computeBranchTime(const QueryPlan & plan, TimeInterval
     all_steps_time_ns = timing_by_step.at(plan.getRootNode()->step.get()).branch_time_ns;
 }
 
-VectorWithMemoryTracking<TimeIntervals> StepIntervalTimings::collectLowerBranchIntervals(TimeIntervals && current_step_intervals, const VectorWithMemoryTracking<QueryPlan::Node *> & children, const VectorWithMemoryTracking<QueryPlan *> & child_plans, TimeIntervalsByStep & branch_intervals_by_step) const
+std::vector<TimeIntervals> StepIntervalTimings::collectLowerBranchIntervals(TimeIntervals && current_step_intervals, const std::vector<QueryPlan::Node *> & children, const std::vector<QueryPlan *> & child_plans, TimeIntervalsByStep & branch_intervals_by_step) const
 {
-    VectorWithMemoryTracking<TimeIntervals> current_step_branch_intervals;
+    std::vector<TimeIntervals> current_step_branch_intervals;
 
     current_step_branch_intervals.push_back(std::move(current_step_intervals));
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/SchemaInferenceUtils.h>
@@ -71,13 +70,13 @@ public:
 
     bool checkForSuffix() override;
 
-    VectorWithMemoryTracking<String> readHeaderRow();
-    VectorWithMemoryTracking<String> readNames() override { return readHeaderRow(); }
-    VectorWithMemoryTracking<String> readTypes() override { return readHeaderRow(); }
+    std::vector<String> readHeaderRow();
+    std::vector<String> readNames() override { return readHeaderRow(); }
+    std::vector<String> readTypes() override { return readHeaderRow(); }
 
     bool checkForEndOfRow() override;
 
-    [[nodiscard]] bool yieldStrings() const { return yield_strings; }
+    bool yieldStrings() const { return yield_strings; }
 private:
     bool yield_strings;
 };
@@ -88,7 +87,7 @@ public:
     JSONCompactEachRowRowSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool yield_strings_, const FormatSettings & format_settings_);
 
 private:
-    [[nodiscard]] bool allowVariableNumberOfColumns() const override { return format_settings.json.compact_allow_variable_number_of_columns; }
+    bool allowVariableNumberOfColumns() const override { return format_settings.json.compact_allow_variable_number_of_columns; }
 
     std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
 

@@ -2,7 +2,6 @@
 
 #include <Columns/IColumn_fwd.h>
 #include <Common/CollectionOfDerived.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Types_fwd.h>
 
@@ -20,8 +19,8 @@ public:
     ChunkInfo(const ChunkInfo&) = default;
     ChunkInfo(ChunkInfo&&) = default;
 
-    [[nodiscard]] virtual Ptr clone() const = 0;
-    [[nodiscard]] virtual Ptr merge(const Ptr & right) const
+    virtual Ptr clone() const = 0;
+    virtual Ptr merge(const Ptr & right) const
     {
         return right; // merge left into right by default returns right
     }
@@ -39,7 +38,7 @@ private:
     ChunkInfoCloneable(const ChunkInfoCloneable & other) = default;
 
 public:
-    [[nodiscard]] Ptr clone() const override
+    Ptr clone() const override
     {
         return std::static_pointer_cast<ChunkInfo>(std::make_shared<Derived>(*static_cast<const Derived*>(this)));
     }
@@ -87,7 +86,7 @@ public:
         return *this;
     }
 
-    [[nodiscard]] Chunk clone() const;
+    Chunk clone() const;
 
     void swap(Chunk & other) noexcept
     {
@@ -103,33 +102,33 @@ public:
         chunk_infos.clear();
     }
 
-    [[nodiscard]] const Columns & getColumns() const { return columns; }
+    const Columns & getColumns() const { return columns; }
     void setColumns(Columns columns_, UInt64 num_rows_);
     void setColumns(MutableColumns columns_, UInt64 num_rows_);
     Columns detachColumns();
     MutableColumns mutateColumns();
     /** Get empty columns with the same types as in block. */
-    [[nodiscard]] MutableColumns cloneEmptyColumns() const;
+    MutableColumns cloneEmptyColumns() const;
 
     ChunkInfoCollection & getChunkInfos() { return chunk_infos; }
-    [[nodiscard]] const ChunkInfoCollection & getChunkInfos() const { return chunk_infos; }
+    const ChunkInfoCollection & getChunkInfos() const { return chunk_infos; }
     void setChunkInfos(ChunkInfoCollection chunk_infos_) { chunk_infos = std::move(chunk_infos_); }
 
-    [[nodiscard]] UInt64 getNumRows() const { return num_rows; }
-    [[nodiscard]] UInt64 getNumColumns() const { return columns.size(); }
-    [[nodiscard]] bool hasRows() const { return num_rows > 0; }
-    [[nodiscard]] bool hasColumns() const { return !columns.empty(); }
-    [[nodiscard]] bool empty() const { return !hasRows() && !hasColumns(); }
+    UInt64 getNumRows() const { return num_rows; }
+    UInt64 getNumColumns() const { return columns.size(); }
+    bool hasRows() const { return num_rows > 0; }
+    bool hasColumns() const { return !columns.empty(); }
+    bool empty() const { return !hasRows() && !hasColumns(); }
     explicit operator bool() const { return !empty(); }
 
     void addColumn(ColumnPtr column);
     void addColumn(size_t position, ColumnPtr column);
     void erase(size_t position);
 
-    [[nodiscard]] UInt64 bytes() const;
-    [[nodiscard]] UInt64 allocatedBytes() const;
+    UInt64 bytes() const;
+    UInt64 allocatedBytes() const;
 
-    [[nodiscard]] std::string dumpStructure() const;
+    std::string dumpStructure() const;
 
     void append(const Chunk & chunk);
     void append(const Chunk & chunk, size_t from, size_t length); // append rows [from, from+length) of chunk
@@ -142,7 +141,7 @@ private:
     void checkNumRowsIsConsistent();
 };
 
-using Chunks = VectorWithMemoryTracking<Chunk>;
+using Chunks = std::vector<Chunk>;
 
 /// AsyncInsert needs two kinds of information:
 /// - offsets of different sub-chunks

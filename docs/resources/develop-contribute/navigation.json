@@ -57,6 +57,7 @@
       ]
     }
   ],
+  "icon": "/images/icons/icon-contribute.svg",
   "item": "Development & contributing",
   "root": "resources/develop-contribute/index"
 }

@@ -48,8 +48,9 @@ Expression ((Project names + Projection))
       Aggregating (partial)
         Expression (Before GROUP BY)
           JoinLogical
-            Expression (Change column names to column identifiers)
-              ReadFromMergeTree (default.big)
+            ShuffleExchange (any scatter)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.big)
             BroadcastExchange
               Expression (Change column names to column identifiers)
                 ReadFromMergeTree (default.small)

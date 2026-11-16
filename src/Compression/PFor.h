@@ -29,31 +29,10 @@ inline size_t encodeBlocks(std::span<const T> in, Delta mode, uint8_t * out) noe
 }
 
 /// Inverse of encodeBlocks; returns bytes consumed. Pass `end` to decode fail-closed (reads bounded, returns 0 on corrupt input); nullptr keeps the unchecked fast path.
-/// With a delta mode, `prev` is the value before the stream: the first residual is a delta from it.
 template <typename T>
-inline size_t decodeBlocks(const uint8_t * in, size_t count, Delta mode, T * out, const uint8_t * end = nullptr, T prev = 0) noexcept
+inline size_t decodeBlocks(const uint8_t * in, size_t count, Delta mode, T * out, const uint8_t * end = nullptr) noexcept
 {
-    return detail::bulkDecode<T>(in, count, mode, out, end, prev);
-}
-
-/// Header of a block of zeros.
-inline constexpr uint8_t ZERO_BLOCK = 0x80;
-
-/// The output of `encodeBlocks` for `count` zeros; returns bytes written.
-inline size_t encodeZeros(size_t count, uint8_t * out) noexcept
-{
-    const size_t num_blocks = (count + BLOCK - 1) / BLOCK;
-    std::fill_n(out, num_blocks, ZERO_BLOCK);
-    return num_blocks;
-}
-
-/// Size of the `encodeZeros` output at `in`, or 0 if [in, end) does not start with it.
-inline size_t matchZeros(const uint8_t * in, size_t count, const uint8_t * end) noexcept
-{
-    const size_t num_blocks = (count + BLOCK - 1) / BLOCK;
-    if (static_cast<size_t>(end - in) < num_blocks || !std::all_of(in, in + num_blocks, [](uint8_t b) { return b == ZERO_BLOCK; }))
-        return 0;
-    return num_blocks;
+    return detail::bulkDecode<T>(in, count, mode, out, end);
 }
 
 /// Computes an upper bound on the bytes that `encodeBlocks` writes for a stream of values in `mode`, while

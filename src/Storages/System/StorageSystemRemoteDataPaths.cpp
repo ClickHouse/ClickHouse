@@ -154,7 +154,7 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return "ReadFromSystemRemoteDataPaths"; }
+    String getName() const override { return "ReadFromSystemRemoteDataPaths"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 

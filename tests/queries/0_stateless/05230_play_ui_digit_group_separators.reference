@@ -9,6 +9,6 @@ return groups.join('<span class="num-sep"></span>');
 --- a numeric cell of at least five digits is grouped (as in `clickhouse-client`), shorter ones are not
 if (this._column_is_number[name] && text.match(/^\d{5,}$/))
 --- and so is a row number of at least five digits
-if (row_number.length >= 5) { td.innerHTML = trustedHTML(digitGroupsHTML(row_number)); }
+if (row_number.length >= 5) { td.innerHTML = digitGroupsHTML(row_number); }
 --- the value the cell reports to the filter menu is the raw text, not the grouped rendering
         td._filterText = text;

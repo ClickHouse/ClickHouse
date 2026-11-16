@@ -25,16 +25,18 @@ struct SettingFieldASTFunction
     SettingFieldASTFunction & operator =(const String & str);
     SettingFieldASTFunction & operator =(const Field & f);
 
-    [[nodiscard]] bool isChanged() const { return changed; }
+    bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator const boost::intrusive_ptr<ASTFunction> &() const { return value; } /// NOLINT
     explicit operator bool() const { return value != nullptr; }
     explicit operator Field() const { return toString(); }
 
-    [[nodiscard]] String toString() const;
+    String toString() const;
     void parseFromString(const String & str);
 
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
 };
 
 }

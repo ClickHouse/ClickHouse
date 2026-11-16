@@ -42,7 +42,7 @@ struct PartStorageFixture
         std::filesystem::remove_all(base_path, ec);
     }
 
-    [[nodiscard]] std::filesystem::path partFile(const std::string & name) const { return base_path / part_dir / name; }
+    std::filesystem::path partFile(const std::string & name) const { return base_path / part_dir / name; }
 };
 
 /// A carried file, built the way the tests need one. Production only ever gets one by copying a

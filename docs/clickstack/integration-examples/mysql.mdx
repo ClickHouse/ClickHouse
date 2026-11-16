@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['MySQL', 'logs', 'OTEL', 'ClickStack', 'database monitoring', 'slow query']
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -81,7 +83,7 @@ tail -f /var/log/mysql/mysql-slow.log
 </Step>
 <Step title="Create custom OTel collector configuration" id="custom-otel">
 
-ClickStack allows you to extend the base OpenTelemetry Collector configuration by mounting a custom configuration file and setting an environment variable. The custom configuration is merged with the base configuration managed by ClickStack UI via OpAMP.
+ClickStack allows you to extend the base OpenTelemetry Collector configuration by mounting a custom configuration file and setting an environment variable. The custom configuration is merged with the base configuration managed by HyperDX via OpAMP.
 
 Create a file named `mysql-logs-monitoring.yaml` with the following configuration:
 
@@ -156,7 +158,7 @@ This configuration:
 - Handles multi-line log entries (slow queries span multiple lines)
 - Parses both log formats to extract structured fields (level, error_code, query_time, rows_examined)
 - Preserves original log timestamps
-- Adds `source: mysql-error` and `source: mysql-slow` attributes for filtering in ClickStack UI
+- Adds `source: mysql-error` and `source: mysql-slow` attributes for filtering in HyperDX
 - Routes logs to the ClickHouse exporter via a dedicated pipeline
 
 <Note>
@@ -185,34 +187,18 @@ services:
 Ensure the ClickStack collector has appropriate permissions to read the MySQL log files. Use read-only mounts (`:ro`) and follow the principle of least privilege.
 </Note>
 </Step>
-<Step title="Verifying Logs in ClickStack UI" id="verifying-logs">
+<Step title="Verifying Logs in HyperDX" id="verifying-logs">
 
-Once configured, log into ClickStack UI and verify logs are flowing:
+Once configured, log into HyperDX and verify logs are flowing:
 
 1. Navigate to the search view
 2. Set source to Logs
 3. Filter by `source:mysql-error` or `source:mysql-slow` to see MySQL-specific logs
 4. You should see structured log entries with fields like `level`, `error_code`, `message` (for error logs) and `query_time`, `rows_examined`, `query` (for slow query logs)
 
-<div className="ch-image-lg">
+<Image img="/images/clickstack/mysql/search-view.webp" alt="Search view"/>
 
-<Frame>
-
-![Search view](/images/clickstack/mysql/search-view.webp)
-
-</Frame>
-
-</div>
-
-<div className="ch-image-lg">
-
-<Frame>
-
-![Log view](/images/clickstack/mysql/log-view.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/mysql/log-view.webp" alt="Log view"/>
 </Step>
 </Steps>
 
@@ -319,12 +305,12 @@ docker run --name clickstack-demo \
   clickhouse/clickstack-all-in-one:latest
 ```
 </Step>
-<Step title="Verify logs in ClickStack UI" id="verify-demo-logs">
+<Step title="Verify logs in HyperDX" id="verify-demo-logs">
 
 Once ClickStack is running:
 
 1. Wait a few moments for ClickStack to fully initialize (typically 30-60 seconds)
-2. Open [ClickStack UI](http://localhost:8080/) and log in to your account (you may need to create an account first)
+2. Open [HyperDX](http://localhost:8080/) and log in to your account (you may need to create an account first)
 3. Navigate to the Search view and set the source to `Logs`
 4. Set the time range to **2025-11-13 00:00:00 - 2025-11-16 00:00:00**
 5. You should see 40 logs total (30 error logs with `source:mysql-demo-error` + 10 slow queries with `source:mysql-demo-slow`)
@@ -333,30 +319,14 @@ Once ClickStack is running:
 If you don't see all 40 logs immediately, wait about a minute for the collector to finish processing. If logs still don't appear after waiting, run `docker restart clickstack-demo` and check again after another minute. This is a known issue with the OpenTelemetry filelog receiver when bulk-loading pre-existing files with `start_at: beginning`. Production deployments using `start_at: end` process logs as they're written in real-time and don't experience this issue.
 </Note>
 
-<div className="ch-image-lg">
+<Image img="/images/clickstack/mysql/search-view.webp" alt="Search view"/>
 
-<Frame>
-
-![Search view](/images/clickstack/mysql/search-view.webp)
-
-</Frame>
-
-</div>
-
-<div className="ch-image-lg">
-
-<Frame>
-
-![Log view](/images/clickstack/mysql/log-view.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/mysql/log-view.webp" alt="Log view"/>
 
 <Info>
 **Timezone Display**
 
-ClickStack UI displays timestamps in your browser's local timezone. The demo data spans **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)**. The wide time range ensures you'll see the demo logs regardless of your location. Once you see the logs, you can narrow the range to a 24-hour period for clearer visualizations.
+HyperDX displays timestamps in your browser's local timezone. The demo data spans **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)**. The wide time range ensures you'll see the demo logs regardless of your location. Once you see the logs, you can narrow the range to a 24-hour period for clearer visualizations.
 </Info>
 </Step>
 </Steps>
@@ -372,44 +342,20 @@ To help you get started monitoring MySQL with ClickStack, we provide essential v
 </Step>
 <Step title="Import the pre-built dashboard" id="import-dashboard">
 
-1. Open ClickStack UI and navigate to the Dashboards section
+1. Open HyperDX and navigate to the Dashboards section
 2. Click **Import Dashboard** in the upper right corner under the ellipses
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Import dashboard button](/images/clickstack/import-dashboard.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/import-dashboard.webp" alt="Import dashboard button"/>
 
 3. Upload the `mysql-logs-dashboard.json` file and click **Finish Import**
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Finish import](/images/clickstack/mysql/finish-import.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/mysql/finish-import.webp" alt="Finish import"/>
 </Step>
 <Step title="View the dashboard" id="created-dashboard">
 
 The dashboard will be created with all visualizations pre-configured.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Example dashboard](/images/clickstack/mysql/example-dashboard.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/mysql/example-dashboard.webp" alt="Example dashboard"/>
 
 <Note>
 For the demo dataset, set the time range to **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)** (adjust based on your local timezone). The imported dashboard won't have a time range specified by default.
@@ -431,7 +377,7 @@ Check the custom config file is mounted and readable:
 docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml | head -10
 ```
 
-### No logs appearing in ClickStack UI {#no-logs}
+### No logs appearing in HyperDX {#no-logs}
 
 Check the effective config includes your filelog receiver:
 ```bash

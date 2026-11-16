@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
+#include <Core/QualifiedTableName.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
@@ -90,6 +91,27 @@ public:
             visitChildren(*ast);
     }
 
+    /// Add the default database to the table names only, without rewriting anything else.
+    /// The table names live in table expressions and in the arguments of the functions which
+    /// take a table (or dictionary) name: the right argument of `IN`, the first argument of
+    /// `dictGet`. This is used after SQL UDF expansion, where the rest of the query has already
+    /// been normalized and only the names brought in by the expansion are still unqualified,
+    /// and for the metadata written before the names were qualified at CREATE time.
+    void visitTableExpressions(IAST & ast) const
+    {
+        /// `visitTableExpressionsImpl` collects the `WITH` aliases of the select queries
+        /// it walks, and the callers reuse one visitor for the `SELECT` of a view and for the
+        /// column list of the same `CREATE` query. The aliases of one top-level call must not leak
+        /// into the next one, where the same name is an ordinary table name and has to be qualified.
+        auto enclosing_with_aliases = std::move(with_aliases);
+        auto enclosing_with_expression_aliases = std::move(with_expression_aliases);
+        with_aliases.clear();
+        with_expression_aliases.clear();
+        visitTableExpressionsImpl(ast);
+        with_aliases = std::move(enclosing_with_aliases);
+        with_expression_aliases = std::move(enclosing_with_expression_aliases);
+    }
+
     void visit(ASTSelectQuery & select) const
     {
         ASTPtr unused;
@@ -144,11 +166,177 @@ private:
     /// The declarations of the common table expressions of the enclosing select queries by name,
     /// the nearest last.
     mutable std::unordered_map<String, std::vector<WithDeclaration>> with_aliases;
+    /// The aliases of the expressions of the `WITH` clauses of the enclosing select queries,
+    /// e.g. `WITH [1, 2] AS s`. Unlike other aliases, they are visible in the nested select queries.
+    mutable std::unordered_set<String> with_expression_aliases;
     /// The aliases of the expressions of the current select query.
     mutable std::unordered_set<String> expression_aliases;
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
+
+    void visitTableExpressionsImpl(IAST & ast) const
+    {
+        if (auto * select = ast.as<ASTSelectQuery>())
+        {
+            /// A name defined by a `WITH` element is a common table expression and not a table,
+            /// recursive or not, so a table expression (or the right argument of `IN`) which refers
+            /// to it must not be qualified. Unlike the callers of the full traversal, the callers of
+            /// this pass do not inline the common table expressions first: the metadata of a view is
+            /// repaired for the dependency graphs as it is stored, `WITH cte AS (...) SELECT ... FROM cte`,
+            /// and qualifying `cte` there turned the dependency of the view on its source table into
+            /// a dependency on a nonexistent table. The names are visible in this select query and in
+            /// its subqueries, and are forgotten when the walk leaves it.
+            auto enclosing_with_aliases = with_aliases;
+            auto enclosing_with_expression_aliases = with_expression_aliases;
+            addWithAliases(*select, /* only_recursive_with_hides_table = */ false);
+
+            /// The right argument of `IN` may refer to an alias of an expression defined
+            /// elsewhere in the query, possibly after the point of use - then it is not
+            /// a table name. Collect the aliases of this select query before descending
+            /// into the children, exactly like `visit(ASTSelectQuery &, ASTPtr &)` of the
+            /// full traversal does, with the same scoping.
+            auto enclosing_query_aliases = std::move(expression_aliases);
+            expression_aliases.clear();
+            for (const auto & child : select->children)
+                collectAliases(child);
+
+            for (auto & child : select->children)
+            {
+                if (child.get() == select->with().get())
+                    visitWithList(*select, [&](ASTPtr & node) { visitTableExpressionsImpl(*node); });
+                else
+                    visitTableExpressionsImpl(*child);
+            }
+
+            expression_aliases = std::move(enclosing_query_aliases);
+            with_aliases = std::move(enclosing_with_aliases);
+            with_expression_aliases = std::move(enclosing_with_expression_aliases);
+            return;
+        }
+
+        if (auto * subquery = ast.as<ASTSubquery>(); subquery && isCopyOfWithElementBody(*subquery))
+        {
+            visitCopyOfWithElementBody(*subquery, [&](ASTPtr & node) { visitTableExpressionsImpl(*node); });
+            return;
+        }
+
+        if (auto * table_expression = ast.as<ASTTableExpression>())
+        {
+            if (table_expression->database_and_table_name)
+            {
+                auto table_identifier = table_expression->database_and_table_name;
+                tryVisit<ASTTableIdentifier>(table_identifier);
+
+                /// Keep `database_and_table_name` and `children` synchronized.
+                if (table_identifier != table_expression->database_and_table_name)
+                    table_expression->setOrReplace(table_expression->database_and_table_name, std::move(table_identifier));
+            }
+            else if (table_expression->table_function)
+                visitTableFunction(*table_expression->table_function);
+        }
+
+        if (auto * function = ast.as<ASTFunction>(); function && function->arguments)
+            visitFunctionTableNameArguments(*function);
+
+        for (auto & child : ast.children)
+            visitTableExpressionsImpl(*child);
+    }
+
+    /// Qualify the table names which are carried by function arguments rather than by table
+    /// expressions: the dictionary name in the first argument of `dictGet`, the table name in the
+    /// first argument of `joinGet` and the table name in the right argument of `IN` (and of the
+    /// similar operators) - the same carriers `MarkTableIdentifiersVisitor` and the dependency
+    /// visitors know. The subqueries among the arguments are covered by the generic recursion of
+    /// `visitTableExpressionsImpl`.
+    ///
+    /// `joinGet` is qualified here although `visit(ASTFunction &)` of the full traversal leaves it
+    /// alone: the loading dependency graph resolves a bare name against the database owning the
+    /// definition, while `joinGet` itself resolves it against the current database of the query
+    /// reading the view or inserting into the table. Persisting the qualified name is what makes
+    /// the two agree.
+    void visitFunctionTableNameArguments(ASTFunction & function) const
+    {
+        const bool is_operator_in = functionIsInOrGlobalInOperator(function.name);
+        const bool is_dict_get = functionIsDictGet(function.name);
+        const bool is_join_get = functionIsJoinGet(function.name);
+        if (!is_operator_in && !is_dict_get && !is_join_get)
+            return;
+
+        auto & arguments = function.arguments->children;
+
+        if (is_join_get && !arguments.empty())
+        {
+            if (auto * identifier = arguments[0]->as<ASTIdentifier>())
+            {
+                /// A compound identifier is already qualified, a parameterized name is only known
+                /// when the view is called, a temporary table has no database, and an alias of an
+                /// expression is not a table name at all.
+                if (!identifier->compound() && !identifier->isParam()
+                    && !external_tables.contains(identifier->name()) && !isExpressionAlias(identifier->name()))
+                {
+                    arguments[0] = make_intrusive<ASTIdentifier>(std::vector<String>{database_name, identifier->name()});
+                }
+            }
+            else if (auto * literal = arguments[0]->as<ASTLiteral>())
+            {
+                auto & literal_value = literal->value;
+                if (literal_value.getType() == Field::Types::String)
+                {
+                    auto qualified_table_name = QualifiedTableName::tryParseFromString(literal_value.safeGet<String>());
+                    if (qualified_table_name && qualified_table_name->database.empty() && !external_tables.contains(qualified_table_name->table))
+                    {
+                        qualified_table_name->database = database_name;
+                        literal_value = qualified_table_name->getFullName();
+                    }
+                }
+            }
+        }
+
+        if (is_dict_get && !arguments.empty())
+        {
+            if (auto * identifier = arguments[0]->as<ASTIdentifier>())
+            {
+                /// A compound identifier is already qualified, and a parameterized name is only
+                /// known when the view is called, so there is nothing to qualify.
+                /// The name is resolved against `database_name` and not against the current database
+                /// of `context`: on the metadata-load paths the context is the loading context, whose
+                /// current database is unrelated to the database owning the definition.
+                if (!identifier->compound() && !identifier->isParam())
+                {
+                    auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), database_name);
+                    arguments[0] = make_intrusive<ASTIdentifier>(qualified_dictionary_name.getParts());
+                }
+            }
+            else if (auto * literal = arguments[0]->as<ASTLiteral>())
+            {
+                auto & literal_value = literal->value;
+                if (literal_value.getType() == Field::Types::String)
+                {
+                    auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(literal_value.safeGet<String>(), database_name);
+                    literal_value = qualified_dictionary_name.getFullName();
+                }
+            }
+        }
+
+        if (is_operator_in && arguments.size() > 1)
+        {
+            /// A plain identifier in the right argument of `IN` is a table name.
+            if (auto * identifier = arguments[1]->as<ASTIdentifier>(); identifier && !identifier->as<ASTTableIdentifier>())
+            {
+                /// Unless it is an alias of an expression defined elsewhere in the query -
+                /// then it is not a table name and must not be qualified with the database,
+                /// like in `visit(ASTFunction &, ASTPtr &)` of the full traversal.
+                if (isExpressionAlias(identifier->name()))
+                    return;
+
+                if (auto maybe_table_identifier = identifier->createTable())
+                    arguments[1] = maybe_table_identifier;
+            }
+
+            tryVisit<ASTTableIdentifier>(arguments[1]);
+        }
+    }
 
     void visit(ASTSelectWithUnionQuery & select, ASTPtr &) const
     {
@@ -158,10 +346,6 @@ private:
                 tryVisit<ASTSelectQuery>(child);
             else if (child->as<ASTSelectIntersectExceptQuery>())
                 tryVisit<ASTSelectIntersectExceptQuery>(child);
-            /// A parenthesized operand with its own `SETTINGS` clause stays wrapped into a union of its own
-            /// (see `ParserUnionQueryElement`), as does a parenthesized union that is not lifted into this one.
-            else if (child->as<ASTSelectWithUnionQuery>())
-                tryVisit<ASTSelectWithUnionQuery>(child);
         }
     }
 
@@ -174,7 +358,7 @@ private:
         /// and are forgotten when the walk leaves it: another select query of the same `UNION`, or
         /// a sibling subquery, may use the same name for a table, which has to be qualified.
         auto enclosing_with_aliases = with_aliases;
-        addWithAliases(select);
+        addWithAliases(select, /* only_recursive_with_hides_table = */ true);
 
         /// The right argument of IN may refer to an alias of an expression defined elsewhere
         /// in the query, possibly after the point of use - then it is not a table name.
@@ -201,8 +385,12 @@ private:
         with_aliases = std::move(enclosing_with_aliases);
     }
 
-    /// Add the names of the common table expressions declared by the `WITH` clause of the select query.
-    void addWithAliases(const ASTSelectQuery & select) const
+    /// Add the names declared by the `WITH` clause of the select query: the names of the common
+    /// table expressions, and the aliases of the expressions, which the analyzer also makes visible
+    /// in the nested select queries. With `only_recursive_with_hides_table`, only the names of
+    /// a `WITH RECURSIVE` list hide a table, for the full traversal, which runs after the others are
+    /// expanded, and the aliases of the expressions are not collected.
+    void addWithAliases(const ASTSelectQuery & select, bool only_recursive_with_hides_table) const
     {
         if (!select.with())
             return;
@@ -213,11 +401,37 @@ private:
             {
                 with_aliases[with_element->name].push_back(
                 {
-                    .hides_table = select.recursive_with,
+                    .hides_table = select.recursive_with || !only_recursive_with_hides_table,
                     .is_recursive = select.recursive_with && getRecursiveBodyBranches(with_element->subquery),
                 });
             }
+            else if (!only_recursive_with_hides_table)
+            {
+                collectWithExpressionAliases(*child);
+            }
         }
+    }
+
+    /// Like the analyzer, take the aliases at any depth of a `WITH` expression, but not inside
+    /// a lambda or a subquery: those aliases are their own.
+    void collectWithExpressionAliases(const IAST & ast) const
+    {
+        String alias = ast.tryGetAlias();
+        if (!alias.empty())
+            with_expression_aliases.insert(alias);
+
+        if (ast.as<ASTSubquery>() || ast.as<ASTSelectQuery>() || ast.as<ASTSelectWithUnionQuery>())
+            return;
+        if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
+            return;
+
+        for (const auto & child : ast.children)
+            collectWithExpressionAliases(*child);
+    }
+
+    bool isExpressionAlias(const String & name) const
+    {
+        return expression_aliases.contains(name) || with_expression_aliases.contains(name);
     }
 
     bool isWithAlias(const String & name) const
@@ -494,7 +708,7 @@ private:
                             /// e.g. `SELECT 'foo' AS object WHERE (object IN (('foo', 'bar') AS objects)) AND object IN objects`.
                             /// Then it is not a table name and must not be qualified with the database
                             /// (the similar code in `MarkTableIdentifiersVisitor` also checks the aliases).
-                            if (!identifier->as<ASTTableIdentifier>() && expression_aliases.contains(identifier->name()))
+                            if (!identifier->as<ASTTableIdentifier>() && isExpressionAlias(identifier->name()))
                                 continue;
 
                             /// If identifier is broken then we can do nothing and get an exception
@@ -583,6 +797,10 @@ private:
 
     void visitDDL(ASTPtr & /* parent */, ASTSystemQuery & query, ASTPtr &) const
     {
+        if (query.type != ASTSystemQuery::Type::RELOAD_DICTIONARY
+            && query.type != ASTSystemQuery::Type::UNLOAD_DICTIONARY)
+            return;
+
         if (!query.table || query.database || only_replace_current_database_function)
             return;
 

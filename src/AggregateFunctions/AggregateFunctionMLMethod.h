@@ -333,7 +333,7 @@ template <
 class AggregateFunctionMLMethod final : public IAggregateFunctionDataHelper<Data, AggregateFunctionMLMethod<Data, Name>>
 {
 public:
-    [[nodiscard]] String getName() const override { return Name::name; }
+    String getName() const override { return Name::name; }
 
     explicit AggregateFunctionMLMethod(
         UInt32 param_num_,
@@ -359,10 +359,10 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     /// This function is called from evalMLMethod function for correct predictValues call
-    [[nodiscard]] DataTypePtr getReturnTypeToPredict() const override
+    DataTypePtr getReturnTypeToPredict() const override
     {
         return std::make_shared<DataTypeNumber<Float64>>();
     }

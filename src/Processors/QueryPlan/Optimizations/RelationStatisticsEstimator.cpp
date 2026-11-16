@@ -1,7 +1,9 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <algorithm>
+#include <ranges>
+
+#include <fmt/ranges.h>
 
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
@@ -19,13 +21,10 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
-#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -43,6 +42,18 @@ namespace
 
 /// The sizes of the arrays are unknown, so an array join is assumed to produce this many rows per input row.
 constexpr Float64 array_join_rows_multiplier = 100;
+
+String dumpStatsForLogs(const RelationStats & stats)
+{
+    return fmt::format(
+        "{}: {} rows, columns: [{}]",
+        stats.table_name.empty() ? "<unknown>" : stats.table_name,
+        stats.estimated_rows ? toString(stats.estimated_rows.value()) : "unknown",
+        fmt::join(
+            stats.column_stats
+                | std::views::transform([](const auto & p) { return fmt::format("{}: {}", p.first, p.second.num_distinct_values); }),
+            ", "));
+}
 
 RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
 {
@@ -91,20 +102,11 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
     return aggregation_stats;
 }
 
-/// Raises a read with rows to 1 row and 1 value per column: 1% of `=` and the 10% guess of distinct values truncate to 0
-/// on a table of a few rows, and the joins and aggregations above multiply them.
-void floorReadWithRows(RelationProfile & profile)
-{
-    profile.rows = std::max<UInt64>(profile.rows, 1);
-    for (auto & [_, column_stats] : profile.column_stats)
-        column_stats.num_distinct_values = std::max<UInt64>(column_stats.num_distinct_values, 1);
-}
-
 /// Rows dropped by a limit are not a value-uniform sample (e.g. a TopN keeps one end of the
 /// sorted range), so the child's value ranges and NULL fraction do not describe the output.
 /// Applied whenever a limit is present: the row estimate cannot prove the limit does not
 /// truncate (e.g. a TopN read is already scaled down by its `__topKFilter` prewhere).
-void clearColumnValueRanges(UnorderedMapWithMemoryTracking<String, ColumnStats> & column_stats)
+void clearColumnValueRanges(std::unordered_map<String, ColumnStats> & column_stats)
 {
     for (auto & [_, stats] : column_stats)
     {
@@ -144,23 +146,6 @@ bool prunesNothingAtPlanTime(const ActionsDAG::Node * node)
         return std::ranges::any_of(node->children, prunesNothingAtPlanTime);
 
     return false;
-}
-
-/// The conditions on the rows of a read: the filter above it and the `PREWHERE`, as MergeTree estimates them, and the row policy.
-std::vector<RPNBuilderTreeNode> getConditionsToEstimate(const SourceStepWithFilter & reading, const ActionsDAG::Node * filter) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `ConditionSelectivityEstimator::estimateRelationProfile` takes std::vector
-{
-    std::vector<RPNBuilderTreeNode> conditions; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- returned to `estimateRelationProfile`, which takes std::vector
-    auto add_condition = [&](const ActionsDAG::Node * condition)
-    {
-        if (condition && !prunesNothingAtPlanTime(condition))
-            conditions.emplace_back(condition, reading.getContext());
-    };
-    add_condition(filter);
-    if (const auto & prewhere_info = reading.getPrewhereInfo())
-        add_condition(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name));
-    if (const auto & row_level_filter = reading.getRowLevelFilter())
-        add_condition(row_level_filter->actions.tryFindInOutputs(row_level_filter->column_name));
-    return conditions;
 }
 
 }
@@ -265,7 +250,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                     .column_stats = relation_profile.column_stats,
                     .table_name = table_display_name,
                     .source = RowEstimateSource::Statistics};
-                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpRelationStatsForLogs(stats));
+                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
                 return stats;
             }
         }
@@ -295,57 +280,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             .source = RowEstimateSource::PrimaryIndex};
     }
 
-    if (const auto * reading = typeid_cast<const ReadFromObjectStorageStep *>(step))
-    {
-        const auto estimate = reading->getOrCreateDataLakeReadEstimate();
-        if (!estimate)
-            return RelationStats{};
-
-        /// No rows, as `RelationStats{}`, so the join order is the same; but the metadata was read, so it names the table
-        /// and its source: `EXPLAIN` shows `t[no_stats~?]` and the data lake hint line lists it.
-        RelationStats stats{
-            .estimated_rows = {},
-            .table_name = reading->getStorageID().getTableName(),
-            .imprecise_estimate = true,
-            .source = RowEstimateSource::DataLakeMetadata};
-        if (!estimate->rows)
-            return stats;
-        const UInt64 rows = *estimate->rows;
-
-        const auto conditions = getConditionsToEstimate(*reading, filter);
-        if (conditions.empty() || rows == 0)
-        {
-            stats.estimated_rows = rows;
-            if (estimate->estimator)
-            {
-                auto profile = estimate->estimator->estimateRelationProfile();
-                if (rows != 0)
-                    floorReadWithRows(profile);
-                stats.column_stats = std::move(profile.column_stats);
-            }
-            /// Without conditions, the rows of the remaining files, imprecise with delete files, also when they leave 0 rows.
-            stats.imprecise_estimate = estimate->has_delete_files;
-            return stats;
-        }
-
-        /// With `for_runtime_filter_transport` the rows size a sent runtime filter, so they must be an upper bound, not a guess.
-        if (estimate->estimator && !for_runtime_filter_transport)
-        {
-            auto filtered = estimate->estimator->estimateRelationProfile(reading->getStorageMetadata(), conditions);
-            floorReadWithRows(filtered);
-            stats.estimated_rows = filtered.rows;
-            stats.column_stats = std::move(filtered.column_stats);
-            return stats;
-        }
-
-        /// As for MergeTree without column statistics, conditions that pruned nothing give no estimate.
-        if (!estimate->pruned_data_files)
-            return stats;
-
-        /// The remaining files bound the rows, as the selected parts bound a MergeTree read.
-        stats.estimated_rows = rows;
-        return stats;
-    }
+    if (typeid_cast<const ReadFromObjectStorageStep *>(step))
+        return RelationStats{};
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
     {
@@ -362,10 +298,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         /// system.one always produces exactly one row — used to implement constant SELECTs like `SELECT 1`.
         return RelationStats{.estimated_rows = 1, .table_name = "system.one"};
     }
-
-    /// Reads no rows, e.g. a `MergeTree` table without parts.
-    if (typeid_cast<const ReadNothingStep *>(step))
-        return RelationStats{.estimated_rows = 0, .table_name = {}, .source = RowEstimateSource::Statistics};
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
     {

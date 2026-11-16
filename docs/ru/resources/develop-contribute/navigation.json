@@ -57,6 +57,7 @@
       ]
     }
   ],
+  "icon": "/images/icons/icon-contribute.svg",
   "item": "Разработка и участие в проекте",
   "root": "ru/resources/develop-contribute/index"
 }

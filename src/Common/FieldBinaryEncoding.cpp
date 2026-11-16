@@ -271,13 +271,13 @@ DecimalField<T> decodeDecimal(ReadBuffer & buf)
 {
     UInt32 scale = 0;
     readVarUInt(scale, buf);
-    /// The scale comes from the data (a `Dynamic` value or an `AggregateFunction` type parameter
-    /// carries its own binary-encoded Field); an out-of-range value later overruns a fixed-size
-    /// buffer in the decimal text writer, so reject it here, matching `readDecimalFieldBinary`
-    /// and `DataTypeDecimalBase`.
+    /// The scale is attacker-controlled wire data (a `Dynamic` value or an `AggregateFunction` type
+    /// parameter carries its own binary-encoded Field); an out-of-range value later overruns a
+    /// fixed-size buffer in the decimal text writer, so reject it at the boundary, matching
+    /// `readDecimalFieldBinary` and `DataTypeDecimalBase`.
     if (scale > DecimalUtils::max_precision<T>)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})",
-                        scale, DecimalUtils::max_precision<T>);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})", scale, DecimalUtils::max_precision<T>);
+
     T value{};
     readBinaryLittleEndian(value, buf);
     return DecimalField<T>(value, scale);
@@ -356,7 +356,7 @@ Field decodeFieldImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexi
         case FieldBinaryTypeIndex::String:
         {
             String value;
-            readStringBinaryGrowing(value, buf);
+            readStringBinary(value, buf);
             return value;
         }
         case FieldBinaryTypeIndex::UUID:
@@ -401,7 +401,7 @@ Field decodeFieldImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexi
             for (size_t i = 0; i != size; ++i)
             {
                 String name;
-                readStringBinaryGrowing(name, buf);
+                readStringBinary(name, buf);
                 value[name] = decodeFieldImpl(buf, complexity, max_complexity);
             }
             return value;
@@ -409,9 +409,9 @@ Field decodeFieldImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexi
         case FieldBinaryTypeIndex::AggregateFunctionState:
         {
             String name;
-            readStringBinaryGrowing(name, buf);
+            readStringBinary(name, buf);
             String data;
-            readStringBinaryGrowing(data, buf);
+            readStringBinary(data, buf);
             return AggregateFunctionStateData{.name = name, .data = data};
         }
     }

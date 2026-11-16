@@ -74,22 +74,22 @@ public:
     explicit FunctionShowCertificate(const std::string & certificate_ = "") : certificate(certificate_) {}
 #endif
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    size_t getNumberOfArguments() const override { return 0; }
 
     /// The connection's client certificate, or the executing node's own server certificate.
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-    [[nodiscard]] bool isServerConstant() const override { return true; }
+    bool isDeterministic() const override { return false; }
+    bool isServerConstant() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override
     {
-        return "() -> Map(String, String)";
+        return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         MutableColumnPtr keys = DataTypeString().createColumn();
         MutableColumnPtr values = DataTypeString().createColumn();

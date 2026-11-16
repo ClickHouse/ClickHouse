@@ -19,6 +19,7 @@
 --
 -- Tags: distributed
 
+SET enable_analyzer = 1;
 -- Pin the legacy EXPLAIN plan format: the assertions below grep step
 -- descriptions ("additional filter", "VIEW subquery"), which the default
 -- 'pretty' EXPLAIN format (explain_query_plan_default) does not print.

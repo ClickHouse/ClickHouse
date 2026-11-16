@@ -4,7 +4,6 @@
 
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
-#include <DataTypes/Serializations/ISerialization.h>
 
 
 namespace DB
@@ -56,7 +55,7 @@ private:
 
     void addToChecksums(MergeTreeDataPartChecksums & checksums);
 
-    void addStreams(const NameAndTypePair & name_and_type) override;
+    void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) override;
 
     ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
 
@@ -70,7 +69,7 @@ private:
     {
     public:
         void add(MutableColumns && columns);
-        [[nodiscard]] size_t size() const;
+        size_t size() const;
         Columns releaseColumns();
     private:
         MutableColumns accumulated_columns;

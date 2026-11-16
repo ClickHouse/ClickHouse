@@ -17,9 +17,7 @@ clickhouse_add_executable (memcpy-bench
     glibc/memmove-avx512-no-vzeroupper.S
     )
 
-# Do not let the compiler replace copy and fill loops of the benchmarked implementations with calls to `memcpy`, `memmove`, `memset`.
-# It is the Clang equivalent of `-fno-tree-loop-distribute-patterns` from GCC, which Clang rejects.
-target_compile_options(memcpy-bench PRIVATE -fno-builtin-memcpy -fno-builtin-memmove -fno-builtin-memset)
+add_compile_options(memcpy-bench PRIVATE -fno-tree-loop-distribute-patterns)
 
 if (OS_SUNOS)
     target_compile_options(memcpy-bench PRIVATE "-Wa,--divide")

@@ -2,8 +2,8 @@
 -- row count for such columns. A row count is not comparable with bytes per rejected row, so every
 -- physical-column predicate won and ran first, on all rows.
 
-SET min_marks_per_part_to_load_statistics = 0;
 SET allow_experimental_full_text_index = 1;
+SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy'; -- the default plan printer reverses the AND arguments
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;

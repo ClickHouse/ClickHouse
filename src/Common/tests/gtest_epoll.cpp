@@ -23,7 +23,7 @@ struct Pipe
                 ::close(fd);
     }
 
-    [[nodiscard]] int readEnd() const { return fds[0]; }
+    int readEnd() const { return fds[0]; }
     void signal() const { EXPECT_EQ(::write(fds[1], "x", 1), 1); }
 };
 

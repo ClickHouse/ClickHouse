@@ -36,7 +36,6 @@ public:
     void copyFile(const String & destination, const String & source, size_t) override;
     void removeFile(const String & file_name) override;
     void removeEmptyDirectories() override;
-    void removeEmptyRootDirectory() override;
 
 private:
     /// This readFile() is used only to implement BackupWriterDefault::fileContentsEqual().

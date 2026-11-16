@@ -18,14 +18,14 @@ public:
     {
     public:
         explicit ArgumentAST(const IAST * argument_) : argument(argument_) {}
-        [[nodiscard]] std::unique_ptr<AbstractFunction> getFunction() const override
+        std::unique_ptr<AbstractFunction> getFunction() const override
         {
             if (const auto * f = argument->as<ASTFunction>())
                 return std::make_unique<FunctionAST>(*f);
             return nullptr;
         }
-        [[nodiscard]] bool isIdentifier() const override { return argument->as<ASTIdentifier>(); }
-        [[nodiscard]] bool isSettings() const override { return argument->as<ASTSetQuery>(); }
+        bool isIdentifier() const override { return argument->as<ASTIdentifier>(); }
+        bool isSettings() const override { return argument->as<ASTSetQuery>(); }
         bool tryGetString(String * res, bool allow_identifier) const override
         {
             if (const auto * literal = argument->as<ASTLiteral>())
@@ -66,8 +66,8 @@ public:
     {
     public:
         explicit ArgumentsAST(const ASTs * arguments_) : arguments(arguments_) {}
-        [[nodiscard]] size_t size() const override { return arguments ? arguments->size() : 0; }
-        [[nodiscard]] std::unique_ptr<Argument> at(size_t n) const override
+        size_t size() const override { return arguments ? arguments->size() : 0; }
+        std::unique_ptr<Argument> at(size_t n) const override
         {
             return std::make_unique<ArgumentAST>(arguments->at(n).get());
         }
@@ -87,7 +87,7 @@ public:
         arguments = std::make_unique<ArgumentsAST>(&expr_list->children);
     }
 
-    [[nodiscard]] String name() const override { return function->name; }
+    String name() const override { return function->name; }
 private:
     const ASTFunction * function = nullptr;
 };
@@ -100,7 +100,6 @@ inline SecretArgumentsResult findSecretArguments(const ASTFunction & function)
     switch (function.getKind())
     {
         case ASTFunction::Kind::ORDINARY_FUNCTION:
-        case ASTFunction::Kind::TABLE_FUNCTION:
         case ASTFunction::Kind::TABLE_ENGINE:
         case ASTFunction::Kind::DATABASE_ENGINE:
         case ASTFunction::Kind::BACKUP_NAME:

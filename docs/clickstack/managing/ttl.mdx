@@ -7,6 +7,7 @@ doc_type: 'guide'
 keywords: ['clickstack', 'ttl', 'data retention', 'lifecycle', 'storage management']
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
 import OtelLogsSchema from '/snippets/clickstack/_schema_otel_logs.mdx';
 
 ## TTL in ClickStack {#ttl-clickstack}
@@ -15,7 +16,7 @@ Time-to-Live (TTL) is a crucial feature in ClickStack for efficient data retenti
 
 **By default, ClickStack retains data for 3 days. To modify this, see ["Modifying TTL"](#modifying-ttl).**
 
-TTL is controlled at a table level in ClickHouse. For example, the default schema for logs is shown below; `${LOGS_TTL}` is substituted with the configured retention (3 days unless changed) when the collector creates the table. Set `HYPERDX_OTEL_EXPORTER_TABLES_TTL` to configure the common retention for all tables, or override it for individual signals with `HYPERDX_OTEL_EXPORTER_LOGS_TTL`, `HYPERDX_OTEL_EXPORTER_TRACES_TTL`, `HYPERDX_OTEL_EXPORTER_METRICS_TTL`, and `HYPERDX_OTEL_EXPORTER_SESSIONS_TTL`. Each signal-specific setting uses the common table retention when it is not set.
+TTL is controlled at a table level in ClickHouse. For example, the default schema for logs is shown below; `${TABLES_TTL}` is substituted with the configured retention (3 days unless changed) when the collector creates the table:
 
 <OtelLogsSchema />
 
@@ -23,17 +24,9 @@ Partitioning in ClickHouse allows data to be logically separated on disk accordi
 
 As shown in the above example, partitioning is specified on a table when it is initially defined via the `PARTITION BY` clause. This clause can contain an SQL expression on any column/s, the results of which will define which partition a row is sent to. This causes data to be logically associated (via a common folder name prefix) with each partition on the disk, which can then be queried in isolation. For the example above, the default `otel_logs` schema partitions by day using the expression `toDate(Timestamp)`. As rows are inserted into ClickHouse, this expression will be evaluated against each row and routed to the resulting partition if it exists (if the row is the first for a day, the partition will be created). For further details on partitioning and its other applications, see ["Table Partitions"](/concepts/core-concepts/partitions).
 
-<div className="ch-image-lg">
+<Image img="/images/use-cases/observability/observability-14.webp" alt="Partitions" size="lg"/>
 
-<Frame>
-
-![Partitions](/images/use-cases/observability/observability-14.webp)
-
-</Frame>
-
-</div>
-
-The table schema also includes `TTL toDateTime(Timestamp) + ${LOGS_TTL}` and setting `ttl_only_drop_parts = 1`. The former clause ensures data will be dropped once it is older than the configured TTL (3 days by default). The setting `ttl_only_drop_parts = 1` enforces only expiring data parts where all of the data has expired (vs. attempting to partially delete rows). With partitioning ensuring data from separate days is never "merged," data can thus be efficiently dropped.
+The table schema also includes `TTL toDateTime(Timestamp) + ${TABLES_TTL}` and setting `ttl_only_drop_parts = 1`. The former clause ensures data will be dropped once it is older than the configured TTL (3 days by default). The setting `ttl_only_drop_parts = 1` enforces only expiring data parts where all of the data has expired (vs. attempting to partially delete rows). With partitioning ensuring data from separate days is never "merged," data can thus be efficiently dropped.
 
 <Warning>
 **`ttl_only_drop_parts`**

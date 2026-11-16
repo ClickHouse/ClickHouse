@@ -105,33 +105,33 @@ public:
     /// Builds QueryPlan for current query.
     void buildQueryPlan(QueryPlan & query_plan) override;
 
-    [[nodiscard]] bool ignoreLimits() const override { return options.ignore_limits; }
-    [[nodiscard]] bool ignoreQuota() const override { return options.ignore_quota; }
+    bool ignoreLimits() const override { return options.ignore_limits; }
+    bool ignoreQuota() const override { return options.ignore_quota; }
 
     void ignoreWithTotals() override;
 
-    [[nodiscard]] ASTPtr getQuery() const { return query_ptr; }
+    ASTPtr getQuery() const { return query_ptr; }
 
-    [[nodiscard]] const SelectQueryInfo & getQueryInfo() const { return query_info; }
+    const SelectQueryInfo & getQueryInfo() const { return query_info; }
 
-    [[nodiscard]] SelectQueryExpressionAnalyzer * getQueryAnalyzer() const { return query_analyzer.get(); }
+    SelectQueryExpressionAnalyzer * getQueryAnalyzer() const { return query_analyzer.get(); }
 
-    [[nodiscard]] const ExpressionAnalysisResult & getAnalysisResult() const { return analysis_result; }
+    const ExpressionAnalysisResult & getAnalysisResult() const { return analysis_result; }
 
-    [[nodiscard]] const Names & getRequiredColumns() const { return required_columns; }
+    const Names & getRequiredColumns() const { return required_columns; }
 
-    [[nodiscard]] bool hasAggregation() const { return query_analyzer->hasAggregation(); }
+    bool hasAggregation() const { return query_analyzer->hasAggregation(); }
 
     static void addEmptySourceToQueryPlan(
         QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info);
 
     Names getRequiredColumns() { return required_columns; }
 
-    [[nodiscard]] bool supportsTransactions() const override { return true; }
+    bool supportsTransactions() const override { return true; }
 
-    [[nodiscard]] FilterDAGInfoPtr getAdditionalQueryInfo() const { return additional_filter_info; }
+    FilterDAGInfoPtr getAdditionalQueryInfo() const { return additional_filter_info; }
 
-    [[nodiscard]] RowPolicyFilterPtr getRowPolicyFilter() const;
+    RowPolicyFilterPtr getRowPolicyFilter() const;
 
     static SortDescription getSortDescription(const ASTSelectQuery & query, const ContextPtr & context);
     static UInt64 getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context);
@@ -181,7 +181,7 @@ private:
     void applyFiltersToPrewhereInAnalysis(ExpressionAnalysisResult & analysis) const;
     /// Whether the row policy filter can be handed to the storage's read(). Shared by the
     /// push site and the apply-as-FilterStep fallback, which must stay exact complements.
-    [[nodiscard]] bool shouldPushRowLevelFilterToStorage() const;
+    bool shouldPushRowLevelFilterToStorage() const;
 
     Block getSampleBlockImpl();
 
@@ -210,7 +210,7 @@ private:
     bool autoFinalOnQuery(ASTSelectQuery & select_query);
     std::optional<UInt64> getTrivialCount(UInt64 allow_experimental_parallel_reading_from_replicas);
     /// Check if we can limit block size to read based on LIMIT clause
-    [[nodiscard]] UInt64 maxBlockSizeByLimit() const;
+    UInt64 maxBlockSizeByLimit() const;
 
     enum class Modificator : uint8_t
     {

@@ -2,6 +2,8 @@
 -- { echo }
 -- Test for the cume_dist window function.
 
+SET enable_analyzer = 1;
+
 SELECT '-- Basic functionality';
 SELECT number, cume_dist() OVER (ORDER BY number) FROM numbers(5);
 
@@ -34,5 +36,8 @@ SELECT a, b, cume_dist() OVER (PARTITION BY a ORDER BY b) FROM test_cume_dist WH
 
 SELECT '-- Empty partition';
 SELECT a, b, cume_dist() OVER (PARTITION BY a ORDER BY b) FROM test_cume_dist WHERE a = 7;
+
+SELECT '-- Frame specification should produce an error';
+SELECT number, cume_dist() OVER (ORDER BY number ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM numbers(5); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE test_cume_dist;

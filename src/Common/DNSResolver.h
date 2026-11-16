@@ -79,11 +79,11 @@ public:
 
     void setFilterSettings(bool dns_allow_resolve_names_to_ipv4, bool dns_allow_resolve_names_to_ipv6);
 
-    [[nodiscard]] bool getFilterIPv4() const;
-    [[nodiscard]] bool getFilterIPv6() const;
+    bool getFilterIPv4() const;
+    bool getFilterIPv6() const;
 
     /// Returns a copy of cache entries
-    [[nodiscard]] std::vector<std::pair<std::string, CacheEntry>> cacheEntries() const;
+    std::vector<std::pair<std::string, CacheEntry>> cacheEntries() const;
 
     ~DNSResolver();
 

@@ -12,11 +12,15 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse server，由 ClickHouse 源码自动生成。
 
-## encryption_header_cache_policy {#encryption_header_cache_policy}
+<div id="encryption_header_cache_policy">
+  ## encryption_header_cache_policy
+</div>
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />加密头缓存淘汰策略名称。可选值：`LRU`、`SLRU`、`SIEVE`。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />加密头缓存策略名称。
 
-## encryption_header_cache_size {#encryption_header_cache_size}
+<div id="encryption_header_cache_size">
+  ## encryption_header_cache_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="52428800" changeable_without_restart="Yes" />
 
@@ -26,7 +30,9 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
   此设置可在运行时修改，并会立即生效。
 </Note>
 
-## encryption_header_cache_size_ratio {#encryption_header_cache_size_ratio}
+<div id="encryption_header_cache_size_ratio">
+  ## encryption_header_cache_size_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />加密头缓存中受保护队列 (在采用 SLRU policy 时) 的大小占缓存总大小的比例。
 

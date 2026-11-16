@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: distributed, no-msan, no-fasttest
-# no-fasttest: Too slow for fast test (~12s), covered by regular stateless runs.
+# Tags: distributed
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -213,6 +212,9 @@ for _retry in {1..100}; do
 done
 ${CLICKHOUSE_CLIENT} -q "kill query where query_id = '$kill_query_id' sync format Null"
 wait
+# `sleep` never polls the socket the initiator's cancel arrives on, and the KILL above matched only
+# the initiator's own process-list entry, so the remote leg keeps sleeping: end it explicitly.
+${CLICKHOUSE_CLIENT} -q "kill query where initial_query_id = '$kill_query_id' and query_id != initial_query_id sync format Null"
 
 poll_spans "
     with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t

@@ -45,7 +45,7 @@ struct MovesListElement : private boost::noncopyable
         const std::string & target_disk_path_,
         UInt64 part_size_);
 
-    [[nodiscard]] MoveInfo getInfo() const;
+    MoveInfo getInfo() const;
 };
 
 

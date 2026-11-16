@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas, no-msan
+-- Tags: no-parallel-replicas
 
 --- Verifies that direct read on partially materialized text indexes
 

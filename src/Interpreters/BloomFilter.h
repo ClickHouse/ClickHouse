@@ -53,7 +53,7 @@ public:
     void add(const char * data, size_t len);
 
     void addHashPair(const BloomFilterHashPair & pair);
-    [[nodiscard]] bool findHashPair(const BloomFilterHashPair & pair) const;
+    bool findHashPair(const BloomFilterHashPair & pair) const;
     void addHashPairs(const BloomFilterHashPair * pairs, size_t count);
     size_t findHashPairs(const BloomFilterHashPair * pairs, size_t count, UInt8 * out_mask) const;
 
@@ -65,22 +65,22 @@ public:
     void clear();
 
     void addHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed);
-    [[nodiscard]] bool findHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed) const;
+    bool findHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed) const;
 
     /// Checks if this contains everything from another bloom filter.
     /// Bloom filters must have equal size and seed.
     bool contains(const BloomFilter & bf);
 
-    [[nodiscard]] const Container & getFilter() const { return filter; }
+    const Container & getFilter() const { return filter; }
     Container & getFilter() { return filter; }
-    [[nodiscard]] size_t getFilterSizeBytes() const { return size; }
-    [[nodiscard]] size_t getHashes() const { return hashes; }
-    [[nodiscard]] size_t getSeed() const { return seed; }
+    size_t getFilterSizeBytes() const { return size; }
+    size_t getHashes() const { return hashes; }
+    size_t getSeed() const { return seed; }
 
     /// For debug.
-    [[nodiscard]] UInt64 isEmpty() const;
+    UInt64 isEmpty() const;
 
-    [[nodiscard]] size_t memoryUsageBytes() const;
+    size_t memoryUsageBytes() const;
 
     friend bool operator== (const BloomFilter & a, const BloomFilter & b);
 private:
@@ -95,7 +95,7 @@ private:
     libdivide::divider<size_t, libdivide::BRANCHFREE> divider; /// Divider for fast modulo by modulus.
     Container filter;
 
-    [[nodiscard]] inline size_t fastMod(size_t value) const { return value - (value / divider) * modulus; }
+    inline size_t fastMod(size_t value) const { return value - (value / divider) * modulus; }
 
 public:
     static ColumnPtr getPrimitiveColumn(const ColumnPtr & column);

@@ -64,7 +64,7 @@ struct AggregateFunctionTimeseriesInstantValueTraits
                 latest.filled = 1;
         }
 
-        [[nodiscard]] std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
+        std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
         {
             if (latest.filled < 2)
                 return std::nullopt;

@@ -71,7 +71,7 @@ struct Endpoint
     std::optional<bool> container_already_exists;
     std::optional<bool> add_account_name_to_url;
 
-    [[nodiscard]] String getContainerEndpoint() const
+    String getContainerEndpoint() const
     {
         String url = storage_account_url;
         if (url.ends_with('/'))
@@ -92,7 +92,7 @@ struct Endpoint
         return url;
     }
 
-    [[nodiscard]] String getServiceEndpoint() const
+    String getServiceEndpoint() const
     {
         String url = storage_account_url;
 
@@ -131,15 +131,15 @@ class ContainerClientWrapper
 public:
     ContainerClientWrapper(RawContainerClient client_, String blob_prefix_);
 
-    [[nodiscard]] bool IsClientForDisk() const;
-    [[nodiscard]] BlobClient GetBlobClient(const String & blob_name) const;
-    [[nodiscard]] BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
-    [[nodiscard]] BlobContainerPropertiesRespones GetProperties() const;
-    [[nodiscard]] ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
+    bool IsClientForDisk() const;
+    BlobClient GetBlobClient(const String & blob_name) const;
+    BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
+    BlobContainerPropertiesRespones GetProperties() const;
+    ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
 
-    [[nodiscard]] BlobContainerBatch CreateBatch() const;
-    BlobBatchResultResponse SubmitBatch(const BlobContainerBatch & batch) const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
-    [[nodiscard]] String GetBlobPath(const String & blob_name) const;
+    BlobContainerBatch CreateBatch() const;
+    BlobBatchResultResponse SubmitBatch(const BlobContainerBatch & batch) const;
+    String GetBlobPath(const String & blob_name) const;
 
 private:
     RawContainerClient client;
@@ -156,42 +156,13 @@ struct ConnectionParams
     AuthMethod auth_method;
     BlobClientOptions client_options;
 
-    /// When true, the client must not authenticate with the AKS workload identity or the machine's managed identity.
-    bool forbid_implicit_credentials = true;
-
-    /// With `forbid_implicit_credentials`, build a client with no credentials instead of throwing.
-    bool anonymous_fallback_for_server_credentials = false;
-
-    /// A storage defined in user SQL, whose client follows the restriction of each accessing session. Not a disk, or a
-    /// table on a disk, whose configuration comes from the server.
-    bool follows_session_restriction = false;
-
-    /// `client_id` and `tenant_id` of a `WorkloadIdentityCredential` in `auth_method` given in `extra_credentials`,
-    /// which the credential does not expose. Empty when the credential takes them from the environment
-    /// (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`). Used to pass the same identity to `delta-kernel-rs`.
-    String workload_identity_client_id;
-    String workload_identity_tenant_id;
-
-    [[nodiscard]] String getContainer() const { return endpoint.container_name; }
-    [[nodiscard]] String getConnectionURL() const;
+    String getContainer() const { return endpoint.container_name; }
+    String getConnectionURL() const;
     /// Without the query, which can be a SAS, for where the url only names the endpoint (logs, errors, cache keys).
-    [[nodiscard]] String getConnectionURLWithoutQuery() const;
+    String getConnectionURLWithoutQuery() const;
 
-    [[nodiscard]] std::unique_ptr<ServiceClient> createForService() const;
-    [[nodiscard]] std::unique_ptr<ContainerClient> createForContainer() const;
-
-    /// Throws `ACCESS_DENIED` when the credential is off limits and the anonymous fallback is not allowed.
-    bool checkOrDropServerManagedCredentials() const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
-
-    /// Whether requests would authenticate with the server's own identity: no SAS token and a server-managed `auth_method`.
-    [[nodiscard]] bool usesServerManagedCredentials() const;
-
-    /// `auth_method` for a caller that obtains tokens from it directly; throws `ACCESS_DENIED` if it is off limits.
-    [[nodiscard]] AuthMethod getPermittedAuthMethod() const;
-
-    /// Throws `ACCESS_DENIED` if a storage defined in user SQL uses the server's own identity and the accessing session
-    /// is restricted. Does not change the parameters, so a client kept for others is not affected.
-    void checkSessionMayUseServerIdentity(bool restrict_server_credentials) const;
+    std::unique_ptr<ServiceClient> createForService() const;
+    std::unique_ptr<ContainerClient> createForContainer() const;
 };
 
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method);

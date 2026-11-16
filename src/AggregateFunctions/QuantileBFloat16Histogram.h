@@ -79,7 +79,7 @@ struct QuantileBFloat16Histogram
         data.read(buf);
     }
 
-    [[nodiscard]] Value get(Float64 level) const
+    Value get(Float64 level) const
     {
         return getImpl<Value>(level);
     }
@@ -89,7 +89,7 @@ struct QuantileBFloat16Histogram
         getManyImpl(levels, indices, size, result);
     }
 
-    [[nodiscard]] Float64 getFloat(Float64 level) const
+    Float64 getFloat(Float64 level) const
     {
         return getImpl<Float64>(level);
     }
@@ -101,13 +101,13 @@ struct QuantileBFloat16Histogram
 
 private:
     /// Take the most significant 16 bits of the floating point number.
-    [[nodiscard]] BFloat16 toBFloat16(const Value & x) const
+    BFloat16 toBFloat16(const Value & x) const
     {
         return std::bit_cast<UInt32>(static_cast<Float32>(x)) >> 16;
     }
 
     /// Put the bits into most significant 16 bits of the floating point number and fill other bits with zeros.
-    [[nodiscard]] Float32 toFloat32(const BFloat16 & x) const
+    Float32 toFloat32(const BFloat16 & x) const
     {
         return std::bit_cast<Float32>(x << 16);
     }
@@ -128,7 +128,7 @@ private:
     }
 
     template <typename T>
-    [[nodiscard]] T getImpl(Float64 level) const
+    T getImpl(Float64 level) const
     {
         size_t size = data.size();
 

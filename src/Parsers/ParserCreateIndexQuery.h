@@ -12,7 +12,7 @@ namespace DB
 class ParserCreateIndexQuery : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "CREATE INDEX query"; }
+    const char * getName() const override { return "CREATE INDEX query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -24,7 +24,7 @@ public:
     ParserCreateIndexDeclaration() = default;
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "index declaration in create index"; }
+    const char * getName() const override { return "index declaration in create index"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

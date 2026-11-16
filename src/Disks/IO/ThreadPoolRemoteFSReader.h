@@ -40,7 +40,7 @@ public:
 
     SeekableReadBuffer & getReader() { return reader; }
 
-    [[nodiscard]] std::shared_ptr<AsyncReadCounters> getReadCounters() const { return async_read_counters; }
+    std::shared_ptr<AsyncReadCounters> getReadCounters() const { return async_read_counters; }
 
 private:
     /// Reader is used for reading only by RemoteFSFileDescriptor.

@@ -5,6 +5,5 @@
         <return_type>String</return_type>
         <format>TabSeparated</format>
         <command>udf.sh</command>
-        <command_read_timeout>30000</command_read_timeout>
     </function>
 </functions>

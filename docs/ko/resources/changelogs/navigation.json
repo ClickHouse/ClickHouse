@@ -78,5 +78,6 @@
       ]
     }
   ],
+  "icon": "/images/icons/icon-changelogs.svg",
   "item": "변경 내역"
 }

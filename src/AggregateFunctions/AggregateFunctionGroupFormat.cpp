@@ -184,7 +184,7 @@ public:
             const auto & column = state.columns[i];
             const auto & type = argument_types[i];
             auto serialization = type->getDefaultSerialization();
-            NativeWriter::writeData(*serialization, column->getPtr(), buf, nullptr, 0, num_rows, serialization_protocol_version);
+            NativeWriter::writeData(*serialization, column->getPtr(), buf, std::nullopt, 0, num_rows, serialization_protocol_version);
         }
     }
 

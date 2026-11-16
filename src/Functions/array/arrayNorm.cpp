@@ -186,38 +186,48 @@ template <class Kernel>
 class FunctionArrayNorm final : public IFunction
 {
 public:
-    [[nodiscard]] String getName() const override { static auto name = String("array") + Kernel::name + "Norm"; return name; }
+    String getName() const override { static auto name = String("array") + Kernel::name + "Norm"; return name; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayNorm<Kernel>>(); }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    size_t getNumberOfArguments() const override { return 1; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// 1-arg norms (`array<L1|L2|L2Squared|Linf>Norm`) and the 2-arg `arrayLpNorm` share
-        /// the same nested-element → return-type table: arrays of BFloat16 or Float32
-        /// produce a Float32 result, everything else falls back to Float64. The trailing
-        /// `[const Integer | Float]` covers LpNorm's `p` argument, which must be a numeric constant.
-        /// A single alternative (rather than one per result type) keeps a non-constant `p`
-        /// reported as `ILLEGAL_COLUMN` instead of a type mismatch of the other alternative.
-        return "(Array(T : NativeNumber | BFloat16), [const Integer | Float])"
-               " -> selectIf(isFloat32OrSmaller(T), Float32, Float64)";
-    }
+        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
+        if (!array_type)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must be array.", getName());
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        /// The declarative signature above only constrains the *type* of `p`. Its value range
-        /// `[1, inf)` is still validated here, so that analysis-only paths (e.g. `toTypeName`)
-        /// reject an out-of-range `p` such as `0.5`, `nan` or `inf` instead of advertising a
-        /// return type for a call that execution rejects with `ARGUMENT_OUT_OF_BOUND`.
-        DataTypePtr result_type = IFunction::getReturnTypeImpl(arguments);
         if constexpr (std::is_same_v<Kernel, LpNorm>)
             checkLpNormPArgumentForAnalysis(arguments[1], getName());
-        return result_type;
+
+        switch (array_type->getNestedType()->getTypeId())
+        {
+            case TypeIndex::BFloat16:
+            case TypeIndex::Float32:
+                return std::make_shared<DataTypeFloat32>();
+            case TypeIndex::UInt8:
+            case TypeIndex::UInt16:
+            case TypeIndex::UInt32:
+            case TypeIndex::UInt64:
+            case TypeIndex::Int8:
+            case TypeIndex::Int16:
+            case TypeIndex::Int32:
+            case TypeIndex::Int64:
+            case TypeIndex::Float64:
+                return std::make_shared<DataTypeFloat64>();
+            default:
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Arguments of function {} has nested type {}. "
+                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
+                    getName(),
+                    array_type->getNestedType()->getName());
+        }
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         DataTypePtr type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
         ColumnPtr column = arguments[0].column->convertToFullColumnIfConst();
@@ -253,7 +263,7 @@ private:
 
 
     template <typename ResultType>
-    [[nodiscard]] ColumnPtr executeWithResultType(const ColumnArray & array, const DataTypePtr & nested_type, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
+    ColumnPtr executeWithResultType(const ColumnArray & array, const DataTypePtr & nested_type, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
     {
         switch (nested_type->getTypeId())
         {
@@ -275,7 +285,7 @@ private:
     }
 
     template <typename ResultType, typename ArgumentType>
-    [[nodiscard]] ColumnPtr executeWithTypes(const ColumnArray & array, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
+    ColumnPtr executeWithTypes(const ColumnArray & array, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
     {
         const auto & data = typeid_cast<const ColumnVector<ArgumentType> &>(array.getData()).getData();
         const auto & offsets = array.getOffsets();
@@ -289,7 +299,7 @@ private:
         /// available, else the baseline variant), keeping the load stream continuous across rows. The kernel
         /// widens each element to `ResultType` internally, so `BFloat16` (-> Float32) and integers (-> Float64)
         /// take the same vectorized path as `Float32`/`Float64` (see `normBatchImpl`).
-#if USE_X86_64_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
             normBatchImpl_x86_64_v4<Kernel, ResultType, ArgumentType>(data.data(), offsets.data(), result_data.data(), input_rows_count, kernel_params);
         else
@@ -298,7 +308,7 @@ private:
         return result_col;
     }
 
-    [[nodiscard]] typename Kernel::ConstParams initConstParams(const ColumnsWithTypeAndName &) const { return {}; }
+    typename Kernel::ConstParams initConstParams(const ColumnsWithTypeAndName &) const { return {}; }
 };
 
 template <>
@@ -379,14 +389,14 @@ template <class Kernel>
 class FunctionArrayNormalize final : public IFunction
 {
 public:
-    [[nodiscard]] String getName() const override { static auto name = String("array") + Kernel::name + "Normalize"; return name; }
+    String getName() const override { static auto name = String("array") + Kernel::name + "Normalize"; return name; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayNormalize<Kernel>>(); }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    size_t getNumberOfArguments() const override { return 1; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
         if (!array_type)
@@ -420,7 +430,7 @@ public:
         }
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         DataTypePtr type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
         ColumnPtr column = arguments[0].column->convertToFullColumnIfConst();
@@ -440,7 +450,7 @@ public:
 
 private:
     template <typename ResultType>
-    [[nodiscard]] ColumnPtr executeWithResultType(const ColumnArray & array, const DataTypePtr & nested_type, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
+    ColumnPtr executeWithResultType(const ColumnArray & array, const DataTypePtr & nested_type, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
     {
         switch (nested_type->getTypeId())
         {
@@ -462,7 +472,7 @@ private:
     }
 
     template <typename ResultType, typename ArgumentType>
-    [[nodiscard]] ColumnPtr executeWithTypes(const ColumnArray & array, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
+    ColumnPtr executeWithTypes(const ColumnArray & array, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
     {
         const auto & data = typeid_cast<const ColumnVector<ArgumentType> &>(array.getData()).getData();
         const auto & offsets = array.getOffsets();
@@ -472,7 +482,7 @@ private:
 
         const typename Kernel::ConstParams kernel_params = initConstParams(arguments);
 
-#if USE_X86_64_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
             normalizeBatchImpl_x86_64_v4<Kernel, ResultType, ArgumentType>(data.data(), offsets.data(), result_data.data(), input_rows_count, kernel_params);
         else
@@ -483,7 +493,7 @@ private:
         return ColumnArray::create(std::move(result_data_col), array.getOffsetsPtr());
     }
 
-    [[nodiscard]] typename Kernel::ConstParams initConstParams(const ColumnsWithTypeAndName &) const { return {}; }
+    typename Kernel::ConstParams initConstParams(const ColumnsWithTypeAndName &) const { return {}; }
 };
 
 template <>

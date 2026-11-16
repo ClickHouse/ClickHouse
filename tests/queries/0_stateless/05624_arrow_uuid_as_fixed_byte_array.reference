@@ -1,6 +1,0 @@
-default
-u	UUID
-61f0c404-5cb3-11e7-907b-a6006ad3dba0
-output_format_arrow_uuid_as_fixed_byte_array = 1
-u	FixedString(16)
-61F0C4045CB311E7907BA6006AD3DBA0

@@ -12,8 +12,6 @@ class FunctionNode;
 /// to a remote server, which rebuilds them itself); otherwise returns 0.
 size_t getGroupingFunctionSpecializationStateArgumentsCount(const FunctionNode & function);
 
-/// With `keep_ordinary`, `__groupingOrdinary` is left as is: it has no `__grouping_set` argument, so it
-/// resolves from the query text, while its arguments may no longer be GROUP BY keys after the key optimizations.
-void removeGroupingFunctionSpecializations(QueryTreeNodePtr & node, bool keep_ordinary = false);
+void removeGroupingFunctionSpecializations(QueryTreeNodePtr & node);
 
 }

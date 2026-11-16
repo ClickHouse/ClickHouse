@@ -112,7 +112,7 @@ Range HiveORCFile::buildRange(const ORC::Proto::ColumnStatistics * col_stats)
     if (const auto & double_stats = col_stats->double_statistics)
         return createRangeFromOrcStatistics<Float64>(double_stats->minimum, double_stats->maximum);
     if (const auto & string_stats = col_stats->string_statistics)
-        return createRangeFromOrcStatistics<String>(string_stats->getLowerBound(), string_stats->getUpperBound());
+        return createRangeFromOrcStatistics<String>(string_stats->minimum, string_stats->maximum);
     if (const auto & bool_stats = col_stats->bucket_statistics)
     {
         if (bool_stats->count.empty())
@@ -165,7 +165,7 @@ bool HiveORCFile::useFileMinMaxIndex() const
 }
 
 
-std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(const VectorWithMemoryTracking<ORC::Proto::ColumnStatistics> * statistics)
+std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(const std::vector<ORC::Proto::ColumnStatistics> * statistics)
 {
     if (!statistics)
         return nullptr;

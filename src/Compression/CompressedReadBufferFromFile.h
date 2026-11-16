@@ -18,7 +18,7 @@ class CompressedReadBufferFromFile final : public CompressedReadBufferBase, publ
 {
 private:
       /** At any time, one of two things is true:
-      * a) size_compressed = 0 and working_buffer is empty
+      * a) size_compressed = 0
       * b)
       *  - `working_buffer` contains the entire block.
       *  - `file_in` points to the end of this block.
@@ -55,7 +55,7 @@ public:
     /// we store this offset inside nextimpl_working_buffer_offset.
     void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block) override;
 
-    [[nodiscard]] off_t getPosition() const override;
+    off_t getPosition() const override;
 
     [[nodiscard]] size_t readBig(char * to, size_t n) override;
 

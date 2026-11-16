@@ -12,15 +12,21 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定はClickHouseサーバーを構成するものであり、ClickHouseのソースコードから自動生成されています。
 
-## index_mark_cache_policy {#index_mark_cache_policy}
+<div id="index_mark_cache_policy">
+  ## index_mark_cache_policy
+</div>
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />セカンダリ索引マークキャッシュのエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />セカンダリ索引マークキャッシュのポリシー名。
 
-## index_mark_cache_prewarm_ratio {#index_mark_cache_prewarm_ratio}
+<div id="index_mark_cache_prewarm_ratio">
+  ## index_mark_cache_prewarm_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.95" changeable_without_restart="No" />プリウォーム時に埋めるマークキャッシュの総サイズに対する比率。
 
-## index_mark_cache_size {#index_mark_cache_size}
+<div id="index_mark_cache_size">
+  ## index_mark_cache_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />
 
@@ -32,7 +38,9 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
   この設定は実行時に変更でき、変更は即座に反映されます。
 </Note>
 
-## index_mark_cache_size_ratio {#index_mark_cache_size_ratio}
+<div id="index_mark_cache_size_ratio">
+  ## index_mark_cache_size_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.3" changeable_without_restart="No" />セカンダリ索引マークキャッシュにおける保護キュー (SLRU ポリシーの場合) のサイズを、マークキャッシュ全体のサイズに対する比率で表したものです。
 

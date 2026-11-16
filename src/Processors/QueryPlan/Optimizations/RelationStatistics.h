@@ -1,7 +1,6 @@
 #pragma once
 
 #include <optional>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <unordered_map>
 
 #include <Core/Joins.h>
@@ -18,7 +17,7 @@ struct RelationStats
 {
     std::optional<UInt64> estimated_rows = {};
     std::optional<Float64> avg_row_bytes = {};
-    UnorderedMapWithMemoryTracking<String, ColumnStats> column_stats = {};
+    std::unordered_map<String, ColumnStats> column_stats = {};
 
     String table_name;
     bool imprecise_estimate = false;
@@ -38,7 +37,7 @@ namespace QueryPlanOptimizations
 /// Propagate per-column statistics through `actions`, rekeying the map in place by output name.
 /// An output inherits an input's stats when it is that input, an alias of it, or a deterministic
 /// single-argument function of it (which cannot increase the distinct count).
-void remapColumnStats(UnorderedMapWithMemoryTracking<String, ColumnStats> & mapped, const ActionsDAG & actions);
+void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions);
 
 /// Tighten equi-join key NDVs to their minimum, respecting which side each join kind preserves.
 /// Anti joins and full joins leave both inputs unchanged.

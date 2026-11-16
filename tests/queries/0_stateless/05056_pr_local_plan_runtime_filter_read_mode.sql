@@ -1,6 +1,5 @@
 -- Tags: no-parallel, no-fasttest
 -- A fail point armed here fires for every query on the server, so this test must run alone.
--- Random settings limits: allow_reorder_prewhere_conditions=(1, 1)
 
 -- A join runtime filter is pushed into the initiator's local plan but can never reach the replicas:
 -- `__applyFilter` is non-deterministic, so `addFilters` drops it from the query shipped to them. The
@@ -20,6 +19,7 @@ CREATE TABLE b_rf_read_mode (a UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO b_rf_read_mode SELECT number FROM numbers(10);
 
 -- For runs with the old analyzer
+SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas = 3;

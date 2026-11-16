@@ -8,6 +8,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 Esta guía muestra cómo habilitar el servidor MCP remoto de ClickHouse Cloud y configurarlo para usarlo con herramientas de desarrollo habituales.
 
 **Requisitos previos**
@@ -23,27 +25,11 @@ En el menú de la izquierda, haga clic en **Conectar**. Se abrirá una ventana c
 
 Seleccione **Conectar with MCP**:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Seleccione MCP en la ventana modal Conectar](/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp" alt="Seleccione MCP en la ventana modal Conectar" size="md" />
 
 Active el botón para habilitar MCP en el servicio. Para habilitar o deshabilitar MCP se necesita el permiso `control-plane:service:manage-mcp` (consulte [Roles y permisos de la consola](/es/products/cloud/reference/security/console-roles#console-permissions)):
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Habilitar el servidor MCP](/images/use-cases/AI_ML/MCP/2enable_mcp.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/AI_ML/MCP/2enable_mcp.webp" alt="Habilitar el servidor MCP" size="md" />
 
 Copie la URL que se muestra, que es la misma que aparece a continuación:
 

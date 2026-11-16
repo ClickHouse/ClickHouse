@@ -1,0 +1,155 @@
+---
+sidebarTitle: 'Docker セットアップ'
+title: 'Docker Compose で Agentic Data Stack をセットアップする'
+description: 'Docker Compose を使用して、Agentic Data Stack 全体（ClickHouse、LibreChat、MCPサーバー、Langfuse）を実行します'
+doc_type: 'guide'
+keywords: ['Agentic Data Stack', 'Docker Compose', 'セットアップ', 'LibreChat', 'MCP', 'Langfuse']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+Docker Compose を使って Agentic Data Stack 一式をローカルで実行すると、初回ログイン直後からデータについて質問できます。`docker compose up` コマンド 1 つで、[LibreChat](/ja/products/agentic-data-stack/components/librechat)、[ClickHouse MCPサーバー](/ja/products/agentic-data-stack/components/mcp-server)、[ClickHouse](/ja/get-started/setup/install)、そしてオブザーバビリティ向けの [Langfuse](/ja/products/agentic-data-stack/components/langfuse) が起動します。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* Compose プラグイン (Compose v2 以降) を備えた **Docker**。
+* リポジトリをクローンするための **Git**。
+* モデルプロバイダーの API key (OpenAI、Anthropic、Google など) 。質問に回答するには agent にモデルが必要なため、Setup 時に key を指定するか、初回のチャット前に LibreChat UI で追加してください。
+
+<div id="stand-up-the-stack">
+  ## スタックを起動する
+</div>
+
+<Steps>
+  <Step title="リポジトリをクローンする">
+    ```bash
+    git clone https://github.com/ClickHouse/agentic-data-stack
+    cd agentic-data-stack
+    ```
+
+    このリポジトリにはルートに `docker-compose.yml` が含まれているため、1 つのコマンドでスタック全体を起動できます。サービスの一覧は [Architecture](#how-it-is-wired) を参照してください。
+  </Step>
+
+  <Step title="デモ用セットアップスクリプトを実行する">
+    ```bash
+    ./scripts/prepare-demo.sh
+    ```
+
+    これにより、各サービスの認証情報を含む `.env` ファイルが生成され、その後、選択した provider の API key を設定するための対話式メニューが表示されます。これらのキーは `.env` ファイルに直接設定することもできます。設定をスキップした provider は `user_provided` のままになるため、代わりに LibreChat UI で独自のキーを追加できます。
+
+    初回起動時には、スタックが `.env` の内容をもとに admin ユーザーを作成します。デフォルトのログイン情報は `admin@admin.com` / `password` です。
+
+    <Accordion title="独自のログイン認証情報を設定する">
+      `prepare-demo.sh` を実行する前に、以下の変数を指定して `generate-env.sh` を実行してください。
+
+      ```bash
+      USER_EMAIL="you@example.com" USER_PASSWORD="supersecret" USER_NAME="YourName" ./scripts/generate-env.sh
+      ```
+
+      その後、`prepare-demo.sh` は既存の `.env` を検出し、API-key の設定に直接進みます。
+    </Accordion>
+  </Step>
+
+  <Step title="バックグラウンドでサービスを起動する">
+    ```bash
+    docker compose up -d
+    ```
+
+    起動順序は自動的に制御されます。LibreChat は MCPサーバー が正常状態になってから起動するため、初回読み込み時点で ClickHouse への接続が利用可能です。
+  </Step>
+
+  <Step title="LibreChat を開いてサインインする">
+    スタックの起動後、以下のサービスをブラウザから利用できます。
+
+    * **LibreChat** (チャット UI) — [http://localhost:3080](http://localhost:3080)
+    * **Langfuse** (オブザーバビリティ) — [http://localhost:3000](http://localhost:3000)
+    * **Admin Panel** (ブラウザベースの LibreChat 設定) — [http://localhost:3081](http://localhost:3081)
+    * **MinIO console** (object storage、認証情報は `.env` にあります) — [http://localhost:9091](http://localhost:9091)
+
+    `.env` ファイル内の admin 認証情報を使って LibreChat にサインインしてください。
+  </Step>
+
+  <Step title="モデルを選択する">
+    モデルはデフォルトで選択されています。変更する場合は、モデル selector を開いて使用するものを選んでください。
+
+    <Image img="/images/agentic-data-stack/select-model.webp" alt="左上隅にある LibreChat のモデル selector。デフォルトのモデルと「Select a model」のツールチップが表示されている" size="md" />
+
+    セットアップ中に provider の key を設定しなかった場合は、UI で追加してください。
+
+    <Accordion title="UI で provider の key を設定する">
+      モデル selector を開き、provider の横にある **Set API Key** をクリックします。
+
+      <Image img="/images/agentic-data-stack/set-api-key.webp" alt="Anthropic provider の横にある Set API Key ボタンが表示された LibreChat のモデル selector" size="md" />
+
+      ダイアログに key を貼り付けて **Submit** をクリックします。有効期限を設定することも、期限切れにしないこともできます。
+
+      <Image img="/images/agentic-data-stack/set-api-key-modal.webp" alt="Anthropic 用の Set API Key ダイアログ。expiration のドロップダウン、Key フィールド、Submit ボタンと Revoke ボタンが表示されている" size="md" />
+    </Accordion>
+  </Step>
+
+  <Step title="MCPサーバー を選択する">
+    このスタックでは、LibreChat の `librechat.yaml` に MCPサーバー があらかじめ設定されています。message composer で **MCP Servers** をクリックし、**ClickHouse-Local** を選択してください。
+
+    ClickHouse Cloud service を使用する場合は、代わりに **ClickHouse-Cloud** を選択してください。
+
+    {/* TODO: ClickHouse-Cloud の接続方法についてユーザー向けガイドを追加する（または /cloud/features/ai-ml/remote-mcp の リモートMCP ドキュメントへリンクする）— 同梱のローカルサーバーとは異なり、OAuth フローが必要。 */}
+
+    <Image img="/images/agentic-data-stack/select-clickhouse-local.webp" alt="LibreChat の composer で MCP Servers メニューが開かれ、緑の接続済みドット付きの ClickHouse-Local と ClickHouse-Cloud が表示されている" size="md" />
+  </Step>
+
+  <Step title="最初の質問をする">
+    たとえば、次のように質問できます。
+
+    > 利用可能な database と table は何ですか。また、最大の table には何行ありますか？
+
+    この agent は MCPサーバー のツールを使って database と table を一覧表示し、ClickHouse に対して read-only の queries を実行し、その結果をもとに回答を組み立てます。SQL を書く必要はありません。
+
+    <Image img="/images/agentic-data-stack/prompt-chat.webp" alt="ClickHouse-Local の MCP ツールを呼び出して利用可能な database と table を一覧表示し、例の質問に回答する LibreChat" size="md" />
+  </Step>
+</Steps>
+
+<div id="stop-or-reset">
+  ## スタックを停止またはリセットする
+</div>
+
+何も削除せずにサービスを停止するには、次のコマンドを実行します。
+
+```bash
+docker compose down
+```
+
+すべてのコンテナーを削除し、クリーンな状態からやり直せるようにすべてのボリュームを消去するには、スタックのリセットスクリプトを使用します：
+
+```bash
+./scripts/reset-all.sh
+```
+
+<div id="how-it-is-wired">
+  ## アーキテクチャ
+</div>
+
+`docker-compose.yml` は、4つの Compose ファイルを取り込むシンプルなエントリーポイントです。
+
+| Compose file                 | Defines                                                     |
+| ---------------------------- | ----------------------------------------------------------- |
+| `langfuse-compose.yml`       | Langfuse とその関連サービス (ClickHouse、PostgreSQL、Redis、MinIO)      |
+| `clickhouse-mcp-compose.yml` | ClickHouse MCPサーバー                                          |
+| `librechat-compose.yml`      | LibreChat とその関連サービス (MongoDB、Meilisearch、pgvector、RAG API)  |
+| `admin-panel-compose.yml`    | LibreChat Admin Panel                                             |
+
+単一コマンドで起動できるのは、次の2つのポイントによるものです。
+
+* **ヘルスチェックと起動順序。** Compose はヘルスチェックを使って起動順を制御します。MCPサーバーは ClickHouse の起動を待ち、LibreChat は MCPサーバーの起動を待ちます。
+* **共有環境ファイル。** `.env` には各サービスの認証情報と接続情報が格納されており、各サービスが相互に接続できるよう一貫して設定されています。たとえば、MCPサーバーは `.env` 内の ClickHouse 認証情報を使って ClickHouse に接続します。LibreChat には `LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`、`LANGFUSE_BASE_URL` が渡されるため、すべての実行結果はそのまま Langfuse にトレースされます。
+
+ClickHouse はこのスタックで2つの役割を担います。1つは Langfuse のストレージバックエンド、もう1つはエージェントが MCPサーバー経由でクエリするデータベースです。
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+* スタックを構成する各コンポーネントの役割については、[ClickHouse MCPサーバー](/ja/products/agentic-data-stack/components/mcp-server)、[LibreChat](/ja/products/agentic-data-stack/components/librechat)、[Langfuse](/ja/products/agentic-data-stack/components/langfuse)を参照してください。
+* スタック全体がどのように連携するかについては、[概要](/ja/products/agentic-data-stack/overview)を参照してください。
+* 何もインストールせずに公開データセットでスタックを試すには、ホスト型デモの[AgentHouse](https://llm.clickhouse.com)を利用してください。

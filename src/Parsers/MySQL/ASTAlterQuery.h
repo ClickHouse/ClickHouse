@@ -37,7 +37,7 @@ protected:
 class ParserAlterQuery : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "alter query"; }
+    const char * getName() const override { return "alter query"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
