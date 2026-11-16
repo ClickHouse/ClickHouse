@@ -2680,6 +2680,53 @@ def test_explicit_version_longer_than_the_latest_is_read_whole(started_cluster):
     )
 
 
+def test_explicit_version_in_the_url_reads_its_own_tags(started_cluster):
+    """`_tags` of a version selected by the URL are the tags of that version, not of the latest one,
+    including when the selected version has no tags at all."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = f"versioned-{token}"
+    table_name = f"explicit_version_tags_{token}"
+    files_path = f"{table_name}_data"
+    minio = started_cluster.minio_client
+    minio.make_bucket(bucket)
+    minio.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+
+    def check(key, selected_tagging, expected_generation):
+        source_key = f"{files_path}/{key}/part.csv"
+        put_args = {"Bucket": bucket, "Key": source_key, "Body": b"1,2,3\n"}
+        if selected_tagging:
+            put_args["Tagging"] = selected_tagging
+        selected_version = client.put_object(**put_args)["VersionId"]
+        client.put_object(Bucket=bucket, Key=source_key, Body=b"4,5,6\n", Tagging="generation=new")
+
+        url = (
+            f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/{key}/*"
+            f"?versionId={selected_version}"
+        )
+        queue = f"{table_name}_{key}"
+        node.query(
+            f"""
+            CREATE TABLE {queue} (column1 UInt32, column2 UInt32, column3 UInt32)
+            ENGINE = S3Queue('{url}', '{started_cluster.minio_access_key}', '{started_cluster.minio_secret_key}', CSV)
+            SETTINGS mode = 'unordered', keeper_path = '/clickhouse/test_{queue}', s3queue_loading_retries = 0
+            """
+        )
+        result = node.query(
+            f"SELECT column1, _tags['generation'] FROM {queue} SETTINGS stream_like_engine_allow_direct_select = 1"
+        )
+        assert result == f"1\t{expected_generation}\n", result
+
+    check("tagged", "generation=old", "old")
+    check("untagged", None, "")
+
+
 def test_failed_lookup_of_the_selected_version_releases_the_file(started_cluster):
     """The lookup of a version selected by the URL runs after the file is claimed. When it fails, the claim is
     released without spending a retry, so the file is consumed later even with `s3queue_loading_retries = 0`."""
