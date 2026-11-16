@@ -25,3 +25,6 @@ FROM values('x UInt8, w UInt128', (1, 1), (2, 3));
 SELECT quantileExactWeighted(0.5)(x, w) FROM values('x UInt8, w UInt256', (1, 1), (2, 3));
 SELECT quantileExactWeightedInterpolated(0.5)(x, w) FROM values('x UInt8, w UInt128', (1, 1), (2, 18446744073709551616)); -- { serverError BAD_ARGUMENTS }
 SELECT quantileExactWeighted(0.5)(x, w) FROM values('x UInt8, w UInt256', (1, 1), (2, 18446744073709551616)); -- { serverError BAD_ARGUMENTS }
+-- The second argument of `quantileDeterministic` is a determinator, not a weight: a wide one is not checked.
+SELECT quantileDeterministic(0.5)(number, toUInt128('18446744073709551616') + number) FROM numbers(10);
+SELECT quantilesDeterministic(0.5, 0.9)(number, toUInt256('18446744073709551616') + number) FROM numbers(10);

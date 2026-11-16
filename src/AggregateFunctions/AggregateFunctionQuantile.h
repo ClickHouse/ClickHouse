@@ -117,8 +117,12 @@ public:
                     "Second argument (weight) for function {} must be unsigned integer, but it has type {}",
                     Name::name,
                     argument_types_[1]->getName());
-            const WhichDataType which_weight(argument_types_[1]);
-            weight_is_wide = which_weight.isUInt128() || which_weight.isUInt256();
+            /// Only a weight is checked: the determinator of `quantileDeterministic` may be any value of its type.
+            if constexpr (!requires { Data::second_argument_is_determinator; })
+            {
+                const WhichDataType which_weight(argument_types_[1]);
+                weight_is_wide = which_weight.isUInt128() || which_weight.isUInt256();
+            }
         }
         else if constexpr (std::is_same_v<SecondArgumentType, Float64>)
         {
