@@ -1506,6 +1506,11 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (isSensitiveToEvaluationCount(filter->getExpression()))
             return 0;
 
+        /// The set operation returns full columns while a branch may emit constant ones, so a filter reading the
+        /// representation (e.g. `isConstant`) would see a different one there.
+        if (!ActionsDAG::getInputsReadByRepresentation(filter->getExpression().getOutputs()).empty())
+            return 0;
+
         /// A set operation matches NULL keys whatever lies under the null map, so the cloned filter must not read it.
         if (dagReadsUnspecifiedValueUnderNull(filter->getExpression()))
             return 0;

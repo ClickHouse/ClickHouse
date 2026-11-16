@@ -10,6 +10,10 @@ null map EXCEPT ALL	[]
 null map EXCEPT DISTINCT	[]
 null map INTERSECT ALL	[1]
 null map INTERSECT DISTINCT	[1]
+representation EXCEPT ALL	[]
+representation EXCEPT DISTINCT	[]
+representation INTERSECT ALL	[]
+representation INTERSECT DISTINCT	[]
 granules on	2
 granules off	2
 res INTERSECT ALL	5

@@ -56,6 +56,13 @@ SELECT 'null map EXCEPT DISTINCT', groupArray(isNull(x)) FROM (SELECT nullIf(toU
 SELECT 'null map INTERSECT ALL', groupArray(isNull(x)) FROM (SELECT nullIf(toUInt8(number + 1), 1) AS x FROM numbers(1) INTERSECT ALL SELECT nullIf(toUInt8(number + 2), 2) FROM numbers(1)) WHERE assumeNotNull(x) = 1;
 SELECT 'null map INTERSECT DISTINCT', groupArray(isNull(x)) FROM (SELECT nullIf(toUInt8(number + 1), 1) AS x FROM numbers(1) INTERSECT DISTINCT SELECT nullIf(toUInt8(number + 2), 2) FROM numbers(1)) WHERE assumeNotNull(x) = 1;
 
+-- The set operation returns full columns, while the branch filters below make x constant: isConstant must be
+-- evaluated above it. Pushdown on and off must return the same rows.
+SELECT 'representation EXCEPT ALL', groupArray(x) FROM (SELECT number AS x FROM numbers(2) WHERE x = 1 EXCEPT ALL SELECT number AS x FROM numbers(2) WHERE x = 0) WHERE isConstant(x) SETTINGS query_plan_filter_push_down = 1, optimize_constant_columns_after_filter = 1;
+SELECT 'representation EXCEPT DISTINCT', groupArray(x) FROM (SELECT number AS x FROM numbers(2) WHERE x = 1 EXCEPT DISTINCT SELECT number AS x FROM numbers(2) WHERE x = 0) WHERE isConstant(x) SETTINGS query_plan_filter_push_down = 1, optimize_constant_columns_after_filter = 1;
+SELECT 'representation INTERSECT ALL', groupArray(x) FROM (SELECT number AS x FROM numbers(2) WHERE x = 1 INTERSECT ALL SELECT number AS x FROM numbers(2) WHERE x = 1) WHERE isConstant(x) SETTINGS query_plan_filter_push_down = 1, optimize_constant_columns_after_filter = 1;
+SELECT 'representation INTERSECT DISTINCT', groupArray(x) FROM (SELECT number AS x FROM numbers(2) WHERE x = 1 INTERSECT DISTINCT SELECT number AS x FROM numbers(2) WHERE x = 1) WHERE isConstant(x) SETTINGS query_plan_filter_push_down = 1, optimize_constant_columns_after_filter = 1;
+
 -- Propagating the condition is not enough: with more than one granule per part, both branches must
 -- actually prune down to a single granule, which is the point of the optimization.
 DROP TABLE IF EXISTS t_intex_g_l;
