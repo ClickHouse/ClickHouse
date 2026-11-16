@@ -104,22 +104,6 @@ static QueryPlanOptimizationSettings makeInplaceBuildOptimizationSettings(const 
     return optimization_settings;
 }
 
-static bool equals(const DataTypes & lhs, const DataTypes & rhs)
-{
-    size_t size = lhs.size();
-    if (size != rhs.size())
-        return false;
-
-    for (size_t i = 0; i < size; ++i)
-    {
-        if (!lhs[i]->equals(*rhs[i]))
-            return false;
-    }
-
-    return true;
-}
-
-
 SetPtr FutureSet::getOrderedSetIfAlreadyBuilt(const ContextPtr & context)
 {
     /// Only `FutureSetFromSubquery` can be unbuilt at this point, and its `buildOrderedSetInplace`

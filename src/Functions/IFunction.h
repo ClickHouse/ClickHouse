@@ -225,7 +225,7 @@ public:
     /// Whether an `IN` function was resolved with SQL three-valued `NULL` semantics.
     /// Analyzer passes can construct resolved functions directly, so the planner uses this
     /// together with the marker stored on an analyzed `FunctionNode`.
-    virtual bool useNullAsUnknownSemanticsForIn() const { return false; }
+    [[nodiscard]] virtual bool useNullAsUnknownSemanticsForIn() const { return false; }
 
     const Array & getParameters() const final;
 
@@ -672,7 +672,7 @@ public:
 
     /// See the comment for the same method in `IFunctionBase`: the adaptor that wraps this
     /// interface into one forwards to this.
-    virtual bool useNullAsUnknownSemanticsForIn() const { return false; }
+    [[nodiscard]] virtual bool useNullAsUnknownSemanticsForIn() const { return false; }
 
     /// (Does `result_type` always come from a corresponding `getReturnTypeImpl` call?
     ///  No: FunctionCast::prepareRemoveNullable does something complicated and ends up not respecting

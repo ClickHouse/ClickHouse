@@ -215,7 +215,7 @@ public:
     /// Preserve the setting used while the analyzer resolved this `IN` node. The planner may
     /// later run with a copied context whose settings differ from the query's analysis context.
     void setUseNullAsUnknownSemanticsForIn(bool value) { use_null_as_unknown_semantics_for_in = value; }
-    bool useNullAsUnknownSemanticsForIn() const { return use_null_as_unknown_semantics_for_in; }
+    [[nodiscard]] bool useNullAsUnknownSemanticsForIn() const { return use_null_as_unknown_semantics_for_in; }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 

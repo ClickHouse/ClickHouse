@@ -342,7 +342,7 @@ public:
     }
 
     void updateHash(SipHash & hash) const override { hash.update(in_null_as_unknown); }
-    bool useNullAsUnknownSemanticsForIn() const override { return in_null_as_unknown; }
+    [[nodiscard]] bool useNullAsUnknownSemanticsForIn() const override { return in_null_as_unknown; }
 
     /// The `IgnoreSet` variants are called with the left operand alone during type analysis, but
     /// `inIgnoreSet(x, set)` written explicitly stays valid, hence the variadic arity.
