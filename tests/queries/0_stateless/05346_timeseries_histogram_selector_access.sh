@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: the selector parses PromQL, which needs ANTLR4.
 
 # Test: timeSeriesHistogramSelector needs SELECT on the TimeSeries table, also through a table created AS the function,
 # even for a user who can read the inner tables.
