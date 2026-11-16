@@ -38,6 +38,7 @@
 #include <Processors/Transforms/ReverseTransform.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/StorageAlias.h>
@@ -66,6 +67,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Poco/Net/SocketAddress.h>
 
@@ -110,6 +112,7 @@ namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int INFINITE_LOOP;
@@ -842,9 +845,10 @@ void StorageBuffer::read(
         buffers_select_query_options.view_source_in_subqueries
             = query_info.planner_context && query_info.planner_context->isViewSourceInSubqueries();
 
+        /// Column kinds must match this table, so the query below requests only the columns the buffers provide.
         auto storage = std::make_shared<StorageValues>(
                 getStorageID(),
-                storage_snapshot->getAllColumnsDescription(),
+                storage_snapshot->metadata->getColumns(),
                 std::move(pipe_from_buffers),
                 storage_snapshot->metadata->virtuals);
 
@@ -954,7 +958,7 @@ void StorageBuffer::read(
     input_headers.emplace_back(query_plan.getCurrentHeader());
     input_headers.emplace_back(buffers_plan.getCurrentHeader());
 
-    std::vector<std::unique_ptr<QueryPlan>> plans;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(buffers_plan)));
     query_plan = QueryPlan();
@@ -1125,7 +1129,7 @@ public:
             if (destination)
             {
                 LOG_DEBUG(storage.log, "Writing block with {} rows, {} bytes directly.", rows, bytes);
-                storage.writeBlockToDestination(block, destination, write_identity);
+                storage.writeBlockToDestination(block, destination, write_identity, getContext().get());
             }
             return;
         }
@@ -1618,7 +1622,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     FlushStage stage = FlushStage::RestoringIdentity;
     try
     {
-        writeBlockToDestination(block_to_write, getDestinationTable(), buffer.write_identity, &stage);
+        writeBlockToDestination(block_to_write, getDestinationTable(), buffer.write_identity, /*query_context=*/ nullptr, &stage);
     }
     catch (...)
     {
@@ -1708,7 +1712,12 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 }
 
 
-void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table, const std::shared_ptr<const BufferWriteIdentity> & write_identity, FlushStage * stage)
+void StorageBuffer::writeBlockToDestination(
+    const Block & block,
+    StoragePtr table,
+    const std::shared_ptr<const BufferWriteIdentity> & write_identity,
+    const Context * query_context,
+    FlushStage * stage)
 {
     if (!destination_id || block.empty())
         return;
@@ -1722,6 +1731,8 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     auto insert_context = Context::createCopy(getContext());
     insert_context->makeQueryContext();
+    if (query_context)
+        insert_context->shareQueryMaxThreadsSnapshot(*query_context);
     /// A flush is a deferred background write, not an interactive query, even though it carries the
     /// originating user below: this keeps functions that may run only in user-issued queries (AI functions)
     /// rejected in it, as in merges and mutations.
@@ -1904,6 +1915,10 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
                 command.type, getName());
 
+        if (!command.ignore && tryExtractQuantizedCodecParams(command.codec))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Engine {} doesn't support the Quantized codec of column {}",
+                getName(), backQuote(command.column_name));
+
         if (command.type == AlterCommand::Type::DROP_COLUMN && !command.clear)
         {
             if (!name_deps)
@@ -2083,6 +2098,9 @@ void registerStorageBuffer(StorageFactory & factory)
             columns.clearColumnTTLs();
         }
 
+        if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()))
+            checkNoQuantizedCodec(columns.getAll(), args.engine_name);
+
         return std::make_shared<StorageBuffer>(
             args.table_id,
             columns,
@@ -2182,10 +2200,6 @@ If the set of columns in the Buffer table does not match the set of columns in a
 
 If the types do not match for one of the columns in the Buffer table and a subordinate table, an error message is entered in the server log, and the buffer is cleared.
 The same happens if the subordinate table does not exist when the buffer is flushed.
-
-<Note>
-Running ALTER on the Buffer table in releases made before 26 Oct 2021 will cause a `Block structure mismatch` error (see [#15117](https://github.com/ClickHouse/ClickHouse/issues/15117) and [#30565](https://github.com/ClickHouse/ClickHouse/pull/30565)), so deleting the Buffer table and then recreating is the only option. Check that this error is fixed in your release before trying to run ALTER on the Buffer table.
-</Note>
 
 If the server is restarted abnormally, the data in the buffer is lost.
 

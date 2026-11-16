@@ -56,7 +56,7 @@ public:
         size_t rows = 0;  /// The number of rows in the block.
         size_t bytes = 0; /// The number of (uncompressed) bytes in the block.
 
-        std::string toString() const;
+        [[nodiscard]] std::string toString() const;
     };
 
     /** num_shards - the level of internal parallelism (the number of independent buffers)
@@ -224,7 +224,13 @@ private:
 
     /// `table` argument is passed, as it is sometimes evaluated beforehand. It must match the `destination`.
     /// `write_identity` carries the originating user so the forwarded INSERT is authorized as them.
-    void writeBlockToDestination(const Block & block, StoragePtr table, const std::shared_ptr<const BufferWriteIdentity> & write_identity, FlushStage * stage = nullptr);
+    /// `query_context` is the context of the `INSERT` that writes the block directly, or `nullptr` for a flush.
+    void writeBlockToDestination(
+        const Block & block,
+        StoragePtr table,
+        const std::shared_ptr<const BufferWriteIdentity> & write_identity,
+        const Context * query_context = nullptr,
+        FlushStage * stage = nullptr);
 
     void backgroundFlush();
     void reschedule(size_t min_delay);

@@ -35,6 +35,7 @@
 #include <Common/Base64.h>
 
 #include <Common/ProfileEvents.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <algorithm>
 #include <memory>
@@ -77,7 +78,7 @@ IStorageCluster::IStorageCluster(
 namespace
 {
 
-bool isSerializableFilterNode(const ActionsDAG::Node & node, const std::unordered_map<String, ColumnWithTypeAndName> & replica_columns)
+bool isSerializableFilterNode(const ActionsDAG::Node & node, const UnorderedMapWithMemoryTracking<String, ColumnWithTypeAndName> & replica_columns)
 {
     /// A lambda's body is built, and JIT-compiled in place, while the initiator plans the query, so a replica cannot always rebuild it.
     if (WhichDataType(node.result_type).isFunction())
@@ -107,7 +108,7 @@ bool isSerializableFilterNode(const ActionsDAG::Node & node, const std::unordere
     return node.type == ActionsDAG::ActionType::FUNCTION || node.type == ActionsDAG::ActionType::ALIAS;
 }
 
-String serializeFilterForReplicas(const ActionsDAG::Node & predicate, const std::unordered_map<String, ColumnWithTypeAndName> & replica_columns)
+String serializeFilterForReplicas(const ActionsDAG::Node & predicate, const UnorderedMapWithMemoryTracking<String, ColumnWithTypeAndName> & replica_columns)
 {
     ActionsDAG::NodeRawConstPtrs serializable;
     for (const auto * atom : ActionsDAG::extractConjunctionAtoms(&predicate))
@@ -147,7 +148,7 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
     {
         const auto & header_columns = getOutputHeader()->getColumnsWithTypeAndName();
         const auto & select_expressions = select->select()->children;
-        std::unordered_map<String, ColumnWithTypeAndName> replica_columns;
+        UnorderedMapWithMemoryTracking<String, ColumnWithTypeAndName> replica_columns;
         for (size_t i = 0; i < select_expressions.size() && select_expressions.size() == header_columns.size(); ++i)
         {
             if (const auto * identifier = select_expressions[i]->as<ASTIdentifier>())

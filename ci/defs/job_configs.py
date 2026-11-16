@@ -340,6 +340,26 @@ common_integration_test_job_config = Job.Config(
 )
 
 
+# Cross-compiled builds that pull requests do not run: the merge queue builds them once per
+# merge instead of on every PR commit, and master builds them on every commit. Over
+# 2026-09-15 to 2026-11-14 each of them was the only failing build in 0 to 12 PRs (25 in
+# total, about 3 a week), while they cost about $2.4 per PR commit together.
+# `Build (arm_darwin)` stays in pull requests because `Fast test (arm_darwin)` needs its binary,
+# and so do `Build (wasm64)` (the only Emscripten build, 14 PRs) and `Build (arm_fuzzers)` (66 PRs).
+MERGE_QUEUE_SPECIAL_BUILD_TYPES = (
+    BuildTypes.AMD_DARWIN,
+    BuildTypes.ARM_V80COMPAT,
+    BuildTypes.AMD_FREEBSD,
+    BuildTypes.AMD_ILLUMOS,
+    BuildTypes.PPC64LE,
+    BuildTypes.AMD_COMPAT,
+    BuildTypes.AMD_MUSL,
+    BuildTypes.RISCV64,
+    BuildTypes.S390X,
+    BuildTypes.LOONGARCH64,
+)
+
+
 class JobConfigs:
     style_check = Job.Config(
         name=JobNames.STYLE_CHECK,
@@ -733,6 +753,21 @@ class JobConfigs:
             else job
         )
         for job in special_build_jobs
+    ]
+    # See `MERGE_QUEUE_SPECIAL_BUILD_TYPES`.
+    special_build_pr_jobs = [
+        job
+        for job in special_build_jobs
+        if job.parameter not in MERGE_QUEUE_SPECIAL_BUILD_TYPES
+    ]
+    # Only checks that they compile: no artifacts, since no merge queue job uses them, and no post
+    # hooks, since the merge queue has no PR number, so `build_master_head_hook.py` would publish
+    # the binaries as the master ones and `build_profile_hook.py` would record the build as a
+    # master baseline.
+    special_build_mq_jobs = [
+        job.set_post_hooks([]).set_provides([], reset=True)
+        for job in special_build_jobs
+        if job.parameter in MERGE_QUEUE_SPECIAL_BUILD_TYPES
     ]
     # The standalone WebAssembly build of the SQL parser (utils/wasm-parser). It cross-compiles to
     # `wasm32-wasip1` with a wasi-sdk toolchain, which cannot be mixed into a tree configured for
@@ -1193,11 +1228,18 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
-        Job.ParamSet(
-            parameter="arm_binary, sequential",
-            runs_on=RunnerLabels.ARM_SMALL,
-            requires=[ArtifactNames.CH_ARM_BINARY],
-        ),
+        # The sequential tests take about 48 minutes in total, so a single job ended about 25
+        # minutes after the rest of `CORE_BLOCKING_JOB_NAMES` in `ci/workflows/pull_request.py`
+        # and delayed every job gated by it. Two hash batches take about 24 minutes each.
+        *[
+            Job.ParamSet(
+                parameter=f"arm_binary, sequential, {batch}/{total_batches}",
+                runs_on=RunnerLabels.ARM_SMALL,
+                requires=[ArtifactNames.CH_ARM_BINARY],
+            )
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
+        ],
     )
     # MasterCI-only: run the plain (non-sanitizer) full stateless suite against the
     # optimized release binary instead of the plain `binary` build that PRs use (the
@@ -1266,6 +1308,14 @@ class JobConfigs:
             for total_batches in (2,)
             for batch in range(1, total_batches + 1)
         ],
+    )
+    # PRs run the azure configuration as one targeted job (the changed tests, the tests covering
+    # the changed lines and the tests that failed in the PR before) instead of the full suite:
+    # over 30 days its PR failure rate (1.55% parallel, 0.76% sequential) was the same as on
+    # master (1.79%, 0.61%), so the full run found nothing specific to the PRs, and at 85-100
+    # minutes it was the last job of a sixth of the PR runs. Master keeps the full suite.
+    functional_tests_azure_targeted_pr_jobs = targeted_variants(
+        functional_tests_jobs_azure, allow_failure=True
     )
     # Per-arch Bugfix Validation Check (integration tests). See the rationale
     # and status-model comment above for `bugfix_validation_ft_pr_jobs`. Each
@@ -1695,7 +1745,9 @@ class JobConfigs:
                     runs_on=RunnerLabels.ARM_MEDIUM,
                     requires=[ArtifactNames.CH_ARM_BINARY],
                 )
-                for total_batches in (4,)
+                # With 4 batches a batch took about 93 minutes and was the last job of a third
+                # of the PR runs.
+                for total_batches in (5,)
                 for batch in range(1, total_batches + 1)
             ],
         )
@@ -2026,7 +2078,9 @@ class JobConfigs:
     )
     # One family per architecture: six selected-test shards, or eight full-suite shards.
     # pr-performance requests the full suite on ARM; ci-force-all does so on both architectures.
-    performance_comparison_pr_jobs = performance_comparison_with_master_head_job.parametrize(
+    performance_comparison_pr_job = performance_comparison_with_master_head_job.copy()
+    performance_comparison_pr_job.enable_gh_read_token = True
+    performance_comparison_pr_jobs = performance_comparison_pr_job.parametrize(
         *[
             Job.ParamSet(
                 parameter=f"{arch}_release, master_head, {batch}/{total_batches}",

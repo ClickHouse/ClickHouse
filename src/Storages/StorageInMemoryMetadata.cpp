@@ -186,6 +186,8 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames(), context->getInsertionTableColumnsDescription());
     new_context->setProgressCallback(context->getProgressCallback());
     new_context->setProcessListElement(context->getProcessListElement());
+    /// A part of the outer query: plan it from the same snapshot.
+    new_context->shareQueryMaxThreadsSnapshot(*context);
     /// This branch starts from the global context, which is not a background operation. Carry the marker over
     /// so that a definer view reached from a background write (e.g. a `Buffer` flush) stays a background
     /// operation and functions restricted to user-issued queries (AI functions) remain rejected in it.
