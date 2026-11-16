@@ -31,6 +31,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int UNKNOWN_AGGREGATE_FUNCTION;
 }
 
@@ -97,7 +98,7 @@ struct PrometheusAvg
         kahanAdd(x / count, value, compensation);
     }
 
-    Float64 get() const
+    [[nodiscard]] Float64 get() const
     {
         if (is_mean)
             return value + compensation;
@@ -117,7 +118,7 @@ struct TimeSeriesAvgOverGroupData
     PODArray<UInt8, 64> is_null;
     size_t num_steps = 0;
 
-    size_t size() const { return key_ends.size(); }
+    [[nodiscard]] size_t size() const { return key_ends.size(); }
 };
 
 class AggregateFunctionTimeSeriesAvgOverGroup final
@@ -125,6 +126,8 @@ class AggregateFunctionTimeSeriesAvgOverGroup final
 {
 public:
     static constexpr UInt16 FORMAT_VERSION = 1;
+    /// A key can take no bytes (`Tuple()`), so the input does not limit the number of rows.
+    static constexpr size_t MAX_ROWS_IN_STATE = 0xFFFFFF;
 
     explicit AggregateFunctionTimeSeriesAvgOverGroup(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<TimeSeriesAvgOverGroupData, AggregateFunctionTimeSeriesAvgOverGroup>(
@@ -212,6 +215,9 @@ public:
         size_t num_values = 0;
         readVarUInt(num_rows, buf);
         readVarUInt(num_steps, buf);
+        if (num_rows > MAX_ROWS_IN_STATE)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large number of rows {} in a state of aggregate function {} (maximum: {})",
+                            num_rows, getName(), MAX_ROWS_IN_STATE);
         if (common::mulOverflow(num_rows, num_steps, num_values))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect size of a state of aggregate function {}", getName());
 

@@ -69,6 +69,8 @@ SELECT finalizeAggregation(CAST(unhex('01000105'), 'AggregateFunction(timeSeries
 -- The state starts with its format version.
 SELECT hex(timeSeriesAvgOverGroupState(k, v)) FROM values('k UInt8, v Array(Float64)', (7, [1]));
 SELECT finalizeAggregation(CAST(unhex('02000105'), 'AggregateFunction(timeSeriesAvgOverGroup, UInt8, Array(Float64))')); -- { serverError INCORRECT_DATA }
+-- A key without bytes does not limit the number of rows by the size of the state.
+SELECT finalizeAggregation(CAST(unhex('0100FFFFFFFFFFFFFFFFFF0100'), 'AggregateFunction(timeSeriesAvgOverGroup, Tuple(), Array(Float64))')); -- { serverError TOO_LARGE_ARRAY_SIZE }
 
 SELECT '-- PromQL avg';
 
