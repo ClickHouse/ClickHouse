@@ -270,6 +270,10 @@ submit {\bg INSERT INTO nonexistent VALUES (1)}
 expect -ex {A background job supports INSERT only as INSERT ... SELECT}
 expect ":) "
 
+submit {\bg EXECUTE AS default INSERT INTO nonexistent VALUES}
+expect -ex {A background job supports INSERT only as INSERT ... SELECT}
+expect ":) "
+
 # Refusing binary replay emits no 0x01 payload and retains job 4 with its spool.
 # Cancelling that terminal job then discards the retained output.
 expect_before -ex "\x01" { exit 1 }

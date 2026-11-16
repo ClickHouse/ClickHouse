@@ -178,6 +178,23 @@ bool hasSessionOnlyEffects(const ASTPtr & ast)
             [](const auto & element) { return element.type == ASTBackupQuery::TEMPORARY_TABLE; }));
 }
 
+/// True if the statement, or any statement it wraps, is an INSERT that takes its data from the client.
+bool hasClientFedInsert(const ASTPtr & ast)
+{
+    if (ast->as<ASTParallelWithQuery>())
+        return std::ranges::any_of(ast->children, [](const auto & child) { return hasClientFedInsert(child); });
+    if (const auto * execute_as = ast->as<ASTExecuteAsQuery>())
+        return execute_as->subquery && hasClientFedInsert(execute_as->subquery);
+
+    const auto * insert = ast->as<ASTInsertQuery>();
+    if (!insert)
+        return false;
+    ASTPtr input_function;
+    if (insert->select)
+        insert->tryFindInputFunction(input_function);
+    return !insert->select || input_function;
+}
+
 std::optional<String> getDetachableOutputFormat(
     const ASTPtr & ast,
     const ContextPtr & context,
@@ -362,17 +379,10 @@ bool Client::tryProcessInteractiveClientCommand(std::string_view input)
             return true;
         }
 
-        if (const auto * insert = parsed_query->as<ASTInsertQuery>())
+        if (hasClientFedInsert(parsed_query))
         {
-            ASTPtr input_function;
-            if (insert->select)
-                insert->tryFindInputFunction(input_function);
-
-            if (!insert->select || input_function)
-            {
-                error_stream << "A background job supports INSERT only as INSERT ... SELECT" << std::endl;
-                return true;
-            }
+            error_stream << "A background job supports INSERT only as INSERT ... SELECT" << std::endl;
+            return true;
         }
 
         /// The job opens a session of its own, and the server accepts a one-time password once: ask for a fresh
