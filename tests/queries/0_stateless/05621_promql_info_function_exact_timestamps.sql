@@ -23,3 +23,19 @@ INSERT INTO ts_ns (metric_name, tags, samples) VALUES
 SELECT * FROM prometheusQuery(ts_ns, 'info(metric)', toDateTime64('2026-11-11 00:00:01', 9, 'UTC')); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 SELECT * FROM prometheusQueryRange(ts_ns, 'info(metric)', toDateTime64('2026-07-29 00:00:01', 9, 'UTC'), toDateTime64('2026-11-11 00:00:01', 9, 'UTC'), 9072000); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 DROP TABLE ts_ns;
+
+SELECT '-- a table with UInt32 timestamps is read when the lookback starts before 1970';
+CREATE TABLE ts_u32 (samples Array(Tuple(UInt32, Float64))) ENGINE = TimeSeries;
+CREATE TABLE ts_u32_v10 (samples Array(Tuple(UInt32, Float64))) ENGINE = TimeSeries SETTINGS version = 10;
+INSERT INTO ts_u32 (metric_name, tags, samples) VALUES
+    ('metric', map('instance', 'a', 'job', '1'), [(0, 5)]),
+    ('target_info', map('instance', 'a', 'job', '1', 'data', 'first'), [(0, 1)]),
+    ('target_info', map('instance', 'a', 'job', '1', 'data', 'second'), [(1, 1)]);
+INSERT INTO ts_u32_v10 (metric_name, tags, samples) VALUES
+    ('metric', map('instance', 'a', 'job', '1'), [(0, 5)]),
+    ('target_info', map('instance', 'a', 'job', '1', 'data', 'first'), [(0, 1)]),
+    ('target_info', map('instance', 'a', 'job', '1', 'data', 'second'), [(1, 1)]);
+SELECT tags, value FROM prometheusQuery(ts_u32, 'info(metric)', 1) ORDER BY tags;
+SELECT tags, value FROM prometheusQuery(ts_u32_v10, 'info(metric)', 1) ORDER BY tags;
+DROP TABLE ts_u32;
+DROP TABLE ts_u32_v10;

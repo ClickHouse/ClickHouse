@@ -1,4 +1,5 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromSelector.h>
+#include <IO/WriteHelpers.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -228,12 +229,22 @@ SQLQueryPiece fromSelectorSampleTimestamps(
     {
         if (timestamp_kind == SampleTimestampKind::SECONDS)
             return makeASTFunction("CAST", std::move(timestamp), make_intrusive<ASTLiteral>("Float64"));
-        auto range_start = timeSeriesTimestampToAST(node_range.start_time - node_range.window + 1, context.result_timestamp_type);
-        auto range_start_in_table_scale = makeASTFunction("CAST", std::move(range_start), makeASTFunction("toTypeName", timestamp->clone()));
+        const TimestampType range_start = node_range.start_time - node_range.window + 1;
+        /// The start of the range can be before the first timestamp of an unsigned type, so it is not cast to the type of the table.
+        auto ticks_per_second = makeASTFunction(
+            "reinterpretAsInt64",
+            makeASTFunction("CAST", make_intrusive<ASTLiteral>(1u), makeASTFunction("toTypeName", timestamp->clone())));
+        auto range_start_ticks = makeASTFunction(
+            "toInt64",
+            makeASTFunction(
+                "multiply",
+                makeASTFunction(
+                    "toDecimal128",
+                    make_intrusive<ASTLiteral>(toString(range_start, context.result_timestamp_scale)),
+                    make_intrusive<ASTLiteral>(context.result_timestamp_scale)),
+                std::move(ticks_per_second)));
         ASTPtr ticks = makeASTFunction(
-            "minus",
-            makeASTFunction("reinterpretAsInt64", std::move(timestamp)),
-            makeASTFunction("reinterpretAsInt64", std::move(range_start_in_table_scale)));
+            "minus", makeASTFunction("reinterpretAsInt64", std::move(timestamp)), std::move(range_start_ticks));
         constexpr UInt64 low_part_size = 1ULL << 26;
         if (timestamp_kind == SampleTimestampKind::TICKS_HIGH)
             ticks = makeASTFunction("intDiv", std::move(ticks), make_intrusive<ASTLiteral>(low_part_size));
