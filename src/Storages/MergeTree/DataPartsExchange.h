@@ -96,7 +96,8 @@ private:
         OutputBufferGetter output_buffer_getter,
         MergeTreeData::DataPart::Checksums & checksums,
         ThrottlerPtr throttler,
-        bool sync) const;
+        bool sync,
+        bool drop_page_cache) const;
 
     MergeTreeData::MutableDataPartPtr downloadPartToDisk(
         const String & part_name,
@@ -109,7 +110,8 @@ private:
         OutputBufferGetter output_buffer_getter,
         size_t projections,
         ThrottlerPtr throttler,
-        bool sync);
+        bool sync,
+        bool drop_page_cache);
 
     MergeTreeData::MutableDataPartPtr downloadPartToDiskRemoteMeta(
        const String & part_name,
