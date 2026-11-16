@@ -8,8 +8,14 @@
         </substitution>
     </substitutions>
 
-    <query>SELECT count() FROM (SELECT rand()           FROM zeros(1000000000)) </query>
-    <query>SELECT count() FROM (SELECT rand64()         FROM zeros(1000000000)) </query>
-    <query>SELECT count() FROM (SELECT randUniform(0, 1) FROM zeros(100000000)) </query>
-    <query>SELECT count() FROM (SELECT generateUUIDv4() FROM zeros( 100000000)) </query>
+    <!-- count() does not read the subquery column, so queries 0-3 never call the function; 4-7 do. -->
+    <query disabled="1">SELECT count() FROM (SELECT rand()           FROM zeros(1000000000)) </query>
+    <query disabled="1">SELECT count() FROM (SELECT rand64()         FROM zeros(1000000000)) </query>
+    <query disabled="1">SELECT count() FROM (SELECT randUniform(0, 1) FROM zeros(100000000)) </query>
+    <query disabled="1">SELECT count() FROM (SELECT generateUUIDv4() FROM zeros( 100000000)) </query>
+
+    <query>SELECT count() FROM zeros(1000000000) WHERE NOT ignore(rand())</query>
+    <query>SELECT count() FROM zeros(1000000000) WHERE NOT ignore(rand64())</query>
+    <query>SELECT count() FROM zeros(100000000) WHERE NOT ignore(randUniform(0, 1))</query>
+    <query>SELECT count() FROM zeros(100000000) WHERE NOT ignore(generateUUIDv4())</query>
 </test>

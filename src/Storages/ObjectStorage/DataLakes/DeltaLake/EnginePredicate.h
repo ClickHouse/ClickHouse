@@ -42,7 +42,7 @@ public:
         visitor = &visitPredicate;
     }
 
-    bool hasException() const { return exception != nullptr; }
+    [[nodiscard]] bool hasException() const { return exception != nullptr; }
 
     void setException(std::exception_ptr exception_)
     {
@@ -51,10 +51,10 @@ public:
             exception = exception_;
     }
 
-    const DB::ActionsDAG & getFilterDAG() const { return filter; }
-    bool isBinaryColumn(const std::string & name) const { return binary_columns.contains(name); }
-    DB::ContextPtr getContext() const { return context; }
-    const DB::FormatSettings & getFormatSettings() const { return format_settings; }
+    [[nodiscard]] const DB::ActionsDAG & getFilterDAG() const { return filter; }
+    [[nodiscard]] bool isBinaryColumn(const std::string & name) const { return binary_columns.contains(name); }
+    [[nodiscard]] DB::ContextPtr getContext() const { return context; }
+    [[nodiscard]] const DB::FormatSettings & getFormatSettings() const { return format_settings; }
 
 private:
     const LoggerPtr log = getLogger("EnginePredicate");

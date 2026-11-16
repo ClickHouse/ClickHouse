@@ -143,6 +143,8 @@ with engine.connect() as conn:
 
 Ошибки, которые драйвер выбрасывает через соединение SQLAlchemy, представлены классами DB-API, экспортируемыми из `clickhouse_connect.dbapi`. Это те же самые объекты классов, что и соответствующие классы в `clickhouse_connect.driver.exceptions`, поэтому SQLAlchemy оборачивает их в соответствующий подкласс `sqlalchemy.exc.DBAPIError`. `StreamFailureError` является подклассом `OperationalError` и оборачивается в `sqlalchemy.exc.OperationalError`.
 
+Если таблицы не существует, инспекция столбцов и рефлексия таблицы вызывают исключение `sqlalchemy.exc.NoSuchTableError`. Это исключение также наследуется от `sqlalchemy.exc.NoResultFound`, поэтому существующие обработчики по-прежнему его перехватывают. Текст сообщения: `Table <database>.<table_name> does not exist`.
+
 Выполнение SQL-запросов подчиняется [политике повторных попыток HTTP](/ru/integrations/language-clients/python/driver-api#http-retries) драйвера. Для нативных массовых вставок действует [политика повторных попыток вставки](/ru/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication).
 
 Если отмена на стороне вызывающего кода может прервать явный вызов `AsyncConnection.invalidate()`, выполняйте инвалидацию в отдельной собственной задаче и дожидайтесь её завершения, прежде чем передавать отмену дальше. Так SQLAlchemy сможет завершить служебный учёт записей соединений:
@@ -441,6 +443,8 @@ ClickHouse не поддерживает рекурсивные материал
 ## DDL и рефлексия {#sqlalchemy-ddl-reflection}
 
 ClickHouse Connect предоставляет типы данных ClickHouse, движки таблиц, конструкции для словарей, DDL для баз данных и рефлексию таблиц.
+
+Для обеспечения совместимости `Inspector.get_table_names()` возвращает представления всех видов. `MetaData.reflect()` по умолчанию также включает их, а с помощью параметра `only` можно выбрать представление по имени. Используйте `Inspector.get_view_names()` для non-materialized представлений и `Inspector.get_materialized_view_names()` для materialized view. Оба метода принимают `schema` и работают в SQLAlchemy 1.4.40 и более поздних версиях, включая 2.x. Получение определения представления через `Inspector.get_view_definition()` не поддерживается.
 
 `Nullable()` и `LowCardinality()` из `clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes` принимают класс или экземпляр типа ClickHouse SQLAlchemy и сохраняют его конкретный тип для средств проверки типов. Например, `Nullable(String)` возвращает экземпляр `String`, который можно напрямую передать в `Column`. Средства проверки типов выводят для `[Nullable(String)]` тип `list[String]`. Если в списке есть и другие типы ClickHouse, аннотируйте его как `list[ChSqlaType]` и импортируйте `ChSqlaType` из `clickhouse_connect.cc_sqlalchemy.datatypes.base`.
 
