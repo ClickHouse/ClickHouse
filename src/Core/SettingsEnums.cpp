@@ -556,7 +556,7 @@ IMPLEMENT_SETTING_ENUM(
     MergeTreeStringSizeStreamCodec,
     ErrorCodes::BAD_ARGUMENTS,
     {{"NONE", MergeTreeStringSizeStreamCodec::NONE},
-     {"T64", MergeTreeStringSizeStreamCodec::T64}})
+     {"ADAPTIVE", MergeTreeStringSizeStreamCodec::ADAPTIVE}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeTextIndexSerializationVersion,

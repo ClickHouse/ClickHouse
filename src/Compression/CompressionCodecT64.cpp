@@ -837,11 +837,6 @@ void CompressionCodecT64::updateHash(SipHash & hash) const
     hash.update(variant);
 }
 
-CompressionCodecPtr getCompressionCodecT64(TypeIndex type_idx)
-{
-    return std::make_shared<CompressionCodecT64>(type_idx, CompressionCodecT64::Variant::Byte);
-}
-
 namespace
 {
 

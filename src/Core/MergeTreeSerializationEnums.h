@@ -18,11 +18,11 @@ enum class MergeTreeStringSerializationVersion : uint8_t
     WITH_SIZE_STREAM = 1,
 };
 
-/// Transformation of the `.size` substream of `String` columns applied before the column codec.
+/// Codec of the `.size` substream of `String` columns.
 enum class MergeTreeStringSizeStreamCodec : uint8_t
 {
     NONE,
-    T64,
+    ADAPTIVE,
 };
 
 enum class MergeTreeNullableSerializationVersion : uint8_t

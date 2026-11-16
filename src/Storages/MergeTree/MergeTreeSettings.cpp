@@ -362,19 +362,17 @@ Possible values:
 )", 0, \
         {"25.11", "single_stream", "with_size_stream", "Change to the newer format with separate sizes"}, \
         {"25.10", "single_stream", "single_stream", "New setting"}) \
-    DECLARE(MergeTreeStringSizeStreamCodec, string_size_stream_codec, "T64", R"(
-Codec applied to the string lengths stored in the `.size` substream of `String` columns (see `string_serialization_version`).
-The `.size` substream is always compressed with the codec of its `String` column (its `CODEC` clause, or the table default).
-This setting adds a transformation of the lengths before that codec.
+    DECLARE(MergeTreeStringSizeStreamCodec, string_size_stream_codec, "ADAPTIVE", R"(
+Codec of the string lengths stored in the `.size` substream of `String` columns (see `string_serialization_version`).
 
 Possible values:
 
-- `NONE`: the `.size` substream uses the column codec only, e.g. `ZSTD(3)`.
-- `T64`: the lengths are transformed with `T64` first, e.g. `T64, ZSTD(3)` for a column with `ZSTD(3)`. String lengths are small numbers stored in 8 bytes each, so this makes the substream smaller and faster to decompress.
+- `NONE`: the `.size` substream uses the general-purpose codecs of its column (its `CODEC` clause, or the table default), e.g. `ZSTD(3)`.
+- `ADAPTIVE`: each block of the `.size` substream is compressed with the smallest of the column codec, `T64` and `T64` followed by the column codec, e.g. `T64, ZSTD(3)`. String lengths are small numbers stored in 8 bytes each, so `T64` usually makes the substream smaller and faster to decompress. The selection works like `enable_adaptive_codec_selection` and follows `adaptive_codec_selection_period`.
 
-`T64` is not added when the column is not compressed (`CODEC(NONE)`) or when `enable_adaptive_codec_selection` chooses the codec.
+`ADAPTIVE` has no effect when the column is not compressed (`CODEC(NONE)`) or is encrypted.
 )", 0, \
-        {"26.11", "NONE", "T64", "New setting"}) \
+        {"26.11", "NONE", "ADAPTIVE", "New setting"}) \
     DECLARE(MergeTreeNullableSerializationVersion, nullable_serialization_version, "basic", R"(
 Controls the serialization method used for `Nullable(T)` columns.
 

@@ -1,8 +1,8 @@
 -- Tags: no-fasttest
 -- no-fasttest: AES_128_GCM_SIV depends on OpenSSL.
 
--- With `string_size_stream_codec = 'T64'`, the `.size` substream of an encrypted `String` column stays encrypted.
--- `T64` is added in front of a compressing chain, and not added when the column is only encrypted.
+-- With `string_size_stream_codec = 'ADAPTIVE'`, the `.size` substream of an encrypted `String` column keeps the column codec,
+-- so it stays encrypted.
 
 DROP TABLE IF EXISTS t_size_codec_enc;
 
@@ -14,7 +14,7 @@ CREATE TABLE t_size_codec_enc
 )
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream',
-    string_size_stream_codec = 'T64', ratio_of_defaults_for_sparse_serialization = 1;
+    string_size_stream_codec = 'ADAPTIVE', ratio_of_defaults_for_sparse_serialization = 1;
 
 INSERT INTO t_size_codec_enc SELECT repeat('x', number % 100) AS s, s, s FROM numbers(100000);
 

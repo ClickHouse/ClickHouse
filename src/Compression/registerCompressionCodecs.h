@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Compression/ICompressionCodec.h>
-#include <Core/Types_fwd.h>
 
 namespace DB
 {
@@ -34,6 +33,5 @@ CompressionCodecPtr getCompressionCodecDoubleDelta(UInt8 data_bytes_size);
 CompressionCodecPtr getCompressionCodecGCD(UInt8 gcd_bytes_size);
 CompressionCodecPtr getCompressionCodecALP(UInt8 float_width);
 CompressionCodecPtr getCompressionCodecSZ3(UInt8 float_bytes_size);
-CompressionCodecPtr getCompressionCodecT64(TypeIndex type_idx);
 
 }

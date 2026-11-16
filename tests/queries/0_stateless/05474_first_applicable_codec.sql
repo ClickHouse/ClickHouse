@@ -20,7 +20,7 @@ CREATE TABLE t_first_applicable
     e Array(Int64) CODEC(FirstApplicable(FPC, T64))
 )
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0, ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream', nullable_serialization_version = 'basic';
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0, string_size_stream_codec = 'NONE', ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream', nullable_serialization_version = 'basic';
 
 SHOW CREATE TABLE t_first_applicable;
 
@@ -54,7 +54,7 @@ CREATE TABLE t_first_applicable_default
     d UInt64 CODEC(Delta, Default)
 )
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0, ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream', nullable_serialization_version = 'basic',
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0, string_size_stream_codec = 'NONE', ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream', nullable_serialization_version = 'basic',
     default_compression_codec = 'FirstApplicable(FPC, Multiple(T64, LZ4), ZSTD(1))',
     marks_compression_codec = 'FirstApplicable(FPC, ZSTD(1))',
     primary_key_compression_codec = 'FirstApplicable(T64, LZ4)';
@@ -78,7 +78,7 @@ CREATE TABLE t_first_applicable_ttl
 )
 ENGINE = MergeTree ORDER BY tuple()
 TTL toDateTime(i) RECOMPRESS CODEC(FirstApplicable(T64, ZSTD(1)))
-SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0, ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream', nullable_serialization_version = 'basic', default_compression_codec = 'LZ4';
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0, string_size_stream_codec = 'NONE', ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream', nullable_serialization_version = 'basic', default_compression_codec = 'LZ4';
 
 INSERT INTO t_first_applicable_ttl SELECT number, toString(number) FROM numbers(10000);
 OPTIMIZE TABLE t_first_applicable_ttl FINAL;
