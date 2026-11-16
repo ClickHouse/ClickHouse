@@ -1795,7 +1795,7 @@ public:
 
 #if CLICKHOUSE_CLOUD
     /// Describes the log to the SharedMergeTree log pipeline.
-    CloudLogDescriptor makePipelineDescriptor() const;
+    [[nodiscard]] CloudLogDescriptor makePipelineDescriptor() const;
 #endif
 
     void setManualFlushTargetIndex(ISystemLog::Index target_index) override
