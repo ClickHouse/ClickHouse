@@ -19,6 +19,7 @@
 #include <Common/setThreadName.h>
 #include "config.h"
 
+#include <Access/Common/AccessFlags.h>
 #include <Access/Credentials.h>
 #include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
@@ -535,7 +536,12 @@ public:
         /// A failed table lookup goes to the outer handler, which keeps its HTTP status (e.g. 404 for an unknown table).
         StoragePtr table;
         if (!Poco::URI(uri).getPath().ends_with("/format_query"))
+        {
+            /// Exemplars need a grant on the table itself, it is checked before the table is looked up.
+            if (Poco::URI(uri).getPath().ends_with("/query_exemplars"))
+                context->checkAccess(AccessType::SELECT, getTimeSeriesTableID());
             table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+        }
 
         try
         {

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
-# Tag no-fasttest: the Prometheus protocols need protobufs and PromQL needs ANTLR4, both disabled in the fast-test build.
-# Tag no-parallel: the test reads a counter of system.events.
+# Tags: no-fasttest, no-parallel, zookeeper, no-replicated-database
+# no-fasttest: needs protobufs and ANTLR4. no-parallel: reads a counter of system.events. no-replicated-database: ON CLUSTER.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -14,6 +13,10 @@ DROP TABLE IF EXISTS ts;
 DROP TABLE IF EXISTS ts_plain;
 DROP TABLE IF EXISTS ts_clause;
 DROP TABLE IF EXISTS ts_repeated;
+DROP TABLE IF EXISTS ts_normalized;
+DROP TABLE IF EXISTS ts_ns;
+DROP TABLE IF EXISTS ts_policy;
+DROP TABLE IF EXISTS ts_copy;
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS store_exemplars = 1;
 CREATE TABLE ts_plain ENGINE = TimeSeries;
 "
@@ -36,14 +39,25 @@ $CLIENT -q "CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS version = 11 EXEMPL
 $CLIENT -q "CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS store_exemplars = 0 EXEMPLARS INNER ENGINE = MergeTree ORDER BY (id, timestamp)" 2>&1 | grep -o -m1 "INCORRECT_QUERY"
 $CLIENT -q "ALTER TABLE ts MODIFY SETTING store_exemplars = 0" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
 
+echo "-- a copy made ON CLUSTER gets the UUID of its exemplars table from the initiator, also with the old entry format"
+$CLIENT --distributed_ddl_output_mode=none --distributed_ddl_entry_format_version=2 -q "CREATE TABLE ts_copy ON CLUSTER test_shard_localhost AS ts ENGINE = TimeSeries"
+$CLIENT -q "
+    SELECT count() FROM system.tables
+    WHERE database = currentDatabase() AND name LIKE '.inner_id.exemplars.%'
+        AND uuid IN (SELECT toUUIDOrZero(extract(query, 'EXEMPLARS INNER UUID \\'([^\\']+)\\''))
+                     FROM system.distributed_ddl_queue WHERE query LIKE '%' || currentDatabase() || '%ts_copy%')"
+
 USER_PREFIX="user_05617_${CLICKHOUSE_DATABASE}"
 $CLIENT -n -q "
 CREATE TABLE ts_repeated ENGINE = TimeSeries SETTINGS store_exemplars = 1;
-DROP USER IF EXISTS ${USER_PREFIX}_granted, ${USER_PREFIX}_revoked, ${USER_PREFIX}_policy;
-CREATE USER ${USER_PREFIX}_granted, ${USER_PREFIX}_revoked, ${USER_PREFIX}_policy;
+CREATE TABLE ts_normalized ENGINE = TimeSeries SETTINGS store_exemplars = 1;
+CREATE TABLE ts_policy ENGINE = TimeSeries SETTINGS store_exemplars = 1;
+CREATE TABLE ts_ns (samples Array(Tuple(DateTime64(9), Float64))) ENGINE = TimeSeries SETTINGS store_exemplars = 1;
+DROP USER IF EXISTS ${USER_PREFIX}_granted, ${USER_PREFIX}_revoked, ${USER_PREFIX}_policy, ${USER_PREFIX}_none;
+CREATE USER ${USER_PREFIX}_granted, ${USER_PREFIX}_revoked, ${USER_PREFIX}_policy, ${USER_PREFIX}_none;
 GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO ${USER_PREFIX}_granted, ${USER_PREFIX}_revoked, ${USER_PREFIX}_policy;
 REVOKE SELECT ON ${CLICKHOUSE_DATABASE}.ts FROM ${USER_PREFIX}_revoked;
-CREATE ROW POLICY policy_05617 ON ${CLICKHOUSE_DATABASE}.ts USING metric_name = 'other_metric' TO ${USER_PREFIX}_policy;
+CREATE ROW POLICY policy_05617 ON ${CLICKHOUSE_DATABASE}.ts_policy USING metric_name = 'other_metric' TO ${USER_PREFIX}_policy;
 "
 
 BEFORE=$($CLIENT -q "SELECT value FROM system.events WHERE event = 'PrometheusRemoteWriteOutOfOrderExemplars'")
@@ -117,7 +131,10 @@ def write(table, body):
     request = urllib.request.Request(
         base + '/write?' + urllib.parse.urlencode({'database': database, 'table': table}), data=snappy(body),
         headers={'Content-Type': 'application/x-protobuf', 'Content-Encoding': 'snappy'})
-    print('write', table, urllib.request.urlopen(request).status)
+    try:
+        print('write', table, urllib.request.urlopen(request).status)
+    except urllib.error.HTTPError as e:
+        print('write', table, e.code)
 
 def query(table, params, user=None):
     url = base + '/query_exemplars?' + urllib.parse.urlencode(dict(params, database=database, table=table))
@@ -126,13 +143,16 @@ def query(table, params, user=None):
         code, body = response.status, response.read().decode()
     except urllib.error.HTTPError as e:
         code, body = e.code, e.read().decode()
-    if code == 400:
+    if code in (400, 404):
         body = json.loads(body)['errorType']
+    if code == 403:
+        body = 'forbidden'
     print(code, body.strip())
 
 write('ts', first)
 write('ts', second)
 write('ts_plain', first)
+write('ts_policy', first)
 
 for params in [
     {'query': 'test_exemplars'},
@@ -161,11 +181,29 @@ write('ts_repeated',
     ]))
 query('ts_repeated', {'query': 'repeated_metric'})
 
+print('-- entries which differ only in an empty label or a repeated label are the same series')
+N = [('__name__', 'normalized_metric'), ('job', 'n')]
+write('ts_normalized',
+    series(N, [(T, 1.0)], [([('trace_id', 'n2')], 2.0, T + 2)])
+    + series(N + [('optional', ''), ('job', 'n')], [(T + 60000, 2.0)], [
+        ([('trace_id', 'n1')], 1.0, T + 1),  # out of order: older than the exemplar of the first entry
+        ([('trace_id', 'n3')], 3.0, T + 3),
+    ]))
+query('ts_normalized', {'query': 'normalized_metric'})
+
+print('-- a timestamp which does not fit into the timestamp type of the table is refused')
+write('ts_ns', series(N, [], [([('trace_id', 'min')], 1.0, -(1 << 63))]))
+write('ts_ns', series(N, [(-(1 << 63), 1.0)], []))
+query('ts_ns', {'query': 'normalized_metric'})
+
 print('-- a user needs a grant on the table itself and no row policy on it')
 query('ts', {'query': 'test_exemplars{job="b"}'}, user_prefix + '_granted')
 query('ts', {'query': 'test_exemplars{job="b"}'}, user_prefix + '_revoked')
-query('ts', {'query': 'test_exemplars{job="b"}'}, user_prefix + '_policy')
+query('ts_policy', {'query': 'test_exemplars{job="b"}'}, user_prefix + '_policy')
 query('ts', {'query': '1 + 1'}, user_prefix + '_revoked')
+print('-- the grant is checked before the table is looked up')
+query('ts_missing', {'query': 'test_exemplars'}, user_prefix + '_none')
+query('ts_missing', {'query': 'test_exemplars'}, user_prefix + '_granted')
 PYTHON
 
 AFTER=$($CLIENT -q "SELECT value FROM system.events WHERE event = 'PrometheusRemoteWriteOutOfOrderExemplars'")
@@ -184,6 +222,10 @@ DROP TABLE ts;
 DROP TABLE ts_plain;
 DROP TABLE ts_clause;
 DROP TABLE ts_repeated;
-DROP ROW POLICY policy_05617 ON ${CLICKHOUSE_DATABASE}.ts;
-DROP USER ${USER_PREFIX}_granted, ${USER_PREFIX}_revoked, ${USER_PREFIX}_policy;
+DROP TABLE ts_normalized;
+DROP TABLE ts_ns;
+DROP TABLE ts_policy;
+DROP TABLE ts_copy;
+DROP ROW POLICY policy_05617 ON ${CLICKHOUSE_DATABASE}.ts_policy;
+DROP USER ${USER_PREFIX}_granted, ${USER_PREFIX}_revoked, ${USER_PREFIX}_policy, ${USER_PREFIX}_none;
 "

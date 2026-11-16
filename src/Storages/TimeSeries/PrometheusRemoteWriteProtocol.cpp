@@ -55,6 +55,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ASYNC_INSERT_FLUSH_TIMEOUT;
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TIME_SERIES_TAGS;
     extern const int LOGICAL_ERROR;
@@ -84,7 +85,13 @@ std::string_view metricTypeToString(prometheus::MetricMetadata::MetricType metri
 void insertTimestamp(Int64 timestamp_ms, UInt32 scale, IColumn & column)
 {
     if (typeid_cast<ColumnDecimal<DateTime64> *>(&column))
+    {
+        /// The conversion to a bigger scale multiplies without a check.
+        Int64 scaled;
+        if ((scale > 3) && common::mulOverflow(timestamp_ms, DecimalUtils::scaleMultiplier<Int64>(scale - 3), scaled))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp {} ms does not fit into DateTime64({})", timestamp_ms, scale);
         column.insert(DecimalUtils::convertTo<DateTime64>(scale, DateTime64{timestamp_ms}, 3));
+    }
     else
         column.insert(DecimalUtils::convertTo<UInt32>(DateTime64{timestamp_ms}, 3));
 }
@@ -156,14 +163,18 @@ std::vector<Exemplar> getAcceptedExemplars(
     return accepted;
 }
 
-/// The sorted labels of a time series as one string.
+/// The labels of a time series as one string: sorted, without duplicates and empty values, like the stored series.
 String getSeriesKey(const prometheus::TimeSeries & element)
 {
     std::vector<std::pair<std::string_view, std::string_view>> labels;
     labels.reserve(element.labels_size());
     for (const auto & label : element.labels())
-        labels.emplace_back(label.name(), label.value());
+    {
+        if (!label.value().empty())
+            labels.emplace_back(label.name(), label.value());
+    }
     std::sort(labels.begin(), labels.end());
+    labels.erase(std::unique(labels.begin(), labels.end()), labels.end());
 
     String key;
     for (const auto & [name, value] : labels)
