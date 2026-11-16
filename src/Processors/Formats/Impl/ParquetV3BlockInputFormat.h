@@ -13,6 +13,9 @@
 namespace DB
 {
 
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
 struct ParquetFileBucketInfo : public FileBucketInfo
 {
     RowGroupIndices row_group_ids;
@@ -143,6 +146,9 @@ private:
 
     BlockMissingValues previous_block_missing_values;
     size_t previous_approx_bytes_read_for_chunk = 0;
+    ExpressionActionsPtr deferred_prewhere_actions;
+    String deferred_prewhere_column_name;
+    size_t deferred_prewhere_filter_column_position = 0;
 
     void readFileFooterIfNeeded();
     void initializeIfNeeded();
@@ -154,6 +160,7 @@ private:
     std::shared_ptr<const Parquet::FileFooter> readFileFooter(Parquet::Prefetcher & prefetcher) const;
     /// For count(), which needs no column chunks.
     std::shared_ptr<const Parquet::FileFooter> getFileFooter(Parquet::Prefetcher & prefetcher) const;
+    bool applyDeferredPrewhere(Chunk & chunk);
 
     /// Only a cell found in the cache keeps statistics: counting them moves the cell, which only a hit may do.
     ParquetMetadataCache::MappedPtr metadata_cache_cell;

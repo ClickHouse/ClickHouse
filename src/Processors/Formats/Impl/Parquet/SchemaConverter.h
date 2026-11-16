@@ -1,8 +1,12 @@
 #pragma once
 
 #include <Processors/Formats/Impl/Parquet/Reader.h>
+#include <Processors/Formats/Impl/Parquet/VariantUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+
+#include <memory>
 
 namespace DB
 {
@@ -20,6 +24,8 @@ struct SchemaConverter
 {
     using PrimitiveColumnInfo = Reader::PrimitiveColumnInfo;
     using OutputColumnInfo = Reader::OutputColumnInfo;
+    using ParsedObjectSourceInfo = Reader::ParsedObjectSourceInfo;
+    using VariantSourceInfo = Reader::VariantSourceInfo;
     using LevelInfo = Reader::LevelInfo;
 
     /// Its column chunks are parsed only where needed, see getGeoTypeFromGeospatialStatistics.
@@ -31,7 +37,11 @@ struct SchemaConverter
     VectorWithMemoryTracking<String> external_columns;
 
     VectorWithMemoryTracking<PrimitiveColumnInfo> primitive_columns;
+    VectorWithMemoryTracking<ParsedObjectSourceInfo> parsed_object_sources;
+    VectorWithMemoryTracking<VariantSourceInfo> variant_sources;
     VectorWithMemoryTracking<OutputColumnInfo> output_columns;
+    size_t variant_source_state_slots = 0;
+    size_t variant_metadata_state_slots = 0;
 
     size_t schema_idx = 1;
     size_t primitive_column_idx = 0;
@@ -47,6 +57,12 @@ struct SchemaConverter
 
     /// The key is the parquet column name, without ColumnMapper.
     UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> geo_columns;
+    UnorderedMapWithMemoryTracking<String, String> clickhouse_variant_type_hints;
+    UnorderedSetWithMemoryTracking<String> clickhouse_variant_wrapper_paths;
+    bool has_clickhouse_variant_wrapper_paths_metadata = false;
+    /// Dot-joined paths of all elements of the file schema (lowercase if matching is case-insensitive).
+    /// Filled only when reading, if some requested column has a dot in its name.
+    UnorderedSetWithMemoryTracking<String> schema_element_paths;
 
     /// If precomputed_geo_columns has a value it is used directly (including the empty-map case)
     /// and the constructor skips parsing the "geo" key-value metadata. This ensures that a
@@ -76,6 +92,17 @@ private:
         ListElement,
     };
 
+    struct VariantTraversalContext
+    {
+        bool inside_typed_value = false;
+        bool suppress_name_component = false;
+        bool skip_requested_lookup = false;
+        size_t metadata_column_idx = UINT64_MAX;
+        size_t metadata_schema_idx = UINT64_MAX;
+        VectorWithMemoryTracking<LevelInfo> metadata_levels;
+        std::shared_ptr<std::optional<size_t>> shared_metadata_primitive;
+    };
+
     /// Parameters of a recursive call that traverses a subtree, corresponding to a parquet SchemaElement.
     struct TraversalNode
     {
@@ -91,8 +118,11 @@ private:
         /// If `parquet_name` is nullopt, the clickhouse and parquet names are equal.
         String name;
         std::optional<String> parquet_name;
+        String schema_path;
+        String type_hint_path;
         DataTypePtr type_hint;
         bool requested = false;
+        std::optional<VariantTraversalContext> variant;
         /// The element or one of its ancestors is not in the data lake schema (see useColumnMapperIfNeeded).
         bool not_in_datalake_schema = false;
 
@@ -117,6 +147,7 @@ private:
             if (!name.empty())
                 name += ".";
             name += mapped_field_name;
+            appendTypeHintPathComponent(mapped_field_name);
             if (parquet_name.has_value() || mapped_field_name != parquet_field_name)
             {
                 if (parquet_name.has_value())
@@ -125,6 +156,16 @@ private:
                     parquet_name.emplace();
                 *parquet_name += parquet_field_name;
             }
+        }
+
+        void appendSchemaPathComponent(const String & parquet_field_name)
+        {
+            schema_path = appendVariantMetadataPath(schema_path, parquet_field_name);
+        }
+
+        void appendTypeHintPathComponent(std::string_view field_name)
+        {
+            type_hint_path = appendVariantMetadataPath(type_hint_path, field_name);
         }
 
         TraversalNode prepareToRecurse(SchemaContext schema_context_, DataTypePtr type_hint_)
@@ -160,18 +201,51 @@ private:
     VectorWithMemoryTracking<TupleInArray> tuples_in_arrays;
 
     void checkHasColumns();
+    bool hasRequestedDescendantColumn(const String & prefix) const;
+    VectorWithMemoryTracking<std::pair<size_t, String>> collectRequestedSubcolumns(const String & prefix) const;
+    void checkSchemaReadDepth(size_t depth) const;
+    size_t schemaIdxAfterSubtree(size_t idx, size_t depth) const;
+    size_t collectSchemaElementPaths(size_t idx, const String & prefix, size_t depth);
+    size_t getOrAddVariantMetadataPrimitive(const TraversalNode & node, const String & name);
+    size_t addParsedObjectSource(size_t primitive_idx, String storage_name, DataTypePtr parsed_object_type);
+    size_t addVariantSource(
+        size_t metadata_primitive_idx,
+        size_t value_primitive_idx,
+        size_t typed_value_output_idx,
+        bool string_output_uses_json,
+        bool typed_value_requires_parent_metadata_mapping,
+        bool rows_deeper_than_metadata);
+    static void addPrimitiveDependency(OutputColumnInfo & output, size_t primitive_idx);
+    void addOutputDependencies(OutputColumnInfo & output, const OutputColumnInfo & dependency_output);
+    size_t addVariantPrimitiveColumnAt(
+        const parq::SchemaElement & element,
+        size_t parquet_column_idx,
+        size_t parquet_schema_idx,
+        const VectorWithMemoryTracking<LevelInfo> & parent_levels,
+        const String & name,
+        bool output_nullable,
+        bool preserve_unexpanded_nullable = false);
 
-    void processSubtree(TraversalNode & node);
+    void processSubtree(TraversalNode & node, size_t depth);
 
     /// These functions are used by processSubtree for different kinds of SchemaElement.
     /// Return true if the schema element was recognized as the corresponding kind,
     /// even if no output column needs to be produced.
     bool processSubtreePrimitive(TraversalNode & node);
-    bool processSubtreeMap(TraversalNode & node);
-    bool processSubtreeArrayOuter(TraversalNode & node);
-    bool processSubtreeArrayInner(TraversalNode & node);
-    void processSubtreeTuple(TraversalNode & node);
-    bool processSubtreeDynamic(TraversalNode & node);
+    bool processSubtreeVariant(TraversalNode & node, size_t depth);
+    bool processSubtreeVariantTypedWrapper(TraversalNode & node, size_t depth);
+    bool processSubtreeMap(TraversalNode & node, size_t depth);
+    bool processSubtreeArrayOuter(TraversalNode & node, size_t depth);
+    bool processSubtreeArrayInner(TraversalNode & node, size_t depth);
+    void processSubtreeTuple(TraversalNode & node, size_t depth);
+    bool processSubtreeDynamic(TraversalNode & node, size_t depth);
+
+    void skipSchemaSubtree(size_t depth);
+    size_t addVariantPrimitiveColumn(
+        const parq::SchemaElement & element,
+        const String & name,
+        bool output_nullable,
+        bool preserve_unexpanded_nullable = false);
 
     /// The sizes of an array are stored only in the leaves under it. Adds a primitive column with
     /// PrimitiveColumnInfo::levels_only_arrays = `arrays` and no output, for one of the leaves

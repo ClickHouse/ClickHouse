@@ -1,0 +1,22 @@
+-- UInt64 above Int64 range mixed with a string (ambiguous, residual encoding)
+18446744073709551615	Decimal(38, 0)
+x	String
+-- UInt64 within Int64 range keeps the INT64 primitive
+42	Int64
+x	String
+-- Residual Int128 / UInt128 / Int256 / UInt256 within 38 digits are preserved
+-99999999999999999999999999999999999999	Decimal(38, 0)
+18446744073709551616	Decimal(38, 0)
+18446744073709551617	Decimal(38, 0)
+18446744073709551618	Decimal(38, 0)
+99999999999999999999999999999999999999	Decimal(38, 0)
+a	String
+b	String
+c	String
+d	String
+e	String
+-- Residual wide integers that fit Int64 keep the INT64 primitive
+-100	Int64
+a	String
+b	String
+-- A residual integer above 38 decimal digits cannot be represented

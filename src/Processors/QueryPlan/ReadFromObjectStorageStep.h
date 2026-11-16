@@ -125,7 +125,7 @@ private:
     /// Not const: the in-order path pins Parquet's preserve_order, which is what makes a single
     /// file a sorted run at all.
     std::optional<DB::FormatSettings> format_settings;
-    const bool need_only_count;
+    bool need_only_count;
     const size_t max_block_size;
     size_t num_streams;
     const size_t max_num_streams;

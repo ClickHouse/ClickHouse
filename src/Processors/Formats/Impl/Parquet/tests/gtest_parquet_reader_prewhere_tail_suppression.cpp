@@ -57,6 +57,8 @@ struct Fixture
             output.output_type = type;
             output.idx_in_output_block = i;
             output.is_primitive = true;
+            /// `preparePrewhere` walks `primitive_dependencies` to mark the primitives a step needs.
+            output.primitive_dependencies = {i};
             reader.output_columns.push_back(std::move(output));
 
             Reader::PrimitiveColumnInfo primitive;
