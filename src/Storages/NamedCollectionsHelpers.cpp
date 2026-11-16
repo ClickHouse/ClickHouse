@@ -428,12 +428,28 @@ std::optional<std::string> tryGetUsedNamedCollectionName(const String & engine_n
         /// conservatively: while the proxy is not materialized, a collection with that name is exactly
         /// what the table will resolve through. If the table has already been materialized as a
         /// cluster reference, the dependency only makes a same-named collection harder to drop.
-        const auto * second_arg = positional_args.size() >= 2 ? positional_args[1]->as<ASTFunction>() : nullptr;
-        if ((!second_arg || second_arg->name != "equals") && positional_args.size() >= 2)
+        ///
+        /// Otherwise the resolver (`tryGetNamedCollectionWithOverrides`) takes the first identifier for a
+        /// collection whenever one with that name exists, and accepts any function after it: a non-`equals`
+        /// function such as `rand()` is checked as an override of a key with the function name and
+        /// skipped. So `Remote(nc, rand())` resolves through `nc` when it exists, and the dependency is
+        /// registered conservatively, for the same reason as for a single identifier. A literal or an
+        /// identifier after the first argument (`Remote(cluster, system, one)`) is rejected by the
+        /// resolver of a collection, so such a list is always positional. A table function after the
+        /// first argument (`Remote(cluster, numbers(1))`) is the positional target signature and is kept
+        /// as a cluster reference.
+        if (positional_args.size() >= 2)
         {
-            /// Anything else is a positional argument list (`Remote(cluster, system, one)`), which
-            /// never references a collection.
-            return std::nullopt;
+            const auto * second_arg = positional_args[1]->as<ASTFunction>();
+            if (!second_arg || second_arg->name != "equals")
+            {
+                for (size_t i = 1; i < positional_args.size(); ++i)
+                {
+                    const auto * function = positional_args[i]->as<ASTFunction>();
+                    if (!function || TableFunctionFactory::instance().isTableFunctionName(function->name))
+                        return std::nullopt;
+                }
+            }
         }
     }
 

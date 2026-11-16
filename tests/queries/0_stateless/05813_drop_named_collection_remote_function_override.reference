@@ -1,0 +1,6 @@
+--- ENGINE = Remote(..., remote(nc, rand())) ---
+0
+--- ENGINE = Remote(nc, rand()) loaded lazily ---
+0
+--- the collection can be dropped once the tables are gone ---
+0
