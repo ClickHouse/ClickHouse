@@ -158,6 +158,16 @@ INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceOne(v
 DETACH TABLE tq_b; ATTACH TABLE tq_b;
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'tq_b';
 
+-- A named collection can change without an `ALTER` of the table, so a table that uses one must still match the source
+-- in keeper when it attaches. Changing the source in keeper has the same effect as changing the collection.
+CREATE TABLE tq_nc (x String) ENGINE = S3Queue(s3_conn, filename = '05366_nc/*', format = 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_nc';
+DETACH TABLE tq_nc;
+INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceOne(value, '05366_nc', '05366_other') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_nc' AND name = 'metadata';
+ATTACH TABLE tq_nc; -- { serverError METADATA_MISMATCH }
+INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceOne(value, '05366_other', '05366_nc') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_nc' AND name = 'metadata';
+ATTACH TABLE tq_nc;
+DROP TABLE tq_nc;
+
 -- Remove `source` from keeper, as in metadata of an older version: the first attached table writes it back.
 -- A new table must not join such metadata, because it could belong to another source.
 INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceRegexpAll(value, ',"source_[a-z_]+":("[^"]*"|[0-9]+)', '') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';

@@ -27,9 +27,16 @@ struct ObjectStorageQueueTableMetadata
         String endpoint;
         String bucket;
         String path_pattern;
+        bool from_named_collection = false;
 
         [[nodiscard]] bool empty() const { return endpoint.empty(); }
-        bool operator==(const Source &) const = default;
+        bool operator==(const Source & other) const
+        {
+            return type == other.type
+                && endpoint == other.endpoint
+                && bucket == other.bucket
+                && path_pattern == other.path_pattern;
+        }
     };
 
     /// Non-changeable settings.

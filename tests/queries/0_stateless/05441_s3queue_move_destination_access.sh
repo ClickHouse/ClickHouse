@@ -45,6 +45,7 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS ${db}.t_backup SYNC;
     DROP TABLE IF EXISTS ${db}.t_backup_cluster SYNC;
     DROP TABLE IF EXISTS ${db}.mv SYNC;
+    DROP DATABASE IF EXISTS ${db}_replicated SYNC;
     DROP ROW POLICY IF EXISTS p_${db} ON ${db}.t;
     DROP USER IF EXISTS ${user_alter}, ${user_create};
 "
@@ -168,6 +169,17 @@ $CLICKHOUSE_CLIENT --user "${user_alter}" -q "
     ALTER TABLE ${db}.t ON CLUSTER test_shard_localhost MODIFY SETTING after_processing = 'delete'
     -- { serverError ACCESS_DENIED }
 "
+# In a `Replicated` database the entry runs again as the submitting user, so it needs the same grants.
+$CLICKHOUSE_CLIENT --distributed_ddl_output_mode none -q "
+    CREATE DATABASE ${db}_replicated ENGINE = Replicated('/test/05441_${db}', 's1', 'r1');
+    CREATE TABLE ${db}_replicated.t (x UInt8) ENGINE = S3Queue('${src}', 'clickhouse', 'clickhouse', 'CSV')
+    SETTINGS mode = 'unordered', keeper_path = '${keeper_path}_replicated';
+    GRANT ALTER SETTINGS, SELECT ON ${db}_replicated.t TO ${user_alter};
+"
+$CLICKHOUSE_CLIENT --user "${user_alter}" --distributed_ddl_output_mode none -q "
+    ALTER TABLE ${db}_replicated.t MODIFY SETTING after_processing = 'delete'
+" && echo "after_processing = 'delete' in a Replicated database with WRITE on S3: allowed"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE ${db}_replicated SYNC"
 
 # Resetting the destination disables the move, so it needs no grant for a destination.
 $CLICKHOUSE_CLIENT -q "REVOKE WRITE ON S3 FROM ${user_alter}"
@@ -406,6 +418,7 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS ${db}.t_backup SYNC;
     DROP TABLE IF EXISTS ${db}.t_backup_cluster SYNC;
     DROP TABLE IF EXISTS ${db}.mv SYNC;
+    DROP DATABASE IF EXISTS ${db}_replicated SYNC;
     DROP ROW POLICY IF EXISTS p_${db} ON ${db}.t;
     DROP USER IF EXISTS ${user_alter}, ${user_create};
 "

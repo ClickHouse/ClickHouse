@@ -8,6 +8,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
@@ -207,6 +208,8 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     auto source = getQueueSource(*configuration);
     if ((*queue_settings)[ObjectStorageQueueSetting::mode] == ObjectStorageQueueMode::EXCLUSIVE)
         source.path_pattern.clear();
+    /// The first argument is an identifier only if it names a named collection
+    source.from_named_collection = engine_args[0]->as<ASTIdentifier>() != nullptr;
     const bool strict_metadata_check = (args.is_restore_from_backup && !isSecondaryDDLReplay(args.getLocalContext()))
         || !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext());
 

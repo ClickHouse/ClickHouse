@@ -711,15 +711,18 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-    bool is_mutation = false;
+    bool run_as_submitting_user = false;
     for (const auto & child : alter.command_list->children)
     {
         const auto & command = child->as<const ASTAlterCommand &>();
         if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
         {
-            is_mutation = true;
+            run_as_submitting_user = true;
             checkNoRowPolicyForSetOperands(child, table_id.database_name, getContext());
         }
+        else if (command.type == ASTAlterCommand::MODIFY_SETTING && command.settings_changes
+            && !StorageFactory::instance().getExportAccessOfAnyEngine(command.settings_changes->as<ASTSetQuery &>().changes).empty())
+            run_as_submitting_user = true;
     }
 
     checkAddedIndexPermissions(alter, table, getContext());
@@ -728,7 +731,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {.run_as_submitting_user = is_mutation}, std::move(guard));
+        return database->tryEnqueueReplicatedDDL(
+            query_ptr, getContext(), {.run_as_submitting_user = run_as_submitting_user}, std::move(guard));
     }
 
 #if CLICKHOUSE_CLOUD

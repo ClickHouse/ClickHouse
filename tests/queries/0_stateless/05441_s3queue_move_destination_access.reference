@@ -8,6 +8,7 @@ settings that are not a destination: allowed
 -- ALTER with WRITE on S3
 destination with WRITE on S3: allowed
 after_processing = 'delete' with WRITE on S3: allowed
+after_processing = 'delete' in a Replicated database with WRITE on S3: allowed
 empty destination without WRITE on S3: allowed
 -- ALTER with WRITE on S3, restricted by a row policy
 empty destination with a row policy: allowed

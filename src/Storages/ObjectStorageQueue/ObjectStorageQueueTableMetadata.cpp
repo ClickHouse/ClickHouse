@@ -268,7 +268,7 @@ void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueT
         after_processing = from_zk.after_processing.load();
     }
 
-    if (!from_zk.source.empty() && source != from_zk.source)
+    if (!source.from_named_collection && !from_zk.source.empty() && source != from_zk.source)
     {
         LOG_WARNING(log, "The source of the queue is {}, while this table reads {}",
             sourceToString(from_zk.source), sourceToString(source));
