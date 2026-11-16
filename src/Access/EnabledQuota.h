@@ -117,8 +117,8 @@ public:
 
     void reset(QuotaType quota_type) const;
 
-    /// Returns the information about consumption of all governing quotas.
-    std::vector<QuotaUsage> getAllUsage() const;
+    /// Returns the consumption of governing quotas, optionally omitting unresolved client-key quotas for login snapshots.
+    std::vector<QuotaUsage> getAllUsage(bool skip_unresolved_client_key = false) const;
 
 
 private:

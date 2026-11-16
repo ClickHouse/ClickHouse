@@ -654,7 +654,7 @@ void EnabledQuota::reset(QuotaType quota_type) const
         Impl::resetQuotaValue(*quota->intervals, quota_type, 0, current_time);
 }
 
-std::vector<QuotaUsage> EnabledQuota::getAllUsage() const
+std::vector<QuotaUsage> EnabledQuota::getAllUsage(bool skip_unresolved_client_key) const
 {
     auto loaded = quotas.load();
     auto current_time = std::chrono::system_clock::now();
@@ -662,6 +662,9 @@ std::vector<QuotaUsage> EnabledQuota::getAllUsage() const
     result.reserve(loaded->size());
     for (const auto & quota : *loaded)
     {
+        /// Native TCP supplies the key after authentication; omit quotas that cannot yet be resolved.
+        if (skip_unresolved_client_key && quota->requires_client_key)
+            continue;
         auto usage = quota->intervals->getUsage(current_time);
         if (usage)
             result.push_back(std::move(usage).value());

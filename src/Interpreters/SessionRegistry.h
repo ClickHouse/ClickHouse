@@ -28,12 +28,13 @@ class SessionRegistry
 public:
     struct Entry
     {
-        UUID auth_id;
+        UUID auth_id{};
         String session_id;
 
         time_t event_time{};
         Decimal64 event_time_microseconds{};
 
+        std::optional<UUID> user_id;
         std::optional<String> user;
         std::optional<AuthenticationType> auth_type;
         Strings roles;
@@ -52,6 +53,11 @@ public:
     public:
         Handle(SessionRegistry & registry_, std::list<Entry>::iterator entry_iter_) noexcept;
         ~Handle();
+
+        void updateConnection(
+            ClientInfo client_info, std::optional<ClientCertificateInfo> certificate_info,
+            AuthenticationType auth_type, std::vector<QuotaUsage> quotas);
+        void updateQuotas(std::vector<QuotaUsage> quotas);
 
     private:
         friend class SessionRegistry;

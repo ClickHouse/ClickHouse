@@ -938,12 +938,14 @@ event_time:              2021-10-14 20:33:52
 event_time_microseconds: 2021-10-14 20:33:52.104247
 user:                    default
 auth_type:               PLAINTEXT_PASSWORD
-profiles:                ['default']
 roles:                   []
+profiles:                ['default']
 settings:                [('load_balancing','random'),('max_memory_usage','10000000000')]
+quotas:                  []
 client_address:          ::ffff:127.0.0.1
 client_port:             38490
 interface:               TCP
+http_user_agent:
 client_hostname:
 client_name:             ClickHouse client
 client_revision:         54449

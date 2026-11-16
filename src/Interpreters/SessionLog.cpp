@@ -198,7 +198,7 @@ void SessionLog::addLoginSuccess(const UUID & auth_id,
             log_entry.settings.emplace_back(change.name, value);
         }
 
-        for (const auto & quota : access->getQuotaUsages())
+        for (const auto & quota : access->getQuotaUsages(/* check_client_key = */ false))
             log_entry.quotas.emplace_back(quota.quota_name, quota.quota_key);
     });
 }

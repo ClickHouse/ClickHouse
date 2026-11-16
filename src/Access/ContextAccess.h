@@ -59,9 +59,11 @@ public:
 #if CLICKHOUSE_CLOUD
     std::shared_ptr<const EnabledMaskingPolicies> getEnabledMaskingPolicies() const;
 #endif
-    /// Returns the quota to track resource consumption.
-    std::shared_ptr<const EnabledQuota> getQuota() const;
-    std::vector<QuotaUsage> getQuotaUsages() const;
+    /// Returns the quota to track resource consumption. Queries must check the client-key requirement.
+    std::shared_ptr<const EnabledQuota> getQuota(bool check_client_key = true) const;
+
+    /// Login snapshots may omit unresolved client-key quotas before the native handshake supplies the key.
+    std::vector<QuotaUsage> getQuotaUsages(bool check_client_key = true) const;
 
     /// Returns the default settings, i.e. the settings which should be applied on user's login.
     SettingsChanges getDefaultSettings() const;
@@ -276,7 +278,7 @@ public:
 #endif
     /// Returns the quota to track resource consumption.
     ALWAYS_INLINE std::shared_ptr<const EnabledQuota> getQuota() const { return access->getQuota(); }
-    ALWAYS_INLINE std::vector<QuotaUsage> getQuotaUsages() const { return access->getQuotaUsages(); }
+    ALWAYS_INLINE std::vector<QuotaUsage> getQuotaUsages(bool check_client_key = true) const { return access->getQuotaUsages(check_client_key); }
 
     /// Returns the default settings, i.e. the settings which should be applied on user's login.
     ALWAYS_INLINE SettingsChanges getDefaultSettings() const { return access->getDefaultSettings(); }

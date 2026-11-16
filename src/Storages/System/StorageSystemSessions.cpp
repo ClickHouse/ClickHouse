@@ -1,3 +1,5 @@
+#include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -27,7 +29,7 @@
 
 #include <Poco/Net/SocketAddress.h>
 
-#include <unordered_map>
+#include <map>
 
 namespace DB
 {
@@ -35,14 +37,13 @@ namespace DB
 namespace
 {
 
-/// A connection can only have one query in flight at a time, so the current query, if any, can be
-/// found by matching the session's client address against the client address of in-flight queries.
-std::unordered_map<String, String> getAddressToQueryIdMap(ContextPtr context)
+/// Client endpoints may be shared by proxies or by idle named sessions on a keep-alive connection.
+std::map<UUID, String> getSessionToQueryIdMap(ContextPtr context)
 {
-    std::unordered_map<String, String> result;
+    std::map<UUID, String> result;
     for (const auto & process : context->getProcessList().getInfo(false, false, false))
-        if (process.client_info.current_address)
-            result.emplace(process.client_info.current_address->toString(), process.client_info.current_query_id);
+        if (!process.is_internal && process.client_info.session_auth_id != UUID{})
+            result.emplace(process.client_info.session_auth_id, process.client_info.current_query_id);
     return result;
 }
 
@@ -58,19 +59,19 @@ ColumnsDescription StorageSystemSessions::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", lc_string_datatype, "Hostname of the server executing the query."},
-        {"auth_id", std::make_shared<DataTypeUUID>(), "Authentication ID, which is a UUID that is automatically generated each time user logins."},
-        {"session_id", std::make_shared<DataTypeString>(), "Session ID that is passed by client via HTTP interface."},
+        {"auth_id", std::make_shared<DataTypeUUID>(), "Authentication ID generated at login. For a named HTTP session, the initial ID is retained until the session is closed or expires."},
+        {"session_id", std::make_shared<DataTypeString>(), "Session ID passed by the client via HTTP. Named sessions remain listed between requests until they are closed or expire."},
         {"event_date", std::make_shared<DataTypeDate>(), "Login date."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Login time."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Login starting time with microseconds precision."},
         {"elapsed", std::make_shared<DataTypeFloat64>(), "The time in seconds since the session is established."},
         {"current_query_id", std::make_shared<DataTypeString>(), "ID of the query currently executing in this session, if any."},
 
-        {"user", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "User name."},
-        {"auth_type", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum8>(getSessionAuthTypeEnumValues())), "The authentication type."},
+        {"user", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Name of the authenticated user. If the user is renamed, this column shows the old name until the next authentication. The access check uses the user ID, not the name."},
+        {"auth_type", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum8>(getSessionAuthTypeEnumValues())), "The authentication type. For named HTTP sessions, this reflects the most recent acquisition, as do connection and certificate fields."},
 
-        {"roles", std::make_shared<DataTypeArray>(lc_string_datatype), "The list of roles to which the profile is applied."},
-        {"profiles", std::make_shared<DataTypeArray>(lc_string_datatype), "The list of profiles set for all roles and/or users."},
+        {"roles", std::make_shared<DataTypeArray>(lc_string_datatype), "Roles enabled when the session was first established."},
+        {"profiles", std::make_shared<DataTypeArray>(lc_string_datatype), "Profiles applied when the session was first established."},
         {"settings", std::move(settings_type_column), "Settings that are changed when the client logged in."},
         {"quotas", std::move(quotas_type_column), "Quotas that are bound to this session."},
 
@@ -100,11 +101,20 @@ ColumnsDescription StorageSystemSessions::getColumnsDescription()
 
 void StorageSystemSessions::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    const auto address_to_query_id = getAddressToQueryIdMap(context);
+    /// Sessions show the settings and addresses of other users.
+    /// Thus, a user without the `SHOW CONNECTIONS` privilege sees only the sessions of this user.
+    /// Compare the user IDs, not the names. A user can be renamed, and a different user can get the old name.
+    const bool show_all_users = context->getAccess()->isGranted(AccessType::SHOW_CONNECTIONS);
+    const std::optional<UUID> current_user_id = context->getUserID();
+
+    const auto session_to_query_id = getSessionToQueryIdMap(context);
     const auto now = std::chrono::system_clock::now();
 
     for (const auto & entry : context->getSessionRegistry().getEntries())
     {
+        if (!show_all_users && (!current_user_id || entry->user_id != current_user_id))
+            continue;
+
         size_t i = 0;
 
         res_columns[i++]->insert(getFQDNOrHostName());
@@ -116,12 +126,8 @@ void StorageSystemSessions::fillData(MutableColumns & res_columns, ContextPtr co
         res_columns[i++]->insert(std::chrono::duration<double>(now - std::chrono::system_clock::from_time_t(entry->event_time)).count());
 
         String current_query_id;
-        if (entry->client_info.current_address)
-        {
-            auto it = address_to_query_id.find(entry->client_info.current_address->toString());
-            if (it != address_to_query_id.end())
-                current_query_id = it->second;
-        }
+        if (auto it = session_to_query_id.find(entry->client_info.session_auth_id); it != session_to_query_id.end())
+            current_query_id = it->second;
         res_columns[i++]->insert(current_query_id);
 
         res_columns[i++]->insert(entry->user ? Field(*entry->user) : Field());
