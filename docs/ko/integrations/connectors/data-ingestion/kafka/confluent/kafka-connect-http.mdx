@@ -4,12 +4,10 @@ slug: /integrations/kafka/cloud/confluent/http
 description: 'Kafka Connect 및 ClickHouse와 함께 HTTP Sink 커넥터 사용'
 title: 'Confluent HTTP Sink 커넥터'
 doc_type: 'guide'
-keywords: ['Confluent HTTP Sink Connector', 'HTTP Sink ClickHouse', 'Kafka HTTP 커넥터
-', 'ClickHouse HTTP 통합', 'Confluent Cloud HTTP Sink']
+keywords: ['Confluent HTTP Sink Connector', 'HTTP Sink ClickHouse', 'Kafka HTTP 커넥터 ', 'ClickHouse HTTP 통합', 'Confluent Cloud HTTP Sink']
 ---
 
 import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
-import { Image } from "/snippets/ko/components/Image.jsx";
 
 HTTP Sink 커넥터는 데이터 타입에 구애받지 않으므로 Kafka 스키마가 필요 없으며, 맵과 배열 같은 ClickHouse 고유의 데이터 타입도 지원합니다. 이러한 유연성이 추가되는 대신 구성은 다소 더 복잡해집니다.
 
@@ -19,9 +17,7 @@ HTTP Sink 커넥터는 데이터 타입에 구애받지 않으므로 Kafka 스�
   HTTP Connector는 [Confluent Enterprise License](https://docs.confluent.io/kafka-connect-http/current/overview.html#license)에 따라 배포됩니다.
 </Note>
 
-<div id="quick-start-steps">
-  ### 빠른 시작 단계
-</div>
+### 빠른 시작 단계 {#quick-start-steps}
 
 <Steps>
   <Step title="연결 정보 수집" id="1-gather-your-connection-details">
@@ -61,7 +57,15 @@ HTTP Sink 커넥터는 데이터 타입에 구애받지 않으므로 Kafka 스�
   <Step title="HTTP Sink 구성" id="4-configure-http-sink">
     Kafka 토픽과 HTTP Sink 커넥터 인스턴스를 생성합니다:
 
-    <Image img="/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp" size="sm" alt="HTTP Sink 커넥터를 생성하는 방법을 보여주는 Confluent Cloud 인터페이스" border />
+    <div className="ch-image-sm">
+
+    <Frame>
+
+    ![HTTP Sink 커넥터를 생성하는 방법을 보여주는 Confluent Cloud 인터페이스](/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp)
+
+    </Frame>
+
+    </div>
 
     <br />
 
@@ -78,7 +82,15 @@ HTTP Sink 커넥터는 데이터 타입에 구애받지 않으므로 Kafka 스�
       이 HTTP Url은 오류가 발생하기 쉽습니다. 문제를 방지하려면 이스케이프 처리를 정확히 하십시오.
     </Note>
 
-    <Image img="/images/integrations/data-ingestion/kafka/confluent/http_auth.webp" size="lg" alt="HTTP Sink 커넥터의 인증 설정을 보여주는 Confluent Cloud 인터페이스" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![HTTP Sink 커넥터의 인증 설정을 보여주는 Confluent Cloud 인터페이스](/images/integrations/data-ingestion/kafka/confluent/http_auth.webp)
+
+    </Frame>
+
+    </div>
 
     <br />
 
@@ -92,13 +104,29 @@ HTTP Sink 커넥터는 데이터 타입에 구애받지 않으므로 Kafka 스�
         * `Retry on HTTP codes` - 400-500으로 설정하되 필요에 따라 조정하십시오. 예를 들어 ClickHouse 앞단에 HTTP 프록시가 있는 경우 달라질 수 있습니다.
         * `Maximum Reties` - 기본값(10)이 적절하지만, 재시도 안정성을 높이려면 조정해도 됩니다.
 
-    <Image img="/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp" size="sm" alt="HTTP Sink 커넥터의 고급 구성 옵션을 보여주는 Confluent Cloud 인터페이스" border />
+    <div className="ch-image-sm">
+
+    <Frame>
+
+    ![HTTP Sink 커넥터의 고급 구성 옵션을 보여주는 Confluent Cloud 인터페이스](/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
   <Step title="연결 테스트" id="5-testing-the-connectivity">
     HTTP Sink로 구성한 토픽에 메시지를 생성합니다
 
-    <Image img="/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp" size="md" alt="Kafka 토픽에서 테스트 메시지를 생성하는 방법을 보여주는 Confluent Cloud 인터페이스" border />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![Kafka 토픽에서 테스트 메시지를 생성하는 방법을 보여주는 Confluent Cloud 인터페이스](/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp)
+
+    </Frame>
+
+    </div>
 
     <br />
 

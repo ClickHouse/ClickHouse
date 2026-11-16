@@ -541,12 +541,13 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                 LOG_TRACE(log, "Setting `buckets` already equals {}. Will do nothing", value);
                 continue;
             }
-            if (table_metadata.buckets > 1)
+            if (buckets_num > 1)
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
-                    "It is not allowed to modify `buckets` settings "
-                    "when it is already set to a non-zero value");
+                    "It is not allowed to modify `buckets` setting when the table already uses {} buckets "
+                    "(`buckets` is {}, `processing_threads_num` is {})",
+                    buckets_num, table_metadata.buckets.load(), table_metadata.processing_threads_num.load());
             }
             migrateToBucketsInKeeper(value);
             new_table_metadata.buckets = value;
@@ -575,9 +576,13 @@ void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)
     chassert(table_metadata.buckets == 0 || table_metadata.buckets == 1);
     chassert(buckets_num == 1, "Buckets: " + toString(buckets_num));
     LOG_TRACE(log, "Changing buckets value from {} to {}", table_metadata.buckets.load(), value);
+
+    ObjectStorageQueueTableMetadata new_table_metadata(table_metadata);
+    new_table_metadata.buckets = value;
+
     ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
         zookeeper_path,
-        value,
+        new_table_metadata.getBucketsNum(),
         /* prev_value */table_metadata.buckets,
         zookeeper_name);
     table_metadata.buckets = value;
@@ -656,18 +661,18 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                 && table_metadata.getMode() == ObjectStorageQueueMode::ORDERED
                 && table_metadata.buckets <= 1 && table_metadata.processing_threads_num <= 1)
             {
-                const std::string message = "Ordered mode in cloud without "
+                const auto message = PreformattedMessage::create("Ordered mode in cloud without "
                     "either `buckets`>1 or `processing_threads_num`>1 (works as `buckets` if it's not specified) "
-                    "will not work properly. Please specify them in the CREATE query. See documentation for more details.";
+                    "will not work properly. Please specify them in the CREATE query. See documentation for more details.");
 
                 if (is_attach)
                 {
-                    LOG_WARNING(log, "{}", message);
+                    LOG_WARNING(log, message);
                     warned = true;
                 }
                 else
                 {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
+                    throw Exception(message, ErrorCodes::BAD_ARGUMENTS);
                 }
             }
 
@@ -791,7 +796,7 @@ namespace
             return self;
         }
 
-        UInt128 hash() const
+        [[nodiscard]] UInt128 hash() const
         {
             SipHash hash;
             hash.update(hostname);
@@ -800,7 +805,7 @@ namespace
             return hash.get128();
         }
 
-        std::string serialize() const
+        [[nodiscard]] std::string serialize() const
         {
             WriteBufferFromOwnString buf;
             buf << version << "\n";
@@ -1249,7 +1254,7 @@ public:
         nodes_num = servers.size();
     }
 
-    std::string chooseServer(const UInt128 & hash) const
+    [[nodiscard]] std::string chooseServer(const UInt128 & hash) const
     {
         if (virtual_nodes.empty())
             return {};
@@ -1259,7 +1264,7 @@ public:
         return it->second;
     }
 
-    size_t size() const { return nodes_num; }
+    [[nodiscard]] size_t size() const { return nodes_num; }
 
     template<typename... Args>
     static UInt128 hash(Args... args)

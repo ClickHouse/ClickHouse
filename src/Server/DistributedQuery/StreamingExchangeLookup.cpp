@@ -19,6 +19,8 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsString distributed_plan_exchange_compression_method;
+    extern const SettingsInt64 distributed_plan_exchange_zstd_compression_level;
     extern const SettingsString network_compression_method;
     extern const SettingsInt64 network_zstd_compression_level;
 }
@@ -31,15 +33,21 @@ namespace ErrorCodes
 
 CompressionCodecPtr streamingExchangeCompressionCodec(const Settings & settings)
 {
-    const String method = Poco::toUpper(settings[Setting::network_compression_method].toString());
+    const bool use_network_method = settings[Setting::distributed_plan_exchange_compression_method].value.empty();
+    const std::string_view setting_name = use_network_method ? "network_compression_method" : "distributed_plan_exchange_compression_method";
+    const String method = Poco::toUpper(use_network_method
+        ? settings[Setting::network_compression_method].value
+        : settings[Setting::distributed_plan_exchange_compression_method].value);
     /// The factory also knows codecs such as `Delta` that work only on some column types. Only the
     /// general codecs can compress any data.
     if (method != "NONE" && method != "ZSTD" && method != "LZ4" && method != "LZ4HC")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting '{}' must be NONE, ZSTD, LZ4 or LZ4HC for the streaming exchange", setting_name);
 
     std::optional<int> level;
     if (method == "ZSTD")
-        level = static_cast<int>(settings[Setting::network_zstd_compression_level]);
+        level = static_cast<int>(use_network_method
+            ? settings[Setting::network_zstd_compression_level]
+            : settings[Setting::distributed_plan_exchange_zstd_compression_level]);
 
     CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(settings));
     return CompressionCodecFactory::instance().get(method, level);
@@ -64,11 +72,11 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool advisory) override
     {
         auto stream_name = exchange_stream_id.toString();
         auto future_connection = connections->getConnection(query_id, stream_name);
-        return std::make_shared<StreamingExchangeSink>(input_header, future_connection, stream_name);
+        return std::make_shared<StreamingExchangeSink>(input_header, future_connection, stream_name, advisory);
     }
 
     std::shared_ptr<IProcessor> createSerializer(SharedHeader input_header, const String &) override
@@ -81,7 +89,8 @@ public:
         return std::make_shared<StreamingExchangeDeserializingTransform>(std::move(output_header), exchange_id);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
+    std::shared_ptr<ISource>
+    createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized, bool advisory) override
     {
         auto stream_name = exchange_stream_id.toString();
         auto it = exchange_stream_sources.stream_hosts.find(stream_name);
@@ -91,7 +100,15 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "No streaming exchange port for exchange stream {} on host {}", stream_name, it->second.host);
         return std::make_shared<StreamingExchangeSource>(
-            output_header, query_id, stream_name, it->second.host, it->second.port, cancellation, auth_token, output_is_serialized);
+            output_header,
+            query_id,
+            stream_name,
+            it->second.host,
+            it->second.port,
+            cancellation,
+            auth_token,
+            output_is_serialized,
+            advisory);
     }
 
 private:

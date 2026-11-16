@@ -1,0 +1,11 @@
+-- without ORDER BY: which rows the LIMIT keeps is not known, so the result checks what holds for any of them
+2	1	1	1
+-- with ORDER BY
+1	10	a	r1
+2	20	b	r1
+1	10	a	r2
+1	10	a	r1
+2	20	b	r1
+1	10	a	r2
+-- a column is still read lazily
+1

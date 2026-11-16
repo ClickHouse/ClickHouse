@@ -17,9 +17,21 @@ El escalado es la capacidad de ajustar los recursos disponibles para satisfacer 
   Los niveles Scale y Enterprise admiten servicios tanto de una sola réplica como de múltiples réplicas. Los servicios Scale de una sola réplica y los servicios Enterprise con perfiles estándar `1:4` admiten el autoescalado vertical de autoservicio. Los servicios Enterprise con perfiles personalizados requieren redimensionamiento vertical con asistencia del soporte técnico. Los servicios Scale y Enterprise pueden escalarse horizontalmente hasta varias réplicas. Los servicios del nivel Basic tienen una sola réplica, un tamaño fijo y no permiten escalado vertical ni horizontal. Para obtener más información, consulte [servicios grandes de una sola réplica](/es/products/cloud/features/large-single-replica-services).
 </Note>
 
-<div id="how-scaling-works-in-clickhouse-cloud">
-  ## Cómo funciona el escalado en ClickHouse Cloud
-</div>
+## Elección de una opción de compute {#choosing-a-compute-option}
+
+Elija una opción en función de si desea cambiar la capacidad de su service existente, aislar una carga de trabajo en compute dedicado o añadir compute de forma temporal a una consulta elegible.
+
+| Opción                                                                         | Qué hace                                                                                                                                               | Cuándo usarla                                                                                          |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Escalado de su service existente                                               | El escalado vertical cambia la CPU y la memoria. El escalado horizontal cambia el número de réplicas, de forma manual o automática donde sea compatible. | Desea que su service existente escale hacia arriba o hacia abajo según cambie la demanda de la carga de trabajo. |
+| [Warehouses](/es/products/cloud/features/infrastructure/warehouses)               | Crea services independientes con compute y endpoints dedicados que comparten los mismos datos.                                                         | Necesita un aislamiento de compute duradero para distintas cargas de trabajo.                                  |
+| [On-Demand Compute](/es/products/cloud/features/infrastructure/on-demand-compute) | Asigna temporalmente workers de un grupo gestionado a través de su service y endpoint existentes.                                                      | Una consulta `SELECT` elegible necesita compute adicional sin redimensionar el service.                |
+
+<Note>
+  La compatibilidad con el escalado varía según el nivel y el perfil del service. El [escalado automático horizontal](/es/products/cloud/features/autoscaling/horizontal-autoscaling) está en Private Preview. On-Demand Compute también está en Private Preview y solo admite consultas `SELECT` elegibles.
+</Note>
+
+## Cómo funciona el escalado en ClickHouse Cloud {#how-scaling-works-in-clickhouse-cloud}
 
 ClickHouse Cloud admite el escalado horizontal manual para los servicios de los niveles Scale y Enterprise. Los servicios del nivel Scale también admiten autoescalado vertical; la compatibilidad con el autoescalado vertical en el nivel Enterprise depende del perfil, como se describe a continuación. El [escalado automático horizontal](/es/products/cloud/features/autoscaling/horizontal-autoscaling) está disponible en Private Preview para los servicios de los niveles Scale y Enterprise.
 
@@ -39,9 +51,7 @@ Para los servicios del nivel Enterprise, el escalado funciona de la siguiente ma
   De este modo, se equilibra la necesidad de que las consultas existentes finalicen con la garantía de que las réplicas antiguas no permanezcan activas durante demasiado tiempo.
 </Note>
 
-<div id="learn-more">
-  ## Más información
-</div>
+## Más información {#learn-more}
 
 * [Autoescalado vertical](/es/products/cloud/features/autoscaling/vertical) — Escalado automático de CPU y memoria según el uso
 

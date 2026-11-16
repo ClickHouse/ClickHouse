@@ -1,0 +1,6 @@
+<clickhouse>
+    <iceberg_biglake_metadata_service_hosts>
+        <host>metadata.google.internal</host>
+        <host>169.254.169.254</host>
+    </iceberg_biglake_metadata_service_hosts>
+</clickhouse>

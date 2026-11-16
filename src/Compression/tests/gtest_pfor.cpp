@@ -55,12 +55,42 @@ void checkSelfDescribingRoundTrip(const std::vector<T> & in, PFor::Delta mode)
     EXPECT_EQ(decoded, in);
 }
 
-/// Exercises both the headerless and the self-describing APIs.
+/// Fills buffers of a few sizes with the prefixes of `in` that `EncodedBytesBound` accepts, as a caller does
+/// that fills a buffer without encoding. Checks that each accepted prefix encodes within its buffer.
+template <typename T, PFor::Delta mode>
+void checkEncodedBytesBound(const std::vector<T> & in)
+{
+    for (const size_t max_bytes : {size_t{16}, size_t{256}, size_t{4096}})
+    {
+        PFor::EncodedBytesBound<T, mode> bound;
+        size_t accepted = 0;
+        while (accepted < in.size() && bound.tryAddValue(in[accepted], max_bytes))
+            ++accepted;
+
+        std::vector<uint8_t> out(PFor::maxCompressedBytes<T>(accepted));
+        const size_t encoded = PFor::encodeBlocks<T>(std::span<const T>(in.data(), accepted), mode, out.data());
+        ASSERT_LE(encoded, max_bytes) << "the bound accepts a prefix that does not fit (n=" << accepted << ")";
+    }
+}
+
+/// Exercises both the headerless and the self-describing APIs, and the bound of the headerless encoding.
 template <typename T>
 void checkRoundTrip(const std::vector<T> & in, PFor::Delta mode)
 {
     checkBlocksRoundTrip<T>(in, mode);
     checkSelfDescribingRoundTrip<T>(in, mode);
+    switch (mode)
+    {
+        case PFor::Delta::none:
+            checkEncodedBytesBound<T, PFor::Delta::none>(in);
+            break;
+        case PFor::Delta::d0:
+            checkEncodedBytesBound<T, PFor::Delta::d0>(in);
+            break;
+        case PFor::Delta::d1:
+            checkEncodedBytesBound<T, PFor::Delta::d1>(in);
+            break;
+    }
 }
 
 /// Inclusive prefix sum of `gaps` (turns gaps into a non-decreasing value stream).

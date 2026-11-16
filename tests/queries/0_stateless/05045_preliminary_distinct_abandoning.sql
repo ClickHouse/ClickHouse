@@ -72,17 +72,16 @@ INSERT INTO t_lc SELECT if(number % 100 = 0, NULL, concat('k', toString(number))
 SELECT count() FROM (SELECT DISTINCT a FROM t_lc);
 DROP TABLE t_lc;
 
--- a final `DISTINCT` that skips stream merging (per-partition streams) still deduplicates every
--- stream completely, so the preliminary step below it abandons and the result stays exact. The
--- per-partition skip needs enough partitions relative to `max_threads` and zero distinct size limits
--- (the CI stateless profile sets them, hence the explicit zeros).
+-- A final `DISTINCT` that skips stream merging still deduplicates every partition stream completely,
+-- so the preliminary step below it can abandon deduplication and the result stays exact. Partition
+-- reuse needs enough partitions relative to `max_threads`.
 DROP TABLE IF EXISTS t_part;
 -- The per-partition read emits whole granules per chunk, so a small `index_granularity` is what gives
 -- each partition stream enough chunks to complete the observation window and abandon.
 CREATE TABLE t_part (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a % 8 SETTINGS index_granularity = 512;
 INSERT INTO t_part SELECT number FROM numbers(40000);
-SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT a FROM t_part SETTINGS allow_distinct_partitions_independently = 1, max_rows_in_distinct = 0, max_bytes_in_distinct = 0, max_threads = 8, explain_query_plan_default = 'legacy') WHERE explain LIKE '%Skip stream merging%';
-SELECT count() FROM (SELECT DISTINCT a FROM t_part) SETTINGS allow_distinct_partitions_independently = 1, max_rows_in_distinct = 0, max_bytes_in_distinct = 0, max_threads = 8, log_comment = '05045_part';
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT a FROM t_part SETTINGS allow_distinct_partitions_independently = 1, max_threads = 8, explain_query_plan_default = 'legacy') WHERE explain LIKE '%Skip stream merging%';
+SELECT count() FROM (SELECT DISTINCT a FROM t_part) SETTINGS allow_distinct_partitions_independently = 1, max_threads = 8, log_comment = '05045_part';
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['DistinctTransformsAbandonedDeduplication'] > 0 FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = '05045_part' AND type = 'QueryFinish' ORDER BY event_time_microseconds DESC LIMIT 1;
 DROP TABLE t_part;

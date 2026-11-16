@@ -1,5 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
+#include <algorithm>
 #include <limits>
 
 #include <Interpreters/ActionsDAG.h>
@@ -8,14 +10,44 @@
 namespace DB::QueryPlanOptimizations
 {
 
-void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
+void updateJoinKeyDistinctCounts(
+    ColumnStats & left_stats,
+    ColumnStats & right_stats,
+    JoinKind kind,
+    JoinStrictness strictness)
+{
+    bool update_left = false;
+    bool update_right = false;
+    if (strictness == JoinStrictness::Semi)
+    {
+        /// Only the output side is filtered to matching keys; the other side is not in the output.
+        update_left = kind == JoinKind::Left;
+        update_right = kind == JoinKind::Right;
+    }
+    else if (strictness != JoinStrictness::Anti)
+    {
+        /// An outer join preserves the named side, so only the non-preserved side can lose key values.
+        update_left = kind == JoinKind::Inner || kind == JoinKind::Right
+            || kind == JoinKind::Cross || kind == JoinKind::Comma;
+        update_right = kind == JoinKind::Inner || kind == JoinKind::Left
+            || kind == JoinKind::Cross || kind == JoinKind::Comma;
+    }
+
+    const UInt64 minimum = std::min(left_stats.num_distinct_values, right_stats.num_distinct_values);
+    if (update_left)
+        left_stats.num_distinct_values = minimum;
+    if (update_right)
+        right_stats.num_distinct_values = minimum;
+}
+
+void remapColumnStats(UnorderedMapWithMemoryTracking<String, ColumnStats> & mapped, const ActionsDAG & actions)
 {
     /// Column statistics are usually absent; do not pay for a full lineage walk of the
     /// `ActionsDAG` when there is nothing to remap.
     if (mapped.empty())
         return;
 
-    std::unordered_map<String, ColumnStats> original;
+    UnorderedMapWithMemoryTracking<String, ColumnStats> original;
     original.swap(mapped);
 
     const auto lineage = traceActionsDAGLineage(actions);
@@ -49,6 +81,15 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
         }
         mapped[outputs[output_lineage.output_position]->result_name] = stats;
     }
+}
+
+UInt64 toUInt64Saturating(Float64 estimate)
+{
+    if (!(estimate > 0))
+        return 0;
+    if (estimate >= static_cast<Float64>(std::numeric_limits<UInt64>::max()))
+        return std::numeric_limits<UInt64>::max();
+    return static_cast<UInt64>(estimate);
 }
 
 }

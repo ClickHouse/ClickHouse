@@ -55,7 +55,7 @@ ${CLICKHOUSE_CLIENT} \
     WHERE sleepEachRow(0.001) = 0
 " &
 INSERT_PID=$!
-wait_for_query_to_start "insert_case1_${CLICKHOUSE_DATABASE}" 30
+wait_for_query_to_start "insert_case1_${CLICKHOUSE_DATABASE}" 30 "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "
     CREATE MATERIALIZED VIEW test_async_sel_mv_race_mv TO test_async_sel_mv_race_target AS
     SELECT * FROM test_async_sel_mv_race_dst

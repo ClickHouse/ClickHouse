@@ -65,11 +65,17 @@ public:
     Chunk generate(bool flush_if_enough_size = false);
     static Chunk squash(Chunk && input_chunk, SharedHeader header);
 
+    /// Concatenate complete chunks in input order, discarding their `ChunkInfo`. This is for consumers
+    /// whose output no longer represents the source chunks, such as sorting or lazy materialization.
+    static Chunk squashWithoutChunkInfo(Chunks && input_chunks);
+
     Chunk flush();
 
-    bool empty() const { return !accumulated; }
+    [[nodiscard]] bool empty() const { return !accumulated; }
+    /// Rows added but not yet generated.
+    [[nodiscard]] size_t getRows() const { return accumulated.getRows() + pending.getRows(); }
     void setHeader(const Block & header_) { header = std::make_shared<const Block>(header_); }
-    const SharedHeader & getHeader() const { return header; }
+    [[nodiscard]] const SharedHeader & getHeader() const { return header; }
 
 private:
 
@@ -77,9 +83,9 @@ private:
     {
     public:
         explicit operator bool () const { return !data.empty(); }
-        bool empty() const { return data.empty(); }
-        size_t getRows() const { return rows; }
-        size_t getBytes() const { return bytes; }
+        [[nodiscard]] bool empty() const { return data.empty(); }
+        [[nodiscard]] size_t getRows() const { return rows; }
+        [[nodiscard]] size_t getBytes() const { return bytes; }
         void append(Chunk && chunk);
         void append(Chunk && chunk, size_t rows_to_add, size_t bytes_to_add, size_t offset);
 
@@ -111,17 +117,17 @@ private:
 
         explicit PendingQueue(bool strict_limits_ = false) : strict_limits(strict_limits_) {}
 
-        size_t getRows() const { return total_rows - offset_first; }
-        size_t getBytes() const;
-        const Chunk & peekFront() const { return chunks.front(); }
+        [[nodiscard]] size_t getRows() const { return total_rows - offset_first; }
+        [[nodiscard]] size_t getBytes() const;
+        [[nodiscard]] const Chunk & peekFront() const { return chunks.front(); }
         Chunk pullFront();
         void dropFront();
         void pushBack(Chunk && chunk);
-        size_t getOffset() const { return offset_first; }
-        bool empty() const { return chunks.empty(); }
+        [[nodiscard]] size_t getOffset() const { return offset_first; }
+        [[nodiscard]] bool empty() const { return chunks.empty(); }
         static ConsumptionPlan calculateConsumable(const Chunk & chunk, size_t offset, size_t max_rows, size_t max_bytes);
         ConsumeResult consumeUpTo(size_t rows_budget);
-        ConsumptionPlan planConsumption(size_t max_rows, size_t max_bytes, size_t min_rows, size_t min_bytes) const;
+        [[nodiscard]] ConsumptionPlan planConsumption(size_t max_rows, size_t max_bytes, size_t min_rows, size_t min_bytes) const;
 
     private:
 
@@ -152,24 +158,18 @@ private:
     Chunk generateUsingStrictBounds();
     Chunk generateUsingOneMinBound(bool flush_if_enough_size);
 
-    bool oneMinReached() const;
-    bool oneMinReached(size_t rows, size_t bytes) const;
-    bool oneMinReached(const Chunk & chunk) const;
-    bool allMinReached() const;
-    bool allMinReached(size_t rows, size_t bytes) const;
-    bool oneMaxReached() const;
-    bool oneMaxReached(size_t rows, size_t bytes) const;
+    [[nodiscard]] bool oneMinReached() const;
+    [[nodiscard]] bool oneMinReached(size_t rows, size_t bytes) const;
+    [[nodiscard]] bool oneMinReached(const Chunk & chunk) const;
+    [[nodiscard]] bool allMinReached() const;
+    [[nodiscard]] bool allMinReached(size_t rows, size_t bytes) const;
+    [[nodiscard]] bool oneMaxReached() const;
+    [[nodiscard]] bool oneMaxReached(size_t rows, size_t bytes) const;
 
     static Chunk squash(ChunksWithOffsetsAndLengths && input_data, Chunk::ChunkInfoCollection && infos, SharedHeader header);
-    static Chunk squash(Chunks &&input_chunks);
     static Chunk squash(ChunksWithOffsetsAndLengths && input_data);
 
     Chunk convertToChunk();
-
-    // LazyMaterializingTransform calls private method squash(std::vector<Chunk> && input_chunks)
-    // that method does not handle ChunkInfos,
-    // therefore it is private method to force using Squashing instance with proper arguments
-    friend class LazyMaterializingTransform;
 };
 
 }
