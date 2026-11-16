@@ -2793,6 +2793,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     DatabasePtr database;
 
     database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
+    bool has_explicit_uuid = create.uuid != UUIDHelpers::Nil || create.hasInnerUUIDs();
     assertOrSetUUID(create, database);
 
     String storage_name = create.is_dictionary ? "Dictionary" : "Table";
@@ -3064,6 +3065,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (from_path)
         attach_from_lock
             = res->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+    /// A table created with the UUID of a dropped table gets its data path and part names,
+    /// so the caches keyed by them must not serve the dropped table's data.
+    if (has_explicit_uuid && !create.attach_short_syntax && !internal && !getContext()->isDDLOrOnClusterInternal())
+        getContext()->clearCaches();
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 

@@ -37,7 +37,7 @@ TEST(DataTypeDynamic, CreateWithMalformedASTDoesNotCrash)
     arguments->children.push_back(equals_func);
 
     /// Must throw `UNEXPECTED_AST_STRUCTURE`, not crash with SIGSEGV.
-    EXPECT_THROW(factory.get("Dynamic", arguments), Exception);
+    EXPECT_THROW((void)factory.get("Dynamic", arguments), Exception);
 }
 
 /// Regression test for STID 1477-2777 (BuzzHouse serverfuzz, amd_msan, 2026-04-25):
@@ -56,7 +56,7 @@ TEST(DataTypeDynamic, CreateWithEqualsNullArgumentsDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(equals_func);
 
-    EXPECT_THROW(factory.get("Dynamic", arguments), Exception);
+    EXPECT_THROW((void)factory.get("Dynamic", arguments), Exception);
 }
 
 /// The `equals` function has `arguments` with zero children — `children[0]` would
@@ -77,7 +77,7 @@ TEST(DataTypeDynamic, CreateWithEqualsZeroChildrenDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(equals_func);
 
-    EXPECT_THROW(factory.get("Dynamic", arguments), Exception);
+    EXPECT_THROW((void)factory.get("Dynamic", arguments), Exception);
 }
 
 /// The `equals` function has only one child — `children[1]` reads past the end.
@@ -96,7 +96,7 @@ TEST(DataTypeDynamic, CreateWithEqualsOneChildDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(equals_func);
 
-    EXPECT_THROW(factory.get("Dynamic", arguments), Exception);
+    EXPECT_THROW((void)factory.get("Dynamic", arguments), Exception);
 }
 
 /// The `equals` function has three children — accepted with the old indexing-only
@@ -118,7 +118,7 @@ TEST(DataTypeDynamic, CreateWithEqualsThreeChildrenIsRejected)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(equals_func);
 
-    EXPECT_THROW(factory.get("Dynamic", arguments), Exception);
+    EXPECT_THROW((void)factory.get("Dynamic", arguments), Exception);
 }
 
 /// Verify that valid `Dynamic(max_types=N)` still works correctly.

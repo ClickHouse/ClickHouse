@@ -274,7 +274,7 @@ struct PruningMemoryReservation
 
     /// Reserve `bytes` against the shared budget. Returns true and charges the counter if it fits;
     /// otherwise charges nothing and returns false (skip pruning). Unbounded reservations always fit.
-    bool tryReserve(size_t bytes) const
+    [[nodiscard]] bool tryReserve(size_t bytes) const
     {
         if (stage_memory == nullptr || watermark == 0)
             return true;

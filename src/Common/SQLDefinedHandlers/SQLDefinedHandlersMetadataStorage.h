@@ -22,7 +22,7 @@ public:
     static std::unique_ptr<SQLDefinedHandlersMetadataStorage> create(const ContextPtr & context);
 
     /// Read all stored handlers, parsed and ready to match.
-    SQLDefinedHandlers getAll() const;
+    [[nodiscard]] SQLDefinedHandlers getAll() const;
     /// Same, but also return a version token of the whole set (the Keeper root-node data version for
     /// replicated storage; 0 for local). Pass it to `store` to make the cross-replica
     /// "read set -> check ambiguity -> persist" sequence atomic via optimistic concurrency.
@@ -36,13 +36,13 @@ public:
 
     void remove(const std::string & handler_name);
     bool removeIfExists(const std::string & handler_name);
-    bool exists(const std::string & handler_name) const;
+    [[nodiscard]] bool exists(const std::string & handler_name) const;
 
     void shutdown();
 
     /// Return true if an update was made (for replicated storage).
     bool waitUpdate();
-    bool isReplicated() const;
+    [[nodiscard]] bool isReplicated() const;
 
     /// Mark the snapshot last read by `getAll()` as successfully loaded, so the background update check
     /// stops requesting a retry for it. Must be called only after the returned handlers have been fully
@@ -58,10 +58,10 @@ private:
 
     SQLDefinedHandlersMetadataStorage(std::shared_ptr<IStorage> storage_, ContextPtr context_);
 
-    std::vector<std::string> listHandlers() const;
+    [[nodiscard]] std::vector<std::string> listHandlers() const;
     std::vector<std::string> listHandlers(Int32 & version) const;
-    SQLDefinedHandlers readHandlers(const std::vector<std::string> & handler_names) const;
-    SQLDefinedHandlerPtr readHandler(const std::string & handler_name) const;
+    [[nodiscard]] SQLDefinedHandlers readHandlers(const std::vector<std::string> & handler_names) const;
+    [[nodiscard]] SQLDefinedHandlerPtr readHandler(const std::string & handler_name) const;
 };
 
 }
