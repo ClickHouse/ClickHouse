@@ -1,5 +1,6 @@
--- Tags: zookeeper, no-shared-merge-tree
+-- Tags: zookeeper, no-shared-merge-tree, no-replicated-database
 -- Tag no-shared-merge-tree: checks the per-partition loop of `ReplicatedMergeTree`.
+-- Tag no-replicated-database: the other replica runs the replicated TRUNCATE on its own and may still hold its block number locks when they are counted.
 
 DROP TABLE IF EXISTS t SYNC;
 CREATE TABLE t (k UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t', 'r1') PARTITION BY k ORDER BY k;
