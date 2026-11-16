@@ -11,8 +11,6 @@
 #include <Common/quoteString.h>
 
 #include <algorithm>
-#include <ranges>
-#include <unordered_map>
 
 namespace DB
 {
@@ -74,20 +72,6 @@ public:
         {
             const IAST * scope = data.new_analyzer_binding && !lambdas.empty() ? lambdas.back().node : nullptr;
             aliases.push_back({alias, ast.get(), where, scope, isRenamedReference(*ast, data)});
-        }
-
-        const auto * identifier = ast->as<ASTIdentifier>();
-        if (data.new_analyzer_binding && identifier && identifier->compound()
-            && (identifier->name() == data.column_name || identifier->name() == data.rename_to))
-        {
-            for (const auto & frame : lambdas | std::views::reverse)
-            {
-                if (const auto * parameter = findBindingParameter(*identifier, frame.parameters, true))
-                {
-                    lambda_fields.try_emplace(frame.node, identifier->name(), *parameter);
-                    break;
-                }
-            }
         }
 
         if (lambda)
@@ -181,12 +165,6 @@ private:
                 return fmt::format("{} is also an alias in {}", backQuote(alias.name), alias.where);
         }
 
-        /// The analyzer resolves `x.y` and `` `x.y` `` in one lambda with the parameter `x` to the same thing.
-        for (const auto & lambda : lambdas)
-            if (auto it = lambda_fields.find(lambda.node); it != lambda_fields.end())
-                return fmt::format("{} is also a field of the lambda parameter {} in {}",
-                    backQuote(it->second.first), backQuote(it->second.second), where);
-
         return {};
     }
 
@@ -194,8 +172,6 @@ private:
     std::vector<Alias> aliases;
     std::vector<Lambda> lambdas;
     std::vector<const IAST *> aliased_ancestors;
-    /// Lambdas whose parameter binds a compound identifier named like the column before or after the rename.
-    std::unordered_map<const IAST *, std::pair<String, String>> lambda_fields;
 };
 
 }

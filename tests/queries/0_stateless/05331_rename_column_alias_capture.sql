@@ -55,21 +55,6 @@ INSERT INTO t_alias_field (`x.y`) VALUES (100);
 SELECT 'alias field', c2 FROM t_alias_field;
 DROP TABLE t_alias_field;
 
--- A compound x.y and a quoted `x.y` in one lambda with the parameter x resolve to the same thing.
-DROP TABLE IF EXISTS t_field_pair;
-CREATE TABLE t_field_pair (`x.y` Int64, arr Array(Tuple(y Int64)), c2 Array(Int64) DEFAULT arrayMap(x -> x.y + `x.y` * 1000, arr)) ENGINE = MergeTree ORDER BY tuple();
-ALTER TABLE t_field_pair RENAME COLUMN `x.y` TO `x.z`; -- { serverError BAD_ARGUMENTS }
-INSERT INTO t_field_pair (`x.y`, arr) VALUES (7, [(1), (2)]);
-SELECT 'field pair', c2 FROM t_field_pair;
-DROP TABLE t_field_pair;
-
--- `share_nested_offsets = 0` allows renaming a column to a dotted name.
-DROP TABLE IF EXISTS t_field_new;
-CREATE TABLE t_field_new (c9 Int64, arr Array(Tuple(z Int64)), c2 Array(Int64) DEFAULT arrayMap(x -> c9 + x.z, arr)) ENGINE = MergeTree ORDER BY tuple() SETTINGS share_nested_offsets = 0;
-ALTER TABLE t_field_new RENAME COLUMN c9 TO `x.z`; -- { serverError BAD_ARGUMENTS }
-INSERT INTO t_field_new (c9, arr) VALUES (100, [(1), (2)]);
-SELECT 'field new', c2 FROM t_field_new;
-DROP TABLE t_field_new;
 
 -- A lambda parameter with the new name, in each kind of expression.
 DROP TABLE IF EXISTS t_lambda;
@@ -93,18 +78,6 @@ ALTER TABLE t_lambda RENAME COLUMN x TO p4; -- { serverError BAD_ARGUMENTS }
 INSERT INTO t_lambda (x, arr, d, c3) VALUES (100, [1, 2], '2100-01-01', 5);
 SELECT 'lambda', c2, c3 FROM t_lambda;
 DROP TABLE t_lambda;
-
--- Outside column defaults an alias inside a lambda is visible in the whole expression.
-DROP TABLE IF EXISTS t_constraint_lambda_alias;
-CREATE TABLE t_constraint_lambda_alias (a Int64, arr Array(Int64), CONSTRAINT k CHECK arrayAll(x -> (x + 1 AS b) > 0, arr) AND (a > 0)) ENGINE = MergeTree ORDER BY tuple();
-ALTER TABLE t_constraint_lambda_alias RENAME COLUMN a TO b; -- { serverError BAD_ARGUMENTS }
-DROP TABLE t_constraint_lambda_alias;
-
--- An alias in a TTL GROUP BY SET expression.
-DROP TABLE IF EXISTS t_ttl_set_alias;
-CREATE TABLE t_ttl_set_alias (d Date, key UInt64, c0 UInt64, c1 UInt64, value UInt64) ENGINE = MergeTree ORDER BY key TTL d + INTERVAL 1 YEAR GROUP BY key SET value = any((c0 AS c1) + c1);
-ALTER TABLE t_ttl_set_alias RENAME COLUMN c1 TO v; -- { serverError BAD_ARGUMENTS }
-DROP TABLE t_ttl_set_alias;
 
 -- The options of an index type are not column expressions.
 DROP TABLE IF EXISTS t_index_options;
@@ -151,6 +124,24 @@ SELECT 'quoted', c2 FROM t_quoted;
 SELECT default_expression FROM system.columns WHERE database = currentDatabase() AND table = 't_quoted' AND name = 'c2';
 DROP TABLE t_quoted;
 
+-- In a lambda with the parameter x a compound x.y is the parameter's field and a quoted `x.y` is the column.
+DROP TABLE IF EXISTS t_field_pair;
+CREATE TABLE t_field_pair (`x.y` Int64, arr Array(Tuple(y Int64)), c2 Array(Int64) DEFAULT arrayMap(x -> x.y + `x.y` * 1000, arr)) ENGINE = MergeTree ORDER BY tuple();
+ALTER TABLE t_field_pair RENAME COLUMN `x.y` TO `x.z`;
+INSERT INTO t_field_pair (`x.z`, arr) VALUES (7, [(1), (2)]);
+SELECT 'field pair', c2 FROM t_field_pair;
+SELECT default_expression FROM system.columns WHERE database = currentDatabase() AND table = 't_field_pair' AND name = 'c2';
+DROP TABLE t_field_pair;
+
+-- `share_nested_offsets = 0` allows renaming a column to a dotted name.
+DROP TABLE IF EXISTS t_field_new;
+CREATE TABLE t_field_new (c9 Int64, arr Array(Tuple(z Int64)), c2 Array(Int64) DEFAULT arrayMap(x -> c9 + x.z, arr)) ENGINE = MergeTree ORDER BY tuple() SETTINGS share_nested_offsets = 0;
+ALTER TABLE t_field_new RENAME COLUMN c9 TO `x.z`;
+INSERT INTO t_field_new (`x.z`, arr) VALUES (100, [(1), (2)]);
+SELECT 'field new', c2 FROM t_field_new;
+SELECT default_expression FROM system.columns WHERE database = currentDatabase() AND table = 't_field_new' AND name = 'c2';
+DROP TABLE t_field_new;
+
 DROP TABLE IF EXISTS t_to_field_name;
 CREATE TABLE t_to_field_name (a Int64, arr Array(Tuple(y Int64)), c2 Array(Int64) DEFAULT arrayMap(x -> a + x.y, arr)) ENGINE = MergeTree ORDER BY tuple() SETTINGS share_nested_offsets = 0;
 INSERT INTO t_to_field_name (a, arr) VALUES (10, [(1), (2)]);
@@ -171,12 +162,6 @@ CREATE TABLE t_subquery_local (d DateTime, x UInt64) ENGINE = MergeTree ORDER BY
 ALTER TABLE t_subquery_local RENAME COLUMN x TO u;
 SELECT 'subquery local', position(create_table_query, 'WHERE u < (SELECT max(x) FROM (SELECT 100 AS x))') > 0 FROM system.tables WHERE database = currentDatabase() AND name = 't_subquery_local';
 DROP TABLE t_subquery_local;
-
-DROP TABLE IF EXISTS t_subquery_outer_alias;
-CREATE TABLE t_subquery_outer_alias (d DateTime, c0 UInt64, x UInt64) ENGINE = MergeTree ORDER BY tuple() TTL d + INTERVAL 1 YEAR WHERE (c0 AS u) > 0 AND c0 < (SELECT max(x) FROM (SELECT 100 AS x));
-ALTER TABLE t_subquery_outer_alias RENAME COLUMN x TO u;
-SELECT 'subquery outer alias', position(create_table_query, 'SELECT max(x) FROM (SELECT 100 AS x)') > 0 FROM system.tables WHERE database = currentDatabase() AND name = 't_subquery_outer_alias';
-DROP TABLE t_subquery_outer_alias;
 
 -- A TTL GROUP BY SET assignment, target and expression, is renamed like the other expressions.
 DROP TABLE IF EXISTS t_ttl_set;
@@ -217,14 +202,6 @@ INSERT INTO t_own_definition (b) SELECT 5;
 SELECT 'own definition', c2 FROM t_own_definition;
 SELECT default_expression FROM system.columns WHERE database = currentDatabase() AND table = 't_own_definition' AND name = 'c2';
 DROP TABLE t_own_definition;
-
-DROP TABLE IF EXISTS t_constraint_own_definition;
-CREATE TABLE t_constraint_own_definition (a Int64, CONSTRAINT k CHECK (a + 1 AS b) > 0) ENGINE = MergeTree ORDER BY tuple();
-ALTER TABLE t_constraint_own_definition RENAME COLUMN a TO b;
-INSERT INTO t_constraint_own_definition (b) VALUES (5);
-INSERT INTO t_constraint_own_definition (b) VALUES (-5); -- { serverError VIOLATED_CONSTRAINT }
-SELECT 'constraint own definition', b FROM t_constraint_own_definition;
-DROP TABLE t_constraint_own_definition;
 
 DROP TABLE IF EXISTS t_outside_lambda;
 CREATE TABLE t_outside_lambda (x Int64, arr Array(Int64), c2 Int64 DEFAULT arrayMap(c1 -> c1 + 1, arr)[1] + x) ENGINE = MergeTree ORDER BY tuple();

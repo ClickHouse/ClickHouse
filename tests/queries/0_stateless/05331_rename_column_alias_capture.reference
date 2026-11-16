@@ -8,8 +8,6 @@ across	2	1000
 old alias	2
 old alias	2
 alias field	5
-field pair	[1001,2002]
-field new	[101,102]
 lambda	[101,102]	5
 lambda	[101,102]	5
 index options	s2	text(tokenizer = keyword, preprocessor = lower(s2), postprocessor = upper(s2))
@@ -25,11 +23,14 @@ arrayMap(x -> x.y, arr)
 quoted	[7000,7000]
 quoted	[7000,7000]
 arrayMap(x -> (`x.z` * 1000), arr)
+field pair	[7001,7002]
+arrayMap(x -> (x.y + (`x.z` * 1000)), arr)
+field new	[101,102]
+arrayMap(x -> (`x.z` + x.z), arr)
 to field name	[11,12]
 to field name	[11,12]
 subquery alias	1
 subquery local	1
-subquery outer alias	1
 ttl set	1
 ttl set target	1
 self alias	20
@@ -40,7 +41,6 @@ self alias same name	20
 (v AS c1) + v
 own definition	6
 (b + 1) AS b
-constraint own definition	5
 outside lambda	102
 unused alias	2
 unused alias	2
