@@ -111,13 +111,13 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 ## parallel_replicas_filter_pushdown {#parallel_replicas_filter_pushdown}
 
-<BetaBadge />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "新增设置"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "默认启用"}]}]} />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "新设置"}]}]} />
+将位于并行副本执行部分之上的条件下推到该部分，并下推到发送给各副本的查询中，使副本同样按该条件进行过滤。
 
-允许将过滤器下推到由并行副本选择执行的查询部分
+关闭此设置后，条件将保留在发起服务器上读取操作的上方，与 26.10 之前版本的行为一致。如果下推出现异常，可以通过关闭此设置来规避：无论开启与否，查询结果都不会改变，改变的只是副本的工作量以及过滤发生的早晚。
 
 ## parallel_replicas_for_cluster_engines {#parallel_replicas_for_cluster_engines}
 
@@ -153,6 +153,8 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 索引分析仅在副本协调器上执行，其他副本则跳过。仅在启用 parallel&#95;replicas&#95;local&#95;plan 时生效
 
+此设置所涉及的索引分析，是指用于选出读取操作所声明的标记范围的那部分索引分析，协调器正是基于这些标记范围进行分配的。它不涵盖读取数据过程中发生的裁剪，例如 `enable_join_runtime_filters_index_analysis` 的粒度剪枝：JOIN 运行时过滤器要等构建侧读取完成后才会生成，因此每个副本都需自行评估各自的过滤器，并对自己负责的那部分数据进行剪枝，协调器无法代劳。
+
 ## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -174,6 +176,8 @@ parts 会在逻辑上划分为多个分段，以便在并行读取时分配给�
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 将查询中使用的副本数量限制为 (预计读取的行数 / min&#95;number&#95;of&#95;rows&#95;per&#95;replica) 。最大值仍然受 &#39;max&#95;parallel&#95;replicas&#39; 限制
+
+启用 `automatic_parallel_replicas_mode` 时，此设置将被忽略：自动模式会根据自身的成本模型进行决策。
 
 ## parallel_replicas_mode {#parallel_replicas_mode}
 

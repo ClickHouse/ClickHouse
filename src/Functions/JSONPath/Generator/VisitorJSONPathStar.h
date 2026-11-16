@@ -15,7 +15,7 @@ public:
         current_index = 0;
     }
 
-    const char * getName() const override { return "VisitorJSONPathStar"; }
+    [[nodiscard]] const char * getName() const override { return "VisitorJSONPathStar"; }
 
     VisitorStatus apply(typename JSONParser::Element & element) const override
     {

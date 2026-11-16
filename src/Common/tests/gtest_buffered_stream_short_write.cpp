@@ -17,8 +17,8 @@ public:
     {
     }
 
-    const std::string & written() const { return output; }
-    int writeCount() const { return write_calls; }
+    [[nodiscard]] const std::string & written() const { return output; }
+    [[nodiscard]] int writeCount() const { return write_calls; }
 
 private:
     int writeToDevice(const char * buffer, std::streamsize length) override
@@ -45,7 +45,7 @@ public:
     {
     }
 
-    const std::string & written() const { return output; }
+    [[nodiscard]] const std::string & written() const { return output; }
 
 private:
     int writeToDevice(const char * buffer, std::streamsize length) override

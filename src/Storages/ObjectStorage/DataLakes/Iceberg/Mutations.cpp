@@ -39,6 +39,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 #include <limits>
 #include <unordered_set>
 
@@ -163,6 +164,33 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
     std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> update_data_write_buffers;
     std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> update_data_writers;
 
+    /// No snapshot references these files until the caller commits them, so remove them if writing fails.
+    bool written = false;
+    SCOPE_EXIT({
+        if (written)
+            return;
+        for (auto * writers : {&delete_data_writers, &update_data_writers})
+            for (auto & [_, writer] : *writers)
+                if (writer)
+                    writer->cancel();
+        for (auto * buffers : {&delete_data_write_buffers, &update_data_write_buffers})
+            for (auto & [_, buffer] : *buffers)
+                if (buffer)
+                    buffer->cancel();
+        for (const auto * files : {&delete_data_result, &update_data_result})
+            for (const auto & [_, file] : *files)
+            {
+                try
+                {
+                    object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(file.path)));
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("IcebergMutations", "Cannot remove a file of a failed mutation");
+                }
+            }
+    });
+
     if (commands[0].type == MutationCommand::UPDATE || commands[0].type == MutationCommand::DELETE)
     {
         MutationsInterpreter::Settings settings(true);
@@ -172,7 +200,11 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         auto delete_commands = commands;
         delete_commands[0].type = MutationCommand::DELETE;
 
-        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata, delete_commands, context, settings);
+        /// Delete positions are written in the order of this read and must be increasing.
+        auto read_context = Context::createCopy(context);
+        read_context->setSetting("input_format_parquet_preserve_order", Field(true));
+
+        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata, delete_commands, read_context, settings);
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
 
@@ -364,12 +396,13 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         }
     }
 
+    std::optional<WriteDataFilesResult> result;
     if (commands[0].type == MutationCommand::DELETE)
-        return WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, {}};
+        result = WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, {}};
     else if (commands[0].type == MutationCommand::UPDATE)
-        return WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, DataFileWriteResultWithStats{update_data_result, update_data_statistics}};
-    else
-        return {};
+        result = WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, DataFileWriteResultWithStats{update_data_result, update_data_statistics}};
+    written = true;
+    return result;
 }
 
 static bool writeMetadataFiles(
@@ -384,6 +417,7 @@ static bool writeMetadataFiles(
     std::shared_ptr<DataLake::ICatalog> catalog,
     StorageID table_id,
     Poco::JSON::Object::Ptr metadata,
+    const String & base_catalog_metadata_location,
     Poco::JSON::Object::Ptr partititon_spec,
     Int32 partition_spec_id,
     std::optional<ChunkPartitioner> & chunk_partitioner,
@@ -585,8 +619,10 @@ static bool writeMetadataFiles(
         {
             auto catalog_filename = path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-            if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+            if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata))
             {
+                if (!catalog_writes_metadata_file)
+                    removeRejectedMetadataFile(path_resolver, metadata_info, object_storage);
                 cleanup();
                 return false;
             }
@@ -707,7 +743,7 @@ void mutate(
     {
         auto log = getLogger("IcebergMutations");
 
-        auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+        auto [last_version, metadata_path, compression_method, base_catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
             storage_id.getTableName(),
@@ -809,6 +845,7 @@ void mutate(
                     catalog,
                     storage_id,
                     metadata,
+                    base_catalog_metadata_location,
                     partititon_spec,
                     static_cast<Int32>(partition_spec_id),
                     chunk_partitioner,
@@ -840,7 +877,7 @@ void alter(
     while (i < MAX_TRANSACTION_RETRIES)
     {
         auto log = getLogger("IcebergMutations");
-        auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+        auto [last_version, metadata_path, compression_method, base_catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
             storage_id.getTableName(),
@@ -931,8 +968,10 @@ void alter(
         {
             auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, new_schema, previous_schema_id))
+            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_schema, previous_schema_id))
             {
+                if (!catalog_writes_metadata_file)
+                    removeRejectedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
                 ++i;
                 continue;
             }
