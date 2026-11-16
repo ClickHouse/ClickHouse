@@ -5927,7 +5927,12 @@ void Context::clearVectorSimilarityIndexCache(const StorageID & table_id) const
 {
     if (table_id)
     {
-        auto table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, shared_from_this()));
+        auto table = DatabaseCatalog::instance().getTable(table_id, shared_from_this());
+
+        /// Here we lock the table because: a `RENAME TABLE` from or to an `Ordinary` database rewrites the paths of the parts,
+        /// which are read here to build the cache keys. `RENAME` locks the object it gets from the catalog exclusively, so we
+        /// take the shared lock on that same object, before looking through it.
+        auto table_lock = table->lockForShare(getCurrentQueryId(), getSettingsRef()[Setting::lock_acquire_timeout]);
 
         auto merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load);
 
@@ -5935,9 +5940,6 @@ void Context::clearVectorSimilarityIndexCache(const StorageID & table_id) const
         if (!merge_tree)
             return;
 
-        /// Here we lock the table because: `RENAME TABLE` of a table without a UUID rewrites the paths of its parts, which are
-        /// read here to build the cache keys. `RENAME` locks the table exclusively, so the shared lock keeps the paths stable.
-        auto table_lock = table->lockForShare(getCurrentQueryId(), getSettingsRef()[Setting::lock_acquire_timeout]);
         merge_tree->clearVectorSimilarityIndexCache();
     }
     else
