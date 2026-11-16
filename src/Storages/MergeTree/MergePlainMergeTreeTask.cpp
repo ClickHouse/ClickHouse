@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/StatisticsCache.h>
-#include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -41,9 +40,8 @@ bool MergePlainMergeTreeTask::executeStep()
 
     if (!thread_group)
     {
-        query_thread_group = CurrentThread::getGroup();
         task_context = createTaskContext();
-        thread_group = ThreadGroup::createForMergeMutate(task_context);
+        thread_group = ThreadGroup::createForMergeMutate(task_context, std::move(query_thread_group));
     }
 
     /// Make out memory tracker a parent of current thread memory tracker
@@ -121,18 +119,6 @@ void MergePlainMergeTreeTask::prepare()
             projections_duration_ms);
     };
 
-    transfer_profile_counters_to_initial_query = [this] ()
-    {
-        if (query_thread_group)
-        {
-            auto task_counters_snapshot = thread_group->performance_counters.getPartiallyAtomicSnapshot();
-
-            auto & query_counters = query_thread_group->performance_counters;
-            for (ProfileEvents::Event i = ProfileEvents::Event(0); i < ProfileEvents::end(); ++i)
-                query_counters.incrementNoTrace(i, task_counters_snapshot[i]);
-        }
-    };
-
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
         future_part,
         metadata_snapshot,
@@ -189,7 +175,6 @@ void MergePlainMergeTreeTask::finish()
     write_part_log({});
 
     StorageMergeTree::incrementMergedPartsProfileEvent(new_part->getType());
-    transfer_profile_counters_to_initial_query();
 
     if (auto txn_ = txn_holder.getTransaction())
     {

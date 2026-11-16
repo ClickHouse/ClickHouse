@@ -23,7 +23,8 @@ public:
         bool cleanup_,
         MergeMutateSelectedEntryPtr merge_mutate_entry_,
         TableLockHolder table_lock_holder_,
-        IExecutableTask::TaskResultCallback & task_result_callback_)
+        IExecutableTask::TaskResultCallback & task_result_callback_,
+        ThreadGroupPtr query_thread_group_)
         : storage(storage_)
         , metadata_snapshot(std::move(metadata_snapshot_))
         , deduplicate(deduplicate_)
@@ -32,6 +33,7 @@ public:
         , merge_mutate_entry(std::move(merge_mutate_entry_))
         , table_lock_holder(std::move(table_lock_holder_))
         , task_result_callback(task_result_callback_)
+        , query_thread_group(std::move(query_thread_group_))
     {
         for (auto & item : merge_mutate_entry->future_part->parts)
             priority.value += item->getBytesOnDisk();
@@ -83,7 +85,6 @@ private:
     Priority priority;
 
     std::function<void(const ExecutionStatus &)> write_part_log;
-    std::function<void()> transfer_profile_counters_to_initial_query;
     IExecutableTask::TaskResultCallback task_result_callback;
     MergeTaskPtr merge_task{nullptr};
 
@@ -92,7 +93,7 @@ private:
 
     /// Collects the counters and the memory of all threads of the task, from its first step.
     ThreadGroupPtr thread_group;
-    /// The group of the thread that runs the first step: the `OPTIMIZE` query gets the counters of the task.
+    /// The group of the `OPTIMIZE` query that runs the merge, null for a background merge. It moves into `thread_group`.
     ThreadGroupPtr query_thread_group;
 
     ContextMutablePtr task_context;

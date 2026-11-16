@@ -79,6 +79,7 @@ class ThreadGroup
     /// - createForMaterializedView()
     /// - createForFlushAsyncInsertQueue()
     /// - createForExplainAnalyze()
+    /// - createForMergeMutate() of a merge that a query runs
     /// Required for raw pointers to memory_tracker/performance_counters
     ThreadGroupPtr parent;
 
@@ -143,7 +144,9 @@ public:
     static ThreadGroupPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
     /// NOTE: make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
-    static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
+    /// If the merge or mutation runs for a query, pass the thread group of the query: the query then gets the counters
+    /// of the group as they happen. The memory stays in the background memory tracker.
+    static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context, ThreadGroupPtr query_thread_group = nullptr);
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
     static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group);
