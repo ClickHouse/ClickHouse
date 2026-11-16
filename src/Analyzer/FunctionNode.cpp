@@ -99,10 +99,8 @@ void FunctionNode::resolveAsFunction(FunctionBasePtr function_value)
     nulls_action = NullsAction::EMPTY;
 }
 
-void FunctionNode::resolveAsAggregateFunction(AggregateFunctionPtr aggregate_function_value, String source_function_name_, NullsAction source_nulls_action_)
+void FunctionNode::resolveAsAggregateFunction(AggregateFunctionPtr aggregate_function_value)
 {
-    source_function_name = std::move(source_function_name_);
-    source_nulls_action = source_nulls_action_;
     function_name = aggregate_function_value->getName();
     function = std::move(aggregate_function_value);
     kind = FunctionKind::AGGREGATE;
@@ -238,8 +236,6 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
     result_function->nulls_action = nulls_action;
     result_function->wrap_with_nullable = wrap_with_nullable;
     result_function->is_operator = is_operator;
-    result_function->source_function_name = source_function_name;
-    result_function->source_nulls_action = source_nulls_action;
 
     return result_function;
 }
