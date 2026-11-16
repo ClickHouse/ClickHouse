@@ -30,7 +30,7 @@ public:
     void deserialize(std::string_view argument_name, ReadBuffer & buf, size_t grid_size);
 
     /// The value at grid point `grid_index`. It is 0 if no row has been added, then every window is empty anyway.
-    Float64 at(size_t grid_index) const;
+    [[nodiscard]] Float64 at(size_t grid_index) const;
 
 private:
     /// One value if the argument is the same at every grid point, `grid_size` values otherwise. Empty until a row is added.

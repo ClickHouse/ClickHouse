@@ -67,7 +67,7 @@ struct AggregateFunctionTimeseriesQuantileToGridTraits
             sliding_sum.removeBefore(cut_off);
         }
 
-        std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/, Float64 phi) const
+        [[nodiscard]] std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/, Float64 phi) const
         {
             return sliding_sum.getCurrentSum().quantile(phi);
         }

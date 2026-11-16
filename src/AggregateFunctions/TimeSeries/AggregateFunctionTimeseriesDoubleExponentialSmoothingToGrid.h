@@ -76,7 +76,7 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
             sliding_sum.removeBefore(cut_off);
         }
 
-        std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/, Float64 sf, Float64 tf) const
+        [[nodiscard]] std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/, Float64 sf, Float64 tf) const
         {
             const auto & values = sliding_sum.getCurrentSum().samples;
             if (values.empty())

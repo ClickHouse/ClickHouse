@@ -69,7 +69,7 @@ public:
         : DatabaseTablesSnapshotIterator(std::move(base))
     {
     }
-    UUID uuid() const override { return table()->getStorageID().uuid; }
+    [[nodiscard]] UUID uuid() const override { return table()->getStorageID().uuid; }
 };
 
 DatabaseAtomic::DatabaseAtomic(
@@ -963,7 +963,8 @@ void registerDatabaseAtomic(DatabaseFactory & factory)
         DatabaseMetadataDiskSettings database_metadata_disk_settings;
         auto * engine_define = args.create_query.storage;
         chassert(engine_define);
-        database_metadata_disk_settings.loadFromQuery(*engine_define, args.context, args.isLoadingFromExistingMetadata());
+        database_metadata_disk_settings.loadFromQuery(
+            *engine_define, args.context, args.isLoadingFromExistingMetadata(), /* stored_definition */ args.create_query.attach_short_syntax);
 
         return make_shared<DatabaseAtomic>(
             args.database_name, args.metadata_path, args.uuid, args.context, database_metadata_disk_settings);

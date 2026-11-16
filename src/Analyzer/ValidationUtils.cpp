@@ -258,7 +258,7 @@ public:
 
 private:
 
-    bool nodeIsAggregateFunctionOrInGroupByKeys(const QueryTreeNodePtr & node) const
+    [[nodiscard]] bool nodeIsAggregateFunctionOrInGroupByKeys(const QueryTreeNodePtr & node) const
     {
         if (auto * function_node = node->as<FunctionNode>())
             if (function_node->isAggregateFunction())
