@@ -1,5 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
@@ -9,6 +10,7 @@
 #include <Processors/QueryPlan/IEJoinStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -261,7 +263,15 @@ private:
             {
                 if (typeid_cast<const FullSortingMergeJoin *>(join_step->getJoin().get()))
                     return false;
+
+                /// PASTE JOIN aligns rows from both sides by position, so sorting of its inputs is not redundant
+                if (join_step->getJoin()->getTableJoin().kind() == JoinKind::Paste)
+                    return false;
             }
+
+            if (const auto * logical_join = typeid_cast<const JoinStepLogical *>(step);
+                logical_join && logical_join->getJoinOperator().kind == JoinKind::Paste)
+                return false;
 
             /// (3) IEJoin merges its pre-sorted inputs, its sortings are not redundant
             if (typeid_cast<const IEJoinStep *>(step))
