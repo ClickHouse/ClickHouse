@@ -59,9 +59,9 @@ struct AggregateFunctionSumAddOverflowImpl
         lhs += rhs;
     }
 
-    /// A single addition, for the per-row path: `wide::integer` branches on the sign and adds in a loop with carries,
-    /// while `unsigned __int128` compiles to `add` and `adc`. The loops of the batch paths keep `add`, as the compiler
-    /// optimizes the loop of `wide::integer` better there (the masked loop of `sumIf` is 1.5 times faster).
+    /// A single addition, for the per-row path, where `unsigned __int128` compiles to one `add` and `adc`. The loops of
+    /// the batch paths keep `add`, as the compiler optimizes the loop of `wide::integer` better there (the masked loop
+    /// of `sumIf` was 1.5 times slower with `unsigned __int128` in the performance tests).
     static void NO_SANITIZE_UNDEFINED ALWAYS_INLINE addOne(T & lhs, const T & rhs)
     {
         if constexpr (std::is_same_v<T, Int128> || std::is_same_v<T, UInt128>)
