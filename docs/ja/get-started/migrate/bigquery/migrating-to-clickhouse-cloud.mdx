@@ -8,15 +8,21 @@ sidebarTitle: '移行ガイド'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="why-use-clickhouse-cloud-over-bigquery">
   ## なぜ BigQuery ではなく ClickHouse Cloud を使うのか？
 </div>
 
 要点: 最新のデータ分析では、ClickHouse のほうが BigQuery より高速で、低コストかつ高機能だからです。
 
-<Image img="/images/migrations/bigquery-2.webp" size="md" alt="ClickHouse と BigQuery の比較" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse と BigQuery の比較](/images/migrations/bigquery-2.webp)
+
+</Frame>
+
+</div>
 
 <div id="loading-data-from-bigquery-to-clickhouse-cloud">
   ## BigQuery から ClickHouse Cloud へのデータの読み込み
@@ -28,7 +34,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 BigQuery から ClickHouse Cloud への一般的な移行例を示すサンプルデータセットとして、[こちら](/ja/get-started/sample-datasets/stackoverflow) で説明している Stack Overflow データセットを使用します。これには、2008 年から 2024 年 4 月までに Stack Overflow で作成されたすべての `post`、`vote`、`user`、`comment`、`badge` が含まれます。このデータの BigQuery スキーマを以下に示します。
 
-<Image img="/images/migrations/bigquery-3.webp" size="lg" alt="スキーマ" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![スキーマ](/images/migrations/bigquery-3.webp)
+
+</Frame>
+
+</div>
 
 このデータセットを BigQuery インスタンスに取り込んで移行手順をテストしたい方向けに、これらのテーブルのデータを Parquet フォーマットで GCS バケットに用意しています。さらに、BigQuery でテーブルを作成してロードするための DDL コマンドは [こちら](https://pastila.nl/?003fd86b/2b93b1a2302cfee5ef79fd374e73f431#hVPC52YDsUfXg2eTLrBdbA==) で確認できます。
 
@@ -51,7 +65,15 @@ BigQuery は、Google のオブジェクト ストレージ (GCS) へのデー�
 
 2. データを ClickHouse Cloud にインポートします。これには [gcs table function](/ja/reference/functions/table-functions/gcs) を使用できます。DDL とインポート用クエリは[こちら](https://pastila.nl/?00531abf/f055a61cc96b1ba1383d618721059976#Wf4Tn43D3VCU5Hx7tbf1Qw==)で確認できます。なお、ClickHouse Cloud のインスタンスは複数のコンピュートノードで構成されるため、`gcs` table function ではなく、[s3Cluster table function](/ja/reference/functions/table-functions/s3Cluster) を使用しています。この関数は GCS バケットでも動作し、[ClickHouse Cloud service のすべてのノードを活用して](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#parallel-servers)データを並列にロードします。
 
-<Image img="/images/migrations/bigquery-4.webp" size="md" alt="一括ロード" />
+<div className="ch-image-md">
+
+<Frame>
+
+![一括ロード](/images/migrations/bigquery-4.webp)
+
+</Frame>
+
+</div>
 
 このアプローチには、いくつかの利点があります。
 
@@ -161,7 +183,15 @@ INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datas
 * ClickHouseがよく使われる規模では、メモリ効率とディスク効率が極めて重要です。データはパーツと呼ばれるchunk単位でClickHouseテーブルに書き込まれ、これらのパーツにはバックグラウンドでマージするためのルールが適用されます。ClickHouseでは、各パーツがそれぞれ独自のプライマリインデックスを持ちます。パーツがマージされると、マージ後のパーツのプライマリインデックスもマージされます。なお、これらの索引は各行ごとに作成されるわけではありません。代わりに、パーツのプライマリインデックスには行のグループごとに1つの索引エントリがあります。この手法はスパース索引付けと呼ばれます。
 * ClickHouseでは、パーツ内の行が指定したキー順に並べられた状態でディスクに保存されるため、スパース索引付けが可能になります。スパースプライマリインデックスは、単一の行を直接特定するのではなく (B木ベースの索引のように) 、クエリに一致する可能性のある行グループをすばやく特定できます (索引エントリに対するbinary searchによって) 。見つかった一致候補の行グループは、その後、一致する行を見つけるために並列にClickHouse engineへストリーミングされます。この索引設計により、プライマリインデックスを小さく保てるため (全体がmain memoryに収まります) 、クエリ実行時間を大幅に短縮できます。特に、データ分析のユースケースで一般的な範囲クエリで効果を発揮します。詳しくは、[この詳細ガイド](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)を参照することをお勧めします。
 
-<Image img="/images/migrations/bigquery-5.webp" size="md" alt="ClickHouseの主キー" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouseの主キー](/images/migrations/bigquery-5.webp)
+
+</Frame>
+
+</div>
 
 ClickHouseで選択した主キーは、索引だけでなく、データがディスクに書き込まれる順序も決定します。そのため、圧縮率に大きな影響を及ぼし、ひいてはクエリ性能にも影響する可能性があります。大半のカラムの値が連続した順序で書き込まれるような順序付けキーを選ぶと、選択した圧縮アルゴリズム (およびcodec) がデータをより効果的に圧縮できるようになります。
 
@@ -189,7 +219,15 @@ BigQuery を使ったことがあれば、テーブルをパーティション�
 
 ClickHouse では、テーブルを最初に定義するときに [`PARTITION BY`](/ja/reference/engines/table-engines/mergetree-family/custom-partitioning-key) 句でパーティション化を指定します。この句には任意のカラムに対する SQL 式を含めることができ、その結果によって行がどのパーティションに送られるかが決まります。
 
-<Image img="/images/migrations/bigquery-6.webp" size="md" alt="パーティション" />
+<div className="ch-image-md">
+
+<Frame>
+
+![パーティション](/images/migrations/bigquery-6.webp)
+
+</Frame>
+
+</div>
 
 データパーツは、ディスク上で各パーティションに論理的に関連付けられており、個別にクエリできます。以下の例では、[`toYear(CreationDate)`](/ja/reference/functions/regular-functions/date-time-functions#toYear) という式を使って posts テーブルを年ごとにパーティション化しています。行が ClickHouse に挿入されると、この式が各行に対して評価され、その後、行はそのパーティションに属する新しいデータパーツとして、対応するパーティションに振り分けられます。
 
@@ -407,7 +445,15 @@ WHERE UserId = 8592047
 テーブルに送るだけでよく、可能な場合はプロジェクションが利用されて応答
 時間の短縮につながります。
 
-<Image img="/images/migrations/bigquery-7.webp" size="md" alt="プロジェクション" />
+<div className="ch-image-md">
+
+<Frame>
+
+![プロジェクション](/images/migrations/bigquery-7.webp)
+
+</Frame>
+
+</div>
 
 これは materialized view とは対照的です。materialized view では、ユーザーは
 フィルターに応じて、適切に最適化されたターゲットテーブルを選択するか、
@@ -435,7 +481,15 @@ WHERE UserId = 8592047
 
 *BigQuery*
 
-<Image img="/images/migrations/bigquery-8.webp" size="sm" alt="BigQuery クエリの書き換え" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![BigQuery クエリの書き換え](/images/migrations/bigquery-8.webp)
+
+</Frame>
+
+</div>
 
 *ClickHouse*
 
@@ -470,7 +524,15 @@ Peak memory usage: 323.37 MiB.
 
 <br />
 
-<Image img="/images/migrations/bigquery-9.webp" size="sm" alt="BigQuery 1" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![BigQuery 1](/images/migrations/bigquery-9.webp)
+
+</Frame>
+
+</div>
 
 *ClickHouse*
 
@@ -506,9 +568,25 @@ Peak memory usage: 567.41 MiB.
 
 *BigQuery*
 
-<Image img="/images/migrations/bigquery-10.webp" border size="sm" alt="集約関数 1" />
+<div className="ch-image-sm">
 
-<Image img="/images/migrations/bigquery-11.webp" border size="sm" alt="集約関数 2" />
+<Frame>
+
+![集約関数 1](/images/migrations/bigquery-10.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-sm">
+
+<Frame>
+
+![集約関数 2](/images/migrations/bigquery-11.webp)
+
+</Frame>
+
+</div>
 
 *ClickHouse*
 
@@ -564,7 +642,15 @@ Peak memory usage: 377.26 MiB.
 
 *BigQuery*
 
-<Image img="/images/migrations/bigquery-12.webp" size="sm" border alt="条件式と配列" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![条件式と配列](/images/migrations/bigquery-12.webp)
+
+</Frame>
+
+</div>
 
 *ClickHouse*
 

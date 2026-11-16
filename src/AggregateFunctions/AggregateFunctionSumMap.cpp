@@ -129,11 +129,11 @@ public:
         }
     }
 
-    bool isVersioned() const override { return true; }
+    [[nodiscard]] bool isVersioned() const override { return true; }
 
-    size_t getDefaultVersion() const override { return 1; }
+    [[nodiscard]] size_t getDefaultVersion() const override { return 1; }
 
-    size_t getVersionFromRevision(size_t revision) const override
+    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
     {
         if (revision >= STATE_VERSION_1_MIN_REVISION)
             return 1;
@@ -198,7 +198,7 @@ public:
         return std::make_shared<DataTypeTuple>(types);
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     static auto getArgumentColumns(const IColumn ** columns)
     {
@@ -496,8 +496,8 @@ public:
         }
     }
 
-    bool keepKey(const Field & key) const { return static_cast<const Derived &>(*this).keepKey(key); }
-    String getName() const override { return Derived::getNameImpl(); }
+    [[nodiscard]] bool keepKey(const Field & key) const { return static_cast<const Derived &>(*this).keepKey(key); }
+    [[nodiscard]] String getName() const override { return Derived::getNameImpl(); }
 };
 
 template <bool overflow, bool tuple_argument, typename Compare>
@@ -531,7 +531,7 @@ public:
         }
     }
 
-    bool keepKey(const Field &) const { return true; }
+    [[nodiscard]] bool keepKey(const Field &) const { return true; }
 };
 
 
@@ -601,7 +601,7 @@ public:
         }
     }
 
-    bool keepKey(const Field & key) const
+    [[nodiscard]] bool keepKey(const Field & key) const
     {
         if (keys_to_keep.contains(key))
             return true;
@@ -755,7 +755,7 @@ public:
 
     static String getNameImpl() { return "minMap"; }
 
-    bool keepKey(const Field &) const { return true; }
+    [[nodiscard]] bool keepKey(const Field &) const { return true; }
 };
 
 template <bool tuple_argument, typename Compare>
@@ -779,7 +779,7 @@ public:
 
     static String getNameImpl() { return "maxMap"; }
 
-    bool keepKey(const Field &) const { return true; }
+    [[nodiscard]] bool keepKey(const Field &) const { return true; }
 };
 
 

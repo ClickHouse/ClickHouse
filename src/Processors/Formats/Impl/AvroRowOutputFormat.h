@@ -49,7 +49,7 @@ public:
 
     void backup(size_t len) override { out.position() -= len; }
 
-    uint64_t byteCount() const override { return out.count(); }
+    [[nodiscard]] uint64_t byteCount() const override { return out.count(); }
     void flush() override {}
 
 private:
@@ -61,7 +61,7 @@ class AvroSerializer
 {
 public:
     AvroSerializer(const ColumnsWithTypeAndName & columns, std::unique_ptr<AvroSerializerTraits>, const FormatSettings & settings_, ColumnMapperPtr column_mapper_ = nullptr);
-    const avro::ValidSchema & getSchema() const { return valid_schema; }
+    [[nodiscard]] const avro::ValidSchema & getSchema() const { return valid_schema; }
 
     /// Dotted paths (see `column_path` below) of the `UUID2` values. Avro has a single `uuid` logical type for both
     /// ClickHouse UUID types, so the writer records them in the file metadata (`AVRO_UUID2_PATHS_METADATA_KEY`) to
