@@ -1,7 +1,9 @@
 #pragma once
 
+#include <type_traits>
+#include <vector>
+#include <base/defines.h>
 #include <Common/HashTable/HashTable.h>
-#include <array>
 
 
 /** Two-level hash table.
@@ -13,14 +15,20 @@
   * - if you need to merge two hash tables together, then you can easily parallelize it by buckets;
   * - delay during resizes is amortized, since the small hash tables will be resized separately;
   * - in theory, resizes are cache-local in a larger range of sizes.
+  *
+  * With `BITS_FOR_BUCKET = 0` there is a single bucket: routing folds to a constant.
+  * Lookups and inserts compile down to what the single-level table does.
+  *
+  * Buckets share no state.
+  * Threads may fill different buckets at the same time when every bucket is written under its own lock.
   */
 
-template <size_t initial_size_degree = 8>
-struct TwoLevelHashTableGrower : public HashTableGrowerWithPrecalculation<initial_size_degree>
-{
-    /// Increase the size of the hash table.
-    void increaseSize() { this->increaseSizeDegree(this->sizeDegree() >= 15 ? 1 : 2); }
-};
+/// The buckets grow by 4 times while they are small, and switch to the Robin Hood mode when they become large,
+/// see `HashTableGrowerWithPrecalculationAndRobinHood`.
+template <size_t initial_size_degree = 8, size_t robin_hood_size_degree = 16>
+using TwoLevelHashTableGrower = HashTableGrowerWithPrecalculationAndRobinHood<initial_size_degree, 15, robin_hood_size_degree>;
+
+constexpr size_t DEFAULT_BITS_FOR_BUCKET = 8;
 
 template
 <
@@ -30,12 +38,14 @@ template
     typename Grower,
     typename Allocator,
     typename ImplTable = HashTable<Key, Cell, Hash, Grower, Allocator>,
-    size_t BITS_FOR_BUCKET = 8
+    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET
 >
 class TwoLevelHashTable :
     private boost::noncopyable,
     protected Hash            /// empty base optimization
 {
+    static_assert(BITS_FOR_BUCKET < 32, "the bucket is taken from the low 32 bits of the hash");
+
 protected:
     friend class const_iterator;
     friend class iterator;
@@ -48,7 +58,7 @@ public:
     static constexpr UInt32 NUM_BUCKETS = 1ULL << BITS_FOR_BUCKET;
     static constexpr UInt32 MAX_BUCKET = NUM_BUCKETS - 1;
 
-    size_t hash(const Key & x) const { return Hash::operator()(x); }
+    [[nodiscard]] size_t hash(const Key & x) const { return Hash::operator()(x); }
 
     /// NOTE Bad for hash tables with more than 2^32 cells.
     static size_t getBucketFromHash(size_t hash_value) { return (hash_value >> (32 - BITS_FOR_BUCKET)) & MAX_BUCKET; }
@@ -89,10 +99,15 @@ public:
 
     Impl impls[NUM_BUCKETS];
 
-    /// Cached prefix sums of bucket capacities in cells to speed up offsetInternal
-    /// bucket_cells_prefix[b] = sum_{i=0..b-1} impls[i].getBufferSizeInCells()
-    mutable std::array<size_t, NUM_BUCKETS> bucket_cells_prefix{};
-    mutable std::once_flag bucket_prefix_once;
+    /// Whether the buckets may switch to the Robin Hood mode when they become large. Call it before inserting.
+    void setRobinHoodAllowed(bool allowed) requires GrowerWithRobinHood<Grower>
+    {
+        for (auto & impl : impls)
+            impl.grower.setRobinHoodAllowed(allowed);
+    }
+
+    /// `bucket_cells_prefix[b]` is the number of cells in the buckets before `b`. See `computeBucketPrefix`.
+    std::vector<size_t> bucket_cells_prefix;
 
 
     TwoLevelHashTable() = default;
@@ -104,7 +119,9 @@ public:
     }
 
     /// Copy the data from another (normal) hash table. It should have the same hash function.
+    /// The constraint keeps an integer size hint from choosing this overload over the one above.
     template <typename Source>
+    requires(!std::is_arithmetic_v<Source>)
     explicit TwoLevelHashTable(const Source & src)
     {
         typename Source::const_iterator it = src.begin();
@@ -158,9 +175,9 @@ public:
         Cell & operator* () const { return *current_it; }
         Cell * operator->() const { return current_it.getPtr(); }
 
-        Cell * getPtr() const { return current_it.getPtr(); }
-        size_t getHash() const { return current_it.getHash(); }
-        size_t getBucket() const { return bucket; }
+        [[nodiscard]] Cell * getPtr() const { return current_it.getPtr(); }
+        [[nodiscard]] size_t getHash() const { return current_it.getHash(); }
+        [[nodiscard]] size_t getBucket() const { return bucket; }
     };
 
 
@@ -199,13 +216,13 @@ public:
         const Cell & operator* () const { return *current_it; }
         const Cell * operator->() const { return current_it.getPtr(); }
 
-        const Cell * getPtr() const { return current_it.getPtr(); }
-        size_t getHash() const { return current_it.getHash(); }
-        size_t getBucket() const { return bucket; }
+        [[nodiscard]] const Cell * getPtr() const { return current_it.getPtr(); }
+        [[nodiscard]] size_t getHash() const { return current_it.getHash(); }
+        [[nodiscard]] size_t getBucket() const { return bucket; }
     };
 
 
-    const_iterator begin() const
+    [[nodiscard]] const_iterator begin() const
     {
         size_t buck = 0;
         typename Impl::const_iterator impl_it = beginOfNextNonEmptyBucket(buck);
@@ -219,10 +236,10 @@ public:
         return { this, buck, impl_it };
     }
 
-    const_iterator end() const         { return { this, MAX_BUCKET, impls[MAX_BUCKET].end() }; }
+    [[nodiscard]] const_iterator end() const         { return { this, MAX_BUCKET, impls[MAX_BUCKET].end() }; }
     iterator end()                     { return { this, MAX_BUCKET, impls[MAX_BUCKET].end() }; }
 
-    const_iterator iteratorAt(size_t bucket) const
+    [[nodiscard]] const_iterator iteratorAt(size_t bucket) const
     {
         if (bucket >= NUM_BUCKETS)
             return end();
@@ -282,7 +299,7 @@ public:
         impls[bucket].prefetchByHash(key_hash);
     }
 
-    bool ALWAYS_INLINE isEmptyCell(size_t key_hash) const
+    [[nodiscard]] bool ALWAYS_INLINE isEmptyCell(size_t key_hash) const
     {
         const auto bucket = getBucketFromHash(key_hash);
         return impls[bucket].isEmptyCell(key_hash);
@@ -326,14 +343,14 @@ public:
         return impls[buck].find(x, hash_value);
     }
 
-    ConstLookupResult ALWAYS_INLINE find(Key x, size_t hash_value) const
+    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(Key x, size_t hash_value) const
     {
         return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x, hash_value);
     }
 
     LookupResult ALWAYS_INLINE find(Key x) { return find(x, hash(x)); }
 
-    ConstLookupResult ALWAYS_INLINE find(Key x) const { return find(x, hash(x)); }
+    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(Key x) const { return find(x, hash(x)); }
 
     bool ALWAYS_INLINE erase(Key x, size_t hash_value)
     {
@@ -377,7 +394,7 @@ public:
     }
 
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         size_t res = 0;
         for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
@@ -396,7 +413,7 @@ public:
             impls[i].forEachMapped(func);
     }
 
-    bool empty() const
+    [[nodiscard]] bool empty() const
     {
         for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
             if (!impls[i].empty())
@@ -405,7 +422,7 @@ public:
         return true;
     }
 
-    size_t getBufferSizeInBytes() const
+    [[nodiscard]] size_t getBufferSizeInBytes() const
     {
         size_t res = 0;
         for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
@@ -414,7 +431,7 @@ public:
         return res;
     }
 
-    size_t getBufferSizeInCells() const
+    [[nodiscard]] size_t getBufferSizeInCells() const
     {
         size_t res = 0;
         for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
@@ -422,23 +439,31 @@ public:
         return res;
     }
 
+    /// Prefix sums that `offsetInternal` uses to number cells across all buckets.
+    /// Call it after the last insert and before reading offsets, never while another thread reads them.
+    void computeBucketPrefix()
+    {
+        bucket_cells_prefix.assign(NUM_BUCKETS, 0);
+        size_t run = 0;
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
+        {
+            bucket_cells_prefix[i] = run;
+            run += impls[i].getBufferSizeInCells();
+        }
+    }
+
+    /// Number of the cell over all buckets. The zero cell gets 0. Any other cell gets its position in the
+    /// concatenated bucket buffers plus one. So the number fits an array of `getBufferSizeInCells() + 1`.
     size_t offsetInternal(ConstLookupResult ptr) const
     {
+        if constexpr (NUM_BUCKETS == 1)
+            return impls[0].offsetInternal(ptr);
+
         const size_t buck = getBucketFromHash(ptr->getHash(*this));
         if (ptr->isZero(impls[buck]))
             return 0;
 
-        // Lazily compute prefix sums across buckets once; subsequent calls are O(1).
-        std::call_once(bucket_prefix_once, [this]()
-        {
-            size_t run = 0;
-            for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
-            {
-                bucket_cells_prefix[i] = run;
-                run += impls[i].getBufferSizeInCells();
-            }
-        });
-
+        chassert(!bucket_cells_prefix.empty(), "computeBucketPrefix must run before an offset is read");
         return bucket_cells_prefix[buck] + (ptr - impls[buck].buf) + 1;
     }
 };

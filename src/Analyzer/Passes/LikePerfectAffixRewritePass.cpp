@@ -103,6 +103,10 @@ public:
         if (is_not_like)
             new_node = operation("not", new_node);
 
+        /// A `group_by_use_nulls` copy of a `GROUP BY` key is the key made `Nullable`: rewrite it like the key and keep it `Nullable`.
+        if (!function_node->getResultType()->equals(*function_node->getFunctionOrThrow()->getResultType()))
+            new_node->convertToNullable();
+
         /// Replpace the original LIKE node
         chassert(new_node != nullptr, "should have been created");
         chassert(new_node->getResultType()->getTypeId() == node->getResultType()->getTypeId(), "Rewrite should preserve type");

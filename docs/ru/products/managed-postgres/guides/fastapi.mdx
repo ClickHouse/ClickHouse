@@ -1,0 +1,436 @@
+---
+slug: /cloud/managed-postgres/guides/fastapi
+sidebarTitle: 'FastAPI и SQLAlchemy'
+title: 'Использование FastAPI и SQLAlchemy с ClickHouse Managed Postgres'
+description: 'Подключите приложение FastAPI к ClickHouse Managed Postgres с помощью асинхронного SQLAlchemy и asyncpg, выполните миграции Alembic и предоставьте CRUD-конечные точки через TLS с проверкой сертификата'
+keywords: ['managed postgres', 'fastapi', 'sqlalchemy', 'asyncpg', 'alembic', 'python', 'uvicorn', 'pgbouncer', 'migrations', 'tls']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-fastapi-beta" />
+
+[FastAPI](https://fastapi.tiangolo.com/) — асинхронный веб-фреймворк для Python, а [SQLAlchemy](https://www.sqlalchemy.org/) — самая популярная ORM для Python. В этом руководстве вы определите типизированную модель SQLAlchemy, создадите для неё таблицу с помощью миграции [Alembic](https://alembic.sqlalchemy.org/) и реализуете на FastAPI конечные точки для создания, чтения, обновления и удаления данных. Приложение использует драйвер [asyncpg](https://magicstack.github.io/asyncpg/), а все соединения защищены TLS с полной проверкой сертификата.
+
+## Предварительные требования {#prerequisites}
+
+* [uv](https://docs.astral.sh/uv/) и Python 3.11 или новее. Это руководство проверено на Python 3.13, FastAPI 0.142, SQLAlchemy 2.1, asyncpg 0.31, Alembic 1.20 и Uvicorn 0.54.
+* Аккаунт ClickHouse Cloud
+* [`psql`](https://www.postgresql.org/download/) для создания базы данных. Оператор `CREATE DATABASE` также можно выполнить в [консоли SQL](/ru/integrations/connectors/sql-clients/sql-console).
+
+## Создание сервиса ClickHouse Managed Postgres {#create-service}
+
+В консоли ClickHouse Cloud нажмите **New service** и выберите **Postgres**. Инстанс будет готов через несколько минут. Пошаговое описание процесса см. в [кратком руководстве](/ru/products/managed-postgres/quickstart).
+
+## Получение сведений о подключении {#connection-details}
+
+Нажмите **Подключение** на левой боковой панели вашего сервиса. В открывшемся окне отображаются имя пользователя, пароль, сервер и порт, а также переключатель **Directly** / **via PgBouncer**.
+
+В этом руководстве используются оба типа соединений:
+
+* **PgBouncer (порт `6432`)** — для приложения. SQLAlchemy держит пул соединений в каждом воркере Uvicorn, а встроенный [PgBouncer](/ru/products/managed-postgres/connection#pgbouncer) позволяет множеству воркеров и реплик совместно использовать небольшое число соединений с Postgres. PgBouncer работает в режиме пулинга транзакций (transaction pooling).
+* **Прямое соединение (порт `5432`)** — для Alembic. Миграции выполняют DDL, могут работать долго и зависеть от состояния сеанса, поэтому они должны подключаться к Postgres напрямую.
+
+Включите **Use SSL** и нажмите **Download CA certificate**. Сертификат также можно скачать в разделе **Settings → CA Certificate**. Он уникален для вашего инстанса, поэтому драйвер может с его помощью убедиться, что подключается именно к вашему серверу.
+
+При включённом **Use SSL** URL в окне заканчивается на `sslmode=verify-full&sslrootcert=...`. asyncpg не читает эти параметры, поэтому скопируйте из окна только пароль и хост. CA‑сертификат приложение передаёт непосредственно в коде (см. [Настройка соединения](#configure-connection)).
+
+## Настройка проекта {#project-setup}
+
+Создайте проект и установите FastAPI, Uvicorn, SQLAlchemy с дополнительным модулем asyncio, asyncpg и Alembic:
+
+```bash
+uv init --bare fastapi-managed-postgres && cd fastapi-managed-postgres
+uv add fastapi uvicorn "sqlalchemy[asyncio]" asyncpg alembic
+mkdir app && touch app/__init__.py
+```
+
+<Tip>
+  **Добавляете в существующее приложение?**
+
+  Пропустите команды `uv init` и `mkdir`. В своём проекте выполните `uv add "sqlalchemy[asyncio]" asyncpg alembic`, а затем переходите к разделу [Настройка соединения](#configure-connection). Если ваше приложение работает с SQLite через асинхронный SQLAlchemy:
+
+  * Измените вызов `create_async_engine` так, чтобы он соответствовал вызову в `app/db.py`. В `migrations/env.py` импортируйте `Base` и свои модели из собственных модулей.
+  * Уберите `Base.metadata.create_all` из кода, выполняемого при запуске. Alembic создаст ваши существующие таблицы в Postgres, но не перенесёт данные из SQLite.
+</Tip>
+
+## Настройка соединения {#configure-connection}
+
+Переместите скачанный CA‑сертификат в каталог проекта и переименуйте его в `ca-certificate.pem`.
+
+Создайте базу данных для приложения. Замените `<PASSWORD>` и хост значениями из модального окна **Подключение**:
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_fastapi;"
+```
+
+```text
+CREATE DATABASE
+```
+
+Создайте файл `.env` в корне проекта или добавьте эти переменные в существующий. Оба URL различаются только портом, используют схему `postgresql+asyncpg` и не содержат параметров SSL:
+
+```bash title=".env"
+# The app connects through PgBouncer (port 6432)
+DATABASE_URL="postgresql+asyncpg://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/guide_fastapi"
+# Alembic migrations connect directly to Postgres (port 5432)
+DIRECT_DATABASE_URL="postgresql+asyncpg://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_fastapi"
+DATABASE_CA_CERT="ca-certificate.pem"
+```
+
+Путь в `DATABASE_CA_CERT` вычисляется относительно каталога, из которого вы запускаете команды. Если пароль содержит специальные символы, например `@`, `/` или `#`, примените к ним URL-кодирование. Не добавляйте `.env` в систему контроля версий.
+
+Создайте `app/db.py`. В этом файле настраиваются параметры TLS, создаются движок и фабрика сеансов, общая для всего приложения:
+
+```python title="app/db.py"
+import os
+import ssl
+
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase
+
+
+def ssl_context() -> ssl.SSLContext:
+    # Verifies the certificate chain against your instance's CA and checks the hostname
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.load_verify_locations(os.environ["DATABASE_CA_CERT"])
+    return context
+
+
+# The app uses the PgBouncer connection (port 6432)
+engine = create_async_engine(
+    os.environ["DATABASE_URL"],
+    connect_args={"ssl": ssl_context()},
+)
+SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+
+
+class Base(DeclarativeBase):
+    pass
+```
+
+Объект `ssl.SSLContext`, созданный с `PROTOCOL_TLS_CLIENT`, требует действительный сертификат и проверяет имя хоста, что эквивалентно `sslmode=verify-full`. SQLAlchemy передаёт его в asyncpg через `connect_args`.
+
+<Warning>
+  **Передавайте CA‑сертификат в `connect_args`**
+
+  * Без аргумента `ssl` asyncpg использует TLS, если сервер его поддерживает, но сертификат не проверяет.
+  * Не копируйте `sslmode` или `sslrootcert` из модального окна Подключение в URL. SQLAlchemy передаёт параметры URL в asyncpg как именованные аргументы, и установить соединение не удаётся из‑за ошибки `TypeError: connect() got an unexpected keyword argument 'sslmode'`.
+  * В Python 3.13 и более поздних версиях контекст, созданный через `ssl.create_default_context`, приводит к ошибке `certificate verify failed: Missing Authority Key Identifier`, поскольку эта функция включает строгие проверки X.509. Создавайте контекст через `ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)`, как показано выше.
+  * Если указан неверный CA‑сертификат, соединение завершается ошибкой `certificate verify failed: unable to get local issuer certificate`. Если имя хоста не совпадает (например, при подключении по IP-адресу), возникает ошибка `certificate verify failed: IP address mismatch`.
+</Warning>
+
+<Note>
+  Если вы предпочитаете хранить настройки TLS в URL или ваше приложение использует синхронные сеансы SQLAlchemy, используйте вместо asyncpg драйвер [psycopg](https://www.psycopg.org/psycopg3/). Он основан на libpq и принимает параметры из модального окна Подключение, например `postgresql+psycopg://...:5432/guide_fastapi?sslmode=verify-full&sslrootcert=ca-certificate.pem`, причём как с `create_engine`, так и с `create_async_engine`.
+</Note>
+
+## Определение модели {#model}
+
+Создайте файл `app/models.py` с типизированной моделью SQLAlchemy:
+
+```python title="app/models.py"
+from datetime import datetime
+
+from sqlalchemy import DateTime, func
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db import Base
+
+
+class Todo(Base):
+    __tablename__ = "todos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str]
+    done: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+```
+
+## Выполнение миграций {#migrations}
+
+Создайте окружение Alembic на основе асинхронного шаблона:
+
+```bash
+uv run alembic init -t async migrations
+```
+
+Замените содержимое сгенерированного файла `migrations/env.py`. Новая версия загружает ваши модели для autogenerate и подключается напрямую к Postgres с теми же настройками TLS, что и приложение:
+
+```python title="migrations/env.py"
+import asyncio
+import os
+from logging.config import fileConfig
+
+from alembic import context
+from sqlalchemy import pool
+from sqlalchemy.engine import Connection
+from sqlalchemy.ext.asyncio import create_async_engine
+
+import app.models  # noqa: F401 (registers the models on Base.metadata)
+from app.db import Base, ssl_context
+
+config = context.config
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
+
+target_metadata = Base.metadata
+
+
+def do_run_migrations(connection: Connection) -> None:
+    context.configure(connection=connection, target_metadata=target_metadata)
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+async def run_migrations() -> None:
+    # Migrations use the direct connection (port 5432)
+    engine = create_async_engine(
+        os.environ["DIRECT_DATABASE_URL"],
+        poolclass=pool.NullPool,
+        connect_args={"ssl": ssl_context()},
+    )
+    async with engine.connect() as connection:
+        await connection.run_sync(do_run_migrations)
+    await engine.dispose()
+
+
+asyncio.run(run_migrations())
+```
+
+Alembic игнорирует плейсхолдер `sqlalchemy.url` в `alembic.ini`, так как `env.py` создаёт движок самостоятельно.
+
+Сгенерируйте миграцию на основе модели и примените её:
+
+```bash
+uv run --env-file .env alembic revision --autogenerate -m "create todos"
+uv run --env-file .env alembic upgrade head
+```
+
+```text
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.schemas
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.tables
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.types
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.constraints
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.defaults
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.comments
+INFO  [alembic.autogenerate.compare.tables] Detected added table 'todos'
+Generating /path/to/fastapi-managed-postgres/migrations/versions/9b8d29f05361_create_todos.py ...  done
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 9b8d29f05361, create todos
+```
+
+Проверьте сгенерированный файл в `migrations/versions` и закоммитьте его вместе с кодом. Alembic записывает применённую ревизию в таблицу `alembic_version`. При каждом изменении модели заново выполняйте `revision --autogenerate` и `upgrade head`.
+
+## Добавьте конечные точки API {#endpoints}
+
+Создайте `app/main.py`. Каждый запрос получает собственный объект `AsyncSession` через зависимость FastAPI, а пул движка закрывается при завершении работы приложения:
+
+```python title="app/main.py"
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import datetime
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, HTTPException
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db import SessionLocal, engine
+from app.models import Todo
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    yield
+    await engine.dispose()
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+async def get_session() -> AsyncIterator[AsyncSession]:
+    async with SessionLocal() as session:
+        yield session
+
+
+Session = Annotated[AsyncSession, Depends(get_session)]
+
+
+class TodoCreate(BaseModel):
+    title: str
+
+
+class TodoUpdate(BaseModel):
+    title: str | None = None
+    done: bool | None = None
+
+
+class TodoOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    done: bool
+    created_at: datetime
+
+
+async def get_todo_or_404(session: AsyncSession, todo_id: int) -> Todo:
+    todo = await session.get(Todo, todo_id)
+    if todo is None:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    return todo
+
+
+@app.get("/todos", response_model=list[TodoOut])
+async def list_todos(session: Session):
+    result = await session.scalars(select(Todo).order_by(Todo.id))
+    return result.all()
+
+
+@app.post("/todos", response_model=TodoOut, status_code=201)
+async def create_todo(body: TodoCreate, session: Session):
+    todo = Todo(title=body.title)
+    session.add(todo)
+    await session.commit()
+    return todo
+
+
+@app.get("/todos/{todo_id}", response_model=TodoOut)
+async def read_todo(todo_id: int, session: Session):
+    return await get_todo_or_404(session, todo_id)
+
+
+@app.patch("/todos/{todo_id}", response_model=TodoOut)
+async def update_todo(todo_id: int, body: TodoUpdate, session: Session):
+    todo = await get_todo_or_404(session, todo_id)
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(todo, field, value)
+    await session.commit()
+    return todo
+
+
+@app.delete("/todos/{todo_id}", status_code=204)
+async def delete_todo(todo_id: int, session: Session) -> None:
+    await session.delete(await get_todo_or_404(session, todo_id))
+    await session.commit()
+```
+
+SQLAlchemy выполняет все операторы одного сеанса в рамках одной транзакции, которая завершается вызовом `session.commit`. При закрытии сеанса все незакоммиченные изменения откатываются. При выполнении `INSERT` SQLAlchemy получает сгенерированные значения `id` и `created_at` через `RETURNING`, поэтому функции `create_todo` не требуется дополнительный запрос.
+
+## Запуск и проверка {#verify}
+
+Запустите приложение:
+
+```bash
+uv run --env-file .env uvicorn app.main:app --port 3112
+```
+
+```text
+INFO:     Started server process [86235]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:3112 (Press CTRL+C to quit)
+```
+
+Во втором терминале создайте две задачи, отметьте первую как выполненную и удалите вторую:
+
+```bash
+curl -X POST localhost:3112/todos -H 'content-type: application/json' -d '{"title": "Try FastAPI"}'
+curl -X POST localhost:3112/todos -H 'content-type: application/json' -d '{"title": "Write a migration"}'
+curl -X PATCH localhost:3112/todos/1 -H 'content-type: application/json' -d '{"done": true}'
+curl -X DELETE localhost:3112/todos/2
+```
+
+```text
+{"id":1,"title":"Try FastAPI","done":false,"created_at":"2026-10-01T14:20:39.315984Z"}
+{"id":2,"title":"Write a migration","done":false,"created_at":"2026-10-01T14:20:39.520672Z"}
+{"id":1,"title":"Try FastAPI","done":true,"created_at":"2026-10-01T14:20:39.315984Z"}
+```
+
+Запрос `DELETE` возвращает `204 No Content`. При запросе несуществующей задачи возвращается `404`:
+
+```bash
+curl -i localhost:3112/todos/2
+```
+
+```text
+HTTP/1.1 404 Not Found
+date: Thu, 01 Oct 2026 14:20:39 GMT
+server: uvicorn
+content-length: 27
+content-type: application/json
+
+{"detail":"Todo not found"}
+```
+
+Откройте в браузере [http://localhost:3112/todos](http://localhost:3112/todos), чтобы просмотреть список оставшихся задач, или [http://localhost:3112/docs](http://localhost:3112/docs), чтобы опробовать конечные точки в интерактивной документации API FastAPI.
+
+Чтобы убедиться, что прямое соединение защищено TLS с проверкой сертификата, выполните запрос к `pg_stat_ssl` с теми же настройками TLS, что и в приложении:
+
+```bash
+uv run --env-file .env python -c "
+import asyncio, os
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+from app.db import ssl_context
+
+async def main():
+    engine = create_async_engine(os.environ['DIRECT_DATABASE_URL'], connect_args={'ssl': ssl_context()})
+    async with engine.connect() as conn:
+        result = await conn.execute(text('SELECT ssl, version FROM pg_stat_ssl WHERE pid = pg_backend_pid()'))
+        print(result.one())
+    await engine.dispose()
+
+asyncio.run(main())
+"
+```
+
+```text
+(True, 'TLSv1.3')
+```
+
+Чтобы просмотреть данные в консоли, откройте **консоль SQL** на левой боковой панели вашего сервиса, разверните `guide_fastapi`, затем `public` и выберите таблицу `todos`. В соседней таблице `alembic_version` хранится история миграций. В таблице `todos` осталась одна строка:
+
+| id | title       | done | created&#95;at                |
+| -- | ----------- | ---- | ----------------------------- |
+| 1  | Try FastAPI | true | 2026-10-01 14:20:39.315984+00 |
+
+Чтобы остановить приложение, нажмите <kbd>Ctrl</kbd>+<kbd>C</kbd>.
+
+## Использование PgBouncer {#pgbouncer}
+
+Приложение работает через PgBouncer с настройками asyncpg и SQLAlchemy по умолчанию:
+
+* asyncpg выполняет каждый запрос как именованный подготовленный оператор на уровне протокола, а SQLAlchemy кэширует до 100 таких операторов для каждого соединения. Встроенный PgBouncer поддерживает эти операторы в режиме пулинга транзакций, а asyncpg освобождает их сообщением `Close` на уровне протокола, а не SQL-командой `DEALLOCATE`. Указывать `statement_cache_size=0` или собственную функцию `prepared_statement_name_func` не нужно. Если вы всё же отключаете кэш операторов asyncpg, добавьте также в URL `prepared_statement_cache_size=0`, чтобы отключить кэш SQLAlchemy.
+* Настройки сеанса, заданные через `SET`, например `search_path`, не сохраняются в следующей транзакции и могут «утечь» к другим клиентам. Вместо этого используйте `SET LOCAL` внутри транзакции.
+* `pg_stat_ssl` показывает соединение между PgBouncer и Postgres, поэтому описанная выше проверка TLS через порт `6432` возвращает `(False, None)`. При этом соединение приложения с PgBouncer всё равно проверяется: с неверным CA‑сертификатом подключение завершится такой же ошибкой.
+* Alembic не использует рекомендательные блокировки и выполняет каждый `upgrade` в одной транзакции, поэтому тоже работает через PgBouncer. Тем не менее для длительных миграций лучше использовать прямое соединение.
+
+<Warning>
+  **Изменение типа столбца**
+
+  PgBouncer хранит подготовленные операторы в своих соединениях с Postgres. Если миграция изменяет тип столбца, возвращаемого запросом, например с `integer` на `bigint`, этот запрос через PgBouncer завершается ошибкой `InvalidCachedStatementError: cached statement plan is invalid due to a database schema or configuration change` — даже в новых соединениях — до тех пор, пока PgBouncer не заменит свои соединения с Postgres. Чтобы устранить проблему, закройте соединения PgBouncer с Postgres для этой базы данных через прямое соединение от имени того же пользователя, под которым подключается приложение. PgBouncer подключается к Postgres локально, поэтому у его соединений нет `client_addr`; прямые соединения запрос не затрагивает. PgBouncer откроет новые соединения, а каждое соединение приложения из пула может ещё один раз завершиться ошибкой, прежде чем SQLAlchemy обновит свой кэш:
+
+  ```sql
+  SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+  WHERE datname = 'guide_fastapi' AND usename = current_user
+    AND client_addr IS NULL AND backend_type = 'client backend'
+    AND pid <> pg_backend_pid();
+  ```
+
+  Добавление столбца к этой проблеме не приводит, поскольку SQLAlchemy явно перечисляет выбираемые столбцы.
+</Warning>
+
+## Дальнейшие шаги {#next-steps}
+
+* [Подключение](/ru/products/managed-postgres/connection): строки подключения, PgBouncer и TLS
+* [Настройки](/ru/products/managed-postgres/settings): параметры Postgres и PgBouncer, например `max_connections`
+* [Реплики для чтения](/ru/products/managed-postgres/read-replicas): направление запросов только на чтение на реплику со вторым движком
+* [Безопасность](/ru/products/managed-postgres/security): списки IP Access List и частное сетевое подключение

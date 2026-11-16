@@ -1,0 +1,12 @@
+-- a Nested subcolumn missing in the blocks takes the array sizes from its stored siblings
+0
+2
+2
+-- the same with the filter of the query, compressed
+0
+2
+2
+-- a cast to the changed type on read
+0
+2
+2

@@ -7,10 +7,6 @@ keywords: ['managed postgres', 'node.js', 'nodejs', 'node-postgres', 'pg', 'java
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-nodejs-beta" />
-
 [node-postgres](https://node-postgres.com/) (the `pg` package) is the most widely used Postgres driver for Node.js. In this guide, you connect to ClickHouse Managed Postgres through a `pg.Pool` with full TLS certificate verification, create two tables, move money between accounts in a transaction, and serve the data from a small `node:http` server.
 
 ## Prerequisites {#prerequisites}
@@ -100,7 +96,7 @@ If `DATABASE_URL` contains `sslmode` or `sslrootcert`, `pg` builds its TLS setti
 
 Also note that:
 
-- Without either an `ssl` object or `sslmode` in the URL, `pg` connects **without TLS**.
+- Without either an `ssl` object or `sslmode` in the URL, `pg` doesn't use TLS or verify the server.
 - `pg` reads `PGHOST`, `PGUSER`, `PGPASSWORD`, and similar variables, but it doesn't read `PGSSLROOTCERT`. The variables in the **env** tab of the Connect modal therefore aren't enough on their own to verify the server.
 - If you prefer to keep everything in the URL, the URL that the Connect modal shows with **Use SSL** on also works with `pg`, for example `...?sslmode=verify-full&sslrootcert=ca-certificate.pem`. In that case, remove the `ssl` option, and note that `sslrootcert` is resolved relative to the directory you start Node.js from.
 </Warning>

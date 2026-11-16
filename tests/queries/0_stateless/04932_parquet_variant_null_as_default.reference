@@ -1,0 +1,8 @@
+-- input_format_null_as_default = 0
+Int8	7
+None	\N
+Int8	9
+-- input_format_null_as_default = 1
+Int8	7
+None	\N
+Int8	9

@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <optional>
 #include <vector>
 #include <Processors/QueryPlan/Profiling/Analysis/JoinBranchCosts.h>
@@ -18,10 +20,10 @@ bool sameCluster(const JoinStep * lhs, const JoinStep * rhs)
     return lhs->getClusterId() != 0 && lhs->getClusterId() == rhs->getClusterId();
 }
 
-std::vector<const QueryPlan::Node *> collectPostOrder(const QueryPlan::Node * root)
+VectorWithMemoryTracking<const QueryPlan::Node *> collectPostOrder(const QueryPlan::Node * root)
 {
-    std::vector<const QueryPlan::Node *> post_order;
-    std::vector<const QueryPlan::Node *> to_visit{root};
+    VectorWithMemoryTracking<const QueryPlan::Node *> post_order;
+    VectorWithMemoryTracking<const QueryPlan::Node *> to_visit{root};
 
     while (!to_visit.empty())
     {
@@ -32,7 +34,7 @@ std::vector<const QueryPlan::Node *> collectPostOrder(const QueryPlan::Node * ro
         for (const auto * child : node->children)
             to_visit.push_back(child);
 
-        for (const auto * child_plan : node->step->getChildPlans())
+        for (const auto * child_plan : node->step->getChildPlans(/*for_explain=*/ false))
             if (child_plan && child_plan->isInitialized())
                 to_visit.push_back(child_plan->getRootNode());
     }
@@ -51,12 +53,12 @@ JoinBranchCosts::JoinBranchCosts(const QueryPlan & plan, const CardinalityByJoin
 
 void JoinBranchCosts::accumulate(const QueryPlan::Node * root, const CardinalityByJoinStep & cardinality_by_join_step)
 {
-    std::unordered_map<const QueryPlan::Node *, std::vector<const JoinStep *>> joins_below;
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, VectorWithMemoryTracking<const JoinStep *>> joins_below;
 
     for (const auto * node : collectPostOrder(root))
     {
         /// collect the joins from children
-        std::vector<const JoinStep *> joins_below_the_curren_node;
+        VectorWithMemoryTracking<const JoinStep *> joins_below_the_curren_node;
         for (const auto * child : node->children)
         {
             const auto it = joins_below.find(child);

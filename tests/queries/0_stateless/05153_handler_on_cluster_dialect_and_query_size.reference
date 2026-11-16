@@ -1,0 +1,11 @@
+=== a handler reading over remote() keeps its dialect on the shard ===
+created
+0
+0
+0
+=== a handler issuing ON CLUSTER keeps its dialect in the DDL queue ===
+created
+1
+=== a handler issuing ON CLUSTER is not bounded by the request max_query_size ===
+created
+1

@@ -20,10 +20,11 @@ from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
 from helpers.network import PartitionManager
 from helpers.s3_tools import prepare_s3_bucket
-from helpers.test_tools import exec_query_with_retry
+from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 from helpers.s3_queue_common import generate_random_string
 
 from minio.commonconfig import Tags
+from minio.versioningconfig import ENABLED, VersioningConfig
 
 MINIO_INTERNAL_PORT = 9001
 
@@ -1670,6 +1671,29 @@ def test_create_new_files_on_insert(started_cluster):
     instance.query("drop table test_multiple_inserts")
 
 
+def test_create_new_files_on_insert_multipart_gcs(started_cluster):
+    instance = started_cluster.instances["dummy"]
+    # The S3 client deduces the GCS provider from the endpoint, so reach MinIO under the GCS host name.
+    instance.exec_in_container(
+        ["bash", "-c", f"echo '{started_cluster.minio_ip} storage.googleapis.com' >> /etc/hosts"],
+        privileged=True,
+        user="root",
+    )
+    bucket = started_cluster.minio_bucket
+    name = f"gcs_new_file_{generate_random_string()}"
+    url = f"http://storage.googleapis.com:{started_cluster.minio_port}/{bucket}/{name}"
+    settings = {"s3_max_single_part_upload_size": 1048576}
+    for path, partition_by in [(f"{url}.csv", ""), (f"{url}_{{_partition_id}}.csv", "PARTITION BY 'p'")]:
+        insert = f"INSERT INTO FUNCTION s3('{path}', 'minio', '{minio_secret_key}', 'CSV', 's String') {partition_by} SELECT repeat('a', 1000) FROM numbers(2000)"
+        instance.query(insert, settings=settings)
+        instance.query(insert, settings={**settings, "s3_create_new_file_on_insert": 1})
+
+    result = instance.query(
+        f"SELECT _file, count() FROM s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{name}*.csv', 'minio', '{minio_secret_key}', 'CSV', 's String') GROUP BY _file ORDER BY _file"
+    )
+    assert result == f"{name}.1.csv\t2000\n{name}.csv\t2000\n{name}_p.1.csv\t2000\n{name}_p.csv\t2000\n"
+
+
 def test_format_detection(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
@@ -2444,6 +2468,18 @@ def test_dynamic_s3_disk_user_marker_is_not_honored(started_cluster):
         "SELECT create_table_query FROM system.tables WHERE database = 'default' AND name = 't_user_marker'"
     )
     assert "_server_credentials_allowed" not in create_query, create_query
+    instance.query("DROP TABLE t_user_marker SYNC")
+
+    # The disk configuration parser accepts and ignores extra values, so a marker with one is stripped too.
+    instance.query(
+        f"CREATE TABLE t_user_marker (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS "
+        f"disk = disk(type = s3, endpoint = '{disk_endpoint}', access_key_id = 'minio', "
+        f"secret_access_key = 'ClickHouse_Minio_P@ssw0rd', equals(_server_credentials_allowed, 1, 'extra'))"
+    )
+    create_query = instance.query(
+        "SELECT create_table_query FROM system.tables WHERE database = 'default' AND name = 't_user_marker'"
+    )
+    assert "_server_credentials_allowed" not in create_query, create_query
 
     instance.query("DROP TABLE t_user_marker SYNC")
 
@@ -3000,6 +3036,41 @@ def test_page_cache(started_cluster):
     ).split('\t')
     assert 0 < int(misses)
     assert 0 < int(gets)
+
+
+def test_cache_key_includes_storage(started_cluster):
+    # The same key with the same content, so the same ETag, in another bucket or behind another endpoint:
+    # the filesystem cache and the page cache must not serve it the entry filled by the first object.
+    instance = started_cluster.instances["dummy"]
+    table_name = f"test_cache_key_includes_storage-{uuid.uuid4()}"
+    host = f"{started_cluster.minio_host}:{started_cluster.minio_port}"
+    ip = f"{started_cluster.minio_ip}:{started_cluster.minio_port}"
+
+    for bucket in [started_cluster.minio_bucket, started_cluster.minio_bucket_2]:
+        instance.query(
+            f"insert into function s3('http://{host}/{bucket}/{table_name}.tsv', auto, 'x UInt64') select number from numbers(100) SETTINGS s3_truncate_on_insert=1"
+        )
+
+    urls = [
+        f"http://{host}/{started_cluster.minio_bucket}/{table_name}.tsv",
+        f"http://{ip}/{started_cluster.minio_bucket}/{table_name}.tsv",
+        f"http://{host}/{started_cluster.minio_bucket_2}/{table_name}.tsv",
+    ]
+    for settings in ["filesystem_cache_name = 'cache1', enable_filesystem_cache=1", "use_page_cache_for_object_storage=1"]:
+        for url in urls:
+            query_id = f"{table_name}-{uuid.uuid4()}"
+            assert "100\n" == instance.query(
+                f"select sum(ignore(*) + 1) from s3('{url}', 'TSV', 'x UInt64') SETTINGS {settings}",
+                query_id=query_id,
+            )
+
+            instance.query("SYSTEM FLUSH LOGS")
+
+            assert 0 < int(
+                instance.query(
+                    f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+                )
+            )
 
 
 def test_archive(started_cluster):
@@ -3623,6 +3694,47 @@ def test_schema_inference_cache_multi_path(started_cluster):
     )
 
 
+def test_schema_cache_key_includes_object_version(started_cluster):
+    # The schema and row-count caches must not answer a read of one version of an object with an entry of another.
+    instance = started_cluster.instances["dummy"]
+    minio_client = started_cluster.minio_client
+    bucket = "versioned"
+    if not minio_client.bucket_exists(bucket):
+        minio_client.make_bucket(bucket)
+    minio_client.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    prefix = f"test_schema_cache_key_includes_object_version-{uuid.uuid4()}"
+    host = f"{started_cluster.minio_host}:{started_cluster.minio_port}"
+    auth = f"'minio', '{minio_secret_key}'"
+
+    def s3(key, format, structure=None, version_id=None):
+        url = f"http://{host}/{bucket}/{prefix}-{key}"
+        if version_id is not None:
+            url += f"?versionId={version_id}"
+        structure = f", '{structure}'" if structure else ""
+        return f"s3('{url}', {auth}, '{format}'{structure})"
+
+    def put_version(key, format, structure, query):
+        instance.query(f"INSERT INTO FUNCTION {s3(key, format, structure)} {query} SETTINGS s3_truncate_on_insert = 1")
+        return minio_client.stat_object(bucket, f"{prefix}-{key}")
+
+    # Versions of equal size, so that only the caches can tell them apart.
+    old_count = put_version("count.csv", "CSV", "x UInt64", "SELECT 1 FROM numbers(200)")
+    new_count = put_version("count.csv", "CSV", "x UInt64", "SELECT 100 FROM numbers(100)")
+    old_schema = put_version("schema.csv", "CSVWithNames", "a UInt64", "SELECT number FROM numbers(1, 2)")
+    new_schema = put_version("schema.csv", "CSVWithNames", "b UInt64", "SELECT number FROM numbers(3, 2)")
+    assert old_count.size == new_count.size and old_schema.size == new_schema.size
+    # An entry registered in the second the object was last modified is not used, which would hide a wrong hit.
+    assert_eq_with_retry(instance, f"SELECT now() > toDateTime({int(new_schema.last_modified.timestamp())})", "1")
+
+    for version_id, expected in [(old_count.version_id, "200\n"), (None, "100\n")]:
+        assert expected == instance.query(f"SELECT count() FROM {s3('count.csv', 'CSV', 'x UInt64', version_id)}")
+
+    for version_id, expected in [(None, "b\n3\n4\n"), (old_schema.version_id, "a\n1\n2\n")]:
+        assert expected == instance.query(
+            f"SELECT * FROM {s3('schema.csv', 'CSVWithNames', version_id=version_id)} FORMAT TSVWithNames"
+        )
+
+
 def test_gcs_decompressive_transcoding(started_cluster):
     """Mock at resolver:8084 omits Content-Length on HEAD and GET
     Without the fix, s3() would silently return 0 rows"""
@@ -3667,7 +3779,6 @@ def test_query_condition_cache(started_cluster):
     select_query = f"SELECT * FROM {table_name} WHERE id < 100 ORDER BY id"
     settings = {
         "use_query_condition_cache": 1,
-        "allow_experimental_analyzer": 1,
     }
 
     query_id_first = f"qcc_s3_first_{generate_random_string()}"
@@ -3771,7 +3882,6 @@ def test_query_condition_cache_overwrite_invalidation(started_cluster):
     select_query = f"SELECT DISTINCT val FROM {table_name} WHERE id < 100"
     settings = {
         "use_query_condition_cache": 1,
-        "allow_experimental_analyzer": 1,
     }
 
     def profile_event(query_id, event):

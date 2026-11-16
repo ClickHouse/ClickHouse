@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/JoinEstimation.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <Processors/QueryPlan/Profiling/Analysis/StepStatsAnalyzer.h>
+#include <Processors/QueryPlan/BlockNestedLoopJoinStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/IJoin.h>
@@ -213,6 +214,17 @@ std::optional<double> resultRowsQError(const std::optional<UInt64> & estimated_r
         static_cast<double>(actual_rows) / static_cast<double>(*estimated_rows));
 }
 
+void prependSideEstimate(MetricGroup & group, std::optional<UInt64> estimated_rows, const JoinSideRows & side)
+{
+    group.metrics.insert(group.metrics.begin(), {MetricKey::RowsEstimated, optionalQuantity(estimated_rows)});
+    if (!side.input_rows)
+        return;
+    const auto q_error = resultRowsQError(estimated_rows, *side.input_rows);
+    const auto rows_it = std::ranges::find(group.metrics, MetricKey::Rows, &StepMetric::key);
+    if (q_error && rows_it != group.metrics.end())
+        group.metrics.insert(std::next(rows_it), {MetricKey::QError, *q_error});
+}
+
 void prependEstimationComparison(
     StepAnalysisReport & report, const JoinStep & join_step, const StepStatsContext & context, std::optional<UInt64> matched_output_rows)
 {
@@ -232,9 +244,9 @@ void prependEstimationComparison(
     const JoinSideRows right_side = readSideRows(right_group);
 
     if (left_group)
-        left_group->metrics.insert(left_group->metrics.begin(), {MetricKey::RowsEstimated, optionalQuantity(estimation.left_rows)});
+        prependSideEstimate(*left_group, estimation.left_rows, left_side);
     if (right_group)
-        right_group->metrics.insert(right_group->metrics.begin(), {MetricKey::RowsEstimated, optionalQuantity(estimation.right_rows)});
+        prependSideEstimate(*right_group, estimation.right_rows, right_side);
 
     MetricGroup cost{MetricGroupKey::Cost, {}};
     cost.metrics.emplace_back(MetricKey::Estimated, optionalDouble(estimation.cost));
@@ -275,6 +287,20 @@ void inlineGroupIntoStage(AnalyzedStepData & step_data, MetricGroupKey group_key
 
 AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisReport report)
 {
+    /// The block nested loop join is a plan step of its own rather than an `IJoin`. It never swaps its
+    /// inputs and reports no per-stage metrics, so the derived per-side numbers and the spill group
+    /// are all there is to shape.
+    if (const auto * block_nested_loop_step = typeid_cast<const BlockNestedLoopJoinStep *>(context.step))
+    {
+        enrichJoinSides(
+            report, context.io.output_rows, block_nested_loop_step->getKind(), block_nested_loop_step->getStrictness());
+
+        if (auto * spill_group = findGroup(report, MetricGroupKey::Spill))
+            reshapeSpillGroup(*spill_group);
+
+        return buildAnalyzedStepData(context, std::move(report));
+    }
+
     const auto * join_step = typeid_cast<const JoinStep *>(context.step);
     const auto * filled_join_step = typeid_cast<const FilledJoinStep *>(context.step);
     if (!join_step && !filled_join_step)

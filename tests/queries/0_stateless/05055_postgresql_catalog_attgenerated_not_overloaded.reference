@@ -1,0 +1,10 @@
+--- no column of an ordinary table is reported as generated
+plain|1|t
+arr|1|f
+arr_not_null|1|t
+--- a query for generated columns finds none
+0
+--- element nullability still round-trips through a self-connect
+plain	Int32
+arr	Array(Nullable(String))
+arr_not_null	Array(String)

@@ -44,24 +44,24 @@ SELECT '- full -';
 SELECT * FROM t1 FULL JOIN t2 ON NULL ORDER BY t1.id NULLS FIRST, t2.id SETTINGS join_use_nulls = 1;
 
 -- mixing of constant and non-constant expressions in ON is not allowed
-SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 == 1 SETTINGS enable_analyzer = 1;
-SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 == 2 SETTINGS enable_analyzer = 1;
+SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 == 1;
+SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 == 2;
 
-SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 != 1 SETTINGS enable_analyzer = 1;
+SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 != 1;
 SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 'aaa'; -- { serverError INVALID_JOIN_ON_EXPRESSION,ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT * FROM t1 JOIN t2 ON 'aaa'; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 
-SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 0 SETTINGS enable_analyzer = 1;
-SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 SETTINGS enable_analyzer = 1;
+SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 0;
+SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1;
 
 -- { echoOn }
-SELECT * FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND 1 = 1 ORDER BY 1 SETTINGS enable_analyzer = 1;
-SELECT * FROM t1 RIGHT JOIN t2 ON t1.id = t2.id AND 1 = 1 ORDER BY 1 SETTINGS enable_analyzer = 1;
-SELECT * FROM t1 FULL JOIN t2 ON t1.id = t2.id AND 1 = 1 ORDER BY 2, 1 SETTINGS enable_analyzer = 1;
+SELECT * FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND 1 = 1 ORDER BY 1;
+SELECT * FROM t1 RIGHT JOIN t2 ON t1.id = t2.id AND 1 = 1 ORDER BY 1;
+SELECT * FROM t1 FULL JOIN t2 ON t1.id = t2.id AND 1 = 1 ORDER BY 2, 1;
 
-SELECT * FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND 1 = 2 ORDER BY 1 SETTINGS enable_analyzer = 1;
-SELECT * FROM t1 RIGHT JOIN t2 ON t1.id = t2.id AND 1 = 2 ORDER BY 2 SETTINGS enable_analyzer = 1;
-SELECT * FROM t1 FULL JOIN t2 ON t1.id = t2.id AND 1 = 2 ORDER BY 2, 1 SETTINGS enable_analyzer = 1;
+SELECT * FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND 1 = 2 ORDER BY 1;
+SELECT * FROM t1 RIGHT JOIN t2 ON t1.id = t2.id AND 1 = 2 ORDER BY 2;
+SELECT * FROM t1 FULL JOIN t2 ON t1.id = t2.id AND 1 = 2 ORDER BY 2, 1;
 
 SELECT * FROM (SELECT 1 as a) as t1 INNER JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL;
 SELECT * FROM (SELECT 1 as a) as t1 LEFT JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL;
@@ -76,30 +76,29 @@ SELECT a + 1
 FROM (SELECT 1 as x) as t1
 LEFT JOIN ( SELECT 1 AS a ) AS t2
 ON TRUE
-SETTINGS enable_analyzer=1, join_use_nulls=1;
+SETTINGS join_use_nulls=1;
 
 SELECT a + 1, x + 1, toTypeName(a), toTypeName(x)
 FROM (SELECT 1 as x) as t1
 LEFT JOIN ( SELECT sum(number) as a from numbers(3) GROUP BY NULL) AS t2
 ON TRUE
-SETTINGS enable_analyzer=1, join_use_nulls=1;
+SETTINGS join_use_nulls=1;
 
 SELECT a + 1, x + 1, toTypeName(a), toTypeName(x)
 FROM (SELECT 1 as x) as t1
 RIGHT JOIN ( SELECT sum(number) as a from numbers(3) GROUP BY NULL) AS t2
 ON TRUE
-SETTINGS enable_analyzer=1, join_use_nulls=1;
+SETTINGS join_use_nulls=1;
 
 SELECT a + 1, x + 1, toTypeName(a), toTypeName(x)
 FROM (SELECT 1 as x) as t1
 FULL JOIN ( SELECT sum(number) as a from numbers(3) GROUP BY NULL) AS t2
 ON TRUE
-SETTINGS enable_analyzer=1, join_use_nulls=1;
+SETTINGS join_use_nulls=1;
 
 -- Join on constant with empty table fixed only with new logical join step
 SET enable_parallel_replicas = 0;
 SET join_use_nulls = 1;
-SET enable_analyzer = 1;
 
 CREATE TABLE empty_table (id Int) ENGINE = Memory;
 

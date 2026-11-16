@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -18,6 +19,7 @@ enum class MetricGroupKey : UInt8
     Left,
     Right,
     HashTable,
+    Memory,
     Buffer,
     Spill,
     Build,
@@ -52,6 +54,7 @@ enum class MetricKey : UInt8
 
     UniqueKeys,
     Memory,
+    Bytes,
     Buckets,
     Rehashes,
 
@@ -112,7 +115,7 @@ struct StepMetric
     MetricValue value;
 };
 
-using MetricList = std::vector<StepMetric>;
+using MetricList = VectorWithMemoryTracking<StepMetric>;
 
 struct MetricGroup
 {
@@ -120,7 +123,7 @@ struct MetricGroup
     MetricList metrics;
 };
 
-using StepAnalysisReport = std::vector<MetricGroup>;
+using StepAnalysisReport = VectorWithMemoryTracking<MetricGroup>;
 
 inline const MetricGroup * findGroup(const StepAnalysisReport & report, MetricGroupKey key)
 {
@@ -173,7 +176,7 @@ public:
             available = false;
     }
 
-    std::optional<UInt64> get() const { return available ? std::optional<UInt64>(total) : std::nullopt; }
+    [[nodiscard]] std::optional<UInt64> get() const { return available ? std::optional<UInt64>(total) : std::nullopt; }
 
 private:
     UInt64 total = 0;

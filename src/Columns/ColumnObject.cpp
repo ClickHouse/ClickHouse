@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypesCache.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Columns/ColumnObject.h>
@@ -6,11 +7,13 @@
 #include <Columns/ColumnVariant.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -293,6 +296,9 @@ MutableColumnPtr ColumnObject::cloneResized(size_t size) const
 
 Field ColumnObject::operator[](size_t n) const
 {
+    /// Nesting is part of the value rather than of the query text, so no parser limit bounds it.
+    checkStackSize();
+
     Object object;
 
     for (const auto & [path, column] : typed_paths)
@@ -1565,7 +1571,7 @@ struct ColumnObject::ComparatorBase
     {
     }
 
-    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = parent.compareAt(lhs, rhs, parent, nan_direction_hint);
 
@@ -1850,6 +1856,19 @@ void ColumnObject::getExtremes(Field & min, Field & max, size_t start, size_t en
     get(max_idx, max);
 }
 
+namespace
+{
+
+const ColumnObject & getSourceObjectColumn(const IColumn & source, const ColumnObject & column, std::string_view operation)
+{
+    const auto * source_object = typeid_cast<const ColumnObject *>(&source);
+    if (!source_object)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for {} of {} is not Object, but {}", operation, column.getName(), source.getName());
+    return *source_object;
+}
+
+}
+
 void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     if (source_columns.empty())
@@ -1872,8 +1891,9 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
         }
     };
 
+    /// The later loop over `source_columns` relies on this check.
     for (const auto & source_column : source_columns)
-        add_dynamic_paths(assert_cast<const ColumnObject &>(*source_column));
+        add_dynamic_paths(getSourceObjectColumn(*source_column, *this, "squashing"));
 
     /// Add dynamic paths from this object column.
     add_dynamic_paths(*this);
@@ -1940,7 +1960,9 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
     for (const auto & [path, column] : dynamic_paths)
         dynamic_paths_source_columns[path].reserve(source_columns.size());
 
-    size_t total_size = 0;
+    /// Include the rows that this column already has: the discriminators and offsets of the dynamic paths are reserved
+    /// exactly, so a smaller reservation makes every dynamic path grow (reallocate and copy) during the squashing.
+    size_t total_size = size();
     for (const auto & source_column : source_columns)
     {
         const auto & source_object_column = assert_cast<const ColumnObject &>(*source_column);
@@ -2021,7 +2043,8 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
     UnorderedMapWithMemoryTracking<String, size_t> path_to_total_number_of_non_null_values;
     for (const auto & source_column : source_columns)
     {
-        const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
+        /// The later loops over `source_columns` rely on this check.
+        const auto & source_object = getSourceObjectColumn(*source_column, *this, "merge");
         /// During deserialization from MergeTree we will have statistics from the whole
         /// data part with number of non null values for each dynamic path.
         const auto & source_statistics = source_object.getOrCalculateStatistics();
@@ -2127,7 +2150,7 @@ void ColumnObject::takeExactDynamicStructureFrom(const IColumn & source)
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "takeExactDynamicStructureFrom should be called only on empty Object column");
 
-    const auto & source_object = assert_cast<const ColumnObject &>(source);
+    const auto & source_object = getSourceObjectColumn(source, *this, "dynamic structure");
 
     for (auto & [path, column] : typed_paths)
         column->takeExactDynamicStructureFrom(*source_object.typed_paths.at(path));
@@ -2182,6 +2205,38 @@ ColumnObject::StatisticsPtr ColumnObject::getOrCalculateStatistics() const
 void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
 {
     /// Assumes dynamic structure has already been set by `takeExactDynamicStructureFrom` or `chooseDynamicStructureForMerge`.
+
+    /// The loops over `source_columns` below rely on this check.
+    for (const auto & source_column : source_columns)
+        getSourceObjectColumn(*source_column, *this, "statistics");
+
+    /// The writer of a part takes the statistics from its sample column for every block. When the statistics of the
+    /// only source already match our dynamic paths, the code below would build an exact copy of them, so share them.
+    if (source_columns.size() == 1)
+    {
+        const auto & source_object = assert_cast<const ColumnObject &>(*source_columns.front());
+        auto source_statistics = source_object.getOrCalculateStatistics();
+        bool can_share = source_statistics->shared_data_paths_statistics.size() <= Statistics::MAX_SHARED_DATA_STATISTICS_SIZE;
+        for (const auto & [path, _] : source_statistics->dynamic_paths_statistics)
+            can_share = can_share && dynamic_paths.contains(path);
+        for (const auto & [path, _] : dynamic_paths)
+            can_share = can_share && !source_statistics->shared_data_paths_statistics.contains(path);
+
+        if (can_share)
+        {
+            statistics = std::move(source_statistics);
+            for (auto & [path, column] : dynamic_paths)
+            {
+                auto it = source_object.dynamic_paths.find(path);
+                if (it != source_object.dynamic_paths.end())
+                    column->takeOrCalculateStatisticsFrom({it->second});
+            }
+            for (auto & [path, column] : typed_paths)
+                column->takeOrCalculateStatisticsFrom({source_object.typed_paths.at(path)});
+            return;
+        }
+    }
+
     Statistics new_statistics;
     /// Collect total sizes for paths that are not in our dynamic_paths (candidates for shared data statistics).
     UnorderedMapWithMemoryTracking<String, size_t> shared_data_candidates;
@@ -2459,12 +2514,13 @@ std::string_view ColumnObject::SortedPathsIterator::getCurrentSharedDataValue() 
     return shared_data_values->getDataAt(shared_data_it);
 }
 
-ColumnObject::SortedPathsIterator::PathInfo ColumnObject::SortedPathsIterator::getCurrentPathInfo() const
+ColumnObject::SortedPathsIterator::PathInfo ColumnObject::SortedPathsIterator::getCurrentPathInfo(bool materialize_shared_data_value) const
 {
     PathInfo path_info;
     path_info.type = current_path_type;
     path_info.path = getCurrentPath();
-    std::tie(path_info.column, path_info.row) = getCurrentPathColumnAndRow();
+    if (current_path_type != PathType::SHARED_DATA || materialize_shared_data_value)
+        std::tie(path_info.column, path_info.row) = getCurrentPathColumnAndRow();
     return path_info;
 }
 

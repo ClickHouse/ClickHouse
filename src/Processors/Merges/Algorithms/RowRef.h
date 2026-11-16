@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/IColumn_fwd.h>
 #include <Processors/Chunk.h>
@@ -74,8 +75,8 @@ public:
     ~SharedChunkAllocator();
 
 private:
-    std::vector<SharedChunk> chunks;
-    std::vector<size_t> free_chunks;
+    VectorWithMemoryTracking<SharedChunk> chunks;
+    VectorWithMemoryTracking<size_t> free_chunks;
 
     void release(SharedChunk * ptr) noexcept;
 
@@ -102,7 +103,7 @@ struct RowRef
 
     UInt64 source_stream_index = 0;
 
-    bool empty() const { return sort_columns == nullptr; }
+    [[nodiscard]] bool empty() const { return sort_columns == nullptr; }
     void reset() { sort_columns = nullptr; }
 
     void set(SortCursor & cursor);
@@ -111,12 +112,12 @@ struct RowRef
 
     static size_t checkEqualsFirstNonEqual(size_t size, size_t offset, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row);
 
-    size_t firstNonEqualSortColumnsWith(size_t offset, const RowRef & other) const
+    [[nodiscard]] size_t firstNonEqualSortColumnsWith(size_t offset, const RowRef & other) const
     {
         return checkEqualsFirstNonEqual(num_columns, offset, sort_columns, row_num, other.sort_columns, other.row_num);
     }
 
-    bool hasEqualSortColumnsWith(const RowRef & other) const
+    [[nodiscard]] bool hasEqualSortColumnsWith(const RowRef & other) const
     {
         return checkEquals(num_columns, sort_columns, row_num, other.sort_columns, other.row_num);
     }
@@ -148,7 +149,7 @@ struct RowRefWithOwnedChunk
         std::swap(source_stream_index, other.source_stream_index);
     }
 
-    bool empty() const { return owned_chunk == nullptr; }
+    [[nodiscard]] bool empty() const { return owned_chunk == nullptr; }
 
     void clear()
     {
@@ -163,12 +164,12 @@ struct RowRefWithOwnedChunk
     void set(SortCursor & cursor, SharedChunkPtr chunk);
 
 
-    size_t firstNonEqualSortColumnsWith(size_t offset, const RowRefWithOwnedChunk & other) const
+    [[nodiscard]] size_t firstNonEqualSortColumnsWith(size_t offset, const RowRefWithOwnedChunk & other) const
     {
         return RowRef::checkEqualsFirstNonEqual(sort_columns->size(), offset, sort_columns->data(), row_num, other.sort_columns->data(), other.row_num);
     }
 
-    bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other) const
+    [[nodiscard]] bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other) const
     {
         return RowRef::checkEquals(sort_columns->size(), sort_columns->data(), row_num,
                                    other.sort_columns->data(), other.row_num);

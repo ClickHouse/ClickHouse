@@ -13,6 +13,7 @@ std::string_view toString(MetricGroupKey key)
         case MetricGroupKey::Left: return "Left";
         case MetricGroupKey::Right: return "Right";
         case MetricGroupKey::HashTable: return "Hash table";
+        case MetricGroupKey::Memory: return "Memory";
         case MetricGroupKey::Buffer: return "Buffer";
         case MetricGroupKey::Spill: return "Spill";
         case MetricGroupKey::Build: return "Build";
@@ -55,6 +56,7 @@ std::string_view toString(MetricKey key)
 
         case MetricKey::UniqueKeys: return "unique keys";
         case MetricKey::Memory: return "memory";
+        case MetricKey::Bytes: return "bytes";
         case MetricKey::Buckets: return "buckets";
         case MetricKey::Rehashes: return "rehashes";
 
@@ -119,6 +121,7 @@ MetricFormat formatOf(MetricKey key)
         case MetricKey::InputBytes:
         case MetricKey::OutputBytes:
         case MetricKey::Memory:
+        case MetricKey::Bytes:
         case MetricKey::LeftSpilled:
         case MetricKey::RightSpilled:
         case MetricKey::Spilled:

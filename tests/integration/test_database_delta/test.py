@@ -263,8 +263,10 @@ def execute_spark_query(node, query_text, retry_on_timeout=False):
     # idempotent or read-only: blindly re-running a multi-statement batch that
     # already committed an earlier statement would fail on "already exists" or
     # duplicate INSERT data. Callers set retry_on_timeout=True only after making
-    # their batch idempotent (CREATE ... IF NOT EXISTS, INSERT OVERWRITE) or for
-    # read-only queries. Only the hang is retried, real errors are re-raised.
+    # their batch idempotent (CREATE ... IF NOT EXISTS, INSERT OVERWRITE, a Delta
+    # txnAppId/txnVersion pair), for read-only queries, or by passing query_text
+    # as a callable that is called once per attempt and returns the batch on
+    # fresh object names. Only the hang is retried, real errors are re-raised.
     if retry_on_timeout:
         max_attempts = SPARK_QUERY_MAX_ATTEMPTS
         attempt_timeout = SPARK_QUERY_RETRY_ATTEMPT_TIMEOUT
@@ -273,7 +275,9 @@ def execute_spark_query(node, query_text, retry_on_timeout=False):
         attempt_timeout = SPARK_QUERY_TIMEOUT
     for attempt in range(1, max_attempts + 1):
         try:
-            result = _run_spark_query_once(node, query_text, attempt_timeout)
+            result = _run_spark_query_once(
+                node, query_text() if callable(query_text) else query_text, attempt_timeout
+            )
             break
         except Exception as e:
             is_timeout = "timed out after" in str(e)
@@ -329,11 +333,15 @@ def execute_spark_query(node, query_text, retry_on_timeout=False):
 
 def execute_multiple_spark_queries(node, queries_list, retry_on_timeout=False):
     # retry_on_timeout must only be set when every statement in queries_list is
-    # idempotent (CREATE ... IF NOT EXISTS, INSERT OVERWRITE) so that a
-    # fresh-JVM retry after a partial commit converges to the same final state.
-    return execute_spark_query(
-        node, ";".join(queries_list), retry_on_timeout=retry_on_timeout
-    )
+    # idempotent (CREATE ... IF NOT EXISTS, INSERT OVERWRITE, a Delta
+    # txnAppId/txnVersion pair) so that a fresh-JVM retry after a partial commit
+    # converges to the same final state, or when queries_list is a callable
+    # returning the statements on fresh object names for each attempt.
+    if callable(queries_list):
+        query_text = lambda: ";".join(queries_list())
+    else:
+        query_text = ";".join(queries_list)
+    return execute_spark_query(node, query_text, retry_on_timeout=retry_on_timeout)
 
 
 # The new Unity implementation must match the legacy one on an all-Delta
@@ -345,13 +353,12 @@ UNITY_SESSION_SETTINGS = {"allow_database_unity_catalog": "1"}
 
 
 @pytest.mark.parametrize("use_v2", USE_V2_VALUES)
-@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
-def test_embedded_database_and_tables(started_cluster, use_delta_kernel, use_v2):
+def test_embedded_database_and_tables(started_cluster, use_v2):
     test_uuid = str(uuid.uuid4()).replace("-", "_")
     node1 = started_cluster.instances["node1"]
     node1.query(f"drop database if exists unity_test_{test_uuid}")
     node1.query(
-        f"create database unity_test_{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}, use_unity_catalog_v2={use_v2}",
+        f"create database unity_test_{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, use_unity_catalog_v2={use_v2}",
         settings=UNITY_SESSION_SETTINGS,
     )
     default_tables = list(
@@ -468,18 +475,25 @@ def test_check_database_unity(started_cluster, use_v2):
 
 @pytest.mark.parametrize("use_v2", USE_V2_VALUES)
 def test_multiple_schemes_tables(started_cluster, use_v2):
-    test_uuid = str(uuid.uuid4()).replace("-", "_")
     node1 = started_cluster.instances["node1"]
+    test_uuid = None
+
     # Combine schema creation, table creation and inserts into a single
-    # Spark invocation to avoid multiple slow JVM startups.
-    queries = []
-    for i in range(10):
-        queries.extend([
-            f"CREATE SCHEMA test_schema{test_uuid}{i}",
-            f"CREATE TABLE test_schema{test_uuid}{i}.test_table{test_uuid}{i} (col1 int, col2 double) using Delta location '/var/lib/clickhouse/user_files/tmp/test_schema{test_uuid}{i}/test_table{test_uuid}{i}'",
-            f"INSERT INTO test_schema{test_uuid}{i}.test_table{test_uuid}{i} VALUES ({i}, {i}.0)",
-        ])
-    execute_multiple_spark_queries(node1, queries)
+    # Spark invocation to avoid multiple slow JVM startups. The statements are
+    # not idempotent, so every attempt creates its objects under a fresh uuid.
+    def make_queries():
+        nonlocal test_uuid
+        test_uuid = str(uuid.uuid4()).replace("-", "_")
+        queries = []
+        for i in range(10):
+            queries.extend([
+                f"CREATE SCHEMA test_schema{test_uuid}{i}",
+                f"CREATE TABLE test_schema{test_uuid}{i}.test_table{test_uuid}{i} (col1 int, col2 double) using Delta location '/var/lib/clickhouse/user_files/tmp/test_schema{test_uuid}{i}/test_table{test_uuid}{i}'",
+                f"INSERT INTO test_schema{test_uuid}{i}.test_table{test_uuid}{i} VALUES ({i}, {i}.0)",
+            ])
+        return queries
+
+    execute_multiple_spark_queries(node1, make_queries, retry_on_timeout=True)
 
     node1.query(
         f"create database multi_schema_test{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, use_unity_catalog_v2={use_v2}",
@@ -496,6 +510,9 @@ def test_multiple_schemes_tables(started_cluster, use_v2):
         )
     )
     print(multi_schema_tables)
+    assert multi_schema_tables == [
+        f"test_schema{test_uuid}{i}.test_table{test_uuid}{i}" for i in range(10)
+    ]
 
     for i, table in enumerate(multi_schema_tables):
         assert node1.query(
@@ -512,15 +529,14 @@ def test_multiple_schemes_tables(started_cluster, use_v2):
 
 
 @pytest.mark.parametrize("use_v2", USE_V2_VALUES)
-@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
-def test_complex_table_schema(started_cluster, use_delta_kernel, use_v2):
+def test_complex_table_schema(started_cluster, use_v2):
     node1 = started_cluster.instances["node1"]
     schema_name = (
-        f"schema_with_complex_tables_{use_delta_kernel}_{uuid.uuid4()}".replace(
+        f"schema_with_complex_tables_{uuid.uuid4()}".replace(
             "-", "_"
         )
     )
-    table_name = f"complex_table_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
+    table_name = f"complex_table_{uuid.uuid4()}".replace("-", "_")
     schema = "event_date DATE, event_time TIMESTAMP, hits ARRAY<integer>, ids MAP<int, string>, really_complex STRUCT<f1:int,f2:string>"
     create_query = f"CREATE TABLE IF NOT EXISTS {schema_name}.{table_name} ({schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/complex_schema/{table_name}'"
     insert_query = f"INSERT OVERWRITE {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), array(42, 123, 77), map(7, 'v7', 5, 'v5'), named_struct(\\\"f1\\\", 34, \\\"f2\\\", 'hello')"
@@ -536,7 +552,7 @@ def test_complex_table_schema(started_cluster, use_delta_kernel, use_v2):
 drop database if exists complex_schema;
 create database complex_schema
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
-settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}, use_unity_catalog_v2={use_v2}
+settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, use_unity_catalog_v2={use_v2}
         """,
         settings=UNITY_SESSION_SETTINGS,
     )
@@ -558,9 +574,6 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
     complex_data = (
         node1.query(
             f"SELECT * FROM complex_schema.`{schema_name}.{table_name}`",
-            settings={
-                "allow_experimental_delta_kernel_rs": use_delta_kernel
-            },
         )
         .strip()
         .split("\t")
@@ -572,31 +585,31 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
     assert complex_data[3] == "{7:'v7',5:'v5'}"
     assert complex_data[4] == "(34,'hello')"
 
-    if use_delta_kernel == "1":
-        assert node1.contains_in_log("DeltaLakeMetadata: Initializing snapshot")
+    assert node1.contains_in_log("DeltaLakeMetadata: Initializing snapshot")
 
 
 @pytest.mark.parametrize("use_v2", USE_V2_VALUES)
-@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
-def test_timestamp_ntz(started_cluster, use_delta_kernel, use_v2):
+def test_timestamp_ntz(started_cluster, use_v2):
     table_name_src = f"ntz_schema_{uuid.uuid4()}".replace("-", "_")
     node1 = started_cluster.instances["node1"]
     node1.query(f"drop database if exists {table_name_src}")
 
     schema_name = (
-        f"schema_with_timetstamp_ntz_{use_delta_kernel}_{uuid.uuid4()}".replace(
+        f"schema_with_timetstamp_ntz_{uuid.uuid4()}".replace(
             "-", "_"
         )
     )
-    table_name = f"table_with_timestamp_{use_delta_kernel}_{uuid.uuid4()}".replace(
+    table_name = f"table_with_timestamp_{uuid.uuid4()}".replace(
         "-", "_"
     )
     schema = "event_date DATE, event_time TIMESTAMP, event_time_ntz TIMESTAMP_NTZ"
-    create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/{table_name_src}/{table_name}'"
-    insert_query = f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), to_timestamp_ntz('2024-10-01 00:12:00')"
+    create_query = f"CREATE TABLE IF NOT EXISTS {schema_name}.{table_name} ({schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/{table_name_src}/{table_name}'"
+    insert_query = f"INSERT OVERWRITE {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), to_timestamp_ntz('2024-10-01 00:12:00')"
+    # Every statement is idempotent, so the retry replay converges to the same single row.
     execute_multiple_spark_queries(
         node1,
-        [f"CREATE SCHEMA {schema_name}", create_query, insert_query],
+        [f"CREATE SCHEMA IF NOT EXISTS {schema_name}", create_query, insert_query],
+        retry_on_timeout=True,
     )
 
     node1.query(
@@ -604,7 +617,7 @@ def test_timestamp_ntz(started_cluster, use_delta_kernel, use_v2):
 drop database if exists {table_name};
 create database {table_name_src}
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
-settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}, use_unity_catalog_v2={use_v2}
+settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, use_unity_catalog_v2={use_v2}
         """,
         settings=UNITY_SESSION_SETTINGS,
     )
@@ -628,7 +641,6 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
             ntz_data = (
                 node1.query(
                     f"SELECT * FROM {table_name_src}.`{schema_name}.{table_name}`",
-                    settings={"allow_experimental_delta_kernel_rs": use_delta_kernel},
                 )
                 .strip()
                 .split("\t")
@@ -683,8 +695,7 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=True
     # This query will fail if bug exists
     print(node1.query(f"SHOW TABLES FROM {schema_name}"))
 
-@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
-def test_view_with_void(started_cluster, use_delta_kernel):
+def test_view_with_void(started_cluster):
     # 25/08/20 16:45:23 WARN ObjectStore: Version information not found in metastore. hive.metastore.schema.verification is not enabled so recording the schema version 2.3.0
     # 25/08/20 16:45:23 WARN ObjectStore: setMetaStoreSchemaVersion called but recording version is disabled: version = 2.3.0, comment = Set by MetaStore UNKNOWN@172.18.0.2
     # 25/08/20 16:45:24 WARN ObjectStore: Failed to get database global_temp, returning NoSuchObjectException
@@ -695,12 +706,12 @@ def test_view_with_void(started_cluster, use_delta_kernel):
     node1.query(f"drop database if exists {table_name_src}")
 
     schema_name = (
-        f"schema_with_timetstamp_ntz_{use_delta_kernel}_{uuid.uuid4()}".replace(
+        f"schema_with_timetstamp_ntz_{uuid.uuid4()}".replace(
             "-", "_"
         )
     )
     execute_spark_query(node1, f"CREATE SCHEMA {schema_name}")
-    table_name = f"table_with_timestamp_{use_delta_kernel}_{uuid.uuid4()}".replace(
+    table_name = f"table_with_timestamp_{uuid.uuid4()}".replace(
         "-", "_"
     )
     view_name = f"test_view_{table_name}"
@@ -717,7 +728,7 @@ def test_view_with_void(started_cluster, use_delta_kernel):
 drop database if exists {table_name};
 create database {table_name_src}
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
-settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
+settings warehouse = 'unity', catalog_type='unity', vended_credentials=false
         """,
         settings={"allow_database_unity_catalog": "1"},
     )
@@ -808,8 +819,17 @@ def test_snapshot_version(started_cluster, use_v2):
 
     schema_name = f"schema_{table_name}"
 
+    def idempotent_insert(txn_version, insert_query):
+        # Delta skips a write whose txnAppId/txnVersion pair is already in the log,
+        # so a retry after a hang cannot add a commit to the history asserted below.
+        return [
+            f"SET spark.databricks.delta.write.txnAppId={table_name}",
+            f"SET spark.databricks.delta.write.txnVersion={txn_version}",
+            insert_query,
+        ]
+
     schema = "event_date DATE, data STRING"
-    create_query = f"""CREATE TABLE {schema_name}.{table_name} ({schema})
+    create_query = f"""CREATE TABLE IF NOT EXISTS {schema_name}.{table_name} ({schema})
 USING Delta location '{table_path}'
 TBLPROPERTIES (
   delta.enableChangeDataFeed = true
@@ -818,11 +838,12 @@ TBLPROPERTIES (
     # Spark invocation to avoid multiple slow JVM startups.
     execute_multiple_spark_queries(
         node1,
-        [
-            f"CREATE SCHEMA {schema_name}",
-            create_query,
+        [f"CREATE SCHEMA IF NOT EXISTS {schema_name}", create_query]
+        + idempotent_insert(
+            1,
             f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), 'hello'",
-        ],
+        ),
+        retry_on_timeout=True,
     )
 
     # Create table with columns `event_date`, `data`
@@ -851,9 +872,13 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, us
     assert data_v1[2] == "1"
 
     # Commit new data at version 2
-    execute_spark_query(
+    execute_multiple_spark_queries(
         node1,
-        f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-02', 'yyyy-MM-dd'), 'world'",
+        idempotent_insert(
+            2,
+            f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-02', 'yyyy-MM-dd'), 'world'",
+        ),
+        retry_on_timeout=True,
     )
 
     # Check what commit versions we have now
@@ -894,10 +919,16 @@ FROM {db_name}.`{schema_name}.{table_name}`
     assert data_v2[2] == "2"
 
     # Commit new data at version 3
-    execute_spark_query(
+    execute_multiple_spark_queries(
         node1,
-        f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-03', 'yyyy-MM-dd'), 'from', 'Pepe' as name",
+        idempotent_insert(
+            3,
+            f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-03', 'yyyy-MM-dd'), 'from', 'Pepe' as name",
+        ),
+        retry_on_timeout=True,
     )
+
+    assert get_table_versions() == ["0", "1", "2", "3"]
 
     # Validate data between versions 1 and 2
     data_raw = node1.query(
@@ -982,9 +1013,8 @@ FROM {db_name}.`{schema_name}.{table_name}`
 
 
 @pytest.mark.parametrize("use_v2", USE_V2_VALUES)
-@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_varchar_char_types_via_unity_catalog(
-    started_cluster, use_delta_kernel, use_v2
+    started_cluster, use_v2
 ):
     """
     Regression test for: Unsupported DeltaLake type: varchar(n)
@@ -1001,9 +1031,9 @@ def test_varchar_char_types_via_unity_catalog(
     """
     node1 = started_cluster.instances["node1"]
 
-    schema_name = f"varchar_schema_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
-    table_name = f"varchar_table_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
-    db_name = f"uc_varchar_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
+    schema_name = f"varchar_schema_{uuid.uuid4()}".replace("-", "_")
+    table_name = f"varchar_table_{uuid.uuid4()}".replace("-", "_")
+    db_name = f"uc_varchar_{uuid.uuid4()}".replace("-", "_")
 
     create_query = (
         f"CREATE TABLE IF NOT EXISTS {schema_name}.{table_name} "
@@ -1026,7 +1056,7 @@ DROP DATABASE IF EXISTS {db_name};
 CREATE DATABASE {db_name}
 ENGINE DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
 SETTINGS warehouse = 'unity', catalog_type = 'unity', vended_credentials = false,
-         allow_experimental_delta_kernel_rs = {use_delta_kernel}, use_unity_catalog_v2 = {use_v2}
+         use_unity_catalog_v2 = {use_v2}
         """,
         settings=UNITY_SESSION_SETTINGS,
     )
@@ -1054,7 +1084,6 @@ SETTINGS warehouse = 'unity', catalog_type = 'unity', vended_credentials = false
     row = (
         node1.query(
             f"SELECT id, name, code FROM {db_name}.`{schema_name}.{table_name}`",
-            settings={"allow_experimental_delta_kernel_rs": use_delta_kernel},
         )
         .strip()
     )
@@ -1664,57 +1693,3 @@ def test_register_existing_delta_table_rejects_char_varchar(started_cluster, use
             f"DROP DATABASE IF EXISTS {db_name}",
             settings={"allow_database_unity_catalog": 1},
         )
-
-
-@pytest.mark.parametrize("use_v2", USE_V2_VALUES)
-def test_register_existing_delta_table_requires_kernel(started_cluster, use_v2):
-    """
-    Attaching an existing Delta table into a Unity `DataLakeCatalog` database reads its schema via the kernel
-    to register it, so with `allow_experimental_delta_kernel_rs = 0` the CREATE must fail explicitly rather
-    than report success while registering nothing in Unity (regression for the silent no-op in
-    `DeltaLakeMetadata::createInitial`).
-    """
-    node1 = started_cluster.instances["node1"]
-    test_uuid = str(uuid.uuid4()).replace("-", "_")
-    db_name = f"unity_nokernel_{test_uuid}"
-    schema_name = f"nokernel_schema_{test_uuid}"
-    table_name = f"nokernel_table_{test_uuid}"
-    creator = f"creator_nokernel_{test_uuid}"
-    location = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}"
-
-    execute_multiple_spark_queries(
-        node1, [f"CREATE SCHEMA IF NOT EXISTS {schema_name}"], retry_on_timeout=True
-    )
-    node1.query(
-        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
-        "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
-        f"allow_experimental_delta_kernel_rs=1, use_unity_catalog_v2={use_v2}",
-        settings={"allow_database_unity_catalog": "1"},
-    )
-    try:
-        # An existing Delta table on storage, not registered in Unity.
-        node1.query(
-            f"CREATE TABLE default.{creator} (id Int32) ENGINE = DeltaLakeLocal('{location}')",
-            settings={
-                "allow_experimental_delta_kernel_rs": 1,
-                "allow_delta_lake_writes": 1,
-                "allow_delta_lake_create_table": 1,
-            },
-        )
-
-        # Onboarding it into the catalog with the kernel disabled must fail explicitly. The create-table
-        # setting is enabled so the failure is the kernel requirement, not the experimental-feature gate.
-        error = node1.query_and_get_error(
-            f"CREATE TABLE {db_name}.`{schema_name}.{table_name}` ENGINE = DeltaLakeLocal('{location}')",
-            settings={
-                "allow_experimental_delta_kernel_rs": 0,
-                "allow_delta_lake_create_table": 1,
-            },
-        )
-        assert "allow_delta_kernel_rs" in error, error
-    finally:
-        node1.query(
-            f"DROP DATABASE IF EXISTS {db_name}",
-            settings={"allow_database_unity_catalog": 1},
-        )
-        node1.query(f"DROP TABLE IF EXISTS default.{creator}")
