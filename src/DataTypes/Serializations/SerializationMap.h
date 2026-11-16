@@ -42,6 +42,8 @@ public:
         const SerializationPtr & nested_serialization_,
         MergeTreeMapSerializationVersion serialization_version_);
 
+    bool isColumnCompatible(const IColumn & column) const override { return typeid(column) == typeid(ColumnMap); }
+
     bool supportsPooling() const override { return nested_serialization->supportsPooling(); }
 
     /// Whether a resolved subcolumn is really the `.keys` / `.values` array, which its name alone

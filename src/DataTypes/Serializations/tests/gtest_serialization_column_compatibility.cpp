@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnSparse.h>
@@ -13,9 +15,12 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <DataTypes/Serializations/SerializationDynamicElement.h>
+#include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationObject.h>
+#include <DataTypes/Serializations/SerializationQBit.h>
+#include <DataTypes/Serializations/SerializationSubObject.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
@@ -180,6 +185,41 @@ TEST(SerializationIsColumnCompatible, DynamicElementNullMapRequiresColumnUInt8)
 
 /// A plain tuple of the type's columns would reach SerializationSparse's unchecked cast
 /// when the element is stored sparsely.
+TEST(SerializationIsColumnCompatible, MapRequiresColumnMap)
+{
+    const auto type = DataTypeFactory::instance().get("Map(String, UInt64)");
+    const auto serialization = type->getDefaultSerialization();
+    ASSERT_TRUE(dynamic_cast<const SerializationMap *>(serialization.get()) != nullptr);
+
+    EXPECT_TRUE(serialization->isColumnCompatible(*type->createColumn()));
+    /// A constant column of the same SQL type is still the wrong destination.
+    auto default_column = type->createColumn();
+    type->insertDefaultInto(*default_column);
+    EXPECT_FALSE(serialization->isColumnCompatible(*ColumnConst::create(std::move(default_column), 1)));
+    EXPECT_FALSE(serialization->isColumnCompatible(*ColumnString::create()));
+}
+
+TEST(SerializationIsColumnCompatible, QBitRequiresColumnQBit)
+{
+    const auto type = DataTypeFactory::instance().get("QBit(Float32, 2)");
+    const auto serialization = type->getDefaultSerialization();
+    ASSERT_TRUE(dynamic_cast<const SerializationQBit *>(serialization.get()) != nullptr);
+
+    EXPECT_TRUE(serialization->isColumnCompatible(*type->createColumn()));
+    EXPECT_FALSE(serialization->isColumnCompatible(*ColumnString::create()));
+}
+
+TEST(SerializationIsColumnCompatible, SubObjectRequiresColumnObject)
+{
+    const auto dynamic_type = DataTypeFactory::instance().get("Dynamic");
+    const auto serialization = SerializationSubObject::create(
+        "a", {}, dynamic_type, dynamic_type->getDefaultSerialization(), nullptr);
+
+    const auto json_type = DataTypeFactory::instance().get("JSON(a.b UInt32)");
+    EXPECT_TRUE(serialization->isColumnCompatible(*json_type->createColumn()));
+    EXPECT_FALSE(serialization->isColumnCompatible(*ColumnString::create()));
+}
+
 TEST(SerializationIsColumnCompatible, TupleChecksNestedElements)
 {
     SerializationTuple::ElementSerializations element_serializations;

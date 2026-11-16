@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnObject.h>
 #include <DataTypes/Serializations/SerializationObjectTypedSharedData.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 
@@ -26,6 +27,8 @@ private:
 public:
     static UInt128 getHash(const String & paths_prefix_, const SharedTypedPaths & paths_, size_t first_path_index_, size_t num_paths_);
     static SerializationPtr create(const String & paths_prefix_, SharedTypedPaths paths_, size_t first_path_index_, size_t num_paths_);
+
+    bool isColumnCompatible(const IColumn & column) const override { return typeid(column) == typeid(ColumnObject); }
 
     size_t allocatedBytes() const override;
     bool supportsPooling() const override;

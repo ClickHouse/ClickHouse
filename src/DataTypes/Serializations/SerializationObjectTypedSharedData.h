@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnObject.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <Common/Exception.h>
@@ -49,6 +50,8 @@ public:
 
     static UInt128 getHash(const SharedTypedPaths & paths_);
     static SerializationPtr create(SharedTypedPaths paths_);
+
+    bool isColumnCompatible(const IColumn & column) const override { return typeid(column) == typeid(ColumnObject); }
 
     size_t allocatedBytes() const override;
     bool supportsPooling() const override;
