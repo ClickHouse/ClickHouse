@@ -296,11 +296,11 @@ protected:
     /// of an owner which was considered dead, so such an owner must not touch them.
     void addProcessingNodeRemovalRequest(Coordination::Requests & requests) const;
     /// Whether the multi request failed because the lock owner was considered dead.
-    bool isLockOwnerDead(
+    [[nodiscard]] bool isLockOwnerDead(
         Coordination::Error code,
         const Coordination::Requests & requests,
         const Coordination::Responses & responses) const;
-    bool isLockOwnerAlive(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client) const;
+    [[nodiscard]] bool isLockOwnerAlive(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client) const;
 
     static NodeMetadata createNodeMetadata(const std::string & path, const std::string & exception = {}, size_t retries = 0);
 
