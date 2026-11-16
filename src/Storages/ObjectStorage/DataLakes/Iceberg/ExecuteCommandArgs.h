@@ -49,9 +49,9 @@ public:
     class Result
     {
     public:
-        bool has(const String & name) const { return values.contains(name); }
+        [[nodiscard]] bool has(const String & name) const { return values.contains(name); }
 
-        const Field & get(const String & name) const
+        [[nodiscard]] const Field & get(const String & name) const
         {
             auto it = values.find(name);
             if (it == values.end())
@@ -60,11 +60,11 @@ public:
         }
 
         template <typename T>
-        T getAs(const String & name) const { return get(name).safeGet<T>(); }
+        [[nodiscard]] T getAs(const String & name) const { return get(name).safeGet<T>(); }
 
         void set(const String & name, Field value) { values[name] = std::move(value); }
 
-        const std::unordered_map<String, Field> & all() const { return values; }
+        [[nodiscard]] const std::unordered_map<String, Field> & all() const { return values; }
 
     private:
         friend class ExecuteCommandArgs;
@@ -115,7 +115,7 @@ public:
     }
 
     /// Parse the AST argument list.  `args` may be nullptr (no arguments).
-    Result parse(const ASTPtr & args) const
+    [[nodiscard]] Result parse(const ASTPtr & args) const
     {
         Result result;
         bool seen_named = false;

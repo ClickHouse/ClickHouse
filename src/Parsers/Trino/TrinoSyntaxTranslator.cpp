@@ -108,7 +108,7 @@ public:
         }
     }
 
-    const JoinedUnnestAliases & getJoinedUnnestAliases() const { return joined_unnest_aliases; }
+    [[nodiscard]] const JoinedUnnestAliases & getJoinedUnnestAliases() const { return joined_unnest_aliases; }
 
     std::optional<String> run()
     {
@@ -168,18 +168,18 @@ private:
             hint);
     }
 
-    bool isKeywordAt(size_t idx, std::string_view keyword) const
+    [[nodiscard]] bool isKeywordAt(size_t idx, std::string_view keyword) const
     {
         return idx < tokens.size() && tokenIsKeyword(tokens[idx], keyword);
     }
 
-    bool isTypeAt(size_t idx, TokenType type) const
+    [[nodiscard]] bool isTypeAt(size_t idx, TokenType type) const
     {
         return idx < tokens.size() && tokens[idx].type == type;
     }
 
     /// Returns the index of the round bracket that closes the one at open_idx, or tokens.size() if unbalanced.
-    size_t findMatchingParen(size_t open_idx) const
+    [[nodiscard]] size_t findMatchingParen(size_t open_idx) const
     {
         chassert(tokens[open_idx].type == TokenType::OpeningRoundBracket);
         size_t depth = 0;
@@ -201,7 +201,7 @@ private:
     /// argument of a function call) is syntactically recognizable as VARBINARY:
     /// a call to a binary-producing function, a CAST/TRY_CAST to VARBINARY, or
     /// a byte-preserving string function over such an expression.
-    bool isBinaryExpressionAt(size_t idx) const
+    [[nodiscard]] bool isBinaryExpressionAt(size_t idx) const
     {
         while (idx < tokens.size() && tokens[idx].type == TokenType::OpeningRoundBracket)
             ++idx;
@@ -302,7 +302,7 @@ private:
     }
 
     /// Splits the token range (typically the inside of parentheses) at top-level commas.
-    std::vector<std::pair<size_t, size_t>> splitTopLevelCommas(size_t begin_idx, size_t end_idx) const
+    [[nodiscard]] std::vector<std::pair<size_t, size_t>> splitTopLevelCommas(size_t begin_idx, size_t end_idx) const
     {
         std::vector<std::pair<size_t, size_t>> parts;
         size_t depth = 0;
@@ -884,7 +884,7 @@ private:
 
     /// True for a token that can start a query body: a SELECT, a VALUES list or
     /// the `TABLE t` shorthand (rewritten into a SELECT later).
-    bool isQueryBodyStart(size_t idx) const
+    [[nodiscard]] bool isQueryBodyStart(size_t idx) const
     {
         return isKeywordAt(idx, "SELECT") || isKeywordAt(idx, "VALUES") || isKeywordAt(idx, "TABLE");
     }
@@ -892,7 +892,7 @@ private:
     /// Finds the first query body at the top nesting level at or after `from`,
     /// so that a wrapper such as `EXPLAIN ...` or `INSERT INTO t (columns)` is
     /// skipped. Returns `tokens.size()` when there is none.
-    size_t findQueryBodyStart(size_t from) const
+    [[nodiscard]] size_t findQueryBodyStart(size_t from) const
     {
         size_t depth = 0;
         for (size_t j = from; j < tokens.size(); ++j)
@@ -1002,7 +1002,7 @@ private:
     /// Finds where a BETWEEN bound expression ends: the next AND/OR, comma,
     /// unbalanced closing bracket or clause keyword at the top nesting level.
     /// CASE ... END counts as nesting (it may contain top-level AND).
-    size_t findBetweenBoundEnd(size_t begin_idx, size_t end_idx) const
+    [[nodiscard]] size_t findBetweenBoundEnd(size_t begin_idx, size_t end_idx) const
     {
         size_t depth = 0;
         for (size_t j = begin_idx; j < end_idx; ++j)
@@ -1063,7 +1063,7 @@ private:
 
     /// Whether the token at `idx` begins a primary expression (as opposed to
     /// being function-call arguments or a subscript), judged by the preceding token.
-    bool isExpressionStartContext(size_t idx) const
+    [[nodiscard]] bool isExpressionStartContext(size_t idx) const
     {
         if (idx == 0)
             return true;
@@ -1100,7 +1100,7 @@ private:
 
     /// Whether a dot at position `idx` starts a numeric literal (`.06`) rather
     /// than a tuple element access (`t.1`), judged by the preceding token.
-    bool isLeadingDotNumberContext(size_t idx) const
+    [[nodiscard]] bool isLeadingDotNumberContext(size_t idx) const
     {
         if (idx == 0)
             return true;
