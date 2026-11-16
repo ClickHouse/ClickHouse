@@ -20,7 +20,7 @@ APPLY_FOR_NON_ALLOCATING_PROFILE_EVENTS(M)
 class NonAllocatingEvent
 {
 public:
-    Event value() const noexcept
+    [[nodiscard]] Event value() const noexcept
     {
         return stored;
     }

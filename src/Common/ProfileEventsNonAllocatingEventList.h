@@ -21,6 +21,9 @@
     M(HTTPConnectionsReset) \
     M(HTTPConnectionsPreserved) \
     M(HTTPConnectionsExpired) \
+    M(AmberConnectionsReset) \
+    M(AmberConnectionsPreserved) \
+    M(AmberConnectionsExpired) \
     M(TextIndexLazyPackedBlocksDecoded) \
     M(TextIndexLazyAdvanceCount) \
     M(TextIndexLazySegmentsPrepared) \
