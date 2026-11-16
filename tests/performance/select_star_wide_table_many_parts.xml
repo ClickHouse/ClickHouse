@@ -1,0 +1,112 @@
+<test iceberg="0">
+    <!-- Reading a part looked each read column up in a scan of the part's column list. -->
+    <settings>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+    <substitutions>
+        <substitution>
+            <name>i</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+                <value>2</value>
+                <value>3</value>
+                <value>4</value>
+                <value>5</value>
+                <value>6</value>
+                <value>7</value>
+                <value>8</value>
+                <value>9</value>
+                <value>10</value>
+                <value>11</value>
+                <value>12</value>
+                <value>13</value>
+                <value>14</value>
+                <value>15</value>
+                <value>16</value>
+                <value>17</value>
+                <value>18</value>
+                <value>19</value>
+                <value>20</value>
+                <value>21</value>
+                <value>22</value>
+                <value>23</value>
+                <value>24</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE select_star_wide_many_parts (k UInt64, ts DateTime) ENGINE = MergeTree PARTITION BY toDate(ts) ORDER BY (k, ts)</create_query>
+    <create_query>ALTER TABLE select_star_wide_many_parts
+        ADD COLUMN c{i}_0 String,
+        ADD COLUMN c{i}_1 UInt32,
+        ADD COLUMN c{i}_2 UInt32,
+        ADD COLUMN c{i}_3 UInt32,
+        ADD COLUMN c{i}_4 String,
+        ADD COLUMN c{i}_5 UInt32,
+        ADD COLUMN c{i}_6 UInt32,
+        ADD COLUMN c{i}_7 UInt32,
+        ADD COLUMN c{i}_8 String,
+        ADD COLUMN c{i}_9 UInt32,
+        ADD COLUMN c{i}_10 UInt32,
+        ADD COLUMN c{i}_11 UInt32,
+        ADD COLUMN c{i}_12 String,
+        ADD COLUMN c{i}_13 UInt32,
+        ADD COLUMN c{i}_14 UInt32,
+        ADD COLUMN c{i}_15 UInt32,
+        ADD COLUMN c{i}_16 String,
+        ADD COLUMN c{i}_17 UInt32,
+        ADD COLUMN c{i}_18 UInt32,
+        ADD COLUMN c{i}_19 UInt32,
+        ADD COLUMN c{i}_20 String,
+        ADD COLUMN c{i}_21 UInt32,
+        ADD COLUMN c{i}_22 UInt32,
+        ADD COLUMN c{i}_23 UInt32,
+        ADD COLUMN c{i}_24 String,
+        ADD COLUMN c{i}_25 UInt32,
+        ADD COLUMN c{i}_26 UInt32,
+        ADD COLUMN c{i}_27 UInt32,
+        ADD COLUMN c{i}_28 String,
+        ADD COLUMN c{i}_29 UInt32,
+        ADD COLUMN c{i}_30 UInt32,
+        ADD COLUMN c{i}_31 UInt32,
+        ADD COLUMN c{i}_32 String,
+        ADD COLUMN c{i}_33 UInt32,
+        ADD COLUMN c{i}_34 UInt32,
+        ADD COLUMN c{i}_35 UInt32,
+        ADD COLUMN c{i}_36 String,
+        ADD COLUMN c{i}_37 UInt32,
+        ADD COLUMN c{i}_38 UInt32,
+        ADD COLUMN c{i}_39 UInt32,
+        ADD COLUMN c{i}_40 String,
+        ADD COLUMN c{i}_41 UInt32,
+        ADD COLUMN c{i}_42 UInt32,
+        ADD COLUMN c{i}_43 UInt32,
+        ADD COLUMN c{i}_44 String,
+        ADD COLUMN c{i}_45 UInt32,
+        ADD COLUMN c{i}_46 UInt32,
+        ADD COLUMN c{i}_47 UInt32,
+        ADD COLUMN c{i}_48 String,
+        ADD COLUMN c{i}_49 UInt32,
+        ADD COLUMN c{i}_50 UInt32,
+        ADD COLUMN c{i}_51 UInt32,
+        ADD COLUMN c{i}_52 String,
+        ADD COLUMN c{i}_53 UInt32,
+        ADD COLUMN c{i}_54 UInt32,
+        ADD COLUMN c{i}_55 UInt32,
+        ADD COLUMN c{i}_56 String,
+        ADD COLUMN c{i}_57 UInt32,
+        ADD COLUMN c{i}_58 UInt32,
+        ADD COLUMN c{i}_59 UInt32,
+        ADD COLUMN c{i}_60 String,
+        ADD COLUMN c{i}_61 UInt32,
+        ADD COLUMN c{i}_62 UInt32,
+        ADD COLUMN c{i}_63 UInt32</create_query>
+
+    <!-- 25 daily partitions of 1000 rows, one part each; every part spans the whole range of `k`. -->
+    <fill_query>INSERT INTO select_star_wide_many_parts (k, ts) SELECT (number % 1000) * 25 + intDiv(number, 1000), toDateTime('2024-01-01 12:00:00') + intDiv(number, 1000) * 86400 FROM numbers(25000)</fill_query>
+
+    <query>SELECT * FROM select_star_wide_many_parts WHERE k = 12345 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS select_star_wide_many_parts</drop_query>
+</test>

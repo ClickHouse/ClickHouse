@@ -26,8 +26,9 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_aj_index ARRA
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_aj_index WHERE arrayJoin(tags) = 'tag_42' AND id > 40 SETTINGS query_plan_lower_array_join_function = 1) WHERE explain ILIKE '%Granules: 2/13%';
 SELECT count() FROM t_aj_index ARRAY JOIN tags AS t WHERE t IN ('tag_42') AND id > 40;
 
--- LEFT pads empty arrays with defaults, so no index
+-- LEFT pads empty arrays with defaults, so the index works only when the filter rejects the default
 SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_aj_index LEFT ARRAY JOIN tags AS t WHERE t IN ('tag_42')) WHERE explain ILIKE '%Name: idx_tags%';
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_aj_index LEFT ARRAY JOIN tags AS t WHERE t IN ('tag_42', '')) WHERE explain ILIKE '%Name: idx_tags%';
 
 DROP TABLE t_aj_index;
 

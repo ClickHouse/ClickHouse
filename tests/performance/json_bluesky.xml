@@ -1,0 +1,103 @@
+<!--
+    `JSON`, `Dynamic` and `Variant` at scale: the Bluesky events of JSONBench (https://github.com/ClickHouse/JSONBench),
+    10 files, 9,999,994 rows, in a `JSON` column with the default `max_dynamic_paths` (about 220 paths, all of them
+    dynamic subcolumns). Queries: JSONBench Q1 with Q3-Q5 in one statement (8-35 ms each); string paths read as typed
+    subcolumns and through a cast of the whole `Dynamic`; type drift (`commit.record.createdAt` is a `DateTime64(9)` or a
+    `String`); `Array(JSON)` rebuilt; whole objects; JSONBench Q2 over the typed control table `bluesky_typed`;
+    `Variant` subcolumns and whole values in `bluesky_variant` (`commit.record.subject`: a DID string, a (cid, uri) object
+    or absent; ordered by time, so the types interleave in every granule).
+    Layout: `bluesky` one part per file, merges stopped before the inserts (`OPTIMIZE FINAL` of this table runs at about
+    12 K rows/s, a single 10 M-row insert block exceeds 36 GiB); the other two tables one part each. A few source documents
+    are cut at 65535 bytes and skipped. `session_timezone` pins the formatted dates.
+    The setup runs every timed query once; the expected values come from the source files parsed by `clickhouse local`
+    (no MergeTree; `JSONExtract` where the `JSON` type is not needed), not from these tables.
+    Per server and invocation: 1.3 GB read from public S3; about 3.5 GiB written on local disk (10 parts of `bluesky`, the
+    typed and `Variant` tables twice each); no job-local S3.
+    JSONBench Q2 on `bluesky` and the sub-object `data.^commit.record.subject` are no longer timed: noisy in A/A runs.
+-->
+<test run_all_queries="1" max_query_seconds="300">
+
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+    <session_timezone>UTC</session_timezone>
+</settings>
+
+<substitutions>
+    <substitution>
+        <name>file</name>
+        <values>
+            <value>0001</value>
+            <value>0002</value>
+            <value>0003</value>
+            <value>0004</value>
+            <value>0005</value>
+            <value>0006</value>
+            <value>0007</value>
+            <value>0008</value>
+            <value>0009</value>
+            <value>0010</value>
+        </values>
+    </substitution>
+</substitutions>
+
+<create_query>CREATE TABLE bluesky (data JSON(kind LowCardinality(String), commit.operation LowCardinality(String), commit.collection LowCardinality(String), did String, time_us UInt64) CODEC(ZSTD(1))) ORDER BY (data.kind, data.commit.operation, data.commit.collection, data.did, fromUnixTimestamp64Micro(data.time_us))</create_query>
+<create_query>CREATE TABLE bluesky_typed (kind LowCardinality(String), operation LowCardinality(String), collection LowCardinality(String), did String, time_us UInt64) ORDER BY (kind, operation, collection, did, fromUnixTimestamp64Micro(time_us))</create_query>
+<create_query>CREATE TABLE bluesky_variant (time_us UInt64, subject Variant(String, Tuple(cid String, uri String))) ORDER BY time_us</create_query>
+
+<fill_query>SYSTEM STOP MERGES bluesky</fill_query>
+<fill_query>INSERT INTO bluesky SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_{file}.json.gz', NOSIGN, JSONAsObject) SETTINGS input_format_allow_errors_num = 10, max_insert_threads = 1, min_insert_block_size_rows = 2000000, min_insert_block_size_bytes = 0</fill_query>
+<fill_query>SELECT throwIf(count() != 9999994) FROM bluesky</fill_query>
+<fill_query>SELECT throwIf(count() != 10 OR min(rows) != 999998) FROM system.parts WHERE database = 'default' AND table = 'bluesky' AND active</fill_query>
+<fill_query>SELECT throwIf(countIf(length(JSONSharedDataPaths(data)) != 0) != 0) FROM bluesky</fill_query>
+
+<fill_query>INSERT INTO bluesky_typed SELECT data.kind, data.commit.operation, data.commit.collection, data.did, data.time_us FROM bluesky</fill_query>
+<fill_query>OPTIMIZE TABLE bluesky_typed FINAL SETTINGS optimize_throw_if_noop = 1, optimize_skip_merged_partitions = 1</fill_query>
+<fill_query>SYSTEM STOP MERGES bluesky_typed</fill_query>
+<fill_query>SELECT throwIf(count() != 9999994) FROM bluesky_typed</fill_query>
+
+<fill_query>SELECT throwIf(countIf((data.commit.record.subject.uri.:String IS NULL) != (data.commit.record.subject.cid.:String IS NULL) OR (data.commit.record.subject.uri.:String IS NOT NULL AND data.commit.record.subject.:String IS NOT NULL)) != 0) FROM bluesky</fill_query>
+<fill_query>INSERT INTO bluesky_variant SELECT data.time_us, if(data.commit.record.subject.uri.:String IS NULL, data.commit.record.subject.:String::Variant(String, Tuple(cid String, uri String)), (assumeNotNull(data.commit.record.subject.cid.:String), assumeNotNull(data.commit.record.subject.uri.:String))::Tuple(cid String, uri String)::Variant(String, Tuple(cid String, uri String))) FROM bluesky</fill_query>
+<fill_query>OPTIMIZE TABLE bluesky_variant FINAL SETTINGS optimize_throw_if_noop = 1, optimize_skip_merged_partitions = 1</fill_query>
+<fill_query>SYSTEM STOP MERGES bluesky_variant</fill_query>
+<fill_query>SELECT throwIf(count() != 1) FROM system.parts WHERE database = 'default' AND table = 'bluesky_variant' AND active</fill_query>
+<fill_query>SELECT throwIf((count(), sum(time_us), sum(cityHash64(time_us, toString(variantType(subject)), ifNull(subject.String, ''), ifNull(variantElement(subject, 'Tuple(cid String, uri String)').cid, ''), ifNull(variantElement(subject, 'Tuple(cid String, uri String)').uri, '')))) != (9999994, 601606937489845242, 11518312640090075397)) FROM bluesky_variant</fill_query>
+
+<fill_query>
+    SELECT throwIf(arraySort(groupArray(h)) != arraySort([4794833843659870208, 15453238919632120789, 9140253772579193942, 12518719394816361126])) FROM (
+    SELECT sum(cityHash64(*)) AS h FROM (SELECT data.commit.collection AS event, count() AS count FROM bluesky GROUP BY event ORDER BY count DESC)
+    UNION ALL SELECT sum(cityHash64(*)) FROM (SELECT data.commit.collection AS event, toHour(fromUnixTimestamp64Micro(data.time_us)) as hour_of_day, count() AS count FROM bluesky WHERE data.kind = 'commit' AND data.commit.operation = 'create' AND data.commit.collection in ['app.bsky.feed.post', 'app.bsky.feed.repost', 'app.bsky.feed.like'] GROUP BY event, hour_of_day ORDER BY hour_of_day, event)
+    UNION ALL SELECT sum(cityHash64(*)) FROM (SELECT data.did::String as user_id, min(fromUnixTimestamp64Micro(data.time_us)) as first_post_ts FROM bluesky WHERE data.kind = 'commit' AND data.commit.operation = 'create' AND data.commit.collection = 'app.bsky.feed.post' GROUP BY user_id ORDER BY first_post_ts ASC LIMIT 3)
+    UNION ALL SELECT sum(cityHash64(*)) FROM (SELECT data.did::String as user_id, date_diff( 'milliseconds', min(fromUnixTimestamp64Micro(data.time_us)), max(fromUnixTimestamp64Micro(data.time_us))) AS activity_span FROM bluesky WHERE data.kind = 'commit' AND data.commit.operation = 'create' AND data.commit.collection = 'app.bsky.feed.post' GROUP BY user_id ORDER BY activity_span DESC LIMIT 3))
+</fill_query>
+<fill_query>SELECT throwIf((SELECT count() FROM bluesky WHERE data.commit.cid.:String ILIKE '%zzz%' OR data.commit.record.subject.cid.:String ILIKE '%zzz%' OR data.commit.record.subject.uri.:String ILIKE '%zzz%') != 34352 OR (SELECT count() FROM bluesky WHERE data.commit.cid::String ILIKE '%zzz%' OR data.commit.record.subject.cid::String ILIKE '%zzz%' OR data.commit.record.subject.uri::String ILIKE '%zzz%') != 34352)</fill_query>
+<fill_query>SELECT throwIf(groupArray(tuple(*)) != [('DateTime64(9)', 9672170, '1714-08-01 06:17:32.000000000'), ('None', 327820, ''), ('String', 4, '0090-04-03T06:17:32.000Z')]) FROM (SELECT dynamicType(data.commit.record.createdAt) AS t, count(), min(toString(data.commit.record.createdAt)) FROM bluesky GROUP BY t ORDER BY t)</fill_query>
+<fill_query>SELECT throwIf(tuple(*) != (42214779, 38850090)) FROM (SELECT sum(length(toString(data.commit.record.facets))), sum(length(toString(data.commit.record.embed.images))) FROM bluesky)</fill_query>
+<fill_query>SELECT throwIf((count(), sum(cityHash64(p, c))) != (10, 17861883446907680236)) FROM (SELECT arrayJoin(JSONAllPaths(data)) AS p, count() AS c FROM bluesky GROUP BY p ORDER BY c DESC LIMIT 10)</fill_query>
+<fill_query>SELECT throwIf((SELECT sum(length(toString(data))) FROM bluesky) != 4925524234)</fill_query>
+<fill_query>SELECT throwIf((count(), sum(cityHash64(event, count, users))) != (13, 17221227897422865449)) FROM (SELECT collection AS event, count() AS count, uniqExact(did) AS users FROM bluesky_typed WHERE kind = 'commit' AND operation = 'create' GROUP BY event ORDER BY count DESC)</fill_query>
+<fill_query>SELECT throwIf(tuple(*) != (3432447, 5211543, 5852)) FROM (SELECT countIf(subject.String LIKE 'did:plc:%'), countIf(variantElement(subject, 'Tuple(cid String, uri String)').uri LIKE '%/app.bsky.feed.post/%'), countIf(variantElement(subject, 'Tuple(cid String, uri String)').cid ILIKE '%zzz%') FROM bluesky_variant)</fill_query>
+<fill_query>SELECT throwIf(groupArray((toString(t), c, u)) != [('None', 1343721, 1), ('String', 3442451, 854111), ('Tuple(cid String, uri String)', 5213822, 1315895)]) FROM (SELECT variantType(subject) AS t, count() AS c, uniqExact(subject) AS u FROM bluesky_variant GROUP BY t ORDER BY t)</fill_query>
+
+<query>
+    SELECT sum(cityHash64(*)) FROM (SELECT data.commit.collection AS event, count() AS count FROM bluesky GROUP BY event ORDER BY count DESC)
+    UNION ALL SELECT sum(cityHash64(*)) FROM (SELECT data.commit.collection AS event, toHour(fromUnixTimestamp64Micro(data.time_us)) as hour_of_day, count() AS count FROM bluesky WHERE data.kind = 'commit' AND data.commit.operation = 'create' AND data.commit.collection in ['app.bsky.feed.post', 'app.bsky.feed.repost', 'app.bsky.feed.like'] GROUP BY event, hour_of_day ORDER BY hour_of_day, event)
+    UNION ALL SELECT sum(cityHash64(*)) FROM (SELECT data.did::String as user_id, min(fromUnixTimestamp64Micro(data.time_us)) as first_post_ts FROM bluesky WHERE data.kind = 'commit' AND data.commit.operation = 'create' AND data.commit.collection = 'app.bsky.feed.post' GROUP BY user_id ORDER BY first_post_ts ASC LIMIT 3)
+    UNION ALL SELECT sum(cityHash64(*)) FROM (SELECT data.did::String as user_id, date_diff( 'milliseconds', min(fromUnixTimestamp64Micro(data.time_us)), max(fromUnixTimestamp64Micro(data.time_us))) AS activity_span FROM bluesky WHERE data.kind = 'commit' AND data.commit.operation = 'create' AND data.commit.collection = 'app.bsky.feed.post' GROUP BY user_id ORDER BY activity_span DESC LIMIT 3)
+</query>
+<query>SELECT count() FROM bluesky WHERE data.commit.cid.:String ILIKE '%zzz%' OR data.commit.record.subject.cid.:String ILIKE '%zzz%' OR data.commit.record.subject.uri.:String ILIKE '%zzz%'</query>
+<query>SELECT count() FROM bluesky WHERE data.commit.cid::String ILIKE '%zzz%' OR data.commit.record.subject.cid::String ILIKE '%zzz%' OR data.commit.record.subject.uri::String ILIKE '%zzz%'</query>
+<query>SELECT dynamicType(data.commit.record.createdAt) AS t, count(), min(toString(data.commit.record.createdAt)) FROM bluesky GROUP BY t ORDER BY t</query>
+<query>SELECT sum(length(toString(data.commit.record.facets))), sum(length(toString(data.commit.record.embed.images))) FROM bluesky</query>
+<query>SELECT arrayJoin(JSONAllPaths(data)) AS p, count() AS c FROM bluesky GROUP BY p ORDER BY c DESC LIMIT 10</query>
+<query>SELECT sum(length(toString(data))) FROM bluesky</query>
+
+<query>SELECT collection AS event, count() AS count, uniqExact(did) AS users FROM bluesky_typed WHERE kind = 'commit' AND operation = 'create' GROUP BY event ORDER BY count DESC</query>
+
+<query>SELECT countIf(subject.String LIKE 'did:plc:%'), countIf(variantElement(subject, 'Tuple(cid String, uri String)').uri LIKE '%/app.bsky.feed.post/%'), countIf(variantElement(subject, 'Tuple(cid String, uri String)').cid ILIKE '%zzz%') FROM bluesky_variant</query>
+<query>SELECT variantType(subject) AS t, count() AS c, uniqExact(subject) AS u FROM bluesky_variant GROUP BY t ORDER BY t</query>
+
+<drop_query>DROP TABLE IF EXISTS bluesky, bluesky_typed, bluesky_variant SYNC</drop_query>
+
+</test>

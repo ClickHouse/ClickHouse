@@ -113,7 +113,7 @@ public:
     {
     }
 
-    bool supportsExternalBufferMode() const override { return true; }
+    [[nodiscard]] bool supportsExternalBufferMode() const override { return true; }
 
     /// Like the body of a real response, reads straight into the memory of the caller: this
     /// buffer has no memory of its own, so the default `readBig` would see an empty buffer.
@@ -193,7 +193,7 @@ public:
     {
     }
 
-    bool supportsExternalBufferMode() const override { return true; }
+    [[nodiscard]] bool supportsExternalBufferMode() const override { return true; }
 
 private:
     bool nextImpl() override
@@ -208,6 +208,13 @@ private:
 
 using GetObjectFn = std::function<Aws::S3::Model::GetObjectOutcome(const Aws::S3::Model::GetObjectRequest & request)>;
 
+/// The configuration holds the filter by reference, so the filter must outlive every client built from it.
+static const DB::RemoteHostFilter & allowAnyHost()
+{
+    static const DB::RemoteHostFilter filter;
+    return filter;
+}
+
 struct ClientFake : DB::S3::Client
 {
     explicit ClientFake()
@@ -217,13 +224,13 @@ struct ClientFake : DB::S3::Client
               std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("test_access_key", "test_secret"),
               DB::S3::ClientFactory::instance().createClientConfiguration(
                   "test_region",
-                  DB::RemoteHostFilter(),
+                  allowAnyHost(),
                   1,
                   DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
                   true,
                   true,
                   true,
-                  false,
+                  DB::HTTPConnectionGroupType::STORAGE,
                   {},
                   /* request_throttler = */ {},
                   "http"),

@@ -1263,8 +1263,10 @@ elseif(ARCH_PPC64LE)
         ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_skey.c
         ${OPENSSL_SOURCE_DIR}/crypto/sha/keccak1600.c
         ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_block.c
-        ${OPENSSL_SOURCE_DIR}/engines/e_afalg.c
     )
+    if (OS_LINUX)
+        set(CRYPTO_SRC ${CRYPTO_SRC} ${OPENSSL_SOURCE_DIR}/engines/e_afalg.c)
+    endif()
 elseif(ARCH_S390X)
     set(CRYPTO_SRC ${CRYPTO_SRC}
         asm/crypto/aes/aes-s390x.S

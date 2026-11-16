@@ -57,6 +57,10 @@ public:
         bool use_same_s3_credentials_for_base_backup = false;
         bool use_same_password_for_base_backup = false;
         bool azure_attempt_to_create_container = true;
+        /// The backup is opened as the base of a backup being written. Such a base is only asked whether it has a file
+        /// with a given name, or with a given size and checksum, and for the size and checksum of a file. So it doesn't
+        /// keep the rest of the information about its files, and can't be read from.
+        bool for_file_lookups_only = false;
         ReadSettings read_settings;
         WriteSettings write_settings;
 #if CLICKHOUSE_CLOUD
@@ -64,18 +68,18 @@ public:
         std::optional<BackupResumeParams> resume;
 #endif
 
-        CreateParams getCreateParamsForBaseBackup(BackupInfo base_backup_info_, String old_password) const;
+        [[nodiscard]] CreateParams getCreateParamsForBaseBackup(BackupInfo base_backup_info_, String old_password) const;
     };
 
     static BackupFactory & instance();
 
     /// Creates a new backup or opens it.
-    BackupMutablePtr createBackup(const CreateParams & params) const;
+    [[nodiscard]] BackupMutablePtr createBackup(const CreateParams & params) const;
 
     /// Returns a versioned, credential-free identity of the effective backup location.
     /// Named collections must be frozen first so identity generation and backup creation
     /// observe the same collection state.
-    String getDestinationIdentity(const BackupInfo & backup_info, ContextPtr context) const;
+    [[nodiscard]] String getDestinationIdentity(const BackupInfo & backup_info, ContextPtr context) const;
 
     /// The SOURCES grant required to open `backup_info` in `open_mode`, as declared by its engine.
     struct SourceAccessTarget
@@ -103,7 +107,7 @@ public:
         const SourceAccessFn & source_access_fn,
         SecretArgumentsSpec secret_arguments);
 
-    const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & engine_name) const;
+    [[nodiscard]] const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & engine_name) const;
 
 private:
     struct RegisteredEngine

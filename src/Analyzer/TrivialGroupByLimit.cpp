@@ -58,7 +58,7 @@ public:
         has_array_join = getFunctionCanonicalNameIfAny(function_node->getFunctionName()) == "arrayJoin";
     }
 
-    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
+    [[nodiscard]] bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
     {
         if (has_array_join)
             return false;
@@ -67,7 +67,7 @@ public:
         return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
     }
 
-    bool hasArrayJoin() const
+    [[nodiscard]] bool hasArrayJoin() const
     {
         return has_array_join;
     }
@@ -96,7 +96,7 @@ std::optional<UInt64> getTrivialGroupByLimit(const QueryNode & query, const Sett
     if (settings[Setting::exact_rows_before_limit])
         return std::nullopt;
 
-    if (!query.hasGroupBy() || !query.hasLimit() || query.hasHaving() || query.hasOrderBy() || query.hasWindow()
+    if (!query.hasGroupBy() || !query.hasLimit() || query.hasHaving() || query.hasOrderBy() || query.isShuffle() || query.hasWindow()
         || query.hasQualify() || query.hasLimitBy() || query.isDistinct() || query.isGroupByWithTotals()
         || query.isGroupByWithRollup() || query.isGroupByWithCube() || query.isGroupByWithGroupingSets())
         return std::nullopt;

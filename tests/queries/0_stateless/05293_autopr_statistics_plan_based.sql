@@ -37,7 +37,6 @@ OPTIMIZE TABLE t_plan_based_small FINAL;
 
 CREATE TABLE t_plan_based_baseline (c UInt64) ENGINE = Memory;
 
-SET enable_analyzer = 1;
 -- The read has to be pruned by its own key condition only: a filter built from the other side at runtime
 -- would change how many bytes are read.
 SET enable_join_runtime_filters = 0;
