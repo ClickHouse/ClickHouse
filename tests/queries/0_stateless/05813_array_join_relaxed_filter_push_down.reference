@@ -1,0 +1,20 @@
+-- function form: an element filter in each step
+3
+-- clause form
+3
+-- each step gets the filter one time, and no filter stays above
+0
+-- two arrays
+2
+-- a branch with no condition on the first array gives nothing to the first step
+1
+-- a condition that can throw stays above
+1
+a1	c0	24
+a3	c1	4
+-- same rows as without the filter push down
+1
+1
+1
+a1	b2	c0	6
+a3	b1	c1	2
