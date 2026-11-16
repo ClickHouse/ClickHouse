@@ -39,7 +39,7 @@
 
   <query>SELECT count() FROM tab WHERE message LIKE '%column oriented%'</query>
   <query>SELECT count() FROM tab WHERE message ILIKE '%COLUMN ORIENTED%'</query>
-  <!-- A phrase in every row: nothing is pruned, so this measures the cost of searching one of its words. -->
+  <!-- A phrase in 99% of the rows prunes almost nothing, so this measures the cost of searching one of its words. -->
   <query>SELECT count() FROM tab WHERE message LIKE '%quick brown%'</query>
 
   <drop_query>DROP TABLE IF EXISTS tab</drop_query>
