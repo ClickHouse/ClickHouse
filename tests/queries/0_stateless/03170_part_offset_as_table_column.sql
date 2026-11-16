@@ -1,3 +1,4 @@
+SET allow_reserved_column_names = 1;
 CREATE TABLE test_table
 (
     `key` UInt32,

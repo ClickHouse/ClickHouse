@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickpipes', 'mongodb', 'documentdb', 'cdc', 'إدخال البيانات', 'المزامنة في الوقت الفعلي']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <div id="supported-documentdb-versions">
   ## إصدارات DocumentDB المتوافقة
 </div>
@@ -27,17 +25,49 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 1. انقر على `Parameter groups` في اللوحة اليمنى، ثم اعثر على مجموعة المعلمات المستخدمة بواسطة عنقود DocumentDB لديك (إذا كنت تستخدم مجموعة المعلمات الافتراضية، فستحتاج أولًا إلى إنشاء مجموعة معلمات جديدة حتى تتمكن من تعديلها).
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-select-parameter-group.webp" alt="اختر مجموعة المعلمات" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![اختر مجموعة المعلمات](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-select-parameter-group.webp)
+
+</Frame>
+
+</div>
 
 2. ابحث عن `change_stream_log_retention_duration`، ثم حدده وعدّله إلى `259200` (72 ساعة)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-modify-parameter-group.webp" alt="عدّل مجموعة المعلمات" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![عدّل مجموعة المعلمات](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-modify-parameter-group.webp)
+
+</Frame>
+
+</div>
 
 3. انقر على `Apply Changes` لتطبيق مجموعة المعلمات المعدّلة على عنقود DocumentDB لديك فورًا. ينبغي أن ترى حالة مجموعة المعلمات تنتقل إلى `applying`، ثم إلى `in-sync` عند تطبيق التغيير.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-apply-parameter-group.webp" alt="طبّق مجموعة المعلمات" size="lg" border />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-parameter-group-status.webp" alt="حالة مجموعة المعلمات" size="lg" border />
+<Frame>
+
+![طبّق مجموعة المعلمات](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-apply-parameter-group.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![حالة مجموعة المعلمات](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-parameter-group-status.webp)
+
+</Frame>
+
+</div>
 
 <div id="update-change-stream-log-retention-via-aws-cli">
   ### حدِّث مدة الاحتفاظ بسجلات change stream عبر AWS CLI

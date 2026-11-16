@@ -113,9 +113,9 @@ SELECT count() FROM qv_merge_02184;
 SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'qv_merge_02184' AND name = 'vec';
 
 -- The other three engines take their structure from a single table, so the same conflict reaches them
--- through the Merge table above.
+-- through the Merge table above. Buffer refuses the Quantized codec itself.
 DROP TABLE IF EXISTS qv_buffer_02184;
-CREATE TABLE qv_buffer_02184 ENGINE = Buffer(currentDatabase(), qv_merge_02184, 16, 10, 100, 10000, 1000000, 10000000, 100000000);
+CREATE TABLE qv_buffer_02184 ENGINE = Buffer(currentDatabase(), qv_merge_02184, 16, 10, 100, 10000, 1000000, 10000000, 100000000); -- { serverError ILLEGAL_COLUMN }
 
 DROP TABLE IF EXISTS qv_distributed_02184;
 CREATE TABLE qv_distributed_02184 ENGINE = Distributed('test_shard_localhost', currentDatabase(), 'qv_merge_02184', rand());

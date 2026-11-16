@@ -5,8 +5,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# shellcheck source=./05293_window_functions_block_boundaries.lib
-. "$CUR_DIR"/05293_window_functions_block_boundaries.lib
+# shellcheck source=./window_functions_block_sizes.lib
+. "$CUR_DIR"/window_functions_block_sizes.lib
 
 create_table
 
