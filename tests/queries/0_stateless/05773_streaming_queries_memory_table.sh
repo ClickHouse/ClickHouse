@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: atomic-database
 
 # A streaming query from a `Memory` table returns the blocks that the table has, and then every block inserted later.
 
@@ -14,8 +15,8 @@ $STREAMING_CLIENT -q "
     INSERT INTO m VALUES ('b', 2);
 "
 
-echo "--- not supported"
-$STREAMING_CLIENT -q "SELECT * FROM m STREAM CURSOR {'a': 1}" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
+echo "--- a cursor that is not of a Memory table"
+$STREAMING_CLIENT -q "SELECT * FROM m STREAM CURSOR {'a': 1}" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
 
 echo "--- bounded"
 $STREAMING_CLIENT -q "SELECT k, v FROM m STREAM BOUNDED"
@@ -63,3 +64,26 @@ wait
 grep -o -m1 "TOO_SLOW" "$fifo_3.out"
 rm -f "$fifo_3.out"
 cleanup "$fifo_3" "$pid_3" > /dev/null
+
+echo "--- incremental refresh"
+refresh()
+{
+    $STREAMING_CLIENT -q "SYSTEM REFRESH VIEW mv; SYSTEM WAIT VIEW mv; SELECT '$1', count(), sum(v) FROM tgt"
+}
+$STREAMING_CLIENT -q "
+    CREATE TABLE src (v UInt64) ENGINE = Memory;
+    INSERT INTO src VALUES (1), (2);
+    CREATE TABLE tgt (v UInt64) ENGINE = MergeTree ORDER BY v;
+    CREATE MATERIALIZED VIEW mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO tgt EMPTY AS SELECT v FROM src;
+"
+refresh round1
+$STREAMING_CLIENT -q "INSERT INTO src VALUES (3)"
+refresh round2
+refresh round3
+# After TRUNCATE, all the blocks are new.
+$STREAMING_CLIENT -q "TRUNCATE TABLE src; INSERT INTO src VALUES (10)"
+refresh round4
+# A mutation rewrites the rows that were already appended.
+$STREAMING_CLIENT -q "ALTER TABLE src UPDATE v = v + 1 WHERE 1"
+$STREAMING_CLIENT -q "SYSTEM REFRESH VIEW mv; SYSTEM WAIT VIEW mv" 2>&1 | grep -o -m1 "was rewritten by a mutation"
+$STREAMING_CLIENT -q "DROP TABLE mv"

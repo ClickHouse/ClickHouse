@@ -34,6 +34,8 @@
 #include <Processors/ISource.h>
 #include <Interpreters/castColumn.h>
 #include <Core/Streaming/Settings.h>
+#include <Core/Streaming/CursorTree.h>
+#include <Common/randomSeed.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -87,6 +89,7 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int TOO_MANY_BYTES;
     extern const int ABORTED;
+    extern const int BAD_ARGUMENTS;
     extern const int TOO_SLOW;
 }
 
@@ -275,13 +278,20 @@ size_t StorageMemory::getMaxReadStreams(size_t num_streams, ContextPtr)
 /// The blocks are numbered within a generation of the data, see `StorageMemory::BlocksWithCounts`. If the data is replaced
 /// (by a mutation or a restore), the stream fails rather than read the replaced rows again. If the blocks that
 /// the stream has not read yet are removed (by `max_rows_to_keep` or `max_bytes_to_keep`), the stream fails as well.
+///
+/// The cursor is {'epoch': <random number of the server process>, 'generation': ..., 'block_number': <the last read block>}.
+/// It is meant for an incremental refresh of a materialized view, which the bounded stream reports it to. A cursor of
+/// another process or of a generation that started empty (`TRUNCATE`) means that all the blocks are new; a cursor of a
+/// generation that a mutation rewrote cannot be resumed.
 class MemoryStreamingSource final : public ISource
 {
 public:
-    MemoryStreamingSource(SharedHeader header_, std::shared_ptr<const StorageMemory> storage_, bool bounded_)
+    MemoryStreamingSource(
+        SharedHeader header_, std::shared_ptr<const StorageMemory> storage_, bool bounded_, const CursorTreeNodePtr & cursor, ContextPtr context_)
         : ISource(header_)
         , storage(std::move(storage_))
         , bounded(bounded_)
+        , context(std::move(context_))
         , wakeup(storage->stream_subscribers->subscribe())
     {
         /// The subscription is created before the first look at the data, so that no change is missed.
@@ -289,6 +299,38 @@ public:
         generation = snapshot->generation;
         next_block_number = snapshot->first_block_number;
         end_block_number = snapshot->first_block_number + snapshot->blocks.size();
+
+        if (cursor)
+        {
+            if (!cursor->hasValue("epoch") || !cursor->hasValue("generation") || !cursor->hasValue("block_number"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The cursor of a Memory table must have 'epoch', 'generation' and 'block_number'");
+
+            const bool same_generation = static_cast<UInt64>(cursor->getValue("epoch")) == processEpoch()
+                && static_cast<UInt64>(cursor->getValue("generation")) == generation;
+            if (same_generation)
+            {
+                const Int64 last_block_number = cursor->getValue("block_number");
+                if (last_block_number < -1)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid block number {} in the cursor", last_block_number);
+                next_block_number = static_cast<UInt64>(last_block_number + 1);
+                if (next_block_number > end_block_number)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "The block number {} in the cursor is beyond the blocks of the Memory table", last_block_number);
+            }
+            else if (snapshot->rows_rewritten && static_cast<UInt64>(cursor->getValue("epoch")) == processEpoch())
+                throw Exception(ErrorCodes::ABORTED,
+                    "The data of the Memory table {} was rewritten by a mutation since the cursor was taken",
+                    storage->getStorageID().getNameForLogs());
+            /// Otherwise the data started anew (by `TRUNCATE` or a restart of the server) after the cursor: all the blocks are new.
+        }
+    }
+
+    /// A random number of the server process: the generations of the data are numbered anew in every process.
+    static UInt64 processEpoch()
+    {
+        static const UInt64 epoch = randomSeed() >> 1;
+        return epoch;
     }
 
     String getName() const override { return "MemoryStreamingSource"; }
@@ -328,7 +370,10 @@ protected:
             return {};
 
         if (bounded && next_block_number >= end_block_number)
+        {
+            reportFinalCursor();
             return {};
+        }
 
         wakeup->reset();
         const auto snapshot = storage->data.get();
@@ -367,9 +412,26 @@ protected:
     }
 
 private:
+    void reportFinalCursor()
+    {
+        /// Only an incremental refresh of a materialized view has the holder of the cursor.
+        auto streaming_cursor = context->getStreamingCursor();
+        if (!streaming_cursor || reported)
+            return;
+        reported = true;
+
+        auto cursor = std::make_shared<CursorTreeNode>();
+        cursor->setValue("epoch", static_cast<Int64>(processEpoch()));
+        cursor->setValue("generation", static_cast<Int64>(generation));
+        cursor->setValue("block_number", static_cast<Int64>(next_block_number) - 1);
+        streaming_cursor->merge(cursor);
+    }
+
     const std::shared_ptr<const StorageMemory> storage;
     const bool bounded;
+    const ContextPtr context;
     const MemoryTableWakeupPtr wakeup;
+    bool reported = false;
 
     UInt64 generation = 0;
     UInt64 next_block_number = 0;
@@ -392,15 +454,14 @@ void StorageMemory::readImpl(
     if (query_info.isStream())
     {
         const auto & stream_settings = *query_info.table_expression_modifiers->getStreamSettings();
-        if (stream_settings.cursor)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CURSOR is not supported for STREAM from a table with engine Memory");
         if (stream_settings.watermark)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WATERMARK is not supported for STREAM from a table with engine Memory");
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
         auto header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
         auto source = std::make_shared<MemoryStreamingSource>(
-            header, std::static_pointer_cast<const StorageMemory>(shared_from_this()), !stream_settings.subscribe_for_updates);
+            header, std::static_pointer_cast<const StorageMemory>(shared_from_this()), !stream_settings.subscribe_for_updates,
+            stream_settings.cursor, context);
         source->setStorageLimits(query_info.storage_limits);
         auto step = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
         step->setStepDescription("Read from Memory STREAM");
@@ -601,6 +662,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
         new_data->rows += buffer.rows();
         new_data->bytes += buffer.allocatedBytes();
     }
+    new_data->rows_rewritten = true;
 
     /// A mutation can make the data larger (e.g. `UPDATE` with longer strings or `MATERIALIZE COLUMN`).
     if (is_temporary_table)
@@ -1089,7 +1151,9 @@ A streaming query (`SELECT ... FROM memory_table STREAM`, an experimental featur
 SELECT * FROM memory_table STREAM WHERE level = 'Error'
 ```
 
-The query fails if the data of the table is replaced while it runs (by a mutation or a restore), and with `TOO_SLOW` if the blocks it has not read yet are removed by `max_rows_to_keep` or `max_bytes_to_keep`. Like any other `SELECT`, a streaming query holds the table, so `TRUNCATE` and `DROP` wait for it to finish (up to `lock_acquire_timeout`). `CURSOR` and `WATERMARK` are not supported.
+The query fails if the data of the table is replaced while it runs (by a mutation or a restore), and with `TOO_SLOW` if the blocks it has not read yet are removed by `max_rows_to_keep` or `max_bytes_to_keep`. Like any other `SELECT`, a streaming query holds the table, so `TRUNCATE` and `DROP` wait for it to finish (up to `lock_acquire_timeout`). `WATERMARK` is not supported.
+
+A `Memory` table can be the source of an incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`): every refresh appends the blocks inserted after the previous one. After a restart of the server or `TRUNCATE`, all the blocks of the table are new; after a mutation, the refresh fails, as the rows it already appended were rewritten.
 
 ## Examples {#examples}
 ```sql
