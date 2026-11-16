@@ -326,6 +326,9 @@ public:
 
     virtual Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const = 0;
 
+    /// False if the rows returned by `read` are not keys with their attributes, so `dictGetKeys` cannot scan them.
+    virtual bool supportsReverseLookup() const { return true; }
+
     bool supportUpdates() const override { return true; }
 
     bool isModified() const override

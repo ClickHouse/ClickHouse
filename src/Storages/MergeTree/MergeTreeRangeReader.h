@@ -62,6 +62,15 @@ struct PrewhereExprStep
     /// count only these steps, so that a query without `PREWHERE` reports nothing and filtering by
     /// mutations/policies is not attributed to `PREWHERE`.
     bool is_query_prewhere = false;
+
+    /// True for a step that carries a synthesized dynamic filter of the query predicate -- a top-K
+    /// threshold filter (`__topKFilter` of `ORDER BY ... LIMIT`) or a join runtime filter (`__applyFilter`),
+    /// possibly fused with a user predicate. Mutually exclusive with `is_query_prewhere`. The PREWHERE
+    /// granule stats treat such a step as a contaminant: a granule it thins can no longer be shown to be
+    /// emptied by the user predicate alone, so it is not attributed to `PREWHERE`. Unlike row-level
+    /// policies and mutations (which run before `PREWHERE` and are excluded via the entering snapshot),
+    /// a dynamic filter may run anywhere in the query-predicate chain, including before the first user step.
+    bool is_synthesized_dynamic_filter = false;
 };
 
 using PrewhereExprStepPtr = std::shared_ptr<PrewhereExprStep>;
@@ -72,8 +81,8 @@ struct PrewhereExprInfo
 {
     PrewhereExprSteps steps;
 
-    std::string dump() const;
-    std::string dumpConditions() const;
+    [[nodiscard]] std::string dump() const;
+    [[nodiscard]] std::string dumpConditions() const;
 };
 
 struct ReadStepPerformanceCounters
@@ -219,12 +228,12 @@ private:
         ///       some columns may have different size (for example, default columns may be zero size).
         size_t read(MutableColumns & columns, Columns & shared_columns, size_t from_mark, size_t offset, size_t num_rows);
 
-        size_t numDelayedRows() const { return num_delayed_rows; }
+        [[nodiscard]] size_t numDelayedRows() const { return num_delayed_rows; }
 
         /// Skip extra rows to current_offset and perform actual reading
         size_t finalize(MutableColumns & columns, Columns & shared_columns);
 
-        bool isFinished() const { return is_finished; }
+        [[nodiscard]] bool isFinished() const { return is_finished; }
 
     private:
         size_t current_mark = 0;
@@ -243,7 +252,7 @@ private:
         bool is_finished = true;
 
         /// Current position from the beginning of file in rows
-        size_t position() const;
+        [[nodiscard]] size_t position() const;
         size_t readRows(MutableColumns & columns, Columns & shared_columns, size_t num_rows);
     };
 
@@ -261,18 +270,18 @@ private:
         void skip(size_t num_rows);
 
         void finish() { current_mark = last_mark; }
-        bool isFinished() const { return current_mark >= last_mark; }
+        [[nodiscard]] bool isFinished() const { return current_mark >= last_mark; }
 
-        size_t numReadRowsInCurrentGranule() const { return offset_after_current_mark; }
-        size_t numPendingRowsInCurrentGranule() const
+        [[nodiscard]] size_t numReadRowsInCurrentGranule() const { return offset_after_current_mark; }
+        [[nodiscard]] size_t numPendingRowsInCurrentGranule() const
         {
             return current_mark_index_granularity - numReadRowsInCurrentGranule();
         }
-        size_t numPendingGranules() const { return last_mark - current_mark; }
-        size_t numPendingRows() const;
-        size_t currentMark() const { return current_mark; }
-        UInt64 currentPartOffset() const;
-        UInt64 lastPartOffset() const;
+        [[nodiscard]] size_t numPendingGranules() const { return last_mark - current_mark; }
+        [[nodiscard]] size_t numPendingRows() const;
+        [[nodiscard]] size_t currentMark() const { return current_mark; }
+        [[nodiscard]] UInt64 currentPartOffset() const;
+        [[nodiscard]] UInt64 lastPartOffset() const;
 
         IMergeTreeReader * merge_tree_reader = nullptr;
         const MergeTreeIndexGranularity * index_granularity = nullptr;
@@ -292,10 +301,10 @@ private:
 
         size_t readRows(MutableColumns & columns, Columns & shared_columns, size_t num_rows);
         void toNextMark();
-        size_t ceilRowsToCompleteGranules(size_t rows_num) const;
-        size_t alignRowsToColumnsCacheStripes(
+        [[nodiscard]] size_t ceilRowsToCompleteGranules(size_t rows_num) const;
+        [[nodiscard]] size_t alignRowsToColumnsCacheStripes(
             size_t rows_num, size_t stripe_marks, size_t max_block_size_rows, std::span<IMergeTreeReader * const> columns_cache_readers) const;
-        size_t alignRowsToColumnsCacheStripesImpl(size_t rows_num, size_t stripe_marks) const;
+        [[nodiscard]] size_t alignRowsToColumnsCacheStripesImpl(size_t rows_num, size_t stripe_marks) const;
     };
 
 public:
@@ -385,20 +394,18 @@ public:
         /// filtering is still deferred (an incomplete trailing granule, or a block not yet shrunk), this is
         /// always the post-filter survivor count, taken from `final_filter`. A granule is fully dropped by
         /// PREWHERE iff its entry here is 0.
-        NumRows survivingRowsPerGranule() const;
+        [[nodiscard]] NumRows survivingRowsPerGranule() const;
 
-        /// Calls `callback(mark, surviving_rows)` once for every granule that PREWHERE actually read, where
-        /// `mark` is the granule's mark number in the part and `surviving_rows` is
-        /// `surviving_rows_per_granule[i]` for it. The caller passes `survivingRowsPerGranule()` as the
-        /// survivors. A granule is "read by PREWHERE" only if rows reached the first query-PREWHERE step:
-        /// `entering_rows_per_granule[i] == 0` omits it, covering both a mark pruned before PREWHERE (a skip
-        /// index or the query condition cache) and a granule emptied by an earlier mutation/row-policy
-        /// filter. The caller passes the survivor count at the PREWHERE boundary (or the raw rows read when
-        /// PREWHERE is the first step). Uses the same mark mapping as `computeUnmatchedMarkRanges`. A granule
-        /// split across read blocks appears in each block it spans, so the caller must combine the pieces
-        /// (see `MergeTreeReadersChain` PREWHERE granule stats).
+        /// Calls `callback(mark, granule_index)` once for every granule the caller gates in, in non-decreasing
+        /// mark order, where `mark` is the granule's mark number in the part and `granule_index` indexes the
+        /// per-granule vectors (`rows_per_granule`, `survivingRowsPerGranule()`, ...). `visit[i] == 0` omits
+        /// granule `i`. The caller decides what to visit -- granules PREWHERE read and, for contamination
+        /// tracking, granules a dynamic filter emptied before the user step -- and reads whatever per-granule
+        /// state it needs by `granule_index`. Uses the same mark mapping as `computeUnmatchedMarkRanges`. A
+        /// granule split across read blocks appears in each block it spans, so the caller must combine the
+        /// pieces (see `MergeTreeReadersChain` PREWHERE granule stats).
         template <typename Callback>
-        void forEachGranuleMark(const NumRows & entering_rows_per_granule, const NumRows & surviving_rows_per_granule, Callback && callback) const
+        void forEachGranuleMark(const NumRows & visit, Callback && callback) const
         {
             if (rows_per_granule.empty())
                 return;
@@ -409,8 +416,8 @@ public:
 
             if (in_progress_start_mark.has_value())
                 for (size_t i = 0; i < i_start; ++i)
-                    if (entering_rows_per_granule[i] != 0)
-                        callback(*in_progress_start_mark + i, surviving_rows_per_granule[i]);
+                    if (visit[i] != 0)
+                        callback(*in_progress_start_mark + i, i);
 
             size_t range_idx = 0;
             for (size_t i = i_start; i < rows_per_granule.size(); ++i)
@@ -418,11 +425,11 @@ public:
                 while (range_idx + 1 < started_ranges.size() && started_ranges[range_idx + 1].num_granules_read_before_start <= i)
                     ++range_idx;
 
-                if (entering_rows_per_granule[i] == 0)
+                if (visit[i] == 0)
                     continue;
 
                 const size_t offset = i - started_ranges[range_idx].num_granules_read_before_start;
-                callback(started_ranges[range_idx].range.begin + offset, surviving_rows_per_granule[i]);
+                callback(started_ranges[range_idx].range.begin + offset, i);
             }
         }
 

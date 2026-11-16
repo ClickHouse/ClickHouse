@@ -57,11 +57,11 @@ public:
         return std::make_shared<FunctionArrayIntersect>(name, mode, std::move(context));
     }
 
-    String getName() const override { return function_name; }
+    [[nodiscard]] String getName() const override { return function_name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// `arrayIntersect` uses `mostSubtype` to narrow the element types so that
     /// the same value can fit in every input array. `arrayUnion` and
@@ -69,16 +69,16 @@ public:
     /// The signature is documentation-only: `arrayUnion` additionally rejects mixing
     /// `Decimal` with non-`Decimal` elements, which `leastSupertype` accepts, so both
     /// entry points resolve through the handwritten `getReturnTypeImpl` below.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if (mode == ArraySetMode::Intersect)
             return "(Array(T), ...) -> Array(mostSubtype(T, ...))";
         return "(Array(T), ...) -> Array(leastSupertype(T, ...))";
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes types;
         types.reserve(arguments.size());
@@ -87,9 +87,9 @@ public:
         return getReturnTypeImpl(types);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
 private:
     const char * function_name;
@@ -126,7 +126,7 @@ private:
 
     /// Cast column to data_type removing nullable if data_type hasn't.
     /// It's expected that column can represent data_type after removing some NullMap's.
-    ColumnPtr castRemoveNullable(const ColumnPtr & column, const DataTypePtr & data_type) const;
+    [[nodiscard]] ColumnPtr castRemoveNullable(const ColumnPtr & column, const DataTypePtr & data_type) const;
 
     struct CastArgumentsResult
     {

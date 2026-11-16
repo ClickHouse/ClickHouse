@@ -50,13 +50,13 @@ public:
         clearImpl();
     }
 
-    size_t sizeInBytes() const override { return current_size_in_bytes; }
+    [[nodiscard]] size_t sizeInBytes() const override { return current_size_in_bytes; }
 
-    size_t count() const override { return cells.size(); }
+    [[nodiscard]] size_t count() const override { return cells.size(); }
 
-    size_t maxSizeInBytes() const override { return max_size_in_bytes; }
+    [[nodiscard]] size_t maxSizeInBytes() const override { return max_size_in_bytes; }
 
-    size_t maxCount() const override { return max_count; }
+    [[nodiscard]] size_t maxCount() const override { return max_count; }
 
     void setMaxCount(size_t max_count_) override
     {

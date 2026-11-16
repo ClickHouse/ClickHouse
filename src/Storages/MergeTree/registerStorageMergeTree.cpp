@@ -966,7 +966,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// `LoadingStrictnessLevel::ATTACH` and must still be subject to these checks.
         storage_settings->loadFromQuery(
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
-            args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE, /* stored_definition */ args.query.attach_short_syntax);
+            args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE,
+            /* stored_definition */ args.query.attach_short_syntax || is_stored_definition);
 
         /// What this query changes from the settings the server has in effect, which already include the
         /// `merge_tree` config section and `compatibility`: those are not changes made by the query. A
@@ -977,7 +978,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         /// After the constraints, so a forbidden `storage_policy` is reported as such and not as an unknown policy.
         if ((*storage_settings)[MergeTreeSetting::storage_policy].changed)
-            args.getStoragePolicy((*storage_settings)[MergeTreeSetting::storage_policy]);
+            (void)args.getStoragePolicy((*storage_settings)[MergeTreeSetting::storage_policy]);
 
         /// `MergeTreeData` runs `sanityCheck` on the settings it is given when the mode says `CREATE`, so a
         /// full-definition `ATTACH` is the fresh definition left to check. Without this it can state a value

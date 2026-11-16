@@ -1,0 +1,38 @@
+one window for partition readers and an aggregate
+0	1	0	0.2	100	2	0
+1	1	0.25	0.4	100	3	1
+2	1	0.5	0.6	0	4	3
+3	2	0.75	0.8	1	100	6
+4	2	1	1	2	100	10
+the same under the old analyzer
+0	1	0	0.2	100	2	0
+1	1	0.25	0.4	100	3	1
+2	1	0.5	0.6	0	4	3
+3	2	0.75	0.8	1	100	6
+4	2	1	1	2	100	10
+an explicit frame changes only the aggregate
+0	1	0	0.2	100	2	0
+1	1	0.25	0.4	100	3	1
+2	1	0.5	0.6	0	4	3
+3	2	0.75	0.8	1	100	5
+4	2	1	1	2	100	7
+lagInFrame and leadInFrame read the frame
+0	100	100	2	100
+1	100	100	3	100
+2	0	100	4	100
+3	1	100	100	100
+4	2	100	100	100
+lag reads far behind the frame and across blocks
+0	5000
+ntile requires ORDER BY
+one window step
+Output: ntile(2) OVER (ORDER BY number ASC), sum(number) OVER (ORDER BY number ASC)
+
+Window (Window step for window \'ORDER BY number ASC\')
+│  Window: (ORDER BY number ASC)
+│  Functions: ntile(2) OVER (ORDER BY number ASC)
+│             sum(number) OVER (ORDER BY number ASC)
+└──Sorting (Sorting for window \'ORDER BY number ASC\')
+   │  Sort description: number ASC
+   └──ReadFromSystemNumbers
+         Output: number

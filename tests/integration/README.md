@@ -47,7 +47,18 @@ python -m ci.praktika run "Integration tests (amd_binary, 4/5)" \
 
 ## Running on macOS with Apple container
 
-On Apple silicon with macOS 26, [Apple container](https://github.com/apple/container) can host a Docker Engine for the local CI runner. The CI runner uses Docker inside Apple's Linux VM. Install the Docker CLI and Apple container, and provide a Linux ARM64 ClickHouse binary in one of the locations listed above. A native macOS binary cannot run in this environment.
+On Apple silicon with macOS 26, [Apple container](https://github.com/apple/container) can host a Docker Engine for the local CI runner. The CI runner uses Docker inside Apple's Linux VM. Install the Docker CLI and Apple container (`brew install docker container`), and provide a Linux ARM64 ClickHouse binary in one of the locations listed above or with `--path`. A native macOS binary cannot run in this environment.
+
+To cross-compile the Linux ARM64 binary on the Mac, use the toolchain from [Build on macOS](../../docs/resources/develop-contribute/build/build-osx.mdx) with the Linux toolchain file in a separate build directory. Add the Rust target to the toolchain the build uses (the configure step prints the exact command if it is missing):
+
+```bash
+rustup target add aarch64-unknown-linux-gnu
+cmake -S . -B build_linux -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-aarch64.cmake \
+    -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang \
+    -DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++
+ninja -C build_linux clickhouse
+```
 
 The following setup was verified with Apple container 1.4.1 and `docker:28-dind`. Run it from the repository root:
 
