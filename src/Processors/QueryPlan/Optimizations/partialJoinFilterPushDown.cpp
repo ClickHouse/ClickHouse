@@ -132,7 +132,7 @@ bool isUsefulToPreFilterWith(const ActionsDAG::Node & node)
 
 /// Extract all conditions from the filter that use only columns from the list.
 /// The resulting condition is broader then the full filter but can be used to early pre-filtering of the data
-ConditionList extractPartialPredicate(const ActionsDAG::Node & node, const NameSet & available_columns)
+ConditionList extractPartialPredicate(const ActionsDAG::Node & node, const NameSet & available_columns, bool only_conditions_safe_on_more_rows)
 {
     const bool is_conjunction = node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->getName() == "and";
     const bool is_disjunction = node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->getName() == "or";
@@ -142,7 +142,7 @@ ConditionList extractPartialPredicate(const ActionsDAG::Node & node, const NameS
         conjuction_template.condition_type = ConditionList::And;
         for (const auto * child : node.children)
         {
-            auto child_condition_template = extractPartialPredicate(*child, available_columns);
+            auto child_condition_template = extractPartialPredicate(*child, available_columns, only_conditions_safe_on_more_rows);
             if (!child_condition_template.assumedTrue())
                 conjuction_template.subconditions.emplace_back(std::move(child_condition_template));
         }
@@ -154,7 +154,7 @@ ConditionList extractPartialPredicate(const ActionsDAG::Node & node, const NameS
         disjuction_template.condition_type = ConditionList::Or;
         for (const auto * child : node.children)
         {
-            auto child_condition_template = extractPartialPredicate(*child, available_columns);
+            auto child_condition_template = extractPartialPredicate(*child, available_columns, only_conditions_safe_on_more_rows);
             if (child_condition_template.assumedTrue())
                 return ConditionList{}; /// The whole disjunction can be assumed True, so it in not included into partial predicate
 
@@ -164,12 +164,16 @@ ConditionList extractPartialPredicate(const ActionsDAG::Node & node, const NameS
     }
     else if (node.type == ActionsDAG::ActionType::ALIAS)
     {
-        return extractPartialPredicate(*node.children.front(), available_columns);
+        return extractPartialPredicate(*node.children.front(), available_columns, only_conditions_safe_on_more_rows);
     }
     else
     {
         if (!onlyDependsOnAvailableColumns(node, available_columns))
             return ConditionList{}; /// If the subtree depends on other columns then we cannot include it into partial predicate, so assume it's True
+
+        /// the partial predicate also gets the rows that the conditions it leaves out reject
+        if (only_conditions_safe_on_more_rows && !canBeMovedToTheFrontOfAndChain(&node))
+            return ConditionList{};
 
         if (!isUsefulToPreFilterWith(node))
             return ConditionList{}; /// Nothing to pre-filter with, so assume it's True
@@ -223,11 +227,13 @@ const ActionsDAG::Node * buildPredicateFromTemplate(ActionsDAG & full_dag, const
 std::optional<ActionsDAG> tryToExtractPartialPredicate(
     const ActionsDAG & original_dag,
     const std::string & filter_name,
-    const Names & available_columns);
+    const Names & available_columns,
+    bool only_conditions_safe_on_more_rows = false);
 std::optional<ActionsDAG> tryToExtractPartialPredicate(
     const ActionsDAG & original_dag,
     const std::string & filter_name,
-    const Names & available_columns)
+    const Names & available_columns,
+    bool only_conditions_safe_on_more_rows)
 {
     if (!original_dag.tryFindInOutputs(filter_name))
         return {};
@@ -236,7 +242,8 @@ std::optional<ActionsDAG> tryToExtractPartialPredicate(
 
     const ActionsDAG::Node & predicate = full_dag.findInOutputs(filter_name);
 
-    auto predicate_template = extractPartialPredicate(predicate, NameSet(available_columns.begin(), available_columns.end()));
+    auto predicate_template = extractPartialPredicate(
+        predicate, NameSet(available_columns.begin(), available_columns.end()), only_conditions_safe_on_more_rows);
 
     if (predicate_template.assumedTrue())
         return {};
