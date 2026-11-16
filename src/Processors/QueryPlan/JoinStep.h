@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinEstimation.h>
 #include <Core/Joins.h>
@@ -74,7 +76,7 @@ public:
         std::string rhs_name;
     };
 
-    struct PrimaryKeySharding : std::vector<PrimaryKeyNamesPair>
+    struct PrimaryKeySharding : VectorWithMemoryTracking<PrimaryKeyNamesPair>
     {
         bool is_reverse_order = false;
     };
@@ -108,7 +110,7 @@ public:
     bool isOptimized() const { return optimized; }
     void setOptimized() { optimized = true; }
 
-    std::vector<size_t> getStepGroups() const override;
+    VectorWithMemoryTracking<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
     StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
@@ -135,7 +137,7 @@ private:
     size_t max_streams;
 
     const NameSet required_output;
-    std::set<size_t> columns_to_remove;
+    SetWithMemoryTracking<size_t> columns_to_remove;
     JoinLocality locality = JoinLocality::Unspecified;
     LeftPipelineOrder left_pipeline_order = LeftPipelineOrder::None;
     bool use_new_analyzer = false;

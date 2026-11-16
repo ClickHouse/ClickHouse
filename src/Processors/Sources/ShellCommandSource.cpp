@@ -659,7 +659,11 @@ namespace
 
             if (command_holder && process_pool)
             {
-                bool valid_command = configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read;
+                /// The default row count is not final until the output header has been read.
+                /// `prepare` intentionally keeps the old check: it must not wait on a live pooled worker.
+                bool valid_command = configuration.read_fixed_number_of_rows
+                    && (!configuration.read_number_of_rows_from_process_output || executor)
+                    && current_read_rows >= configuration.number_of_rows_to_read;
 
                 LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
@@ -737,7 +741,8 @@ namespace
                                   "Executable generates stderr: {}", timeout_command_out.getStderr());
                 }
 
-                if (check_exit_code)
+                /// Do not wait for a command whose output was not read to the end: it may never exit while its pipes stay open.
+                if (check_exit_code && finished)
                 {
                     try
                     {

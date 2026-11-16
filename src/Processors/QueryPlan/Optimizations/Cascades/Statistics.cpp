@@ -1,4 +1,6 @@
 #include <mutex>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
@@ -34,7 +36,7 @@ void ExpressionStatistics::dump(WriteBuffer & out) const
     for (const auto & column : column_statistics)
         out << "`" << column.first << "` NDV : " << column.second.num_distinct_values
             << " avg_bytes: " << column.second.avg_bytes << "\n";
-    std::unordered_set<const void *> visited_classes;
+    UnorderedSetWithMemoryTracking<const void *> visited_classes;
     for (const auto & [member, class_ptr] : equivalences.getMemberToClassMap())
     {
         if (!class_ptr || !visited_classes.insert(class_ptr.get()).second)
@@ -74,7 +76,7 @@ Float64 estimateRowWidthFromHeader(const Block & header)
     return std::max(total, CascadesDefaults::MIN_ROW_WIDTH);
 }
 
-Float64 estimateRowWidth(const Block & header, const std::unordered_map<String, ColumnStats> & column_statistics)
+Float64 estimateRowWidth(const Block & header, const UnorderedMapWithMemoryTracking<String, ColumnStats> & column_statistics)
 {
     Float64 total = 0;
     for (const auto & column : header)
@@ -160,7 +162,7 @@ private:
     }
 
     mutable std::mutex table_statistics_lock;
-    mutable std::unordered_map<String, RelationStats> parsed_table_statistics TSA_GUARDED_BY(table_statistics_lock);
+    mutable UnorderedMapWithMemoryTracking<String, RelationStats> parsed_table_statistics TSA_GUARDED_BY(table_statistics_lock);
     const String statistics_hint_json;
 };
 
@@ -185,7 +187,7 @@ OptimizerStatisticsPtr createEmptyStatistics()
 }
 
 
-std::unordered_map<String, Float64> estimateReadColumnWidths(const ReadFromMergeTree & read_step)
+UnorderedMapWithMemoryTracking<String, Float64> estimateReadColumnWidths(const ReadFromMergeTree & read_step)
 {
     const auto & storage = read_step.getStorageSnapshot()->storage;
     const auto total_rows_opt = storage.totalRows(read_step.getContext());
@@ -224,7 +226,7 @@ std::unordered_map<String, Float64> estimateReadColumnWidths(const ReadFromMerge
     }
 
     const auto & header = *read_step.getOutputHeader();
-    std::unordered_map<String, Float64> widths;
+    UnorderedMapWithMemoryTracking<String, Float64> widths;
     for (const auto & column_name : read_step.getAllColumnNames())
     {
         auto size_it = column_sizes.find(column_name);
@@ -239,7 +241,7 @@ std::unordered_map<String, Float64> estimateReadColumnWidths(const ReadFromMerge
     return widths;
 }
 
-std::unordered_map<String, Float64> estimateReadColumnWidthsScaledToRow(const ReadFromMergeTree & read_step, Float64 row_bytes)
+UnorderedMapWithMemoryTracking<String, Float64> estimateReadColumnWidthsScaledToRow(const ReadFromMergeTree & read_step, Float64 row_bytes)
 {
     Float64 type_width_sum = 0;
     for (const auto & column : read_step.getStorageSnapshot()->metadata->getColumns().getAllPhysical())
@@ -247,7 +249,7 @@ std::unordered_map<String, Float64> estimateReadColumnWidthsScaledToRow(const Re
     const Float64 scale = type_width_sum > 0 ? row_bytes / type_width_sum : 1.0;
 
     const auto & header = *read_step.getOutputHeader();
-    std::unordered_map<String, Float64> widths;
+    UnorderedMapWithMemoryTracking<String, Float64> widths;
     for (const auto & column_name : read_step.getAllColumnNames())
         if (const auto * header_column = header.findByName(column_name))
             widths[column_name] = estimateColumnWidthFromType(*header_column->type) * scale;

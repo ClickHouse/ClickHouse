@@ -240,7 +240,7 @@ void IAggregateFunction::mergeAndDestroyBatchOrDefer(
 
         for (; i < size; ++i)
         {
-            chassert(dst_places[i] + offset != rhs_places[i] + offset,
+            chassert(!isSelfMerge(dst_places[i] + offset, rhs_places[i] + offset),
                      "IAggregateFunction::mergeAndDestroyBatchOrDefer called with the same source and destination state");
             if (isLargeMergePair(dst_places[i] + offset, rhs_places[i] + offset))
             {
@@ -277,7 +277,7 @@ void IAggregateFunction::mergeBatchOrDefer(
         if (!places[i])
             continue;
 
-        chassert(places[i] + place_offset != rhs[i],
+        chassert(!isSelfMerge(places[i] + place_offset, rhs[i]),
                  "IAggregateFunction::mergeBatchOrDefer called with the same source and destination state");
         if (isLargeMergePair(places[i] + place_offset, rhs[i]))
         {

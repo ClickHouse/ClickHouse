@@ -172,25 +172,15 @@ public:
         }
     }
 
-    /// `forEachValue` with the hash of every key, `func(key, mapped, hash)`, taken from its cell. It is the hash `hash`
-    /// computes, which must not be computed from the key handed out here: a key packed into an integer is a view of
-    /// that integer in its cell. Such a key goes into another table with `emplaceIteratedKey`.
+    /// `forEachValue` with the hash of every key, `func(key, mapped, hash)`, taken from its cell (see
+    /// `forEachCellWithHash`). It is the hash `hash` computes, which must not be computed from the key handed
+    /// out here: a key packed into an integer is a view of that integer in its cell (see `iteratedKey`). Such
+    /// a key goes into another table with `emplaceIteratedKey`.
     template <typename Func>
     void ALWAYS_INLINE forEachValueWithHash(Func && func)
     {
-        /// The hash function of every submap: a cell computes the hash of its packed key with it, or returns the hash it
-        /// saved for a key of `ms`.
-        const StringHashTableHash hash_function;
-        if (this->m0.size())
-            func(std::string_view{}, this->m0.zeroValue()->getMapped(), this->hash(std::string_view{}));
-        for (auto & v : this->m1)
-            func(v.getKey(), v.getMapped(), v.getHash(hash_function));
-        for (auto & v : this->m2)
-            func(v.getKey(), v.getMapped(), v.getHash(hash_function));
-        for (auto & v : this->m3)
-            func(v.getKey(), v.getMapped(), v.getHash(hash_function));
-        for (auto & v : this->ms)
-            func(v.getKey(), v.getMapped(), v.getHash(hash_function));
+        this->forEachCellWithHash([&](auto key_class, auto & cell, size_t hash)
+            { func(Base::template iteratedKey<decltype(key_class)::value>(cell), cell.getMapped(), hash); });
     }
 
     template <typename Func>

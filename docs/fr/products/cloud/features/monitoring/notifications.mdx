@@ -7,8 +7,6 @@ sidebarTitle: 'Notifications'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 ClickHouse Cloud envoie des notifications concernant des événements critiques liés à votre service ou à votre organization. Voici quelques notions à garder à l’esprit pour comprendre comment les notifications sont envoyées et configurées :
 
 1. **Catégorie de notification** : désigne des groupes de notifications, comme les notifications de facturation, les notifications liées au service, etc. Au sein de chaque catégorie, plusieurs notifications permettent de configurer le mode de distribution.
@@ -21,9 +19,25 @@ ClickHouse Cloud envoie des notifications concernant des événements critiques 
 
 Les notifications peuvent être reçues par différents canaux. ClickHouse Cloud permet de recevoir des notifications par e-mail, dans l’UI de ClickHouse Cloud et dans Slack. Vous pouvez cliquer sur l’icône en forme de cloche dans le menu en haut à gauche pour afficher les notifications en cours, ce qui ouvre un panneau latéral. En cliquant sur le bouton **View All** en bas de ce panneau, vous accéderez à une page affichant le journal d’activité de toutes les notifications.
 
-<Image img="/images/cloud/manage/notifications-1.webp" size="md" alt="Panneau latéral des notifications ClickHouse Cloud" border />
+<div className="ch-image-md">
 
-<Image img="/images/cloud/manage/notifications-2.webp" size="md" alt="Journal d’activité des notifications ClickHouse Cloud" border />
+<Frame>
+
+![Panneau latéral des notifications ClickHouse Cloud](/images/cloud/manage/notifications-1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![Journal d’activité des notifications ClickHouse Cloud](/images/cloud/manage/notifications-2.webp)
+
+</Frame>
+
+</div>
 
 <div id="customizing-notifications">
   ## Personnaliser les notifications
@@ -35,9 +49,25 @@ Vous pouvez personnaliser les notifications envoyées via l’UI de Cloud, et ce
 
 Pour configurer l’envoi d’une notification spécifique, cliquez sur l’icône en forme de crayon pour modifier les canaux de diffusion de la notification.
 
-<Image img="/images/cloud/manage/notifications-3.webp" size="md" alt="Écran des paramètres des notifications ClickHouse Cloud" border />
+<div className="ch-image-md">
 
-<Image img="/images/cloud/manage/notifications-4.webp" size="md" alt="Paramètres de diffusion des notifications ClickHouse Cloud" border />
+<Frame>
+
+![Écran des paramètres des notifications ClickHouse Cloud](/images/cloud/manage/notifications-3.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![Paramètres de diffusion des notifications ClickHouse Cloud](/images/cloud/manage/notifications-4.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   Certaines notifications **obligatoires**, comme **Échec du paiement**, ne sont pas configurables.

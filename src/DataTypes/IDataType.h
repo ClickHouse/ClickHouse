@@ -4,7 +4,10 @@
 #include <Core/TypeId.h>
 #include <Common/COW.h>
 #include <DataTypes/IDataType_fwd.h>
-#include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationSubstream.h>
+#include <Core/Types.h>
+#include <Common/typeid_cast.h>
+#include <base/demangle.h>
 
 #include <memory>
 #include <optional>
@@ -108,8 +111,8 @@ public:
 
     SerializationPtr getSubcolumnSerialization(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
 
-    using SubstreamData = ISerialization::SubstreamData;
-    using SubstreamPath = ISerialization::SubstreamPath;
+    using SubstreamData = SerializationSubstreamData;
+    using SubstreamPath = SerializationSubstreamPath;
 
     /// A resolved subcolumn: everything needed to read it, plus the path saying which substream it is.
     /// The name alone does not, because subcolumn names are flat and several substreams can claim one -
@@ -188,7 +191,7 @@ public:
 
     SerializationPtr getSerialization(const SerializationInfoSettings & settings) const;
 
-    SerializationPtr wrapSerializationBasedOnKindStack(SerializationPtr serialization, const ISerialization::KindStack & kind_stack, const SerializationInfoSettings & settings) const;
+    SerializationPtr wrapSerializationBasedOnKindStack(SerializationPtr serialization, const SerializationKindStack & kind_stack, const SerializationInfoSettings & settings) const;
 
     /// Chooses between subcolumn serialization and regular serialization according to @column.
     /// This method typically should be used to get serialization for reading column or subcolumn.

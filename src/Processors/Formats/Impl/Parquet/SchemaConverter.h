@@ -93,6 +93,8 @@ private:
         std::optional<String> parquet_name;
         DataTypePtr type_hint;
         bool requested = false;
+        /// The element or one of its ancestors is not in the data lake schema (see useColumnMapperIfNeeded).
+        bool not_in_datalake_schema = false;
 
         /// These are assigned by the callee.
         const parq::SchemaElement * element = nullptr;
@@ -136,6 +138,27 @@ private:
         }
     };
 
+    /// Every leaf under an array, in schema order, so the leaves of a subtree are a contiguous range.
+    struct LeafInArray
+    {
+        size_t schema_idx = 0;
+        size_t column_idx = 0;
+        VectorWithMemoryTracking<LevelInfo> levels;
+    };
+    VectorWithMemoryTracking<LeafInArray> leaves_in_arrays;
+
+    /// A tuple inside an array that is not requested as a whole. A requested subcolumn of an element
+    /// it does not have (`arr.missing`) takes the array sizes from it.
+    struct TupleInArray
+    {
+        String name;
+        size_t schema_idx = 0;
+        size_t leaves_start = 0;
+        size_t leaves_end = 0;
+        VectorWithMemoryTracking<LevelInfo> levels;
+    };
+    VectorWithMemoryTracking<TupleInArray> tuples_in_arrays;
+
     void checkHasColumns();
 
     void processSubtree(TraversalNode & node);
@@ -149,6 +172,15 @@ private:
     bool processSubtreeArrayInner(TraversalNode & node);
     void processSubtreeTuple(TraversalNode & node);
     bool processSubtreeDynamic(TraversalNode & node);
+
+    /// The sizes of an array are stored only in the leaves under it. Adds a primitive column with
+    /// PrimitiveColumnInfo::levels_only_arrays = `arrays` and no output, for one of the leaves
+    /// leaves_in_arrays[leaves_start, leaves_end). Returns its index in primitive_columns, or nullopt if no leaf is read.
+    std::optional<size_t> addLevelsOnlyPrimitive(size_t leaves_start, size_t leaves_end, UInt8 arrays, const String & name);
+
+    /// If the requested column at `pos` is `arr.missing`, where `arr` is in tuples_in_arrays and has
+    /// no element `missing`, outputs it as arrays of defaults sized like `arr` and returns true.
+    bool addMissingElementOfTupleInArray(size_t pos);
 
     void processPrimitiveColumn(
         const parq::SchemaElement & element, DataTypePtr type_hint, bool time_as_stored_integer,

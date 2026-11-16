@@ -7,6 +7,8 @@
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Processors/Formats/IInputFormat.h>
 
+#include <future>
+
 using namespace DB;
 
 namespace DB::ErrorCodes
@@ -380,6 +382,32 @@ TEST(RendezvousHashing, DoesNotWaitForConnectedOwner)
     ASSERT_TRUE(extractNForReplica(distributor, paths0, 0, 9));
     paths0.insert(paths0.end(), paths1.begin(), paths1.end());
     ASSERT_TRUE(checkHead(paths0, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}));
+}
+
+TEST(RendezvousHashing, WaitsForOwnerWithHugeWait)
+{
+    /// The largest value of the setting, and the largest one whose conversion to nanoseconds fits but whose
+    /// addition to `now()` does not.
+    for (const auto wait_for_owner :
+         {std::chrono::milliseconds(std::numeric_limits<Int64>::max() / 1000),
+          std::chrono::milliseconds(std::numeric_limits<Int64>::max() / 1'000'000)})
+    {
+        auto iterator = makeIterator();
+        std::vector<std::string> replicas = {"replica2", "replica1"};
+        StorageObjectStorageStableTaskDistributor distributor(iterator, std::move(replicas), false, wait_for_owner);
+
+        std::vector<std::string> paths;
+        ASSERT_TRUE(extractNForReplica(distributor, paths, 0, 6));
+        ASSERT_TRUE(checkHead(paths, {1, 5, 6, 7, 8, 9}));
+
+        /// Replica 0 has no files left: it waits for replica 1 instead of taking its files.
+        auto stolen = std::async(std::launch::async, [&distributor] { return distributor.getNextTask(0); });
+        ASSERT_EQ(stolen.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+
+        /// Replica 1 asks for a task, which ends the wait.
+        ASSERT_NE(distributor.getNextTask(1), nullptr);
+        ASSERT_NE(stolen.get(), nullptr);
+    }
 }
 
 TEST(RendezvousHashing, TakesFilesOfReplicaWithMostRemainingBytes)

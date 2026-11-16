@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <mutex>
 #include <span>
 #include <string_view>
@@ -104,7 +105,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 class MergeTreeDeduplicationLog;
 class UniqueKeyDenseIndexOps;
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+using PartitionIdToMaxBlock = UnorderedMapWithMemoryTracking<String, Int64>;
 
 namespace ErrorCodes
 {

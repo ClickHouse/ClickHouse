@@ -9,6 +9,7 @@
 #include <Common/Macros.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatSettings.h>
+#include <limits>
 
 namespace DB
 {
@@ -20,6 +21,7 @@ extern const int LOGICAL_ERROR;
 
 struct FileBucketInfo;
 using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
+class RuntimeFilterPruningPredicate;
 
 struct ObjectInfo
 {
@@ -103,6 +105,10 @@ struct IObjectIterator
 
     /// Set `emit_profile_events` flag, propagating to nested iterators if any.
     virtual void setEmitProfileEvents(bool value) { emit_profile_events = value; }
+
+    /// The predicate of the JOIN runtime filters every row of the read passes, set before the first `next`.
+    /// An iterator may skip the objects that cannot contain any of their keys once it is built.
+    virtual void setJoinRuntimeFilters(std::shared_ptr<const RuntimeFilterPruningPredicate> /*predicate*/) {}
 };
 
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
@@ -129,6 +135,11 @@ public:
         iterator->setEmitProfileEvents(value);
     }
 
+    void setJoinRuntimeFilters(std::shared_ptr<const RuntimeFilterPruningPredicate> predicate) override
+    {
+        iterator->setJoinRuntimeFilters(std::move(predicate));
+    }
+
 private:
     const ObjectIterator iterator;
     const StorageObjectStorageConfigurationPtr configuration;
@@ -137,6 +148,79 @@ private:
     const std::shared_ptr<ExpressionActions> filter_actions;
     const std::function<void(FileProgress)> file_progress_callback;
     LoggerPtr log = getLogger("ObjectIteratorWithPathAndFileFilter");
+};
+
+/// Hands out objects already taken from `iterator` before continuing with it, so a caller can look ahead
+/// without losing what it took.
+class ObjectIteratorWithPeekedObjects : public IObjectIterator
+{
+public:
+    ObjectIteratorWithPeekedObjects(ObjectInfos peeked_objects_, ObjectIterator iterator_)
+        : peeked_objects(std::move(peeked_objects_)), iterator(std::move(iterator_))
+    {
+    }
+
+    ObjectInfoPtr next(size_t id) override
+    {
+        {
+            std::lock_guard lock(mutex);
+            if (next_peeked_object < peeked_objects.size())
+                return peeked_objects[next_peeked_object++];
+        }
+        return iterator->next(id);
+    }
+
+    /// The peeked objects not handed out yet count too: a drained `iterator` can report 0, and a consumer
+    /// seeing <= 1 key collapses to a single stream.
+    size_t estimatedKeysCount() override
+    {
+        const size_t delegate_count = iterator->estimatedKeysCount();
+        if (delegate_count == std::numeric_limits<size_t>::max())
+            return delegate_count;
+
+        std::lock_guard lock(mutex);
+        return (peeked_objects.size() - next_peeked_object) + delegate_count;
+    }
+
+    std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+
+    void setEmitProfileEvents(bool value) override
+    {
+        emit_profile_events = value;
+        iterator->setEmitProfileEvents(value);
+    }
+
+private:
+    std::mutex mutex;
+    const ObjectInfos peeked_objects;
+    size_t next_peeked_object = 0;
+    const ObjectIterator iterator;
+};
+
+/// Hands out exactly one object, then reports exhaustion. Gives a source a private file so
+/// file-to-stream assignment is deterministic rather than a pull race.
+class SingleObjectIterator : public IObjectIterator
+{
+public:
+    SingleObjectIterator(ObjectInfoPtr object_, ObjectIterator snapshot_source_)
+        : object(std::move(object_)), snapshot_source(std::move(snapshot_source_))
+    {
+    }
+
+    ObjectInfoPtr next(size_t) override
+    {
+        if (consumed.exchange(true))
+            return nullptr;
+        return object;
+    }
+
+    size_t estimatedKeysCount() override { return 1; }
+    std::optional<UInt64> getSnapshotVersion() const override { return snapshot_source->getSnapshotVersion(); }
+
+private:
+    const ObjectInfoPtr object;
+    const ObjectIterator snapshot_source;
+    std::atomic_bool consumed = false;
 };
 
 class ObjectIteratorSplitByBuckets : public IObjectIterator, private WithContext

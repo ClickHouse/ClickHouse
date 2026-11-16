@@ -418,6 +418,10 @@ public:
         /// server-internal table whose client was built restricted at metadata load) without detaching the table,
         /// and by the config reload of server disks, which rebuilds the client unconditionally.
         bool force_client_rebuild = false;
+
+        /// Request settings given as explicit arguments of the storage definition, by name. They take priority over the
+        /// server config and the endpoint settings, which are re-applied on every call.
+        std::map<String, String> explicit_request_settings = {};
     };
     virtual void applyNewSettings(
         const Poco::Util::AbstractConfiguration & /* config */,

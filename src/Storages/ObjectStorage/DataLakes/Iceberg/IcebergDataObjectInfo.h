@@ -86,6 +86,10 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
         FormatParserSharedResourcesPtr parser_shared_resources,
         ContextPtr context_);
 
+    /// Whether the position deletes of this file are applied by `IcebergStreamingPositionDeleteTransform`,
+    /// which requires the rows of the data file and of its delete files in order of increasing row number.
+    bool usesStreamingPositionDeletes(const ContextPtr & context_) const;
+
     std::optional<String> getFileFormat() const override { return info.file_format; }
 
     VectorWithMemoryTracking<UInt64> getSplitOffsetsHint() const override { return split_offsets; }

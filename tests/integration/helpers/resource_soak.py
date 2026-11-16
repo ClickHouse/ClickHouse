@@ -104,6 +104,7 @@ class ResourceSampler:
         self.pid = node.get_process_pid("clickhouse")
         assert self.pid is not None, "cannot find the server process"
         self.asan = node.is_built_with_sanitizer("address")
+        self.tsan = node.is_built_with_sanitizer("thread")
         self.samples: List[Sample] = []
 
     def sample(self, iteration: int) -> Sample:
@@ -184,7 +185,7 @@ done | sort | uniq -c | sort -rn | head -20
     ):
         """Assert that the server-wide resources do not grow from the early to the late window.
 
-        Memory gets a tolerance in bytes plus a fraction of the early value: allocator caching, log buffers and the query that just ran move it by some megabytes between samples. File descriptors and threads come from bounded pools (connection pools, thread pools), so after the warmup their maximum moves by a few at most.
+        Memory gets a tolerance in bytes plus a fraction of the early value: allocator caching, log buffers and the query that just ran move it by some megabytes between samples. File descriptors and threads come from bounded pools (connection pools, thread pools), so after the warmup their number moves by a few at most.
 
         `cache_metrics` name `system.metrics` sizes in bytes of caches that legitimately fill up during the soak, for example `IcebergMetadataFilesCacheBytes` while every `INSERT` adds a manifest. Their size is subtracted from the memory before the comparison, as the caches have limits of their own."""
         caches = [sum(s.metrics[m] for m in cache_metrics) for s in self.samples]
@@ -196,14 +197,18 @@ done | sort | uniq -c | sort -rn | head -20
             unit=" B",
         )
         # Resident memory also covers allocations that `MemoryTracking` does not see, such as those of the Rust Delta kernel. Only anonymous memory is compared: file-backed pages are those of the binary and of the files it reads, which the server faults in on first use (for example the debug info when it symbolizes a stack trace) and the kernel can evict, so they are not held by the server.
-        assert_not_growing(
-            "anonymous resident memory without caches",
-            [m - c for m, c in zip(self.series("rss"), caches)],
-            abs_tolerance=memory_abs_tolerance + (ASAN_QUARANTINE_BYTES if self.asan else 0),
-            rel_tolerance=memory_rel_tolerance,
-            unit=" B",
-        )
-        assert_not_growing("open file descriptors", self.series("fds"), abs_tolerance=fds_tolerance, statistic=max)
+        # The resident memory of a ThreadSanitizer build includes its shadow memory, which it discards all at once when its thread slots run out of epochs and then refills, at points unrelated to the iterations.
+        if self.tsan:
+            logging.info("anonymous resident memory: not compared on a ThreadSanitizer build")
+        else:
+            assert_not_growing(
+                "anonymous resident memory without caches",
+                [m - c for m, c in zip(self.series("rss"), caches)],
+                abs_tolerance=memory_abs_tolerance + (ASAN_QUARANTINE_BYTES if self.asan else 0),
+                rel_tolerance=memory_rel_tolerance,
+                unit=" B",
+            )
+        assert_not_growing("open file descriptors", self.series("fds"), abs_tolerance=fds_tolerance)
         assert_not_growing("descriptors of exited threads", self.series("exited_thread_fds"), abs_tolerance=fds_tolerance, statistic=max)
         assert_not_growing("threads", self.series("threads"), abs_tolerance=threads_tolerance, statistic=max)
 

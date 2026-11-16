@@ -488,6 +488,9 @@ public:
     /// Whether removing a directory with `removeSharedRecursive` is cheaper than removing its files one by one.
     virtual bool prefersRecursiveRemoval() const { return false; }
 
+    /// Whether a new file written by `writeFile` appears at once: a reader sees either no file or the complete one.
+    virtual bool supportsAtomicFileCreation() const { return false; }
+
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
 

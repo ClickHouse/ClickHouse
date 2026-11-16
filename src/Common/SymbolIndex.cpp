@@ -815,24 +815,41 @@ bool collectSymbolsFromELF(
 }
 
 
+struct CollectSymbolsContext
+{
+    SymbolIndex::Data & data;
+    std::exception_ptr exception;
+};
+
 /* Callback for dl_iterate_phdr.
  * Is called by dl_iterate_phdr for every loaded shared lib until something
  * else than 0 is returned by one call of this function.
  */
-int collectSymbols(DynamicLinkingProgramHeaderInfo * info, size_t, void * data_ptr)
+int collectSymbols(DynamicLinkingProgramHeaderInfo * info, size_t, void * context_ptr)
 {
-    SymbolIndex::Data & data = *reinterpret_cast<SymbolIndex::Data *>(data_ptr);
+    CollectSymbolsContext & context = *reinterpret_cast<CollectSymbolsContext *>(context_ptr);
+    SymbolIndex::Data & data = context.data;
 
     const size_t initial_symbol_count = data.symbols.size();
     const size_t initial_object_count = data.objects.size();
 
-    collectSymbolsFromProgramHeaders(info, data);
-    if (!collectSymbolsFromELF(info, data))
+    /// An exception must not unwind through the frames of `dl_iterate_phdr`: it is C code, and it holds
+    /// the loader lock while it calls us. Stop the iteration, and rethrow after `dl_iterate_phdr` returns.
+    try
     {
-        /// Offsets of different objects overlap, and only offsets inside the main executable are published.
-        if (data.objects.size() > initial_object_count)
-            data.objects.back().symbols.assign(data.symbols.begin() + initial_symbol_count, data.symbols.end());
-        data.symbols.resize(initial_symbol_count);
+        collectSymbolsFromProgramHeaders(info, data);
+        if (!collectSymbolsFromELF(info, data))
+        {
+            /// Offsets of different objects overlap, and only offsets inside the main executable are published.
+            if (data.objects.size() > initial_object_count)
+                data.objects.back().symbols.assign(data.symbols.begin() + initial_symbol_count, data.symbols.end());
+            data.symbols.resize(initial_symbol_count);
+        }
+    }
+    catch (...)
+    {
+        context.exception = std::current_exception();
+        return 1;
     }
 
     /* Continue iterations */
@@ -1073,7 +1090,10 @@ const SymbolIndex::Object * find(const void * address, const std::vector<SymbolI
 void SymbolIndex::load()
 {
 #if defined(__ELF__)
-    dl_iterate_phdr(collectSymbols, &data);
+    CollectSymbolsContext context{data, {}};
+    dl_iterate_phdr(collectSymbols, &context);
+    if (context.exception)
+        std::rethrow_exception(context.exception);
 #elif defined(OS_DARWIN)
     uint32_t image_count = _dyld_image_count();
     for (uint32_t i = 0; i < image_count; ++i)

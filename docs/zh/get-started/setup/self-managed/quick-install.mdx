@@ -18,10 +18,19 @@ doc_type: 'guide'
     curl https://clickhouse.com/ | sh
     ```
 
-    在 Linux 和 macOS 上，这还会将 ClickHouse 命令行客户端 [`clickhousectl`](/zh/get-started/setup/self-managed/clickhousectl)
-    安装到 `~/.local/bin` (并创建一个 `chctl` 别名)。`clickhousectl`
-    可帮助你安装和管理多个本地 ClickHouse 版本、在后台运行服务器，
-    以及管理 ClickHouse Cloud。有关基于命令行客户端的工作流程，请参阅 [clickhousectl 安装页面](/zh/get-started/setup/self-managed/clickhousectl)。
+    在 Linux 和 macOS (x86&#95;64 和 ARM64) 上，这还会将 ClickHouse 命令行客户端 [`clickhousectl`](/zh/get-started/setup/self-managed/clickhousectl)
+    安装到 `~/.local/bin` (并创建一个 `chctl` 别名)。如果脚本
+    提示 `~/.local/bin` 不在你的 `PATH` 中，请将其添加进去：
+
+    ```bash
+    export PATH="$HOME/.local/bin:$PATH"
+    ```
+
+    `clickhousectl` 可帮助你安装和管理多个本地 ClickHouse 版本、
+    在后台运行 ClickHouse 和 Postgres 服务器，以及管理 ClickHouse Cloud。
+
+    如果希望改由 `clickhousectl` 为你安装和管理 ClickHouse 版本，
+    请运行 `clickhousectl local use latest`。有关基于命令行客户端的工作流程，请参阅 [clickhousectl 安装页面](/zh/get-started/setup/self-managed/clickhousectl)。
 
     如果只想安装 `clickhouse` 可执行文件而不安装 `clickhousectl`，请设置
     `CLICKHOUSE_ONLY=1`：
@@ -85,7 +94,7 @@ doc_type: 'guide'
     现在，你已经可以开始向 ClickHouse 发送 SQL 命令了！
 
     <Tip>
-      [快速入门](/zh/get-started/setup/install)将引导你完成创建表和插入数据的步骤。
+      [在 ClickHouse 中创建表](/zh/get-started/quickstarts/creating-tables)将引导你完成创建表和插入数据的步骤。
     </Tip>
   </Step>
 </Steps>

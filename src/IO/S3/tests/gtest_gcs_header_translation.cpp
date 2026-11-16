@@ -369,7 +369,7 @@ std::unique_ptr<DB::S3::Client> makeClientTalkingToMockGCS(
         /* s3_slow_all_threads_after_network_error = */ false,
         /* s3_slow_all_threads_after_retryable_error = */ false,
         /* enable_s3_requests_logging = */ false,
-        /* for_disk_s3 = */ false,
+        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {},
         "http");

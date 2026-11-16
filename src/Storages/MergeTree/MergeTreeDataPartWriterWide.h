@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Formats/MarkInCompressedFile.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 
 namespace DB

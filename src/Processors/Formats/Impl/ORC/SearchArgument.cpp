@@ -412,9 +412,10 @@ TruthValue PredicateLeaf::evaluatePredicateMinMax(const Proto::ColumnStatistics 
         }
         case PredicateDataType::STRING:
         {
-            if (stats.string_statistics && stats.string_statistics->minimum && stats.string_statistics->maximum)
+            /// The bounds of long values contain the actual range, which is enough for the evaluation.
+            if (stats.string_statistics && stats.string_statistics->getLowerBound() && stats.string_statistics->getUpperBound())
                 result = evaluateRange(op, literalsTo<std::string>(literals, [](const Literal & l) { return l.getString(); }),
-                    *stats.string_statistics->minimum, *stats.string_statistics->maximum, has_null);
+                    *stats.string_statistics->getLowerBound(), *stats.string_statistics->getUpperBound(), has_null);
             break;
         }
         case PredicateDataType::DATE:

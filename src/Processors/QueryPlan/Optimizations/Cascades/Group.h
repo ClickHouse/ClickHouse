@@ -1,6 +1,9 @@
 #pragma once
 
 #include <limits>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
@@ -67,7 +70,7 @@ public:
     ExpressionWithCost selectInputImplementation(
         const ExpressionProperties & required_properties,
         const CostConfig & cost_config,
-        const std::unordered_set<GroupExpression *> & active_path,
+        const UnorderedSetWithMemoryTracking<GroupExpression *> & active_path,
         bool input_is_self_referential) const;
 
     /// Returns the weighted subtree cost of the best implementation satisfying
@@ -77,12 +80,12 @@ public:
     void dump(WriteBuffer & out, const CostConfig & cost_config, String indent = {}) const;
     String dump(const CostConfig & cost_config) const;
 
-    std::vector<GroupExpressionPtr> logical_expressions;
-    std::vector<GroupExpressionPtr> physical_expressions;
+    VectorWithMemoryTracking<GroupExpressionPtr> logical_expressions;
+    VectorWithMemoryTracking<GroupExpressionPtr> physical_expressions;
 
     /// Best implementation for various required properties, indexed by distribution
     /// shape (node_count, is_replicated) for O(1) bucket lookup.
-    std::unordered_map<UInt64, std::vector<GroupExpressionPtr>> best_implementations;
+    UnorderedMapWithMemoryTracking<UInt64, VectorWithMemoryTracking<GroupExpressionPtr>> best_implementations;
 
     /// Statistics for this group - shared by all expressions in the group
     /// since they all represent the same logical result
@@ -91,14 +94,14 @@ public:
 private:
     const GroupId group_id;
     bool is_explored = false;
-    std::unordered_set<ExpressionProperties, ExpressionPropertiesHash> optimized_properties;  /// Tracks which required properties have had implementation rules applied
-    std::unordered_set<ExpressionProperties, ExpressionPropertiesHash> enforced_properties;   /// Tracks which required properties have had enforcer rules applied
-    std::unordered_set<ExpressionProperties, ExpressionPropertiesHash> fully_done_properties; /// Tracks which required properties are fully optimized (all stages complete)
+    UnorderedSetWithMemoryTracking<ExpressionProperties, ExpressionPropertiesHash> optimized_properties;  /// Tracks which required properties have had implementation rules applied
+    UnorderedSetWithMemoryTracking<ExpressionProperties, ExpressionPropertiesHash> enforced_properties;   /// Tracks which required properties have had enforcer rules applied
+    UnorderedSetWithMemoryTracking<ExpressionProperties, ExpressionPropertiesHash> fully_done_properties; /// Tracks which required properties are fully optimized (all stages complete)
     /// Deduplicates physical expressions by STRUCTURAL identity. Bucketed by fingerprint hash;
     /// a hit is dropped only when an existing expression is structurally equal, so a genuine
     /// hash collision keeps both alternatives instead of silently discarding one.
-    std::unordered_map<size_t, std::vector<GroupExpression *>> physical_expressions_by_fingerprint;
-    std::unordered_map<size_t, std::vector<GroupExpression *>> logical_expressions_by_fingerprint;
+    UnorderedMapWithMemoryTracking<size_t, VectorWithMemoryTracking<GroupExpression *>> physical_expressions_by_fingerprint;
+    UnorderedMapWithMemoryTracking<size_t, VectorWithMemoryTracking<GroupExpression *>> logical_expressions_by_fingerprint;
 
     /// Encode (node_count, is_replicated) into a single key for best_implementations lookup.
     static UInt64 distributionKey(const DistributionDescription & distribution)

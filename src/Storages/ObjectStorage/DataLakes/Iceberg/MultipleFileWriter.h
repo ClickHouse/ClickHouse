@@ -66,7 +66,6 @@ public:
 private:
     UInt64 max_data_file_num_rows;
     UInt64 max_data_file_num_bytes;
-    Poco::JSON::Array::Ptr schema;
     /// Pre-built ColumnMapper for `startNewFile`. Traversing the Iceberg schema is invariant
     /// for the lifetime of the writer, so we compute the mapping once and reuse it across
     /// every rolled-over data file instead of recomputing it on each rollover.

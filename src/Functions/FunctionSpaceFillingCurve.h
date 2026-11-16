@@ -42,6 +42,21 @@ struct UIntColumnSpan
             default: return fallback->getUInt(row);
         }
     }
+
+    /// Calls `f` with a reader of the rows that is specialized for the width of the column,
+    /// so that a loop over the rows inside `f` does not dispatch on the width for every row.
+    template <typename F>
+    ALWAYS_INLINE void withReader(F && f) const
+    {
+        switch (width)
+        {
+            case 8: f([values = static_cast<const UInt64 *>(data)](size_t row) -> UInt64 { return values[row]; }); break;
+            case 4: f([values = static_cast<const UInt32 *>(data)](size_t row) -> UInt64 { return values[row]; }); break;
+            case 2: f([values = static_cast<const UInt16 *>(data)](size_t row) -> UInt64 { return values[row]; }); break;
+            case 1: f([values = static_cast<const UInt8 *>(data)](size_t row) -> UInt64 { return values[row]; }); break;
+            default: f([column = fallback](size_t row) -> UInt64 { return column->getUInt(row); }); break;
+        }
+    }
 };
 
 inline UIntColumnSpan makeUIntColumnSpan(const IColumn & column)

@@ -1784,7 +1784,7 @@ void RadixUniqExactRouteTransform::work()
     /// Only the distinct values of the dictionary that the rows use are routed: a shared dictionary can be much larger
     /// than the chunk. They are `Nullable` for `LowCardinality(Nullable)`.
     if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
-        column = column_low_cardinality->getMinimalDictionaryEncodedColumn(0, column_low_cardinality->size()).dictionary;
+        column = column_low_cardinality->getMinimalDictionary(0, column_low_cardinality->size());
     {
         RADIX_UNIQ_EXACT_TRACK_MEMORY(state);
         if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
