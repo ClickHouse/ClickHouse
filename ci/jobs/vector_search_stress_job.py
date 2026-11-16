@@ -11,8 +11,8 @@ from ci.praktika.utils import Shell, Utils
 temp_dir = f"{Utils.cwd()}/ci/tmp"
 
 # The binary under test: the release build of PR #131027
-CH_BINARY_URL_ARM = "https://clickhouse-builds.s3.amazonaws.com/PRs/131027/e7d7a78a5a9df6ac19262116ba9805a3f3f54c43/pr/build_arm_release/clickhouse"
-CH_BINARY_URL_AMD = "https://clickhouse-builds.s3.amazonaws.com/PRs/131027/e7d7a78a5a9df6ac19262116ba9805a3f3f54c43/pr/build_amd_release/clickhouse"
+CH_BINARY_URL_ARM = "https://clickhouse-builds.s3.amazonaws.com/PRs/131027/07136ac28d6e56c48678640fd88e20f24025a5b5/pr/build_arm_release/clickhouse"
+CH_BINARY_URL_AMD = "https://clickhouse-builds.s3.amazonaws.com/PRs/131027/07136ac28d6e56c48678640fd88e20f24025a5b5/pr/build_amd_release/clickhouse"
 
 
 def clickhouse_binary_url():

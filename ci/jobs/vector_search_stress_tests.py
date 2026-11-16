@@ -178,8 +178,8 @@ dataset_laion_5b_mini_for_quick_test = {
 }
 
 # 10 million LAION vectors, searched using the rabitq quantized codes instead of a vector similarity index.
-# The column-level block sizes equal the size of one row (768 x BFloat16 = 1536 bytes), so that the rescoring step
-# reads only the shortlisted rows with `merge_tree_use_one_row_per_block_layout` (PR #131027).
+# The column-level setting `uncompressed_fixed_array_size` stores every row of 768 elements as one uncompressed block,
+# so that the rescoring step reads only the shortlisted rows with `merge_tree_use_one_row_per_block_layout` (PR #131027).
 dataset_laion_5b_10m_quantized_rabitq = {
     TABLE: "laion_10m_rabitq",
     S3_URLS: [
@@ -187,7 +187,7 @@ dataset_laion_5b_10m_quantized_rabitq = {
     ],
     SCHEMA: """
         id Int32,
-        vector Array(BFloat16) CODEC(Quantized('rabitq', 768)) SETTINGS (min_compress_block_size = 1536, max_compress_block_size = 1536)
+        vector Array(BFloat16) CODEC(Quantized('rabitq', 768)) SETTINGS (uncompressed_fixed_array_size = 768)
      """,
     ID_COLUMN: "id",
     VECTOR_COLUMN: "vector",
@@ -204,7 +204,7 @@ dataset_laion_5b_10m_quantized_turboquant = {
     ],
     SCHEMA: """
         id Int32,
-        vector Array(BFloat16) CODEC(Quantized('turboquant', 768)) SETTINGS (min_compress_block_size = 1536, max_compress_block_size = 1536)
+        vector Array(BFloat16) CODEC(Quantized('turboquant', 768)) SETTINGS (uncompressed_fixed_array_size = 768)
      """,
     ID_COLUMN: "id",
     VECTOR_COLUMN: "vector",
@@ -382,7 +382,7 @@ test_params_laion_5b_10m_qbit_int8 = {
     USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
     SEARCH_METHOD: SEARCH_METHOD_QBIT,
     SESSION_SETTINGS: None,
-    QBIT_PRECISIONS: [1, 8],
+    QBIT_PRECISIONS: [1, 2, 8],
 }
 
 test_params_laion_5b_10m_qbit_int8_strided = {
@@ -404,7 +404,7 @@ test_params_laion_5b_10m_qbit_int8_strided = {
     USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
     SEARCH_METHOD: SEARCH_METHOD_QBIT,
     SESSION_SETTINGS: None,
-    QBIT_PRECISIONS: [1, 8],
+    QBIT_PRECISIONS: [1, 2, 8],
     # Read one of the four stride groups; recall is still measured against the full 768-dimension truth set
     QBIT_USED_DIMS: 192,
 }
@@ -1233,8 +1233,8 @@ def run_single_test(test_name, dataset, test_params):
 
 
 # The binary under test: the release build of PR #131027
-CH_BINARY_URL_ARM = "https://clickhouse-builds.s3.amazonaws.com/PRs/131027/e7d7a78a5a9df6ac19262116ba9805a3f3f54c43/pr/build_arm_release/clickhouse"
-CH_BINARY_URL_AMD = "https://clickhouse-builds.s3.amazonaws.com/PRs/131027/e7d7a78a5a9df6ac19262116ba9805a3f3f54c43/pr/build_amd_release/clickhouse"
+CH_BINARY_URL_ARM = "https://clickhouse-builds.s3.amazonaws.com/PRs/131027/07136ac28d6e56c48678640fd88e20f24025a5b5/pr/build_arm_release/clickhouse"
+CH_BINARY_URL_AMD = "https://clickhouse-builds.s3.amazonaws.com/PRs/131027/07136ac28d6e56c48678640fd88e20f24025a5b5/pr/build_amd_release/clickhouse"
 
 
 def clickhouse_binary_url():
