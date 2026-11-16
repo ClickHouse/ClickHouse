@@ -887,20 +887,54 @@ def test_grpc_streaming_cancel_after_input_data_while_waiting_in_queue(started_c
     assert started == "0", f"The cancelled gRPC waiter was admitted, QueryStart count: {started}"
 
 
-def test_grpc_streaming_read_ahead_is_bounded_while_waiting_in_queue(started_cluster):
+# Each chunk alone exceeds the read-ahead limit of 1 MiB.
+GRPC_READ_AHEAD_CHUNK = b"1\n" * (1024 * 1024)
+
+
+def grpc_read_ahead_external_tables_message():
+    return clickhouse_grpc_pb2.QueryInfo(
+        external_tables=[
+            clickhouse_grpc_pb2.ExternalTable(
+                name="ext",
+                columns=[clickhouse_grpc_pb2.NameAndType(name="x", type="UInt8")],
+                data=GRPC_READ_AHEAD_CHUNK,
+                format="TSV",
+            )
+        ],
+        next_query_info=True,
+    ).SerializeToString()
+
+
+def grpc_read_ahead_overwritten_input_data_message():
+    # The singular field `input_data` occurs twice: first with a large value, then with a small one.
+    # The parsed message keeps only the small value, so its serialized size is tiny,
+    # but the server-side parser retains the capacity of the large string.
+    return (
+        clickhouse_grpc_pb2.QueryInfo(input_data=GRPC_READ_AHEAD_CHUNK).SerializeToString()
+        + clickhouse_grpc_pb2.QueryInfo(input_data=b"1\n", next_query_info=True).SerializeToString()
+    )
+
+
+@pytest.mark.parametrize(
+    "make_extra_message",
+    [grpc_read_ahead_external_tables_message, grpc_read_ahead_overwritten_input_data_message],
+    ids=["external_tables", "overwritten_input_data"],
+)
+def test_grpc_streaming_read_ahead_is_bounded_while_waiting_in_queue(started_cluster, make_extra_message):
     """
     While a streaming gRPC query waits in the admission queue, the server reads its extra
     `QueryInfo` messages ahead to notice an in-band `cancel`, but must buffer only a bounded
     amount of them. Extra messages can carry `external_tables` instead of `input_data`, and
     those must be charged against the limit too: otherwise a queued query could make the
     server accumulate an unbounded amount of external table data before it is admitted.
+    The limit must also account for the memory retained by a message, not only its serialized
+    size: a singular bytes field occurring several times in a message keeps the allocation
+    of its largest occurrence.
     """
     prefix = uuid.uuid4().hex[:8]
     blocker_ids = [f"grpc_read_ahead_blocker_{prefix}_{i}" for i in range(2)]
     waiter_id = f"grpc_read_ahead_waiter_{prefix}"
 
-    # Each chunk alone exceeds the read-ahead limit of 1 MiB.
-    chunk = b"1\n" * (1024 * 1024)
     sent_chunks = 0
 
     pool = Pool(4)
@@ -925,26 +959,22 @@ def test_grpc_streaming_read_ahead_is_bounded_while_waiting_in_queue(started_clu
             settings={"queue_max_wait_ms": "30000"},
             input_data=b"1\n",
             next_query_info=True,
-        )
+        ).SerializeToString()
+        extra_message = make_extra_message()
         while not stop_sending.is_set():
-            yield clickhouse_grpc_pb2.QueryInfo(
-                external_tables=[
-                    clickhouse_grpc_pb2.ExternalTable(
-                        name="ext",
-                        columns=[clickhouse_grpc_pb2.NameAndType(name="x", type="UInt8")],
-                        data=chunk,
-                        format="TSV",
-                    )
-                ],
-                next_query_info=True,
-            )
+            yield extra_message
             sent_chunks += 1
-        yield clickhouse_grpc_pb2.QueryInfo(cancel=True)
+        yield clickhouse_grpc_pb2.QueryInfo(cancel=True).SerializeToString()
 
     channel = grpc.insecure_channel(f"{node.ip_address}:{GRPC_PORT}")
     try:
         grpc.channel_ready_future(channel).result(timeout=10)
-        stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(channel)
+        # Send already serialized messages, so that a message can contain a repeated singular field.
+        execute_query_with_stream_input = channel.stream_unary(
+            "/clickhouse.grpc.ClickHouse/ExecuteQueryWithStreamInput",
+            request_serializer=lambda message: message,
+            response_deserializer=clickhouse_grpc_pb2.Result.FromString,
+        )
 
         for qid in blocker_ids:
             pool.apply_async(run_blocker, (qid,))
@@ -952,7 +982,7 @@ def test_grpc_streaming_read_ahead_is_bounded_while_waiting_in_queue(started_clu
         for qid in blocker_ids:
             wait_for_query_start(node, qid)
 
-        call = stub.ExecuteQueryWithStreamInput.future(query_infos())
+        call = execute_query_with_stream_input.future(query_infos())
 
         wait_for_queue_length(node, 1)
 

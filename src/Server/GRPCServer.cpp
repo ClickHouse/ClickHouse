@@ -988,8 +988,8 @@ namespace
 
         /// Extra query infos read ahead by `readAheadQueryInfo` and not consumed by `readQueryInfo` yet,
         /// in the order they were received. They precede `next_query_info_while_reading`.
-        /// `read_ahead_bytes` is the total size of those messages, see `readAheadCost`.
-        std::deque<GRPCQueryInfo> read_ahead_query_infos;
+        /// Each one is stored with its cost, see `readAheadCost`, and `read_ahead_bytes` is the total cost.
+        std::deque<std::pair<GRPCQueryInfo, size_t>> read_ahead_query_infos;
         size_t read_ahead_bytes = 0;
 
         Stopwatch query_time;
@@ -1779,10 +1779,13 @@ namespace
 
     /// The memory held by a query info buffered by `readAheadQueryInfo`. Not only `input_data` counts:
     /// extra query infos can also carry arbitrarily large `external_tables`, so charge the whole message.
-    /// The fixed per-message part bounds the number of buffered messages even if they are empty.
+    /// `ByteSizeLong` is not enough: the parser keeps the capacity of a string field which is overwritten
+    /// by a later occurrence of the same field in the message, so a message with a small serialized size
+    /// can hold a large allocation. `SpaceUsedLong` counts the retained storage, including the object itself,
+    /// which bounds the number of buffered messages even if they are empty.
     size_t readAheadCost(const GRPCQueryInfo & query_info)
     {
-        return query_info.ByteSizeLong() + sizeof(GRPCQueryInfo);
+        return query_info.SpaceUsedLong();
     }
 
     void Call::readQueryInfo()
@@ -1791,9 +1794,10 @@ namespace
         {
             /// The next query info has already been read by `readAheadQueryInfo`. A read of the following one
             /// is in flight or finished, so it must not be started here.
-            query_info = std::move(read_ahead_query_infos.front());
+            auto & [read_ahead_query_info, cost] = read_ahead_query_infos.front();
+            query_info = std::move(read_ahead_query_info);
+            read_ahead_bytes -= cost;
             read_ahead_query_infos.pop_front();
-            read_ahead_bytes -= readAheadCost(query_info);
             return;
         }
 
@@ -1845,8 +1849,9 @@ namespace
         if (read_ahead_bytes >= max_read_ahead_bytes)
             return;
 
-        read_ahead_bytes += readAheadCost(next_query_info_while_reading);
-        read_ahead_query_infos.push_back(std::move(next_query_info_while_reading));
+        size_t cost = readAheadCost(next_query_info_while_reading);
+        read_ahead_bytes += cost;
+        read_ahead_query_infos.emplace_back(std::move(next_query_info_while_reading), cost);
         next_query_info_while_reading.Clear();
         startReadingQueryInfo();
     }
