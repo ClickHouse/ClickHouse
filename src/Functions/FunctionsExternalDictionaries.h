@@ -93,7 +93,7 @@ class FunctionDictHelper
 public:
     explicit FunctionDictHelper(ContextPtr context_) : context(context_) {}
 
-    const ContextPtr & getContext() const { return context; }
+    [[nodiscard]] const ContextPtr & getContext() const { return context; }
 
     std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
