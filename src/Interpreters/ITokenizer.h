@@ -351,8 +351,8 @@ struct SplitByStringTokenizer final : public ITokenizerHelper<SplitByStringToken
         return 0;
     }
 
-    const ByteSetLookup & getSeparatorFirstBytes() const { return separator_first_bytes; }
-    bool allSeparatorsSingleByte() const { return all_separators_single_byte; }
+    [[nodiscard]] const ByteSetLookup & getSeparatorFirstBytes() const { return separator_first_bytes; }
+    [[nodiscard]] bool allSeparatorsSingleByte() const { return all_separators_single_byte; }
 
 private:
 
@@ -741,7 +741,7 @@ struct RegexpMaskedTokenizer final : public ITokenizerHelper<RegexpMaskedTokeniz
     static const char * getExternalName() { return getName(); }
 
     /// Canonical: equal descriptions mean equal tokenizers, and the description is parseable by `TokenizerFactory`.
-    String getDescription() const override;
+    [[nodiscard]] String getDescription() const override;
 
     /// Scans from `pos` anew on each call, so a loop over it can be quadratic: use `forEachSpan` or the methods below.
     bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
@@ -752,12 +752,12 @@ struct RegexpMaskedTokenizer final : public ITokenizerHelper<RegexpMaskedTokeniz
     void stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const override;
 
     /// A mask match depends on the text outside of a `LIKE` fragment, so fragments cannot be tokenized.
-    bool supportsStringLike() const override { return false; }
+    [[nodiscard]] bool supportsStringLike() const override { return false; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
-    const ITokenizer & getBase() const { return *base; }
-    const TokenMasks & getMasks() const { return *masks; }
+    [[nodiscard]] const ITokenizer & getBase() const { return *base; }
+    [[nodiscard]] const TokenMasks & getMasks() const { return *masks; }
 
     /// Calls `callback` for every token in order. Stops if the callback returns true. The data needs no padding.
     /// The other methods are built on it, except `forEachTokenImpl` without masks.

@@ -408,7 +408,7 @@ public:
     }
 
 private:
-    size_t firstByte(int rune) const
+    [[nodiscard]] size_t firstByte(int rune) const
     {
         const auto code_point = static_cast<size_t>(rune);
         if (latin1 || code_point < 0x80)

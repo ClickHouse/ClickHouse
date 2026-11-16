@@ -37,14 +37,14 @@ public:
     static const std::vector<String> & getBuiltinMaskNames();
 
     /// The selected built-in masks, deduplicated, in canonical order.
-    const std::vector<String> & getBuiltinNames() const { return builtin_names; }
+    [[nodiscard]] const std::vector<String> & getBuiltinNames() const { return builtin_names; }
     /// The custom patterns, sorted and deduplicated.
-    const std::vector<String> & getCustomPatterns() const { return custom_patterns; }
+    [[nodiscard]] const std::vector<String> & getCustomPatterns() const { return custom_patterns; }
 
-    bool empty() const { return builtin_patterns.empty() && !custom; }
+    [[nodiscard]] bool empty() const { return builtin_patterns.empty() && !custom; }
 
     /// False if no mask can match at a position holding byte `c`.
-    ALWAYS_INLINE bool mayStartWith(char c) const { return first_bytes.contains(c); }
+    [[nodiscard]] ALWAYS_INLINE bool mayStartWith(char c) const { return first_bytes.contains(c); }
 
     /// The width of `builtin_candidates`.
     static constexpr size_t MAX_BUILTIN_PATTERNS = 16;
