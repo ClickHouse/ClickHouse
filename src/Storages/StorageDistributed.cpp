@@ -2566,6 +2566,22 @@ static void checkExperimentalDistributedSettings(const DistributedSettings & dis
             "The bucket map of `Distributed` tables is experimental. Set `allow_experimental_distributed_bucket_map` to enable it");
 }
 
+/// A bucket map setting taken from the server configuration is not kept in the table definition, so it is refused.
+static void checkBucketMapSettingsAreInDefinition(const DistributedSettings & distributed_settings, const StorageFactory::Arguments & args)
+{
+    if (distributed_settings[DistributedSetting::bucket_map_zookeeper_path].value.empty()
+        || !isFreshTableDefinition(args.mode, args.query.attach_short_syntax))
+        return;
+
+    const auto * settings_ast = args.storage_def->settings;
+    auto in_definition = [&](std::string_view name) { return settings_ast && settings_ast->changes.tryGet(name); };
+    if (!in_definition("bucket_map_zookeeper_path")
+        || (distributed_settings[DistributedSetting::bucket_map_buckets].changed && !in_definition("bucket_map_buckets")))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Settings `bucket_map_zookeeper_path` and `bucket_map_buckets` must be set in the `SETTINGS` clause of the table, "
+            "not in the server configuration");
+}
+
 namespace
 {
 
@@ -2732,6 +2748,7 @@ void registerStorageDistributed(StorageFactory & factory)
         finalizeDistributedSettings(distributed_settings, context);
 
         checkExperimentalDistributedSettings(distributed_settings, args);
+        checkBucketMapSettingsAreInDefinition(distributed_settings, args);
 
         /// Infer an omitted structure here, so a fresh definition resolves under the user's context
         /// and the local-shard `SHOW_COLUMNS` check applies to them. A definition restored from
@@ -3023,7 +3040,7 @@ This is an experimental feature. Enable it with the [`allow_experimental_distrib
 
 With the `bucket_map_zookeeper_path` setting, the table selects shards with a bucket map stored in ZooKeeper instead of the shard weights. A row goes to the bucket `sharding_key % buckets`, and then to the shard the bucket is assigned to. A negative sharding key is taken as an unsigned 64-bit number, `reinterpretAsUInt64(toInt64(sharding_key))`. The number of buckets is fixed, so assigning a bucket to another shard does not change the shard of the rows of the other buckets. The map is shared by all `Distributed` tables with the same path, for example by the tables of the same name on all servers of the cluster.
 
-When the table is created and the map does not exist, the map is created with `bucket_map_buckets` buckets split into ranges of almost equal size, one range for every shard of the cluster. A map that exists must have `bucket_map_buckets` buckets. The map is a text node:
+When the table is created and the map does not exist, the map is created with `bucket_map_buckets` buckets split into ranges of almost equal size, one range for every shard of the cluster. A map that exists must have `bucket_map_buckets` buckets. Both settings must be in the `SETTINGS` clause of the table, values from the `distributed` section of the server configuration are refused. The map is a text node:
 
 ```text
 format version: 1
@@ -3096,6 +3113,7 @@ void registerStorageRemote(StorageFactory & factory)
 
         finalizeDistributedSettings(distributed_settings, args.getContext());
         checkExperimentalDistributedSettings(distributed_settings, args);
+        checkBucketMapSettingsAreInDefinition(distributed_settings, args);
 
         bool has_local_shard = false;
         for (const auto & shard_info : parsed.cluster->getShardsInfo())
