@@ -1615,8 +1615,13 @@ set(MUSL_C_SOURCES
 
 # C and ASM go into a single static library to avoid circular dependency
 # issues with OBJECT libraries.
-add_library(musl STATIC ${MUSL_C_SOURCES} ${MUSL_ARCH_ASM_SOURCES})
+add_library(musl STATIC ${MUSL_C_SOURCES} ${MUSL_ARCH_ASM_SOURCES} "${CMAKE_CURRENT_SOURCE_DIR}/getaddrinfo_default.c")
 set_target_properties(musl PROPERTIES FOLDER "contrib/musl-cmake")
+
+# The server interposes `getaddrinfo` (src/Common/NameResolutionFilter.cpp) and calls musl's implementation
+# by this name; `getaddrinfo_default.c` provides a weak `getaddrinfo` for the programs that do not interpose it.
+set_source_files_properties("${MUSL_SOURCE_DIR}/src/network/getaddrinfo.c" PROPERTIES
+    COMPILE_DEFINITIONS "getaddrinfo=__musl_getaddrinfo")
 
 foreach(asm_file ${MUSL_ARCH_ASM_SOURCES})
     set_source_files_properties(${asm_file} PROPERTIES

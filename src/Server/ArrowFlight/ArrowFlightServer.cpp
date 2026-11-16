@@ -9,6 +9,7 @@
 
 #include <Core/Block.h>
 #include <Core/Settings.h>
+#include <Common/NameResolutionFilter.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/quoteString.h>
@@ -492,7 +493,12 @@ void ArrowFlightServer::start()
         options.tls_certificates.push_back(arrow::flight::CertKeyPair{cert, key});
     }
 
-    auto init_status = Init(options);
+    /// gRPC resolves the address to listen on, which comes from the server configuration.
+    auto init_status = [&]
+    {
+        NameResolutionFilter::InternalScope internal_scope;
+        return Init(options);
+    }();
     if (!init_status.ok())
     {
         throw Exception(

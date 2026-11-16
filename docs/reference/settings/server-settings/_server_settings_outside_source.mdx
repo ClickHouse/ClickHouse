@@ -1742,6 +1742,22 @@ For example:
 </remote_url_allow_hosts>
 ```
 
+The list is checked by every storage engine, table function, dictionary source, and catalog before it connects. That does not cover the hosts that a client library finds by itself, such as the brokers that a Kafka cluster advertises, the servers that NATS advertises, the members of a MongoDB replica set, or the data nodes of HDFS. With `<check_name_resolution>true</check_name_resolution>` in the section, the list is also applied to every resolution of a host name by the server, including the ones made inside client libraries, so a connection to a host that is not in the list fails as if the host did not exist. It is disabled by default.
+
+- only the host is checked when a name is resolved, because the port is not known yet: a `\<host\>` entry with a port allows its host, a `\<host_regexp\>` is matched against the host alone, and an `\<s3_bucket\>` entry `host/bucket` allows `host` and `bucket.host`. The ports are still checked as before, by the storage engines and table functions.
+- IP addresses are checked as written, like host names.
+- the server's own connections are not checked: the hosts of ZooKeeper and Keeper, the clusters in `remote_servers` and the clusters of `Replicated` databases, other replicas when fetching parts, the ODBC bridge, LDAP servers, HTTP proxies, the endpoint of `send_crash_reports`, Graphite, and the AWS and Azure credential providers whose endpoints come from the environment (the instance metadata service, the container credentials, the web identity and SSO providers).
+- a rejected resolution is logged and counted in the `DNSRequestNotAllowed` profile event.
+
+For example:
+
+```xml
+<remote_url_allow_hosts>
+    <host_regexp>^.*\.clickhouse\.com$</host_regexp>
+    <check_name_resolution>true</check_name_resolution>
+</remote_url_allow_hosts>
+```
+
 ## timezone {#timezone}
 The server's time zone.
 

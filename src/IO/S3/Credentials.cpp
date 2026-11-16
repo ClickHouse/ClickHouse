@@ -4,6 +4,7 @@
 #include <IO/S3/Credentials.h>
 #include <IO/S3/getAvailabilityZone.h>
 #include <Common/Exception.h>
+#include <Common/NameResolutionFilter.h>
 #include <Common/ListWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -531,6 +532,9 @@ String getRunningAvailabilityZone(AZFacilities az_facility)
 {
     LOG_INFO(getLogger("Application"), "Trying to detect the availability zone.");
 
+    /// The instance metadata services are not subject to `remote_url_allow_hosts`.
+    DB::NameResolutionFilter::InternalScope internal_scope;
+
     using AZGetter = std::function<String()>;
 
     VectorWithMemoryTracking<std::pair<bool /* used if AWS_ZONE_NAME_THEN_GCP_ZONE */, AZGetter>> az_getters =
@@ -639,6 +643,8 @@ Aws::Auth::AWSCredentials AWSInstanceProfileCredentialsProvider::GetAWSCredentia
 {
     if (Silk::isInsideFiber())
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "EC2 instance metadata credentials are not implemented for fibers");
+    /// The endpoint of the instance metadata service comes from the environment, not from a user.
+    DB::NameResolutionFilter::InternalScope internal_scope;
     refreshIfExpired();
     Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
     return GetAWSCredentialsImpl();
@@ -826,6 +832,8 @@ Aws::Auth::AWSCredentials AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::Ge
         return credentials;
 
     Silk::ThreadModeScope thread_mode;
+    /// The role and the STS endpoint come from the environment, not from a user.
+    DB::NameResolutionFilter::InternalScope internal_scope;
     Reload();
     return credentials;
 }
@@ -885,6 +893,8 @@ Aws::Auth::AWSCredentials SSOCredentialsProvider::GetAWSCredentials()
 {
     if (Silk::isInsideFiber())
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "SSO credentials are not implemented for fibers");
+    /// The SSO profile comes from the AWS configuration files of the server, not from a user.
+    DB::NameResolutionFilter::InternalScope internal_scope;
     refreshIfExpired();
     Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
     return credentials;
@@ -1012,6 +1022,8 @@ Aws::Auth::AWSCredentials GeneralHTTPCredentialsProvider::GetAWSCredentials()
 {
     if (Silk::isInsideFiber())
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "ECS container credentials are not implemented for fibers");
+    /// The endpoint of the container credentials comes from the environment, not from a user.
+    DB::NameResolutionFilter::InternalScope internal_scope;
     return Aws::Auth::GeneralHTTPCredentialsProvider::GetAWSCredentials();
 }
 

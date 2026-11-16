@@ -12,6 +12,7 @@
 #include <Common/logger_useful.h>
 #include <base/find_symbols.h>
 #include <Common/DNSResolver.h>
+#include <Common/NameResolutionFilter.h>
 #include <Common/isLocalAddress.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -424,6 +425,8 @@ std::expected<String,String> StorageSystemZooKeeperInfo::sendFourLetterCommand(c
     String response;
     try
     {
+        /// The host of a ZooKeeper node from the server configuration.
+        NameResolutionFilter::InternalScope internal_scope;
         auto address = DNSResolver::instance().resolveAddress(host, port);
         socket = Poco::Net::StreamSocket();
         socket.connect(address);

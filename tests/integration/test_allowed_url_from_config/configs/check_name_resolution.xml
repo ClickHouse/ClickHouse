@@ -1,0 +1,16 @@
+<clickhouse>
+    <remote_url_allow_hosts>
+        <check_name_resolution>true</check_name_resolution>
+    </remote_url_allow_hosts>
+    <remote_servers>
+        <!-- 127.0.0.1 is not in `remote_url_allow_hosts` of node6, but a cluster of the configuration is not subject to it. -->
+        <check_name_resolution_cluster>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </check_name_resolution_cluster>
+    </remote_servers>
+</clickhouse>

@@ -4,6 +4,7 @@
 #include <Access/SettingsAuthResponseParser.h>
 #include <Access/resolveSetting.h>
 #include <Common/Exception.h>
+#include <Common/NameResolutionFilter.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
@@ -87,6 +88,8 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'host' entry");
 
     params.host = config.getString(ldap_server_config + ".host");
+    /// An LDAP server from the server configuration is not subject to `remote_url_allow_hosts`.
+    NameResolutionFilter::addInternalHost(params.host);
 
     if (params.host.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'host' entry");

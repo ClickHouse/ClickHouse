@@ -16,6 +16,7 @@
 #include <optional>
 #include <string_view>
 #include <Common/MultiVersion.h>
+#include <Common/NameResolutionFilter.h>
 #include <unordered_set>
 #include <Common/DNSPTRResolverProvider.h>
 #include <Common/Silk/FiberMutex.h>
@@ -354,6 +355,10 @@ bool DNSResolver::getFilterIPv6() const
 
 DNSResolver::IPAddresses DNSResolver::resolveHostAllInOriginOrder(const std::string & host)
 {
+    /// Before the cache, which may hold the host resolved for an internal connection, and before literal IP
+    /// addresses, which do not reach `getaddrinfo`.
+    NameResolutionFilter::check(host);
+
     if (impl->disable_cache)
         return getResolvedIPAddressesWithFiltering(host);
 
@@ -379,6 +384,7 @@ std::pair<std::string, UInt16> DNSResolver::splitHostAndPort(const std::string &
 Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host_and_port)
 {
     auto [host, port] = splitHostAndPort(host_and_port);
+    NameResolutionFilter::check(host);
 
     if (impl->disable_cache)
         return Poco::Net::SocketAddress(pickAddress(getResolvedIPAddressesWithFiltering(host)), port);
@@ -389,6 +395,8 @@ Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host_an
 
 Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host, UInt16 port)
 {
+    NameResolutionFilter::check(host);
+
     if (impl->disable_cache)
         return Poco::Net::SocketAddress(pickAddress(getResolvedIPAddressesWithFiltering(host)), port);
 
@@ -466,6 +474,7 @@ bool DNSResolver::updateHostNameAndAddresses()
     bool updated = false;
     try
     {
+        NameResolutionFilter::InternalScope internal_scope;
         String updated_host_name = Poco::Net::DNS::hostName();
         DNSResolver::IPAddresses updated_host_addresses = hostByName(updated_host_name);
         ::sort(updated_host_addresses.begin(), updated_host_addresses.end());
@@ -568,6 +577,9 @@ void DNSResolver::updateCache(UInt32 max_consecutive_failures)
     /// FIXME Updating may take a long time because we cannot manage timeouts of getaddrinfo(...) and getnameinfo(...).
     /// DROP DNS CACHE will wait on update_mutex (possibly while holding drop_mutex)
     std::lock_guard lock(impl->update_mutex);
+
+    /// The cached hosts were checked when they were resolved for the first time, and every use checks them again.
+    NameResolutionFilter::InternalScope internal_scope;
 
     updateCacheImpl(
         &DNSResolver::updateHost, impl->known_hosts, max_consecutive_failures, "Cached hosts not found: {}", "Cached hosts dropped: {}");

@@ -1,6 +1,7 @@
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HTTPConnectionInfo.h>
 #include <Common/HostResolvePool.h>
+#include <Common/NameResolutionFilter.h>
 
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -1110,6 +1111,11 @@ private:
         /// (`HTTPSClientSession::connect` calls `setPeerHostName(getProxyHost())`), and an address
         /// there would break certificate verification. Routing it through the cache needs a
         /// resolved-proxy-host field in the session, mirroring `setResolvedHost`.
+        ///
+        /// The target host is resolved by the proxy, so it is checked against `remote_url_allow_hosts` here, and
+        /// the proxy itself, which comes from the server configuration or the environment, is not.
+        NameResolutionFilter::check(host);
+
         auto connection = createConnection();
         connection->setKeepAlive(true);
         connection->setProxyConfig(poco_proxy_config);
@@ -1119,6 +1125,7 @@ private:
             setTimeouts(*connection, timeouts);
 
             auto timer = CurrentThread::getProfileEvents().timer(getMetrics().elapsed_microseconds);
+            NameResolutionFilter::InternalScope internal_scope;
             connection->doConnect(connect_time);
             applySocketBufferSizes(*connection, group->getSocketBufferSizes());
         }

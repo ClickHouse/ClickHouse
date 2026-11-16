@@ -19,6 +19,10 @@ else()
   set(gRPC_USE_UNSECURE_LIBRARIES TRUE)
 endif()
 
+# Resolve names with the native resolver, which uses `getaddrinfo`, rather than with `c-ares`, which sends DNS
+# queries by itself: the server applies `remote_url_allow_hosts` in `getaddrinfo` (src/Common/NameResolutionFilter.cpp).
+add_definitions(-DGRPC_ARES=0)
+
 include(grpc.cmake)
 include(protobuf_generate_grpc.cmake)
 

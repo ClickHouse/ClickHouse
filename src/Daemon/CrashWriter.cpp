@@ -3,10 +3,12 @@
 
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Poco/Environment.h>
+#include <Poco/URI.h>
 
 #include <base/getMemoryAmount.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Common/NameResolutionFilter.h>
 #include <Common/ErrorCodes.h>
 #include <Common/SymbolIndex.h>
 #include <Common/StackTrace.h>
@@ -57,6 +59,8 @@ CrashWriter::CrashWriter(std::string endpoint_, std::string server_data_path_)
     , logger(getLogger(logger_name))
 {
     LOG_DEBUG(logger, "Sending crash reports is initialized with {} endpoint (anonymized)", endpoint);
+    /// The endpoint comes from the server configuration, it is not subject to `remote_url_allow_hosts`.
+    DB::NameResolutionFilter::addInternalHost(Poco::URI(endpoint).getHost());
 }
 
 void CrashWriter::onSignal(int sig, std::string_view error_message, const FramePointers & frame_pointers, size_t offset, size_t size)
