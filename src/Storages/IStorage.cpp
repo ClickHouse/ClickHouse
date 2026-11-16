@@ -33,7 +33,7 @@ namespace Setting
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool async_socket_for_remote;
-    extern const SettingsUInt64 max_distributed_connections;
+    extern const SettingsNonZeroUInt64 max_distributed_connections;
 }
 
 namespace ErrorCodes
@@ -255,7 +255,7 @@ void IStorage::read(
     const auto & settings = context->getSettingsRef();
     const size_t max_threads_execute_query = isRemote() && !settings[Setting::async_socket_for_remote]
         ? settings[Setting::max_distributed_connections]
-        : getEffectiveMaxThreads(settings);
+        : getEffectiveMaxThreads(*context);
     const size_t resize_to = std::min(num_streams, max_threads_execute_query);
 
     if (!should_not_resize && parallelize_output && parallelizeOutputAfterReading(context) && output_ports > 0
