@@ -544,7 +544,6 @@ static struct InitFiu
     REGULAR(aggregate_function_state_transfer_throw) \
     REGULAR(aggregate_function_state_transfer_throw_after_child) \
     PAUSEABLE_ONCE(creating_sets_transform_pause) \
-    REGULAR(marks_loader_hold_task_until_canceled)
     REGULAR(marks_loader_hold_task_until_canceled) \
     REGULAR(whatif_projection_scan_cut_short) \
     REGULAR(http_connection_socket_inode_unavailable)
