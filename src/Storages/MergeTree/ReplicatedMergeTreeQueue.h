@@ -481,9 +481,9 @@ public:
         MutationsSnapshot() = default;
         MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByPartititon mutations_by_partition_, DataPartsVector patches_);
 
-        MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
-        std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
-        NameSet getColumnsChangedOnFly() const override;
+        [[nodiscard]] MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
+        [[nodiscard]] std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
+        [[nodiscard]] NameSet getColumnsChangedOnFly() const override;
     };
 
     /// Return mutation commands for part which could be not applied to
