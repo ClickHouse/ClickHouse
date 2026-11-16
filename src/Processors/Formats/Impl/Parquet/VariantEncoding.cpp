@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -224,7 +225,6 @@ struct DecodeContext
     const Metadata & metadata;
     size_t max_depth;
     bool escape_dots_in_json_keys;
-    std::string_view column_name;
 };
 
 void checkDepth(const DecodeContext & context, size_t depth)
@@ -933,29 +933,8 @@ void decodeValueIntoDynamic(
     target.insertValueIntoSharedVariant(*single_value_column, type, type_name, 0);
 }
 
-bool isOrdinaryVariant(const IDataType & type)
-{
-    return type.getTypeId() == TypeIndex::Variant && !type.getCustomName();
-}
-
-bool isWrittenAsArray(const IDataType & type)
-{
-    if (type.getTypeId() == TypeIndex::Array)
-        return true;
-    const auto * tuple = typeid_cast<const DataTypeTuple *>(&type);
-    return tuple && !tuple->hasExplicitNames();
-}
-
-bool isWrittenAsObject(const IDataType & type)
-{
-    if (type.getTypeId() == TypeIndex::Map || type.getTypeId() == TypeIndex::Object)
-        return true;
-    const auto * tuple = typeid_cast<const DataTypeTuple *>(&type);
-    return tuple && tuple->hasExplicitNames();
-}
-
-/// The name of the type that a value of `type` written by `ValueEncoder` is read as, see `getValueTypeName`.
-/// Empty for the types written as arrays or objects, and for the types that cannot be written.
+/// The name of the type that a value of `type` written by `ValueEncoder` is read as into `Dynamic`, see
+/// `getValueTypeName`. Empty for the types whose values cannot be converted back from that type.
 String getWrittenTypeName(const IDataType & type)
 {
     switch (type.getTypeId())
@@ -1004,243 +983,68 @@ String getWrittenTypeName(const IDataType & type)
             return "String";
         case TypeIndex::UUID:
             return "UUID";
+        case TypeIndex::Object:
+            return "JSON";
+        case TypeIndex::Array:
+        {
+            /// An array of objects is read as `Array(JSON)`, but an empty one as `Array(Dynamic)`.
+            const String element = getWrittenTypeName(*assert_cast<const DataTypeArray &>(type).getNestedType());
+            return element.empty() || element == "JSON" ? "" : "Array(Dynamic)";
+        }
         default:
             return {};
     }
 }
 
-/// Values of two members of a `Variant` with the same key are indistinguishable in the variant encoding.
-String getWrittenKindKey(const IDataType & type)
+/// The types that the values of the members of an ordinary `Variant` are read as into `Dynamic`, in the
+/// order of the members. Throws if a member cannot be restored from them.
+DataTypes getWrittenTypesOfVariantMembers(const DataTypeVariant & type, std::string_view column_name)
 {
-    const DataTypePtr inner = removeNullable(removeLowCardinality(type.getPtr()));
-    if (isWrittenAsArray(*inner))
-        return "an array";
-    if (isWrittenAsObject(*inner))
-        return "an object";
-    const String name = getWrittenTypeName(*inner);
-    return name.empty() ? name : "a value read as " + name;
-}
-
-void checkVariantMembersAreDistinguishable(const IDataType & type, std::string_view column_name)
-{
-    switch (type.getTypeId())
-    {
-        case TypeIndex::Nullable:
-            checkVariantMembersAreDistinguishable(*assert_cast<const DataTypeNullable &>(type).getNestedType(), column_name);
-            return;
-        case TypeIndex::Array:
-            checkVariantMembersAreDistinguishable(*assert_cast<const DataTypeArray &>(type).getNestedType(), column_name);
-            return;
-        case TypeIndex::Tuple:
-            for (const auto & element : assert_cast<const DataTypeTuple &>(type).getElements())
-                checkVariantMembersAreDistinguishable(*element, column_name);
-            return;
-        case TypeIndex::Map:
-            checkVariantMembersAreDistinguishable(*assert_cast<const DataTypeMap &>(type).getValueType(), column_name);
-            return;
-        case TypeIndex::Variant:
-        {
-            if (type.getCustomName())
-                return;
-            const auto & members = assert_cast<const DataTypeVariant &>(type).getVariants();
-            UnorderedMapWithMemoryTracking<String, size_t> member_of_key;
-            for (size_t i = 0; i < members.size(); ++i)
-            {
-                checkVariantMembersAreDistinguishable(*members[i], column_name);
-                const String key = getWrittenKindKey(*members[i]);
-                if (key.empty())
-                    continue;
-                auto [it, inserted] = member_of_key.try_emplace(key, i);
-                if (!inserted)
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot write the type {} into the Parquet variant column '{}': the values of its members {} and {} are "
-                        "both written as {}, so they cannot be told apart when reading",
-                        type.getName(), column_name, members[it->second]->getName(), members[i]->getName(), key);
-            }
-            return;
-        }
-        default:
-            return;
-    }
-}
-
-[[noreturn]] void throwCannotReadValueAs(std::string_view data, size_t pos, const DecodeContext & context, const IDataType & type)
-{
-    const String type_name = getValueTypeName(data, pos);
-    throw Exception(
-        ErrorCodes::TYPE_MISMATCH,
-        "Cannot read a value of type {} of the Parquet variant column '{}' as {}",
-        type_name.empty() ? "Nullable(Nothing)" : type_name, context.column_name, type.getName());
-}
-
-ColumnVariant::Discriminator chooseVariantMember(std::string_view data, size_t pos, const DecodeContext & context, const DataTypeVariant & type)
-{
-    const String type_name = getValueTypeName(data, pos);
-    if (auto discriminator = type.tryGetVariantDiscriminator(type_name))
-        return *discriminator;
-
-    const BasicType basic_type = BasicType(readByte(data, pos) & 0x03);
     const auto & members = type.getVariants();
-    std::optional<ColumnVariant::Discriminator> chosen;
+    DataTypes res(members.size());
+    UnorderedMapWithMemoryTracking<String, size_t> member_of_written_type;
     for (size_t i = 0; i < members.size(); ++i)
     {
-        const DataTypePtr member = removeNullable(removeLowCardinality(members[i]));
-        bool matches = false;
-        if (basic_type == BasicType::Array)
-            matches = isWrittenAsArray(*member);
-        else if (basic_type == BasicType::Object)
-            matches = isWrittenAsObject(*member);
-        else
-            matches = getWrittenTypeName(*member) == type_name;
-
-        if (!matches)
-            continue;
-        if (chosen)
+        const String name = getWrittenTypeName(*members[i]);
+        if (name.empty())
             throw Exception(
-                ErrorCodes::TYPE_MISMATCH,
-                "Cannot read a value of type {} of the Parquet variant column '{}' as {}: both members {} and {} can hold it",
-                type_name, context.column_name, type.getName(), members[*chosen]->getName(), members[i]->getName());
-        chosen = static_cast<ColumnVariant::Discriminator>(i);
+                ErrorCodes::BAD_ARGUMENTS,
+                "The type {} cannot be stored in the Parquet variant column '{}': its member {} cannot be read back. "
+                "Use `Dynamic` instead",
+                type.getName(), column_name, members[i]->getName());
+        auto [it, inserted] = member_of_written_type.try_emplace(name, i);
+        if (!inserted)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The type {} cannot be stored in the Parquet variant column '{}': the values of its members {} and {} are "
+                "both read as {}, so they cannot be told apart",
+                type.getName(), column_name, members[it->second]->getName(), members[i]->getName(), name);
+        res[i] = getDataTypesCache().getType(name);
     }
-
-    if (!chosen)
-        throwCannotReadValueAs(data, pos, context, type);
-    return *chosen;
+    return res;
 }
 
-/// Decodes a value into a column of `type`, which can be or contain an ordinary `Variant`. The members of
-/// a `Variant` are matched to the values the way `ValueEncoder` writes them, so a value of a member that
-/// is not a variant primitive type, such as `UInt8`, is converted back to the member type.
-void decodeValueIntoType(
-    std::string_view data, size_t pos, const DecodeContext & context, size_t depth, const DataTypePtr & type, IColumn & target)
+/// Converts the values read as `Dynamic` to an ordinary `Variant`, putting every value into the member
+/// that values of its type are written from.
+ColumnPtr convertDynamicToVariant(const ColumnPtr & dynamic, const DataTypeVariant & type, std::string_view column_name)
 {
-    checkDepth(context, depth);
+    const DataTypes written_types = getWrittenTypesOfVariantMembers(type, column_name);
+    const auto written_variant_type = std::make_shared<DataTypeVariant>(written_types);
+    const ColumnPtr written = castColumn({dynamic, std::make_shared<DataTypeDynamic>(), ""}, written_variant_type);
+    const auto & written_variant = assert_cast<const ColumnVariant &>(*written);
 
-    const UInt8 header = readByte(data, pos);
-    if (header == UInt8(PrimitiveType::Null) << 2)
+    const auto & members = type.getVariants();
+    Columns variants(members.size());
+    VectorWithMemoryTracking<ColumnVariant::Discriminator> local_to_global(members.size());
+    for (ColumnVariant::Discriminator local = 0; local < members.size(); ++local)
     {
-        if (!isOrdinaryVariant(*type) && !canContainNull(*type))
-            throwCannotReadValueAs(data, pos, context, *type);
-        target.insertDefault();
-        return;
+        const auto & written_type = written_variant_type->getVariant(written_variant.globalDiscriminatorByLocal(local));
+        const size_t member = std::find_if(
+            written_types.begin(), written_types.end(), [&](const auto & t) { return t->equals(*written_type); }) - written_types.begin();
+        variants[local] = castColumn({written_variant.getVariantPtrByLocalDiscriminator(local), written_type, ""}, members[member]);
+        local_to_global[local] = static_cast<ColumnVariant::Discriminator>(member);
     }
-
-    const BasicType basic_type = BasicType(header & 0x03);
-    const UInt8 value_header = header >> 2;
-
-    switch (type->getTypeId())
-    {
-        case TypeIndex::Nullable:
-        {
-            auto & nullable = assert_cast<ColumnNullable &>(target);
-            decodeValueIntoType(
-                data, pos, context, depth, assert_cast<const DataTypeNullable &>(*type).getNestedType(), nullable.getNestedColumn());
-            nullable.getNullMapData().push_back(0);
-            return;
-        }
-        case TypeIndex::Variant:
-        {
-            if (type->getCustomName())
-                break;
-            const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
-            const ColumnVariant::Discriminator discriminator = chooseVariantMember(data, pos, context, variant_type);
-            auto & variant_column = assert_cast<ColumnVariant &>(target);
-            auto & member = variant_column.getVariantByGlobalDiscriminator(discriminator);
-            decodeValueIntoType(data, pos, context, depth, variant_type.getVariant(discriminator), member);
-            variant_column.getOffsets().push_back(member.size() - 1);
-            variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(discriminator));
-            return;
-        }
-        case TypeIndex::Array:
-        {
-            if (basic_type != BasicType::Array)
-                throwCannotReadValueAs(data, pos, context, *type);
-            const ArrayLayout layout = ArrayLayout::deserialize(data, pos + 1, value_header);
-            auto & array_column = assert_cast<ColumnArray &>(target);
-            const auto & nested_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
-            for (UInt32 i = 0; i < layout.num_elements; ++i)
-                decodeValueIntoType(data, layout.elementPos(data, i), context, depth + 1, nested_type, array_column.getData());
-            array_column.getOffsets().push_back(array_column.getData().size());
-            return;
-        }
-        case TypeIndex::Tuple:
-        {
-            const auto & tuple_type = assert_cast<const DataTypeTuple &>(*type);
-            auto & tuple_column = assert_cast<ColumnTuple &>(target);
-            const auto & element_types = tuple_type.getElements();
-
-            if (!tuple_type.hasExplicitNames())
-            {
-                if (basic_type != BasicType::Array)
-                    throwCannotReadValueAs(data, pos, context, *type);
-                const ArrayLayout layout = ArrayLayout::deserialize(data, pos + 1, value_header);
-                if (layout.num_elements != element_types.size())
-                    throw Exception(
-                        ErrorCodes::TYPE_MISMATCH,
-                        "Cannot read a value of the Parquet variant column '{}' as {}: the value is an array of {} elements",
-                        context.column_name, type->getName(), layout.num_elements);
-                for (UInt32 i = 0; i < layout.num_elements; ++i)
-                    decodeValueIntoType(
-                        data, layout.elementPos(data, i), context, depth + 1, element_types[i], tuple_column.getColumn(i));
-                tuple_column.addSize(1);
-                return;
-            }
-
-            if (basic_type != BasicType::Object)
-                throwCannotReadValueAs(data, pos, context, *type);
-            const ObjectLayout layout = ObjectLayout::deserialize(data, pos + 1, value_header);
-            VectorWithMemoryTracking<std::optional<size_t>> value_pos_of_element(element_types.size());
-            for (UInt32 i = 0; i < layout.num_elements; ++i)
-            {
-                const std::string_view name = context.metadata.getName(layout.fieldId(data, i));
-                const auto element = tuple_type.tryGetPositionByName(name);
-                if (!element)
-                    throw Exception(
-                        ErrorCodes::TYPE_MISMATCH,
-                        "Cannot read a value of the Parquet variant column '{}' as {}: the value has the key '{}', which is "
-                        "not an element of the tuple",
-                        context.column_name, type->getName(), name);
-                value_pos_of_element[*element] = layout.valuePos(data, i);
-            }
-            for (size_t i = 0; i < element_types.size(); ++i)
-            {
-                if (!value_pos_of_element[i])
-                    throw Exception(
-                        ErrorCodes::TYPE_MISMATCH,
-                        "Cannot read a value of the Parquet variant column '{}' as {}: the value has no key '{}'",
-                        context.column_name, type->getName(), tuple_type.getNameByPosition(i + 1));
-                decodeValueIntoType(data, *value_pos_of_element[i], context, depth + 1, element_types[i], tuple_column.getColumn(i));
-            }
-            tuple_column.addSize(1);
-            return;
-        }
-        case TypeIndex::Map:
-        {
-            if (basic_type != BasicType::Object)
-                throwCannotReadValueAs(data, pos, context, *type);
-            const auto & map_type = assert_cast<const DataTypeMap &>(*type);
-            auto & nested = assert_cast<ColumnMap &>(target).getNestedColumn();
-            auto & key_value = assert_cast<ColumnTuple &>(nested.getData());
-            const ObjectLayout layout = ObjectLayout::deserialize(data, pos + 1, value_header);
-            for (UInt32 i = 0; i < layout.num_elements; ++i)
-            {
-                const std::string_view name = context.metadata.getName(layout.fieldId(data, i));
-                key_value.getColumn(0).insertData(name.data(), name.size());
-                decodeValueIntoType(data, layout.valuePos(data, i), context, depth + 1, map_type.getValueType(), key_value.getColumn(1));
-            }
-            key_value.addSize(layout.num_elements);
-            nested.getOffsets().push_back(key_value.size());
-            return;
-        }
-        case TypeIndex::Dynamic:
-            decodeValueIntoDynamic(data, pos, context, depth, assert_cast<ColumnDynamic &>(target));
-            return;
-        default:
-            break;
-    }
-
-    decodeValueIntoTypedPath(data, pos, context, depth, type, target);
+    return ColumnVariant::create(written_variant.getLocalDiscriminatorsPtr(), written_variant.getOffsetsPtr(), variants, local_to_global);
 }
 
 const ColumnString & unwrapLeaf(const IColumn & column, const NullMap *& out_null_map)
@@ -1718,23 +1522,14 @@ VariantValueDecoder::VariantValueDecoder(DataTypePtr output_type_, String column
     if (const auto * object_type = typeid_cast<const DataTypeObject *>(inner_type.get()))
         filter = std::make_shared<const JSONPathsFilter>(*object_type, settings.use_partial_match_to_skip_paths_by_regexp);
     else
-        chassert(isDynamic(inner_type) || isOrdinaryVariant(*inner_type));
+        chassert(isDynamic(inner_type));
 }
 
 void VariantValueDecoder::decode(std::string_view metadata_blob, std::string_view value_blob, IColumn & output) const
 {
     const Metadata parsed_metadata = parseMetadata(metadata_blob);
     const DecodeContext context{
-        .metadata = parsed_metadata,
-        .max_depth = settings.max_depth,
-        .escape_dots_in_json_keys = settings.escape_dots_in_json_keys,
-        .column_name = column_name};
-
-    if (isOrdinaryVariant(*output_type))
-    {
-        decodeValueIntoType(value_blob, 0, context, 0, output_type, output);
-        return;
-    }
+        .metadata = parsed_metadata, .max_depth = settings.max_depth, .escape_dots_in_json_keys = settings.escape_dots_in_json_keys};
 
     /// `Nullable(JSON)`: values are decoded into the nested column, nulls (of the whole group or a variant
     /// null) go through `output.insertDefault()`, which inserts NULL into a nullable column.
@@ -1779,6 +1574,16 @@ void decodeVariantColumn(
     size_t num_rows,
     const VariantSettings & settings)
 {
+    if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(output_type.get()); variant_type && !output_type->getCustomName())
+    {
+        const DataTypePtr dynamic_type = std::make_shared<DataTypeDynamic>();
+        auto dynamic = dynamic_type->createColumn();
+        decodeVariantColumn(metadata, value, *dynamic, dynamic_type, column_name, num_rows, settings);
+        const ColumnPtr converted = convertDynamicToVariant(std::move(dynamic), *variant_type, column_name);
+        output.insertRangeFrom(*converted, 0, converted->size());
+        return;
+    }
+
     const NullMap * metadata_nulls = nullptr;
     const ColumnString & metadata_strings = unwrapLeaf(metadata, metadata_nulls);
 
@@ -1823,7 +1628,8 @@ void encodeVariantColumn(
     ColumnString & value,
     PaddedPODArray<UInt8> * null_map)
 {
-    checkVariantMembersAreDistinguishable(*type, column_name);
+    if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()); variant_type && !type->getCustomName())
+        getWrittenTypesOfVariantMembers(*variant_type, column_name);
 
     const size_t num_rows = column.size();
     const bool nullable_root = null_map && (type->getTypeId() == TypeIndex::Dynamic || type->getTypeId() == TypeIndex::Variant);

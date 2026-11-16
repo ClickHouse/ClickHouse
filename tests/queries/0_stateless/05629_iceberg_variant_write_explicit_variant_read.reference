@@ -10,17 +10,15 @@ x	Variant(String, UInt8)
 123.45	Variant(Decimal(5, 2), String)
 --- v Variant(Array(Int64), String)
 [1,2]	Variant(Array(Int64), String)
---- v Variant(Map(String, Int64), String)
-{'k':1}	Variant(Map(String, Int64), String)
---- v Variant(Tuple(a UInt8, b String), Int64)
-(1,'x')	Variant(Int64, Tuple(a UInt8, b String))
+--- v Variant(Array(Nullable(UInt8)), String)
+[1,NULL]	Variant(Array(Nullable(UInt8)), String)
 --- v Array(Variant(UInt16, String))
 [1,'x',NULL]	Array(Variant(String, UInt16))
---- v Variant(Array(Variant(UInt8, String)), Int64)
-[1,'x']	Variant(Array(Variant(String, UInt8)), Int64)
---- Members written the same way
-so they cannot be told apart when reading
-so they cannot be told apart when reading
+--- Members that cannot be read back
+so they cannot be told apart
+so they cannot be told apart
+cannot be read back
+cannot be read back
 --- Variant sort sources
 the Iceberg type `variant` cannot be a sort source
 0

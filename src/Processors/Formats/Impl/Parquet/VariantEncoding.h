@@ -31,7 +31,7 @@ struct VariantSettings
 };
 
 /// Decodes variant values, given as their `metadata` and `value` blobs, into a column of `output_type`,
-/// which is `Dynamic`, `JSON`, `Nullable(JSON)` or an ordinary `Variant`.
+/// which is `Dynamic`, `JSON` or `Nullable(JSON)`.
 class VariantValueDecoder
 {
 public:
@@ -62,7 +62,7 @@ private:
     VectorWithMemoryTracking<std::string_view> keys;
 };
 
-/// `output` must be a column of `output_type`, see `VariantValueDecoder`.
+/// `output` must be a column of `output_type`, which is one of the types of `VariantValueDecoder` or an ordinary `Variant`.
 void decodeVariantColumn(
     const IColumn & metadata,
     const IColumn & value,
