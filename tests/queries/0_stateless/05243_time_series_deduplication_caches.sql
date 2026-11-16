@@ -5,7 +5,7 @@
 
 SET allow_experimental_time_series_table = 1;
 
-DROP TABLE IF EXISTS ts, ts_fail, not_ts, ts_v6, ts_v7, ts_ext_tags, ext_tags_no_bounds, ts_ttl_tags, ts_ext_metric_families, ext_metric_families;
+DROP TABLE IF EXISTS ts, ts_fail, not_ts, ts_v6, ts_v7, ts_ext_tags, ext_tags_no_bounds, ts_ttl_tags, ts_ext_metric_families, ext_metric_families, ts_ttl_metric_families;
 
 -- The inner tables use MergeTree, so the counts below don't depend on background merges.
 CREATE TABLE ts ENGINE = TimeSeries TAGS INNER ENGINE = MergeTree ORDER BY (metric_name, id) METRIC FAMILIES INNER ENGINE = MergeTree ORDER BY metric_family;
@@ -149,4 +149,12 @@ INSERT INTO ts_ttl_tags (metric_name, tags, samples) VALUES ('http_requests', {'
 INSERT INTO ts_ttl_tags (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:01', 3), 2.)]);
 SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts_ttl_tags);
 
-DROP TABLE ts, ts_fail, not_ts, ts_v6, ts_v7, ts_ext_tags, ext_tags_no_bounds, ts_ttl_tags, ts_ext_metric_families, ext_metric_families;
+SELECT '--- an inner metric families table with a TTL has no cache, because the TTL removes rows the cache cannot see ---';
+CREATE TABLE ts_ttl_metric_families ENGINE = TimeSeries
+    METRIC FAMILIES INNER COLUMNS (written DateTime DEFAULT now())
+    METRIC FAMILIES INNER ENGINE = MergeTree ORDER BY metric_family TTL written + INTERVAL 10 YEAR;
+INSERT INTO ts_ttl_metric_families (metric_family, type, unit, help) VALUES ('m', 'gauge', 'seconds', 'first');
+INSERT INTO ts_ttl_metric_families (metric_family, type, unit, help) VALUES ('m', 'gauge', 'seconds', 'first');
+SELECT count() FROM timeSeriesMetricFamilies({CLICKHOUSE_DATABASE:Identifier}.ts_ttl_metric_families);
+
+DROP TABLE ts, ts_fail, not_ts, ts_v6, ts_v7, ts_ext_tags, ext_tags_no_bounds, ts_ttl_tags, ts_ext_metric_families, ext_metric_families, ts_ttl_metric_families;

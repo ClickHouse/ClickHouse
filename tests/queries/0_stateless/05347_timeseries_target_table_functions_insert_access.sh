@@ -85,6 +85,25 @@ ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${db}.ext_tags TO ${user}"
 try_read "external target with SELECT" "SELECT tags FROM timeSeriesTags(${db}.ts_ext)"
 try_read "external target with SELECT, DESCRIBE" "DESCRIBE timeSeriesTags(${db}.ts_ext)"
 
+# The selector and the PromQL table functions need SELECT on the TimeSeries table to find it, even with SELECT on its targets only.
+select_args="${db}.ts, 'm', 0, 1, 'samples'"
+${CLICKHOUSE_CLIENT} -q "
+    REVOKE ALL ON ${db}.* FROM ${user};
+    GRANT SELECT ON ${db}.ts_ext TO ${user};
+"
+for target in $(${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE database = '${db}' AND name LIKE '.inner_id.%'"); do
+    ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${db}.\`${target}\` TO ${user}"
+done
+echo "-- the selector and the PromQL table functions need SELECT on the TimeSeries table:"
+try_read "timeSeriesSelector with SELECT on the targets only" "DESCRIBE timeSeriesSelector(${select_args})"
+try_read "prometheusQuery with SELECT on the targets only" "DESCRIBE prometheusQuery(${db}.ts, 'm', 0)"
+try_read "prometheusQueryRange with SELECT on the targets only" "DESCRIBE prometheusQueryRange(${db}.ts, 'm', 0, 1, 1)"
+try_read "timeSeriesSelector with SELECT on the targets only, reading" "SELECT count() FROM timeSeriesSelector(${select_args})"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${db}.ts TO ${user}"
+try_read "timeSeriesSelector with SELECT" "SELECT count() FROM timeSeriesSelector(${select_args})"
+try_read "prometheusQuery with SELECT" "DESCRIBE prometheusQuery(${db}.ts, 'm', 0)"
+try_read "prometheusQueryRange with SELECT" "DESCRIBE prometheusQueryRange(${db}.ts, 'm', 0, 1, 1)"
+
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE ${db}.ts;
     DROP TABLE ${db}.ts_ext;

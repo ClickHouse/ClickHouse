@@ -1279,7 +1279,12 @@ void TimeSeriesSink::initMetricFamiliesPipeline()
         time_series_storage.getVersion());
 
     metric_families_pipeline = createTargetPipeline(ViewTarget::MetricFamilies, metric_families_header);
-    metric_families_deduplication_cache = time_series_storage.getMetricFamiliesDeduplicationCache();
+
+    /// A TTL of the metric families table removes rows without the cache knowing, so the cache is not used with it.
+    auto metric_families_target_metadata = time_series_storage.getTargetTable(ViewTarget::MetricFamilies, getContext())
+        ->getInMemoryMetadataPtr(getContext(), false);
+    if (!metric_families_target_metadata->hasAnyTTL())
+        metric_families_deduplication_cache = time_series_storage.getMetricFamiliesDeduplicationCache();
 }
 
 

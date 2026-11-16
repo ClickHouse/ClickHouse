@@ -31,3 +31,11 @@ external target without grants, DESCRIBE: grant SHOW COLUMNS ON db.ext_tags (ACC
 external target with SELECT on other columns: grant SELECT ON db.ext_tags (ACCESS_DENIED)
 external target with SELECT: OK
 external target with SELECT, DESCRIBE: OK
+-- the selector and the PromQL table functions need SELECT on the TimeSeries table:
+timeSeriesSelector with SELECT on the targets only: grant SELECT ON db.ts (ACCESS_DENIED)
+prometheusQuery with SELECT on the targets only: grant SELECT ON db.ts (ACCESS_DENIED)
+prometheusQueryRange with SELECT on the targets only: grant SELECT ON db.ts (ACCESS_DENIED)
+timeSeriesSelector with SELECT on the targets only, reading: grant SELECT ON db.ts (ACCESS_DENIED)
+timeSeriesSelector with SELECT: OK
+prometheusQuery with SELECT: OK
+prometheusQueryRange with SELECT: OK
