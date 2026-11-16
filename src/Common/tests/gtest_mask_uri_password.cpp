@@ -81,6 +81,9 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
         {"//TOKEN1@one/x|TOKEN2@two/x", "//[HIDDEN]@one/x|[HIDDEN]@two/x"},
         {"http://u:TOPSECRET|tail@localhost:11111/x", "http://u:[HIDDEN]@localhost:11111/x"},
         {"//TOKEN@host/x?next=http://u:p@other/x", "//[HIDDEN]@host/x?next=http://u:[HIDDEN]@other/x"},
+        {"//TOKEN@host/x/?next=http://u:p@other/x", "//[HIDDEN]@host/x/?next=http://u:[HIDDEN]@other/x"},
+        {"http://TOKEN@host/x/?next=http://u:p@other/x&next2=http://u:p@other2",
+            "http://[HIDDEN]@host/x/?next=http://u:[HIDDEN]@other/x&next2=http://u:[HIDDEN]@other2"},
     };
 
     for (const auto & [input, expected] : cases)
