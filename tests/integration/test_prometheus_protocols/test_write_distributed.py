@@ -84,6 +84,13 @@ def start_cluster():
             "samples Array(Tuple(DateTime64(0), Float64))) "
             "ENGINE = Distributed(two_shards_dist, '', ts_local, cityHash64(tags['host']))"
         )
+        # The same coarser samples type behind a wrapper that also declares the metadata columns.
+        node.query(
+            "CREATE TABLE prom_dist_coarse_full (metric_name String, tags Map(String, String), "
+            "samples Array(Tuple(DateTime64(0), Float64)), metric_family String, type String, "
+            "unit String, help String) "
+            "ENGINE = Distributed(two_shards_dist, '', ts_local, cityHash64(tags['host']))"
+        )
         # Two shards and no sharding key: the sink refuses this unless the caller picks a shard.
         node.query(
             "CREATE TABLE prom_dist_keyless AS shard_0.ts_local "
@@ -815,6 +822,41 @@ def test_remote_write_metadata_only_needs_only_the_metadata_grant():
         assert response.status_code == 204, response.text
         stored = metadata_on_the_shards(family)
         assert stored == f"gauge\t{METADATA_HELP}\t{METADATA_UNIT}\n", stored
+    finally:
+        node.query(f"DROP USER {user}")
+
+
+def test_remote_write_hides_a_samples_type_the_caller_may_not_see():
+    """A metadata-only writer holds no grant on `samples`, so the refusal of a wrapper whose samples
+    type differs from the shards' names neither type to it."""
+    user = "prom_metadata_hidden_user"
+    family = "metadata_hidden_family"
+    request = convert_metrics_metadata_to_protobuf(
+        [(family, "GAUGE", METADATA_HELP, METADATA_UNIT)]
+    )
+    node.query(f"CREATE USER {user} IDENTIFIED WITH no_password")
+    try:
+        node.query(
+            f"GRANT INSERT(metric_family, type, unit, help) ON default.prom_dist_coarse_full TO {user}"
+        )
+        node.query(f"GRANT INSERT ON shard_0.* TO {user}")
+        node.query(f"GRANT INSERT ON shard_1.* TO {user}")
+        response = get_response_to_remote_write(
+            node.ip_address, 9093, f"/coarse_full/write?user={user}&password=", request
+        )
+        assert response.status_code >= 400, response.text
+        assert "INCOMPATIBLE_SCHEMA" in response.text, response.text
+        assert "DateTime64" not in response.text, response.text
+        assert "samples" not in response.text, response.text
+        assert metadata_on_the_shards(family) == ""
+
+        # Not vacuous: a caller who may see the column is told both types.
+        response = get_response_to_remote_write(
+            node.ip_address, 9093, "/coarse_full/write", request
+        )
+        assert response.status_code >= 400, response.text
+        assert "Array(Tuple(DateTime64(0), Float64))" in response.text, response.text
+        assert "Array(Tuple(DateTime64(3), Float64))" in response.text, response.text
     finally:
         node.query(f"DROP USER {user}")
 

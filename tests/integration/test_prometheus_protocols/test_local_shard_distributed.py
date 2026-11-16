@@ -12,6 +12,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 from .prometheus_test_utils import (
+    convert_metrics_metadata_to_protobuf,
     convert_time_series_to_protobuf,
     execute_query_via_http_api,
     get_error_from_query_endpoint,
@@ -178,6 +179,14 @@ def start_cluster():
             f"CREATE USER {MIXED_INSERT_USER} IDENTIFIED WITH no_password DEFAULT DATABASE metrics"
         )
         node.query(f"GRANT INSERT ON metrics.prom_mixed TO {MIXED_INSERT_USER}")
+        # The same shards under a key that reads `tags`: a row without tags goes to the remote shard.
+        node.query(
+            "CREATE TABLE metrics.prom_mixed_by_tags AS metrics.ts_mixed "
+            "ENGINE = Distributed(mixed_local_remote_dist, '', ts_mixed, 1 + length(mapKeys(tags)))"
+        )
+        node.query(
+            f"GRANT INSERT ON metrics.prom_mixed_by_tags TO {MIXED_INSERT_USER}"
+        )
 
         node.query(
             f"CREATE USER {SWAP_DENIED_USER} IDENTIFIED WITH no_password DEFAULT DATABASE metrics"
@@ -353,6 +362,38 @@ def test_remote_write_is_accepted_when_no_row_routes_to_the_denied_local_shard()
         settings={"distributed_foreground_insert": 1},
     )
     assert mixed_counts("remote_only_sql") == [0, 1]
+
+
+def test_a_metadata_only_write_is_routed_with_the_tags_the_insert_fills_in():
+    """A metadata-only request names no `tags`, and the insert fills them in before the sharding key
+    reads them: the row goes to the remote shard, so the caller needs no grant on the local one."""
+
+    def families(table, family):
+        return node.query(
+            f"SELECT count() FROM timeSeriesMetrics({table}) WHERE metric_family = '{family}'"
+        ).strip()
+
+    response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        f"/mixed_by_tags/write?user={MIXED_INSERT_USER}&password=",
+        convert_metrics_metadata_to_protobuf(
+            [("remote_routed_family", "GAUGE", "Some help", "seconds")]
+        ),
+    )
+    assert response.status_code == 204, response.text
+    assert families("remote_shard.ts_mixed", "remote_routed_family") == "1"
+    assert families("metrics.ts_mixed", "remote_routed_family") == "0"
+
+    # A plain INSERT of the same row through the same wrapper is accepted from the same caller.
+    node.query(
+        "INSERT INTO metrics.prom_mixed_by_tags (metric_family, type, unit, help) "
+        "VALUES ('remote_routed_sql', 'gauge', 'seconds', 'Some help')",
+        user=MIXED_INSERT_USER,
+        settings={"distributed_foreground_insert": 1},
+    )
+    assert families("remote_shard.ts_mixed", "remote_routed_sql") == "1"
+    assert families("metrics.ts_mixed", "remote_routed_sql") == "0"
 
 
 def test_remote_write_is_still_refused_when_a_row_routes_to_the_local_shard():

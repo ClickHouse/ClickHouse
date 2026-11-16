@@ -18,6 +18,8 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/addMissingDefaults.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -460,6 +462,17 @@ namespace
                 storage.getStorageID().getNameForLogs(), wrong_engine_replicas.size(), backQuoteIfNeed(remote_id.table_name),
                 fmt::join(wrong_engine_replicas, ", "));
 
+        /// A caller who may not see this column of the table is told neither of its two types.
+        const auto & wrapper_id = storage.getStorageID();
+        if (!wrong_type_replicas.empty()
+            && !context->getAccess()->isGranted(
+                AccessType::SHOW_COLUMNS, wrapper_id.database_name, wrapper_id.table_name, std::string_view{samples_column}))
+            throw Exception(
+                for_write ? ErrorCodes::INCOMPATIBLE_SCHEMA : ErrorCodes::TYPE_MISMATCH,
+                "This operation is not supported over table {}: {} shard-local target(s) named {} declare a column "
+                "with another type than the table",
+                wrapper_id.getNameForLogs(), wrong_type_replicas.size(), backQuoteIfNeed(remote_id.table_name));
+
         if (!wrong_type_replicas.empty())
             throw Exception(
                 /// A write must be refused with a retryable status, or Prometheus drops the batch it could resend.
@@ -615,6 +628,11 @@ void checkPrometheusQueryDistributedWrite(
     const auto & distributed = typeid_cast<const StorageDistributed &>(storage);
     const auto cluster = distributed.getCluster();
 
+    const auto metadata = storage.getInMemoryMetadataPtr(context, false);
+    const auto block_to_send = settings[Setting::insert_allow_materialized_columns]
+        ? metadata->getSampleBlock()
+        : metadata->getSampleBlockNonMaterialized();
+
     /// Authorized for the shards this server writes in-process before any shard is sent data: that insert's own check
     /// would otherwise deny the caller after a remote shard has committed its part of the batch. A split that cannot
     /// be evaluated here counts as non-empty for every shard, so the refusal errs on the side of nothing written.
@@ -623,7 +641,11 @@ void checkPrometheusQueryDistributedWrite(
     {
         try
         {
-            receives_rows = distributed.getShardsReceivingRows(cluster, block);
+            /// Routed as the insert routes it: with the defaults of the columns the request leaves out.
+            Block completed_block = block;
+            ExpressionActions(addMissingDefaults(block, block_to_send.getNamesAndTypesList(), metadata->columns, context))
+                .execute(completed_block);
+            receives_rows = distributed.getShardsReceivingRows(cluster, completed_block);
         }
         catch (...) /// NOLINT(bugprone-empty-catch)
         {
@@ -631,10 +653,7 @@ void checkPrometheusQueryDistributedWrite(
         }
     }
     const auto & remote_id = target.remote_time_series_storage_id;
-    const auto metadata = storage.getInMemoryMetadataPtr(context, false);
-    const auto columns_to_send = settings[Setting::insert_allow_materialized_columns]
-        ? metadata->getSampleBlock().getNames()
-        : metadata->getSampleBlockNonMaterialized().getNames();
+    const auto columns_to_send = block_to_send.getNames();
     const auto & all_addresses = cluster->getShardsAddresses();
     for (size_t shard_index = 0; shard_index != all_addresses.size(); ++shard_index)
     {
