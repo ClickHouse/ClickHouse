@@ -339,6 +339,9 @@ public:
 
     virtual std::exception_ptr getLastException() const { return {}; }
 
+    /// Stops and joins the dictionary's background threads. Called on server shutdown.
+    virtual void shutdown() const {}
+
     std::shared_ptr<IDictionary> shared_from_this()
     {
         return std::static_pointer_cast<IDictionary>(IExternalLoadable::shared_from_this());

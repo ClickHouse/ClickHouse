@@ -1287,6 +1287,9 @@ struct ContextSharedPart : boost::noncopyable
             SHUTDOWN(log, "system logs", TSA_SUPPRESS_WARNING_FOR_READ(system_logs), flushAndShutdown());
         });
 
+        /// Not earlier: storages may use dictionaries until they are shut down (the final flush of `Buffer`).
+        SHUTDOWN(log, "dictionaries background threads", external_dictionaries_loader, shutdownDictionaries());
+
         stopIntrospectionServers();
 
         FileCacheFactory::instance().clear();

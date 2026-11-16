@@ -190,6 +190,12 @@ void ExternalDictionariesLoader::unloadAllDictionaries() const
     unloadAll();
 }
 
+void ExternalDictionariesLoader::shutdownDictionaries() const
+{
+    for (const auto & object : getLoadedObjects())
+        std::static_pointer_cast<const IDictionary>(object)->shutdown();
+}
+
 DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std::string & dictionary_name, ContextPtr query_context) const
 {
     std::string resolved_name = resolveDictionaryName(dictionary_name, query_context);

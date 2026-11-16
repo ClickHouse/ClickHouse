@@ -82,6 +82,12 @@ CacheDictionary<dictionary_key_type>::~CacheDictionary()
 }
 
 template <DictionaryKeyType dictionary_key_type>
+void CacheDictionary<dictionary_key_type>::shutdown() const
+{
+    update_queue.stopAndWait();
+}
+
+template <DictionaryKeyType dictionary_key_type>
 size_t CacheDictionary<dictionary_key_type>::getElementCount() const
 {
     const ProfiledSharedLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
