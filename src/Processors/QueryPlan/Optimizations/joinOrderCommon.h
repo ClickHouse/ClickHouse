@@ -280,7 +280,14 @@ inline double computeMergeJoinCost(
         if (!input.sorted)
             sort = SORT_ROW_COST * rows * static_cast<double>(std::bit_width(input.rows));
         else if (input.sort_groups > 0)
-            sort = SORT_ROW_COST * rows * static_cast<double>(std::bit_width(static_cast<UInt64>(rows / std::max(input.sort_groups, 1.0))));
+        {
+            /// A saturated estimate gives 2^64 here, which does not fit into `UInt64`.
+            const double group_rows = rows / std::max(input.sort_groups, 1.0);
+            const UInt64 groups = group_rows >= static_cast<double>(std::numeric_limits<UInt64>::max())
+                ? std::numeric_limits<UInt64>::max()
+                : static_cast<UInt64>(group_rows);
+            sort = SORT_ROW_COST * rows * static_cast<double>(std::bit_width(groups));
+        }
         return sort + row_cost * read * rows;
     };
     const double merge_join = MERGE_JOIN_FIXED_COST + input_cost(left, left_probes ? probe_read : 1.0)
