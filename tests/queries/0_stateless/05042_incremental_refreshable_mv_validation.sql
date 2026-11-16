@@ -20,7 +20,7 @@ SETTINGS
     part_minmax_index_columns = 'with_block_number_offset';
 
 CREATE TABLE val_dim (k UInt64) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE val_mem (k UInt64, v UInt64) ENGINE = Memory;
+CREATE TABLE val_mem (k UInt64, v UInt64) ENGINE = Log;
 CREATE TABLE val_tgt (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 
 -- A single plain streaming source is accepted.
@@ -48,7 +48,7 @@ CREATE MATERIALIZED VIEW val_mv_subquery_src
     TO val_tgt EMPTY
     AS SELECT k, v FROM (SELECT k, v FROM val_src); -- { serverError BAD_ARGUMENTS }
 
--- A non-streaming source engine (Memory) is rejected.
+-- A non-streaming source engine (Log) is rejected.
 CREATE MATERIALIZED VIEW val_mv_mem
     REFRESH EVERY 10 YEAR APPEND INCREMENTAL
     TO val_tgt EMPTY
