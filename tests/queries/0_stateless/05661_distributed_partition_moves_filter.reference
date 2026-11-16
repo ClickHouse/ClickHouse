@@ -30,3 +30,8 @@ This JOIN is not supported for table
 4
 6
 4
+-- a query that also reads the remote table directly fails
+7
+7
+is read directly by a query
+is read directly by a query

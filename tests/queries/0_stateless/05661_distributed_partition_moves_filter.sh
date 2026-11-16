@@ -17,7 +17,7 @@ function set_moves()
 function wait_for_version()
 {
     for _ in {1..600}; do
-        version=$($CLICKHOUSE_CLIENT -q "SELECT version FROM system.distributed_partition_moves WHERE database = currentDatabase() AND table = 'dist'")
+        version=$($CLICKHOUSE_CLIENT -q "SELECT version FROM system.distributed_partition_moves WHERE database = currentDatabase() AND table = '${2:-dist}'")
         [ "$version" = "$1" ] && return
         sleep 0.1
     done
@@ -75,7 +75,26 @@ for distributed_product_mode in local global; do
     $CLICKHOUSE_CLIENT --distributed_product_mode $distributed_product_mode -q "SELECT count() FROM dist WHERE x IN (SELECT x FROM dist WHERE x < 11)"
 done
 
+echo '-- a query that also reads the remote table directly fails'
 $CLICKHOUSE_CLIENT -m -q "
+    CREATE TABLE local_data (d Date, x UInt64) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY x;
+    INSERT INTO local_data SELECT '2024-01-15', number FROM numbers(1, 3);
+    INSERT INTO local_data SELECT '2024-02-15', number FROM numbers(10, 2);
+"
+$CLICKHOUSE_CLIENT --allow_experimental_distributed_partition_moves 1 -q "
+    CREATE TABLE dist_same (d Date, x UInt64) ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), local_data)
+    SETTINGS partition_moves_zookeeper_path = '$MOVES_PATH'"
+wait_for_version $version dist_same
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM dist_same"
+$CLICKHOUSE_CLIENT --distributed_product_mode local -q "SELECT count() FROM dist_same WHERE x IN (SELECT x FROM dist_same)"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM dist_same WHERE x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.local_data)" 2>&1 \
+    | grep -o -m1 'is read directly by a query'
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM dist_same AS l INNER JOIN ${CLICKHOUSE_DATABASE}.local_data AS r USING (x)" 2>&1 \
+    | grep -o -m1 'is read directly by a query'
+
+$CLICKHOUSE_CLIENT -m -q "
+    DROP TABLE dist_same;
+    DROP TABLE local_data;
     DROP VIEW v;
     DROP TABLE dist;
     DROP DATABASE shard_0;

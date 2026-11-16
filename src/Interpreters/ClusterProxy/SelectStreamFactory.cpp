@@ -1,3 +1,4 @@
+#include <Analyzer/TableNode.h>
 #include <Client/IConnections.h>
 #include <Core/Settings.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
@@ -20,6 +21,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageDummy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -28,6 +30,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 
 
 namespace ProfileEvents
@@ -88,11 +91,30 @@ bool hasPartitionIdColumn(const ASTPtr & ast)
     return std::ranges::any_of(ast->children, hasPartitionIdColumn);
 }
 
-/// Adds a condition on `_partition_id` to `WHERE` of every `SELECT` of the query for a shard that reads `table`, to skip `partitions`.
-/// A setting of the query could be rejected or dropped by the constraints of the user. Returns whether the table is found.
-bool skipPartitionsInQueryForShard(const ASTPtr & ast, const StorageID & table, const Strings & partitions)
+/// Counts the tables of the query tree for a shard that replaced a `Distributed` table of `table`: they have no real storage.
+size_t countTablesOfDistributedTable(const QueryTreeNodePtr & node, const StorageID & table)
 {
-    bool found = false;
+    size_t count = 0;
+
+    if (const auto * table_node = node->as<TableNode>())
+    {
+        const auto & storage_id = table_node->getStorageID();
+        count += typeid_cast<const StorageDummy *>(table_node->getStorage().get())
+            && storage_id.table_name == table.table_name && storage_id.database_name == table.database_name;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child)
+            count += countTablesOfDistributedTable(child, table);
+
+    return count;
+}
+
+/// Adds a condition on `_partition_id` to `WHERE` of every `SELECT` of the query for a shard that reads `table`, to skip `partitions`.
+/// A setting of the query could be rejected or dropped by the constraints of the user. Returns the number of found tables.
+size_t skipPartitionsInQueryForShard(const ASTPtr & ast, const StorageID & table, const Strings & partitions)
+{
+    size_t found = 0;
 
     auto * select_query = ast->as<ASTSelectQuery>();
     if (auto tables = select_query ? select_query->tables() : nullptr)
@@ -138,12 +160,12 @@ bool skipPartitionsInQueryForShard(const ASTPtr & ast, const StorageID & table, 
                 filter = makeASTFunction("and", where, filter);
 
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(filter));
-            found = true;
+            ++found;
         }
     }
 
     for (const auto & child : ast->children)
-        found |= skipPartitionsInQueryForShard(child, table, partitions);
+        found += skipPartitionsInQueryForShard(child, table, partitions);
 
     return found;
 }
@@ -273,6 +295,7 @@ void SelectStreamFactory::createForShardImpl(
             .header = shard_header,
             .shard_info = shard_info,
             .lazy = lazy,
+            .main_table_filtered_by_partition_id = table_filtered_by_partition_id != nullptr,
             .shard_filter_generator = std::move(shard_filter_generator),
         });
     };
@@ -413,9 +436,19 @@ void SelectStreamFactory::createForShard(
     auto query_ast = queryNodeToDistributedSelectQuery(query_tree_for_ast);
     /// A query that reads `_partition_id` itself keeps the access check of the column.
     const bool check_partition_id = !partitions_to_skip || hasPartitionIdColumn(query_ast);
-    if (partitions_to_skip && !skipPartitionsInQueryForShard(query_ast, main_table, *partitions_to_skip))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Cannot find table {} in the query for a shard while its partitions are moved between shards", main_table.getNameForLogs());
+    if (partitions_to_skip)
+    {
+        size_t found = skipPartitionsInQueryForShard(query_ast, main_table, *partitions_to_skip);
+        if (!found)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot find table {} in the query for a shard while its partitions are moved between shards", main_table.getNameForLogs());
+
+        /// A direct read of the table by the query is not told from a read through the `Distributed` table by its name.
+        if (found > countTablesOfDistributedTable(query_tree, main_table))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Table {} is read directly by a query that reads it through a `Distributed` table while its partitions are moved between shards",
+                main_table.getNameForLogs());
+    }
 
     createForShardImpl(
         shard_info,
