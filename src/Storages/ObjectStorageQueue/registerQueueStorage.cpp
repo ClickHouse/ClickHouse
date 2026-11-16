@@ -23,7 +23,6 @@
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>
-#include <Common/maskURIPassword.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #endif
 
@@ -64,11 +63,7 @@ ObjectStorageQueueTableMetadata::Source getQueueSource(const StorageS3Configurat
     /// `S3::URI` can put a part of the user info into the bucket name, so a URL with user info gets no source.
     if (!configuration.url.uri.getUserInfo().empty())
         return {};
-    ObjectStorageQueueTableMetadata::Source source{
-        configuration.getTypeName(), configuration.url.endpoint, configuration.url.bucket, configuration.getRawPath().path};
-    maskPresignedURLParameters(source.bucket);
-    maskPresignedURLParameters(source.path_pattern);
-    return source;
+    return {configuration.getTypeName(), configuration.url.endpoint, configuration.url.bucket, configuration.getRawPath().path};
 }
 #endif
 
@@ -173,6 +168,8 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         }
     }
 
+    auto source = getQueueSource(*configuration);
+
     /// In `exclusive` mode there is no coordination through Keeper: each server keeps the list of
     /// processed files only in its own memory. If two servers read the same path, both will read
     /// every file and every row will be inserted twice. So each server needs its own path.
@@ -197,7 +194,12 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         auto path = configuration->getPathForRead();
         path.path = args.getContext()->getMacros()->expand(path.path, info);
         configuration->setPathForRead(path);
+        source.path_pattern.clear();
     }
+
+    source.clearIfMasked();
+    /// The first argument is an identifier only if it names a named collection
+    source.from_named_collection = engine_args[0]->as<ASTIdentifier>() != nullptr;
 
     /// The S3 client is built once in the storage constructor and reused by background threads, so the
     /// constructor needs the effective `s3_allow_server_credentials_in_user_queries` value from the CREATE
@@ -205,11 +207,6 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     /// weakly by `WithContext` and used by background tasks, so a transient settings copy would expire.
     const bool allow_server_credentials_in_user_queries
         = args.getLocalContext()->getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
-    auto source = getQueueSource(*configuration);
-    if ((*queue_settings)[ObjectStorageQueueSetting::mode] == ObjectStorageQueueMode::EXCLUSIVE)
-        source.path_pattern.clear();
-    /// The first argument is an identifier only if it names a named collection
-    source.from_named_collection = engine_args[0]->as<ASTIdentifier>() != nullptr;
     const bool strict_metadata_check = (args.is_restore_from_backup && !isSecondaryDDLReplay(args.getLocalContext()))
         || !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext());
 

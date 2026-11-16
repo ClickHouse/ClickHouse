@@ -9,6 +9,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ColumnsDescription.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/maskURIPassword.h>
 
 
 namespace DB
@@ -239,6 +240,12 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueTableMetadata::parse(const Str
     Poco::JSON::Parser parser;
     auto json = parser.parse(metadata_str).extract<Poco::JSON::Object::Ptr>();
     return ObjectStorageQueueTableMetadata(json);
+}
+
+void ObjectStorageQueueTableMetadata::Source::clearIfMasked()
+{
+    if (maskPresignedURLParameters(endpoint) || maskPresignedURLParameters(bucket) || maskPresignedURLParameters(path_pattern))
+        *this = {};
 }
 
 void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk, bool strict)

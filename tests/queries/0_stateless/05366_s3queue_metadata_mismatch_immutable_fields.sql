@@ -103,6 +103,11 @@ DROP TABLE tq_type_azure;
 
 -- A URL with user info is refused, because the user info would be saved in keeper as a part of the source.
 CREATE TABLE tq_u (x String) ENGINE = S3Queue('http://user:secret@localhost:11111/test/05366_u/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_user_info'; -- { serverError BAD_ARGUMENTS }
+-- So is a path with a part masked as a secret: `05366_root&sig=a/*` and `05366_root&sig=z/*` would be saved the same.
+CREATE TABLE tq_sig (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_root&sig=a/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_sig'; -- { serverError BAD_ARGUMENTS }
+-- In `exclusive` mode the path is not a part of the source, so there such a path is allowed.
+CREATE TABLE tq_sig_x (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_root&sig=a/*', NOSIGN, 'CSV') SETTINGS mode = 'exclusive', keeper_path = '/clickhouse/{database}/05366_sig_x';
+DROP TABLE tq_sig_x;
 
 -- Azure forms that have a source: a scheme in upper case, and an `abfss` URL with a separate SAS.
 CREATE TABLE tq_az_upper (x String) ENGINE = AzureQueue('HTTP://localhost:11111', 'test', '05366_upper/*', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_upper';

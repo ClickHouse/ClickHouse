@@ -30,6 +30,7 @@ struct ObjectStorageQueueTableMetadata
         bool from_named_collection = false;
 
         [[nodiscard]] bool empty() const { return endpoint.empty(); }
+        void clearIfMasked();
         bool operator==(const Source & other) const
         {
             return type == other.type
