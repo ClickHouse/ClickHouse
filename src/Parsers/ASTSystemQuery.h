@@ -73,6 +73,10 @@ public:
         DROP_REPLICA,
         DROP_DATABASE_REPLICA,
         DROP_CATALOG_REPLICA,
+        DROP_AMBER_NODE,
+        ALLOCATE_AMBER_VOLUME,
+        CREATE_AMBER_VOLUME,
+        DROP_AMBER_VOLUME,
         JEMALLOC_PURGE,
         JEMALLOC_ENABLE_PROFILE,
         JEMALLOC_DISABLE_PROFILE,
@@ -178,7 +182,6 @@ public:
 
     ASTPtr database;
     ASTPtr table;
-    bool if_exists = false;
     ASTPtr query_settings;
 
     String getDatabase() const;
@@ -194,6 +197,8 @@ public:
     String full_replica_zk_path;
     String replica_zk_path;
     bool is_drop_whole_replica{};
+    bool if_exists = false;
+    bool distributed_cache_drop_connections = false;
     bool with_tables{false};
 
     /// SYSTEM RESET FILELOG ... FILE 'name' [OFFSET n | TO END]
@@ -206,12 +211,20 @@ public:
     String disk;
     UInt64 seconds{};
     UInt64 untracked_memory_size{};
+    struct AmberParams
+    {
+        String node_name;
+        UInt64 cluster_id{};
+        UInt64 volume_id{};
+        UInt64 shard_count{};
+        UInt64 segment_count{};
+    };
+    std::shared_ptr<const AmberParams> amber_params;
 
     std::optional<String> query_result_cache_tag;
 
     String filesystem_cache_name;
     String distributed_cache_server_id;
-    bool distributed_cache_drop_connections = false;
 
     std::string key_to_drop;
     std::optional<size_t> offset_to_drop;
