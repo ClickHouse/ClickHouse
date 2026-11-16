@@ -44,14 +44,14 @@ doc_type: 'reference'
 
 설정 필드:
 
-| 설정                     | 설명                                                                                                                               |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `db`                   | 데이터베이스 이름입니다. 데이터베이스 이름이 `<connection_string>` 매개변수에 설정되어 있으면 생략하십시오.                                                            |
-| `table`                | 테이블 이름이며, 스키마가 있으면 스키마 이름도 포함합니다.                                                                                                |
-| `connection_string`    | 연결 문자열입니다.                                                                                                                       |
-| `invalidate_query`     | 딕셔너리 상태를 확인하는 쿼리입니다. 선택 사항입니다. 자세한 내용은 [LIFETIME를 사용한 딕셔너리 데이터 갱신](/ko/reference/statements/create/dictionary/lifetime) 섹션을 참조하십시오. |
-| `background_reconnect` | 연결에 실패하면 백그라운드에서 레플리카에 다시 연결합니다. 선택 사항입니다.                                                                                       |
-| `query`                | 사용자 지정 쿼리입니다. 선택 사항입니다.                                                                                                          |
+| 설정                     | 설명                                                                                                                                                                 |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `db`                   | 데이터베이스 이름입니다. 데이터베이스 이름이 `<connection_string>` 매개변수에 설정되어 있으면 생략하십시오.                                                                                              |
+| `table`                | 테이블 이름이며, 스키마가 있으면 스키마 이름도 포함합니다.                                                                                                                                  |
+| `connection_string`    | 연결 문자열입니다.                                                                                                                                                         |
+| `invalidate_query`     | 딕셔너리 상태를 확인하는 쿼리입니다. 선택 사항입니다. 자세한 내용은 [LIFETIME를 사용한 딕셔너리 데이터 갱신](/ko/reference/statements/create/dictionary/lifetime) 섹션을 참조하십시오.                                   |
+| `background_reconnect` | 연결에 실패하면 백그라운드에서 레플리카에 다시 연결합니다. 선택 사항입니다.                                                                                                                         |
+| `query`                | 사용자 지정 쿼리입니다. 선택 사항입니다. 쿼리의 컬럼은 위치 기준으로 매핑되므로, [딕셔너리가 예상하는 순서](/ko/reference/statements/create/dictionary/sources/overview#custom-query-column-order)대로 컬럼을 반환해야 합니다. |
 
 <Note>
   `table` 필드와 `query` 필드는 함께 사용할 수 없습니다. 또한 `table` 또는 `query` 필드 중 하나는 반드시 선언해야 합니다.
@@ -61,9 +61,7 @@ ClickHouse는 ODBC 드라이버로부터 따옴표 문자를 받아 드라이버
 
 Oracle 사용 시 인코딩 문제가 발생하면 해당 [FAQ](/ko/resources/support-center/knowledge-base/integrations/oracle-odbc) 항목을 참조하십시오.
 
-<div id="known-vulnerability-of-the-odbc-dictionary-functionality">
-  ### ODBC 딕셔너리 기능의 알려진 취약점
-</div>
+### ODBC 딕셔너리 기능의 알려진 취약점 {#known-vulnerability-of-the-odbc-dictionary-functionality}
 
 <Note>
   ODBC 드라이버의 연결 매개변수 `Servername`를 사용해 데이터베이스에 연결할 때는 해당 매개변수를 대체할 수 있습니다. 이 경우 `odbc.ini`에 있는 `USERNAME` 및 `PASSWORD` 값이 원격 서버로 전송되어 노출될 수 있습니다.
@@ -92,9 +90,7 @@ SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 
 ODBC 드라이버는 `odbc.ini`에 있는 `USERNAME` 및 `PASSWORD` 값을 `some-server.com`으로 전송합니다.
 
-<div id="example-of-connecting-postgresql">
-  ### PostgreSQL 연결 예시
-</div>
+### PostgreSQL 연결 예시 {#example-of-connecting-postgresql}
 
 Ubuntu OS.
 
@@ -181,9 +177,7 @@ ClickHouse의 딕셔너리 구성:
 
 드라이버 `DRIVER=/usr/local/lib/psqlodbcw.so`를 사용해 라이브러리의 전체 경로를 지정하려면 `odbc.ini`를 수정해야 할 수 있습니다.
 
-<div id="example-of-connecting-ms-sql-server">
-  ### MS SQL Server 연결 예시
-</div>
+### MS SQL Server 연결 예시 {#example-of-connecting-ms-sql-server}
 
 Ubuntu 운영체제.
 

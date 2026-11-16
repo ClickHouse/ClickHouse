@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', '검색', '로그', '관측성', '전문 검색']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="search-in-clickstack-and-elastic">
   ## ClickStack와 Elastic에서 검색하기
 </div>
@@ -19,11 +17,27 @@ ClickHouse는 완전한 SQL을 지원할 뿐만 아니라, [`argMax`](/ko/refere
 
 간단한 로그 및 트레이스 탐색을 위해 ClickStack UI(HyperDX)는 필드-값 쿼리, 범위, 와일드카드 등에 대해 직관적인 텍스트 기반 필터링을 지원하는 [Lucene 스타일 구문](/ko/clickstack/features/search)을 제공합니다. 이는 Elasticsearch의 [Lucene 구문](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) 및 [Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql)의 일부 요소와 유사합니다.
 
-<Image img="/images/use-cases/observability/hyperdx-search.webp" alt="검색" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![검색](/images/use-cases/observability/hyperdx-search.webp)
+
+</Frame>
+
+</div>
 
 검색 인터페이스는 이러한 익숙한 구문을 지원하면서도, 내부적으로는 이를 효율적인 SQL `WHERE` 절로 변환합니다. 따라서 Kibana 사용자에게 익숙한 사용 경험을 제공하는 동시에, 필요할 때 SQL의 강력한 기능도 활용할 수 있습니다. 이를 통해 ClickHouse의 [string search functions](/ko/reference/functions/regular-functions/string-search-functions), [similarity functions](/ko/reference/functions/regular-functions/string-functions#stringJaccardIndex), [date time functions](/ko/reference/functions/regular-functions/date-time-functions)를 폭넓게 활용할 수 있습니다.
 
-<Image img="/images/use-cases/observability/hyperdx-sql.webp" alt="SQL" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![SQL](/images/use-cases/observability/hyperdx-sql.webp)
+
+</Frame>
+
+</div>
 
 아래에서는 ClickStack와 Elasticsearch의 Lucene 쿼리 언어를 비교합니다.
 

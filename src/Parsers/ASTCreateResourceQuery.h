@@ -19,7 +19,7 @@ public:
     {
         ResourceAccessMode mode{};
         std::optional<String> disk; // Applies to all disks if not set
-        CostUnit unit() const { return costUnitForMode(mode); }
+        [[nodiscard]] CostUnit unit() const { return costUnitForMode(mode); }
 
         friend bool operator ==(const Operation & lhs, const Operation & rhs) { return lhs.mode == rhs.mode && lhs.disk == rhs.disk; }
         friend bool operator !=(const Operation & lhs, const Operation & rhs) { return !(lhs == rhs); }

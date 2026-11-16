@@ -439,9 +439,18 @@ function(clickhouse_postprocess_rust_lib target_name)
     ")
 endfunction()
 
-# Configure a Rust crate target with ClickHouse-specific flags.
-function(clickhouse_config_crate_flags target_name)
-    corrosion_set_env_vars(${target_name} "CFLAGS=${RUST_CFLAGS}")
+# Not the target directory of cargo (corrosion passes `--target-dir`): only build scripts read it, the one of
+# `delta_kernel_ffi` writes its headers there.
+set(RUST_BUILD_SCRIPT_TARGET_DIR "${CMAKE_BINARY_DIR}/contrib/delta-kernel-rs/include" CACHE INTERNAL "Rust config")
+
+# The environment of a cargo run in the workspace.
+function(clickhouse_config_crate_env target_name)
+    # Every member of the workspace gets the same environment: they share one target directory, and a build script whose
+    # environment differs between two of them reruns, with everything depending on it, on every build.
+    #
+    # The build-script for `openssl-sys` expects all includes to be in one path
+    # but the CMake build for OpenSSL results in headers in two different places
+    corrosion_set_env_vars(${target_name} "CFLAGS=${RUST_CFLAGS} -I ${ClickHouse_SOURCE_DIR}/contrib/openssl/include/")
     corrosion_set_env_vars(${target_name} "CXXFLAGS=${RUST_CXXFLAGS}")
     corrosion_set_env_vars(${target_name} "RUSTFLAGS=${RUSTFLAGS}")
     corrosion_set_env_vars(${target_name} "RUSTDOCFLAGS=${RUSTFLAGS}")
@@ -469,6 +478,21 @@ function(clickhouse_config_crate_flags target_name)
     #
     # Refs: https://github.com/rust-lang/cargo/issues/15099#issuecomment-2732847355
     corrosion_set_env_vars(${target_name} "CARGO_NET_OFFLINE=true")
+    # The build script of `delta_kernel_ffi` runs `cargo metadata` (cbindgen), which finds the vendored sources only through this.
+    corrosion_set_env_vars(${target_name} "CARGO_HOME=${CMAKE_BINARY_DIR}/contrib/corrosion-cmake/")
+    # Empty, so that `openssl-sys` does not bundle a copy of OpenSSL into the archive:
+    # the binary links `OpenSSL::SSL` and `OpenSSL::Crypto`.
+    corrosion_set_env_vars(${target_name}
+        "OPENSSL_LIBS="
+        "OPENSSL_STATIC=1"
+        "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/"
+        "OPENSSL_INCLUDE_DIR=${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake/common/include/")
+    corrosion_set_env_vars(${target_name} "CARGO_TARGET_DIR=${RUST_BUILD_SCRIPT_TARGET_DIR}")
+endfunction()
+
+# Configure a Rust crate target with ClickHouse-specific flags.
+function(clickhouse_config_crate_flags target_name)
+    clickhouse_config_crate_env(${target_name})
     corrosion_link_libraries(${target_name} cxx)
 
     # Localize all C-namespace symbols from Rust static libraries so they
@@ -613,4 +637,19 @@ function(clickhouse_config_crate_flags target_name)
                 "platform; skipping symbol localization for ${target_name}")
         endif()
     endif()
+endfunction()
+
+# Add a member of the Rust workspace: the interface target `<crate>`, which links the one static library of the
+# workspace, `_ch_rust_workspace` (imported by `contrib/rust-contrib-workspace` after every member), and enables the
+# feature of the root package that re-exports the member.
+#
+#     clickhouse_add_rust_member(<crate> FEATURE <feature> [BUILD_DEPENDS <target> ...])
+#
+# BUILD_DEPENDS are targets the cargo run needs to be built first, such as libraries a build script looks for.
+function(clickhouse_add_rust_member crate)
+    cmake_parse_arguments(ARG "" "FEATURE" "BUILD_DEPENDS" ${ARGN})
+    add_library(${crate} INTERFACE)
+    target_link_libraries(${crate} INTERFACE _ch_rust_workspace)
+    set_property(GLOBAL APPEND PROPERTY CLICKHOUSE_RUST_FEATURES ${ARG_FEATURE})
+    set_property(GLOBAL APPEND PROPERTY CLICKHOUSE_RUST_BUILD_DEPENDS ${ARG_BUILD_DEPENDS})
 endfunction()

@@ -29,7 +29,7 @@ public:
 
     /// Cells are accessed through an unaligned 16-bit word, which makes the access branchless.
     /// The trailing padding byte of the bitset keeps the word in bounds for every bucket.
-    UInt8 ALWAYS_INLINE get(BucketIndex bucket_index) const
+    [[nodiscard]] UInt8 ALWAYS_INLINE get(BucketIndex bucket_index) const
     {
         chassert(bucket_index < bucket_count);
 
@@ -51,7 +51,7 @@ public:
 
     /// The serialized state is the bitset without the trailing padding byte.
     /// The serialization format must not be changed.
-    std::span<const UInt8> getSerializableState() const { return {bitset, BITSET_SIZE}; }
+    [[nodiscard]] std::span<const UInt8> getSerializableState() const { return {bitset, BITSET_SIZE}; }
     std::span<UInt8> getSerializableState() { return {bitset, BITSET_SIZE}; }
     static constexpr size_t serializedSize() { return BITSET_SIZE; }
 

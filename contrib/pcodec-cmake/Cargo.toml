@@ -12,6 +12,3 @@ pco = { path = "../pcodec/pco" }
 # transitive dependency of `pco`, and we name it directly on the untyped decode
 # path. Kept in the same major as pco's own `half` so it resolves to one crate.
 half = "2"
-
-[lib]
-crate-type = ["staticlib"]
