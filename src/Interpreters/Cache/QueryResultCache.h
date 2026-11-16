@@ -307,7 +307,7 @@ public:
         OnDisk
     };
 
-    bool hasCacheEntryForKey(bool update_profile_events = true) const;
+    [[nodiscard]] bool hasCacheEntryForKey(bool update_profile_events = true) const;
 
     /// Records the overall outcome of the query result cache lookup in `QueryCacheHits` / `QueryCacheMisses`. Must be called
     /// exactly once per query that probes the cache, after every enabled backend has been probed, so that these events keep
@@ -323,8 +323,8 @@ public:
     /// Must only be called if hasCacheEntryForKey is true
     std::chrono::time_point<std::chrono::system_clock> entryCreatedAt();
     std::chrono::time_point<std::chrono::system_clock> entryExpiresAt();
-    bool entryIgnoresQuota() const;
-    const ResultColumnOrigins & entryResultColumnOrigins() const;
+    [[nodiscard]] bool entryIgnoresQuota() const;
+    [[nodiscard]] const ResultColumnOrigins & entryResultColumnOrigins() const;
 
     /// getSource*() moves source processors out of the Reader. Call each of these method just once.
     std::unique_ptr<SourceFromChunks> getSource();
