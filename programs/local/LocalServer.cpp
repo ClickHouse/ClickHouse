@@ -2141,8 +2141,10 @@ void LocalServer::processConfig()
             /// them be created again. So, when system logs are enabled, make the `system` database persistent, like in
             /// the server.
             const bool has_system_database_metadata = fs::exists(fs::path(path) / "metadata" / "system.sql");
+            /// Not with `--dump-schema`: it starts no system logs and must not write to the data it reads.
             bool persistent_system_database = attach_system_tables
                 && !getClientConfiguration().has("only-system-tables")
+                && !dump_schema
                 && hasAnySystemLogConfigured(config());
 
             /// A directory used before with a `system` database of the `Memory` engine may hold the data of system log

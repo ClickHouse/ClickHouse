@@ -50,15 +50,15 @@ $CLICKHOUSE_CLIENT -q "
     WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish'
         AND query LIKE 'EXPLAIN QUERY TREE%'"
 
-# Creating `aaa_mv` resolves the `loop` of `aaa_loop`, so `aaa_loop` must follow `zzz_src`, which reading `base` puts
+# Creating `aaa_mv` resolves the `merge` of `aaa_merge`, so `aaa_merge` must follow `zzz_src`, which reading `base` puts
 # on the dependency level of `aaa_mv`.
 round_trip as_table_function "
     CREATE DATABASE d;
     CREATE TABLE d.base (id UInt64) ENGINE = Memory;
     CREATE VIEW d.zzz_src AS SELECT id FROM d.base;
-    CREATE TABLE d.aaa_loop (id UInt64) AS loop('d', 'zzz_src');
-    CREATE MATERIALIZED VIEW d.aaa_mv ENGINE = Memory AS SELECT id FROM d.aaa_loop;"
-echo "as_table_function: source dumped first: $(dumped_before "$work/as_table_function.sql" d.zzz_src d.aaa_loop)"
+    CREATE TABLE d.aaa_merge (id UInt64) AS merge('d', '^zzz_src$');
+    CREATE MATERIALIZED VIEW d.aaa_mv ENGINE = Memory AS SELECT id FROM d.aaa_merge;"
+echo "as_table_function: source dumped first: $(dumped_before "$work/as_table_function.sql" d.zzz_src d.aaa_merge)"
 
 # A parameterized view is called like a table function; reading `base` puts it on the dependency level of `aaa_mv`.
 round_trip parameterized_view "
