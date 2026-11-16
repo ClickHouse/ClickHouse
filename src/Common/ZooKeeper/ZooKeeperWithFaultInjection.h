@@ -114,10 +114,10 @@ public:
     }
 
     void setKeeper(zkutil::ZooKeeper::Ptr const & keeper_) { keeper = keeper_; }
-    zkutil::ZooKeeper::Ptr getKeeper() const { return keeper; }
-    bool isNull() const { return keeper.get() == nullptr; }
-    bool expired() const { return !keeper || keeper->expired(); }
-    bool isFeatureEnabled(KeeperFeatureFlag feature_flag) const { return keeper->isFeatureEnabled(feature_flag); }
+    [[nodiscard]] zkutil::ZooKeeper::Ptr getKeeper() const { return keeper; }
+    [[nodiscard]] bool isNull() const { return keeper.get() == nullptr; }
+    [[nodiscard]] bool expired() const { return !keeper || keeper->expired(); }
+    [[nodiscard]] bool isFeatureEnabled(KeeperFeatureFlag feature_flag) const { return keeper->isFeatureEnabled(feature_flag); }
 
     void forceFailureBeforeOperation()
     {

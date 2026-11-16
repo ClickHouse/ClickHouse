@@ -34,9 +34,9 @@ struct SmallStringView
         char data_small[12];
     };
 
-    bool isSmall() const { return size <= 12; }
+    [[nodiscard]] bool isSmall() const { return size <= 12; }
 
-    const char * data() const
+    [[nodiscard]] const char * data() const
     {
         return isSmall() ? data_small : data_big;
     }
@@ -55,7 +55,7 @@ struct SmallStringView
     [[maybe_unused]] explicit SmallStringView(const std::string & s) : SmallStringView(s.data(), s.size()) {}
     SmallStringView() = default; // NOLINT(hicpp-member-init)
 
-    [[maybe_unused]] std::string toString() const { return std::string(data(), size); }
+    [[nodiscard]] [[maybe_unused]] std::string toString() const { return std::string(data(), size); }
 };
 
 

@@ -14,10 +14,10 @@ class IOptimizationRule
 {
 public:
     virtual ~IOptimizationRule() = default;
-    virtual String getName() const = 0;
-    virtual bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const = 0;
-    virtual Promise getPromise() const = 0;
-    virtual bool isTransformation() const = 0;
+    [[nodiscard]] virtual String getName() const = 0;
+    [[nodiscard]] virtual bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const = 0;
+    [[nodiscard]] virtual Promise getPromise() const = 0;
+    [[nodiscard]] virtual bool isTransformation() const = 0;
 
     std::vector<GroupExpressionPtr> apply(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const;
 
