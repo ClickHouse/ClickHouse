@@ -84,9 +84,8 @@ private:
     /// `suppress_hints_once`): a selected entry must not pop hints by itself.
     replxx::Replxx::ACTION_RESULT historySearch(replxx::Replxx::ACTION action, char32_t code);
 
-    /// Ctrl-O handler: pick a template query by name and insert it into the current line. The
-    /// templates are loaded on the first use and cached for the session; on failure a short
-    /// message is printed and the line is left unchanged.
+    /// Ctrl-O handler: pick a template query by name and insert it into the current line.
+    /// The templates are loaded on the first use and cached for the session.
     replxx::Replxx::ACTION_RESULT templateQuerySearch(char32_t code);
 
     /// After a line was displayed programmatically, pin its text so that any hint regeneration

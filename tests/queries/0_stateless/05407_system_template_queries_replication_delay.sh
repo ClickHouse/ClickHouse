@@ -19,4 +19,8 @@ FROM system.template_queries WHERE is_builtin AND name = 'Replication delay'")
 # The replica copied the only log entry, so it is zero entries behind.
 $CLICKHOUSE_CLIENT -q "SELECT log_entries_behind FROM ($query)"
 
+# Without a Keeper session the log indexes are unknown, so the count is NULL.
+expired=${query/FROM system.replicas/FROM (SELECT * REPLACE (1 AS is_session_expired, 0 AS log_max_index, 0 AS log_pointer) FROM system.replicas)}
+$CLICKHOUSE_CLIENT -q "SELECT log_entries_behind FROM ($expired)"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_05407_delay"

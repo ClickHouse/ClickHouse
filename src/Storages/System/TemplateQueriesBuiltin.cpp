@@ -287,7 +287,7 @@ ORDER BY database, `table`)"
     part_mutations_oldest_time,
     oldest_part_to_get,
     oldest_part_to_merge_to,
-    multiIf(zookeeper_exception = '', greatest(toInt64(log_max_index) - toInt64(log_pointer) + 1, 0), NULL) AS log_entries_behind
+    multiIf(NOT is_session_expired AND zookeeper_exception = '', greatest(toInt64(log_max_index) - toInt64(log_pointer) + 1, 0), NULL) AS log_entries_behind
 FROM system.replicas
 WHERE absolute_delay > 0 OR queue_size > 0
 ORDER BY absolute_delay DESC)"
