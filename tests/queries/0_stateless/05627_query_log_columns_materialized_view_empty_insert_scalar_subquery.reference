@@ -1,0 +1,5 @@
+dst	0
+Row 1:
+──────
+log_comment: 05627_empty_insert
+columns:     ['system.one.dummy','default.dst.a','default.dst.c','default.mv.a','default.mv.c','default.src.a']

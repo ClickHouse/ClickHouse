@@ -530,6 +530,18 @@ static DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, 
 }
 
 
+/// The columns of `supplied` that `target` stores. The conversion in front of the target drops the other ones
+/// silently, see `allow_materialized_view_with_bad_select`; an `ALIAS` column is not stored.
+static Names columnsStoredBy(const ColumnsDescription & target, const Names & supplied)
+{
+    Names stored;
+    for (const auto & name : supplied)
+        if (target.hasNotAlias(name))
+            stored.push_back(name);
+    return stored;
+}
+
+
 /// For source chunk, execute view query over it.
 template <typename Executor>
 class ExecutingInnerQueryFromViewTransform final : public ExceptionKeepingTransform
@@ -592,10 +604,16 @@ protected:
 
     void onFinish() override
     {
-        /// No block came, so the SELECT was never analyzed. Analyze it once over an empty block, so that the query log
-        /// lists the same columns whether the insert moved rows or not.
-        if (query_context && !written_columns_recorded)
-            process(getInputPort().getHeader().cloneEmpty(), {});
+        if (!query_context || written_columns_recorded)
+            return;
+
+        /// No block came, so the SELECT was never analyzed. Analyze it over an empty block without running it: scalar
+        /// subqueries are not executed and no pipeline is built. The result header does not depend on the data.
+        auto local_context = createLocalContext(getInputPort().getHeader().cloneEmpty());
+        QueryExecutionCounters::RepeatedPipelineBuildScope repeated_build_scope(view_id.getFullTableName());
+        InterpreterSelectQueryAnalyzer interpreter(
+            select_query, local_context, SelectQueryOptions().ignoreAccessCheck().analyze(), local_context->getViewSource());
+        recordWrittenColumns(interpreter.getSampleBlock()->getNames());
     }
 
 private:
@@ -627,18 +645,35 @@ private:
         }
     };
 
-    QueryPipeline process(Block data_block, Chunk::ChunkInfoCollection && chunk_infos)
+    /// A context in which the source table is a table with the same name and the same alias columns that holds only
+    /// `data_block`, the block inserted into the source. The interpreter does the processing of alias columns.
+    ContextMutablePtr createLocalContext(Block data_block) const
     {
-        /// We create a table with the same name as original table and the same alias columns,
-        ///  but it will contain single block (that is INSERT-ed into main table).
-        /// The interpreter will do processing of alias columns.
         auto local_context = Context::createCopy(context);
-
         local_context->addViewSource(std::make_shared<StorageValues>(
             source_id,
             source_metadata->getColumns(),
             std::move(data_block),
             source_metadata->virtuals));
+        return local_context;
+    }
+
+    /// Lists in the query log what the view writes: the result columns of its SELECT, known only once the SELECT is
+    /// analyzed. The target gets the ones it stores. The query log reads the access info again when the query
+    /// finishes, so one record per view is enough.
+    void recordWrittenColumns(const Names & select_columns)
+    {
+        if (!query_context || written_columns_recorded)
+            return;
+
+        query_context->addQueryAccessInfo(view_id, select_columns);
+        query_context->addQueryAccessInfo(inner_id, columnsStoredBy(inner_metadata->getColumns(), select_columns));
+        written_columns_recorded = true;
+    }
+
+    QueryPipeline process(Block data_block, Chunk::ChunkInfoCollection && chunk_infos)
+    {
+        auto local_context = createLocalContext(std::move(data_block));
 
         QueryPipelineBuilder pipeline;
 
@@ -652,9 +687,9 @@ private:
             pipeline = interpreter.buildQueryPipeline();
         }
 
-        /// The view writes the result columns of its SELECT, and the target receives exactly them, converted by name.
-        /// Not the declared columns of the view, which can be wider for a `TO` view, and not the insertable columns of
-        /// the target, which miss a supplied MATERIALIZED column and list DEFAULT columns nobody supplied.
+        /// The view writes the result columns of its SELECT. Not its declared columns, which can be wider for a `TO`
+        /// view, and not the insertable columns of the target, which miss a supplied MATERIALIZED column and list
+        /// DEFAULT columns nobody supplied.
         Names written_columns = pipeline.getHeader().getNames();
 
         pipeline.resize(1);
@@ -731,14 +766,7 @@ private:
 
         inner_metadata->check(pipeline.getHeader());
 
-        if (query_context && !written_columns_recorded)
-        {
-            /// Known only here, once the SELECT is analyzed. The query log reads the access info again when the query
-            /// finishes, so one record per view is enough.
-            query_context->addQueryAccessInfo(view_id, written_columns);
-            query_context->addQueryAccessInfo(inner_id, written_columns);
-            written_columns_recorded = true;
-        }
+        recordWrittenColumns(written_columns);
 
         const auto & settings = context->getSettingsRef();
         bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits] && !async_insert;
@@ -1554,13 +1582,15 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
     if (init_context->hasQueryContext())
     {
-        /// The query log lists for every table the columns its writer supplies. The inserted table, and the target of
-        /// an inserted view, get the column list of the INSERT. A dependent view and its target are listed by name
-        /// here, and `ExecutingInnerQueryFromViewTransform` adds the result columns of the view's SELECT once the
-        /// SELECT is analyzed.
+        /// The query log lists for every table the columns its writer supplies. The inserted table gets the column
+        /// list of the INSERT, and the target of an inserted view gets the ones it stores. A dependent view and its
+        /// target are listed by name here, and `ExecutingInnerQueryFromViewTransform` adds the columns once the
+        /// SELECT of the view is analyzed.
         Names column_names;
-        if (current == init_table_id || (!materialized_view && parent == init_table_id))
+        if (current == init_table_id)
             column_names = init_header->getNames();
+        else if (!materialized_view && parent == init_table_id)
+            column_names = columnsStoredBy(metadata->getColumns(), init_header->getNames());
         init_context->getQueryContext()->addQueryAccessInfo(current, column_names);
     }
 
