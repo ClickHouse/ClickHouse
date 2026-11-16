@@ -52,7 +52,7 @@ public:
         Int32 nanos = 0;
 
         /// Rounded down, as the nanoseconds are not negative.
-        Int64 getMillis() const { return second * 1000 + nanos / 1000000; }
+        [[nodiscard]] Int64 getMillis() const { return second * 1000 + nanos / 1000000; }
         auto operator<=>(const Timestamp &) const = default;
     };
 
@@ -64,7 +64,7 @@ public:
         /// Parses a decimal number like `-123.45`. Returns false if it is malformed.
         bool parse(std::string_view s);
         /// Without the trailing zeros in the fraction, as in the bloom filters.
-        std::string toString() const;
+        [[nodiscard]] std::string toString() const;
     };
 
     explicit Literal(bool value);
@@ -77,16 +77,16 @@ public:
     Literal(Int64 second, Int32 nanos);
     Literal(Int128 value, Int32 precision, Int32 scale);
 
-    PredicateDataType getType() const { return type; }
-    bool isNull() const { return is_null; }
+    [[nodiscard]] PredicateDataType getType() const { return type; }
+    [[nodiscard]] bool isNull() const { return is_null; }
 
-    bool getBool() const { return int_value != 0; }
-    Int64 getLong() const { return int_value; }
-    Int64 getDate() const { return int_value; }
-    double getFloat() const { return float_value; }
-    const std::string & getString() const { return string_value; }
-    Timestamp getTimestamp() const { return timestamp_value; }
-    Decimal getDecimal() const { return decimal_value; }
+    [[nodiscard]] bool getBool() const { return int_value != 0; }
+    [[nodiscard]] Int64 getLong() const { return int_value; }
+    [[nodiscard]] Int64 getDate() const { return int_value; }
+    [[nodiscard]] double getFloat() const { return float_value; }
+    [[nodiscard]] const std::string & getString() const { return string_value; }
+    [[nodiscard]] Timestamp getTimestamp() const { return timestamp_value; }
+    [[nodiscard]] Decimal getDecimal() const { return decimal_value; }
 
 private:
     PredicateDataType type;
@@ -117,8 +117,8 @@ public:
     PredicateLeaf(Operator op_, PredicateDataType type_, UInt64 column_id_, VectorWithMemoryTracking<Literal> literals_)
         : op(op_), type(type_), column_id(column_id_), literals(std::move(literals_)) {}
 
-    UInt64 getColumnId() const { return column_id; }
-    PredicateDataType getType() const { return type; }
+    [[nodiscard]] UInt64 getColumnId() const { return column_id; }
+    [[nodiscard]] PredicateDataType getType() const { return type; }
 
     /// `writer_version` is from the postscript of the file. `bloom_filter` can be nullptr.
     /// `timestamps_shifted` means the `TIMESTAMP` values read are not the UTC instants of the statistics
@@ -127,8 +127,8 @@ public:
         UInt32 writer_version, const Proto::ColumnStatistics & stats, const BloomFilter * bloom_filter, bool timestamps_shifted) const;
 
 private:
-    TruthValue evaluatePredicateMinMax(const Proto::ColumnStatistics & stats) const;
-    TruthValue evaluatePredicateBloomFilter(const BloomFilter & bloom_filter, bool has_null) const;
+    [[nodiscard]] TruthValue evaluatePredicateMinMax(const Proto::ColumnStatistics & stats) const;
+    [[nodiscard]] TruthValue evaluatePredicateBloomFilter(const BloomFilter & bloom_filter, bool has_null) const;
 
     Operator op;
     PredicateDataType type;
@@ -144,8 +144,8 @@ class SearchArgument
 public:
     SearchArgument(ExpressionTreePtr root_, VectorWithMemoryTracking<PredicateLeaf> leaves_);
 
-    const VectorWithMemoryTracking<PredicateLeaf> & getLeaves() const { return leaves; }
-    TruthValue evaluate(const VectorWithMemoryTracking<TruthValue> & leaf_values) const;
+    [[nodiscard]] const VectorWithMemoryTracking<PredicateLeaf> & getLeaves() const { return leaves; }
+    [[nodiscard]] TruthValue evaluate(const VectorWithMemoryTracking<TruthValue> & leaf_values) const;
 
 private:
     ExpressionTreePtr root;
@@ -188,12 +188,12 @@ class BloomFilter
 public:
     explicit BloomFilter(const Proto::BloomFilter & proto);
 
-    bool testLong(Int64 value) const;
-    bool testDouble(double value) const;
+    [[nodiscard]] bool testLong(Int64 value) const;
+    [[nodiscard]] bool testDouble(double value) const;
     bool testBytes(const char * data, size_t size) const;
 
 private:
-    bool testHash(Int64 hash) const;
+    [[nodiscard]] bool testHash(Int64 hash) const;
 
     UInt32 num_hash_functions;
     VectorWithMemoryTracking<UInt64> bits;
