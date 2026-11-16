@@ -72,6 +72,7 @@ private:
     };
 
     void start();
+    void reportFinalCursor() const;
 
     Params params;
     StorageSnapshotPtr storage_snapshot;

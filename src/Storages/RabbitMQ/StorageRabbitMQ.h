@@ -41,6 +41,7 @@ public:
     /// A streaming query reads stream queues with its own connection, see `RabbitMQStreamSource`.
     /// The messages of other queues are gone once consumed, so there is nothing to stream from with a cursor.
     bool supportsStreaming() const override { return hasStreamQueues(); }
+    bool reportsStreamingCursor() const override { return hasStreamQueues(); }
 
     bool noPushingToViewsOnInserts() const override { return true; }
 

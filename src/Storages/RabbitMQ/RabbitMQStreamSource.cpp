@@ -132,6 +132,20 @@ void RabbitMQStreamSource::start()
     }
 }
 
+void RabbitMQStreamSource::reportFinalCursor() const
+{
+    /// Only an incremental refresh of a materialized view has the holder of the cursor.
+    auto streaming_cursor = context->getStreamingCursor();
+    if (!streaming_cursor)
+        return;
+
+    auto cursor = std::make_shared<CursorTreeNode>();
+    for (const auto & [queue, last_offset] : last_offsets)
+        if (last_offset >= 0)
+            cursor->setValue(queue, last_offset);
+    streaming_cursor->merge(cursor);
+}
+
 std::optional<Chunk> RabbitMQStreamSource::tryGenerate()
 {
     /// An idle stream returns an empty chunk after a poll, so that the thread runs other processors in the meantime
@@ -204,6 +218,7 @@ Chunk RabbitMQStreamSource::generate()
                 /// RabbitMQ does not report the end of a stream queue, so a bounded stream ends when it is idle.
                 if (bounded && !got_event)
                 {
+                    reportFinalCursor();
                     stream_finished = true;
                 }
                 break;

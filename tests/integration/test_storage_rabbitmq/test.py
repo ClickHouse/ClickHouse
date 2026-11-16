@@ -4186,6 +4186,32 @@ def test_rabbitmq_stream_cursor(rabbitmq_cluster, db, unique):
     publish([3])
     assert query(f"SELECT key FROM {db}.rabbitmq STREAM CURSOR {{'{queue}': 2}} LIMIT 1") == "3\n"
 
+    # An incremental refresh appends only the messages published after the previous refresh.
+    instance.query(f"CREATE TABLE {db}.rabbitmq_target (key UInt64) ENGINE = MergeTree ORDER BY key")
+    instance.query(
+        f"""CREATE MATERIALIZED VIEW {db}.rabbitmq_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL
+            TO {db}.rabbitmq_target EMPTY AS SELECT key FROM {db}.rabbitmq"""
+    )
+
+    def refresh():
+        instance.query(f"SYSTEM REFRESH VIEW {db}.rabbitmq_mv")
+        instance.query(f"SYSTEM WAIT VIEW {db}.rabbitmq_mv")
+        return instance.query(f"SELECT count(), sum(key) FROM {db}.rabbitmq_target")
+
+    def refresh_until(expected):
+        # A message may reach the queue after a refresh: then the next refresh appends it.
+        for _ in range(60):
+            result = refresh()
+            if result == expected:
+                return result
+        return result
+
+    assert refresh_until("4\t6\n") == "4\t6\n"
+    publish([4])
+    assert refresh_until("5\t10\n") == "5\t10\n"
+    assert refresh() == "5\t10\n"
+    instance.query(f"DROP TABLE {db}.rabbitmq_mv")
+
     # A classic queue has nothing to stream from.
     instance.query(
         f"""

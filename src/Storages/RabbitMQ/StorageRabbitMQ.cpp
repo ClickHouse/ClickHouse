@@ -1881,7 +1881,7 @@ A streaming query (`SELECT ... FROM rabbitmq_table STREAM`, an experimental feat
 SELECT * FROM rabbitmq_table STREAM CURSOR {'1_events': 41}
 ```
 
-A queue without an entry in the cursor is read from the beginning. RabbitMQ does not report the end of a stream queue, so `STREAM BOUNDED` finishes once no message arrives during `stream_poll_timeout_ms`. A classic queue does not keep its messages, so a table without stream queues does not support `STREAM`. `WATERMARK` is not supported.
+A queue without an entry in the cursor is read from the beginning. RabbitMQ does not report the end of a stream queue, so `STREAM BOUNDED` finishes once no message arrives during `stream_poll_timeout_ms`. A table with stream queues can be the source of an incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`): a message that arrives later is appended by the next refresh. A classic queue does not keep its messages, so a table without stream queues does not support `STREAM`. `WATERMARK` is not supported.
 
 ## Virtual columns {#virtual-columns}
 
