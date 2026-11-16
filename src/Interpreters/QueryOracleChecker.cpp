@@ -583,13 +583,15 @@ bool hasArrayJoin(const ASTSelectQuery & select)
 /// correctly detects this divergence but the divergence is allowed, so we
 /// must skip these queries (issue #105743).
 /// Scan every slot of an ASTSelectQuery that can host a window function:
-/// SELECT list, QUALIFY clause, and named WINDOW definitions. The bare
+/// SELECT list, `WITH` clause, QUALIFY clause, and named WINDOW definitions. The bare
 /// `hasWindowFunctionWithoutOrderBy(select.select())` we used previously
 /// missed `QUALIFY row_number() OVER () = 1` and `WINDOW w AS (...)` cases.
 bool hasWindowFunctionWithoutOrderBy(const ASTPtr & ast);
 bool hasWindowFunctionWithoutOrderByAnywhere(const ASTSelectQuery & select)
 {
     if (select.select() && hasWindowFunctionWithoutOrderBy(select.select()))
+        return true;
+    if (select.with() && hasWindowFunctionWithoutOrderBy(select.with()))
         return true;
     if (select.qualify() && hasWindowFunctionWithoutOrderBy(select.qualify()))
         return true;
@@ -1419,6 +1421,15 @@ void scanAggregatesSafe(const ASTPtr & ast, SafeAggregateScan & out)
     forEachChild(ast, [&](const ASTPtr & child) { scanAggregatesSafe(child, out); });
 }
 
+/// The SELECT list can use any `WITH` alias, so an aggregate or window function defined there is evaluated by the query.
+SafeAggregateScan scanSelectListAndWith(const ASTSelectQuery & select)
+{
+    SafeAggregateScan data;
+    scanAggregatesSafe(select.with(), data);
+    scanAggregatesSafe(select.select(), data);
+    return data;
+}
+
 /// A sub-query runs on a thread group of its own context: code that takes the query context from the thread
 /// (e.g. distributed plan stage tasks) must see the oracle's settings, not the fuzzed query's.
 ThreadGroupSwitcher switchToThreadGroupOf(const ContextPtr & oracle_context)
@@ -1500,13 +1511,8 @@ bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select)
         return false;
 
     /// Window functions are never safe for oracle testing.
-    if (select.select())
-    {
-        SafeAggregateScan data;
-        scanAggregatesSafe(select.select(), data);
-        if (!data.window_functions.empty())
-            return false;
-    }
+    if (!scanSelectListAndWith(select).window_functions.empty())
+        return false;
 
     return true;
 }
@@ -1514,11 +1520,7 @@ bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select)
 
 bool QueryOracleChecker::hasAggregates(const ASTSelectQuery & select)
 {
-    if (!select.select())
-        return false;
-    SafeAggregateScan data;
-    scanAggregatesSafe(select.select(), data);
-    return !data.aggregates.empty();
+    return !scanSelectListAndWith(select).aggregates.empty();
 }
 
 
@@ -2038,13 +2040,8 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
         return false;
 
     /// Window functions are never safe for oracle testing.
-    if (select.select())
-    {
-        SafeAggregateScan data;
-        scanAggregatesSafe(select.select(), data);
-        if (!data.window_functions.empty())
-            return false;
-    }
+    if (!scanSelectListAndWith(select).window_functions.empty())
+        return false;
 
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
