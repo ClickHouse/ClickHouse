@@ -654,17 +654,27 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
         return;
 
     auto available_topic_partitions_copy = available_topic_partitions;
+    /// Sort deterministically so that every holder skips the same reserved partitions;
+    /// only the takeable prefix is shuffled for load distribution.
+    std::sort(
+        available_topic_partitions_copy.begin(),
+        available_topic_partitions_copy.end(),
+        [](const TopicPartition & a, const TopicPartition & b)
+        { return std::tie(a.topic, a.partition_id) < std::tie(b.topic, b.partition_id); });
+    const size_t takeable_count = available_topic_partitions_copy.size() > reserved_for_lockless
+        ? available_topic_partitions_copy.size() - reserved_for_lockless
+        : 0;
     pcg64 generator(randomSeed());
-    std::shuffle(available_topic_partitions_copy.begin(), available_topic_partitions_copy.end(), generator);
+    std::shuffle(available_topic_partitions_copy.begin(), available_topic_partitions_copy.begin() + takeable_count, generator);
 
-    for (const auto & tp : available_topic_partitions_copy)
+    for (size_t i = 0; i < takeable_count; ++i)
     {
         if (tmp_locks.size() >= locks_to_take)
             break;
-        auto maybe_lock = createLocksInfoIfFree(tp);
+        auto maybe_lock = createLocksInfoIfFree(available_topic_partitions_copy[i]);
         if (!maybe_lock.has_value())
             continue;
-        tmp_locks.emplace(TopicPartition(tp), std::move(*maybe_lock));
+        tmp_locks.emplace(TopicPartition(available_topic_partitions_copy[i]), std::move(*maybe_lock));
     }
 }
 

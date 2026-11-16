@@ -324,8 +324,8 @@ bool StorageKafka2::activate()
 
             /// Mark this replica as understanding the demand protocol, so that peers can
             /// distinguish a genuinely idle new-code replica from an old-code one during
-            /// a rolling upgrade (which cannot publish demand).
-            zookeeper->tryCreate(fs::path(replica_path) / "demand_aware", "", zkutil::CreateMode::Persistent);
+            /// a rolling upgrade or rollback (which cannot publish or remove the marker).
+            zookeeper->tryCreate(fs::path(replica_path) / "demand_aware", "", zkutil::CreateMode::Ephemeral);
 
             return true;
         }
