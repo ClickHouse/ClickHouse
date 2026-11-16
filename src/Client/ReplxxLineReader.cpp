@@ -354,7 +354,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     if (!history_file_path.empty())
     {
-        history_file_fd = open(history_file_path.c_str(), O_RDWR);
+        history_file_fd = open(history_file_path.c_str(), O_RDWR | O_CREAT, 0666);
         if (history_file_fd < 0)
         {
             rx.print("Open of history file failed: %s\n", errnoToString().c_str());
