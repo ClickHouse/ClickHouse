@@ -28,6 +28,7 @@
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/MD5Engine.h>
+#include <Poco/String.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
@@ -936,7 +937,18 @@ UsersConfigParser::UsersConfigParser(AccessControl & access_control_)
 UUID UsersConfigParser::generateID(AccessEntityType type, const String & name)
 {
     Poco::MD5Engine md5;
-    md5.update(name);
+    if (type == AccessEntityType::ROLE || type == AccessEntityType::QUOTA || type == AccessEntityType::SETTINGS_PROFILE)
+    {
+        /// Roles, quotas, and settings profiles from `users.xml` used to be stored under their escaped config keys
+        /// (e.g. `my\.role`), and their IDs were generated from these keys. Keep generating the IDs from the escaped
+        /// spelling, so that the references to these entities persisted in other access storages (by ID) still resolve.
+        /// The names of users have been un-escaped earlier, and their IDs are generated from the un-escaped names.
+        md5.update(Poco::replace(name, ".", "\\."));
+    }
+    else
+    {
+        md5.update(name);
+    }
     char type_storage_chars[] = " USRSXML";
     type_storage_chars[0] = AccessEntityTypeInfo::get(type).unique_char;
     md5.update(type_storage_chars, strlen(type_storage_chars));
@@ -1169,12 +1181,7 @@ std::unordered_set<UUID> UsersConfigParser::getAllowedIDs(
     config.keys(configuration_key, keys);
     std::unordered_set<UUID> ids;
     for (const auto & key : keys)
-    {
-        /// Entity UUIDs are generated from the un-escaped name, but a config written for an older server may
-        /// reference the entity by the escaped config-key spelling, whose UUID is generated from the raw key.
         ids.emplace(generateID(type, unescapeDots(key)));
-        ids.emplace(generateID(type, key));
-    }
     return ids;
 }
 }
