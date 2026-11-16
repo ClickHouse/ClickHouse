@@ -59,7 +59,6 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
-    extern const int UNACCEPTABLE_URL;
 }
 
 namespace
@@ -301,7 +300,7 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
     if (params.collection.endpoint.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", credentials);
 
-    /// The endpoint can carry a secret, so the errors below name only the collection.
+    /// The endpoint can carry a secret, so the error below names only the collection.
     Poco::URI endpoint_uri;
     try
     {
@@ -312,10 +311,7 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' has a malformed endpoint", credentials);
     }
 
-    if (!context->getRemoteHostFilter().checkURL(endpoint_uri, /* throw_on_error = */ false))
-        throw Exception(ErrorCodes::UNACCEPTABLE_URL,
-            "The endpoint of AI named collection '{}' is not allowed in configuration file, see <remote_url_allow_hosts>",
-            credentials);
+    context->getRemoteHostFilter().checkURL(endpoint_uri);
 
     /// Refuse to send prompts and API keys over an unencrypted connection to a remote host.
     /// Local hosts are exempt, the `ai_function_allow_insecure_endpoint` setting overrides the check.
