@@ -79,6 +79,9 @@ struct PendingOutput
 
 constexpr size_t max_pending_output_bytes = 1024 * 1024;
 
+/// How long the proxy waits for the client to end the session after the channel is closed.
+constexpr int ssh_finish_timeout_ms = 5000;
+
 struct Bridge
 {
     const FrontendContext * ctx = nullptr;
@@ -600,12 +603,26 @@ void runSSHSession(int owned_fd, const FrontendContext & ctx)
         ssh_key_free(bridge.backend_key);
     if (bridge.backend_session)
     {
+        ssh_event_remove_session(bridge.event, bridge.backend_session);
         ssh_disconnect(bridge.backend_session);
         ssh_free(bridge.backend_session);
     }
     if (bridge.client_channel)
     {
         ssh_channel_close(bridge.client_channel);
+
+        /// Let the client end the session. A client that reads `SSH_MSG_DISCONNECT` or finds the connection closed
+        /// before it has processed the exit status and the close of the channel fails: OpenSSH then exits with 255
+        /// instead of the exit status of the command. So wait, bounded, for the client to close its side, as the
+        /// SSH handler of the server does. A client that is already gone, or a shutdown that closes the socket,
+        /// ends the wait at once.
+        const int max_finish_iterations = static_cast<int>(ssh_finish_timeout_ms / poll_ms);
+        for (int iterations = 0; iterations < max_finish_iterations && !session.hasFinished(); ++iterations)
+        {
+            if (ssh_event_dopoll(bridge.event, poll_ms) == SSH_ERROR)
+                break;
+        }
+
         ssh_channel_free(bridge.client_channel);
     }
     session.disconnect();
