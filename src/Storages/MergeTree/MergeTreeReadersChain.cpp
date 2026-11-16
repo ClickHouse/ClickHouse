@@ -634,6 +634,18 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     const auto & result_header = range_reader.getReadSampleBlock();
     auto columns_for_patches = getColumnsForPatches(result_header, read_columns);
 
+    /// A column read in this step is a new instance of its data, just read from the disk. A column with the same name
+    /// may have been read and patched in an earlier step and then projected out of the block by an on-fly mutation
+    /// step (e.g. a subcolumn `b.x` read to evaluate `z DEFAULT b.x + 1` while the mutation outputs only its parent
+    /// `b`). The versions recorded for that earlier instance do not describe the new one: keeping them would make the
+    /// patches skip the rows they already updated there, and the column would keep its value from the disk.
+    for (const auto & column : result_header)
+    {
+        auto version_name = getDataVersionColumnName(column.name);
+        if (result.patch_versions_block.has(version_name))
+            result.patch_versions_block.erase(version_name);
+    }
+
     auto apply_patches = [&](ColumnForPatch::Order order)
     {
         /// Apply patches without min version for new columns because
