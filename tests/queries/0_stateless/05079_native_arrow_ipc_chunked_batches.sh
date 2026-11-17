@@ -161,7 +161,7 @@ for FORMAT in Arrow ArrowStream; do
                 FROM file('${TMP_DIR}/nullable_struct.${FORMAT}', '${FORMAT}',
                     's Nullable(Tuple(a Nullable(Int64), b Array(Nullable(Int8))))')
             )
-            SETTINGS allow_experimental_nullable_tuple_type=1"
+            SETTINGS enable_nullable_tuple_type=1"
         write_query "
             SELECT count(), countIf(isNull(s.a)), sum(length(s.b)), sum(length(f)), max(bs)
             FROM
@@ -191,5 +191,5 @@ for FORMAT in Arrow ArrowStream; do
 done > "$TMP_DIR/queries.sql"
 
 ${CLICKHOUSE_LOCAL} --path "$TMP_DIR/local" --max_threads=1 \
-    --allow_experimental_nullable_tuple_type=0 --input_format_null_as_default=1 \
+    --enable_nullable_tuple_type=0 --input_format_null_as_default=1 \
     --multiquery --queries-file "$TMP_DIR/queries.sql"

@@ -22,7 +22,8 @@ void ShuffleReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, con
         stream_ids.emplace_back(exchange_id, shard_id, bucket_id);
 
     /// The order of the chunks does not matter after a shuffle, so the receive runs on all threads.
-    pipeline = receiveExchangeStreams(output_header, exchange_id, stream_ids, settings, /*spread_over_max_threads=*/ true);
+    pipeline
+        = receiveExchangeStreams(output_header, exchange_id, stream_ids, settings, /*spread_over_max_threads=*/ true, /*advisory=*/ false);
     processors = pipeline.getProcessors();
 }
 

@@ -26,7 +26,7 @@ INSERT INTO t_adaptive_projection_off SELECT number, 99999 - number FROM numbers
 OPTIMIZE TABLE t_adaptive_projection_off FINAL;
 
 -- The parent part went adaptive (T64).
-SELECT column, mapContains(codec_block_counts, 'T64') AS has_t64
+SELECT column, mapContains(codec_block_counts, 'T64, LZ4') AS has_t64_chain
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_adaptive_projection) ORDER BY column;
 
 -- The projection went adaptive: its columns compress smaller than the same data with the default codec.

@@ -1,0 +1,4 @@
+<clickhouse>
+  <mark_cache_policy>SLRU</mark_cache_policy>
+  <uncompressed_cache_policy>SLRU</uncompressed_cache_policy>
+</clickhouse>

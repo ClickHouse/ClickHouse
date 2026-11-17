@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- - no-parallel - due to usage of fail points
 
 DROP TABLE IF EXISTS test_parallel_replicas_unavailable_shards;

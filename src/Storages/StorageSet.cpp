@@ -20,6 +20,8 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageSet.h>
 #include <Common/CurrentThread.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/StringUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -55,6 +57,7 @@ public:
     String getName() const override { return "SetOrJoinSink"; }
     void consume(Chunk & chunk) override;
     void onFinish() override;
+    void onPipelineFinished() override;
 
 private:
     void cancelBuffers() noexcept;
@@ -125,6 +128,7 @@ void SetOrJoinSink::consume(Chunk & chunk)
 void SetOrJoinSink::onFinish()
 {
     table.finishInsert();
+    setCurrentQueryMemoryDriftExpected();
     if (backup_buf)
     {
         backup_stream->flush();
@@ -132,7 +136,18 @@ void SetOrJoinSink::onFinish()
         backup_buf->finalize();
 
         table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);
+
+        backup_stream.reset();
+        compressed_backup_buf.reset();
+        backup_buf.reset();
     }
+}
+
+void SetOrJoinSink::onPipelineFinished()
+{
+    /// A `timeout_overflow_mode = 'break'` stop cancels the sink before `onFinish` but is a successful exit.
+    if (isCancelled() && stage != Stage::Exception)
+        onFinish();
 }
 
 
@@ -287,6 +302,8 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
     auto new_set = std::make_shared<Set>(SizeLimits(), 0, true);
     new_set->setHeader(header.getColumnsWithTypeAndName());
     {
+        /// Table data belongs to the server, not to the query releasing it.
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
         std::lock_guard lock(mutex);
         set = new_set;
     }
@@ -381,10 +398,10 @@ void registerStorageSet(StorageFactory & factory)
         if (has_settings)
             set_settings.loadFromQuery(*args.storage_def);
 
-        DiskPtr disk = args.getContext()->getDisk(set_settings[SetSetting::disk]);
+        DiskPtr disk = args.getDisk(set_settings[SetSetting::disk]);
         return std::make_shared<StorageSet>(
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings[SetSetting::persistent]);
-    }, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, },
+    }, SecretArgumentsSpec{}, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, .stores_data_on_disk = true, .supports_temporary = true, },
     Documentation{
         .description = R"DOCS_MD(
 <Note>

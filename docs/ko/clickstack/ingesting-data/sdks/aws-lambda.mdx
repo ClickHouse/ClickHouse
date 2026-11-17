@@ -6,30 +6,18 @@ doc_type: 'guide'
 keywords: ['ClickStack', '관측성', 'aws-lambda', 'lambda-layers']
 ---
 
-**이 가이드는 다음을 통합합니다:**
+import { ClickStackIntegrates } from '/snippets/ko/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✅ 로그</td>
-      <td className="pe-2">✅ 메트릭</td>
-      <td className="pe-2">✅ 트레이스</td>
-    </tr>
-  </tbody>
-</table>
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-<div id="installing-the-otel-lambda-layers">
-  ## OpenTelemetry Lambda 레이어 설치
-</div>
+## OpenTelemetry Lambda 레이어 설치 {#installing-the-otel-lambda-layers}
 
 OpenTelemetry 프로젝트는 다음과 같은 용도로 별도의 Lambda 레이어를 제공합니다.
 
 1. OpenTelemetry 자동 계측을 사용하여 Lambda 함수 코드를 자동으로 계측합니다.
 2. 수집된 로그, 메트릭, 트레이스를 ClickStack으로 전달합니다.
 
-<div id="adding-language-specific-auto-instrumentation">
-  ### 언어별 자동 계측 레이어 추가
-</div>
+### 언어별 자동 계측 레이어 추가 {#adding-language-specific-auto-instrumentation}
 
 언어별 자동 계측 Lambda 레이어는 해당 언어용 OpenTelemetry 자동 계측 패키지를 사용해 Lambda 함수 코드를 자동으로 계측합니다.
 
@@ -110,16 +98,14 @@ Lambda가 이미 OpenTelemetry SDK로 계측되어 있다면 이 단계는 건�
   </Tab>
 </Tabs>
 
-<div id="installing-the-otel-collector-layer">
-  ### OpenTelemetry collector Lambda layer 설치
-</div>
+### OpenTelemetry collector 레이어 설치 {#installing-the-otel-collector-layer}
 
-collector Lambda layer를 사용하면 exporter 지연 시간으로 인한 응답 시간 영향 없이 Lambda 함수에서 ClickStack으로 로그, 메트릭, 트레이스를 전달할 수 있습니다.
+collector 레이어를 사용하면 exporter 지연 시간으로 인한 응답 시간 영향 없이 Lambda 함수에서 ClickStack으로 로그, 메트릭, 트레이스를 전달할 수 있습니다.
 
-**collector layer를 설치하려면**:
+**collector 레이어를 설치하려면**:
 
 1. Layers 섹션에서 &quot;Add a layer&quot;를 클릭합니다.
-2. &quot;Specify an ARN&quot;을 선택하고 아키텍처에 맞는 ARN을 선택합니다. `<region>`은 사용 중인 Region(예: `us-east-2`)으로 바꾸십시오.
+2. &quot;Specify an ARN&quot;을 선택하고 아키텍처에 맞는 ARN을 선택합니다. `<region>`은 사용 중인 리전(예: `us-east-2`)으로 바꾸십시오.
 
 <Tabs>
   <Tab title="x86_64">
@@ -155,7 +141,7 @@ collector Lambda layer를 사용하면 exporter 지연 시간으로 인한 응�
 
     exporters:
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         compression: gzip
 
     service:
@@ -192,7 +178,7 @@ collector Lambda layer를 사용하면 exporter 지연 시간으로 인한 응�
 
     exporters:
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         headers:
           authorization: <YOUR_INGESTION_API_KEY>
         compression: gzip
@@ -221,9 +207,7 @@ collector Lambda layer를 사용하면 exporter 지연 시간으로 인한 응�
 OPENTELEMETRY_COLLECTOR_CONFIG_FILE=/var/task/collector.yaml
 ```
 
-<div id="checking-the-installation">
-  ## 설치 확인
-</div>
+## 설치 확인 {#checking-the-installation}
 
 레이어를 배포한 후에는 Lambda 함수에서 자동으로 수집된 트레이스를
 HyperDX에서 확인할 수 있어야 합니다. `decouple` 및 `batching`
@@ -231,29 +215,21 @@ HyperDX에서 확인할 수 있어야 합니다. `decouple` 및 `batching`
 표시되기까지 시간이 걸릴 수 있습니다. 사용자 지정 로그나 메트릭을 내보내려면 언어별
 OpenTelemetry SDK를 사용해 코드를 계측해야 합니다.
 
-<div id="troubleshoting">
-  ## 문제 해결
-</div>
+## 문제 해결 {#troubleshoting}
 
-<div id="custom-instrumentation-not-sending">
-  ### 사용자 지정 계측이 전송되지 않음
-</div>
+### 사용자 지정 계측이 전송되지 않음 {#custom-instrumentation-not-sending}
 
 수동으로 정의한 트레이스나 기타 텔레메트리가 표시되지 않는다면,
 호환되지 않는 버전의 OpenTelemetry API 패키지를 사용하고 있을 수 있습니다. 사용 중인
 OpenTelemetry API 패키지 버전이 AWS Lambda에 포함된 버전과 같거나
 그보다 낮은 버전인지 확인하십시오.
 
-<div id="enabling-sdk-debug-logs">
-  ### SDK 디버그 로그 활성화
-</div>
+### SDK 디버그 로그 활성화 {#enabling-sdk-debug-logs}
 
 OpenTelemetry SDK의 디버그 로그를 활성화하려면 `OTEL_LOG_LEVEL` 환경 변수를 `DEBUG`로 설정하세요. 이렇게 하면
 자동 계측 레이어가 애플리케이션에 올바르게 계측을 적용하고 있는지 확인하는 데 도움이 됩니다.
 
-<div id="enabling-collector-debug-logs">
-  ### collector 디버그 로그 활성화
-</div>
+### collector 디버그 로그 활성화 {#enabling-collector-debug-logs}
 
 collector 문제를 디버깅하려면 collector 설정 파일을 수정하여 `logging` exporter를 추가하고, 텔레메트리 로그 수준을 `debug`로 설정해 collector Lambda layer에서 더 자세한 로그가 출력되도록 할 수 있습니다.
 
@@ -273,7 +249,7 @@ collector 문제를 디버깅하려면 collector 설정 파일을 수정하여 `
       logging:
         verbosity: detailed
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         compression: gzip
 
     service:
@@ -311,7 +287,7 @@ collector 문제를 디버깅하려면 collector 설정 파일을 수정하여 `
       logging:
         verbosity: detailed
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         headers:
           authorization: <YOUR_INGESTION_API_KEY>
         compression: gzip

@@ -85,9 +85,32 @@ GROUP BY
 └─────────────┴──────────┴─────────┘
 ```
 
-<div id="important-note">
-  ### ベストプラクティス
-</div>
+### 行の順序 {#row-order}
+
+`arrayJoin` は、元の各行について、配列内の要素を配列中の順序どおりに生成します。
+
+クエリ内に、異なる引数を取る `arrayJoin` 呼び出しが複数ある場合、結果には要素の組み合わせごとに 1 行ずつ含まれます。これらの行の順序はクエリプランに依存するため、保証されません。たとえば、`WHERE` でいずれかの呼び出しを使用している場合、クエリはその呼び出しを先に展開することがあります。順序を確定させるには、`ORDER BY` を使用してください。
+
+```sql title="Query"
+SELECT arrayJoin(['a', 'b']) AS x, arrayJoin([1, 2]) AS y
+WHERE y > 0
+ORDER BY x, y
+```
+
+```text title="Response"
+┌─x─┬─y─┐
+│ a │ 1 │
+│ a │ 2 │
+│ b │ 1 │
+│ b │ 2 │
+└───┴───┘
+```
+
+`ORDER BY` がない場合、このクエリは行を `('a', 1)`、`('b', 1)`、`('a', 2)`、`('b', 2)` の順序で返すことがあります。
+
+`ORDER BY` がない場合、元の行の順序は保証されません。順序を安定させる方法や、`LIMIT` と `OFFSET` を使ったページングについては、[`ARRAY JOIN`](/ja/reference/statements/select/array-join) 句の「Row Order and Paging」セクションを参照してください。同セクションで説明している `ORDER BY` のルールは、`arrayJoin` にも同様に適用されます。
+
+### ベストプラクティス {#important-note}
 
 同じ式に対して複数の `arrayJoin` を使用すると、共通部分式の除去により、期待どおりの結果にならない場合があります。
 そのような場合は、繰り返し使用する配列式に、結果に影響しない追加の操作を加えて変更することを検討してください。たとえば、`arrayJoin(arraySort(arr))`、`arrayJoin(arrayConcat(arr, []))`
