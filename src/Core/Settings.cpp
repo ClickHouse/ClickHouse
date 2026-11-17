@@ -3537,14 +3537,20 @@ Possible values:
 )", 0) \
     DECLARE(UInt64, http_max_fields, 1000, R"(
 Maximum number of fields in HTTP request headers, query parameters, and form data.
+
+Also limits the number of fields in the headers of the HTTP responses that ClickHouse reads as a client, for example in the `url` table function.
 )", 0, \
         {"26.4", 1000000, 1000, "Reduce default to limit pre-authentication memory usage by HTTP connections."}) \
     DECLARE(UInt64, http_max_field_name_size, 4 * 1024, R"(
 Maximum length of a field name in HTTP request headers, query parameters, and form data.
+
+Also limits the length of a field name in the headers of the HTTP responses that ClickHouse reads as a client, for example in the `url` table function.
 )", 0, \
         {"26.4", 131072, 4096, "Reduce default to limit pre-authentication memory usage by HTTP connections."}) \
     DECLARE(UInt64, http_max_field_value_size, 128 * 1024, R"(
 Maximum length of a field value in HTTP request headers, query parameters, and form data.
+
+Also limits the length of a field value in the headers of the HTTP responses that ClickHouse reads as a client, for example in the `url` table function.
 )", 0) \
     DECLARE(UInt64, http_max_request_header_size, 10 * 1024 * 1024, R"(
 Maximum total size of all HTTP request headers (names and values combined) in bytes.
