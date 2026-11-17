@@ -1988,6 +1988,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// member. Scalar values also need that cast when their type differs from the sole
             /// subquery column type. Unwrap the wrappers before identifying the structural types.
             bool left_value_compared_as_single_key = false;
+            bool keys_comparable_for_equality = true;
             if (const auto * rhs_query_node = in_second_argument->as<QueryNode>())
             {
                 const auto & left_result_type = in_first_argument->getResultType();
@@ -1997,17 +1998,21 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     && (typeid_cast<const DataTypeTuple *>(left_key_type.get()) || left_key_type->hasDynamicStructure() || isVariant(left_key_type)
                         || isNullableOrLowCardinalityNullable(left_result_type)
                         || !left_result_type->equals(*rhs_query_node->getProjectionColumns().front().type));
+
+                /// The `equals` built by the rewrite rejects keys that are not comparable for equality (e.g. `AggregateFunction`),
+                /// while the regular `IN` set accepts them, so keep such keys on the regular `IN` path as well.
+                const auto & rhs_columns = rhs_query_node->getProjectionColumns();
+                keys_comparable_for_equality = (!left_result_type || left_result_type->isComparableForEquality())
+                    && std::all_of(rhs_columns.begin(), rhs_columns.end(), [](const auto & column) { return column.type->isComparableForEquality(); });
             }
 
-            /// `equals` in the rewrite rejects keys that are not comparable for equality (e.g. `AggregateFunction`),
-            /// while the set of regular IN accepts them, so such keys stay on the regular IN path too.
-            if (in_second_argument->as<QueryNode>() && !left_value_compared_as_single_key
-                && in_first_argument->getResultType()->isComparableForEquality())
+            if (in_second_argument->as<QueryNode>() && !left_value_compared_as_single_key && keys_comparable_for_equality)
             {
                 /// The rewrite below produces a correlated subquery, so it requires the setting.
                 /// Checked here rather than at the gate above, so that the shapes which are not
-                /// rewritten at all are never rejected because of it: a constant or tuple `IN`, and
-                /// the single-key shape just identified, which stays on the regular `IN` path.
+                /// rewritten at all are never rejected because of it: a constant or tuple `IN`, the
+                /// single-key shape just identified and a key `equals` cannot compare, which stay on
+                /// the regular `IN` path.
                 /// Otherwise enabling `rewrite_in_to_join` alone would change query acceptance even
                 /// though no correlated rewrite happens.
                 if (!scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
