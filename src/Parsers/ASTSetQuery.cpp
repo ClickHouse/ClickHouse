@@ -143,7 +143,7 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
         if (!first)
         {
             ostr << ',';
-            writeASTFormattingBreak(ostr, state, frame, 1);
+            writeASTFormattingBreak(ostr, state, frame);
         }
         else
             first = false;
@@ -176,7 +176,7 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
         if (!first)
         {
             ostr << ',';
-            writeASTFormattingBreak(ostr, state, frame, 1);
+            writeASTFormattingBreak(ostr, state, frame);
         }
         else
             first = false;
@@ -190,7 +190,7 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
         if (!first)
         {
             ostr << ',';
-            writeASTFormattingBreak(ostr, state, frame, 1);
+            writeASTFormattingBreak(ostr, state, frame);
         }
         else
             first = false;

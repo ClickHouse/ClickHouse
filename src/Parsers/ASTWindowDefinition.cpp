@@ -86,6 +86,8 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
 {
     ASTFormattingGroup formatting_group(ostr, state, format_frame);
     format_frame.expression_list_prepend_whitespace = false;
+    auto list_frame = format_frame;
+    list_frame.expression_list_prepend_whitespace = true;
     bool need_space = false;
 
     if (!parent_window_name.empty())
@@ -102,8 +104,8 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
             writeASTFormattingBreak(ostr, state, format_frame, 0);
         }
 
-        ostr << "PARTITION BY ";
-        partition_by->format(ostr, settings, state, format_frame);
+        ostr << "PARTITION BY";
+        partition_by->format(ostr, settings, state, list_frame);
 
         need_space = true;
     }
@@ -115,8 +117,8 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
             writeASTFormattingBreak(ostr, state, format_frame, 0);
         }
 
-        ostr << "ORDER BY ";
-        order_by->format(ostr, settings, state, format_frame);
+        ostr << "ORDER BY";
+        order_by->format(ostr, settings, state, list_frame);
 
         need_space = true;
     }

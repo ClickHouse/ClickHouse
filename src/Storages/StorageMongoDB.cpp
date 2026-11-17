@@ -809,11 +809,11 @@ static void findMongoDBConnectionStringSecretArguments(FunctionSecretArgumentsFi
         if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*argument, &value))
         {
             if (hide_unreadable)
-                result.replaced_arguments[index] = {String(HIDDEN_SECRET_LITERAL), std::nullopt};
+                result.replaced_arguments[index] = HIDDEN_SECRET_LITERAL;
         }
         else if (maskMongoDBConnectionString(value))
         {
-            result.replaced_arguments[index] = {argument->isIdentifier() ? backQuoteIfNeed(value) : quoteString(value), std::nullopt};
+            result.replaced_arguments[index] = argument->isIdentifier() ? backQuoteIfNeed(value) : quoteString(value);
         }
     };
 
@@ -848,12 +848,12 @@ static void findMongoDBConnectionStringSecretArguments(FunctionSecretArgumentsFi
             if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*equals->arguments->at(0), &key))
             {
                 /// The key is evaluated as a constant expression, so it can name `options`.
-                result.replaced_arguments[i] = {String(HIDDEN_SECRET_LITERAL), std::nullopt};
+                result.replaced_arguments[i] = HIDDEN_SECRET_LITERAL;
                 continue;
             }
             if (shifted && (equalsCaseInsensitive(key, "options") || equalsCaseInsensitive(key, "oid_columns")))
             {
-                result.replaced_arguments[i] = {String(HIDDEN_SECRET_LITERAL), key};
+                result.replaced_arguments[i] = key + " = " + String(HIDDEN_SECRET_LITERAL);
                 continue;
             }
             if (!equalsCaseInsensitive(key, "uri") && !equalsCaseInsensitive(key, "options"))
@@ -861,9 +861,9 @@ static void findMongoDBConnectionStringSecretArguments(FunctionSecretArgumentsFi
 
             String value;
             if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*equals->arguments->at(1), &value))
-                result.replaced_arguments[i] = {String(HIDDEN_SECRET_LITERAL), key};
+                result.replaced_arguments[i] = key + " = " + String(HIDDEN_SECRET_LITERAL);
             else if (maskMongoDBConnectionString(value))
-                result.replaced_arguments[i] = {quoteString(value), key};
+                result.replaced_arguments[i] = key + " = " + quoteString(value);
             continue;
         }
 
@@ -873,7 +873,7 @@ static void findMongoDBConnectionStringSecretArguments(FunctionSecretArgumentsFi
         /// A positional after a collection name is rejected or ignored, but only after the statement is logged.
         if ((shifted && i > 5) || (is_named_collection && i > 0))
         {
-            result.replaced_arguments[i] = {String(HIDDEN_SECRET_LITERAL), std::nullopt};
+            result.replaced_arguments[i] = HIDDEN_SECRET_LITERAL;
             continue;
         }
 
@@ -902,13 +902,13 @@ SecretArgumentsSpec mongoDBSecretArguments()
     return {.positional_secret_slots = {4}, .secret_keys = {"password"}, .custom = [](FunctionSecretArgumentsFinder & finder)
     {
         /// Hides the secrets of a uri, or the whole value when it is not a plain string literal.
-        auto mask_uri = [&finder](size_t index, const AbstractFunction::Argument & value, std::optional<String> name)
+        auto mask_uri = [&finder](size_t index, const AbstractFunction::Argument & value, std::string_view prefix, bool argument_is_named)
         {
             String uri;
             if (!value.tryGetString(&uri, /* allow_identifier= */ false))
-                finder.markSecretArgument(index, name.has_value());
+                finder.markSecretArgument(index, argument_is_named);
             else if (maskMongoDBConnectionString(uri))
-                finder.result.replaced_arguments[index] = {quoteString(uri), std::move(name)};
+                finder.result.replaced_arguments[index] = String(prefix) + quoteString(uri);
         };
 
         /// MongoDB('mongodb://username:password@127.0.0.1:27017/database', 'collection'[, ...]). Not gated
@@ -922,11 +922,11 @@ SecretArgumentsSpec mongoDBSecretArguments()
                 String name;
                 /// A collection name has no password; a backquoted uri, rejected as an unknown collection, can.
                 if (first->tryGetString(&name, /* allow_identifier= */ true) && maskMongoDBConnectionString(name))
-                    finder.result.replaced_arguments[0] = {backQuoteIfNeed(name), std::nullopt};
+                    finder.result.replaced_arguments[0] = backQuoteIfNeed(name);
             }
             else if (!first_function || first_function->name() != "equals")
             {
-                mask_uri(0, *first, std::nullopt);
+                mask_uri(0, *first, "", /* argument_is_named= */ false);
             }
         }
 
@@ -936,7 +936,7 @@ SecretArgumentsSpec mongoDBSecretArguments()
              i = finder.findNamedArgument(nullptr, "uri", static_cast<size_t>(i) + 1))
         {
             const auto index = static_cast<size_t>(i);
-            mask_uri(index, *finder.function->arguments->at(index)->getFunction()->arguments->at(1), "uri");
+            mask_uri(index, *finder.function->arguments->at(index)->getFunction()->arguments->at(1), "uri = ", /* argument_is_named= */ true);
         }
 
         findMongoDBConnectionStringSecretArguments(finder);

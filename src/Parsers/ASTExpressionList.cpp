@@ -35,9 +35,9 @@ void ASTExpressionList::readJSON(const Poco::JSON::Object & json)
 
 void ASTExpressionList::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ASTFormattingGroup group(ostr, state, frame);
-    if (frame.expression_list_prepend_whitespace || !children.empty())
-        writeASTFormattingBreak(ostr, state, frame, 1, frame.expression_list_prepend_whitespace ? ' ' : '\0');
+    ASTFormattingGroup group(ostr, state, frame, ASTFormattingGroup::Mode::List);
+    if (frame.expression_list_prepend_whitespace)
+        writeASTFormattingBreak(ostr, state, frame);
 
     for (size_t i = 0, size = children.size(); i < size; ++i)
     {
@@ -45,7 +45,7 @@ void ASTExpressionList::formatImpl(WriteBuffer & ostr, const FormatSettings & se
         {
             if (char sep = getSeparator())
                 ostr << sep;
-            writeASTFormattingBreak(ostr, state, frame, 1);
+            writeASTFormattingBreak(ostr, state, frame);
         }
 
         FormatStateStacked frame_nested = frame;
@@ -84,7 +84,7 @@ void ASTExpressionList::formatImplMultiline(WriteBuffer & ostr, const FormatSett
         if (size > 1 || frame.expression_list_always_start_on_new_line)
         {
             ostr << '\n';
-            writeASTFormattingIndent(ostr, state, frame);
+            writeASTFormattingIndent(ostr, settings, state, frame.indent);
         }
 
         FormatStateStacked frame_nested = frame;

@@ -74,7 +74,7 @@ std::vector<size_t> classifyS3Arguments(FunctionSecretArgumentsFinder & finder, 
                         if (f->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
                         {
                             if (maskURICredentials(url))
-                                finder.result.replaced_arguments[i] = {quoteString(url), "url"};
+                                finder.result.replaced_arguments[i] = "url = " + quoteString(url);
                         }
                         else
                         {
@@ -205,7 +205,7 @@ void maskS3UrlArgument(FunctionSecretArgumentsFinder & finder, const std::vector
         return;
     }
     if (maskURICredentials(url))
-        finder.result.replaced_arguments[positional[url_slot]] = {quoteString(url), std::nullopt};
+        finder.result.replaced_arguments[positional[url_slot]] = quoteString(url);
 }
 
 /// Masks the secrets of an S3 named-collection form: the secret named overrides (every occurrence,

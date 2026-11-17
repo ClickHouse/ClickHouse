@@ -2,7 +2,6 @@
 #include <Common/checkStackSize.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/FieldVisitorToStringWriter.h>
 #include <Common/FieldVisitorHash.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFormatting.h>
@@ -302,36 +301,63 @@ public:
 namespace
 {
 
-struct FieldLiteralASTFormatting
+/// Writes the same text as FieldVisitorToString, with possible line breaks between the elements of containers.
+void formatFieldWithBreaks(const Field & value, WriteBuffer & ostr, IAST::FormatState & state, const IAST::FormatStateStacked & frame)
 {
-    IASTFormatState & state;
-    IAST::FormatStateStacked frame;
+    auto write_container = [&](const auto & elements, const char * prefix, char suffix)
+    {
+        checkStackSize();
+        ASTFormattingGroup group(ostr, state, frame);
+        ostr << prefix;
+        if (!elements.empty())
+        {
+            writeASTFormattingBreak(ostr, state, frame, 1, '\0');
+            for (size_t i = 0; i < elements.size(); ++i)
+            {
+                if (i != 0)
+                {
+                    ostr << ',';
+                    writeASTFormattingBreak(ostr, state, frame, 1, ' ', ASTFormattingBreak::Fill);
+                }
+                formatFieldWithBreaks(elements[i], ostr, state, frame);
+            }
+            writeASTFormattingBreak(ostr, state, frame, 0, '\0');
+        }
+        ostr << suffix;
+    };
 
-    ASTFormattingGroup startGroup(WriteBuffer & out) const
+    switch (value.getType())
     {
-        return ASTFormattingGroup(out, state, frame);
+        case Field::Types::Array:
+            write_container(value.safeGet<Array>(), "[", ']');
+            break;
+        case Field::Types::Map:
+            write_container(value.safeGet<Map>(), "[", ']');
+            break;
+        case Field::Types::Tuple:
+        {
+            /// A single-element tuple needs the explicit function, otherwise it is parsed back as a plain value.
+            const auto & tuple = value.safeGet<Tuple>();
+            write_container(tuple, tuple.size() > 1 ? "(" : "tuple(", ')');
+            break;
+        }
+        default:
+            ostr << applyVisitor(FieldVisitorToString(), value);
+            break;
     }
-    void writeBreak(WriteBuffer & out, size_t nest, char flat) const
-    {
-        writeASTFormattingBreak(out, state, frame, nest, flat);
-    }
-    void writeFillBreak(WriteBuffer & out) const
-    {
-        writeASTFormattingFillBreak(out, state, frame);
-    }
-};
+}
 
 }
 
 void ASTLiteral::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
 {
-    if (settings.literal_escaping_style == LiteralEscapingStyle::Regular && !settings.one_line && state.formatting)
+    if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
     {
-        const FieldLiteralASTFormatting formatting{state, frame};
-        applyVisitor(FieldVisitorToStringWriter<FieldLiteralASTFormatting>(ostr, formatting), value);
+        if (state.formatting)
+            formatFieldWithBreaks(value, ostr, state, frame);
+        else
+            ostr << applyVisitor(FieldVisitorToString(), value);
     }
-    else if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
-        ostr << applyVisitor(FieldVisitorToString(), value);
     else if (settings.literal_escaping_style == LiteralEscapingStyle::PostgreSQL)
         ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
     else

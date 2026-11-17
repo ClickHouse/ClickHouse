@@ -5,7 +5,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <iostream>
-#include <optional>
 
 namespace DB
 {
@@ -18,7 +17,7 @@ ASTWithAlias & ASTWithAlias::operator=(const ASTWithAlias &) = default;
 static void writeAlias(const String & name, WriteBuffer & ostr, const ASTWithAlias::FormatSettings & settings,
     IASTFormatState & state, const IAST::FormatStateStacked & frame)
 {
-    writeASTFormattingOptionalBreak(ostr, state, frame, 0);
+    writeASTFormattingBreak(ostr, state, frame, 0, ' ', ASTFormattingBreak::Optional);
     ostr << "AS ";
     settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
 }
@@ -26,9 +25,7 @@ static void writeAlias(const String & name, WriteBuffer & ostr, const ASTWithAli
 
 void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    std::optional<ASTFormattingGroup> group;
-    if (!alias.empty())
-        group.emplace(ostr, state, frame);
+    ASTFormattingGroup group(ostr, state, frame);
 
     /// This is needed for distributed queries with the old analyzer. Remove it after removing the old analyzer.
     /// If we have previously output this node elsewhere in the query, now it is enough to output only the alias.

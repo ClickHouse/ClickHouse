@@ -91,7 +91,6 @@ void ASTSubquery::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     }
 
     ASTFormattingGroup group(ostr, state, frame);
-    const ASTFormattingIndent indent_str{state, frame, !settings.one_line};
     std::string nl_or_nothing = settings.one_line ? "" : "\n";
 
     ostr << "(" << nl_or_nothing;
@@ -100,7 +99,9 @@ void ASTSubquery::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     frame_nested.parent_has_trailing_settings = false;
     ++frame_nested.indent;
     children[0]->format(ostr, settings, state, frame_nested);
-    ostr << nl_or_nothing << indent_str << ")";
+    ostr << nl_or_nothing;
+    writeASTFormattingIndent(ostr, settings, state, frame.indent);
+    ostr << ")";
 }
 
 void ASTSubquery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const

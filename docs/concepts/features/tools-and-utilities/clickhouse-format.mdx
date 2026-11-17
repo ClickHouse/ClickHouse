@@ -13,9 +13,8 @@ Keys:
 - `--query` — Format queries of any length and complexity.
 - `--hilite` or `--highlight` — Add syntax highlight with ANSI terminal escape sequences.
 - `--oneline` — Format in single line.
-- `--max_line_length` — Format queries shorter than this threshold in a single line. This option does not wrap long lines.
+- `--max_line_length` — Format in single line queries with length less than specified.
 - `--wrap_width` — Wrap multiline queries at the specified display width. Wrapping is disabled by default (`0`). Queries formatted in a single line by `--oneline` or `--max_line_length` are not wrapped.
-- `--line_length` — Alias for `--wrap_width`. If both options are specified, their values must be equal.
 - `--comments` — Keep comments in the output.
 - `--quiet` or `-q` — Just check syntax, no output on success.
 - `--multiquery` or `-n` — Allow multiple queries in the same file.
@@ -24,11 +23,7 @@ Keys:
 - `--backslash` — Add a backslash at the end of each line of the formatted query. Can be useful when you copy a query from web or somewhere else with multiple lines, and want to execute it in command line.
 - `--semicolons_inline` — In multiquery mode, write semicolons on last line of query instead of a new line.
 
-Line wrapping uses the query structure to split long argument lists and expressions, with four spaces per nesting level. Queries whose formatted lines already fit keep the same layout as with wrapping disabled.
-
-Quoted strings, identifiers, query parameters, and SQL keyword phrases are kept intact. The width is a soft limit: indivisible fragments and deeply nested indentation can exceed it. Unicode character widths are taken into account. The limit applies before backslashes and inline semicolons are appended. Comments retained by `--comments` and data following `INSERT ... VALUES` are not wrapped.
-
-Wrapping is available only in the `clickhouse-format` utility. The SQL functions `formatQuery` and `formatQuerySingleLine` do not accept a wrapping width and keep their existing formatting behavior.
+Line wrapping splits long argument lists and expressions according to the query structure, with four spaces per nesting level. Lists of plain values, such as column names and literals, are packed several per line. Queries whose formatted lines already fit are not changed. The width is a soft limit: strings, identifiers and other indivisible fragments can exceed it. Unicode character widths are taken into account. Comments retained by `--comments` and data following `INSERT ... VALUES` are not wrapped.
 
 ## Examples {#examples}
 
@@ -119,11 +114,8 @@ $ clickhouse-format --wrap_width 40 --query "SELECT concat(first_name, ' ', midd
 ```sql title="Response"
 SELECT
     concat(
-        first_name,
-        ' ',
-        middle_name,
-        ' ',
-        last_name
+        first_name, ' ', middle_name,
+        ' ', last_name
     )
 FROM people
 ```

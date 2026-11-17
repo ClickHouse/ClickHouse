@@ -67,13 +67,11 @@ struct SecretArgumentsResult
     std::string replacement;
     /// Whether to wrap a result using full argument replacement in quotes.
     bool quote_replacement = true;
-    /// Per-argument quoted values and optional names, composable with the other masking.
-    struct Replacement
-    {
-        std::string value;
-        std::optional<std::string> name;
-    };
-    std::map<size_t, Replacement> replaced_arguments;
+    /// Per-argument replacements by raw argument index; the text is emitted verbatim (it must carry
+    /// its own quoting). Used when only a part of an argument is secret, e.g. a presigned S3 URL
+    /// keeps its host and path while the credential query parameters are hidden. Unlike
+    /// `replacement`, this composes with the other masking (span, nested maps).
+    std::map<size_t, std::string> replaced_arguments;
     /// Individually masked arguments by raw argument index; the value tells whether the argument
     /// is a named `key = value` (the key stays visible and only the value is hidden). Valid S3
     /// syntax can interleave secrets with non-secret arguments (e.g. a named `session_token`

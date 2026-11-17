@@ -269,9 +269,10 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
     if (columns)
     {
-        writeASTFormattingOptionalBreak(ostr, state, frame, 0);
+        writeASTFormattingBreak(ostr, state, frame, 0, ' ', ASTFormattingBreak::Optional);
         ASTFormattingGroup columns_group(ostr, state, frame);
         ostr << '(';
+        writeASTFormattingBreak(ostr, state, frame, 1, '\0');
         columns->format(ostr, settings, state, frame);
         writeASTFormattingBreak(ostr, state, frame, 0, '\0');
         ostr << ')';
@@ -320,7 +321,7 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     if (select)
     {
         if (delim == ' ')
-            writeASTFormattingOptionalBreak(ostr, state, frame, 0);
+            writeASTFormattingBreak(ostr, state, frame, 0, ' ', ASTFormattingBreak::Optional);
         else
             ostr << delim;
         /// Disable FROM-first syntax to avoid parsing ambiguity with INSERT ... FROM INFILE.

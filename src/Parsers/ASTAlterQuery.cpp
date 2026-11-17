@@ -22,6 +22,7 @@
 #include <Parsers/ASTRefreshStrategy.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Storages/DataDestinationType.h>
+#include <base/scope_guard.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <base/EnumReflection.h>
@@ -700,6 +701,11 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     ASTFormattingGroup formatting_group(ostr, state, frame);
     ostr << "(";
     writeASTFormattingBreak(ostr, state, frame, 1, '\0');
+    auto closing_bracket_guard = make_scope_guard(std::function<void()>([&]()
+    {
+        writeASTFormattingBreak(ostr, state, frame, 0, '\0');
+        ostr << ")";
+    }));
 
     if (type == ASTAlterCommand::ADD_COLUMN)
     {
@@ -1007,7 +1013,7 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
                 }
                 ostr << backQuoteIfNeed(to_table)
                              ;
-                break;
+                return;
             default:
                 break;
         }
@@ -1240,9 +1246,6 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     }
     else
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");
-
-    writeASTFormattingBreak(ostr, state, frame, 0, '\0');
-    ostr << ")";
 }
 
 void ASTAlterCommand::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
@@ -1545,8 +1548,7 @@ void ASTAlterQuery::readJSON(const Poco::JSON::Object & json)
 
 void ASTAlterQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ASTFormattingIndent indent_str{state, frame, !settings.one_line};
-    ostr << indent_str;
+    writeASTFormattingIndent(ostr, settings, state, frame.indent);
 
     switch (alter_object)
     {
@@ -1562,7 +1564,7 @@ void ASTAlterQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & s
 
     if (table)
     {
-        ostr << indent_str;
+        writeASTFormattingIndent(ostr, settings, state, frame.indent);
         if (database)
         {
             database->format(ostr, settings, state, frame);
@@ -1574,7 +1576,7 @@ void ASTAlterQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & s
     }
     else if (alter_object == AlterObjectType::DATABASE && database)
     {
-        ostr << indent_str;
+        writeASTFormattingIndent(ostr, settings, state, frame.indent);
         database->format(ostr, settings, state, frame);
     }
 

@@ -127,7 +127,6 @@ ASTPtr ASTTablesInSelectQuery::clone() const
 void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.current_select = this;
-    const ASTFormattingIndent indent{state, frame, !settings.one_line};
 
     if (database_and_table_name)
     {
@@ -141,7 +140,8 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
     }
     else if (subquery)
     {
-        ostr << settings.nl_or_ws << indent;
+        ostr << settings.nl_or_ws;
+        writeASTFormattingIndent(ostr, settings, state, frame.indent);
         subquery->format(ostr, settings, state, frame);
     }
 
@@ -157,14 +157,16 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
 
     if (final)
     {
-        ostr << settings.nl_or_ws << indent
-            << "FINAL";
+        ostr << settings.nl_or_ws;
+        writeASTFormattingIndent(ostr, settings, state, frame.indent);
+        ostr << "FINAL";
     }
 
     if (sample_size)
     {
-        ostr << settings.nl_or_ws << indent
-            << "SAMPLE ";
+        ostr << settings.nl_or_ws;
+        writeASTFormattingIndent(ostr, settings, state, frame.indent);
+        ostr << "SAMPLE ";
         sample_size->format(ostr, settings, state, frame);
 
         if (sample_offset)
@@ -177,7 +179,9 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
 
     if (stream_settings)
     {
-        ostr << settings.nl_or_ws << indent << "STREAM";
+        ostr << settings.nl_or_ws;
+        writeASTFormattingIndent(ostr, settings, state, frame.indent);
+        ostr << "STREAM";
 
         const auto & typed_stream_settings = stream_settings->as<ASTStreamSettings &>();
         if (typed_stream_settings.hasTweaks())
@@ -190,10 +194,11 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
 
 void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    const ASTFormattingIndent indent{state, frame, !settings.one_line};
-
     if (kind != JoinKind::Comma)
-        ostr << settings.nl_or_ws << indent;
+    {
+        ostr << settings.nl_or_ws;
+        writeASTFormattingIndent(ostr, settings, state, frame.indent);
+    }
 
     switch (locality)
     {
@@ -303,13 +308,11 @@ void ASTTableJoin::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
 
 void ASTArrayJoin::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    const ASTFormattingIndent indent{state, frame, !settings.one_line};
     frame.expression_list_prepend_whitespace = true;
 
-    ostr
-        << settings.nl_or_ws
-        << indent
-        << (kind == Kind::Left ? "LEFT " : "") << "ARRAY JOIN";
+    ostr << settings.nl_or_ws;
+    writeASTFormattingIndent(ostr, settings, state, frame.indent);
+    ostr << (kind == Kind::Left ? "LEFT " : "") << "ARRAY JOIN";
 
     settings.one_line
         ? expression_list->format(ostr, settings, state, frame)

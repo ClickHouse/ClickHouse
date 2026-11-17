@@ -104,7 +104,8 @@ void ASTWithElement::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         frame.expression_list_prepend_whitespace = prep_whitespace;
     }
     ostr << " AS" << (is_materialized ? " MATERIALIZED" : "");
-    ostr << settings.nl_or_ws << ASTFormattingIndent{state, frame, !settings.one_line};
+    ostr << settings.nl_or_ws;
+    writeASTFormattingIndent(ostr, settings, state, frame.indent);
     dynamic_cast<const ASTWithAlias &>(*subquery).formatImplWithoutAlias(ostr, settings, state, frame);
 }
 
