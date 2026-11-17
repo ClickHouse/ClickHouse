@@ -123,8 +123,6 @@ struct ExtractNetloc
                 case '|':
                 case '\\':
                 case '^':
-                case '[':
-                case ']':
                     return pos > start_of_host
                         ? std::string_view(start_of_host, std::min({pos, question_mark_pos, slash_pos}) - start_of_host)
                         : std::string_view();
