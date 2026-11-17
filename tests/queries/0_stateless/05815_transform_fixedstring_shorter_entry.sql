@@ -36,3 +36,19 @@ SELECT transform(toUInt8(5), [5.0], [1], 0);
 
 -- Enum handling untouched
 SELECT transform(CAST('a' AS Enum8('a' = 1, 'b' = 2)), ['a', 'b'], [10, 20], 0);
+
+-- Nullable input: successful padded conversions are covered by the fix
+SELECT transform(CAST('ab' AS Nullable(FixedString(4))), ['ab'], [1], 0);
+SELECT CASE CAST('ab' AS Nullable(FixedString(4))) WHEN 'ab' THEN 1 ELSE 0 END;
+
+-- Nullable target: a failed cast becomes NULL and must NOT be admitted as a key
+SELECT transform(CAST(NULL AS Nullable(FixedString(2))), ['abc'], [1], 0);
+SELECT CASE CAST(NULL AS Nullable(FixedString(2))) WHEN 'abc' THEN 1 ELSE 0 END;
+SELECT transform(CAST(NULL AS Nullable(FixedString(2))), [toFixedString('abc', 3)], [1], 0);
+SELECT CASE CAST(NULL AS Nullable(FixedString(2))) WHEN toFixedString('abc', 3) THEN 1 ELSE 0 END;
+SELECT transform(CAST('ab' AS Nullable(FixedString(2))), ['abc'], [1], 0);
+
+-- A genuine NULL entry still matches, and a failed cast must not shadow it
+SELECT transform(CAST(NULL AS Nullable(FixedString(2))), [NULL, 'abc'], [1, 2], 0);
+SELECT transform(CAST(NULL AS Nullable(FixedString(2))), ['abc', NULL], [1, 2], 0);
+SELECT transform(CAST(NULL AS Nullable(String)), [NULL], [1], 0);
