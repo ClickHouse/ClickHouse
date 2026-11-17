@@ -237,15 +237,6 @@ private:
         Field value_field,
         RPNElement & out) const;
 
-    /// Sets `can_prune` to false when the built query may miss rows, so it can serve only to inject the index tokenizer and postprocessor.
-    bool traverseFunctionNodeImpl(
-        const RPNBuilderFunctionTreeNode & function_node,
-        const RPNBuilderTreeNode & argument_node,
-        DataTypePtr value_type,
-        Field value_field,
-        RPNElement & out,
-        bool & can_prune) const;
-
     [[nodiscard]] TextIndexDirectReadMode getHintOrNoneMode() const;
 
     bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;

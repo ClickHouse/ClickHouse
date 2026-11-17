@@ -1284,29 +1284,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     Field value_field,
     RPNElement & out) const
 {
-    bool can_prune = true;
-    if (!traverseFunctionNodeImpl(function_node, argument_node, std::move(value_type), std::move(value_field), out, can_prune))
-        return false;
-
-    /// The function-specific checks passed, so direct read may still inject the index tokenizer and postprocessor.
-    if (!can_prune)
-    {
-        out.function = RPNElement::FUNCTION_UNKNOWN;
-        out.text_search_queries.clear();
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
-            function_node.getFunctionName(), TextSearchMode::All, TextIndexDirectReadMode::None, VectorWithMemoryTracking<String>{}));
-    }
-    return true;
-}
-
-bool MergeTreeIndexConditionText::traverseFunctionNodeImpl(
-    const RPNBuilderFunctionTreeNode & function_node,
-    const RPNBuilderTreeNode & argument_node,
-    DataTypePtr value_type,
-    Field value_field,
-    RPNElement & out,
-    bool & can_prune) const
-{
     const String function_name = function_node.getFunctionName();
     auto direct_read_mode = getDirectReadMode(function_name);
 
@@ -1343,45 +1320,16 @@ bool MergeTreeIndexConditionText::traverseFunctionNodeImpl(
     }
     else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues", json_argument_types))
     {
-        bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens" || function_name == "hasPhrase";
-
-        const bool is_token_function = is_special_text_index_function || function_name == "hasToken";
-        const bool is_array_valued_path = isArray(removeLowCardinalityAndNullable(argument_node.getDAGNode()->result_type));
-
-        /// Direct read does not apply the preprocessor to a JSON path, so the row-level function sees the raw value and the index
-        /// only has to return a superset of its rows. The preprocessed needles do when the preprocessor maps each token of the value
-        /// to the same token of the preprocessed value: ASCII `lower` or `upper` maps byte to byte and changes no separator of these
-        /// tokenizers. The UTF-8 variants are context-sensitive (final sigma), and a postprocessor may map the two needles differently.
-        const auto tokenizer_type = tokenizer->getType();
-        const bool tokenizer_keeps_case_mapped_tokens = tokenizer_type == ITokenizer::Type::SplitByNonAlpha
-            || tokenizer_type == ITokenizer::Type::Array || tokenizer_type == ITokenizer::Type::Ngrams;
-        const bool needles_give_superset = !has_preprocessor
-            || (!has_postprocessor && preprocessor->isASCIILowerOrUpper() && tokenizer_keeps_case_mapped_tokens);
-
-        /// A string needle is preprocessed with the tokenizer below, array needles are taken verbatim there.
-        if (is_special_text_index_function && has_preprocessor && needles_give_superset && !is_array_valued_path
-            && value_field.getType() == Field::Types::Array)
-        {
-            Array processed_needles;
-            for (const Field & element : value_field.safeGet<Array>())
-            {
-                if (element.getType() != Field::Types::String)
-                    return false;
-                processed_needles.emplace_back(preprocessor->processConstant(element.safeGet<String>()));
-            }
-            value_field = std::move(processed_needles);
-        }
-
-        /// The index cannot prune when:
-        /// - the path is array-valued: `JSONAllValues` stores an array value as a single serialized string, while these functions
-        ///   search inside its elements;
-        /// - the preprocessed needles do not give a superset of the rows.
-        if (is_token_function && (is_array_valued_path || !needles_give_superset))
-            can_prune = false;
-
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
         candidate_for_exact_mode = false;
+        bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
+
+        /// The array phrase of `hasPhrase` is a token sequence taken verbatim. It matches the stored tokens of a string value
+        /// only without a preprocessor, which direct read does not apply to a JSON path.
+        if (function_name == "hasPhrase" && !has_preprocessor
+            && WhichDataType(removeLowCardinalityAndNullable(argument_node.getDAGNode()->result_type)).isStringOrFixedString())
+            is_special_text_index_function = true;
 
         /// Convert non-string values to their text representation to match the format produced by `JSONAllValues`.
         /// Keep array values as-is for special text index functions.
