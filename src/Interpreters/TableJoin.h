@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Joins.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -80,7 +81,7 @@ public:
                 nullsafe_compare_key_indexes.insert(key_names_left.size() - 1);
         }
 
-        std::pair<String, String> condColumnNames() const
+        [[nodiscard]] std::pair<String, String> condColumnNames() const
         {
             std::pair<String, String> res;
 
@@ -98,13 +99,13 @@ public:
             return res;
         }
 
-        size_t keysCount() const
+        [[nodiscard]] size_t keysCount() const
         {
             chassert(key_names_left.size() == key_names_right.size());
             return key_names_right.size();
         }
 
-        String formatDebug(bool short_format = false) const
+        [[nodiscard]] String formatDebug(bool short_format = false) const
         {
             const auto & [left_cond, right_cond] = condColumnNames();
 
@@ -119,13 +120,13 @@ public:
                  fmt::join(key_names_left, ", "), fmt::join(key_names_right, ", "), left_cond, right_cond);
         }
 
-        bool isEmpty() const
+        [[nodiscard]] bool isEmpty() const
         {
             return key_names_left.empty() && key_names_right.empty() && !on_filter_condition_left && !on_filter_condition_right
                 && analyzer_left_filter_condition_column_name.empty() && analyzer_right_filter_condition_column_name.empty();
         }
 
-        String formatPretty(const ExplainFormatSettings & settings) const;
+        [[nodiscard]] String formatPretty(const ExplainFormatSettings & settings) const;
     };
 
     using Clauses = std::vector<JoinOnClause>;
@@ -172,6 +173,7 @@ private:
     const size_t max_bytes_before_external_join = 0;
     const bool enable_join_fixed_hash_table_conversion = false;
     const bool enable_join_key_only_hash_tables = false;
+    const bool enable_robin_hood_hash_for_joins = false;
     const bool join_runtime_filter_from_fixed_hash_table = false;
     /// The planner turns it off for a small right side, see `min_rows_for_packed_string_keys_in_hash_join`.
     bool enable_packed_string_keys_in_hash_join = false;
@@ -356,6 +358,7 @@ public:
     size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
     bool enableJoinKeyOnlyHashTables() const { return enable_join_key_only_hash_tables; }
+    bool enableRobinHoodHashForJoins() const { return enable_robin_hood_hash_for_joins; }
     bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }
     bool enablePackedStringKeysInHashJoin() const { return enable_packed_string_keys_in_hash_join; }
     void setPackedStringKeysInHashJoinEnabled(bool value) { enable_packed_string_keys_in_hash_join = value; }
@@ -370,9 +373,9 @@ public:
         return 0;
     }
 
-    const std::vector<SharedRuntimeFilterDescriptor> & getSharedRuntimeFilterDescriptors() const
+    const VectorWithMemoryTracking<SharedRuntimeFilterDescriptor> & getSharedRuntimeFilterDescriptors() const
     {
-        static const std::vector<SharedRuntimeFilterDescriptor> empty;
+        static const VectorWithMemoryTracking<SharedRuntimeFilterDescriptor> empty;
         return join_operator ? join_operator->shared_runtime_filter_descriptors : empty;
     }
 

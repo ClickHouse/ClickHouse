@@ -8,8 +8,6 @@ title: 'ClickHouse Cloudの高度なダッシュボード'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 本番環境でデータベースシステムを監視することは、デプロイメントの健全性を把握し、障害を未然に防いだり迅速に解決したりするうえで不可欠です。
 
 高度なダッシュボードは、ClickHouse システムとその実行環境を深く把握できるよう設計された軽量ツールで、パフォーマンスのボトルネック、システム障害、非効率を早期に特定するのに役立ちます。
@@ -26,7 +24,15 @@ Cloud の両方で利用できます。この記事では、Cloud で高度な�
 * 左側のパネル
   * `監視` → `高度なダッシュボード`
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="高度なダッシュボード" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![高度なダッシュボード](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 <div id="accessing-the-native-advanced-dashboard">
   ## ネイティブの高度なダッシュボードにアクセスする
@@ -40,11 +46,27 @@ Cloud の両方で利用できます。この記事では、Cloud で高度な�
 
 これにより、ネイティブの高度なダッシュボードが新しいタブで開きます。ダッシュボードにアクセスするには、認証が必要です。
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="高度なダッシュボード" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![高度なダッシュボード](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 各可視化には、それを表示するための SQL クエリが関連付けられています。ペンアイコンをクリックすると、このクエリを編集できます。
 
-<Image img="/images/cloud/manage/monitoring/edit_visualization.webp" size="lg" alt="高度なダッシュボード" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![高度なダッシュボード](/images/cloud/manage/monitoring/edit_visualization.webp)
+
+</Frame>
+
+</div>
 
 <div id="out-of-box-visualizations">
   ## 標準で用意されている可視化
@@ -131,7 +153,15 @@ ClickHouse にデータを一括挿入することが推奨されます。
 十分に最適化されていない挿入を見つけるための主要なメトリクスは、**Inserted Rows/sec** と
 **Max Parts for Partition** です。
 
-<Image img="/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp" size="lg" alt="非バッチ挿入" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![非バッチ挿入](/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp)
+
+</Frame>
+
+</div>
 
 上の例では、13h から 14h の間に **Inserted Rows/sec** と **Max Parts for Partition**
 の 2 つのスパイクが見られます。これは、妥当な速度でデータを取り込んでいることを示しています。
@@ -151,7 +181,15 @@ CPU やメモリなど、多くのリソースを消費する SQL クエリを�
 
 以下は、1 秒あたりの実行クエリ数に大きな変化がないまま、CPU 使用率が急上昇している例です。
 
-<Image img="/images/cloud/manage/monitoring/resource_intensive_query.webp" size="lg" alt="リソース負荷の高いクエリ" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![リソース負荷の高いクエリ](/images/cloud/manage/monitoring/resource_intensive_query.webp)
+
+</Frame>
+
+</div>
 
 <div id="bad-primary-key-design">
   ### 不適切な主キー設計
@@ -167,7 +205,15 @@ CPU やメモリなど、多くのリソースを消費する SQL クエリを�
 クエリ全体のスループットが増加している可能性と、
 実行時に大量の行を選択するクエリがある可能性の両方が考えられます。
 
-<Image img="/images/cloud/manage/monitoring/selected_rows_sec.webp" size="lg" alt="リソース負荷の高いクエリ" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![リソース負荷の高いクエリ](/images/cloud/manage/monitoring/selected_rows_sec.webp)
+
+</Frame>
+
+</div>
 
 `system.query_log` テーブルでは、タイムスタンプをフィルターとして使うことで、
 ピーク時に実行されたクエリを特定できます。

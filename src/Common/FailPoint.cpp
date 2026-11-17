@@ -191,6 +191,7 @@ static struct InitFiu
     REGULAR(smt_outdated_parts_exception_response) \
     REGULAR(object_storage_queue_fail_in_the_middle_of_file) \
     PAUSEABLE_ONCE(object_storage_queue_pause_after_commit) \
+    PAUSEABLE_ONCE(object_storage_queue_pause_in_direct_select) \
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
     PAUSEABLE_ONCE(columns_cache_reader_pause_before_later_range) \
     ONCE(replicated_merge_tree_restore_attach_retry) \
@@ -257,8 +258,11 @@ static struct InitFiu
     REGULAR(refresh_mv_skip_execution) \
     REGULAR(refresh_mv_incremental_fail_after_append) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
+    ONCE(column_aggregate_function_expand_exception) \
     ONCE(space_saving_copy_arena_throw) \
     ONCE(adaptive_aggregation_drain_create_states_throw) \
+    ONCE(aggregator_merge_collect_states_throw) \
+    ONCE(aggregator_merge_batch_throw) \
     REGULAR(adaptive_aggregation_spill_no_room_to_append) \
     REGULAR(keepermap_fail_drop_data) \
     PAUSEABLE_ONCE(keepermap_create_pause_before_drop_lock_version) \
@@ -319,6 +323,7 @@ static struct InitFiu
     REGULAR(slowdown_index_analysis_per_part) \
     ONCE(iceberg_writes_cleanup) \
     PAUSEABLE_ONCE(iceberg_writes_pause_before_commit) \
+    PAUSEABLE_ONCE(glue_catalog_pause_before_update_table) \
     REGULAR(iceberg_slow_manifest_read) \
     PAUSEABLE_ONCE(iceberg_drop_partition_pause_after_discovery) \
     PAUSEABLE_ONCE(iceberg_metadata_prefetch_pause) \
@@ -348,6 +353,7 @@ static struct InitFiu
     PAUSEABLE(backup_from_snapshot_pause_after_admin_lock_release) \
     PAUSEABLE(backup_from_snapshot_pause_before_holder_multi) \
     PAUSEABLE(backup_from_snapshot_pause_before_mount_parent_removal) \
+    PAUSEABLE(backup_from_snapshot_pause_before_collecting_snapshot_file) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_before_data_restore_tasks) \
@@ -365,6 +371,7 @@ static struct InitFiu
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     ONCE(database_replicated_restore_table_created_by_other_replica) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
+    PAUSEABLE_ONCE(mt_mutate_task_pause_after_ttl_mode_selection) \
     PAUSEABLE(mt_mutate_task_pause_before_rename_part) \
     PAUSEABLE_ONCE(merge_task_pause_after_reserving_tmp_dir) \
     ONCE(merge_checkpoint_abort_before_last_column) \
@@ -399,10 +406,12 @@ static struct InitFiu
     ONCE(mt_alter_throw_after_mutation_registered) \
     ONCE(mt_throw_after_mutation_commit) \
     ONCE(mt_alter_throw_in_durable_rollback) \
+    PAUSEABLE(mt_alter_pause_after_metadata_publish) \
     REGULAR(rmt_merge_selecting_task_no_free_threads) \
     REGULAR(rmt_merge_selecting_task_max_part_size) \
     REGULAR(merge_tree_load_statistics_throw) \
     REGULAR(merge_tree_load_outdated_parts_retryable_error) \
+    REGULAR(merge_tree_load_outdated_parts_schedule_error) \
     PAUSEABLE(merge_tree_load_outdated_parts_pause) \
     ONCE(merge_tree_load_part_io_error) \
     REGULAR(restore_part_inject_no_space_error) \

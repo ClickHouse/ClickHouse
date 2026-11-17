@@ -136,6 +136,9 @@ public:
     /// The largest field id in `schema`, nested ids included.
     static Int64 getMaxFieldId(Poco::JSON::Array::Ptr schema);
 
+    /// Whether the Iceberg spec allows to promote the primitive type `old_type` to `new_type` (or they are the same).
+    static bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
+
     /// Paths whose Iceberg logical type is `string` (not `binary`); both read as DataTypeString.
     static std::unordered_set<String> collectIcebergStringPaths(Poco::JSON::Array::Ptr schema);
 
@@ -180,7 +183,6 @@ private:
         String & current_full_name = default_link,
         bool is_subfield_of_root = false);
 
-    bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
     /// Returns `new_holder[key]` in which every nested primitive changed by a legal promotion is replaced by the
     /// type at the same place in `old_holder` (struct fields are matched by id). The arguments are not modified.
     Poco::Dynamic::Var getTypeWithOldPrimitives(

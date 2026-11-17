@@ -6,8 +6,13 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
+#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
+#include <Access/ContextAccess.h>
+#include <Interpreters/Context.h>
 #include <Common/FailPoint.h>
+#include <Common/FullyQualifiedObjectPath.h>
 #include <Common/SipHash.h>
+#include <Common/escapeForFileName.h>
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
@@ -15,6 +20,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <ranges>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -96,6 +102,11 @@ std::string escapeForKernelUrl(std::string path)
 
 }
 
+std::string IKernelHelper::resolveDataFilePath(const std::string & path, const DB::ContextPtr &) const
+{
+    return DB::resolvePathInsideTable(getDataPath(), DB::unescapeForFileName(path));
+}
+
 /// A helper class to manage S3-compatible storage types.
 class S3KernelHelper final : public IKernelHelper
 {
@@ -111,6 +122,7 @@ public:
         /// Resolve the bucket's region once at construction. Region is bucket-bound and
         /// doesn't rotate; credentials do — fetch the live client every time we need them.
         auto client = object_storage->getS3StorageClient();
+        is_gcs = client->isClientForGCS();
         region = client->getRegion();
         if (region.empty() || region == Aws::Region::AWS_GLOBAL)
             region = client->getRegionForBucket(url.bucket, /* force_detect */true);
@@ -123,11 +135,29 @@ public:
         no_sign = auth_settings[DB::S3AuthSetting::no_sign_request];
     }
 
-    const std::string & getTableLocation() const override { return table_location; }
+    [[nodiscard]] const std::string & getTableLocation() const override { return table_location; }
 
-    const std::string & getDataPath() const override { return url.key; }
+    [[nodiscard]] const std::string & getDataPath() const override { return url.key; }
 
-    DB::UInt128 getCredentialsFingerprint() const override
+    /// The S3 object storage resolves a fully-qualified path to its own bucket and key. The table's checks
+    /// (`remote_url_allow_hosts`, the credentials, the source grant) cover the table's location only.
+    [[nodiscard]] std::string resolveDataFilePath(const std::string & path, const DB::ContextPtr & context) const override
+    {
+        auto qualified = DB::trySplitFullyQualifiedObjectPath(path);
+        if (!qualified)
+            return IKernelHelper::resolveDataFilePath(path, context);
+
+        const bool is_own_scheme = qualified->scheme == "s3" || qualified->scheme == "s3a" || qualified->scheme == "s3n"
+            || (is_gcs && (qualified->scheme == "gs" || qualified->scheme == "gcs"));
+        if (!is_own_scheme || qualified->object_namespace != url.bucket)
+            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
+                "Data file `{}` of the Delta Lake table is not in the bucket `{}` of the table", path, url.bucket);
+        context->getAccess()->checkAccessWithFilter(
+            DB::AccessType::READ, DB::AccessTypeObjects::toStringSource(DB::AccessTypeObjects::Source::S3), /* filter */ "");
+        return DB::unescapeForFileName(path);
+    }
+
+    [[nodiscard]] DB::UInt128 getCredentialsFingerprint() const override
     {
         /// Re-fetch the live S3 client. `S3ObjectStorage::applyNewSettings` swaps the
         /// MultiVersion<S3::Client> when catalog / vended credentials rotate; a captured
@@ -154,7 +184,7 @@ public:
         return object_storage->tryRefreshCredentialsViaCallback();
     }
 
-    ffi::EngineBuilder * createBuilder() const override
+    [[nodiscard]] ffi::EngineBuilder * createBuilder() const override
     {
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
             ffi::get_engine_builder(
@@ -239,6 +269,7 @@ private:
 
     std::string region;
     bool no_sign;
+    bool is_gcs = false;
 
     static std::string getTableLocation(const DB::S3::URI & url)
     {
@@ -467,11 +498,49 @@ public:
         , data_path(normalizeBlobPath(blob_path_))
     {}
 
-    const std::string & getTableLocation() const override { return table_location; }
+    [[nodiscard]] const std::string & getTableLocation() const override { return table_location; }
 
-    const std::string & getDataPath() const override { return data_path; }
+    [[nodiscard]] const std::string & getDataPath() const override { return data_path; }
 
-    ffi::EngineBuilder * createBuilder() const override
+    /// The Azure object storage resolves a key inside the container and the endpoint prefix of the table. The table's
+    /// checks (the credentials, the source grant) cover the table's location only.
+    std::string resolveDataFilePath(const std::string & path, const DB::ContextPtr & context) const override
+    {
+        auto qualified = DB::trySplitFullyQualifiedObjectPath(path);
+        if (!qualified)
+            return IKernelHelper::resolveDataFilePath(path, context);
+
+        /// `<container>@<account>.<host>`, as Hadoop writes `abfss://` and `wasbs://` URIs.
+        const std::string_view authority = qualified->object_namespace;
+        const size_t at = authority.find('@');
+        const std::string_view container = authority.substr(0, at);
+        const std::string_view account
+            = at == std::string_view::npos ? "" : authority.substr(at + 1, authority.find('.', at) - at - 1);
+
+        std::string prefix = connection_params.endpoint.prefix;
+        if (!prefix.empty() && !prefix.ends_with('/'))
+            prefix += '/';
+        const std::string key = DB::unescapeForFileName(std::string(qualified->key));
+        /// Azure may resolve dot and empty segments on access.
+        const bool has_unsafe_segment = std::ranges::any_of(std::views::split(std::string_view(key), '/'), [](const auto & segment)
+        {
+            const std::string_view name(segment.begin(), segment.end());
+            return name.empty() || name == "." || name == "..";
+        });
+
+        const std::string_view scheme = qualified->scheme;
+        const bool is_own_scheme = scheme == "abfss" || scheme == "abfs" || scheme == "wasbs" || scheme == "wasb";
+        if (!is_own_scheme || container != connection_params.endpoint.container_name || account.empty()
+            || account != getAccountName() || !key.starts_with(prefix) || has_unsafe_segment)
+            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
+                "Data file `{}` of the Delta Lake table is not in the container `{}` of the table",
+                path, connection_params.endpoint.container_name);
+        context->getAccess()->checkAccessWithFilter(
+            DB::AccessType::READ, DB::AccessTypeObjects::toStringSource(DB::AccessTypeObjects::Source::AZURE), /* filter */ "");
+        return key.substr(prefix.size());
+    }
+
+    [[nodiscard]] ffi::EngineBuilder * createBuilder() const override
     {
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
             ffi::get_engine_builder(
@@ -496,6 +565,21 @@ private:
     const std::string table_location;
     const std::string data_path;
     const LoggerPtr log = getLogger("AzureKernelHelper");
+
+    mutable std::once_flag account_name_once;
+    mutable std::string account_name;
+
+    /// The account the kernel reads the table from, empty when the configuration names none.
+    const std::string & getAccountName() const
+    {
+        std::call_once(account_name_once, [this]
+        {
+            for (const auto & [name, value] : getAzureBuilderOptions(connection_params))
+                if (name == "azure_storage_account_name")
+                    account_name = value;
+        });
+        return account_name;
+    }
 
     /// `blob_path` may carry a leading slash (e.g. from a disk-based configuration),
     /// which Azure would keep as a part of the blob name. Strip it so that the data
@@ -531,11 +615,30 @@ public:
     {
     }
 
-    const std::string & getTableLocation() const override { return table_location; }
+    [[nodiscard]] const std::string & getTableLocation() const override { return table_location; }
 
-    const std::string & getDataPath() const override { return path; }
+    [[nodiscard]] const std::string & getDataPath() const override { return path; }
 
-    ffi::EngineBuilder * createBuilder() const override
+    /// The local object storage confines an absolute path to its root like any other key. The source grant was
+    /// checked for the table's location only, so an absolute path needs it on the whole source.
+    [[nodiscard]] std::string resolveDataFilePath(const std::string & data_file_path, const DB::ContextPtr & context) const override
+    {
+        if (!data_file_path.starts_with("file:"))
+            return IKernelHelper::resolveDataFilePath(data_file_path, context);
+
+        std::string_view file_path = std::string_view(data_file_path).substr(std::string_view("file:").size());
+        /// `file:///abs`; an authority (`file://host/abs`) is not a local file.
+        if (file_path.starts_with("//"))
+            file_path.remove_prefix(2);
+        if (!file_path.starts_with('/'))
+            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
+                "Data file `{}` of the Delta Lake table is not a local absolute path", data_file_path);
+        context->getAccess()->checkAccessWithFilter(
+            DB::AccessType::READ, DB::AccessTypeObjects::toStringSource(DB::AccessTypeObjects::Source::FILE), /* filter */ "");
+        return DB::unescapeForFileName(std::string(file_path));
+    }
+
+    [[nodiscard]] ffi::EngineBuilder * createBuilder() const override
     {
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
             ffi::get_engine_builder(

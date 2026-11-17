@@ -6,8 +6,6 @@ slug: /guides/joining-tables
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickHouse는 실행 속도와 메모리 사용량 사이에서 각기 다른 절충점을 지닌 다양한 조인 알고리즘(join algorithms)을 지원합니다. JOIN 구문과 의미 체계는 [`JOIN` 절 참고 문서](/ko/reference/statements/select/join)를 참조하십시오. 구체적인 최적화 지침과 단계별 예시는 [JOIN 최소화 및 최적화](/ko/concepts/best-practices/minimize-optimize-joins)를 참조하십시오.
 
 ## 조인 알고리즘 선택 {#choosing-a-join-algorithm}
@@ -16,7 +14,15 @@ ClickHouse는 여러 [조인 알고리즘](https://clickhouse.com/blog/clickhous
 
 <br />
 
-<Image img="/images/guides/joins-2.png" size="lg" alt="조인의 메모리 대비 속도" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![조인의 메모리 대비 속도](/images/guides/joins-2.png)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -26,7 +32,15 @@ ClickHouse는 여러 [조인 알고리즘](https://clickhouse.com/blog/clickhous
 
 <br />
 
-<Image img="/images/guides/joins-3.webp" size="lg" alt="조인 기능" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![조인 기능](/images/guides/joins-3.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
