@@ -242,6 +242,17 @@ SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM
     SELECT count() FROM (SELECT * FROM tenant_a WHERE tenant = 1) AS a JOIN (SELECT * FROM tenant_b WHERE tenant = 1) AS b ON a.k = b.k AND a.s = b.s)
 WHERE explain LIKE '%Algorithm:%';
 
+SELECT '-- a constant key next to the sorted key: every order is also sorted by the constant, a merge join';
+SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN
+    SELECT sum(a.v + b.v) FROM (SELECT materialize('x') AS c, k, v FROM sorted1) AS a
+    JOIN (SELECT materialize('x') AS c, k, v FROM sorted2) AS b ON a.c = b.c AND a.k = b.k)
+WHERE explain LIKE '%Algorithm:%';
+
+SELECT '-- a constant equated to a column: that input is not sorted by it within the groups of `k`, a hash join';
+SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN
+    SELECT count() FROM (SELECT materialize(toUInt64(0)) AS c, k, v FROM two_keys_a) AS a JOIN two_keys_b AS b ON a.c = b.s AND a.k = b.k)
+WHERE explain LIKE '%Algorithm:%';
+
 SELECT '-- without optimize_sorting_by_input_stream_properties a join result is sorted again, so the second join hashes';
 SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join'), replaceRegexpAll(explain, '^[│└├─ ]+', '')) FROM (EXPLAIN PLAN sorting = 1
     SELECT sum(sorted1.v + sorted2.v + sorted3.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k JOIN sorted3 ON sorted2.k = sorted3.k)

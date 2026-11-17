@@ -1182,6 +1182,9 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
         if (typeid_cast<const JoinStepLogicalLookup *>(query_graph_builder.inputs[i]->step.get()))
             query_graph.prepared_storage_relations.set(i);
     }
+    query_graph.is_constant_column = [inputs = query_graph_builder.inputs, is_constant = makeConstantColumnLookup()](
+                                         size_t relation, const String & column_name)
+    { return relation < inputs.size() && is_constant(*inputs[relation], column_name); };
 
     /// The joins of this graph may become sort-merge joins unless their own `join_algorithm` is explicit without it.
     if (const auto & context = *query_graph_builder.context; context.optimization_settings.query_plan_join_order_use_interesting_orders)

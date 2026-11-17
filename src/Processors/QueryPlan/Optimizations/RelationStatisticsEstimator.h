@@ -3,6 +3,8 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
+#include <functional>
+
 namespace DB::QueryPlanOptimizations
 {
 
@@ -15,5 +17,11 @@ namespace DB::QueryPlanOptimizations
 /// exact phase, so an unindexed plan-time filter yields no estimate instead of a statistics guess.
 RelationStats estimateReadRowsCount(
     QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr, bool for_runtime_filter_transport = false);
+
+/// Whether an output column of the subtree rooted at a node holds the same value in every row: a constant, a deterministic
+/// stateless function of constants, or a column passing one through unchanged. Not exhaustive.
+/// Copies of the lookup share one cache, so the plan must not change while it is used.
+using ConstantColumnLookup = std::function<bool(const QueryPlan::Node & node, const String & column_name)>;
+ConstantColumnLookup makeConstantColumnLookup();
 
 }
