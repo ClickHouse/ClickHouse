@@ -215,11 +215,11 @@ if (ENABLE_CFI)
     endif()
 endif()
 
-# rustc refuses to combine a sanitizer with a statically linked libc (the musl Rust target
+# rustc refuses to combine a sanitizer, CFI included, with a statically linked libc (the musl Rust target
 # defaults to `crt-static`). Disabling it only switches Rust's thread-locals to the
 # general-dynamic TLS model, which calls __tls_get_addr - already provided by musl's static
 # libc for exactly this case - so the resulting staticlib still needs no dynamic loader.
-if (USE_MUSL AND NOT SANITIZE STREQUAL "")
+if (USE_MUSL AND (NOT SANITIZE STREQUAL "" OR ENABLE_CFI))
     list(APPEND RUSTFLAGS "-C" "target-feature=-crt-static")
 endif()
 
