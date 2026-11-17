@@ -1,17 +1,14 @@
-#include <Processors/QueryPlan/Streaming/hasUnboundedOutput.h>
+#include <Processors/QueryPlan/Streaming/hasUnboundedStreamSource.h>
 
-#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
-
-#include <Common/typeid_cast.h>
 
 #include <vector>
 
 namespace DB
 {
 
-bool hasUnboundedOutput(const QueryPlan & query_plan)
+bool hasUnboundedStreamSource(const QueryPlan & query_plan)
 {
     if (!query_plan.isInitialized())
         return false;
@@ -21,10 +18,6 @@ bool hasUnboundedOutput(const QueryPlan & query_plan)
     {
         const auto * node = nodes.back();
         nodes.pop_back();
-
-        const auto * limit = typeid_cast<const LimitStep *>(node->step.get());
-        if (limit && !limit->alwaysReadTillEnd())
-            continue;
 
         if (const auto * source = dynamic_cast<const SourceStepWithFilter *>(node->step.get()))
         {
