@@ -17,6 +17,8 @@ struct RequestedTypeCastSettings
     bool null_tuple_as_default = false;
     /// Named tuples are matched by name even with no name in common; otherwise they are paired as `CAST` pairs them.
     bool tuple_elements_by_name = true;
+    /// Otherwise no value is converted: the types may differ only by Nullable, removed with `null_as_default`, and LowCardinality.
+    bool allow_types_conversion = true;
 };
 
 /// Convert a column produced by an input format to the type the caller requested in the header.

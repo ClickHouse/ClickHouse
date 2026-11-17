@@ -109,7 +109,8 @@ ColumnWithTypeAndName prepareForCast(
         /// `CAST` itself keeps the NULL rows of every type but a tuple.
         const bool convert_visible_rows = has_nulls
             && (strip_nullable ? !nested.type->equals(*to_nested) || !to_nested->isDefaultInsertTrivial()
-                               : to_can_be_null && isTuple(nested.type) && !nested.type->equals(*to_nested));
+                               : settings.allow_types_conversion && to_can_be_null && isTuple(nested.type)
+                                   && !nested.type->equals(*to_nested));
         if (convert_visible_rows)
             return {castRowsNotInNullMap(nested, to, null_map, settings), to, from.name};
 
@@ -132,7 +133,7 @@ ColumnWithTypeAndName prepareForCast(
     if (const auto * to_arr = typeid_cast<const DataTypeArray *>(to.get()))
     {
         /// `CAST` converts a map as the array of its unnamed (key, value) tuples.
-        if (const auto * from_map = typeid_cast<const DataTypeMap *>(from.type.get()))
+        if (const auto * from_map = typeid_cast<const DataTypeMap *>(from.type.get()); from_map && settings.allow_types_conversion)
             from = {assert_cast<const ColumnMap &>(*from.column).getNestedColumnPtr(), from_map->getNestedTypeWithUnnamedTuple(), from.name};
         const auto * from_arr = typeid_cast<const DataTypeArray *>(from.type.get());
         if (!from_arr)
@@ -151,8 +152,11 @@ ColumnWithTypeAndName prepareForCast(
         if (isTuple(from.type))
             return prepareForCast(from, std::make_shared<DataTypeTuple>(DataTypes{
                 std::make_shared<DataTypeArray>(key_value_types[0]), std::make_shared<DataTypeArray>(key_value_types[1])}), settings);
+        const auto * from_map = typeid_cast<const DataTypeMap *>(from.type.get());
+        if (from_map)
+            from = {assert_cast<const ColumnMap &>(*from.column).getNestedColumnPtr(), from_map->getNestedType(), from.name};
         auto entries = prepareForCast(from, std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(key_value_types)), settings);
-        if (!isMap(from.type))
+        if (!from_map)
             return entries;
         const auto & entry_type = assert_cast<const DataTypeArray &>(*entries.type).getNestedType();
         return {ColumnMap::create(entries.column), std::make_shared<DataTypeMap>(assert_cast<const DataTypeTuple &>(*entry_type).getElements()), from.name};
@@ -167,7 +171,8 @@ ColumnWithTypeAndName prepareForCast(
         const auto & source_types = from_tuple->getElements();
         const auto & target_types = to_tuple->getElements();
         VectorWithMemoryTracking<std::optional<size_t>> source_positions;
-        if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames())
+        /// Without type conversion the column is only relabeled, which pairs the elements by position.
+        if (settings.allow_types_conversion && from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames())
             source_positions = from_tuple->matchElementsByName(*to_tuple, settings.case_insensitive);
         const bool match_by_name = !source_positions.empty()
             && (settings.tuple_elements_by_name || std::ranges::any_of(source_positions, [](const auto & pos) { return pos.has_value(); }));
@@ -226,7 +231,9 @@ void castImpl(
     BlockMissingValues * block_missing_values)
 {
     column = prepareForCast(column, requested_type, settings, column_i, block_missing_values);
-    if (settings.tuple_elements_by_name)
+    if (!settings.allow_types_conversion)
+        column.column = recursiveLowCardinalityTypeConversion(column.column, column.type, requested_type);
+    else if (settings.tuple_elements_by_name)
         column.column = castColumnMatchingTupleElementsByName(column, requested_type, settings.case_insensitive);
     else
         column.column = castColumn(column, requested_type);

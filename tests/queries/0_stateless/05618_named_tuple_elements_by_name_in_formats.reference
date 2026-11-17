@@ -106,6 +106,8 @@ Native NULL rows
 1	\N
 0	[('k',0)]	{'k':0}	{'k':0}
 1	[('k',0)]	{'k':0}	{'k':0}
+0	b	('9')	{'k':0}
+1	a	\N	{'k':0}
 Vortex NULL rows
 0	7	b	b	(9)
 1	0	a	a	(0)
@@ -118,6 +120,7 @@ Vortex NULL rows
 1
 1
 (1,0)
+(1,NULL)
 2
 2
 0	(0)	[1,0]

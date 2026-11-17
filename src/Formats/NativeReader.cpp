@@ -15,12 +15,8 @@
 #include <Formats/NativeReader.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/castColumnToRequestedType.h>
-#include <Formats/insertNullAsDefaultIfNeeded.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-
-#include <Interpreters/castColumn.h>
 
 #include <Common/logger_useful.h>
 
@@ -299,8 +295,6 @@ Block NativeReader::read()
             if (header.has(column.name))
             {
                 auto & header_column = header.getByName(column.name);
-                const size_t column_i = header.getPositionByName(column.name);
-                const bool null_as_default = format_settings && format_settings->null_as_default;
 
                 if (!header_column.type->equals(*column.type))
                 {
@@ -313,22 +307,17 @@ Block NativeReader::read()
                     const auto * header_agg_type = typeid_cast<const DataTypeAggregateFunction *>(header_column.type.get());
                     bool convertible_agg_variant = header_agg_type && header_agg_type->equalsIgnoringVariant(*column.type);
 
-                    if ((format_settings && format_settings->native.allow_types_conversion) || convertible_agg_variant)
-                    {
-                        /// Named tuples keep the pairing of `CAST`: this is also the receiving side of every Native INSERT.
-                        castColumnToRequestedType(
-                            column, header_column.type, {.null_as_default = null_as_default, .tuple_elements_by_name = false},
-                            column_i, block_missing_values);
-                    }
-                    else
-                    {
-                        if (null_as_default)
-                            insertNullAsDefaultIfNeeded(column, header_column, column_i, block_missing_values);
-                        /// Support insert from old clients without low cardinality type.
-                        column.column = recursiveLowCardinalityTypeConversion(column.column, column.type, header_column.type);
-                    }
-
-                    column.type = header_column.type;
+                    /// Named tuples keep the pairing of `CAST`: this is also the receiving side of every Native INSERT.
+                    /// Without type conversion LowCardinality may still differ, to support inserts from old clients without it.
+                    castColumnToRequestedType(
+                        column,
+                        header_column.type,
+                        {.null_as_default = format_settings && format_settings->null_as_default,
+                         .tuple_elements_by_name = false,
+                         .allow_types_conversion
+                         = (format_settings && format_settings->native.allow_types_conversion) || convertible_agg_variant},
+                        header.getPositionByName(column.name),
+                        block_missing_values);
                 }
                 else if (!haveSameAggregateStateVersions(*header_column.type, *column.type))
                 {

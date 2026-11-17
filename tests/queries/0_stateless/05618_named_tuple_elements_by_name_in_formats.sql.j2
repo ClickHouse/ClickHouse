@@ -63,12 +63,18 @@ SELECT * FROM file(currentDatabase() || '_05618_null.{{ format }}', '{{ format }
 {% if format != 'Parquet' -%}
 SELECT * FROM file(currentDatabase() || '_05618_null.{{ format }}', '{{ format }}', 'id UInt64, e5 Array(Tuple(String, Int8)), e6 Map(String, Int8), e7 Map(String, Int8)') ORDER BY id SETTINGS input_format_null_as_default = 1;
 {% endif -%}
+{% if format == 'Native' -%}
+SELECT * FROM file(currentDatabase() || '_05618_null.Native', 'Native', 'id UInt64, e3 Enum8(\'a\' = 1, \'b\' = 2), e4 Nullable(Tuple(s LowCardinality(String))), e5 Map(String, Int8)') ORDER BY id SETTINGS input_format_null_as_default = 1, input_format_native_allow_types_conversion = 0;
+SELECT * FROM file(currentDatabase() || '_05618_null.Native', 'Native', 'id UInt64, e1 Int32') SETTINGS input_format_native_allow_types_conversion = 0; -- { serverError TYPE_MISMATCH }
+SELECT * FROM file(currentDatabase() || '_05618_null.Native', 'Native', 'id UInt64, e5 Array(Tuple(String, Int8))') SETTINGS input_format_native_allow_types_conversion = 0; -- { serverError TYPE_MISMATCH }
+{% endif -%}
 {% endfor -%}
 SELECT count() FROM file(currentDatabase() || '_05618_null.Parquet', 'Parquet', 'e2 Enum8(\'a\' = 1, \'b\' = 2)') WHERE e2 = 'a' SETTINGS input_format_parquet_dictionary_filter_push_down = 0;
 SELECT count() FROM file(currentDatabase() || '_05618_null.Parquet', 'Parquet', 'e2 Enum8(\'a\' = 1, \'b\' = 2)') WHERE e2 = 'a' SETTINGS input_format_parquet_dictionary_filter_push_down = 1048576;
 
 INSERT INTO FUNCTION file(currentDatabase() || '_05618_positional.Native', 'Native') SELECT CAST((1, NULL), 'Tuple(a Int32, b Nullable(Int32))') AS t;
 SELECT * FROM file(currentDatabase() || '_05618_positional.Native', 'Native', 't Tuple(x Int64, y Int64)');
+SELECT * FROM file(currentDatabase() || '_05618_positional.Native', 'Native', 't Tuple(b Int32, a Nullable(Int32))') SETTINGS input_format_null_as_default = 1, input_format_native_allow_types_conversion = 0;
 
 INSERT INTO FUNCTION file(currentDatabase() || '_05618_pruning.Parquet', 'Parquet') SELECT [NULL, '1950-01-01'][intDiv(number, 2) + 1]::Nullable(Date32) AS d
 FROM numbers(4) SETTINGS output_format_parquet_row_group_size = 2;
