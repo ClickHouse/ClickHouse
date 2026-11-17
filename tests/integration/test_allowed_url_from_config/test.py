@@ -162,17 +162,17 @@ def test_azure_host_filter_before_client_creation(start_cluster, query):
         (
             "storage_account_url = 'https://onelake.blob.fabric.microsoft.com', "
             "account_name = 'account', account_key = 'YQ=='",
-            "https://onelake.dfs.fabric.microsoft.com",
+            "onelake.dfs.fabric.microsoft.com:443",
         ),
         (
             "connection_string = 'BlobEndpoint=https://onelake.blob.fabric.microsoft.com/;"
             "DfsEndpoint=http://127.0.0.1:1;SharedAccessSignature=sv=2022&sig=c2FzY2FuYXJ5'",
-            "http://127.0.0.1:1",
+            "127.0.0.1:1",
         ),
         (
             "endpoint = 'BlobEndpoint=http://host:80/account/container', "
             "connection_string = 'BlobEndpoint=http://127.0.0.1:1'",
-            "http://127.0.0.1:1",
+            "127.0.0.1:1",
         ),
     ],
 )
