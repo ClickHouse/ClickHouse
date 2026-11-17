@@ -8,6 +8,7 @@ namespace DB
 class Block;
 class Chunk;
 class PuffinWriter;
+struct FormatSettings;
 
 class IPuffinBlobBuilder
 {
@@ -20,5 +21,7 @@ public:
 };
 
 using PuffinBlobBuilderPtr = std::unique_ptr<IPuffinBlobBuilder>;
+
+PuffinBlobBuilderPtr createPuffinBlobBuilder(const Block & header, const FormatSettings & format_settings);
 
 }
