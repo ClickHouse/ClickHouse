@@ -1112,7 +1112,8 @@ bool canStatisticsTrackMinMax(const DataTypePtr & data_type)
 
 bool canStatisticsTrackSum(const DataTypePtr & data_type)
 {
-    return WhichDataType(data_type).isIntegerOrDecimal();
+    /// `Nullable` is summed over the non-NULL values; `LowCardinality` is not supported.
+    return WhichDataType(removeNullable(data_type)).isIntegerOrDecimal();
 }
 
 }
