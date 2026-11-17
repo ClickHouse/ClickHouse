@@ -218,6 +218,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 output_format_compression_level;
+    extern const SettingsBool parameterize_view_by_alias_parameter;
     extern const SettingsString polyglot_dialect;
     extern const SettingsBool enable_logsql_dialect;
     extern const SettingsString logsql_database;
@@ -2921,7 +2922,7 @@ static BlockIO executeQueryImpl(
         bool probably_has_params = find_first_symbols<'{'>(begin, end) != end;
         if (out_ast && probably_has_params)
         {
-            ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
+            ReplaceQueryParameterVisitor visitor(context->getQueryParameters(), settings[Setting::parameterize_view_by_alias_parameter]);
             visitor.visit(out_ast);
             if (visitor.getNumberOfReplacedParameters())
                 query = out_ast->formatWithSecretsOneLine();

@@ -1450,7 +1450,7 @@ ASTPtr exactCastArgument(
     /// The text is a literal only together with the type that reads it, so it is not recorded in the
     /// literal token map - it is not a literal of the query on its own.
     auto result = make_intrusive<ASTLiteral>(std::move(literal->text));
-    result->setAlias(argument->tryGetAlias());
+    result->copyAliasesFrom(*argument);
     return result;
 }
 

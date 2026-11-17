@@ -99,6 +99,20 @@ void ASTWithAlias::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases)
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
+void ASTWithAlias::copyAliasesFrom(const ASTWithAlias & other)
+{
+    if (other.alias.empty() && !other.parametrised_alias)
+        return;
+    setAlias(other.alias);
+    parametrised_alias = other.parametrised_alias;
+}
+
+void ASTWithAlias::copyAliasesFrom(const IAST & other)
+{
+    if (const auto * other_with_alias = dynamic_cast<const ASTWithAlias *>(&other))
+        copyAliasesFrom(*other_with_alias);
+}
+
 void ASTWithAlias::appendColumnName(WriteBuffer & ostr) const
 {
     if (preferAliasToColumnName() && !alias.empty())

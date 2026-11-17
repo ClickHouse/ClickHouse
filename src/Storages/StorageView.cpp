@@ -3,6 +3,7 @@
 #include <Access/User.h>
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeString.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
@@ -870,8 +871,10 @@ static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_quer
     return select_element->table_expression->as<ASTTableExpression>();
 }
 
-void StorageView::replaceQueryParametersIfParameterizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values)
+void StorageView::replaceQueryParametersIfParameterizedView(
+    ASTPtr & outer_query, const NameToNameMap & parameter_values, const String & view_database, ContextPtr context)
 {
+    AddDefaultDatabaseVisitor(context, view_database).visitParameterizedView(outer_query, parameter_values);
     ReplaceQueryParameterVisitor visitor(parameter_values);
     visitor.visit(outer_query);
 }

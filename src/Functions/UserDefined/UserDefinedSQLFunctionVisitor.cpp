@@ -201,11 +201,11 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
                 if (function_argument_it == identifier_name_to_function_argument.end())
                     continue;
 
-                auto child_alias = child->tryGetAlias();
+                auto old_child = child;
                 child = function_argument_it->second->clone();
 
-                if (!child_alias.empty())
-                    child->setAlias(child_alias);
+                if (auto * child_with_alias = dynamic_cast<ASTWithAlias *>(child.get()))
+                    child_with_alias->copyAliasesFrom(*old_child);
 
                 continue;
             }
@@ -218,13 +218,8 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
 
     function_body_to_update = expression_list->children[0];
 
-    auto function_alias = function.tryGetAlias();
-
-    if (!function_alias.empty())
-        function_body_to_update->setAlias(function_alias);
-
-    if (auto * body_with_alias = dynamic_cast<ASTWithAlias *>(function_body_to_update.get()); body_with_alias && function.parametrised_alias)
-        body_with_alias->parametrised_alias = function.parametrised_alias;
+    if (auto * body_with_alias = dynamic_cast<ASTWithAlias *>(function_body_to_update.get()))
+        body_with_alias->copyAliasesFrom(function);
 
     return function_body_to_update;
 }

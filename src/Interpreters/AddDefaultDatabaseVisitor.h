@@ -6,6 +6,7 @@
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTRefreshStrategy.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -114,6 +115,15 @@ public:
         visit(refresh, unused);
     }
 
+    /// `visit` leaves an operand of `IN` unqualified in a select query with a parametrised alias, which it can name.
+    /// Qualify such operands of a parameterized view when it is called, before its parameters are substituted.
+    void visitParameterizedView(ASTPtr & ast, const NameToNameMap & values) const
+    {
+        parameter_values = &values;
+        visit(ast);
+        parameter_values = nullptr;
+    }
+
     /// Substitute the database only into table functions that use the current database implicitly,
     /// e.g. `merge('tables_regexp')`, without qualifying table identifiers.
     /// It is used for `ALTER ... ON CLUSTER`: the identifiers are qualified when the query
@@ -146,6 +156,10 @@ private:
     mutable std::unordered_map<String, std::vector<WithDeclaration>> with_aliases;
     /// The aliases of the expressions of the current select query.
     mutable std::unordered_set<String> expression_aliases;
+    /// Whether an expression of the current select query has a parametrised alias.
+    mutable bool has_parametrised_alias = false;
+    /// The parameters of the called parameterized view, see `visitParameterizedView`.
+    mutable const NameToNameMap * parameter_values = nullptr;
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
@@ -182,11 +196,12 @@ private:
         /// Like in `MarkTableIdentifiersVisitor`, only the aliases of the current select query
         /// are considered: an alias is not visible inside a nested select query and vice versa.
         auto enclosing_query_aliases = std::move(expression_aliases);
+        const bool enclosing_has_parametrised_alias = std::exchange(has_parametrised_alias, false);
         expression_aliases.clear();
         for (const auto & child : select.children)
             collectAliases(child);
 
-        if (select.tables())
+        if (select.tables() && !parameter_values)
             tryVisit<ASTTablesInSelectQuery>(select.refTables());
 
         for (auto & child : select.children)
@@ -198,6 +213,7 @@ private:
         }
 
         expression_aliases = std::move(enclosing_query_aliases);
+        has_parametrised_alias = enclosing_has_parametrised_alias;
         with_aliases = std::move(enclosing_with_aliases);
     }
 
@@ -316,6 +332,16 @@ private:
         String alias = ast->tryGetAlias();
         if (!alias.empty())
             expression_aliases.insert(alias);
+
+        if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(ast.get()); with_alias && with_alias->parametrised_alias)
+        {
+            has_parametrised_alias = true;
+            if (parameter_values)
+            {
+                if (auto it = parameter_values->find(with_alias->parametrised_alias->name); it != parameter_values->end())
+                    expression_aliases.insert(it->second);
+            }
+        }
 
         for (const auto & child : ast->children)
             collectAliases(child);
@@ -442,9 +468,7 @@ private:
             return;
 
         auto qualified_identifier = make_intrusive<ASTTableIdentifier>(database_name, identifier.name());
-        if (!identifier.alias.empty())
-            qualified_identifier->setAlias(identifier.alias);
-        qualified_identifier->parametrised_alias = identifier.parametrised_alias;
+        qualified_identifier->copyAliasesFrom(identifier);
         ast = qualified_identifier;
     }
 
@@ -459,7 +483,7 @@ private:
             {
                 for (size_t i = 0; i < child->children.size(); ++i)
                 {
-                    if (is_dict_get && i == 0)
+                    if (is_dict_get && i == 0 && !parameter_values)
                     {
                         if (auto * identifier = child->children[i]->as<ASTIdentifier>())
                         {
@@ -487,6 +511,10 @@ private:
                             literal_value = qualified_dictionary_name.getFullName();
                         }
                     }
+                    else if (is_operator_in && i == 1 && parameter_values)
+                    {
+                        visitInOperandOfParameterizedView(child->children[i]);
+                    }
                     else if (is_operator_in && i == 1)
                     {
                         if (auto * identifier = child->children[i]->as<ASTIdentifier>())
@@ -496,6 +524,10 @@ private:
                             /// Then it is not a table name and must not be qualified with the database
                             /// (the similar code in `MarkTableIdentifiersVisitor` also checks the aliases).
                             if (!identifier->as<ASTTableIdentifier>() && expression_aliases.contains(identifier->name()))
+                                continue;
+
+                            /// The operand can name a parametrised alias, whose name is known only when the view is called.
+                            if (has_parametrised_alias && !identifier->compound())
                                 continue;
 
                             /// If identifier is broken then we can do nothing and get an exception
@@ -519,6 +551,23 @@ private:
             {
                 visit(child);
             }
+        }
+    }
+
+    /// Qualify an operand of `IN` that `visit` left unqualified, unless it names a parametrised alias.
+    void visitInOperandOfParameterizedView(ASTPtr & operand) const
+    {
+        const auto * identifier = operand->as<ASTIdentifier>();
+        if (!identifier || !has_parametrised_alias || identifier->compound() || expression_aliases.contains(identifier->name()))
+        {
+            visit(operand);
+            return;
+        }
+
+        if (auto table_identifier = identifier->createTable())
+        {
+            operand = table_identifier;
+            tryVisit<ASTTableIdentifier>(operand);
         }
     }
 
@@ -598,8 +647,7 @@ private:
             /// However, just for safety, let's store the old node for a little longer.
             ASTPtr old_node = node;
             auto literal = make_intrusive<ASTLiteral>(database_name);
-            literal->alias = function.alias;
-            literal->parametrised_alias = function.parametrised_alias;
+            literal->copyAliasesFrom(function);
             node = literal;
 
             if (parent)

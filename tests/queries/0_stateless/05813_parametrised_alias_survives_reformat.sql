@@ -64,7 +64,36 @@ SELECT * FROM v_alias_cte(a = 't');
 DROP VIEW v_alias_cte;
 DROP VIEW v_alias_table;
 
+-- An operand of IN that can name a parametrised alias is resolved when the view is called: the alias, else a table of the database of the view.
+DROP TABLE IF EXISTS vals;
+DROP VIEW IF EXISTS v_alias_in_with;
+DROP VIEW IF EXISTS v_alias_in_projection;
+CREATE TABLE vals (x UInt8) ENGINE = Memory;
+INSERT INTO vals VALUES (3);
+CREATE VIEW v_alias_in_with AS WITH [1, 2] AS {a:Identifier} SELECT 1 IN vals AS hit, 3 GLOBAL IN vals AS global_hit;
+CREATE VIEW v_alias_in_projection AS SELECT [1, 2] AS {a:Identifier}, 1 IN vals AS hit, 3 GLOBAL IN vals AS global_hit;
+DETACH TABLE v_alias_in_with;
+ATTACH TABLE v_alias_in_with;
+SELECT hit, global_hit FROM v_alias_in_with(a = 'vals');
+SELECT hit, global_hit FROM v_alias_in_with(a = 'other');
+SELECT hit, global_hit FROM v_alias_in_projection(a = 'vals');
+SELECT hit, global_hit FROM v_alias_in_projection(a = 'other');
+SELECT countIf(explain LIKE concat('%', currentDatabase(), '.vals%')) FROM (EXPLAIN SYNTAX SELECT * FROM v_alias_in_with(a = 'vals'));
+SELECT countIf(explain LIKE concat('%', currentDatabase(), '.vals%')) > 0 FROM (EXPLAIN SYNTAX SELECT * FROM v_alias_in_with(a = 'other'));
+DROP VIEW v_alias_in_projection;
+DROP VIEW v_alias_in_with;
+DROP TABLE vals;
+
 DROP VIEW mv_alias;
 DROP TABLE src_alias;
 DROP VIEW v_alias_only;
 DROP VIEW v_alias_param;
+
+-- With an older `compatibility`, a view whose only parameters are aliases is not parameterized: CREATE substitutes them.
+SET param_a = 'from_session';
+SET compatibility = '26.10';
+DROP VIEW IF EXISTS v_alias_compatibility;
+CREATE VIEW v_alias_compatibility AS SELECT 7 AS {a:Identifier};
+SELECT parameterized_view_parameters, position(create_table_query, '{a:Identifier}') FROM system.tables WHERE database = currentDatabase() AND name = 'v_alias_compatibility';
+SELECT from_session FROM v_alias_compatibility;
+DROP VIEW v_alias_compatibility;

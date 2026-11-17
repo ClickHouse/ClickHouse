@@ -47,6 +47,11 @@ public:
     String tryGetAlias() const override { return alias; }
     void setAlias(const String & to) override { alias = to; }
 
+    /// Replace the alias of this node with the alias of `other`, plain or parametrised, if `other` has one.
+    /// A rewrite that replaces a node uses it, so that a parametrised alias is not lost before it is substituted.
+    void copyAliasesFrom(const ASTWithAlias & other);
+    void copyAliasesFrom(const IAST & other);
+
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     virtual void formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;

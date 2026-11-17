@@ -68,7 +68,8 @@ public:
     void drop() override;
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
-    static void replaceQueryParametersIfParameterizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values);
+    static void replaceQueryParametersIfParameterizedView(
+        ASTPtr & outer_query, const NameToNameMap & parameter_values, const String & view_database, ContextPtr context);
 
     static void replaceWithSubquery(ASTSelectQuery & select_query, ASTPtr & view_name, const StorageMetadataPtr & metadata_snapshot, const bool parameterized_view)
     {

@@ -6706,6 +6706,12 @@ When disabled, the `MATERIALIZED` keyword is ignored: the CTE is inlined at each
 When enabled, the analyzer substitutes ordinary (non-materialized, non-parameterized) views with their defining subqueries, enabling cross-boundary optimizations such as predicate pushdown and column pruning.
 )", EXPERIMENTAL, \
         {"26.4", false, false, "New setting"}) \
+    DECLARE(Bool, parameterize_view_by_alias_parameter, true, R"(
+A query parameter used as an alias, `expr AS {name:Identifier}`, in the query of `CREATE VIEW` makes the view parameterized, like any other query parameter.
+
+When disabled, a view whose only query parameters are such aliases is an ordinary view: `CREATE VIEW` substitutes them with the values of the query parameters of the session, as in versions before 26.11. A server older than 26.11 cannot load a view parameterized only by such an alias.
+)", 0, \
+        {"26.11", false, true, "A view whose only query parameters are aliases (`expr AS {name:Identifier}`) is parameterized instead of substituting them with the query parameters of the session at `CREATE VIEW`."}) \
     DECLARE(Bool, enable_scopes_for_with_statement, true, R"(
 If disabled, declarations in parent WITH clauses will behave the same scope as they declared in the current scope.
 
