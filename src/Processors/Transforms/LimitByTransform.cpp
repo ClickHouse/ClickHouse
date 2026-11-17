@@ -7,13 +7,17 @@
 #include <Core/SortCursor.h>
 #include <DataTypes/IDataType.h>
 #include <base/defines.h>
+#include <base/getL2CacheSize.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/HashTable/Prefetching.h>
 #include <Common/logger_useful.h>
 
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <type_traits>
+#include <variant>
 
 
 namespace DB
@@ -179,7 +183,7 @@ void LimitByTransform::consumeImpl(Method &, const ColumnRawPtrs &, UInt64)
 /// `isCancelled` is polled every this many rows of the row loops below.
 constexpr UInt64 cancellation_check_batch_rows = 1024;
 
-template <typename Method>
+template <bool prefetch, typename Method>
 requires MapAggregationMethod<Method>
 void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & grouping_key_columns, UInt64 row_count)
 {
@@ -189,6 +193,10 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
     size_t current_run_group_idx = 0;
 
     FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_pause);
+
+    /// Constructing `PrefetchingHelper` starts its latency measurement, so the loop without prefetch must not construct one.
+    [[maybe_unused]] std::conditional_t<prefetch, PrefetchingHelper, std::monostate> prefetching;
+    [[maybe_unused]] size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
 
     /// Checking for cancellation on every row costs an atomic load per row and, with clang-23, the registers
     /// the row loop needs for its hash lookup; a batch of rows is processed in microseconds, so checking once
@@ -206,6 +214,14 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
         const UInt64 batch_end_row = std::min(batch_start_row + cancellation_check_batch_rows, row_count);
         for (UInt64 row_idx = batch_start_row; row_idx < batch_end_row; ++row_idx)
         {
+            if constexpr (prefetch)
+            {
+                if (row_idx == PrefetchingHelper::iterationsToMeasure())
+                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+                if (row_idx + prefetch_look_ahead < row_count)
+                    hash_method.data.prefetch(state.getKeyHolder(row_idx + prefetch_look_ahead, *data.aggregates_pool));
+            }
+
             if (row_idx == 5)
                 FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
 
@@ -244,6 +260,31 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
 
     /// Flush the final run, which extends to the end of the chunk.
     processRun(current_run_start_row, row_count - current_run_start_row, current_run_group_idx);
+}
+
+template <typename Method>
+void LimitByTransform::consume(Method & hash_method, const ColumnRawPtrs & grouping_key_columns, UInt64 row_count)
+{
+    if constexpr (SetAggregationMethod<Method>)
+    {
+        consumeImpl(hash_method, grouping_key_columns, row_count);
+    }
+    else
+    {
+        using State = typename Method::State;
+        using KeyHolder = decltype(std::declval<State &>().getKeyHolder(0, std::declval<Arena &>()));
+        if constexpr (State::has_cheap_key_holder
+                      && requires(const typename Method::Data & table, KeyHolder key_holder) { table.prefetch(std::move(key_holder)); })
+        {
+            /// The threshold of the prefetch in `Aggregator`: a table that fits in L2 gains nothing from it.
+            if (hash_method.data.getBufferSizeInBytes() > getL2CacheSize())
+            {
+                consumeImpl<true>(hash_method, grouping_key_columns, row_count);
+                return;
+            }
+        }
+        consumeImpl<false>(hash_method, grouping_key_columns, row_count);
+    }
 }
 
 void LimitByTransform::transform(Chunk & chunk)
@@ -293,7 +334,7 @@ void LimitByTransform::transform(Chunk & chunk)
         {
 #define M(NAME, IS_TWO_LEVEL) \
     case AggregatedDataVariants::Type::NAME: \
-        consumeImpl(*data.NAME, grouping_key_columns, row_count); \
+        consume(*data.NAME, grouping_key_columns, row_count); \
         break;
             APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M
