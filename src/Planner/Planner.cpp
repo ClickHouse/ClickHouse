@@ -52,7 +52,7 @@
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
 #include <Processors/QueryPlan/ReadFromQueryResultCacheStep.h>
-#include <Processors/QueryPlan/Streaming/hasUnboundedOutput.h>
+#include <Processors/QueryPlan/Streaming/hasUnboundedStreamSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -677,7 +677,7 @@ void Planner::buildPlanForUnionNode()
         query_plans.push_back(std::move(query_node_plan));
     }
 
-    bool has_unbounded_arm = std::ranges::any_of(query_plans, [](const auto & plan) { return hasUnboundedOutput(*plan); });
+    bool has_unbounded_arm = std::ranges::any_of(query_plans, [](const auto & plan) { return hasUnboundedStreamSource(*plan); });
     if (has_unbounded_arm && union_mode != SelectUnionMode::UNION_ALL && union_mode != SelectUnionMode::UNION_DISTINCT)
         throw Exception(ErrorCodes::ILLEGAL_STREAM, "INTERSECT and EXCEPT are not supported over an unbounded STREAM");
 
@@ -1036,7 +1036,7 @@ void Planner::buildPlanForQueryNode()
         query_processing_info,
         join_tree_query_plan.source_constants);
 
-    if (hasUnboundedOutput(query_plan))
+    if (hasUnboundedStreamSource(query_plan))
     {
         buildStreamingPlan(
             query_plan,

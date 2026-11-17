@@ -12,7 +12,7 @@
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/Streaming/hasUnboundedOutput.h>
+#include <Processors/QueryPlan/Streaming/hasUnboundedStreamSource.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/Chunk.h>
@@ -286,7 +286,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         {
             BlockIO io;
             auto & query_plan = interpreter->getQueryPlan();
-            if (hasUnboundedOutput(query_plan))
+            if (hasUnboundedStreamSource(query_plan))
                 throw Exception(ErrorCodes::ILLEGAL_STREAM, "Cannot evaluate scalar subquery over an unbounded STREAM");
 
             bool skip_execution_for_exists = false;

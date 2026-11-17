@@ -8,7 +8,7 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/QueryPlan/Streaming/hasUnboundedOutput.h>
+#include <Processors/QueryPlan/Streaming/hasUnboundedStreamSource.h>
 
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -200,7 +200,7 @@ private:
 
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_to_execute, recursive_query_context, select_query_options);
 
-        if (hasUnboundedOutput(interpreter->getQueryPlan()))
+        if (hasUnboundedStreamSource(interpreter->getQueryPlan()))
             throw Exception(ErrorCodes::ILLEGAL_STREAM, "Cannot evaluate a recursive CTE over an unbounded STREAM");
 
         QueryPipelineBuilder pipeline_builder;
