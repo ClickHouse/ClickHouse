@@ -15,7 +15,6 @@
 #include <Analyzer/Utils.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageMerge.h>
-#include <Storages/StorageProxy.h>
 
 #include <Analyzer/traverseQueryTree.h>
 
@@ -43,29 +42,6 @@ std::unordered_set<size_t> convertUsedColumnNamesToUsedProjectionIndexes(const Q
     }
 
     return result;
-}
-
-/// A view, or a storage that reads with `FINAL` unless its version column is read: `MaterializedPostgreSQL`,
-/// which also returns the deleted rows when `_sign` is read.
-bool rowsDependOnReadColumns(const IStorage & storage)
-{
-    return storage.isView() || storage.needRewriteQueryWithFinal({});
-}
-
-/// A storage that reads other tables may read a view. Only `Merge` is looked through, one level down.
-bool rowsMayDependOnReadColumns(const StoragePtr & storage)
-{
-    const auto nested_storage = unwrapStorageProxy(storage);
-    if (!nested_storage || rowsDependOnReadColumns(*nested_storage))
-        return true;
-    if (!nested_storage->readsFromOtherTables())
-        return false;
-    const auto * storage_merge = nested_storage->as<StorageMerge>();
-    return !storage_merge || storage_merge->hasChildTable([](const StoragePtr & table)
-    {
-        const auto nested_table = unwrapStorageProxy(table);
-        return !nested_table || rowsDependOnReadColumns(*nested_table) || nested_table->readsFromOtherTables();
-    });
 }
 
 /// Whether the rows of a query over this join tree do not depend on which columns it reads.

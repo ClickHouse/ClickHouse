@@ -409,4 +409,9 @@ private:
     StorageMetadataPtr getChildMetadataSnapshot(const StoragePtr & storage, const ContextPtr & query_context) const;
 };
 
+/// Whether the number of rows read from `storage` may depend on which of its columns are read: a view,
+/// `MaterializedPostgreSQL` (it returns the deleted rows when `_sign` is read), or a storage that reads
+/// other tables, which may be such a storage. A `Merge` table is looked through one level down.
+bool rowsMayDependOnReadColumns(const StoragePtr & storage);
+
 }

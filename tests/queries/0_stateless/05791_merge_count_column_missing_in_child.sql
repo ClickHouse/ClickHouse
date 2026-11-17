@@ -2,6 +2,7 @@
 
 DROP TABLE IF EXISTS v;
 DROP TABLE IF EXISTS t_nested;
+DROP TABLE IF EXISTS mj;
 DROP TABLE IF EXISTS al;
 DROP TABLE IF EXISTS vj;
 DROP TABLE IF EXISTS vn;
@@ -91,6 +92,9 @@ SELECT count() FROM (SELECT c FROM vj) SETTINGS optimize_trivial_count_query = 0
 CREATE TABLE al ENGINE = Alias(vj);
 SELECT count() FROM (SELECT c FROM al) SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 SELECT count() FROM (SELECT c FROM merge(currentDatabase(), '^vj$')) SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+CREATE TABLE mj (c UInt8) ENGINE = Merge(currentDatabase(), '^(vj|al)$');
+SELECT count() FROM mj SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+DROP TABLE mj;
 DROP TABLE al;
 DROP TABLE vj;
 DROP TABLE t_nested;
