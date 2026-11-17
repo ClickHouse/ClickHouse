@@ -52,7 +52,8 @@ public:
     /// A MATERIALIZED column counts as changed when the read recalculates it because a column it reads
     /// (directly or through another MATERIALIZED column) is updated: `UPDATE a` changes `m MATERIALIZED a * 2`.
     /// A delete only hides rows, so it is not reported: the projection selects a superset of the rows,
-    /// which the parent read narrows down.
+    /// which the parent read narrows down. But if the part already has deleted rows, a change of `_row_exists`
+    /// is reported, because it may restore a row that a rebuilt projection part omits.
     bool changesProjectionColumns(
         const MergeTreeData::DataPartPtr & part, const ProjectionDescription & projection, const Names & filter_column_names);
 

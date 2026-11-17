@@ -21,6 +21,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #if CLICKHOUSE_CLOUD
 #include <Access/ContextAccess.h>
@@ -472,11 +473,17 @@ bool ColumnsChangedOnFlyByPart::changesProjectionColumns(
     if (updated_columns.empty())
         return false;
 
+    /// A projection part rebuilt by a lightweight delete (`lightweight_mutation_projection_mode = 'rebuild'`)
+    /// omits the deleted rows. A change of `_row_exists` may make such a row visible again
+    /// (`UPDATE t SET _row_exists = 1`), and then the projection no longer selects a superset of the rows.
+    if (part->hasLightweightDelete() && updated_columns.contains(RowExistsColumn::name))
+        return true;
+
     if (!materialized_column_dependencies)
         materialized_column_dependencies
             = std::make_unique<MaterializedColumnDependencies>(reading.getStorageMetadata()->getColumns(), reading.getContext());
 
-    /// A delete adds no updated column but `_row_exists`, which no projection depends on.
+    /// Otherwise a delete adds no updated column but `_row_exists`, which no projection depends on.
     auto is_changed = [&](const String & name)
     {
         return updated_columns.contains(name)

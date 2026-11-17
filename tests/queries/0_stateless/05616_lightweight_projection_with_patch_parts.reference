@@ -73,3 +73,6 @@ Description: Projection has been analyzed and will be applied during reading
 -- mutation on the fly of the source of a MATERIALIZED projection column
 1600	3000000	6000000
 1600	3000000	6000000
+-- a patch restores a row that the rebuilt projection omits
+5
+5

@@ -194,3 +194,29 @@ SELECT id, a, m FROM t_lw_proj_patch WHERE m = 6000000 SETTINGS apply_mutations_
 SELECT id, a, m FROM t_lw_proj_patch WHERE m = 3200 SETTINGS apply_mutations_on_fly = 1;
 
 DROP TABLE t_lw_proj_patch;
+
+-- A lightweight delete materialized in the part rebuilds the projection without the deleted rows.
+-- A patch that restores such a row (`_row_exists = 1`) must not be filtered by that projection.
+CREATE TABLE t_lw_proj_patch
+(
+    id UInt64,
+    k UInt64,
+    PROJECTION p_k INDEX k TYPE basic
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS
+    enable_block_number_column = 1,
+    enable_block_offset_column = 1,
+    lightweight_mutation_projection_mode = 'rebuild',
+    index_granularity = 16;
+
+INSERT INTO t_lw_proj_patch SELECT number, number FROM numbers(1000);
+
+SELECT '-- a patch restores a row that the rebuilt projection omits';
+DELETE FROM t_lw_proj_patch WHERE id = 5 SETTINGS lightweight_delete_mode = 'alter_update', mutations_sync = 2;
+SYSTEM STOP MERGES t_lw_proj_patch;
+UPDATE t_lw_proj_patch SET _row_exists = 1 WHERE id = 5 SETTINGS apply_deleted_mask = 0, optimize_use_projections = 0;
+SELECT id FROM t_lw_proj_patch WHERE k = 5;
+SELECT id FROM t_lw_proj_patch WHERE k = 5 SETTINGS optimize_use_projections = 0;
+
+DROP TABLE t_lw_proj_patch;
