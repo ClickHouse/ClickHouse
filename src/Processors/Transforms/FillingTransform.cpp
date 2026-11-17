@@ -1293,6 +1293,8 @@ void FillingTransform::transformRange(
 
         /// The first original row equal to the filling row up to `filling_row_from_key` is in the group the row was set
         /// up for: its keys without `FROM` take that row's values, as when `FillingRow::next` reaches a row.
+        /// A copied key equals the original row, so, as in `FillingRow::next`, its TO or STALENESS does not stop the row.
+        std::optional<bool> constraints_satisfied_before_copy;
         if (filling_row_from_key)
         {
             const size_t from_key = *filling_row_from_key;
@@ -1302,6 +1304,7 @@ void FillingTransform::transformRange(
 
             if (same_group)
             {
+                constraints_satisfied_before_copy = filling_row.isConstraintsSatisfied();
                 for (size_t i = from_key + 1, size = filling_row.size(); i < size; ++i)
                     if (filling_row.getFillDescription(i).fill_from.isNull())
                         filling_row[i] = next_row[i];
@@ -1312,7 +1315,8 @@ void FillingTransform::transformRange(
         /// The condition is true when filling row is initialized by value(s) in FILL FROM,
         /// and there are row(s) in current range with value(s) < then in the filling row.
         /// It can happen only once for a range.
-        if (should_insert_first && filling_row < next_row && filling_row.isConstraintsSatisfied())
+        if (should_insert_first && filling_row < next_row
+            && (constraints_satisfied_before_copy.has_value() ? *constraints_satisfied_before_copy : filling_row.isConstraintsSatisfied()))
         {
             interpolate(result_columns, interpolate_block);
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);

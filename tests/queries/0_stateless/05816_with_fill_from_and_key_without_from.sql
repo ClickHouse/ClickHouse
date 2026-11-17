@@ -47,3 +47,12 @@ ORDER BY a WITH FILL FROM 1, b WITH FILL, c WITH FILL FROM 0;
 
 SELECT * FROM values('a Int64, b Date, c Int64', (0, '2020-01-05', 5), (1, '2020-01-02', 2))
 ORDER BY a WITH FILL FROM 1, b WITH FILL, c WITH FILL FROM 0;
+
+SELECT * FROM values('a Int64, b Int64, c Int64', (0, 5, 5), (1, 3, 1))
+ORDER BY a WITH FILL FROM 1, b WITH FILL TO 0, c WITH FILL FROM 0;
+
+SELECT * FROM values('a Int64, b Int64, c Int64', (0, 0, 5), (1, 10, 1))
+ORDER BY a WITH FILL FROM 1, b WITH FILL STALENESS 3, c WITH FILL FROM 0;
+
+SELECT * FROM values('a Int64, b Int64', (0, 5), (1, -3), (1, 2))
+ORDER BY a WITH FILL FROM 1, b WITH FILL;
