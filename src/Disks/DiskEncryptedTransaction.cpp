@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int DATA_ENCRYPTION_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -77,6 +78,16 @@ DiskEncryptedTransaction::writeFile(
     const WriteSettings & settings)
 {
     return writeFileImpl(/*autocommit*/ false, path, buf_size, mode, settings);
+}
+
+void DiskEncryptedTransaction::truncateFile(const std::string & src_path, size_t size)
+{
+    if (size != 0)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Truncating a file to a non-zero size is not supported on encrypted disks, because it would lead to reuse "
+            "of the initialization vector. File: {}, size: {}", src_path, size);
+
+    delegate_transaction->truncateFile(wrappedPath(src_path), 0);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFileImpl(

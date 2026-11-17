@@ -564,8 +564,15 @@ size_t DiskEncrypted::getEncryptedFileSize(size_t unencrypted_size) const
 
 void DiskEncrypted::truncateFile(const String & path, size_t size)
 {
-    auto wrapped_path = wrappedPath(path);
-    delegate->truncateFile(wrapped_path, size ? (size + FileEncryption::Header::kSize) : 0);
+    /// Truncating to a non-zero size keeps the header with its initialization vector, and the next append
+    /// would encrypt the new data with the same keystream as the data cut off by the truncation.
+    /// Truncating to zero removes the header too, and the next write generates a new initialization vector.
+    if (size != 0)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Truncating a file to a non-zero size is not supported on encrypted disk {}, because it would lead to reuse "
+            "of the initialization vector. File: {}, size: {}", name, path, size);
+
+    delegate->truncateFile(wrappedPath(path), 0);
 }
 
 SyncGuardPtr DiskEncrypted::getDirectorySyncGuard(const String & path) const

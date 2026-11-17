@@ -185,12 +185,12 @@ TEST_F(DiskEncryptedTest, Truncate)
     EXPECT_EQ(getFileContents("a.txt"), "Some text");
     checkBinaryRepresentation(getDirectory() + "a.txt", kHeaderSize + 9);
 
-    /// Truncate the file.
-    encrypted_disk->truncateFile("a.txt", 4);
+    /// Truncating to a non-zero size would keep the initialization vector for the next append, so it is refused.
+    EXPECT_THROW(encrypted_disk->truncateFile("a.txt", 4), Exception);
 
-    EXPECT_EQ(encrypted_disk->getFileSize("a.txt"), 4);
-    EXPECT_EQ(getFileContents("a.txt"), "Some");
-    checkBinaryRepresentation(getDirectory() + "a.txt", kHeaderSize + 4);
+    EXPECT_EQ(encrypted_disk->getFileSize("a.txt"), 9);
+    EXPECT_EQ(getFileContents("a.txt"), "Some text");
+    checkBinaryRepresentation(getDirectory() + "a.txt", kHeaderSize + 9);
 
     /// Truncate the file to zero size.
     encrypted_disk->truncateFile("a.txt", 0);

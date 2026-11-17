@@ -249,12 +249,8 @@ public:
         return delegate_transaction->writeFileWithAutoCommit(wrapped_path, buf_size, mode, settings);
     }
 
-    /// Truncate file to the target size.
-    void truncateFile(const std::string & src_path, size_t size) override
-    {
-        auto wrapped_path = wrappedPath(src_path);
-        delegate_transaction->truncateFile(wrapped_path, size);
-    }
+    /// Only truncation to zero is supported, see `DiskEncrypted::truncateFile`.
+    void truncateFile(const std::string & src_path, size_t size) override;
 
 private:
     std::unique_ptr<WriteBufferFromFileBase> writeFileImpl(
