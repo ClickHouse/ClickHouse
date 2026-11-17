@@ -54,8 +54,7 @@ permitted either. Named collection management is an exception: `readonly` does n
 `CREATE NAMED COLLECTION`, `ALTER NAMED COLLECTION` or `DROP NAMED COLLECTION`.
 
 Granting a privilege with `GRANT` or `GRANT CURRENT GRANTS` and revoking one with `REVOKE` are refused
-too, locally and `ON CLUSTER`. A local `REVOKE` of a privilege that no grantee holds changes nothing and
-is accepted.
+too, locally and `ON CLUSTER`.
 
 Temporary tables are exempt from both settings: a session that may create one may also `ALTER` it,
 insert into it and drop it.
