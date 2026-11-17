@@ -24,7 +24,6 @@ struct HDFSObjectStorageSettings
 
     size_t min_bytes_for_seek;
     int replication;
-    bool read_only = false;
 };
 
 
@@ -87,9 +86,7 @@ public:
 
     void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist( /// NOLINT
-        const StoredObjects & objects,
-        StoredObjects * successful_objects = nullptr) override;
+    void removeObjectsIfExist(const StoredObjects & objects) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
@@ -117,8 +114,6 @@ public:
 
     bool isRemote() const override { return true; }
 
-    bool isReadOnly() const override { return settings->read_only; }
-
     void startup() override { }
 
     void shutdown() override { }
@@ -133,8 +128,6 @@ private:
     void removeObject(const StoredObject & object);
 
     void removeObjects(const StoredObjects & objects);
-
-    void throwIfReadonly() const;
 
     const Poco::Util::AbstractConfiguration & config;
 

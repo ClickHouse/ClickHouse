@@ -32,7 +32,7 @@ public:
         , session_token(session_token_)
     {}
 
-    [[nodiscard]] bool isEmpty() const { return access_key_id.empty() || secret_access_key.empty(); }
+    bool isEmpty() const { return access_key_id.empty() || secret_access_key.empty(); }
 
     void addCredentialsToEngineArgs(DB::ASTs & engine_args) const override
     {
@@ -45,17 +45,17 @@ public:
             engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(session_token));
     }
 
-    [[nodiscard]] const String & getAccessKeyId() const
+    const String & getAccessKeyId() const
     {
         return access_key_id;
     }
 
-    [[nodiscard]] const String & getSecretAccessKey() const
+    const String & getSecretAccessKey() const
     {
         return secret_access_key;
     }
 
-    [[nodiscard]] const String & getSessionToken() const
+    const String & getSessionToken() const
     {
         return session_token;
     }
@@ -89,7 +89,7 @@ public:
                     DB::make_intrusive<DB::ASTLiteral>("Bearer " + oauth_token))));
     }
 
-    [[nodiscard]] const std::string & getToken() const { return oauth_token; }
+    const std::string & getToken() const { return oauth_token; }
 
 private:
     std::string oauth_token;

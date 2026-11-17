@@ -35,13 +35,13 @@ public:
     void stop() override;
 
     /// Returns the port this server is listening to.
-    [[nodiscard]] UInt16 portNumber() const override { return address_to_listen.port(); }
+    UInt16 portNumber() const override { return address_to_listen.port(); }
 
     /// Returns the number of currently handled connections.
-    [[nodiscard]] size_t currentConnections() const override;
+    size_t currentConnections() const override;
 
     /// Returns the number of current threads.
-    [[nodiscard]] size_t currentThreads() const override { return currentConnections(); }
+    size_t currentThreads() const override { return currentConnections(); }
 
 private:
     using GRPCService = clickhouse::grpc::ClickHouse::AsyncService;

@@ -7,6 +7,8 @@
 
 #include <zxc.h>
 
+#include <cstring>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -24,7 +26,7 @@ uint8_t CompressionCodecZXC::getMethodByte() const
 
 void CompressionCodecZXC::updateHash(SipHash & hash) const
 {
-    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecZXC::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -34,10 +36,14 @@ UInt32 CompressionCodecZXC::getMaxCompressedDataSize(UInt32 uncompressed_size) c
 
 UInt32 CompressionCodecZXC::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
-    /// The one-shot form writes no checksum (`ZXC_C_CHECKSUM` defaults to 0):
+    zxc_compress_opts_t opts;
+    memset(&opts, 0, sizeof(opts));
+    opts.level = level;
     /// ClickHouse checksums every compressed block itself, so zxc's own checksum
     /// would be redundant work on the hot decompression path.
-    int64_t compressed_size = zxc_compress(source, source_size, dest, zxc_compress_bound(source_size), level);
+    opts.checksum_enabled = 0;
+
+    int64_t compressed_size = zxc_compress(source, source_size, dest, zxc_compress_bound(source_size), &opts);
     if (compressed_size < 0)
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ZXC codec: error code {}", compressed_size);
 
@@ -46,9 +52,11 @@ UInt32 CompressionCodecZXC::doCompressData(const char * source, UInt32 source_si
 
 UInt32 CompressionCodecZXC::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
-    /// As with compression, the one-shot form verifies no checksum
-    /// (`ZXC_D_CHECKSUM` defaults to 0), which matches the archives written above.
-    int64_t decompressed_size = zxc_decompress(source, source_size, dest, uncompressed_size);
+    zxc_decompress_opts_t opts;
+    memset(&opts, 0, sizeof(opts));
+    opts.checksum_enabled = 0;
+
+    int64_t decompressed_size = zxc_decompress(source, source_size, dest, uncompressed_size, &opts);
     if (decompressed_size < 0)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ZXC-encoded data: error code {}", decompressed_size);
     if (static_cast<UInt32>(decompressed_size) != uncompressed_size)
@@ -62,11 +70,9 @@ UInt32 CompressionCodecZXC::doDecompressData(const char * source, UInt32 source_
 CompressionCodecZXC::CompressionCodecZXC(int level_)
     : level(level_)
 {
-}
-
-ASTPtr CompressionCodecZXC::getCodecDescription() const
-{
-    return makeCodecDescription("ZXC", {make_intrusive<ASTLiteral>(static_cast<UInt64>(level))});
+    ASTs arguments;
+    arguments.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(level)));
+    setCodecDescription("ZXC", arguments);
 }
 
 void registerCodecZXC(CompressionCodecFactory & factory)

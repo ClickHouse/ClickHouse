@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel
 # no-parallel: enables a global failpoint
 
 # Regression for the empty-data_file_name guard in tryRemoveAllFiles on a non-memory writer.

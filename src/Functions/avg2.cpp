@@ -23,9 +23,9 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
-    [[nodiscard]] bool isVariadic() const override { return false; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool isVariadic() const override { return false; }
 };
 
 REGISTER_FUNCTION(Avg2)

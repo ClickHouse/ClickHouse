@@ -33,23 +33,20 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionpolygonsIntersect>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool isVariadic() const override { return false; }
+    bool isVariadic() const override { return false; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 2; }
 
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(Any, Any) -> UInt8";
-    }
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeUInt8>(); }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    [[nodiscard]] bool isSpatialPredicate() const override { return std::is_same_v<Point, CartesianPoint>; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSpatialPredicate() const override { return std::is_same_v<Point, CartesianPoint>; }
 
-    [[nodiscard]] ColumnPtr
+    ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         auto res_column = ColumnUInt8::create();
@@ -87,12 +84,15 @@ public:
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be MultiPoint", getName());
                 else
                 {
-                    CorrectedGeometries<LeftConverter> first(arguments[0].column);
-                    CorrectedGeometries<RightConverter> second(arguments[1].column);
+                    auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
+                    auto second = RightConverter::convert(arguments[1].column->convertToFullColumnIfConst());
 
                     for (size_t i = 0; i < input_rows_count; ++i)
                     {
-                        res_data.emplace_back(boost::geometry::intersects(first.get(i), second.get(i)));
+                        boost::geometry::correct(first[i]);
+                        boost::geometry::correct(second[i]);
+
+                        res_data.emplace_back(boost::geometry::intersects(first[i], second[i]));
                     }
                 }
             });
@@ -100,7 +100,7 @@ public:
         return res_column;
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 };
 
 
@@ -134,9 +134,9 @@ REGISTER_FUNCTION(polygonsIntersect)
 
         )",
             R"(
-┌─polygonsIntersectCartesian([[[(2., 2.), (2., 3.), (3., 3.), (3., 2.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]])─┐
-│                                                                                                                                1 │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─polygonsIntersectCartesian()─┐
+│                            1 │
+└──────────────────────────────┘
         )"}},
         .introduced_in = {25, 7},
         .category = FunctionDocumentation::Category::Geo});
@@ -162,9 +162,9 @@ REGISTER_FUNCTION(polygonsIntersect)
 
         )",
             R"(
-┌─polygonsIntersectSpherical([[[(2., 2.), (2., 3.), (3., 3.), (3., 2.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]])─┐
-│                                                                                                                                1 │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─polygonsIntersectSpherical()─┐
+│                            1 │
+└──────────────────────────────┘
         )"}},
         .introduced_in = {25, 7},
         .category = FunctionDocumentation::Category::Geo});
