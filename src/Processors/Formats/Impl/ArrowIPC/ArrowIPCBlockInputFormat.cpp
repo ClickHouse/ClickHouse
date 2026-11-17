@@ -297,22 +297,8 @@ ColumnWithTypeAndName prepareArrowColumnForCast(
         {
             /// A struct the decoder keeps nullable only because a subcolumn is taken from it too (see
             /// `RecordBatchDecoder::wrapsInNullable`), requested as a non-tuple type: without nullable tuples,
-            /// a null struct row reads as the default tuple, as it does when the struct is decoded alone.
-            const auto & null_map = from_null_column.getNullMapData();
-            if (memoryIsZero(null_map.data(), 0, null_map.size()))
-                return prepareArrowColumnForCast(std::move(nested), to, settings);
-            IColumn::Filter visible_rows(null_map.size());
-            for (size_t i = 0; i < null_map.size(); ++i)
-                visible_rows[i] = !null_map[i];
-            auto defaulted = IColumn::mutate(nested.column->filter(visible_rows, -1));
-            const size_t default_index = defaulted->size();
-            nested.type->insertDefaultInto(*defaulted);
-            auto indexes = ColumnUInt64::create(null_map.size());
-            auto & index_data = indexes->getData();
-            size_t visible_index = 0;
-            for (size_t i = 0; i < null_map.size(); ++i)
-                index_data[i] = null_map[i] ? default_index : visible_index++;
-            nested.column = defaulted->index(*indexes, 0);
+            /// the struct alone is decoded without its null map, and its null rows read as the values the
+            /// decoder has already materialized for them. Drop the null map, keeping these values.
             return prepareArrowColumnForCast(std::move(nested), to, settings);
         }
         else
@@ -433,7 +419,14 @@ void ArrowIPCBlockInputFormat::prepareReader()
         /// `date32` mapped to a numeric target as the raw day number — recursively for a `date32` nested in
         /// an Array/Tuple/Map, and for one addressed as a subcolumn (e.g. `t.d`). Mirrors the Apache Arrow
         /// library reader's recursive numeric type-hint handling.
-        requested_field_target_types[normalize(header_column.name)] = header_column.type;
+        ///
+        /// With case-insensitive matching, several header columns can share a normalized name (`T String` and
+        /// `t Tuple(s IPv6)`). They are all taken from the one decoded field, so its type must not follow any
+        /// of them: the name is kept without a type, the field is decoded by its Arrow type, and each column
+        /// is converted by its own type after decoding.
+        auto [it, inserted] = requested_field_target_types.try_emplace(normalize(header_column.name), header_column.type);
+        if (!inserted && it->second && !it->second->equals(*header_column.type))
+            it->second = nullptr;
     }
 
     if (stream)

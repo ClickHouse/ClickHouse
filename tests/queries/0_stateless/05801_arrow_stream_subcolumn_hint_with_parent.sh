@@ -101,4 +101,24 @@ echo "/////9AAAAAQAAAAAAAKAAwABgAFAAgACgAAAAABBAAEAAAAuP///wQAAAABAAAAFAAAABAAGA
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Tuple(s UUID), \`t.s\` String')"
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Tuple(s String), \`t.s\` UUID')"
 
+echo "map key lookups"
+$CLICKHOUSE_LOCAL -q "SELECT map(1, 'abcdefghijklmnop') AS t FORMAT ArrowStream" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(UInt8, IPv6), \`t.key_1\` String')"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', '\`t.values\` Array(IPv6), \`t.key_1\` String')"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(UInt8, String), \`t.key_1\` IPv6')"
+
+echo "case-insensitive names"
+$CLICKHOUSE_LOCAL -q "SELECT CAST(tuple('abcdefghijklmnop') AS Tuple(s String)) AS t FORMAT ArrowStream" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 'T String, t Tuple(s IPv6)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Tuple(s IPv6), T String') SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
+$CLICKHOUSE_LOCAL -q "SELECT 'abcdefghijklmnop' AS t FORMAT ArrowStream" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 'T String, t IPv6') SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't IPv6, T String') SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
+
+echo "null struct row with a valid nullable child"
+# Written by PyArrow: a nullable `struct<s: binary>` whose second row is null while the child slot below it is valid.
+echo "/////5gAAAAQAAAAAAAKAAwABgAFAAgACgAAAAABBAAMAAAACAAIAAAABAAIAAAABAAAAAEAAAAEAAAA2P///wAAAQ0UAAAAGAAAAAQAAAABAAAAIAAAAAEAAAB0AAAAzP///xAAFAAIAAYABwAMAAAAEAAQAAAAAAABBBAAAAAYAAAABAAAAAAAAAABAAAAcwAAAAQABAAEAAAAAAAAAP////+4AAAAFAAAAAAAAAAMABYABgAFAAgADAAMAAAAAAMEABgAAAA4AAAAAAAAAAAACgAYAAwABAAIAAoAAABcAAAAEAAAAAIAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAEAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAADAAAAAAAAAAYAAAAAAAAACAAAAAAAAAAAAAAAAIAAAACAAAAAAAAAAEAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAABAAAAAgAAAAAAAAAGFiY2RlZmdoaWprbG1ub3BhYmNkZWZnaGlqa2xtbm9w/////wAAAAA=" | base64 -d > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't String') SETTINGS enable_nullable_tuple_type = 0"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't String, \`t.s\` IPv6') SETTINGS enable_nullable_tuple_type = 0"
+
 rm -f "$file"

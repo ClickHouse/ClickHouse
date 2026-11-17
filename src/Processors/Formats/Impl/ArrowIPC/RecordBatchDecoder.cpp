@@ -251,15 +251,41 @@ bool isRequestedBelow(std::string_view path, std::string_view name)
     return name.size() > path.size() + 1 && name.starts_with(path) && name[path.size()] == '.';
 }
 
-/// Whether the field at the dotted `path` is decoded for more than one requested column: its own name and
-/// those of the enclosing fields (`t` and `t.s` for the field `t.s`).
+/// Whether the requested column `name` is a dynamic subcolumn `key_<serialized key>` of the map at the dotted
+/// `map_path` (or a subcolumn of one, e.g. `t.key_1.s`): it is extracted from the keys and the values of the map.
+bool isMapKeyLookup(std::string_view map_path, std::string_view name)
+{
+    constexpr std::string_view key_lookup = ".key_";
+    return name.size() > map_path.size() + key_lookup.size() && name.starts_with(map_path)
+        && name.substr(map_path.size()).starts_with(key_lookup);
+}
+
+/// Whether the field at the dotted `path` is decoded for more than one requested column: its own name, those
+/// of the enclosing fields (`t` and `t.s` for the field `t.s`), and the dynamic key lookups of an enclosing map
+/// (`t` and `t.key_1` for the field `t.values`). A null type marks a name requested several times with
+/// different types (see `ArrowIPCBlockInputFormat::prepareReader`).
 bool isDecodedForSeveralRequests(const String & path, const UnorderedMapWithMemoryTracking<String, DataTypePtr> * types)
 {
     if (!types || path.empty())
         return false;
-    size_t requests = types->contains(path) ? 1 : 0;
+    size_t requests = 0;
+    auto count = [&](const String & name)
+    {
+        if (auto it = types->find(name); it != types->end())
+            requests += it->second ? 1 : 2;
+    };
+    count(path);
     for (size_t pos = path.find('.'); pos != String::npos && requests < 2; pos = path.find('.', pos + 1))
-        requests += types->contains(path.substr(0, pos));
+    {
+        const String prefix = path.substr(0, pos);
+        count(prefix);
+        /// The paths of map entries use the names `keys` / `values` (see `structFieldPath`).
+        const std::string_view component = std::string_view(path).substr(pos + 1, path.find('.', pos + 1) - pos - 1);
+        if (component == "keys" || component == "values")
+            for (const auto & [name, type] : *types)
+                if (isMapKeyLookup(prefix, name))
+                    ++requests;
+    }
     return requests >= 2;
 }
 
@@ -268,6 +294,9 @@ bool isDecodedForSeveralRequests(const String & path, const UnorderedMapWithMemo
 /// `UUID`, and is applied to the shared values of a dictionary when it is registered).
 bool hasRawByteLeaf(const DataTypePtr & type)
 {
+    /// A name requested several times with different types (see `isDecodedForSeveralRequests`).
+    if (!type)
+        return true;
     const DataTypePtr stripped = stripHint(type);
     const WhichDataType which(stripped);
     if (which.isUUID() || rawByteWidth(which) != 0)

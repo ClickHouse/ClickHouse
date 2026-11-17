@@ -61,3 +61,17 @@ map with custom entry names
 dictionary of structs with a UUID leaf
 ('61626364-6566-6768-696a-6b6c6d6e6f70')	abcdefghijklmnop
 ('abcdefghijklmnop')	61626364-6566-6768-696a-6b6c6d6e6f70
+map key lookups
+{1:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}	abcdefghijklmnop
+['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']	abcdefghijklmnop
+{1:'abcdefghijklmnop'}	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+case-insensitive names
+(\'abcdefghijklmnop\')	('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')
+('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	(\'abcdefghijklmnop\')
+abcdefghijklmnop	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+6162:6364:6566:6768:696a:6b6c:6d6e:6f70	abcdefghijklmnop
+null struct row with a valid nullable child
+(\'abcdefghijklmnop\')
+(\'\')
+(\'abcdefghijklmnop\')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+(\'\')	::
