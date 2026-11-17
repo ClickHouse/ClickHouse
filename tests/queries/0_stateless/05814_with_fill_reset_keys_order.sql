@@ -27,3 +27,7 @@ ORDER BY i WITH FILL, j WITH FILL FROM 2 TO 2, k WITH FILL FROM 1;
 SELECT '--- NaN on a later DESC key, the row sorting first is kept';
 SELECT * FROM values('i Int64, j Float64, k Int64', (0, 0, 0), (1, nan, 2))
 ORDER BY i WITH FILL, j DESC WITH FILL FROM 0, k WITH FILL FROM 1;
+
+SELECT '--- an earlier key at its TO, the row sorting first is kept';
+SELECT * FROM values('i Int64, j Int64, k Int64, l Int64', (1, 0, 5, 5), (5, 1, 0, 1))
+ORDER BY i WITH FILL TO 1, j WITH FILL, k WITH FILL FROM 3, l WITH FILL FROM 0;
