@@ -11,7 +11,7 @@ namespace DB
 
 AdaptivePartitionLayout AdaptivePartitionLayout::forProducers(size_t producers, size_t max_bytes_before_external_group_by)
 {
-    constexpr size_t max_sub_bits = 4;
+    constexpr size_t max_sub_bits = 3;
     /// The chunk cap is the largest power of two at which one unused chunk in every partition of every
     /// producer fits in `unused_chunks_budget_bytes`, clamped to the bounds (see the header).
     constexpr size_t min_chunk_cap_bytes = 4 << 10;
