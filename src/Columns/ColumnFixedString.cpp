@@ -11,6 +11,7 @@
 #include <Common/assert_cast.h>
 #include <base/memcmpSmall.h>
 #include <Common/memcpySmall.h>
+#include <base/arithmeticOverflow.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/Function.h>
@@ -27,8 +28,26 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-    extern const int PARAMETER_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+/// Returns `n * num_elements` - the number of bytes occupied by `num_elements` values of `FixedString(n)`.
+/// The number of elements may come from array sizes (e.g. in `replicate` for `ARRAY JOIN`), which can be
+/// arbitrarily large without allocating memory, so the multiplication must not silently wrap around.
+size_t fixedStringBytes(size_t n, size_t num_elements)
+{
+    size_t res = 0;
+    if (common::mulOverflow(n, num_elements, res))
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too large size of FixedString column: {} elements of size {}",
+            num_elements, n);
+    return res;
+}
+
 }
 
 
@@ -39,7 +58,7 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
     if (size > 0)
     {
         auto & new_col = assert_cast<ColumnFixedString &>(*new_col_holder);
-        new_col.chars.resize_exact(size * n);
+        new_col.chars.resize_exact(fixedStringBytes(n, size));
 
         size_t count = std::min(this->size(), size);
         memcpy(new_col.chars.data(), chars.data(), count * n * sizeof(chars[0]));
@@ -108,7 +127,9 @@ void ColumnFixedString::doInsertManyFrom(const IColumn & src, size_t position, s
         throw Exception(ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH, "Size of FixedString doesn't match");
 
     const size_t old_size = chars.size();
-    const size_t new_size = old_size + n * length;
+    size_t new_size = 0;
+    if (common::addOverflow(old_size, fixedStringBytes(n, length), new_size))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large size of FixedString column");
     chars.resize(new_size);
 
     for (size_t offset = old_size; offset < new_size; offset += n)
@@ -202,7 +223,7 @@ struct ColumnFixedString::ComparatorBase
     {
     }
 
-    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = memcmpSmallAllowOverflow15(parent.chars.data() + lhs * parent.n, parent.chars.data() + rhs * parent.n, parent.n);
 
@@ -296,10 +317,8 @@ void ColumnFixedString::doInsertRangeFrom(const IColumn & src, size_t start, siz
     const ColumnFixedString & src_concrete = assert_cast<const ColumnFixedString &>(src);
     chassert(this->n == src_concrete.n);
 
-    if (start + length > src_concrete.size())
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound "
-                        "in ColumnFixedString::insertRangeFrom method (size() = {}).",
-                        toString(start), toString(length), toString(src_concrete.size()));
+    if (start > src_concrete.size() || length > src_concrete.size() - start)
+        throwInsertRangeFromOutOfBound("ColumnFixedString", start, length, src_concrete.size());
 
     size_t old_size = chars.size();
     chars.resize(old_size + length * n);
@@ -448,6 +467,8 @@ void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
             memcpy(&chars[index * n], &chars[from * n], n);
             --from;
         }
+        else
+            memset(&chars[index * n], 0, n);
 
         --index;
     }
@@ -500,7 +521,7 @@ ColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
         return res;
 
     Chars & res_chars = res->chars;
-    res_chars.resize(n * offsets.back());
+    res_chars.resize_exact(fixedStringBytes(n, offsets.back()));
 
     Offset curr_offset = 0;
     for (size_t i = 0; i < col_size; ++i)

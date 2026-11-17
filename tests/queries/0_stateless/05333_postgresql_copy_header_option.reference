@@ -1,0 +1,32 @@
+--- COPY copy_header TO STDOUT WITH (FORMAT csv, HEADER)
+data: '"a","b"\n'
+COPY 0
+--- COPY copy_header TO STDOUT WITH (FORMAT text, HEADER true)
+data: 'a\tb\n'
+COPY 0
+--- COPY (SELECT a FROM copy_header) TO STDOUT CSV HEADER
+data: '"a"\n'
+COPY 0
+--- COPY copy_header TO STDOUT WITH (FORMAT csv)
+COPY 0
+--- COPY copy_header FROM STDIN WITH (FORMAT csv)
+COPY 1
+--- COPY copy_header TO STDOUT WITH (FORMAT csv, HEADER on)
+data: '"a","b"\n"x",1\n'
+COPY 1
+--- COPY copy_header TO STDOUT WITH (HEADER csv)
+error: PostgreSQL COPY with an option with a missing or unexpected value is not supported
+--- COPY copy_header TO STDOUT WITH (FORMAT csv, HEADER DELIMITER ',')
+error: PostgreSQL COPY with an option with a missing or unexpected value is not supported
+--- COPY copy_header TO STDOUT WITH (FORMAT csv, HEADER false)
+data: '"x",1\n'
+COPY 1
+--- COPY copy_header TO STDOUT HEADER CSV
+data: '"a","b"\n"x",1\n'
+COPY 1
+--- COPY copy_header TO STDOUT CSV HEADER DELIMITER ','
+data: '"a","b"\n"x",1\n'
+COPY 1
+--- COPY copy_header TO STDOUT
+data: 'x\t1\n'
+COPY 1

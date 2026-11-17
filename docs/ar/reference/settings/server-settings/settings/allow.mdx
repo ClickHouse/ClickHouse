@@ -12,9 +12,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تُستخدم هذه الإعدادات لتهيئة خادم ClickHouse، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-<div id="allow_feature_tier">
-  ## allow_feature_tier
-</div>
+## allow_feature_tier {#allow_feature_tier}
 
 <SettingsInfoBlock type="UInt32" default_value="0" changeable_without_restart="Yes" />
 
@@ -27,6 +25,14 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 وهذا يعادل تعيين قيد readonly على جميع ميزات `EXPERIMENTAL` / `PRIVATE PREVIEW` / `BETA`.
 
+تُرفض أي عبارة تتعلق بمستخدم أو دور أو ملف تعريف إعدادات إذا ضبطت إعدادًا من هذا النوع على قيمة تختلف
+عن القيمة السارية في session التي تُنفَّذ فيها العبارة، أو إذا غيّرت هذا الإعداد لأحد المستخدمين حتى
+من دون ذكر اسم أي إعداد: كمنح دور يتضمن هذا الإعداد أو سحبه، أو تعيين ملف تعريف إعدادات،
+أو حذف دور أو ملف تعريف، أو إلغاء تجاوز بإغفاله. ولا يمكن لمستخدم مُعرَّف باستخدام SQL تسجيل الدخول إذا كانت إعداداته الخاصة أو
+إعدادات أدواره تتضمن قيمة من هذا النوع. أما الإعدادات التي يطبّقها الخادم نفسه من خلال
+ملف التهيئة، والمستخدمون المُعرَّفون فيه، فلا تُرفض أبدًا. ويُبقي إعداد `compatibility`
+أي إعداد ينتمي إلى مستوى معطّل على قيمته الافتراضية بدلًا من تطبيق القيمة الافتراضية للإصدار السابق.
+
 <Note>
   تعني القيمة `0` أنه يمكن تغيير جميع الإعدادات.
 </Note>
@@ -36,15 +42,11 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   التي ثبّتت القيمة `2` للسماح بإعدادات الإنتاج فقط القيمة `3`.
 </Note>
 
-<div id="allow_impersonate_user">
-  ## allow_impersonate_user
-</div>
+## allow_impersonate_user {#allow_impersonate_user}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />تمكين/تعطيل ميزة IMPERSONATE ‏(EXECUTE AS target&#95;user). تم إهمال هذا الإعداد.
 
-<div id="allow_implicit_no_password">
-  ## allow_implicit_no_password
-</div>
+## allow_implicit_no_password {#allow_implicit_no_password}
 
 يمنع إنشاء مستخدم من دون كلمة مرور إلا إذا جرى تحديد &#39;IDENTIFIED WITH no&#95;password&#39; صراحةً.
 
@@ -54,9 +56,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
 
-<div id="allow_no_password">
-  ## allow_no_password
-</div>
+## allow_no_password {#allow_no_password}
 
 يحدد ما إذا كان يُسمح بنوع كلمة المرور غير الآمن no&#95;password أم لا.
 
@@ -66,9 +66,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 <allow_no_password>1</allow_no_password>
 ```
 
-<div id="allow_plaintext_password">
-  ## allow_plaintext_password
-</div>
+## allow_plaintext_password {#allow_plaintext_password}
 
 يحدّد ما إذا كان يُسمح بأنواع كلمات المرور ذات النص الواضح (غير الآمنة) أم لا.
 
@@ -78,9 +76,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
 
-<div id="allow_use_jemalloc_memory">
-  ## allow_use_jemalloc_memory
-</div>
+## allow_use_jemalloc_memory {#allow_use_jemalloc_memory}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="لا" />يسمح باستخدام الذاكرة الخاصة بـ jemalloc.
 

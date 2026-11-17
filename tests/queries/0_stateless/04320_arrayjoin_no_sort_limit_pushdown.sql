@@ -14,7 +14,7 @@
 -- expands no rows. Without the source limit, the source generates enough
 -- numbers for `arrayJoin` to produce at least 3 output rows.
 SELECT '-- bot repro: arrayJoin with empty-array prefix';
-SELECT arrayJoin(if(number < 3, [], [number])) FROM numbers(100) LIMIT 3 SETTINGS allow_experimental_analyzer = 1;
+SELECT arrayJoin(if(number < 3, [], [number])) FROM numbers(100) LIMIT 3;
 SELECT '-- bot repro, old analyzer';
 
 -- The same bug shape but with a heterogeneous expansion: rows 0..1 produce
@@ -23,7 +23,7 @@ SELECT '-- bot repro, old analyzer';
 -- which is `(0,0), (0,10), (1,1)`. The bug truncates source rows, the fix
 -- truncates output rows.
 SELECT '-- multi-element arrayJoin';
-SELECT number, arrayJoin([number, number + 10]) FROM numbers(100) LIMIT 3 SETTINGS allow_experimental_analyzer = 1;
+SELECT number, arrayJoin([number, number + 10]) FROM numbers(100) LIMIT 3;
 
 -- Same bug on a `MergeTree` source (where `optimizePrimaryKeyConditionAndLimit`
 -- also fires) - empty arrays for the first sorted rows used to drop output.
@@ -43,7 +43,7 @@ DROP TABLE t_arrayjoin_limit_no_sort;
 -- runs during planning, not as a query-plan optimization, so the bot's
 -- `loop()` repro reproduces even with `query_plan_enable_optimizations = 0`.
 SELECT '-- loop() source, LIMIT 3';
-SELECT arrayJoin(if(number < 3, [], [number])) FROM loop(numbers(100)) LIMIT 3 SETTINGS allow_experimental_analyzer = 1;
+SELECT arrayJoin(if(number < 3, [], [number])) FROM loop(numbers(100)) LIMIT 3;
 SELECT '-- loop() source, old analyzer';
 SELECT '-- loop() source, optimizations disabled';
 SELECT arrayJoin(if(number < 3, [], [number])) FROM loop(numbers(100)) LIMIT 3 SETTINGS query_plan_enable_optimizations = 0;

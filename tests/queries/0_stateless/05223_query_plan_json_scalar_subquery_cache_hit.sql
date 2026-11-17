@@ -48,7 +48,7 @@ SELECT
     length(subqueries) AS sub_plans,
     -- Every reader of a cached value lists it, and lists it once: a step consumes a subquery once
     -- however many times it reaches it.
-    arrayMap(id -> length(arrayDistinct(arrayMap(n -> JSONExtractString(n, 'Node Id'),
+    arrayMap(id -> length(arrayDistinct(arrayMap(n -> JSONExtractString(n, 'NodeId'),
         arrayFilter(n -> has(JSONExtract(n, 'SubPlans', 'Array(UInt64)'), id), nodes)))), subquery_ids) AS readers,
     arrayAll(n -> length(JSONExtract(n, 'SubPlans', 'Array(UInt64)'))
                 = length(arrayDistinct(JSONExtract(n, 'SubPlans', 'Array(UInt64)'))), nodes) AS no_duplicate_readers,

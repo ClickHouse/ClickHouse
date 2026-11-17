@@ -51,7 +51,7 @@ SELECT
     -- By node type rather than by id, which carries a serial number.
     arrayStringConcat(
         arraySort(arrayMap(
-            n -> JSONExtractString(n, 'Node Type'),
+            n -> JSONExtractString(n, 'NodeType'),
             arrayFilter(n -> has(JSONExtract(n, 'SubPlans', 'Array(UInt64)'), JSONExtractUInt(sub_plan, 'SubqueryId')), nodes))),
         ',') AS consumer_types
 FROM system.query_log

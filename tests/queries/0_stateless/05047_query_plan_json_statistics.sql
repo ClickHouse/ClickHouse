@@ -28,13 +28,13 @@ SELECT
     anyLast(JSONExtractUInt(source, 'Statistics', 'IO', 'OutputBytes')),
     -- Two steps, and the root names the one below it.
     anyLast(length(nodes)),
-    anyLast(JSONExtractString(arrayElement(JSONExtractArrayRaw(root, 'Children'), 1))) = anyLast(JSONExtractString(source, 'Node Id'))
+    anyLast(JSONExtractString(arrayElement(JSONExtractArrayRaw(root, 'Children'), 1))) = anyLast(JSONExtractString(source, 'NodeId'))
 FROM
 (
     SELECT
         JSONExtractArrayRaw(toJSONString(query_plan), 'Plans', 1, 'Nodes') AS nodes,
-        arrayFilter(n -> JSONExtractString(n, 'Node Type') = 'ReadFromSystemNumbers', nodes)[1] AS source,
-        arrayFilter(n -> JSONExtractString(n, 'Node Id') = JSONExtractString(toJSONString(query_plan), 'Plans', 1, 'Root'), nodes)[1] AS root
+        arrayFilter(n -> JSONExtractString(n, 'NodeType') = 'ReadFromSystemNumbers', nodes)[1] AS source,
+        arrayFilter(n -> JSONExtractString(n, 'NodeId') = JSONExtractString(toJSONString(query_plan), 'Plans', 1, 'Root'), nodes)[1] AS root
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05047_stats'
 );
@@ -43,9 +43,9 @@ FROM
 -- rather than the values: a step that ran took a positive amount of wall clock, it cannot have
 -- taken more than the query did, and the per-processor distribution has to be ordered.
 --
--- Nothing derivable is stored, so nothing derivable is asserted here. What used to be checked as
--- `ShareOfQueryTime` and `Parallelism` is checked as the quantities they are computed from --
--- the query-level totals at the root and the per-stage primaries -- which is all a reader has.
+-- The column stores nothing a reader could derive from it, so the assertions are over the
+-- quantities a share of query time or a degree of parallelism would be computed from: the
+-- query-level totals at the root and the per-stage primaries.
 SELECT
     'timings',
     anyLast(JSONExtractUInt(stage, 'WallClockTimeNs')) > 0,
@@ -61,7 +61,7 @@ FROM
 (
     SELECT
         toJSONString(query_plan) AS plan,
-        arrayFilter(n -> JSONExtractString(n, 'Node Type') = 'ReadFromSystemNumbers',
+        arrayFilter(n -> JSONExtractString(n, 'NodeType') = 'ReadFromSystemNumbers',
                     JSONExtractArrayRaw(plan, 'Plans', 1, 'Nodes'))[1] AS source,
         JSONExtractArrayRaw(source, 'Statistics', 'Stages')[1] AS stage
     FROM system.query_log

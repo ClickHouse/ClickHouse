@@ -115,3 +115,32 @@ def test_hdfs_database_cache_is_checked(started_cluster):
 
     node.query("DROP DATABASE hdfs_db SYNC")
     node.query("DROP USER u, f")
+
+
+def test_hdfs_database_restore_is_checked(started_cluster):
+    # `RESTORE DATABASE` replays a definition taken from a backup, which is user-controlled input, so
+    # the remote host filter must reject it like a `CREATE`. Only the server's replay of its own stored
+    # metadata is exempt. `Memory` backups live in the session, hence the shared `session_id`.
+    session = {"session_id": f"restore_{uuid.uuid4().hex}"}
+    node.http_query(
+        "CREATE DATABASE hdfs_restore_db ENGINE = HDFS('hdfs://hdfs1:9000')",
+        method="POST",
+        params=session,
+    )
+    node.http_query(
+        "BACKUP DATABASE hdfs_restore_db TO Memory('b')", method="POST", params=session
+    )
+    node.query("DROP DATABASE hdfs_restore_db SYNC")
+
+    with ConfigManager() as cm:
+        cm.add_main_config(node, "configs/allowlist.xml")
+        error = node.http_query_and_get_error(
+            "RESTORE DATABASE hdfs_restore_db FROM Memory('b')",
+            method="POST",
+            params=session,
+        )
+        assert "UNACCEPTABLE_URL" in error, error
+        # The definition is rejected before it is persisted.
+        assert node.query("EXISTS DATABASE hdfs_restore_db") == "0\n"
+
+    node.query("DROP DATABASE IF EXISTS hdfs_restore_db SYNC")

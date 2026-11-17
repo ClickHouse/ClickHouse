@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstddef>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -33,7 +35,7 @@ struct StepGroupStats
     UInt64 total_num_processors = 0;
 };
 
-using StepGroupStatsByGroupId = std::unordered_map<size_t, StepGroupStats>;
+using StepGroupStatsByGroupId = UnorderedMapWithMemoryTracking<size_t, StepGroupStats>;
 
 struct AnalyzedStage
 {
@@ -48,7 +50,7 @@ struct AnalyzedStage
     MetricList processor_distribution;
 };
 
-using AnalyzedStages = std::vector<AnalyzedStage>;
+using AnalyzedStages = VectorWithMemoryTracking<AnalyzedStage>;
 
 struct AnalyzedStepData
 {

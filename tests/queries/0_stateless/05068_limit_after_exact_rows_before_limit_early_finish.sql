@@ -10,5 +10,5 @@ SET max_block_size = 1;
 SET max_result_rows = 1;
 SET result_overflow_mode = 'break';
 
-SELECT number FROM numbers(20) ORDER BY number LIMIT 5 AFTER number >= 5 FORMAT JSONCompact SETTINGS enable_analyzer = 1;
-SELECT number FROM numbers(20) LIMIT 5 AFTER number >= 5 FORMAT JSONCompact SETTINGS enable_analyzer = 1;
+SELECT number FROM numbers(20) ORDER BY number LIMIT 5 AFTER number >= 5 FORMAT JSONCompact;
+SELECT number FROM numbers(20) LIMIT 5 AFTER number >= 5 FORMAT JSONCompact;

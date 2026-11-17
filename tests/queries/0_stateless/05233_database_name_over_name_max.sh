@@ -78,23 +78,29 @@ ${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${DB_FS}.\`${LONG_NAME}{_partition_id}\`"
 echo "--- server: control, a short name with the partition wildcard ---"
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${DB_FS}.\`t_05233_absent{_partition_id}\`" 2>&1 | grep -o -m1 -E 'CANNOT_STAT|STD_EXCEPTION'
 
-# Archive path syntax splits `<archive>::<member>` and carries only the archive component into the
-# path listing, so the member glob that made this name look globbed to the database guards is no
-# longer part of the string being stated.
-echo "--- server: a name over NAME_MAX with archive syntax is not a filesystem error ---"
-${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${DB_FS}.\`${LONG_NAME}.zip::*\`" 2>&1 | grep -o -m1 -E 'CANNOT_STAT|STD_EXCEPTION'
+# Archive path syntax splits `<archive>::<member>`, and the database probes only the archive
+# component, so the member glob does not make the name look globbed and an absent archive over
+# NAME_MAX is an unknown table.
+echo "--- server: a name over NAME_MAX with archive syntax is an unknown table ---"
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${DB_FS}.\`${LONG_NAME}.zip::*\`" 2>&1 | grep -o -m1 -E 'UNKNOWN_TABLE|STD_EXCEPTION'
 echo "--- server: control, a short name with archive syntax ---"
-${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${DB_FS}.\`t_05233_absent.zip::*\`" 2>&1 | grep -o -m1 -E 'CANNOT_STAT|STD_EXCEPTION'
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${DB_FS}.\`t_05233_absent.zip::*\`" 2>&1 | grep -o -m1 -E 'UNKNOWN_TABLE|STD_EXCEPTION'
 
 echo "--- local: a glob under an over-long directory matches nothing ---"
 ${CLICKHOUSE_LOCAL} -q "SELECT * FROM \`${LONG_NAME}/*.csv\`" 2>&1 | grep -o -m1 -E 'CANNOT_EXTRACT_TABLE_STRUCTURE|STD_EXCEPTION'
 echo "--- local: control, a glob under a short absent directory ---"
 ${CLICKHOUSE_LOCAL} -q "SELECT * FROM \`t_05233_absent_dir/*.csv\`" 2>&1 | grep -o -m1 -E 'CANNOT_EXTRACT_TABLE_STRUCTURE|STD_EXCEPTION'
 
-echo "--- local: a name over NAME_MAX with archive syntax is not a filesystem error ---"
-${CLICKHOUSE_LOCAL} -q "SELECT * FROM \`${LONG_NAME}.zip::*\`" 2>&1 | grep -o -m1 -E 'CANNOT_STAT|STD_EXCEPTION'
+echo "--- local: a name over NAME_MAX with archive syntax is an unknown table ---"
+${CLICKHOUSE_LOCAL} -q "SELECT * FROM \`${LONG_NAME}.zip::*\`" 2>&1 | grep -o -m1 -E 'UNKNOWN_TABLE|STD_EXCEPTION'
 echo "--- local: control, a short name with archive syntax ---"
-${CLICKHOUSE_LOCAL} -q "SELECT * FROM \`t_05233_absent.zip::*\`" 2>&1 | grep -o -m1 -E 'CANNOT_STAT|STD_EXCEPTION'
+${CLICKHOUSE_LOCAL} -q "SELECT * FROM \`t_05233_absent.zip::*\`" 2>&1 | grep -o -m1 -E 'UNKNOWN_TABLE|STD_EXCEPTION'
+
+# `file()` carries only the archive component into the path listing, where it is stated.
+echo "--- local: file() on an archive over NAME_MAX with a member glob is not a filesystem error ---"
+${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('${LONG_NAME}.zip::*')" 2>&1 | grep -o -m1 -E 'CANNOT_STAT|STD_EXCEPTION'
+echo "--- local: control, file() on a short absent archive with a member glob ---"
+${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('t_05233_absent.zip::*')" 2>&1 | grep -o -m1 -E 'CANNOT_STAT|STD_EXCEPTION'
 
 # A path written out in `file()` reaches the same non-globbed listing probe as a bare name.
 echo "--- local: file() on a written-out path over NAME_MAX ---"
