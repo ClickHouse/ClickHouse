@@ -321,6 +321,8 @@ def test_directory_distributed_select(started_cluster: ClickHouseCluster):
     # The shard materialized the user from the interserver credentials and did not call the service.
     assert directory_count(user) == 1
     assert node_dir2.query(f"SELECT count() FROM system.users WHERE name = '{user}'") == "1\n"
+    # The first `http` directory materialized the user on the shard, and it does not hide the user from the second one.
+    assert node_dir2.query("SELECT count() FROM t", user=user, password=GOOD_PASSWORD) == "3\n"
 
 
 def wait_for_query_finish(query_id):

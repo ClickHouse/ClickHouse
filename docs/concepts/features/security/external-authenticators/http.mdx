@@ -186,7 +186,8 @@ Configure the directory and create the roles on every node. The cluster must def
 - Such users should not be used as `DEFINER`, because a definer has no session roles.
 - Settings returned by the service are applied when a named session (`session_id`) is created, and the session can be reused only by an authentication that returns the same roles and settings.
 - Settings returned by the service are not applied to the jobs of a `QueryRunner` table.
-- Materialized users stay in memory (`system.users`) until restart.
-- A user name that exists in another user directory is never authenticated by this one.
+- Materialized users stay in memory (`system.users`) until restart, or until a login with a name that has appeared in another user directory of a different type.
+- A user of this directory cannot make its first login through the MySQL wire protocol: the protocol needs the authentication methods of the user before authenticating, and the user does not exist until it logs in through another interface. The same applies to the `ldap` user directory.
+- A user name that exists in a user directory of another type is never authenticated by this one. Several `http` directories are tried in order, and the same name may be materialized in more than one of them.
 - A user name containing `:` is never authenticated by this directory, because HTTP Basic credentials cannot carry it.
 - With several external directories, the order in `user_directories` decides. Every login with an unknown name costs a request, so the service must answer `404` for names it does not own. List `http` after the other user directories, so that names defined elsewhere always take precedence for both authentication and name resolution (e.g. in `GRANT ... TO`): otherwise a user materialized by this directory hides a user with the same name added later to another directory until someone authenticates with that name, which drops the materialized user.
