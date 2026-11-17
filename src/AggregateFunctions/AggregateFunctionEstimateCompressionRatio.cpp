@@ -448,9 +448,13 @@ public:
 
     /// NULL rows are measured (a null map, or an error for a type that cannot hold NULL), so the optimizer must not rewrite
     /// `f(if(c, NULL, x))` to `fIf(x, not c)`, which drops them. `RewriteAggregateFunctionWithIfPass` asks this.
+    /// Returning the function itself as its `Null` adapter is safe only because the function is registered as a window
+    /// function, so the factory never wraps it in the `Null` combinator. The registration is checked, not the properties
+    /// argument: the rewrite pass passes default ones.
     AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function, const DataTypes &, const Array &, const AggregateFunctionProperties &) const override
     {
+        chassert(AggregateFunctionFactory::instance().tryGetProperties(getName(), NullsAction::EMPTY).value().is_window_function);
         return nested_function;
     }
 
