@@ -1851,6 +1851,8 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
     pos.increaseDepth();
 
     ParserLiteral literal_p;
+    ParserNumber number_p;
+    ParserStringLiteral string_p;
 
     while (pos.isValid())
     {
@@ -1898,8 +1900,15 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
             }
         }
 
+        /// `ParserLiteral` tries the `NULL` and boolean keywords before these, which need a bare word.
         ASTPtr literal_node;
-        if (literal_p.parse(pos, literal_node, expected))
+        bool parsed = false;
+        if (isOneOf<TokenType::Number, TokenType::Minus, TokenType::Plus>(pos->type))
+            parsed = number_p.parse(pos, literal_node, expected);
+        else if (pos->type == TokenType::StringLiteral)
+            parsed = string_p.parse(pos, literal_node, expected);
+
+        if (parsed || literal_p.parse(pos, literal_node, expected))
         {
             layers.back().arr.push_back(literal_node->as<ASTLiteral &>().value);
         }
