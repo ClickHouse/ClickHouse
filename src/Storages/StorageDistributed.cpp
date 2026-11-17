@@ -2073,12 +2073,14 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
     const std::string key(disk_path + name);
 
     std::lock_guard lock(cluster_nodes_mutex);
-    auto & node_data = cluster_nodes_data[key];
     /// Captured before parsing: if a reload lands in between, the stored version stays
     /// behind the current one and the next call re-parses the addresses.
     const auto clusters_version = getContext()->getClustersVersion();
-    if (!node_data.directory_queue)
+    auto it = cluster_nodes_data.find(key);
+    if (it == cluster_nodes_data.end())
     {
+        /// Published only once fully built: every queue in the map is dereferenced elsewhere.
+        ClusterNodeData node_data;
         node_data.addresses = parseAddresses(name);
         node_data.clusters_version = clusters_version;
         node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(node_data.addresses, *this);
@@ -2087,8 +2089,11 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
             node_data.connection_pool,
             async_insert_blocker,
             getContext()->getDistributedSchedulePool());
+        return cluster_nodes_data.emplace(key, std::move(node_data)).first->second.directory_queue;
     }
-    else if (node_data.clusters_version < clusters_version)
+
+    auto & node_data = it->second;
+    if (node_data.clusters_version < clusters_version)
     {
         /// If the node changed (e.g. remote_servers was reloaded), update the connection
         /// pool of the existing queue in place. Recreating the queue would let two queues
@@ -2097,13 +2102,16 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
         /// the replacement queue retrying FILE_DOESNT_EXIST forever (such a file is not
         /// "broken" and is never moved aside), and a file both queues pick up is sent twice.
         auto new_addresses = parseAddresses(name);
-        node_data.clusters_version = clusters_version;
         if (node_data.addresses != new_addresses)
         {
+            /// The cached addresses and version advance only after the queue uses the new
+            /// pool, so if anything here throws, the next call retries the update.
+            auto new_pool = DistributedAsyncInsertDirectoryQueue::createPool(new_addresses, *this);
+            node_data.directory_queue->updatePool(new_pool);
+            node_data.connection_pool = std::move(new_pool);
             node_data.addresses = std::move(new_addresses);
-            node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(node_data.addresses, *this);
-            node_data.directory_queue->updatePool(node_data.connection_pool);
         }
+        node_data.clusters_version = clusters_version;
     }
     return node_data.directory_queue;
 }
