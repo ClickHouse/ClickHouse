@@ -21,7 +21,7 @@ struct JSONWebKey
     /// Key type, e.g., "RSA".
     std::string kty;
 
-    [[nodiscard]] std::string toString() const;
+    std::string toString() const;
     static JSONWebKey fromRSAKey(const KeyPair &);
 };
 
