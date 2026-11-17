@@ -2307,6 +2307,9 @@ DataTypePtr getPromotedTypeForDynamicImpl(const DataTypePtr & type, const Format
                 return type;
             return std::make_shared<DataTypeNullable>(promoted_nested);
         }
+        /// The parser never infers LowCardinality.
+        case TypeIndex::LowCardinality:
+            return getPromotedTypeForDynamicImpl(assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType(), format_settings);
         default:
             return nullptr; /// Not promotable.
     }
@@ -2321,15 +2324,20 @@ DataTypePtr getPromotedTypeForDynamic(const DataTypePtr & type, const FormatSett
     return promoted;
 }
 
-/// True if the DateTime64 values in the column fit DateTime64(9), the type their promotion casts to.
-/// A later value would saturate there, while the parser keeps its text as a String.
-bool fitsIntoMaxScaleDateTime64(const IColumn & column, const IDataType & type)
+/// True if the DateTime64 values in rows [begin, end) fit DateTime64(9), the type their promotion casts to.
+/// A later value would saturate there, while the parser keeps its text as a String. Expects no LowCardinality,
+/// see recursiveRemoveLowCardinality.
+bool fitsIntoMaxScaleDateTime64(const IColumn & column, const IDataType & type, size_t begin, size_t end)
 {
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
-        return fitsIntoMaxScaleDateTime64(assert_cast<const ColumnNullable &>(column).getNestedColumn(), *nullable_type->getNestedType());
+        return fitsIntoMaxScaleDateTime64(assert_cast<const ColumnNullable &>(column).getNestedColumn(), *nullable_type->getNestedType(), begin, end);
 
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
-        return fitsIntoMaxScaleDateTime64(assert_cast<const ColumnArray &>(column).getData(), *array_type->getNestedType());
+    {
+        const auto & column_array = assert_cast<const ColumnArray &>(column);
+        const auto & offsets = column_array.getOffsets();
+        return fitsIntoMaxScaleDateTime64(column_array.getData(), *array_type->getNestedType(), offsets[begin - 1], offsets[end - 1]);
+    }
 
     constexpr UInt32 promoted_scale = 9;
     const auto * datetime64_type = typeid_cast<const DataTypeDateTime64 *>(&type);
@@ -2339,12 +2347,18 @@ bool fitsIntoMaxScaleDateTime64(const IColumn & column, const IDataType & type)
     const Int64 multiplier = DecimalUtils::scaleMultiplier<Int64>(promoted_scale - datetime64_type->getScale());
     const Int64 max_value = std::numeric_limits<Int64>::max() / multiplier;
     const Int64 min_value = std::numeric_limits<Int64>::min() / multiplier;
-    for (const auto & value : assert_cast<const DataTypeDateTime64::ColumnType &>(column).getData())
+    const auto & data = assert_cast<const DataTypeDateTime64::ColumnType &>(column).getData();
+    for (size_t i = begin; i < end; ++i)
     {
-        if (value.value > max_value || value.value < min_value)
+        if (data[i].value > max_value || data[i].value < min_value)
             return false;
     }
     return true;
+}
+
+bool fitsIntoMaxScaleDateTime64(const IColumn & column, const IDataType & type)
+{
+    return fitsIntoMaxScaleDateTime64(column, type, 0, column.size());
 }
 
 template <typename T>
@@ -2902,6 +2916,15 @@ FormatSettings getJSONRoundTripFormatSettings(const FormatSettings & format_sett
     return result;
 }
 
+/// The round trip of the optimized conversion: a DateTime is written as a CAST to String writes it, so a
+/// value converted through text does not depend on date_time_output_format or on how it is stored.
+FormatSettings getJSONRoundTripFormatSettingsForValues(const FormatSettings & format_settings)
+{
+    FormatSettings result = getJSONRoundTripFormatSettings(format_settings);
+    result.date_time_output_format = FormatSettings::DateTimeOutputFormat::Simple;
+    return result;
+}
+
 /// The round trip of date and time values into date and time values: text holds the wall clock of a
 /// DateTime without its time zone, so it would come back at another instant in another zone or in the
 /// repeated hour of a daylight saving time fall-back. ISO text in UTC carries the instant; it is ours,
@@ -2934,11 +2957,24 @@ ColumnPtr convertTypedColumnToDynamic(
     JSONParserForConversion parser;
     JSONExtractInsertSettings insert_settings;
 
-    FormatSettings json_format_settings = getJSONRoundTripFormatSettings(format_settings);
+    const FormatSettings values_format_settings = getJSONRoundTripFormatSettingsForValues(format_settings);
+    const FormatSettings instants_format_settings = getJSONRoundTripFormatSettingsForInstants(format_settings);
+
+    /// A row whose date and time values the parser infers as date and time values again keeps their instants
+    /// through ISO text in UTC. Any other row, such as one with a DateTime64 outside DateTime64(9), which is
+    /// inferred as a String, is written as a CAST to String writes it.
+    const bool infers_date_times = format_settings.try_infer_datetimes
+        && anyInTypeTree(*src_type, [](const IDataType & t) { return isDateTimeOrDateTime64(t); });
+    const ColumnPtr full_column = infers_date_times ? recursiveRemoveLowCardinality(src_column) : nullptr;
+    const DataTypePtr full_type = infers_date_times ? recursiveRemoveLowCardinality(src_type) : nullptr;
 
     WriteBufferFromOwnString write_buf;
     for (size_t i = 0; i < rows; ++i)
     {
+        const FormatSettings & json_format_settings = infers_date_times && fitsIntoMaxScaleDateTime64(*full_column, *full_type, i, i + 1)
+            ? instants_format_settings
+            : values_format_settings;
+
         write_buf.restart();
         src_serialization->serializeTextJSON(*src_column, i, write_buf, json_format_settings);
 
@@ -2976,7 +3012,7 @@ ColumnPtr convertDynamicColumnToTyped(
     JSONParserForConversion parser;
     JSONExtractInsertSettings insert_settings;
 
-    const FormatSettings round_trip_format_settings = getJSONRoundTripFormatSettings(format_settings);
+    const FormatSettings round_trip_format_settings = getJSONRoundTripFormatSettingsForValues(format_settings);
     const FormatSettings instants_format_settings = getJSONRoundTripFormatSettingsForInstants(format_settings);
     const auto & col_dynamic = assert_cast<const ColumnDynamic &>(*src_column);
     const bool dest_has_date_time = anyInTypeTree(*dest_type, [](const IDataType & t) { return isDateTimeOrDateTime64(t); });
@@ -3048,12 +3084,12 @@ ColumnPtr convertTypedColumnToTyped(
 
     FormatSettings json_format_settings = isDateTimeToDateTimeConversion(src_type, dest_type)
         ? getJSONRoundTripFormatSettingsForInstants(format_settings)
-        : getJSONRoundTripFormatSettings(format_settings);
+        : getJSONRoundTripFormatSettingsForValues(format_settings);
 
     /// A null under type_json_skip_null_typed_paths is not written at all, so the value never reaches
     /// the parser and the destination keeps its default. Serializing it as `null` instead would make
-    /// the destination node reject it.
-    const bool null_omits_path = format_settings.json.type_json_skip_null_typed_paths && src_column->isNullable();
+    /// the destination node reject it. The type decides, as a LowCardinality column is not Nullable itself.
+    const bool null_omits_path = format_settings.json.type_json_skip_null_typed_paths && removeLowCardinality(src_type)->isNullable();
 
     WriteBufferFromOwnString write_buf;
     for (size_t i = 0; i < rows; ++i)
@@ -3389,9 +3425,13 @@ ColumnPtr convertObjectColumns(
         auto promoted = needsFormatParseFallback(it_type->second, format_settings)
             ? nullptr
             : getPromotedTypeForDynamic(it_type->second, format_settings);
-        if (promoted
-            && (!fitsIntoMaxScaleDateTime64(*it_col->second, *it_type->second) || hasNonFiniteFloats(*it_col->second, *it_type->second)))
-            promoted = nullptr;
+        if (promoted)
+        {
+            auto full_column = recursiveRemoveLowCardinality(it_col->second);
+            auto full_type = recursiveRemoveLowCardinality(it_type->second);
+            if (!fitsIntoMaxScaleDateTime64(*full_column, *full_type) || hasNonFiniteFloats(*full_column, *full_type))
+                promoted = nullptr;
+        }
         if (promoted)
         {
             auto dynamic_type = std::make_shared<DataTypeDynamic>(dst_max_dynamic_types);
@@ -3473,7 +3513,7 @@ ColumnPtr convertObjectColumns(
         UnorderedMapWithMemoryTracking<String, TypedNodePtr> new_typed_path_nodes;
         JSONParserForConversion shared_data_parser;
         JSONExtractInsertSettings shared_data_insert_settings;
-        const FormatSettings round_trip_format_settings = getJSONRoundTripFormatSettings(format_settings);
+        const FormatSettings round_trip_format_settings = getJSONRoundTripFormatSettingsForValues(format_settings);
         const FormatSettings instants_format_settings = getJSONRoundTripFormatSettingsForInstants(format_settings);
 
         for (const auto & [path, _] : new_typed_path_mutable_columns)

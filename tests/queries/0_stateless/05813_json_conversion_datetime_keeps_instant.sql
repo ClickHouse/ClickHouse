@@ -27,6 +27,11 @@ SELECT toUnixTimestamp(CAST('{"d":"1960-01-01 00:00:00"}'::JSON(d DateTime64(3, 
 SELECT '-- into a String the wall clock of the source time zone, whatever date_time_output_format says';
 SELECT CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d DateTime('Asia/Tokyo')), 'JSON(d String)').d SETTINGS date_time_output_format = 'iso';
 SELECT CAST('{"d":"2026-01-01 00:00:00"}'::JSON, 'JSON(d String)').d SETTINGS date_time_output_format = 'iso';
+-- The same for a value in shared data, in a shared variant or under type_json_skip_invalid_typed_paths.
+SELECT CAST('{"d":"2026-01-01 00:00:00"}'::JSON(max_dynamic_paths = 0), 'JSON(max_dynamic_paths = 0, d String)').d SETTINGS date_time_output_format = 'unix_timestamp';
+SELECT CAST('{"d":"2026-01-01 00:00:00"}'::JSON(max_dynamic_types = 0), 'JSON(max_dynamic_types = 0, d String)').d SETTINGS date_time_output_format = 'unix_timestamp';
+SELECT CAST('{"d":"2026-01-01 00:00:00"}'::JSON, 'JSON(d String)').d SETTINGS date_time_output_format = 'unix_timestamp', type_json_skip_invalid_typed_paths = 1;
+SELECT CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d DateTime('Asia/Tokyo')), 'JSON(d String)').d SETTINGS date_time_output_format = 'iso', type_json_skip_invalid_typed_paths = 1;
 
 SELECT '-- the text of a date and time is not a number or a date';
 SELECT CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d DateTime('Asia/Tokyo')), 'JSON(d Int64)'); -- { serverError INCORRECT_DATA }
@@ -39,6 +44,9 @@ SELECT toUnixTimestamp64Milli(j.d::DateTime64(3)), dynamicType(j.d) FROM (SELECT
 SELECT arrayMap(x -> toUnixTimestamp(x), j.d::Array(DateTime)), dynamicType(j.d) FROM (SELECT CAST('{"d":["2026-01-01 00:00:00"]}'::JSON(d Array(DateTime('Asia/Tokyo'))), 'JSON') AS j);
 SELECT toUnixTimestamp(j.d::DateTime), dynamicType(j.d) FROM (SELECT CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d DateTime('Asia/Tokyo')), 'JSON') AS j) SETTINGS date_time_output_format = 'unix_timestamp';
 SELECT j.d, dynamicType(j.d) FROM (SELECT CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d DateTime('Asia/Tokyo')), 'JSON') AS j) SETTINGS input_format_try_infer_datetimes = 0;
+SELECT toUnixTimestamp(j.d::DateTime), dynamicType(j.d) FROM (SELECT CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d LowCardinality(DateTime('Asia/Tokyo'))), 'JSON') AS j) SETTINGS allow_suspicious_low_cardinality_types = 1;
+-- A DateTime64 outside DateTime64(9) becomes a String; the other rows of the block keep their instants.
+SELECT toString(j.d) AS d, dynamicType(j.d) FROM (SELECT CAST(json::JSON(d DateTime64(3, 'Asia/Tokyo')), 'JSON') AS j FROM values('json String', ('{"d":"2026-01-01 00:00:00.000"}'), ('{"d":"2300-01-01 00:00:00.000"}'))) ORDER BY d;
 
 SELECT '-- dynamic value into a new typed path';
 SELECT toUnixTimestamp(CAST('{"d":"2026-01-01 00:00:00"}'::JSON, 'JSON(d DateTime(''Asia/Tokyo''))').d);

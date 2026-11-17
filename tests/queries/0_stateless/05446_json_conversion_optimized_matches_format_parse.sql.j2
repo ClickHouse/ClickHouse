@@ -70,6 +70,16 @@ SETTINGS json_use_optimized_type_conversion = {{ optimized }}{{ ', ' ~ settings 
 {{ check('removed Date32 outside the Date range to shared data',
          'JSON(max_dynamic_paths = 0, a Date32)', 'JSON(max_dynamic_paths = 0)', date32_outside_date_range) }}
 
+-- A LowCardinality typed path is promoted like its dictionary type.
+{% for type, rows in [
+    ('LowCardinality(DateTime)', ['{"a": "2024-01-15 12:30:00"}', '{}']),
+    ('LowCardinality(Nullable(DateTime))', ['{"a": "2024-01-15 12:30:00"}', '{"a": null}']),
+    ('LowCardinality(Int32)', ['{"a": 5}', '{}']),
+    ('Array(LowCardinality(String))', ['{"a": ["x", "y"]}']),
+] -%}
+{{ check('removed ' ~ type, 'JSON(a ' ~ type ~ ')', 'JSON', rows, 'allow_suspicious_low_cardinality_types = 1') }}
+{% endfor %}
+
 -- Accepted differences: the parser infers a type per value from its text, the optimized path keeps one type for the path.
 {{ check('accepted: removed Float64 whole number', 'JSON(a Float64)', 'JSON', ['{"a": 5}']) }}
 {{ check('accepted: removed Decimal32 whole number', 'JSON(a Decimal32(2))', 'JSON', ['{"a": 5}']) }}
@@ -189,6 +199,7 @@ SETTINGS json_use_optimized_type_conversion = {{ optimized }}{{ ', ' ~ settings 
     ('changed Nullable(String) to UInt32', 'JSON(a Nullable(String))', 'JSON(a UInt32)', ['{"a": "7"}', '{"a": null}']),
     ('changed Nullable(Int8) to Enum8', 'JSON(a Nullable(Int8))', "JSON(a Enum8('n' = 0, 'x' = 1))", ['{"a": 1}', '{"a": null}']),
     ('changed Nullable(Int32) to Array(Int32)', 'JSON(a Nullable(Int32))', 'JSON(a Array(Int32))', ['{"a": null}']),
+    ('changed LowCardinality(Nullable(String)) to String', 'JSON(a LowCardinality(Nullable(String)))', 'JSON(a String)', ['{"a": "x"}', '{"a": null}']),
 ] -%}
 {{ check(name ~ ' with skipped nulls', src, dst, rows, 'type_json_skip_null_typed_paths = 1, input_format_null_as_default = 0') }}
 {% endfor %}

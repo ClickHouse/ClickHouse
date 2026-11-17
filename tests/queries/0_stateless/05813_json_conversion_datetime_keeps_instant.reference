@@ -19,6 +19,10 @@
 -- into a String the wall clock of the source time zone, whatever date_time_output_format says
 2026-01-01 00:00:00
 2026-01-01 00:00:00
+2026-01-01 00:00:00
+2026-01-01 00:00:00
+2026-01-01 00:00:00
+2026-01-01 00:00:00
 -- the text of a date and time is not a number or a date
 -- typed path removed: the inferred type, without a time zone
 1767193200	DateTime
@@ -27,6 +31,9 @@
 [1767193200]	Array(Nullable(DateTime))
 1767193200	DateTime
 2026-01-01 00:00:00	String
+1767193200	DateTime
+2025-12-31 15:00:00.000000000	DateTime64(9)
+2300-01-01 00:00:00.000	String
 -- dynamic value into a new typed path
 1767225600
 1767225600
