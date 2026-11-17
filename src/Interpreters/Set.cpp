@@ -659,11 +659,13 @@ ColumnPtr Set::castToKeyType(const ColumnWithTypeAndName & column, size_t key, C
         /// in a field that cannot hold it. The lenient conversion produces a `Nullable`, so the key type must
         /// be one that `accurateCastOrNull` can produce. When the probe already has the key type (up to
         /// `Nullable`), no value can fail to fit, so the cheap path is kept: an exact-type cast is a no-op,
-        /// and that is the common `x IN set_table` case. A `Bool` key is the exception, because the cast
-        /// to `Bool` turns every byte other than 0 into `true`: `equals` also holds for a `UInt8` probe, and
-        /// a `Bool` probe can hold such a byte too, e.g. from `reinterpret`.
-        const bool cast_is_no_op
-            = removeNullable(probe.type)->equals(*key_type_without_nullable) && !isBool(key_type_without_nullable);
+        /// and that is the common `x IN set_table` case. With `transform_null_in = 0` a `Bool` key is the
+        /// exception, because the cast to `Bool` turns every byte other than 0 into `true`: `equals` also holds
+        /// for a `UInt8` probe, and a `Bool` probe can hold such a byte too, e.g. from `reinterpret`. With
+        /// `transform_null_in = 1` the probe keeps its bytes, as primary-key analysis does, which matches a
+        /// `Bool` member only against the byte 1 (see `KeyCondition::tryPrepareSetColumnsForIndex`).
+        const bool converts_bool_key = !transform_null_in && isBool(key_type_without_nullable);
+        const bool cast_is_no_op = removeNullable(probe.type)->equals(*key_type_without_nullable) && !converts_bool_key;
         if (canBeAccurateCastOrNullTarget(key_type) && !cast_is_no_op)
         {
             const ColumnPtr converted = castColumnAccurateOrNullSkipNulls(probe, key_type_without_nullable, cast_cache.get());
