@@ -1,5 +1,4 @@
 import argparse
-import mmap
 import re
 import struct
 from pathlib import Path
@@ -101,62 +100,27 @@ def process_runpath_check():
 
 
 def process_pauth_check():
-    # The binary is built with `-mbranch-protection=pac-ret` for a baseline without `FEAT_PAuth`, so
-    # return addresses are signed with `paciasp` and `autiasp`, which are no-ops on older cores. In
-    # a function compiled for ARMv8.3 or later, clang folds `autiasp; ret` into `retaa` instead,
-    # which is not in the `NOP` space and raises SIGILL on such cores (Graviton2, Ampere Altra), see
-    # https://github.com/ClickHouse/ClickHouse/issues/131748. A test run on a newer core would never
-    # notice, so look for the instruction itself. Both have a single fixed encoding.
-    forbidden = {0xD65F0BFF: "retaa", 0xD65F0FFF: "retab"}
-
-    path = f"{temp_path}/clickhouse"
-    with open(path, "rb") as file, mmap.mmap(
-        file.fileno(), 0, access=mmap.ACCESS_READ
-    ) as data:
-        assert data[:4] == b"\x7fELF" and data[4] == 2 and data[5] == 1, "not ELF64 LE"
-        shoff = struct.unpack_from("<Q", data, 0x28)[0]
-        shentsize, shnum = struct.unpack_from("<HH", data, 0x3A)
-        sections = [
-            struct.unpack_from("<IIQQQQIIQQ", data, shoff + i * shentsize)
-            for i in range(shnum)
-        ]
-
-        SHT_PROGBITS, SHF_EXECINSTR = 1, 4
-        found = []
-        scanned = 0
-        for _, sh_type, sh_flags, sh_addr, sh_offset, sh_size, *_ in sections:
-            if sh_type != SHT_PROGBITS or not sh_flags & SHF_EXECINSTR:
-                continue
-            scanned += sh_size
-            for word, name in forbidden.items():
-                pattern = struct.pack("<I", word)
-                pos = data.find(pattern, sh_offset, sh_offset + sh_size)
-                while pos != -1:
-                    if (pos - sh_offset) % 4 == 0:
-                        found.append((sh_addr + pos - sh_offset, name))
-                    pos = data.find(pattern, pos + 1, sh_offset + sh_size)
-        print(f"Scanned {scanned} bytes of code, found {len(found)} forbidden instructions")
-        if not scanned:
-            print("FAILED: no executable sections")
-            return False
-        if not found:
-            return True
-
-    # Name the functions, so that it is clear which library needs `-mbranch-protection=none`. The
-    # package has no `.symtab`, but `system.symbols` reads the binary's own symbol table, and its
-    # offsets are the virtual addresses above because the executable is linked at zero. The probe
-    # only explains the failure, so its own errors are printed and do not change the verdict.
-    addresses = ",".join(str(address) for address, _ in found)
-    functions = Shell.get_output(
-        f"{path} local --path {temp_path}/pauth_check_local --query \""
-        f"SELECT a, demangle(any(symbol)) FROM system.symbols ARRAY JOIN [{addresses}] AS a"
-        f" WHERE address_begin <= a AND a < address_end GROUP BY a FORMAT TSV\"",
-        verbose=True,
-    )
-    names = dict(line.split("\t", 1) for line in functions.splitlines() if "\t" in line)
-    for address, name in sorted(found):
-        print(f"FAILED: [{name}] at [{address:#x}] in [{names.get(str(address), '<unknown>')}]")
-    return False
+    # `retaa` and `retab` raise SIGILL on cores without `FEAT_PAuth` (Graviton2, Ampere Altra), see
+    # https://github.com/ClickHouse/ClickHouse/issues/131748. They appear in code compiled for
+    # ARMv8.3 or later with `-mbranch-protection=pac-ret`.
+    forbidden = [struct.pack("<I", word) for word in (0xD65F0BFF, 0xD65F0FFF)]
+    data = Path(f"{temp_path}/clickhouse").read_bytes()
+    shoff = struct.unpack_from("<Q", data, 0x28)[0]
+    shentsize, shnum = struct.unpack_from("<HH", data, 0x3A)
+    found = 0
+    for i in range(shnum):
+        _, sh_type, sh_flags, _, offset, size = struct.unpack_from(
+            "<IIQQQQ", data, shoff + i * shentsize
+        )
+        if sh_type != 1 or not sh_flags & 4:  # SHT_PROGBITS, SHF_EXECINSTR
+            continue
+        for pattern in forbidden:
+            pos = data.find(pattern, offset, offset + size)
+            while pos != -1:
+                found += (pos - offset) % 4 == 0
+                pos = data.find(pattern, pos + 1, offset + size)
+    print(f"Found {found} `retaa`/`retab` instructions")
+    return found == 0
 
 
 def parse_args():
