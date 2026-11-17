@@ -1157,6 +1157,9 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
         /// Set up tracing context for this thread by its parent context.
         DB::OpenTelemetry::TracingContextHolder thread_trace_context(
             job_data->name != DB::ThreadName::UNKNOWN ? DB::toString(job_data->name) : "ThreadPool::worker()", job_data->thread_trace_context);
+        /// A job without a name: name its span after its type.
+        if (job_data->name == DB::ThreadName::UNKNOWN && thread_trace_context.root_span.isTraceEnabled())
+            thread_trace_context.root_span.operation_name = demangle(job_data->job.target_type().name());
 
         /// The job may attach to the thread group of the scheduling thread and inherit its cancellation predicates.
         std::optional<DB::ThreadStatus::QueryCancellationBlocker> cancellation_blocker;
@@ -1199,10 +1202,6 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             if (final_thread != initial_thread || final_thread_group != initial_thread_group)
                 throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Thread pool job changed current ThreadStatus pointer ({} -> {}) or ThreadGroup ({} -> {}).", initial_thread ? "non-nullptr" : "nullptr", final_thread ? "non-nullptr" : "nullptr", initial_thread_group ? "master_thread_id " + std::to_string(initial_thread_group->master_thread_id) : "nullptr", final_thread_group ? "master_thread_id " + std::to_string(final_thread_group->master_thread_id) : "nullptr");
 #endif
-
-            /// A job without a name: name its span after its type.
-            if (job_data->name == DB::ThreadName::UNKNOWN && thread_trace_context.root_span.isTraceEnabled())
-                thread_trace_context.root_span.operation_name = demangle(job_data->job.target_type().name());
 
             /// job should be reset before decrementing scheduled_jobs to
             /// ensure that the Job destroyed before wait() returns.
