@@ -21,11 +21,14 @@ function cleanup()
 }
 trap cleanup EXIT
 
-# One part of 100 row groups, read in many tasks, so that a reader reads more than one task.
+# One part of 100 row groups, read by one reader in many tasks.
 # One thread: a reader of another thread that is created after the drop captures the post-drop
 # invalidation generation and legitimately populates the cache.
-QUERY="SELECT sum(id), sum(length(value)) FROM t_parquet_cache_drop
-    SETTINGS enable_parallel_replicas = 0, use_columns_cache = 1, max_threads = 1, max_block_size = 1000,
+# With one stream, an unordered read takes the whole part in a single task, so the fail point
+# before a later task is never reached. A read in the reverse order of the sorting key reads
+# every range of the part in its own task of the same reader.
+QUERY="SELECT sum(id), sum(length(value)) FROM (SELECT id, value FROM t_parquet_cache_drop ORDER BY id DESC LIMIT 1000000)
+    SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0, use_columns_cache = 1, max_threads = 1, max_block_size = 1000,
         merge_tree_min_read_task_size = 1, merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 0"
 
 $CLICKHOUSE_CLIENT --allow_experimental_parquet_parts=1 --query "
