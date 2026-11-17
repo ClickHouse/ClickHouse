@@ -30,6 +30,10 @@ SELECT 'Tuple(DateTime, DateTime64)', ts FROM t_rp_time_params ORDER BY ts;
 SET param_saf = '(1, [(\'1969-12-31 23:59:58.500\', 1.5)])';
 ALTER ROW POLICY p_time_params ON t_rp_time_params USING has(arrayMap(x -> x.1, tupleElement({saf:Tuple(UInt8, SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(DateTime64(3, 'UTC'), Float64))))}, 2)), ts);
 SELECT 'SimpleAggregateFunction', ts FROM t_rp_time_params ORDER BY ts;
+-- 19 significant digits, at the same DST overlap.
+SET param_ns = '1730615400.123456789';
+ALTER ROW POLICY p_time_params ON t_rp_time_params USING toUnixTimestamp64Nano({ns:DateTime64(9, 'America/New_York')}) = 1730615400123456789;
+SELECT 'DateTime64(9) DST overlap', count() FROM t_rp_time_params;
 DROP ROW POLICY p_time_params ON t_rp_time_params;
 
 CREATE TABLE t_def_time_params (k UInt8, ts DateTime64(3, 'UTC') DEFAULT {ts:DateTime64(3, 'UTC')}, t Time64(3) DEFAULT {t:Time64(3)}) ENGINE = MergeTree ORDER BY k;
