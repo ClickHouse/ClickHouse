@@ -1,4 +1,5 @@
 #include <IO/SocketPeerClosed.h>
+#include <IO/ScopedNonBlocking.h>
 
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketImpl.h>
@@ -7,14 +8,9 @@
 #include <cerrno>
 
 #if USE_SSL
-#include <Common/Exception.h>
 #include <Poco/Net/SecureStreamSocketImpl.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-#endif
-
-#if USE_SILK && USE_SSL
-#include <Common/Silk/SecureFiberStreamSocketImpl.h>
 #endif
 
 namespace DB
@@ -105,49 +101,6 @@ SSLSocketStateResult getSSLSocketStateImpl(ssl_st * ssl)
     return result;
 }
 
-/// Force the socket into non-blocking mode for the duration of a call, restoring the original
-/// mode afterwards, so that `SSL_peek` on an idle pooled connection can never block.
-class ScopedNonBlocking
-{
-public:
-    explicit ScopedNonBlocking(Poco::Net::SocketImpl & socket_impl_)
-        : socket_impl(socket_impl_)
-    {
-#if USE_SILK
-        /// The Silk TLS BIO is always non-blocking so that an OpenSSL operation cannot
-        /// suspend and migrate between the operation and `SSL_get_error`.
-        if (dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(&socket_impl))
-            return;
-#endif
-        was_blocking = socket_impl.getBlocking();
-        if (was_blocking)
-            socket_impl.setBlocking(false);
-    }
-
-    ~ScopedNonBlocking()
-    {
-        if (!was_blocking)
-            return;
-
-        try
-        {
-            socket_impl.setBlocking(true);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
-    ScopedNonBlocking(const ScopedNonBlocking &) = delete;
-    ScopedNonBlocking & operator=(const ScopedNonBlocking &) = delete;
-
-private:
-    Poco::Net::SocketImpl & socket_impl;
-    /// Whether a regular (non-Silk) socket was blocking before the probe.
-    bool was_blocking = false;
-};
-
 }
 
 SocketState getSSLSocketState(ssl_st * ssl)
@@ -166,6 +119,7 @@ SocketState getSocketState(const Poco::Net::StreamSocket & socket)
         /// performed) has no TLS state to inspect, so fall back to the raw file-descriptor check.
         if (auto * ssl = secure->ssl())
         {
+            /// Non-blocking, so that `SSL_peek` on an idle pooled connection can never block.
             ScopedNonBlocking non_blocking(*secure);
             auto result = getSSLSocketStateImpl(ssl);
             if (result.fatal_error)
