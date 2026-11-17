@@ -613,6 +613,8 @@ bool writeMetadataFileAndVersionHint(
     if (!writeMetadataFile(resolver, metadata_file_info, metadata_file_content, object_storage, context))
         return false;
 
+    /// The commit is published, so a failure of the hint must not reach the caller, which rolls back on an exception.
+    try
     {
         /// Readers with `iceberg_use_version_hint` find the published metadata file through the hint, so a cancellation
         /// must not leave the hint behind the commit.
@@ -625,6 +627,13 @@ bool writeMetadataFileAndVersionHint(
             context,
             /* create */ try_write_version_hint,
             /* assert_version_exactly */ false);
+    }
+    catch (...)
+    {
+        /// As with a failed write of the hint, the readers that follow it see the previous version until the next commit.
+        tryLogCurrentException(
+            getLogger("IcebergWrites"),
+            fmt::format("The version hint is not advanced to the published metadata file {}", metadata_file_info.path.serialize()));
     }
     return true;
 }

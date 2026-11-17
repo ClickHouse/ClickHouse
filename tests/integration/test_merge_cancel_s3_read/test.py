@@ -1165,3 +1165,52 @@ def test_iceberg_commit_with_unknown_outcome_keeps_its_files(cluster, broken_s3)
     finally:
         broken_s3.reset()
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def test_iceberg_commit_keeps_its_files_when_the_hint_fails(cluster, broken_s3):
+    """A commit that is published must not roll back when the update of `version-hint.text` fails after it.
+
+    A writer without `iceberg_use_version_hint` still advances an existing hint, and it reads the hint first.
+    That read fails here after the new version is published.
+    """
+    node = cluster.instances["node"]
+    table = "t_iceberg_hint_fails"
+    # The prefix gets two attempts per request from `configs/storage_conf.xml`.
+    prefix = f"iceberg_unknown_{uuid.uuid4().hex}/"
+    url = f"http://resolver:8087/root/{prefix}"
+    table_function = f"icebergS3('{url}', 'minio', '{minio_secret_key}')"
+
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"CREATE TABLE {table} (id Int64, s String) ENGINE = IcebergS3("
+        f"'{url}', 'minio', '{minio_secret_key}') SETTINGS iceberg_use_version_hint = 1",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    try:
+        # This commit writes the hint.
+        node.query(
+            f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(10) "
+            f"SETTINGS allow_insert_into_iceberg = 1, async_insert = 0"
+        )
+
+        # The table function does not use the hint, so only the commit reads it.
+        broken_s3.setup_at_object_get(
+            key="version-hint.text", count=1000000, action="connection_reset_by_peer"
+        )
+        _, insert_error = node.query_and_get_answer_with_error(
+            f"INSERT INTO TABLE FUNCTION {table_function} "
+            f"SELECT number, toString(number) FROM numbers(20) "
+            f"SETTINGS allow_insert_into_iceberg = 1, async_insert = 0"
+        )
+        broken_s3.reset()
+
+        answer, select_error = node.query_and_get_answer_with_error(
+            f"SELECT count() FROM {table_function}"
+        )
+        assert not select_error, f"the table is not readable: {select_error[:2000]}"
+        assert int(answer) == 30, f"the table holds {answer.strip()} rows instead of 30"
+        assert not insert_error, insert_error[:2000]
+    finally:
+        broken_s3.reset()
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
