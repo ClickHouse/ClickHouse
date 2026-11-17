@@ -17,6 +17,9 @@ class TokenizerFactory final : private boost::noncopyable
 {
 public:
     using Creator = std::function<std::unique_ptr<ITokenizer>(const FieldVector &)>;
+    /// Receives the arguments as AST, for a tokenizer that takes a nested tokenizer or `name = value` arguments.
+    using ASTCreator = std::function<std::unique_ptr<ITokenizer>(const ASTs &)>;
+
     static TokenizerFactory & instance();
 
     /// Parses a definition of a tokenizer from a string into AST and creates a tokenizer from it.
@@ -25,11 +28,12 @@ public:
     /// Creates a tokenizer from an AST node.
     /// Supports ASTIdentifier (name without args),
     /// ASTLiteral with string value (name without args),
-    /// and ASTFunction (name with literal args).
+    /// and ASTFunction (name with literal args, or any args for a tokenizer with an `ASTCreator`).
     [[nodiscard]] std::unique_ptr<ITokenizer> get(const ASTPtr & ast) const;
 
     /// Creates a tokenizer by name and arguments.
     /// If allowed is non-empty, only tokenizers of the specified types can be created.
+    /// A tokenizer with an `ASTCreator` receives the arguments as literals.
     [[nodiscard]] std::unique_ptr<ITokenizer> get(
         std::string_view name,
         const FieldVector & args,
@@ -41,14 +45,17 @@ public:
     [[nodiscard]] std::unordered_map<String, ITokenizer::Type> getAllTokenizers() const;
 
     void registerTokenizer(const String & name, ITokenizer::Type type, Creator creator);
+    void registerTokenizer(const String & name, ITokenizer::Type type, ASTCreator creator);
 
 private:
     TokenizerFactory();
 
+    /// Exactly one of `creator` and `ast_creator` is set.
     struct Entry
     {
         ITokenizer::Type type;
         Creator creator;
+        ASTCreator ast_creator;
     };
 
     using Tokenizers = std::unordered_map<String, Entry>;

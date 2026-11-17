@@ -34,8 +34,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
-#if USE_ICU
     extern const int LOGICAL_ERROR;
+#if USE_ICU
     extern const int TOO_LARGE_STRING_SIZE;
 #endif
 }
@@ -475,6 +475,88 @@ String SplitByRegexpTokenizer::getDescription() const
     if (match_tokens)
         return fmt::format("{}({}, true)", getName(), quoteString(regexp_str));
     return fmt::format("{}({})", getName(), quoteString(regexp_str));
+}
+
+RegexpMaskedTokenizer::RegexpMaskedTokenizer(std::shared_ptr<const ITokenizer> base_, std::shared_ptr<const TokenMasks> masks_)
+    : ITokenizerHelper(Type::RegexpMasked)
+    , base(std::move(base_))
+    , masks(std::move(masks_))
+{
+    if (base->getType() == Type::SplitByString)
+        split_by_string = &assert_cast<const SplitByStringTokenizer &>(*base);
+    else if (base->getType() != Type::SplitByNonAlpha)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported base tokenizer of '{}': '{}'", getName(), base->getDescription());
+}
+
+String RegexpMaskedTokenizer::getDescription() const
+{
+    auto quote_all = [](const std::vector<String> & values)
+    {
+        String result;
+        for (const auto & value : values)
+        {
+            if (!result.empty())
+                result += ", ";
+            result += quoteString(value);
+        }
+        return result;
+    };
+
+    String result = fmt::format("{}({}, masks = [{}]", getName(), base->getDescription(), quote_all(masks->getBuiltinNames()));
+    if (!masks->getCustomPatterns().empty())
+        result += fmt::format(", custom_masks = [{}]", quote_all(masks->getCustomPatterns()));
+    return result + ")";
+}
+
+bool RegexpMaskedTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
+{
+    /// `pos` is the start of the input or the end of the previous token, so the tokens from `pos` on do not depend on the text before it.
+    const size_t from = pos;
+    bool found = false;
+
+    forEachSpan(data + from, length - from, [&](const TokenSpan & span)
+    {
+        token_start = from + span.offset;
+        token_length = span.length;
+        found = true;
+        return true;
+    });
+
+    pos = found ? token_start + token_length : length;
+    return found;
+}
+
+void RegexpMaskedTokenizer::stringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const
+{
+    forEachSpan(data, length, [&](const TokenSpan & span)
+    {
+        tokens.emplace_back(data + span.offset, span.length);
+        return false;
+    });
+}
+
+void RegexpMaskedTokenizer::stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const
+{
+    forEachSpan(data, length, [&](const TokenSpan & span)
+    {
+        bloom_filter.add(data + span.offset, span.length);
+        return false;
+    });
+}
+
+bool RegexpMaskedTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t & /*pos*/, String & /*token*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RegexpMaskedTokenizer::nextInStringLike is not implemented");
+}
+
+void RegexpMaskedTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RegexpMaskedTokenizer::substringToBloomFilter is not implemented");
+}
+
+void RegexpMaskedTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RegexpMaskedTokenizer::substringToTokens is not implemented");
 }
 
 bool ArrayTokenizer::nextInString(const char * /*data*/, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const

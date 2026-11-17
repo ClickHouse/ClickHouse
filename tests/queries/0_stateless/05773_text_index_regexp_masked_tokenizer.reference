@@ -1,0 +1,65 @@
+tokens
+['took','1.5GB','from','10.0.0.1','9000']
+['took','1','5GB','from','10','0','0','1','9000']
+['took','1','5GB','from','10.0.0.1','9000']
+['at','2026-11-05 10:15:30.123+00:00','GET','http://host:8123/?q=1','id','97a133f8-4d41-4e4f-b869-db7c48b6da4c']
+['04/Nov/2026:10:15:30 +0000','read','var/lib/clickhouse/x.bin','0x7f3a','deadbeef','read','write','x','5']
+['user','alice','session','sess_9f2c1a7b3d4e5f60','took','1.5GB']
+['a','10.0.0.1','b','c']
+[]
+1	1
+32000
+Rejected definitions
+Index with all built-in masks
+[1,9]
+[1]
+[2,3]
+[9]
+[7]
+[6]
+[8]
+[1,9]
+[1,9]
+[1,9]
+The index prunes granules
+Granules: 9/9
+Name: idx
+Granules: 2/9
+Index results equal a brute force over tokens
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+After ATTACH
+[1,9]
+Selected and custom masks
+[3]
+[]
+[3,4]
+[1]
+[1,9]
+splitByString base
+[3]
+[1]
+[5]
+Preprocessor
+[9]
+Phrase search
+[1]
+[3]
+[1]
+[3]

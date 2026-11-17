@@ -12,6 +12,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Functions/sparseGramsImpl.h>
 #include <Interpreters/BloomFilter.h>
+#include <Interpreters/TokenMasks.h>
 #include <base/FnTraits.h>
 #include <base/types.h>
 #include <fmt/format.h>
@@ -37,6 +38,7 @@ public:
         SparseGrams,
         AsciiCJK,
         KeyValuePairs,
+        RegexpMasked,
 #if USE_JIEBA
         Chinese,
 #endif
@@ -333,7 +335,6 @@ struct SplitByStringTokenizer final : public ITokenizerHelper<SplitByStringToken
             forEachTokenMultiByte(data, length, callback);
     }
 
-private:
     /// Returns the length of the separator that starts at `pos`, or 0 if there is none.
     ALWAYS_INLINE size_t matchSeparator(const char * data, size_t length, size_t pos) const
     {
@@ -349,6 +350,11 @@ private:
 
         return 0;
     }
+
+    [[nodiscard]] const ByteSetLookup & getSeparatorFirstBytes() const { return separator_first_bytes; }
+    [[nodiscard]] bool allSeparatorsSingleByte() const { return all_separators_single_byte; }
+
+private:
 
     /// Walks the string block by block; the candidate bits of a block are the positions holding a possible
     /// first byte of a separator, and only those are verified with `matchSeparator`. A matched separator may
@@ -708,6 +714,202 @@ private:
 };
 #endif
 
+/// A token of `RegexpMaskedTokenizer`: its byte range in the input and whether it came from a mask.
+struct TokenSpan
+{
+    size_t offset;
+    size_t length;
+    /// True if the token is a mask match (with its extension to the next separator), false if it is a base token.
+    bool masked;
+};
+
+/// The tokens of a base tokenizer (`splitByNonAlpha` or `splitByString`), with every match of a mask (a regular
+/// expression for an IP address, a UUID, a timestamp, ...) merged into one token. See `TokenMasks` for the masks.
+///
+/// The input is scanned left to right. A separator of the base tokenizer is skipped whole. At any other position,
+/// a base-token start, the masks are tried anchored there and the longest match wins. The match is extended to the next
+/// separator start or to the end of the input, and is one token. Without a match, the base token is emitted.
+///
+/// So tokens are never adjacent: the text between two tokens consists of whole separators. The tokens of a piece of
+/// text cut at token boundaries do not depend on the text around it.
+struct RegexpMaskedTokenizer final : public ITokenizerHelper<RegexpMaskedTokenizer>
+{
+    /// `base_` must be `SplitByNonAlphaTokenizer` or `SplitByStringTokenizer`.
+    RegexpMaskedTokenizer(std::shared_ptr<const ITokenizer> base_, std::shared_ptr<const TokenMasks> masks_);
+
+    static const char * getName() { return "regexpMasked"; }
+    static const char * getExternalName() { return getName(); }
+
+    /// Canonical: equal descriptions mean equal tokenizers, and the description is parseable by `TokenizerFactory`.
+    [[nodiscard]] String getDescription() const override;
+
+    /// Scans from `pos` anew on each call, so a loop over it can be quadratic: use `forEachSpan` or the methods below.
+    bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
+    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
+
+    /// One `forEachSpan` pass each, which keeps the scan state of the masks between tokens (unlike `nextInString`).
+    void stringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const override;
+    void stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const override;
+
+    /// A mask match depends on the text outside of a `LIKE` fragment, so fragments cannot be tokenized.
+    [[nodiscard]] bool supportsStringLike() const override { return false; }
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
+    [[nodiscard]] const ITokenizer & getBase() const { return *base; }
+    [[nodiscard]] const TokenMasks & getMasks() const { return *masks; }
+
+    /// Calls `callback` for every token in order. Stops if the callback returns true. The data needs no padding.
+    /// The other methods are built on it, except `forEachTokenImpl` without masks.
+    template <Fn<bool(const TokenSpan &)> Callback>
+    void forEachSpan(const char * data, size_t length, Callback && callback) const
+    {
+        if (base->getType() == Type::SplitByNonAlpha)
+            forEachSpanSplitByBytes(SplitByNonAlphaTokenizer::separator_chars, data, length, callback);
+        else if (split_by_string->allSeparatorsSingleByte())
+            forEachSpanSplitByBytes(split_by_string->getSeparatorFirstBytes(), data, length, callback);
+        else
+            forEachSpanSplitByStrings(data, length, callback);
+    }
+
+    /// The data must be padded as for `forEachToken`.
+    template <Fn<bool(const char *, size_t)> Callback>
+    void forEachTokenImpl(const char * data, size_t length, Callback && callback) const
+    {
+        /// Without masks, the tokens are those of the base tokenizer, which is faster on padded data.
+        if (masks->empty())
+        {
+            if (split_by_string)
+                split_by_string->forEachTokenImpl(data, length, callback);
+            else
+                detail::forEachTokenSplitByBytes(SplitByNonAlphaTokenizer::separator_chars, data, length, callback);
+            return;
+        }
+
+        forEachSpan(data, length, [&](const TokenSpan & span) { return callback(data + span.offset, span.length); });
+    }
+
+private:
+    /// Single-byte separators. The base tokens are found 16 bytes at a time, as in `detail::forEachTokenSplitByBytes`,
+    /// but the last, partial block is tested byte by byte, so the input needs no padding.
+    /// A base token that starts inside the previous token (which is then a mask match) is skipped.
+    template <typename Callback>
+    void forEachSpanSplitByBytes(const ByteSetLookup & separators, const char * data, size_t length, Callback && callback) const
+    {
+        TokenMasks::ScanState scan_state;
+        size_t previous_token_end = 0;
+
+        /// Returns true to stop.
+        auto on_base_token = [&](size_t start, size_t end) ALWAYS_INLINE
+        {
+            if (start < previous_token_end)
+                return false;
+
+            size_t masked_end = masks->mayStartWith(data[start]) ? matchAndExtend(separators, data, length, start, end, scan_state) : 0;
+            if (masked_end)
+                end = masked_end;
+
+            previous_token_end = end;
+            return callback(TokenSpan{start, end - start, masked_end != 0});
+        };
+
+        size_t token_start = 0;
+        for (size_t block = 0; block < length; block += ByteSetLookup::BLOCK_SIZE)
+        {
+            const size_t block_length = std::min<size_t>(length - block, ByteSetLookup::BLOCK_SIZE);
+
+            UInt32 separator_bits = 0;
+            if (block_length == ByteSetLookup::BLOCK_SIZE)
+            {
+                separator_bits = detail::separatorBits(separators, data + block, block_length);
+            }
+            else
+            {
+                for (size_t i = 0; i < block_length; ++i)
+                    separator_bits |= static_cast<UInt32>(separators.contains(data[block + i])) << i;
+            }
+
+            while (separator_bits != 0)
+            {
+                const size_t separator = block + std::countr_zero(separator_bits);
+                separator_bits &= separator_bits - 1;
+
+                if (separator > token_start && on_base_token(token_start, separator))
+                    return;
+
+                token_start = separator + 1;
+            }
+        }
+
+        if (token_start < length)
+            on_base_token(token_start, length);
+    }
+
+    /// Tries the masks at the base token `[start, end)`. Returns the end of the match extended to the next separator,
+    /// or 0 if no mask matches. Out of line, to keep the loop over base tokens small.
+    NO_INLINE size_t matchAndExtend(
+        const ByteSetLookup & separators, const char * data, size_t length, size_t start, size_t end, TokenMasks::ScanState & scan_state) const
+    {
+        size_t match_length = masks->matchAt(data + start, length - start, scan_state);
+        if (match_length == 0)
+            return 0;
+
+        if (match_length <= end - start)
+            return end;
+
+        return separators.find<true>(data + start + match_length, data + length) - data;
+    }
+
+    /// Separators of `splitByString` of which some are longer than one byte, so the scan is sequential.
+    template <typename Callback>
+    void forEachSpanSplitByStrings(const char * data, size_t length, Callback && callback) const
+    {
+        /// The first position from `pos` where no separator starts.
+        auto skip = [&](size_t pos)
+        {
+            while (pos < length)
+            {
+                size_t separator_length = split_by_string->matchSeparator(data, length, pos);
+                if (separator_length == 0)
+                    break;
+                pos += separator_length;
+            }
+            return pos;
+        };
+
+        /// The first position from `pos` where a separator starts.
+        auto find = [&](size_t pos)
+        {
+            while (true)
+            {
+                pos = split_by_string->getSeparatorFirstBytes().find<true>(data + pos, data + length) - data;
+                if (pos >= length || split_by_string->matchSeparator(data, length, pos) != 0)
+                    return pos;
+                ++pos;
+            }
+        };
+
+        TokenMasks::ScanState scan_state;
+        size_t pos = skip(0);
+        while (pos < length)
+        {
+            /// `pos` is a base-token start: no separator starts here.
+            size_t match_length = masks->mayStartWith(data[pos]) ? masks->matchAt(data + pos, length - pos, scan_state) : 0;
+            size_t end = find(pos + std::max<size_t>(match_length, 1));
+
+            if (callback(TokenSpan{pos, end - pos, match_length != 0}))
+                return;
+
+            pos = skip(end);
+        }
+    }
+
+    std::shared_ptr<const ITokenizer> base;
+    /// `base` if it is `splitByString`, otherwise nullptr.
+    const SplitByStringTokenizer * split_by_string = nullptr;
+    std::shared_ptr<const TokenMasks> masks;
+};
+
 /// The Japanese (MeCab) tokenizer is declared in its own header (`JapaneseTokenizer.h`) so that this
 /// widely-included header does not pull in `<mecab.h>`. `forEachToken` dispatches it via the base
 /// `nextInString` (see `Type::Japanese` below), so the concrete type is not needed here.
@@ -790,6 +992,12 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         {
             /// This tokenizer does not split strings: `nextInString` throws.
             detail::forEachTokenImpl(tokenizer, data, length, callback);
+            return;
+        }
+        case ITokenizer::Type::RegexpMasked:
+        {
+            const auto & regexp_masked_tokenizer = assert_cast<const RegexpMaskedTokenizer &>(tokenizer);
+            regexp_masked_tokenizer.forEachTokenImpl(data, length, callback);
             return;
         }
 #if USE_JIEBA

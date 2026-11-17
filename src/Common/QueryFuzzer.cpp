@@ -3086,6 +3086,7 @@ static const Strings & textIndexTokenizers()
            "keyword",
            "ngrambf_v1",
            "ngrams",
+           "regexpMasked",
            "sparseGrams",
            "sparse_grams",
            "splitByNonAlpha",

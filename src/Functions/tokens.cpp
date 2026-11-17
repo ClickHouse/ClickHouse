@@ -333,6 +333,7 @@ Available tokenizers:
 - `splitByNonAlpha` splits strings along non-alphanumeric ASCII characters (also see function [splitByNonAlpha](/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha)).
 - `splitByString(S)` splits strings along certain user-defined separator strings `S` (also see function [splitByString](/reference/functions/regular-functions/splitting-merging-functions#splitByString)). The separators can be specified using an optional parameter, for example, `tokens(value, 'splitByString', [', ', '; ', '\n', '\\'])`. Note that each string can consist of multiple characters (`', '` in the example). The default separator list, if not specified explicitly, is a single whitespace `[' ']`.
 - `splitByRegexp(regexp[, match_tokens])` splits strings according to a user-defined regular expression `regexp`. The regular expression is mandatory, for example, `tokens(value, 'splitByRegexp', '[^\p{L}\p{N}#+]+')`. With the optional `match_tokens` argument left at its default (`false`; `0`/`1` are also accepted), `regexp` is a separator (also see function [splitByRegexp](/sql-reference/functions/splitting-merging-functions.md/#splitByRegexp)). With `match_tokens = true`, `regexp` is matched directly instead: each match contributes at most one token - its first capture group, or the whole match if `regexp` has no capture group - and everything outside the matches is discarded, for example `tokens('tag:hello tag:world', 'splitByRegexp', 'tag:(\w+)', true)` returns `['hello', 'world']`.
+- `regexpMasked([base][, masks = [...]][, custom_masks = [...]])` splits strings like the base tokenizer (`splitByNonAlpha` by default, or `splitByString`), but keeps every match of a mask - a regular expression for a value such as an IP address, a UUID, a timestamp, a number, a path or a URL - as one token. The whole definition is passed as one string, for example `tokens(value, 'regexpMasked(masks = [\'ip\'], custom_masks = [\'sess_[0-9a-f]+\'])')`. See the [text index](/reference/engines/table-engines/mergetree-family/textindexes#tokenizer-regexp-masked) documentation for the built-in masks and the matching rules.
 - `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to UAX #29). ASCII alphanumeric characters and underscores form tokens with connectors (`:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters become single-character tokens.
 - `chinese` segments Chinese text into words using a dictionary and a hidden Markov model (the algorithm follows [jieba](https://github.com/fxsjy/jieba); the embedded dictionary and model data are derived from [cppjieba](https://github.com/yanyiwu/cppjieba)). Unlike `asciiCJK`, which treats every non-ASCII character as a single-character token, `chinese` groups consecutive Chinese characters into words, which yields more meaningful tokens and higher search quality for Chinese text. An optional `granularity` argument is either `coarse_grained` (the default) or `fine_grained`; the latter additionally enumerates overlapping sub-words, improving recall at the cost of a larger index.
 - `icu(locale)` splits strings into word tokens using the ICU library's Unicode word segmentation (UAX #29). For scripts without whitespace between words (for example Chinese, Japanese, and Thai) ICU applies dictionary-based segmentation, so such text is split into meaningful words. `locale` is the ICU locale passed to the segmenter (segmentation is mainly script- and dictionary-driven; the locale selects ICU's locale-specific tailoring); it is mandatory and passed as a separate argument, for example `tokens(value, 'icu', 'ja')`.
@@ -350,6 +351,7 @@ tokens(value) -- 'splitByNonAlpha' tokenizer
 tokens(value, 'splitByNonAlpha')
 tokens(value, 'splitByString'[, separators])
 tokens(value, 'splitByRegexp', regexp[, match_tokens])
+tokens(value, 'regexpMasked[([base][, masks = [...]][, custom_masks = [...]])]')
 tokens(value, 'asciiCJK')
 tokens(value, 'chinese'[, granularity])
 tokens(value, 'icu', locale)
@@ -360,7 +362,7 @@ tokens(value, 'array')
 )";
     FunctionDocumentation::Arguments arguments = {
         {"value", "The input string.", {"String", "FixedString"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `regexpMasked`, `asciiCJK`, `chinese`, `icu`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
         {"locale", "Only relevant if argument `tokenizer` is `icu`: The mandatory locale, for example `'ja'`.", {"const String"}},
         {"n", "Only relevant if argument `tokenizer` is `ngrams`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`.", {"const UInt8"}},
         {"separators", "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`.", {"const Array(String)"}},
@@ -404,6 +406,13 @@ tokens(value, 'array')
         R"(SELECT tokens('tag:hello tag:world', 'splitByRegexp', 'tag:(\w+)', true) AS tokens;)",
         R"(
 ['hello','world']
+        )"
+    },
+    {
+        "regexpMasked tokenizer",
+        "SELECT tokens('took 1.5GB from 10.0.0.1:9000', 'regexpMasked') AS tokens;",
+        R"(
+['took','1.5GB','from','10.0.0.1','9000']
         )"
     }
     };

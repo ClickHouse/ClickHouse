@@ -25,6 +25,12 @@
     <query>SELECT count() FROM tok_prose WHERE NOT ignore(tokens(s, 'splitByString', [', ', '. ', ' '])) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM tok_long_tokens WHERE NOT ignore(tokens(s, 'splitByString', [' '])) SETTINGS max_threads = 1</query>
 
+    <query>SELECT count() FROM tok_log_lines WHERE NOT ignore(tokens(s, 'regexpMasked')) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM tok_log_lines WHERE NOT ignore(tokens(s, 'regexpMasked(masks = [])')) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM tok_log_lines WHERE NOT ignore(tokens(s, 'regexpMasked(masks = [], custom_masks = [''user_id=\\d+''])')) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM tok_prose WHERE NOT ignore(tokens(s, 'regexpMasked')) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM tok_long_tokens WHERE NOT ignore(tokens(s, 'regexpMasked')) SETTINGS max_threads = 1</query>
+
     <drop_query>DROP TABLE IF EXISTS tok_log_lines</drop_query>
     <drop_query>DROP TABLE IF EXISTS tok_prose</drop_query>
     <drop_query>DROP TABLE IF EXISTS tok_long_tokens</drop_query>

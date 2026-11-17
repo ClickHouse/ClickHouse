@@ -245,6 +245,7 @@ FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & argu
         ITokenizer::Type::SplitByNonAlpha,
         ITokenizer::Type::SplitByString,
         ITokenizer::Type::SplitByRegexp,
+        ITokenizer::Type::RegexpMasked,
         ITokenizer::Type::Array,
         ITokenizer::Type::AsciiCJK,
 #if USE_ICU
@@ -331,7 +332,7 @@ If no text index is defined, the function performs a brute-force column scan whi
 
 Prior to searching, the function tokenizes the `input` and, when it is a `String`, the `phrase` using the tokenizer specified for the text index.
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead — unless a tokenizer is provided as the optional third argument.
-The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `array`, `ngrams`, `asciiCJK`, or `icu`.
+The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `regexpMasked`, `array`, `ngrams`, `asciiCJK`, or `icu`.
 
 If `input` is an [Array(String)](/reference/data-types/array), its elements are tokenized like any other input and their tokens form a single sequence per row, so a phrase may span two elements. With the `array` tokenizer each element is one token, which is how a column of already tokenized values is searched.
 If `phrase` is an [Array(String)](/reference/data-types/array), its elements are the tokens to search for, in order and
