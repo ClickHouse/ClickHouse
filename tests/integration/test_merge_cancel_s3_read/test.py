@@ -1115,3 +1115,53 @@ def test_killed_iceberg_commit_keeps_the_table_readable(
         if insert is not None:
             insert.get_answer_and_error()
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def test_iceberg_commit_with_unknown_outcome_keeps_its_files(cluster, broken_s3):
+    """A commit whose metadata upload ends with an unknown outcome must keep the files of the new version.
+
+    The first upload of the new `vN.metadata.json` is stored, but its response is lost, and its retry
+    fails too, so the retries end without telling whether the upload landed. The commit must not roll
+    back then: the new version is published and references the files that a rollback deletes.
+    """
+    node = cluster.instances["node"]
+    table = "t_iceberg_unknown_commit"
+    # The prefix gets two attempts per request from `configs/storage_conf.xml`.
+    prefix = f"iceberg_unknown_{uuid.uuid4().hex}/"
+    url = f"http://resolver:8087/root/{prefix}"
+
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"CREATE TABLE {table} (id Int64, s String) ENGINE = IcebergS3("
+        f"'{url}', 'minio', '{minio_secret_key}')",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    try:
+        # The first upload of `v2.metadata.json` is stored with its response lost. Its retry is not stored,
+        # and its response is lost too. The second rule is checked after the first one, and its key matches
+        # only `v2`, so a later version is not affected.
+        broken_s3.setup_at_object_upload(
+            key="v2.metadata.json", count=1, action="forward_then_reset"
+        )
+        broken_s3.setup_at_object_upload(
+            key="metadata/v2.metadata.json",
+            count=1000000,
+            action="connection_reset_by_peer",
+            action_args=["1"],
+        )
+        _, error = node.query_and_get_answer_with_error(
+            f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(20) "
+            f"SETTINGS allow_insert_into_iceberg = 1, async_insert = 0"
+        )
+        broken_s3.reset()
+
+        answer, select_error = node.query_and_get_answer_with_error(
+            f"SELECT count() FROM {table}"
+        )
+        assert not select_error, f"the table is not readable: {select_error[:2000]}"
+        assert int(answer) == 20, f"the table holds {answer.strip()} rows instead of 20"
+        assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+    finally:
+        broken_s3.reset()
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")

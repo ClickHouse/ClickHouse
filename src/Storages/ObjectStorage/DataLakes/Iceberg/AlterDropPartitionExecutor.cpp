@@ -695,15 +695,25 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
 
     std::vector<std::string> files_for_cleanup;
     bool committed = false;
+    /// With an unknown outcome the new version may be published and reference these files.
+    bool commit_outcome_unknown = false;
 
     SCOPE_EXIT({
-        if (!committed)
+        if (!committed && !commit_outcome_unknown)
             cleanupNotCommited(std::move(files_for_cleanup));
     });
 
     auto [metadata_info, new_snapshot] = writeManifestList(state, plan, filename_generator, files_for_cleanup);
 
-    committed = commitMetadataJSON(state, filename_generator, metadata_info, new_snapshot);
+    try
+    {
+        committed = commitMetadataJSON(state, filename_generator, metadata_info, new_snapshot);
+    }
+    catch (...)
+    {
+        commit_outcome_unknown = isCommitOutcomeUnknown();
+        throw;
+    }
     if (!committed)
         return false;
 

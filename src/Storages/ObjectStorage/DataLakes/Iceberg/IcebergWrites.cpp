@@ -1370,7 +1370,7 @@ IcebergStorageSink::~IcebergStorageSink()
 {
     cancelBuffers();
     /// Covers every way an insert can stop without committing, including cancellation, which skips `onException`.
-    if (!committed)
+    if (!committed && !commit_outcome_unknown)
         removeDataFilesAndManifests();
 }
 
@@ -1865,6 +1865,12 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (...)
     {
+        /// With an unknown outcome the new version may be published and reference these files.
+        if (isCommitOutcomeUnknown())
+        {
+            commit_outcome_unknown = true;
+            throw;
+        }
         /// TODO: keep the files when the catalog reports an unknown commit outcome (`CommitStateUnknownException` or a 5xx), because the snapshot may already reference them.
         cleanup(false);
         throw;

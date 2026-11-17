@@ -40,5 +40,10 @@
             <retry_initial_delay_ms>10000</retry_initial_delay_ms>
             <retry_max_delay_ms>10000</retry_max_delay_ms>
         </iceberg_backoff>
+        <!-- Two attempts per request, so that the retry of a lost upload can fail too. -->
+        <iceberg_unknown>
+            <endpoint>http://resolver:8087/root/iceberg_unknown_</endpoint>
+            <retry_attempts>1</retry_attempts>
+        </iceberg_unknown>
     </s3>
 </clickhouse>

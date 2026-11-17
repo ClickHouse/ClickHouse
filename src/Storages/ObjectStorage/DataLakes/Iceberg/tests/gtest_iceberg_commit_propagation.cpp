@@ -29,6 +29,7 @@ namespace DB::ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_ALREADY_EXISTS;
     extern const int READONLY;
+    extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
 namespace
@@ -37,13 +38,14 @@ namespace
 using WriteErrorThrower = std::function<void(const std::string & path)>;
 using ExistsAnswer = std::function<bool(size_t call)>;
 
-/// `writeMetadataFileAndVersionHint` reports a failed commit as `false`, which every caller reads as
-/// a lost compare-and-swap and retries. A write the storage refused (it cannot express the condition,
-/// or it denies the write) fails the same way on every retry, so it has to propagate instead of being
-/// reported as a lost race; everything else stays retryable. This stub makes both outcomes observable
-/// without an object storage: `exists` answers what the test supplies (absent by default, so the
-/// function proceeds to the write), and `writeObject` throws the error the test supplies. Everything
-/// else throws, so an unexpected call is loud rather than silently absorbed.
+/// `writeMetadataFileAndVersionHint` reports a commit that published nothing as `false`, which every caller reads as
+/// a lost compare-and-swap and retries after removing the files of the attempt. A write the storage refused (it cannot
+/// express the condition, or it denies the write) fails the same way on every retry, so it has to propagate instead of
+/// being reported as a lost race. A write that was sent and failed without proof either way may have published the
+/// new version, so it throws `UNKNOWN_STATUS_OF_TRANSACTION`, and the caller keeps the files. This stub makes these
+/// outcomes observable without an object storage: `exists` answers what the test supplies (absent by default, so the
+/// function proceeds to the write), and `writeObject` throws the error the test supplies. Everything else throws, so
+/// an unexpected call is loud rather than silently absorbed.
 class ThrowingObjectStorage : public IObjectStorage
 {
 public:
@@ -154,6 +156,20 @@ bool commitWithFailingWrite(int write_error_code)
     });
 }
 
+/// Expects the commit to report that its outcome is unknown.
+void expectUnknownOutcome(WriteErrorThrower throw_write_error, ExistsAnswer exists_answer = [](size_t) { return false; })
+{
+    try
+    {
+        bool committed = commitWithFailingWrite(std::move(throw_write_error), std::move(exists_answer));
+        FAIL() << "Expected an unknown outcome, got " << committed;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION) << e.message();
+    }
+}
+
 }
 
 TEST(IcebergCommitPropagation, RefusedConditionalWriteIsNotReportedAsALostRace)
@@ -174,29 +190,48 @@ TEST(IcebergCommitPropagation, RefusedConditionalWriteIsNotReportedAsALostRace)
     }
 }
 
-TEST(IcebergCommitPropagation, OtherWriteFailuresStayRetryable)
+TEST(IcebergCommitPropagation, LostRaceStaysRetryable)
 {
-    /// Any other failure may succeed on a retry, including a genuinely lost race, so it keeps being
-    /// reported as an unsuccessful commit. Without this the other tests would also pass against a
-    /// commit that propagates everything, which would make every transient error fatal.
-    EXPECT_FALSE(commitWithFailingWrite(ErrorCodes::NETWORK_ERROR));
+    /// Another writer published the version first, so this commit published nothing and is retried on the next
+    /// version. Without this the other tests would also pass against a commit that propagates everything.
 
     /// A lost race on local storage.
     EXPECT_FALSE(commitWithFailingWrite(ErrorCodes::FILE_ALREADY_EXISTS));
 
-    /// An I/O error, which may be transient.
-    EXPECT_FALSE(commitWithFailingWrite([](const std::string & path)
-    {
-        ErrnoException::throwFromPathWithErrno(ErrorCodes::CANNOT_OPEN_FILE, path, EIO, "Cannot open file {}", path);
-    }));
-
 #if USE_AWS_S3
-    /// A lost race on S3 (412 `PreconditionFailed`), which the SDK reports without a typed error code.
+    /// A lost race on S3 (412 `PreconditionFailed`). The SDK has no typed error code for it, so it reports the name in
+    /// the message.
     EXPECT_FALSE(commitWithFailingWrite([](const std::string &)
     {
-        throw S3Exception("At least one of the pre-conditions you specified did not hold", Aws::S3::S3Errors::UNKNOWN);
+        throw S3Exception(
+            "Unable to parse ExceptionName: PreconditionFailed Message: At least one of the pre-conditions you specified did not hold",
+            Aws::S3::S3Errors::UNKNOWN);
     }));
 #endif
+}
+
+TEST(IcebergCommitPropagation, FailedCheckBeforeTheWriteStaysRetryable)
+{
+    /// Nothing was sent, so nothing can be published.
+    EXPECT_FALSE(commitWithFailingWrite(
+        [](const std::string &) { throw Exception(ErrorCodes::LOGICAL_ERROR, "The write must not be attempted"); },
+        [](size_t) -> bool { throw Exception(ErrorCodes::NETWORK_ERROR, "The existence check failed in the test stub"); }));
+}
+
+TEST(IcebergCommitPropagation, FailedWriteLeavesTheOutcomeUnknown)
+{
+    /// The write was sent, and its response tells nothing: the storage may have stored the metadata file, which then
+    /// references the files that a rollback removes.
+    expectUnknownOutcome([](const std::string & path)
+    {
+        throw Exception(ErrorCodes::NETWORK_ERROR, "Write of {} failed in the test stub", path);
+    });
+
+    /// An I/O error.
+    expectUnknownOutcome([](const std::string & path)
+    {
+        ErrnoException::throwFromPathWithErrno(ErrorCodes::CANNOT_OPEN_FILE, path, EIO, "Cannot open file {}", path);
+    });
 }
 
 TEST(IcebergCommitPropagation, PermissionErrorIsNotReportedAsALostRace)
@@ -221,7 +256,7 @@ TEST(IcebergCommitPropagation, PermissionErrorIsNotReportedAsALostRace)
     }
 }
 
-TEST(IcebergCommitPropagation, RefusalOfAWriteThatMayHaveLandedStaysRetryable)
+TEST(IcebergCommitPropagation, RefusalOfAWriteThatMayHaveLandedLeavesTheOutcomeUnknown)
 {
     /// A refusal after the write was sent (e.g. of the check after an upload) is not proof that nothing was written.
     auto refuse = [](const std::string & path)
@@ -230,15 +265,15 @@ TEST(IcebergCommitPropagation, RefusalOfAWriteThatMayHaveLandedStaysRetryable)
     };
 
     /// The metadata file is there after the refusal.
-    EXPECT_FALSE(commitWithFailingWrite(refuse, [](size_t call) { return call > 0; }));
+    expectUnknownOutcome(refuse, [](size_t call) { return call > 0; });
 
     /// The check after the refusal fails, so nothing is known.
-    EXPECT_FALSE(commitWithFailingWrite(refuse, [](size_t call) -> bool
+    expectUnknownOutcome(refuse, [](size_t call) -> bool
     {
         if (call == 0)
             return false;
         throw Exception(ErrorCodes::NETWORK_ERROR, "The existence check failed in the test stub");
-    }));
+    });
 }
 
 #if USE_AWS_S3

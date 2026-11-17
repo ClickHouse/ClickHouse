@@ -74,6 +74,11 @@
 #include <IO/S3/getObjectInfo.h>
 #endif
 
+#if USE_AZURE_BLOB_STORAGE
+#include <azure/core/exception.hpp>
+#include <azure/core/http/http_status_code.hpp>
+#endif
+
 
 using namespace DB;
 
@@ -92,6 +97,7 @@ extern const int NOT_IMPLEMENTED;
 extern const int FILE_ALREADY_EXISTS;
 extern const int STALE_VERSION;
 extern const int S3_ERROR;
+extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -415,6 +421,21 @@ static bool isKnownAbsent(const DB::ObjectStoragePtr & object_storage, const std
     }
 }
 
+/// The upload was sent and failed without proof either way, so it may have published the new version.
+[[noreturn]] static void throwCommitOutcomeUnknown(const String & storage_metadata_path)
+{
+    throw Exception(
+        ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
+        "The outcome of writing metadata file {} is unknown, so the files of the new version are kept: {}",
+        storage_metadata_path,
+        getCurrentExceptionMessage(false));
+}
+
+bool isCommitOutcomeUnknown()
+{
+    return getCurrentExceptionCode() == ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION;
+}
+
 bool writeMetadataFile(
     const IcebergPathResolver & resolver,
     const GeneratedMetadataFileWithInfo & metadata_file_info,
@@ -446,14 +467,38 @@ bool writeMetadataFile(
         if (isRefusedWrite(e) && (!write_attempted || isKnownAbsent(object_storage, storage_metadata_path)))
             throw;
         if (isConditionalWriteConflict(e))
+        {
             LOG_DEBUG(
                 getLogger("IcebergWrites"), "Metadata file {} was written by a concurrent commit: {}", storage_metadata_path, e.message());
-        else
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            return false;
+        }
+        if (write_attempted)
+            throwCommitOutcomeUnknown(storage_metadata_path);
+        tryLogCurrentException(__PRETTY_FUNCTION__);
         return false;
     }
+#if USE_AZURE_BLOB_STORAGE
+    catch (const Azure::Core::RequestFailedException & e)
+    {
+        /// Azure answers 409 `BlobAlreadyExists` to `If-None-Match: *` over an existing blob, and 412 `ConditionNotMet`
+        /// to a failed `If-Match`.
+        if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
+            || e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed)
+        {
+            LOG_DEBUG(
+                getLogger("IcebergWrites"), "Metadata file {} was written by a concurrent commit: {}", storage_metadata_path, e.what());
+            return false;
+        }
+        if (write_attempted)
+            throwCommitOutcomeUnknown(storage_metadata_path);
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
+    }
+#endif
     catch (...)
     {
+        if (write_attempted)
+            throwCommitOutcomeUnknown(storage_metadata_path);
         tryLogCurrentException(__PRETTY_FUNCTION__);
         return false;
     }
