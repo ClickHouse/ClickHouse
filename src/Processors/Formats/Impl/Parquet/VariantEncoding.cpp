@@ -1038,6 +1038,14 @@ ColumnPtr convertDynamicToVariant(const ColumnPtr & dynamic, const DataTypeVaria
     const auto & written_variant = assert_cast<const ColumnVariant &>(*written);
 
     const auto & members = type.getVariants();
+    UnorderedMapWithMemoryTracking<String, size_t> member_of_written_type;
+    for (size_t i = 0; i < members.size(); ++i)
+    {
+        auto [it, inserted] = member_of_written_type.try_emplace(written_types[i]->getName(), i);
+        if (!inserted && members[i]->equals(*written_types[i]))
+            it->second = i;
+    }
+
     const size_t num_written = written_variant_type->getVariants().size();
     Columns variants(num_written);
     VectorWithMemoryTracking<ColumnVariant::Discriminator> local_to_global(num_written);
@@ -1046,23 +1054,10 @@ ColumnPtr convertDynamicToVariant(const ColumnPtr & dynamic, const DataTypeVaria
     {
         const auto & written_type = written_variant_type->getVariant(
             written_variant.globalDiscriminatorByLocal(static_cast<ColumnVariant::Discriminator>(local)));
-        std::optional<size_t> member;
-        for (size_t i = 0; i < members.size(); ++i)
-        {
-            if (!written_types[i]->equals(*written_type))
-                continue;
-            if (members[i]->equals(*written_type))
-            {
-                member = i;
-                break;
-            }
-            if (!member)
-                member = i;
-        }
-        chassert(member.has_value());
-        variants[local] = castColumnAccurate({written_variant.getVariantPtrByLocalDiscriminator(local), written_type, ""}, members[*member]);
-        local_to_global[local] = static_cast<ColumnVariant::Discriminator>(*member);
-        member_used[*member] = true;
+        const size_t member = member_of_written_type.at(written_type->getName());
+        variants[local] = castColumnAccurate({written_variant.getVariantPtrByLocalDiscriminator(local), written_type, ""}, members[member]);
+        local_to_global[local] = static_cast<ColumnVariant::Discriminator>(member);
+        member_used[member] = true;
     }
     for (size_t i = 0; i < members.size(); ++i)
     {
