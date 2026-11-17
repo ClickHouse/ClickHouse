@@ -35,6 +35,12 @@ static bool hasNullConstantArgument(const ActionsDAG::Node & node)
     return std::ranges::any_of(node.children, [](const ActionsDAG::Node * child) { return child->column && child->column->onlyNull(); });
 }
 
+/// the body of a lambda is not in the DAG, so two lambdas are never known to be equal
+static bool isLambda(const ActionsDAG::Node & node)
+{
+    return WhichDataType(node.result_type).isFunction();
+}
+
 MatchedTrees::Matches matchTrees(
     const ActionsDAG::NodeRawConstPtrs & inner_dag,
     const ActionsDAG & outer_dag,
@@ -144,11 +150,11 @@ MatchedTrees::Matches matchTrees(
                 {
                     if (frame.mapped_children[i])
                         any_child = frame.mapped_children[i];
-                    else if (!frame.node->children[i]->column)
+                    else if (!frame.node->children[i]->column || isLambda(*frame.node->children[i]))
                         found_all_children = false;
                 }
 
-                if (found_all_children && any_child)
+                if (found_all_children && any_child && !isLambda(*frame.node))
                 {
                     Parents container;
                     Parents * intersection = &inner_parents[any_child];
