@@ -752,11 +752,15 @@ KeeperSnapshotManager::KeeperSnapshotManager(
     for (const auto & entry : recovered)
         existing_snapshots.emplace(entry.log_idx, entry.snapshot);
 
+    /// The retained window always includes the latest snapshot, even with `snapshots_to_keep = 0`:
+    /// `KeeperStateMachine::init` has not yet proved that the selected copy is readable, and its
+    /// duplicates may be the only readable copies of the snapshot that startup loads.
     std::optional<uint64_t> oldest_retained_idx;
-    if (!existing_snapshots.empty() && snapshots_to_keep > 0)
+    if (!existing_snapshots.empty())
     {
+        const size_t retained_count = std::max<size_t>(snapshots_to_keep, 1);
         const size_t purged_count
-            = existing_snapshots.size() > snapshots_to_keep ? existing_snapshots.size() - snapshots_to_keep : 0;
+            = existing_snapshots.size() > retained_count ? existing_snapshots.size() - retained_count : 0;
         oldest_retained_idx = std::next(existing_snapshots.begin(), purged_count)->first;
     }
     for (auto & entry : recovered)
