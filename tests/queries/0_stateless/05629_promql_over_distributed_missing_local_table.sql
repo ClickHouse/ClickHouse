@@ -6,6 +6,12 @@
 
 SET allow_experimental_time_series_table = 1;
 SET distributed_foreground_insert = 1;
+-- A serialized plan is analyzed on the initiator, which resolves the missing table there and raises `UNKNOWN_TABLE`
+-- before the local shard is skipped or its remote replicas are tried (`distributed plan` job).
+SET serialize_query_plan = 0;
+-- The local replica is asked first, and the remote ones only when its table is missing, so the result does not depend
+-- on which replica a randomized `load_balancing` picks.
+SET prefer_localhost_replica = 1;
 
 DROP TABLE IF EXISTS ts_dist;
 DROP TABLE IF EXISTS ts_dist_skip;
@@ -71,10 +77,13 @@ DESCRIBE cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT 
 SELECT count() FROM cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain)) SETTINGS use_hedged_requests = 0;
 
 SELECT '--- custom-key parallel replicas ask the local replica as a remote one, so its missing table is an error';
+-- `FORMAT Null`: the other replica may send its rows before the error arrives, and they must not reach the output.
 SELECT x FROM cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain))
-SETTINGS prefer_localhost_replica = 1, enable_parallel_replicas = 1, max_parallel_replicas = 2, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'x', serialize_query_plan = 0; -- { serverError UNKNOWN_TABLE }
+SETTINGS prefer_localhost_replica = 1, enable_parallel_replicas = 1, max_parallel_replicas = 2, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'x', serialize_query_plan = 0
+FORMAT Null; -- { serverError UNKNOWN_TABLE }
 SELECT x FROM cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain))
-SETTINGS prefer_localhost_replica = 1, enable_parallel_replicas = 1, max_parallel_replicas = 2, parallel_replicas_mode = 'custom_key_range', parallel_replicas_custom_key = 'x', serialize_query_plan = 0; -- { serverError UNKNOWN_TABLE }
+SETTINGS prefer_localhost_replica = 1, enable_parallel_replicas = 1, max_parallel_replicas = 2, parallel_replicas_mode = 'custom_key_range', parallel_replicas_custom_key = 'x', serialize_query_plan = 0
+FORMAT Null; -- { serverError UNKNOWN_TABLE }
 
 CREATE TABLE t_plain (x UInt8) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t_plain VALUES (2), (3);
