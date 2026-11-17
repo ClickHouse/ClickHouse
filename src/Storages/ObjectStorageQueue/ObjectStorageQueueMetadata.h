@@ -224,10 +224,6 @@ private:
     void migrateToBucketsInKeeper(size_t value);
 
     void updateRegistryFunc();
-    /// Reads the processors registered as active. A non-null `watch` is set as soon as
-    /// one of them registers or unregisters. Returns false if the registry node does
-    /// not exist, in which case no watch is left.
-    bool getActiveRegistered(Strings & registered, const Coordination::EventPtr & watch);
     void updateRegistry(const DB::Strings & registered_);
 
     /// Get ID for the specified table which is used for active tables.
@@ -266,8 +262,6 @@ private:
     std::unordered_map<String, PipelineLagWatermarks> pipeline_lag_watermarks;
 
     size_t buckets_num;
-    /// Wakes up updateRegistryFunc(): set by the watch on the registry and by shutdown().
-    const Coordination::EventPtr registry_updated_event = std::make_shared<Poco::Event>();
     std::unique_ptr<ThreadFromGlobalPool> update_registry_thread;
 
     LoggerPtr log;
