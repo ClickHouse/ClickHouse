@@ -994,6 +994,12 @@ void AsyncLoader::worker(Pool & pool)
         {
             std::unique_lock lock{mutex};
 
+            // The workers spawned here, for the dependents of the finished job or for a lower priority pool when
+            // this one runs out of jobs, are not waited for at this point: this worker either returns or takes the
+            // next job of its pool. So the global pool may queue them even when this worker is the last thread
+            // available to run them, e.g. for a sequential handoff between two priorities on one free thread.
+            CurrentThreadDoesNotWaitForScheduledThreads not_waiting_for_spawned_workers;
+
             // Handle just executed job
             if (exception_from_job)
                 finish(job, LoadStatus::FAILED, exception_from_job, lock);

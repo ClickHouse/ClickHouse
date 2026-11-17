@@ -3,10 +3,12 @@
 #include <chrono>
 #include <cstdint>
 #include <thread>
+#include <type_traits>
 #include <mutex>
 #include <condition_variable>
 #include <functional>
 #include <list>
+#include <memory>
 #include <optional>
 #include <atomic>
 #include <stack>
@@ -35,6 +37,34 @@ class JobWithPriority;
   *
   * Thread: std::thread or something with identical interface.
   */
+/// The OS-thread type backing the global pool. On macOS we use a wrapper that requests a larger
+/// stack than the small 512 KiB default (see ThreadStackSize.h); elsewhere plain std::thread, whose
+/// default stack already follows RLIMIT_STACK. `std::is_same_v<Thread, GlobalThreadType>` is used
+/// across ThreadPoolImpl to tell the global pool apart from local (ThreadFromGlobalPool) pools.
+#if defined(OS_DARWIN)
+using GlobalThreadType = DB::ThreadWithStackSize;
+#else
+using GlobalThreadType = std::thread;
+#endif
+
+/// An idle worker of a local pool that holds a slot of the global pool while it is idle (see
+/// `ThreadFromThreadPool::global_slots_for_idle`). While it waits, it is linked into a process-wide list,
+/// so that the global pool can take the slot back when a thread needs it: the worker is woken and leaves
+/// its pool, which frees its thread of the global pool. The slot is given back to the counter by the code
+/// that evicts the worker, right when it does so, so that the next scheduling call sees it even before the
+/// worker wakes up. A worker that is woken for a job of its pool gives its slot back itself, before it
+/// unlocks the mutex of the list.
+/// All the fields are protected by the mutex of that list.
+struct IdleGlobalSlotHolder
+{
+    IdleGlobalSlotHolder * prev = nullptr;
+    IdleGlobalSlotHolder * next = nullptr;
+    std::condition_variable_any * cv = nullptr;
+    bool linked = false;
+    /// Set when the slot is taken back. The worker leaves its pool when it sees it.
+    bool evicted = false;
+};
+
 template <typename Thread>
 class ThreadPoolImpl
 {
@@ -61,7 +91,8 @@ public:
         explicit ThreadFromThreadPool(ThreadPoolImpl& parent_pool);
 
         // Shift the thread state from Preparing to Running to allow the worker to start.
-        void start(typename ThreadList::iterator& it);
+        void start(typename ThreadList::iterator & it);
+        void start(typename ThreadList::iterator & it, std::unique_ptr<JobWithPriority> initial_job_);
 
         void join();
 
@@ -88,11 +119,41 @@ public:
         // Stores the position of the thread in the parent thread pool list
         typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator thread_it;
 
+        /// A job reserved through `scheduleThreadOrThrow` is handed to its worker directly: either to
+        /// a newly created worker at `start`, or to an idle worker popped from the idle stack (set by
+        /// the scheduler under the pool mutex before waking that worker). It must not compete with
+        /// already queued work, otherwise the caller can still observe a seemingly running thread
+        /// whose function has not started.
+        std::unique_ptr<JobWithPriority> initial_job;
+
+        /// Set for a worker of a local pool that keeps no free threads when the worker is created. Such a
+        /// worker leaves as soon as it finds no job instead of waiting in the idle stack, even if
+        /// `max_free_threads` was increased since, so it does not keep a thread of the global pool, which
+        /// it holds without a slot (see `ThreadFromGlobalPoolScheduleMode::QueueUnlessSlotsExhausted`).
+        bool returns_when_idle = false;
+
+        /// For a worker of a local pool that takes no slot of the global pool while it runs a job (see
+        /// `setJobsAreLongLived`): the counter of the free slots of the global pool. Such a worker takes a
+        /// slot from it while it waits in the idle stack, because an idle worker keeps its thread of the
+        /// global pool for an unlimited time. If no slot can be taken, the worker leaves instead of waiting.
+        std::atomic<int64_t> * global_slots_for_idle = nullptr;
+
+        /// Set together with `global_slots_for_idle`: the number of jobs waiting in the queue of the global
+        /// pool. While a job waits there, the worker does not wait in the idle stack, it leaves its pool to
+        /// free its thread of the global pool for that job.
+        std::atomic<size_t> * global_queued_jobs = nullptr;
+
         /// Per-thread condition variable for LIFO idle scheduling.
         /// Each idle thread waits on its own CV, so the scheduler can wake the
         /// LIFO-selected thread directly without disturbing other idle threads.
         /// This avoids the thundering herd that a shared CV with `notify_all` creates.
-        std::condition_variable cv;
+        /// A worker of a local pool also waits for `IdleGlobalSlotHolder::evicted` (see `idle_slot_holder`), which
+        /// is protected by another mutex, so it needs `std::condition_variable_any`.
+        std::conditional_t<std::is_same_v<Thread, GlobalThreadType>, std::condition_variable, std::condition_variable_any> cv;
+
+        /// Linked into the process-wide list while this worker waits in the idle stack holding a slot of the
+        /// global pool (only for a worker with `global_slots_for_idle`).
+        IdleGlobalSlotHolder idle_slot_holder;
 
         /// LIFO idle thread scheduling flag.
         /// When a new job is scheduled, the most recently idle thread is popped
@@ -158,6 +219,38 @@ public:
     /// See trySchedule() above about the sign of `wait_microseconds`.
     void scheduleOrThrow(Job job, Priority priority = {}, Int64 wait_microseconds = 0, bool propagate_opentelemetry_tracing_context = true);
 
+    /// Schedules a job that occupies its worker for the whole lifetime of that worker, i.e. the job
+    /// *is* a thread (see `ThreadFromGlobalPoolImpl`). Such a job must be handed a worker slot at
+    /// scheduling time and must never be left in the queue: the workers running other never-returning
+    /// jobs will not free up, so a queued job would stay in the queue forever while its creator
+    /// already believes that its thread is running - any code that then waits for that thread to make
+    /// progress deadlocks. Throws `CANNOT_SCHEDULE_TASK` instead of enqueueing when all `max_threads`
+    /// slots are already taken by such jobs, and also when the pool is at `max_threads` and all its
+    /// workers are busy with ordinary jobs, because one of those jobs may be the one waiting for this
+    /// thread.
+    void scheduleThreadOrThrow(Job job, Priority priority = {}, bool propagate_opentelemetry_tracing_context = true);
+
+    /// Like `scheduleThreadOrThrow`, the job takes one of the `max_threads` slots and is rejected when
+    /// all of them are already taken by long-lived jobs, but it may wait in the queue when the workers
+    /// are only busy with ordinary jobs. This is for a thread whose creator does not rely on it having
+    /// started, such as a worker of a local `ThreadPool` whose jobs are long-lived (see `setJobsAreLongLived`):
+    /// the local pool keeps its jobs queued until the worker comes, so a worker delayed by a transient
+    /// saturation of the global pool is not an error.
+    void scheduleThreadOrQueueOrThrow(Job job, Priority priority = {}, bool propagate_opentelemetry_tracing_context = true);
+
+    /// Like `scheduleThreadOrQueueOrThrow`, but for a thread that is known to return after a finite
+    /// time, such as a worker of a local pool whose jobs return. It does not take a slot, because it
+    /// does not hold a worker forever, and it is rejected only when all
+    /// the slots are already taken by long-lived jobs: then no worker would ever be free for it.
+    /// Otherwise it waits in the queue for any number of such threads scheduled at the same time.
+    void scheduleReturningThreadOrQueueOrThrow(Job job, Priority priority = {}, bool propagate_opentelemetry_tracing_context = true);
+
+    /// Like `scheduleThreadOrThrow`, the job is handed a worker right away or rejected, but it is for a
+    /// thread that is known to return after a finite time, such as the thread of a gRPC call or of a
+    /// dictionary load. It takes no slot, so a number of such threads running at the same time do not
+    /// make the slots look exhausted to `scheduleReturningThreadOrQueueOrThrow`.
+    void scheduleReturningThreadOrThrow(Job job, Priority priority = {}, bool propagate_opentelemetry_tracing_context = true);
+
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
     /// If any thread has thrown an exception, the first exception will be rethrown from this method,
@@ -187,6 +280,14 @@ public:
     void setMaxThreads(size_t value);
     void setMaxFreeThreads(size_t value);
     void setQueueSize(size_t value);
+
+    /// Declares that the jobs of this local pool occupy their workers for a long time and do not return
+    /// on their own, for example the worker loops of `MergeTreeBackgroundExecutor`. Then each worker
+    /// takes a slot of the global pool for its whole lifetime, so it is rejected when all of the slots
+    /// are taken by other long-lived threads instead of waiting forever in the queue behind them. The
+    /// workers of other local pools take no slot. Must be called before the first job is scheduled.
+    void setJobsAreLongLived();
+
     size_t getMaxThreads() const;
     size_t getMaxFreeThreads() const;
     size_t getQueueSize() const;
@@ -203,11 +304,27 @@ public:
 
 private:
     friend class GlobalThreadPool;
+    /// A local pool accesses the slot counter of the global pool, see `globalRemainingThreadJobCapacity`.
+    template <typename> friend class ThreadPoolImpl;
+
+    /// The counter of the free slots of the global pool (`remaining_thread_job_capacity`).
+    static std::atomic<int64_t> & globalRemainingThreadJobCapacity();
+
+    /// The number of jobs waiting in the queue of the global pool (`queued_jobs_count`).
+    static std::atomic<size_t> & globalQueuedJobs();
 
     mutable std::mutex mutex;
     /// A finished job frees one slot, so it wakes only one scheduler waiting for a slot.
     std::condition_variable slot_freed;
     std::condition_variable all_jobs_finished;
+
+    /// Notified when a worker that was neither running a job nor waiting in the idle stack settles:
+    /// links itself into the idle stack, takes a queued job, or leaves the pool. Only
+    /// `scheduleThreadOrThrow` waits for it (see `scheduleImpl`), and only when it found no idle worker
+    /// while the pool is at `max_threads`; `schedulers_waiting_for_worker` counts such waits so that the
+    /// workers do not notify it for nothing.
+    std::condition_variable worker_settled;
+    size_t schedulers_waiting_for_worker = 0;
 
     Metric metric_threads;
     Metric metric_active_threads;
@@ -233,8 +350,31 @@ private:
     // If negative, it means that we have more jobs than threads.
     std::atomic<int64_t> available_threads;
 
+    // Number of worker slots not yet taken by jobs scheduled through `scheduleThreadOrThrow` or
+    // `scheduleThreadOrQueueOrThrow`. `scheduleReturningThreadOrQueueOrThrow` only checks that it is positive.
+    // Originally equals to max_threads and is adjusted by setMaxThreads together with
+    // `remaining_pool_capacity`. Such a job holds its slot from the moment it is scheduled until it
+    // finishes, because it occupies a worker for the whole lifetime of that worker. Once this reaches
+    // zero, no further such job can ever start, so it has to be rejected instead of being queued.
+    // In the global pool, an idle worker of a local pool that keeps free threads also holds a slot while
+    // it is idle (see `ThreadFromThreadPool::global_slots_for_idle`), but it never takes the last one.
+    std::atomic<int64_t> remaining_thread_job_capacity;
+
+    /// The size of `jobs`, readable without `mutex`. Changed under `mutex`. In the global pool, an idle worker
+    /// of a local pool does not take a slot to wait in the idle stack while it is positive, see
+    /// `ThreadFromThreadPool::global_queued_jobs`.
+    std::atomic<size_t> queued_jobs_count = 0;
+
     bool finished = false;
     bool threads_remove_themselves = true;
+    /// Whether `max_free_threads` is zero. Then the idle workers of a local pool leave right away (see
+    /// `ThreadFromThreadPool::returns_when_idle`). A copy of `max_free_threads == 0` that can be read
+    /// without `mutex`, when a worker is created.
+    std::atomic<bool> workers_return = false;
+    /// Set by `setJobsAreLongLived`. The workers of such a local pool are scheduled through
+    /// `scheduleThreadOrQueueOrThrow` and take a slot of the global pool; the workers of other local pools
+    /// run jobs that return, and are scheduled through `scheduleReturningThreadOrQueueOrThrow`.
+    std::atomic<bool> jobs_are_long_lived = false;
     const bool shutdown_on_exception = true;
 
     boost::heap::priority_queue<JobWithPriority,boost::heap::stable<true>> jobs;
@@ -252,7 +392,14 @@ private:
     size_t idle_thread_count = 0;
 
     template <typename ReturnType>
-    ReturnType scheduleImpl(Job job, Priority priority, std::optional<Int64> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
+    ReturnType scheduleImpl(
+        Job job,
+        Priority priority,
+        std::optional<Int64> wait_microseconds,
+        bool propagate_opentelemetry_tracing_context = true,
+        bool job_occupies_thread = false,
+        bool thread_job_may_queue = false,
+        bool thread_job_takes_slot = true);
 
     /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with the mutex locked.
     void startNewThreadsNoLock();
@@ -263,6 +410,9 @@ private:
     ThreadFromThreadPool * popNewestIdleThreadNoLock();
     ThreadFromThreadPool * popOldestIdleThreadNoLock();
     void wakeIdleThreadNoLock(ThreadFromThreadPool * thread);
+
+    /// Wakes the schedulers waiting on `worker_settled`, if any. Must be called with mutex held.
+    void notifyWorkerSettledNoLock();
 
     /// Wake all threads in the idle stack and set their wakeup flags (for shutdown).
     /// Must be called with mutex held.
@@ -279,16 +429,6 @@ private:
     void finalize();
     void onDestroy();
 };
-
-/// The OS-thread type backing the global pool. On macOS we use a wrapper that requests a larger
-/// stack than the small 512 KiB default (see ThreadStackSize.h); elsewhere plain std::thread, whose
-/// default stack already follows RLIMIT_STACK. `std::is_same_v<Thread, GlobalThreadType>` is used
-/// across ThreadPoolImpl to tell the global pool apart from local (ThreadFromGlobalPool) pools.
-#if defined(OS_DARWIN)
-using GlobalThreadType = DB::ThreadWithStackSize;
-#else
-using GlobalThreadType = std::thread;
-#endif
 
 /// ThreadPool with OS threads.
 using FreeThreadPool = ThreadPoolImpl<GlobalThreadType>;
@@ -345,6 +485,22 @@ struct ThreadFromGlobalPoolState
     Poco::Event event;
 };
 
+enum class ThreadFromGlobalPoolScheduleMode : uint8_t
+{
+    /// Takes a slot for a long-lived job, but may wait in the queue (`scheduleThreadOrQueueOrThrow`).
+    ReserveSlot,
+    /// Takes no slot, is rejected only when all of them are taken by long-lived jobs, and may wait in
+    /// the queue (`scheduleReturningThreadOrQueueOrThrow`). This is the default for a `ThreadFromGlobalPool`:
+    /// it lets a finite thread wait behind ordinary jobs, but does not queue it when the permanent threads
+    /// hold all the workers of the global pool, because then it would never start, and its creator would
+    /// wait for it (or hang in `join`) forever.
+    QueueUnlessSlotsExhausted,
+    /// Takes a slot for a long-lived job and a worker right away (`scheduleThreadOrThrow`).
+    FailIfNoWorker,
+    /// Takes no slot, but a worker right away, for a thread that returns (`scheduleReturningThreadOrThrow`).
+    ReturningFailIfNoWorker,
+};
+
 /// Worker entry point implementing ThreadFromGlobalPoolImpl's constructor body.
 /// Lives in the .cpp so that ThreadStatus, scope_guard and friends do not leak via this header.
 void startThreadFromGlobalPool(
@@ -353,7 +509,8 @@ void startThreadFromGlobalPool(
     UInt64 global_profiler_real_time_period_ns,
     UInt64 global_profiler_cpu_time_period_ns,
     bool global_trace_collector_allowed,
-    bool propagate_opentelemetry_context);
+    bool propagate_opentelemetry_context,
+    ThreadFromGlobalPoolScheduleMode schedule_mode);
 
 
 /** Looks like std::thread but allocates threads in GlobalThreadPool.
@@ -370,6 +527,12 @@ public:
 
     template <typename Function, typename... Args>
     explicit ThreadFromGlobalPoolImpl(Function && func, Args &&... args)
+        : ThreadFromGlobalPoolImpl(ThreadFromGlobalPoolScheduleMode::QueueUnlessSlotsExhausted, std::forward<Function>(func), std::forward<Args>(args)...)
+    {
+    }
+
+    template <typename Function, typename... Args>
+    explicit ThreadFromGlobalPoolImpl(ThreadFromGlobalPoolScheduleMode schedule_mode, Function && func, Args &&... args)
         : state(std::make_shared<ThreadFromGlobalPoolState>())
     {
         startThreadFromGlobalPool(
@@ -382,7 +545,8 @@ public:
             GlobalThreadPool::instance().global_profiler_real_time_period_ns,
             GlobalThreadPool::instance().global_profiler_cpu_time_period_ns,
             global_trace_collector_allowed,
-            propagate_opentelemetry_context);
+            propagate_opentelemetry_context,
+            schedule_mode);
     }
 
     ThreadFromGlobalPoolImpl(ThreadFromGlobalPoolImpl && rhs) noexcept
@@ -472,6 +636,22 @@ using ThreadFromGlobalPoolWithoutTraceCollector = ThreadFromGlobalPoolImpl<true,
 /// To make sure the tracing context is correctly propagated, we explicitly disable context propagation(including initialization and de-initialization) at underlying worker level.
 ///
 using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolNoTracingContextPropagation>;
+
+/// Declares that the current thread does not wait for the threads of the global pool that it schedules
+/// while this object exists. A worker of the global pool that holds no slot is normally not counted on to
+/// free up for a queued thread that it schedules itself, because it may be waiting for that thread, so such
+/// a thread is rejected when the scheduling worker is the last one not held by long-lived threads. This
+/// object lifts that restriction for a worker that is about to return or to move on to other work, such as
+/// a worker of `AsyncLoader` that hands its pool over to a worker of another pool after its job finished.
+class CurrentThreadDoesNotWaitForScheduledThreads : private boost::noncopyable
+{
+public:
+    CurrentThreadDoesNotWaitForScheduledThreads();
+    ~CurrentThreadDoesNotWaitForScheduledThreads();
+
+private:
+    bool previous_value;
+};
 
 /// Enables fault injections globally for all thread pools
 class CannotAllocateThreadFaultInjector
