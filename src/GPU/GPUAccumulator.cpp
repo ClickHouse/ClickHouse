@@ -370,7 +370,7 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
     , aggregates(aggregatesOrThrow(values.size(), std::move(aggregates_)))
     , batch_rows(batchRowsFor(batch_bytes, concatenated(key_types, value_types)))
     , group_stream(createStream())
-    , group_by(std::make_unique<CudfGroupBy>(group_keys, values, aggregates, cuda::stream_ref{group_stream.get()}))
+    , group_by(createCudfGroupBy(group_keys, values, aggregates, cuda::stream_ref{group_stream.get()}))
     , pipeline(
           concatenated(key_types, value_types),
           batch_rows,

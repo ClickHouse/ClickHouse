@@ -35,7 +35,7 @@ constexpr size_t max_slice_rows = 64UL << 20;
 constexpr size_t min_capacity = 1UL << 16;
 
 /// The batches are reduced over their runs of equal keys before they are grouped where the first batch has at most this
-/// many runs per row, see `CudfGroupBy::State::reduce_runs`.
+/// many runs per row, see `StreamingGroupBy::reduce_runs`.
 constexpr double max_runs_per_row_to_reduce = 0.5;
 
 /// The reduced runs gathered are combined into their groups once they take more than this, or twice what they took
@@ -56,10 +56,244 @@ __host__ std::unique_ptr<cudf::groupby_aggregation> groupByAggregationFor(GPUAgg
     throwGPUError(("unknown aggregation " + std::to_string(static_cast<int>(aggregation))).c_str());
 }
 
-}
-
-struct CudfGroupBy::State
+/// The `CudfGroupBy` of `createCudfGroupBy`.
+class StreamingGroupBy final : public CudfGroupBy
 {
+public:
+    __host__ StreamingGroupBy(
+        GPUSpan<GPUElementType> keys_,
+        GPUSpan<GPUElementType> values_,
+        GPUSpan<GPUGroupByAggregate> aggregates_,
+        cuda::stream_ref stream_)
+        : keys(keys_.begin(), keys_.end())
+        , values(values_.begin(), values_.end())
+        , aggregates(aggregates_.begin(), aggregates_.end())
+        , stream(stream_)
+        , keyless(keys_.empty())
+        , keyless_key(0, stream_)
+    {
+        if (stream.get() == cudaStreamLegacy || stream.get() == nullptr)
+            throwGPUError("a `GROUP BY` through cuDF on the device's default stream, where cuco cannot copy its counts back");
+
+        if (values.empty())
+            throwGPUError("a `GROUP BY` without values");
+
+        if (aggregates.empty())
+            throwGPUError("a `GROUP BY` without aggregates");
+
+        for (const auto & key : keys)
+        {
+            if (key != GPUElementType::String && !isInteger(key))
+                throwGPUError(("a key of element type " + std::to_string(static_cast<int>(key)) + " is neither an integer nor a string").c_str());
+        }
+
+        for (const auto & aggregate : aggregates)
+        {
+            const bool counts = aggregate.aggregation == GPUAggregationKind::Count;
+            if (counts != (aggregate.column == GPUGroupByAggregate::no_column))
+                throwGPUError("a `count` of a column, or another aggregate of none");
+            if (counts)
+            {
+                if (aggregate.result_type != GPUElementType::UInt64)
+                    throwGPUError("a `count` into other than a `UInt64`");
+                continue;
+            }
+            if (aggregate.column >= values.size())
+                throwGPUError(("an aggregate of value " + std::to_string(aggregate.column) + " of " + std::to_string(values.size())).c_str());
+            const GPUElementType element_type = values[aggregate.column];
+            const bool variable = columnKindOf(element_type) == GPUColumnKind::Variable;
+            switch (aggregate.aggregation)
+            {
+                case GPUAggregationKind::Sum:
+                    if (variable || sizeOf(aggregate.result_type) != 8)
+                        throwGPUError("a sum of values of varying width, or into other than eight bytes");
+                    break;
+                case GPUAggregationKind::Mean:
+                    if (variable || aggregate.result_type != GPUElementType::Float64)
+                        throwGPUError("an `avg` of values of varying width, or into other than a `Float64`");
+                    break;
+                case GPUAggregationKind::Min:
+                case GPUAggregationKind::Max:
+                    if (aggregate.result_type != element_type)
+                        throwGPUError("a `min` or a `max` into another type than its values'");
+                    break;
+                case GPUAggregationKind::Count:
+                    break;
+            }
+        }
+
+        key_indices.resize(numKeyColumns());
+        for (size_t i = 0; i < key_indices.size(); ++i)
+            key_indices[i] = static_cast<cudf::size_type>(i);
+        runs_combine = std::all_of(
+            aggregates.begin(), aggregates.end(), [](const GPUGroupByAggregate & aggregate) { return aggregate.aggregation != GPUAggregationKind::Mean; });
+        streams = std::none_of(aggregates.begin(), aggregates.end(), [&](const GPUGroupByAggregate & aggregate)
+        {
+            return (aggregate.aggregation == GPUAggregationKind::Min || aggregate.aggregation == GPUAggregationKind::Max)
+                && columnKindOf(values[aggregate.column]) == GPUColumnKind::Variable;
+        });
+        if (!streams && !runs_combine)
+            throwGPUError("a `GROUP BY` with an `avg` and a `min` or a `max` of values of varying width, which combine from partial results that an `avg`'s do not");
+    }
+
+    __host__ void addBatch(GPUSpan<DeviceColumnView> batch_keys, GPUSpan<DeviceColumnView> batch_values) override
+    {
+        if (finalized)
+            throwGPUError("a batch after the groups were closed");
+
+        if (batch_keys.size() != keys.size() || batch_values.size() != values.size())
+            throwGPUError(
+                ("a batch of " + std::to_string(batch_keys.size()) + " keys and " + std::to_string(batch_values.size()) + " values, expected "
+                + std::to_string(keys.size()) + " and " + std::to_string(values.size())).c_str());
+
+        const size_t rows = batch_keys.empty() ? batch_values[0].rows() : batch_keys[0].rows();
+        if (rows == 0)
+            return;
+
+        std::vector<cudf::column_view> columns;
+        columns.reserve(numKeyColumns() + values.size());
+
+        if (keyless)
+            columns.push_back(keylessKey(rows));
+
+        for (size_t i = 0; i < batch_keys.size(); ++i)
+        {
+            if (batch_keys[i].rows() != rows)
+                throwGPUError(("key " + std::to_string(i) + " of " + std::to_string(batch_keys[i].rows()) + " rows in a batch of " + std::to_string(rows)).c_str());
+            columns.push_back(columnViewOf(batch_keys[i], keys[i]));
+        }
+
+        for (size_t i = 0; i < batch_values.size(); ++i)
+        {
+            if (batch_values[i].rows() != rows)
+                throwGPUError(("value " + std::to_string(i) + " of " + std::to_string(batch_values[i].rows()) + " rows in a batch of " + std::to_string(rows)).c_str());
+            columns.push_back(columnViewOf(batch_values[i], values[i]));
+        }
+
+        if (!reduce_runs.has_value() && runs_combine)
+        {
+            std::unique_ptr<cudf::table> runs = reduceRuns(columns);
+            reduce_runs = static_cast<double>(runs->num_rows()) <= max_runs_per_row_to_reduce * static_cast<double>(rows);
+            /// Partial results either way, which are many of an unsorted batch, but only the first's.
+            if (*reduce_runs || !streams)
+            {
+                gatherRuns(std::move(runs));
+                return;
+            }
+        }
+        else if (!reduce_runs.has_value())
+        {
+            reduce_runs = false;
+        }
+        else if (*reduce_runs)
+        {
+            gatherRuns(reduceRuns(columns));
+            return;
+        }
+
+        if (!streams)
+        {
+            gatherRuns(reduceRuns(columns, cudf::sorted::NO));
+            return;
+        }
+
+        group(cudf::table_view(columns));
+    }
+
+    __host__ size_t finalize() override
+    {
+        if (finalized)
+            throwGPUError("the groups were closed twice");
+
+        if (grouping)
+        {
+            auto [group_keys, results] = guarded("closing the groups", [&]
+            {
+                return std::move(*grouping).finalize_and_release(stream);
+            });
+            groups = withoutKeylessKey(tableOf(std::move(group_keys), std::move(results)));
+        }
+        else if (!reduced_runs.empty())
+        {
+            auto [group_keys, results] = combineRuns();
+            groups = withoutKeylessKey(tableOf(std::move(group_keys), std::move(results)));
+        }
+        grouping.reset();
+        finalized = true;
+
+        if (!groups)
+            return 0;
+
+        variable_offsets.resize(keys.size());
+        value_offsets.resize(aggregates.size());
+        return static_cast<size_t>(groups->num_rows());
+    }
+
+    __host__ DeviceColumnView key(size_t index) const override
+    {
+        if (!finalized)
+            throwGPUError("the groups were asked for before they were closed");
+
+        if (index >= keys.size())
+            throwGPUError(("key " + std::to_string(index) + " of " + std::to_string(keys.size())).c_str());
+
+        const GPUElementType type = keys[index];
+        switch (columnKindOf(type))
+        {
+            case GPUColumnKind::Fixed:
+                if (!groups)
+                    return DeviceFixedColumn{.element_type = type};
+                return deviceViewOf(groups->view().column(static_cast<cudf::size_type>(index)), type);
+            case GPUColumnKind::Variable:
+            {
+                if (!groups)
+                    return DeviceVariableColumn{};
+                DeviceVariableColumnOfCudf of_cudf = deviceViewOfVariable(groups->view().column(static_cast<cudf::size_type>(index)), stream);
+                variable_offsets[index] = std::move(of_cudf.widened_offsets);
+                return of_cudf.view;
+            }
+        }
+        throwGPUError(("unknown column kind of element type " + std::to_string(static_cast<int>(type))).c_str());
+    }
+
+    __host__ DeviceColumnView value(size_t index) const override
+    {
+        if (!finalized)
+            throwGPUError("the groups were asked for before they were closed");
+
+        if (index >= aggregates.size())
+            throwGPUError(("aggregate " + std::to_string(index) + " of " + std::to_string(aggregates.size())).c_str());
+
+        const GPUElementType result_type = aggregates[index].result_type;
+        const auto column_index = static_cast<cudf::size_type>(keys.size() + index);
+        switch (columnKindOf(result_type))
+        {
+            case GPUColumnKind::Fixed:
+            {
+                if (!groups)
+                    return DeviceFixedColumn{.element_type = result_type};
+
+                /// Taken by its bits, as `tableOf` checked it is as wide as `result_type`: cuDF sums unsigned integers into
+                /// signed ones.
+                const cudf::column_view column = groups->view().column(column_index);
+                checkNoNulls(column);
+                if (column.offset() != 0)
+                    throwGPUError("the device returned a value of the groups as a slice");
+                return DeviceFixedColumn{.element_type = result_type, .data = column.head<char>(), .rows = static_cast<size_t>(column.size())};
+            }
+            case GPUColumnKind::Variable:
+            {
+                if (!groups)
+                    return DeviceVariableColumn{};
+                DeviceVariableColumnOfCudf of_cudf = deviceViewOfVariable(groups->view().column(column_index), stream);
+                value_offsets[index] = std::move(of_cudf.widened_offsets);
+                return of_cudf.view;
+            }
+        }
+        throwGPUError(("unknown column kind of element type " + std::to_string(static_cast<int>(result_type))).c_str());
+    }
+
+private:
     const std::vector<GPUElementType> keys;
     const std::vector<GPUElementType> values;
     const std::vector<GPUGroupByAggregate> aggregates;
@@ -107,33 +341,10 @@ struct CudfGroupBy::State
     rmm::device_buffer keyless_key;
 
     /// Of the keys and of the values of varying width: their offsets widened for a view of the device's.
-    std::vector<std::unique_ptr<cudf::column>> variable_offsets;
-    std::vector<std::unique_ptr<cudf::column>> value_offsets;
+    mutable std::vector<std::unique_ptr<cudf::column>> variable_offsets;
+    mutable std::vector<std::unique_ptr<cudf::column>> value_offsets;
     bool finalized = false;
 
-    __host__ State(
-        GPUSpan<GPUElementType> keys_,
-        GPUSpan<GPUElementType> values_,
-        GPUSpan<GPUGroupByAggregate> aggregates_,
-        cuda::stream_ref stream_)
-        : keys(keys_.begin(), keys_.end())
-        , values(values_.begin(), values_.end())
-        , aggregates(aggregates_.begin(), aggregates_.end())
-        , stream(stream_)
-        , keyless(keys_.empty())
-        , keyless_key(0, stream_)
-    {
-        key_indices.resize(numKeyColumns());
-        for (size_t i = 0; i < key_indices.size(); ++i)
-            key_indices[i] = static_cast<cudf::size_type>(i);
-        runs_combine = std::all_of(
-            aggregates.begin(), aggregates.end(), [](const GPUGroupByAggregate & aggregate) { return aggregate.aggregation != GPUAggregationKind::Mean; });
-        streams = std::none_of(aggregates.begin(), aggregates.end(), [&](const GPUGroupByAggregate & aggregate)
-        {
-            return (aggregate.aggregation == GPUAggregationKind::Min || aggregate.aggregation == GPUAggregationKind::Max)
-                && columnKindOf(values[aggregate.column]) == GPUColumnKind::Variable;
-        });
-    }
 
     /// The columns grouped by: the keys, or the key of its own of a `GROUP BY` without keys.
     __host__ size_t numKeyColumns() const { return keys.size() + (keyless ? 1 : 0); }
@@ -344,235 +555,16 @@ struct CudfGroupBy::State
         reduced_bytes = combined_bytes;
         reduced_runs.push_back(std::move(groups));
     }
-
 };
 
-__host__ CudfGroupBy::CudfGroupBy(
-    GPUSpan<GPUElementType> keys,
-    GPUSpan<GPUElementType> values,
-    GPUSpan<GPUGroupByAggregate> aggregates,
-    cuda::stream_ref stream)
-{
-    if (stream.get() == cudaStreamLegacy || stream.get() == nullptr)
-        throwGPUError("a `GROUP BY` through cuDF on the device's default stream, where cuco cannot copy its counts back");
-
-    if (values.empty())
-        throwGPUError("a `GROUP BY` without values");
-
-    if (aggregates.empty())
-        throwGPUError("a `GROUP BY` without aggregates");
-
-    for (const auto & key : keys)
-    {
-        if (key != GPUElementType::String && !isInteger(key))
-            throwGPUError(("a key of element type " + std::to_string(static_cast<int>(key)) + " is neither an integer nor a string").c_str());
-    }
-
-    for (const auto & aggregate : aggregates)
-    {
-        const bool counts = aggregate.aggregation == GPUAggregationKind::Count;
-        if (counts != (aggregate.column == GPUGroupByAggregate::no_column))
-            throwGPUError("a `count` of a column, or another aggregate of none");
-        if (counts)
-        {
-            if (aggregate.result_type != GPUElementType::UInt64)
-                throwGPUError("a `count` into other than a `UInt64`");
-            continue;
-        }
-        if (aggregate.column >= values.size())
-            throwGPUError(("an aggregate of value " + std::to_string(aggregate.column) + " of " + std::to_string(values.size())).c_str());
-        const GPUElementType element_type = values[aggregate.column];
-        const bool variable = columnKindOf(element_type) == GPUColumnKind::Variable;
-        switch (aggregate.aggregation)
-        {
-            case GPUAggregationKind::Sum:
-                if (variable || sizeOf(aggregate.result_type) != 8)
-                    throwGPUError("a sum of values of varying width, or into other than eight bytes");
-                break;
-            case GPUAggregationKind::Mean:
-                if (variable || aggregate.result_type != GPUElementType::Float64)
-                    throwGPUError("an `avg` of values of varying width, or into other than a `Float64`");
-                break;
-            case GPUAggregationKind::Min:
-            case GPUAggregationKind::Max:
-                if (aggregate.result_type != element_type)
-                    throwGPUError("a `min` or a `max` into another type than its values'");
-                break;
-            case GPUAggregationKind::Count:
-                break;
-        }
-    }
-
-    state = new State(keys, values, aggregates, stream);
-    if (!state->streams && !state->runs_combine)
-    {
-        delete state;
-        state = nullptr;
-        throwGPUError("a `GROUP BY` with an `avg` and a `min` or a `max` of values of varying width, which combine from partial results that an `avg`'s do not");
-    }
 }
 
-__host__ CudfGroupBy::~CudfGroupBy()
+__host__ CudfGroupBy::~CudfGroupBy() = default;
+
+__host__ CudfGroupBy * createCudfGroupBy(
+    GPUSpan<GPUElementType> keys, GPUSpan<GPUElementType> values, GPUSpan<GPUGroupByAggregate> aggregates, cuda::stream_ref stream)
 {
-    delete state;
-}
-
-__host__ void CudfGroupBy::addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values)
-{
-    if (state->finalized)
-        throwGPUError("a batch after the groups were closed");
-
-    if (keys.size() != state->keys.size() || values.size() != state->values.size())
-        throwGPUError(
-            ("a batch of " + std::to_string(keys.size()) + " keys and " + std::to_string(values.size()) + " values, expected "
-            + std::to_string(state->keys.size()) + " and " + std::to_string(state->values.size())).c_str());
-
-    const size_t rows = keys.empty() ? values[0].rows() : keys[0].rows();
-    if (rows == 0)
-        return;
-
-    std::vector<cudf::column_view> columns;
-    columns.reserve(state->numKeyColumns() + state->values.size());
-
-    if (state->keyless)
-        columns.push_back(state->keylessKey(rows));
-
-    for (size_t i = 0; i < keys.size(); ++i)
-    {
-        if (keys[i].rows() != rows)
-            throwGPUError(("key " + std::to_string(i) + " of " + std::to_string(keys[i].rows()) + " rows in a batch of " + std::to_string(rows)).c_str());
-        columns.push_back(columnViewOf(keys[i], state->keys[i]));
-    }
-
-    for (size_t i = 0; i < values.size(); ++i)
-    {
-        if (values[i].rows() != rows)
-            throwGPUError(("value " + std::to_string(i) + " of " + std::to_string(values[i].rows()) + " rows in a batch of " + std::to_string(rows)).c_str());
-        columns.push_back(columnViewOf(values[i], state->values[i]));
-    }
-
-    if (!state->reduce_runs.has_value() && state->runs_combine)
-    {
-        std::unique_ptr<cudf::table> runs = state->reduceRuns(columns);
-        state->reduce_runs = static_cast<double>(runs->num_rows()) <= max_runs_per_row_to_reduce * static_cast<double>(rows);
-        /// Partial results either way, which are many of an unsorted batch, but only the first's.
-        if (*state->reduce_runs || !state->streams)
-        {
-            state->gatherRuns(std::move(runs));
-            return;
-        }
-    }
-    else if (!state->reduce_runs.has_value())
-    {
-        state->reduce_runs = false;
-    }
-    else if (*state->reduce_runs)
-    {
-        state->gatherRuns(state->reduceRuns(columns));
-        return;
-    }
-
-    if (!state->streams)
-    {
-        state->gatherRuns(state->reduceRuns(columns, cudf::sorted::NO));
-        return;
-    }
-
-    state->group(cudf::table_view(columns));
-}
-
-__host__ size_t CudfGroupBy::finalize()
-{
-    if (state->finalized)
-        throwGPUError("the groups were closed twice");
-
-    if (state->grouping)
-    {
-        auto [group_keys, results] = guarded("closing the groups", [&]
-        {
-            return std::move(*state->grouping).finalize_and_release(state->stream);
-        });
-        state->groups = state->withoutKeylessKey(state->tableOf(std::move(group_keys), std::move(results)));
-    }
-    else if (!state->reduced_runs.empty())
-    {
-        auto [group_keys, results] = state->combineRuns();
-        state->groups = state->withoutKeylessKey(state->tableOf(std::move(group_keys), std::move(results)));
-    }
-    state->grouping.reset();
-    state->finalized = true;
-
-    if (!state->groups)
-        return 0;
-
-    state->variable_offsets.resize(state->keys.size());
-    state->value_offsets.resize(state->aggregates.size());
-    return static_cast<size_t>(state->groups->num_rows());
-}
-
-__host__ DeviceColumnView CudfGroupBy::key(size_t index) const
-{
-    if (!state->finalized)
-        throwGPUError("the groups were asked for before they were closed");
-
-    if (index >= state->keys.size())
-        throwGPUError(("key " + std::to_string(index) + " of " + std::to_string(state->keys.size())).c_str());
-
-    const GPUElementType type = state->keys[index];
-    switch (columnKindOf(type))
-    {
-        case GPUColumnKind::Fixed:
-            if (!state->groups)
-                return DeviceFixedColumn{.element_type = type};
-            return deviceViewOf(state->groups->view().column(static_cast<cudf::size_type>(index)), type);
-        case GPUColumnKind::Variable:
-        {
-            if (!state->groups)
-                return DeviceVariableColumn{};
-            DeviceVariableColumnOfCudf of_cudf
-                = deviceViewOfVariable(state->groups->view().column(static_cast<cudf::size_type>(index)), state->stream);
-            state->variable_offsets[index] = std::move(of_cudf.widened_offsets);
-            return of_cudf.view;
-        }
-    }
-    throwGPUError(("unknown column kind of element type " + std::to_string(static_cast<int>(type))).c_str());
-}
-
-__host__ DeviceColumnView CudfGroupBy::value(size_t index) const
-{
-    if (!state->finalized)
-        throwGPUError("the groups were asked for before they were closed");
-
-    if (index >= state->aggregates.size())
-        throwGPUError(("aggregate " + std::to_string(index) + " of " + std::to_string(state->aggregates.size())).c_str());
-
-    const GPUElementType result_type = state->aggregates[index].result_type;
-    const auto column_index = static_cast<cudf::size_type>(state->keys.size() + index);
-    switch (columnKindOf(result_type))
-    {
-        case GPUColumnKind::Fixed:
-        {
-            if (!state->groups)
-                return DeviceFixedColumn{.element_type = result_type};
-
-            /// Taken by its bits, as `tableOf` checked it is as wide as `result_type`: cuDF sums unsigned integers into
-            /// signed ones.
-            const cudf::column_view column = state->groups->view().column(column_index);
-            checkNoNulls(column);
-            if (column.offset() != 0)
-                throwGPUError("the device returned a value of the groups as a slice");
-            return DeviceFixedColumn{.element_type = result_type, .data = column.head<char>(), .rows = static_cast<size_t>(column.size())};
-        }
-        case GPUColumnKind::Variable:
-        {
-            if (!state->groups)
-                return DeviceVariableColumn{};
-            DeviceVariableColumnOfCudf of_cudf = deviceViewOfVariable(state->groups->view().column(column_index), state->stream);
-            state->value_offsets[index] = std::move(of_cudf.widened_offsets);
-            return of_cudf.view;
-        }
-    }
-    throwGPUError(("unknown column kind of element type " + std::to_string(static_cast<int>(result_type))).c_str());
+    return new StreamingGroupBy(keys, values, aggregates, stream);
 }
 
 }

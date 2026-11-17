@@ -14,33 +14,29 @@ namespace DB::GPU
 /// none among them.
 ///
 /// Without keys, the aggregates are of every row, as one group, which there is none of where no row is grouped.
+///
+/// An interface of plain types: both ClickHouse and the GPU island of cuDF, of another standard library, include it, and
+/// the implementation, of the types of cuDF, is in the island alone.
 class CudfGroupBy
 {
 public:
-    __host__ CudfGroupBy(
-        GPUSpan<GPUElementType> keys,
-        GPUSpan<GPUElementType> values,
-        GPUSpan<GPUGroupByAggregate> aggregates,
-        cuda::stream_ref stream);
-    __host__ ~CudfGroupBy();
-
-    CudfGroupBy(const CudfGroupBy &) = delete;
-    CudfGroupBy & operator=(const CudfGroupBy &) = delete;
+    /// Out of line, so that the vtable is emitted in the island alone, where the implementation is.
+    __host__ virtual ~CudfGroupBy();
 
     /// The columns must be there in the order of the stream of the `CudfGroupBy`, and must stay until it has grouped
     /// them, in its order as well.
-    __host__ void addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values);
+    virtual void addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values) = 0;
 
     /// Returns the number of groups.
-    __host__ size_t finalize();
+    virtual size_t finalize() = 0;
 
-    __host__ DeviceColumnView key(size_t index) const;
+    virtual DeviceColumnView key(size_t index) const = 0;
     /// The result of aggregate `index`.
-    __host__ DeviceColumnView value(size_t index) const;
-
-private:
-    struct State;
-    State * state = nullptr;
+    virtual DeviceColumnView value(size_t index) const = 0;
 };
+
+/// The caller owns what it returns.
+__host__ CudfGroupBy * createCudfGroupBy(
+    GPUSpan<GPUElementType> keys, GPUSpan<GPUElementType> values, GPUSpan<GPUGroupByAggregate> aggregates, cuda::stream_ref stream);
 
 }
