@@ -6,7 +6,10 @@
 
 #include <Common/Silk/FiberStreamSocketImpl.h>
 #include <Common/Silk/SecureFiberStreamSocketImpl.h>
+#include <IO/HTTP/HTTPClientIO.h>
+#include <IO/ReadHelpers.h>
 #include <IO/SocketPeerClosed.h>
+#include <IO/WriteHelpers.h>
 
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
@@ -18,6 +21,9 @@
 
 #include <Poco/Exception.h>
 #include <Poco/Net/Context.h>
+#include <Poco/Net/HTTPClientSession.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SecureServerSocket.h>
 #include <Poco/Net/SecureStreamSocket.h>
@@ -205,6 +211,71 @@ TYPED_TEST(SilkFiberSocketTest, RequestResponse)
     }
     EXPECT_EQ(request, "Hello world!");
     peer.sendBytes("ACK", 3);
+
+    client_future.wait();
+    peer.close();
+}
+
+
+/// An HTTP request body sent through `sendHTTPRequest` on a fiber socket, as the connection pool
+/// creates them for `HTTPConnectionGroupType::AMBER`.
+TYPED_TEST(SilkFiberSocketTest, HTTPRequestBody)
+{
+    auto listener = this->policy.makeListener();
+    const uint16_t port = listener.address().port();
+    const std::string body(1'000'000, 'x');
+
+    silk::FiberFuture client_future;
+    const int run_result = Silk::spawn(
+        [port, body, impl = this->policy.makeClient()]() -> int
+        {
+            try
+            {
+                Poco::Net::HTTPClientSession session{Poco::Net::StreamSocket(impl)};
+                session.setHost("127.0.0.1");
+                session.setPort(port);
+                session.setTimeout(Poco::Timespan(10, 0), Poco::Timespan(10, 0), Poco::Timespan(10, 0));
+
+                Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", Poco::Net::HTTPMessage::HTTP_1_1);
+                request.setContentLength(body.size());
+                auto request_body = DB::sendHTTPRequest(session, request);
+                DB::writeString(body, *request_body);
+                request_body->finalize();
+
+                Poco::Net::HTTPResponse response;
+                auto response_body = DB::receiveHTTPResponse(session, response);
+                EXPECT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_OK);
+                std::string result;
+                DB::readStringUntilEOF(result, *response_body);
+                EXPECT_EQ(result, "OK");
+                return 0;
+            }
+            catch (...)
+            {
+                ADD_FAILURE() << DB::getCurrentExceptionMessage(/*with_stacktrace*/ false);
+                return 1;
+            }
+        },
+        client_future);
+    ASSERT_EQ(run_result, 0);
+
+    auto peer = listener.acceptConnection();
+    peer.setReceiveTimeout(Poco::Timespan(10, 0));
+    std::string request;
+    char buf[4096];
+    size_t header_end = std::string::npos;
+    while (header_end == std::string::npos || request.size() < header_end + 4 + body.size())
+    {
+        int n = peer.receiveBytes(buf, sizeof(buf));
+        ASSERT_GT(n, 0);
+        request.append(buf, n);
+        if (header_end == std::string::npos)
+            header_end = request.find("\r\n\r\n");
+    }
+    EXPECT_EQ(request.substr(header_end + 4), body);
+
+    const std::string reply = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK";
+    peer.sendBytes(reply.data(), static_cast<int>(reply.size()));
 
     client_future.wait();
     peer.close();

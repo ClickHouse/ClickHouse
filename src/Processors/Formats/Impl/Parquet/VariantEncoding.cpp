@@ -183,6 +183,7 @@ public:
         : type(type_)
         , sorted_paths_to_skip(type.getPathsToSkip().begin(), type.getPathsToSkip().end())
         , use_partial_match(use_partial_match_)
+        , typed_paths_have_trivial_defaults(type.isDefaultInsertTrivial())
     {
         std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
         for (const auto & regexp : type.getPathRegexpsToSkip())
@@ -213,11 +214,14 @@ public:
         return it == typed_paths.end() ? nullptr : &it->second;
     }
 
+    [[nodiscard]] bool typedPathsHaveTrivialDefaults() const { return typed_paths_have_trivial_defaults; }
+
 private:
     const DataTypeObject & type;
     VectorWithMemoryTracking<String> sorted_paths_to_skip;
     ListWithMemoryTracking<re2::RE2> path_regexps_to_skip;
     bool use_partial_match;
+    bool typed_paths_have_trivial_defaults;
 };
 
 namespace
@@ -608,10 +612,16 @@ void decodeObjectIntoJSON(
     }
     column.getSharedDataOffsets().push_back(shared_data_paths->size());
 
-    for (auto & [_, typed_column] : column.getTypedPaths())
+    /// Only the root object of a `JSON` column is decoded with a filter; nested objects have no typed paths.
+    const bool trivial_defaults = !filter || filter->typedPathsHaveTrivialDefaults();
+    for (auto & [path, typed_column] : column.getTypedPaths())
     {
-        if (typed_column->size() == prev_size)
+        if (typed_column->size() != prev_size)
+            continue;
+        if (trivial_defaults)
             typed_column->insertDefault();
+        else
+            (*filter->findTypedPath(path))->insertDefaultInto(*typed_column);
     }
 
     for (auto & [_, dynamic_column] : column.getDynamicPathsPtrs())
@@ -741,7 +751,7 @@ void VariantValueDecoder::decode(std::string_view metadata_blob, std::string_vie
     const DecodeContext context{.metadata = parsed_metadata, .max_depth = max_depth};
 
     /// `Nullable(JSON)`: values are decoded into the nested column, nulls (of the whole group or a variant
-    /// null) go through `output.insertDefault()`, which inserts NULL into a nullable column.
+    /// null) get the default of `output_type`, NULL for a nullable column.
     auto * output_nullable = typeid_cast<ColumnNullable *>(&output);
     IColumn & output_inner = output_nullable ? output_nullable->getNestedColumn() : output;
 
@@ -758,7 +768,7 @@ void VariantValueDecoder::decode(std::string_view metadata_blob, std::string_vie
         /// A variant null is an empty object, the same as a null of the whole column.
         if (type_name.empty())
         {
-            output.insertDefault();
+            output_type->insertDefaultInto(output);
             return;
         }
         throw Exception(
@@ -805,7 +815,7 @@ void decodeVariantColumn(
         const bool value_missing = (value_nulls && (*value_nulls)[row]) || value_blob.empty();
         if (metadata_missing && value_missing)
         {
-            output.insertDefault();
+            output_type->insertDefaultInto(output);
             continue;
         }
         if (metadata_missing || value_missing)
