@@ -40,7 +40,7 @@ SharedHeader makeHeader()
 
 QueryPlan makeReadFromTablePlan(bool use_parallel_replicas, bool with_node_name_mapping = false)
 {
-    std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
+    UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
     if (with_node_name_mapping)
         node_name_to_input_node_column.emplace("__table1.value", ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "value"));
 

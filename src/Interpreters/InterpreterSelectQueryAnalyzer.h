@@ -96,6 +96,8 @@ public:
 
     void addStorageLimits(const StorageLimitsList & storage_limits);
 
+    void setPlanLogCapture(QueryPlanLogCapturePtr log_capture) override { plan_log_capture = std::move(log_capture); }
+
     bool supportsTransactions() const override { return true; }
 
     bool ignoreLimits() const override { return select_query_options.ignore_limits; }
@@ -125,10 +127,15 @@ private:
     ResultColumnOrigins result_column_origins;
     QueryTreeNodePtr query_tree;
     Planner planner;
+    QueryPlanLogCapturePtr plan_log_capture;
 
     QueryPlanWithParallelReplicasBuilder query_plan_with_parallel_replicas_builder;
 };
 
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage);
+
+/// The view source of `context` if the analysis reads it (`reads_view_source`), else nullptr.
+/// The inner query of an ordinary view always reads the table itself.
+StoragePtr getViewSourceIfRead(const ContextPtr & context, bool reads_view_source);
 
 }

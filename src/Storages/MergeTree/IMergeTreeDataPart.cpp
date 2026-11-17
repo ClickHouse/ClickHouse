@@ -72,6 +72,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
+#include <Common/ThreadStatus.h>
 #include <Common/TransactionID.h>
 #include <Common/UniqueLock.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -169,14 +170,12 @@ namespace FailPoints
 void MergeTreePartMinMaxIndex::load(const IMergeTreeDataPart & part)
 {
     const auto metadata_snapshot = part.getMetadataSnapshot();
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
     const auto data_settings = part.storage.getSettings();
 
     const auto & part_info = part.isProjectionPart() ? part.getParentPart()->info : part.info;
     const bool fill_virtuals = !part_info.isPatch() && part_info.getBlocksCount() == 1 && part_info.level == 0 && part_info.mutation == 0;
 
-    FormatSettings format_settings;
-    for (const auto & [column_name, column_type] : MergeTreeData::getMinMaxColumns(partition_key, data_settings))
+    for (const auto & [column_name, column_type] : MergeTreeData::getMinMaxColumns(*metadata_snapshot, data_settings))
     {
         const bool synth_block_number = (fill_virtuals || part.isSystemColumnInvalidated(BlockNumberColumn::name)) && metadata_snapshot->isVirtualColumn(BlockNumberColumn::name) && column_name == BlockNumberColumn::name;
         const bool synth_block_offset = (fill_virtuals || part.isSystemColumnInvalidated(BlockOffsetColumn::name)) && metadata_snapshot->isVirtualColumn(BlockOffsetColumn::name) && column_name == BlockOffsetColumn::name;
@@ -207,31 +206,40 @@ void MergeTreePartMinMaxIndex::load(const IMergeTreeDataPart & part)
             continue;
         }
 
-        auto serialization = column_type->getDefaultSerialization();
-
-        Field min_val;
-        serialization->deserializeBinary(min_val, *file, format_settings);
-        Field max_val;
-        serialization->deserializeBinary(max_val, *file, format_settings);
-
-        normalizeBoolFields(min_val);
-        normalizeBoolFields(max_val);
-
-        // NULL_LAST
-        if (min_val.isNull())
-            min_val = POSITIVE_INFINITY;
-        if (max_val.isNull())
-            max_val = POSITIVE_INFINITY;
-
-        hyperrectangle.emplace_back(min_val, true, max_val, true);
+        hyperrectangle.push_back(readRange(*column_type, *file));
     }
     initialized = true;
+}
+
+void MergeTreePartMinMaxIndex::writeRange(const Range & range, const IDataType & type, WriteBuffer & out)
+{
+    auto serialization = type.getDefaultSerialization();
+    serialization->serializeBinary(range.left, out, {});
+    serialization->serializeBinary(range.right, out, {});
+}
+
+Range MergeTreePartMinMaxIndex::readRange(const IDataType & type, ReadBuffer & in)
+{
+    auto serialization = type.getDefaultSerialization();
+    auto read_bound = [&]
+    {
+        Field bound;
+        serialization->deserializeBinary(bound, in, {});
+        normalizeBoolFields(bound);
+        // NULL_LAST
+        if (bound.isNull())
+            bound = POSITIVE_INFINITY;
+        return bound;
+    };
+    Field min_val = read_bound();
+    Field max_val = read_bound();
+    return Range(min_val, true, max_val, true);
 }
 
 MergeTreePartMinMaxIndex::WrittenFiles MergeTreePartMinMaxIndex::store(
     StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & out_checksums, const MergeTreeSettingsPtr & storage_settings) const
 {
-    return store(MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), storage_settings), part_storage, out_checksums, storage_settings);
+    return store(MergeTreeData::getMinMaxColumns(*metadata_snapshot, storage_settings), part_storage, out_checksums, storage_settings);
 }
 
 MergeTreePartMinMaxIndex::WrittenFiles MergeTreePartMinMaxIndex::store(
@@ -286,12 +294,9 @@ MergeTreePartMinMaxIndex::WrittenFiles MergeTreePartMinMaxIndex::store(
             continue;
         }
 
-        auto serialization = column_type->getDefaultSerialization();
-
         auto out = part_storage.writeFile(file_name, 4096, {});
         HashingWriteBuffer out_hashing(*out);
-        serialization->serializeBinary(hyperrectangle[i].left, out_hashing, {});
-        serialization->serializeBinary(hyperrectangle[i].right, out_hashing, {});
+        writeRange(hyperrectangle[i], *column_type, out_hashing);
         out_hashing.finalize();
         out_checksums.files[file_name].file_size = out_hashing.count();
         out_checksums.files[file_name].file_hash = out_hashing.getHash();
@@ -400,7 +405,7 @@ void MergeTreePartMinMaxIndex::repairInheritedBlockColumns(const IMergeTreeDataP
     if (!initialized || source_part.isProjectionPart() || source_info.isPatch())
         return;
 
-    const auto columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), source_part.storage.getSettings());
+    const auto columns = MergeTreeData::getMinMaxColumns(*metadata_snapshot, source_part.storage.getSettings());
 
     /// The inherited index may be narrower than the current set of minmax columns: the block columns are
     /// appended to the set when `part_minmax_index_columns` is widened, and changing the setting does not
@@ -436,13 +441,12 @@ Names MergeTreePartMinMaxIndex::getProbablyWrittenFiles(const IMergeTreeDataPart
         return {};
 
     const auto metadata_snapshot = part.getMetadataSnapshot();
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
     const auto data_settings = part.storage.getSettings();
     const auto & data_part_storage = part.getDataPartStorage();
 
     /// The hyperrectangle may hold more columns than the current setting prescribes (a wider index that
     /// has not been re-materialized yet), so clamp to what `store` actually writes: its leading prefix.
-    auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings);
+    auto minmax_columns = MergeTreeData::getMinMaxColumns(*metadata_snapshot, data_settings);
     if (minmax_columns.size() > hyperrectangle.size())
         minmax_columns.resize(hyperrectangle.size());
 
@@ -773,6 +777,16 @@ bool IMergeTreeDataPart::isIndexLoaded() const
 {
     std::scoped_lock lock(index_mutex);
     return index != nullptr;
+}
+
+bool IMergeTreeDataPart::isIndexInMemory() const
+{
+    if (isIndexLoaded())
+        return true;
+
+    auto index_cache = storage.getPrimaryIndexCache();
+    return index_cache
+        && index_cache->contains(PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart()));
 }
 
 void IMergeTreeDataPart::setName(const String & new_name)
@@ -1179,8 +1193,19 @@ void IMergeTreeDataPart::removeIfNeeded()
     if (!is_temp && state != MergeTreeDataPartState::DeleteOnDestroy)
         return;
 
+    /// Keep the retries of this cleanup when the query or merge is cancelled (`plain_rewritable` removes synchronously).
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
     try
     {
+        /// On object storage the directory of a temporary part and the blobs it has written exist only in its uncommitted transaction.
+        auto & part_storage = getDataPartStorage();
+        if (is_temp && part_storage.hasActiveTransaction() && !part_storage.hasSharedTransaction())
+        {
+            LOG_DEBUG(storage.log, "Rolling back the uncommitted transaction of temporary part {}", part_storage.getPartDirectory());
+            part_storage.undoTransaction();
+        }
+
         if (!getDataPartStorage().exists()) // path
             return;
 
@@ -1639,6 +1664,49 @@ std::optional<Estimates> IMergeTreeDataPart::getEstimatesImpl(const NameSet & re
         }
     }
     return estimates;
+}
+
+bool IMergeTreeDataPart::areStatisticsCached(const NameSet & required_columns, const StatisticsCache * cache) const
+{
+    /// A part whose caches are cleared does not use the cache any more, see `loadStatistics`.
+    if (!cache || cleared_data_in_caches || required_columns.empty())
+        return false;
+
+    /// The index of the packed archive must not be read here: if it is not loaded yet, the statistics
+    /// of the part have not been read and the files of the uncached columns are assumed to exist.
+    const bool is_packed = checksums.has(String(ColumnsStatistics::FILENAME));
+    const PackedFilesReader * packed_reader = nullptr;
+    if (is_packed)
+    {
+        std::lock_guard lock(statistics_reader_mutex);
+        packed_reader = statistics_reader.get();
+    }
+
+    const auto & all_columns = getColumnsDescription();
+    const String part_path = getPathForCacheKey();
+
+    auto is_cached = [&](const String & column_name)
+    {
+        if (!all_columns.tryGet(column_name) || cache->contains(StatisticsCache::hash(part_path, column_name)))
+            return true;
+
+        const String filename = getStatisticsFilename(column_name);
+        if (is_packed)
+            return packed_reader && !packed_reader->exists(filename);
+        return !checksums.has(filename);
+    };
+
+    for (const auto & column_name : required_columns)
+    {
+        if (!is_cached(column_name))
+            return false;
+        /// `loadStatistics` also loads the statistics of the parent column of a `.null` subcolumn.
+        if (column_name.ends_with(".null")
+            && !is_cached(column_name.substr(0, column_name.size() - std::string_view(".null").size())))
+            return false;
+    }
+
+    return true;
 }
 
 std::optional<ColumnsStatistics> IMergeTreeDataPart::tryLoadStatisticsFromCache(const NameSet & required_columns, StatisticsCache * cache) const

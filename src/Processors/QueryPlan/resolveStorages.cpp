@@ -30,10 +30,11 @@
 #include <Storages/IStorage.h>
 #include <Core/Settings.h>
 #include <Planner/Utils.h>
-#include <Common/MemoryTrackerUtils.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 
 #include <algorithm>
 #include <stack>
+#include <Common/StackWithMemoryTracking.h>
 
 namespace DB
 {
@@ -44,8 +45,6 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsNonZeroUInt64 max_block_size;
-    extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
@@ -332,9 +331,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(
             mutable_context,
             QueryProcessingStage::FetchColumns,
             context->getSettingsRef()[Setting::max_block_size],
-            getMaxThreadsForAvailableMemory(
-                context->getSettingsRef()[Setting::max_threads],
-                context->getSettingsRef()[Setting::max_threads_min_free_memory_per_thread]));
+            getEffectiveMaxThreads(*context));
 
         /// Preserve the mutable_context for the lifetime of query execution
         /// because source processors (e.g., StorageKeeperMapSource) may hold weak_ptr to it
@@ -388,7 +385,7 @@ void QueryPlan::resolveStorages(
     const StoragePtr * bound_storage_ptr = bound_storage ? &bound_storage : nullptr;
     const StorageSnapshotPtr * bound_snapshot_ptr = bound_storage ? &bound_snapshot : nullptr;
 
-    std::stack<QueryPlan::Node *> stack;
+    StackWithMemoryTracking<QueryPlan::Node *> stack;
     stack.push(getRootNode());
     while (!stack.empty())
     {

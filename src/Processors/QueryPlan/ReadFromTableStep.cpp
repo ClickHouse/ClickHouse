@@ -24,7 +24,7 @@ ReadFromTableStep::ReadFromTableStep(
     bool use_parallel_replicas_,
     PrewhereInfoPtr prewhere_info_,
     FilterDAGInfoPtr row_level_filter_,
-    std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column_)
+    UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> node_name_to_input_node_column_)
     : ISourceStep(std::move(header))
     , table_name(std::move(table_name_))
     , table_expression_modifiers(std::move(table_expression_modifiers_))
@@ -163,7 +163,7 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
         row_level_filter = std::make_shared<FilterDAGInfo>(FilterDAGInfo::deserialize(ctx));
     }
 
-    std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
+    UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
     if (flags & FLAG_HAS_NODE_NAME_TO_INPUT_COLUMN)
     {
         if (!ctx.for_query_plan_cache)
