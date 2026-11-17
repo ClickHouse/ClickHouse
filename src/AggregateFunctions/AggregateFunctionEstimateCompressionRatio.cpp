@@ -370,14 +370,26 @@ struct TargetPart
     }
 };
 
+/// How rows are converted to the target type: the cast and the type validation of the query that created the function, with
+/// its settings copied. A state keeps the one of its pending rows, so that a later query that merges or reads the state (one
+/// kept in a `Memory` table) converts them as the query that added them would have.
+struct Conversion
+{
+    /// Null when the target type is the source type.
+    FunctionBasePtr cast;
+    std::optional<DataTypeValidationSettings> validation_settings;
+};
+using ConversionPtr = std::shared_ptr<const Conversion>;
+
 struct EstimateCompressionRatioWithTargetData
 {
     /// The bytes of the rows in their own type, of the rows written and of the merged states.
     UInt64 source_bytes = 0;
     /// The compressed bytes in the target type, of the finished parts and of the merged states.
     UInt64 compressed_bytes = 0;
-    /// The rows not written yet, in their own type.
+    /// The rows not written yet, in their own type, and how to convert them. All pending rows share one conversion.
     MutableColumnPtr pending;
+    ConversionPtr conversion;
     /// The rows and bytes (in the target type) of the open granule written so far, when it is written in pieces.
     size_t granule_rows = 0;
     size_t granule_bytes = 0;
@@ -416,7 +428,6 @@ public:
         , target_type(std::move(target_type_))
         , max_compress_block_size(block_size_bytes.value_or(merge_tree.max_compress_block_size))
         , min_compress_block_size(block_size_bytes.value_or(merge_tree.min_compress_block_size))
-        , validation_settings(std::move(validation_settings_))
     {
         /// `Dynamic` and `JSON`, also nested, are not supported. As a target, their streams depend on the data, and the writer
         /// has more rules for them. As a source, pending rows keep the dynamic structure of the blocks they came in, and the
@@ -439,6 +450,8 @@ public:
         /// target type. It copies the conversion settings of the query, or of the server when there is no query (a table being
         /// loaded, a TTL `GROUP BY` in a background merge). Prepared here, so that a conversion the types do not allow is an
         /// error before any row comes.
+        auto own_conversion = std::make_shared<Conversion>();
+        own_conversion->validation_settings = std::move(validation_settings_);
         if (!source_type->equals(*target_type))
         {
             ContextPtr context = CurrentThread::tryGetQueryContext();
@@ -447,9 +460,10 @@ public:
             ColumnsWithTypeAndName cast_arguments{
                 {source_type->createColumn(), source_type, ""},
                 {DataTypeString().createColumnConst(1, target_type->getName()), std::make_shared<DataTypeString>(), ""}};
-            cast = FunctionFactory::instance().get("_CAST", context)->build(cast_arguments);
-            cast->prepare({});
+            own_conversion->cast = FunctionFactory::instance().get("_CAST", context)->build(cast_arguments);
+            own_conversion->cast->prepare({});
         }
+        conversion = std::move(own_conversion);
 
         /// The codec and block size of each stream, resolved once for the parts of all states, and here, so that a codec the
         /// target type cannot take is an error before any row comes.
@@ -483,7 +497,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto & data_ref = data(place);
-        pendingOf(data_ref).insertFrom(*columns[0], row_num);
+        pendingOf(data_ref, conversion).insertFrom(*columns[0], row_num);
         if (isPendingFull(data_ref))
             writePending(data_ref);
     }
@@ -498,7 +512,7 @@ public:
     {
         if (if_argument_pos < 0)
         {
-            addRows(data(place), *columns[0], row_begin, row_end);
+            addRows(data(place), *columns[0], row_begin, row_end, conversion);
             return;
         }
 
@@ -506,7 +520,7 @@ public:
         IColumn::Filter filter;
         filter.assign(flags.begin() + row_begin, flags.begin() + row_end);
         auto rows = columns[0]->cut(row_begin, row_end - row_begin)->filter(filter, -1);
-        addRows(data(place), *rows, 0, rows->size());
+        addRows(data(place), *rows, 0, rows->size(), conversion);
     }
 
     /// The default adds the values first and the default rows after them, and the order of the rows matters to compression.
@@ -514,14 +528,14 @@ public:
         size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena *) const override
     {
         auto rows = columns[0]->cut(row_begin, row_end - row_begin)->convertToFullColumnIfSparse();
-        addRows(data(place), *rows, 0, rows->size());
+        addRows(data(place), *rows, 0, rows->size(), conversion);
     }
 
     /// The other state is often another thread's share of the same group. If it has not opened a part, its rows are added to
     /// this state, so that they are written to the same part: the block headers and dictionaries of a part of its own would
     /// outweigh a few hundred rows. A state that has opened a part has compressed its rows already, so it is finished as a
-    /// separate part, and the result of a larger group still depends on the threads. The other state is not changed
-    /// otherwise, so a state kept in a `Memory` table can be read again.
+    /// separate part, and the result of a larger group still depends on the threads. The rows passed on keep their
+    /// conversion. The other state is not changed otherwise, so a state kept in a `Memory` table can be read again.
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & rhs_ref = data(const_cast<AggregateDataPtr>(rhs));
@@ -534,7 +548,7 @@ public:
         data_ref.source_bytes += rhs_ref.source_bytes;
         data_ref.compressed_bytes += rhs_ref.compressed_bytes;
         if (rhs_ref.pending)
-            addRows(data_ref, *rhs_ref.pending, 0, rhs_ref.pending->size());
+            addRows(data_ref, *rhs_ref.pending, 0, rhs_ref.pending->size(), rhs_ref.conversion);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
@@ -584,8 +598,16 @@ private:
         return {std::move(codec), block_size};
     }
 
-    IColumn & pendingOf(Data & data_ref) const
+    /// The pending rows, to add rows that convert with `rows_conversion`. Pending rows of another conversion are written first,
+    /// so that all pending rows share one (a state merged with a state added by another query).
+    IColumn & pendingOf(Data & data_ref, const ConversionPtr & rows_conversion) const
     {
+        if (data_ref.conversion != rows_conversion)
+        {
+            if (data_ref.pending && !data_ref.pending->empty())
+                writePending(data_ref);
+            data_ref.conversion = rows_conversion;
+        }
         if (!data_ref.pending)
         {
             data_ref.pending = source_type->createColumn();
@@ -605,7 +627,7 @@ private:
     /// Adds the rows as `add` adds them one by one: the pending rows are written right after the row that fills them, so the
     /// result does not depend on the blocks the rows come in. The rows go in as ranges that fit the room left, guessed from
     /// their average size; a range that overfills the pending rows by bytes is taken back and added row by row.
-    void addRows(Data & data_ref, const IColumn & column, size_t row_begin, size_t row_end) const
+    void addRows(Data & data_ref, const IColumn & column, size_t row_begin, size_t row_end, const ConversionPtr & rows_conversion) const
     {
         if (row_begin == row_end)
             return;
@@ -613,7 +635,7 @@ private:
         const size_t bytes_per_row = std::max<size_t>(1, column.byteSize() / column.size());
         while (row_begin < row_end)
         {
-            auto & pending = pendingOf(data_ref);
+            auto & pending = pendingOf(data_ref, rows_conversion);
             const size_t pending_bytes = pending.byteSize();
             const size_t room_rows = merge_tree.granule_rows - std::min(merge_tree.granule_rows, data_ref.granule_rows + pending.size());
             const size_t room_bytes = PENDING_BYTES - std::min(PENDING_BYTES, pending_bytes);
@@ -643,13 +665,16 @@ private:
         throwIfBroken(data_ref);
         chassert(data_ref.granule_rows + data_ref.pending->size() <= merge_tree.granule_rows);
 
-        /// `CAST` validates the target type with the settings of the query (suspicious and experimental types). Here and not in
-        /// the constructor, so that a stored state type that names such a type can still be attached, read and merged.
-        if (!data_ref.part && validation_settings)
-            validateDataType(target_type, *validation_settings);
+        /// `CAST` validates the target type with the settings of the query (suspicious and experimental types), here those of
+        /// the query that added the rows. Here and not in the constructor, so that a stored state type that names such a type
+        /// can still be attached, read and merged.
+        chassert(data_ref.conversion);
+        const Conversion & rows_conversion = *data_ref.conversion;
+        if (!data_ref.part && rows_conversion.validation_settings)
+            validateDataType(target_type, *rows_conversion.validation_settings);
 
         ColumnPtr rows = data_ref.pending->getPtr();
-        ColumnPtr converted = convert(rows);
+        ColumnPtr converted = convert(rows, rows_conversion);
         const UInt64 rows_bytes = sourceBytes(*rows, /*first_in_part=*/!data_ref.part);
 
         data_ref.broken = true;
@@ -682,13 +707,16 @@ private:
     }
 
     /// The rows in the target type. A value that `CAST` cannot convert is an error here, before the state changes.
-    ColumnPtr convert(const ColumnPtr & rows) const
+    ColumnPtr convert(const ColumnPtr & rows, const Conversion & rows_conversion) const
     {
+        const auto & cast = rows_conversion.cast;
         if (!cast)
             return rows;
-        /// The cast does not read its second argument, but it must be a constant.
+        /// With the types the cast was built with: a `DateTime` without a time zone takes the time zone of the session that
+        /// creates the type, and the query that reads a state may have another. The cast does not read its second argument,
+        /// but it must be a constant.
         ColumnsWithTypeAndName arguments{
-            {rows, source_type, ""},
+            {rows, cast->getArgumentTypes()[0], ""},
             {DataTypeString().createColumnConst(rows->size(), target_type->getName()), std::make_shared<DataTypeString>(), ""}};
         return cast->execute(arguments, cast->getResultType(), rows->size(), /*dry_run=*/false);
     }
@@ -820,11 +848,8 @@ private:
     const DataTypePtr target_type;
     const size_t max_compress_block_size;
     const size_t min_compress_block_size;
-    /// The settings of the query that created the function, which `CAST` would validate the target type with.
-    const std::optional<DataTypeValidationSettings> validation_settings;
-    /// Null when the target type is the source type. It converts every row this function writes, also the pending rows of a
-    /// state that another function added (a live state kept in a `Memory` table and merged by a later query).
-    FunctionBasePtr cast;
+    /// The conversion of the rows this function adds, given to the states with them.
+    ConversionPtr conversion;
     ASTPtr codec_description;
     UnorderedMapWithMemoryTracking<String, StreamLayout> stream_layouts;
 };
@@ -947,10 +972,10 @@ With `target_type`, the estimate follows how a new `MergeTree` table with the de
 - one compressed stream per substream, for example the sizes and the characters of a `String`, or the dictionary and the indexes of a `LowCardinality` column;
 - granules of 8192 rows, or of fewer rows when they take 10 MiB in `target_type`;
 - sparse serialization for a column of mostly default values, decided from the first 8192 rows (or 1 MiB of rows), where a table decides from all the rows of a part;
-- values converted as `CAST` converts them, as `ALTER TABLE ... MODIFY COLUMN` does, with the settings of the query (a `SETTINGS` clause in a subquery doesn't apply).
+- values converted as `CAST` converts them, as `ALTER TABLE ... MODIFY COLUMN` does, with the settings of the query that adds them (a `SETTINGS` clause in a subquery doesn't apply).
 
 The estimate is approximate, and it does not read the settings of any table.
-A state kept unfinished in a `Memory` table is finished by the query that reads it, so the rows it has not written yet are converted with that query's settings.
+A state kept in a `Memory` table keeps the conversion settings of the query that added its rows, whichever query reads it.
 A table sizes its granules from its insert blocks and from all its columns together, while the function sees one column and no insert blocks, so the granules of wide rows can differ.
 The numerator of a `LowCardinality` column is the size of its values, not of its dictionary.
 The result can depend on how a query splits the rows between threads.
