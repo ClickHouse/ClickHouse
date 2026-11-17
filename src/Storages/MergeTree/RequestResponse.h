@@ -12,7 +12,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 
-#include <Core/ProtocolDefines.h>
+#include <Core/ParallelReplicasProtocolDefines.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 
@@ -90,7 +90,7 @@ struct ParallelReadRequest
     UInt64 replica_protocol_version = DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION;
 
     void serialize(WriteBuffer & out, UInt64 initiator_pr_protocol_version, UInt64 initiator_tcp_protocol_version) const;
-    String describe() const;
+    [[nodiscard]] String describe() const;
     static ParallelReadRequest deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version);
 };
 
@@ -105,7 +105,7 @@ struct ParallelReadResponse
     String stream_id;
 
     void serialize(WriteBuffer & out, UInt64 replica_pr_protocol_version, UInt64 replica_tcp_protocol_version) const;
-    String describe() const;
+    [[nodiscard]] String describe() const;
     void deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version);
 };
 
@@ -205,7 +205,7 @@ struct InitialAllRangesAnnouncementResponse
     String stream_id;
 
     void serialize(WriteBuffer & out, UInt64 replica_pr_protocol_version, UInt64 replica_tcp_protocol_version) const;
-    String describe() const;
+    [[nodiscard]] String describe() const;
     static InitialAllRangesAnnouncementResponse deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version);
 };
 
