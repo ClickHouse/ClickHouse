@@ -31,7 +31,7 @@ template <typename Key>
 class ThetaSketchData : private boost::noncopyable
 {
 private:
-    /// The sketches are allocated with memory tracking that can refuse the allocation, as std::allocator's operator new cannot.
+    /// Not std::allocator: operator new is tracked but, by default, never refused at the memory limit.
     using SketchAllocator = AllocatorWithMemoryTracking<uint64_t>;
     using UpdateSketch = datasketches::update_theta_sketch_alloc<SketchAllocator>;
     using UnionSketch = datasketches::theta_union_alloc<SketchAllocator>;
