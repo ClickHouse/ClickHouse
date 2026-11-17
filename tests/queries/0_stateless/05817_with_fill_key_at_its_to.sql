@@ -68,3 +68,14 @@ ORDER BY i WITH FILL TO 1, k WITH FILL TO 3;
 
 SELECT * FROM values('i Float64, k Float64', (3, 0), (3, inf), (5, 2))
 ORDER BY i WITH FILL TO 0, k WITH FILL TO 4;
+
+-- An ORDER BY key without WITH FILL before a fill key: the rows stay in order.
+
+SELECT * FROM values('i Int64, g Int64, k Int64', (3, 5, 0), (3, 5, 3))
+ORDER BY i WITH FILL TO 1, g, k WITH FILL;
+
+SELECT DISTINCT i, g FROM (SELECT * FROM values('i Int64, g Int64, k Int64', (3, 5, 0), (3, 5, 3))
+ORDER BY i WITH FILL TO 1, g, k WITH FILL);
+
+SELECT * FROM values('g Int64, i Int64, k Int64', (5, 3, 0), (5, 3, 3))
+ORDER BY g, i WITH FILL TO 1, k WITH FILL SETTINGS use_with_fill_by_sorting_prefix = 0;

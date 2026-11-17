@@ -740,6 +740,9 @@ FillingTransform::FillingTransform(
     }
 
     VectorWithMemoryTracking<bool> is_fill_column(header_->columns());
+    /// `FillingRow::next` fills inside groups past `TO` when comparing with the value of the next row, which keeps the
+    /// order only if the fill never steps to a NULL, NaN or infinity and never resets to FROM.
+    bool compare_with_next_value = true;
     for (size_t i = 0, size = fill_description.size(); i < size; ++i)
     {
         size_t block_position = header_->getPositionByName(fill_description[i].column_name);
@@ -751,7 +754,8 @@ FillingTransform::FillingTransform(
 
         const Block & output_header = getOutputPort().getHeader();
         const DataTypePtr & type = removeNullable(output_header.getByPosition(block_position).type);
-        descr.fill_column_nullable = isNullableOrLowCardinalityNullable(output_header.getByPosition(block_position).type);
+        compare_with_next_value &= !isNullableOrLowCardinalityNullable(output_header.getByPosition(block_position).type)
+            && !isFloat(type) && descr.fill_from.isNull();
 
         if (!tryConvertFields(descr, type))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
@@ -801,6 +805,18 @@ FillingTransform::FillingTransform(
         logDebug("sort prefix", dumpSortDescription(sort_prefix));
         last_range_sort_prefix.reserve(sort_prefix.size());
     }
+
+    /// A generated row holds defaults in the ORDER BY keys that are neither filled nor in the sorting prefix, so such a key
+    /// must not precede a fill key.
+    bool after_unfilled_key = false;
+    for (size_t i = sort_prefix.size(); i < sort_description.size(); ++i)
+    {
+        if (sort_description[i].with_fill && after_unfilled_key)
+            compare_with_next_value = false;
+        after_unfilled_key |= !sort_description[i].with_fill;
+    }
+    if (compare_with_next_value)
+        filling_row.compareWithNextValue();
 
     size_t idx = 0;
     for (const ColumnWithTypeAndName & column : header_->getColumnsWithTypeAndName())
