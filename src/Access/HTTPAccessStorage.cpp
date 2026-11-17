@@ -55,6 +55,13 @@ HTTPAccessStorage::HTTPAccessStorage(const String & storage_name_, AccessControl
     , access_control(access_control_)
     , memory_storage(storage_name_, access_control.getChangesNotifier(), false)
 {
+    /// Two directories could materialize one user name under different ids, and a row policy or a quota of that name would apply to only one of them.
+    for (const auto & storage : *access_control.getStoragesPtr())
+    {
+        if (storage->getStorageType() == std::string_view{STORAGE_TYPE})
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only one `http` user directory is supported");
+    }
+
     server_name = config.getString(prefix + ".server", "");
     if (server_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'server' field for HTTP user directory");
@@ -179,10 +186,9 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
     /// A user with this name belongs to another storage: neither shadow it nor send its password to the server.
     /// The other storages are checked directly: once materialized here, the user hides a later one from `AccessControl::find`.
     /// A user materialized here earlier is dropped, so that the name resolves to the other storage (e.g. in `GRANT ... TO`).
-    /// Other `http` directories are skipped: their users have nothing local to shadow, and an earlier one has already answered `404`.
     for (const auto & storage : *access_control.getStoragesPtr())
     {
-        if (storage.get() != this && storage->getStorageType() != std::string_view{STORAGE_TYPE} && storage->find<User>(user_name))
+        if (storage.get() != this && storage->find<User>(user_name))
         {
             if (auto id = memory_storage.find<User>(user_name); id && memory_storage.remove(*id, /* throw_if_not_exists = */ false))
                 access_control.getChangesNotifier().sendNotifications();

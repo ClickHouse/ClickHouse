@@ -10,18 +10,11 @@
                 <name>X-Tenant</name>
             </forward_headers>
         </dir_server>
-        <!-- An unknown path of the mock server: it answers `404` for every name. -->
-        <empty_server>
-            <uri>http://node:8000/empty</uri>
-        </empty_server>
     </http_authentication_servers>
 
     <!-- Otherwise `users.xml` is the first directory, before `http`. -->
     <users_config remove="remove"/>
     <user_directories replace="replace">
-        <http>
-            <server>empty_server</server>
-        </http>
         <http>
             <server>dir_server</server>
             <allowed_roles>

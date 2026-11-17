@@ -134,9 +134,6 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             else:
                 self.do_AUTHHEAD()
 
-        else:
-            self.reply(http.HTTPStatus.NOT_FOUND)
-
 
 if __name__ == "__main__":
     httpd = http.server.HTTPServer(
