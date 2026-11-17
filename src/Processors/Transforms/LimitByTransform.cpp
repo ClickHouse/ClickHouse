@@ -279,8 +279,10 @@ void LimitByTransform::consume(Method & hash_method, const ColumnRawPtrs & group
         using State = typename Method::State;
         using KeyHolder = decltype(std::declval<State &>().getKeyHolder(0, std::declval<Arena &>()));
         /// As in the JOIN probe, the row loop does little besides the lookup, so the key must be cheap to calculate twice.
-        /// A `LowCardinality` column reaches the table once per dictionary position, not once per row.
+        /// A `LowCardinality` key keeps the plain loop: a single column reaches the table once per dictionary position,
+        /// and a fixed-size key that contains one is rebuilt through the dictionary.
         if constexpr (State::has_cheap_key_calculation && !Method::low_cardinality_optimization
+                      && !requires { requires Method::has_low_cardinality; }
                       && requires(const typename Method::Data & table, KeyHolder key_holder) { table.prefetch(std::move(key_holder)); })
         {
             /// The threshold of the prefetch in `Aggregator`: a table that fits in L2 gains nothing from it.
