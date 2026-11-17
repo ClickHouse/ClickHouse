@@ -319,8 +319,7 @@ bool FillingRow::resetKeysAfter(size_t pos, const FillingRow & next_original_row
         );
     }
 
-    /// A row whose keys up to `pos` equal `next_original_row` does not sort before it when its first differing later key is
-    /// not less. Otherwise the decision above stands: `less` does not place NULL and NaN where the sort does.
+    /// The first differing later key decides, except for NULL and NaN: `less` does not order them as the sort does.
     for (size_t i = 0; i < size(); ++i)
     {
         if (equals(row[i], next_original_row[i]))
