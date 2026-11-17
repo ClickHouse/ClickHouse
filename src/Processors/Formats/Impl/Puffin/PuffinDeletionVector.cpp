@@ -66,8 +66,7 @@ template <typename T>
 void addPositions(roaring::Roaring64Map & bitmap, const IColumn & positions, size_t begin, size_t end, PaddedPODArray<UInt64> & buffer)
 {
     const auto & data = assert_cast<const ColumnVector<T> &>(positions).getData();
-    buffer.resize(end - begin);
-    for (size_t i = begin; i < end; ++i)
+    auto to_position = [&](size_t i)
     {
         if constexpr (is_signed_v<T>)
         {
@@ -76,8 +75,18 @@ void addPositions(roaring::Roaring64Map & bitmap, const IColumn & positions, siz
         }
         const auto position = static_cast<UInt64>(data[i]);
         validateDeletionVectorPosition(position);
-        buffer[i - begin] = position;
+        return position;
+    };
+
+    if (end - begin == 1)
+    {
+        bitmap.add(to_position(begin));
+        return;
     }
+
+    buffer.resize(end - begin);
+    for (size_t i = begin; i < end; ++i)
+        buffer[i - begin] = to_position(i);
     bitmap.addMany(buffer.size(), buffer.data());
 }
 

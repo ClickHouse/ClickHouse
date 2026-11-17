@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/Puffin/PuffinBlockOutputFormat.h>
+#include <Processors/Formats/Impl/Puffin/PuffinDeletionVector.h>
 #include <Processors/Formats/Impl/Puffin/PuffinWriter.h>
 
 #include <Formats/FormatFactory.h>
@@ -6,9 +7,9 @@
 namespace DB
 {
 
-PuffinBlockOutputFormat::PuffinBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings)
+PuffinBlockOutputFormat::PuffinBlockOutputFormat(WriteBuffer & out_, SharedHeader header_)
     : IOutputFormat(header_, out_)
-    , builder(createPuffinBlobBuilder(getPort(PortKind::Main).getHeader(), format_settings))
+    , builder(createPuffinDeletionVectorBuilder(getPort(PortKind::Main).getHeader()))
 {
 }
 
@@ -33,8 +34,8 @@ void registerOutputFormatPuffin(FormatFactory & factory)
 {
     factory.registerOutputFormat(
         "Puffin",
-        [](WriteBuffer & buf, const Block & sample, const FormatSettings & format_settings, FormatFilterInfoPtr)
-        { return std::make_shared<PuffinBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings); });
+        [](WriteBuffer & buf, const Block & sample, const FormatSettings &, FormatFilterInfoPtr)
+        { return std::make_shared<PuffinBlockOutputFormat>(buf, std::make_shared<const Block>(sample)); });
     factory.markFormatHasNoAppendSupport("Puffin");
     factory.markOutputFormatNotTTYFriendly("Puffin");
     factory.setContentType("Puffin", "application/octet-stream");

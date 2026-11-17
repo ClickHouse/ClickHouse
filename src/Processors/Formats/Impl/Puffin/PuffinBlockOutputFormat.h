@@ -9,7 +9,7 @@ namespace DB
 class PuffinBlockOutputFormat final : public IOutputFormat
 {
 public:
-    PuffinBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings);
+    PuffinBlockOutputFormat(WriteBuffer & out_, SharedHeader header_);
 
     String getName() const override { return "PuffinBlockOutputFormat"; }
 

@@ -5,6 +5,7 @@
 #include <DataTypes/IDataType.h>
 
 #include <memory>
+#include <vector>
 
 namespace DB
 {
@@ -38,6 +39,13 @@ private:
 
 PuffinBlob makeThetaSketchBlobMetadata(Int32 field_id, Int64 snapshot_id, Int64 sequence_number, UInt64 ndv);
 
-PuffinBlobBuilderPtr createPuffinThetaSketchBuilder(const Block & header, const FormatSettings & format_settings);
+struct PuffinThetaSketchBlobOptions
+{
+    std::vector<Int32> field_ids;
+    Int64 snapshot_id;
+    Int64 sequence_number;
+};
+
+PuffinBlobBuilderPtr createPuffinThetaSketchBuilder(const Block & header, PuffinThetaSketchBlobOptions options);
 
 }

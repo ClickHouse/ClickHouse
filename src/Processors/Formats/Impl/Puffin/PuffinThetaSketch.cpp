@@ -7,18 +7,10 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Formats/FormatSettings.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Chunk.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
-
-#include <boost/algorithm/string/classification.hpp>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/trim.hpp>
-
-#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #if USE_DATASKETCHES
 #include <Columns/ColumnDecimal.h>
@@ -41,6 +33,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -288,41 +281,6 @@ PuffinBlob makeThetaSketchBlobMetadata(Int32 field_id, Int64 snapshot_id, Int64 
 namespace
 {
 
-VectorWithMemoryTracking<Int32> parseFieldIds(const String & setting, const Block & header)
-{
-    if (setting.empty())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Setting `output_format_puffin_field_ids` must be set to the Iceberg field ids of the columns to write Theta sketches");
-
-    VectorWithMemoryTracking<Int32> field_ids;
-    VectorWithMemoryTracking<String> parts;
-    boost::split(parts, setting, boost::is_any_of(","));
-    UnorderedSetWithMemoryTracking<Int32> seen;
-    for (auto & part : parts)
-    {
-        boost::trim(part);
-        Int32 field_id = 0;
-        if (!tryParse(field_id, part) || field_id <= 0)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Setting `output_format_puffin_field_ids` must be a comma-separated list of positive integers, got '{}'",
-                setting);
-        if (!seen.insert(field_id).second)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `output_format_puffin_field_ids` contains field id {} twice", field_id);
-        field_ids.push_back(field_id);
-    }
-
-    if (field_ids.size() != header.columns())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Setting `output_format_puffin_field_ids` has {} field ids, but {} columns are written: {}",
-            field_ids.size(),
-            header.columns(),
-            header.dumpNames());
-    return field_ids;
-}
-
 void checkThetaSketchColumnType(const String & column_name, const DataTypePtr & type)
 {
     if (PuffinColumnThetaSketch::isSupportedType(type))
@@ -348,19 +306,16 @@ void checkThetaSketchColumnType(const String & column_name, const DataTypePtr & 
 class PuffinThetaSketchBuilder final : public IPuffinBlobBuilder
 {
 public:
-    PuffinThetaSketchBuilder(const Block & header, const FormatSettings & format_settings)
-        : field_ids(parseFieldIds(format_settings.puffin.output_field_ids, header))
-        , snapshot_id(format_settings.puffin.output_snapshot_id)
-        , sequence_number(format_settings.puffin.output_sequence_number)
+    PuffinThetaSketchBuilder(const Block & header, PuffinThetaSketchBlobOptions options_)
+        : options(std::move(options_))
     {
-        if (snapshot_id == -1)
+        if (options.field_ids.size() != header.columns())
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Setting `output_format_puffin_snapshot_id` must be set to the snapshot the Theta sketches are computed from");
-        if (sequence_number == -1)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Setting `output_format_puffin_sequence_number` must be set to the sequence number of the snapshot the Theta sketches are computed from");
+                ErrorCodes::LOGICAL_ERROR,
+                "Got {} field ids for {} columns of Theta sketches: {}",
+                options.field_ids.size(),
+                header.columns(),
+                header.dumpNames());
 
         sketches.reserve(header.columns());
         for (const auto & column : header)
@@ -382,7 +337,9 @@ public:
         for (size_t i = 0; i < sketches.size(); ++i)
         {
             const auto serialized = sketches[i].serialize();
-            writer.addBlob(makeThetaSketchBlobMetadata(field_ids[i], snapshot_id, sequence_number, serialized.ndv), serialized.bytes);
+            writer.addBlob(
+                makeThetaSketchBlobMetadata(options.field_ids[i], options.snapshot_id, options.sequence_number, serialized.ndv),
+                serialized.bytes);
         }
     }
 
@@ -394,23 +351,21 @@ public:
 
 private:
     VectorWithMemoryTracking<PuffinColumnThetaSketch> sketches;
-    VectorWithMemoryTracking<Int32> field_ids;
-    Int64 snapshot_id = -1;
-    Int64 sequence_number = -1;
+    PuffinThetaSketchBlobOptions options;
 };
 
 }
 
 #endif
 
-PuffinBlobBuilderPtr createPuffinThetaSketchBuilder(const Block & header, const FormatSettings & format_settings)
+PuffinBlobBuilderPtr createPuffinThetaSketchBuilder(const Block & header, PuffinThetaSketchBlobOptions options)
 {
     if (header.columns() == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin output format requires at least one column to write Theta sketches");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Writing Theta sketches requires at least one column");
 #if USE_DATASKETCHES
-    return std::make_unique<PuffinThetaSketchBuilder>(header, format_settings);
+    return std::make_unique<PuffinThetaSketchBuilder>(header, std::move(options));
 #else
-    UNUSED(format_settings);
+    UNUSED(options);
     throw Exception(
         ErrorCodes::SUPPORT_IS_DISABLED, "Writing Theta sketches to Puffin files is disabled, ClickHouse was built without DataSketches");
 #endif
