@@ -238,6 +238,10 @@ void removeStaleSplitObjectsByNumber(
 
         object_storage.removeObjectIfExists(StoredObject(stale_key));
         configuration.forgetPathCommittedByInsert(stale_key);
+        /// A concurrent insert into the same table may have published this key after the caller has looked at the
+        /// list of the paths. It is retired while it is still reserved here, so that the table does not go on
+        /// listing a key whose object is gone.
+        configuration.retirePath(stale_key);
         LOG_INFO(log, "Removed the stale object {} of a previous insert split by size, overwritten by a truncating insert", stale_key);
     }
 }

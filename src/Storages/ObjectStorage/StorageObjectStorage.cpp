@@ -1225,6 +1225,13 @@ SinkToStoragePtr StorageObjectStorage::createSink(
         /// The same logger the storage uses; the sink is created from a static context.
         const auto log = getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), storage_id.getFullTableName()));
 
+        /// The cleanup set is taken from the live list of the paths, after the starting key has been reserved
+        /// above, and not from the snapshot taken at the beginning: a concurrent insert into the same table can
+        /// complete and publish its keys between that snapshot and the reservation, and this insert overwrites
+        /// the table, so it has to delete them as well. The inserts that have not completed yet still hold the
+        /// reservations of their keys, and the cleanup steps over them, see `removeStaleSplitObjects`.
+        const auto live_paths = configuration->getPaths();
+
         /// A truncating insert split by size claims the whole numbered sequence, and so deletes every key
         /// after the first one. An insert that is not split deletes only the keys written by a previous split
         /// insert: the keys that an insert stepped aside into with `*_create_new_file_on_insert` alone are kept,
@@ -1232,8 +1239,8 @@ SinkToStoragePtr StorageObjectStorage::createSink(
         std::vector<String> stale_keys;
         if (settings.split_on_write_by_size_bytes)
         {
-            stale_keys.reserve(paths.size() - 1);
-            for (auto it = paths.begin() + 1; it != paths.end(); ++it)
+            stale_keys.reserve(live_paths.size() - 1);
+            for (auto it = live_paths.begin() + 1; it != live_paths.end(); ++it)
                 stale_keys.push_back(it->path);
         }
         else
@@ -1256,14 +1263,14 @@ SinkToStoragePtr StorageObjectStorage::createSink(
                 [&](const String & removed_key) { configuration->retirePath(removed_key); },
                 log);
         }
-        else if (settings.split_on_write_by_size_bytes && paths.size() == 1)
+        else if (settings.split_on_write_by_size_bytes && live_paths.size() == 1)
         {
             /// The table has no numbered tail of its own to delete - it either never had one, or lost it
             /// on a reload. Only a truncating insert that is split by size claims the numbered sequence.
             removeStaleSplitObjectsByNumber(
                 *object_storage,
                 *configuration,
-                getNumberedFileNames(paths.front().path),
+                getNumberedFileNames(live_paths.front().path),
                 settings.create_new_file_on_insert,
                 log);
         }
