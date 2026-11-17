@@ -11,9 +11,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/CurrentThread.h>
 
-#include <deque>
-
-
 namespace DB
 {
 
@@ -232,42 +229,17 @@ public:
             updated_metadata.datalake_table_state = nested_metadata->datalake_table_state;
             setInMemoryMetadata(updated_metadata);
         }
-
-        /// The schema of `nested` belongs to the pinned state as well (e.g. a column of an Iceberg table can be renamed
-        /// between snapshots), and another `SELECT` of the query can change it before this one reads, so it is kept.
-        if (nested_metadata->datalake_table_state)
-        {
-            std::lock_guard lock{pinned_nested_metadata_mutex};
-            std::erase_if(pinned_nested_metadata, [&](const StorageMetadataPtr & pinned)
-            {
-                return *pinned->datalake_table_state == *nested_metadata->datalake_table_state;
-            });
-            pinned_nested_metadata.push_back(nested_metadata);
-            if (pinned_nested_metadata.size() > max_pinned_nested_metadata)
-                pinned_nested_metadata.pop_front();
-        }
     }
 
     /// The metadata of the proxy is the cached column contract rather than the metadata of `nested`,
-    /// so only the data lake state pinned during analysis is taken from it, together with the metadata
-    /// of `nested` captured with that state in `updateExternalDynamicMetadataIfExists`.
+    /// so only the data lake state pinned during analysis is taken from it. The schema of `nested` belongs
+    /// to that state as well, and another `SELECT` of the query can change the current one before this
+    /// one reads, so `nested` builds its metadata from the state.
     StorageSnapshotPtr getNestedSnapshot(const StoragePtr & storage, const StorageSnapshotPtr & proxy_snapshot, ContextPtr context) const override
     {
         if (proxy_snapshot && proxy_snapshot->metadata && proxy_snapshot->metadata->datalake_table_state)
-        {
-            const auto & state = *proxy_snapshot->metadata->datalake_table_state;
-            {
-                std::lock_guard lock{pinned_nested_metadata_mutex};
-                for (const auto & pinned : pinned_nested_metadata)
-                    if (*pinned->datalake_table_state == state)
-                        return storage->getStorageSnapshot(pinned, context);
-            }
-            /// Only when more states were pinned since the analysis than are kept.
-            const auto current_metadata = storage->getInMemoryMetadataPtr(context, false);
-            auto pinned_metadata = std::make_shared<StorageInMemoryMetadata>(*current_metadata);
-            pinned_metadata->setDataLakeTableState(state);
-            return storage->getStorageSnapshot(pinned_metadata, context);
-        }
+            return storage->getStorageSnapshot(
+                storage->getInMemoryMetadataForDataLakeTableState(*proxy_snapshot->metadata->datalake_table_state, context), context);
         const auto nested_metadata = storage->getInMemoryMetadataPtr(context, false);
         return storage->getStorageSnapshot(nested_metadata, context);
     }
@@ -403,10 +375,6 @@ private:
     /// Guards `nested` for readers that must not wait for the resolution. `nested` is written while holding
     /// both mutexes. Nothing that may take `nested_mutex` or a database mutex is called while holding it.
     mutable std::mutex resolved_nested_mutex;
-    /// The metadata of `nested` with each of the recently pinned data lake states, see `getNestedSnapshot`.
-    mutable std::mutex pinned_nested_metadata_mutex;
-    mutable std::deque<StorageMetadataPtr> pinned_nested_metadata;
-    static constexpr size_t max_pinned_nested_metadata = 16;
     mutable GetNestedStorageFunc get_nested;
     mutable StoragePtr nested;
     const bool add_conversion;

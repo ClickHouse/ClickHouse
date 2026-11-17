@@ -94,6 +94,7 @@ public:
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
+    StorageMetadataPtr getInMemoryMetadataForDataLakeTableState(const DataLakeTableStateSnapshot & state, ContextPtr query_context) const override;
 
 private:
     void updateConfigurationIfNeeded(ContextPtr context) override;

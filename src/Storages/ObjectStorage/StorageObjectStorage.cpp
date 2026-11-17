@@ -702,6 +702,28 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
 }
 
 
+StorageMetadataPtr StorageObjectStorage::getInMemoryMetadataForDataLakeTableState(
+    const DataLakeTableStateSnapshot & state, ContextPtr query_context) const
+{
+    /// Mirrors `updateExternalDynamicMetadataIfExists`, which pinned `state`.
+    auto current_metadata = getInMemoryMetadataPtr(query_context, false);
+    StorageInMemoryMetadata pinned = *current_metadata;
+    pinned.setDataLakeTableState(state);
+
+    if (configuration->isDataLakeConfiguration() && configuration->shouldReloadSchemaForConsistency(query_context))
+    {
+        if (auto rebuilt = configuration->buildStorageMetadataFromState(state, query_context))
+        {
+            pinned = rebuilt->withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+                rebuilt->columns, query_context, format_settings, configuration->partition_strategy_type));
+            pinned.settings_changes = current_metadata->settings_changes;
+        }
+    }
+
+    return std::make_shared<StorageInMemoryMetadata>(std::move(pinned));
+}
+
+
 std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
 {
     return totalRowsInSnapshot(nullptr, query_context);

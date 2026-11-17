@@ -67,18 +67,31 @@ ORDER BY 1;
 "
 
 # The schema of the table also belongs to the snapshot: a column renamed between the snapshots must not leak
-# into the `SELECT` of the older one through the shared table function proxy.
+# into the `SELECT` of the older one through the shared table function proxy. The `SELECT`s of the newer snapshots
+# count the files, because the proxy keeps the columns from the `CREATE` query and `count()` could read `id`,
+# which those snapshots do not have, see https://github.com/ClickHouse/ClickHouse/issues/129062.
 DIR2="${DIR}evolved/"
 $CLICKHOUSE_CLIENT --allow_insert_into_iceberg 1 --allow_experimental_iceberg_compaction 0 --iceberg_delete_data_on_drop 0 -m -q "
 CREATE TABLE ${DB_LAZY}.t2 (id Int64) ENGINE = IcebergLocal('${DIR2}', 'Parquet');
 INSERT INTO ${DB_LAZY}.t2 VALUES (100);
 CREATE TABLE ${DB_LAZY}.tf2 (id Int64) AS icebergLocal('${DIR2}', 'Parquet');
 ALTER TABLE ${DB_LAZY}.t2 RENAME COLUMN id TO renamed;
-INSERT INTO ${DB_LAZY}.t2 VALUES (7);
 "
 
-E1=$($CLICKHOUSE_CLIENT -q "SELECT snapshot_id FROM system.iceberg_history WHERE database = '${DB_LAZY}' AND table = 't2' ORDER BY made_current_at LIMIT 1")
-E2=$($CLICKHOUSE_CLIENT -q "SELECT snapshot_id FROM system.iceberg_history WHERE database = '${DB_LAZY}' AND table = 't2' ORDER BY made_current_at DESC LIMIT 1")
+# 16 more snapshots with the renamed column, so that one query pins many states of the table.
+for i in {1..16}; do
+    $CLICKHOUSE_CLIENT --allow_insert_into_iceberg 1 --allow_experimental_iceberg_compaction 0 -q "INSERT INTO ${DB_LAZY}.t2 VALUES (${i})"
+done
+
+mapfile -t SNAPSHOTS < <($CLICKHOUSE_CLIENT -q "SELECT snapshot_id FROM system.iceberg_history WHERE database = '${DB_LAZY}' AND table = 't2' ORDER BY made_current_at")
+E1=${SNAPSHOTS[0]}
+E2=${SNAPSHOTS[1]}
+
+# The `SELECT` of the oldest snapshot first, then one `SELECT` for each of the other 16 snapshots.
+MANY_STATES="(SELECT 'old', sum(id) FROM ${DB_LAZY}.tf2 SETTINGS iceberg_snapshot_id = ${E1})"
+for i in {1..16}; do
+    MANY_STATES+=" UNION ALL (SELECT 'new ${i}', toInt64(uniqExact(_file)) FROM ${DB_LAZY}.tf2 SETTINGS iceberg_snapshot_id = ${SNAPSHOTS[$i]})"
+done
 
 $CLICKHOUSE_CLIENT -m -q "
 DETACH DATABASE ${DB_LAZY};
@@ -89,17 +102,20 @@ SELECT * FROM
 (
     (SELECT 'old', sum(id) FROM ${DB_LAZY}.tf2 SETTINGS iceberg_snapshot_id = ${E1})
     UNION ALL
-    (SELECT 'new', count() FROM ${DB_LAZY}.tf2 SETTINGS iceberg_snapshot_id = ${E2})
+    (SELECT 'new', toInt64(uniqExact(_file)) FROM ${DB_LAZY}.tf2 SETTINGS iceberg_snapshot_id = ${E2})
 )
 ORDER BY 1;
 
 SELECT * FROM
 (
-    (SELECT 'new', count() FROM ${DB_LAZY}.tf2 SETTINGS iceberg_snapshot_id = ${E2})
+    (SELECT 'new', toInt64(uniqExact(_file)) FROM ${DB_LAZY}.tf2 SETTINGS iceberg_snapshot_id = ${E2})
     UNION ALL
     (SELECT 'old', sum(id) FROM ${DB_LAZY}.tf2 SETTINGS iceberg_snapshot_id = ${E1})
 )
 ORDER BY 1;
+
+SELECT 'many states';
+SELECT * FROM (${MANY_STATES}) ORDER BY 2;
 
 DROP DATABASE ${DB_LAZY};
 "
