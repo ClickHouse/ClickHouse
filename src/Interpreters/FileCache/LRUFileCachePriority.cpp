@@ -296,7 +296,8 @@ void LRUFileCachePriority::iterate(IterateFunc func, FileCacheReserveStat & stat
 namespace
 {
 
-/// The summary of the file segment of `entry`, or `nullopt` if the segment is gone or empty.
+/// The summary of the file segment of `entry`, or `nullopt` if the segment is gone or empty, or if its key lock is busy:
+/// the key is only `tryLock`-ed, so segments in use by other queries can be missing from the result.
 /// The key lock is held only to find the file segment, to make sure it is still in the cache,
 /// and, for a `Moving` or `Evicting` entry, to check that it is still the current queue entry of the segment.
 /// Everything else comes from the queue entry, the key metadata, or atomics of the file segment.
