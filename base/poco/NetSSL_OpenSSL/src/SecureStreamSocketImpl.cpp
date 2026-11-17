@@ -162,6 +162,24 @@ int SecureStreamSocketImpl::receiveBytes(void* buffer, int length, int flags)
 }
 
 
+int SecureStreamSocketImpl::waitForSendOrReceive(Poco::Timespan&, int)
+{
+	throw Poco::NotImplementedException("waitForSendOrReceive is not implemented for a SecureStreamSocketImpl");
+}
+
+
+int SecureStreamSocketImpl::sendNow(const void*, int)
+{
+	throw Poco::NotImplementedException("sendNow is not implemented for a SecureStreamSocketImpl");
+}
+
+
+int SecureStreamSocketImpl::receiveNow(void*, int)
+{
+	throw Poco::NotImplementedException("receiveNow is not implemented for a SecureStreamSocketImpl");
+}
+
+
 int SecureStreamSocketImpl::sendTo(const void* buffer, int length, const SocketAddress& address, int flags)
 {
 	throw Poco::InvalidAccessException("Cannot sendTo() on a SecureStreamSocketImpl");

@@ -22,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 }
 
@@ -106,6 +107,11 @@ bool FiberStreamSocketImpl::pollImpl(Poco::Timespan & timeout, int mode)
         error(r, "poll");
 
     return triggered != 0;
+}
+
+int FiberStreamSocketImpl::waitForSendOrReceive(Poco::Timespan & /*timeout*/, int /*mode*/)
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Silk::FiberStreamSocketImpl::waitForSendOrReceive is not implemented");
 }
 
 int FiberStreamSocketImpl::sendBytes(const void * buffer, int length, int flags)

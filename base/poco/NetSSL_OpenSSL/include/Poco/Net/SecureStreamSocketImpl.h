@@ -117,6 +117,14 @@ namespace Net
         ///
         /// Returns the number of bytes received.
 
+        int waitForSendOrReceive(Poco::Timespan & timeout, int mode);
+        int sendNow(const void * buffer, int length);
+        int receiveNow(void * buffer, int length);
+        /// Not implemented yet: OpenSSL keeps data of its own, so the versions of `SocketImpl`,
+        /// which work on the descriptor, would break the stream.
+        ///
+        /// Throws a Poco::NotImplementedException.
+
         int sendTo(const void * buffer, int length, const SocketAddress & address, int flags = 0);
         /// Not supported by a SecureStreamSocket.
         ///

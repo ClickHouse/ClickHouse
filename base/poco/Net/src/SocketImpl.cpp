@@ -19,6 +19,8 @@
 #include "Poco/Timestamp.h"
 #include "Poco/ErrorHandler.h"
 #include <string.h> // FD_SET needs memset on some platforms, so we can't use <cstring>
+#include <algorithm>
+#include <limits>
 
 
 #if   defined(POCO_OS_FAMILY_UNIX)
@@ -249,6 +251,7 @@ void SocketImpl::close()
 		poco_closesocket(_sockfd);
 		_sockfd = POCO_INVALID_SOCKET;
 	}
+	_heldSendError = 0;
 }
 
 
@@ -625,6 +628,136 @@ bool SocketImpl::poll(const Poco::Timespan& timeout, int mode)
 {
 	Poco::Timespan remainingTime(timeout);
 	return pollImpl(remainingTime, mode);
+}
+
+
+int SocketImpl::waitForSendOrReceive(Poco::Timespan& timeout, int mode)
+{
+	if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
+	if ((mode & (SELECT_READ | SELECT_WRITE)) == 0)
+		throw InvalidArgumentException("waitForSendOrReceive needs SELECT_READ, SELECT_WRITE or both");
+
+#if defined(POCO_HAVE_FD_POLL)
+	pollfd pollBuf{};
+	pollBuf.fd = _sockfd;
+	if (mode & SELECT_READ) pollBuf.events |= POLLIN;
+	if (mode & SELECT_WRITE) pollBuf.events |= POLLOUT;
+
+	while (true)
+	{
+		/// Rounded up, so that a wait shorter than a millisecond does not turn into a busy loop.
+		int timeoutMs = -1;
+		if (timeout.totalMicroseconds() >= 0)
+			timeoutMs = static_cast<int>(std::min<Poco::Timespan::TimeDiff>(
+				(timeout.totalMicroseconds() + 999) / 1000, std::numeric_limits<int>::max()));
+
+		Poco::Timestamp start;
+		int rc = ::poll(&pollBuf, 1, timeoutMs);
+		int err = rc < 0 ? lastError() : 0;
+		if (timeout.totalMicroseconds() > 0)
+		{
+			Poco::Timespan waited = Poco::Timestamp() - start;
+			timeout = waited < timeout ? timeout - waited : Poco::Timespan(0);
+		}
+
+		if (rc > 0)
+		{
+			if (pollBuf.revents & POLLNVAL) throw InvalidSocketException();
+			int ready = 0;
+			if (pollBuf.revents & (POLLERR | POLLHUP)) ready = mode & (SELECT_READ | SELECT_WRITE);
+			if (pollBuf.revents & POLLIN) ready |= SELECT_READ;
+			if (pollBuf.revents & POLLOUT) ready |= SELECT_WRITE;
+			return ready;
+		}
+		if (rc == 0)
+		{
+			timeout = 0;
+			return 0;
+		}
+		if (err != POCO_EINTR) error(err);
+	}
+#else
+	throw NotImplementedException("waitForSendOrReceive needs poll");
+#endif
+}
+
+
+int SocketImpl::sendNow(const void* buffer, int length)
+{
+	if (length <= 0) throw InvalidArgumentException("sendNow needs a positive length");
+	if (_heldSendError != 0) return -1;
+	if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
+
+	/// Waits as for a blocking send: a non-blocking throttle only books the budget, so a send
+	/// that never waits for the throttler would not be slowed down at all.
+	throttleSend(length, true);
+
+	int flags = MSG_DONTWAIT;
+#if defined(MSG_NOSIGNAL)
+	flags |= MSG_NOSIGNAL;
+#endif
+	int rc;
+	int err = 0;
+	do
+	{
+		rc = ::send(_sockfd, reinterpret_cast<const char*>(buffer), length, flags);
+		err = rc < 0 ? lastError() : 0;
+	}
+	while (rc < 0 && err == POCO_EINTR);
+
+	if (rc < 0)
+	{
+		if (err == POCO_EAGAIN || err == POCO_EWOULDBLOCK)
+			return 0;
+		_heldSendError = err;
+		return -1;
+	}
+
+	useSendThrottlerBudget(rc);
+	return rc;
+}
+
+
+int SocketImpl::receiveNow(void* buffer, int length)
+{
+	if (length <= 0) throw InvalidArgumentException("receiveNow needs a positive length");
+	if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
+
+	throttleRecv(length, false);
+
+	int rc;
+	int err = 0;
+	do
+	{
+		rc = ::recv(_sockfd, reinterpret_cast<char*>(buffer), length, MSG_DONTWAIT);
+		err = rc < 0 ? lastError() : 0;
+	}
+	while (rc < 0 && err == POCO_EINTR);
+
+	if (rc < 0)
+	{
+		if (err == POCO_EAGAIN || err == POCO_EWOULDBLOCK)
+			return 0;
+		if (err == POCO_ETIMEDOUT)
+			throw TimeoutException(err);
+		error(err);
+	}
+	if (rc == 0)
+		return -1;
+
+	useRecvThrottlerBudget(rc);
+	return rc;
+}
+
+
+void SocketImpl::throwHeldSendError()
+{
+	if (_heldSendError == 0)
+		throw IllegalStateException("No send error is held");
+	/// The same mapping as in `sendBytes`.
+	if (_heldSendError == POCO_ETIMEDOUT)
+		throw TimeoutException();
+	error(_heldSendError);
 }
 
 void SocketImpl::setSendBufferSize(int size)
@@ -1040,6 +1173,7 @@ int SocketImpl::fcntl(poco_fcntl_request_t request, long arg)
 void SocketImpl::reset(poco_socket_t aSocket)
 {
 	_sockfd = aSocket;
+	_heldSendError = 0;
 }
 
 

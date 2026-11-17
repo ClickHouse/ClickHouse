@@ -19,6 +19,10 @@ public:
     void connect(const Poco::Net::SocketAddress & address) override;
     void connect(const Poco::Net::SocketAddress & address, const Poco::Timespan & timeout) override;
     bool pollImpl(Poco::Timespan & timeout, int mode) override;
+    /// Not implemented yet: a `poll` of the descriptor would block the thread of the fiber
+    /// scheduler, not the fiber. `sendNow` and `receiveNow` of `SocketImpl` work as they are,
+    /// because they never wait for the socket.
+    int waitForSendOrReceive(Poco::Timespan & timeout, int mode) override;
     int sendBytes(const void * buffer, int length, int flags) override;
     int receiveBytes(void * buffer, int length, int flags) override;
     void setBlocking(bool flag) override;
