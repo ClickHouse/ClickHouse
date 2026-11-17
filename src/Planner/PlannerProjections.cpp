@@ -102,7 +102,7 @@ void collectExpressionsBeforeWindow(const QueryTreeNodePtr & node, QueryTreeNode
 
 }
 
-QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context)
+QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context, bool only_analyze)
 {
     auto query_tree = buildQueryTree(query_ast, context);
     auto & query_node = query_tree->as<QueryNode &>();
@@ -130,7 +130,7 @@ QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const Storag
     }
 
     QueryTreePassManager query_tree_pass_manager(context);
-    addQueryTreePasses(query_tree_pass_manager, /*only_analyze=*/true);
+    addQueryTreePasses(query_tree_pass_manager, only_analyze);
     /// Optimization passes are not applied because some of them are invalid for projections.
     /// Example: 'SELECT min(c0), max(c0), count() GROUP BY -c0' for minmax_count projection can be rewritten to
     /// 'SELECT min(c0), max(c0), count() GROUP BY c0' which is incorrect cause we store a column '-c0' in projection.

@@ -57,6 +57,7 @@ private:
 };
 
 /// Builds the query tree of the `SELECT` of a projection over `source` and runs the analysis passes on it.
-QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context);
+/// With `only_analyze` a scalar subquery is not calculated, it gets a default value.
+QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context, bool only_analyze = true);
 
 }
