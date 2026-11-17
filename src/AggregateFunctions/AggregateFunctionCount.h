@@ -146,6 +146,11 @@ public:
         data(place).count = new_count;
     }
 
+    void setSumAndCount(AggregateDataPtr __restrict place, const Field & /*sum*/, UInt64 count) const override
+    {
+        data(place).count = count;
+    }
+
     AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr &, const DataTypes & types, const Array & params, const AggregateFunctionProperties & /*properties*/) const override;
 

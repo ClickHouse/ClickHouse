@@ -389,8 +389,9 @@ public:
     virtual void createAndDeserializeBatch(PaddedPODArray<AggregateDataPtr> & data, AggregateDataPtr __restrict place, size_t total_size_of_state, size_t limit, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const = 0;
 
     /// Sets a just-created state to what it would be after aggregating `count` rows whose values add up to `sum`, for
-    /// callers that already know both (e.g. the aggregation from column statistics). Implemented by `sum`, `avg` and
-    /// `sumCount`; `sum` is a `Field` of the result type of `sum` over the argument. Other functions throw.
+    /// callers that already know both (e.g. the aggregation from column statistics). Implemented by `sum`, `avg`,
+    /// `sumCount` and `count`; `sum` is a `Field` of the result type of `sum` over the argument, and ignored by `count`.
+    /// Over a `Nullable` argument, `count` is the number of non-NULL rows. Other functions throw.
     virtual void setSumAndCount(AggregateDataPtr __restrict place, const Field & sum, UInt64 count) const;
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
