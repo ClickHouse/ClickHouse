@@ -3,6 +3,7 @@
 
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/castColumn.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
@@ -16,6 +17,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVariant.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/ConstantValue.h>
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/IDataType.h>
@@ -32,6 +34,7 @@
 #include <base/DayNum.h>
 #include <Common/Exception.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/NaNUtils.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
@@ -89,6 +92,15 @@ std::optional<ColumnPtr> tryConvertNumericColumnNative(
         using To = typename Types::RightType;
 
         const From source = assert_cast<const ColumnVector<From> &>(value).getData()[0];
+
+        /// A `NaN` or infinity is not representable in an integer type, and `accurate::convertNumeric` would cast a
+        /// `NaN` before noticing (undefined behavior). The same guard as in the accurate `CAST` (`convertNumericGeneral`).
+        if constexpr (is_floating_point<From> && !is_floating_point<To>)
+        {
+            if (!isFinite(source))
+                return true; /// Not representable: `result` stays null.
+        }
+
         const bool exact = strict || !convert_inexact_floats || !is_floating_point<To>;
 
         To converted{};
@@ -786,6 +798,17 @@ ColumnPtr tryConvertColumnToTypeOrNull(const IColumn & value, const DataTypePtr 
 ColumnPtr convertColumnToTypeOrThrow(const IColumn & value, const DataTypePtr & from, const DataTypePtr & to)
 {
     return convertColumnToTypeOrThrow(value, from, to, FormatSettings{});
+}
+
+ConstantValue resolveActiveAlternative(const ConstantValue & value)
+{
+    const DataTypePtr active_type = resolveActiveAlternativeType(value.getColumn()->getDataColumn(), value.getType());
+    if (active_type == value.getType())
+        return value;
+
+    /// `CAST` from a `Variant`/`Dynamic` to the type of its active alternative extracts that alternative's value.
+    const ColumnPtr active = castColumn({value.getColumn()->getDataColumnPtr(), value.getType(), ""}, active_type);
+    return ConstantValue{ConstantValue::wrapToColumnConst(active), active_type};
 }
 
 }
