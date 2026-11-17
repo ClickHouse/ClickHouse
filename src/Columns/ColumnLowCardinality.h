@@ -363,6 +363,9 @@ public:
 
     DictionaryEncodedColumn getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 limit) const;
 
+    /// Returns `getMinimalDictionaryEncodedColumn(offset, limit).dictionary` without building the indexes.
+    ColumnPtr getMinimalDictionary(UInt64 offset, UInt64 limit) const;
+
     ColumnPtr countKeys() const;
 
     bool containsNull() const;
@@ -375,16 +378,16 @@ private:
         explicit Dictionary(MutableColumnPtr && column_unique, bool is_shared);
         explicit Dictionary(ColumnPtr column_unique, bool is_shared);
 
-        const WrappedPtr & getColumnUniquePtr() const { return column_unique; }
+        [[nodiscard]] const WrappedPtr & getColumnUniquePtr() const { return column_unique; }
         WrappedPtr & getColumnUniquePtr() { return column_unique; }
 
-        const IColumnUnique & getColumnUnique() const { return static_cast<const IColumnUnique &>(*column_unique); }
+        [[nodiscard]] const IColumnUnique & getColumnUnique() const { return static_cast<const IColumnUnique &>(*column_unique); }
         IColumnUnique & getColumnUnique() { return static_cast<IColumnUnique &>(*column_unique); }
 
         /// Dictionary may be shared for several mutable columns.
         /// Immutable columns may have the same column unique, which isn't necessarily shared dictionary.
         void setShared(const ColumnPtr & column_unique_);
-        bool isShared() const { return shared; }
+        [[nodiscard]] bool isShared() const { return shared; }
 
         /// Create new dictionary with only keys that are mentioned in indexes.
         void compact(MutableColumnPtr & indexes);
