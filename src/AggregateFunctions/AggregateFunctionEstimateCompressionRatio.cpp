@@ -375,8 +375,10 @@ struct TargetPart
 /// kept in a `Memory` table) converts them as the query that added them would have.
 struct Conversion
 {
-    /// Null when the target type is the source type.
+    /// Null when the target type is the source type. Prepared once: a prepared function can run in several threads at once,
+    /// as in the actions of an expression.
     FunctionBasePtr cast;
+    ExecutableFunctionPtr prepared_cast;
     std::optional<DataTypeValidationSettings> validation_settings;
 };
 using ConversionPtr = std::shared_ptr<const Conversion>;
@@ -461,7 +463,7 @@ public:
                 {source_type->createColumn(), source_type, ""},
                 {DataTypeString().createColumnConst(1, target_type->getName()), std::make_shared<DataTypeString>(), ""}};
             own_conversion->cast = FunctionFactory::instance().get("_CAST", context)->build(cast_arguments);
-            own_conversion->cast->prepare({});
+            own_conversion->prepared_cast = own_conversion->cast->prepare({});
         }
         conversion = std::move(own_conversion);
 
@@ -718,7 +720,7 @@ private:
         ColumnsWithTypeAndName arguments{
             {rows, cast->getArgumentTypes()[0], ""},
             {DataTypeString().createColumnConst(rows->size(), target_type->getName()), std::make_shared<DataTypeString>(), ""}};
-        return cast->execute(arguments, cast->getResultType(), rows->size(), /*dry_run=*/false);
+        return rows_conversion.prepared_cast->execute(arguments, cast->getResultType(), rows->size(), /*dry_run=*/false);
     }
 
     /// How many of the converted rows from `offset` the open granule takes, and their bytes. A granule ends after
