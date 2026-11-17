@@ -39,3 +39,12 @@ Some listed previews may not be available to every organization. Contact [Cloud 
 2. Select **Request access**. This submits an access request; it does not enable the feature immediately. ClickHouse Cloud confirms when the request has been received.
 3. After your request is approved and access is enabled, use the **Go to...** or **View in...** service link, where available, to start using the feature.
 4. To share feedback, select **Give feedback** next to the feature, choose **Thumbs up** if you would use the feature or **Thumbs down** if you would not, optionally add details in the text form and opt in to being contacted about the feedback, and select **Send feedback**.
+
+## Manage public previews with the API {#manage-public-previews-with-the-api}
+
+You can automate public preview management with the ClickHouse Cloud API:
+
+- [List organization preview features](/products/cloud/api-reference/organization/organization-public-previews-get-list) with `GET /v1/organizations/{organizationId}/previews` to retrieve the previews offered to your organization, including whether each preview is enabled and whether your API key can switch it. The API key requires the `control-plane:organization:view` permission.
+- [Update an organization preview feature](/products/cloud/api-reference/organization/organization-public-preview-patch) with `PATCH /v1/organizations/{organizationId}/previews/{previewId}` and the request body `{ "enabled": true }` or `{ "enabled": false }`. Use a `previewId` returned by the list endpoint. The API key requires the `control-plane:organization:manage` permission.
+
+Both endpoints are in beta and their API contracts may change.
