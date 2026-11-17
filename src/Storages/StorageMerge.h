@@ -330,7 +330,7 @@ private:
 
         void addCreatingSetsStep(QueryPlan &, ContextPtr) const;
 
-        bool requiresColumn(const String & column_name) const;
+        [[nodiscard]] bool requiresColumn(const String & column_name) const;
 
     private:
         std::string filter_column_name; // complex filter, may contain logic operations

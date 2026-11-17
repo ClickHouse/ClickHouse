@@ -61,7 +61,7 @@ public:
 
     /// The filter applies a row-level security filter that the read could not take (`SelectQueryInfo::row_level_filter_after_read`).
     void markAsRowLevelFilterAfterRead() { row_level_filter_after_read = true; }
-    bool isRowLevelFilterAfterRead() const { return row_level_filter_after_read; }
+    [[nodiscard]] bool isRowLevelFilterAfterRead() const { return row_level_filter_after_read; }
     /// The value of `optimize_constant_columns_after_filter` from the context the filter was planned in.
     /// It can differ from the value in the query context, e.g. for a subquery with its own `SETTINGS`.
     /// If not set, `FilterTransform` reads the setting from the query context.
