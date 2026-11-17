@@ -1,0 +1,36 @@
+-- projection materialized before the merge: horizontal, full storage
+1	['','']
+2	['','']
+1	['','']
+2	['','']
+-- dependent column materialized before the merge: horizontal, full storage
+1	['','']	2	2
+2	['','']	2	2
+-- projection materialized before the merge: vertical, packed storage
+1	['','']
+2	['','']
+1	['','']
+2	['','']
+-- dependent column materialized before the merge: vertical, packed storage
+1	['','']	2	2
+2	['','']	2	2
+-- projection materialized before the merge: vertical, full storage
+1	['','']
+2	['','']
+1	['','']
+2	['','']
+-- dependent column materialized before the merge: vertical, full storage
+1	['','']	2	2
+2	['','']	2	2
+-- projection materialized before the merge: horizontal, packed storage
+1	['','']
+2	['','']
+1	['','']
+2	['','']
+-- dependent column materialized before the merge: horizontal, packed storage
+1	['','']	2	2
+2	['','']	2	2
+-- projection materialized by a mutation of a part with packed storage
+['','']
+['','']
+1
