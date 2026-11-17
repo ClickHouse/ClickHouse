@@ -1853,15 +1853,15 @@ Type of the blobs written by the `Puffin` output format. Possible values:
 )", 0, \
         {"26.11", "deletion-vector-v1", "deletion-vector-v1", "New setting for the `Puffin` output format: the type of the written blobs."}) \
     DECLARE(String, output_format_puffin_field_ids, "", R"(
-Comma-separated Iceberg field ids of the input columns, written to the `fields` of `apache-datasketches-theta-v1` blobs by the `Puffin` output format. Empty means the columns get field ids 1, 2, ... in their order.
+Comma-separated Iceberg field ids of the input columns, written to the `fields` of `apache-datasketches-theta-v1` blobs by the `Puffin` output format. Required to write Theta sketches.
 )", 0, \
         {"26.11", "", "", "New setting for the `Puffin` output format: Iceberg field ids of the columns for Theta sketch blobs."}) \
     DECLARE(Int64, output_format_puffin_snapshot_id, -1, R"(
-Iceberg snapshot id written to `apache-datasketches-theta-v1` blobs by the `Puffin` output format: the snapshot the statistics were computed from.
+Iceberg snapshot id written to `apache-datasketches-theta-v1` blobs by the `Puffin` output format: the snapshot the statistics were computed from. Required to write Theta sketches.
 )", 0, \
         {"26.11", -1, -1, "New setting for the `Puffin` output format: the snapshot id of Theta sketch blobs."}) \
     DECLARE(Int64, output_format_puffin_sequence_number, -1, R"(
-Iceberg sequence number written to `apache-datasketches-theta-v1` blobs by the `Puffin` output format: the sequence number of the snapshot the statistics were computed from.
+Iceberg sequence number written to `apache-datasketches-theta-v1` blobs by the `Puffin` output format: the sequence number of the snapshot the statistics were computed from. Required to write Theta sketches.
 )", 0, \
         {"26.11", -1, -1, "New setting for the `Puffin` output format: the sequence number of Theta sketch blobs."}) \
     \

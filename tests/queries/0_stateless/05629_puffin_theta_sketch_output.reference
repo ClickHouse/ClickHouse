@@ -44,3 +44,6 @@ contains field id 1 twice
 must be a comma-separated list of positive integers
 the type has no Iceberg single-value serialization
 cast the column to DateTime64(6)
+Setting `output_format_puffin_field_ids` must be set
+Setting `output_format_puffin_snapshot_id` must be set
+Setting `output_format_puffin_sequence_number` must be set

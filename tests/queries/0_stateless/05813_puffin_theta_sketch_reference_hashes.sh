@@ -13,7 +13,7 @@ OUT="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 mkdir -p "$OUT"
 
 $CLICKHOUSE_LOCAL -q "
-INSERT INTO FUNCTION file('$OUT/reference.puffin', Puffin) SETTINGS output_format_puffin_blob_type = 'apache-datasketches-theta-v1'
+INSERT INTO FUNCTION file('$OUT/reference.puffin', Puffin) SETTINGS output_format_puffin_blob_type = 'apache-datasketches-theta-v1', output_format_puffin_field_ids = '1,2,3,4,5,6,7,8,9,10,11,12,13,14,15', output_format_puffin_snapshot_id = 1, output_format_puffin_sequence_number = 1
 SELECT
     (n = 0)::Bool AS b,
     toInt8([-128, 5][n + 1]) AS i8,

@@ -3,6 +3,7 @@
 #include <Processors/Formats/Impl/Puffin/PuffinWriter.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnVector.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Core/Block.h>
@@ -51,6 +52,35 @@ String serializeDeletionVectorBlob(roaring::Roaring64Map & positions)
     return buf.str();
 }
 
+void validateDeletionVectorPosition(UInt64 position)
+{
+    if (position > static_cast<UInt64>(DELETION_VECTOR_MAX_POSITION))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Deleted row position {} exceeds the maximum deletion vector position {}",
+            position,
+            DELETION_VECTOR_MAX_POSITION);
+}
+
+template <typename T>
+void addPositions(roaring::Roaring64Map & bitmap, const IColumn & positions, size_t begin, size_t end, PaddedPODArray<UInt64> & buffer)
+{
+    const auto & data = assert_cast<const ColumnVector<T> &>(positions).getData();
+    buffer.resize(end - begin);
+    for (size_t i = begin; i < end; ++i)
+    {
+        if constexpr (is_signed_v<T>)
+        {
+            if (data[i] < 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deleted row position {} is negative", static_cast<Int64>(data[i]));
+        }
+        const auto position = static_cast<UInt64>(data[i]);
+        validateDeletionVectorPosition(position);
+        buffer[i - begin] = position;
+    }
+    bitmap.addMany(buffer.size(), buffer.data());
+}
+
 PuffinBlob makeDeletionVectorBlobMetadata(const String & referenced_data_file, UInt64 cardinality)
 {
     PuffinBlob blob;
@@ -63,16 +93,6 @@ PuffinBlob makeDeletionVectorBlobMetadata(const String & referenced_data_file, U
     return blob;
 }
 
-void validateDeletionVectorPosition(UInt64 position)
-{
-    if (position > static_cast<UInt64>(DELETION_VECTOR_MAX_POSITION))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Deleted row position {} exceeds the maximum deletion vector position {}",
-            position,
-            DELETION_VECTOR_MAX_POSITION);
-}
-
 class PuffinDeletionVectorBuilder final : public IPuffinBlobBuilder
 {
 public:
@@ -80,13 +100,14 @@ public:
 
     void consume(const Chunk & chunk) override;
     void write(PuffinWriter & writer) override;
-    void reset() override;
+    void clear() override;
 
 private:
-    void addPositions(roaring::Roaring64Map & bitmap, const IColumn & positions, size_t begin, size_t end) const;
+    using AddPositions = void (*)(roaring::Roaring64Map &, const IColumn &, size_t, size_t, PaddedPODArray<UInt64> &);
 
     bool positions_are_arrays = false;
-    bool positions_are_unsigned = false;
+    AddPositions add_positions = nullptr;
+    PaddedPODArray<UInt64> positions_buffer;
     MapWithMemoryTracking<String, roaring::Roaring64Map> deletion_vectors;
 };
 
@@ -115,61 +136,54 @@ PuffinDeletionVectorBuilder::PuffinDeletionVectorBuilder(const Block & header)
         positions_type = array_type->getNestedType();
     }
 
-    WhichDataType which(positions_type);
-    if (!which.isNativeUInt() && !which.isNativeInt())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Puffin output format requires the second column with deleted row positions to be an integer or an array of integers, got {}",
-            header.getByPosition(1).type->getName());
-    positions_are_unsigned = which.isNativeUInt();
-}
-
-void PuffinDeletionVectorBuilder::addPositions(roaring::Roaring64Map & bitmap, const IColumn & positions, size_t begin, size_t end) const
-{
-    for (size_t i = begin; i < end; ++i)
+    switch (WhichDataType(positions_type).idx)
     {
-        UInt64 position = 0;
-        if (positions_are_unsigned)
-        {
-            position = positions.getUInt(i);
-        }
-        else
-        {
-            const Int64 value = positions.getInt(i);
-            if (value < 0)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deleted row position {} is negative", value);
-            position = static_cast<UInt64>(value);
-        }
-        validateDeletionVectorPosition(position);
-        bitmap.add(position);
+        case TypeIndex::UInt8: add_positions = &addPositions<UInt8>; break;
+        case TypeIndex::UInt16: add_positions = &addPositions<UInt16>; break;
+        case TypeIndex::UInt32: add_positions = &addPositions<UInt32>; break;
+        case TypeIndex::UInt64: add_positions = &addPositions<UInt64>; break;
+        case TypeIndex::Int8: add_positions = &addPositions<Int8>; break;
+        case TypeIndex::Int16: add_positions = &addPositions<Int16>; break;
+        case TypeIndex::Int32: add_positions = &addPositions<Int32>; break;
+        case TypeIndex::Int64: add_positions = &addPositions<Int64>; break;
+        default:
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Puffin output format requires the second column with deleted row positions to be an integer or an array of integers, got {}",
+                header.getByPosition(1).type->getName());
     }
 }
 
 void PuffinDeletionVectorBuilder::consume(const Chunk & chunk)
 {
     const auto & columns = chunk.getColumns();
-    const auto files = columns[0]->convertToFullColumnIfLowCardinality();
-    const IColumn & positions = *columns[1];
-    const auto * positions_array = positions_are_arrays ? &assert_cast<const ColumnArray &>(positions) : nullptr;
-    const auto * positions_offsets = positions_array ? &positions_array->getOffsets() : nullptr;
+    const auto files = columns[0]->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+    const auto positions = columns[1]->convertToFullColumnIfConst();
+    const auto * positions_array = positions_are_arrays ? &assert_cast<const ColumnArray &>(*positions) : nullptr;
 
-    roaring::Roaring64Map * bitmap = nullptr;
-    std::string_view current_file;
-    for (size_t row = 0; row < chunk.getNumRows(); ++row)
+    const size_t rows = chunk.getNumRows();
+    size_t run_begin = 0;
+    while (run_begin < rows)
     {
-        const std::string_view file = files->getDataAt(row);
-        if (!bitmap || file != current_file)
-        {
-            if (file.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Referenced data file of a deletion vector must not be empty");
-            bitmap = &deletion_vectors[String(file)];
-            current_file = file;
-        }
+        const std::string_view file = files->getDataAt(run_begin);
+        if (file.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Referenced data file of a deletion vector must not be empty");
 
+        size_t run_end = run_begin + 1;
+        while (run_end < rows && files->getDataAt(run_end) == file)
+            ++run_end;
+
+        auto & bitmap = deletion_vectors[String(file)];
         if (positions_array)
-            addPositions(*bitmap, positions_array->getData(), (*positions_offsets)[row - 1], (*positions_offsets)[row]);
+        {
+            const auto & offsets = positions_array->getOffsets();
+            add_positions(bitmap, positions_array->getData(), offsets[run_begin - 1], offsets[run_end - 1], positions_buffer);
+        }
         else
-            addPositions(*bitmap, positions, row, row + 1);
+        {
+            add_positions(bitmap, *positions, run_begin, run_end, positions_buffer);
+        }
+        run_begin = run_end;
     }
 }
 
@@ -182,7 +196,7 @@ void PuffinDeletionVectorBuilder::write(PuffinWriter & writer)
     }
 }
 
-void PuffinDeletionVectorBuilder::reset()
+void PuffinDeletionVectorBuilder::clear()
 {
     deletion_vectors.clear();
 }

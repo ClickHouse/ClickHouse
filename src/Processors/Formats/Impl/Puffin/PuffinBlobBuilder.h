@@ -17,7 +17,7 @@ public:
 
     virtual void consume(const Chunk & chunk) = 0;
     virtual void write(PuffinWriter & writer) = 0;
-    virtual void reset() = 0;
+    virtual void clear() = 0;
 };
 
 using PuffinBlobBuilderPtr = std::unique_ptr<IPuffinBlobBuilder>;

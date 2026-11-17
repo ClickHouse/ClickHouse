@@ -26,7 +26,7 @@ void PuffinBlockOutputFormat::finalizeImpl()
 
 void PuffinBlockOutputFormat::resetFormatterImpl()
 {
-    builder->reset();
+    builder->clear();
 }
 
 void registerOutputFormatPuffin(FormatFactory & factory)

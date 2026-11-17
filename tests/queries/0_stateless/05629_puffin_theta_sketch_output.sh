@@ -10,11 +10,11 @@ OUT="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 mkdir -p "$OUT"
 rm -f "${OUT:?}"/*.puffin
 
-THETA="output_format_puffin_blob_type = 'apache-datasketches-theta-v1'"
+THETA="output_format_puffin_blob_type = 'apache-datasketches-theta-v1', output_format_puffin_snapshot_id = 123, output_format_puffin_sequence_number = 7"
 
 echo "--- one blob per column, exact ndv for small inputs ---"
 $CLICKHOUSE_LOCAL -q "
-INSERT INTO FUNCTION file('$OUT/types.puffin', Puffin) SETTINGS $THETA, output_format_puffin_snapshot_id = 123, output_format_puffin_sequence_number = 7
+INSERT INTO FUNCTION file('$OUT/types.puffin', Puffin) SETTINGS $THETA, output_format_puffin_field_ids = '1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20'
 SELECT
     number % 2 = 0 AS b,
     toInt8(number % 100) AS i8,
@@ -45,19 +45,19 @@ FROM file('$OUT/types.puffin', PuffinMetadata) ORDER BY offset
 
 echo "--- NULLs and empty strings are skipped, empty inputs give empty sketches ---"
 $CLICKHOUSE_LOCAL -q "
-INSERT INTO FUNCTION file('$OUT/skipped.puffin', Puffin) SETTINGS $THETA
+INSERT INTO FUNCTION file('$OUT/skipped.puffin', Puffin) SETTINGS $THETA, output_format_puffin_field_ids = '1,2'
 SELECT if(number % 2 = 0, '', toString(number)) AS s, CAST(NULL AS Nullable(Int32)) AS n FROM numbers(10)
 "
 $CLICKHOUSE_LOCAL -q "SELECT fields, properties['ndv'] FROM file('$OUT/skipped.puffin', PuffinMetadata) ORDER BY offset"
 $CLICKHOUSE_LOCAL -q "
-INSERT INTO FUNCTION file('$OUT/empty.puffin', Puffin) SETTINGS $THETA
+INSERT INTO FUNCTION file('$OUT/empty.puffin', Puffin) SETTINGS $THETA, output_format_puffin_field_ids = '1'
 SELECT number AS x FROM numbers(0)
 "
 $CLICKHOUSE_LOCAL -q "SELECT fields, length, properties['ndv'] FROM file('$OUT/empty.puffin', PuffinMetadata)"
 
 echo "--- the same values give the same sketch for all integer types of Iceberg int, and another one for long ---"
 $CLICKHOUSE_LOCAL -q "
-INSERT INTO FUNCTION file('$OUT/widths.puffin', Puffin) SETTINGS $THETA
+INSERT INTO FUNCTION file('$OUT/widths.puffin', Puffin) SETTINGS $THETA, output_format_puffin_field_ids = '1,2,3,4'
 SELECT toInt8(number) AS a, toUInt16(number) AS b, toInt32(number) AS c, toInt64(number) AS d FROM numbers(100)
 "
 $CLICKHOUSE_LOCAL -q "
@@ -69,7 +69,7 @@ ORDER BY 1
 
 echo "--- estimation mode ---"
 $CLICKHOUSE_LOCAL -q "
-INSERT INTO FUNCTION file('$OUT/large.puffin', Puffin) SETTINGS $THETA
+INSERT INTO FUNCTION file('$OUT/large.puffin', Puffin) SETTINGS $THETA, output_format_puffin_field_ids = '1'
 SELECT number % 100000 AS x FROM numbers(300000)
 "
 $CLICKHOUSE_LOCAL -q "SELECT abs(toUInt64(properties['ndv']) - 100000) < 5000 FROM file('$OUT/large.puffin', PuffinMetadata)"
@@ -99,7 +99,10 @@ $CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION file('$OUT/e1.puffin', Puffin) SETTIN
 $CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION file('$OUT/e2.puffin', Puffin) SETTINGS $THETA, output_format_puffin_field_ids = '1' SELECT 1 AS x, 2 AS y" 2>&1 | grep -o -m1 "has 1 field ids, but 2 columns are written"
 $CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION file('$OUT/e3.puffin', Puffin) SETTINGS $THETA, output_format_puffin_field_ids = '1,1' SELECT 1 AS x, 2 AS y" 2>&1 | grep -o -m1 "contains field id 1 twice"
 $CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION file('$OUT/e4.puffin', Puffin) SETTINGS $THETA, output_format_puffin_field_ids = '1,x' SELECT 1 AS x, 2 AS y" 2>&1 | grep -o -m1 "must be a comma-separated list of positive integers"
-$CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION file('$OUT/e5.puffin', Puffin) SETTINGS $THETA SELECT [1] AS x" 2>&1 | grep -o -m1 "the type has no Iceberg single-value serialization"
-$CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION file('$OUT/e6.puffin', Puffin) SETTINGS $THETA SELECT now64(9) AS x" 2>&1 | grep -o -m1 "cast the column to DateTime64(6)"
+$CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION file('$OUT/e5.puffin', Puffin) SETTINGS $THETA, output_format_puffin_field_ids = '1' SELECT [1] AS x" 2>&1 | grep -o -m1 "the type has no Iceberg single-value serialization"
+$CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION file('$OUT/e6.puffin', Puffin) SETTINGS $THETA, output_format_puffin_field_ids = '1' SELECT now64(9) AS x" 2>&1 | grep -o -m1 "cast the column to DateTime64(6)"
+$CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION file('$OUT/e7.puffin', Puffin) SETTINGS $THETA SELECT 1 AS x" 2>&1 | grep -o -m1 "Setting \`output_format_puffin_field_ids\` must be set"
+$CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION file('$OUT/e8.puffin', Puffin) SETTINGS $THETA, output_format_puffin_field_ids = '1', output_format_puffin_snapshot_id = -1 SELECT 1 AS x" 2>&1 | grep -o -m1 "Setting \`output_format_puffin_snapshot_id\` must be set"
+$CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION file('$OUT/e9.puffin', Puffin) SETTINGS $THETA, output_format_puffin_field_ids = '1', output_format_puffin_sequence_number = -1 SELECT 1 AS x" 2>&1 | grep -o -m1 "Setting \`output_format_puffin_sequence_number\` must be set"
 
 rm -rf "${OUT:?}"

@@ -290,14 +290,12 @@ namespace
 
 VectorWithMemoryTracking<Int32> parseFieldIds(const String & setting, const Block & header)
 {
-    VectorWithMemoryTracking<Int32> field_ids;
     if (setting.empty())
-    {
-        for (size_t i = 0; i < header.columns(); ++i)
-            field_ids.push_back(static_cast<Int32>(i + 1));
-        return field_ids;
-    }
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting `output_format_puffin_field_ids` must be set to the Iceberg field ids of the columns to write Theta sketches");
 
+    VectorWithMemoryTracking<Int32> field_ids;
     VectorWithMemoryTracking<String> parts;
     boost::split(parts, setting, boost::is_any_of(","));
     UnorderedSetWithMemoryTracking<Int32> seen;
@@ -355,6 +353,15 @@ public:
         , snapshot_id(format_settings.puffin.output_snapshot_id)
         , sequence_number(format_settings.puffin.output_sequence_number)
     {
+        if (snapshot_id == -1)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `output_format_puffin_snapshot_id` must be set to the snapshot the Theta sketches are computed from");
+        if (sequence_number == -1)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `output_format_puffin_sequence_number` must be set to the sequence number of the snapshot the Theta sketches are computed from");
+
         sketches.reserve(header.columns());
         for (const auto & column : header)
         {
@@ -379,7 +386,7 @@ public:
         }
     }
 
-    void reset() override
+    void clear() override
     {
         for (auto & sketch : sketches)
             sketch.reset();
