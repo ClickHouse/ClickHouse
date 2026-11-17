@@ -53,14 +53,14 @@ public:
     /// Probes of one call that fall into the same block share a single read of it.
     void containsBatch(const IColumn & keys, std::span<UInt8> found) const override;
 
-    size_t getTotalRowCount() const override { return rows; }
+    [[nodiscard]] size_t getTotalRowCount() const override { return rows; }
 
     /// Returns the bytes of the keys at the width of `Key`. The blocks pack close keys, but the keys count at
     /// their full width, so the limit on bytes keeps the same number of keys whatever their values are. The
     /// memory that lookups use does not count. The directory is small next to the keys: it takes 16 to 40
     /// bytes per block, and every block but the last holds at least 4 KiB of keys. The filters and the cache
     /// have budgets of their own.
-    size_t getTotalByteCount() const override { return rows * sizeof(Key); }
+    [[nodiscard]] size_t getTotalByteCount() const override { return rows * sizeof(Key); }
 
 private:
     using BlockFormat = DiskSetBlockFormat<Key>;
@@ -104,7 +104,7 @@ private:
         /// Returns the only block that can hold `key`, which is not below the first key of block `from`.
         /// Lookups of ascending keys pass the block of the previous key, so that a key in the same block
         /// takes one comparison, and the search for another block covers only the blocks after it.
-        size_t findBlock(const Key & key, size_t from) const
+        [[nodiscard]] size_t findBlock(const Key & key, size_t from) const
         {
             chassert(from < entries.size() && entries[from].first_key <= key);
             if (from + 1 == entries.size() || key < entries[from + 1].first_key)
@@ -115,17 +115,17 @@ private:
             return static_cast<size_t>(it - entries.begin() - 1);
         }
 
-        const Key & getFirstKey(size_t block) const { return entries[block].first_key; }
+        [[nodiscard]] const Key & getFirstKey(size_t block) const { return entries[block].first_key; }
 
         /// Returns the position of the frame of `block` in the file.
-        size_t getOffset(size_t block) const { return entries[block].offset; }
+        [[nodiscard]] size_t getOffset(size_t block) const { return entries[block].offset; }
 
         /// Returns the position in the file after the frame of `block`: the position of the frame of the next
         /// block, or the size of the file for the last block.
-        size_t getEndOffset(size_t block) const { return block + 1 < entries.size() ? entries[block + 1].offset : file_size; }
+        [[nodiscard]] size_t getEndOffset(size_t block) const { return block + 1 < entries.size() ? entries[block + 1].offset : file_size; }
 
-        size_t size() const { return entries.size(); }
-        size_t allocatedBytes() const { return entries.capacity() * sizeof(Entry); }
+        [[nodiscard]] size_t size() const { return entries.size(); }
+        [[nodiscard]] size_t allocatedBytes() const { return entries.capacity() * sizeof(Entry); }
 
         /// Returns about the memory of a directory of `blocks` blocks.
         static size_t estimateBytes(size_t blocks) { return blocks * sizeof(Entry); }

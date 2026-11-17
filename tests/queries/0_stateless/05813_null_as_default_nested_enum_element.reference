@@ -1,0 +1,29 @@
+JSONEachRow Array	[1,2]
+JSONCompactEachRow Array	[1,2]
+JSONEachRow Tuple object	(1,1)
+JSONEachRow Tuple array	(1,1)
+JSONEachRow Map	{'k':1}
+Values Array	[1,2]
+Values Array no expressions	[1,2]
+Values Tuple	(1)
+Values Map value	{'k':1}
+Values Map key	{1:1}
+TSV Array	[1,2]
+CSV Array	[1,2]
+CSV Array nested CSV	[1,2]
+CSV Tuple columns	(1,1)
+CAST String	[1,2]
+CAST String Variant	[1,2]
+Array(Array)	[[1,2]]
+Array(Tuple)	[(0,1),(1,1)]
+Map(String, Tuple)	{'k':(1)}
+Array(JSON)	[1]
+Enum16	[-5,7]
+empty_as_default Array	[1,2]
+empty_as_default Tuple	(1)
+empty_as_default Map	{'k':1}
+Array(Nullable)	[NULL,'b']
+Array(UInt8)	[0,2]
+1	['a','b']
+2	['a','b']
+3	['a','b']
