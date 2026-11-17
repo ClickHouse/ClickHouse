@@ -300,7 +300,7 @@ struct AdaptiveMergeTask
     PaddedPODArray<UInt32> merge_order;
     AggregateDataPtrs merge_group;
     PaddedPODArray<AggregateDataPtr> record_places;
-    RowStorePointers records;
+    RowPointers records;
     AdaptiveRecordRanges ranges;
     std::vector<std::pair<UInt64, UInt64>> best_counts_and_hashes;
     PaddedPODArray<UInt64> best_hashes;

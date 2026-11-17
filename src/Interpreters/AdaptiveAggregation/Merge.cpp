@@ -536,7 +536,7 @@ namespace
     /// staged it, appended without a read buffer or a virtual call, and another value in its column's own serialization.
     template <typename Format>
     MutableColumns decodeStagedVariableArguments(
-        const Format & format, const AdaptiveArgumentLayout & layout, const RowStorePointers & records)
+        const Format & format, const AdaptiveArgumentLayout & layout, const RowPointers & records)
     {
         MutableColumns columns;
         std::vector<ColumnString *> string_columns;
@@ -545,13 +545,13 @@ namespace
         for (const auto & field : layout.variable_fields)
         {
             auto column = field.type->createColumn();
-            column->reserve(records.ptrs.size());
+            column->reserve(records.size());
             string_columns.push_back(isStagedString(field) ? &assert_cast<ColumnString &>(*column) : nullptr);
             columns.push_back(std::move(column));
         }
 
         const IColumn::SerializationSettings serialization_settings;
-        for (const char * record : records.ptrs)
+        for (const char * record : records)
         {
             const auto [key_pos, key_size] = format.key(record);
             const char * value = key_pos + key_size;
@@ -582,7 +582,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
     const AdaptiveRecordRanges & ranges,
     const Filter & filter,
     PaddedPODArray<AggregateDataPtr> & places,
-    RowStorePointers & records) const
+    RowPointers & records) const
 {
     using Key = AdaptiveRecordKey<Method>;
     const bool prefetch = prefetchesStagedKeys<Key>(table);
@@ -667,7 +667,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
 #endif
 
             places.clear();
-            records.ptrs.clear();
+            records.clear();
             walk = walkStagedRecords<Key>(
                 format,
                 table,
@@ -688,7 +688,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                         it->getMapped() = place;
                     }
                     places.push_back(it->getMapped());
-                    records.ptrs.push_back(record);
+                    records.push_back(record);
                 });
 
             if (!places.empty())
@@ -911,7 +911,7 @@ void Aggregator::executeStagedArgumentRecords(
     const Record & format,
     Arena * arena,
     PaddedPODArray<AggregateDataPtr> & places,
-    const RowStorePointers & records,
+    const RowPointers & records,
     bool use_compiled_functions) const
 {
     const auto & argument_layout = *adaptive_argument_layout;
@@ -929,7 +929,7 @@ void Aggregator::executeStagedArgumentRecords(
             auto column = field->type->createColumn();
             const size_t size = column->sizeOfValueIfFixed();
             chassert(size == format.fixed_key.bytes);
-            column->fillFromRowStorePtrs(field->type, records, format.key_offset, size, 0, rows);
+            column->gatherFromRows(records, format.key_offset, size, 0, rows);
             arguments[field->position] = std::move(column);
         }
     }
@@ -938,7 +938,7 @@ void Aggregator::executeStagedArgumentRecords(
     for (const auto & field : argument_layout.fixed_fields)
     {
         auto column = field.type->createColumn();
-        column->fillFromRowStorePtrs(field.type, records, field.offset, field.size, 0, rows);
+        column->gatherFromRows(records, field.offset, field.size, 0, rows);
         arguments[field.position] = std::move(column);
     }
 
