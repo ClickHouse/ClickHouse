@@ -263,11 +263,14 @@ bool isDecodedForSeveralRequests(const String & path, const UnorderedMapWithMemo
     return requests >= 2;
 }
 
-/// Whether `type` has a leaf that `rawByteTargetType` converts while decoding (`IPv6` or a big integer).
+/// Whether `type` has a leaf whose raw bytes are reinterpreted, either while decoding (`rawByteTargetType`:
+/// `IPv6` or a big integer) or by the post-decode rewrite (`reinterpretRawByteColumns`, which also covers
+/// `UUID`, and is applied to the shared values of a dictionary when it is registered).
 bool hasRawByteLeaf(const DataTypePtr & type)
 {
     const DataTypePtr stripped = stripHint(type);
-    if (rawByteWidth(WhichDataType(stripped)) != 0)
+    const WhichDataType which(stripped);
+    if (which.isUUID() || rawByteWidth(which) != 0)
         return true;
     if (const auto * array = typeid_cast<const DataTypeArray *>(stripped.get()))
         return hasRawByteLeaf(array->getNestedType());
