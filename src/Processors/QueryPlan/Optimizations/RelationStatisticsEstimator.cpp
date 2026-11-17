@@ -304,7 +304,14 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         const bool use_statistics = reading->getContext()->getSettingsRef()[Setting::use_statistics];
         if (use_statistics)
         {
-            if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames(), analyzed_result))
+            /// A filter on a subcolumn is covered by its column's statistics, which a read of the subcolumn alone does not load.
+            Names statistics_columns = reading->getAllColumnNames();
+            if (const auto & composed_filter = reading->getFilterActionsDAG())
+                for (const auto * input : composed_filter->getInputs())
+                    if (auto column = metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, input->result_name);
+                        column && column->isSubcolumn())
+                        statistics_columns.push_back(column->getNameInStorage());
+            if (auto estimator = reading->getConditionSelectivityEstimator(statistics_columns, analyzed_result))
             {
                 auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
                 RelationStats stats{

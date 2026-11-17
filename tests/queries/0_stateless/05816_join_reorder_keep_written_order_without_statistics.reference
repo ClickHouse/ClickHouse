@@ -27,8 +27,8 @@ filter above an aggregation
 Join: customer ⋈ h ⋈ orders
 Join: customer ⋈ h
 subcolumn of a column with statistics
-Join: orders ⋈ customer ⋈ nation_stats
-Join: orders ⋈ customer
+Join: orders ⋈ (customer ⋈ nation_stats)
+Join: customer ⋈ nation_stats
 subcolumn of a column without statistics
 Join: orders ⋈ customer ⋈ nation
 Join: orders ⋈ customer
