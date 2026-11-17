@@ -877,7 +877,7 @@ PySpark 或 shell——运行这些查询。
 ## 使用 VariantType {#working-with-varianttype}
 
 <Note>
-  Spark 4.0+ 已支持 VariantType，且需要使用 ClickHouse 25.3+ 并启用 Experimental JSON/Variant 类型。
+  Spark 4.0+ 已支持 VariantType，且需要使用 ClickHouse 25.3+；自该版本起，`JSON` 和 `Variant` 类型已可用于生产环境，并默认启用。
 </Note>
 
 该连接器 支持 Spark 的 `VariantType`，可用于处理半结构化数据。VariantType 会映射到 ClickHouse 的 `JSON` 和 `Variant` 类型，让您能够高效存储和查询 schema 灵活的数据。
@@ -1209,12 +1209,11 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
 
 ### 最佳实践 {#varianttype-best-practices}
 
-1. **对纯 JSON 数据使用 JSON 类型**：如果你只存储 JSON 对象，请使用默认的 JSON 类型 (不要设置 `variant_types` 属性) 
+1. **对纯 JSON 数据使用 JSON 类型**：如果你只存储 JSON 对象，请使用默认的 JSON 类型 (不要设置 `variant_types` 属性)
 2. **显式指定类型**：使用 `Variant()` 时，明确列出你计划存储的所有类型
-3. **启用实验性功能**：确保 ClickHouse 已启用 `allow_experimental_json_type = 1`
-4. **写入时使用 JSON 格式**：对于 VariantType 数据，建议使用 JSON 格式以获得更好的兼容性
-5. **考虑查询模式**：JSON/Variant 类型支持 ClickHouse 的 JSON 路径查询，可实现高效过滤
-6. **使用列提示提升性能**：在 ClickHouse 中使用 JSON 字段时，添加列提示可以提升查询性能。目前，尚不支持通过 Spark 添加列提示。请参阅 [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497) 以跟踪该功能。
+3. **写入时使用 JSON 格式**：对于 VariantType 数据，建议使用 JSON 格式以获得更好的兼容性
+4. **考虑查询模式**：JSON/Variant 类型支持 ClickHouse 的 JSON 路径查询，可实现高效过滤
+5. **使用列提示提升性能**：在 ClickHouse 中使用 JSON 字段时，添加列提示可以提升查询性能。目前，尚不支持通过 Spark 添加列提示。请参阅 [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497) 以跟踪该功能。
 
 ### 示例：完整流程 {#varianttype-example-workflow}
 
@@ -1223,10 +1222,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
     ```scala
     import org.apache.spark.sql.functions._
 
-    // 在 ClickHouse 中启用实验性 JSON 类型
-    spark.sql("SET allow_experimental_json_type = 1")
-
-    // 创建包含 Variant 列的表
+    // Create table with Variant column
     spark.sql("""
       CREATE TABLE clickhouse.default.events (
         event_id BIGINT,
@@ -1240,14 +1236,14 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
       )
     """)
 
-    // 准备混合类型数据
+    // Prepare data with mixed types
     val events = Seq(
       (1L, "2024-01-01 10:00:00", """{"action": "login", "user_id": 123}"""),
       (2L, "2024-01-01 10:05:00", """{"action": "purchase", "amount": 99.99}"""),
       (3L, "2024-01-01 10:10:00", """{"action": "logout", "duration": 600}""")
     ).toDF("event_id", "event_time", "json_data")
 
-    // 转换为 VariantType 并写入
+    // Convert to VariantType and write
     val variantEvents = events.select(
       col("event_id"),
       to_timestamp(col("event_time")).as("event_time"),
@@ -1256,7 +1252,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
 
     variantEvents.writeTo("clickhouse.default.events").append()
 
-    // 读取并查询
+    // Read and query
     val result = spark.sql("""
       SELECT event_id, event_time, event_data
       FROM clickhouse.default.events
@@ -1272,10 +1268,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
     ```python
     from pyspark.sql.functions import parse_json, to_timestamp
 
-    # 在 ClickHouse 中启用 Experimental JSON 类型
-    spark.sql("SET allow_experimental_json_type = 1")
-
-    # 创建包含 Variant 列的表
+    # Create table with Variant column
     spark.sql("""
       CREATE TABLE clickhouse.default.events (
         event_id BIGINT,
@@ -1289,7 +1282,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
       )
     """)
 
-    # 准备混合类型数据
+    # Prepare data with mixed types
     events = [
         (1, "2024-01-01 10:00:00", '{"action": "login", "user_id": 123}'),
         (2, "2024-01-01 10:05:00", '{"action": "purchase", "amount": 99.99}'),
@@ -1297,7 +1290,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
     ]
     df = spark.createDataFrame(events, ["event_id", "event_time", "json_data"])
 
-    # 转换为 VariantType 并写入
+    # Convert to VariantType and write
     variant_events = df.select(
         "event_id",
         to_timestamp("event_time").alias("event_time"),
@@ -1306,7 +1299,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
 
     variant_events.writeTo("clickhouse.default.events").append()
 
-    # 读取并查询
+    # Read and query
     result = spark.sql("""
       SELECT event_id, event_time, event_data
       FROM clickhouse.default.events
@@ -1322,10 +1315,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
     ```java
     import static org.apache.spark.sql.functions.*;
 
-    // 在 ClickHouse 中启用 Experimental JSON 类型
-    spark.sql("SET allow_experimental_json_type = 1");
-
-    // 创建包含 Variant 列的表
+    // Create table with Variant column
     spark.sql("CREATE TABLE clickhouse.default.events (" +
         "event_id BIGINT, " +
         "event_time TIMESTAMP, " +
@@ -1337,7 +1327,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
         "'order_by' = 'event_time'" +
         ")");
 
-    // 准备混合类型数据
+    // Prepare data with mixed types
     List<Row> events = Arrays.asList(
         RowFactory.create(1L, "2024-01-01 10:00:00", "{\"action\": \"login\", \"user_id\": 123}"),
         RowFactory.create(2L, "2024-01-01 10:05:00", "{\"action\": \"purchase\", \"amount\": 99.99}"),
@@ -1350,7 +1340,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
     });
     Dataset<Row> eventsDF = spark.createDataFrame(events, eventSchema);
 
-    // 转换为 VariantType 并写入
+    // Convert to VariantType and write
     Dataset<Row> variantEvents = eventsDF.select(
         col("event_id"),
         to_timestamp(col("event_time")).as("event_time"),
@@ -1359,7 +1349,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
 
     variantEvents.writeTo("clickhouse.default.events").append();
 
-    // 读取并查询
+    // Read and query
     Dataset<Row> result = spark.sql("SELECT event_id, event_time, event_data " +
         "FROM clickhouse.default.events " +
         "WHERE event_time >= '2024-01-01' " +

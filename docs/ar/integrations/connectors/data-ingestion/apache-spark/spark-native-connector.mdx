@@ -892,13 +892,13 @@ TBLPROPERTIES (
 ## العمل مع VariantType {#working-with-varianttype}
 
 <Note>
-  يتوفر دعم VariantType في Spark 4.0+، ويتطلب ClickHouse 25.3+ مع تمكين نوعَي JSON/Variant التجريبيين.
+  يتوفر دعم VariantType في Spark 4.0+، ويتطلب ClickHouse 25.3+، حيث يكون النوعان `JSON` و`Variant` جاهزين لبيئة الإنتاج ومفعّلين افتراضيًا.
 </Note>
 
 يدعم الموصل `VariantType` في Spark للعمل مع البيانات شبه المهيكلة. ويرتبط VariantType بالنوعين `JSON` و`Variant` في ClickHouse، ما يتيح لك تخزين البيانات ذات المخطط المرن والاستعلام عنها بكفاءة.
 
 <Note>
-  يركّز هذا القسم تحديدًا على ربط VariantType واستخدامه. للحصول على نظرة عامة كاملة على جميع أنواع البيانات المدعومة، راجع قسم [أنواع البيانات المدعومة](#supported-data-types).
+  يركّز هذا القسم تحديدًا على مطابقة VariantType واستخدامه. للحصول على نظرة عامة كاملة على جميع أنواع البيانات المدعومة، راجع قسم [أنواع البيانات المدعومة](#supported-data-types).
 </Note>
 
 ### تعيين أنواع ClickHouse {#clickhouse-type-mapping}
@@ -1226,10 +1226,9 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recommended for Vari
 
 1. **استخدم نوع JSON للبيانات التي تحتوي على JSON فقط**: إذا كنت تخزّن كائنات JSON فقط، فاستخدم نوع JSON الافتراضي (من دون الخاصية `variant_types`)
 2. **حدّد الأنواع صراحةً**: عند استخدام `Variant()`، اذكر صراحةً جميع الأنواع التي تنوي تخزينها
-3. **فعّل الميزات التجريبية**: تأكد من تفعيل `allow_experimental_json_type = 1` في ClickHouse
-4. **استخدم تنسيق JSON لعمليات الكتابة**: يُوصى باستخدام تنسيق JSON لبيانات VariantType لتحقيق توافق أفضل
-5. **ضع أنماط الاستعلام في الاعتبار**: تدعم أنواع JSON/Variant استعلامات مسار JSON في ClickHouse لتصفية أكثر كفاءة
-6. **تلميحات الأعمدة لتحسين الأداء**: عند استخدام حقول JSON في ClickHouse، يؤدي إضافة تلميحات الأعمدة إلى تحسين أداء الاستعلامات. لا تتوفر حاليًا إمكانية إضافة تلميحات الأعمدة عبر Spark. راجع [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497) لمتابعة هذه الميزة.
+3. **استخدم صيغة JSON لعمليات الكتابة**: يُوصى باستخدام صيغة JSON لبيانات VariantType لتحقيق توافق أفضل
+4. **ضع أنماط الاستعلام في الاعتبار**: تدعم أنواع JSON/Variant استعلامات مسار JSON في ClickHouse لتصفية أكثر كفاءة
+5. **تلميحات الأعمدة لتحسين الأداء**: عند استخدام حقول JSON في ClickHouse، يؤدي إضافة تلميحات الأعمدة إلى تحسين أداء الاستعلامات. لا تتوفر حاليًا إمكانية إضافة تلميحات الأعمدة عبر Spark. راجع [GitHub تذكرة #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497) لمتابعة هذه الميزة.
 
 ### مثال: سير عمل متكامل {#varianttype-example-workflow}
 
@@ -1237,9 +1236,6 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recommended for Vari
   <Tab title="Scala">
     ```scala
     import org.apache.spark.sql.functions._
-
-    // Enable experimental JSON type in ClickHouse
-    spark.sql("SET allow_experimental_json_type = 1")
 
     // Create table with Variant column
     spark.sql("""
@@ -1287,9 +1283,6 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recommended for Vari
     ```python
     from pyspark.sql.functions import parse_json, to_timestamp
 
-    # Enable experimental JSON type in ClickHouse
-    spark.sql("SET allow_experimental_json_type = 1")
-
     # Create table with Variant column
     spark.sql("""
       CREATE TABLE clickhouse.default.events (
@@ -1336,9 +1329,6 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recommended for Vari
   <Tab title="Java">
     ```java
     import static org.apache.spark.sql.functions.*;
-
-    // Enable experimental JSON type in ClickHouse
-    spark.sql("SET allow_experimental_json_type = 1");
 
     // Create table with Variant column
     spark.sql("CREATE TABLE clickhouse.default.events (" +

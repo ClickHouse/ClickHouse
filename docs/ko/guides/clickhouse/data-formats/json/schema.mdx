@@ -502,23 +502,19 @@ SELECT id, nickname FROM people
 * **컬럼 폭증 위험 방지** - JSON 타입은 서브컬럼이 전용 컬럼으로 저장되는 경우 잠재적으로 수천 개의 컬럼까지 확장될 수 있지만, 이로 인해 과도하게 많은 컬럼 파일이 생성되어 성능에 영향을 주는 컬럼 파일 폭증이 발생할 수 있습니다. 이를 완화하기 위해 JSON에 사용되는 기본 [Dynamic type](/ko/reference/data-types/dynamic)은 [`max_dynamic_paths`](/ko/reference/data-types/newjson#reading-json-paths-as-sub-columns) 매개변수를 제공하며, 이 매개변수는 별도 컬럼 파일로 저장되는 고유 경로 수를 제한합니다. 임계값에 도달하면 추가 경로는 컴팩트한 인코딩 포맷을 사용하는 공유 컬럼 파일에 저장되므로, 유연한 데이터 수집을 지원하면서도 성능과 스토리지 효율성을 유지할 수 있습니다. 다만 이 공유 컬럼 파일에 접근할 때는 성능이 다소 떨어집니다. 하지만 JSON 컬럼은 [타입 힌트](#using-type-hints-and-skipping-paths)와 함께 사용할 수 있습니다. &quot;힌트가 지정된&quot; 컬럼은 전용 컬럼과 동일한 성능을 제공합니다.
 * **경로와 타입을 더 쉽게 내부 검사** - JSON 타입은 추론된 타입과 경로를 확인하기 위한 [인트로스펙션 함수](/ko/reference/data-types/newjson#introspection-functions)를 지원하지만, 정적 구조는 예를 들어 `DESCRIBE`를 사용해 더 간단하게 확인할 수 있습니다.
 
-<div id="single-json-column">
-  ### 단일 JSON 컬럼 {#single-json-column}
-</div>
+### 단일 JSON 컬럼 {#single-json-column}
 
 이 접근 방식은 프로토타이핑과 데이터 엔지니어링 작업에 유용합니다. 프로덕션 환경에서는 필요한 경우에만 동적인 하위 구조에 `JSON`을 사용해 보십시오.
 
 <Info>
   **성능 고려 사항**
 
-  단일 JSON 컬럼은 필요하지 않은 JSON 경로를 스키핑(저장하지 않음)하고 [타입 힌트](#using-type-hints-and-skipping-paths)를 사용해 최적화할 수 있습니다. 타입 힌트를 사용하면 하위 컬럼의 유형을 사용자가 명시적으로 정의할 수 있으므로, 쿼리 시점에 수행되는 추론 및 간접 처리 과정을 건너뛸 수 있습니다. 이를 통해 명시적 스키마를 사용하는 경우와 동일한 성능을 얻을 수 있습니다. 자세한 내용은 [&quot;타입 힌트 사용 및 경로 스키핑&quot;](#using-type-hints-and-skipping-paths)을 참조하십시오.
+  단일 JSON 컬럼은 필요하지 않은 JSON 경로를 스키핑(저장하지 않음)하고 [타입 힌트](#using-type-hints-and-skipping-paths)를 사용해 최적화할 수 있습니다. 타입 힌트를 사용하면 서브컬럼의 유형을 사용자가 명시적으로 정의할 수 있으므로, 쿼리 시점에 수행되는 추론 및 간접 처리 과정을 건너뛸 수 있습니다. 이를 통해 명시적 스키마를 사용하는 경우와 동일한 성능을 얻을 수 있습니다. 자세한 내용은 [&quot;타입 힌트 사용 및 경로 건너뛰기&quot;](#using-type-hints-and-skipping-paths)을 참조하십시오.
 </Info>
 
 여기서 단일 JSON 컬럼의 스키마는 단순합니다:
 
 ```sql
-SET enable_json_type = 1;
-
 CREATE TABLE people
 (
     `json` JSON(username String)
@@ -528,7 +524,11 @@ ORDER BY json.username;
 ```
 
 <Note>
-  `username` 컬럼을 정렬/프라이머리 키에 사용하므로 JSON 정의에서 이 컬럼에 대한 [타입 힌트](#using-type-hints-and-skipping-paths)를 제공합니다. 이렇게 하면 ClickHouse가 이 컬럼이 null이 될 수 없음을 인지하고, 어떤 `username` 하위 컬럼을 사용해야 하는지도 올바르게 판단할 수 있습니다(유형별로 여러 개가 있을 수 있어, 그렇지 않으면 모호해질 수 있습니다).
+  `username` 컬럼을 정렬/프라이머리 키에 사용하므로 JSON 정의에서 이 컬럼에 대한 [타입 힌트](#using-type-hints-and-skipping-paths)를 제공합니다. 이렇게 하면 ClickHouse가 이 컬럼이 null이 될 수 없음을 인지하고, 어떤 `username` 서브컬럼을 사용해야 하는지도 올바르게 판단할 수 있습니다(유형별로 여러 개가 있을 수 있어, 그렇지 않으면 모호해질 수 있습니다).
+</Note>
+
+<Note>
+  버전 24.8~25.2에서는 테이블을 생성하기 전에 `SET allow_experimental_json_type = 1;`을 실행하여 `JSON` 타입을 활성화하십시오.
 </Note>
 
 위 테이블에 행을 삽입하려면 `JSONAsObject` 포맷을 사용할 수 있습니다:

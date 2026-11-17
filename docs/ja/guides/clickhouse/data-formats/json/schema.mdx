@@ -502,9 +502,7 @@ SELECT id, nickname FROM people
 * **カラム爆発のリスクを回避** - JSON 型は、サブカラムを専用カラムとして保存することで、潜在的には数千ものカラムまでスケールできます。ただし、その結果として過剰な数のカラムファイルが作成され、パフォーマンスに影響する「カラムファイルの爆発」を招く可能性があります。これを軽減するため、JSON の基盤となる [Dynamic type](/ja/reference/data-types/dynamic) には [`max_dynamic_paths`](/ja/reference/data-types/newjson#reading-json-paths-as-sub-columns) パラメータがあり、個別のカラムファイルとして保存される一意のパス数を制限できます。しきい値に達すると、追加のパスはコンパクトにエンコードされたフォーマットを使用する共有カラムファイルに保存されるため、柔軟なデータのインジェストをサポートしつつ、パフォーマンスとストレージ効率を維持できます。ただし、この共有カラムファイルへのアクセスは、専用カラムほど高性能ではありません。なお、JSONカラム は [型ヒント](#using-type-hints-and-skipping-paths) と組み合わせて使用することもできます。&quot;ヒント付き&quot; カラムは、専用カラムと同等のパフォーマンスを発揮します。
 * **パスと型のイントロスペクションがより簡単** - JSON 型は、推論された型やパスを確認するための [イントロスペクション関数](/ja/reference/data-types/newjson#introspection-functions) をサポートしていますが、静的な構造のほうが、たとえば `DESCRIBE` を使って簡単に調べやすい場合があります。
 
-<div id="single-json-column">
-  ### 単一の JSON カラム {#single-json-column}
-</div>
+### 単一の JSON カラム {#single-json-column}
 
 このアプローチは、プロトタイピングやデータエンジニアリングの作業に適しています。本番環境では、必要な場合に限り、動的な下位構造に対してのみ `JSON` を使用してください。
 
@@ -517,8 +515,6 @@ SELECT id, nickname FROM people
 ここでの単一 JSON カラムのスキーマはシンプルです。
 
 ```sql
-SET enable_json_type = 1;
-
 CREATE TABLE people
 (
     `json` JSON(username String)
@@ -529,6 +525,10 @@ ORDER BY json.username;
 
 <Note>
   `username` カラムは並び順/主キーで使用するため、JSON 定義では [型ヒント](#using-type-hints-and-skipping-paths) を付けています。これにより、ClickHouse はこのカラムが null にならないことを認識でき、さらにどの `username` サブカラムを使うべきかも判断できます (型ごとに複数存在する可能性があるため、そうしないと曖昧になります) 。
+</Note>
+
+<Note>
+  バージョン 24.8 から 25.2 では、テーブルを作成する前に `SET allow_experimental_json_type = 1;` を実行して `JSON`型を有効化してください。
 </Note>
 
 上記のテーブルに行を挿入するには、`JSONAsObject` フォーマットを使用できます。
@@ -544,7 +544,7 @@ INSERT INTO people FORMAT JSONAsObject
 INSERT INTO people FORMAT JSONAsObject
 {"id":2,"name":"Analytica Rowe","username":"Analytica","address":[{"street":"Maple Avenue","suite":"Apt. 402","city":"Dataford","zipcode":"11223-4567","geo":{"lat":40.7128,"lng":-74.006}}],"phone_numbers":["123-456-7890","555-867-5309"],"website":"fastdata.io","company":{"name":"FastData Inc.","catchPhrase":"Streamlined analytics at scale","labels":{"type":["real-time processing"],"founded":2019,"dissolved":2023,"employees":10}},"dob":"1992-07-15","tags":{"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}}
 
-1 行がセットされました。Elapsed: 0.004 秒。
+1 row in set. Elapsed: 0.004 sec.
 ```
 
 ```sql

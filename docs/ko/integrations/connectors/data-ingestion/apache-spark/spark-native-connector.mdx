@@ -878,7 +878,7 @@ TBLPROPERTIES (
 ## VariantType 사용하기 {#working-with-varianttype}
 
 <Note>
-  VariantType 지원은 Spark 4.0+에서 제공되며, 실험적 JSON/Variant 타입을 활성화한 ClickHouse 25.3+가 필요합니다.
+  VariantType 지원은 Spark 4.0+에서 제공되며 ClickHouse 25.3+가 필요합니다. ClickHouse 25.3부터 `JSON` 및 `Variant` 타입은 운영 환경에서 사용할 수 있는 수준이며 기본적으로 활성화되어 있습니다.
 </Note>
 
 커넥터는 반정형 데이터를 다루기 위해 Spark의 `VariantType`을 지원합니다. VariantType은 ClickHouse의 `JSON` 및 `Variant` 타입에 매핑되므로, 유연한 스키마의 데이터를 효율적으로 저장하고 쿼리할 수 있습니다.
@@ -1212,10 +1212,9 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
 
 1. **JSON 전용 데이터에는 JSON 타입 사용**: JSON 객체만 저장한다면 기본 JSON 타입을 사용합니다(`variant_types` 속성 없음)
 2. **타입을 명시적으로 지정**: `Variant()`를 사용할 때는 저장할 예정인 모든 타입을 명시적으로 나열합니다
-3. **실험적 기능 활성화**: ClickHouse에서 `allow_experimental_json_type = 1`이 활성화되어 있는지 확인합니다
-4. **쓰기에는 JSON 포맷 사용**: 더 나은 호환성을 위해 VariantType 데이터 쓰기에는 JSON 포맷을 권장합니다
-5. **쿼리 패턴 고려**: JSON/Variant 타입은 효율적인 필터링을 위해 ClickHouse의 JSON 경로 쿼리를 지원합니다
-6. **성능을 위한 컬럼 힌트**: ClickHouse에서 JSON 필드를 사용할 때 컬럼 힌트를 추가하면 쿼리 성능이 향상됩니다. 현재는 Spark를 통해 컬럼 힌트를 추가하는 기능을 지원하지 않습니다. 이 기능의 진행 상황은 [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497)에서 확인하십시오.
+3. **쓰기에는 JSON 포맷 사용**: 더 나은 호환성을 위해 VariantType 데이터 쓰기에는 JSON 포맷을 권장합니다
+4. **쿼리 패턴 고려**: JSON/Variant 타입은 효율적인 필터링을 위해 ClickHouse의 JSON 경로 쿼리를 지원합니다
+5. **성능을 위한 컬럼 힌트**: ClickHouse에서 JSON 필드를 사용할 때 컬럼 힌트를 추가하면 쿼리 성능이 향상됩니다. 현재는 Spark를 통해 컬럼 힌트를 추가하는 기능을 지원하지 않습니다. 이 기능의 진행 상황은 [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497)에서 확인하십시오.
 
 ### 예시: 전체 워크플로 {#varianttype-example-workflow}
 
@@ -1224,10 +1223,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
     ```scala
     import org.apache.spark.sql.functions._
 
-    // ClickHouse에서 실험적 JSON 타입 활성화
-    spark.sql("SET allow_experimental_json_type = 1")
-
-    // Variant 컬럼이 있는 테이블 생성
+    // Create table with Variant column
     spark.sql("""
       CREATE TABLE clickhouse.default.events (
         event_id BIGINT,
@@ -1241,14 +1237,14 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
       )
     """)
 
-    // 혼합 타입 데이터 준비
+    // Prepare data with mixed types
     val events = Seq(
       (1L, "2024-01-01 10:00:00", """{"action": "login", "user_id": 123}"""),
       (2L, "2024-01-01 10:05:00", """{"action": "purchase", "amount": 99.99}"""),
       (3L, "2024-01-01 10:10:00", """{"action": "logout", "duration": 600}""")
     ).toDF("event_id", "event_time", "json_data")
 
-    // VariantType으로 변환 후 저장
+    // Convert to VariantType and write
     val variantEvents = events.select(
       col("event_id"),
       to_timestamp(col("event_time")).as("event_time"),
@@ -1257,7 +1253,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
 
     variantEvents.writeTo("clickhouse.default.events").append()
 
-    // 읽기 및 쿼리
+    // Read and query
     val result = spark.sql("""
       SELECT event_id, event_time, event_data
       FROM clickhouse.default.events
@@ -1273,10 +1269,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
     ```python
     from pyspark.sql.functions import parse_json, to_timestamp
 
-    # ClickHouse에서 실험적 JSON 타입 활성화
-    spark.sql("SET allow_experimental_json_type = 1")
-
-    # Variant 컬럼이 있는 테이블 생성
+    # Create table with Variant column
     spark.sql("""
       CREATE TABLE clickhouse.default.events (
         event_id BIGINT,
@@ -1290,7 +1283,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
       )
     """)
 
-    # 혼합 타입 데이터 준비
+    # Prepare data with mixed types
     events = [
         (1, "2024-01-01 10:00:00", '{"action": "login", "user_id": 123}'),
         (2, "2024-01-01 10:05:00", '{"action": "purchase", "amount": 99.99}'),
@@ -1298,7 +1291,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
     ]
     df = spark.createDataFrame(events, ["event_id", "event_time", "json_data"])
 
-    # VariantType으로 변환 후 저장
+    # Convert to VariantType and write
     variant_events = df.select(
         "event_id",
         to_timestamp("event_time").alias("event_time"),
@@ -1307,7 +1300,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
 
     variant_events.writeTo("clickhouse.default.events").append()
 
-    # 읽기 및 쿼리
+    # Read and query
     result = spark.sql("""
       SELECT event_id, event_time, event_data
       FROM clickhouse.default.events
@@ -1323,10 +1316,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
     ```java
     import static org.apache.spark.sql.functions.*;
 
-    // ClickHouse에서 실험적 JSON 타입 활성화
-    spark.sql("SET allow_experimental_json_type = 1");
-
-    // Variant 컬럼이 있는 테이블 생성
+    // Create table with Variant column
     spark.sql("CREATE TABLE clickhouse.default.events (" +
         "event_id BIGINT, " +
         "event_time TIMESTAMP, " +
@@ -1338,7 +1328,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
         "'order_by' = 'event_time'" +
         ")");
 
-    // 혼합 타입 데이터 준비
+    // Prepare data with mixed types
     List<Row> events = Arrays.asList(
         RowFactory.create(1L, "2024-01-01 10:00:00", "{\"action\": \"login\", \"user_id\": 123}"),
         RowFactory.create(2L, "2024-01-01 10:05:00", "{\"action\": \"purchase\", \"amount\": 99.99}"),
@@ -1351,7 +1341,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
     });
     Dataset<Row> eventsDF = spark.createDataFrame(events, eventSchema);
 
-    // VariantType으로 변환 후 저장
+    // Convert to VariantType and write
     Dataset<Row> variantEvents = eventsDF.select(
         col("event_id"),
         to_timestamp(col("event_time")).as("event_time"),
@@ -1360,7 +1350,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
 
     variantEvents.writeTo("clickhouse.default.events").append();
 
-    // 읽기 및 쿼리
+    // Read and query
     Dataset<Row> result = spark.sql("SELECT event_id, event_time, event_data " +
         "FROM clickhouse.default.events " +
         "WHERE event_time >= '2024-01-01' " +

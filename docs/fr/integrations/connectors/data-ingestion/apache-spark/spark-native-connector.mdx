@@ -881,7 +881,7 @@ PySpark ou le shell.
 ## Travailler avec VariantType {#working-with-varianttype}
 
 <Note>
-  La prise en charge de VariantType est disponible avec Spark 4.0+ et nécessite ClickHouse 25.3+ avec les types JSON/Variant expérimentaux activés.
+  La prise en charge de VariantType est disponible avec Spark 4.0+ et nécessite ClickHouse 25.3+, version dans laquelle les types `JSON` et `Variant` sont prêts pour la production et activés par défaut.
 </Note>
 
 Le connecteur prend en charge le `VariantType` de Spark pour manipuler des données semi-structurées. VariantType correspond aux types `JSON` et `Variant` de ClickHouse, ce qui vous permet de stocker et d&#39;interroger efficacement des données à schéma souple.
@@ -1213,12 +1213,11 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recommended for Vari
 
 ### Bonnes pratiques {#varianttype-best-practices}
 
-1. **Utilisez le type JSON pour les données exclusivement JSON** : si vous stockez uniquement des objets JSON, utilisez le type JSON par défaut (sans la propriété `variant_types`)
-2. **Spécifiez explicitement les types** : lorsque vous utilisez `Variant()`, listez explicitement tous les types que vous prévoyez de stocker
-3. **Activez les fonctionnalités expérimentales** : assurez-vous que ClickHouse a bien `allow_experimental_json_type = 1` activé
-4. **Utilisez le format JSON pour les écritures** : le format JSON est recommandé pour les données de type VariantType afin d&#39;assurer une meilleure compatibilité
-5. **Tenez compte des schémas de requêtes** : les types JSON/Variant prennent en charge les requêtes JSON path de ClickHouse pour un filtrage efficace
-6. **Indications de colonne pour les performances** : lorsque vous utilisez des champs JSON dans ClickHouse, l&#39;ajout d&#39;indications de colonne améliore les performances des requêtes. Actuellement, l&#39;ajout d&#39;indications de colonne via Spark n&#39;est pas pris en charge. Consultez l&#39;[issue GitHub #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497) pour suivre cette fonctionnalité.
+1. **Utilisez le type JSON pour les données exclusivement JSON** : si vous stockez uniquement des objets JSON, utilisez le type JSON par défaut (sans la propriété `variant_types`)
+2. **Spécifiez explicitement les types** : lorsque vous utilisez `Variant()`, listez explicitement tous les types que vous prévoyez de stocker
+3. **Utilisez le format JSON pour les écritures** : le format JSON est recommandé pour les données de type VariantType afin d&#39;assurer une meilleure compatibilité
+4. **Tenez compte des schémas de requêtes** : les types JSON/Variant prennent en charge les requêtes JSON path de ClickHouse pour un filtrage efficace
+5. **Indications de colonne pour les performances** : lorsque vous utilisez des champs JSON dans ClickHouse, l&#39;ajout d&#39;indications de colonne améliore les performances des requêtes. Actuellement, l&#39;ajout d&#39;indications de colonne via Spark n&#39;est pas pris en charge. Consultez l&#39;[issue GitHub #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497) pour suivre cette fonctionnalité.
 
 ### Exemple : workflow complet {#varianttype-example-workflow}
 
@@ -1226,9 +1225,6 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recommended for Vari
   <Tab title="Scala">
     ```scala
     import org.apache.spark.sql.functions._
-
-    // Enable experimental JSON type in ClickHouse
-    spark.sql("SET allow_experimental_json_type = 1")
 
     // Create table with Variant column
     spark.sql("""
@@ -1276,9 +1272,6 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recommended for Vari
     ```python
     from pyspark.sql.functions import parse_json, to_timestamp
 
-    # Enable experimental JSON type in ClickHouse
-    spark.sql("SET allow_experimental_json_type = 1")
-
     # Create table with Variant column
     spark.sql("""
       CREATE TABLE clickhouse.default.events (
@@ -1325,9 +1318,6 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recommended for Vari
   <Tab title="Java">
     ```java
     import static org.apache.spark.sql.functions.*;
-
-    // Enable experimental JSON type in ClickHouse
-    spark.sql("SET allow_experimental_json_type = 1");
 
     // Create table with Variant column
     spark.sql("CREATE TABLE clickhouse.default.events (" +

@@ -7,42 +7,42 @@
       "versionId": "349556d4402ee1508effaf375c9bd86a6a92dbb374839742a3a0b8724a0a2dd5",
       "translations": {
         "es": {
-          "updatedAt": "2026-11-17T20:57:24.859Z",
+          "updatedAt": "2026-11-17T21:11:29.241Z",
           "fileName": "docs.json",
           "postProcessHash": "0dd83355e988b7f33093d32836b313228ae7ef25d1303809bca6155471feb58a"
         },
         "ja": {
-          "updatedAt": "2026-11-17T20:57:24.922Z",
+          "updatedAt": "2026-11-17T21:11:29.304Z",
           "fileName": "docs.json",
           "postProcessHash": "0dd83355e988b7f33093d32836b313228ae7ef25d1303809bca6155471feb58a"
         },
         "pt-BR": {
-          "updatedAt": "2026-11-17T20:57:25.043Z",
+          "updatedAt": "2026-11-17T21:11:29.429Z",
           "fileName": "docs.json",
           "postProcessHash": "0dd83355e988b7f33093d32836b313228ae7ef25d1303809bca6155471feb58a"
         },
         "ru": {
-          "updatedAt": "2026-11-17T20:57:25.104Z",
+          "updatedAt": "2026-11-17T21:11:29.489Z",
           "fileName": "docs.json",
           "postProcessHash": "0dd83355e988b7f33093d32836b313228ae7ef25d1303809bca6155471feb58a"
         },
         "zh": {
-          "updatedAt": "2026-11-17T20:57:25.163Z",
+          "updatedAt": "2026-11-17T21:11:29.547Z",
           "fileName": "docs.json",
           "postProcessHash": "0dd83355e988b7f33093d32836b313228ae7ef25d1303809bca6155471feb58a"
         },
         "ar": {
-          "updatedAt": "2026-11-17T20:57:25.224Z",
+          "updatedAt": "2026-11-17T21:11:29.606Z",
           "fileName": "docs.json",
           "postProcessHash": "0dd83355e988b7f33093d32836b313228ae7ef25d1303809bca6155471feb58a"
         },
         "fr": {
-          "updatedAt": "2026-11-17T20:57:25.282Z",
+          "updatedAt": "2026-11-17T21:11:29.664Z",
           "fileName": "docs.json",
           "postProcessHash": "0dd83355e988b7f33093d32836b313228ae7ef25d1303809bca6155471feb58a"
         },
         "ko": {
-          "updatedAt": "2026-11-17T20:57:24.981Z",
+          "updatedAt": "2026-11-17T21:11:29.368Z",
           "fileName": "docs.json",
           "postProcessHash": "0dd83355e988b7f33093d32836b313228ae7ef25d1303809bca6155471feb58a"
         }
@@ -30098,51 +30098,50 @@
     },
     {
       "fileId": "9879c879473b4fc1b4d091c14a72a2d3dbf080187a7f44a50dff164cb1272410",
-      "versionId": "f57631f7649d083a91cf9d025ee366f4151b4f9e93bc0dc93337fd3b0abbbf28",
+      "versionId": "04b861056c2d8deb6f273cfdba22d2b223386771e71d2b615b55173d39ffc0bb",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.356Z",
-          "fileName": "es/clickstack/migration/elastic/migrating-data.mdx",
-          "postProcessHash": "db02fc0df9140017f0103cd1ac4ec808a7402c19acf428e2ceb95ac9a0ac06bf"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.356Z",
-          "fileName": "ja/clickstack/migration/elastic/migrating-data.mdx",
-          "postProcessHash": "08560c0fa13b6177c69b53953fff54fc0213b0bd2b11b1b46fbaa57ae0157fe9"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.356Z",
-          "fileName": "ko/clickstack/migration/elastic/migrating-data.mdx",
-          "postProcessHash": "fa8bad67febd5544571c02998ea3dde2d5625c4fcb5d3628f0518efe6560579c"
+        "fr": {
+          "updatedAt": "2026-11-17T21:11:32.332Z",
+          "fileName": "fr/clickstack/migration/elastic/migrating-data.mdx",
+          "postProcessHash": "6e8ebb5d944fc303fba0c5f94bda04bdb7848a09cdd0629f1e72b9dc144c9bcd"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.357Z",
+          "updatedAt": "2026-11-17T21:11:32.333Z",
           "fileName": "pt-BR/clickstack/migration/elastic/migrating-data.mdx",
-          "postProcessHash": "80438e625cb4e139b488e14c13702c3378a12c60b35e5605603da300ff79cd12"
+          "postProcessHash": "a762509db1d2cc2b5bbbeed24e50669bb20460d7bd1d515fdee0c89fc0e2c433"
+        },
+        "es": {
+          "updatedAt": "2026-11-17T21:11:32.334Z",
+          "fileName": "es/clickstack/migration/elastic/migrating-data.mdx",
+          "postProcessHash": "117ec4f421b575251ea6d932d08aa5abeceb7802fdb8ad15561a16c8bc2b2da3"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:06.357Z",
+          "updatedAt": "2026-11-17T21:11:32.335Z",
           "fileName": "ru/clickstack/migration/elastic/migrating-data.mdx",
-          "postProcessHash": "234fbfd5808969007324955a27ca186bbdd7ad5bc417310ddf6b8cac96564740"
+          "postProcessHash": "c404c5afa9c0cc40ed4bc9731f4d9826de609dd7a7d07551abdad7c140f9be5e"
         },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.357Z",
-          "fileName": "zh/clickstack/migration/elastic/migrating-data.mdx",
-          "postProcessHash": "9b2dfae30b2f8c969ddbd41ffc4221169935fe1f8f84fb9e8df0caedd1a8f847"
+        "ja": {
+          "updatedAt": "2026-11-17T21:11:32.337Z",
+          "fileName": "ja/clickstack/migration/elastic/migrating-data.mdx",
+          "postProcessHash": "c915ef869f318daf64b5e54daada394b683f3509b3167e16ab09bd463782a643"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:06.357Z",
+          "updatedAt": "2026-11-17T21:11:32.337Z",
           "fileName": "ar/clickstack/migration/elastic/migrating-data.mdx",
-          "postProcessHash": "a198600d4b2039db352a05ff1274ae269f76dd183636d5877d2b6c0b79e62d86"
+          "postProcessHash": "a167842d2fab655bac45e00d0d87fb94f2e81dac808e734b829cf17268c3a432"
         },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:06.357Z",
-          "fileName": "fr/clickstack/migration/elastic/migrating-data.mdx",
-          "postProcessHash": "0959b8c28ecf7a9b54fb38ec4e8e9d688db26ac4db8f7eb62d859cfa94f27662"
+        "ko": {
+          "updatedAt": "2026-11-17T21:11:32.339Z",
+          "fileName": "ko/clickstack/migration/elastic/migrating-data.mdx",
+          "postProcessHash": "862510febd16ea70f50246708c5718dcc665064b6dade16f9ca9d18cb444065f"
+        },
+        "zh": {
+          "updatedAt": "2026-11-17T21:11:32.345Z",
+          "fileName": "zh/clickstack/migration/elastic/migrating-data.mdx",
+          "postProcessHash": "e52624751f75fc62f32bfc670c1dcd934cf7ae796e5b89122a864eda6637131f"
         }
       },
-      "fileName": "clickstack/migration/elastic/migrating-data.mdx",
-      "staged": false
+      "fileName": "clickstack/migration/elastic/migrating-data.mdx"
     },
     {
       "fileId": "f98bc58963667182ee05ac86457c9523a0b86704190915e4270bb1a7124ae576",
@@ -68808,47 +68807,47 @@
     },
     {
       "fileId": "ebfcb2ae41a78fe48a2df43069560a1b612021ffdc85eab8646ab49e5f1ac4df",
-      "versionId": "14341a2ae339f6c063879a10af5ce8e6c7ab98e42d8e39543864dd937bb70990",
+      "versionId": "ca3d6ce86a36ca2854c317503ee5456f168cf361c2f71e734436959649f4d665",
       "translations": {
-        "es": {
-          "updatedAt": "2026-11-17T19:23:08.878Z",
-          "fileName": "es/resources/changelogs/cloud/release-status.mdx",
-          "postProcessHash": "54933606d6fa434f71ab84ef665c64f70456bdd586ec9590bda341c95c53ecce"
-        },
-        "ja": {
-          "updatedAt": "2026-11-17T19:23:08.879Z",
-          "fileName": "ja/resources/changelogs/cloud/release-status.mdx",
-          "postProcessHash": "fb5bd77afa0ab03c97e88858301f6e968d0447f74a04f8a61e468059e939d911"
-        },
-        "ko": {
-          "updatedAt": "2026-11-17T19:23:08.879Z",
-          "fileName": "ko/resources/changelogs/cloud/release-status.mdx",
-          "postProcessHash": "9efdfdad6471f9d5daa9771c5fbb2f7b55ed8e824245d25508711efd7ff0f165"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-11-17T19:23:08.879Z",
-          "fileName": "pt-BR/resources/changelogs/cloud/release-status.mdx",
-          "postProcessHash": "754eaf5b217f4a4acfc52ee4569e90b833fccf84f3d6d13bed1d14378cdc2002"
-        },
-        "ru": {
-          "updatedAt": "2026-11-17T19:23:08.879Z",
-          "fileName": "ru/resources/changelogs/cloud/release-status.mdx",
-          "postProcessHash": "155da65c57bdcbb87a13c910a4bea6042b62860fbbae714b8655a5e5cfe02b06"
-        },
         "zh": {
-          "updatedAt": "2026-11-17T19:23:08.879Z",
+          "updatedAt": "2026-11-17T21:11:32.344Z",
           "fileName": "zh/resources/changelogs/cloud/release-status.mdx",
-          "postProcessHash": "a043c60a91f3e7efa5bbb5927c5844429f25ebf9aa7f87393deff49b1a0004d9"
+          "postProcessHash": "b0359e8c728073d3e85e2683dbe5e2bf42e57aaae81a58c4ffb7540986a48e92"
         },
         "ar": {
-          "updatedAt": "2026-11-17T19:23:08.879Z",
+          "updatedAt": "2026-11-17T21:11:32.347Z",
           "fileName": "ar/resources/changelogs/cloud/release-status.mdx",
-          "postProcessHash": "da5de580789158ebb599eed3bd77d58a904b693ed7e049a13725677de7c42904"
+          "postProcessHash": "c6bc62993eaeb1ab0ddcf57dd2ee7b1286575bdb9b57f23abfe9a929b37c17e1"
+        },
+        "ja": {
+          "updatedAt": "2026-11-17T21:11:32.348Z",
+          "fileName": "ja/resources/changelogs/cloud/release-status.mdx",
+          "postProcessHash": "a0d8ffb6d7b4e7ec36013ef4b61973b2dee4cd7e13812e690aecc35fa75f73d4"
+        },
+        "ru": {
+          "updatedAt": "2026-11-17T21:11:32.348Z",
+          "fileName": "ru/resources/changelogs/cloud/release-status.mdx",
+          "postProcessHash": "4ae86b3e5199db987595686ea18719f0c9b053a8428193e99a9a694914baf581"
         },
         "fr": {
-          "updatedAt": "2026-11-17T19:23:08.880Z",
+          "updatedAt": "2026-11-17T21:11:32.349Z",
           "fileName": "fr/resources/changelogs/cloud/release-status.mdx",
-          "postProcessHash": "f0d1a87c7485490e861c40f8e63cb0dcba443dff2fe06d64cdb014e859f418bc"
+          "postProcessHash": "e7c1ab929c44a2c5523513bc9cad062bec14199238c107a8595d5009cecd1e75"
+        },
+        "ko": {
+          "updatedAt": "2026-11-17T21:11:32.350Z",
+          "fileName": "ko/resources/changelogs/cloud/release-status.mdx",
+          "postProcessHash": "507c0224ef7ece864eaf2bb6fcacf65df0ba307790b53ceff46b0f305819aa1f"
+        },
+        "es": {
+          "updatedAt": "2026-11-17T21:11:32.379Z",
+          "fileName": "es/resources/changelogs/cloud/release-status.mdx",
+          "postProcessHash": "e20a71300d29ca1e321cfe156d4394f43b3d5092f7099dbfed91ac0b27ba1243"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-17T21:11:32.380Z",
+          "fileName": "pt-BR/resources/changelogs/cloud/release-status.mdx",
+          "postProcessHash": "cb971982c12564d55b917170fb4c8dc6c6e85c8dce17134ae200d9bf739e0427"
         }
       },
       "fileName": "resources/changelogs/cloud/release-status.mdx"
@@ -73895,47 +73894,47 @@
     },
     {
       "fileId": "3c60d54c06c62bef8cca86005bbc2e76ceeaafcc29989651813a80695343aa17",
-      "versionId": "7f5f7a287fde197c6014ed4628bb7afcb6a946d7564cc33f10ae2f5f9c9ec835",
+      "versionId": "925ddf7b940721a85e3992003789d32a591893240427f5c1c2f377c225302dd3",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-26T08:10:30.596Z",
-          "fileName": "es/guides/clickhouse/data-formats/json/inference.mdx",
-          "postProcessHash": "be954378e862141cef8e5221cc5ea7f4768acd72abba050c0bd177d5410e0e36"
-        },
         "ja": {
-          "updatedAt": "2026-08-26T08:10:30.597Z",
+          "updatedAt": "2026-11-17T21:11:32.335Z",
           "fileName": "ja/guides/clickhouse/data-formats/json/inference.mdx",
-          "postProcessHash": "d8bff4ae32f98e5b315abb352b8953ee911eca58a9afb8a7d62ed60936353a91"
-        },
-        "ko": {
-          "updatedAt": "2026-08-26T08:10:30.597Z",
-          "fileName": "ko/guides/clickhouse/data-formats/json/inference.mdx",
-          "postProcessHash": "67e88806f1bc57f37239a0d3514c930f4ffc2c195fb066a26f9c3b79e70a41e3"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T08:10:30.598Z",
-          "fileName": "pt-BR/guides/clickhouse/data-formats/json/inference.mdx",
-          "postProcessHash": "db772e953a16975aefa7177cd082b01d0c084ea9ca93384fe7cab119bb2e9db6"
-        },
-        "ru": {
-          "updatedAt": "2026-08-26T08:10:30.598Z",
-          "fileName": "ru/guides/clickhouse/data-formats/json/inference.mdx",
-          "postProcessHash": "bff50301cedd7ba69183d176afbf15b814b5da971bfa12c599c151c83aecc668"
+          "postProcessHash": "21dbc62ab8659f50fed695c88f526e6f2633ef98b8707ff95b322ab774dc9432"
         },
         "zh": {
-          "updatedAt": "2026-08-26T08:10:30.599Z",
+          "updatedAt": "2026-11-17T21:11:32.339Z",
           "fileName": "zh/guides/clickhouse/data-formats/json/inference.mdx",
-          "postProcessHash": "1343082255ca328391296656fefb7665447356132f74cad50addf97e1422d338"
+          "postProcessHash": "f3e516441d8b819111851163f6c3035cff4469f44c4807227aa98fd4e8301278"
         },
-        "ar": {
-          "updatedAt": "2026-08-26T08:10:30.600Z",
-          "fileName": "ar/guides/clickhouse/data-formats/json/inference.mdx",
-          "postProcessHash": "d77b28a8a1c30bbfb44aad087a924d037c0fa0546e9d83a4020af5185ec115fb"
+        "pt-BR": {
+          "updatedAt": "2026-11-17T21:11:32.340Z",
+          "fileName": "pt-BR/guides/clickhouse/data-formats/json/inference.mdx",
+          "postProcessHash": "576785baca8137e91f850802c3e40fc9a66961e06b0c3a66109fb254c65814eb"
+        },
+        "es": {
+          "updatedAt": "2026-11-17T21:11:32.341Z",
+          "fileName": "es/guides/clickhouse/data-formats/json/inference.mdx",
+          "postProcessHash": "634e4bda2434efe9c7a9f13bf8b2e99b028def9693018f77e15ad765b234dc38"
         },
         "fr": {
-          "updatedAt": "2026-08-26T08:10:30.601Z",
+          "updatedAt": "2026-11-17T21:11:32.341Z",
           "fileName": "fr/guides/clickhouse/data-formats/json/inference.mdx",
-          "postProcessHash": "304b23ea8e4a51b22f4cb01c879a825b8ba1c74f80ac7b619af0b217d8c62621"
+          "postProcessHash": "4ad9b4fea187d866511cec69dd98d5a84158acff868fca8ad05000c4c33ac6dd"
+        },
+        "ar": {
+          "updatedAt": "2026-11-17T21:11:32.343Z",
+          "fileName": "ar/guides/clickhouse/data-formats/json/inference.mdx",
+          "postProcessHash": "7e23c182590e635c642409c40da55db916da83d48d0346781437d9e59c38baa3"
+        },
+        "ru": {
+          "updatedAt": "2026-11-17T21:11:32.347Z",
+          "fileName": "ru/guides/clickhouse/data-formats/json/inference.mdx",
+          "postProcessHash": "9f571055e3d7eec5cf56c3ed19541c501107348874a61cf5f859b017384d675b"
+        },
+        "ko": {
+          "updatedAt": "2026-11-17T21:11:32.348Z",
+          "fileName": "ko/guides/clickhouse/data-formats/json/inference.mdx",
+          "postProcessHash": "a6ee3e1414de2cf697d198b2cdc855c2d93adee02f917aaf69167d0685a1e573"
         }
       },
       "fileName": "guides/clickhouse/data-formats/json/inference.mdx"
@@ -73990,47 +73989,47 @@
     },
     {
       "fileId": "b7fc22ac88545681181a11214adc5a103259720edefb69606710038e3c58b36d",
-      "versionId": "6f55d028a94f53cf0812a33df25ad394353676a1cdd8b82386e5ed022c9e2498",
+      "versionId": "8b678225877ef5240ff2464791716ce1675320cbf1bf51f8894d354d832ed325",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-26T08:10:30.603Z",
-          "fileName": "es/guides/clickhouse/data-formats/json/loading.mdx",
-          "postProcessHash": "3abe09dd2b056aa40e2170d965988dac7ef8343e6ab13ca78d29ddba1d5d7b13"
-        },
-        "ja": {
-          "updatedAt": "2026-08-26T08:10:30.604Z",
-          "fileName": "ja/guides/clickhouse/data-formats/json/loading.mdx",
-          "postProcessHash": "4ee2976683331b1e947fc4b1ac0a10409ae49cf758717de674d9b7734766b37c"
-        },
-        "ko": {
-          "updatedAt": "2026-08-26T08:10:30.604Z",
-          "fileName": "ko/guides/clickhouse/data-formats/json/loading.mdx",
-          "postProcessHash": "4857e246a6dcb267388b2ea7556300b51be0e79db9b4e1a05f4322f7bf14ce1b"
-        },
         "pt-BR": {
-          "updatedAt": "2026-08-26T08:10:30.605Z",
+          "updatedAt": "2026-11-17T21:11:32.333Z",
           "fileName": "pt-BR/guides/clickhouse/data-formats/json/loading.mdx",
-          "postProcessHash": "e388b8669138687eb19ff62e954a1a727d3bf5b85ac3c3df51683b69376fe144"
-        },
-        "ru": {
-          "updatedAt": "2026-08-26T08:10:30.605Z",
-          "fileName": "ru/guides/clickhouse/data-formats/json/loading.mdx",
-          "postProcessHash": "0fb64c703ccd3a984aaae5ebfa2d31a125f190f6b933fece8ee76b53936553a0"
-        },
-        "zh": {
-          "updatedAt": "2026-08-26T08:10:30.606Z",
-          "fileName": "zh/guides/clickhouse/data-formats/json/loading.mdx",
-          "postProcessHash": "5c7a41636f15eeb1cb603edd37afc397c964acf7b55e6ccee5e9237090e0f7ed"
+          "postProcessHash": "0bb10cc0bd87f80cf5bd23f2e2f3c1859d4dc7732a80155d90e39bc93b83581d"
         },
         "ar": {
-          "updatedAt": "2026-08-26T08:10:30.607Z",
+          "updatedAt": "2026-11-17T21:11:32.341Z",
           "fileName": "ar/guides/clickhouse/data-formats/json/loading.mdx",
-          "postProcessHash": "037c10ae60807ca42d34c2071d01404cb02fb47603d5dda19286b9fe5d96e299"
+          "postProcessHash": "99bf69945d8adc358fda10c81c390634f34809b96f0e5ad31e86cfcb0f3d9468"
+        },
+        "zh": {
+          "updatedAt": "2026-11-17T21:11:32.342Z",
+          "fileName": "zh/guides/clickhouse/data-formats/json/loading.mdx",
+          "postProcessHash": "261e9a0372b97d07a40bf1cdb59cdf8cc789fe6419b5d570343b35831ba15534"
+        },
+        "ru": {
+          "updatedAt": "2026-11-17T21:11:32.343Z",
+          "fileName": "ru/guides/clickhouse/data-formats/json/loading.mdx",
+          "postProcessHash": "d93be08247841a2338f472e6d91e87fb0917c8a368630020e10dc5f9e21ada46"
+        },
+        "es": {
+          "updatedAt": "2026-11-17T21:11:32.344Z",
+          "fileName": "es/guides/clickhouse/data-formats/json/loading.mdx",
+          "postProcessHash": "ec855d960e0b1bd1e21fe47a6d1ffd86dd80b286c1448e551db4a602059b8199"
         },
         "fr": {
-          "updatedAt": "2026-08-26T08:10:30.608Z",
+          "updatedAt": "2026-11-17T21:11:32.345Z",
           "fileName": "fr/guides/clickhouse/data-formats/json/loading.mdx",
-          "postProcessHash": "44d7596613a2dc497ed9a59971a7acbad8303438aa394241e147f350b22e7e98"
+          "postProcessHash": "68773eb52005cfacbf4b608b60e8603ff75269003c2d5012a245822492e306e3"
+        },
+        "ja": {
+          "updatedAt": "2026-11-17T21:11:32.346Z",
+          "fileName": "ja/guides/clickhouse/data-formats/json/loading.mdx",
+          "postProcessHash": "fda9bf639a64c88b396361e27cfa75b21092601600460d82768de848ff1583b5"
+        },
+        "ko": {
+          "updatedAt": "2026-11-17T21:11:32.350Z",
+          "fileName": "ko/guides/clickhouse/data-formats/json/loading.mdx",
+          "postProcessHash": "7079da4b6f7515ecf0396a0f7c0bf7fc516f6f0805bc610ddb9cbd447e19f696"
         }
       },
       "fileName": "guides/clickhouse/data-formats/json/loading.mdx"
@@ -74084,47 +74083,47 @@
     },
     {
       "fileId": "bbefce44b657ff6d3f01134e110169232a2359b552b0f991fa2310c9e749fd21",
-      "versionId": "68520cb4cb4e631ddce1913b3b6d6041dbd6b5f99257454124e69cc57181f35d",
+      "versionId": "d3d42eb4fec6e712fbf805b18c6e5ba9c7f6badfe3d3e8e813d5066672378b31",
       "translations": {
-        "es": {
-          "updatedAt": "2026-11-17T19:23:09.309Z",
-          "fileName": "es/guides/clickhouse/data-formats/json/schema.mdx",
-          "postProcessHash": "77a8c77995bf847523ee731e24b23a3d7ad2155a062fe50935405bbab4d05d92"
-        },
-        "ja": {
-          "updatedAt": "2026-11-17T19:23:09.309Z",
-          "fileName": "ja/guides/clickhouse/data-formats/json/schema.mdx",
-          "postProcessHash": "73ab1b0988b2fbd0133ed06962b46237dcfb277c90a77bb56c9eb590cd584f72"
-        },
-        "ko": {
-          "updatedAt": "2026-11-17T19:23:09.310Z",
-          "fileName": "ko/guides/clickhouse/data-formats/json/schema.mdx",
-          "postProcessHash": "b1ab67f6e7d8fdf5dfadf311d92349883015983a966276c66472352ec3f2208f"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-11-17T19:23:09.310Z",
-          "fileName": "pt-BR/guides/clickhouse/data-formats/json/schema.mdx",
-          "postProcessHash": "84cfd4fe5c99d42376020e7953d18ec0544c7f82f8a01d8769c665f02e6e695e"
-        },
-        "ru": {
-          "updatedAt": "2026-11-17T19:23:09.310Z",
-          "fileName": "ru/guides/clickhouse/data-formats/json/schema.mdx",
-          "postProcessHash": "5359255f90b0694ba0573cde8025d4fd9766186fc0045a5bd344ab3d4f7795f0"
-        },
-        "zh": {
-          "updatedAt": "2026-11-17T19:23:09.311Z",
-          "fileName": "zh/guides/clickhouse/data-formats/json/schema.mdx",
-          "postProcessHash": "148a52067a12d6359844b5411901f339aab9f9441c7f618220a135a1e9526792"
+        "fr": {
+          "updatedAt": "2026-11-17T21:11:32.332Z",
+          "fileName": "fr/guides/clickhouse/data-formats/json/schema.mdx",
+          "postProcessHash": "a1bf9a5cf15a873c81e49b919973454ef092c74459c7041e89b61473d1961c23"
         },
         "ar": {
-          "updatedAt": "2026-11-17T19:23:09.311Z",
+          "updatedAt": "2026-11-17T21:11:32.333Z",
           "fileName": "ar/guides/clickhouse/data-formats/json/schema.mdx",
-          "postProcessHash": "b3d70a8a9d7572c32e81db9b2f38fc4ea12f5a98cbecc48ce4db3304c3cd50d7"
+          "postProcessHash": "d19270962ff0cf58df322956d7d89a5dd8bccf487158b7372f1bf34d9eab44e3"
         },
-        "fr": {
-          "updatedAt": "2026-11-17T19:23:09.311Z",
-          "fileName": "fr/guides/clickhouse/data-formats/json/schema.mdx",
-          "postProcessHash": "652104b97a7320f203f7fd81479dfe8a77dfae302fe23873406fe8bfe1de22fb"
+        "zh": {
+          "updatedAt": "2026-11-17T21:11:32.334Z",
+          "fileName": "zh/guides/clickhouse/data-formats/json/schema.mdx",
+          "postProcessHash": "08a2416756cd913175a163ebc74ddbb096e609284da7f731d426fcb9acba70c7"
+        },
+        "es": {
+          "updatedAt": "2026-11-17T21:11:32.341Z",
+          "fileName": "es/guides/clickhouse/data-formats/json/schema.mdx",
+          "postProcessHash": "b843345f9a83bc5a3e749eaa63873ed0028aa6e38c550446e302ae2cf215ec3a"
+        },
+        "ru": {
+          "updatedAt": "2026-11-17T21:11:32.342Z",
+          "fileName": "ru/guides/clickhouse/data-formats/json/schema.mdx",
+          "postProcessHash": "8ebe19dc1867701b9013a9fe2839feab3ca35e8d881e86e7f659d31ee3470725"
+        },
+        "ja": {
+          "updatedAt": "2026-11-17T21:11:32.343Z",
+          "fileName": "ja/guides/clickhouse/data-formats/json/schema.mdx",
+          "postProcessHash": "b96742f81f9f7ce25cfb902bda9866bd95a372c98fbabcdd574608541a792781"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-17T21:11:32.346Z",
+          "fileName": "pt-BR/guides/clickhouse/data-formats/json/schema.mdx",
+          "postProcessHash": "7144694d9caa7285942cc4c487ef1bfa0c513520d97c3a3a24792227672b59ae"
+        },
+        "ko": {
+          "updatedAt": "2026-11-17T21:11:32.349Z",
+          "fileName": "ko/guides/clickhouse/data-formats/json/schema.mdx",
+          "postProcessHash": "4a1482addfc7f0c29c41e0bb911bf98042433deb09a96012133a582671107a61"
         }
       },
       "fileName": "guides/clickhouse/data-formats/json/schema.mdx"
@@ -78918,47 +78917,47 @@
     },
     {
       "fileId": "cc402adbf192413cc8585ed4b4daa98802aaefd4d818552f07e9a7a3bbacf2b1",
-      "versionId": "2e80f2b7a62a53168defd92173bb7e5cf92dc11f5b855d25f8b421d03a3f9539",
+      "versionId": "23aa4eb80b674f8f719958f4333c3926c41442a46291517015e620dc17b7ef15",
       "translations": {
-        "es": {
-          "updatedAt": "2026-11-17T19:23:09.436Z",
-          "fileName": "es/integrations/connectors/data-ingestion/apache-spark/spark-native-connector.mdx",
-          "postProcessHash": "d203dce51f9aec59e7b9617fcafae012908728539378faa4e95257097c81c833"
-        },
-        "ja": {
-          "updatedAt": "2026-11-17T19:23:09.437Z",
-          "fileName": "ja/integrations/connectors/data-ingestion/apache-spark/spark-native-connector.mdx",
-          "postProcessHash": "5254349b1544720c62b5d542ce3207b6d2700aeb9efd6fda5f1a6afb308b5fe5"
-        },
-        "ko": {
-          "updatedAt": "2026-11-17T19:23:09.438Z",
-          "fileName": "ko/integrations/connectors/data-ingestion/apache-spark/spark-native-connector.mdx",
-          "postProcessHash": "f37f7d1a340709eb09277a339bbe1e91673d58fe6002dfdc2dd45335c3f6a6a4"
+        "zh": {
+          "updatedAt": "2026-11-17T21:11:32.332Z",
+          "fileName": "zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector.mdx",
+          "postProcessHash": "cf73b39e625d29403077c8a6aaa7a0098754e8a63d6321ff81ed0a06089b0189"
         },
         "pt-BR": {
-          "updatedAt": "2026-11-17T19:23:09.438Z",
+          "updatedAt": "2026-11-17T21:11:32.333Z",
           "fileName": "pt-BR/integrations/connectors/data-ingestion/apache-spark/spark-native-connector.mdx",
-          "postProcessHash": "b0f9f651db2fd26f14fd35fb74e031cde5a24b2d5eff86a2da94a469bdc35840"
-        },
-        "ru": {
-          "updatedAt": "2026-11-17T19:23:09.439Z",
-          "fileName": "ru/integrations/connectors/data-ingestion/apache-spark/spark-native-connector.mdx",
-          "postProcessHash": "e1ac31d17c2527782a681d27d505a080e1a258820a68367a7aa76441e669e7ec"
-        },
-        "zh": {
-          "updatedAt": "2026-11-17T19:23:09.439Z",
-          "fileName": "zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector.mdx",
-          "postProcessHash": "f5a0f2dbd5e69628bf94e31aaaee141c62e9cd4de3d36d34020efcad086da8d8"
-        },
-        "ar": {
-          "updatedAt": "2026-11-17T19:23:09.440Z",
-          "fileName": "ar/integrations/connectors/data-ingestion/apache-spark/spark-native-connector.mdx",
-          "postProcessHash": "921225959b139f299582a77d439422eb5edc79d0e81cb7979c647948d2a82d82"
+          "postProcessHash": "09a4d15b4c1b1c38e8c5f3a166430a9e88ce7ee23bcb41a2e412d23e9ca3ade4"
         },
         "fr": {
-          "updatedAt": "2026-11-17T19:23:09.440Z",
+          "updatedAt": "2026-11-17T21:11:32.336Z",
           "fileName": "fr/integrations/connectors/data-ingestion/apache-spark/spark-native-connector.mdx",
-          "postProcessHash": "0c598e4e6c39feb535920a685067d47eb31fe12ed66ed80b2d1d6b8d7ea21b51"
+          "postProcessHash": "9cbe60f85f5ddff82ee4b936ca6f43624bafc7ac4952292950495aba77119e46"
+        },
+        "ar": {
+          "updatedAt": "2026-11-17T21:11:32.336Z",
+          "fileName": "ar/integrations/connectors/data-ingestion/apache-spark/spark-native-connector.mdx",
+          "postProcessHash": "c726b8817844b5169bc2767b846de8ed7625466d7603bcbd4f48e6be2709a95e"
+        },
+        "ko": {
+          "updatedAt": "2026-11-17T21:11:32.338Z",
+          "fileName": "ko/integrations/connectors/data-ingestion/apache-spark/spark-native-connector.mdx",
+          "postProcessHash": "c5fe3df4d25167d120edd27ceb0ee783570a839834bbdf8b66c13e082fd69244"
+        },
+        "es": {
+          "updatedAt": "2026-11-17T21:11:32.339Z",
+          "fileName": "es/integrations/connectors/data-ingestion/apache-spark/spark-native-connector.mdx",
+          "postProcessHash": "8afc2a6a1a6266f9d5b9172015f439064b5a13169d6364e3f63c63b91adbf815"
+        },
+        "ru": {
+          "updatedAt": "2026-11-17T21:11:32.340Z",
+          "fileName": "ru/integrations/connectors/data-ingestion/apache-spark/spark-native-connector.mdx",
+          "postProcessHash": "147f65aaee135934b3f906a5984a9d2d971bf1e04e8519af23e24118de10ccbc"
+        },
+        "ja": {
+          "updatedAt": "2026-11-17T21:11:32.340Z",
+          "fileName": "ja/integrations/connectors/data-ingestion/apache-spark/spark-native-connector.mdx",
+          "postProcessHash": "47e04b7cb06288e2ee888f50e1f54e3e063e29cda2567b176875d30995bbd66d"
         }
       },
       "fileName": "integrations/connectors/data-ingestion/apache-spark/spark-native-connector.mdx"
@@ -90291,51 +90290,50 @@
     },
     {
       "fileId": "e9f283e1e5a9654579b54a8d8447c8a3584f1690adbeee1e44bde871d10e5a31",
-      "versionId": "dc25dfe82139ae6e4b729044bd75232444a75beef5aa1e068196eb9a7b4a1006",
+      "versionId": "c9717c92975b10cb771cf795fcdbdacd852b0e90f9e48b5f3a61a3b246a0fe48",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.449Z",
-          "fileName": "es/resources/support-center/knowledge-base/data-import-export/kafka-clickhouse-json.mdx",
-          "postProcessHash": "1a57ea23cc2e5b491702e46b8bc5cde4caaa25ce16fe9bfb2e3a966efef10dd7"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.449Z",
-          "fileName": "ja/resources/support-center/knowledge-base/data-import-export/kafka-clickhouse-json.mdx",
-          "postProcessHash": "861456ac813ee65a9020a36e8b3ad0072d0eed7f0bf8ad583106a72b8ed1d567"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.449Z",
-          "fileName": "ko/resources/support-center/knowledge-base/data-import-export/kafka-clickhouse-json.mdx",
-          "postProcessHash": "4917047a989a7203d454e85718e5a1e1f183d1f0e15135b06419ba2078566791"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.449Z",
-          "fileName": "pt-BR/resources/support-center/knowledge-base/data-import-export/kafka-clickhouse-json.mdx",
-          "postProcessHash": "21ec0b6725ede10b5d0359cdf2666331131b0264f340530dcb577256cf1ccfac"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.449Z",
-          "fileName": "ru/resources/support-center/knowledge-base/data-import-export/kafka-clickhouse-json.mdx",
-          "postProcessHash": "defd85e7959ed5ffc81066fb686c6c5856837207cca1fe92bc7bd3541651adc5"
-        },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.449Z",
+          "updatedAt": "2026-11-17T21:11:32.331Z",
           "fileName": "zh/resources/support-center/knowledge-base/data-import-export/kafka-clickhouse-json.mdx",
-          "postProcessHash": "57a8139a850048d698f094b38d1ddb44d6c6e8c4d41f557f5d86805089dd5bbf"
+          "postProcessHash": "a4c04f2ed0cbfda24b74b8ed8f1ca27d45b046aedb4714587e30a052c89cf362"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.449Z",
+          "updatedAt": "2026-11-17T21:11:32.335Z",
           "fileName": "ar/resources/support-center/knowledge-base/data-import-export/kafka-clickhouse-json.mdx",
-          "postProcessHash": "1c673f9d812d5cdf9fa8172b769a96a22ecb6dfe35ced546c7e51296c7c3be48"
+          "postProcessHash": "fadfb50a221c8ea56c6a670ec03b9b714f8e653d53c6d15fb19e71a9192bbfde"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.449Z",
+          "updatedAt": "2026-11-17T21:11:32.335Z",
           "fileName": "fr/resources/support-center/knowledge-base/data-import-export/kafka-clickhouse-json.mdx",
-          "postProcessHash": "c2378e5995f0cea559b3166ad57e0af7712d0e04f971a49dc57c8af8e8c5ab13"
+          "postProcessHash": "f0e04c51caa7d4126643806db503c9c0d871da28ff5aaa0d762cbf317dd256ad"
+        },
+        "ru": {
+          "updatedAt": "2026-11-17T21:11:32.335Z",
+          "fileName": "ru/resources/support-center/knowledge-base/data-import-export/kafka-clickhouse-json.mdx",
+          "postProcessHash": "c6c778d75c89ca1734685433a344dd2be033d8bd6213440f0040d6bdc1acfe79"
+        },
+        "es": {
+          "updatedAt": "2026-11-17T21:11:32.338Z",
+          "fileName": "es/resources/support-center/knowledge-base/data-import-export/kafka-clickhouse-json.mdx",
+          "postProcessHash": "b5b5837dde811b932e552d6dfa9e7ff0cb7889b71ff0d6048318b6420c670a16"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-17T21:11:32.344Z",
+          "fileName": "pt-BR/resources/support-center/knowledge-base/data-import-export/kafka-clickhouse-json.mdx",
+          "postProcessHash": "b4a068346e9abf963e7fa79948c3839ddeb0c747b9a17a106d397a663b746c53"
+        },
+        "ja": {
+          "updatedAt": "2026-11-17T21:11:32.345Z",
+          "fileName": "ja/resources/support-center/knowledge-base/data-import-export/kafka-clickhouse-json.mdx",
+          "postProcessHash": "734357264a337ea5d7fb1fea966c070d078e99869cd1282e6672752b948b1063"
+        },
+        "ko": {
+          "updatedAt": "2026-11-17T21:11:32.347Z",
+          "fileName": "ko/resources/support-center/knowledge-base/data-import-export/kafka-clickhouse-json.mdx",
+          "postProcessHash": "1d808520b08769f6fa89cda9ca91e03af279032d705d8ea7d4de7efb01f34129"
         }
       },
-      "fileName": "resources/support-center/knowledge-base/data-import-export/kafka-clickhouse-json.mdx",
-      "staged": false
+      "fileName": "resources/support-center/knowledge-base/data-import-export/kafka-clickhouse-json.mdx"
     },
     {
       "fileId": "76abdd4a1511b5ea298329e699bfb605d7c4a4402a8686128e3aa557b134afa0",
@@ -149739,47 +149737,47 @@
     },
     {
       "fileId": "1add6468fce965a014288a2585a927d60b44a87ac6581ca3571972032bf40b92",
-      "versionId": "056f68069944a33c50896d5f1ee3d7284791efedfa4d027f89d55f2664eb1cfd",
+      "versionId": "c2e2160657e2fa25f383366d46500691f7ff9377ae5c11d0df8534d7ec77f000",
       "translations": {
         "es": {
-          "updatedAt": "2026-11-17T19:23:09.555Z",
+          "updatedAt": "2026-11-17T21:11:32.334Z",
           "fileName": "es/products/cloud/features/scaling/preparing-for-traffic-spikes.mdx",
-          "postProcessHash": "3aab60dc4d1e5a27184dbbc5ea88180d9ee769bb28d55e71ba0f352fb905d665"
-        },
-        "ja": {
-          "updatedAt": "2026-11-17T19:23:09.555Z",
-          "fileName": "ja/products/cloud/features/scaling/preparing-for-traffic-spikes.mdx",
-          "postProcessHash": "0e3b5dc398e89b26fd60100d80ab4e2aaf5169efe4e2cf229633d6c4ba505f10"
+          "postProcessHash": "1ae86bc23b1329617cf3ca2b5f030896da3a5dd79815849e73bad626a6a5e037"
         },
         "ko": {
-          "updatedAt": "2026-11-17T19:23:09.556Z",
+          "updatedAt": "2026-11-17T21:11:32.337Z",
           "fileName": "ko/products/cloud/features/scaling/preparing-for-traffic-spikes.mdx",
-          "postProcessHash": "4d33740fdb002c5498f4fc07afbd95e3ce1d7a53c3bcc9d002733aebddcc59a7"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-11-17T19:23:09.556Z",
-          "fileName": "pt-BR/products/cloud/features/scaling/preparing-for-traffic-spikes.mdx",
-          "postProcessHash": "e6b5134d32c8ce7c163d1d066c134b0496c60abf21d33d3965055eee9432cd07"
-        },
-        "ru": {
-          "updatedAt": "2026-11-17T19:23:09.556Z",
-          "fileName": "ru/products/cloud/features/scaling/preparing-for-traffic-spikes.mdx",
-          "postProcessHash": "b44102256307b4bb369cfd115ac4ca7859ec33759b8fec897edbde3c9c7ed8e8"
-        },
-        "zh": {
-          "updatedAt": "2026-11-17T19:23:09.556Z",
-          "fileName": "zh/products/cloud/features/scaling/preparing-for-traffic-spikes.mdx",
-          "postProcessHash": "19258db7dca38a72bc791ac81c485975b7f540e9931e074cc69ee1b79e02e492"
-        },
-        "ar": {
-          "updatedAt": "2026-11-17T19:23:09.556Z",
-          "fileName": "ar/products/cloud/features/scaling/preparing-for-traffic-spikes.mdx",
-          "postProcessHash": "8f1f61658e5b50e0929542bbf4c9995eda524cd264f321ab2346743bfa306291"
+          "postProcessHash": "38323597b11f50c18579c04c69edc222b9898a247d683ac6e82405244e1762f7"
         },
         "fr": {
-          "updatedAt": "2026-11-17T19:23:09.557Z",
+          "updatedAt": "2026-11-17T21:11:32.338Z",
           "fileName": "fr/products/cloud/features/scaling/preparing-for-traffic-spikes.mdx",
-          "postProcessHash": "ee5915b42aa6d151dd7be05b5c8b3ab87b0d7b9ebf65521f011bd22ab41ff14a"
+          "postProcessHash": "51dad873cafe910dc2081ea655205df37793514e4a9e374df476c663af10df53"
+        },
+        "ar": {
+          "updatedAt": "2026-11-17T21:11:32.340Z",
+          "fileName": "ar/products/cloud/features/scaling/preparing-for-traffic-spikes.mdx",
+          "postProcessHash": "732809570cedf2dcc4b00cf7353427e5b8ffe65638212fac926e3f0ddb292a6c"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-17T21:11:32.340Z",
+          "fileName": "pt-BR/products/cloud/features/scaling/preparing-for-traffic-spikes.mdx",
+          "postProcessHash": "24b31b47eac025dac69c2164b833edbe6d002615c0fbeb46c3b9e4d6ed68521c"
+        },
+        "ru": {
+          "updatedAt": "2026-11-17T21:11:32.342Z",
+          "fileName": "ru/products/cloud/features/scaling/preparing-for-traffic-spikes.mdx",
+          "postProcessHash": "b689b0d39d8741ee3881246adae6ffbbc3b8e47ba9344f902fac6aca46dbba65"
+        },
+        "zh": {
+          "updatedAt": "2026-11-17T21:11:32.346Z",
+          "fileName": "zh/products/cloud/features/scaling/preparing-for-traffic-spikes.mdx",
+          "postProcessHash": "2071cdce1799d2a7caeb74060416ee6b59a811a64720676f944ee015af9ab05d"
+        },
+        "ja": {
+          "updatedAt": "2026-11-17T21:11:32.347Z",
+          "fileName": "ja/products/cloud/features/scaling/preparing-for-traffic-spikes.mdx",
+          "postProcessHash": "62f638e7fc62e3a89d8c6c9e0cfccadfe44574811c8fd5c7847a3266ed702450"
         }
       },
       "fileName": "products/cloud/features/scaling/preparing-for-traffic-spikes.mdx"

@@ -878,7 +878,7 @@ PySpark、またはシェルなど、任意の API を使ってアプリケー�
 ## VariantType を扱う {#working-with-varianttype}
 
 <Note>
-  VariantType のサポートは Spark 4.0+ で利用でき、Experimental な JSON/Variant 型を有効にした ClickHouse 25.3+ が必要です。
+  VariantType のサポートは Spark 4.0+ で利用でき、ClickHouse 25.3+ が必要です。このバージョンでは、`JSON` 型および `Variant` 型が本番環境での利用に対応しており、デフォルトで有効になっています。
 </Note>
 
 このコネクタは、半構造化データを扱うための Spark の `VariantType` をサポートしています。VariantType は ClickHouse の `JSON` 型および `Variant` 型にマッピングされるため、柔軟なスキーマを持つデータを効率的に保存およびクエリできます。
@@ -1210,12 +1210,11 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 型に推奨
 
 ### ベストプラクティス {#varianttype-best-practices}
 
-1. **JSON 専用のデータには JSON 型を使用する**: JSON object だけを保存する場合は、デフォルトの JSON 型 (`variant_types` プロパティなし) を使用します
+1. **JSON 専用のデータには JSON 型を使用する**: JSON オブジェクトだけを保存する場合は、デフォルトの JSON 型 (`variant_types` プロパティなし) を使用します
 2. **型を明示的に指定する**: `Variant()` を使用する場合は、保存する予定のすべての型を明示的に列挙します
-3. **実験的機能を有効にする**: ClickHouse で `allow_experimental_json_type = 1` が有効になっていることを確認します
-4. **書き込みには JSON フォーマットを使用する**: 互換性を高めるため、VariantType データの書き込みには JSON フォーマットを使用することを推奨します
-5. **クエリパターンを考慮する**: JSON/Variant 型は、効率的にフィルタリングするための ClickHouse の JSON パスクエリをサポートしています
-6. **パフォーマンス向上のためのカラムヒント**: ClickHouse で JSON フィールドを使用する場合、カラムヒントを追加するとクエリのパフォーマンスが向上します。現在、Spark 経由でのカラムヒントの追加はサポートされていません。この機能の進捗状況は [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497) を参照してください。
+3. **書き込みには JSON フォーマットを使用する**: 互換性を高めるため、VariantType データの書き込みには JSON フォーマットを使用することを推奨します
+4. **クエリパターンを考慮する**: JSON/Variant 型は、効率的にフィルタリングするための ClickHouse の JSON パスクエリをサポートしています
+5. **パフォーマンス向上のためのカラムヒント**: ClickHouse で JSON フィールドを使用する場合、カラムヒントを追加するとクエリのパフォーマンスが向上します。現在、Spark 経由でのカラムヒントの追加はサポートされていません。この機能の進捗状況は [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497) を参照してください。
 
 ### 例: ワークフロー全体 {#varianttype-example-workflow}
 
@@ -1224,10 +1223,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 型に推奨
     ```scala
     import org.apache.spark.sql.functions._
 
-    // ClickHouseで実験的なJSON型を有効にする
-    spark.sql("SET allow_experimental_json_type = 1")
-
-    // Variant カラムを持つテーブルを作成する
+    // Create table with Variant column
     spark.sql("""
       CREATE TABLE clickhouse.default.events (
         event_id BIGINT,
@@ -1241,14 +1237,14 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 型に推奨
       )
     """)
 
-    // 混合型のデータを準備する
+    // Prepare data with mixed types
     val events = Seq(
       (1L, "2024-01-01 10:00:00", """{"action": "login", "user_id": 123}"""),
       (2L, "2024-01-01 10:05:00", """{"action": "purchase", "amount": 99.99}"""),
       (3L, "2024-01-01 10:10:00", """{"action": "logout", "duration": 600}""")
     ).toDF("event_id", "event_time", "json_data")
 
-    // VariantTypeに変換して書き込む
+    // Convert to VariantType and write
     val variantEvents = events.select(
       col("event_id"),
       to_timestamp(col("event_time")).as("event_time"),
@@ -1257,7 +1253,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 型に推奨
 
     variantEvents.writeTo("clickhouse.default.events").append()
 
-    // 読み取りとクエリ
+    // Read and query
     val result = spark.sql("""
       SELECT event_id, event_time, event_data
       FROM clickhouse.default.events
@@ -1273,10 +1269,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 型に推奨
     ```python
     from pyspark.sql.functions import parse_json, to_timestamp
 
-    # ClickHouseで実験的なJSON型を有効化
-    spark.sql("SET allow_experimental_json_type = 1")
-
-    # Variant カラムを持つテーブルを作成
+    # Create table with Variant column
     spark.sql("""
       CREATE TABLE clickhouse.default.events (
         event_id BIGINT,
@@ -1290,7 +1283,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 型に推奨
       )
     """)
 
-    # 混合型のデータを準備
+    # Prepare data with mixed types
     events = [
         (1, "2024-01-01 10:00:00", '{"action": "login", "user_id": 123}'),
         (2, "2024-01-01 10:05:00", '{"action": "purchase", "amount": 99.99}'),
@@ -1298,7 +1291,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 型に推奨
     ]
     df = spark.createDataFrame(events, ["event_id", "event_time", "json_data"])
 
-    # VariantTypeに変換して書き込み
+    # Convert to VariantType and write
     variant_events = df.select(
         "event_id",
         to_timestamp("event_time").alias("event_time"),
@@ -1307,7 +1300,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 型に推奨
 
     variant_events.writeTo("clickhouse.default.events").append()
 
-    # 読み取りとクエリ
+    # Read and query
     result = spark.sql("""
       SELECT event_id, event_time, event_data
       FROM clickhouse.default.events
@@ -1323,10 +1316,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 型に推奨
     ```java
     import static org.apache.spark.sql.functions.*;
 
-    // ClickHouseで実験的なJSON型を有効化
-    spark.sql("SET allow_experimental_json_type = 1");
-
-    // Variant カラムを持つテーブルを作成
+    // Create table with Variant column
     spark.sql("CREATE TABLE clickhouse.default.events (" +
         "event_id BIGINT, " +
         "event_time TIMESTAMP, " +
@@ -1338,7 +1328,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 型に推奨
         "'order_by' = 'event_time'" +
         ")");
 
-    // 複数の型が混在するデータを準備
+    // Prepare data with mixed types
     List<Row> events = Arrays.asList(
         RowFactory.create(1L, "2024-01-01 10:00:00", "{\"action\": \"login\", \"user_id\": 123}"),
         RowFactory.create(2L, "2024-01-01 10:05:00", "{\"action\": \"purchase\", \"amount\": 99.99}"),
@@ -1351,7 +1341,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 型に推奨
     });
     Dataset<Row> eventsDF = spark.createDataFrame(events, eventSchema);
 
-    // VariantTypeに変換して書き込み
+    // Convert to VariantType and write
     Dataset<Row> variantEvents = eventsDF.select(
         col("event_id"),
         to_timestamp(col("event_time")).as("event_time"),
@@ -1360,7 +1350,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 型に推奨
 
     variantEvents.writeTo("clickhouse.default.events").append();
 
-    // 読み取りとクエリ
+    // Read and query
     Dataset<Row> result = spark.sql("SELECT event_id, event_time, event_data " +
         "FROM clickhouse.default.events " +
         "WHERE event_time >= '2024-01-01' " +

@@ -502,23 +502,19 @@ Un schéma strict présente plusieurs avantages :
 * **Évite le risque d’explosion du nombre de colonnes** - Bien que le type JSON puisse monter jusqu’à des milliers de colonnes, les sous-colonnes étant stockées comme des colonnes dédiées, cela peut entraîner une explosion du nombre de fichiers de colonnes, avec la création d’un nombre excessif de fichiers qui nuit aux performances. Pour atténuer ce problème, le [type Dynamic](/fr/reference/data-types/dynamic) sous-jacent utilisé par JSON propose un paramètre [`max_dynamic_paths`](/fr/reference/data-types/newjson#reading-json-paths-as-sub-columns), qui limite le nombre de chemins uniques stockés dans des fichiers de colonnes distincts. Une fois le seuil atteint, les chemins supplémentaires sont stockés dans un fichier de colonnes partagé à l’aide d’un format compact encodé, ce qui préserve les performances et l’efficacité du stockage tout en prenant en charge une ingestion de données flexible. L’accès à ce fichier de colonnes partagé est toutefois moins performant. Notez toutefois que la colonne JSON peut être utilisée avec des [indications de type](#using-type-hints-and-skipping-paths). Les colonnes « indiquées » offriront les mêmes performances que les colonnes dédiées.
 * **Introspection plus simple des chemins et des types** - Bien que le type JSON prenne en charge des [fonctions d’introspection](/fr/reference/data-types/newjson#introspection-functions) pour déterminer les types et les chemins qui ont été inférés, les structures statiques peuvent être plus simples à explorer, par exemple avec `DESCRIBE`.
 
-<div id="single-json-column">
-  ### Colonne JSON unique {#single-json-column}
-</div>
+### Colonne JSON unique {#single-json-column}
 
 Cette approche est utile pour le prototypage et les tâches d’ingénierie des données. En production, n’utilisez `JSON` que pour les sous-structures dynamiques, lorsque c’est nécessaire.
 
 <Info>
   **Considérations relatives aux performances**
 
-  Une colonne JSON unique peut être optimisée en ignorant (c’est-à-dire sans stocker) les chemins JSON qui ne sont pas nécessaires et en utilisant des [indications de type](#using-type-hints-and-skipping-paths). Les indications de type permettent à l’utilisateur de définir explicitement le type d’une sous-colonne, évitant ainsi l’inférence et le traitement de l’indirection au moment de la requête. On peut ainsi obtenir les mêmes performances qu’avec un schéma explicite. Voir [« Using type hints and skipping paths »](#using-type-hints-and-skipping-paths) pour plus de détails.
+  Une colonne JSON unique peut être optimisée en ignorant (c’est-à-dire sans stocker) les chemins JSON qui ne sont pas nécessaires et en utilisant des [indications de type](#using-type-hints-and-skipping-paths). Les indications de type permettent à l’utilisateur de définir explicitement le type d’une sous-colonne, évitant ainsi l’inférence et le traitement de l’indirection au moment de l’exécution de la requête. On peut ainsi obtenir les mêmes performances qu’avec un schéma explicite. Voir [« Utilisation des indications de type et des chemins à ignorer »](#using-type-hints-and-skipping-paths) pour plus de détails.
 </Info>
 
-Le schéma d’une colonne JSON unique est simple :
+Le schéma d’une colonne JSON unique est simple :
 
 ```sql
-SET enable_json_type = 1;
-
 CREATE TABLE people
 (
     `json` JSON(username String)
@@ -531,7 +527,11 @@ ORDER BY json.username;
   Nous fournissons une [indication de type](#using-type-hints-and-skipping-paths) pour la colonne `username` dans la définition JSON, car nous l’utilisons dans la clé de tri / clé primaire. Cela permet à ClickHouse de savoir que cette colonne ne sera pas NULL et de déterminer quelle sous-colonne `username` utiliser (il peut y en avoir plusieurs pour chaque type, ce qui serait sinon ambigu).
 </Note>
 
-L’insertion de lignes dans la table ci-dessus peut se faire à l’aide du format `JSONAsObject` :
+<Note>
+  Dans les versions 24.8 à 25.2, activez le type `JSON` avec `SET allow_experimental_json_type = 1;` avant de créer la table.
+</Note>
+
+L’insertion de lignes dans la table ci-dessus peut se faire à l’aide du format `JSONAsObject` :
 
 ```sql
 INSERT INTO people FORMAT JSONAsObject 

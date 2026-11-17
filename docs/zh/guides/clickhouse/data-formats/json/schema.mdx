@@ -502,9 +502,7 @@ SELECT id, nickname FROM people
 * **避免列数爆炸风险** - 尽管 JSON 类型可扩展到潜在的数千列，其中 subcolumns 会作为独立列存储，但这可能导致列文件数量激增，即创建过多列文件，从而影响性能。为缓解这一问题，JSON 所使用的底层 [Dynamic 类型](/zh/reference/data-types/dynamic) 提供了 [`max_dynamic_paths`](/zh/reference/data-types/newjson#reading-json-paths-as-sub-columns) 参数，用于限制以独立列文件形式存储的唯一路径数量。一旦达到该阈值，额外路径会以紧凑编码格式存储到共享列文件中，从而在支持灵活数据摄取的同时兼顾性能和存储效率。不过，访问该共享列文件时，性能会有所下降。不过还要注意，JSON 列也可以结合[类型提示](#using-type-hints-and-skipping-paths)使用。带有“提示”的列可提供与独立列相同的性能。
 * **更便于查看路径和类型的内部信息** - 尽管 JSON 类型支持使用[内部信息函数](/zh/reference/data-types/newjson#introspection-functions)来确定已推断出的类型和路径，但静态结构通常更容易查看，例如使用 `DESCRIBE`。
 
-<div id="single-json-column">
-  ### 单个 JSON 列 {#single-json-column}
-</div>
+### 单个 JSON 列 {#single-json-column}
 
 这种方法适用于原型设计和数据工程任务。对于生产环境，建议仅在确有必要时，才将 `JSON` 用于动态子结构。
 
@@ -517,8 +515,6 @@ SELECT id, nickname FROM people
 这里的单个 JSON 列 schema 很简单：
 
 ```sql
-SET enable_json_type = 1;
-
 CREATE TABLE people
 (
     `json` JSON(username String)
@@ -529,6 +525,10 @@ ORDER BY json.username;
 
 <Note>
   由于我们会在排序键/主键中使用 `username` 列，因此在 JSON 定义中为其提供了一个[类型提示](#using-type-hints-and-skipping-paths)。这有助于 ClickHouse 确认该列不会为 NULL，并明确应使用哪个 `username` 子列 (每种类型都可能对应多个子列，否则这里会有歧义) 。
+</Note>
+
+<Note>
+  在 24.8 至 25.2 版本中，请先使用 `SET allow_experimental_json_type = 1;` 启用 `JSON` 类型，再创建表。
 </Note>
 
 可以使用 `JSONAsObject` 格式将行插入上述表中：

@@ -502,23 +502,19 @@ Un esquema estricto tiene varias ventajas:
 * **Evita el riesgo de explosión de columnas** - Aunque el tipo JSON puede escalar hasta potencialmente miles de columnas, donde las subcolumnas se almacenan como columnas dedicadas, esto puede provocar una explosión de archivos de columnas, en la que se crea un número excesivo de archivos que afecta al rendimiento. Para mitigarlo, el [tipo Dynamic](/es/reference/data-types/dynamic) subyacente que usa JSON ofrece un parámetro [`max_dynamic_paths`](/es/reference/data-types/newjson#reading-json-paths-as-sub-columns), que limita el número de rutas únicas almacenadas como archivos de columnas independientes. Una vez alcanzado el umbral, las rutas adicionales se almacenan en un archivo de columna compartido mediante un formato codificado compacto, lo que mantiene el rendimiento y la eficiencia del almacenamiento a la vez que admite una ingestión de datos flexible. Sin embargo, acceder a este archivo de columna compartido no ofrece el mismo rendimiento. Tenga en cuenta, no obstante, que la columna JSON puede usarse con [sugerencias de tipo](#using-type-hints-and-skipping-paths). Las columnas con sugerencias de tipo ofrecerán el mismo rendimiento que las columnas dedicadas.
 * **Introspección más sencilla de rutas y tipos** - Aunque el tipo JSON admite [funciones de introspección](/es/reference/data-types/newjson#introspection-functions) para determinar los tipos y las rutas que se han inferido, las estructuras estáticas pueden ser más fáciles de explorar, por ejemplo, con `DESCRIBE`.
 
-<div id="single-json-column">
-  ### Una única columna JSON {#single-json-column}
-</div>
+### Una única columna JSON {#single-json-column}
 
 Este enfoque es útil para la creación de prototipos y las tareas de ingeniería de datos. En producción, intente usar `JSON` solo para subestructuras dinámicas cuando sea necesario.
 
 <Info>
   **Consideraciones de rendimiento**
 
-  Una única columna JSON puede optimizarse omitiendo (sin almacenar) las rutas JSON que no se requieren y usando [indicaciones de tipo](#using-type-hints-and-skipping-paths). Las pistas de tipo permiten al usuario definir explícitamente el tipo de una subcolumna, evitando así la inferencia y el procesamiento de indirección en tiempo de consulta. Esto puede utilizarse para ofrecer el mismo rendimiento que si se usara un esquema explícito. Consulte [&quot;Uso de pistas de tipo y omisión de rutas&quot;](#using-type-hints-and-skipping-paths) para obtener más detalles.
+  Una única columna JSON puede optimizarse omitiendo (sin almacenar) las rutas JSON que no se requieren y usando [indicaciones de tipo](#using-type-hints-and-skipping-paths). Las indicaciones de tipo permiten al usuario definir explícitamente el tipo de una subcolumna, evitando así la inferencia y el procesamiento de indirección en tiempo de consulta. Esto puede utilizarse para ofrecer el mismo rendimiento que si se usara un esquema explícito. Consulte [&quot;Uso de indicaciones de tipo y omisión de rutas&quot;](#using-type-hints-and-skipping-paths) para obtener más detalles.
 </Info>
 
 El esquema para una única columna JSON aquí es sencillo:
 
 ```sql
-SET enable_json_type = 1;
-
 CREATE TABLE people
 (
     `json` JSON(username String)
@@ -529,6 +525,10 @@ ORDER BY json.username;
 
 <Note>
   Proporcionamos una [indicación de tipo](#using-type-hints-and-skipping-paths) para la columna `username` en la definición JSON, ya que la usamos en la clave de ordenación/clave primaria. Esto ayuda a ClickHouse a saber que esta columna no será NULL y garantiza que sepa qué subcolumna `username` debe usar (puede haber varias para cada tipo, por lo que, de lo contrario, sería ambiguo).
+</Note>
+
+<Note>
+  En las versiones 24.8 a 25.2, active el tipo `JSON` con `SET allow_experimental_json_type = 1;` antes de crear la tabla.
 </Note>
 
 La inserción de filas en la tabla anterior puede realizarse usando el formato `JSONAsObject`:

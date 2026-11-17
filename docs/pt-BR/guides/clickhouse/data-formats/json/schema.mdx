@@ -502,23 +502,19 @@ Um esquema rígido tem vários benefícios:
 * **Evita o risco de explosão de colunas** - Embora o tipo JSON possa escalar para potencialmente milhares de colunas, em que as subcolunas são armazenadas como colunas dedicadas, isso pode levar a uma explosão de arquivos de coluna, na qual um número excessivo desses arquivos é criado, impactando o desempenho. Para mitigar isso, o [tipo Dynamic](/pt-BR/reference/data-types/dynamic) subjacente usado pelo JSON oferece um parâmetro [`max_dynamic_paths`](/pt-BR/reference/data-types/newjson#reading-json-paths-as-sub-columns), que limita o número de caminhos únicos armazenados como arquivos de coluna separados. Quando esse limite é atingido, caminhos adicionais são armazenados em um arquivo de coluna compartilhado usando um formato compacto codificado, mantendo o desempenho e a eficiência de armazenamento, ao mesmo tempo em que oferece suporte à ingestão flexível de dados. No entanto, acessar esse arquivo de coluna compartilhado não oferece o mesmo desempenho. Observe, porém, que a coluna JSON pode ser usada com [indicações de tipo](#using-type-hints-and-skipping-paths). Colunas com indicação de tipo terão o mesmo desempenho que colunas dedicadas.
 * **Introspecção mais simples de caminhos e tipos** - Embora o tipo JSON ofereça suporte a [funções de introspecção](/pt-BR/reference/data-types/newjson#introspection-functions) para determinar os tipos e caminhos inferidos, estruturas estáticas podem ser mais simples de explorar, por exemplo, com `DESCRIBE`.
 
-<div id="single-json-column">
-  ### Coluna JSON única {#single-json-column}
-</div>
+### Coluna JSON única {#single-json-column}
 
 Essa abordagem é útil para prototipagem e tarefas de engenharia de dados. Em produção, tente usar `JSON` apenas para subestruturas dinâmicas, quando necessário.
 
 <Info>
   **Considerações de desempenho**
 
-  Uma única coluna JSON pode ser otimizada ignorando (ou seja, sem armazenar) caminhos JSON que não são necessários e usando [type hints](#using-type-hints-and-skipping-paths). Os type hints permitem que o usuário defina explicitamente o tipo de uma subcoluna, evitando a inferência e o processamento de indireção no momento da consulta. Isso pode ser usado para obter o mesmo desempenho de um esquema explícito. Consulte [&quot;Usando type hints e ignorando caminhos&quot;](#using-type-hints-and-skipping-paths) para mais detalhes.
+  Uma única coluna JSON pode ser otimizada ignorando (ou seja, sem armazenar) caminhos JSON que não são necessários e usando [type hints](#using-type-hints-and-skipping-paths). Os type hints permitem que o usuário defina explicitamente o tipo de uma subcoluna, evitando a inferência e o processamento de indireção no momento da execução da consulta. Isso pode ser usado para obter o mesmo desempenho de um esquema explícito. Consulte [&quot;Usando type hints e ignorando caminhos&quot;](#using-type-hints-and-skipping-paths) para mais detalhes.
 </Info>
 
 O esquema de uma única coluna JSON aqui é simples:
 
 ```sql
-SET enable_json_type = 1;
-
 CREATE TABLE people
 (
     `json` JSON(username String)
@@ -529,6 +525,10 @@ ORDER BY json.username;
 
 <Note>
   Fornecemos uma [type hint](#using-type-hints-and-skipping-paths) para a coluna `username` na definição do JSON, pois a usamos na chave de ordenação/chave primária. Isso ajuda o ClickHouse a saber que essa coluna não poderá ser nula e garante que ele saiba qual subcoluna de `username` usar (pode haver várias para cada tipo, então, caso contrário, isso seria ambíguo).
+</Note>
+
+<Note>
+  Nas versões 24.8 a 25.2, habilite o tipo `JSON` com `SET allow_experimental_json_type = 1;` antes de criar a tabela.
 </Note>
 
 É possível inserir linhas na tabela acima usando o formato `JSONAsObject`:

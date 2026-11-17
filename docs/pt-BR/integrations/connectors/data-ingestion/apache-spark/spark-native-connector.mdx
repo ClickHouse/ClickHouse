@@ -882,7 +882,7 @@ PySpark ou shell.
 ## Trabalhando com VariantType {#working-with-varianttype}
 
 <Note>
-  O suporte a VariantType está disponível no Spark 4.0+ e requer o ClickHouse 25.3+ com os tipos JSON/Variant experimentais habilitados.
+  O suporte a VariantType está disponível no Spark 4.0+ e requer o ClickHouse 25.3+, versão em que os tipos `JSON` e `Variant` estão prontos para produção e habilitados por padrão.
 </Note>
 
 O conector oferece suporte ao `VariantType` do Spark para trabalhar com dados semiestruturados. O VariantType é mapeado para os tipos `JSON` e `Variant` do ClickHouse, permitindo armazenar e consultar com eficiência dados com esquema flexível.
@@ -1216,10 +1216,9 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
 
 1. **Use o tipo JSON para dados exclusivamente em JSON**: Se você armazena apenas objetos JSON, use o tipo JSON padrão (sem a propriedade `variant_types`)
 2. **Especifique os tipos explicitamente**: Ao usar `Variant()`, liste explicitamente todos os tipos que você pretende armazenar
-3. **Habilite recursos experimentais**: Verifique se o ClickHouse está com `allow_experimental_json_type = 1` habilitado
-4. **Use o formato JSON para escritas**: O formato JSON é recomendado para dados do VariantType, por oferecer melhor compatibilidade
-5. **Considere os padrões de consulta**: Os tipos JSON/Variant oferecem suporte às consultas de caminho JSON do ClickHouse para uma filtragem eficiente
-6. **Column hints para desempenho**: Ao usar campos JSON no ClickHouse, adicionar column hints melhora o desempenho da consulta. No momento, não há suporte para adicionar column hints via Spark. Consulte a [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497) para acompanhar esse recurso.
+3. **Use o formato JSON para escritas**: O formato JSON é recomendado para dados do VariantType, por oferecer melhor compatibilidade
+4. **Considere os padrões de consulta**: Os tipos JSON/Variant oferecem suporte às consultas de caminho JSON do ClickHouse para uma filtragem eficiente
+5. **Column hints para desempenho**: Ao usar campos JSON no ClickHouse, adicionar column hints melhora o desempenho da consulta. No momento, não há suporte para adicionar column hints via Spark. Consulte a [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497) para acompanhar esse recurso.
 
 ### Exemplo: Fluxo de trabalho completo {#varianttype-example-workflow}
 
@@ -1228,10 +1227,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
     ```scala
     import org.apache.spark.sql.functions._
 
-    // Habilitar o tipo JSON experimental no ClickHouse
-    spark.sql("SET allow_experimental_json_type = 1")
-
-    // Criar tabela com coluna Variant
+    // Create table with Variant column
     spark.sql("""
       CREATE TABLE clickhouse.default.events (
         event_id BIGINT,
@@ -1245,14 +1241,14 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
       )
     """)
 
-    // Preparar dados com tipos mistos
+    // Prepare data with mixed types
     val events = Seq(
       (1L, "2024-01-01 10:00:00", """{"action": "login", "user_id": 123}"""),
       (2L, "2024-01-01 10:05:00", """{"action": "purchase", "amount": 99.99}"""),
       (3L, "2024-01-01 10:10:00", """{"action": "logout", "duration": 600}""")
     ).toDF("event_id", "event_time", "json_data")
 
-    // Converter para VariantType e gravar
+    // Convert to VariantType and write
     val variantEvents = events.select(
       col("event_id"),
       to_timestamp(col("event_time")).as("event_time"),
@@ -1261,7 +1257,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
 
     variantEvents.writeTo("clickhouse.default.events").append()
 
-    // Ler e consultar
+    // Read and query
     val result = spark.sql("""
       SELECT event_id, event_time, event_data
       FROM clickhouse.default.events
@@ -1277,10 +1273,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
     ```python
     from pyspark.sql.functions import parse_json, to_timestamp
 
-    # Habilitar o tipo JSON experimental no ClickHouse
-    spark.sql("SET allow_experimental_json_type = 1")
-
-    # Criar tabela com coluna Variant
+    # Create table with Variant column
     spark.sql("""
       CREATE TABLE clickhouse.default.events (
         event_id BIGINT,
@@ -1294,7 +1287,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
       )
     """)
 
-    # Preparar dados com tipos mistos
+    # Prepare data with mixed types
     events = [
         (1, "2024-01-01 10:00:00", '{"action": "login", "user_id": 123}'),
         (2, "2024-01-01 10:05:00", '{"action": "purchase", "amount": 99.99}'),
@@ -1302,7 +1295,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
     ]
     df = spark.createDataFrame(events, ["event_id", "event_time", "json_data"])
 
-    # Converter para VariantType e gravar
+    # Convert to VariantType and write
     variant_events = df.select(
         "event_id",
         to_timestamp("event_time").alias("event_time"),
@@ -1311,7 +1304,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
 
     variant_events.writeTo("clickhouse.default.events").append()
 
-    # Ler e consultar
+    # Read and query
     result = spark.sql("""
       SELECT event_id, event_time, event_data
       FROM clickhouse.default.events
@@ -1327,10 +1320,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
     ```java
     import static org.apache.spark.sql.functions.*;
 
-    // Habilitar o tipo JSON experimental no ClickHouse
-    spark.sql("SET allow_experimental_json_type = 1");
-
-    // Criar tabela com coluna Variant
+    // Create table with Variant column
     spark.sql("CREATE TABLE clickhouse.default.events (" +
         "event_id BIGINT, " +
         "event_time TIMESTAMP, " +
@@ -1342,7 +1332,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
         "'order_by' = 'event_time'" +
         ")");
 
-    // Preparar dados com tipos mistos
+    // Prepare data with mixed types
     List<Row> events = Arrays.asList(
         RowFactory.create(1L, "2024-01-01 10:00:00", "{\"action\": \"login\", \"user_id\": 123}"),
         RowFactory.create(2L, "2024-01-01 10:05:00", "{\"action\": \"purchase\", \"amount\": 99.99}"),
@@ -1355,7 +1345,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
     });
     Dataset<Row> eventsDF = spark.createDataFrame(events, eventSchema);
 
-    // Converter para VariantType e gravar
+    // Convert to VariantType and write
     Dataset<Row> variantEvents = eventsDF.select(
         col("event_id"),
         to_timestamp(col("event_time")).as("event_time"),
@@ -1364,7 +1354,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
 
     variantEvents.writeTo("clickhouse.default.events").append();
 
-    // Ler e consultar
+    // Read and query
     Dataset<Row> result = spark.sql("SELECT event_id, event_time, event_data " +
         "FROM clickhouse.default.events " +
         "WHERE event_time >= '2024-01-01' " +
