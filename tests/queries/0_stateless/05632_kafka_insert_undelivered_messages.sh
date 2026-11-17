@@ -85,6 +85,7 @@ echo "killed: $($CLICKHOUSE_CLIENT -q "SELECT count() = 0 FROM system.processes 
 wait
 echo "cancelled: $(grep -m1 -c QUERY_WAS_CANCELLED "${CLICKHOUSE_TMP}/${name}_kill.out")"
 
+# A single message fits in the queue, so the INSERT waits in the final flush.
 SECONDS=0
-timeout_out=$($CLICKHOUSE_CLIENT --max_execution_time 1 --timeout_overflow_mode throw -q "INSERT INTO ${name}_kill VALUES (1), (2)" 2>&1)
+timeout_out=$($CLICKHOUSE_CLIENT --max_execution_time 1 --timeout_overflow_mode throw -q "INSERT INTO ${name}_kill VALUES (1)" 2>&1)
 echo "timeout: $(grep -m1 -c TIMEOUT_EXCEEDED <<< "$timeout_out"), within 15 s: $((SECONDS < 15))"
