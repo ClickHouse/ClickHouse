@@ -1,0 +1,27 @@
+---- function exists and forwards arg0 ----
+42
+1
+2
+3
+---- setting enable_alias_marker exists ----
+enable_alias_marker	Bool
+---- lambda over Distributed: no LOGICAL_ERROR ----
+plan=0
+[1]
+[2]
+[3]
+plan=1
+[1]
+[2]
+[3]
+---- arg2 materialized as action-node-name across mergeable-state stages ----
+with_mergeable_state: arg2_materialized
+with_mergeable_state_after_aggregation: arg2_materialized
+with_mergeable_state_after_aggregation_and_limit: arg2_materialized
+---- non-analyzer path rejects __aliasMarker ----
+expected_rejection
+---- enable_alias_marker=0 disables marker injection ----
+marker_on:
+true	false	1
+marker_off:
+1	true	false
