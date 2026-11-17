@@ -224,6 +224,14 @@ TEST(TerminalMarkdownRenderer, MintlifyCardKeepsTitleAndContent)
         "Looking for a guide?\nCheck out the JSON guide.\n");
 }
 
+TEST(TerminalMarkdownRenderer, MintlifyAccordionKeepsTitleAndContent)
+{
+    EXPECT_EQ(
+        plainRenderer().render("<Accordion title=\"Implementation details\">\nBody.\n</Accordion>"),
+        "Implementation details\nBody.\n");
+    EXPECT_EQ(plainRenderer().render("Before.\n\n<Frame>\nInside.\n</Frame>\n\nAfter."), "Before.\n\nInside.\n\nAfter.\n");
+}
+
 TEST(TerminalMarkdownRenderer, SelfClosingComponentIsDropped)
 {
     /// A self-closing component with no matching `import` is unknown, so it is simply dropped (see

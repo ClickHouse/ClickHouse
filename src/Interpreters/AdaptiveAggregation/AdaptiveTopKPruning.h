@@ -5,6 +5,7 @@
 #include <limits>
 #include <memory>
 #include <span>
+#include <utility>
 #include <vector>
 
 #include <base/defines.h>
@@ -176,6 +177,9 @@ public:
         UInt64 & bound = bounds[bucketCountBin(hash)];
         bound = count > std::numeric_limits<UInt64>::max() - bound ? std::numeric_limits<UInt64>::max() : bound + count;
     }
+
+    /// Takes the producers' finished bins out, to be freed once the merge has bounded its last bucket.
+    std::vector<AdaptiveTopKCountBins> takeProducerBins() { return std::exchange(producer_bins, {}); }
 
     /// Selects what the merge does with unit `unit` of the `units` that split the bucket, each a run of its partitions
     /// and so of its bins, at the merge's threshold of the moment, `threshold`: a bin can hold a group of the

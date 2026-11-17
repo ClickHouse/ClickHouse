@@ -350,6 +350,9 @@ class QueryMetadataCache;
 class CursorTreeNode;
 using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 
+/// The cursor that a bounded streaming read of a `MergeTree` table (`STREAM BOUNDED`) advanced to.
+/// It exists only for the incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`), which
+/// persists it to resume the next refresh. Other streaming queries must not rely on it.
 struct StreamingCursor
 {
     std::mutex mutex;
@@ -798,6 +801,7 @@ protected:
     mutable std::mutex sample_block_cache_mutex;
 
     QueryMetadataCacheWeakPtr query_metadata_cache;
+    QueryPlanLogCapturePtr query_plan_log_capture;
 
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
@@ -972,6 +976,9 @@ public:
     void setUserFilesPath(const String & path);
     void setUserScriptsPath(const String & path);
     void setDynamicUserDefinedExecutableFunctionsPath(const String & path);
+
+    void enablePlanLogCapture();
+    QueryPlanLogCapturePtr getPlanLogCapture() const;
 
     void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);
     void setTemporaryStoragePolicy(const String & policy_name, size_t max_size);
