@@ -13,6 +13,7 @@
 
 
 #include "Poco/Net/SecureSocketImpl.h"
+#include "Poco/Net/NonBlockingFilterBIO.h"
 #include "Poco/Net/SSLException.h"
 #include "Poco/Net/Context.h"
 #include "Poco/Net/Utility.h"
@@ -25,6 +26,7 @@
 #include "Poco/NumberFormatter.h"
 #include "Poco/NumberParser.h"
 #include "Poco/Format.h"
+#include <algorithm>
 #include <cerrno>
 #include <openssl/x509v3.h>
 #include <openssl/err.h>
@@ -364,7 +366,10 @@ void SecureSocketImpl::shutdown()
 	ScopedLock lock(*_mutex);
 	if (_pSSL)
 	{
-		if (_fatalError)
+		/// After a non-blocking send, the connection is broken when encrypted bytes are still queued
+		/// or the transport holds a send error: a `close_notify` would wait for the send timeout.
+		const bool brokenByNonBlockingSend = _nonBlockingFilter && (_nonBlockingFilter->hasQueued() || holdsSendError());
+		if (_fatalError || brokenByNonBlockingSend)
 		{
 			/// OpenSSL forbids `SSL_shutdown` after a fatal TLS or syscall error.
 			/// https://docs.openssl.org/3.5/man3/SSL_shutdown/
@@ -527,6 +532,172 @@ int SecureSocketImpl::available() const
 	poco_check_ptr (_pSSL);
 
 	return SSL_pending(_pSSL);
+}
+
+
+NonBlockingFilterBIO& SecureSocketImpl::nonBlockingFilter()
+{
+	if (!_pSSL || _needHandshake)
+		throw Poco::IllegalStateException("The non-blocking calls of a TLS socket need a complete handshake");
+	if (_fatalError)
+		throw SSLException("The TLS connection is broken after a fatal error");
+	if (!_nonBlockingFilter)
+		_nonBlockingFilter = &NonBlockingFilterBIO::install(_pSSL, *_pSocket);
+	return *_nonBlockingFilter;
+}
+
+
+bool SecureSocketImpl::holdsSendError() const
+{
+	return _pSocket->_heldSendError != 0;
+}
+
+
+int SecureSocketImpl::waitForSendOrReceive(Poco::Timespan& timeout, int mode)
+{
+	ScopedLock lock(*_mutex);
+	if ((mode & (SocketImpl::SELECT_READ | SocketImpl::SELECT_WRITE)) == 0)
+		throw InvalidArgumentException("waitForSendOrReceive needs SELECT_READ, SELECT_WRITE or both");
+	nonBlockingFilter();
+
+	const bool wantSend = (mode & SocketImpl::SELECT_WRITE) != 0;
+	const bool wantReceive = (mode & SocketImpl::SELECT_READ) != 0;
+	/// A write that wants to read can go on only when data from the peer arrives.
+	const bool sendWaitsForData = wantSend && _nowWriteLength != 0;
+
+	/// `SSL_has_pending` is not used: it is also true for a part of a record, which cannot be
+	/// read before the rest arrives, and the caller would not wait at all.
+	if (wantReceive && SSL_pending(_pSSL) > 0)
+	{
+		int ready = SocketImpl::SELECT_READ;
+		if (wantSend)
+		{
+			Poco::Timespan noWait(0);
+			if (_pSocket->waitForSendOrReceive(noWait, sendWaitsForData ? SocketImpl::SELECT_READ : SocketImpl::SELECT_WRITE))
+				ready |= SocketImpl::SELECT_WRITE;
+		}
+		return ready;
+	}
+
+	int socketMode = 0;
+	if (wantReceive || sendWaitsForData)
+		socketMode |= SocketImpl::SELECT_READ;
+	if (wantSend && !sendWaitsForData)
+		socketMode |= SocketImpl::SELECT_WRITE;
+	const int socketReady = _pSocket->waitForSendOrReceive(timeout, socketMode);
+
+	int ready = 0;
+	if ((socketReady & SocketImpl::SELECT_READ) && wantReceive)
+		ready |= SocketImpl::SELECT_READ;
+	if ((socketReady & SocketImpl::SELECT_READ) && sendWaitsForData)
+		ready |= SocketImpl::SELECT_WRITE;
+	if (socketReady & SocketImpl::SELECT_WRITE)
+		ready |= SocketImpl::SELECT_WRITE;
+	return ready;
+}
+
+
+int SecureSocketImpl::sendNow(const void* buffer, int length)
+{
+	ScopedLock lock(*_mutex);
+	if (length <= 0)
+		throw InvalidArgumentException("sendNow needs a positive length");
+	NonBlockingFilterBIO& filter = nonBlockingFilter();
+	if (holdsSendError())
+		return -1;
+
+	NonBlockingFilterBIO::NonBlockingScope scope(filter);
+	/// New data waits until the queue is empty, so that the queue holds at most one record.
+	if (!filter.sendQueued())
+		return 0;
+	if (holdsSendError())
+		return -1;
+
+	const int writeLength = _nowWriteLength != 0 ? _nowWriteLength : std::min(length, SSL3_RT_MAX_PLAIN_LENGTH);
+	if (writeLength > length)
+		throw Poco::IllegalStateException("sendNow must repeat a write that wants to read with at least the same length");
+
+	SSLOperationResult result = performSSLOperation(_pSSL, [this, buffer, writeLength]
+	{
+		return SSL_write(_pSSL, buffer, writeLength);
+	});
+	try
+	{
+		filter.rethrowCaught();
+	}
+	catch (...)
+	{
+		_fatalError = true;
+		throw;
+	}
+
+	if (result.rc > 0)
+	{
+		_nowWriteLength = 0;
+		/// The filter dropped the bytes after a send error of the transport.
+		return holdsSendError() ? -1 : result.rc;
+	}
+	if (result.sslError == SSL_ERROR_WANT_READ)
+	{
+		_nowWriteLength = writeLength;
+		return 0;
+	}
+	const int rc = handleError(result.rc, result.sslError, result.socketError, result.errorCode);
+	if (rc == 0)
+		throw SSLConnectionUnexpectedlyClosedException();
+	/// The filter never asks OpenSSL to repeat a write in the non-blocking mode.
+	throw Poco::IllegalStateException("SSL_write of sendNow wants to write again");
+}
+
+
+int SecureSocketImpl::receiveNow(void* buffer, int length)
+{
+	ScopedLock lock(*_mutex);
+	if (length <= 0)
+		throw InvalidArgumentException("receiveNow needs a positive length");
+	if (_nowReceiveEnded)
+		return -1;
+	NonBlockingFilterBIO& filter = nonBlockingFilter();
+
+	NonBlockingFilterBIO::NonBlockingScope scope(filter);
+	SSLOperationResult result = performSSLOperation(_pSSL, [this, buffer, length]
+	{
+		return SSL_read(_pSSL, buffer, length);
+	});
+	try
+	{
+		filter.rethrowCaught();
+	}
+	catch (...)
+	{
+		_fatalError = true;
+		throw;
+	}
+
+	if (result.rc > 0)
+		return result.rc;
+	switch (result.sslError)
+	{
+	case SSL_ERROR_WANT_READ:
+	case SSL_ERROR_WANT_WRITE:
+		return 0;
+	case SSL_ERROR_ZERO_RETURN:
+		/// `close_notify`, or the end of the stream: the context sets `SSL_OP_IGNORE_UNEXPECTED_EOF`.
+		_nowReceiveEnded = true;
+		return -1;
+	default:
+		/// Throws, except for a server that ignores a peer that closed without `close_notify`.
+		handleError(result.rc, result.sslError, result.socketError, result.errorCode);
+		_nowReceiveEnded = true;
+		return -1;
+	}
+}
+
+
+void SecureSocketImpl::throwHeldSendError()
+{
+	ScopedLock lock(*_mutex);
+	_pSocket->throwHeldSendError();
 }
 
 
@@ -850,6 +1021,10 @@ void SecureSocketImpl::reset()
 		SSL_free(_pSSL);
 		_pSSL = nullptr;
 	}
+	/// The filter was freed with the BIO of `_pSSL`.
+	_nonBlockingFilter = nullptr;
+	_nowWriteLength = 0;
+	_nowReceiveEnded = false;
 	_fatalError = false;
 }
 
