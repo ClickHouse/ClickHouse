@@ -1498,6 +1498,7 @@ bool MergeTreeDataSelectExecutor::analyzeSinglePart(
 
         /// in a disjunction the indexes exclude granules together in the merge below
         std::vector<size_t> indexes_without_own_drops;
+        size_t total_granules = ranges.ranges.getNumberOfMarks();
 
         for (size_t idx = 0; idx < num_indexes; ++idx)
         {
@@ -1512,7 +1513,6 @@ bool MergeTreeDataSelectExecutor::analyzeSinglePart(
             auto & stat = skip_index_stats[idx];
 
             stat.total_parts.fetch_add(1, std::memory_order_relaxed);
-            size_t total_granules = ranges.ranges.getNumberOfMarks();
             stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
 
             if (auto index_result = can_use_index(index_and_condition.index); !index_result)
@@ -1545,6 +1545,7 @@ bool MergeTreeDataSelectExecutor::analyzeSinglePart(
             }
 
             stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
+            total_granules = ranges.ranges.getNumberOfMarks();
             if (ranges.ranges.empty())
                 stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
             stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
@@ -1553,12 +1554,11 @@ bool MergeTreeDataSelectExecutor::analyzeSinglePart(
 
         if (rpn_template_for_part)
         {
-            const size_t marks_before_merge = ranges.ranges.getNumberOfMarks();
             ranges.ranges = mergePartialResultsForDisjunctions(*part_for_skip_indexes,
                                 ranges.ranges, *rpn_template_for_part,
                                 partial_eval_results, reader_settings, log);
 
-            if (ranges.ranges.getNumberOfMarks() < marks_before_merge)
+            if (ranges.ranges.getNumberOfMarks() < total_granules)
                 for (size_t index_idx : indexes_without_own_drops)
                     stats.used_skip_indexes[index_idx] = true;
 
