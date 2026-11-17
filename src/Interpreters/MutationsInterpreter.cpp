@@ -1,4 +1,6 @@
 #include <Core/Settings.h>
+#include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -312,41 +314,6 @@ Block executeQueryAffected(
     return block;
 }
 
-/// Calculates the number of rows of the part deleted by each command, and returns a vector of the counts. It is used when the part
-/// has no lightweight delete, so all rows of the part exist, and `count()` is answered from the metadata of the part without
-/// reading its data when possible, e.g. for a constant condition or a condition on the primary key.
-/// The counts stop once all rows are deleted, because the remaining commands delete no rows.
-std::vector<UInt64> countDeletedRowsByCommandPrefixes(
-    MergeTreeData::DataPartPtr source_part,
-    const StoragePtr & storage_from_part,
-    const std::vector<MutationCommand> & commands,
-    ContextPtr context,
-    const std::function<void(const Progress & value)> & check_operation_is_not_cancelled,
-    const std::function<void()> & on_exception)
-{
-    std::vector<UInt64> deleted_rows_by_command(commands.size(), 0);
-    const UInt64 rows_count = source_part->rows_count;
-    UInt64 deleted_by_previous_commands = 0;
-    for (size_t i = 0; i < commands.size() && deleted_by_previous_commands < rows_count; ++i)
-    {
-        UInt64 deleted_by_commands = rows_count;
-        if (i + 1 < commands.size())
-        {
-            std::vector<MutationCommand> first_commands(commands.begin(), commands.begin() + i + 1);
-            auto count_query_tree = prepareQueryAffectedQueryTree(first_commands, storage_from_part, context);
-            Block block = executeQueryAffected(count_query_tree, context, check_operation_is_not_cancelled, on_exception, "count()");
-            deleted_by_commands = block.rows() ? (*block.getByName("count()").column)[0].safeGet<UInt64>() : 0;
-        }
-
-        chassert(deleted_by_previous_commands <= deleted_by_commands && deleted_by_commands <= rows_count,
-            "The rows deleted by the first commands must not decrease and must not exceed the rows of the part");
-
-        deleted_rows_by_command[i] = deleted_by_commands - deleted_by_previous_commands;
-        deleted_by_previous_commands = deleted_by_commands;
-    }
-    return deleted_rows_by_command;
-}
-
 NameSet getColumnsRequiredToRecalculateTTL(const StorageInMemoryMetadata & metadata)
 {
     NameSet res;
@@ -501,8 +468,33 @@ std::vector<UInt64> countDeletedRowsByCommands(
 
     auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part, mutations_snapshot);
 
+    /// Without a lightweight delete, all rows of the part exist, so the rows are counted without reading the part: one command deletes
+    /// all of them, and so does the first of several commands whose conditions are all constant. Otherwise counting would need to read
+    /// the part, so the rows of the part are not counted, and all counts are 0.
     if (!has_lightweight_delete)
-        return countDeletedRowsByCommandPrefixes(source_part, storage_from_part, commands, context, check_operation_is_not_cancelled, on_exception);
+    {
+        if (commands.size() == 1)
+        {
+            deleted_rows_by_command[0] = source_part->rows_count;
+            return deleted_rows_by_command;
+        }
+
+        std::optional<size_t> first_deleting_command;
+        for (size_t i = 0; i < commands.size(); ++i)
+        {
+            auto condition = getPartitionAndPredicateExpressionForMutationCommand(commands[i].ast().get(), storage_from_part, context);
+            if (!condition || !IdentifiersCollector::collect(condition).empty())
+                return std::vector<UInt64>(commands.size(), 0);
+
+            auto deletes_rows = makeASTFunction("not", makeASTFunction("isZeroOrNull", std::move(condition)));
+            if (!first_deleting_command && evaluateConstantExpressionAsColumn(deletes_rows, context).getUInt())
+                first_deleting_command = i;
+        }
+
+        if (first_deleting_command)
+            deleted_rows_by_command[*first_deleting_command] = source_part->rows_count;
+        return deleted_rows_by_command;
+    }
 
     /// With a lightweight delete, the rows already deleted must not be counted, so the rows of the part are read with the
     /// lightweight delete mask, and the rows deleted by each command are counted in one query.

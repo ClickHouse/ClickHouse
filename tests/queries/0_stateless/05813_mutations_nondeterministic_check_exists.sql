@@ -1,5 +1,6 @@
--- Tags: zookeeper, no-shared-catalog
+-- Tags: zookeeper, no-shared-catalog, no-shared-merge-tree
 -- no-shared-catalog: STOP MERGES will only stop them on the current replica, the second one will continue to merge
+-- no-shared-merge-tree: only `ReplicatedMergeTree` rejects nondeterministic mutations without `allow_nondeterministic_mutations`
 
 -- A mutation whose condition has `exists((subquery))` is a mutation with a subquery, the same as one with `IN (subquery)`.
 -- Where mutations with a subquery are rejected, i.e. on replicated tables without `allow_nondeterministic_mutations`

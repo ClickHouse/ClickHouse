@@ -53,8 +53,9 @@ IsStorageTouched isStorageTouchedByMutations(
 );
 
 /// Returns the number of rows of the part deleted by each `DELETE` command, attributed to the first command that deletes the row.
-/// If the part has no lightweight delete, the counts are calculated by `count()` queries that are answered without reading the part
-/// data if possible. `on_exception` is the same as for `isStorageTouchedByMutations`.
+/// It is called only when the commands delete all rows of the part. If the part has no lightweight delete, the part is not read: the
+/// rows are counted for one command, or for the first true one of several constant conditions, and are not counted (all 0) otherwise.
+/// `on_exception` is the same as for `isStorageTouchedByMutations`.
 std::vector<UInt64> countDeletedRowsByCommands(
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,

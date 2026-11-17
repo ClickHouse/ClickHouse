@@ -36,8 +36,8 @@ t_wide	Wide
 t_compact	3
 t_wide	3
 -- all rows batch
-6
-4
+0
+0
 0
 empty part	1
 -- constant batch
@@ -67,4 +67,13 @@ empty part	1
 (DELETE WHERE id < 3)	3
 (DELETE WHERE exists((SELECT * FROM system.one)))	7
 (DELETE WHERE 0)	0
+0
+-- non-key conditions
+(DELETE WHERE v = 0)	0
+(DELETE WHERE v = 1)	0
+(DELETE WHERE v = 2)	0
+(DELETE WHERE v = 0)	0
+(DELETE WHERE 1)	0
+(DELETE WHERE 0)	0
+empty part	1
 0

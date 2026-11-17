@@ -141,8 +141,8 @@ SELECT table, affected_rows FROM system.mutations WHERE database = currentDataba
 DROP TABLE t_wide;
 DROP TABLE t_compact;
 
--- 13. All rows of the part are deleted by several mutations applied together: the part is replaced by an empty one, and the rows
--- are counted for the first mutation that deletes them
+-- 13. All rows of the part are deleted by several mutations applied together: the part is replaced by an empty one without reading
+-- it. A known limitation: the conditions are not constant, so the rows of the part are not counted, and all mutations report 0
 SELECT '-- all rows batch';
 DROP TABLE IF EXISTS t_all_rows_batch;
 CREATE TABLE t_all_rows_batch (id UInt64) ENGINE = MergeTree ORDER BY id;
@@ -241,3 +241,23 @@ ALTER TABLE t_exists DELETE WHERE 0 SETTINGS mutations_sync = 1;
 SELECT command, affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_exists' ORDER BY toUInt64(extract(mutation_id, '\\d+'));
 SELECT count() FROM t_exists;
 DROP TABLE t_exists;
+
+-- 21. Several conditions on a column out of the keys delete all rows of the part together, also a constant one. A known limitation:
+-- not all conditions are constant, so the rows of the part are not counted, and all commands report 0
+SELECT '-- non-key conditions';
+DROP TABLE IF EXISTS t_non_key;
+CREATE TABLE t_non_key (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_non_key SELECT number, number % 10 FROM numbers(20);
+SYSTEM STOP MERGES t_non_key;
+ALTER TABLE t_non_key DELETE WHERE v = 0;
+ALTER TABLE t_non_key DELETE WHERE v = 1;
+ALTER TABLE t_non_key DELETE WHERE v = 2;
+ALTER TABLE t_non_key DELETE WHERE v = 0;
+ALTER TABLE t_non_key DELETE WHERE 1;
+SYSTEM START MERGES t_non_key;
+ALTER TABLE t_non_key DELETE WHERE 0 SETTINGS mutations_sync = 1;
+SELECT command, affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_non_key' ORDER BY toUInt64(extract(mutation_id, '\\d+'));
+SYSTEM FLUSH LOGS part_log;
+SELECT 'empty part', sum(ProfileEvents['MutationCreatedEmptyParts']) FROM system.part_log WHERE event_date >= yesterday() AND database = currentDatabase() AND table = 't_non_key' AND event_type = 'MutatePart';
+SELECT count() FROM t_non_key;
+DROP TABLE t_non_key;
