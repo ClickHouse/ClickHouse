@@ -268,4 +268,103 @@ void forgetTask(const String & endpoint_uri, const String & task_id, const Conte
     readStringUntilEOF(s, *in);
 }
 
+namespace
+{
+
+/// Sends `operation` with the task ids in the body. A teardown request is sent although the query can already be killed.
+std::unique_ptr<ReadWriteBufferFromHTTP> sendTaskIds(const String & endpoint_uri, const String & operation, const Strings & task_ids,
+    std::optional<UInt32> wait_for_ms, const ConnectionTimeouts & timeouts, const ReadSettings & read_settings, bool for_teardown,
+    const ContextPtr & context)
+{
+    auto credentials = context->getInterserverCredentials();
+    Poco::Net::HTTPBasicCredentials creds{};
+    if (!credentials->getUser().empty())
+    {
+        creds.setUsername(credentials->getUser());
+        creds.setPassword(credentials->getPassword());
+    }
+
+    Poco::URI uri(endpoint_uri);
+    uri.addQueryParameter("operation", operation);
+    uri.addQueryParameter("compress", "false");
+    if (wait_for_ms)
+        uri.addQueryParameter("wait_for_ms", std::to_string(*wait_for_ms));
+
+    auto builder = BuilderRWBufferFromHTTP(uri);
+    builder.withConnectionGroup(HTTPConnectionGroupType::HTTP)
+        .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+        .withTimeouts(timeouts)
+        .withSettings(read_settings)
+        .withOutCallback([&task_ids](WriteBuffer & out) { writeTaskIds(task_ids, out); })
+        .withDelayInit(false);
+    if (for_teardown)
+        builder.withoutQueryCancellationCheck();
+    return builder.create(creds);
+}
+
+}
+
+std::vector<DistributedQueryTaskStatusEntry> getTaskStatuses(const String & endpoint_uri, const Strings & task_ids, UInt32 wait_for_ms,
+    const ContextPtr & context, bool for_cleanup)
+{
+    ConnectionTimeouts timeouts;
+    timeouts.connection_timeout = Poco::Timespan(100 * 1000);
+    ReadSettings read_settings;
+    if (for_cleanup)
+    {
+        timeouts.send_timeout = Poco::Timespan(2 * 1000 * 1000);
+        timeouts.receive_timeout = Poco::Timespan((wait_for_ms + 2000) * 1000);
+        read_settings.http_settings.max_tries = 1;
+    }
+    else
+    {
+        timeouts.send_timeout = Poco::Timespan(100 * 1000 * 1000);
+        timeouts.receive_timeout = Poco::Timespan(100 * 1000 * 1000);
+        /// Retrying is fine: a retry can lose drained log lines, which is accepted.
+        read_settings.http_settings.max_tries = 3;
+        read_settings.http_settings.retry_initial_backoff_ms = 200;
+        read_settings.http_settings.retry_max_backoff_ms = 1000;
+    }
+
+    auto in = sendTaskIds(endpoint_uri, "get_statuses", task_ids, wait_for_ms, timeouts, read_settings, for_cleanup, context);
+    auto entries = readTaskStatuses(*in);
+    if (!in->eof())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected trailing data in a stateless worker statuses response");
+    if (entries.size() != task_ids.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "A stateless worker returned {} statuses for {} tasks", entries.size(), task_ids.size());
+    return entries;
+}
+
+void cancelTasks(const String & endpoint_uri, const Strings & task_ids, const ContextPtr & context)
+{
+    ConnectionTimeouts timeouts;
+    timeouts.connection_timeout = Poco::Timespan(100 * 1000);
+    timeouts.send_timeout = Poco::Timespan(5 * 1000 * 1000);
+    timeouts.receive_timeout = Poco::Timespan(5 * 1000 * 1000);
+    ReadSettings read_settings;
+    /// Safe to retry: idempotent.
+    read_settings.http_settings.max_tries = 3;
+    read_settings.http_settings.retry_initial_backoff_ms = 200;
+    read_settings.http_settings.retry_max_backoff_ms = 1000;
+
+    auto in = sendTaskIds(endpoint_uri, "cancel_tasks", task_ids, {}, timeouts, read_settings, /*for_teardown=*/ true, context);
+    in->ignoreAll();
+}
+
+void forgetTasks(const String & endpoint_uri, const Strings & task_ids, const ContextPtr & context)
+{
+    ConnectionTimeouts timeouts;
+    timeouts.connection_timeout = Poco::Timespan(100 * 1000);
+    timeouts.send_timeout = Poco::Timespan(100 * 1000 * 1000);
+    timeouts.receive_timeout = Poco::Timespan(100 * 1000 * 1000);
+    ReadSettings read_settings;
+    /// Safe to retry: idempotent.
+    read_settings.http_settings.max_tries = 3;
+    read_settings.http_settings.retry_initial_backoff_ms = 200;
+    read_settings.http_settings.retry_max_backoff_ms = 1000;
+
+    auto in = sendTaskIds(endpoint_uri, "forget_tasks", task_ids, {}, timeouts, read_settings, /*for_teardown=*/ true, context);
+    in->ignoreAll();
+}
+
 }
