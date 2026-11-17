@@ -4206,6 +4206,7 @@ div:has(> #ch-product-availability) > #ch-page-ask-row {
 /* Shared top-navigation presentation. Menu-specific rules above only arrange
    products, section headings, icons, and partner captions. */
 :root {
+    --ch-icon: #374151; /* gray-700 */
     --ch-nav-text: #374151;
     --ch-nav-strong: #111827;
     --ch-nav-muted: #6b7280;
@@ -4213,11 +4214,15 @@ div:has(> #ch-product-availability) > #ch-page-ask-row {
     --ch-nav-active: rgba(17, 24, 39, 0.08);
 }
 .dark {
+    --ch-icon: #9ca3af; /* gray-400 */
     --ch-nav-text: #b3b3b3;
     --ch-nav-strong: #ffffff;
     --ch-nav-muted: #a3a3a3;
     --ch-nav-hover: rgba(255, 255, 255, 0.05);
     --ch-nav-active: rgba(255, 255, 255, 0.08);
+}
+.ch-icon {
+    color: var(--ch-icon);
 }
 [role="menu"]:has(> .nav-dropdown-item) {
     border-radius: 8px !important;
