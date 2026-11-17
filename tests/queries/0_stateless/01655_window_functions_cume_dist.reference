@@ -56,3 +56,4 @@
 -- Single-row partition
 3	\N	1
 -- Empty partition
+-- Frame specification should produce an error

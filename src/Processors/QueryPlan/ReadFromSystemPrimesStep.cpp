@@ -1,4 +1,3 @@
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
@@ -42,9 +41,9 @@ Ranges intersectWithPrimesDomain(const Ranges & ranges)
 
 /// We can keep using `Range` however it is very slow, and inside `SourceFromPrimes`, we will doing
 /// lots of ranges access. So, we convert to lightweight `Intervals`.
-VectorWithMemoryTracking<Interval> rangesToIntervals(const Ranges & ranges)
+std::vector<Interval> rangesToIntervals(const Ranges & ranges)
 {
-    VectorWithMemoryTracking<Interval> intervals;
+    std::vector<Interval> intervals;
     intervals.reserve(ranges.size());
 
     for (const auto & range : ranges)
@@ -77,7 +76,7 @@ VectorWithMemoryTracking<Interval> rangesToIntervals(const Ranges & ranges)
 
 /// Maybe this part not needed if KeyCondition already simplifies the intervals.
 /// But let's keep it regardless to be safe from future changes to other components.
-void mergeIntervals(VectorWithMemoryTracking<Interval> & intervals)
+void mergeIntervals(std::vector<Interval> & intervals)
 {
     if (intervals.empty())
         return;
@@ -231,7 +230,7 @@ Pipe ReadFromSystemPrimesStep::makePipe()
     /// so it is only safe when this source already generates only rows that satisfy the filter.)
     auto apply_query_limit = [&] { NumbersLikeUtils::applyQueryLimit(effective_limit, limit); };
 
-    auto intersect_ranges = [&](const Ranges & ranges) -> std::optional<VectorWithMemoryTracking<Interval>>
+    auto intersect_ranges = [&](const Ranges & ranges) -> std::optional<std::vector<Interval>>
     {
         /// Intersect extracted conditions with the primes value domain [2, UInt64::max],
         /// and convert to sorted, non-overlapping inclusive intervals for `SourceFromPrimes` implementations.
@@ -241,7 +240,7 @@ Pipe ReadFromSystemPrimesStep::makePipe()
 
         /// It is cheaper to work with Intervals in SourceFromPrimes than Ranges.
         /// Intervals are just pairs of UInt64.
-        VectorWithMemoryTracking<Interval> intervals = rangesToIntervals(intersected);
+        std::vector<Interval> intervals = rangesToIntervals(intersected);
         if (intervals.empty())
             return std::nullopt;
 
@@ -266,7 +265,7 @@ Pipe ReadFromSystemPrimesStep::makePipe()
         if (effective_limit)
             /// Even if the source LIMIT is small, a large offset or step can still cause the sieve to read many primes, so we check total number of
             /// primes we end up generating here against `max_rows_to_read` to fail fast if the query is not feasible.
-            NumbersLikeUtils::checkLimits(*context, static_cast<size_t>(estimate_rows_to_read(*effective_limit)));
+            NumbersLikeUtils::checkLimits(context->getSettingsRef(), static_cast<size_t>(estimate_rows_to_read(*effective_limit)));
 
         auto source = std::make_shared<PrimesSource>(
             static_cast<UInt64>(max_block_size), primes_storage.offset, effective_limit, primes_storage.step, primes_storage.column_name);
@@ -346,7 +345,7 @@ Pipe ReadFromSystemPrimesStep::makePipe()
     if (effective_limit && (primes_storage.offset > 0 || primes_storage.step > 1))
     {
         chassert(*effective_limit == *primes_storage.limit);
-        NumbersLikeUtils::checkLimits(*context, static_cast<size_t>(estimate_rows_to_read(*effective_limit)));
+        NumbersLikeUtils::checkLimits(context->getSettingsRef(), static_cast<size_t>(estimate_rows_to_read(*effective_limit)));
     }
 
     /// Fallback: generate primes in prime-index space as defined by storage params and apply the full filter later.

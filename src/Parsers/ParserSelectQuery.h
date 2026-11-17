@@ -10,7 +10,7 @@ namespace DB
 class ParserSelectQuery : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "SELECT query"; }
+    const char * getName() const override { return "SELECT query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
     /// If this flag is enabled, it will accept queries without SELECT, e.g. 1 + 2,
@@ -20,8 +20,6 @@ protected:
 
 public:
     explicit ParserSelectQuery(bool implicit_select_ = false) : implicit_select(implicit_select_) {}
-
-    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
 };
 
 /// Parses the body of an ORDER BY clause (everything after the ORDER BY keyword itself):

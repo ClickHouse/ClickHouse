@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeReadTask.h>
-#include <Interpreters/ExpressionActionsSettings.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 
 #include <algorithm>
@@ -53,7 +52,7 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
 
 struct MergeTreeBlockSizePredictor
 {
-    MergeTreeBlockSizePredictor(const MergeTreeDataPartInfoForReaderPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation);
+    MergeTreeBlockSizePredictor(const DataPartPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation);
 
     /// Reset some values for correct statistics calculating
     void startBlock();
@@ -62,13 +61,13 @@ struct MergeTreeBlockSizePredictor
     void update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay = calculateDecay());
 
     /// Return current block size (after update())
-    [[nodiscard]] size_t getBlockSize() const
+    size_t getBlockSize() const
     {
         return block_size_bytes;
     }
 
     /// Predicts what number of rows should be read to exhaust byte quota per column
-    [[nodiscard]] size_t estimateNumRowsForMaxSizeColumn(size_t bytes_quota) const
+    size_t estimateNumRowsForMaxSizeColumn(size_t bytes_quota) const
     {
         /// Below we calculate the following expression: `bytes_quota / max_size_per_row` and then cast its result to size_t.
         /// The problem is that the conversion to double (`max_size_per_row` is double) can overflow size_t if `bytes_quota` is close to `SIZE_MAX`
@@ -85,7 +84,7 @@ struct MergeTreeBlockSizePredictor
     }
 
     /// Predicts what number of rows should be read to exhaust byte quota per block
-    [[nodiscard]] size_t estimateNumRows(size_t bytes_quota) const
+    size_t estimateNumRows(size_t bytes_quota) const
     {
         return (bytes_quota > block_size_bytes)
             ? static_cast<size_t>((bytes_quota - block_size_bytes) / std::max<size_t>(1, static_cast<size_t>(bytes_per_row_current)))
@@ -108,7 +107,7 @@ struct MergeTreeBlockSizePredictor
     static double calculateDecay() { return 1. - std::pow(TARGET_WEIGHT, 1. / NUM_UPDATES_TO_TARGET_WEIGHT); }
 
 protected:
-    MergeTreeDataPartInfoForReaderPtr data_part;
+    DataPartPtr data_part;
 
     struct ColumnInfo
     {
@@ -129,12 +128,6 @@ protected:
     double max_size_per_row_dynamic = 0;
 
     size_t number_of_rows_in_part;
-
-    /// Columns with values of a fixed size that are read from the part, with the size of a value.
-    /// Together with the initial `dynamic_columns_infos` this is the estimation of all columns read from the part.
-    /// Columns that are read only by `PREWHERE` steps are absent from the result block, so when the estimation
-    /// is reinitialized in `update` they are taken from here instead of being dropped.
-    std::vector<std::pair<String, size_t>> fixed_columns_from_part;
 
     bool is_initialized_in_update = false;
     bool allow_subcolumns_sizes_calculation = false;
