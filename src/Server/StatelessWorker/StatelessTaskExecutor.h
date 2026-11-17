@@ -26,7 +26,7 @@ class QueryStatus;
 class StatelessTaskExecutor
 {
 public:
-    StatelessTaskExecutor();
+    explicit StatelessTaskExecutor(size_t max_queries_);
     virtual ~StatelessTaskExecutor() = default;
 
     enum Result
@@ -74,7 +74,8 @@ public:
     Result startTask(const String & unique_task_id, DistributedQueryTaskDescription task, const String & unique_temp_file_path, const TaskCollectors & collectors);
     /// Starts the tasks of a `start_tasks` batch of the query `unique_query_id`, skipping those cancelled before their start or
     /// already started. A task that cannot be scheduled fails the call; the tasks scheduled before it keep running.
-    void startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors);
+    /// Returns false, having started nothing, for a query new on this worker when `max_queries` queries run already.
+    bool startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors);
     TaskStatus getStatus(const String & task_id, UInt64 wait_milliseconds);
     /// Remembers an unknown id: the coordinator sends the starts of a stage concurrently, so a cancel can overtake a start.
     Result cancelTask(const String & task_id);
@@ -161,6 +162,8 @@ private:
     void scheduleTask(const String & unique_task_id, TaskStatePtr task_state, TaskPromisePtr task_promise,
         DistributedQueryTaskDescription task_description_, const String & unique_temp_file_path, OpenTelemetry::TracingContext trace_context_);
 
+    /// The most queries with tasks on this worker; a query holds its slot while it has a `WorkerQueryController`.
+    const size_t max_queries;
     /// A thread for every task, as many as the global thread pool has: a task waiting for its peers holds only its own.
     ThreadPool thread_pool;
 

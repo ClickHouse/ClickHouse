@@ -12,7 +12,7 @@ class StatelessTaskExecutor;
 class StatelessWorkerEndpoint final : public InterserverIOEndpoint, private boost::noncopyable
 {
 public:
-    StatelessWorkerEndpoint();
+    explicit StatelessWorkerEndpoint(size_t max_queries);
     ~StatelessWorkerEndpoint() override;
 
     std::string getId(const std::string & path) const override;

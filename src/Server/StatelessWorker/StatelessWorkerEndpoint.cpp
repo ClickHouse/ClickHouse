@@ -30,10 +30,10 @@ namespace FailPoints
     extern const char stateless_worker_pause_before_start_task[];
 }
 
-StatelessWorkerEndpoint::StatelessWorkerEndpoint()
+StatelessWorkerEndpoint::StatelessWorkerEndpoint(size_t max_queries)
     : endpoint_name("stateless_worker/")
     , log(Poco::Logger::getShared("StatelessWorkerEndpoint"))
-    , task_runner(std::make_shared<StatelessTaskExecutor>())
+    , task_runner(std::make_shared<StatelessTaskExecutor>(max_queries))
 {
 }
 
@@ -398,7 +398,12 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
         /// Holds a start that is on the wire, so a cancel can overtake it.
         FailPointInjection::pauseFailPoint(FailPoints::stateless_worker_pause_before_start_task);
 
-        task_runner->startTasks(unique_query_id, std::move(batch), unique_temp_file_path, collectors);
+        if (!task_runner->startTasks(unique_query_id, std::move(batch), unique_temp_file_path, collectors))
+        {
+            /// The coordinator reads 429 as a busy server (`RECEIVED_ERROR_TOO_MANY_REQUESTS`).
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS);
+            writeString("The stateless worker runs `stateless_worker_server.max_queries` queries already", out);
+        }
         return;
     }
 
