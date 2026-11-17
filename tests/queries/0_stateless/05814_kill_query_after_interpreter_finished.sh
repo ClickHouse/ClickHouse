@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# Tag no-replicated-database: there `TRUNCATE` returns the replicated DDL status pipeline, for which the kill check is kept.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -48,9 +50,16 @@ function run_case()
 
     ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '${holder_id}' SYNC FORMAT Null"
     wait ${victim_pid}
+    local victim_rc=$?
 
     # The query did its work, so it must report success.
-    grep -o -m1 -E 'QUERY_WAS_CANCELLED|TIMEOUT_EXCEEDED' "${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_victim.out" || echo "OK"
+    local victim_out="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_victim.out"
+    if [ "${victim_rc}" = "0" ] && [ ! -s "${victim_out}" ]; then
+        echo "OK"
+    else
+        echo "exit code ${victim_rc}"
+        grep -o -m1 -E '\([A-Z_]+\)' "${victim_out}"
+    fi
     ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t_kill"
 }
 
