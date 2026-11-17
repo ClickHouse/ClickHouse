@@ -100,7 +100,7 @@ SELECT 'P16a', max(streams) FROM
         WHERE current_database = currentDatabase() AND log_comment = '05453_union_scatter_p16a' AND type = 'QueryFinish'
     )
     GROUP BY query_id
-);
+) SETTINGS make_distributed_plan = 0;
 SELECT count() FROM (SELECT k FROM t1 UNION ALL SELECT k FROM t1)
 SETTINGS max_threads = 4, max_streams_for_union_step = 0, max_streams_for_union_step_to_max_threads_ratio = 0.25, log_comment = '05453_union_scatter_p16b';
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
@@ -113,6 +113,6 @@ SELECT 'P16b', max(streams) FROM
         WHERE current_database = currentDatabase() AND log_comment = '05453_union_scatter_p16b' AND type = 'QueryFinish'
     )
     GROUP BY query_id
-);
+) SETTINGS make_distributed_plan = 0;
 
 DROP TABLE t1, t2, t3, t_small;
