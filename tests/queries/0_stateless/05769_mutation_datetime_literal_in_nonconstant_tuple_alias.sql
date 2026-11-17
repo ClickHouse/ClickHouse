@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS t_in_alias;
 CREATE TABLE t_in_alias (id UInt8, event DateTime) ENGINE = MergeTree ORDER BY id;
 
 SELECT 'prefer_column_name_to_alias = 0';
+SET prefer_column_name_to_alias = 0;
 -- 1577804400 is 2020-01-01 00:00:00 in Tokyo, 1577836800 is 2020-01-01 09:00:00 there.
 INSERT INTO t_in_alias VALUES (1, 1577804400), (2, 1577836800);
 SELECT id FROM t_in_alias

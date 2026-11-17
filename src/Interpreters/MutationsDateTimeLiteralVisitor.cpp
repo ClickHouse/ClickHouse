@@ -24,6 +24,7 @@
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/TTLDescription.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -453,6 +454,10 @@ std::optional<LiteralUses> tryCollectLiteralUses(
         if (e.code() == ErrorCodes::LOGICAL_ERROR || e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED
             || e.code() == ErrorCodes::QUERY_WAS_CANCELLED || e.code() == ErrorCodes::TIMEOUT_EXCEEDED)
             throw;
+        LOG_DEBUG(
+            getLogger("MutationsDateTimeLiteralVisitor"),
+            "The expressions cannot be analyzed alone, so their DateTime literals are not converted: {}",
+            e.message());
         return std::nullopt;
     }
 }
