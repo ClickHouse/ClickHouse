@@ -50,9 +50,9 @@ Poco::JSON::Array::Ptr IcebergPositionDeleteTransform::getSchemaFields()
 
     Poco::JSON::Object::Ptr field_filename = new Poco::JSON::Object;
     field_filename->set(Iceberg::f_id, IcebergPositionDeleteTransform::data_file_path_column_field_id);
-    field_pos->set(Iceberg::f_name, IcebergPositionDeleteTransform::data_file_path_column_name);
-    field_pos->set(Iceberg::f_required, true);
-    field_pos->set(Iceberg::f_type, "string");
+    field_filename->set(Iceberg::f_name, IcebergPositionDeleteTransform::data_file_path_column_name);
+    field_filename->set(Iceberg::f_required, true);
+    field_filename->set(Iceberg::f_type, "string");
 
     pos_delete_schema->add(field_filename);
     pos_delete_schema->add(field_pos);
@@ -137,7 +137,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             format_settings,
             parser_shared_resources,
             delete_format_filter_info,
-            true /* is_remote_fs */,
+            object_storage->isRemote(),
             compression_method);
 
         position_delete_files.push_back(std::move(delete_format));

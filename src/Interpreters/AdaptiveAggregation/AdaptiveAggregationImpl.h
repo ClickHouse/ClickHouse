@@ -83,6 +83,11 @@ constexpr size_t adaptive_spill_min_buffer_bytes = 4 << 10;
 /// table, grown to hold them, stays in the cache while the unit is drained and converted; a bucket smaller than a
 /// unit is merged as one, which spares a small bucket the fixed cost of every further unit.
 constexpr size_t adaptive_merge_unit_records = 16'384;
+/// Once the merge ends, what the producers left is freed in parallel jobs of this many producers each (see
+/// `Aggregator::releaseAdaptiveMergeSources`). Freeing a producer's table, cell index, arenas, staging buffer and
+/// count bins takes about twenty microseconds, as waking a thread of the pool does, so fewer producers do not pay
+/// for a job.
+constexpr size_t adaptive_release_producers_per_job = 16;
 /// Groups below this work estimate use the existing parallelism across merge buckets. Above the upper
 /// bound, a group has enough work to amortize additional merge tasks even while other buckets are busy.
 /// Between the bounds, the threshold follows the estimated work per worker for this query.
@@ -262,7 +267,7 @@ struct AdaptiveAggregationSession
         void readBack(const std::function<bool(const PaddedPODArray<char> &)> & callback);
 
         /// The records appended to the stream, which the merge counts before it reads them back.
-        size_t recordCount() const { return record_count; }
+        [[nodiscard]] size_t recordCount() const { return record_count; }
 
         /// Removes the stream, read back or not.
         void release() { stream.reset(); }
@@ -349,20 +354,20 @@ public:
         chassert(empty());
         keys_are_const = true;
     }
-    bool keysAreConst() const { return keys_are_const; }
+    [[nodiscard]] bool keysAreConst() const { return keys_are_const; }
 
-    size_t size() const { return hashes.size(); }
-    bool empty() const { return hashes.empty(); }
-    UInt64 hashAt(size_t i) const { return hashes[i]; }
-    UInt64 lastHash() const { return hashes.back(); }
+    [[nodiscard]] size_t size() const { return hashes.size(); }
+    [[nodiscard]] bool empty() const { return hashes.empty(); }
+    [[nodiscard]] UInt64 hashAt(size_t i) const { return hashes[i]; }
+    [[nodiscard]] UInt64 lastHash() const { return hashes.back(); }
 
     /// The descriptors, read-only, for the writer and the accounting of the batch. The keys are the sizes of string-like
     /// keys with the bytes the kernel kept, one key after another, or the raw bytes of one fixed-width key per record.
-    const PaddedPODArray<UInt32> & getSourceRows() const { return source_rows; }
-    const PaddedPODArray<UInt64> & getHashes() const { return hashes; }
-    const PaddedPODArray<UInt64> & getKeySizes() const { return key_sizes; }
-    const PaddedPODArray<char> & getKeys() const { return keys; }
-    const PaddedPODArray<UInt32> & getMultiplicities() const { return multiplicities; }
+    [[nodiscard]] const PaddedPODArray<UInt32> & getSourceRows() const { return source_rows; }
+    [[nodiscard]] const PaddedPODArray<UInt64> & getHashes() const { return hashes; }
+    [[nodiscard]] const PaddedPODArray<UInt64> & getKeySizes() const { return key_sizes; }
+    [[nodiscard]] const PaddedPODArray<char> & getKeys() const { return keys; }
+    [[nodiscard]] const PaddedPODArray<UInt32> & getMultiplicities() const { return multiplicities; }
 
     void clear()
     {
@@ -484,14 +489,14 @@ struct AdaptiveAggregationProducer
         /// the sketch.
         void addSampledHash(UInt64 hash) { distinct_sampled_hashes.insert(intHash64(hash)); }
 
-        size_t getEstimatedStagedKeyCount() const
+        [[nodiscard]] size_t getEstimatedStagedKeyCount() const
         {
             /// Staged keys that all fall outside the sample number fewer than about one sample's worth, so an empty
             /// sample counts as one sampled key.
             return std::max<size_t>(distinct_sampled_hashes.size(), 1) * (adaptive_thaw_sample_mask + 1);
         }
 
-        size_t getEstimatedDistinctInputCount() const
+        [[nodiscard]] size_t getEstimatedDistinctInputCount() const
         {
             return distinct_sampled_inputs ? distinct_sampled_inputs->size() * (adaptive_thaw_sample_mask + 1) : 0;
         }
@@ -520,9 +525,9 @@ struct AdaptiveAggregationProducer
     using Phase = std::variant<LearningState, FrozenState, BaselineState>;
     Phase phase = LearningState{};
 
-    bool isLearning() const { return std::holds_alternative<LearningState>(phase); }
-    bool isFrozen() const { return std::holds_alternative<FrozenState>(phase); }
-    bool isBaseline() const { return std::holds_alternative<BaselineState>(phase); }
+    [[nodiscard]] bool isLearning() const { return std::holds_alternative<LearningState>(phase); }
+    [[nodiscard]] bool isFrozen() const { return std::holds_alternative<FrozenState>(phase); }
+    [[nodiscard]] bool isBaseline() const { return std::holds_alternative<BaselineState>(phase); }
 
     void freeze(size_t used_arena_bytes_at_freeze, size_t memory_usage_at_freeze)
     {
@@ -537,7 +542,7 @@ struct AdaptiveAggregationProducer
     /// merge. Handed over to the session when the producer finishes.
     std::unique_ptr<PartitionedRecordBuffer> partitions;
     /// Memory that the staged records in `partitions` take.
-    size_t stagedBytes() const { return partitions ? partitions->allocatedChunkBytes() : 0; }
+    [[nodiscard]] size_t stagedBytes() const { return partitions ? partitions->allocatedChunkBytes() : 0; }
     /// The producer's staged records, including those already written to disk, for the merge-work estimate.
     size_t total_staged_records = 0;
 

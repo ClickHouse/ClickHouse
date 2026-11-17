@@ -38,7 +38,7 @@ struct ComparisonOrderDomain
     /// FixedString width, ...); unset for the other kinds
     DataTypePtr exact_type = nullptr;
 
-    bool isValid() const
+    [[nodiscard]] bool isValid() const
     {
         return kind != Kind::None;
     }
