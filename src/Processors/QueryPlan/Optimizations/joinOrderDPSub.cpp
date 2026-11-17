@@ -151,7 +151,8 @@ private:
     {
         return isReadInOrder(relation_mask, order_class) && (relation_mask & dpsub_data.shardable_relations);
     }
-    /// The equivalence classes with columns on both sides: one key of the join each.
+    /// The equivalence classes with columns on both sides: one key of the join each. Only classes of a single type, as
+    /// equality of columns of different types is not transitive (`Date` vs `DateTime` in two time zones).
     [[nodiscard]] UInt64 spanningClasses(UInt32 left_mask, UInt32 right_mask) const;
     /// The classes of all keys of a join, in the order a single relation can be read in, starting with the merge key;
     /// empty if it cannot be read in an order that covers them.
@@ -786,14 +787,7 @@ UInt64 DPSubJoinOrderOptimizer::mergeKeyClasses(
         if (dpsub_data.edge_class[edge - query_graph.edges.data()] < 0)
             return 0;
 
-    UInt64 classes = 0;
-    for (size_t c = 0; c < dpsub_data.class_relations.size(); ++c)
-    {
-        const UInt32 relations = dpsub_data.class_relations[c];
-        if (dpsub_data.class_single_type[c] && (relations & left_mask) && (relations & right_mask))
-            classes |= static_cast<UInt64>(1) << c;
-    }
-    return classes;
+    return spanningClasses(left_mask, right_mask);
 }
 
 bool DPSubJoinOrderOptimizer::isReadInOrder(UInt32 relation_mask, Int32 order_class) const
@@ -863,7 +857,7 @@ UInt64 DPSubJoinOrderOptimizer::spanningClasses(UInt32 left_mask, UInt32 right_m
     for (size_t c = 0; c < dpsub_data.class_relations.size(); ++c)
     {
         const UInt32 relations = dpsub_data.class_relations[c];
-        if ((relations & left_mask) && (relations & right_mask))
+        if (dpsub_data.class_single_type[c] && (relations & left_mask) && (relations & right_mask))
             classes |= static_cast<UInt64>(1) << c;
     }
     return classes;
