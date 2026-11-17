@@ -9,17 +9,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # TIMEOUT_EXCEEDED without recomputing tree hashes or terminating the server process.
 # Covers all 5 CTE cleanup sites: join-tree CTE, expression CTE, expression materialized CTE,
 # and join-tree materialized CTE (both first and subsequent references).
-#
-# Note: CLICKHOUSE_TMP is per-database/per-worker in clickhouse-test, so use a host-wide
-# /tmp directory for the flock file and generated SQL/calibration cache across flaky-check workers.
-SHARED_TMP="${TMPDIR:-/tmp}"
-LOCK_FILE="${SHARED_TMP}/ch_04954_cte_cancel_v4.lock"
-exec 9>"$LOCK_FILE"
-if command -v flock >/dev/null 2>&1; then
-    flock -w 120 9 || true
-fi
 
-CACHE_DIR="${SHARED_TMP}/ch_04954_cte_cache_v4"
+SHARED_TMP="${TMPDIR:-/tmp}"
+CACHE_DIR="${SHARED_TMP}/ch_04954_cte_cache_v6"
+LOCK_FILE="${SHARED_TMP}/ch_04954_cte_cancel_v6.lock"
 mkdir -p "$CACHE_DIR"
 
 TMP_SQL_DIR="${CLICKHOUSE_TMP}/cte_cancel_${CLICKHOUSE_DATABASE}_$$"
@@ -36,41 +29,47 @@ COMMON_ARGS=(
     --log_queries=1
 )
 
-# Generate a single-column CTE with ~66,441 (> 65,536 = 1 << 16) QueryTree nodes using
-# 3 groups of 44 scalar greatest(...) chunks of 100 `number + k` expressions (13,200 `plus`
-# expressions * 5 QueryTree nodes/plus = >66,000 unresolved QueryTree nodes), each group
-# wrapped in 4 nested `randConstant` calls:
-# - Scalar greatest(...) avoids multi-thousand-element DataTypeTuple construction overhead.
-# - Each `randConstant` invokes `getTreeHash()` during `resolveQuery` (`resolveFunction.cpp`),
-#   visiting >265,000 nodes per group inside `CTEInResolveProcessGuard`.
-# - The CTE itself exceeds 65,536 nodes so any raw-node re-hash during scope-exit unwinding
-#   crosses `cancellation_check_period` in `IQueryTreeNode::getTreeHash()` and aborts an unfixed server.
+# Hold the host-wide lock ONLY during one-time SQL generation and timing calibration so
+# flaky-check parallel workers never serialize across the 5 cancelled queries.
+exec 9>"$LOCK_FILE"
+if command -v flock >/dev/null 2>&1; then
+    flock -w 60 9 || true
+fi
+
+# Generate a single-column CTE whose:
+# 1. Unresolved QueryTree (original_cte_node for sites 1, 3, 4, 5) has >66,000 (> 65,536 = 1 << 16)
+#    QueryTree nodes via an unreferenced WITH alias (unused_pad of 22,000 zero-arg f() FunctionNodes,
+#    3 QueryTree nodes each), which QueryAnalyzer drops in O(1) without resolving.
+# 2. Resolved projection (for site 2 and for triggering getTreeHash() inside CTEInResolveProcessGuard)
+#    expands a 14-step WITH alias chain (a0..a14 -> >65,536 QueryTree nodes) wrapped in 10 nested
+#    randConstant calls so >650,000 nodes are hashed inside getTreeHash() while CTEInResolveProcessGuard
+#    is active on the stack.
 if [ ! -s "$CACHE_DIR/join_mat_2.sql" ]; then
     awk -v dir="$CACHE_DIR" 'BEGIN {
-        idx = 0;
-        sum_expr = "";
-        for (g = 1; g <= 3; g++) {
-            if (g > 1) sum_expr = sum_expr "+";
-            grp = "greatest(";
-            for (b = 1; b <= 44; b++) {
-                if (b > 1) grp = grp ",";
-                chunk = "greatest(";
-                for (k = 1; k <= 100; k++) {
-                    idx++;
-                    if (k > 1) chunk = chunk ",";
-                    chunk = chunk "number+" idx;
-                }
-                chunk = chunk ")";
-                grp = grp chunk;
+        pad = "tuple(";
+        for (c = 1; c <= 100; c++) {
+            if (c > 1) pad = pad ",";
+            chunk = "tuple(";
+            for (k = 1; k <= 220; k++) {
+                if (k > 1) chunk = chunk ",";
+                chunk = chunk "f()";
             }
-            grp = grp ")";
-            expr = grp;
-            for (d = 1; d <= 4; d++) {
-                expr = "randConstant(tuple(" (g * 10 + d) "," expr "))";
-            }
-            sum_expr = sum_expr expr;
+            chunk = chunk ")";
+            pad = pad chunk;
         }
-        body = "SELECT toUInt64(" sum_expr ") AS v FROM numbers(0)";
+        pad = pad ") AS unused_pad";
+
+        dag = "number AS a0";
+        for (d = 1; d <= 14; d++) {
+            dag = dag ", greatest(a" (d - 1) ",a" (d - 1) ") AS a" d;
+        }
+
+        rc = "a14";
+        for (r = 1; r <= 10; r++) {
+            rc = "randConstant(tuple(" r "," rc "))";
+        }
+
+        body = "WITH " pad ", " dag " SELECT toUInt64(" rc ") AS v FROM numbers(0)";
 
         print "WITH c AS (" body ") SELECT 1 FORMAT Null;" > (dir "/calib_parse.sql");
         print "WITH c AS MATERIALIZED (" body ") SELECT v FROM c FORMAT Null;" > (dir "/calib_1ref.sql");
@@ -82,17 +81,14 @@ if [ ! -s "$CACHE_DIR/join_mat_2.sql" ]; then
     }'
 fi
 
-# Warm up connection and calibrate server-side parse time (T_PARSE_MS) vs post-parse single-CTE
-# analysis+plan time (R1_MS = T_1REF_MS - T_PARSE_MS) once per test host from system.query_log.
-if [ -s "$CACHE_DIR/calib.env" ]; then
-    # shellcheck disable=SC1091
-    . "$CACHE_DIR/calib.env"
-else
+# Calibrate post-parse single-CTE analysis time (R1_MS = T_1REF_MS - T_PARSE_MS) once per test host.
+if [ ! -s "$CACHE_DIR/calib.env" ]; then
     QID_PARSE="${CLICKHOUSE_DATABASE}_cte_calib_parse_$$"
     QID_1REF="${CLICKHOUSE_DATABASE}_cte_calib_1ref_$$"
 
-    $CLICKHOUSE_CLIENT --query_id "$QID_PARSE" "${COMMON_ARGS[@]}" --queries-file "$CACHE_DIR/calib_parse.sql"
-    $CLICKHOUSE_CLIENT --query_id "$QID_1REF" "${COMMON_ARGS[@]}" --queries-file "$CACHE_DIR/calib_1ref.sql"
+    $CLICKHOUSE_CLIENT -q "SELECT 1 FORMAT Null" >/dev/null 2>&1 || true
+    $CLICKHOUSE_CLIENT --query_id "$QID_PARSE" "${COMMON_ARGS[@]}" --queries-file "$CACHE_DIR/calib_parse.sql" >/dev/null 2>&1 || true
+    $CLICKHOUSE_CLIENT --query_id "$QID_1REF" "${COMMON_ARGS[@]}" --queries-file "$CACHE_DIR/calib_1ref.sql" >/dev/null 2>&1 || true
 
     read -r T_PARSE_MS T_1REF_MS < <($CLICKHOUSE_CLIENT -n -q "
         SYSTEM FLUSH LOGS query_log;
@@ -104,20 +100,23 @@ else
           AND query_id IN ('$QID_PARSE', '$QID_1REF')
           AND type = 'QueryFinish'")
 
-    T_PARSE_MS=${T_PARSE_MS:-10}
-    T_1REF_MS=${T_1REF_MS:-100}
+    T_PARSE_MS=${T_PARSE_MS:-20}
+    T_1REF_MS=${T_1REF_MS:-120}
     R1_MS=$((T_1REF_MS - T_PARSE_MS))
     if [ "$R1_MS" -lt 40 ]; then
         R1_MS=40
     fi
-    if [ "$R1_MS" -gt 1500 ]; then
-        R1_MS=1500
-    fi
-    if [ "$T_PARSE_MS" -gt 1000 ]; then
-        T_PARSE_MS=1000
-    fi
-    printf 'T_PARSE_MS=%s\nR1_MS=%s\n' "$T_PARSE_MS" "$R1_MS" > "$CACHE_DIR/calib.env"
+    printf 'T_PARSE_MS=%s\nR1_MS=%s\n' "$T_PARSE_MS" "$R1_MS" > "$CACHE_DIR/calib.env.tmp.$$"
+    mv -f "$CACHE_DIR/calib.env.tmp.$$" "$CACHE_DIR/calib.env"
 fi
+
+if command -v flock >/dev/null 2>&1; then
+    flock -u 9 || true
+fi
+exec 9>&-
+
+# shellcheck disable=SC1091
+. "$CACHE_DIR/calib.env"
 
 WINNING_QIDS=()
 
@@ -184,19 +183,16 @@ run_cancelled_cte()
     return 1
 }
 
-# Single-reference cases: `max_execution_time` starts after `parseQuery`, and `CTEInResolveProcessGuard`
-# spans roughly [0.14*R1_MS, 0.45*R1_MS] before later optimizer passes run. Start at 0.25*R1_MS so
-# cancellation hits strictly inside `CTEInResolveProcessGuard`.
-run_cancelled_cte "join"       "$CACHE_DIR/join.sql"       "0.12" 0.25 0.34 0.18 0.44 0.56
-run_cancelled_cte "expr"       "$CACHE_DIR/expr.sql"       "0.12" 0.25 0.34 0.18 0.44 0.56
-run_cancelled_cte "expr_mat"   "$CACHE_DIR/expr_mat.sql"   "0.12" 0.25 0.34 0.18 0.44 0.56
-run_cancelled_cte "join_mat_1" "$CACHE_DIR/join_mat_1.sql" "0.12" 0.25 0.34 0.18 0.44 0.56
+# Single-reference cases: QueryStatus stopwatch starts after parseQuery; entry hash is at ~0.15*R1_MS
+# and the 10 nested randConstant calls span [0.35*R1_MS, 0.98*R1_MS] inside CTEInResolveProcessGuard.
+run_cancelled_cte "join"       "$CACHE_DIR/join.sql"       "0.15" 0.45 0.30 0.65 0.20 0.85
+run_cancelled_cte "expr"       "$CACHE_DIR/expr.sql"       "0.15" 0.45 0.30 0.65 0.20 0.85
+run_cancelled_cte "expr_mat"   "$CACHE_DIR/expr_mat.sql"   "0.15" 0.45 0.30 0.65 0.20 0.85
+run_cancelled_cte "join_mat_1" "$CACHE_DIR/join_mat_1.sql" "0.15" 0.45 0.30 0.65 0.20 0.85
 
 # Subsequent materialized-reference case (2 UNION ALL branches):
-# Reference #1 finishes `resolveQuery` and initializes `materialized_cte_ptr->storage` by ~0.45*R1_MS,
-# and Reference #2 resolves in [0.45*R1_MS, 0.90*R1_MS]. Require elapsed >= T_PARSE_MS + 0.50*R1_MS
-# and start at 0.68*R1_MS so cancellation hits strictly inside subsequent-reference cleanup.
-run_cancelled_cte "join_mat_2" "$CACHE_DIR/join_mat_2.sql" "0.50" 0.68 0.82 0.55 1.00 1.25
+# Reference #1 finishes by ~1.00*R1_MS, and Reference #2's 10 randConstant calls span [1.25*R1_MS, 1.90*R1_MS].
+run_cancelled_cte "join_mat_2" "$CACHE_DIR/join_mat_2.sql" "0.90" 1.35 1.15 1.60 1.00 1.85
 
 if [ "${#WINNING_QIDS[@]}" -eq 5 ]; then
     QID_LIST=$(IFS=,; echo "${WINNING_QIDS[*]}")
