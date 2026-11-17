@@ -77,9 +77,15 @@ void ITableFunction::checkEngineAccess(ContextPtr context) const
     if (!requiresTableEngineGrant())
         return;
 
-    const char * engine = isClusterFunction() ? getNonClusteredStorageEngineName() : getStorageEngineName();
-    if (engine && *engine)
+    if (const String engine = getEngineNameForAccessCheck(); !engine.empty())
         context->checkAccess(AccessType::TABLE_ENGINE, engine);
+}
+
+String ITableFunction::getEngineNameForAccessCheck() const
+{
+    /// A cluster function is checked as its non-clustered engine. It is empty when the function has no engine.
+    const char * engine = isClusterFunction() ? getNonClusteredStorageEngineName() : getStorageEngineName();
+    return engine ? engine : "";
 }
 
 ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const
@@ -112,22 +118,52 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
 
     auto context_to_use = use_global_context ? context->getGlobalContext() : context;
 
+    StoragePtr storage;
     if (cached_columns.empty())
-        return executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
-
-    if (hasStaticStructure() && cached_columns == getActualTableStructure(context, is_insert_query))
-        return executeImpl(ast_function, context_to_use, table_name, std::move(cached_columns), is_insert_query);
-
-    auto this_table_function = shared_from_this();
-    auto get_storage = [=]() -> StoragePtr
     {
-        return this_table_function->executeImpl(ast_function, context_to_use, table_name, cached_columns, is_insert_query);
-    };
+        storage = executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
+    }
+    else if (hasStaticStructure() && cached_columns == getActualTableStructure(context, is_insert_query))
+    {
+        storage = executeImpl(ast_function, context_to_use, table_name, std::move(cached_columns), is_insert_query);
+    }
+    else
+    {
+        auto this_table_function = shared_from_this();
+        auto get_storage = [=]() -> StoragePtr
+        {
+            return this_table_function->executeImpl(ast_function, context_to_use, table_name, cached_columns, is_insert_query);
+        };
 
-    /// It will request actual table structure and create underlying storage lazily
-    return std::make_shared<StorageTableFunctionProxy>(StorageID(getDatabaseName(), table_name), std::move(get_storage),
-                                                       std::move(cached_columns), needStructureConversion(),
-                                                       hasUnreplicatedTableDataOnDisk());
+        /// It will request actual table structure and create underlying storage lazily
+        storage = std::make_shared<StorageTableFunctionProxy>(StorageID(getDatabaseName(), table_name), std::move(get_storage),
+                                                              std::move(cached_columns), needStructureConversion(),
+                                                              hasUnreplicatedTableDataOnDisk());
+    }
+
+    /// The source access check covered only the URI as typed, but a write can go to a destination computed at write time:
+    /// each partition of `PARTITION BY`, or a key renamed by `s3_create_new_file_on_insert`. The storage checks those.
+    /// Without `check_source_access`, the caller does the checks, e.g. `url('s3://...')` for its delegate.
+    /// `INSERT` passes no cached columns, so the check is never set on a lazy `StorageTableFunctionProxy`, which would not pass it on.
+    /// Without a URI, only an unfiltered grant passed the source access check, and it allows every destination.
+    ///
+    /// A table created with `CREATE TABLE ... AS s3(...)` stays after the query and survives restarts (it uses the global context),
+    /// and is the same as one created with `ENGINE = S3`: users insert into it with `INSERT` on the table, not with source grants.
+    /// Its creator needed `TABLE ENGINE ON S3` instead, so the check is not set on it.
+    if (is_insert_query && check_source_access && !use_global_context)
+    {
+        const auto access_object = getSourceAccessObject();
+        if (access_object && !getFunctionURI().empty())
+        {
+            /// The same check as for the typed URI, so that a destination is refused whenever typing it would be.
+            storage->setPartitionedWriteAccessCheck(
+                [source = *access_object](const ContextPtr & write_context, const String & uri)
+                { checkSourceAccessForURI(write_context, AccessType::WRITE, source, uri); },
+                IStorage::PartitionedWriteAccessKey{});
+        }
+    }
+
+    return storage;
 }
 
 String ITableFunction::normalizeURIForAccessCheck(const String & uri)

@@ -159,8 +159,6 @@ void registerTableFunctionElasticsearch(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionElasticsearch>(
         {
             .description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-
 <ExperimentalBadge/>
 
 Allows `SELECT` queries on documents of an index in [Elasticsearch](https://www.elastic.co/elasticsearch). Each document is returned as one row: its `_source` is exposed as a single column of the [JSON](/reference/data-types/newjson) type, and the document id and index name are available as virtual columns. The function is read-only.

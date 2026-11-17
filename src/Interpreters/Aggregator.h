@@ -244,6 +244,11 @@ public:
         /// instead of the serial merge.
         bool enable_parallel_single_level_merge = false;
 
+        /// Let the parallel single-level merge read the tables through their cell indexes when every table
+        /// has one (see `Aggregator::mergesByCellIndex`), instead of scanning every cell of every table for
+        /// each partition.
+        bool enable_parallel_single_level_merge_by_index = true;
+
         bool serialize_string_with_zero_byte = false;
 
         struct TopKParams
@@ -380,6 +385,7 @@ public:
             bool enable_producing_buckets_out_of_order_in_aggregation_,
             bool serialize_string_with_zero_byte_,
             bool enable_parallel_single_level_merge_,
+            bool enable_parallel_single_level_merge_by_index_,
             bool enable_packed_string_keys_,
             bool enable_adaptive_aggregator_,
             UInt64 adaptive_aggregator_freeze_threshold_,
@@ -511,7 +517,9 @@ public:
     /// `merged_group_count` receives the number of groups that the merge builds over all the bucket's units, before any
     /// top-K truncation. The groups that the top-K pruning skips, with their unit or with their count bin, add none, and
     /// so do the units that a settled ascending top-K skips. `parallel_merge` tells when the source states of one group
-    /// merge together on the pool (see `mergeSourceStates`).
+    /// merge together on the pool (see `mergeSourceStates`). The merge returns the chunks of the bucket's units
+    /// squashed into chunks of at least `max_block_size` rows, the last one taking the rows left. A result of aggregate
+    /// states, which a partial merge and a function like `sumState` return, keeps a chunk per unit.
     AggregatedChunks mergeAndConvertAdaptiveBucket(
         ManyAggregatedDataVariants & data,
         AdaptiveAggregationSession & session,
@@ -522,6 +530,21 @@ public:
         std::atomic<bool> & is_cancelled,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater,
         size_t * merged_group_count) const;
+
+    /// Frees the table that `task` kept from the bucket it merged last (see `mergeAndConvertAdaptiveBucket`), once
+    /// the task has no bucket left to merge. The kept tables would otherwise wait for the destruction of the
+    /// destination, which one thread does at the end of the query: it frees the table of every task, and where the
+    /// states have destructors it first walks all their cells for states to destroy, although every cell is empty.
+    void releaseAdaptiveMergeTable(ManyAggregatedDataVariants & data, const AdaptiveMergeTask & task) const;
+
+    /// Ends the sources of an adaptive in-memory merge of `data` once every bucket merged, and frees what the producers
+    /// left: the source tables with their cell indexes and arenas, the staging buffers and the count bins of the top-K
+    /// pruning. Every bucket took the states out of its source cells, so the source tables stop owning states and
+    /// their destruction only frees memory. `data` is the result of `prepareVariantsToMerge`, which made it the only
+    /// owner of the source tables. The caller guarantees that no merge task reads the sources any more. With many
+    /// producers the work is spread over the thread pool: one thread would otherwise free everything at the end of
+    /// the query, which with 192 producers takes several milliseconds.
+    void releaseAdaptiveMergeSources(ManyAggregatedDataVariants & data, AdaptiveAggregationSession & session) const;
 
     /// The destination of the adaptive merge: an empty two-level variants of the aggregation's method with an arena slot
     /// per bucket, which holds the arena in which the merge creates the states of the bucket's unit. For a merge that goes
@@ -636,7 +659,9 @@ public:
 
     /// `adaptive_session` (or nullptr when the adaptive aggregation is off) puts the destination of the adaptive merge
     /// in front of the tables when the session is engaged. It also gives the adaptive verdict of the run to the
-    /// hash-table statistics.
+    /// hash-table statistics. The adaptive bucket merge takes the tables over and leaves `data_variants` empty,
+    /// because it frees them itself (see `releaseAdaptiveMergeSources`). Every other merge shares them with the
+    /// caller, which keeps `data_variants` as it was.
     ManyAggregatedDataVariants prepareVariantsToMerge(
         ManyAggregatedDataVariants && data_variants, AdaptiveAggregationSession * adaptive_session) const;
 
@@ -650,8 +675,9 @@ public:
     using ClaimMergePartition = std::function<std::optional<size_t>(size_t rows)>;
 
     /// Whether the merge by partitions of `tables` reads them through their cell indexes (see
-    /// `AggregatedDataVariants::indexCells`), which every one of them has then.
-    static bool mergesByCellIndex(const ManyAggregatedDataVariants & tables);
+    /// `AggregatedDataVariants::indexCells`): when every one of them has one, unless
+    /// `enable_parallel_single_level_merge_by_index` is off.
+    bool mergesByCellIndex(const ManyAggregatedDataVariants & tables) const;
 
     /// Merges partition `first_partition` of `num_partitions`, then the partitions that `claim` hands out, out of every
     /// table of `non_empty_data` into one fresh table, and converts it to one output chunk. The partitions hold disjoint
@@ -664,9 +690,9 @@ public:
     /// double-destroy. The NULL key of the single-key nullable methods belongs to partition 0. `destination_size_hint`
     /// pre-sizes the destination table; the caller derives it from the source tables before any partition starts, since
     /// once the workers run, the source tables are mutated concurrently and may not be read outside the partitions that
-    /// a worker claimed. `parallel_merge` tells when the states of one group of indexed tables merge together on the
-    /// pool. The tables walked source by source defer their large pairs of states to the pool (see
-    /// `mergeDeferredLargeStates`).
+    /// a worker claimed. In the merge by cell index (see `mergesByCellIndex`), `parallel_merge` tells when the states
+    /// of one group merge together on the pool. The tables walked source by source defer their large pairs of states
+    /// to the pool (see `mergeDeferredLargeStates`).
     AggregatedChunk mergeSingleLevelPartitionsAndConvertToChunk(
         ManyAggregatedDataVariants & non_empty_data,
         bool final,
@@ -1746,7 +1772,7 @@ private:
     void mergeSingleLevelPartitionsImpl(
         Method & dst_method,
         const std::vector<AggregatedDataVariants *> & sources,
-        bool indexed,
+        bool merge_by_cell_index,
         Arena * arena,
         size_t num_partitions,
         size_t first_partition,
