@@ -3264,6 +3264,8 @@ static bool bracketedArgumentCanBeSubquery(TokenIterator pos)
 /// Any other shape, such as `unique(1)`, `unique(from + 1)`, `unique((SELECT 1), 2)` or `unique((SELECT 1) + 1)`,
 /// is not the predicate, and `unique` stays a regular function name for it.
 /// The parsed subquery is handed over to `UniqueLayer`, so it is parsed only once and nested predicates stay linear.
+/// A failed attempt, e.g. for `unique(with + 1)` where `with` is a column, is remembered by the position, see
+/// `Tokens::markUniquePredicateParseFailed`, so nested ordinary calls of this shape stay linear as well.
 /// `pos` points right after the opening bracket of the function call and is left there. The speculative parse
 /// runs on `pos` itself, so that its backtracking is counted against `max_parser_backtracks`.
 static std::unique_ptr<Layer> tryParseUniquePredicateArgument(IParser::Pos & pos)
@@ -3276,6 +3278,9 @@ static std::unique_ptr<Layer> tryParseUniquePredicateArgument(IParser::Pos & pos
     else if (pos->type != TokenType::BareWord)
         return nullptr;
 
+    if (pos.isUniquePredicateParseFailed())
+        return nullptr;
+
     const IParser::Pos begin = pos;
     ASTPtr subquery;
     Expected expected;
@@ -3283,6 +3288,7 @@ static std::unique_ptr<Layer> tryParseUniquePredicateArgument(IParser::Pos & pos
         || !ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
     {
         pos = begin;
+        pos.markUniquePredicateParseFailed();
         return nullptr;
     }
 

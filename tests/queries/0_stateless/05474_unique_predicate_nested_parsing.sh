@@ -34,3 +34,7 @@ count 'unique((SELECT ' '), 2)'
 count 'unique((SELECT ' ') + 1)'
 count 'unique((SELECT unique((SELECT ' '), 2)))'
 count 'unique(((SELECT ' ')) UNION ALL SELECT 2)'
+# Ordinary calls whose argument starts with an identifier that can start a subquery, e.g. a column named `with`.
+count 'unique(with + ' ')'
+count 'unique(select + ' ')'
+count 'unique(with + unique(SELECT ' '))'
