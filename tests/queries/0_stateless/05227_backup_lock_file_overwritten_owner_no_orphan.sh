@@ -32,7 +32,7 @@ function wait_status()
     local operation_id="$1"
     local timeout=60
     local start=$EPOCHSECONDS
-    while true; do
+    while clickhouse_test_time_left; do
         local current_status
         current_status=$(${CLICKHOUSE_CLIENT} --query "SELECT status FROM system.backups WHERE id='${operation_id}'")
         if [ "${current_status}" != "CREATING_BACKUP" ]; then

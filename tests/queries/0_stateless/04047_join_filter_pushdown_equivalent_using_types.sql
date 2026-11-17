@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 0;
 SET join_use_nulls = 1;
 

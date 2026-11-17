@@ -610,14 +610,14 @@ struct DeserializeBinaryBulkStateMap : public ISerialization::DeserializeBinaryB
     ISerialization::DeserializeBinaryBulkStatePtr bucket_index_state;
     bool has_bucket_index = false;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateMap>(*this);
-        new_state->nested_state = nested_state ? nested_state->clone() : nullptr;
-        new_state->buckets_info_state = buckets_info_state ? buckets_info_state->clone() : nullptr;
+        new_state->nested_state = nested_state ? nested_state->clone(context) : nullptr;
+        new_state->buckets_info_state = buckets_info_state ? buckets_info_state->clone(context) : nullptr;
         for (size_t bucket = 0; bucket != bucket_nested_states.size(); ++bucket)
-            new_state->bucket_nested_states[bucket] = bucket_nested_states[bucket] ? bucket_nested_states[bucket]->clone() : nullptr;
-        new_state->bucket_index_state = bucket_index_state ? bucket_index_state->clone() : nullptr;
+            new_state->bucket_nested_states[bucket] = bucket_nested_states[bucket] ? bucket_nested_states[bucket]->clone(context) : nullptr;
+        new_state->bucket_index_state = bucket_index_state ? bucket_index_state->clone(context) : nullptr;
         return new_state;
     }
 };
@@ -639,13 +639,19 @@ struct KeysOrValuesSubcolumnCreator : public ISerialization::ISubcolumnCreator
     {
     }
 
-    DataTypePtr create(const DataTypePtr & prev) const override { return nested_creator->create(prev); }
-    ColumnPtr create(const ColumnPtr & prev) const override { return nested_creator->create(prev); }
-    SerializationPtr create(const SerializationPtr & prev, const DataTypePtr & type) const override
+    [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override { return nested_creator->create(prev); }
+    [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override { return nested_creator->create(prev); }
+    [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr & type) const override
     {
         return SerializationMapKeysOrValues::create(nested_creator->create(prev, type), serialization_version);
     }
 };
+
+/// A `JSON` or `Dynamic` key hashes differently across versions, so such a `Map` is written in one bucket, read whole by every version.
+size_t getMaxBucketsInMap(const ColumnMap & column, size_t max_buckets_in_map)
+{
+    return column.getNestedData().getColumn(0).hasDynamicStructure() ? 1 : max_buckets_in_map;
+}
 
 }
 
@@ -721,7 +727,7 @@ void SerializationMap::enumerateStreams(
     if (map_deserialize_state)
         buckets = checkAndGetState<DeserializeBinaryBulkStateBucketsInfo>(map_deserialize_state->buckets_info_state)->buckets;
     else if (map_column)
-        buckets = calculateNumberOfBuckets(map_column->getOrCalculateStatistics(), settings.max_buckets_in_map, settings.map_buckets_strategy, settings.map_buckets_coefficient, settings.map_buckets_min_avg_size);
+        buckets = calculateNumberOfBuckets(map_column->getOrCalculateStatistics(), getMaxBucketsInMap(*map_column, settings.max_buckets_in_map), settings.map_buckets_strategy, settings.map_buckets_coefficient, settings.map_buckets_min_avg_size);
 
     /// Enumerate the bucket index stream (used to preserve original key order).
     /// Only needed when there are multiple buckets — single-bucket serialization
@@ -782,7 +788,7 @@ void SerializationMap::serializeBinaryBulkStatePrefix(
     /// Determine the number of buckets from column statistics and write it to the stream.
     UInt64 buckets = 1;
     ColumnMap::StatisticsPtr statistics = assert_cast<const ColumnMap &>(column).getOrCalculateStatistics();
-    buckets = calculateNumberOfBuckets(statistics, settings.max_buckets_in_map, settings.map_buckets_strategy, settings.map_buckets_coefficient, settings.map_buckets_min_avg_size);
+    buckets = calculateNumberOfBuckets(statistics, getMaxBucketsInMap(assert_cast<const ColumnMap &>(column), settings.max_buckets_in_map), settings.map_buckets_strategy, settings.map_buckets_coefficient, settings.map_buckets_min_avg_size);
     writeBinaryLittleEndian(buckets, *stream);
     map_state->buckets = buckets;
 

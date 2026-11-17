@@ -1,18 +1,19 @@
 #include <Core/ProtocolDefines.h>
+#include <Formats/FormatSettings.h>
 #include <Columns/IColumn.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Field.h>
 #include <Core/SettingsFields.h>
+#include <Core/SettingsFieldsConversionHelpers.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
-
-#include <boost/algorithm/string/predicate.hpp>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wimplicit-int-conversion"
@@ -30,123 +31,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
-    extern const int CANNOT_PARSE_BOOL;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int CANNOT_CONVERT_TYPE;
     extern const int BAD_ARGUMENTS;
 }
 
-bool stringToBool(const String & str)
-{
-    if (str == "0")
-        return false;
-    if (str == "1")
-        return true;
-    if (boost::iequals(str, "false"))
-        return false;
-    if (boost::iequals(str, "true"))
-        return true;
-    throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse bool from string '{}'", str);
-}
-
 namespace
 {
-    template<typename T>
-    void validateFloatingPointSettingValue(T value)
-    {
-        if constexpr (std::is_floating_point_v<T>)
-        {
-            if (!std::isfinite(value))
-                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
-                    "Float setting value must be finite, got {}", value);
-        }
-    }
-
-    template <typename T>
-    T stringToNumber(const String & str)
-    {
-        if constexpr (std::is_same_v<T, bool>)
-        {
-            return stringToBool(str);
-        }
-        else
-        {
-            T value = parseWithSizeSuffix<T>(str);
-            validateFloatingPointSettingValue(value);
-            return value;
-        }
-    }
-
-    template <typename T>
-    T fieldToNumber(const Field & f)
-    {
-        if (f.getType() == Field::Types::String)
-        {
-            return stringToNumber<T>(f.safeGet<String>());
-        }
-        if (f.getType() == Field::Types::UInt64)
-        {
-            T result;
-            if (!accurate::convertNumeric(f.safeGet<UInt64>(), result))
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
-                                "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
-            validateFloatingPointSettingValue(result);
-            return result;
-        }
-        if (f.getType() == Field::Types::Int64)
-        {
-            T result;
-            if (!accurate::convertNumeric(f.safeGet<Int64>(), result))
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
-                                "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
-            validateFloatingPointSettingValue(result);
-            return result;
-        }
-        if (f.getType() == Field::Types::Bool)
-        {
-            return T(f.safeGet<bool>());
-        }
-        if (f.getType() == Field::Types::Float64)
-        {
-            Float64 x = f.safeGet<Float64>();
-            validateFloatingPointSettingValue(x);
-            if constexpr (std::is_floating_point_v<T>)
-            {
-                return T(x);
-            }
-            else
-            {
-                if (!isFinite(x))
-                {
-                    /// Conversion of infinite values to integer is undefined.
-                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert infinite value to integer type");
-                }
-                /// Use precision-correct float-vs-integer comparison via `accurate::greaterOp` / `accurate::lessOp`.
-                /// A naive `x > Float64(numeric_limits<T>::max())` is wrong for wide integer types like `UInt64`:
-                /// `Float64(numeric_limits<UInt64>::max())` rounds UP to `2^64`, so a `Float64` value equal to
-                /// that rounded-up boundary slips through the check and produces undefined behavior in the
-                /// subsequent `static_cast<T>(x)`. See issue #103817.
-                ///
-                /// Bool is special-cased: `numeric_limits<bool>` is exactly representable in `Float64`, and
-                /// `accurate::lessOp` would fail to instantiate for `bool` (`make_unsigned_t<bool>` is ill-formed).
-                if constexpr (std::is_same_v<T, bool>)
-                {
-                    if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
-                        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
-                }
-                else if (accurate::greaterOp(x, std::numeric_limits<T>::max())
-                         || accurate::lessOp(x, std::numeric_limits<T>::lowest()))
-                {
-                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
-                }
-                return T(x);
-            }
-        }
-        else
-            throw Exception(
-                ErrorCodes::CANNOT_CONVERT_TYPE, "Invalid value {} of the setting, which needs {}", f, demangle(typeid(T).name()));
-    }
-
     Map stringToMap(const String & str)
     {
         /// Allow empty string as an empty map
@@ -196,14 +87,14 @@ SettingFieldNumber<T> & SettingFieldNumber<T>::operator=(Type x)
 }
 
 template <typename T>
-SettingFieldNumber<T>::SettingFieldNumber(const Field & f) : SettingFieldNumber(fieldToNumber<T>(f))
+SettingFieldNumber<T>::SettingFieldNumber(const Field & f) : SettingFieldNumber(fieldToNumberSettingValue<T>(f))
 {
 }
 
 template <typename T>
 SettingFieldNumber<T> & SettingFieldNumber<T>::operator=(const Field & f)
 {
-    *this = fieldToNumber<T>(f);
+    *this = fieldToNumberSettingValue<T>(f);
     return *this;
 }
 
@@ -230,7 +121,7 @@ String SettingFieldNumber<T>::toString() const
 template <typename T>
 void SettingFieldNumber<T>::parseFromString(const String & str)
 {
-    *this = stringToNumber<T>(str);
+    *this = stringToNumberSettingValue<T>(str);
 }
 
 template <typename T>
@@ -302,7 +193,7 @@ namespace
     {
         if (f.getType() == Field::Types::String)
             return stringToMaxThreads(f.safeGet<String>());
-        return fieldToNumber<UInt64>(f);
+        return fieldToNumberSettingValue<UInt64>(f);
     }
 }
 
@@ -334,18 +225,6 @@ void SettingFieldMaxThreads::parseFromString(const String & str)
     *this = stringToMaxThreads(str);
 }
 
-void SettingFieldMaxThreads::writeBinary(WriteBuffer & out) const
-{
-    writeVarUInt(is_auto ? 0 : value, out);
-}
-
-void SettingFieldMaxThreads::readBinary(ReadBuffer & in)
-{
-    UInt64 x = 0;
-    readVarUInt(x, in);
-    *this = x;
-}
-
 UInt64 SettingFieldMaxThreads::getAuto()
 {
     return getNumberOfCPUCoresToUse();
@@ -358,40 +237,40 @@ namespace
         if (d != 0.0 && !std::isnormal(d))
             throw Exception(
                 ErrorCodes::CANNOT_PARSE_NUMBER, "A setting's value in seconds must be a normal floating point number or zero. Got {}", d);
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
-        if (d * 1000000 > std::numeric_limits<Int64>::max() || d * 1000000 < std::numeric_limits<Int64>::min())
+        if (d < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A setting's value in seconds cannot be negative. Got {}", d);
+        const Float64 microseconds = d * 1000000;
+        if (accurate::greaterOp(microseconds, std::numeric_limits<Int64>::max()))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "Cannot convert seconds to microseconds: the setting's value in seconds is too big: {}", d);
-#pragma clang diagnostic pop
 
-        return static_cast<Int64>(d * 1000000);
+        return static_cast<Int64>(microseconds);
     }
 
 }
 
 template <>
 SettingFieldSeconds::SettingFieldTimespan(const Field & f)
-    : SettingFieldTimespan(Poco::Timespan{float64AsSecondsToTimespan(fieldToNumber<Float64>(f))})
+    : SettingFieldTimespan(Poco::Timespan{float64AsSecondsToTimespan(fieldToNumberSettingValue<Float64>(f))})
 {
 }
 
 template <>
-SettingFieldMilliseconds::SettingFieldTimespan(const Field & f) : SettingFieldTimespan(fieldToNumber<UInt64>(f))
+SettingFieldMilliseconds::SettingFieldTimespan(const Field & f) : SettingFieldTimespan(fieldToNumberSettingValue<UInt64>(f))
 {
 }
 
 template <>
 SettingFieldTimespan<SettingFieldTimespanUnit::Second> & SettingFieldSeconds::operator=(const Field & f)
 {
-    *this = Poco::Timespan{float64AsSecondsToTimespan(fieldToNumber<Float64>(f))};
+    *this = Poco::Timespan{float64AsSecondsToTimespan(fieldToNumberSettingValue<Float64>(f))};
     return *this;
 }
 
 template <>
 SettingFieldTimespan<SettingFieldTimespanUnit::Millisecond> & SettingFieldMilliseconds::operator=(const Field & f)
 {
-    *this = fieldToNumber<UInt64>(f);
+    *this = fieldToNumberSettingValue<UInt64>(f);
     return *this;
 }
 
@@ -429,7 +308,7 @@ void SettingFieldSeconds::parseFromString(const String & str)
 template <>
 void SettingFieldMilliseconds::parseFromString(const String & str)
 {
-    *this = stringToNumber<UInt64>(str);
+    *this = stringToNumberSettingValue<UInt64>(str);
 }
 
 template <SettingFieldTimespanUnit unit_>
@@ -449,12 +328,8 @@ Int64 SettingFieldTimespan<unit_>::microsecondsFromUnits(UInt64 units)
 template <SettingFieldTimespanUnit unit_>
 void SettingFieldTimespan<unit_>::writeBinary(WriteBuffer & out) const
 {
-    /// Note that this returns an UInt64 (for both seconds and milliseconds units) for compatibility reasons as the value
-    /// for seconds used to be a integer (now a Float64)
-    /// This method is only used to communicate with clients or servers older than DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS
-    /// in which the value was passed as binary (as a UInt64)
-    /// Later versions pass the setting values as String (using toString() and parseFromString()) and there passing "1.2" will
-    /// lead to `1` on releases with integer seconds or `1.2` on more recent releases
+    /// Note that this writes an UInt64 (for both seconds and milliseconds units), so the fractional part is lost.
+    /// It is only used by `BaseSettings::writeChangedBinary`; settings in queries are passed as strings.
     /// See https://github.com/ClickHouse/ClickHouse/issues/36940 for more details
     auto num_units = operator UInt64();
     writeVarUInt(num_units, out);
@@ -521,18 +396,6 @@ SettingFieldMap & SettingFieldMap::operator =(const Field & f)
 void SettingFieldMap::parseFromString(const String & str)
 {
     *this = stringToMap(str);
-}
-
-void SettingFieldMap::writeBinary(WriteBuffer & out) const
-{
-    DB::writeBinary(value, out);
-}
-
-void SettingFieldMap::readBinary(ReadBuffer & in)
-{
-    Map map;
-    DB::readBinary(map, in);
-    *this = map;
 }
 
 namespace
@@ -605,6 +468,51 @@ Poco::URI SettingFieldURI::parseURI(const String & str)
 }
 
 
+static bool isTriBoolKeyword(const Field & f, std::string_view keyword)
+{
+    return f.getType() == Field::Types::String && f.safeGet<String>() == keyword;
+}
+
+template <typename Keyword>
+SettingFieldTriBool<Keyword>::SettingFieldTriBool(const Field & f) : is_keyword(isTriBoolKeyword(f, keyword))
+{
+    if (!is_keyword)
+        base = SettingFieldBool(f);
+}
+
+template <typename Keyword>
+SettingFieldTriBool<Keyword> & SettingFieldTriBool<Keyword>::operator=(const Field & f)
+{
+    changed = true;
+    is_keyword = isTriBoolKeyword(f, keyword);
+    if (!is_keyword)
+        base = f;
+    return *this;
+}
+
+template <typename Keyword>
+SettingFieldTriBool<Keyword>::operator Field() const
+{
+    return is_keyword ? Field(String(keyword)) : Field(base);
+}
+
+template <typename Keyword>
+String SettingFieldTriBool<Keyword>::toString() const
+{
+    return is_keyword ? String(keyword) : base.toString();
+}
+
+template <typename Keyword>
+void SettingFieldTriBool<Keyword>::parseFromString(const String & str)
+{
+    changed = true;
+    is_keyword = (str == keyword);
+    if (!is_keyword)
+        base.parseFromString(str);
+}
+
+template struct SettingFieldTriBool<SettingFieldKeywordForce>;
+
 void SettingFieldEnumHelpers::writeBinary(std::string_view str, WriteBuffer & out)
 {
     writeStringBinary(str, out);
@@ -651,18 +559,6 @@ String SettingFieldCustom::toString(bool show_secrets) const
 void SettingFieldCustom::parseFromString(const String & str)
 {
     *this = Field::restoreFromDump(str);
-}
-
-void SettingFieldCustom::writeBinary(WriteBuffer & out) const
-{
-    writeStringBinary(toString(), out);
-}
-
-void SettingFieldCustom::readBinary(ReadBuffer & in)
-{
-    String str;
-    readStringBinaryGrowing(str, in);
-    parseFromString(str);
 }
 
 SettingFieldNonZeroUInt64::SettingFieldNonZeroUInt64(UInt64 x) : SettingFieldUInt64(x)

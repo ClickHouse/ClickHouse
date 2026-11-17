@@ -186,6 +186,13 @@ StorageNATS::StorageNATS(
     , throw_on_startup_failure(mode <= LoadingStrictnessLevel::CREATE)
     , fresh_definition(fresh_definition_)
 {
+    if (fresh_definition
+        && (subjects.empty() || std::any_of(subjects.begin(), subjects.end(), [](const String & s) { return s.empty(); })))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting `nats_subjects` must contain at least one subject, and subjects must not be empty");
+    }
     auto nats_username = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_username]);
     auto nats_password = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_password]);
     auto nats_token = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_token]);
@@ -711,7 +718,12 @@ StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot,
                 "This NATS engine reads from multiple subjects. "
                 "You must specify `stream_like_engine_insert_queue` to choose the subject to write to");
         }
-
+        if (subjects.empty() || subjects[0].empty())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "This NATS engine has no valid subject to write to, check the `nats_subjects` setting");
+        }
         subject = subjects[0];
     }
 
@@ -727,6 +739,7 @@ StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot,
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
         max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
     return std::make_shared<MessageQueueSink>(
+        std::make_shared<const Block>(metadata_snapshot->getSampleBlock()),
         std::make_shared<const Block>(metadata_snapshot->getSampleBlockNonMaterialized()),
         getFormatName(),
         max_rows,
@@ -1689,9 +1702,7 @@ The number of rows in one NATS message depends on whether the format is row-base
 ## Using JetStream {#using-jetstream}
 
 Before using NATS engine with NATS JetStream, you must create a NATS stream and a durable pull consumer. For this, you can use, for example, the nats utility from the [NATS CLI](https://github.com/nats-io/natscli) package:
-<details>
-<summary>creating stream</summary>
-
+<Accordion title="creating stream">
 ```bash
 $ nats stream add
 ? Stream Name stream_name
@@ -1746,11 +1757,9 @@ State:
            Last Sequence: 0
         Active Consumers: 0
 ```
-</details>
+</Accordion>
 
-<details>
-<summary>creating durable pull consumer</summary>
-
+<Accordion title="creating durable pull consumer">
 ```bash
 $ nats consumer add
 ? Select a Stream stream_name
@@ -1786,7 +1795,7 @@ Last Delivered Message: Consumer sequence: 0 Stream sequence: 0
     Unprocessed Messages: 0
            Waiting Pulls: 0 of maximum 512
 ```
-</details>
+</Accordion>
 
 After creating stream and durable pull consumer, we can create a table with NATS engine. To do this, you need to initialize: nats_stream, nats_consumer_name, and nats_subjects:
 

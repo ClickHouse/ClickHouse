@@ -1,5 +1,6 @@
 #include <Interpreters/SecretArgumentsRegistry.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Backups/BackupFactory.h>
 #include <Common/HiddenSecret.h>
 #include <Databases/DatabaseFactory.h>
@@ -11,6 +12,19 @@
 
 namespace DB
 {
+
+namespace
+{
+
+bool differsOnlyInCaseFromFunctionWithSecrets(const String & name)
+{
+    if (!TableFunctionFactory::instance().hasArgumentSecretsIgnoringCase(name)
+        && !FunctionFactory::instance().hasArgumentSecretsIgnoringCase(name))
+        return false;
+    return !FunctionFactory::instance().has(name) && !AggregateFunctionFactory::instance().isAggregateFunctionName(name);
+}
+
+}
 
 const SecretArgumentsRegistry & SecretArgumentsRegistry::instance()
 {
@@ -37,9 +51,12 @@ SecretArgumentsResult SecretArgumentsRegistry::find(ASTFunction::Kind kind, cons
                 spec = FunctionFactory::instance().tryGetSecretArgumentsSpec(name);
                 generic_rules = false;
             }
-            /// Every table function has a spec, so an unknown function has no secrets.
-            if (!spec)
+            /// Every table function has a spec, so an unknown function has no secrets, unless it is one with secrets in the wrong case.
+            if (!spec && !differsOnlyInCaseFromFunctionWithSecrets(name))
                 return {};
+            break;
+        case ASTFunction::Kind::TABLE_FUNCTION:
+            spec = TableFunctionFactory::instance().tryGetSecretArgumentsSpec(name);
             break;
         case ASTFunction::Kind::TABLE_ENGINE:
             spec = StorageFactory::instance().tryGetSecretArgumentsSpec(name);
@@ -59,12 +76,16 @@ SecretArgumentsResult SecretArgumentsRegistry::find(ASTFunction::Kind kind, cons
     }
 
     FunctionSecretArgumentsFinder finder(function);
-    /// Not a registered engine (a typo, or a process that did not register that factory). The statement is
-    /// logged before validation rejects it, so fail closed.
+    /// Not a registered engine or table function (a typo, one not compiled in, a parameterized view, whose `name = value`
+    /// parameters keep their names), or a function name in the wrong case. The statement is logged before validation
+    /// rejects it, so fail closed.
     if (!spec)
-        finder.maskEveryArgument();
+        finder.maskEveryArgument(/*keep_identifier_keys=*/ kind == ASTFunction::Kind::TABLE_FUNCTION);
     else
         finder.apply(*spec, generic_rules);
+    /// No table function, engine, backup locator or function with secrets reads a parameter list `f(...)(...)`, so its
+    /// values cannot be classified.
+    finder.result.hide_parameters = true;
     return finder.result;
 }
 

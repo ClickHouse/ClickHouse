@@ -5,7 +5,6 @@
 -- so EXISTS became false for every outer row (and a correlated scalar returned NULL).
 
 -- Correlated subqueries require the analyzer; force it so the test also runs under the old-analyzer CI config.
-SET enable_analyzer = 1;
 SET allow_correlated_subqueries = 1;
 
 DROP TABLE IF EXISTS users_04490;

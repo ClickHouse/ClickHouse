@@ -3,7 +3,6 @@
 
 -- The copy merges into the target's filter, rebuilding the `FilterStep`: without the cache key the
 -- second run cannot reuse the entry. `Memory` source, so only the target read can populate it
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 SET use_query_condition_cache = 1;
