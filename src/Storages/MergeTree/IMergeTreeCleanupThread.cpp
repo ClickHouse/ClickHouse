@@ -97,8 +97,7 @@ void IMergeTreeCleanupThread::run()
         return;
     }
 
-    /// Nothing is cleaned up once the server shuts down: the shutdown waits for a running iteration,
-    /// and what is left is cleaned up after the restart.
+    /// The shutdown waits for a running iteration; what is left is removed after the restart.
     if (data.getContext()->isShutdownCalled())
         return;
 
