@@ -113,7 +113,7 @@ struct WildcardPartitionStrategy : IPartitionStrategy
 
 private:
     /// See `NumberedFileNames::may_be_names_of_other_partitions`.
-    bool numberedNamesMayBeNamesOfOtherPartitions(const std::string & prefix) const;
+    [[nodiscard]] bool numberedNamesMayBeNamesOfOtherPartitions(const std::string & prefix) const;
 };
 
 /*

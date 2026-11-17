@@ -144,13 +144,13 @@ public:
     /// while the reads snapshot it at planning time, so it is guarded by `paths_mutex` and handed out by value.
     /// The backends keep the storage of the list (`keys`, `blobs_paths`, `paths`) and reach it only through
     /// `getPathsUnlocked` / `getMutablePathsUnlocked` / `setPathsUnlocked`, which are called with the mutex held.
-    Paths getPaths() const
+    [[nodiscard]] Paths getPaths() const
     {
         std::lock_guard lock(paths_mutex);
         return getPathsUnlocked();
     }
 
-    size_t getPathsCount() const
+    [[nodiscard]] size_t getPathsCount() const
     {
         std::lock_guard lock(paths_mutex);
         return getPathsUnlocked().size();
@@ -181,7 +181,7 @@ public:
     /// The keys after the first one that were written by an insert split by size, in the order of the list.
     /// A truncating insert that is not split itself deletes only these: the keys that an insert stepped aside
     /// into with `*_create_new_file_on_insert` alone are kept, as they always were.
-    Strings getSplitTailPaths() const
+    [[nodiscard]] Strings getSplitTailPaths() const
     {
         std::lock_guard lock(paths_mutex);
         const Paths & paths = getPathsUnlocked();
@@ -265,7 +265,7 @@ public:
         paths_committed_by_writes.commit(path);
     }
 
-    bool isPathCommittedByInsert(const String & path) const
+    [[nodiscard]] bool isPathCommittedByInsert(const String & path) const
     {
         std::lock_guard lock(paths_mutex);
         return paths_committed_by_writes.contains(path);
@@ -590,7 +590,7 @@ public:
     std::optional<String> source_disk_name;
 
 protected:
-    virtual const Paths & getPathsUnlocked() const = 0;
+    [[nodiscard]] virtual const Paths & getPathsUnlocked() const = 0;
     /// The list itself, for the mutations that touch a single element of it.
     virtual Paths & getMutablePathsUnlocked() = 0;
     virtual void setPathsUnlocked(const Paths & paths) = 0;

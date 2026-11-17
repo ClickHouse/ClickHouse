@@ -102,7 +102,7 @@ public:
     void setRawPath(const Path & path) override { blob_path = path; }
     const String & getRawURI() const override { return blob_path.path; }
 
-    const Paths & getPathsUnlocked() const override { return blobs_paths; }
+    [[nodiscard]] const Paths & getPathsUnlocked() const override { return blobs_paths; }
     Paths & getMutablePathsUnlocked() override { return blobs_paths; }
     void setPathsUnlocked(const Paths & paths) override { blobs_paths = paths; }
 
