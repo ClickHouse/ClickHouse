@@ -1625,6 +1625,7 @@ def test_move_is_refused_when_config_has_same_name_user(start_cluster):
     config_path = "/etc/clickhouse-server/users.d/tier_move_collision_user.xml"
     with entities(instance, users=[user]):
         instance.query(f"CREATE USER {user} IN local_directory IDENTIFIED WITH no_password")
+        assert instance.query("SELECT currentUser()", user=user).strip() == user
         try:
             instance.exec_in_container(
                 [
@@ -1638,6 +1639,13 @@ def test_move_is_refused_when_config_has_same_name_user(start_cluster):
                 f"SELECT storage FROM system.users WHERE name = '{user}' ORDER BY storage"
             ).splitlines() == ["local_directory", "users_xml"]
 
+            # While the name refers to two users, nobody can log in with it.
+            output, error = instance.query_and_get_answer_with_error(
+                "SELECT currentUser()", user=user
+            )
+            assert output == ""
+            assert "AUTHENTICATION_FAILED" in error, error
+
             error = instance.query_and_get_error(f"MOVE USER {user} TO memory")
             assert "ACCESS_ENTITY_ALREADY_EXISTS" in error, error
             assert instance.query(
@@ -1646,6 +1654,12 @@ def test_move_is_refused_when_config_has_same_name_user(start_cluster):
         finally:
             instance.exec_in_container(["rm", "-f", config_path])
             instance.query("SYSTEM RELOAD CONFIG")
+
+        # Once the user of the config is removed, the remaining user can log in again.
+        assert instance.query(
+            f"SELECT storage FROM system.users WHERE name = '{user}'"
+        ).splitlines() == ["local_directory"]
+        assert instance.query("SELECT currentUser()", user=user).strip() == user
 
 
 def test_named_storage_collision_is_checked_before_batch_insert(start_cluster):
