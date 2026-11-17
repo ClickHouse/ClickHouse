@@ -1409,7 +1409,7 @@ void collectIcebergAvroRecords(const Poco::Dynamic::Var & type, std::optional<In
     if (type.type() != typeid(Poco::JSON::Object::Ptr))
         return;
 
-    const auto object = type.extract<Poco::JSON::Object::Ptr>();
+    const auto & object = type.extract<Poco::JSON::Object::Ptr>();
     const String kind = object->has("type") && object->get("type").isString() ? object->getValue<String>("type") : String{};
     if (kind == "record")
     {
