@@ -59,8 +59,6 @@ namespace Setting
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool optimize_use_implicit_projections;
     extern const SettingsBool optimize_use_projections;
-    extern const SettingsBool parallel_replicas_local_plan;
-    extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool query_plan_aggregation_bucket_top_k;
     extern const SettingsBool query_plan_aggregation_having_prefilter;
     extern const SettingsBool query_plan_convert_any_join_to_semi_or_anti_join;
@@ -144,6 +142,7 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
     extern const SettingsFloat automatic_parallel_replicas_max_duplicated_read_ratio;
+    extern const SettingsFloat automatic_parallel_replicas_statistics_drift_ratio;
     extern const SettingsBool automatic_parallel_replicas_remember_boundary;
     extern const SettingsUInt64 automatic_parallel_replicas_undecided_retry_after_executions;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
@@ -249,8 +248,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     UInt64 max_entries_for_hash_table_stats_,
     String initial_query_id_,
     ExpressionActionsSettings actions_settings_,
-    PreparedSetsCachePtr prepared_sets_cache_,
-    bool is_parallel_replicas_initiator_with_projection_support_)
+    PreparedSetsCachePtr prepared_sets_cache_)
 {
     optimize_plan = from[Setting::query_plan_enable_optimizations];
     max_optimizations_to_apply = from[Setting::query_plan_max_optimizations_to_apply];
@@ -374,7 +372,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];
     force_projection_name = optimize_projection ? from[Setting::force_optimize_projection_name].value : "";
     max_set_size_for_projection_match = from[Setting::query_plan_max_set_size_for_projection_match];
-    is_parallel_replicas_initiator_with_projection_support = is_parallel_replicas_initiator_with_projection_support_;
 
     make_distributed_plan = from[Setting::make_distributed_plan];
     serialize_query_plan = from[Setting::serialize_query_plan];
@@ -490,6 +487,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     automatic_parallel_replicas_mode = Context::getAutomaticParallelReplicasMode(from);
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
     automatic_parallel_replicas_max_duplicated_read_ratio = from[Setting::automatic_parallel_replicas_max_duplicated_read_ratio];
+    automatic_parallel_replicas_statistics_drift_ratio = from[Setting::automatic_parallel_replicas_statistics_drift_ratio];
     automatic_parallel_replicas_remember_boundary = from[Setting::automatic_parallel_replicas_remember_boundary];
     automatic_parallel_replicas_undecided_retry_after_executions = from[Setting::automatic_parallel_replicas_undecided_retry_after_executions];
     parallel_replicas_boundary_settings_hash = parallelReplicasBoundarySettingsHash(from);
@@ -504,10 +502,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
         from->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         from->getInitialQueryId(),
         ExpressionActionsSettings(from),
-        from->getPreparedSetsCache(),
-        from->canUseParallelReplicasOnInitiator()
-            && from->getSettingsRef()[Setting::parallel_replicas_local_plan]
-            && from->getSettingsRef()[Setting::parallel_replicas_support_projection])
+        from->getPreparedSetsCache())
 {
     skip_forced_projection_check = from->skipsForcedProjectionCheck();
     distributed_plan_local_object = from->getDistributedPlanLocalObject();
