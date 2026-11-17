@@ -218,7 +218,7 @@ struct DataLakeStorageSettings
 
     Field get(const std::string & name);
 
-    bool isChanged(std::string_view name) const;
+    [[nodiscard]] bool isChanged(std::string_view name) const;
 
     static bool hasBuiltin(std::string_view name);
     SettingDescriptions enumerateSettings() const;
