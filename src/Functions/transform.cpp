@@ -794,7 +794,10 @@ namespace
         /// (FixedString -> String) trailing NULs, and the cast above already produces the value the lookup
         /// needs. Such values compare equal under `String`/`FixedString` semantics but are not Field-accurate
         /// equal, so the comparison below would wrongly drop the entry and the lookup would never match.
-        /// Overlong values already throw during the cast above, so no truncated entry can slip through.
+        /// Overlong values throw during the cast for non-nullable targets; for a nullable target the cast
+        /// produces NULL instead of throwing, so only successful (non-NULL) conversions are exempted below.
+        /// A conversion that acquired NULL falls through to `accurateEquals`, which rejects it exactly as
+        /// before; a genuine NULL entry is still admitted by that same comparison.
         const bool cast_is_string_family_conversion = isStringOrFixedString(removeNullable(from_type))
             && isStringOrFixedString(removeNullable(from_array_nested_type));
 
@@ -805,7 +808,7 @@ namespace
             auto & table = *cache->table_num_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || cast_is_string_family_conversion || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (cast_checked_enum_membership || (cast_is_string_family_conversion && !(*cache->from_column)[i].isNull()) || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
                 {
                     UInt64 key = 0;
                     auto * dst = reinterpret_cast<char *>(&key);
@@ -828,7 +831,7 @@ namespace
             auto & table = *cache->table_string_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || cast_is_string_family_conversion || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (cast_checked_enum_membership || (cast_is_string_family_conversion && !(*cache->from_column)[i].isNull()) || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
                 {
                     std::string_view ref = cache->from_column->getDataAt(i);
                     table.insertIfNotPresent(ref, i);
@@ -841,7 +844,7 @@ namespace
             auto & table = *cache->table_anything_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || cast_is_string_family_conversion || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (cast_checked_enum_membership || (cast_is_string_family_conversion && !(*cache->from_column)[i].isNull()) || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
                 {
                     SipHash hash;
                     cache->from_column->updateHashWithValue(i, hash);
