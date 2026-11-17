@@ -1228,9 +1228,11 @@ std::map<String, Documentation> ParserSystemQuery::getDocumentation() const
 {
     std::map<String, Documentation> documentation;
 
+    /// The description is built from two literals, because a single string literal longer than 65536 bytes
+    /// does not compile (`-Werror,-Woverlength-strings`).
     documentation["SYSTEM"] =
     {
-        .description = R"DOCS_MD(
+        .description = String(R"DOCS_MD(
 ## SYSTEM RELOAD EMBEDDED DICTIONARIES {#reload-embedded-dictionaries}
 
 Reload all [Internal dictionaries](/reference/statements/create/dictionary).
@@ -1867,7 +1869,8 @@ However, if the server on the specified port and protocol was not stopped using 
 ```sql
 SYSTEM START LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
 ```
-
+)DOCS_MD")
+        + R"DOCS_MD(
 ## Managing MergeTree Tables {#managing-mergetree-tables}
 
 ClickHouse can manage background processes in [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables.
