@@ -244,96 +244,65 @@ DataTypePtr rawByteTargetType(const DataTypePtr & hint)
     return nullptr;
 }
 
-/// Whether the path component `internal` of a decoded field names the component `exposed` of a requested
-/// column. The entries of a map are decoded at `key` / `value` but requested as the subcolumns `keys` /
-/// `values`, so these components match both names.
-bool componentMatches(std::string_view internal, std::string_view exposed)
+/// Whether the requested column `name` is a subcolumn below the field at the dotted `path`. The paths of
+/// map entries already use the names of the exposed subcolumns `keys` / `values` (see `structFieldPath`).
+bool isRequestedBelow(std::string_view path, std::string_view name)
 {
-    if (internal == exposed)
-        return true;
-    return (internal == "key" || internal == "value") && exposed.size() == internal.size() + 1
-        && exposed.starts_with(internal) && exposed.back() == 's';
-}
-
-bool hasMapEntryComponent(std::string_view path)
-{
-    while (true)
-    {
-        const size_t dot = path.find('.');
-        const std::string_view component = path.substr(0, dot);
-        if (component == "key" || component == "value")
-            return true;
-        if (dot == std::string_view::npos)
-            return false;
-        path.remove_prefix(dot + 1);
-    }
-}
-
-enum class RequestedNameRelation
-{
-    Unrelated,
-    Same,
-    /// The requested name is a subcolumn below the field.
-    Descendant,
-};
-
-/// How the requested column `name` relates to the field at the dotted `path`, matching the components with
-/// `componentMatches`.
-RequestedNameRelation relateRequestedName(std::string_view path, std::string_view name)
-{
-    while (true)
-    {
-        const size_t path_dot = path.find('.');
-        const size_t name_dot = name.find('.');
-        if (!componentMatches(path.substr(0, path_dot), name.substr(0, name_dot)))
-            return RequestedNameRelation::Unrelated;
-        if (path_dot == std::string_view::npos)
-            return name_dot == std::string_view::npos ? RequestedNameRelation::Same : RequestedNameRelation::Descendant;
-        if (name_dot == std::string_view::npos)
-            return RequestedNameRelation::Unrelated;
-        path.remove_prefix(path_dot + 1);
-        name.remove_prefix(name_dot + 1);
-    }
-}
-
-/// Whether the field at the dotted `path` is requested as a column, under its own name or, for a path
-/// through map entries, under the name of the exposed subcolumn (`t.keys.s` for the field `t.key.s`).
-bool isRequestedField(const String & path, const UnorderedMapWithMemoryTracking<String, DataTypePtr> & types)
-{
-    if (types.contains(path))
-        return true;
-    if (!hasMapEntryComponent(path))
-        return false;
-    return std::ranges::any_of(types, [&](const auto & entry)
-        { return relateRequestedName(path, entry.first) == RequestedNameRelation::Same; });
+    return name.size() > path.size() + 1 && name.starts_with(path) && name[path.size()] == '.';
 }
 
 /// Whether the field at the dotted `path` is decoded for more than one requested column: its own name and
-/// those of the enclosing fields (`t` and `t.s` for the field `t.s`), matched by `isRequestedField`.
+/// those of the enclosing fields (`t` and `t.s` for the field `t.s`).
 bool isDecodedForSeveralRequests(const String & path, const UnorderedMapWithMemoryTracking<String, DataTypePtr> * types)
 {
     if (!types || path.empty())
         return false;
-    size_t requests = isRequestedField(path, *types) ? 1 : 0;
+    size_t requests = types->contains(path) ? 1 : 0;
     for (size_t pos = path.find('.'); pos != String::npos && requests < 2; pos = path.find('.', pos + 1))
-        requests += isRequestedField(path.substr(0, pos), *types);
+        requests += types->contains(path.substr(0, pos));
     return requests >= 2;
 }
 
+/// Whether `type` has a leaf that `rawByteTargetType` converts while decoding (`IPv6` or a big integer).
+bool hasRawByteLeaf(const DataTypePtr & type)
+{
+    const DataTypePtr stripped = stripHint(type);
+    if (rawByteWidth(WhichDataType(stripped)) != 0)
+        return true;
+    if (const auto * array = typeid_cast<const DataTypeArray *>(stripped.get()))
+        return hasRawByteLeaf(array->getNestedType());
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(stripped.get()))
+        return std::ranges::any_of(tuple->getElements(), hasRawByteLeaf);
+    if (const auto * map = typeid_cast<const DataTypeMap *>(stripped.get()))
+        return hasRawByteLeaf(map->getKeyType()) || hasRawByteLeaf(map->getValueType());
+    return false;
+}
+
 /// Whether the field at the dotted `path` carries a requested subcolumn below it together with a requested
-/// column that encloses that subcolumn: e.g. `t` and `t.s` for the struct `t`, or `t.u` and `t.u.s` for the
-/// struct `t`, where `t` itself is not requested. Each such column is taken from the one decoded column.
+/// column that encloses that subcolumn (e.g. `t` and `t.s` for the struct `t`, or `t.u` and `t.u.s` for the
+/// struct `t`, where `t` itself is not requested), and one of these columns asks for a raw-byte conversion.
+/// Each such column is taken from the one decoded column, whose leaves then keep their bytes (see
+/// `RecordBatchDecoder::rawByteTarget`) and are converted after decoding.
 bool carriesNestedRequests(const String & path, const UnorderedMapWithMemoryTracking<String, DataTypePtr> * types)
 {
     if (!types || path.empty())
         return false;
     for (const auto & [name, type] : *types)
     {
-        if (relateRequestedName(path, name) != RequestedNameRelation::Descendant)
+        if (!isRequestedBelow(path, name))
             continue;
+        bool enclosed = false;
+        bool converts = hasRawByteLeaf(type);
         for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
-            if (types->contains(name.substr(0, pos)))
-                return true;
+        {
+            if (auto it = types->find(name.substr(0, pos)); it != types->end())
+            {
+                enclosed = true;
+                converts = converts || hasRawByteLeaf(it->second);
+            }
+        }
+        if (enclosed && converts)
+            return true;
     }
     return false;
 }
@@ -2637,6 +2606,10 @@ DataTypePtr RecordBatchDecoder::structFieldHint(const DataTypePtr & hint, const 
 
 String RecordBatchDecoder::structFieldPath(const String & path, const ArrowType & type, size_t i) const
 {
+    /// The key and the value of a map are identified by position, under the names of the subcolumns that
+    /// expose them, so a requested `t.keys` or `t.values.s` names the field it is decoded from.
+    if (type.map_entries)
+        return childPath(path, i == 0 ? "keys" : "values");
     return childPath(path, type.positional_fields ? std::to_string(i + 1) : type.children[i].name);
 }
 
@@ -2986,9 +2959,12 @@ void RecordBatchDecoder::collectDictionaryUses(
         const FieldPosition position{path, list_depth};
         DictionaryUses & id_uses = uses[field.dictionary->id];
         if (std::ranges::none_of(id_uses, [&](const DictionaryUse & use) { return use.position == position; }))
-            id_uses.push_back(DictionaryUse{
-                position, effective_hint,
-                /*keep_raw_bytes=*/rawByteTargetType(effective_hint) && isDecodedForSeveralRequests(path, lookup_types)});
+        {
+            /// The values can be a struct, an array or a map whose descendants are shared (`t Tuple(s IPv6)`
+            /// with `t.s String` for a dictionary of structs), so the whole subtree counts, not only the field.
+            const bool shared = isDecodedForSeveralRequests(path, lookup_types) || carriesNestedRequests(path, lookup_types);
+            id_uses.push_back(DictionaryUse{position, effective_hint, /*keep_raw_bytes=*/effective_hint && shared});
+        }
     }
 
     const ArrowType & type = field.type;

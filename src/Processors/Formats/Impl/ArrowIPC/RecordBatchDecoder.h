@@ -36,9 +36,10 @@ struct DictionaryUse
 {
     FieldPosition position;
     DataTypePtr hint;
-    /// The field is decoded for several requested columns that can read its raw bytes differently (see
-    /// `RecordBatchDecoder::rawByteTarget`), so the values are registered unconverted: each requested
-    /// column taken from the field is converted by its own type after decoding.
+    /// The field, or a field below it (when the values are a struct, an array or a map), is decoded for
+    /// several requested columns that can read its raw bytes differently (see `RecordBatchDecoder::rawByteTarget`),
+    /// so the values are registered without the post-decode rewrite: each requested column taken from the
+    /// field is converted by its own type after decoding.
     bool keep_raw_bytes = false;
 };
 
@@ -340,9 +341,10 @@ private:
     [[nodiscard]] ColumnUInt8::Ptr buildNullMap(const Slice & validity, size_t rows, Int64 null_count) const;
     /// Nullable structs retain their null maps when tuples are nullable, a tuple conversion is requested, or
     /// the struct (at the dotted `path`) carries a requested subcolumn together with a requested column that
-    /// encloses it (`t` and `t.s`, or `t.u` and `t.u.s`, for the struct `t`): the subcolumn is taken from the
-    /// decoded struct and converted after decoding, which needs the null map to tell the hidden rows. The
-    /// reader applies the destination nullability after converting visible rows.
+    /// encloses it (`t` and `t.s`, or `t.u` and `t.u.s`, for the struct `t`) and one of them asks for a
+    /// raw-byte conversion: the subcolumn is taken from the decoded struct and converted after decoding, which
+    /// needs the null map to tell the hidden rows. The reader applies the destination nullability after
+    /// converting visible rows, and reads a null row as the default tuple when tuples are not nullable.
     [[nodiscard]] bool wrapsInNullable(
         const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint, const String & path) const;
     /// Decodes a RunEndEncoded field (which has no buffers of its own) into a column of its values type, with each

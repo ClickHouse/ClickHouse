@@ -43,3 +43,18 @@ null outer struct row
 (\'\')	::
 ('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	abcdefghijklmnop
 ('::')	
+null struct row with string subcolumns only
+(\'abcdefghijklmnop\')	abcdefghijklmnop
+(\'\')	
+(\'abcdefghijklmnop\')
+(\'\')
+dictionary of structs
+('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	abcdefghijklmnop
+('abcdefghijklmnop')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+dictionary of arrays of structs
+[('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')]	['abcdefghijklmnop']
+[('abcdefghijklmnop')]	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+map with custom entry names
+{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':'abcdefghijklmnop'}	['abcdefghijklmnop']
+{'abcdefghijklmnop':'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}	['abcdefghijklmnop']
+['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']	[149452120213688298009235146691947225697]

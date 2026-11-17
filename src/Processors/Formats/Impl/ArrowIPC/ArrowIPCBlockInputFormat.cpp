@@ -292,6 +292,29 @@ ColumnWithTypeAndName prepareArrowColumnForCast(
                 return nested;
             }
         }
+        else if (isTuple(nested.type) && !settings.schema_inference_allow_nullable_tuple_type && !to->isNullable()
+            && !to->isLowCardinalityNullable())
+        {
+            /// A struct the decoder keeps nullable only because a subcolumn is taken from it too (see
+            /// `RecordBatchDecoder::wrapsInNullable`), requested as a non-tuple type: without nullable tuples,
+            /// a null struct row reads as the default tuple, as it does when the struct is decoded alone.
+            const auto & null_map = from_null_column.getNullMapData();
+            if (memoryIsZero(null_map.data(), 0, null_map.size()))
+                return prepareArrowColumnForCast(std::move(nested), to, settings);
+            IColumn::Filter visible_rows(null_map.size());
+            for (size_t i = 0; i < null_map.size(); ++i)
+                visible_rows[i] = !null_map[i];
+            auto defaulted = IColumn::mutate(nested.column->filter(visible_rows, -1));
+            const size_t default_index = defaulted->size();
+            nested.type->insertDefaultInto(*defaulted);
+            auto indexes = ColumnUInt64::create(null_map.size());
+            auto & index_data = indexes->getData();
+            size_t visible_index = 0;
+            for (size_t i = 0; i < null_map.size(); ++i)
+                index_data[i] = null_map[i] ? default_index : visible_index++;
+            nested.column = defaulted->index(*indexes, 0);
+            return prepareArrowColumnForCast(std::move(nested), to, settings);
+        }
         else
             nested = prepareArrowColumnForCast(std::move(nested), to_nested, settings);
         from.column = ColumnNullable::create(nested.column, from_null_column.getNullMapColumnPtr());
