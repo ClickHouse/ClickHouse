@@ -69,3 +69,7 @@ not folded identity hasTokenMatch	64
 not folded identity hasTokenMatch, no index	64
 typed constant LIKE	64
 typed constant LIKE, no index	64
+Bool constant hasAnyTokens	64
+Bool constant hasAnyTokens, no index	64
+Bool constant hasTokenPrefix	64
+Bool constant hasTokenPrefix, no index	64

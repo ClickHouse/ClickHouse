@@ -157,3 +157,15 @@ SELECT 'typed constant LIKE', count() FROM tab_folded_constant WHERE formatRowNo
 SELECT 'typed constant LIKE, no index', count() FROM tab_folded_constant WHERE formatRowNoNewline('CSV', tag, toUInt16(toDate('2026-01-01'))) LIKE '%20454%' SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab_folded_constant;
+
+-- A `Bool` constant is not named by its number either: `toString` of the `Bool` result is `true`, not `1`.
+CREATE TABLE tab_folded_constant (id UInt64, c UInt8, INDEX idx(toString(if(c, toBool(1), toBool(0)))) TYPE text(tokenizer = array))
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_folded_constant SELECT number, 1 FROM numbers(64);
+
+SELECT 'Bool constant hasAnyTokens', count() FROM tab_folded_constant WHERE hasAnyTokens(toString(if(c, 1, 0)), ['1']) SETTINGS use_skip_indexes = 1;
+SELECT 'Bool constant hasAnyTokens, no index', count() FROM tab_folded_constant WHERE hasAnyTokens(toString(if(c, 1, 0)), ['1']) SETTINGS use_skip_indexes = 0;
+SELECT 'Bool constant hasTokenPrefix', count() FROM tab_folded_constant WHERE hasTokenPrefix(toString(if(c, 1, 0)), '1', 'array') SETTINGS use_skip_indexes = 1;
+SELECT 'Bool constant hasTokenPrefix, no index', count() FROM tab_folded_constant WHERE hasTokenPrefix(toString(if(c, 1, 0)), '1', 'array') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab_folded_constant;

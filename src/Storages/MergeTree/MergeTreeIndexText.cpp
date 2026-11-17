@@ -2380,13 +2380,13 @@ void addCapturedConstant(CapturedConstants & captured, const String & name, cons
         captured[name] = {column, type, name};
 }
 
-/// A literal keeps the value but not the type, so a constant of a type like `Date` is not named by one.
+/// A literal keeps the value but not the type, so a constant of a type like `Date` or `Bool` is not named by one.
 bool canNameByLiteral(const DataTypePtr & type)
 {
     const auto plain_type = removeNullable(removeLowCardinality(type));
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(plain_type.get()))
         return canNameByLiteral(array_type->getNestedType());
-    return isNativeNumber(plain_type) || isString(plain_type);
+    return (isNativeNumber(plain_type) && !isBool(plain_type)) || isString(plain_type);
 }
 
 /// Evaluates a node that only depends on constants, like `arrayFirst(y -> 1, ['1'])`, which the DAG does not fold.
