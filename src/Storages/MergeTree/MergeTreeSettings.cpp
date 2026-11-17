@@ -454,6 +454,7 @@ Possible values:
 - with_buckets — Split keys into buckets during serialization. Using buckets improves reading individual keys from the Map.
 
 The number of buckets in `with_buckets` serialization is determined by [max_buckets_in_map](#max_buckets_in_map) and [map_buckets_strategy](#map_buckets_strategy).
+A `Map` whose key type contains `JSON` or `Dynamic` is always written in one bucket, regardless of other bucket settings.
 )", 0, \
         {"26.3", "basic", "basic", "Add a setting to control Map serialization version"}) \
     DECLARE(MergeTreeMapSerializationVersion, map_serialization_version_for_zero_level_parts, "basic", R"(
@@ -839,7 +840,7 @@ Set to `0` to disable this and select merges by `max_parts_to_merge_at_once` alo
 )", 0, \
         {"26.11", 0, 4096, "New setting. Lowers `max_parts_to_merge_at_once` when merging that many parts of a very wide table would not fit in memory, so that such merges stop failing with `MEMORY_LIMIT_EXCEEDED` on small servers. The previous value disables the estimate, preserving pre-26.11 behavior."}) \
     DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
-    Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md)
+    Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/reference/statements/alter/statistics)
     or [during INSERTs](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert))", 0, \
         {"26.1", true, true, "New setting"}) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
@@ -2704,6 +2705,10 @@ ZooKeeper path for zero-copy table-independent info.
     DECLARE(Bool, remote_fs_zero_copy_path_compatible_mode, false, R"(
 Run zero-copy in compatible mode during conversion process.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, cache_temporarily_for_merges, false, R"(
+Background merge and mutation reads use the filesystem cache as a temporary buffer: a miss is read into the cache and served from it, and the cache removes it when nobody holds it anymore, unless a reader or writer outside this mode used it. Only the experimental `ReaderExecutor` supports it; other readers bypass the cache. `force_read_through_cache_for_merges` takes precedence.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New experimental setting."}) \
     DECLARE(Bool, force_read_through_cache_for_merges, false, R"(
 Controls how background merge and mutation reads handle cache misses. When disabled, existing cached ranges are used, but missing ranges are read directly from the underlying storage without populating the cache. When enabled, missing ranges are read through and stored in the filesystem cache, and in the distributed cache when enabled. This can warm data for later reads, but also consumes cache capacity.
 )", EXPERIMENTAL) \
@@ -2766,7 +2771,7 @@ When enabled, merges and mutations choose a codec per block for columns that use
 The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type, each on its own and, when the default codec is a general-purpose compression such as `LZ4` or `ZSTD`, followed by it.
 The smallest output wins and incompressible blocks are stored raw. The choice is made on one block in every `adaptive_codec_selection_period` blocks and reused for the blocks in between.
 A column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`) is never selected adaptively, so encryption is always applied.
-Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions) table function.
+Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions/index) table function.
 )", BETA, \
         {"26.11", false, false, "Adaptive codec selection was moved to Beta."}, \
         {"26.8", false, false, "New setting."}) \
