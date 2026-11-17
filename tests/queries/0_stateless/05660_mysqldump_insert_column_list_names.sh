@@ -2,7 +2,8 @@
 # The column list of a MySQL dump `INSERT` can use double-quoted names (mysqldump --compatible=ansi), span several lines,
 # differ in case from `CREATE TABLE` (also for non-ASCII names) or escape a quote by doubling it. The values must still be
 # read into the right columns, a name not in `CREATE TABLE` must follow input_format_skip_unknown_fields, and distinct
-# names that are not valid UTF-8 must not be matched to each other.
+# names that are not valid UTF-8 must not be matched to each other. A name that matches the given structure exactly
+# must keep its spelling.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -49,3 +50,7 @@ ${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', MySQLDump)"
 
 printf 'CREATE TABLE t1 (`\xe4` int, `\xf6` int);\nINSERT INTO t1 (`\xf6`, `\xe4`) VALUES (100,1);\n' > "${DATA_FILE}"
 ${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', MySQLDump)"
+
+printf 'CREATE TABLE t1 (id int NOT NULL, b int NOT NULL);\nINSERT INTO t1 (B, ID) VALUES (100,1);\n' > "${DATA_FILE}"
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', MySQLDump, 'ID Int32, B Int32')"
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', MySQLDump, 'ID Int32, B Int32') SETTINGS input_format_skip_unknown_fields = 0"

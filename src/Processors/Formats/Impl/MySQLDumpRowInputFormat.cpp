@@ -441,7 +441,12 @@ static void skipEndOfRow(ReadBuffer & in, String & table_name)
     skipEndOfInsertQueryIfNeeded(in, table_name);
 }
 
-static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name, NamesAndTypesList & structure_from_create, Names & column_names)
+static void readFirstCreateAndInsertQueries(
+    ReadBuffer & in,
+    String & table_name,
+    NamesAndTypesList & structure_from_create,
+    Names & column_names,
+    const BlockNameMap * header_names = nullptr)
 {
     auto type = skipToInsertOrCreateQuery(table_name, in);
     bool insert_query_present = type == MySQLQueryType::INSERT;
@@ -465,7 +470,7 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name
     if (insert_column_names.empty())
         return;
 
-    /// MySQL column names are case-insensitive, so take the spelling from CREATE. A name not in CREATE stays as is.
+    /// MySQL column names are case-insensitive, so take the spelling from CREATE. A name in the header or not in CREATE stays as is.
     /// Poco decodes every invalid UTF-8 sequence to the same code point, so a name that is not valid UTF-8 is compared ignoring ASCII case only.
     auto is_valid_utf8 = [](const String & s) { return UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(s.data()), s.size()); };
     auto names_equal = [&](const String & create_name, const String & name)
@@ -481,6 +486,8 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name
         {
             if (std::ranges::find(column_names, name) != column_names.end())
                 continue;
+            if (header_names && header_names->find(name) != header_names->end())
+                continue;
             auto it = std::ranges::find_if(column_names, [&](const String & create_name) { return names_equal(create_name, name); });
             if (it != column_names.end())
                 name = *it;
@@ -494,7 +501,7 @@ void MySQLDumpRowInputFormat::readPrefix()
 {
     NamesAndTypesList structure_from_create;
     Names column_names;
-    readFirstCreateAndInsertQueries(*in, table_name, structure_from_create, column_names);
+    readFirstCreateAndInsertQueries(*in, table_name, structure_from_create, column_names, &column_indexes_by_names);
 
     if (!column_names.empty() && format_settings.mysql_dump.map_column_names)
         column_mapping->addColumns(column_names, column_indexes_by_names, format_settings);
