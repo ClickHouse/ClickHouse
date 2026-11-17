@@ -1,4 +1,5 @@
 #include <Common/StringUtils.h>
+#include <Formats/FormatSettings.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
@@ -136,7 +137,7 @@ SerializationPtr DataTypeMap::doGetSerialization(const SerializationInfoSettings
     /// Instead, reuse already created serializations for keys and values.
     auto key_serialization_named = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(key_serialization, "keys", SubstreamType::TupleElement));
     auto value_serialization_named = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(value_serialization, "values", SubstreamType::TupleElement));
-    auto nested_serialization = SerializationArray::create(SerializationTuple::create(SerializationTuple::ElementSerializations{key_serialization_named, value_serialization_named}, true));
+    auto nested_serialization = SerializationArray::create(SerializationTuple::create(SerializationTuple::ElementSerializations{key_serialization_named, value_serialization_named}, DataTypes{key_type, value_type}, true));
     return SerializationMap::create(key_serialization, value_serialization, nested_serialization, settings.map_serialization_version);
 }
 
@@ -179,7 +180,7 @@ DataTypePtr DataTypeMap::doCloneWithChildren(const DataTypes & new_children) con
 
 /// Resolves a dynamic subcolumn like `map['key']` by parsing the key from the subcolumn name,
 /// creating a `SerializationMapKeyValue` that reads the bucket of the key (the whole Map when the key
-/// has a float zero), and optionally pre-extracting the values from an existing column.
+/// has a float zero or a `JSON` or `Dynamic` value), and optionally pre-extracting the values from an existing column.
 /// The subcolumn name must start with "key_" followed by the text-serialized key value.
 std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t /*initial_array_level*/, bool throw_if_null) const
 {
@@ -213,9 +214,10 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(s
 
     /// The bucket of a key is the hash of its bits. The two zeros are equal, but their bits differ,
     /// so the other zero may be in another bucket. A key with a float zero at any depth, e.g. in a `Tuple`
-    /// or in a path of a `JSON`, reads the whole Map.
+    /// or in a path of a `JSON`, reads the whole Map. So does a key with a `JSON` or `Dynamic` value:
+    /// older versions put such keys into buckets by another hash of them.
     bool read_whole_map = map_serialization.getMapSerializationVersion() == MergeTreeMapSerializationVersion::WITH_BUCKETS
-        && anyFieldSatisfies((*key_column)[0], isFloatZeroField);
+        && (key_type->hasDynamicStructure() || anyFieldSatisfies((*key_column)[0], isFloatZeroField));
 
     auto key_value_serialization = SerializationMapKeyValue::create(
         map_serialization.getValueSerialization(),
@@ -397,8 +399,12 @@ When a data part is written with `with_buckets` serialization:
 
 When a query reads a specific key (`m['key']`), the optimizer rewrites the expression to a key subcolumn (`m.key_<serialized_key>`).
 The serialization layer computes which bucket the requested key belongs to and reads only that single bucket from disk.
+This rewrite happens only for tables that use `with_buckets` serialization: with `basic` serialization reading a key subcolumn
+reads the whole `Map` anyway.
 
 When the full map is read (e.g., `SELECT m`), all buckets are read and reassembled into the original map. This is slower than `basic` serialization due to the overhead of reading and merging multiple substreams.
+
+A `Map` whose key type contains `JSON` or `Dynamic` is always written in one bucket, and a lookup of one of its keys reads the whole map.
 
 <Note>
 Since version 26.8, `with_buckets` serialization preserves the original key order: an additional `bucket_indexes` substream records which bucket every key-value pair was taken from, so the map is reassembled in the order it was written instead of in bucket order.

@@ -28,6 +28,7 @@ namespace ErrorCodes
 namespace DB::S3RequestSetting
 {
     extern const S3RequestSettingsString upload_checksum_algorithm;
+    extern const S3RequestSettingsString delete_checksum_algorithm;
 }
 
 namespace DB::S3
@@ -62,10 +63,11 @@ RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3R
                     ErrorCodes::INVALID_SETTING_VALUE,
                     "Setting upload_checksum_algorithm cannot be MD5 for S3Express buckets, "
                     "which require a flexible checksum; use CRC32 or SHA256");
-            if (OpenSSLInitializer::instance().isFIPSEnabled())
+            if (!OpenSSLInitializer::instance().isMD5Available())
                 throw Exception(
                     ErrorCodes::INVALID_SETTING_VALUE,
-                    "Setting upload_checksum_algorithm cannot be MD5 when FIPS mode is enabled; use CRC32 or SHA256");
+                    "Setting upload_checksum_algorithm cannot be MD5 because the MD5 digest is not available (FIPS mode?); "
+                    "use CRC32 or SHA256");
         }
         return *algorithm;
     }
@@ -80,6 +82,53 @@ RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3R
     return RequestChecksum::Algorithm::MD5;
 }
 
+bool RequestChecksum::hasExplicitDeleteChecksumAlgorithm(const S3RequestSettings & request_settings)
+{
+    return !request_settings[DB::S3RequestSetting::delete_checksum_algorithm].value.empty();
+}
+
+RequestChecksum::Algorithm RequestChecksum::getDeleteChecksumAlgorithm(
+    const S3RequestSettings & request_settings, bool is_s3express_bucket, bool md5_rejected_by_server)
+{
+    const auto md5_available = OpenSSLInitializer::instance().isMD5Available();
+
+    const auto & name = request_settings[DB::S3RequestSetting::delete_checksum_algorithm].value;
+    if (!name.empty())
+    {
+        const auto algorithm = tryParse(name);
+        if (!algorithm)
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting delete_checksum_algorithm has invalid value {} which only supports {}",
+                name, supportedAlgorithms());
+
+        if (*algorithm == Algorithm::MD5)
+        {
+            if (is_s3express_bucket)
+                throw Exception(
+                    ErrorCodes::INVALID_SETTING_VALUE,
+                    "Setting delete_checksum_algorithm cannot be MD5 for S3Express buckets, "
+                    "which require a flexible checksum; use CRC32 or SHA256");
+            if (!md5_available)
+                throw Exception(
+                    ErrorCodes::INVALID_SETTING_VALUE,
+                    "Setting delete_checksum_algorithm cannot be MD5 because the MD5 digest is not available (FIPS mode?); "
+                    "use CRC32 or SHA256");
+        }
+        return *algorithm;
+    }
+
+    if (is_s3express_bucket)
+        return Algorithm::CRC32; /// flexible checksum is mandatory, `Content-MD5` not accepted
+
+    /// Most servers reject `DeleteObjects` without a digest. If the `MD5` digest is unavailable in the crypto library
+    /// (e.g. FIPS mode), the SDK would silently omit the header, so use a flexible checksum instead.
+    if (!md5_available || md5_rejected_by_server)
+        return Algorithm::SHA256;
+
+    return Algorithm::MD5;
+}
+
 namespace
 {
 
@@ -87,6 +136,7 @@ namespace
 constexpr std::pair<std::string_view, std::string_view> GCS_TRANSLATED_HEADERS[] = {
     {"x-amz-copy-source", "x-goog-copy-source"},
     {"x-amz-metadata-directive", "x-goog-metadata-directive"},
+    {"x-amz-acl", "x-goog-acl"},
     /// Only the name is translated: S3 and GCS share no class name but STANDARD, so an S3 class
     /// reaches GCS as 400 InvalidStorageClass.
     {"x-amz-storage-class", "x-goog-storage-class"},
@@ -155,6 +205,9 @@ Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCol
 
     for (const auto & dropped_header : GCS_DROPPED_HEADERS)
         headers.erase(std::string(dropped_header));
+
+    if (const auto it = headers.find("if-none-match"); it != headers.end() && it->second == "*")
+        headers.emplace("x-goog-if-generation-match", "0");
 
     /// replace all x-amz-meta- headers
     VectorWithMemoryTracking<std::pair<std::string, std::string>> new_meta_headers;
