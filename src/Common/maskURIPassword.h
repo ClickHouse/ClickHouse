@@ -205,86 +205,67 @@ inline bool maskURIPassword(std::string & uri, std::string_view authority_termin
         }
         return offset;
     };
-    auto skip_past_next_schema = [&](size_t offset) -> size_t
-    {
-        while (offset < original_size - 3)
-        {
-            const size_t initial_offset = offset;
-            offset = skip_valid_schema_chars(uri, offset, original_size);
-            if (offset > initial_offset && offset + 3 < original_size
-                && uri.compare(offset, SCHEMA_SEPARATOR.length(), SCHEMA_SEPARATOR) == 0)
-                return parse_userinfo_and_authority(offset + SCHEMA_SEPARATOR.length());
-            ++offset;
-        }
-        return original_size;
-    };
     auto parse_schema_from_root = [&](size_t offset) -> size_t
     {
         // a // at the start of a uri is resolved relative to the schema of the base, interpret offset + 2 as start of authority
-        if (offset < original_size - 2 && uri.compare(offset, 2, "//") == 0)
+        size_t authority_begin = offset == 0 || uri[offset - 1] == '|' ? offset : std::string_view::npos;
+        if (offset < original_size - 3 && (offset == 0 || uri[offset - 1] == '|') && uri.compare(offset, 2, "//") == 0)
             return parse_userinfo_and_authority(offset + 2);
-        const size_t initial_offset = offset;
-        if (offset < original_size - 3)
+        size_t next_fallback_seperator = std::string::npos;
+        while (offset < original_size - 3)
         {
-            offset = skip_valid_schema_chars(uri, offset, original_size);
-            if (offset + 3 >= original_size)
+            const size_t next_offset = offset > 0 ? uri.find_first_of("|@:", offset) : uri.find_first_of("@:", offset);
+            if (next_offset == std::string_view::npos)
             {
+                // nothing interesting left to parse
                 return original_size;
             }
-            const char c = uri[offset];
-            if (c == ':' && uri.compare(offset + 1, 2, "//") == 0)
-                return parse_userinfo_and_authority(offset + 3);
-            if (c == ':' || c == '@')
-                return parse_userinfo_and_authority(initial_offset);
-            if (c == '|')
-                return offset + 1;
-            if (!url_legal_name_chars.contains(c))
-                return skip_past_next_schema(offset + 1);
-        }
-        return parse_userinfo_and_authority(initial_offset);
-    };
-    auto parse_query = [&](size_t offset) -> size_t
-    {
-        while (offset < original_size)
-        {
-            const auto next_param_val = uri.find_first_of("=|", offset);
-            if (next_param_val == std::string_view::npos)
-                return original_size;
-            if (uri[next_param_val] == '|')
-                return next_param_val + 1;
-            offset = next_param_val + 1;
-            const size_t initial_offset = offset;
-            offset = skip_valid_schema_chars(uri, offset, original_size);
-            if (offset > initial_offset && uri.compare(offset, 3, SCHEMA_SEPARATOR) == 0)
-                offset = parse_userinfo_and_authority(offset + 3);
-            offset++;
+            const char c = uri[next_offset];
+            if ('@' == c)
+            {
+                if (offset == 0)
+                    return parse_userinfo_and_authority(authority_begin);
+                if (authority_begin < next_offset)
+                    return parse_userinfo_and_authority(authority_begin);
+                offset = next_offset + 1;
+            }
+
+            if (':' == c)
+            {
+                if (next_offset >= offset && next_offset + 3 < original_size && uri.compare(next_offset + 1, 2, "//") == 0)
+                {
+                    if (next_offset == 0 || next_fallback_seperator == next_offset - 1 || authority_begin == std::string_view::npos)
+                    {
+                        return parse_userinfo_and_authority(next_offset + 3);
+                    }
+                    for (size_t i = next_offset - 1; i > offset; --i)
+                    {
+                        if (is_letter(uri[i]))
+                        {
+                            return parse_userinfo_and_authority(next_offset + 3);
+                        }
+                        if (!is_digit(uri[i]) && !(uri[offset] == '+' || uri[offset] == '.' || uri[offset] == '-'))
+                        {
+                            offset = next_offset + 1;
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    offset = next_offset + 1;
+                }
+            } else if (c == '|' && authority_begin == std::string_view::npos)
+            {
+                authority_begin = next_offset;
+                offset = authority_begin + 1;
+            }
         }
         return original_size;
     };
-    auto parse_path = [&](const size_t offset) -> size_t
-    {
-        const auto query_or_next_url = uri.find_first_of("?|", offset);
-        if (query_or_next_url == std::string_view::npos)
-            return skip_past_next_schema(offset);
-        if (uri[query_or_next_url] == '?')
-            return parse_query(query_or_next_url + 1);
-        return query_or_next_url + 1;
-    };
-    auto parse_after_authority = [&](const size_t offset) -> size_t
-    {
-        switch (const char c = uri[offset]; c)
-        {
-            case '/': return parse_path(offset + 1);
-            case '?': return parse_query(offset + 1);
-            case '|': return offset + 1;
-            default: return url_legal_name_chars.contains(c) ? original_size : skip_past_next_schema(offset + 1);
-        }
-    };
     for (size_t i = 0; i < original_size;)
     {
-        i = parse_schema_from_root(i);
-        if (i < original_size)
-            i = parse_after_authority(i);
+        i = parse_schema_from_root(i) + 1;
     }
     if (uncopied_offset == 0)
         return false;

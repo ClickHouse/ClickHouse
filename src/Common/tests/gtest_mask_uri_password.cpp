@@ -65,6 +65,8 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
         {"a\np:/", "a\np:/"},
         {"a\npppp:/", "a\npppp:/"},
         {"}pp}ppp:/", "}pp}ppp:/"},
+        {"http://user:s3cret@[", "http://user:[HIDDEN]@["},
+        {"http://s3cret@[", "http://[HIDDEN]@["},
         {"https://host/}pppp:/", "https://host/}pppp:/"},
 
         /// Fails closed by default: a consumer like the MongoDB driver ends the userinfo at the first '/' only.
@@ -93,6 +95,10 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
          "http://[HIDDEN]@host/x/?next=http://u:[HIDDEN]@other/x&next2=http://u:[HIDDEN]@other2"},
         {"http://TOKEN@host/x/?foo=bar&next=http://u:p@other/x&next2=http://u:p@other2",
          "http://[HIDDEN]@host/x/?foo=bar&next=http://u:[HIDDEN]@other/x&next2=http://u:[HIDDEN]@other2"},
+        {"http://user:s3cret@[", "http://user:[HIDDEN]@["},
+        {"http://s3cret@[", "http://[HIDDEN]@["},
+        {" http://s3cret@[", " http://[HIDDEN]@["},
+        {"'http://s3cret@['", "'http://[HIDDEN]@['"},
     };
 
     for (const auto & [input, expected] : cases)
