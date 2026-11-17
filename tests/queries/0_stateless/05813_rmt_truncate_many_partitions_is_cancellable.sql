@@ -1,19 +1,18 @@
--- Tags: zookeeper, no-shared-merge-tree, no-replicated-database, no-fasttest
+-- Tags: zookeeper, no-shared-merge-tree, no-replicated-database
 -- Tag no-shared-merge-tree: checks the per-partition loop of `ReplicatedMergeTree`.
 -- Tag no-replicated-database: the other replica runs the replicated TRUNCATE on its own and may still hold its block number locks when they are counted.
--- Tag no-fasttest: the 1000-partition fixture takes about 25 s.
 
 DROP TABLE IF EXISTS t SYNC;
 CREATE TABLE t (k UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t', 'r1') PARTITION BY k ORDER BY k;
-INSERT INTO t SELECT number FROM numbers(1000) SETTINGS max_partitions_per_insert_block = 0;
+INSERT INTO t SELECT number FROM numbers(100) SETTINGS max_partitions_per_insert_block = 0;
 
 -- The loop over the partitions stops on max_execution_time and drops nothing.
-TRUNCATE TABLE t SETTINGS max_execution_time = 0.2; -- { serverError TIMEOUT_EXCEEDED }
+TRUNCATE TABLE t SETTINGS max_execution_time = 0.05; -- { serverError TIMEOUT_EXCEEDED }
 SYSTEM SYNC REPLICA t;
 SELECT count() FROM t;
 
 -- DROP PARTITION ALL takes the same loop, and stops with timeout_overflow_mode = 'break' too: there is no partial result.
-ALTER TABLE t DROP PARTITION ALL SETTINGS max_execution_time = 0.2, timeout_overflow_mode = 'break'; -- { serverError TIMEOUT_EXCEEDED }
+ALTER TABLE t DROP PARTITION ALL SETTINGS max_execution_time = 0.05, timeout_overflow_mode = 'break'; -- { serverError TIMEOUT_EXCEEDED }
 SYSTEM SYNC REPLICA t;
 SELECT count() FROM t;
 
