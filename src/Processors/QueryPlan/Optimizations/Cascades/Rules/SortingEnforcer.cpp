@@ -119,7 +119,7 @@ GroupExpressions SortingEnforcer::applyImpl(GroupExpressionPtr expression, const
         std::move(sorting_step),
         input_required,
         std::move(output_properties),
-        EnforcedProperty::Sorting);
+        required_properties);
 
     return addPhysicalToMemo(sort_expr, required_properties, memo);
 }

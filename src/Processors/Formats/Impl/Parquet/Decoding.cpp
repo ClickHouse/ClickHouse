@@ -2544,6 +2544,15 @@ void BigEndianDecimalFixedSizeConverter<T>::convertColumn(std::span<const char> 
     auto to_bytes = col.insertRawUninitialized(num_values);
     chassert(to_bytes.size() == num_values * sizeof(T));
     T * to = reinterpret_cast<T *>(to_bytes.data());
+    if constexpr (sizeof(T) <= 8)
+    {
+        if (input_size == sizeof(T))
+        {
+            for (size_t i = 0; i < num_values; ++i)
+                to[i] = unalignedLoadBigEndian<T>(from_bytes + i * sizeof(T));
+            return;
+        }
+    }
     for (size_t i = 0; i < num_values; ++i)
     {
         to[i] = helper.convertPaddedValue(from_bytes);
