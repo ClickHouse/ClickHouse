@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_query_cache">
-  ## use_query_cache
-</div>
+## use_query_cache {#use_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -27,9 +25,7 @@ Valores possíveis:
 * 0 - Desativado
 * 1 - Ativado
 
-<div id="use_query_condition_cache">
-  ## use_query_condition_cache
-</div>
+## use_query_condition_cache {#use_query_condition_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -43,17 +39,34 @@ Valores possíveis:
 * 0 - Desativado
 * 1 - Ativado
 
-<div id="use_query_condition_cache_for_top_k">
-  ## use_query_condition_cache_for_top_k
-</div>
+## use_query_condition_cache_for_time_conditions {#use_query_condition_cache_for_time_conditions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração para controlar o cache de condição de consulta para leituras com `ORDER BY ... LIMIT n` (TopK); ativada por padrão. O controle é desativado na versão 26.7, portanto, a `compatibility` com uma versão anterior o mantém desativado."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração que permite ao cache de condições de consulta atender condições que envolvem o horário atual (por exemplo, `WHERE time >= now() - INTERVAL 10 DAY`), derivando uma condição determinística com a constante de tempo arredondada para uma grade; habilitada por padrão. previous_value=false, de modo que `compatibility` com uma versão anterior mantém essas condições fora do cache, como antes."}]}]} />
 
-Ative o [cache de condição de consulta](/pt-BR/concepts/features/performance/caches/query-condition-cache) para consultas que usam a otimização `ORDER BY <column> LIMIT n` (TopK) (baseada em filtragem dinâmica ou em índices de omissão). Quando desativado, essas leituras não consultam nem preenchem o cache.
+Habilita o [cache de condições de consulta](/pt-BR/concepts/features/performance/caches/query-condition-cache) para condições que envolvem o horário atual, por exemplo, `WHERE time >= now() - INTERVAL 10 DAY`, na leitura de tabelas `MergeTree`. Leituras de arquivos e de armazenamento de objetos (`file`, `s3` e similares) usam o cache de condições de consulta apenas para condições determinísticas e não são afetadas por esta configuração.
 
-Essas consultas podem descartar grânulos durante a execução, dependendo do limiar em uso. Por isso, suas entradas de cache são particionadas pelos parâmetros do plano TopK e pelo conjunto de partes lidas. Essa configuração não tem efeito, a menos que `use_query_condition_cache` também esteja ativada.
+Essas condições são não determinísticas (mudam conforme o relógio), portanto não podem ser armazenadas em cache diretamente. Em vez disso, deriva-se delas uma condição determinística arredondando para uma grade temporal a constante de horário atual já avaliada; por exemplo, `WHERE time >= '2026-08-09 12:34:56'` passa a ser `WHERE time >= '2026-08-09 00:00:00'` (com arredondamento para baixo nas leituras do cache e para cima nas gravações, o que garante a correção do cache). O passo da grade é proporcional à distância entre a constante e o horário atual (consulte [`query_condition_cache_time_condition_grid_factor`](/pt-BR/reference/settings/session-settings/other#query_condition_cache_time_condition_grid_factor)), limitado ao intervalo entre um segundo e um dia.
+
+Se a constante já estiver alinhada à grade (por exemplo, `WHERE time >= today() - 10` ou `WHERE time >= toStartOfDay(now())`), o cache permanece eficaz durante toda a célula da grade, por exemplo, até o fim do dia. Caso contrário, o cache é reutilizado apenas para limites inferiores de tempo, por exemplo, `WHERE time >= now() - INTERVAL 10 DAY`: as entradas do cache gravadas durante uma célula da grade são usadas durante a célula seguinte. Um limite superior não alinhado, como `WHERE time < now()`, isolado ou como parte de uma janela deslizante como `WHERE time >= now() - INTERVAL 10 DAY AND time < now()`, não é reutilizado por consultas posteriores, pois a condição delas não está contida na condição das consultas anteriores.
+
+Esta configuração só tem efeito se `use_query_condition_cache` também estiver habilitado.
+
+Valores possíveis:
+
+* 0 - Desabilitado
+* 1 - Habilitado
+
+## use_query_condition_cache_for_top_k {#use_query_condition_cache_for_top_k}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração para controlar o cache de condições de consulta para leituras com `ORDER BY ... LIMIT n` (TopK); ativada por padrão. O controle é desativado na versão 26.7, portanto, a `compatibility` com uma versão anterior o mantém desativado."}]}]} />
+
+Ative o [cache de condições de consulta](/pt-BR/concepts/features/performance/caches/query-condition-cache) para consultas que usam a otimização `ORDER BY <column> LIMIT n` (TopK) (baseada em filtragem dinâmica ou em índices de omissão). Quando desativado, essas leituras não consultam nem preenchem o cache.
+
+Essas consultas podem descartar grânulos durante a execução, dependendo do limiar em uso. Por isso, suas entradas de cache são particionadas pelos parâmetros do plano TopK e pelo conjunto de partes lidas (para uma tabela `File`, pelo conjunto de arquivos lidos e suas versões; para uma tabela de data lake, pelo seu snapshot). Essa configuração não tem efeito, a menos que `use_query_condition_cache` também esteja ativada.
 
 Valores possíveis:
 

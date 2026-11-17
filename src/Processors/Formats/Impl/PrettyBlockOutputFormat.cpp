@@ -374,8 +374,12 @@ void PrettyBlockOutputFormat::writingThread()
     {
         while (!finish)
         {
-            if (std::cv_status::timeout == mono_chunk_condvar.wait_for(lock, saturatedMilliseconds(format_settings.pretty.squash_consecutive_ms))
-                || watch.elapsedMilliseconds() > format_settings.pretty.squash_max_wait_ms)
+            bool timed_out = std::cv_status::timeout
+                == mono_chunk_condvar.wait_for(lock, saturatedMilliseconds(format_settings.pretty.squash_consecutive_ms));
+            /// After `stopThread` or `onCancel` the rest is written by `writeSuffix` or not at all.
+            if (finish)
+                break;
+            if (timed_out || watch.elapsedMilliseconds() > format_settings.pretty.squash_max_wait_ms)
             {
                 writeMonoChunkIfNeeded();
                 watch.restart();
@@ -1238,6 +1242,18 @@ void PrettyBlockOutputFormat::stopThread()
     }
 }
 
+void PrettyBlockOutputFormat::onCancel() noexcept
+{
+    if (!format_settings.pretty.squash_consecutive_ms || mono_block)
+        return;
+
+    /// After this `writingThread` never writes `out` again, so the owner of `out` can cancel it.
+    /// Waits for any writing method holding `writing_mutex`, so it can take as long as one blocked write to `out`.
+    std::lock_guard lock(writing_mutex);
+    finish = true;
+    mono_chunk_condvar.notify_one();
+}
+
 PrettyBlockOutputFormat::~PrettyBlockOutputFormat()
 {
     if (thread)
@@ -1386,9 +1402,9 @@ SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact
 └───────────────────────────────┘
 ```
 
-`TAB`, the line feed and `ESC` are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them - a tab advances to the next tab stop, and an ANSI escape sequence is what lets the data carry a visualization. A line feed keeps breaking the line too: inside a table cell when [`output_format_pretty_multiline_fields`](/operations/settings/formats#output_format_pretty_multiline_fields) is enabled, and as is otherwise. A column name is the exception to that exception: the header and the footer are a single line, so a line feed in a name is replaced like any other control character.
+`TAB`, the line feed and `ESC` are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them - a tab advances to the next tab stop, and an ANSI escape sequence is what lets the data carry a visualization. A line feed keeps breaking the line too: inside a table cell when [`output_format_pretty_multiline_fields`](/reference/settings/formats#output_format_pretty_multiline_fields) is enabled, and as is otherwise. A column name is the exception to that exception: the header and the footer are a single line, so a line feed in a name is replaced like any other control character.
 
-To print control characters verbatim instead, disable [`output_format_pretty_display_control_characters`](/operations/settings/formats#output_format_pretty_display_control_characters):
+To print control characters verbatim instead, disable [`output_format_pretty_display_control_characters`](/reference/settings/formats#output_format_pretty_display_control_characters):
 
 ```sql title="Query"
 SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact

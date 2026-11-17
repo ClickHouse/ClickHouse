@@ -71,13 +71,15 @@ bool checkMergeTreeDiskSettings(const SettingsChanges & changes, ContextPtr cont
     return found_disk_setting;
 }
 
-void MergeTreeSettings::resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+void MergeTreeSettings::resolveDiskSetting(
+    SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition)
 {
     for (auto & change : changes)
-        resolveDiskSetting(change, context, is_loading_from_existing_metadata, for_system_database);
+        resolveDiskSetting(change, context, is_loading_from_existing_metadata, for_system_database, stored_definition);
 }
 
-void MergeTreeSettings::resolveDiskSetting(SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+void MergeTreeSettings::resolveDiskSetting(
+    SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition)
 {
     if (change.name != "disk")
         return;
@@ -89,7 +91,8 @@ void MergeTreeSettings::resolveDiskSetting(SettingChange & change, ContextPtr co
 
     if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
     {
-        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata, for_system_database);
+        auto disk_name = DiskFromAST::createCustomDisk(
+            value_as_custom_ast, context, is_loading_from_existing_metadata, for_system_database, stored_definition);
         LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
         change.value = disk_name;
     }

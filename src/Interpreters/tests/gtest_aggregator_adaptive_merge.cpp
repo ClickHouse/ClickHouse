@@ -142,6 +142,7 @@ Aggregator::Params makeAdaptiveParams(const Names & keys, const AggregateDescrip
         /*min_hit_rate_to_use_consecutive_keys_optimization_=*/0.5, StatsCollectingParams{},
         /*enable_producing_buckets_out_of_order_in_aggregation_=*/false,
         /*serialize_string_with_zero_byte_=*/false, /*enable_parallel_single_level_merge_=*/false,
+        /*enable_parallel_single_level_merge_by_index_=*/true,
         /*enable_packed_string_keys_=*/true, /*enable_adaptive_aggregator_=*/true,
         /*adaptive_aggregator_freeze_threshold_=*/1, /*adaptive_aggregator_freeze_threshold_bytes_=*/0,
         /*adaptive_aggregator_disable_thaw_=*/false, /*use_aggregation_memory_tracker_=*/true);
@@ -194,17 +195,27 @@ TEST_P(AggregatorAdaptiveMerge, SourceStateLifetimes)
                 sources.push_back(std::move(source));
             }
 
-            auto & table = sources.front()->key64_two_level->data;
+            /// The producers index their single-level tables instead of converting them to two-level. The
+            /// single-level table hashes keys like the two-level one, whose buckets the adaptive merge uses.
+            auto & table = sources.front()->key64->data;
             const auto bucket = static_cast<Int32>(
                 AggregatedDataWithUInt64KeyTwoLevel::getBucketFromHash(table.hash(UInt64{1})));
-            aggregator.prepareAdaptiveTopKPruning(*session, sources.size(), /*external_merge=*/false, /*collects_statistics=*/false);
+            aggregator.prepareAdaptiveTopK(*session, sources.size(), /*external_merge=*/false, /*collects_statistics=*/false);
             auto prepared = aggregator.prepareVariantsToMerge(std::move(sources), session.get());
             AdaptiveMergeTask task;
             std::atomic<bool> cancelled{false};
             const auto merge = [&]
             {
                 return aggregator.mergeAndConvertAdaptiveBucket(
-                    prepared, *session, task, /*final=*/true, bucket, cancelled, /*updater=*/nullptr, /*full_group_count=*/nullptr);
+                    prepared,
+                    *session,
+                    task,
+                    /*final=*/true,
+                    bucket,
+                    aggregator.parallelMergeThreshold(session.get()),
+                    cancelled,
+                    /*updater=*/nullptr,
+                    /*merged_group_count=*/nullptr);
             };
             if (throws)
                 EXPECT_THROW(merge(), std::runtime_error);
@@ -267,7 +278,7 @@ TEST(AggregatorAdaptiveStaging, ConstantSerializedKey)
         sources.push_back(std::move(source));
     }
 
-    aggregator.prepareAdaptiveTopKPruning(*session, sources.size(), /*external_merge=*/false, /*collects_statistics=*/false);
+    aggregator.prepareAdaptiveTopK(*session, sources.size(), /*external_merge=*/false, /*collects_statistics=*/false);
     auto prepared = aggregator.prepareVariantsToMerge(std::move(sources), session.get());
     AdaptiveMergeTask task;
     std::atomic<bool> cancelled{false};
@@ -275,8 +286,8 @@ TEST(AggregatorAdaptiveStaging, ConstantSerializedKey)
     for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
     {
         const auto chunks = aggregator.mergeAndConvertAdaptiveBucket(
-            prepared, *session, task, /*final=*/true, static_cast<Int32>(bucket), cancelled,
-            /*updater=*/nullptr, /*full_group_count=*/nullptr);
+            prepared, *session, task, /*final=*/true, static_cast<Int32>(bucket), aggregator.parallelMergeThreshold(session.get()),
+            cancelled, /*updater=*/nullptr, /*merged_group_count=*/nullptr);
         for (const auto & converted : chunks)
         {
             const auto & columns = converted.chunk.getColumns();

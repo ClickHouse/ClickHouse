@@ -5,6 +5,7 @@
 #include <IO/parseHTTPDate.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/NetException.h>
 #include <Common/maskURIPassword.h>
 #include <Poco/Net/NetException.h>
@@ -316,7 +317,15 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
 
     ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPRequestsSent);
 
-    auto body_out = sendHTTPRequest(*session, request, buffer_size);
+    /// Without these limits, the response header gets the small defaults of `Poco`, for example 8 KiB for a field value.
+    const auto & http_settings = read_settings.http_settings;
+    auto to_limit = [](size_t value) { return static_cast<int>(std::min<size_t>(value, std::numeric_limits<int>::max())); };
+    const Poco::Net::HTTPHeaderLimits response_header_limits{
+        .fields = to_limit(http_settings.max_fields),
+        .name_length = to_limit(http_settings.max_field_name_size),
+        .value_length = to_limit(http_settings.max_field_value_size)};
+
+    auto body_out = sendHTTPRequest(*session, request, buffer_size, nullptr, nullptr, response_header_limits);
     if (out_stream_callback && with_request_body)
         out_stream_callback(*body_out);
     body_out->finalize();
@@ -1124,7 +1133,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
     return ptr;
 }
 
-void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri)
+void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri, const HTTPHeaderFilter & header_filter)
 {
     credentials.clear();
 
@@ -1142,6 +1151,8 @@ void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const 
     {
         credentials.setUsername(user_info);
     }
+
+    header_filter.checkBasicCredentials(credentials);
 }
 
 }
