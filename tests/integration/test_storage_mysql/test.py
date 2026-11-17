@@ -285,9 +285,11 @@ def test_limit_pushdown(started_cluster):
         query_id = uuid.uuid4().hex
         result = node1.query(query, settings=settings, query_id=query_id)
         node1.query("SYSTEM FLUSH LOGS text_log")
+        # The default profile's `max_block_size = 2` would read the whole log in two-row blocks.
         sent = node1.query(
             "SELECT message FROM system.text_log "
-            f"WHERE query_id = '{query_id}' AND message LIKE 'Query: SELECT%' ORDER BY event_time_microseconds"
+            f"WHERE query_id = '{query_id}' AND message LIKE 'Query: SELECT%' ORDER BY event_time_microseconds",
+            settings={"max_block_size": 65536},
         )
         return result.strip(), sent.strip().splitlines()
 
