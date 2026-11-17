@@ -11,9 +11,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 INSERT_SETTINGS="max_block_size = 65536, max_threads = 1, max_insert_block_size = 100000, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_insert_threads = 1"
 
+# The tables of `clickhouse-local` take the engine from `default_table_engine`: cloud runs of the tests replace
+# `MergeTree` in `ENGINE` clauses with `SharedMergeTree`, which `clickhouse-local` does not have.
 ${CLICKHOUSE_LOCAL} --multiquery "
-CREATE TABLE t_one (x UInt64) ENGINE = MergeTree ORDER BY x;
-CREATE TABLE t_two (x UInt64) ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x;
+SET default_table_engine = 'MergeTree';
+CREATE TABLE t_one (x UInt64) ORDER BY x;
+CREATE TABLE t_two (x UInt64) PARTITION BY x % 2 ORDER BY x;
 INSERT INTO t_one SELECT number FROM numbers(1000) SETTINGS ${INSERT_SETTINGS};
 INSERT INTO t_two SELECT number FROM numbers(1000) SETTINGS ${INSERT_SETTINGS};
 SELECT table, count() FROM system.parts WHERE database = currentDatabase() AND active GROUP BY table ORDER BY table;
