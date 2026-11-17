@@ -13,8 +13,6 @@ DROP TABLE IF EXISTS t_04510;
 CREATE TABLE t_04510 (x UInt8)
 ENGINE = S3('http://localhost:11111/test/04510', 'ak', 'SEKRIT_SAK',
             session_token = 'SEKRIT_ST',
-            google_adc_client_secret = 'SEKRIT_ADCCS',
-            google_adc_refresh_token = 'SEKRIT_ADCRT',
             extra_credentials(role_arn = 'visible_role_arn', external_id = 'SEKRIT_EID'),
             format = 'TSV');
 SHOW CREATE TABLE t_04510 SETTINGS format_display_secrets_in_show_and_select = 0;

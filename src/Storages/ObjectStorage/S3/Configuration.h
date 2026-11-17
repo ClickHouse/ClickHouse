@@ -86,7 +86,7 @@ struct S3StorageParsedArguments : private StorageParsedArguments
 public:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context);
     void fromDisk(const DiskPtr & disk, ASTs & args, ContextPtr context, bool with_structure);
-    void fromAST(ASTs & args, ContextPtr context, bool with_structure);
+    void fromAST(ASTs & args, ContextPtr context, bool with_structure, bool is_replayed_definition);
     S3StorageParsedArguments() = default;
 };
 
