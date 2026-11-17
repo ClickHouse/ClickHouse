@@ -453,6 +453,9 @@ DataTypePtr resolveActiveAlternativeType(const IColumn & value, const DataTypePt
 /// a `Field` holds as their underlying representation, such as `Date` (a `UInt64`).
 bool isTypeKeptByField(const IDataType & type)
 {
+    /// A `Field` has no custom type names, such as `Point`, except `Bool`.
+    if (type.hasCustomName() && type.getName() != "Bool")
+        return false;
     if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
         return isTypeKeptByField(*nullable->getNestedType());
     if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type))
@@ -517,26 +520,36 @@ ColumnPtr createColumnFromFieldKeepingDynamicTypes(
         return ColumnNullable::create(nested, ColumnUInt8::create(1, static_cast<UInt8>(0)));
     }
 
+    const ColumnPtr source_value = source.cut(row, 1);
+    const DataTypePtr source_alternative = resolveActiveAlternativeType(*source_value, source_type);
+    /// The source value is copied only while the `Field` is still its value: the caller can replace its nested nulls
+    /// with defaults (`input_format_null_as_default`). Otherwise it is built from the `Field`, keeping the types inside.
+    const bool value_is_source = (*source_value)[0] == value;
+
     if (isDynamic(*type) || isObject(*type))
     {
         /// The `Field` lost the type of the source value, which the source column still has.
-        if (isDynamic(*type) ? source_type->hasDynamicStructure() || isVariant(*source_type) : isObject(*source_type))
-            return castColumn(ColumnWithTypeAndName(source.cut(row, 1), source_type, ""), type);
+        if (value_is_source && (isDynamic(*type) ? source_type->hasDynamicStructure() || isVariant(*source_type) : isObject(*source_type)))
+            return castColumn(ColumnWithTypeAndName(source_value, source_type, ""), type);
+
+        /// A `Dynamic` or `Variant` source: convert the value of its active alternative.
+        if (!source_alternative->equals(*source_type))
+        {
+            auto alternative_column = castColumn(ColumnWithTypeAndName(source_value, source_type, ""), source_alternative);
+            return createColumnFromFieldKeepingDynamicTypes(type, value, *alternative_column, source_alternative, 0);
+        }
 
         /// `convertFieldToType` keeps the value for `Dynamic`, so it is still a value of the source type.
         if (isDynamic(*type) && !isTypeKeptByField(*source_type))
         {
             const DataTypePtr value_type = recursiveRemoveLowCardinality(source_type);
-            const ColumnPtr source_value = recursiveRemoveLowCardinality(source.cut(row, 1));
-            auto value_column = createColumnFromFieldKeepingDynamicTypes(value_type, value, *source_value, value_type, 0);
+            const ColumnPtr full_source_value = recursiveRemoveLowCardinality(source_value);
+            auto value_column = createColumnFromFieldKeepingDynamicTypes(value_type, value, *full_source_value, value_type, 0);
             return castColumn(ColumnWithTypeAndName(value_column, value_type, ""), type);
         }
 
         return insert_value();
     }
-
-    const ColumnPtr source_value = source.cut(row, 1);
-    const DataTypePtr source_alternative = resolveActiveAlternativeType(*source_value, source_type);
 
     if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()))
     {
@@ -544,7 +557,9 @@ ColumnPtr createColumnFromFieldKeepingDynamicTypes(
         if (const auto discriminator = variant_type->tryGetVariantDiscriminator(source_alternative->getName()))
         {
             const DataTypePtr & alternative = variant_type->getVariant(*discriminator);
-            auto alternative_column = castColumn(ColumnWithTypeAndName(source_value, source_type, ""), alternative);
+            ColumnPtr alternative_column = castColumn(ColumnWithTypeAndName(source_value, source_type, ""), alternative);
+            if (!value_is_source)
+                alternative_column = createColumnFromFieldKeepingDynamicTypes(alternative, value, *alternative_column, alternative, 0);
             return castColumn(ColumnWithTypeAndName(alternative_column, alternative, ""), type);
         }
 

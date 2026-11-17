@@ -115,3 +115,27 @@ INSERT INTO t_dynamic_values_nested_variant SETTINGS input_format_values_deduce_
 INSERT INTO t_dynamic_values_nested_variant SELECT 2, CAST([CAST(toUInt16(42) AS Variant(Date, UInt16))] AS Array(Variant(Date, UInt16)));
 SELECT id, toString(a), dynamicType(a[1]) FROM t_dynamic_values_nested_variant ORDER BY id;
 DROP TABLE t_dynamic_values_nested_variant;
+
+-- `JSON` carried by a `Dynamic` or `Variant` source keeps the types inside, as without the carrier.
+SELECT toString(j), dynamicType(j.d) FROM values('j JSON', CAST(CAST(map('d', CAST(toDate('2020-01-01') AS Dynamic)) AS JSON) AS Dynamic));
+SELECT toString(j), dynamicType(j.d) FROM values('j JSON', CAST(CAST(map('d', CAST(toDate('2020-01-01') AS Dynamic)) AS JSON) AS Variant(JSON, String)));
+SELECT toString(j), dynamicType(j.d) FROM values('j Nullable(JSON)', CAST(CAST(map('d', CAST(toDate('2020-01-01') AS Dynamic)) AS JSON) AS Variant(JSON, String)));
+SELECT toString(a), dynamicType(a[1].d) FROM values('a Array(JSON)', CAST([CAST(map('d', CAST(toDate('2020-01-01') AS Dynamic)) AS JSON)] AS Dynamic));
+
+-- `input_format_null_as_default` replaces the nulls inside a `Dynamic` or `Variant` source too, keeping the other types.
+DROP TABLE IF EXISTS t_dynamic_values_carrier_null;
+CREATE TABLE t_dynamic_values_carrier_null (id UInt8, x Tuple(Int32, Dynamic), a Array(Tuple(Int32, Dynamic))) ENGINE = Memory;
+INSERT INTO t_dynamic_values_carrier_null SETTINGS input_format_null_as_default = 1, input_format_values_deduce_templates_of_expressions = 0 VALUES
+    (1, CAST((CAST(NULL AS Nullable(Int32)), CAST(toDate('2020-01-01') AS Dynamic)) AS Dynamic),
+        CAST([(CAST(NULL AS Nullable(Int32)), CAST(toDate('2020-01-01') AS Dynamic))] AS Dynamic));
+INSERT INTO t_dynamic_values_carrier_null SETTINGS input_format_null_as_default = 1, input_format_values_deduce_templates_of_expressions = 0 VALUES
+    (2, CAST((CAST(NULL AS Nullable(Int32)), CAST(toDate('2020-01-01') AS Dynamic)) AS Variant(Tuple(Nullable(Int32), Dynamic), String)), []);
+INSERT INTO t_dynamic_values_carrier_null SETTINGS input_format_null_as_default = 1, input_format_values_deduce_templates_of_expressions = 0 VALUES
+    (3, (CAST(NULL AS Nullable(Int32)), CAST(toDate('2020-01-01') AS Dynamic)), []);
+SELECT id, x.1, toString(x.2), dynamicType(x.2), toString(a), dynamicType(a[1].2) FROM t_dynamic_values_carrier_null ORDER BY id;
+DROP TABLE t_dynamic_values_carrier_null;
+
+-- A `Field` has no custom type names: `Point` and `LineString` are kept, and typed reads find the values.
+SELECT dynamicType(d), dynamicElement(d, 'Point') FROM values('d Dynamic', CAST((1., 2.) AS Point));
+SELECT dynamicType(d), dynamicElement(d, 'LineString') FROM values('d Dynamic', CAST([(1., 2.), (3., 4.)] AS LineString));
+SELECT dynamicType(d), d FROM values('d Dynamic', true);

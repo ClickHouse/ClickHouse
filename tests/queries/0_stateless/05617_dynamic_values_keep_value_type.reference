@@ -49,3 +49,13 @@ FixedString(3)
 [42]	UInt16
 1	[42]	UInt16
 2	[42]	UInt16
+{"d":"2020-01-01"}	Date
+{"d":"2020-01-01"}	Date
+{"d":"2020-01-01"}	Date
+[\'{"d":"2020-01-01"}\']	Date
+1	0	2020-01-01	Date	[(0,\'2020-01-01\')]	Date
+2	0	2020-01-01	Date	[]	None
+3	0	2020-01-01	Date	[]	None
+Point	(1,2)
+LineString	[(1,2),(3,4)]
+Bool	true
