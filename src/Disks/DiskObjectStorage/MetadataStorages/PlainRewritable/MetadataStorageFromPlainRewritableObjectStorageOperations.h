@@ -69,7 +69,6 @@ class MetadataStorageFromPlainObjectStorageCreateDirectoryOperation final : publ
 {
 private:
     const bool recursive;
-    const bool materialize_only;
     const std::filesystem::path path;
     const std::string directory_remote_path;
     const std::shared_ptr<FsSnapshot> fs_tree;
@@ -84,7 +83,6 @@ private:
 public:
     MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
         bool recursive_,
-        bool materialize_only_,
         std::filesystem::path path_,
         std::string directory_remote_path_,
         std::shared_ptr<FsSnapshot> fs_tree_,

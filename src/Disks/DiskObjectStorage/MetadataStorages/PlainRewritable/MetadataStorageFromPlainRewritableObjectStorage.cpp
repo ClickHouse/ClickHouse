@@ -1644,7 +1644,6 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
         /*recursive=*/false,
-        /*materialize_only=*/false,
         normalizeDirectoryPath(path),
         uncommitted_state.getDirectoryRemoteInfo(path)->remote_path,
         commit_snapshot,
@@ -1667,7 +1666,6 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
         /*recursive=*/true,
-        /*materialize_only=*/false,
         normalizeDirectoryPath(path),
         uncommitted_state.getDirectoryRemoteInfo(path)->remote_path,
         commit_snapshot,
@@ -1825,23 +1823,12 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::materializeVirt
 {
     /// A file can be put only into a directory with its own `prefix.path`, not into one that exists only as an ancestor
     /// of other directories.
-    if (directory.empty() || uncommitted_state.getDirectoryRemoteInfo(directory) || !uncommitted_state.getSnapshot().existsDirectory(directory))
+    if (uncommitted_state.getDirectoryRemoteInfo(directory) || !uncommitted_state.getSnapshot().existsDirectory(directory))
         return;
 
+    /// The same as for a new file in `generateObjectKeyForPath`.
     uncommitted_state.useMissingDirectory(directory);
-    addAffectedPath(directory);
-    checkNotReservedPath(directory, uncommitted_state);
-    uncommitted_state.createDirectory(directory);
-
-    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
-        /*recursive=*/true,
-        /*materialize_only=*/true,
-        normalizeDirectoryPath(directory),
-        uncommitted_state.getDirectoryRemoteInfo(directory)->remote_path,
-        commit_snapshot,
-        metadata_storage.object_storage,
-        metadata_storage.layout,
-        metadata_storage.metrics));
+    createDirectoryRecursive(directory);
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::planFileMove(const NormalizedPath & path_from, const NormalizedPath & path_to)

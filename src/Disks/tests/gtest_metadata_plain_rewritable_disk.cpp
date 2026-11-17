@@ -49,7 +49,6 @@ namespace DB::ErrorCodes
     extern const int CORRUPTED_DATA;
     extern const int INCORRECT_DATA;
     extern const int DIRECTORY_ALREADY_EXISTS;
-    extern const int DIRECTORY_DOESNT_EXIST;
 }
 
 namespace ProfileEvents
@@ -2261,45 +2260,6 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveAndHardLinkIntoVirtualDirectory)
         EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("C/g").front().remote_path), "data");
         EXPECT_TRUE(metadata->existsDirectory("A/B"));
     }
-}
-
-TEST_F(MetadataPlainRewritableDiskTest, ConcurrentRemoveOfVirtualMoveTarget)
-{
-    auto metadata = getMetadataStorage("ConcurrentRemoveOfVirtualMoveTarget");
-    auto object_storage = getObjectStorage("ConcurrentRemoveOfVirtualMoveTarget");
-
-    {
-        auto tx = metadata->createTransaction();
-        tx->createDirectory("X");
-        const auto key = tx->generateObjectKeyForPath("X/f").serialize();
-        size_t size = writeObject(object_storage, key, "data");
-        tx->createMetadataFile("X/f", {StoredObject(key, "X/f", size)});
-        tx->createDirectoryRecursive("A/B");
-        tx->commit(DB::NoCommitOptions{});
-    }
-
-    /// The move into `A`, which exists only as the parent of `A/B`, does not bring `A` back once it is removed.
-    auto tx1 = metadata->createTransaction();
-    tx1->moveFile("X/f", "A/f");
-
-    {
-        auto tx2 = metadata->createTransaction();
-        tx2->removeRecursive("A", /*should_remove_blob=*/nullptr);
-        tx2->commit(DB::NoCommitOptions{});
-    }
-
-    try
-    {
-        tx1->commit(DB::NoCommitOptions{});
-        FAIL() << "The move recreated a removed directory";
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::DIRECTORY_DOESNT_EXIST) << e.message();
-    }
-
-    EXPECT_FALSE(metadata->existsDirectory("A"));
-    EXPECT_TRUE(metadata->existsFile("X/f"));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, MoveAndCopyIntoReplacedVirtualDirectory)
