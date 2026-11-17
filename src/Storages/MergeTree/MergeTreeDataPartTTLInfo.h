@@ -54,12 +54,7 @@ struct MergeTreeDataPartTTLInfos
 
     TTLInfoMap group_by_ttl;
 
-    /// The `time_of_merge` of the latest `TTLDelete` (`TTLRecompress`) merge among the merges that produced
-    /// the part or any of the parts it was made of, zero if there was none. Set only with `persist_ttl_merge_times`.
-    /// The merge selector postpones the next TTL merge of a partition by `merge_with_ttl_timeout`
-    /// (`merge_with_recompression_ttl_timeout`) from it, so the postponement survives a restart of the server and
-    /// covers the merges assigned by the other replicas. These are not TTL bounds: the algorithms that rebuild the
-    /// bounds keep them, see `resetBounds`.
+    /// `time_of_merge` of the latest TTL merge in the history of the part (with `persist_ttl_merge_times`), zero if none.
     time_t last_delete_ttl_merge_time = 0;
     time_t last_recompression_ttl_merge_time = 0;
 

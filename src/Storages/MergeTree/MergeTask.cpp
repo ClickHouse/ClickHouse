@@ -683,12 +683,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         ctx->need_remove_expired_values = false;
     }
 
-    /// Persist the time of the TTL merge in the part, so that the selector keeps postponing the next TTL merge of
-    /// the partition after a restart (see `MergeTreeDataPartTTLInfos::last_delete_ttl_merge_time`). It is
-    /// `time_of_merge` and not the current time, so that the replicas that execute the same merge write the same
-    /// `ttl.txt`. The TTL algorithms rebuild the bounds of `ttl_infos`, but keep these times.
-    /// Without `persist_ttl_merge_times`, the times of the source parts are dropped too, so that the part is
-    /// byte-identical to the one merged by the versions that do not know them.
+    /// `time_of_merge` is the same on all replicas; without the setting, drop the times to match older versions byte by byte.
     auto & new_part_ttl_infos = global_ctx->new_data_part->ttl_infos;
     if (!(*global_ctx->data_settings)[MergeTreeSetting::persist_ttl_merge_times])
     {

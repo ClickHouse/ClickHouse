@@ -78,10 +78,7 @@ MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, Merg
     return choices;
 }
 
-/// The due times of the next TTL merges of the partitions of `ctx.ranges`: for every partition, the later one of
-/// the due time this server set when it selected the last TTL merge of the partition (`in_memory_due_times`) and the
-/// timeout counted from the time of the last TTL merge recorded in the parts of the partition. Only the latter
-/// survives a restart and covers the TTL merges that the other replicas selected.
+/// Per partition, the later of the in-memory due time and the last TTL merge time stored in the parts plus the timeout.
 PartitionIdToTTLs getTTLMergeDueTimes(
     const ChooseContext & ctx,
     const PartitionIdToTTLs & in_memory_due_times,

@@ -14,8 +14,7 @@ struct PartitionStatistics
     size_t part_count = 0;
     size_t total_size = 0;
 
-    /// The latest `MergeTreeDataPartTTLInfos::last_delete_ttl_merge_time` (`last_recompression_ttl_merge_time`)
-    /// among the parts of the partition, including the ones that cannot be merged now. Zero if there is none.
+    /// The latest TTL merge times among all parts of the partition, zero if there is none.
     time_t last_delete_ttl_merge_time = 0;
     time_t last_recompression_ttl_merge_time = 0;
 };

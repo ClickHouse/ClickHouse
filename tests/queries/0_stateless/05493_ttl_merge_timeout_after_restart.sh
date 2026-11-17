@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 
-# `merge_with_ttl_timeout` postpones the next TTL merge of a partition. With `persist_ttl_merge_times`, the
-# postponement must survive a restart of the table, and the regular merges of the partition, because the time of the
-# last TTL merge is stored in `ttl.txt` of the parts. Without it, the time is kept only in memory, and after a restart
-# every partition gets a TTL merge at once.
+# With `persist_ttl_merge_times`, `merge_with_ttl_timeout` must survive a table restart and regular merges.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,8 +14,7 @@ $CLICKHOUSE_CLIENT -q "
     SETTINGS persist_ttl_merge_times = 1, merge_with_ttl_timeout = 86400, max_number_of_merges_with_ttl_in_pool = 100;
 "
 
-# Insert one expired row and one row that never expires, so the TTL merge rewrites the part instead of dropping it.
-# A background merge may pick the part before `OPTIMIZE`, so wait until the expired row is gone and no merge runs.
+# One expired and one never-expiring row (so the part is rewritten, not dropped); wait until it is merged.
 function insert_and_merge()
 {
     local key=$1
