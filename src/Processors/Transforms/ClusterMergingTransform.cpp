@@ -140,15 +140,74 @@ void ensureAggregateStateOwnership(
     }
 }
 
+/// Exact identity of the ordinary (non-cluster) `GROUP BY` keys of every row.
+/// Upstream `Aggregator` distinguishes groups by the exact (serialized) key values, while
+/// `IColumn::compareAt` is not an equality test for every type: it treats all aggregate function
+/// states as equal (also inside `Variant` and `Dynamic`), and it treats distinct NaN payloads and
+/// `-0.0` / `+0.0` as equal. Two rows may only be merged when their ordinary keys are exactly the
+/// same, so equality and hashing use the serialized keys. Ordering uses `compareAt` first (to keep
+/// the natural order of the ordinary keys) and the serialized keys as a tie-breaker, so rows with
+/// the same identity stay adjacent after sorting.
+class OrdinaryKeysIdentity
+{
+public:
+    OrdinaryKeysIdentity(const MutableColumns & columns_, VectorWithMemoryTracking<size_t> positions_, size_t rows)
+        : columns(columns_), positions(std::move(positions_))
+    {
+        if (positions.empty())
+            return;
+
+        keys.resize(rows);
+        for (size_t row = 0; row < rows; ++row)
+        {
+            const char * begin = nullptr;
+            size_t size = 0;
+            for (size_t pos : positions)
+                size += columns[pos]->serializeValueIntoArena(row, arena, begin, nullptr).size();
+            keys[row] = std::string_view(begin, size);
+        }
+    }
+
+    bool equals(size_t a, size_t b) const
+    {
+        return positions.empty() || keys[a] == keys[b];
+    }
+
+    void updateHash(size_t row, SipHash & hash) const
+    {
+        if (positions.empty())
+            return;
+        hash.update(keys[row].size());
+        hash.update(keys[row].data(), keys[row].size());
+    }
+
+    int compare(size_t a, size_t b) const
+    {
+        for (size_t pos : positions)
+        {
+            int cmp = columns[pos]->compareAt(a, b, *columns[pos], 1);
+            if (cmp != 0)
+                return cmp;
+        }
+        if (positions.empty())
+            return 0;
+        return keys[a].compare(keys[b]);
+    }
+
+private:
+    const MutableColumns & columns;
+    const VectorWithMemoryTracking<size_t> positions;
+    Arena arena;
+    VectorWithMemoryTracking<std::string_view> keys;
+};
+
 UInt64 computeBucketHash(
-    const MutableColumns & merged_columns,
-    const VectorWithMemoryTracking<size_t> & non_cluster_key_positions,
+    const OrdinaryKeysIdentity & ordinary_keys,
     size_t row,
     Int64 bucket_id)
 {
     SipHash hash;
-    for (size_t pos : non_cluster_key_positions)
-        merged_columns[pos]->updateHashWithValue(row, hash);
+    ordinary_keys.updateHash(row, hash);
     hash.update(bucket_id);
     return hash.get64();
 }
@@ -441,6 +500,7 @@ Chunk ClusterMergingTransform::generate1D()
         if (!aggregates_mask[i] && i != cluster_key_pos)
             non_cluster_key_positions.push_back(i);
     }
+    const OrdinaryKeysIdentity ordinary_keys(merged_columns, std::move(non_cluster_key_positions), total_rows);
 
     if constexpr (!USE_BUCKET_OPTIMIZATION)
     {
@@ -450,12 +510,9 @@ Chunk ClusterMergingTransform::generate1D()
 
         std::sort(row_order.begin(), row_order.end(), [&](size_t a, size_t b)
         {
-            for (size_t pos : non_cluster_key_positions)
-            {
-                int cmp = merged_columns[pos]->compareAt(a, b, *merged_columns[pos], 1);
-                if (cmp != 0)
-                    return cmp < 0;
-            }
+            int cmp = ordinary_keys.compare(a, b);
+            if (cmp != 0)
+                return cmp < 0;
             return merged_columns[cluster_key_pos]->compareAt(a, b, *merged_columns[cluster_key_pos], 1) < 0;
         });
 
@@ -478,16 +535,8 @@ Chunk ClusterMergingTransform::generate1D()
             size_t prev_row = row_order[prev];
             size_t curr_row = row_order[i];
 
-            bool same = true;
-            for (size_t pos : non_cluster_key_positions)
-            {
-                if (merged_columns[pos]->compareAt(prev_row, curr_row, *merged_columns[pos], 1) != 0)
-                {
-                    same = false;
-                    break;
-                }
-            }
-            if (!same) continue;
+            if (!ordinary_keys.equals(prev_row, curr_row))
+                continue;
 
             Float64 curr_val = merged_columns[cluster_key_pos]->getFloat64(curr_row);
             if (curr_val - max_cluster[prev] <= cluster_distance)
@@ -562,7 +611,7 @@ Chunk ClusterMergingTransform::generate1D()
         else
             bucket_id = exact_bucket_ids[i];
 
-        UInt64 hash = computeBucketHash(merged_columns, non_cluster_key_positions, i, bucket_id);
+        UInt64 hash = computeBucketHash(ordinary_keys, i, bucket_id);
 
         auto & candidates = bucket_map[hash];
         size_t found = std::numeric_limits<size_t>::max();
@@ -571,16 +620,7 @@ Chunk ClusterMergingTransform::generate1D()
             const auto & cand_bucket = buckets[cand];
             if (cand_bucket.bucket_id != bucket_id)
                 continue;
-            bool same = true;
-            for (size_t pos : non_cluster_key_positions)
-            {
-                if (merged_columns[pos]->compareAt(cand_bucket.leader_row_index, i, *merged_columns[pos], 1) != 0)
-                {
-                    same = false;
-                    break;
-                }
-            }
-            if (same)
+            if (ordinary_keys.equals(cand_bucket.leader_row_index, i))
             {
                 found = cand;
                 break;
@@ -621,12 +661,9 @@ Chunk ClusterMergingTransform::generate1D()
         size_t row_a = buckets[a].leader_row_index;
         size_t row_b = buckets[b].leader_row_index;
 
-        for (size_t pos : non_cluster_key_positions)
-        {
-            int cmp = merged_columns[pos]->compareAt(row_a, row_b, *merged_columns[pos], 1);
-            if (cmp != 0)
-                return cmp < 0;
-        }
+        int cmp = ordinary_keys.compare(row_a, row_b);
+        if (cmp != 0)
+            return cmp < 0;
         return buckets[a].bucket_id < buckets[b].bucket_id;
     });
 
@@ -642,15 +679,7 @@ Chunk ClusterMergingTransform::generate1D()
             auto & curr = buckets[curr_idx];
             auto & prev = buckets[prev_idx];
 
-            bool same_non_cluster = true;
-            for (size_t pos : non_cluster_key_positions)
-            {
-                if (merged_columns[pos]->compareAt(prev.leader_row_index, curr.leader_row_index, *merged_columns[pos], 1) != 0)
-                {
-                    same_non_cluster = false;
-                    break;
-                }
-            }
+            bool same_non_cluster = ordinary_keys.equals(prev.leader_row_index, curr.leader_row_index);
 
             /// Compare the gap rather than `prev.max_cluster_key + cluster_distance`: the sum can
             /// round up onto `curr.min_cluster_key` and merge keys farther apart than the distance.
@@ -795,15 +824,13 @@ struct CellState
 };
 
 UInt64 computeCellHash(
-    const MutableColumns & merged_columns,
-    const VectorWithMemoryTracking<size_t> & non_cluster_key_positions,
+    const OrdinaryKeysIdentity & ordinary_keys,
     size_t row,
     Int64 cx,
     Int64 cy)
 {
     SipHash hash;
-    for (size_t pos : non_cluster_key_positions)
-        merged_columns[pos]->updateHashWithValue(row, hash);
+    ordinary_keys.updateHash(row, hash);
     hash.update(cx);
     hash.update(cy);
     return hash.get64();
@@ -848,6 +875,7 @@ Chunk ClusterMergingTransform::generate2D()
         if (!aggregates_mask[i] && i != x_pos && i != y_pos)
             non_cluster_key_positions.push_back(i);
     }
+    const OrdinaryKeysIdentity ordinary_keys(merged_columns, std::move(non_cluster_key_positions), total_rows);
 
     const Float64 d = cluster_distance;
     const Float64 a = d / std::numbers::sqrt2;   /// Cell side; cell diagonal == d.
@@ -868,16 +896,7 @@ Chunk ClusterMergingTransform::generate2D()
             const auto & cell = cells[cand];
             if (cell.cx != cx || cell.cy != cy)
                 continue;
-            bool same = true;
-            for (size_t pos : non_cluster_key_positions)
-            {
-                if (merged_columns[pos]->compareAt(cell.leader_row_index, probe_row, *merged_columns[pos], 1) != 0)
-                {
-                    same = false;
-                    break;
-                }
-            }
-            if (same)
+            if (ordinary_keys.equals(cell.leader_row_index, probe_row))
                 return cand;
         }
         return std::numeric_limits<size_t>::max();
@@ -934,7 +953,7 @@ Chunk ClusterMergingTransform::generate2D()
             cy = y_exact[i];
         }
 
-        UInt64 h = computeCellHash(merged_columns, non_cluster_key_positions, i, cx, cy);
+        UInt64 h = computeCellHash(ordinary_keys, i, cx, cy);
 
         size_t found = lookup_cell(cx, cy, i, h);
         if (found != std::numeric_limits<size_t>::max())
@@ -991,7 +1010,7 @@ Chunk ClusterMergingTransform::generate2D()
                 || __builtin_add_overflow(A.cy, static_cast<Int64>(dy), &ncy))
                 continue;
 
-            UInt64 h = computeCellHash(merged_columns, non_cluster_key_positions, leader_A, ncx, ncy);
+            UInt64 h = computeCellHash(ordinary_keys, leader_A, ncx, ncy);
             size_t cj = lookup_cell(ncx, ncy, leader_A, h);
             if (cj == std::numeric_limits<size_t>::max())
                 continue;
@@ -1134,6 +1153,7 @@ Chunk ClusterMergingTransform::generateString()
         if (!aggregates_mask[i] && i != cluster_key_pos)
             non_cluster_key_positions.push_back(i);
     }
+    const OrdinaryKeysIdentity ordinary_keys(merged_columns, std::move(non_cluster_key_positions), total_rows);
 
     /// Distance for String keys is a non-negative integer Levenshtein bound.
     if (!std::isfinite(cluster_distance))
@@ -1177,11 +1197,8 @@ Chunk ClusterMergingTransform::generateString()
         if (len_diff > max_edits)
             return;
 
-        for (size_t pos : non_cluster_key_positions)
-        {
-            if (merged_columns[pos]->compareAt(i, j, *merged_columns[pos], 1) != 0)
-                return;
-        }
+        if (!ordinary_keys.equals(i, j))
+            return;
 
         if (dsu.find(i) == dsu.find(j))
             return;

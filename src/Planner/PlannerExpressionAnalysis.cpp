@@ -46,7 +46,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_EXPRESSION;
 }
@@ -322,17 +321,11 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
 
                 if (cluster_idx_orig >= 0 && !is_cluster_key_position)
                 {
+                    /// `ClusterMergingTransform` tests the ordinary keys for equality by their exact
+                    /// serialized values, so keys of any type (including aggregate function states)
+                    /// keep partitioning the clusters exactly as in ordinary aggregation.
                     for (const auto * expression_dag_node : expression_dag_nodes)
-                    {
-                        /// `ClusterMergingTransform` compares and sorts the ordinary keys with
-                        /// `IColumn::compareAt`, which is not an equality test for non-comparable
-                        /// types (for example, it treats all aggregate function states as equal).
-                        if (!expression_dag_node->result_type->isComparable())
-                            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "GROUP BY ... WITH CLUSTER does not support the non-comparable type {} of the key {}",
-                                expression_dag_node->result_type->getName(), expression_dag_node->result_name);
                         ordinary_key_names_with_cluster.insert(expression_dag_node->result_name);
-                    }
                 }
 
                 ++orig_pos;

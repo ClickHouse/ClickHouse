@@ -1,7 +1,7 @@
 -- A key that is both an ordinary `GROUP BY` key and a part of the `WITH CLUSTER` key would share one
 -- column after aggregation and lose its exact-match role, so such queries are rejected.
--- Ordinary keys of non-comparable types (aggregate function states) are rejected, because the
--- clustering step cannot test them for equality.
+-- Ordinary keys of non-comparable types (aggregate function states) are compared by their exact
+-- values, so distinct states keep separate clusters.
 
 SET enable_analyzer = 1;
 SET allow_experimental_group_by_with_cluster = 1;
@@ -11,17 +11,17 @@ SELECT x, count() FROM VALUES('x UInt8', (1), (2)) GROUP BY x WITH CLUSTER 1, x;
 SELECT x, count() FROM VALUES('x UInt8', (1), (2)) GROUP BY x, (x, 0) WITH CLUSTER 2; -- { serverError BAD_ARGUMENTS }
 SELECT s, count() FROM VALUES('s String', ('abc'), ('abd')) GROUP BY s, s WITH CLUSTER 1; -- { serverError BAD_ARGUMENTS }
 
-SELECT finalizeAggregation(g), min(x), count()
+SELECT finalizeAggregation(g) AS v, min(x), count()
 FROM (SELECT sumState(number) AS g, number AS x FROM numbers(2) GROUP BY number)
-GROUP BY g, x WITH CLUSTER 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+GROUP BY g, x WITH CLUSTER 1 ORDER BY v;
 
-SELECT finalizeAggregation(g), count()
+SELECT finalizeAggregation(g) AS v, count()
 FROM (SELECT sumState(number) AS g, toString(number) AS s FROM numbers(2) GROUP BY number)
-GROUP BY g, s WITH CLUSTER 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+GROUP BY g, s WITH CLUSTER 1 ORDER BY v;
 
 SELECT count()
 FROM (SELECT sumState(number) AS g, number AS x, number AS y FROM numbers(2) GROUP BY number)
-GROUP BY g, (x, y) WITH CLUSTER 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+GROUP BY g, (x, y) WITH CLUSTER 1;
 
 -- Distinct expressions over the same column keep both roles.
 SELECT x + 1 AS k, min(x), count() FROM VALUES('x UInt8', (1), (2)) GROUP BY x + 1, x WITH CLUSTER 1 ORDER BY k;
