@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <Common/VectorWithMemoryTracking.h>
+#include <vector>
 #include <Common/re2.h>
 #include <IO/PeekableReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
@@ -32,10 +32,10 @@ private:
     String regexp_str;
     const re2::RE2 regexp;
     // The vector of fields extracted from line using regexp.
-    VectorWithMemoryTracking<std::string_view> matched_fields;
+    std::vector<std::string_view> matched_fields;
     // These two vectors are needed to use RE2::FullMatchN (function for extracting fields).
-    VectorWithMemoryTracking<re2::RE2::Arg> re2_arguments;
-    VectorWithMemoryTracking<re2::RE2::Arg *> re2_arguments_ptrs;
+    std::vector<re2::RE2::Arg> re2_arguments;
+    std::vector<re2::RE2::Arg *> re2_arguments_ptrs;
     bool skip_unmatched;
 };
 

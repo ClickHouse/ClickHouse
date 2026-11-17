@@ -26,29 +26,29 @@ namespace DB
     class ExecutableFunctionRunningConcurrency final : public IExecutableFunction
     {
     public:
-        [[nodiscard]] String getName() const override
+        String getName() const override
         {
             return "runningConcurrency";
         }
 
-        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             return executeForType(arguments, input_rows_count);
         }
 
-        [[nodiscard]] bool useDefaultImplementationForConstants() const override
+        bool useDefaultImplementationForConstants() const override
         {
             return true;
         }
 
-        [[nodiscard]] bool isDeterministicInScopeOfQuery() const override
+        bool isDeterministicInScopeOfQuery() const override
         {
             return false;
         }
 
     private:
         template <typename ArgDataType>
-        [[nodiscard]] ColumnPtr executeTyped(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+        ColumnPtr executeTyped(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
         {
             using ColVecArg = typename ArgDataType::ColumnType;
             const ColVecArg * col_begin = checkAndGetColumn<ColVecArg>(arguments[0].column.get());
@@ -95,7 +95,7 @@ namespace DB
             return col_concurrency;
         }
 
-        [[nodiscard]] ColumnPtr executeForType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+        ColumnPtr executeForType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
         {
             WhichDataType which(arguments[0].type);
             if (which.isDate())
@@ -200,9 +200,9 @@ namespace DB
             return std::make_unique<FunctionBaseRunningConcurrency>(argument_types, return_type);
         }
 
-        String getSignatureString() const override
+        DataTypePtr getReturnTypeImpl(const DataTypes &) const override
         {
-            return "(DateOrDateTime, DateOrDateTime) -> UInt32";
+            return std::make_shared<DataTypeUInt32>();
         }
 
         size_t getNumberOfArguments() const override
@@ -253,7 +253,7 @@ If events from different data blocks overlap then they can not be processed corr
 </Tip>
 
 <Warning title="Deprecated">
-It is advised to use [window functions](/reference/functions/window-functions/index) instead.
+It is advised to use [window functions](/reference/functions/window-functions) instead.
 </Warning>
 )";
         FunctionDocumentation::Syntax syntax = "runningConcurrency(start, end)";

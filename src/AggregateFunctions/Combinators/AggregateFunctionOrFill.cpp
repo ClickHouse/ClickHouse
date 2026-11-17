@@ -22,16 +22,14 @@ public:
     explicit AggregateFunctionCombinatorOrFill(Kind kind_) : kind(kind_) {}
 
     /// Due to aggregate_functions_null_for_empty
-    [[nodiscard]] bool supportsNesting() const override { return true; }
+    bool supportsNesting() const override { return true; }
 
-    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
-
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return kind == Kind::OrNull ? "OrNull" : "OrDefault";
     }
 
-    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
+    AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,

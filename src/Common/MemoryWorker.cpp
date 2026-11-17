@@ -76,25 +76,11 @@ std::map<std::string, uint64_t> readAllMetricsFromStatFile(ReadBufferFromFile & 
 
 using Metrics = std::map<std::string_view, uint64_t>;
 
-std::optional<uint64_t> findMetric(const Metrics & metrics, std::string_view key)
-{
-    auto it = metrics.find(key);
-    if (it == metrics.end())
-        return std::nullopt;
-    return it->second;
-}
-
-uint64_t getMetric(const Metrics & metrics, std::string_view key)
-{
-    return findMetric(metrics, key).value_or(0);
-}
-
 void readMetricsFromStatFile(
     ReadBufferFromFile & buf,
     Metrics & metrics,
     std::initializer_list<std::string_view> keys,
-    bool * warnings_printed,
-    std::initializer_list<std::string_view> optional_keys = {})
+    bool * warnings_printed)
 {
     /// Zero out existing values; keeps map nodes allocated for reuse.
     for (auto & [_, v] : metrics)
@@ -138,26 +124,16 @@ void readMetricsFromStatFile(
         metrics[*it] = value;
     }
 
-    for (const auto * it = keys.begin(); it != keys.end(); ++it)
+    if (print_warnings)
     {
-        uint64_t key_bit = 1ull << (it - keys.begin());
-        if (seen_mask & key_bit)
-            continue;
-
-        /// A requested key that is absent from the file must not be reported as a zero value:
-        /// callers distinguish "the kernel does not expose this statistic" from a real zero
-        /// (e.g. `CGroupMemoryInactiveFile` is omitted rather than published as 0).
-        metrics.erase(*it);
-
-        /// An optional key may legitimately be absent (e.g. an older kernel does not expose `inactive_file`),
-        /// so it must not be logged as an error nor consume the single warning slot.
-        if (std::find(optional_keys.begin(), optional_keys.end(), *it) != optional_keys.end())
-            continue;
-
-        if (print_warnings)
+        for (const auto * it = keys.begin(); it != keys.end(); ++it)
         {
-            *warnings_printed = true;
-            LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", *it, buf.getFileName());
+            uint64_t key_bit = 1ull << (it - keys.begin());
+            if (!(seen_mask & key_bit))
+            {
+                *warnings_printed = true;
+                LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", *it, buf.getFileName());
+            }
         }
     }
 }
@@ -170,25 +146,9 @@ struct CgroupsV1Reader : ICgroupsReader
     {
         std::lock_guard lock(mutex);
         buf.rewind();
-        /// Only the keys needed for the usage value are parsed here, so that the long-existing usage path
-        /// does not depend on the fields that are read only for the `CGroupMemoryInactiveFile` metric.
         readMetricsFromStatFile(buf, metrics, {"rss"}, &warnings_printed);
-        return calculateUsage(metrics);
-    }
-
-    CgroupsMemoryUsageAndInactive readMemoryUsageAndInactiveFile() override
-    {
-        std::lock_guard lock(mutex);
-        buf.rewind();
-        /// Use total_inactive_file for cgroups v1 to get the hierarchical value
-        /// (includes child cgroups), matching Kubernetes cadvisor behavior.
-        readMetricsFromStatFile(buf, metrics, {"rss", "total_inactive_file"}, &warnings_printed, {"total_inactive_file"});
-
-        CgroupsMemoryUsageAndInactive result;
-        result.usage = calculateUsage(metrics);
-        /// Keep "the key is absent" distinct from a real zero: an older kernel may not expose it at all.
-        result.inactive_file = findMetric(metrics, "total_inactive_file");
-        return result;
+        auto it = metrics.find("rss");
+        return it != metrics.end() ? it->second : 0;
     }
 
     std::string dumpAllStats() override
@@ -199,12 +159,6 @@ struct CgroupsV1Reader : ICgroupsReader
     }
 
 private:
-    /// The single source of truth for the cgroups v1 usage value.
-    static uint64_t calculateUsage(const Metrics & metrics)
-    {
-        return getMetric(metrics, "rss");
-    }
-
     std::mutex mutex;
     ReadBufferFromFile buf TSA_GUARDED_BY(mutex);
     Metrics metrics TSA_GUARDED_BY(mutex);
@@ -219,24 +173,25 @@ struct CgroupsV2Reader : ICgroupsReader
     {
         std::lock_guard lock(mutex);
         stat_buf.rewind();
-        /// Only the keys needed for the usage value are parsed here, so that the long-existing usage path
-        /// does not depend on the fields that are read only for the `CGroupMemoryInactiveFile` metric.
-        readMetricsFromStatFile(stat_buf, metrics, {"anon", "sock", "kernel", "slab_reclaimable"}, &warnings_printed);
-        return calculateUsage(metrics);
-    }
-
-    CgroupsMemoryUsageAndInactive readMemoryUsageAndInactiveFile() override
-    {
-        std::lock_guard lock(mutex);
-        stat_buf.rewind();
         readMetricsFromStatFile(
-            stat_buf, metrics, {"anon", "sock", "kernel", "slab_reclaimable", "inactive_file"}, &warnings_printed, {"inactive_file"});
+            stat_buf, metrics, {"anon", "sock", "kernel", "slab_reclaimable"}, &warnings_printed);
 
-        CgroupsMemoryUsageAndInactive result;
-        result.usage = calculateUsage(metrics);
-        /// Keep "the key is absent" distinct from a real zero: an older kernel may not expose it at all.
-        result.inactive_file = findMetric(metrics, "inactive_file");
-        return result;
+        auto get = [](const Metrics & m, std::string_view key) -> uint64_t
+        {
+            auto it = m.find(key);
+            return it != m.end() ? it->second : 0;
+        };
+
+        /// anon + sock: actual process memory.
+        /// kernel - slab_reclaimable: non-reclaimable kernel memory (pagetables, kernel_stack, slab_unreclaimable).
+        /// slab_reclaimable is excluded because the kernel reclaims it synchronously under memory pressure
+        /// before invoking the OOM killer, so it should not count against the application's memory budget.
+        uint64_t usage = get(metrics, "anon") + get(metrics, "sock");
+        uint64_t kernel = get(metrics, "kernel");
+        uint64_t slab_reclaimable = get(metrics, "slab_reclaimable");
+        if (kernel > slab_reclaimable)
+            usage += kernel - slab_reclaimable;
+        return usage;
     }
 
     std::string dumpAllStats() override
@@ -247,21 +202,6 @@ struct CgroupsV2Reader : ICgroupsReader
     }
 
 private:
-    /// The single source of truth for the cgroups v2 usage value.
-    /// anon + sock: actual process memory.
-    /// kernel - slab_reclaimable: non-reclaimable kernel memory (pagetables, kernel_stack, slab_unreclaimable).
-    /// slab_reclaimable is excluded because the kernel reclaims it synchronously under memory pressure
-    /// before invoking the OOM killer, so it should not count against the application's memory budget.
-    static uint64_t calculateUsage(const Metrics & metrics)
-    {
-        uint64_t usage = getMetric(metrics, "anon") + getMetric(metrics, "sock");
-        uint64_t kernel = getMetric(metrics, "kernel");
-        uint64_t slab_reclaimable = getMetric(metrics, "slab_reclaimable");
-        if (kernel > slab_reclaimable)
-            usage += kernel - slab_reclaimable;
-        return usage;
-    }
-
     std::mutex mutex;
     ReadBufferFromFile stat_buf TSA_GUARDED_BY(mutex);
     Metrics metrics TSA_GUARDED_BY(mutex);
@@ -308,25 +248,6 @@ std::shared_ptr<ICgroupsReader> ICgroupsReader::createCgroupsReader(ICgroupsRead
 
     chassert(version == CgroupsVersion::V1);
     return std::make_shared<CgroupsV1Reader>(cgroup_path);
-}
-
-CgroupsMemoryUsageAndOptionalInactive ICgroupsReader::readMemoryUsageAndOptionalInactiveFile()
-{
-    CgroupsMemoryUsageAndOptionalInactive result;
-    try
-    {
-        auto stats = readMemoryUsageAndInactiveFile();
-        result.usage = stats.usage;
-        result.inactive_file = stats.inactive_file;
-    }
-    catch (...)
-    {
-        /// A malformed inactive-file line must not take down the pre-existing usage-based
-        /// metrics; `readMemoryUsage` parses only the fields the usage value is made of.
-        tryLogCurrentException("CgroupsReader");
-        result.usage = readMemoryUsage();
-    }
-    return result;
 }
 
 namespace MemoryWorkerHelpers
@@ -413,7 +334,6 @@ std::string_view sourceToString(MemoryWorker::MemoryUsageSource source)
     {
         case MemoryWorker::MemoryUsageSource::Cgroups: return "Cgroups";
         case MemoryWorker::MemoryUsageSource::Jemalloc: return "Jemalloc";
-        case MemoryWorker::MemoryUsageSource::OS: return "OS";
         case MemoryWorker::MemoryUsageSource::None: return "None";
     }
 }
@@ -424,7 +344,6 @@ std::string_view sourceToString(MemoryWorker::MemoryUsageSource source)
 /// Supported sources in order of priority
 /// - reading from cgroups' pseudo-files (fastest and most accurate)
 /// - reading jemalloc's resident stat (doesn't take into account allocations that didn't use jemalloc)
-/// - reading process RSS when cgroups and jemalloc are unavailable
 /// Also, different tick rates are used because not all options are equally fast
 MemoryWorker::MemoryWorker(
     MemoryWorkerConfig config,
@@ -479,9 +398,50 @@ MemoryWorker::MemoryWorker(
             /// file names and v2 uses a hierarchy.
             if (version == ICgroupsReader::CgroupsVersion::V2)
             {
-                cgroup_memory_levels = openCgroupsV2MemoryLevels(cgroup_path);
-                cgroups_v2_lookup.emplace();
-                cgroups_v2_lookup->dir = cgroup_path;
+                /// In cgroup v2, every ancestor cgroup has its own `memory.max` and
+                /// `memory.current`. We pair them at the same level so the computed
+                /// per-level `available_i = max_i - current_i` reflects sibling
+                /// consumption inside an ancestor: using the leaf's `memory.current`
+                /// against an ancestor's `memory.max` would ignore other children of
+                /// that ancestor and let us exceed its budget.
+                fs::path current = fs::path(cgroup_path);
+                while (current != default_cgroups_mount.parent_path())
+                {
+                    fs::path max_path = current / "memory.max";
+                    fs::path current_path = current / "memory.current";
+                    fs::path stat_path = current / "memory.stat";
+                    if (fs::exists(max_path) && fs::exists(current_path))
+                    {
+                        CgroupMemoryLevel level;
+                        level.max_path = max_path.string();
+                        level.current_path = current_path.string();
+                        /// `memory.stat` lets us discount reclaimable page cache/slab from
+                        /// `memory.current`. If it is missing, the level falls back to treating
+                        /// the raw `memory.current` as usage (stricter, never over-budget).
+                        if (fs::exists(stat_path))
+                            level.stat_path = stat_path.string();
+                        try
+                        {
+                            level.max_buf = std::make_unique<ReadBufferFromFile>(level.max_path);
+                            level.current_buf = std::make_unique<ReadBufferFromFile>(level.current_path);
+                            if (!level.stat_path.empty())
+                                level.stat_buf = std::make_unique<ReadBufferFromFile>(level.stat_path);
+                        }
+                        catch (...)
+                        {
+                            /// Keep the level (with its paths) but leave the buffers null:
+                            /// `readAvailableForDynamicLimit` retries the open on each tick and
+                            /// fails the tick closed until it succeeds, instead of silently
+                            /// dropping this (possibly tighter) ancestor and overestimating headroom.
+                            level.max_buf.reset();
+                            level.current_buf.reset();
+                            level.stat_buf.reset();
+                            tryLogCurrentException(log, fmt::format("Cannot open cgroup memory files at '{}'", current.string()));
+                        }
+                        cgroup_memory_levels.push_back(std::move(level));
+                    }
+                    current = current.parent_path();
+                }
             }
             else
             {
@@ -521,7 +481,6 @@ MemoryWorker::MemoryWorker(
             /// fall back to the jemalloc source and host-wide `/proc/meminfo` instead.
             cgroups_reader.reset();
             cgroup_memory_levels.clear();
-            cgroups_v2_lookup.reset();
             source = MemoryUsageSource::None;
         }
 #endif
@@ -533,117 +492,8 @@ MemoryWorker::MemoryWorker(
     source = MemoryUsageSource::Jemalloc;
     if (rss_update_period_ms == 0)
         rss_update_period_ms = jemalloc_memory_usage_tick_ms;
-#elif HAS_MEMORY_STATISTICS_OS
-    static constexpr uint64_t os_memory_usage_tick_ms{100};
-
-    os_memory_statistics = std::make_unique<MemoryStatisticsOS>();
-    source = MemoryUsageSource::OS;
-    if (rss_update_period_ms == 0)
-        rss_update_period_ms = os_memory_usage_tick_ms;
 #endif
 }
-
-#if defined(OS_LINUX)
-std::vector<MemoryWorker::CgroupMemoryLevel> MemoryWorker::openCgroupsV2MemoryLevels(const std::string & cgroup_path)
-{
-    /// In cgroup v2, every ancestor cgroup has its own `memory.max` and
-    /// `memory.current`. We pair them at the same level so the computed
-    /// per-level `available_i = max_i - current_i` reflects sibling
-    /// consumption inside an ancestor: using the leaf's `memory.current`
-    /// against an ancestor's `memory.max` would ignore other children of
-    /// that ancestor and let us exceed its budget.
-    std::vector<CgroupMemoryLevel> levels;
-    fs::path current = fs::path(cgroup_path);
-    while (current != default_cgroups_mount.parent_path())
-    {
-        fs::path max_path = current / "memory.max";
-        fs::path current_path = current / "memory.current";
-        fs::path stat_path = current / "memory.stat";
-        if (fs::exists(max_path) && fs::exists(current_path))
-        {
-            CgroupMemoryLevel level;
-            level.max_path = max_path.string();
-            level.current_path = current_path.string();
-            /// `memory.stat` lets us discount reclaimable page cache/slab from
-            /// `memory.current`. If it is missing, the level falls back to treating
-            /// the raw `memory.current` as usage (stricter, never over-budget).
-            if (fs::exists(stat_path))
-                level.stat_path = stat_path.string();
-            try
-            {
-                level.max_buf = std::make_unique<ReadBufferFromFile>(level.max_path);
-                level.current_buf = std::make_unique<ReadBufferFromFile>(level.current_path);
-                if (!level.stat_path.empty())
-                    level.stat_buf = std::make_unique<ReadBufferFromFile>(level.stat_path);
-            }
-            catch (...)
-            {
-                /// Keep the level (with its paths) but leave the buffers null:
-                /// `readAvailableForDynamicLimit` retries the open on each tick and
-                /// fails the tick closed until it succeeds, instead of silently
-                /// dropping this (possibly tighter) ancestor and overestimating headroom.
-                level.max_buf.reset();
-                level.current_buf.reset();
-                level.stat_buf.reset();
-                tryLogCurrentException(log, fmt::format("Cannot open cgroup memory files at '{}'", current.string()));
-            }
-            levels.push_back(std::move(level));
-        }
-        current = current.parent_path();
-    }
-    return levels;
-}
-
-bool MemoryWorker::lookUpCgroupsV2MemoryFiles()
-{
-    std::optional<std::string> dir;
-    std::shared_ptr<ICgroupsReader> reader;
-    std::vector<CgroupMemoryLevel> levels;
-    bool failed = false;
-    try
-    {
-        dir = getCgroupsV2PathContainingFile("memory.current");
-        if (dir == cgroups_v2_lookup->dir && !cgroups_v2_lookup->reopen)
-            return false;
-
-        if (dir)
-        {
-            reader = ICgroupsReader::createCgroupsReader(ICgroupsReader::CgroupsVersion::V2, *dir);
-            levels = openCgroupsV2MemoryLevels(*dir);
-        }
-    }
-    catch (...)
-    {
-        /// Handled as if no cgroup was visible, so the lookup is retried in `cgroups_v2_lookup_period`, not on the next tick.
-        tryLogCurrentException(log, "Cannot look up the cgroup memory files");
-        dir.reset();
-        reader.reset();
-        levels.clear();
-        failed = true;
-    }
-#if !USE_JEMALLOC && HAS_MEMORY_STATISTICS_OS
-    if (!dir && !os_memory_statistics)
-        os_memory_statistics = std::make_unique<MemoryStatisticsOS>();
-#endif
-
-    const bool replaced = cgroups_reader || reader;
-    cgroups_reader = std::move(reader);
-    cgroup_memory_levels = std::move(levels);
-
-    if (dir != cgroups_v2_lookup->dir && !failed)
-    {
-        if (dir)
-            LOG_INFO(log, "Reopened the cgroup memory files from '{}', the nearest cgroup with memory.current now (was '{}')",
-                *dir, cgroups_v2_lookup->dir.value_or(""));
-        else
-            LOG_INFO(log, "No cgroup has memory.current anymore (was '{}'), reading the resident memory from {} instead",
-                cgroups_v2_lookup->dir.value_or(""), USE_JEMALLOC ? "jemalloc" : "the OS");
-    }
-    cgroups_v2_lookup->dir = std::move(dir);
-    cgroups_v2_lookup->reopen = false;
-    return replaced;
-}
-#endif
 
 void MemoryWorker::setReleasableCache(std::shared_ptr<IMemoryReleasableCache> cache)
 {
@@ -711,7 +561,6 @@ MemoryWorker::~MemoryWorker()
 MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
 {
     MemoryUsage usage;
-    [[maybe_unused]] bool jemalloc_stats_refreshed = false;
 
     switch (source)
     {
@@ -727,21 +576,11 @@ MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
         case MemoryUsageSource::Jemalloc:
 #if USE_JEMALLOC
             epoch_mib.setValue(0);
-            jemalloc_stats_refreshed = true;
             usage.resident = resident_mib.getValue();
             break;
 #else
             [[fallthrough]];
 #endif
-        case MemoryUsageSource::OS:
-#if HAS_MEMORY_STATISTICS_OS
-            if (os_memory_statistics != nullptr)
-            {
-                usage.resident = os_memory_statistics->get().resident;
-                break;
-            }
-#endif
-            [[fallthrough]];
         case MemoryUsageSource::None:
         {
             if (log_error)
@@ -755,17 +594,6 @@ MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
     /// sanitizer overhead (redzones, quarantine), but RSS does, so use sanitizer allocator bytes.
     /// RSS is still checked against the hard limit via `MemoryTracker::updateRSS`.
     usage.allocated = __sanitizer_get_current_allocated_bytes();
-#elif USE_JEMALLOC
-    /// Every allocation of `Allocator` goes through jemalloc, and `stats.allocated` counts the bytes
-    /// handed out to the application even if their pages are not touched yet, while the resident
-    /// memory does not include such pages. Correcting the tracker down to the resident memory alone
-    /// would forget memory that is allocated but not yet used and admit allocations past
-    /// `max_server_memory_usage` until the process is killed by the OOM killer. Correcting it down to
-    /// `stats.allocated` still removes the drift: bytes counted in the tracker without any allocation
-    /// behind them.
-    if (!jemalloc_stats_refreshed)
-        epoch_mib.setValue(0);
-    usage.allocated = std::max<Int64>(usage.resident, allocated_mib.getValue());
 #else
     usage.allocated = usage.resident;
 #endif
@@ -854,10 +682,6 @@ void MemoryWorker::setDynamicHardLimitSettings(Int64 ceiling, double ratio)
 std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
 {
 #if defined(OS_LINUX)
-    /// Fail closed while no cgroup is visible: a cgroup limit outside of the view may still bind.
-    if (cgroups_v2_lookup && !cgroups_v2_lookup->dir)
-        return std::nullopt;
-
     /// When running in a cgroup with a finite limit, the host-wide `/proc/meminfo` is
     /// the wrong source: the cgroup may be much smaller than the host, and other
     /// processes in the cgroup count toward our budget. Use the cgroup view instead,
@@ -1055,17 +879,6 @@ void MemoryWorker::updateResidentMemoryThread()
 
             Stopwatch total_watch;
 
-            bool cgroups_reopened = false;
-#if defined(OS_LINUX)
-            static constexpr std::chrono::milliseconds cgroups_v2_lookup_period{1000};
-            if (cgroups_v2_lookup
-                && (cgroups_v2_lookup->reopen || getCurrentTimeMs() - cgroups_v2_lookup->time >= cgroups_v2_lookup_period))
-            {
-                cgroups_v2_lookup->time = getCurrentTimeMs();
-                cgroups_reopened = lookUpCgroupsV2MemoryFiles();
-            }
-#endif
-
             const MemoryUsage memory_usage = getMemoryUsage(first_run);
 
             /// Speculatively reserve growth headroom on top of the observed RSS.
@@ -1101,8 +914,7 @@ void MemoryWorker::updateResidentMemoryThread()
             /// upward would change no limit decision and could only publish a misleadingly
             /// large value.
             const Int64 current_hard_limit = total_memory_tracker.getHardLimit();
-            /// After a reopen `prev_resident` was read from another cgroup or source, so the difference is not growth.
-            if (!first_run && !cgroups_reopened && rss_speculative_reserve_ratio > 0.0 && current_hard_limit > 0)
+            if (!first_run && rss_speculative_reserve_ratio > 0.0 && current_hard_limit > 0)
             {
                 /// `total_memory_tracker.get()` can legitimately go negative (the lazy
                 /// correction below handles this via `MemoryTracker::updateAllocated`).
@@ -1205,8 +1017,8 @@ void MemoryWorker::updateResidentMemoryThread()
             }
 #endif
 
-            /// update MemoryTracker with `allocated` (sanitizer allocator bytes, otherwise the maximum of
-            /// resident and jemalloc `stats.allocated`, see `getMemoryUsage`) when:
+            /// update MemoryTracker with `allocated` (sanitizer allocator bytes, otherwise resident,
+            /// which may be much larger than what was actually allocated) when:
             ///  - it's a first run of MemoryWorker (MemoryTracker could've missed some allocation before its initialization)
             ///  - MemoryTracker stores a negative value
             ///  - `correct_tracker` is set to true
@@ -1333,10 +1145,6 @@ void MemoryWorker::updateResidentMemoryThread()
         catch (...)
         {
             tryLogCurrentException(log, "Failed to update resident memory");
-#if defined(OS_LINUX)
-            if (cgroups_v2_lookup)
-                cgroups_v2_lookup->reopen = true;
-#endif
         }
     }
 }
