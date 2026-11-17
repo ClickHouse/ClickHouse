@@ -20,9 +20,11 @@ struct CorrelatedColumnsCollector
     explicit CorrelatedColumnsCollector(
         const QueryTreeNodePtr & expression,
         const IdentifierResolveScope * current_scope,
-        const std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> & map
+        const std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> & map,
+        const IdentifierResolveScope * deferred_query_scope_ = nullptr
     )
         : node_to_scope_map(map)
+        , deferred_query_scope(deferred_query_scope_)
         , correlated_columns()
     {
         visitExpression(expression, current_scope);
@@ -61,7 +63,7 @@ private:
 
             if (current_node_type == QueryTreeNodeType::COLUMN)
             {
-                if (checkCorrelatedColumn(current_scope, current))
+                if (checkCorrelatedColumn(current_scope, current, deferred_query_scope))
                     correlated_columns.push_back(current);
             }
 
@@ -74,6 +76,7 @@ private:
     }
 
     const std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> & node_to_scope_map;
+    const IdentifierResolveScope * deferred_query_scope;
     QueryTreeNodes correlated_columns;
 };
 
