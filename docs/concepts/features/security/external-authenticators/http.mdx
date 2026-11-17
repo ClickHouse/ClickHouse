@@ -101,3 +101,92 @@ CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server'
 ### Passing session settings {#passing-session-settings}
 
 If a response body from HTTP authentication server has JSON format and contains `settings` sub-object, ClickHouse will try parse its key: value pairs as string values and set them as session settings for authenticated user's current session. If parsing is failed, a response body from server will be ignored.
+
+## HTTP user directory {#http-user-directory}
+
+In addition to authenticating users that already exist in ClickHouse (`IDENTIFIED WITH HTTP`), an HTTP authentication server can serve as a user directory. A user that is not defined in ClickHouse authenticates with HTTP Basic against the service and is materialized as an in-memory user without any grants. The service can also return session settings and a list of roles for this login.
+
+This is similar to the `ldap` user directory: users and their passwords live in an external system, and ClickHouse keeps only a transient copy. Unlike `IDENTIFIED WITH HTTP`, no `CREATE USER` is needed beforehand.
+
+### Configuration {#http-user-directory-configuration}
+
+Add an `http` section to `user_directories` in `config.xml`. It refers to a server defined in `http_authentication_servers`.
+
+```xml
+<clickhouse>
+    <user_directories>
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+        <http>
+            <server>basic_auth_server</server>
+            <allowed_roles>
+                <reader/>
+                <writer/>
+            </allowed_roles>
+            <allowed_role_prefix>tenant_</allowed_role_prefix>
+            <authentication_cache_ttl>30</authentication_cache_ttl>
+        </http>
+        <local_directory>
+            <path>/var/lib/clickhouse/access/</path>
+        </local_directory>
+    </user_directories>
+</clickhouse>
+```
+
+Parameters:
+- `server` - Name of the server from `http_authentication_servers`. Required.
+- `allowed_roles` - Roles the service may return. Element names are role names. Optional.
+- `allowed_role_prefix` - Roles whose names start with this prefix may be returned. Optional.
+- `authentication_cache_ttl` - Time in seconds to reuse a successful response. Default: `0` (disabled).
+
+The parameters of the `http` section are read at startup, so changing them requires a restart. The parameters of the server itself (`uri`, timeouts, `forward_headers`) follow config reload. If `server` does not name an entry of `http_authentication_servers`, every authentication through the directory fails.
+
+### Response format {#http-user-directory-response}
+
+The service receives a GET request with Basic credentials and the configured forwarded headers.
+
+- `200` - Success. The body is optional; if present, it must be JSON.
+- `404` - The user is not known to this service. Authentication continues with the next user directory.
+- Any other status (`401`, `403`, `5xx`) - Authentication fails, the next directories are not tried.
+
+Parsing is strict: a malformed body, a body that is not a JSON object, a `roles` value that is not an array, a non-string role, or an unknown or unparsable setting fails the authentication. The `settings` are applied as session settings, as with `IDENTIFIED WITH HTTP`, and are subject to constraints.
+
+```json
+{"settings": {"max_threads": "4"}, "roles": ["reader", "tenant_a"]}
+```
+
+### Roles {#http-user-directory-roles}
+
+Every returned role must exist in ClickHouse and be listed in `allowed_roles` or start with `allowed_role_prefix`. Otherwise the authentication fails. If neither is configured, any returned role is rejected.
+
+Roles belong to the authentication, not to the user: two logins of one user name may get different roles. The roles are enabled in the session without being granted:
+
+- `currentRoles` shows them.
+- `SHOW GRANTS` shows nothing.
+- `SET ROLE NONE` does not remove them, and `SET ROLE` with a returned role fails because it is not granted.
+
+<Note>
+Anyone who can run `CREATE ROLE` can create a role with a name matching `allowed_role_prefix`, which the service may then return. Restrict `CREATE ROLE`, or prefer `allowed_roles`.
+</Note>
+
+### Authentication cache {#http-user-directory-cache}
+
+With `authentication_cache_ttl` greater than zero, a successful validated response is reused for the same user name, password, and forwarded headers. There is one entry per user name. Failures are never cached. Existence and the allow-list of the roles are checked again on every hit.
+
+The cache is disabled by default; 30-60 seconds is a reasonable value. The TTL bounds the staleness of new authentications only: sessions that are already established are not affected.
+
+### Distributed queries {#http-user-directory-distributed}
+
+Configure the directory and create the roles on every node. The cluster must define a `<secret>`. The initiator pushes the user and its roles to shards, which materialize the user and apply the roles without calling the service.
+
+### Limitations {#http-user-directory-limitations}
+
+- Settings profiles attached to returned roles, including their constraints such as `readonly`, are not applied at login. Use the `settings` of the response instead.
+- `INSERT` into a `Distributed` table on a cluster with `<secret>`, both foreground and background, does not carry the roles to shards.
+- `ON CLUSTER` queries with `distributed_ddl_use_initial_user_and_roles` fail with `UNKNOWN_USER` on hosts that have not seen the user.
+- Such users should not be used as `DEFINER`, because a definer has no session roles.
+- A named session (`session_id`) can be reused only with the same roles, and settings returned by the service are not applied to named sessions.
+- Materialized users stay in memory (`system.users`) until restart.
+- A user name that exists in another user directory is never authenticated by this one.
+- With several external directories, the order in `user_directories` decides. Every login with an unknown name costs a request, so the service must answer `404` for names it does not own.

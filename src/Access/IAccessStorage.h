@@ -38,6 +38,9 @@ struct AuthResult
     /// Username determined by the access storage during authentication,
     /// should be treated as the authenticated user name
     String user_name;
+    /// Roles returned by the authentication (e.g. by `HTTPAccessStorage`). They are valid only for this authentication
+    /// and are not granted to the user.
+    std::vector<UUID> external_roles{};
 };
 
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.

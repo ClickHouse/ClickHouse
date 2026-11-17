@@ -1,0 +1,51 @@
+<clickhouse>
+    <http_authentication_servers>
+        <dir_server>
+            <uri>http://node:8000/directory</uri>
+            <connection_timeout_ms>1000</connection_timeout_ms>
+            <receive_timeout_ms>1000</receive_timeout_ms>
+            <send_timeout_ms>1000</send_timeout_ms>
+            <max_tries>1</max_tries>
+            <forward_headers>
+                <name>X-Tenant</name>
+            </forward_headers>
+        </dir_server>
+    </http_authentication_servers>
+
+    <user_directories replace="replace">
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+        <http>
+            <server>dir_server</server>
+            <allowed_roles>
+                <r_reader/>
+                <r_a/>
+                <r_b/>
+            </allowed_roles>
+            <allowed_role_prefix>tenant_</allowed_role_prefix>
+            <authentication_cache_ttl>2</authentication_cache_ttl>
+        </http>
+        <local_directory>
+            <path>/var/lib/clickhouse/access/</path>
+        </local_directory>
+    </user_directories>
+
+    <remote_servers>
+        <dir_cluster>
+            <secret>dir_cluster_secret</secret>
+            <shard>
+                <replica>
+                    <host>node_dir1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>node_dir2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </dir_cluster>
+    </remote_servers>
+</clickhouse>

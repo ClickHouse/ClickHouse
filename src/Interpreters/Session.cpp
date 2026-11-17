@@ -23,6 +23,7 @@
 
 #include <condition_variable>
 #include <mutex>
+#include <set>
 #include <unordered_map>
 #include <vector>
 
@@ -397,6 +398,9 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
             LOG_DEBUG(log, "User {} has external_roles applied: [{}] ({})",
                       toString(*user_id), fmt::join(external_roles_, ", "), external_roles_.size());
         }
+
+        /// Roles returned by the access storage for this authentication (e.g. by `HTTPAccessStorage`).
+        external_roles.insert(external_roles.end(), auth_result.external_roles.begin(), auth_result.external_roles.end());
     }
     catch (const Exception & e)
     {
@@ -636,6 +640,17 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     bool new_named_session_created = false;
     std::tie(new_named_session, new_named_session_created)
         = NamedSessionsStorage::instance().acquireSession(global_context, *user_id, session_name_, timeout_, session_check_);
+
+    /// Roles are per authentication, but sessions are keyed by user: another authentication must not inherit the roles of the session.
+    if (!new_named_session_created)
+    {
+        auto session_roles = new_named_session->context->getExternalRoles();
+        if (std::set<UUID>(session_roles.begin(), session_roles.end()) != std::set<UUID>(external_roles.begin(), external_roles.end()))
+        {
+            new_named_session->release();
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Session {} cannot be reused: the roles of this authentication differ from the roles of the session", session_name_);
+        }
+    }
 
     auto new_session_context = new_named_session->context;
     new_session_context->makeSessionContext();
