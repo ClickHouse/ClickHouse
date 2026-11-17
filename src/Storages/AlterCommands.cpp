@@ -65,6 +65,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool enable_json_lazy_type_hints;
+    extern const SettingsBool enable_positional_arguments_for_projections;
     extern const SettingsBool allow_metadata_only_named_tuple_alter;
     extern const SettingsBool allow_reserved_column_names;
     extern const SettingsBool allow_statistics;
@@ -264,12 +265,24 @@ void recomputeImplicitIndexPolicy(
 /// reproduce, and the projection index written in the meantime cannot be loaded. The definition is analyzed
 /// with the context of the query first, only to validate it for the issuer: the access to the functions it
 /// uses, the rejection of functions that cannot run in the background, and the settings constraints.
+/// The global context in which a projection of an `ALTER` is analyzed. Positional arguments are the exception: they are
+/// resolved once, when the projection is created, as the issuer of the `ALTER` asked with
+/// `enable_positional_arguments_for_projections` (see `05401_projection_positional_arguments_calculating_context`).
+ContextPtr getProjectionAnalysisContext(const ContextPtr & context)
+{
+    auto projection_context = Context::createCopy(context->getGlobalContext());
+    projection_context->setSetting(
+        "enable_positional_arguments_for_projections",
+        context->getSettingsRef()[Setting::enable_positional_arguments_for_projections].value);
+    return projection_context;
+}
+
 ProjectionDescription buildProjectionOfAlter(const ASTPtr & projection_decl, const StorageInMemoryMetadata & metadata, ContextPtr context)
 {
     ProjectionDescription::getProjectionFromAST(
         projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE, /*attach_short_syntax=*/ true, &metadata);
     return ProjectionDescription::getProjectionFromAST(
-        projection_decl, metadata.columns, &metadata.partition_key, context->getGlobalContext(), LoadingStrictnessLevel::CREATE,
+        projection_decl, metadata.columns, &metadata.partition_key, getProjectionAnalysisContext(context), LoadingStrictnessLevel::CREATE,
         /*attach_short_syntax=*/ true, &metadata, /*constraints_context=*/ context);
 }
 
@@ -2174,7 +2187,7 @@ void AlterCommands::apply(
             /// Check if we can still build projection from new metadata. The rebuilt projection is what the table
             /// uses until a reload, so it is analyzed in the global context, as a reload does.
             auto new_projection = ProjectionDescription::getProjectionFromAST(
-                projection.definition_ast, metadata_copy.columns, &metadata_copy.partition_key, context->getGlobalContext(),
+                projection.definition_ast, metadata_copy.columns, &metadata_copy.partition_key, getProjectionAnalysisContext(context),
                 LoadingStrictnessLevel::ATTACH, /*attach_short_syntax=*/ true, &metadata_copy);
             /// Check if new metadata has the same keys as the old one.
             if (!blocksHaveEqualStructure(projection.sample_block_for_keys, new_projection.sample_block_for_keys))
