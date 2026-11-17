@@ -218,8 +218,6 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
             {
                 if (row_idx == PrefetchingHelper::iterationsToMeasure())
                     prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
-                if (row_idx + prefetch_look_ahead < row_count)
-                    hash_method.data.prefetch(state.getKeyHolder(row_idx + prefetch_look_ahead, *data.aggregates_pool));
             }
 
             if (row_idx == 5)
@@ -251,6 +249,13 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
                 current_run_group_idx = row_group_idx;
             else if (row_group_idx != current_run_group_idx) /// Local run ended
             {
+                /// A row inside a run finds the cell its run already loaded, so only a key change prefetches the rows ahead.
+                if constexpr (prefetch)
+                {
+                    if (row_idx + prefetch_look_ahead < row_count)
+                        hash_method.data.prefetch(state.getKeyHolder(row_idx + prefetch_look_ahead, *data.aggregates_pool));
+                }
+
                 processRun(current_run_start_row, row_idx - current_run_start_row, current_run_group_idx);
                 current_run_group_idx = row_group_idx;
                 current_run_start_row = row_idx;
@@ -273,7 +278,9 @@ void LimitByTransform::consume(Method & hash_method, const ColumnRawPtrs & group
     {
         using State = typename Method::State;
         using KeyHolder = decltype(std::declval<State &>().getKeyHolder(0, std::declval<Arena &>()));
-        if constexpr (State::has_cheap_key_holder
+        /// As in the JOIN probe, the row loop does little besides the lookup, so the key must be cheap to calculate twice.
+        /// A `LowCardinality` column reaches the table once per dictionary position, not once per row.
+        if constexpr (State::has_cheap_key_calculation && !Method::low_cardinality_optimization
                       && requires(const typename Method::Data & table, KeyHolder key_holder) { table.prefetch(std::move(key_holder)); })
         {
             /// The threshold of the prefetch in `Aggregator`: a table that fits in L2 gains nothing from it.

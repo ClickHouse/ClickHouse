@@ -39,7 +39,7 @@ static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
 /** Hash methods declare two independent prefetch predicates. They are not interchangeable, and the
   * places that read them are disjoint.
   *
-  * `has_cheap_key_holder` - read by `Aggregator::executeImpl` and `LimitByTransform`.
+  * `has_cheap_key_holder` - read by `Aggregator::executeImpl`.
   *
   * Is it acceptable to call `getKeyHolder(row)` a second time for the same row purely to issue a
   * software prefetch? The aggregation prefetch pipeline runs
@@ -63,12 +63,12 @@ static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
   * has to hash the key by definition, and `HashMethodString`/`HashMethodPackedString` still profit
   * because building their key holder is free.
   *
-  * `has_cheap_key_calculation` - read by the JOIN probe loop, via `join_prefetch_supported` in
+  * `has_cheap_key_calculation` - read by `LimitByTransform` and by the JOIN probe loop, via `join_prefetch_supported` in
   * HashJoinMethodsImpl.h (the `KeyGetterForType` aliases in HashJoin/KeyGetter.h resolve to these
   * same hash methods). It is the stricter "the whole key calculation, hashing included, is cheap",
   * and is left as it was: the JOIN probe loop has its own cost balance, which this file's
-  * aggregation-side reasoning says nothing about. Only the aggregator and `LimitByTransform`
-  * read `has_cheap_key_holder`.
+  * aggregation-side reasoning says nothing about. Only the aggregator reads
+  * `has_cheap_key_holder`.
   */
 
 /// For the case when there is one numeric key.

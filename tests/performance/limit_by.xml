@@ -56,4 +56,12 @@
         LIMIT 10 BY k1, k2
         FORMAT NULL
     </query>
+
+    <!-- BY key in runs of 64 rows over a hash table larger than the L2 cache -->
+    <query>
+        SELECT intDiv(number, 64) AS k, number AS v
+        FROM numbers_mt(50000000)
+        LIMIT 5 BY k
+        FORMAT NULL
+    </query>
 </test>
