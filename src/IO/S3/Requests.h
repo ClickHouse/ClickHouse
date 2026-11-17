@@ -250,14 +250,27 @@ static constexpr size_t IDEMPOTENCY_ID_LENGTH = 22;
 
 /// The id the writer stamped in the object's metadata. Set it and the client accepts a failure whose
 /// object carries it. Left empty, the client asks nothing.
+///
+/// A conditional write also keeps what its attempts told. The retry loops of the writer send the request
+/// again, so the history covers all calls with it.
 class RequestWithIdempotencyId
 {
 public:
     void setIdempotencyId(Aws::String value) { idempotency_id = std::move(value); }
     [[nodiscard]] const Aws::String & getIdempotencyId() const { return idempotency_id; }
 
+    /// An attempt got no answer that proves it was not applied.
+    void markMayHaveBeenApplied() { may_have_been_applied = true; }
+    [[nodiscard]] bool mayHaveBeenApplied() const { return may_have_been_applied; }
+
+    /// The last call failed, and nothing proves whether an attempt of the write was applied.
+    void setOutcomeUnknown(bool value) { outcome_unknown = value; }
+    [[nodiscard]] bool isOutcomeUnknown() const { return outcome_unknown; }
+
 private:
     Aws::String idempotency_id;
+    bool may_have_been_applied = false;
+    bool outcome_unknown = false;
 };
 
 class PutObjectRequest : public ExtendedRequest<Model::PutObjectRequest>, public RequestWithIdempotencyId

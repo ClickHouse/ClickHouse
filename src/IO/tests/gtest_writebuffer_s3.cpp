@@ -1607,8 +1607,9 @@ TEST_P(SyncAsync, ExceptionOnCompleteMPU) {
       }, DB::S3Exception);
 }
 
-/// A conditional (`If-None-Match: *`) PutObject replayed after it already succeeded must report
-/// success, not the spurious `PreconditionFailed` the replay gets back.
+/// A conditional (`If-None-Match: *`) PutObject whose response is lost after it was stored must report
+/// success. The `NoSuchKey` that stands for the lost response proves nothing, so the client asks for the
+/// idempotency id with a HEAD at once and sends no replay.
 TEST_P(SyncAsync, SinglepartConditionalPutRetryAfterLostResponse) {
     auto injection = std::make_shared<MockS3::PutObjectLostResponseThenPreconditionFailed>(
         client->store, /* store_first_attempt= */ true);
@@ -1620,27 +1621,23 @@ TEST_P(SyncAsync, SinglepartConditionalPutRetryAfterLostResponse) {
     getAsyncPolicy().setAutoExecute(true);
     buffer->finalize();
 
-    /// Two PUT attempts (NO_SUCH_KEY then 412) and one HEAD that verified our own write token.
-    EXPECT_EQ(client->counters.putObject, 2u);
+    /// One PUT attempt and one HEAD that verified our own write token.
+    EXPECT_EQ(client->counters.putObject, 1u);
     EXPECT_EQ(client->counters.headObject, 1u);
 
     auto & bStore = client->store->GetBucketStore(bucket);
     EXPECT_EQ(bStore.objects["conditional_put_lost_response"], "A");
 
-    /// Both attempts carried the same token, and it is the one stored with the object.
-    ASSERT_EQ(injection->seen_metadata.size(), 2u);
+    /// The attempt carried the token that is stored with the object.
+    ASSERT_EQ(injection->seen_metadata.size(), 1u);
     const auto token = injection->seen_metadata[0].at("clickhouse-idempotency-id");
     EXPECT_FALSE(token.empty());
-    EXPECT_EQ(injection->seen_metadata[1].at("clickhouse-idempotency-id"), token);
     EXPECT_EQ(bStore.object_metadata["conditional_put_lost_response"].at("clickhouse-idempotency-id"), token);
 
     /// This mode conditions on absence, so it sends `If-None-Match` and no `If-Match`.
-    ASSERT_EQ(injection->seen_if_none_match.size(), 2u);
-    for (size_t i = 0; i < 2; ++i)
-    {
-        EXPECT_EQ(injection->seen_if_none_match[i], "*");
-        EXPECT_TRUE(injection->seen_if_match[i].empty());
-    }
+    ASSERT_EQ(injection->seen_if_none_match.size(), 1u);
+    EXPECT_EQ(injection->seen_if_none_match[0], "*");
+    EXPECT_TRUE(injection->seen_if_match[0].empty());
 }
 
 /// A 412 caused by an object this request did NOT write must still fail. The pre-existing object is
@@ -1714,8 +1711,8 @@ TEST_P(SyncAsync, SinglepartPutWithoutIfNoneMatchStillThrows) {
 }
 
 /// `If-Match` is the other conditional single-part write: Iceberg advances `version-hint.text` with
-/// it once the file exists. A lost response leaves the object carrying a new ETag, so the replayed
-/// PUT sees its own `If-Match` fail. On our own object that is success, not a CAS conflict.
+/// it once the file exists. A lost response leaves the object carrying a new ETag, so a replayed
+/// PUT would see its own `If-Match` fail. The id on our own object proves success instead.
 TEST_P(SyncAsync, SinglepartIfMatchPutRecoversLostResponse) {
     auto injection = std::make_shared<MockS3::PutObjectLostResponseThenPreconditionFailed>(
         client->store, /* store_first_attempt= */ true);
@@ -1731,15 +1728,12 @@ TEST_P(SyncAsync, SinglepartIfMatchPutRecoversLostResponse) {
     EXPECT_EQ(bStore.objects["conditional_put_if_match"], "A");
     EXPECT_FALSE(bStore.object_metadata["conditional_put_if_match"].at("clickhouse-idempotency-id").empty());
 
-    /// Both attempts really carried the caller's `If-Match` etag, and no `If-None-Match` beside it.
+    /// The attempt really carried the caller's `If-Match` etag, and no `If-None-Match` beside it.
     /// Without this the test would also pass on a buffer that never sends `If-Match` at all, and the
     /// recovery it proves would not be the one Iceberg's CAS on `version-hint.text` depends on.
-    ASSERT_EQ(injection->seen_if_match.size(), 2u);
-    for (size_t i = 0; i < 2; ++i)
-    {
-        EXPECT_EQ(injection->seen_if_match[i], "some-etag");
-        EXPECT_TRUE(injection->seen_if_none_match[i].empty());
-    }
+    ASSERT_EQ(injection->seen_if_match.size(), 1u);
+    EXPECT_EQ(injection->seen_if_match[0], "some-etag");
+    EXPECT_TRUE(injection->seen_if_none_match[0].empty());
 }
 
 /// The protective half: the same 412 over an object somebody else wrote is a real conflict.
@@ -1916,7 +1910,7 @@ TEST_P(SyncAsync, SinglepartConditionalPutThrowsWhenHeadFails) {
 
 /// The multipart carrier of the same defect: with `s3_max_single_part_upload_size = 0` a conditional
 /// Iceberg create takes the multipart path, whose CompleteMultipartUpload sets the same
-/// `If-None-Match` and is likewise replayed on a lost response. The token is stamped on
+/// `If-None-Match` and is likewise proven by the id after a lost response. The token is stamped on
 /// CreateMultipartUpload and lands on the completed object.
 TEST_P(SyncAsync, MultipartConditionalCompleteRetryAfterLostResponse) {
     auto injection = std::make_shared<MockS3::CompleteMPULostResponseThenPreconditionFailed>(client->store);
@@ -1931,7 +1925,7 @@ TEST_P(SyncAsync, MultipartConditionalCompleteRetryAfterLostResponse) {
     getAsyncPolicy().setAutoExecute(true);
     buffer->finalize();
 
-    EXPECT_EQ(client->counters.multiUploadComplete, 2u);
+    EXPECT_EQ(client->counters.multiUploadComplete, 1u);
     EXPECT_EQ(client->counters.headObject, 1u);
     EXPECT_EQ(client->counters.multiUploadAbort, 0u);
 
@@ -1940,12 +1934,9 @@ TEST_P(SyncAsync, MultipartConditionalCompleteRetryAfterLostResponse) {
     EXPECT_FALSE(bStore.object_metadata["conditional_mpu_lost_response"].at("clickhouse-idempotency-id").empty());
 
     /// This mode conditions on absence, so the completion sends `If-None-Match` and no `If-Match`.
-    ASSERT_EQ(injection->seen_if_none_match.size(), 2u);
-    for (size_t i = 0; i < 2; ++i)
-    {
-        EXPECT_EQ(injection->seen_if_none_match[i], "*");
-        EXPECT_TRUE(injection->seen_if_match[i].empty());
-    }
+    ASSERT_EQ(injection->seen_if_none_match.size(), 1u);
+    EXPECT_EQ(injection->seen_if_none_match[0], "*");
+    EXPECT_TRUE(injection->seen_if_match[0].empty());
 }
 
 /// The multipart twin of the foreign-object arm: a 412 on a completion whose object somebody else
@@ -1990,8 +1981,8 @@ TEST_P(SyncAsync, MultipartConditionalCompleteDoesNotMaskForeignObject) {
 }
 
 /// The multipart carrier of the `If-Match` mode: `CompleteMultipartUpload` sets the caller's etag the
-/// same way `PutObject` does, so a lost completion response leaves the replay failing its own
-/// condition. On our own object that is success, not a CAS conflict.
+/// same way `PutObject` does, so a replay after a lost completion response would fail its own
+/// condition. The id on our own object proves success instead.
 TEST_P(SyncAsync, MultipartIfMatchCompleteRecoversLostResponse) {
     auto injection = std::make_shared<MockS3::CompleteMPULostResponseThenPreconditionFailed>(client->store);
     setInjectionModel(injection);
@@ -2005,7 +1996,7 @@ TEST_P(SyncAsync, MultipartIfMatchCompleteRecoversLostResponse) {
     getAsyncPolicy().setAutoExecute(true);
     buffer->finalize();
 
-    EXPECT_EQ(client->counters.multiUploadComplete, 2u);
+    EXPECT_EQ(client->counters.multiUploadComplete, 1u);
     EXPECT_EQ(client->counters.headObject, 1u);
     EXPECT_EQ(client->counters.multiUploadAbort, 0u);
 
@@ -2013,13 +2004,10 @@ TEST_P(SyncAsync, MultipartIfMatchCompleteRecoversLostResponse) {
     EXPECT_EQ(bStore.objects["conditional_mpu_if_match"], "A");
     EXPECT_FALSE(bStore.object_metadata["conditional_mpu_if_match"].at("clickhouse-idempotency-id").empty());
 
-    /// Both completions really carried the caller's `If-Match` etag, and no `If-None-Match` beside it.
-    ASSERT_EQ(injection->seen_if_match.size(), 2u);
-    for (size_t i = 0; i < 2; ++i)
-    {
-        EXPECT_EQ(injection->seen_if_match[i], "some-etag");
-        EXPECT_TRUE(injection->seen_if_none_match[i].empty());
-    }
+    /// The completion really carried the caller's `If-Match` etag, and no `If-None-Match` beside it.
+    ASSERT_EQ(injection->seen_if_match.size(), 1u);
+    EXPECT_EQ(injection->seen_if_match[0], "some-etag");
+    EXPECT_TRUE(injection->seen_if_none_match[0].empty());
 }
 
 /// The protective half of the multipart `If-Match` mode: the same 412 over an object somebody else

@@ -62,8 +62,8 @@ class MockControl:
             for x in action_args:
                 url += f"&action_args={x}"
 
-        # Only `at_object_get`, `at_object_upload` and `at_complete_multi_part_upload` read it: the rule
-        # then applies to the requests whose object path contains the key.
+        # Only `at_object_get`, `at_object_head`, `at_object_upload` and `at_complete_multi_part_upload` read
+        # it: the rule then applies to the requests whose object path contains the key.
         if key is not None:
             url += f"&key={urllib.parse.quote(key, safe='')}"
 
@@ -80,6 +80,9 @@ class MockControl:
 
     def setup_at_object_get(self, **kwargs):
         self.setup_action("at_object_get", **kwargs)
+
+    def setup_at_object_head(self, **kwargs):
+        self.setup_action("at_object_head", **kwargs)
 
     def setup_at_create_multi_part_upload(self, **kwargs):
         self.setup_action("at_create_multi_part_upload", **kwargs)
@@ -550,6 +553,7 @@ class _ServerRuntime:
         self.at_create_multi_part_upload = None
         self.at_object_get = None
         self.at_object_get_by_key = {}
+        self.at_object_head_by_key = {}
         self.at_object_upload_by_key = {}
         self.at_complete_multi_part_upload = None
         self.at_complete_multi_part_upload_by_key = {}
@@ -580,6 +584,7 @@ class _ServerRuntime:
             self.at_listing = None
             self.at_object_get = None
             self.at_object_get_by_key = {}
+            self.at_object_head_by_key = {}
             self.at_object_upload_by_key = {}
             self.at_complete_multi_part_upload_by_key = {}
 
@@ -834,6 +839,16 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.log_message("set at_object_get %s for key %s", rule, key)
             return self._ok()
 
+        if path[1] == "at_object_head":
+            params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
+            rule = _ServerRuntime.CountAfter.from_cgi_params(_runtime.lock, params)
+            key = params.get("key", [None])[0]
+            if key is None:
+                return self.write_error(400, "_mock_settings: at_object_head needs a key")
+            _runtime.at_object_head_by_key[key] = rule
+            self.log_message("set at_object_head %s for key %s", rule, key)
+            return self._ok()
+
         if path[1] == "reset":
             _runtime.reset()
             self.log_message("reset")
@@ -965,6 +980,13 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         return self.redirect()
 
     def do_HEAD(self):
+        parts = urllib.parse.urlsplit(self.path)
+        # `has_effect` takes `_runtime.lock` itself, so the lock must not be held here.
+        for key, rule in list(_runtime.at_object_head_by_key.items()):
+            if key in parts.path and rule.has_effect():
+                self.log_message("head at_object_head %s for key %s", rule, key)
+                return rule.inject_error(self)
+
         if _runtime.slow_get is not None:
             timeout = _runtime.slow_get.get_timeout()
             if timeout is not None:

@@ -312,11 +312,24 @@ private:
     bool isGCSCreateIfAbsentWithHMAC(const Model::PutObjectRequest & request) const;
     Model::PutObjectOutcome putObjectWithGOOG4Signature(const Model::PutObjectRequest & request) const;
 
-    /// True only if the object at `key` carries `idempotency_id`, i.e. whoever set it wrote the object.
+    /// Who wrote the object at `key`, told by the `idempotency_id` in its metadata.
+    enum class ObjectWriter : uint8_t
+    {
+        ThisWrite,
+        AnotherWrite,
+        /// No id, a failed `HeadObject`, or no object.
+        Unproven,
+    };
+
     /// One HeadObject. Logs a failed proof, at warning level if asked.
-    bool isObjectWrittenWithIdempotencyId(
+    ObjectWriter findObjectWriter(
         const Aws::String & bucket, const Aws::String & key, const Aws::String & idempotency_id,
         bool warn_if_unproven) const;
+
+    /// Decides a failed conditional write from the history of its attempts and from the id. Returns true when an
+    /// attempt of this write is proven to have been applied. Otherwise marks the request when its outcome is unknown.
+    template <typename RequestType, typename OutcomeType>
+    bool resolveFailedConditionalWrite(RequestType & request, const OutcomeType & outcome, bool warn_if_unproven) const;
 
     std::optional<S3::URI> getURIForBucket(const std::string & bucket) const;
 

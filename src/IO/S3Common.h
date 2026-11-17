@@ -59,11 +59,16 @@ public:
     bool isRetryableError() const;
     bool isAccessTokenExpiredError() const;
 
+    /// A conditional write failed, and the client could not prove whether one of its attempts was applied.
+    bool isOutcomeUnknown() const { return outcome_unknown; }
+    void setOutcomeUnknown() { outcome_unknown = true; }
+
     S3Exception * clone() const override { return new S3Exception(*this); }
     void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
 
 private:
     Aws::S3::S3Errors code;
+    bool outcome_unknown = false;
 };
 }
 

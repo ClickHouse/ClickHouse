@@ -89,6 +89,14 @@ struct WriteBufferFromS3::PartData
     }
 };
 
+/// Throws the error of a failed write, with the mark of the client when it could not prove whether the write was applied.
+[[noreturn]] static void throwWriteError(S3Exception exception, const S3::RequestWithIdempotencyId & request)
+{
+    if (request.isOutcomeUnknown())
+        exception.setOutcomeUnknown();
+    throw exception; /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
+}
+
 static BufferAllocationPolicyPtr createBufferAllocationPolicy(const S3::S3RequestSettings & settings)
 {
     BufferAllocationPolicy::Settings allocation_settings;
@@ -741,17 +749,21 @@ bool WriteBufferFromS3::completeMultipartUpload()
         }
         else
         {
-            throw S3Exception(
-                error.GetErrorType(),
-                "Message: {}, Key: {}, Bucket: {}, Tags: {}",
-                error.GetMessage(), key, bucket, fmt::join(multipart_tags.begin(), multipart_tags.end(), " "));
+            throwWriteError(
+                S3Exception(
+                    error.GetErrorType(),
+                    "Message: {}, Key: {}, Bucket: {}, Tags: {}",
+                    error.GetMessage(), key, bucket, fmt::join(multipart_tags.begin(), multipart_tags.end(), " ")),
+                req);
         }
     }
 
-    throw S3Exception(
-        last_error_type,
-        "Message: Multipart upload failed with a transient error ({}), retries {}, Key: {}, Bucket: {}",
-        last_error_details, max_retry, key, bucket);
+    throwWriteError(
+        S3Exception(
+            last_error_type,
+            "Message: Multipart upload failed with a transient error ({}), retries {}, Key: {}, Bucket: {}",
+            last_error_details, max_retry, key, bucket),
+        req);
 }
 
 S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
@@ -853,17 +865,21 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
                 else
                     LOG_ERROR(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
                               outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);
-                throw S3Exception(
-                    outcome.GetError().GetErrorType(),
-                    "Message: {}, bucket {}, key {}, object size {}",
-                    outcome.GetError().GetMessage(), bucket, key, content_length);
+                throwWriteError(
+                    S3Exception(
+                        outcome.GetError().GetErrorType(),
+                        "Message: {}, bucket {}, key {}, object size {}",
+                        outcome.GetError().GetMessage(), bucket, key, content_length),
+                    request);
             }
         }
 
-        throw S3Exception(
-            Aws::S3::S3Errors::NO_SUCH_KEY,
-            "Message: Single part upload failed with NO_SUCH_KEY error, retries {}, Key: {}, Bucket: {}",
-            max_retry, key, bucket);
+        throwWriteError(
+            S3Exception(
+                Aws::S3::S3Errors::NO_SUCH_KEY,
+                "Message: Single part upload failed with NO_SUCH_KEY error, retries {}, Key: {}, Bucket: {}",
+                max_retry, key, bucket),
+            request);
     };
 
     task_tracker->add(std::move(upload_worker));
