@@ -37,7 +37,7 @@ TDE must be enabled on service creation. Existing services can't be encrypted af
 ### Customer Managed Encryption Keys (CMEK) {#customer-managed-encryption-keys-cmek}
 
 <Warning>
-Deleting a KMS key used to encrypt a ClickHouse Cloud service will cause your ClickHouse service to be stopped and its data will be unretrievable, along with existing backups. To prevent accidental data loss when rotating keys you may wish to maintain old KMS keys for a period of time prior to deletion. 
+Permanently deleting a KMS key used to encrypt a ClickHouse Cloud service makes the service data and its existing backups unretrievable. Deleting a key first stops the service, and most KMS providers keep a deleted key recoverable for a waiting period before destroying it (see [KMS key poller](#kms-key-poller)). To prevent accidental data loss when rotating keys, keep old KMS keys for a period of time before deleting them.
 </Warning>
 
 Once a service is encrypted with TDE, customers may update the key to enable CMEK. The service will automatically restart after updating the TDE setting. During this process, the old KMS key decrypts the data encrypting key (DEK), and the new KMS key re-encrypts the DEK. This ensures that the service on restart will use the new KMS key for encryption operations moving forward. This process may take several minutes.
