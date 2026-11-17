@@ -466,6 +466,7 @@ export const CloudRegionsMap = () => {
     "name": "Canada Central",
     "provider": "Azure",
     "tags": [
+      "Private",
       "BYOC"
     ],
     "x": 27.3,
@@ -478,6 +479,7 @@ export const CloudRegionsMap = () => {
     "name": "Central India",
     "provider": "Azure",
     "tags": [
+      "Private",
       "BYOC"
     ],
     "x": 68.5,
@@ -503,6 +505,7 @@ export const CloudRegionsMap = () => {
     "name": "France Central",
     "provider": "Azure",
     "tags": [
+      "Private",
       "BYOC"
     ],
     "x": 48.8,
