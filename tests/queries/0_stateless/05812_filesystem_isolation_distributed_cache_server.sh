@@ -47,12 +47,21 @@ function finish()
 }
 trap finish EXIT
 
+# Each file under a directory of its own, outside every path the server is given otherwise, so that only a mount of
+# that one directory makes that one file readable: a directory holding two of them would be mounted for either.
+openssl req -newkey rsa:2048 -nodes -keyout "$DIR/key-only/server.key" -x509 -days 1 \
+    -out "$DIR/cert-only/server.crt" -subj "/CN=localhost" >/dev/null 2>&1
+openssl req -newkey rsa:2048 -nodes -keyout "$DIR/chain-only/chain.key" -x509 -days 1 \
+    -out "$DIR/chain-only/chain.crt" -subj "/CN=localhost" >/dev/null 2>&1
+rm -f "$DIR/chain-only/chain.key"
+
 # The ports of the sections and the Raft port are left to the system. The port of Keeper goes into the `<zookeeper>`
 # of every section and the port of the server is where the reload below is sent, so these two are bound, read and
-# released, as in `05055_native_http_client_framing.sh`. Losing one between the probe and the server is harmless:
-# `listen_try` is true for this configuration, so a taken port is only a warning and the reload below then fails,
-# which reds the test instead of passing it silently.
-read -r SERVER_PORT KEEPER_PORT <<<"$(python3 -c "
+# released, as in `05055_native_http_client_framing.sh`. Another process can take one of them between the probe and
+# the server, especially when the test runs many times in parallel: then the server either does not start (`No
+# servers started`) or Keeper does not listen. Such an attempt is stopped and repeated with new ports.
+for _ in {1..10}; do
+    read -r SERVER_PORT KEEPER_PORT <<<"$(python3 -c "
 import socket
 sockets = [socket.socket() for _ in range(2)]
 for s in sockets:
@@ -62,17 +71,12 @@ for s in sockets:
     s.close()
 ")"
 
-# Each file under a directory of its own, outside every path the server is given otherwise, so that only a mount of
-# that one directory makes that one file readable: a directory holding two of them would be mounted for either.
-openssl req -newkey rsa:2048 -nodes -keyout "$DIR/key-only/server.key" -x509 -days 1 \
-    -out "$DIR/cert-only/server.crt" -subj "/CN=localhost" >/dev/null 2>&1
-openssl req -newkey rsa:2048 -nodes -keyout "$DIR/chain-only/chain.key" -x509 -days 1 \
-    -out "$DIR/chain-only/chain.crt" -subj "/CN=localhost" >/dev/null 2>&1
-rm -f "$DIR/chain-only/chain.key"
+    rm -rf "$DIR/log" "$DIR/run" "$DIR/first" "$DIR/second" "$DIR/outside/cache"
+    mkdir -p "$DIR/log" "$DIR/run"
 
-# A Raft port equal to a port of the server is rejected, and 0 is the port of a server whose `<tcp_port>` is 0, so
-# the port of the server here is a concrete one.
-cat > "$DIR/conf/config.xml" <<EOF
+    # A Raft port equal to a port of the server is rejected, and 0 is the port of a server whose `<tcp_port>` is 0, so
+    # the port of the server here is a concrete one.
+    cat > "$DIR/conf/config.xml" <<EOF
 <clickhouse>
     <logger>
         <level>information</level>
@@ -123,15 +127,22 @@ cat > "$DIR/conf/config.xml" <<EOF
 </clickhouse>
 EOF
 
-$CLICKHOUSE_BINARY server --config-file "$DIR/conf/config.xml" > "$DIR/server.out" 2>&1 &
-PID=$!
+    $CLICKHOUSE_BINARY server --config-file "$DIR/conf/config.xml" > "$DIR/server.out" 2>&1 &
+    PID=$!
 
-# Longer than the 60 seconds of the other tests of the isolation: every instance registers itself in Keeper and
-# initializes its cache before the server is ready.
-for _ in {1..1200}; do
-    grep -q 'Ready for connections' "$DIR/log/server.log" 2>/dev/null && break
-    kill -0 "$PID" 2>/dev/null || break
-    sleep 0.1
+    # Longer than the 60 seconds of the other tests of the isolation: every instance registers itself in Keeper and
+    # initializes its cache before the server is ready.
+    for _ in {1..1200}; do
+        grep -q 'Ready for connections' "$DIR/log/server.log" 2>/dev/null && break
+        grep -q 'Address already in use' "$DIR/log/server.log" 2>/dev/null && break
+        kill -0 "$PID" 2>/dev/null || break
+        sleep 0.1
+    done
+
+    grep -q 'Address already in use' "$DIR/log/server.log" 2>/dev/null || break
+    kill "$PID" 2>/dev/null
+    wait "$PID"
+    PID=
 done
 
 if grep -q 'Ready for connections' "$DIR/log/server.log" 2>/dev/null && grep -q 'Isolated the filesystem' "$DIR/log/server.log"; then
