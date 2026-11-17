@@ -20,6 +20,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -54,8 +56,27 @@ namespace DB::ArrowIPC
 
 namespace
 {
+/// The type of a variable binary leaf that `reinterpretStringLeaf` converted to the raw-byte type its hint
+/// requests, or null when `column` is not such a leaf.
+DataTypePtr rawByteLeafType(const IColumn & column)
+{
+    switch (column.getDataType())
+    {
+        case TypeIndex::IPv6: return std::make_shared<DataTypeIPv6>();
+        case TypeIndex::Int128: return std::make_shared<DataTypeInt128>();
+        case TypeIndex::UInt128: return std::make_shared<DataTypeUInt128>();
+        case TypeIndex::Int256: return std::make_shared<DataTypeInt256>();
+        case TypeIndex::UInt256: return std::make_shared<DataTypeUInt256>();
+        default: return nullptr;
+    }
+}
+
 /// Match the declared type to the decoded column, preserving tuple names. Nullable structs retain their
 /// null maps until conversion, including when schema inference produces a plain `Tuple`.
+/// A binary leaf declared by the schema as `String` can be decoded as `IPv6` or a big integer, when its type
+/// hint asks for it. The hint can come from a header column other than the one the field is read for: a
+/// dotted name such as `t.s` also reaches the child `s` of a field `t` read as `String`. So declare the
+/// decoded type of the leaf: each consumer of the field must see a type that describes its column.
 DataTypePtr matchColumnNullability(const DataTypePtr & type, const ColumnPtr & column)
 {
     const bool is_nullable = column->isNullable();
@@ -85,6 +106,11 @@ DataTypePtr matchColumnNullability(const DataTypePtr & type, const ColumnPtr & c
         nested_type = std::make_shared<DataTypeMap>(
             matchColumnNullability(map_type->getKeyType(), entries.getColumnPtr(0)),
             matchColumnNullability(map_type->getValueType(), entries.getColumnPtr(1)));
+    }
+    else if (isStringOrFixedString(nested_type))
+    {
+        if (DataTypePtr raw_type = rawByteLeafType(nested_column))
+            nested_type = std::move(raw_type);
     }
 
     return is_nullable ? std::make_shared<DataTypeNullable>(nested_type) : nested_type;
