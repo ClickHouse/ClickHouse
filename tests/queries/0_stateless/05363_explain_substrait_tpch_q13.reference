@@ -1,2 +1,1 @@
-  Filter ((Apply runtime join filter + (Join filter + Change column names to column identifiers))): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_6987499949275158444, __table3.o_custkey)
-  BuildRuntimeFilter (Build runtime join filter on __table2.c_custkey): the step has no Substrait representation. (NOT_IMPLEMENTED)
+  JoinLogical: RIGHT JOIN is not supported yet. (NOT_IMPLEMENTED)

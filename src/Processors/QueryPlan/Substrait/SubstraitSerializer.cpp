@@ -9,6 +9,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/StorageID.h>
@@ -869,11 +870,86 @@ SubstraitPlanSerializer::convertJoin(const JoinStepLogical & join, NodeState & l
     return out;
 }
 
-void applySubstraitSerializationSettings(QueryPlanOptimizationSettings & settings)
+namespace
 {
+
+/// The optimizations whose plans the serializer can express.
+
+/// List of steps left out that we can add later. TODO:
+/// * `optimize_prewhere` moves a filter into the read step. The serializer has to write PREWHERE as `ReadRel.filter`.
+/// * `enable_group_by_top_k_optimization` drops the groups that the limit above would drop. It needs a check for that limit and PREWHERE.
+/// * `convert_join_to_in` replaces a join by `in` over a `CreatingSet` step. The serializer has to map `in` together with its set.
+
+/// List of steps left out that we can't add as there is not Substrait form.
+/// * `enable_join_runtime_filters`.
+/// * `min_columns_for_join_lazy_indexing`.
+
+constexpr bool QueryPlanOptimizationSettings::* substrait_compatible_optimizations[] = {
+    &QueryPlanOptimizationSettings::remove_redundant_sorting,
+    &QueryPlanOptimizationSettings::lift_up_array_join,
+    &QueryPlanOptimizationSettings::push_down_limit,
+    &QueryPlanOptimizationSettings::aggregation_bucket_top_k,
+    &QueryPlanOptimizationSettings::split_filter,
+    &QueryPlanOptimizationSettings::merge_expressions,
+    &QueryPlanOptimizationSettings::merge_filters,
+    &QueryPlanOptimizationSettings::filter_push_down,
+    &QueryPlanOptimizationSettings::propagate_predicate_across_join,
+    &QueryPlanOptimizationSettings::fuse_filter_into_array_join,
+    &QueryPlanOptimizationSettings::lower_array_join_function,
+    &QueryPlanOptimizationSettings::push_down_volume_reducing_functions,
+    &QueryPlanOptimizationSettings::convert_outer_join_to_inner_join,
+    &QueryPlanOptimizationSettings::convert_outer_join_to_inner_join_transitively,
+    &QueryPlanOptimizationSettings::short_circuit_constant_false_join,
+    &QueryPlanOptimizationSettings::execute_functions_after_sorting,
+    &QueryPlanOptimizationSettings::reuse_storage_ordering_for_window_functions,
+    &QueryPlanOptimizationSettings::lift_up_union,
+    &QueryPlanOptimizationSettings::aggregate_partitions_independently,
+    &QueryPlanOptimizationSettings::limit_by_partitions_independently,
+    &QueryPlanOptimizationSettings::distinct_partitions_independently,
+    &QueryPlanOptimizationSettings::window_partitions_independently,
+    &QueryPlanOptimizationSettings::creating_set_partitions_independently,
+    &QueryPlanOptimizationSettings::remove_redundant_distinct,
+    &QueryPlanOptimizationSettings::try_use_vector_search,
+    &QueryPlanOptimizationSettings::merge_filter_into_join_condition,
+    &QueryPlanOptimizationSettings::merge_expression_into_join,
+    &QueryPlanOptimizationSettings::convert_any_join_to_semi_or_anti_join,
+    &QueryPlanOptimizationSettings::top_k_through_join,
+    &QueryPlanOptimizationSettings::remove_unused_columns,
+    &QueryPlanOptimizationSettings::aggregation_having_prefilter,
+    &QueryPlanOptimizationSettings::read_in_order,
+    &QueryPlanOptimizationSettings::distinct_in_order,
+    &QueryPlanOptimizationSettings::limit_by_in_order,
+    &QueryPlanOptimizationSettings::optimize_sorting_by_input_stream_properties,
+    &QueryPlanOptimizationSettings::aggregation_in_order,
+    &QueryPlanOptimizationSettings::optimize_aggregation_in_order_limit,
+    &QueryPlanOptimizationSettings::push_limit_by_into_sort,
+};
+
+}
+
+void disableSubstraitIncompatiblePlanning(const ContextMutablePtr & context)
+{
+    context->setSetting("optimize_trivial_count_query", false); /// I don't see how to serialize this right now.
+    context->setSetting("correlated_subqueries_use_in_memory_buffer", false); /// No Substtrait form for this.
+}
+
+QueryPlanOptimizationSettings makeSubstraitCompatibleOptimizationSettings(const ContextPtr & context)
+{
+    auto context_without_optimizations = Context::createCopy(context);
+    context_without_optimizations->setSetting("query_plan_enable_optimizations", false);
+    context_without_optimizations->setSetting("optimize_use_projections", false);
+    QueryPlanOptimizationSettings settings(context_without_optimizations);
+
+    settings.optimize_lazy_materialization = false; /// No Substrait form for `LazilyReadFromMergeTree`.
+    settings.try_use_top_k_optimization = false; /// Substrait can only express fixed conditions.
+
+    const QueryPlanOptimizationSettings from_query_settings(context);
+    settings.optimize_plan = from_query_settings.optimize_plan;
+    for (const auto optimization : substrait_compatible_optimizations)
+        settings.*optimization = from_query_settings.*optimization;
+
     settings.keep_logical_steps = true;
-    /// TODO: Serialize PREWHERE as ReadRel.filter and drop this.
-    settings.optimize_prewhere = false;
+    return settings;
 }
 
 substrait::Plan serializeQueryPlanToSubstrait(const QueryPlan & plan)

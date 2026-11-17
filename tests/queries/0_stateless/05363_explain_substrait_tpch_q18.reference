@@ -1,3 +1,2 @@
-  Filter ((Apply runtime join filter + Change column names to column identifiers)): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_10764236346055892549, __table1.c_custkey)
   Filter ((WHERE + Change column names to column identifiers)): function in is not mapped to Substrait, in in(__table3.l_orderkey, __set_14953515652240762772_18203261487458425524)
   Filter ((WHERE + Change column names to column identifiers)): function in is not mapped to Substrait, in in(__table2.o_orderkey, __set_14953515652240762772_18203261487458425524). (NOT_IMPLEMENTED)

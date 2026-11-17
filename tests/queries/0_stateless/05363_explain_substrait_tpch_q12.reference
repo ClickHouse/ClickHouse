@@ -1,2 +1,1 @@
-  Filter ((Apply runtime join filter + Change column names to column identifiers)): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_13444803688408130568, __table1.o_orderkey)
   Filter ((WHERE + Change column names to column identifiers)): function in is not mapped to Substrait, in in(__table2.l_shipmode, __set_FixedString(10)_15867086455827095087_11900573322730802812). (NOT_IMPLEMENTED)

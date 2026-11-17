@@ -7,7 +7,9 @@
 # Prints the Substrait plan of TPC-H query $1, or the blocking steps if the plan cannot be serialized.
 function explain_substrait_tpch()
 {
+    # Without `use_hash_table_stats_for_join_reordering = 0` the join order depends on the queries that ran on the server before.
     { echo "USE tpch;"; sed 's/^SELECT/EXPLAIN SUBSTRAIT SELECT/' "$CURDIR/../../benchmarks/tpc-h/queries/query_$1.sql"; } \
-        | $CLICKHOUSE_CLIENT "${SETTINGS[@]}" --enable_substrait 1 --format TSVRaw --ignore-error --send_logs_level fatal 2>&1 \
+        | $CLICKHOUSE_CLIENT "${SETTINGS[@]}" --enable_substrait 1 --use_hash_table_stats_for_join_reordering 0 \
+            --format TSVRaw --ignore-error --send_logs_level fatal 2>&1 \
         | sed -n '/^(query:/,$d; /^[ {}]/p'
 }

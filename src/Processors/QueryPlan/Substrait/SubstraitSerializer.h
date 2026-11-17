@@ -26,9 +26,8 @@ class OffsetStep;
 class ReadFromMergeTree;
 class SortingStep;
 
-/// The plan shape the serializer expects, apply before QueryPlan::optimize. Joins stay logical and filters do not fold into PREWHERE reads.
-void applySubstraitSerializationSettings(QueryPlanOptimizationSettings & settings);
-
+void disableSubstraitIncompatiblePlanning(const ContextMutablePtr & context);
+QueryPlanOptimizationSettings makeSubstraitCompatibleOptimizationSettings(const ContextPtr & context);
 substrait::Plan serializeQueryPlanToSubstrait(const QueryPlan & plan);
 String serializeQueryPlanToSubstraitJSON(const QueryPlan & plan);
 

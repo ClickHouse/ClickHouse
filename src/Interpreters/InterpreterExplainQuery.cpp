@@ -1399,14 +1399,15 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             ContextPtr context;
 
             {
-                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
+                auto planning_context = Context::createCopy(query_context);
+                disableSubstraitIncompatiblePlanning(planning_context);
+                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), planning_context, options);
                 interpreter.applyDistributedPlanFallbackIfNeeded();
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
             }
 
-            auto optimization_settings = QueryPlanOptimizationSettings(context);
-            applySubstraitSerializationSettings(optimization_settings);
+            auto optimization_settings = makeSubstraitCompatibleOptimizationSettings(context);
             optimization_settings.is_explain = true;
             optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
             plan.optimize(optimization_settings);

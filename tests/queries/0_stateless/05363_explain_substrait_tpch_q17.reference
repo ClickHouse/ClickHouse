@@ -1,3 +1,2 @@
-  Filter ((Apply runtime join filter + Change column names to column identifiers)): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_16814621774863894665, __table1.l_partkey)
-  Filter ((((Apply runtime join filter + (Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection)))) + Before GROUP BY) + (WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_7906474624375310697, __table3.__table2.p_partkey)
+  Aggregating: aggregate function avg has no Substrait overload for dec, in avg(__table4.l_quantity)
   Filter ((WHERE + Change column names to column identifiers)): constant of type String cannot be encoded as fbin, in equals(__table2.p_brand, 'Brand#23'_String). (NOT_IMPLEMENTED)

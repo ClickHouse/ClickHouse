@@ -1,3 +1,1 @@
-  Filter ((Apply runtime join filter + (WHERE + Change column names to column identifiers))): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_6683473133183657473, __table3.l_orderkey)
-  Filter ((Apply runtime join filter + (WHERE + Change column names to column identifiers))): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_14311662977122962989, __table2.o_custkey)
   Filter ((WHERE + Change column names to column identifiers)): constant of type String cannot be encoded as fbin, in equals(__table1.c_mktsegment, 'BUILDING'_String). (NOT_IMPLEMENTED)

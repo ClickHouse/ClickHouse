@@ -1,2 +1,1 @@
-  Filter ((Apply runtime join filter + Change column names to column identifiers)): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_16828329822469311528, __table1.s_suppkey)
   Expression (Before GROUP BY): constant 1 is not exactly representable as dec, in minus(1_UInt8, __table2.l_discount). (NOT_IMPLEMENTED)
