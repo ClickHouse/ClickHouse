@@ -308,11 +308,11 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     const size_t row_size = size();
     size_t pos = 0;
 
-    /// NULL is unordered against values here, so with a Nullable fill column the group of a row is unknown and a key at
-    /// `min(TO, next value)` counts as reached.
-    bool nullable_fill_column = false;
+    /// The filling row cannot step to a NULL, NaN or infinity and then stays behind that original row, so with a fill
+    /// column that can hold one a key at `min(TO, next value)` counts as reached.
+    bool unreachable_values = false;
     for (size_t i = 0; i < row_size; ++i)
-        nullable_fill_column |= getFillDescription(i).fill_column_nullable;
+        unreachable_values |= getFillDescription(i).fill_column_nullable || isFloat(getFillDescription(i).fill_column_type);
 
     /// Find position we need to increment for generating next row.
     for (; pos < row_size; ++pos)
@@ -321,7 +321,7 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
             continue;
 
         /// The cursor is in the group of the next row for a column only when it holds the value of the next row.
-        const Field & target = nullable_fill_column ? findBorder(constraints[pos], next_original_row[pos], getDirection(pos))
+        const Field & target = unreachable_values ? findBorder(constraints[pos], next_original_row[pos], getDirection(pos))
             : next_original_row[pos].isNull() ? constraints[pos] : next_original_row[pos];
         logDebug("target: {}", target);
 
@@ -344,7 +344,7 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         return false;
 
     /// Towards another group, the following columns are walked to their constraints before the step is refused below.
-    if ((nullable_fill_column || next_original_row[pos].isNull()) && !constraints[pos].isNull()
+    if ((unreachable_values || next_original_row[pos].isNull()) && !constraints[pos].isNull()
         && !less(row[pos], constraints[pos], getDirection(pos)))
         return false;
 

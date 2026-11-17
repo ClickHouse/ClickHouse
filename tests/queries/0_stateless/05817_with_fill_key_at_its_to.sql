@@ -46,3 +46,14 @@ ORDER BY i NULLS FIRST WITH FILL, k DESC NULLS LAST WITH FILL FROM 2;
 
 SELECT DISTINCT i FROM (SELECT * FROM values('i Nullable(Int64), k Nullable(Int64)', (NULL, 2), (0, 0), (1, 3), (3, 0))
 ORDER BY i NULLS FIRST WITH FILL, k DESC NULLS LAST WITH FILL FROM 2);
+
+-- A floating-point fill key: an infinity or NaN in the data neither drops nor misorders rows.
+
+SELECT * FROM values('i Float64, k Int64', (1, 0), (inf, 5))
+ORDER BY i WITH FILL TO 1, k WITH FILL TO 3;
+
+SELECT * FROM values('i Float64, k Int64', (1, 0), (nan, 5))
+ORDER BY i WITH FILL TO 1, k WITH FILL TO 3;
+
+SELECT * FROM values('i Float64, k Float64', (3, 0), (3, inf), (5, 2))
+ORDER BY i WITH FILL TO 0, k WITH FILL TO 4;
