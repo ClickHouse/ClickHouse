@@ -21,6 +21,7 @@
 #include <Common/EventNotifier.h>
 #include <Common/FailPoint.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
 #include <base/getMemoryAmount.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
@@ -389,6 +390,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsUInt64 prefetch_buffer_size;
+    extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_cache_temporarily;
     extern const SettingsBool read_from_page_cache_if_exists_otherwise_bypass_cache;
@@ -8941,7 +8943,8 @@ const S3SettingsByEndpoint & Context::getStorageS3Settings() const
     if (!shared->storage_s3_settings)
     {
         const auto & config = shared->getConfigRefWithLock(lock);
-        shared->storage_s3_settings.emplace().loadFromConfig(config, "s3", getSettingsRef());
+        /// Shared by all queries, so built from the server settings, as on a config reload.
+        shared->storage_s3_settings.emplace().loadFromConfig(config, "s3", getGlobalContext()->getSettingsRef());
     }
 
     return *shared->storage_s3_settings;
@@ -10646,6 +10649,19 @@ StorageSnapshotPtr Context::getPinnedStorageSnapshot(const UUID & table_uuid) co
 const ServerSettings & Context::getServerSettings() const
 {
     return shared->server_settings;
+}
+
+void Context::enablePlanLogCapture()
+{
+    query_plan_log_capture = std::make_shared<QueryPlanLogCapture>();
+    setJoinAnalyzeMode(JoinAnalyzeMode::Derived);
+}
+
+QueryPlanLogCapturePtr Context::getPlanLogCapture() const
+{
+    if (!hasQueryContext())
+        return nullptr;
+    return getQueryContext()->query_plan_log_capture;
 }
 
 ServerSettings Context::getServerSettingsCopy() const
