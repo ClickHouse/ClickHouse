@@ -11567,6 +11567,12 @@ worker's tasks of the stages started together, with each stage's plan written on
 `0` sends one task per request.
 )", EXPERIMENTAL, \
         {"26.11", true, true, "New experimental setting."}) \
+    DECLARE(UInt64, distributed_plan_task_dispatch_stages_per_flush, 0, R"(
+Hand the queued tasks of a distributed query to the senders after every this many started stages, so their batches go
+out while the later stages are prepared. `0` hands them over only before waiting for persisted producers and once all
+stages are started.
+)", EXPERIMENTAL, \
+        {"26.11", 0, 0, "New experimental setting."}) \
     DECLARE(Bool, distributed_plan_read_in_order, false, R"(
 Allow the read-in-order optimization for `ORDER BY` in a distributed query plan, so a sorted read of the
 table's sorting key can skip the sort and stop early instead of scanning and sorting.

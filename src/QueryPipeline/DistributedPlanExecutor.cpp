@@ -104,6 +104,7 @@ namespace Setting
 {
     extern const SettingsUInt64 distributed_plan_task_dispatch_threads;
     extern const SettingsBool distributed_plan_task_dispatch_batching;
+    extern const SettingsUInt64 distributed_plan_task_dispatch_stages_per_flush;
     extern const SettingsBool distributed_plan_execute_locally;
     extern const SettingsBool enable_join_runtime_filters_index_analysis;
     extern const SettingsUInt64 distributed_plan_workers_num;
@@ -1506,6 +1507,7 @@ public:
         , task_to_host_map(std::move(task_to_host_map_))
         , running_tasks(8, context, cancellation, stage_wakeup, logger)
         , batch_dispatch(context->getSettingsRef()[Setting::distributed_plan_task_dispatch_batching])
+        , stages_per_flush(context->getSettingsRef()[Setting::distributed_plan_task_dispatch_stages_per_flush])
     {
         /// A null map belongs to an in-process plan, which createDistributedQueryExecutor routes to
         /// the local executor instead.
@@ -2079,6 +2081,8 @@ protected:
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = getTaskSettingsChanges(context);
         queueStageTasks(stage_name, stage, task_description);
+        if (stages_per_flush && ++stages_since_flush >= stages_per_flush)
+            dispatchQueuedTasks();
     }
 
     void checkBeforeStartingTask()
@@ -2199,6 +2203,7 @@ protected:
 
     void dispatchQueuedTasks() override
     {
+        stages_since_flush = 0;
         for (auto & [worker, batches] : queued_batches)
         {
             /// This is processing batches queued for one worker now
@@ -2314,6 +2319,9 @@ protected:
     VectorWithMemoryTracking<String> worker_endpoint_uris;
     TaskTracker running_tasks;
     const bool batch_dispatch;
+    const UInt64 stages_per_flush;
+    /// Stages queued since the last `dispatchQueuedTasks`; query thread only.
+    size_t stages_since_flush = 0;
     /// The batches `startStage` built and `dispatchQueuedTasks` has not handed over yet; query thread only.
     UnorderedMapWithMemoryTracking<WorkerIndex, VectorWithMemoryTracking<QueuedBatch>> queued_batches;
     /// The send queue of each worker that got batches; query thread only, a sender job holds its own queue.
