@@ -1,5 +1,6 @@
 import logging
 
+import pymysql
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -12,7 +13,7 @@ cluster = ClickHouseCluster(__file__)
 
 instance1 = cluster.add_instance(
     "instance1",
-    main_configs=["configs/ldap_with_role_mapping.xml", "configs/remote_servers.xml"],
+    main_configs=["configs/ldap_with_role_mapping.xml", "configs/remote_servers.xml", "configs/mysql.xml"],
     user_configs=["configs/users.xml"],
     macros={"shard": 1, "replica": "instance1"},
     stay_alive=True,
@@ -251,3 +252,30 @@ def test_remote_query_user_does_not_exist_locally(ldap_cluster):
 
     instance2.query("DROP USER IF EXISTS non_local", user="common_user", password="qwerty")
     instance2.query("DROP TABLE IF EXISTS test_table SYNC", user="common_user", password="qwerty")
+
+
+def mysql_connect(user, password):
+    return pymysql.connections.Connection(host=instance1.ip_address, user=user, password=password, port=9004)
+
+
+def test_mysql_protocol():
+    # A user of the LDAP user directory exists only after its first login: forget the ones created by other tests.
+    instance1.restart_clickhouse()
+    users_query = "SELECT storage FROM system.users WHERE name = 'janedoe'"
+    assert instance1.query(users_query, user="common_user", password="qwerty") == ""
+
+    # The first login creates the user, the second one finds it.
+    for _ in range(2):
+        conn = mysql_connect("janedoe", "qwerty")
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT currentUser()")
+            assert cursor.fetchall() == (("janedoe",),)
+        finally:
+            conn.close()
+        assert instance1.query(users_query, user="common_user", password="qwerty") == "ldap\n"
+
+    for user, password in (("janedoe", "wrong"), ("doesnotexist", "qwerty")):
+        with pytest.raises(pymysql.err.MySQLError) as exc_info:
+            mysql_connect(user, password)
+        assert exc_info.value.args[0] == 516  # AUTHENTICATION_FAILED
