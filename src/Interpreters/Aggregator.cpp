@@ -6017,6 +6017,12 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
             non_empty_data[i]->aggregates_pools.begin(), non_empty_data[i]->aggregates_pools.end());
     }
 
+    /// The bucket merge frees the tables itself once its last bucket merged (see `releaseAdaptiveMergeSources`), so it
+    /// takes them over. The other merges only share them: their caller frees them, the large ones in parallel (see
+    /// `ManyAggregatedData`).
+    if (bucket_merge)
+        data_variants.clear();
+
     return non_empty_data;
 }
 

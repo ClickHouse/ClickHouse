@@ -1296,6 +1296,13 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
     const auto & shared_data_offsets = getSharedDataOffsets();
     size_t start = shared_data_offsets[static_cast<ssize_t>(n) - 1];
     size_t end = shared_data_offsets[static_cast<ssize_t>(n)];
+
+    /// The number of paths and the size of each path delimit the object, as in `serializeDynamicPathsAndSharedDataIntoArena`.
+    size_t num_paths = end - start;
+    for (const auto & [_, column] : dynamic_paths_ptrs)
+        num_paths += !column->isNullAt(n);
+    hash.update(num_paths);
+
     auto dynamic_paths_it = sorted_dynamic_paths.begin();
     for (size_t i = start; i != end; ++i)
     {
@@ -1306,6 +1313,7 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
             const auto * dynamic_column = dynamic_paths_ptrs.find(*dynamic_paths_it)->second;
             if (!dynamic_column->isNullAt(n))
             {
+                hash.update(dynamic_paths_it->size());
                 hash.update(*dynamic_paths_it);
                 dynamic_column->updateHashWithValue(n, hash);
             }
@@ -1316,6 +1324,7 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
         auto value = shared_data_values->getDataAt(i);
         ReadBufferFromMemory buf(value);
         auto value_type = decodeDataType(buf);
+        hash.update(path.size());
         hash.update(path);
 
         /// A shared_data entry can be encoded as Nothing (a serialized NULL). Nothing has no usable
@@ -1330,7 +1339,7 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
         }
 
         auto type_name = value_type->getName();
-        hash.update(type_name);
+        ColumnDynamic::updateHashWithTypeName(hash, type_name);
         auto tmp_column = value_type->createColumn();
         getDataTypesCache().getSerialization(type_name, value_type)->deserializeBinary(*tmp_column, buf, getFormatSettings());
         tmp_column->updateHashWithValue(0, hash);
@@ -1342,6 +1351,7 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
         const auto * dynamic_column = dynamic_paths_ptrs.find(*dynamic_paths_it)->second;
         if (!dynamic_column->isNullAt(n))
         {
+            hash.update(dynamic_paths_it->size());
             hash.update(*dynamic_paths_it);
             dynamic_column->updateHashWithValue(n, hash);
         }

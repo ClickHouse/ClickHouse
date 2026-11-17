@@ -781,7 +781,7 @@ JoinStepLogicalLookup::JoinStepLogicalLookup(QueryPlan child_plan_, PreparedJoin
 
 void JoinStepLogicalLookup::initializePipeline(QueryPipelineBuilder & pipeline_builder, const BuildQueryPipelineSettings & build_pipeline_settings)
 {
-    QueryPlanOptimizationSettings optimization_settings({}, {}, {}, {}, {}, false);
+    QueryPlanOptimizationSettings optimization_settings({}, {}, {}, {}, {});
     pipeline_builder = std::move(*child_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings, /* do_optimize */ false));
 }
 
