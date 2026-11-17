@@ -976,12 +976,6 @@ void QueryPlan::takeContextsFrom(const QueryPlan & kept_aside_plan)
 
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    optimize(optimization_settings, optimization_settings);
-}
-
-void QueryPlan::optimize(
-    const QueryPlanOptimizationSettings & optimization_settings, const QueryPlanOptimizationSettings & subplans_optimization_settings)
-{
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::QueryPlanOptimizeMicroseconds);
 
     QueryPlanOptimizationSettings effective_settings = optimization_settings;
@@ -1014,9 +1008,9 @@ void QueryPlan::optimize(
     /// in this plan is claimed. `resolveMaterializingCTEs` then only
     /// materializes the CTEs that were not already materialized inplace.
     if (effective_settings.build_sets)
-        QueryPlanOptimizations::addStepsToBuildSets(subplans_optimization_settings, *this, *root, nodes);
+        QueryPlanOptimizations::addStepsToBuildSets(effective_settings, *this, *root, nodes);
     if (effective_settings.materialize_ctes)
-        QueryPlanOptimizations::resolveMaterializingCTEs(subplans_optimization_settings, *this, *root, nodes);
+        QueryPlanOptimizations::resolveMaterializingCTEs(effective_settings, *this, *root, nodes);
 }
 
 
