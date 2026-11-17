@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/Defines.h>
+#include <Interpreters/JoinUtils.h>
 #include <Processors/Transforms/BlockNestedLoopJoinTransform.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
@@ -947,17 +948,13 @@ BlockNestedLoopTotalsTransform::BlockNestedLoopTotalsTransform(
 }
 
 /// The totals value of the column at `position` of `source`, or the type's default when `source`
-/// does not reach that far. `arrayJoin` in the totals expression can make the row count differ
-/// from one, so the result is always cut back to a single row.
+/// does not reach that far.
 static ColumnPtr totalsColumnAt(const Block & source, size_t position, const DataTypePtr & type)
 {
     if (position >= source.columns())
         return type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
 
-    auto column = source.getByPosition(position).column->convertToFullColumnIfConst();
-    if (column->size() != 1)
-        column = column->cloneResized(1);
-    return column;
+    return JoinCommon::totalsColumnToSingleRow(source.getByPosition(position).column, type)->convertToFullColumnIfConst();
 }
 
 void BlockNestedLoopTotalsTransform::transform(Chunk & chunk)
