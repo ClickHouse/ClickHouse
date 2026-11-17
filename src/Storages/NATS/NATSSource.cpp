@@ -158,14 +158,18 @@ Chunk NATSSource::generateImpl()
 
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
     EmptyReadBuffer empty_buf;
-    auto input_format = FormatFactory::instance().getInput(
-        storage.getFormatName(),
-        empty_buf,
-        non_virtual_header,
-        context,
-        max_block_size,
-        std::nullopt,
-        FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
+    auto parser_shared_resources = FormatParserSharedResources::singleThreaded(context->getSettingsRef());
+    auto create_format = [&]
+    {
+        return FormatFactory::instance().getInput(
+            storage.getFormatName(),
+            empty_buf,
+            non_virtual_header,
+            context,
+            max_block_size,
+            std::nullopt,
+            parser_shared_resources);
+    };
     std::optional<String> exception_message;
     size_t total_rows = 0;
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
@@ -188,7 +192,7 @@ Chunk NATSSource::generateImpl()
         throw std::move(e);
     };
 
-    StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
+    StreamingFormatExecutor executor(non_virtual_header, std::move(create_format), on_error);
 
     const Field table_name = storage.getStorageID().getTableName();
 

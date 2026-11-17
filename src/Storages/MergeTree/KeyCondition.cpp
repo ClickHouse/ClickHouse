@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <unordered_set>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/FieldToDataType.h>
@@ -37,6 +38,7 @@
 #include <Common/MortonUtils.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/typeid_cast.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
@@ -520,9 +522,130 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 /// exact-true, so exact-count / implicit-projection paths return wrong results. We therefore reuse the
 /// null atom only when the key is not wrapped at all; a wrapped key falls back to a full scan, which is
 /// always correct.
-static bool monotonicChainSupportsNullAtom(const KeyCondition::MonotonicFunctionsChain & chain)
+///
+/// The one exception is outer NULL-transparent identity casts, which `classifyNullAtomOverChain` peels
+/// first. The analyzer emits them when a non-Nullable sort-key expression is read through a
+/// `UNION ALL` view whose other arm has NULLs (`_CAST(toStartOfHour(ts), 'Nullable(DateTime)')`), and
+/// declining them loses all pruning for `(range) OR col IS NULL`.
+enum class NullAtomOverChain : uint8_t
 {
-    return chain.empty();
+    BareKey,        /// `isNull(chain(k))` is exactly `isNull(k)`: use the bare-key atom.
+    NeverNull,      /// `chain(k)` cannot be NULL: `isNull` is constantly false, `isNotNull` constantly true.
+    Decline,        /// Anything else: no atom, full scan (the behaviour before this exception).
+};
+
+/// `f` is a NULL-transparent identity cast when it is `CAST`, `_CAST` or `toNullable`, keeps the value
+/// domain (`removeNullable(result) == removeNullable(argument)`, after stripping `LowCardinality`), and
+/// does not drop nullability (a Nullable argument needs a Nullable result: `CAST(k, 'UInt32')` on a
+/// `Nullable(UInt32)` key throws on a NULL row). Then `f(NULL) = NULL`, `f(x) = x` for every non-NULL
+/// `x`, and `f` cannot throw.
+static bool isNullTransparentIdentityCast(const IFunctionBase & func)
+{
+    const auto & name = func.getName();
+    const auto & argument_types = func.getArgumentTypes();
+
+    if (name == "toNullable")
+    {
+        if (argument_types.size() != 1)
+            return false;
+    }
+    else if (name == "CAST" || name == "_CAST")
+    {
+        /// `CAST(x, 'T')`: the wrapped expression is the first argument, the constant type name the second.
+        if (argument_types.size() != 2 || !argument_types[1] || !isString(removeNullable(argument_types[1])))
+            return false;
+    }
+    else
+        return false;
+
+    const auto & argument_type = argument_types[0];
+    const auto & result_type = func.getResultType();
+    if (!argument_type || !result_type)
+        return false;
+
+    if (canContainNull(*argument_type) && !isNullableOrLowCardinalityNullable(result_type))
+        return false;
+
+    return removeNullable(recursiveRemoveLowCardinality(result_type))
+        ->equals(*removeNullable(recursiveRemoveLowCardinality(argument_type)));
+}
+
+/// A date-truncation function that is total for the argument and result types checked here: its per-row
+/// transform has no throw path, so evaluating it on any key value yields a value. Verified against
+/// `src/Functions/DateTimeTransforms.h` (`ToStartOfMinuteImpl`, `ToStartOfHourImpl`, `ToStartOfDayImpl`,
+/// `ToStartOfMonthImpl`) and `TransformDateTime64.h`:
+///   - the `DateTime` / `DateTime64` overloads of the sub-day functions are a time-zone lookup, clamped to the
+///     `UInt32` range for `DateTime64`; their `Date` / `Date32` / `Time` overloads throw, so those argument
+///     types are not accepted;
+///   - `toStartOfMonth` is a clamped day-number lookup for all four date types;
+///   - only the default result type (`DateTime`, resp. `Date`) is accepted: the
+///     `enable_extended_results_for_datetime_functions` path re-assembles a `DateTime64` and can throw
+///     `DECIMAL_OVERFLOW`.
+/// Keep this list small; a function goes on it only after its every accepted overload is checked.
+static bool isTotalDateTruncation(const IFunctionBase & func)
+{
+    static const std::unordered_set<std::string_view> to_date_time_functions = {"toStartOfMinute", "toStartOfHour", "toStartOfDay"};
+    static const std::unordered_set<std::string_view> to_date_functions = {"toStartOfMonth"};
+
+    const String name = func.getName();
+    const bool returns_date_time = to_date_time_functions.contains(name);
+    if (!returns_date_time && !to_date_functions.contains(name))
+        return false;
+
+    /// `f(x)` or `f(x, 'time_zone')`; the time zone is a constant validated when the function is built.
+    const auto & argument_types = func.getArgumentTypes();
+    if (argument_types.empty() || argument_types.size() > 2 || !argument_types[0])
+        return false;
+    if (argument_types.size() == 2 && (!argument_types[1] || !isString(removeNullable(argument_types[1]))))
+        return false;
+
+    const auto & result_type = func.getResultType();
+    if (!result_type)
+        return false;
+
+    const WhichDataType argument(removeNullable(recursiveRemoveLowCardinality(argument_types[0])));
+    const WhichDataType result(removeNullable(recursiveRemoveLowCardinality(result_type)));
+    if (returns_date_time)
+        return (argument.isDateTime() || argument.isDateTime64()) && result.isDateTime();
+    return (argument.isDate() || argument.isDate32() || argument.isDateTime() || argument.isDateTime64()) && result.isDate();
+}
+
+/// The chain is ordered from the key outwards, so the outermost wrapper is `chain.back()`.
+///   - BareKey: the chain is empty or only identity casts.
+///   - NeverNull: at least one outer identity cast was peeled, every remaining inner element is TOTAL
+///     (an identity cast or `isTotalDateTruncation`), and the rest of the chain returns a type that cannot
+///     hold NULL (`canContainNull`, the test `FunctionIsNull` folds a non-Nullable argument by). Then
+///     `isNull(cast(x))` is constantly 0 and `isNotNull(cast(x))` constantly 1, and no row could raise
+///     while computing `x`, so constant atoms change neither the result nor whether the query throws.
+///     Constant atoms, not the bare-key atom, because the inner functions (e.g. `toStartOfHour`) are not
+///     identities and the key's own NULL-ness says nothing here.
+///   - Decline: no outer identity cast (every pre-existing wrapped case: `ifNull`, `coalesce`,
+///     `assumeNotNull`, `CAST(k, 'UInt32')`, `toUInt32`, `toDateTime(date32_k)`, `intDiv`, ...), the rest of
+///     the chain can return NULL, or an inner element is partial: `toDateTime(date32_k)` under
+///     `date_time_overflow_behavior = 'throw'`, `intDiv(k, 0)` or `CAST(nullable_k, 'UInt32')` raise on
+///     some rows, and the row-level `isNull` does evaluate them because its argument (the outer cast) is
+///     Nullable. Folding those to a constant would turn an exception into a result; the scan keeps it.
+static NullAtomOverChain classifyNullAtomOverChain(const KeyCondition::MonotonicFunctionsChain & chain)
+{
+    size_t remaining = chain.size();
+    while (remaining > 0 && chain[remaining - 1] && isNullTransparentIdentityCast(*chain[remaining - 1]))
+        --remaining;
+
+    if (remaining == 0)
+        return NullAtomOverChain::BareKey;
+
+    if (remaining == chain.size())
+        return NullAtomOverChain::Decline;
+
+    for (size_t i = 0; i < remaining; ++i)
+        if (!chain[i] || !(isNullTransparentIdentityCast(*chain[i]) || isTotalDateTruncation(*chain[i])))
+            return NullAtomOverChain::Decline;
+
+    const auto & inner = chain[remaining - 1];
+    if (inner && inner->getResultType() && !canContainNull(*inner->getResultType()))
+        return NullAtomOverChain::NeverNull;
+
+    return NullAtomOverChain::Decline;
 }
 
 /// Functions with range inversion cannot be relaxed. It will become stricter instead.
@@ -742,6 +865,13 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     bool need_inversion,
     bool boolean_context);
 
+static const ActionsDAG::Node * tryRewriteBooleanCondition(
+    const ActionsDAG::Node & condition,
+    const String & condition_name,
+    ActionsDAG & inverted_dag,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    const ContextPtr & context);
+
 /// Rewrite `<op>(coalesce(a_1, ..., a_N), const)` (or with `ifNull`, or with the constant on the
 /// left) into
 ///     `(y_1 <op> const)`
@@ -864,15 +994,8 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
     auto make_cmp = [&](const ActionsDAG::Node * lhs) -> const ActionsDAG::Node &
     {
         const auto & cmp_node = inverted_dag.addFunction(op_func, {lhs, &const_cloned}, "");
-        /// If `lhs` is itself a `coalesce` or `ifNull` (nested coalesce), expand it recursively here.
-        /// Otherwise the inner `coalesce` would remain unexpanded after the first
-        /// `cloneDAGWithInversionPushDown` pass and a subsequent pass (e.g. when each skip index builds its
-        /// own `KeyCondition` via `createIndexCondition`) would expand it then, producing a `KeyCondition`
-        /// whose RPN no longer matches the template's RPN. The disjunction-tracking machinery in
-        /// `MergeTreeDataSelectExecutor::filterMarksUsingIndex` assumes both RPNs share the same length and
-        /// position layout; the mismatch puts partial results at the wrong positions of `partial_disjunction_result`,
-        /// which can skip granules that match the filter.
-        if (const auto * rewritten = tryRewriteCoalesceComparison(cmp_node, canonical_op_str, inverted_dag, inputs_mapping, context))
+        /// The built comparison goes through the whole rewrite chain too, so a later pass keeps the template's RPN layout.
+        if (const auto * rewritten = tryRewriteBooleanCondition(cmp_node, canonical_op_str, inverted_dag, inputs_mapping, context))
             return *rewritten;
         return cmp_node;
     };
@@ -1092,8 +1215,7 @@ static const ActionsDAG::Node * tryRewriteIsTrueCondition(
 ///     (always-true for non-NULL boolean, declined), and a NULL element changes NULL handling.
 ///   - the `X` boolean-result gate is the same as `tryRewriteIsTrueCondition`: `k IN (true)` for a
 ///     non-boolean `k` means `k = 1`, not "k truthy".
-/// Only literal/constant sets whose elements are available at analysis time are handled; subquery
-/// sets that are not yet built decline (return nullptr) and fall back to the existing behavior.
+/// Only literal sets are handled; any other set declines (returns nullptr) and falls back to the existing behavior.
 /// Returns nullptr if the pattern does not match.
 static const ActionsDAG::Node * tryRewriteInTruthyCondition(
     const ActionsDAG::Node & node,
@@ -1138,14 +1260,8 @@ static const ActionsDAG::Node * tryRewriteInTruthyCondition(
     if (!predicateIsBooleanResult(predicate, context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]))
         return nullptr;
 
-    /// Only inspect a set that is ALREADY built. `get()` returns a non-null set for literal-tuple
-    /// (`IN (true)`) and storage sets, which are available at planning time, and nullptr for a
-    /// subquery set that has not run yet. We must NOT force-build here: this rewrite runs during
-    /// key-condition DAG cloning for every query, so forcing the set would execute the `IN` subquery
-    /// purely for analysis, e.g. `X IN (SELECT throwIf(1))` would throw even when no index is used
-    /// (see 02707_skip_index_with_in). buildOrderedSetInplace on an already-built set is then cheap
-    /// (no subquery) and just materializes its ordered elements.
-    if (!future_set->get())
+    /// Only a literal set: a subquery set is built between index-analysis passes, which would then disagree on the rewrite.
+    if (!typeid_cast<const FutureSetFromTuple *>(future_set.get()))
         return nullptr;
 
     auto prepared_set = future_set->buildOrderedSetInplace(context);
@@ -1249,14 +1365,41 @@ static const ActionsDAG::Node * tryRewriteNullIfComparison(
 
     ActionsDAG::NodeRawConstPtrs args = {&cloned_col, &cloned_const};
     const auto & cmp_node = inverted_dag.addFunction(function_builder, args, "");
-    /// Normalize the generated comparison through tryRewriteCoalesceComparison so that
+    /// Normalize the generated comparison through tryRewriteBooleanCondition so that
     /// the template KeyCondition and each skip-index KeyCondition produce the same RPN atoms.
     /// Without this, nullIf(coalesce(a, b), sentinel) = const can expand coalesce differently
     /// across passes, causing filterMarksUsingIndex to misalign atom positions and drop granules.
     const String cmp_name(canonical_op);
-    if (const auto * rewritten = tryRewriteCoalesceComparison(cmp_node, cmp_name, inverted_dag, inputs_mapping, context))
+    if (const auto * rewritten = tryRewriteBooleanCondition(cmp_node, cmp_name, inverted_dag, inputs_mapping, context))
         return rewritten;
     return &cmp_node;
+}
+
+/// Rewrites that are valid only for a non-inverted condition in a boolean context.
+/// They are tried in order and lazily, since each of them may add nodes to `inverted_dag`.
+static const ActionsDAG::Node * tryRewriteBooleanCondition(
+    const ActionsDAG::Node & condition,
+    const String & condition_name,
+    ActionsDAG & inverted_dag,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    const ContextPtr & context)
+{
+    if (const auto * rewritten = tryRewriteIsTrueCondition(condition, condition_name, inverted_dag, inputs_mapping, context))
+        return rewritten;
+    if (const auto * rewritten = tryRewriteInTruthyCondition(condition, condition_name, inverted_dag, inputs_mapping, context))
+        return rewritten;
+
+    if (!context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite])
+        return nullptr;
+
+    if (const auto * rewritten = tryRewriteCoalesceComparison(condition, condition_name, inverted_dag, inputs_mapping, context))
+        return rewritten;
+    if (const auto * rewritten = tryRewriteCoalesceCondition(condition, condition_name, inverted_dag, inputs_mapping, context))
+        return rewritten;
+    if (const auto * rewritten = tryRewriteNullIfComparison(condition, condition_name, inverted_dag, inputs_mapping, context))
+        return rewritten;
+
+    return nullptr;
 }
 
 static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
@@ -1322,31 +1465,6 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
         case ActionsDAG::ActionType::FUNCTION:
         {
             auto name = node.function_base->getName();
-
-            /// Rewrites that are valid only for a non-inverted condition in a boolean context.
-            /// They are tried in order and lazily, since each of them may add nodes to `inverted_dag`.
-            auto try_rewrite_boolean_condition = [&]() -> const ActionsDAG::Node *
-            {
-                if (need_inversion || !boolean_context)
-                    return nullptr;
-
-                if (const auto * rewritten = tryRewriteIsTrueCondition(node, name, inverted_dag, inputs_mapping, context))
-                    return rewritten;
-                if (const auto * rewritten = tryRewriteInTruthyCondition(node, name, inverted_dag, inputs_mapping, context))
-                    return rewritten;
-
-                if (!context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite])
-                    return nullptr;
-
-                if (const auto * rewritten = tryRewriteCoalesceComparison(node, name, inverted_dag, inputs_mapping, context))
-                    return rewritten;
-                if (const auto * rewritten = tryRewriteCoalesceCondition(node, name, inverted_dag, inputs_mapping, context))
-                    return rewritten;
-                if (const auto * rewritten = tryRewriteNullIfComparison(node, name, inverted_dag, inputs_mapping, context))
-                    return rewritten;
-
-                return nullptr;
-            };
 
             /// A `not` that receives an inversion cancels against it and substitutes its argument for
             /// the result. That is only truthiness-preserving: `not(not(x))` is `x != 0` (a `UInt8`),
@@ -1443,7 +1561,9 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 res = &inverted_dag.addFunction(function_builder, children, "");
                 handled_inversion = true;
             }
-            else if (const auto * rewritten = try_rewrite_boolean_condition())
+            else if (const auto * rewritten = !need_inversion && boolean_context
+                         ? tryRewriteBooleanCondition(node, name, inverted_dag, inputs_mapping, context)
+                         : nullptr)
             {
                 res = rewritten;
                 handled_inversion = true;
@@ -1467,6 +1587,11 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                     const auto & func_name = need_inversion ? it->second : it->first;
                     auto function_builder = FunctionFactory::instance().get(func_name, context);
                     res = &inverted_dag.addFunction(function_builder, children, "");
+                    /// `res` is a non-inverted condition over wrapper-free arguments; rewrite it so a later pass keeps the same RPN layout.
+                    if (boolean_context)
+                        if (const auto * rewritten_inverse
+                            = tryRewriteBooleanCondition(*res, func_name, inverted_dag, inputs_mapping, context))
+                            res = rewritten_inverse;
                     handled_inversion = true;
                 }
                 else
@@ -1495,6 +1620,10 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                     {
                         res = &inverted_dag.addFunction(node.function_base, children, "");
                     }
+
+                    if (!need_inversion && boolean_context)
+                        if (const auto * rewritten_clone = tryRewriteBooleanCondition(*res, name, inverted_dag, inputs_mapping, context))
+                            res = rewritten_clone;
                 }
             }
             break;
@@ -2674,7 +2803,7 @@ std::vector<KeyCondition::DeterministicKeyDag> KeyCondition::collectKeyWrappingD
     for (const auto * node : expr_nodes)
         expr_set.insert(node);
 
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> projection_inputs;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> projection_inputs;
     projection_inputs.reserve(expr_nodes.size());
     for (const auto * node : expr_nodes)
         projection_inputs.emplace(node, rename_node);
@@ -3543,6 +3672,27 @@ std::optional<KeyCondition::SetIndexAnalysisResult> KeyCondition::tryAnalyzePred
     return result;
 }
 
+/// Whether the chain ends by rendering a native integer (or a `Date`) as text that the cast into `element_type` parses back to the
+/// same value, as an element renders. A custom serialization (`Bool`, also in `SimpleAggregateFunction`) breaks that.
+static bool isTextOfElementValues(const std::vector<FunctionBasePtr> & chain, const DataTypePtr & element_type)
+{
+    if (chain.empty())
+        return false;
+
+    const IFunctionBase & conversion = *chain.back();
+    const String name = conversion.getName();
+    if ((name != "toString" && name != "CAST" && name != "_CAST")
+        || (name == "toString" && conversion.getArgumentTypes().size() != 1)
+        || !isString(removeLowCardinalityAndNullable(conversion.getResultType())))
+        return false;
+
+    const DataTypePtr source_type = removeLowCardinalityAndNullable(getArgumentTypeOfMonotonicFunction(conversion));
+    if (source_type->getCustomSerialization() || element_type->getCustomSerialization())
+        return false;
+
+    return (isNativeInteger(source_type) && isNativeInteger(element_type)) || (isDate(source_type) && isDate(element_type));
+}
+
 bool KeyCondition::tryPrepareSetColumnsForIndex(
     Columns & set_columns,
     DataTypes & set_types,
@@ -3630,6 +3780,7 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
         /// `JSON` accepts only objects, a `Variant` infers an alternative from the spelling (`CAST('42',
         /// 'Variant(Date)')` throws), and a `Dynamic` does so under `cast_string_to_dynamic_use_inference` -
         /// so the full scan may match another spelling or raise a conversion error that pruning would hide.
+        /// A string the key chain computes as the text of an integer (or a `Date`) holds no other spelling, so such a set keeps the index.
         if (membership_compares_carriers)
         {
             const DataTypePtr predicate_column_type
@@ -3637,7 +3788,8 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
             const DataTypePtr element_type = removeLowCardinalityAndNullable(set_element_type);
 
             if (isStringOrFixedString(predicate_column_type) && !isString(element_type) && !isNothing(element_type)
-                && !element_type->equals(*predicate_column_type))
+                && !element_type->equals(*predicate_column_type)
+                && !(!mapping.set_transform && isTextOfElementValues(mapping.index_mapping.functions, element_type)))
                 return false;
         }
 
@@ -5445,8 +5597,21 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
         /// they are sound only for a bare key. A wrapped key (`isNull(ifNull(k, 0))`,
         /// `isNull(toDateTime(date32_k))`, ...) would otherwise be analyzed like `isNull(k)` and
         /// wrongly prune a granule the predicate does not cover; decline and fall back to a scan.
-        if ((func_name == "isNull" || func_name == "isNotNull") && !monotonicChainSupportsNullAtom(chain))
-            return;
+        /// Outer NULL-transparent identity casts are peeled first, see `classifyNullAtomOverChain`.
+        if (func_name == "isNull" || func_name == "isNotNull")
+        {
+            switch (classifyNullAtomOverChain(chain))
+            {
+                case NullAtomOverChain::BareKey:
+                    chain.clear();
+                    break;
+                case NullAtomOverChain::NeverNull:
+                    group.atoms.emplace_back(func_name == "isNull" ? RPNElement::ALWAYS_FALSE : RPNElement::ALWAYS_TRUE);
+                    return;
+                case NullAtomOverChain::Decline:
+                    return;
+            }
+        }
 
         RPNElement element;
         element.key_columns.push_back(key_column_num);
@@ -5734,8 +5899,17 @@ void KeyCondition::extractIsNullAtomForNotDistinctFrom(
     if (key_column_num == static_cast<size_t>(-1))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
 
-    if (!monotonicChainSupportsNullAtom(chain))
-        return;
+    switch (classifyNullAtomOverChain(chain))
+    {
+        case NullAtomOverChain::BareKey:
+            chain.clear();
+            break;
+        case NullAtomOverChain::NeverNull:
+            group.atoms.emplace_back(RPNElement::ALWAYS_FALSE);
+            return;
+        case NullAtomOverChain::Decline:
+            return;
+    }
 
     RPNElement element;
     element.key_columns.push_back(key_column_num);
