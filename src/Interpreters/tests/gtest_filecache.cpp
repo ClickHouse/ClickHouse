@@ -1966,7 +1966,7 @@ try
         std::string read_back(first.size() + second.size(), '\0');
         ASSERT_EQ(read_buf->read(read_back.data(), read_back.size()), read_back.size());
         ASSERT_EQ(read_back, first + second);
-        char extra;
+        char extra = 0;
         ASSERT_EQ(read_buf->read(&extra, 1), 0);
     }
 

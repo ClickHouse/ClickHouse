@@ -165,10 +165,10 @@ public:
         void requestPath(size_t path_index, const SharedTypedPath & path, bool from_plain_layout);
         /// A v2 Wide part writes the regions of the paths' substreams, so a narrow read goes through them instead of
         /// the plain layout.
-        bool hasRegions() const { return header && header->has_regions; }
+        [[nodiscard]] bool hasRegions() const { return header && header->has_regions; }
         /// The path is read from its regions: the part has regions and no reader of the path needs the plain layout. The
         /// prefixes of all readers come before any data, so this does not change while the data is read.
-        bool readsFromRegions(size_t path_index) const
+        [[nodiscard]] bool readsFromRegions(size_t path_index) const
         {
             return hasRegions() && !requested_paths.at(path_index).read_from_plain_layout;
         }

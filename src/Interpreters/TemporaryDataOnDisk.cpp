@@ -489,9 +489,10 @@ TemporaryDataReadBuffer::TemporaryDataReadBuffer(std::unique_ptr<ReadBuffer> in_
 
 TemporaryDataReadBuffer::TemporaryDataReadBuffer(std::unique_ptr<SeekableReadBuffer> in_)
     : ReadBuffer(nullptr, 0)
-    , seekable_in(in_.get())
     , compressed_buf(std::unique_ptr<ReadBuffer>(std::move(in_)))
 {
+    /// The holder is the reader passed in, a `SeekableReadBuffer`.
+    seekable_in = static_cast<SeekableReadBuffer *>(compressed_buf.getHolder());
     BufferBase::set(compressed_buf->buffer().begin(), compressed_buf->buffer().size(), compressed_buf->offset());
 }
 
@@ -596,16 +597,18 @@ TemporaryDataReserveResult TemporaryDataBuffer::tryReserveMore(size_t num_bytes)
     if (parent->tryAddCompressedSize(num_bytes))
         return TemporaryDataReserveResult::NotEnoughSpace;
 
-    TemporaryDataReserveResult result;
-    try
+    auto result = [&]
     {
-        result = file_holder->tryReserveMore(num_bytes);
-    }
-    catch (...)
-    {
-        parent->subtractCompressedSize(num_bytes);
-        throw;
-    }
+        try
+        {
+            return file_holder->tryReserveMore(num_bytes);
+        }
+        catch (...)
+        {
+            parent->subtractCompressedSize(num_bytes);
+            throw;
+        }
+    }();
 
     if (result != TemporaryDataReserveResult::Reserved)
     {

@@ -70,9 +70,9 @@ public:
         entries.push_back(offset);
     }
 
-    bool empty() const { return entries.empty(); }
+    [[nodiscard]] bool empty() const { return entries.empty(); }
     /// Only when not empty.
-    size_t firstOffset() const { return entries.front(); }
+    [[nodiscard]] size_t firstOffset() const { return entries.front(); }
 
     /// Calls `callback(begin, end)` for each granule in order; an empty granule has `begin == end`, and the last one
     /// ends at `data_size`.
@@ -110,14 +110,14 @@ public:
     /// Frees the memory.
     void clear() { std::vector<UInt64>{}.swap(entries); }
 
-    size_t allocatedBytes() const { return entries.capacity() * sizeof(UInt64); }
+    [[nodiscard]] size_t allocatedBytes() const { return entries.capacity() * sizeof(UInt64); }
 
 private:
     /// Set on an entry after an offset: the number of granules starting at that offset besides the first. All the
     /// granules at an offset but the last are empty.
     static constexpr UInt64 MORE_GRANULES_FLAG = 1ULL << 63;
 
-    size_t lastOffset() const { return (entries.back() & MORE_GRANULES_FLAG) ? entries[entries.size() - 2] : entries.back(); }
+    [[nodiscard]] size_t lastOffset() const { return (entries.back() & MORE_GRANULES_FLAG) ? entries[entries.size() - 2] : entries.back(); }
 
     std::vector<UInt64> entries;
 };
@@ -576,9 +576,9 @@ public:
             slices.push_back(std::move(slice));
     }
 
-    bool empty() const { return slices.empty(); }
-    size_t rows() const { return num_rows; }
-    const std::vector<GranuleSlice> & getSlices() const { return slices; }
+    [[nodiscard]] bool empty() const { return slices.empty(); }
+    [[nodiscard]] size_t rows() const { return num_rows; }
+    [[nodiscard]] const std::vector<GranuleSlice> & getSlices() const { return slices; }
 
     /// A path's column of the granule, read at `offset`.
     struct PathColumn
@@ -588,7 +588,7 @@ public:
     };
 
     /// Materializes the column only for a granule that spans slices.
-    PathColumn getPathColumn(size_t path_index) const
+    [[nodiscard]] PathColumn getPathColumn(size_t path_index) const
     {
         chassert(num_rows != 0);
         if (slices.size() == 1)

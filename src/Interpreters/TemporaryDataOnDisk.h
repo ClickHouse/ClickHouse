@@ -316,8 +316,7 @@ private:
 
     bool nextImpl() override;
 
-    /// The file reader inside `compressed_buf`, when it is seekable. Declared first, so that it is taken from the reader
-    /// before the reader moves into `compressed_buf`.
+    /// The file reader inside `compressed_buf`, when it is seekable.
     SeekableReadBuffer * seekable_in = nullptr;
     WrapperGuard<CompressedReadBuffer, ReadBuffer> compressed_buf;
 };

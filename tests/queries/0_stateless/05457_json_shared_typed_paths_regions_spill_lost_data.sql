@@ -1,5 +1,6 @@
--- Tags: no-parallel, no-distributed-cache
+-- Tags: no-parallel, no-fasttest, no-distributed-cache
 -- no-parallel: the failpoints are global and would break the spills of the other tests
+-- no-fasttest: tests with failpoints run alone, and those are kept out of the fast test
 -- no-distributed-cache: the temporary storage is the distributed cache, which the spiller does not use
 
 -- Errors of the spilling of the per-path buffers of a merge of v2 parts. With a buffer budget of one byte every append

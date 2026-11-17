@@ -347,7 +347,7 @@ public:
         });
     }
 
-    bool hasFailed() const { return failed; }
+    [[nodiscard]] bool hasFailed() const { return failed; }
 
 private:
     bool nextImpl() override
