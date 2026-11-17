@@ -152,6 +152,9 @@ element member	1
 absent parent	(NULL)	((NULL))	((6))
 absent parent	\N	\N	6
 absent parent	0
+list member	[(5),(6)]	[(9)]
+list member	[5,6]	[9]
+list member	1
 ORC
 schema ids	[0]
 1	(10,5)	[(11,5)]	7	(6)	(NULL)	[1,NULL]
@@ -238,6 +241,9 @@ element member	1
 absent parent	(NULL)	((NULL))	((6))
 absent parent	\N	\N	6
 absent parent	0
+list member	[(5),(6)]	[(9)]
+list member	[5,6]	[9]
+list member	1
 Avro
 schema ids	[0]
 1	(10,5)	[(11,5)]	7	(6)	(NULL)	[1,NULL]
@@ -263,4 +269,7 @@ element member	1
 absent parent	(NULL)	((NULL))	((6))
 absent parent	\N	\N	6
 absent parent	0
+list member	[(5),(6)]	[(9)]
+list member	[5,6]	[9]
+list member	1
 malformed defaults

@@ -1215,6 +1215,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
         /// If header doesn't have column with current_path name and node is Array(Record),
         /// check if we have a flattened Nested table with such name.
         Names nested_names = Nested::getAllNestedColumnsForTable(header, current_path);
+        std::erase_if(nested_names, [&](const String & name) { return absent_columns.contains(name); });
         auto nested_avro_node = node->leafAt(0);
         if (nested_names.empty() || nested_avro_node->type() != avro::AVRO_RECORD)
             return AvroDeserializer::Action(createSkipFn(node));
@@ -1375,8 +1376,9 @@ void collectIcebergFieldIds(const Poco::Dynamic::Var & schema, UnorderedSetWithM
 }
 
 /// Iceberg reads a field whose id is not in a data file as NULL. Returns the columns of `header` whose
-/// field id is not in the file, if the file identifies all its top-level fields by id. Those of them in a struct that is absent
-/// too and has no struct default are NULL whatever their `initial-default`: they are also added to `columns_without_default`.
+/// field id is not in the file (of the field that has it, for a subcolumn), if the file identifies all its top-level fields by
+/// id. Those of them in a struct that is absent too and has no struct default are NULL whatever their `initial-default`: they
+/// are also added to `columns_without_default`.
 NameSet getColumnsAbsentFromIcebergFile(
     const Block & header,
     const ColumnMapper & column_mapper,
@@ -1414,12 +1416,12 @@ NameSet getColumnsAbsentFromIcebergFile(
     const auto & storage_encoding = column_mapper.getStorageColumnEncoding();
     for (const auto & column : header)
     {
-        auto field_id = storage_encoding.find(column.name);
+        const String field = column_mapper.getIcebergFieldPath(column.name);
+        auto field_id = storage_encoding.find(field);
         if (field_id == storage_encoding.end() || file_field_ids.contains(field_id->second))
             continue;
         result.insert(column.name);
-        for (String parent = column_mapper.getIcebergParentPath(column_mapper.getIcebergFieldPath(column.name)); !parent.empty();
-             parent = column_mapper.getIcebergParentPath(parent))
+        for (String parent = column_mapper.getIcebergParentPath(field); !parent.empty(); parent = column_mapper.getIcebergParentPath(parent))
         {
             auto parent_id = storage_encoding.find(parent);
             if (parent_id == storage_encoding.end() || file_field_ids.contains(parent_id->second))

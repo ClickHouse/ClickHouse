@@ -163,6 +163,14 @@ for table, mode in zip(sys.argv[1::2], sys.argv[2::2]):
         fields.append(struct_field("n", x(), None))
         fields.append(struct_field("d", struct_field("s", x(), None), {}))
         fields.append(struct_field("e", struct_field("s", x(), {}), {}))
+    elif mode == "list_member":
+        # `g` is added, `p` is dropped and added again.
+        fields[:] = [f for f in fields if f["name"] != "p"]
+        for name, default in (("g", [5, 6]), ("p", [9])):
+            member, element = new_id(), new_id()
+            fields.append({"id": new_id(), "name": name, "required": False, "initial-default": [{str(member): v} for v in default],
+                "type": {"type": "list", "element-id": element, "element-required": False, "element": {"type": "struct", "fields": [
+                    {"id": member, "name": "y", "required": False, "type": "int"}]}}})
     elif mode == "bad_long":
         fields.append({"id": new_id(), "name": "d", "required": False, "type": "long", "initial-default": "abc"})
     elif mode == "bad_timestamp":
@@ -688,6 +696,18 @@ for format in Parquet ORC Avro; do
         SELECT 'absent parent', n, d, e FROM icebergLocal('${table}/');
         SELECT 'absent parent', n.x, d.s.x, e.s.x FROM icebergLocal('${table}/');
         SELECT 'absent parent', count() FROM icebergLocal('${table}/') WHERE n.x = 6 OR d.s.x = 6;"
+
+    # The subcolumn of a member of an absent list, and of a list added again under a new id, is that member of its default.
+    table="${format}_list_member"
+    create+="
+        CREATE TABLE t_list_member (k Int32, p Array(Tuple(y Nullable(Int32)))) ENGINE = IcebergLocal('${table}/', '${format}');
+        INSERT INTO t_list_member VALUES (1, [(11), (12)]);"
+    evolve+=("${table}" list_member)
+    bind+=("${table}")
+    after+="
+        SELECT 'list member', g, p FROM icebergLocal('${table}/');
+        SELECT 'list member', g.y, p.y FROM icebergLocal('${table}/');
+        SELECT 'list member', count() FROM icebergLocal('${table}/') WHERE has(g.y, 5) AND has(p.y, 9);"
 
     ${LOCAL} --allow_insert_into_iceberg=1 -q "${create}"
     null_struct "${null_structs[@]}"
