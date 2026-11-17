@@ -1510,9 +1510,12 @@ public:
         /// A null map belongs to an in-process plan, which createDistributedQueryExecutor routes to
         /// the local executor instead.
         chassert(task_to_host_map);
-        if (const UInt64 dispatch_threads = context->getSettingsRef()[Setting::distributed_plan_task_dispatch_threads])
-            task_senders.emplace(CurrentMetrics::DistributedPlanTaskDispatchThreads, CurrentMetrics::DistributedPlanTaskDispatchThreadsActive,
-                CurrentMetrics::DistributedPlanTaskDispatchThreadsScheduled, dispatch_threads, dispatch_threads, /*queue_size=*/ 0);
+        /// One sender per worker at a time, so more threads than workers would stay idle.
+        const size_t workers = std::max<size_t>(task_to_host_map->getWorkerAddresses().size(), 1);
+        const UInt64 dispatch_threads = context->getSettingsRef()[Setting::distributed_plan_task_dispatch_threads];
+        const size_t sender_threads = dispatch_threads == 0 ? workers : std::min<size_t>(dispatch_threads, workers);
+        task_senders.emplace(CurrentMetrics::DistributedPlanTaskDispatchThreads, CurrentMetrics::DistributedPlanTaskDispatchThreadsActive,
+            CurrentMetrics::DistributedPlanTaskDispatchThreadsScheduled, sender_threads, sender_threads, /*queue_size=*/ 0);
         QueryStatusPtr query_status = context->getProcessListElement();
         Strings worker_hosts;
         for (const auto & worker : task_to_host_map->getWorkerAddresses())
@@ -2227,11 +2230,6 @@ protected:
 
             if (!start_sender)
                 continue;
-            if (!task_senders)
-            {
-                sendQueuedBatches(worker, queue);
-                continue;
-            }
 
             try
             {
@@ -2320,8 +2318,8 @@ protected:
     UnorderedMapWithMemoryTracking<WorkerIndex, VectorWithMemoryTracking<QueuedBatch>> queued_batches;
     /// The send queue of each worker that got batches; query thread only, a sender job holds its own queue.
     UnorderedMapWithMemoryTracking<WorkerIndex, std::shared_ptr<WorkerSendQueue>> send_queues;
-    /// Sends the batches of several workers at once; set when `distributed_plan_task_dispatch_threads` is positive. Declared last,
-    /// so its jobs are joined before the other members are destroyed.
+    /// Sends the batches, so the query thread never waits for a worker; set in the constructor. Declared last, so its jobs are
+    /// joined before the other members are destroyed.
     std::optional<ThreadPool> task_senders;
 };
 

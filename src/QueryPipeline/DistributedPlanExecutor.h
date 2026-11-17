@@ -182,7 +182,7 @@ protected:
 
     virtual void startStage(const String & stage_name, const DistributedQueryStage & stage) = 0;
     virtual bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) = 0;
-    /// Sends the tasks that `startStage` only queued; called before a wait for a stage and at the end of `start`.
+    /// Hands the tasks that `startStage` only queued to the senders; called before a wait for a stage and at the end of `start`.
     virtual void dispatchQueuedTasks() {}
 
     [[nodiscard]] virtual bool waitsForFilterOnlyStages() const { return false; }

@@ -11556,8 +11556,9 @@ A heuristic for the rule-based distributed planner. When the cost-based optimize
 )", EXPERIMENTAL, \
         {"25.7", 20000, 20000, "New experimental setting."}) \
     DECLARE(UInt64, distributed_plan_task_dispatch_threads, 0, R"(
-Number of stateless workers the tasks of a distributed query are sent to at the same time, one sender per worker; the
-batches of one worker are sent one after another. `0` sends from the query's thread, one worker after another.
+Number of stateless workers the tasks of a distributed query are sent to at the same time, one sender thread per worker;
+the batches of one worker are sent one after another. `0` sends to all the query's workers at once, `1` to one worker after
+another. The query's thread never sends.
 )", EXPERIMENTAL, \
         {"26.11", 0, 0, "New experimental setting."}) \
     DECLARE(Bool, distributed_plan_task_dispatch_batching, true, R"(

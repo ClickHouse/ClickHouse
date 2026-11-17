@@ -3,8 +3,8 @@
 # no-fasttest: the remote executor needs the stateless worker configuration.
 # no-parallel: the failpoint holds the task starts of every distributed query on the server.
 #
-# With `distributed_plan_task_dispatch_threads` > 0 the coordinator sends the `start_tasks` batches of several workers at once,
-# so a cancel can overtake a batch that is on the wire. The worker remembers the cancelled ids and ignores their late start.
+# The coordinator sends the `start_tasks` batches of several workers at once from its sender threads, so a cancel can
+# overtake a batch that is on the wire. The worker remembers the cancelled ids and ignores their late start.
 # The failpoint holds the worker's start handlers after the body is read, the query is killed meanwhile, and the batches are
 # released only after the worker has remembered every task the query queued.
 
