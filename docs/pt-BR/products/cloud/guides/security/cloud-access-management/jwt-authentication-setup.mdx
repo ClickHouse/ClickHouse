@@ -13,6 +13,10 @@ import { EnterprisePlanFeatureBadge } from "/snippets/pt-BR/components/Enterpris
 
 import { VersionBadge } from "/snippets/pt-BR/components/VersionBadge/VersionBadge.jsx";
 
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
 <VersionBadge minVersion="26.4" />
 
 <EnterprisePlanFeatureBadge feature="Autenticação JWT com provedor de identidade personalizado" />
@@ -24,12 +28,6 @@ import { VersionBadge } from "/snippets/pt-BR/components/VersionBadge/VersionBad
 O ClickHouse Cloud permite autenticar conexões com um serviço usando JSON Web Tokens (JWTs) validados nos seus próprios endpoints de JSON Web Key Set (JWKS). Em vez de gerenciar credenciais de banco de dados, seu provedor de identidade emite tokens de curta duração que o ClickHouse verifica com base nas chaves públicas publicadas em um URL JWKS configurado por você.
 
 Você pode configurar esses provedores JWKS para cada serviço em **Settings → Security** no Cloud Console do ClickHouse.
-
-<Tip>
-  **Usa o Microsoft Entra ID?**
-
-  Siga o guia [Autenticação JWT com o Microsoft Entra ID](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id) para ver a configuração do Entra ID, os valores do provedor que devem ser informados e como mapear as funções de aplicativo do Entra ID para funções do ClickHouse.
-</Tip>
 
 <div id="before-you-begin">
   ## Antes de começar
@@ -46,7 +44,9 @@ Para configurar provedores JWT para um serviço, você precisa de:
   Provedores baseados em JWKS aceitam chaves **RSA** e, a partir da versão 26.8, chaves **EC** nas curvas P-256, P-384 e P-521. Um documento JWKS pode conter outros tipos de chave, mas deve haver pelo menos uma chave utilizável.
 </Note>
 
-## Como funciona {#how-it-works}
+<div id="how-it-works">
+  ## Como funciona
+</div>
 
 O cliente (seu provedor de identidade ou aplicação) gera um JWT e o assina com sua **chave privada**. O token deve seguir o [formato de token](/pt-BR/concepts/features/security/external-authenticators/jwt#token-claims) esperado. Em seguida, o ClickHouse o verifica usando as chaves **públicas** publicadas no URL do seu JWKS:
 
@@ -105,4 +105,3 @@ O ClickHouse valida e busca o URL JWKS quando você adiciona ou atualiza um prov
 </div>
 
 * [Autenticação JWT](/pt-BR/concepts/features/security/external-authenticators/jwt) — claims de tokens, usuários efêmeros e uso do cliente.
-* [Autenticação JWT com Microsoft Entra ID](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id) — configure o Entra ID como provedor JWT.

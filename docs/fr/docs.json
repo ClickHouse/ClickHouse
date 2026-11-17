@@ -4,66 +4,42 @@
       "pages": [
         "fr/index"
       ],
-      "tab": "Accueil"
+      "tab": "Home"
     },
     {
       "menu": [
         {
-          "href": "#",
-          "icon": "/images/icons/icon-clickhouse.svg",
-          "item": "ClickHouse"
-        },
-        {
           "$ref": "./get-started/navigation.json"
-        },
-        {
-          "$ref": "./guides/navigation.json"
         },
         {
           "$ref": "./concepts/navigation.json"
         },
         {
-          "$ref": "./reference/navigation.json"
+          "$ref": "./guides/navigation.json"
         },
         {
-          "$ref": "./products/managed-postgres/navigation.json"
+          "$ref": "./reference/navigation.json"
         }
       ],
-      "tab": "Bases de données"
+      "tab": "Database"
     },
     {
       "menu": [
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Déploiements"
+          "item": "ClickHouse Cloud"
         },
         {
           "$ref": "./products/cloud/navigation.json"
         },
         {
-          "item": "BYOC",
-          "pages": [
-            "fr/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
-          ]
-        },
-        {
-          "href": "#",
-          "icon": "/images/icons/section-header.svg",
-          "item": "Applications"
-        },
-        {
-          "$ref": "./clickstack/navigation.json"
+          "$ref": "./products/managed-postgres/navigation.json"
         },
         {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
-          "item": "Ingénierie IA"
-        },
-        {
-          "href": "https://docs.runreveal.com/",
-          "icon": "/images/integrations/logos/runreveal.webp",
-          "item": "Sécurité"
+          "item": "Langfuse"
         },
         {
           "href": "#",
@@ -71,28 +47,24 @@
           "item": "Open source"
         },
         {
-          "item": "ClickStack",
-          "pages": [
-            "fr/clickstack/index"
-          ]
+          "$ref": "./clickstack/navigation.json"
+        },
+        {
+          "$ref": "./products/agentic-data-stack/navigation.json"
         },
         {
           "$ref": "./chdb/navigation.json"
         },
         {
           "$ref": "./products/kubernetes-operator/navigation.json"
-        },
-        {
-          "href": "https://www.librechat.ai/docs",
-          "item": "LibreChat"
         }
       ],
-      "tab": "Produits"
+      "tab": "Solutions"
     },
     {
       "menu": [
         {
-          "item": "Écosystème",
+          "item": "Ecosystem",
           "pages": [
             "fr/integrations/home",
             "fr/integrations/data-catalogs"
@@ -108,7 +80,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "Intégrations"
+      "tab": "Integrations"
     },
     {
       "menu": [
@@ -125,7 +97,7 @@
           "$ref": "./resources/about/navigation.json"
         }
       ],
-      "tab": "Ressources"
+      "tab": "Resources"
     }
   ]
 }

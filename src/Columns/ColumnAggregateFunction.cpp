@@ -17,6 +17,7 @@
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 #include <Common/FailPoint.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
@@ -54,11 +55,21 @@ static String getTypeString(const AggregateFunctionPtr & func, std::optional<siz
 
     stream << func->getName();
 
-    /// This name travels with every state serialized into a `Field`, so it must spell the state the
-    /// same way its state type does, or such a `Field` no longer matches the type it came from.
-    stream << DataTypeAggregateFunction::formatParameters(func->getParameters());
+    const auto & parameters = func->getParameters();
+    const auto & argument_types = func->getArgumentTypes();
+    if (!parameters.empty())
+    {
+        stream << '(';
+        for (size_t i = 0; i < parameters.size(); ++i)
+        {
+            if (i)
+                stream << ", ";
+            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
+        }
+        stream << ')';
+    }
 
-    for (const auto & argument_type : func->getArgumentTypes())
+    for (const auto & argument_type : argument_types)
         stream << ", " << argument_type->getName();
 
     stream << ')';
@@ -66,32 +77,19 @@ static String getTypeString(const AggregateFunctionPtr & func, std::optional<siz
 }
 
 
-/// A window function may keep its state in a faster layout that the type name does not show
-/// (see `AggregateFunctionStateVariant`). Such a state must not get into a column: other code can
-/// make the column's type again from its name, and would then read the state with the wrong layout.
-static void checkOrdinaryStateLayout(const IAggregateFunction & func)
-{
-    if (func.getStateVariant() != AggregateFunctionStateVariant::Aggregation)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "A column of `{}` states cannot hold states in the window function layout", func.getName());
-}
-
-
 ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_)
     : func(func_), type_string(getTypeString(func, version_)), version(version_)
 {
-    checkOrdinaryStateLayout(*func);
 }
 
 ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_)
     : foreign_arenas(arenas_), func(func_), type_string(getTypeString(func))
 {
-    checkOrdinaryStateLayout(*func);
+
 }
 
 void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_, std::optional<size_t> version_)
 {
-    checkOrdinaryStateLayout(*func_);
     func = func_;
     version = version_;
     type_string = getTypeString(func, version);
@@ -828,18 +826,13 @@ ColumnAggregateFunction::MutablePtr ColumnAggregateFunction::createView() const
 {
     auto res = create(func, concatArenas(foreign_arenas, my_arena));
     res->src = getPtr();
-    /// The view refers to the same states, so it must keep the state version:
-    /// the version affects how the states are serialized (e.g. in `groupArray` over a state column).
-    res->version = version;
-    res->type_string = type_string;
     return res;
 }
 
 ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction & src_)
     : COWHelper<IColumnHelper<ColumnAggregateFunction>, ColumnAggregateFunction>(src_),
     foreign_arenas(concatArenas(src_.foreign_arenas, src_.my_arena)),
-    func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end()),
-    type_string(src_.type_string), version(src_.version)
+    func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
 {
 }
 

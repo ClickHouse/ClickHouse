@@ -106,14 +106,6 @@ inline std::string calculateFlexibleChecksum(Model::UploadPartRequest & req, Alg
 
 Algorithm getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket);
 
-/// Whether `delete_checksum_algorithm` was set explicitly. An explicit value is never changed behind the user's back.
-bool hasExplicitDeleteChecksumAlgorithm(const S3RequestSettings & request_settings);
-
-/// The checksum for `DeleteObjects`, which cannot go without a digest. An explicit `delete_checksum_algorithm` wins;
-/// an explicit `MD5` is rejected when `S3Express` or when the `MD5` digest is unavailable (FIPS). Otherwise `MD5`,
-/// or `SHA256` when `MD5` is unavailable or the server already rejected it (`md5_rejected_by_server`).
-Algorithm getDeleteChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket, bool md5_rejected_by_server);
-
 template <typename R>
 inline void setChecksumAlgorithm(R & request, Algorithm algorithm)
 {
@@ -128,7 +120,7 @@ inline void setChecksumAlgorithm(R & request, Algorithm algorithm)
 Model::StorageClass getStorageClassForName(const std::string & name);
 
 /// Replace the significant `x-amz-` headers with their `x-goog-` analogue; GCS ignores the
-/// `x-amz-` spelling silently. `If-None-Match: *` also gets `x-goog-if-generation-match: 0`.
+/// `x-amz-` spelling silently.
 Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCollection headers);
 
 void translateHeadersToGCS(Aws::Http::HttpRequest & request);
@@ -241,33 +233,14 @@ public:
     bool ShouldComputeContentMd5() const override { return !hasFlexibleChecksum(); }
 };
 
-/// Custom object metadata key under which a writer stamps the id identifying itself.
-static constexpr auto IDEMPOTENCY_ID_METADATA_KEY = "clickhouse-idempotency-id";
-
-/// 22 characters drawn from `a`-`z`, about 103 bits. It only has to be unique among the writers
-/// racing for one key.
-static constexpr size_t IDEMPOTENCY_ID_LENGTH = 22;
-
-/// The id the writer stamped in the object's metadata. Set it and the client accepts a failure whose
-/// object carries it. Left empty, the client asks nothing.
-class RequestWithIdempotencyId
-{
-public:
-    void setIdempotencyId(Aws::String value) { idempotency_id = std::move(value); }
-    const Aws::String & getIdempotencyId() const { return idempotency_id; }
-
-private:
-    Aws::String idempotency_id;
-};
-
-class PutObjectRequest : public ExtendedRequest<Model::PutObjectRequest>, public RequestWithIdempotencyId
+class PutObjectRequest : public ExtendedRequest<Model::PutObjectRequest>
 {
 public:
     bool RequestChecksumRequired() const override { return hasFlexibleChecksum(); }
     bool ShouldComputeContentMd5() const override { return !hasFlexibleChecksum(); }
 };
 
-class CompleteMultipartUploadRequest : public ExtendedRequest<Model::CompleteMultipartUploadRequest>, public RequestWithIdempotencyId
+class CompleteMultipartUploadRequest : public ExtendedRequest<Model::CompleteMultipartUploadRequest>
 {
 public:
     void SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue) override;
@@ -288,8 +261,8 @@ public:
 class DeleteObjectsRequest : public ExtendedRequest<Model::DeleteObjectsRequest>
 {
 public:
-    bool RequestChecksumRequired() const override { return hasFlexibleChecksum(); }
-    bool ShouldComputeContentMd5() const override { return !hasFlexibleChecksum(); }
+    bool RequestChecksumRequired() const override { return is_s3express_bucket; }
+    bool ShouldComputeContentMd5() const override { return !is_s3express_bucket; }
 };
 
 class ComposeObjectRequest : public ExtendedRequest<Aws::S3::S3Request>

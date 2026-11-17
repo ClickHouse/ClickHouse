@@ -236,7 +236,7 @@ You can now simply use:
 ```sql
 SELECT encode_text('cat');
 ```
-The first run will be slow because it loads the model, but repeated runs will be fast. We can then copy the output to `SET param_target=...` and can easily write queries. Alternatively, the `encode_text()` function can directly be used as an argument to the `cosineDistance` function :
+The first run will be slow because it loads the model, but repeated runs will be fast. We can then copy the output to `SET param_target=...` and can easily write queries. Alternatively, the `encode_text()` function can directly be used as a argument to the `cosineDistance` function :
 
 ```SQL
 SELECT url

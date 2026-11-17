@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/ParsedTemplateFormatString.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <IO/PeekableReadBuffer.h>
@@ -48,7 +47,7 @@ public:
 
     using EscapingRule = FormatSettings::EscapingRule;
 
-    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name, size_t column_index) override;
+    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
 
     void skipField(size_t /*file_column*/) override { skipField(); }
     void skipField();
@@ -70,13 +69,13 @@ public:
     bool parseRowBetweenDelimiterWithDiagnosticInfo(WriteBuffer & out) override;
     bool tryParseSuffixWithDiagnosticInfo(WriteBuffer & out) override;
 
-    VectorWithMemoryTracking<String> readNames() override { return readHeaderRow(); }
-    VectorWithMemoryTracking<String> readTypes() override { return readHeaderRow(); }
-    VectorWithMemoryTracking<String> readHeaderRow() {return readRowImpl<ReadFieldMode::AS_STRING>(); }
+    std::vector<String> readNames() override { return readHeaderRow(); }
+    std::vector<String> readTypes() override { return readHeaderRow(); }
+    std::vector<String> readHeaderRow() {return readRowImpl<ReadFieldMode::AS_STRING>(); }
 
-    VectorWithMemoryTracking<String> readRow() { return readRowImpl<ReadFieldMode::AS_FIELD>(); }
+    std::vector<String> readRow() { return readRowImpl<ReadFieldMode::AS_FIELD>(); }
 
-    VectorWithMemoryTracking<String> readRowForHeaderDetection() override { return readRowImpl<ReadFieldMode::AS_POSSIBLE_STRING>(); }
+    std::vector<String> readRowForHeaderDetection() override { return readRowImpl<ReadFieldMode::AS_POSSIBLE_STRING>(); }
 
     bool checkForEndOfRow() override;
 
@@ -96,7 +95,7 @@ private:
     };
 
     template <ReadFieldMode mode>
-    VectorWithMemoryTracking<String> readRowImpl();
+    std::vector<String> readRowImpl();
 
     template <ReadFieldMode mode>
     String readFieldIntoString(bool is_first, bool is_last, bool is_unknown);
@@ -118,7 +117,7 @@ private:
 
     std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
 
-    std::optional<std::pair<VectorWithMemoryTracking<String>, DataTypes>> readRowAndGetFieldsAndDataTypes() override;
+    std::optional<std::pair<std::vector<String>, DataTypes>> readRowAndGetFieldsAndDataTypes() override;
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 

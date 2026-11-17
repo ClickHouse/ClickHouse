@@ -1938,11 +1938,6 @@ def rewrite_links(text: str, source_docu_file: str | None, lk: Lookups, issues: 
         line_prefix = text[line_start:idx].lstrip()
         return line_prefix.startswith("[//]:")
 
-    fenced_spans: list[tuple[int, int]] = []
-
-    def is_fenced_at(idx: int) -> bool:
-        return any(start <= idx < end for start, end in fenced_spans)
-
     def rewrite_one(href: str) -> str:
         # Strip stale MIGRATE markers and any trailing markdown title attribute.
         href = marker_re.sub("", href)
@@ -2002,7 +1997,7 @@ def rewrite_links(text: str, source_docu_file: str | None, lk: Lookups, issues: 
         return rewritten, None
 
     def md_repl(m):
-        if is_comment_line_at(m.start()) or is_fenced_at(m.start()):
+        if is_comment_line_at(m.start()):
             return m.group(0)
         href, marker = _split_marker(rewrite_one(m.group("href")))
         link = f"[{m.group('text')}]({href})"
@@ -2011,7 +2006,7 @@ def rewrite_links(text: str, source_docu_file: str | None, lk: Lookups, issues: 
         return link
 
     def html_repl(m):
-        if is_comment_line_at(m.start()) or is_fenced_at(m.start()):
+        if is_comment_line_at(m.start()):
             return m.group(0)
         href, marker = _split_marker(rewrite_one(m.group(2)))
         attr = f'{m.group(1)}"{href}"'
@@ -2019,9 +2014,7 @@ def rewrite_links(text: str, source_docu_file: str | None, lk: Lookups, issues: 
             attr += f"{{/* MIGRATE: {marker} */}}"
         return attr
 
-    fenced_spans = _fenced_spans(text)
     text = LINK_RE.sub(md_repl, text)
-    fenced_spans = _fenced_spans(text)
     text = HREF_ATTR_RE.sub(html_repl, text)
     # Markdown reference-style link definitions: `[label]: <url>` or
     # `[label]: url` at the start of a line. Skip the special `[//]: # `
@@ -2031,14 +2024,13 @@ def rewrite_links(text: str, source_docu_file: str | None, lk: Lookups, issues: 
         re.MULTILINE,
     )
     def ref_repl(m):
-        if m.group("label").strip() == "//" or is_fenced_at(m.start()):
+        if m.group("label").strip() == "//":
             return m.group(0)
         href, marker = _split_marker(rewrite_one(m.group("href")))
         line = f'{m.group("indent")}[{m.group("label")}]: {href}'
         if marker:
             line += f"  {{/* MIGRATE: {marker} */}}"
         return line
-    fenced_spans = _fenced_spans(text)
     text = REF_DEF_RE.sub(ref_repl, text)
     # Strip any orphaned MIGRATE markers left outside a link's closing `)` from
     # previous migration runs. These appear as `](url){/* MIGRATE: ... */}...`

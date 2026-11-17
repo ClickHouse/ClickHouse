@@ -44,6 +44,10 @@ The Kubernetes cluster (EKS for AWS, GKE for GCP, AKS for Azure) that hosts your
 Kubernetes node upgrades may cause brief pod restarts during the migration process. ClickHouse Cloud uses pod disruption budgets and graceful shutdowns to minimize impact on your workloads.
 </Note>
 
+### Upgrade Schedule {#upgrade-schedule}
+
+Kubernetes cluster upgrades are scheduled in coordination with you through ClickHouse Support. We will communicate upgrade plans in advance and work with you to identify an appropriate maintenance window that minimizes operational impact.
+
 ### Version Support {#version-support}
 
 ClickHouse Cloud maintains Kubernetes clusters within the supported version ranges defined by your cloud service provider (AWS EKS, Google GKE, or Azure AKS). We ensure your cluster remains compatible with provider requirements while staying current with security patches and feature updates.

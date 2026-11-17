@@ -7,7 +7,6 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/Arena.h>
@@ -2026,17 +2025,4 @@ void ColumnVariant::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking
 }
 
 
-ColumnPlanes ColumnVariant::getPlanes() const
-{
-    ColumnPlanes planes(ColumnPlanes::Shape::Variant, getLocalDiscriminators().data(), getOffsets().data());
-    const size_t num_variants = variants.size();
-    planes.children.reserve(num_variants);
-    planes.local_to_global.reserve(num_variants);
-    for (size_t i = 0; i < num_variants; ++i)
-    {
-        planes.children.push_back(&getVariantByGlobalDiscriminator(i));
-        planes.local_to_global.push_back(globalDiscriminatorByLocal(static_cast<Discriminator>(i)));
-    }
-    return planes;
-}
 }
