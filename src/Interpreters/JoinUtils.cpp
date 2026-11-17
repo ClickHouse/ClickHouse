@@ -712,7 +712,6 @@ void joinTotals(Block left_totals, Block right_totals, const TableJoin & table_j
 
 ColumnPtr totalsColumnToSingleRow(const ColumnPtr & column, const DataTypePtr & type)
 {
-    /// A constant keeps its value.
     if (column->empty() && !isColumnConst(*column) && !type->isDefaultInsertTrivial())
         return type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
     if (column->size() != 1)
