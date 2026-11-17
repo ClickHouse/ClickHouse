@@ -169,10 +169,12 @@ BlockIO InterpreterCreateQuotaQuery::execute()
         if (query.if_exists)
         {
             auto ids = storage->find<Quota>(query.names);
-            storage->tryUpdate(ids, update_func);
+            /// The IDs are resolved in the requested storage, but the update goes through `AccessControl`,
+            /// so a rename is checked against the names in the other storages too.
+            access_control.tryUpdate(ids, update_func);
         }
         else
-            storage->update(storage->getIDs<Quota>(query.names), update_func);
+            access_control.update(storage->getIDs<Quota>(query.names), update_func);
     }
     else
     {

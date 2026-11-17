@@ -108,10 +108,12 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
         if (query.if_exists)
         {
             auto ids = storage->find<RowPolicy>(names);
-            storage->tryUpdate(ids, update_func);
+            /// The IDs are resolved in the requested storage, but the update goes through `AccessControl`,
+            /// so a rename is checked against the names in the other storages too.
+            access_control.tryUpdate(ids, update_func);
         }
         else
-            storage->update(storage->getIDs<RowPolicy>(names), update_func);
+            access_control.update(storage->getIDs<RowPolicy>(names), update_func);
     }
     else
     {
