@@ -2,6 +2,7 @@
 #include <Formats/FormatSettings.h>
 
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/castColumn.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Core/AccurateComparison.h>
@@ -12,6 +13,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVariant.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/ConstantValue.h>
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/IDataType.h>
@@ -595,6 +597,17 @@ ColumnPtr tryConvertColumnToTypeOrNull(const IColumn & value, const DataTypePtr 
 ColumnPtr convertColumnToTypeOrThrow(const IColumn & value, const DataTypePtr & from, const DataTypePtr & to)
 {
     return convertColumnToTypeOrThrow(value, from, to, FormatSettings{});
+}
+
+ConstantValue resolveActiveAlternative(const ConstantValue & value)
+{
+    const DataTypePtr active_type = resolveActiveAlternativeType(value.getColumn()->getDataColumn(), value.getType());
+    if (active_type == value.getType())
+        return value;
+
+    /// `CAST` from a `Variant`/`Dynamic` to the type of its active alternative extracts that alternative's value.
+    const ColumnPtr active = castColumn({value.getColumn()->getDataColumnPtr(), value.getType(), ""}, active_type);
+    return ConstantValue{ConstantValue::wrapToColumnConst(active), active_type};
 }
 
 }
