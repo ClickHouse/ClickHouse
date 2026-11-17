@@ -1,0 +1,19 @@
+<test>
+    <create_query>CREATE TABLE set_index_integer_default (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192</create_query>
+    <create_query>CREATE TABLE set_index_integer_small_marks (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 64</create_query>
+
+    <fill_query>INSERT INTO set_index_integer_default SELECT number FROM numbers(5000000)</fill_query>
+    <fill_query>INSERT INTO set_index_integer_small_marks SELECT number FROM numbers(5000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE set_index_integer_default FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE set_index_integer_small_marks FINAL</fill_query>
+
+    <query>SELECT count() FROM set_index_integer_default WHERE id IN (SELECT number * 4999 FROM numbers(1000)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM set_index_integer_default WHERE id IN (SELECT number * 25 FROM numbers(200000)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM set_index_integer_default WHERE id IN (SELECT intHash64(number) FROM numbers(200000)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM set_index_integer_small_marks WHERE id IN (SELECT number * 4999 FROM numbers(1000)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM set_index_integer_small_marks WHERE id IN (SELECT number * 25 FROM numbers(200000)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM set_index_integer_small_marks WHERE id IN (SELECT intHash64(number) FROM numbers(200000)) SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS set_index_integer_default</drop_query>
+    <drop_query>DROP TABLE IF EXISTS set_index_integer_small_marks</drop_query>
+</test>
