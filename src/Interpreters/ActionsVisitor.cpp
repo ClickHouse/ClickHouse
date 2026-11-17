@@ -585,7 +585,7 @@ public:
         index.push_back(node);
     }
 
-    [[nodiscard]] const ActionsDAG::Node * tryGetNode(const std::string & name) const
+    const ActionsDAG::Node * tryGetNode(const std::string & name) const
     {
         auto it = map.find(name);
         if (it == map.end())
@@ -594,7 +594,7 @@ public:
         return it->second;
     }
 
-    [[nodiscard]] const ActionsDAG::Node & getNode(const std::string & name) const
+    const ActionsDAG::Node & getNode(const std::string & name) const
     {
         const auto * node = tryGetNode(name);
         if (!node)
@@ -603,9 +603,9 @@ public:
         return *node;
     }
 
-    [[nodiscard]] bool contains(const std::string & name) const { return map.contains(name); }
+    bool contains(const std::string & name) const { return map.contains(name); }
 
-    [[nodiscard]] std::vector<std::string_view> getAllNames() const
+    std::vector<std::string_view> getAllNames() const
     {
         std::vector<std::string_view> result;
         result.reserve(map.size());

@@ -49,7 +49,7 @@ public:
         bool is_using_join_expression_);
 
     /// Get left table expression
-    [[nodiscard]] const ITableExpressionNode & getLeftTableExpression() const
+    const ITableExpressionNode & getLeftTableExpression() const
     {
         return children[left_table_expression_child_index]->assertTableExpression();
     }
@@ -60,20 +60,20 @@ public:
         return children[left_table_expression_child_index];
     }
 
-    [[nodiscard]] const QueryTreeNodePtr & getLeftTableExpressionNode() const
+    const QueryTreeNodePtr & getLeftTableExpressionNode() const
     {
         return children[left_table_expression_child_index];
     }
 
     /// Get left table expression
-    [[nodiscard]] TableExpressionNodePtr getLeftTableExpressionNodeTyped() const
+    TableExpressionNodePtr getLeftTableExpressionNodeTyped() const
     {
         children[left_table_expression_child_index]->assertTableExpression();
         return static_pointer_cast<ITableExpressionNode>(children[left_table_expression_child_index]);
     }
 
     /// Get right table expression
-    [[nodiscard]] const ITableExpressionNode & getRightTableExpression() const
+    const ITableExpressionNode & getRightTableExpression() const
     {
         return children[right_table_expression_child_index]->assertTableExpression();
     }
@@ -85,26 +85,26 @@ public:
     }
 
     /// Get right table expression
-    [[nodiscard]] const QueryTreeNodePtr & getRightTableExpressionNode() const
+    const QueryTreeNodePtr & getRightTableExpressionNode() const
     {
         return children[right_table_expression_child_index];
     }
 
     /// Get right table expression
-    [[nodiscard]] TableExpressionNodePtr getRightTableExpressionNodeTyped() const
+    TableExpressionNodePtr getRightTableExpressionNodeTyped() const
     {
         children[right_table_expression_child_index]->assertTableExpression();
         return static_pointer_cast<ITableExpressionNode>(children[right_table_expression_child_index]);
     }
 
     /// Returns true if join has join expression, false otherwise
-    [[nodiscard]] bool hasJoinExpression() const
+    bool hasJoinExpression() const
     {
         return children[join_expression_child_index] != nullptr;
     }
 
     /// Get join expression
-    [[nodiscard]] const QueryTreeNodePtr & getJoinExpression() const
+    const QueryTreeNodePtr & getJoinExpression() const
     {
         return children[join_expression_child_index];
     }
@@ -116,19 +116,19 @@ public:
     }
 
     /// Returns true if join has USING join expression, false otherwise
-    [[nodiscard]] bool isUsingJoinExpression() const
+    bool isUsingJoinExpression() const
     {
         return hasJoinExpression() && is_using_join_expression;
     }
 
     /// Returns true if join has ON join expression, false otherwise
-    [[nodiscard]] bool isOnJoinExpression() const
+    bool isOnJoinExpression() const
     {
         return hasJoinExpression() && !is_using_join_expression;
     }
 
     /// Returns true if this is a NATURAL JOIN (USING columns are derived from common column names)
-    [[nodiscard]] bool isNaturalJoin() const
+    bool isNaturalJoin() const
     {
         return is_natural;
     }
@@ -146,7 +146,7 @@ public:
     }
 
     /// Get join locality
-    [[nodiscard]] JoinLocality getLocality() const
+    JoinLocality getLocality() const
     {
         return locality;
     }
@@ -158,13 +158,13 @@ public:
     }
 
     /// Get join strictness
-    [[nodiscard]] JoinStrictness getStrictness() const
+    JoinStrictness getStrictness() const
     {
         return strictness;
     }
 
     /// Get join kind
-    [[nodiscard]] JoinKind getKind() const
+    JoinKind getKind() const
     {
         return kind;
     }
@@ -176,7 +176,7 @@ public:
     }
 
     /// Returns true if join is LATERAL, false otherwise
-    [[nodiscard]] bool isLateral() const
+    bool isLateral() const
     {
         return lateral;
     }
@@ -188,9 +188,9 @@ public:
     }
 
     /// Convert join node to ASTTableJoin
-    [[nodiscard]] ASTPtr toASTTableJoin() const;
+    ASTPtr toASTTableJoin() const;
 
-    [[nodiscard]] QueryTreeNodeType getNodeType() const override
+    QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::JOIN;
     }
@@ -205,13 +205,13 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(HashState & state, CompareOptions) const override;
 
-    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
+    QueryTreeNodePtr cloneImpl() const override;
 
-    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     JoinLocality locality = JoinLocality::Unspecified;
@@ -262,7 +262,7 @@ public:
         return children;
     }
 
-    [[nodiscard]] const QueryTreeNodes & getTableExpressions() const
+    const QueryTreeNodes & getTableExpressions() const
     {
         return children;
     }
@@ -273,7 +273,7 @@ public:
         return child->assertTableExpression();
     }
 
-    [[nodiscard]] TableExpressionNodePtr getTableExpressionTypedAt(size_t pos) const
+    TableExpressionNodePtr getTableExpressionTypedAt(size_t pos) const
     {
         const auto & child = children.at(pos);
         child->assertTableExpression();
@@ -283,7 +283,7 @@ public:
     /// The size is getTableExpressions.size() - 1
     const JoinTypes & getJoinTypes() { return join_types; }
 
-    [[nodiscard]] QueryTreeNodeType getNodeType() const override
+    QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::CROSS_JOIN;
     }
@@ -291,13 +291,13 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(HashState & state, CompareOptions) const override;
 
-    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
+    QueryTreeNodePtr cloneImpl() const override;
 
-    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
     JoinTypes join_types;
 };

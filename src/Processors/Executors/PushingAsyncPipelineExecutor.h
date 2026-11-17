@@ -36,7 +36,7 @@ public:
     ~PushingAsyncPipelineExecutor();
 
     /// Get structure of returned block or chunk.
-    [[nodiscard]] const Block & getHeader() const;
+    const Block & getHeader() const;
 
     void start();
 

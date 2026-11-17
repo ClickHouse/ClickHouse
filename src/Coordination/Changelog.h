@@ -417,19 +417,19 @@ private:
 
         void popOldestEntry();
 
-        [[nodiscard]] bool containsEntry(uint64_t index) const;
+        bool containsEntry(uint64_t index) const;
 
-        [[nodiscard]] LogEntryPtr getEntry(uint64_t index) const;
+        LogEntryPtr getEntry(uint64_t index) const;
 
         void cleanUpTo(uint64_t index);
         void cleanAfter(uint64_t index);
 
-        [[nodiscard]] bool empty() const;
-        [[nodiscard]] size_t numberOfEntries() const;
-        [[nodiscard]] bool hasSpaceAvailable(size_t entry_bytes) const;
+        bool empty() const;
+        size_t numberOfEntries() const;
+        bool hasSpaceAvailable(size_t entry_bytes) const;
         void clear();
 
-        [[nodiscard]] bool hasUnlimitedSpace() const;
+        bool hasUnlimitedSpace() const;
 
         /// Mapping log_id -> log_entry
         IndexToLogEntry cache;
