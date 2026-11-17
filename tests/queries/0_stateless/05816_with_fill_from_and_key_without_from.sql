@@ -1,3 +1,4 @@
+-- Random settings limits: optimize_distinct_in_order=(1, 1)
 -- The row filled from `FROM` of the first key is in the group of the next original row:
 -- a later key without `FROM` takes the value of that row, not the column default.
 
@@ -56,3 +57,6 @@ ORDER BY a WITH FILL FROM 1, b WITH FILL STALENESS 3, c WITH FILL FROM 0;
 
 SELECT * FROM values('a Int64, b Int64', (0, 5), (1, -3), (1, 2))
 ORDER BY a WITH FILL FROM 1, b WITH FILL;
+
+SELECT * FROM values('a Int64, b Int64, c Int64, d Int64', (1, -3, 7, 1), (1, 10, -2, 2))
+ORDER BY a WITH FILL, b WITH FILL FROM 10, c WITH FILL, d WITH FILL FROM 0;
