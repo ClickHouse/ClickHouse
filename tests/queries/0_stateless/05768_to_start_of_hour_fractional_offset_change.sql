@@ -67,6 +67,21 @@ SELECT countIf(s < p)
 FROM (SELECT s, lagInFrame(s, 1, s) OVER (ORDER BY t ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS p
       FROM (SELECT t, toUnixTimestamp64Second(toStartOfHour(t)) AS s
             FROM (SELECT toTimeZone(toDateTime64('2400-04-01 10:00:00', 0, 'UTC') + toIntervalMinute(number), 'Australia/Lord_Howe') AS t FROM numbers(3 * 1440))));
+
+SELECT 'the hour starts at the offset change inside the repeated and skipped half hour after 2299, and rounding again keeps it';
+WITH toDateTime64('2400-10-01 02:40:00', 0, 'Australia/Lord_Howe') AS t
+SELECT toStartOfHour(t), toStartOfHour(toStartOfHour(t)), dateTrunc('hour', t), toStartOfInterval(t, INTERVAL 1 HOUR);
+WITH toTimeZone(toDateTime64('2400-04-01 15:10:00', 0, 'UTC'), 'Australia/Lord_Howe') AS t
+SELECT toTimeZone(toStartOfHour(t), 'UTC'), toTimeZone(toStartOfHour(toStartOfHour(t)), 'UTC');
+WITH toTimeZone(toDateTime64('2400-04-01 14:50:00', 0, 'UTC'), 'Australia/Lord_Howe') AS t
+SELECT toTimeZone(toStartOfHour(t), 'UTC');
+
+SELECT 'the start of the hour is a whole hour on the clock or the offset change itself, and rounding it again keeps it';
+SELECT countIf(toStartOfHour(s) != s OR NOT (toMinute(s) = 0 AND toSecond(s) = 0 OR timeZoneOffset(s) != timeZoneOffset(s - 1)))
+FROM (SELECT toStartOfHour(t) AS s
+      FROM (SELECT toTimeZone(toDateTime64(start, 0, 'UTC') + toIntervalMinute(number), 'Australia/Lord_Howe') AS t
+            FROM numbers(3 * 1440)
+            ARRAY JOIN ['2024-04-06 10:00:00', '2024-10-05 10:00:00', '2400-04-01 10:00:00', '2400-09-30 10:00:00'] AS start));
 SET enable_extended_results_for_datetime_functions = 0;
 
 SELECT 'time windows are a fixed hour long, so each one contains its time';

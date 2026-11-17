@@ -1051,11 +1051,8 @@ public:
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(t)))
             {
-                /// The values of a day outside the lookup table have no offset change. Count the hour on the local
-                /// clock instead: the seconds since the local midnight, plus the offset change since then.
-                const Time date = outOfRangeValues(t).date;
-                const Time clock = (static_cast<Time>(t) - date) + (timezoneOffsetOutOfRange(t) - timezoneOffsetOutOfRange(date));
-                return static_cast<DateOrTime>(static_cast<Time>(t) - clock % 3600);
+                /// The values of a day outside the lookup table have no offset change, so it is looked up with cctz.
+                return static_cast<DateOrTime>(toStartOfHourOutOfRange(static_cast<Time>(t)));
             }
 
         if (static_cast<Time>(t) >= 0 && offset_is_whole_number_of_hours_during_epoch) [[likely]]
@@ -2099,6 +2096,7 @@ private:
     [[nodiscard]] Time toTimeOutOfRange(Time t) const;
     [[nodiscard]] Time timezoneOffsetOutOfRange(Time t) const;
     [[nodiscard]] Time timezoneOffsetAtLocalTimeOutOfRange(Time t) const;
+    [[nodiscard]] Time toStartOfHourOutOfRange(Time t) const;
     [[nodiscard]] Time addDaysOutOfRange(Time t, Int64 delta) const;
     [[nodiscard]] Time addMonthsOutOfRange(Time t, Int64 delta) const;
     [[nodiscard]] Time addYearsOutOfRange(Time t, Int64 delta) const;

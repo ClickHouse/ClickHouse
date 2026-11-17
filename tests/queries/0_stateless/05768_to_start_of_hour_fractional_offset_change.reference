@@ -33,6 +33,12 @@ dates outside the lookup table (after 2299) follow the offset changes too
 0
 0
 0
+the hour starts at the offset change inside the repeated and skipped half hour after 2299, and rounding again keeps it
+2400-10-01 02:30:00	2400-10-01 02:30:00	2400-10-01 02:30:00	2400-10-01 02:30:00
+2400-04-01 15:00:00	2400-04-01 15:00:00
+2400-04-01 14:00:00
+the start of the hour is a whole hour on the clock or the offset change itself, and rounding it again keeps it
+0
 time windows are a fixed hour long, so each one contains its time
 0
 0

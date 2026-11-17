@@ -465,6 +465,41 @@ DateLUTImpl::Time DateLUTImpl::timezoneOffsetAtLocalTimeOutOfRange(Time t) const
         cctz_time_zone->lookup(local).post);
 }
 
+DateLUTImpl::Time DateLUTImpl::toStartOfHourOutOfRange(Time t) const
+{
+    /// The same rounding as `roundDownToWallClockHour` does inside the lookup table, with the offset change
+    /// of the day taken from the time zone rules: the last whole hour on the clock after the change, but not
+    /// before the change itself. Days without an offset change by a fraction of an hour are rounded on the
+    /// grid counted from the local midnight, as `roundDown` does.
+    const Time date = outOfRangeValues(t).date;
+    Time time = t - date;
+
+    const Time offset_at_date = timezoneOffsetOutOfRange(date);
+    const Time amount = timezoneOffsetOutOfRange(t) - offset_at_date;
+    if (amount % 3600 == 0)
+        return date + time / 3600 * 3600;
+
+    /// Find the instant of the offset change between `date` and `t`: the first second with the new offset.
+    Time before = date;
+    Time after = t;
+    while (after - before > 1)
+    {
+        const Time middle = before + (after - before) / 2;
+        if (timezoneOffsetOutOfRange(middle) == offset_at_date)
+            before = middle;
+        else
+            after = middle;
+    }
+    const Time time_at_offset_change = after - date;
+
+    const Time clock = time + amount;
+    Time clock_hour = clock / 3600 * 3600;
+    if (clock < 0 && clock % 3600 != 0)
+        clock_hour -= 3600;
+    time = std::max(clock_hour - amount, time_at_offset_change);
+    return date + time;
+}
+
 DateLUTImpl::Time DateLUTImpl::addDaysOutOfRange(Time t, Int64 delta) const
 {
     /// Keep the same wall-clock time of day, but on the day that is `delta` days away.
