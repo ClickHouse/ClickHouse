@@ -2728,6 +2728,15 @@ FileSegmentSummaryInfoList FileCache::observeFilesystemCache(
     const std::atomic<bool> * cancellation_flag)
 {
     assertInitialized();
+
+    /// The overcommit policies keep a queue per user, which the walk over the queue does not reach.
+    const auto type = main_priority->getType();
+    if (type == IFileCachePriority::Type::LRU_OVERCOMMIT || type == IFileCachePriority::Type::SLRU_OVERCOMMIT)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Observing the filesystem cache '{}' is not supported for the overcommit cache policies",
+            getName());
+
     return main_priority->observeFilesystemCache(query_max_elements, query_max_total_size, query_order, cancellation_flag);
 }
 
