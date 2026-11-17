@@ -6,10 +6,10 @@ CREATE TABLE t_max_rows_to_use_cache (x UInt64) ENGINE = MergeTree ORDER BY x SE
 INSERT INTO t_max_rows_to_use_cache SELECT number FROM numbers(100000);
 
 SELECT sum(x) FROM t_max_rows_to_use_cache
-SETTINGS use_uncompressed_cache = 1, use_columns_cache = 0, merge_tree_max_rows_to_use_cache = 18446744073709551615, merge_tree_max_bytes_to_use_cache = 18446744073709551615, log_comment = '05407_max_value';
+SETTINGS use_uncompressed_cache = 1, use_columns_cache = 0, use_statistics_for_sum_avg_aggregation = 0, merge_tree_max_rows_to_use_cache = 18446744073709551615, merge_tree_max_bytes_to_use_cache = 18446744073709551615, log_comment = '05407_max_value';
 
 SELECT sum(x) FROM t_max_rows_to_use_cache
-SETTINGS use_uncompressed_cache = 1, use_columns_cache = 0, merge_tree_max_rows_to_use_cache = 1000000000000, merge_tree_max_bytes_to_use_cache = 1000000000000, log_comment = '05407_large_value';
+SETTINGS use_uncompressed_cache = 1, use_columns_cache = 0, use_statistics_for_sum_avg_aggregation = 0, merge_tree_max_rows_to_use_cache = 1000000000000, merge_tree_max_bytes_to_use_cache = 1000000000000, log_comment = '05407_large_value';
 
 SYSTEM FLUSH LOGS query_log;
 

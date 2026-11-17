@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/hasNullable.h>
 #include <Functions/FunctionTopKFilter.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/HashTablesStatistics.h>
@@ -219,10 +220,10 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
 
     const auto & key_column = header.getByName(key_name);
 
-    /// The same type restrictions as `tryOptimizeTopK`: `__topKFilter` cannot compare `Dynamic`, `Variant`
-    /// and empty tuples, and comparing variable-length values row by row may cost more than it saves.
+    /// The same type restrictions as `tryOptimizeTopK`: no Dynamic, Variant or JSON anywhere in the key, no empty
+    /// tuples, and comparing variable-length values row by row may cost more than it saves.
     const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_column.type.get());
-    if (isDynamic(key_column.type) || isVariant(key_column.type) || (key_tuple_type && key_tuple_type->getElements().empty())
+    if (hasRuntimeTypedType(key_column.type) || (key_tuple_type && key_tuple_type->getElements().empty())
         || (!key_column.type->haveMaximumSizeOfValue() && !settings.use_top_k_dynamic_filtering_for_variable_length_types))
     {
         LOG_TRACE(log, "No dynamic filter: the key {} has type {}", key_name, key_column.type->getName());
