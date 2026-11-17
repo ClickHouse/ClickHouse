@@ -55,6 +55,12 @@ $CLICKHOUSE_CLIENT -q "CREATE DATABASE ${CLICKHOUSE_DATABASE}_rep ENGINE = Repli
 $CLICKHOUSE_CLIENT --user "$user" -q "UNDROP TABLE ${CLICKHOUSE_DATABASE}_rep.t ON CLUSTER ${CLICKHOUSE_DATABASE}_rep" 2>&1 | grep -Fq "(ACCESS_DENIED)" && echo OK
 $CLICKHOUSE_CLIENT --user "$user" -q "UNDROP TABLE ${CLICKHOUSE_DATABASE}_absent.t ON CLUSTER ${CLICKHOUSE_DATABASE}_absent" 2>&1 | grep -Fq "(ACCESS_DENIED)" && echo OK
 
+$CLICKHOUSE_CLIENT -q "GRANT UNDROP TABLE ON shard_0.t_05812 TO $user"
+$CLICKHOUSE_CLIENT --user "$user" --distributed_ddl_task_timeout 0 -q "UNDROP TABLE t_05812 ON CLUSTER test_cluster_two_shards_different_databases" 2>&1 | grep -Fq "(ACCESS_DENIED)" && echo OK
+$CLICKHOUSE_CLIENT -q "GRANT UNDROP TABLE ON shard_1.t_05812 TO $user"
+out=$($CLICKHOUSE_CLIENT --user "$user" --distributed_ddl_task_timeout 0 -q "UNDROP TABLE t_05812 ON CLUSTER test_cluster_two_shards_different_databases" 2>&1)
+[ -z "$out" ] && echo OK
+
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${CLICKHOUSE_DATABASE}_rep"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${CLICKHOUSE_DATABASE}_other"
 $CLICKHOUSE_CLIENT -q "DROP USER $user"

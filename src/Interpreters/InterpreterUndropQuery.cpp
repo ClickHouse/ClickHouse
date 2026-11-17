@@ -37,7 +37,9 @@ BlockIO InterpreterUndropQuery::execute()
     if (!undrop.cluster.empty())
     {
         /// Check the grant before `maybeRemoveOnCluster` looks at the database, so its existence and engine are not revealed.
-        getContext()->checkAccess(AccessType::UNDROP_TABLE, undrop.getDatabase(), undrop.getTable());
+        /// An unqualified name is checked by `executeDDLQueryOnCluster`, which knows the default databases of the shards.
+        if (undrop.database)
+            getContext()->checkAccess(AccessType::UNDROP_TABLE, undrop.getDatabase(), undrop.getTable());
         if (!maybeRemoveOnCluster(query_ptr, getContext()))
         {
             DDLQueryOnClusterParams params;
