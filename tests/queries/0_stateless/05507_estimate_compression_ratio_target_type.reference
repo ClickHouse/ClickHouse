@@ -33,6 +33,7 @@ aggregation
 1
 1
 1000	1
+1000	0
 states
 1	AggregateFunction(estimateCompressionRatio(\'LZ4\', \'String\'), String)
 1

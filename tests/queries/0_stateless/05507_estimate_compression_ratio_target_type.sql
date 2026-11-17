@@ -171,6 +171,18 @@ SELECT count(), min(r) > 0 FROM
     SELECT estimateCompressionRatio('LZ4', 'String')(s) OVER (ORDER BY n ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS r
     FROM src WHERE n < 1000
 );
+-- The rows of a small group that several threads read are estimated as one part, as with one thread. The rows of each group
+-- are equal, so the order in which the threads pass them on does not matter.
+DROP TABLE IF EXISTS group_results;
+CREATE TABLE group_results (threads UInt8, k UInt64, r Float64) ENGINE = Memory;
+INSERT INTO group_results SELECT 1, k, estimateCompressionRatio('ZSTD(1)', 'String')(s)
+FROM (SELECT number % 1000 AS k, concat('value_', toString(number % 1000)) AS s FROM numbers_mt(1000000)) GROUP BY k
+SETTINGS max_threads = 1;
+INSERT INTO group_results SELECT 8, k, estimateCompressionRatio('ZSTD(1)', 'String')(s)
+FROM (SELECT number % 1000 AS k, concat('value_', toString(number % 1000)) AS s FROM numbers_mt(1000000)) GROUP BY k
+SETTINGS max_threads = 8, max_block_size = 8192;
+SELECT count(), countIf(results != 1) FROM (SELECT k, uniqExact(r) AS results FROM group_results GROUP BY k);
+DROP TABLE group_results;
 
 SELECT 'states';
 -- `-State` keeps the two sizes; `-Merge` of one state and `finalizeAggregation` give the result.

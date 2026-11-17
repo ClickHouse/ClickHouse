@@ -457,11 +457,23 @@ public:
         addRows(data(place), *rows, 0, rows->size());
     }
 
+    /// The other state is often another thread's share of the same group. If it has not opened a part, its rows are added to
+    /// this state, so that they are written to the same part: the block headers and dictionaries of a part of its own would
+    /// outweigh a few hundred rows. A state that has opened a part is finished as a part. The other state is not changed
+    /// otherwise, so a state kept in a `Memory` table can be read again.
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        auto [source_bytes, compressed_bytes] = read(rhs);
-        data(place).source_bytes += source_bytes;
-        data(place).compressed_bytes += compressed_bytes;
+        auto & rhs_ref = data(const_cast<AggregateDataPtr>(rhs));
+        std::lock_guard lock(rhs_ref.mutex);
+        throwIfBroken(rhs_ref);
+        if (rhs_ref.part)
+            finish(rhs_ref);
+
+        auto & data_ref = data(place);
+        data_ref.source_bytes += rhs_ref.source_bytes;
+        data_ref.compressed_bytes += rhs_ref.compressed_bytes;
+        if (rhs_ref.pending)
+            addRows(data_ref, *rhs_ref.pending, 0, rhs_ref.pending->size());
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
@@ -846,8 +858,8 @@ compressed stream per substream (for example, the sizes and the characters of a 
 a `LowCardinality` column), granules of 8192 rows or 10 MiB in `target_type`, sparse serialization for columns of mostly default values (decided from
 the first rows of a state, 8192 or the rows of 1 MiB, where a part decides from all its rows). It does not read the settings of any table. The values are
 converted as `CAST` converts them, as `ALTER TABLE ... MODIFY COLUMN` does. The numerator of a
-`LowCardinality` column is the size of its values, not of its dictionary. Every thread of a query estimates its rows as a
-separate part, so use `max_threads = 1` for a stable result. `Dynamic` and `JSON` are not supported as target types, nor as
+`LowCardinality` column is the size of its values, not of its dictionary. The rows of a group that one thread of a query
+gathers beyond a granule are estimated as a separate part, and so are states that are serialized (in a distributed query, an external aggregation or an `AggregateFunction` column), so use `max_threads = 1` for a stable result of large groups. `Dynamic` and `JSON` are not supported as target types, nor as
 arguments with `target_type`, and neither is an argument with `LowCardinality` inside a `Variant` (convert them in the query
 first).
 
