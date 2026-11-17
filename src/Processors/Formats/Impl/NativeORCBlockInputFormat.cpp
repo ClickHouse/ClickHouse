@@ -821,10 +821,9 @@ static void buildORCSearchArgumentImpl(
             const auto & declared_type = column_types->declared_type;
             if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(declared_type))
             {
-                /// Use the column default inserted by `insertNullAsDefaultIfNeeded`. It differs from
-                /// the type default for `Date32`.
+                /// The default a NULL row of `declared_type` gets. It differs from `getDefault` for `Date32`.
                 auto default_column = declared_type->createColumn();
-                default_column->insertDefault();
+                declared_type->insertDefaultInto(*default_column);
                 const bool match_if_null = evaluateRPNElement({}, curr);
                 const bool match_if_default = evaluateRPNElement((*default_column)[0], curr);
                 if (match_if_default != match_if_null)
@@ -1156,21 +1155,14 @@ static bool orcUnionBranchMatchesType(const ORC::Type * orc_branch_type, const D
 static bool orcUnionBranchPrefersType(const ORC::Type * orc_branch_type, const DataTypePtr & target_type);
 static DataTypes computeOrcUnionBranchHints(const ORC::Type * orc_type, const DataTypePtr & type_hint, bool case_insensitive_matching);
 
-/// Binds a name to a field of an ORC struct type. A field spelled exactly like the name always
-/// wins over one that only matches case-folded, so a struct holding several fields whose names
-/// differ only by case resolves the name to the same field everywhere.
-static std::optional<size_t> findORCStructFieldByName(const ORC::Type * orc_type, const String & name, bool ignore_case)
+/// The field of an ORC struct that each element of a named tuple takes, paired as the cast to the tuple pairs them.
+static VectorWithMemoryTracking<std::optional<size_t>> matchORCStructFieldsByName(
+    const ORC::Type * orc_type, const DataTypeTuple & tuple_type, bool ignore_case)
 {
-    for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
-        if (name == orc_type->getFieldName(i))
-            return i;
-
-    if (ignore_case)
-        for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
-            if (boost::iequals(name, orc_type->getFieldName(i)))
-                return i;
-
-    return std::nullopt;
+    Strings field_names(orc_type->getSubtypeCount());
+    for (size_t i = 0; i < field_names.size(); ++i)
+        field_names[i] = orc_type->getFieldName(i);
+    return DataTypeTuple::matchElementsByName(field_names, tuple_type.getElementNames(), ignore_case);
 }
 
 /// Also collects the ORC structs that are requested as a `Tuple`.
@@ -1225,12 +1217,13 @@ static void updateIncludeTypeIds(
                 requested_structs.push_back(orc_type);
                 if (tuple_type->hasExplicitNames())
                 {
-                    const auto & element_names = tuple_type->getElementNames();
-                    for (size_t tuple_i = 0; tuple_i < element_names.size(); ++tuple_i)
+                    const auto field_positions = matchORCStructFieldsByName(orc_type, *tuple_type, ignore_case);
+                    for (size_t tuple_i = 0; tuple_i < field_positions.size(); ++tuple_i)
                     {
-                        if (auto field_i = findORCStructFieldByName(orc_type, element_names[tuple_i], ignore_case))
+                        if (field_positions[tuple_i])
                             updateIncludeTypeIds(
-                                tuple_type->getElement(tuple_i), orc_type->getSubtype(*field_i), ignore_case, include_typeids, requested_structs);
+                                tuple_type->getElement(tuple_i), orc_type->getSubtype(*field_positions[tuple_i]), ignore_case,
+                                include_typeids, requested_structs);
                     }
                 }
                 else
@@ -2897,6 +2890,21 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             const auto * tuple_type_hint = type_hint ? typeid_cast<const DataTypeTuple *>(type_hint.get()) : nullptr;
             const auto * orc_struct_column = dynamic_cast<const ORC::StructVectorBatch *>(orc_column);
 
+            /// The hint element that each field takes, if any.
+            VectorWithMemoryTracking<std::optional<size_t>> hint_positions(orc_type->getSubtypeCount());
+            if (tuple_type_hint && tuple_type_hint->hasExplicitNames())
+            {
+                const auto field_positions = matchORCStructFieldsByName(orc_type, *tuple_type_hint, case_insensitive_matching);
+                for (size_t hint_i = 0; hint_i < field_positions.size(); ++hint_i)
+                    if (field_positions[hint_i])
+                        hint_positions[*field_positions[hint_i]] = hint_i;
+            }
+            else if (tuple_type_hint)
+            {
+                for (size_t i = 0; i < hint_positions.size() && i < tuple_type_hint->getElements().size(); ++i)
+                    hint_positions[i] = i;
+            }
+
             for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
             {
                 /// Read only for the size and the null map of the struct, so its values are not converted.
@@ -2906,24 +2914,11 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                 auto field_name = orc_type->getFieldName(i);
 
                 DataTypePtr nested_type_hint;
-                if (tuple_type_hint)
+                if (hint_positions[i])
                 {
+                    nested_type_hint = tuple_type_hint->getElement(*hint_positions[i]);
                     if (tuple_type_hint->hasExplicitNames())
-                    {
-                        /// An element spelled exactly like the field wins over one that only matches
-                        /// case-folded, so two fields whose names differ only by case cannot both
-                        /// claim the same element and leave the other one unread.
-                        auto pos = tuple_type_hint->tryGetPositionByName(field_name, /*case_insensitive=*/false);
-                        if (!pos && case_insensitive_matching)
-                            pos = tuple_type_hint->tryGetPositionByName(field_name, /*case_insensitive=*/true);
-                        if (pos)
-                        {
-                            nested_type_hint = tuple_type_hint->getElement(*pos);
-                            field_name = tuple_type_hint->getNameByPosition(*pos + 1);
-                        }
-                    }
-                    else if (i < tuple_type_hint->getElements().size())
-                        nested_type_hint = tuple_type_hint->getElement(i);
+                        field_name = tuple_type_hint->getNameByPosition(*hint_positions[i] + 1);
                 }
 
                 const auto * nested_orc_column = orc_struct_column->fields[i];
