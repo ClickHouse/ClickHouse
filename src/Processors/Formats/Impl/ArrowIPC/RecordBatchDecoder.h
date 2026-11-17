@@ -38,7 +38,7 @@ struct DictionaryUse
     DataTypePtr hint;
 
     /// Uses with equal keys decode the dictionary's values identically, so they share one decoding.
-    String key() const;
+    [[nodiscard]] String key() const;
 };
 
 using DictionaryUses = VectorWithMemoryTracking<DictionaryUse>;
