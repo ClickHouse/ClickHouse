@@ -11,5 +11,19 @@ x	String
 4294967296	UInt64
 --- v Variant(DateTime64(3), DateTime64(5))
 2024-01-01 00:00:00.12345	DateTime64(5)
---- No member can hold the values of the others
+--- v Variant(Array(UInt32), Array(Int64))
+[-5]	Array(Int64)
+[4294967295]	Array(Int64)
+--- v Variant(String, FixedString(2))
+ab	String
+xyz	String
+--- No member can hold the values of the others: v Variant(Array(Int64), Array(String))
+none of these members can hold the values of the others
+--- No member can hold the values of the others: v Variant(Array(Bool), Array(UInt8))
+none of these members can hold the values of the others
+--- No member can hold the values of the others: v Variant(Array(Date), Array(DateTime))
+none of these members can hold the values of the others
+--- No member can hold the values of the others: v Variant(Array(Decimal32(0)), Array(Decimal32(9)))
+none of these members can hold the values of the others
+--- No member can hold the values of the others: v Variant(Array(Enum8(''a'' = 1)), Array(Int8))
 none of these members can hold the values of the others
