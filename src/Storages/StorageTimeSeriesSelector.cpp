@@ -364,6 +364,78 @@ namespace
         return makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags), make_intrusive<ASTLiteral>(tag_name));
     }
 
+    /// Makes a regular expression of a PromQL matcher match only whole values, as Prometheus does.
+    /// Prometheus wraps the regex as `^(?:...)$`, but here the group is added only when the regex has an alternation
+    /// at the top level: a leading group stops `extractFixedPrefixFromRegularExpression`, so `{__name__=~"node_.*"}`
+    /// or `{__name__=~"^(node_foo|node_bar)$"}` would lose the primary key on `metric_name`.
+    String anchorRegex(const String & regex)
+    {
+        size_t depth = 0;
+        bool in_class = false;
+        bool in_quote = false;
+        bool top_level_alternation = false;
+        bool ends_with_anchor = false;
+        for (size_t pos = 0; pos < regex.size(); ++pos)
+        {
+            char c = regex[pos];
+            ends_with_anchor = false;
+            if (in_quote)
+            {
+                /// Everything after `\Q` is literal up to `\E` or the end of the regex.
+                if (c == '\\' && pos + 1 < regex.size() && regex[pos + 1] == 'E')
+                {
+                    in_quote = false;
+                    ++pos;
+                }
+            }
+            else if (c == '\\')
+            {
+                if (pos + 1 < regex.size() && regex[pos + 1] == 'Q')
+                    in_quote = true;
+                ++pos;
+            }
+            else if (in_class)
+            {
+                if (c == ']')
+                    in_class = false;
+            }
+            else if (c == '[')
+            {
+                in_class = true;
+                /// A `]` right after `[` or `[^` is literal.
+                if (pos + 1 < regex.size() && regex[pos + 1] == '^')
+                    ++pos;
+                if (pos + 1 < regex.size() && regex[pos + 1] == ']')
+                    ++pos;
+            }
+            else if (c == '(')
+                ++depth;
+            else if (c == ')')
+            {
+                if (depth > 0)
+                    --depth;
+            }
+            else if (c == '|' && depth == 0)
+                top_level_alternation = true;
+            else if (c == '$')
+                ends_with_anchor = true;
+        }
+
+        String res = regex;
+        /// A quote can extend to the end of the regex, and it must not swallow the anchor or the group added after it.
+        if (in_quote)
+            res += "\\E";
+
+        if (top_level_alternation)
+            return "^(?:" + res + ")$";
+
+        if (!res.starts_with('^'))
+            res = '^' + res;
+        if (!ends_with_anchor)
+            res += '$';
+        return res;
+    }
+
     ASTPtr matcherToAST(const PrometheusQueryTree::Matcher & matcher, const std::unordered_map<String, String> & column_name_by_tag_name)
     {
         std::string_view function_name;
@@ -397,13 +469,7 @@ namespace
                     tagNameToAST(matcher.label_name, column_name_by_tag_name), makeASTFunction("tuple", std::move(literals)));
             }
 
-            /// The group makes the anchors apply to every alternative, not only to the first and the last one.
-            if (value.contains('|'))
-                value = "^(?:" + value + ")$";
-            if (!value.starts_with('^'))
-                value = '^' + value;
-            if (!value.ends_with('$'))
-                value += '$';
+            value = anchorRegex(value);
         }
         ASTPtr res = makeASTFunction(function_name, tagNameToAST(matcher.label_name, column_name_by_tag_name), make_intrusive<ASTLiteral>(value));
         if (add_not)
