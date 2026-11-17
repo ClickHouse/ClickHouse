@@ -6126,7 +6126,7 @@ private:
 
     WrapperType createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type, bool requested_result_is_nullable) const;
 
-    WrapperType createQBitWrapper(const DataTypePtr & from_type_untyped, const DataTypeQBit & to_type) const;
+    WrapperType createQBitWrapper(const DataTypePtr & from_type_untyped, const DataTypeQBit & to_type, bool requested_result_is_nullable) const;
 
     template <typename FloatType>
     static ColumnPtr convertArrayToQBit(
@@ -6138,7 +6138,7 @@ private:
         size_t stride);
 
     template <typename T>
-    WrapperType createArrayToQBitWrapper(const DataTypeArray & from_array_type, const DataTypeQBit & to_qbit_type) const;
+    WrapperType createArrayToQBitWrapper(const DataTypeArray & from_array_type, const DataTypeQBit & to_qbit_type, bool reports_failures) const;
 
     template <typename FloatType>
     static ColumnPtr convertQBitToArray(ColumnsWithTypeAndName & arguments, const ColumnNullable * nullable_source, size_t dimension, size_t stride);
@@ -6147,7 +6147,7 @@ private:
     WrapperType createQBitToArrayWrapper(const DataTypeQBit & from_qbit_type, const DataTypeArray & to_type) const;
 
     /// CAST between two QBit types. Keeps the dimension; may change the element type and/or the stride.
-    WrapperType createQBitToQBitWrapper(const DataTypeQBit & from_qbit_type, const DataTypeQBit & to_qbit_type) const;
+    WrapperType createQBitToQBitWrapper(const DataTypeQBit & from_qbit_type, const DataTypeQBit & to_qbit_type, bool reports_failures) const;
 
     /// Repack a QBit into a different stride and/or between the Float32/BFloat16 pair as a pure byte operation on the
     /// bit-plane FixedStrings, without reconstructing the vector through floats (see the definition).

@@ -469,7 +469,10 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
         }
     }
 
-    return [this, from_type_index, to_type]
+    /// Only a conversion asked for a nullable result reports a failure as NULL, see prepareUnpackDictionaries.
+    const bool reports_failures = requested_result_is_nullable && cast_type == CastType::accurateOrNull;
+
+    return [this, from_type_index, to_type, reports_failures]
         (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count)
     {
         ColumnPtr result_column;
@@ -489,7 +492,7 @@ case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
         = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>:: \
             execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, ADDITIONS()); \
     break;
-                    if (cast_type == CastType::accurate)
+                    if (!reports_failures)
                     {
                         switch (settings.date_time_overflow_behavior)
                         {
@@ -513,7 +516,7 @@ case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
                 }
                 else if constexpr (IsDataTypeNumber<RightDataType>)
                 {
-                    if (cast_type == CastType::accurate)
+                    if (!reports_failures)
                     {
                         result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
                             arguments,
@@ -543,7 +546,7 @@ case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
                         && is_any_of<LeftDataType, DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64>)
                     || (std::is_same_v<RightDataType, DataTypeIPv6> && std::is_same_v<LeftDataType, DataTypeUInt128>))
                 {
-                    if (cast_type == CastType::accurate)
+                    if (!reports_failures)
                     {
                         result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
                             arguments,
@@ -589,7 +592,7 @@ case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
         /// Additionally check if callOnIndexAndDataType wasn't called at all.
         if (!res)
         {
-            if (cast_type == CastType::accurateOrNull)
+            if (reports_failures)
             {
                 auto nullable_column_wrapper = FunctionCast::createToNullableColumnWrapper();
                 return nullable_column_wrapper(arguments, result_type, column_nullable, input_rows_count);
@@ -649,9 +652,9 @@ FunctionCast::WrapperType FunctionCast::createFixedStringWrapper(const DataTypeP
     if (!isStringOrFixedString(from_type))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CAST AS FixedString is only implemented for types String and FixedString");
 
-    /// Return NULL instead of throwing when the target type is explicitly Nullable
-    /// (e.g. CAST('abc', 'Nullable(FixedString(2))')) or when using accurateCastOrNull.
-    bool exception_mode_null = cast_type == CastType::accurateOrNull || requested_result_is_nullable;
+    /// Return NULL instead of throwing when a nullable result is requested: an explicitly Nullable target
+    /// (e.g. CAST('abc', 'Nullable(FixedString(2))')), or accurateCastOrNull, whose result is Nullable.
+    bool exception_mode_null = requested_result_is_nullable;
     return [exception_mode_null, N] (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t /*input_rows_count*/)
     {
         if (exception_mode_null)
@@ -703,16 +706,17 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
     bool ok = which.isNativeInt() || which.isNativeUInt() || (to_date_time && (which.isInt() || which.isUInt()))
         || which.isDecimal() || which.isFloat() || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64()
         || which.isTime() || which.isTime64() || which.isStringOrFixedString();
+    const bool reports_failures = requested_result_is_nullable && cast_type == CastType::accurateOrNull;
     if (!ok)
     {
-        if (cast_type == CastType::accurateOrNull)
+        if (reports_failures)
             return createToNullableColumnWrapper();
         else
             throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
                 from_type->getName(), to_type->getName());
     }
 
-    return [this, type_index, scale, to_type, requested_result_is_nullable]
+    return [this, type_index, scale, to_type, requested_result_is_nullable, reports_failures]
         (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *column_nullable, size_t input_rows_count)
     {
         ColumnPtr result_column;
@@ -728,7 +732,7 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
 
             if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType> && !(std::is_same_v<DataTypeDateTime64, RightDataType> || std::is_same_v<DataTypeTime64, RightDataType>))
             {
-                if (cast_type == CastType::accurate)
+                if (!reports_failures && cast_type != CastType::nonAccurate)
                 {
                     AccurateConvertStrategyAdditions additions;
                     additions.scale = scale;
@@ -737,7 +741,7 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
 
                     return true;
                 }
-                else if (cast_type == CastType::accurateOrNull)
+                else if (reports_failures)
                 {
                     AccurateOrNullConvertStrategyAdditions additions;
                     additions.scale = scale;
@@ -777,7 +781,7 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                     /// `DateTime64` to `Time64` projects the value to the seconds of the local day, which always fits,
                     /// but a reduction of the scale drops a part of the fraction, and an accurate cast must reject
                     /// such a lossy conversion instead of truncating it like `CAST` does.
-                    if (cast_type == CastType::accurate)
+                    if (!reports_failures && cast_type != CastType::nonAccurate)
                     {
                         AccurateConvertStrategyAdditions additions;
                         additions.scale = scale;
@@ -786,7 +790,7 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
 
                         return true;
                     }
-                    else if (cast_type == CastType::accurateOrNull)
+                    else if (reports_failures)
                     {
                         AccurateOrNullConvertStrategyAdditions additions;
                         additions.scale = scale;
@@ -843,7 +847,7 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
         /// Additionally check if callOnIndexAndDataType wasn't called at all.
         if (!res)
         {
-            if (cast_type == CastType::accurateOrNull)
+            if (reports_failures)
             {
                 auto nullable_column_wrapper = FunctionCast::createToNullableColumnWrapper();
                 return nullable_column_wrapper(arguments, result_type, column_nullable, input_rows_count);
@@ -1298,8 +1302,11 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(
     };
 }
 
-FunctionCast::WrapperType FunctionCast::createQBitWrapper(const DataTypePtr & from_type_untyped, const DataTypeQBit & to_type) const
+FunctionCast::WrapperType FunctionCast::createQBitWrapper(
+    const DataTypePtr & from_type_untyped, const DataTypeQBit & to_type, bool requested_result_is_nullable) const
 {
+    const bool reports_failures = requested_result_is_nullable && cast_type == CastType::accurateOrNull;
+
     /// Conversion from String through parsing.
     if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
     {
@@ -1327,7 +1334,7 @@ FunctionCast::WrapperType FunctionCast::createQBitWrapper(const DataTypePtr & fr
                 from_qbit_type->getName(),
                 to_type.getName());
 
-        return createQBitToQBitWrapper(*from_qbit_type, to_type);
+        return createQBitToQBitWrapper(*from_qbit_type, to_type, reports_failures);
     }
 
     /// From Array to QBit
@@ -1336,19 +1343,19 @@ FunctionCast::WrapperType FunctionCast::createQBitWrapper(const DataTypePtr & fr
         switch (to_type.getElementSize())
         {
             case 8:
-                return createArrayToQBitWrapper<Int8>(*from_array_type, to_type);
+                return createArrayToQBitWrapper<Int8>(*from_array_type, to_type, reports_failures);
             case 16:
-                return createArrayToQBitWrapper<BFloat16>(*from_array_type, to_type);
+                return createArrayToQBitWrapper<BFloat16>(*from_array_type, to_type, reports_failures);
             case 32:
-                return createArrayToQBitWrapper<Float32>(*from_array_type, to_type);
+                return createArrayToQBitWrapper<Float32>(*from_array_type, to_type, reports_failures);
             case 64:
-                return createArrayToQBitWrapper<Float64>(*from_array_type, to_type);
+                return createArrayToQBitWrapper<Float64>(*from_array_type, to_type, reports_failures);
             default:
                 UNREACHABLE();
         }
     }
 
-    if (cast_type == CastType::accurateOrNull)
+    if (reports_failures)
         return createToNullableColumnWrapper();
 
     throw Exception(
@@ -1470,7 +1477,8 @@ ColumnPtr FunctionCast::convertArrayToQBit(
 }
 
 template <typename T>
-FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(const DataTypeArray & from_array_type, const DataTypeQBit & to_qbit_type) const
+FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(
+    const DataTypeArray & from_array_type, const DataTypeQBit & to_qbit_type, bool reports_failures) const
 {
     const DataTypePtr & from_nested_type = from_array_type.getNestedType();
     const DataTypePtr & to_nested_type = to_qbit_type.getElementType();
@@ -1482,11 +1490,11 @@ FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(const DataTypeA
     /// column (per-variant overflow-as-NULL), while QBit elements are non-nullable. Use a Nullable
     /// nested target so the conversion assembles a consistent column; removeNullable() below strips it.
     const DataTypePtr nested_target_type
-        = (cast_type == CastType::accurateOrNull && (isDynamic(from_nested_type) || isVariant(from_nested_type)))
+        = (reports_failures && (isDynamic(from_nested_type) || isVariant(from_nested_type)))
         ? makeNullable(to_nested_type)
         : to_nested_type;
 
-    return [nested_function = prepareUnpackDictionaries(from_nested_type, nested_target_type),
+    return [nested_function = prepareUnpackDictionaries(from_nested_type, nested_target_type, reports_failures),
             from_nested_type,
             nested_target_type,
             to_nested_type,
@@ -1765,7 +1773,8 @@ ColumnPtr FunctionCast::repackQBit(
     return ColumnQBit::create(tuple, dimension, to_stride);
 }
 
-FunctionCast::WrapperType FunctionCast::createQBitToQBitWrapper(const DataTypeQBit & from_qbit_type, const DataTypeQBit & to_qbit_type) const
+FunctionCast::WrapperType FunctionCast::createQBitToQBitWrapper(
+    const DataTypeQBit & from_qbit_type, const DataTypeQBit & to_qbit_type, bool reports_failures) const
 {
     /// A QBit -> QBit cast keeps the dimension but may change the element type and/or the stride (the number of stride
     /// groups). We reconstruct the source vector at its native precision into an Array, then reuse the Array -> QBit path
@@ -1828,10 +1837,10 @@ FunctionCast::WrapperType FunctionCast::createQBitToQBitWrapper(const DataTypeQB
     WrapperType array_to_qbit;
     switch (to_qbit_type.getElementSize())
     {
-        case 8: array_to_qbit = createArrayToQBitWrapper<Int8>(*native_array_type, to_qbit_type); break;
-        case 16: array_to_qbit = createArrayToQBitWrapper<BFloat16>(*native_array_type, to_qbit_type); break;
-        case 32: array_to_qbit = createArrayToQBitWrapper<Float32>(*native_array_type, to_qbit_type); break;
-        case 64: array_to_qbit = createArrayToQBitWrapper<Float64>(*native_array_type, to_qbit_type); break;
+        case 8: array_to_qbit = createArrayToQBitWrapper<Int8>(*native_array_type, to_qbit_type, reports_failures); break;
+        case 16: array_to_qbit = createArrayToQBitWrapper<BFloat16>(*native_array_type, to_qbit_type, reports_failures); break;
+        case 32: array_to_qbit = createArrayToQBitWrapper<Float32>(*native_array_type, to_qbit_type, reports_failures); break;
+        case 64: array_to_qbit = createArrayToQBitWrapper<Float64>(*native_array_type, to_qbit_type, reports_failures); break;
         default: UNREACHABLE();
     }
 
@@ -2756,7 +2765,7 @@ FunctionCast::WrapperType FunctionCast::createEnumWrapper(
         auto function = Function::createFromSettings(settings);
         return createFunctionAdaptor(function, from_type);
     }
-    else if (cast_type == CastType::accurateOrNull)
+    else if (cast_type == CastType::accurateOrNull && requested_result_is_nullable)
         return createToNullableColumnWrapper();
 
     throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
@@ -3057,7 +3066,7 @@ FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(
     {
         if (!to_nested->isNullable() && !isVariant(to_type))
         {
-            if (cast_type == CastType::accurateOrNull)
+            if (cast_type == CastType::accurateOrNull && report_failures_as_null)
             {
                 return createToNullableColumnWrapper();
             }
@@ -3479,7 +3488,7 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
         case TypeIndex::Tuple:
             return createTupleWrapper(from_type, checkAndGetDataType<DataTypeTuple>(to_type.get()), requested_result_is_nullable);
         case TypeIndex::QBit:
-            return createQBitWrapper(from_type, static_cast<const DataTypeQBit &>(*to_type));
+            return createQBitWrapper(from_type, static_cast<const DataTypeQBit &>(*to_type), requested_result_is_nullable);
         case TypeIndex::Map:
             return createMapWrapper(from_type, checkAndGetDataType<DataTypeMap>(to_type.get()));
         case TypeIndex::Object:
@@ -3492,7 +3501,7 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
             break;
     }
 
-    if (cast_type == CastType::accurateOrNull)
+    if (cast_type == CastType::accurateOrNull && requested_result_is_nullable)
         return createToNullableColumnWrapper();
     else
         throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
