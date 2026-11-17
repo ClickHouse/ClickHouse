@@ -932,6 +932,9 @@ double DPSubJoinOrderOptimizer::probeReadFraction(UInt32 probe_mask, UInt32 buil
     if (prefix.empty() || !(dpsub_data.class_relations[prefix.front()] & build_mask))
         return 1.0;
     const Int32 order_class = prefix.front();
+    /// Ranges of columns of different types are in different units, such as days of a `Date` and seconds of a `DateTime`.
+    if (!((dpsub_data.single_type_classes >> order_class) & 1))
+        return 1.0;
 
     const size_t num_classes = dpsub_data.class_members.size();
     const auto & probe = dpsub_data.key_ranges[std::countr_zero(probe_mask) * num_classes + order_class];
