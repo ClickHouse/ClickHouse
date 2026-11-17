@@ -242,3 +242,33 @@ def test_drop_database_concurrent_exchange(started_cluster):
     assert node.query("SELECT count() FROM system.databases WHERE name = 'd7'") == "0\n"
     assert node.query("SELECT s FROM d8.t") == "d7\n"
     node.query("DROP DATABASE d8 SYNC SETTINGS max_table_size_to_drop = 0")
+
+
+@pytest.mark.parametrize("engine", ["Ordinary", "Atomic"])
+def test_drop_database_lazy_load_tables(started_cluster, engine):
+    # The size of a table that is still a lazy proxy is checked, and the flag allows its drop.
+    db = f"d9_{engine}"
+    node.query(
+        f"CREATE DATABASE {db} ENGINE={engine} SETTINGS lazy_load_tables = 1",
+        settings={"allow_deprecated_database_ordinary": 1},
+    )
+    node.query(f"CREATE TABLE {db}.mt (n UInt64) ENGINE=MergeTree ORDER BY n")
+    node.query(f"INSERT INTO {db}.mt VALUES (1), (2)")
+
+    def reattach():
+        node.query(f"DETACH DATABASE {db}")
+        node.query(f"ATTACH DATABASE {db}")
+        assert (
+            node.query(f"SELECT engine FROM system.tables WHERE database = '{db}'")
+            == "TableProxy\n"
+        )
+
+    reattach()
+    assert "is greater than max" in node.query_and_get_error(f"DROP DATABASE {db}")
+    reattach()
+    create_force_drop_flag(node)
+    node.query(f"DROP DATABASE {db} SYNC")
+    assert (
+        node.query(f"SELECT count() FROM system.databases WHERE name = '{db}'")
+        == "0\n"
+    )

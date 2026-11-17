@@ -400,7 +400,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 if (!query.is_dictionary)
                     table->checkTableCanBeDropped(context_);
             }
-            else if (!tables_with_checked_size.contains(table))
+            else if (!tables_with_checked_size.contains(resolveStorageProxy(table)))
                 table->checkTableCanBeDropped(context_);
 
             /// Check dependencies before shutting table down
@@ -662,7 +662,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     if (query_for_table.kind != ASTDropQuery::Kind::Drop)
                         continue;
                     DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, /*is_drop_database=*/ true);
-                    if (!table->isDictionary() && !tables_with_checked_size.contains(table)
+                    if (!table->isDictionary() && !tables_with_checked_size.contains(resolveStorageProxy(table))
                         && !skip_size_check.contains(table_id.table_name))
                         tables_to_check_size.push_back(std::move(table));
                 }
@@ -676,7 +676,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     /// an `INSERT` in between cannot make it exceed the limit unnoticed. A table that consumed the flag
                     /// cannot be checked again, because the flag is gone.
                     if (force_drop_file_existed && !fs::exists(force_drop_file))
-                        tables_with_checked_size.insert(table);
+                        tables_with_checked_size.insert(resolveStorageProxy(table));
                 }
             };
 
