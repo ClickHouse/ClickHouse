@@ -863,7 +863,10 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
                 args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
         }
 
-        mysql_settings->loadFromQueryContext(args.context, *engine_define);
+        /// On `RESTORE` we don't use the session context: it may contain a conflicting `mysql_datatypes_support_level`
+        /// setting and make the `RESTORE` fail.
+        if (!args.is_restore_from_backup)
+            mysql_settings->loadFromQueryContext(args.context, *engine_define);
         if (engine_define->settings)
             mysql_settings->loadFromQuery(*engine_define);
 
