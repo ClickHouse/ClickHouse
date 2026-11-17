@@ -243,10 +243,10 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
     {
         if (fast_path)
             return joinRightColumns<TYPE, need_filter, /*fast_path=*/true, /*flag_per_row=*/false>(
-                *tables[0], added_columns, used_flags, selector.getRange());
+                tables, added_columns, used_flags, selector.getRange());
         else
             return joinRightColumns<TYPE, need_filter, /*fast_path=*/false, /*flag_per_row=*/false>(
-                *tables[0], added_columns, used_flags, selector.getRange());
+                tables, added_columns, used_flags, selector.getRange());
     }
     /// The probe always runs on a whole block as one continuous range; only the build scatters rows by index.
     UNREACHABLE();
@@ -391,7 +391,7 @@ void processMatch(
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 template <HashJoin::Type TYPE, bool need_filter, bool fast_path, bool flag_per_row, typename AddedColumns>
 size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
-    std::conditional_t<flag_per_row, Tables, const HashJoinTable &> tables,
+    Tables tables,
     AddedColumns & added_columns,
     JoinStuff::JoinUsedFlags & used_flags,
     const ScatteredBlock::Selector::Range & selector)
@@ -399,8 +399,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
     using Map = const JoinMapOf<TYPE, MapsTemplate>;
     using KeyGetter = typename KeyGetterForType<TYPE, Map>::Type;
-
-    const JoinOnKeyColumns * single_keys = flag_per_row ? nullptr : &added_columns.join_on_keys.at(0);
 
     size_t rows = ScatteredBlock::Selector::size(selector);
 
@@ -468,8 +466,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     else
     {
         IColumn::Offset current_offset = 0;
-        tables.template probe<TYPE, MapsTemplate, fast_path>(
-            *single_keys,
+        tables[0]->probe<TYPE, MapsTemplate, fast_path>(
+            added_columns.join_on_keys.at(0),
             selector,
             added_columns.enable_prefetch,
             current_offset,

@@ -447,10 +447,10 @@ SharedFixedHashTableRuntimeFilter::ProbeFn HashJoinTable::makeSharedRuntimeFilte
 namespace
 {
 
-/// Calls `f(map)` for each `ASOF` map of type `type` whose buckets have buffers of their own. That leaves out a
+/// Calls `f(map)` on the `ASOF` map of type `type` if its buckets have buffers of their own. That leaves out a
 /// `PartitionedFixedHashTable`, which has one buffer for all its buckets, and a map with one bucket, which has nothing to split.
 template <typename F>
-void forEachAsofMapWithBucketBuffers(const HashJoin::MapsVariant & maps, HashJoin::Type type, F && f)
+void visitAsofMapWithBucketBuffers(const HashJoin::MapsVariant & maps, HashJoin::Type type, F && f)
 {
     if (const auto * asof_maps = std::get_if<HashJoin::MapsAsof>(&maps))
         asof_maps->visit(type, [&]<typename Table>(const std::shared_ptr<Table> & map)
@@ -466,7 +466,7 @@ void forEachAsofMapWithBucketBuffers(const HashJoin::MapsVariant & maps, HashJoi
 HashJoinTable::ParallelClearWork HashJoinTable::parallelClearWork() const
 {
     ParallelClearWork work;
-    forEachAsofMapWithBucketBuffers(maps, key_type, [&]<typename Table>(const Table & map)
+    visitAsofMapWithBucketBuffers(maps, key_type, [&]<typename Table>(const Table & map)
     {
         work.buckets += Table::NUM_BUCKETS;
         work.keys += map.size();
@@ -476,7 +476,7 @@ HashJoinTable::ParallelClearWork HashJoinTable::parallelClearWork() const
 
 void HashJoinTable::clearInParallel(size_t num_jobs, absl::FunctionRef<void(std::function<void()>)> schedule)
 {
-    forEachAsofMapWithBucketBuffers(maps, key_type, [&]<typename Table>(Table & table)
+    visitAsofMapWithBucketBuffers(maps, key_type, [&]<typename Table>(Table & table)
     {
         for (size_t first_bucket = 0; first_bucket < num_jobs; ++first_bucket)
             schedule([&table, first_bucket, num_jobs]

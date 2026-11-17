@@ -630,16 +630,16 @@ public:
     /// Frees the maps. The table stays, so that a concurrent `keys` stays valid.
     void releaseMaps();
 
-    /// Looks up the key of every row of `selector`. For each row, calls `body(i, ind, find_result, offset)` with the position `i`,
+    /// Looks up the key of every row of `selector`. For each row, calls `on_row(i, ind, find_result, offset)` with the position `i`,
     /// the row `ind`, and the output offset. The loop keeps the offset so that it stays in a register. A row with a NULL key
     /// or one the ON-section mask filters out gets a result that is not found; `fast_path` assumes there is none. `TYPE` is `type()`.
-    template <Type TYPE, typename Maps, bool fast_path, typename Body>
+    template <Type TYPE, typename Maps, bool fast_path, typename OnRow>
     ALWAYS_INLINE void probe(
         const JoinOnKeyColumns & keys,
         const ScatteredBlock::Selector::Range & selector,
         bool enable_prefetch,
         IColumn::Offset & offset,
-        Body && body) const
+        OnRow && on_row) const
     {
         using Map = const JoinMapOf<TYPE, Maps>;
         using KeyGetter = typename KeyGetterForType<TYPE, Map>::Type;
@@ -699,7 +699,7 @@ public:
             if constexpr (!fast_path)
                 skip_row = (prepared || skip_data) && skip_data[ind];
 
-            body(i, ind, skip_row ? FindResult() : key_getter.findKey(map, ind, pool), offset);
+            on_row(i, ind, skip_row ? FindResult() : key_getter.findKey(map, ind, pool), offset);
         }
     }
 

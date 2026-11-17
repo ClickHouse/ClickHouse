@@ -67,7 +67,7 @@ private:
     /// With `flag_per_row`, `tables` holds one table per ON disjunct and the used flags are per right row. Without it, there is one table.
     template <HashJoin::Type TYPE, bool need_filter, bool fast_path, bool flag_per_row, typename AddedColumns>
     static size_t joinRightColumns(
-        std::conditional_t<flag_per_row, Tables, const HashJoinTable &> tables,
+        Tables tables,
         AddedColumns & added_columns,
         JoinStuff::JoinUsedFlags & used_flags,
         const ScatteredBlock::Selector::Range & selector);
