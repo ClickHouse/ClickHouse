@@ -9,7 +9,7 @@ from ci.praktika.utils import MetaClasses, Shell, Utils
 
 TEMP = "/tmp"
 
-LLVM_VERSION = "22"
+LLVM_VERSION = "23"
 
 LLVM_SOURCE_DIR = f"{TEMP}/llvm-project"
 NINJA_SOURCE_DIR = f"{TEMP}/ninja-src"
@@ -204,7 +204,7 @@ def main():
             f" -DLLVM_ENABLE_LLD=ON"
             f" -DLLVM_ENABLE_TERMINFO=OFF"
             f" -DLLVM_ENABLE_ZLIB=FORCE_ON"
-            f" -DLLVM_ENABLE_ZSTD=OFF"
+            f" -DLLVM_ENABLE_ZSTD=FORCE_ON"
             f" -DCMAKE_INSTALL_PREFIX={STAGE1_INSTALL_DIR}"
             f" -S {LLVM_SOURCE_DIR}/llvm"
             f" -B {STAGE1_BUILD_DIR}"
@@ -416,7 +416,7 @@ def main():
             f' -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
             f" -DLLVM_ENABLE_TERMINFO=OFF"
             f" -DLLVM_ENABLE_ZLIB=FORCE_ON"
-            f" -DLLVM_ENABLE_ZSTD=OFF"
+            f" -DLLVM_ENABLE_ZSTD=FORCE_ON"
             f" -DLLVM_BINUTILS_INCDIR=/usr/include"
             f' -DLLVM_BUILTIN_TARGETS="{builtin_targets}"'
             f" {builtin_cmake_args}"
