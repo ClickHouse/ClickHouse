@@ -24,15 +24,15 @@ namespace ErrorCodes
 namespace
 {
 
-std::vector<Int32> parseFieldIds(const String & setting, const Block & header)
+VectorWithMemoryTracking<Int32> parseFieldIds(const String & setting, const Block & header)
 {
     if (setting.empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Setting `output_format_puffin_field_ids` must be set to the Iceberg field ids of the columns to write Theta sketches");
 
-    std::vector<Int32> field_ids;
-    std::vector<String> parts;
+    VectorWithMemoryTracking<Int32> field_ids;
+    VectorWithMemoryTracking<String> parts;
     boost::split(parts, setting, boost::is_any_of(","));
     UnorderedSetWithMemoryTracking<Int32> seen;
     for (auto & part : parts)

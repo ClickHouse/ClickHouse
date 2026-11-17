@@ -5,7 +5,7 @@
 #include <DataTypes/IDataType.h>
 
 #include <memory>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -41,7 +41,7 @@ PuffinBlob makeThetaSketchBlobMetadata(Int32 field_id, Int64 snapshot_id, Int64 
 
 struct PuffinThetaSketchBlobOptions
 {
-    std::vector<Int32> field_ids;
+    VectorWithMemoryTracking<Int32> field_ids;
     Int64 snapshot_id;
     Int64 sequence_number;
 };
