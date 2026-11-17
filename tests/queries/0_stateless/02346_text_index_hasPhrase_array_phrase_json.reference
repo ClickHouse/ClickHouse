@@ -111,6 +111,9 @@ other preprocessor, string needles
 [1]
 [1]
 [1]
+hasToken checks are kept when the index cannot prune
+[1]
+[1]
 array-valued path, tokenizer unsupported by hasPhrase
 [1]
 [1]

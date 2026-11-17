@@ -149,6 +149,24 @@ CREATE TABLE tab_phrase_preprocessor
 ENGINE = MergeTree
 ORDER BY id;
 
+CREATE TABLE tab_has_token_array_tokenizer
+(
+  id UInt32,
+  data JSON(key String),
+  INDEX idx JSONAllValues(data) TYPE text(tokenizer = array, preprocessor = lower(JSONAllValues(data)), postprocessor = replaceAll(JSONAllValues(data), 'quick brown', 'zebra'))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+CREATE TABLE tab_has_token_separator
+(
+  id UInt32,
+  data JSON(key String),
+  INDEX idx JSONAllValues(data) TYPE text(tokenizer = splitByNonAlpha, postprocessor = replaceAll(JSONAllValues(data), ' ', ''))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
 INSERT INTO tab_split_by_string VALUES (1, '{"key": "the quick brown fox"}'), (2, '{"key": "lazy dog"}'), (3, '{"key": "brown quick"}');
 INSERT INTO tab_split_by_non_alpha SELECT * FROM tab_split_by_string;
 INSERT INTO tab_array SELECT * FROM tab_split_by_string;
@@ -164,6 +182,8 @@ INSERT INTO tab_case_mapping SELECT * FROM tab_preprocessor;
 INSERT INTO tab_case_mapping_letter_separator VALUES (1, '{"key": "aXb"}'), (2, '{"key": "cXd"}');
 INSERT INTO tab_case_mapping_postprocessor VALUES (1, '{"key": "a"}'), (2, '{"key": "c"}');
 INSERT INTO tab_phrase_preprocessor VALUES (1, '{"key": "a b"}'), (2, '{"key": "d"}');
+INSERT INTO tab_has_token_array_tokenizer VALUES (1, '{"key": "quick brown"}'), (2, '{"key": "lazy dog"}');
+INSERT INTO tab_has_token_separator VALUES (1, '{"key": "a b"}');
 INSERT INTO tab_array_path_postprocessor VALUES (1, '{"key": ["CAT"]}'), (2, '{"key": ["dog"]}');
 
 SELECT 'splitByString';
@@ -306,6 +326,11 @@ SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_preprocessor WHERE hasToke
 SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_preprocessor WHERE hasPhrase(data.key, ['a']) ORDER BY id);
 SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_preprocessor WHERE hasPhrase(data.key, ['a']) ORDER BY id) SETTINGS use_skip_indexes = 0;
 
+SELECT 'hasToken checks are kept when the index cannot prune';
+SELECT groupArray(id) FROM (SELECT id FROM tab_has_token_array_tokenizer WHERE hasToken(data.key, 'quick') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_has_token_array_tokenizer WHERE hasToken(data.key, 'quick') ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab_has_token_separator WHERE hasToken(data.key, 'a b'); -- { serverError BAD_ARGUMENTS }
+
 SELECT 'array-valued path, tokenizer unsupported by hasPhrase';
 SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_sparse_grams WHERE hasPhrase(data.key, ['quick', 'brown']) ORDER BY id);
 SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_sparse_grams WHERE hasPhrase(data.key, ['quick', 'brown']) ORDER BY id) SETTINGS use_skip_indexes = 0;
@@ -326,4 +351,6 @@ DROP TABLE tab_case_mapping_letter_separator;
 DROP TABLE tab_case_mapping_postprocessor;
 DROP TABLE tab_regexp_preprocessor;
 DROP TABLE tab_phrase_preprocessor;
+DROP TABLE tab_has_token_array_tokenizer;
+DROP TABLE tab_has_token_separator;
 DROP TABLE tab_array_path_sparse_grams;

@@ -1139,23 +1139,6 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
     return compile_pattern(pattern);
 }
 
-/// Only splitByNonAlpha, splitByString, splitByRegexp, array, ngrams, asciiCJK, and icu tokenizers are supported with the `hasPhrase` function.
-static bool isTokenizerSupportedByHasPhrase(const ITokenizer & tokenizer)
-{
-    static const std::unordered_set<std::string_view> supported_tokenizers = {
-        SplitByNonAlphaTokenizer::getExternalName(),
-        SplitByStringTokenizer::getExternalName(),
-        SplitByRegexpTokenizer::getExternalName(),
-        ArrayTokenizer::getExternalName(),
-        AsciiCJKTokenizer::getExternalName(),
-#if USE_ICU
-        IcuTokenizer::getExternalName(),
-#endif
-        NgramsTokenizer::getExternalName(),
-    };
-    return supported_tokenizers.contains(tokenizer.getTokenizerExternalName());
-}
-
 /// Converts a Field value to its text representation using `serializeText`,
 /// matching the format produced by `JSONAllValues`.
 static String serializeFieldAsText(const Field & value, const DataTypePtr & type)
@@ -1301,6 +1284,29 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     Field value_field,
     RPNElement & out) const
 {
+    bool can_prune = true;
+    if (!traverseFunctionNodeImpl(function_node, argument_node, std::move(value_type), std::move(value_field), out, can_prune))
+        return false;
+
+    /// The function-specific checks passed, so direct read may still inject the index tokenizer and postprocessor.
+    if (!can_prune)
+    {
+        out.function = RPNElement::FUNCTION_UNKNOWN;
+        out.text_search_queries.clear();
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+            function_node.getFunctionName(), TextSearchMode::All, TextIndexDirectReadMode::None, VectorWithMemoryTracking<String>{}));
+    }
+    return true;
+}
+
+bool MergeTreeIndexConditionText::traverseFunctionNodeImpl(
+    const RPNBuilderFunctionTreeNode & function_node,
+    const RPNBuilderTreeNode & argument_node,
+    DataTypePtr value_type,
+    Field value_field,
+    RPNElement & out,
+    bool & can_prune) const
+{
     const String function_name = function_node.getFunctionName();
     auto direct_read_mode = getDirectReadMode(function_name);
 
@@ -1339,11 +1345,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     {
         bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens" || function_name == "hasPhrase";
 
-        /// Neither prune nor inject a tokenizer that the function rejects.
-        if (function_name == "hasPhrase" && !isTokenizerSupportedByHasPhrase(*tokenizer))
-            return false;
-
-        const bool is_token_function = is_special_text_index_function || function_name == "hasToken" || function_name == "hasTokenOrNull";
+        const bool is_token_function = is_special_text_index_function || function_name == "hasToken";
         const bool is_array_valued_path = isArray(removeLowCardinalityAndNullable(argument_node.getDAGNode()->result_type));
 
         /// Direct read does not apply the preprocessor to a JSON path, so the row-level function sees the raw value and the index
@@ -1374,14 +1376,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// - the path is array-valued: `JSONAllValues` stores an array value as a single serialized string, while these functions
         ///   search inside its elements;
         /// - the preprocessed needles do not give a superset of the rows.
-        /// Still return a query: direct read uses it to inject the index tokenizer and postprocessor.
         if (is_token_function && (is_array_valued_path || !needles_give_superset))
-        {
-            out.function = RPNElement::FUNCTION_UNKNOWN;
-            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
-                function_name, TextSearchMode::All, TextIndexDirectReadMode::None, VectorWithMemoryTracking<String>{}));
-            return true;
-        }
+            can_prune = false;
 
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
@@ -1659,7 +1655,19 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasPhrase")
     {
-        if (!isTokenizerSupportedByHasPhrase(*tokenizer))
+        /// Only splitByNonAlpha, splitByString, splitByRegexp, array, ngrams, asciiCJK, and icu tokenizers are supported with the `hasPhrase` function.
+        static const std::unordered_set<std::string_view> supported_tokenizers = {
+            SplitByNonAlphaTokenizer::getExternalName(),
+            SplitByStringTokenizer::getExternalName(),
+            SplitByRegexpTokenizer::getExternalName(),
+            ArrayTokenizer::getExternalName(),
+            AsciiCJKTokenizer::getExternalName(),
+#if USE_ICU
+            IcuTokenizer::getExternalName(),
+#endif
+            NgramsTokenizer::getExternalName(),
+        };
+        if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
             return false;
 
         /// The two sides number an element's tokens differently, so the row-level function decides alone.
