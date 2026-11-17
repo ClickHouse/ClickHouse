@@ -346,10 +346,6 @@ private:
                 tryVisit<ASTSelectQuery>(child);
             else if (child->as<ASTSelectIntersectExceptQuery>())
                 tryVisit<ASTSelectIntersectExceptQuery>(child);
-            /// A parenthesized operand with its own `SETTINGS` clause stays wrapped into a union of its own
-            /// (see `ParserUnionQueryElement`), as does a parenthesized union that is not lifted into this one.
-            else if (child->as<ASTSelectWithUnionQuery>())
-                tryVisit<ASTSelectWithUnionQuery>(child);
         }
     }
 
@@ -801,6 +797,10 @@ private:
 
     void visitDDL(ASTPtr & /* parent */, ASTSystemQuery & query, ASTPtr &) const
     {
+        if (query.type != ASTSystemQuery::Type::RELOAD_DICTIONARY
+            && query.type != ASTSystemQuery::Type::UNLOAD_DICTIONARY)
+            return;
+
         if (!query.table || query.database || only_replace_current_database_function)
             return;
 

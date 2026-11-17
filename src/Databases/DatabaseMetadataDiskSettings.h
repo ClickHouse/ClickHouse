@@ -3,7 +3,6 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsFields.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {

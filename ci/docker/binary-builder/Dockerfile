@@ -1,7 +1,5 @@
 # docker build -t clickhouse/binary-builder .
-ARG CCTOOLS_TAG
 ARG FROM_TAG
-FROM clickhouse/cctools:${CCTOOLS_TAG} AS cctools
 FROM clickhouse/fasttest:$FROM_TAG
 ARG TARGETARCH
 ENV CC=clang-${LLVM_VERSION}
@@ -9,10 +7,11 @@ ENV CXX=clang++-${LLVM_VERSION}
 
 #non-functional change
 
-COPY --from=cctools /cctools /cctools
+# If the cctools is updated, then first build it in the CI, then update here in a different commit
+COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /cctools /cctools
 
 # We need OpenSSL FIPS in permissive mode for build on MasterCI
-COPY --from=cctools \
+COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
   /opt/openssl-fips/openssl.cnf \
   /opt/openssl-fips/fipsmodule.cnf \
   /opt/openssl-fips/fips.so \
@@ -20,17 +19,18 @@ COPY --from=cctools \
   /etc/ssl/
 
 # Refresh the kitware GPG key inherited from fasttest base image, it may be stale
-RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg
+RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg \
+    && apt-get update \
+    && apt-get install software-properties-common --yes --no-install-recommends --verbose-versions
 
-RUN apt-get update \
+RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
+    && apt-get update \
     && apt-get -o Dpkg::Options::="--force-overwrite" upgrade --yes \
     && apt-get -o Dpkg::Options::="--force-overwrite" install --yes \
         binutils-dev \
         build-essential \
         zlib1g-dev \
-        libjemalloc-dev \
         python3-boto3 \
-        pigz \
         yasm \
         zstd \
         zip \

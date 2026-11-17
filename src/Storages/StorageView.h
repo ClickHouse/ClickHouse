@@ -47,10 +47,6 @@ public:
     /// or the invoker has a row policy on the view itself, so it stays transparent.
     bool isSealed(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
 
-    /// A sealed view hides nothing from a query that runs with the identity of the view's own query (its definer,
-    /// with the definer's default roles), so such a query reads it transparently.
-    bool isReadByDefiner(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
-
     /// If this is a trivial view over a Distributed table, returns the underlying StorageDistributed.
     /// Returns nullptr otherwise.
     StoragePtr tryGetUnderlyingDistributed(const StorageSnapshotPtr & snapshot, ContextPtr context) const;

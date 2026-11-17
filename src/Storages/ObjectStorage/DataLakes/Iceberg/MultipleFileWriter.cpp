@@ -61,6 +61,7 @@ void MultipleFileWriter::startNewFile()
 
     current_file_stats = std::make_shared<DataFileStatistics>(schema, fieldIdsOfWrittenColumns(*column_mapper, *sample_block));
     current_file_num_rows = 0;
+    current_file_num_bytes = 0;
     auto metadata_path = filename_generator.generateDataFileName();
     auto storage_path = path_resolver.resolve(metadata_path);
 
@@ -74,35 +75,23 @@ void MultipleFileWriter::startNewFile()
         format_settings->parquet.bloom_filter_push_down = true;
         format_settings->parquet.filter_push_down = true;
     }
-
-    /// The Parquet writer writes a row group to the file only when the row group is complete, so the size of the file,
-    /// which `consume` compares with the limit, does not grow until then. A row group bigger than the limit would make
-    /// a file never cut: with the default `output_format_parquet_row_group_size_bytes` (512 MiB before compression),
-    /// the limit would be ignored for all smaller files.
-    FormatSettings file_format_settings = format_settings ? *format_settings : getFormatSettings(context);
-    file_format_settings.parquet.row_group_bytes = std::min(file_format_settings.parquet.row_group_bytes, max_data_file_num_bytes);
-
     /// The ORC String/FixedString logical-type handling lives in ORCBlockOutputFormat, keyed on
     /// the column mapper, so it covers the compaction/mutation rewrite paths too.
     FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
     output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
-        write_format, *buffer, *sample_block, context, file_format_settings, format_filter_info);
+        write_format, *buffer, *sample_block, context, format_settings, format_filter_info);
 }
 
 void MultipleFileWriter::consume(const Chunk & chunk)
 {
-    /// The size limit is compared against the bytes written to the current file so far, that is, the compressed size,
-    /// the same measure as `file_size_in_bytes` in the manifest, which the compaction uses to select its input files.
-    /// Comparing it against the uncompressed size makes the files smaller than the target by the compression ratio,
-    /// and the output of the compaction is selected by the compaction again. The file can exceed the limit
-    /// by what the output format has not written yet: an incomplete Parquet row group and the row groups being encoded.
-    if (!current_file_num_rows || *current_file_num_rows >= max_data_file_num_rows || buffer->count() >= max_data_file_num_bytes)
+    if (!current_file_num_rows || *current_file_num_rows >= max_data_file_num_rows || *current_file_num_bytes >= max_data_file_num_bytes)
     {
         startNewFile();
     }
     output_format->write(sample_block->cloneWithColumns(chunk.getColumns()));
     output_format->flush();
     *current_file_num_rows += chunk.getNumRows();
+    *current_file_num_bytes += chunk.bytes();
     stats.update(chunk);
     current_file_stats->update(chunk);
 }
@@ -114,10 +103,7 @@ void MultipleFileWriter::finalize()
 
     auto column_sizes_on_disk = output_format->getColumnSizesOnDisk();
     if (current_file_stats)
-    {
         current_file_stats->addColumnSizesOnDisk(column_sizes_on_disk, *sample_block);
-        current_file_stats->setSplitOffsets(output_format->getRowGroupOffsets());
-    }
     stats.addColumnSizesOnDisk(column_sizes_on_disk, *sample_block);
 
     buffer->finalize();

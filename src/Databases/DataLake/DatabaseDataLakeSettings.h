@@ -15,11 +15,9 @@ class SettingsChanges;
 /// List of available types supported in DatabaseDataLakeSettings object
 #define DATABASE_ICEBERG_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, String) \
-    M(CLASS_NAME, Timezone) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, DatabaseDataLakeCatalogType) \
-    M(CLASS_NAME, DatabaseDataLakeSnapshotLoadingMode) \
     M(CLASS_NAME, S3UriStyle) \
 
 /// Merged and deduplicated type list for DatabaseDataLake + StorageObjectStorage settings.
@@ -30,7 +28,6 @@ class SettingsChanges;
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \
     M(CLASS_NAME, DatabaseDataLakeCatalogType) \
-    M(CLASS_NAME, DatabaseDataLakeSnapshotLoadingMode) \
     M(CLASS_NAME, DateTimeInputFormat) \
     M(CLASS_NAME, DateTimeOutputFormat) \
     M(CLASS_NAME, DateTimeOverflowBehavior) \
@@ -54,7 +51,6 @@ class SettingsChanges;
     M(CLASS_NAME, SchemaInferenceMode) \
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
-    M(CLASS_NAME, Timezone) \
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, UInt64Auto) \

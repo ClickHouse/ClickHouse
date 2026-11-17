@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/CaseAwareBlockNameMap.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/BlockMissingValues.h>
 #include <Core/NamesAndTypes.h>
 #include <Formats/FormatSettings.h>
@@ -106,7 +105,7 @@ private:
 
     const FormatSettings format_settings;
     String hints_str;
-    UnorderedMapWithMemoryTracking<String, DataTypePtr> hints;
+    std::unordered_map<String, DataTypePtr> hints;
     String hints_parsing_error;
     std::unique_ptr<JSONColumnsReaderBase> reader;
     Names column_names_from_settings;

@@ -18,11 +18,15 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 Os ClickPipes do Pub/Sub podem ser implantados e gerenciados manualmente pela UI do ClickPipes, bem como programaticamente com [OpenAPI](/pt-BR/integrations/clickpipes/programmatic-access/openapi) e [Terraform](/pt-BR/integrations/clickpipes/programmatic-access/terraform).
 
-## Pré-requisito {#prerequisite}
+<div id="prerequisite">
+  ## Pré-requisito
+</div>
 
-Você já se familiarizou com a [introdução ao ClickPipes](/pt-BR/integrations/clickpipes/home), tem acesso a um projeto do GCP que contém o tópico do qual deseja ingerir dados e pode conceder as permissões adequadas do Pub/Sub à service account usada pelo ClickPipes. Siga o [guia de permissões do IAM do Pub/Sub](/pt-BR/integrations/clickpipes/pubsub/auth) para conhecer as opções de autenticação e o conjunto exato de permissões necessárias.
+Você já se familiarizou com a [introdução ao ClickPipes](/pt-BR/integrations/clickpipes/home), tem acesso a um projeto do GCP que contém o tópico do qual deseja ingerir dados e criou uma conta de serviço com as permissões adequadas do Pub/Sub. Siga o [guia de permissões do IAM do Pub/Sub](/pt-BR/integrations/clickpipes/pubsub/auth) para ver o conjunto exato de permissões exigido pelo ClickPipes.
 
-## Criando seu primeiro ClickPipe {#creating-your-first-clickpipe}
+<div id="creating-your-first-clickpipe">
+  ## Criando seu primeiro ClickPipe
+</div>
 
 1. Acesse o SQL Console do seu serviço ClickHouse Cloud.
 
@@ -36,7 +40,7 @@ Você já se familiarizou com a [introdução ao ClickPipes](/pt-BR/integrations
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1_pubsub.webp" alt="Selecionar GCP Pub/Sub como fonte de dados" size="lg" border />
 
-4. Preencha o formulário informando um nome para o ClickPipe, o **ID do projeto GCP** e o **arquivo JSON da service account** da service account que recebeu acesso ao Pub/Sub. O ID do projeto deve ter de 6 a 30 caracteres, pode conter letras minúsculas, dígitos e hífens, deve começar com uma letra e não pode terminar com hífen.
+4. Preencha o formulário informando um nome para o ClickPipe, o **ID do projeto GCP** e o **arquivo JSON da conta de serviço** da conta de serviço que recebeu acesso ao Pub/Sub. O ID do projeto deve ter de 6 a 30 caracteres, pode conter letras minúsculas, dígitos e hífens, deve começar com uma letra e não pode terminar com hífen.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_pubsub.webp" alt="Preencher detalhes da conexão" size="lg" border />
 
@@ -66,7 +70,7 @@ Você também pode personalizar as configurações avançadas usando os controle
 **Permissões:** O ClickPipes criará um usuário dedicado para gravar dados em uma tabela de destino. Você pode selecionar uma função para esse usuário interno usando uma função personalizada ou uma das funções predefinidas:
 
 * `Full access`: com acesso total ao cluster. Isso pode ser útil se você usar uma visão materializada ou um Dicionário com a tabela de destino.
-* `Only destination table`: com permissões `INSERT` apenas na tabela de destino.
+  * `Only destination table`: com permissões `INSERT` apenas na tabela de destino.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permissões" border />
 
@@ -76,7 +80,7 @@ Você também pode personalizar as configurações avançadas usando os controle
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="Aviso de remoção" size="lg" border />
 
-A tabela de resumo oferece controles para exibir dados de amostra da tabela de origem ou da tabela de destino no ClickHouse
+A tabela de resumo oferece controles para exibir dados de exemplo da tabela de origem ou da tabela de destino no ClickHouse
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="Ver destino" size="lg" border />
 
@@ -245,10 +249,10 @@ Independentemente do número de consumidores em execução, a tolerância a falh
 
 O ClickPipes para Pub/Sub oferece entrega **at-least-once**. Uma mensagem do Pub/Sub só é confirmada depois que a linha correspondente é inserida no ClickHouse (ou gravada na tabela de erro, no caso de registros malformados); todas as mensagens são confirmadas depois de processadas — incluindo registros inválidos encaminhados para a tabela de erro — para evitar reentrega infinita. Se uma réplica falhar após a inserção, mas antes de o ack chegar ao Pub/Sub, a mensagem será reenviada após o ack deadline e inserida novamente, portanto os consumidores downstream devem tolerar duplicatas. Se você precisar de semântica de exactly-once, faça a deduplicação downstream usando a coluna virtual `_message_id` (cada ID de mensagem do Pub/Sub é exclusivo dentro de um tópico).
 
-## Autenticação {#authentication}
+<div id="authentication">
+  ## Autenticação
+</div>
 
-A Interface do ClickPipes usa uma chave JSON de service account. Você faz upload do arquivo de chave ao criar o pipe; o ClickPipes o criptografa em repouso e o usa em tempo de execução para consumir mensagens e gerenciar o ciclo de vida da assinatura gerenciada.
-
-O workload identity do GCP também está disponível em Beta. Consulte o [guia de workload identity do GCP](/pt-BR/integrations/clickpipes/security/gcp-workload-identity) para ver as instruções de configuração.
+O ClickPipes para Pub/Sub autentica-se no GCP usando uma chave JSON de conta de serviço. Você faz upload do arquivo de chave ao criar o pipe; o ClickPipes o criptografa em repouso e o usa em tempo de execução para consumir mensagens e gerenciar o ciclo de vida da assinatura gerenciada.
 
 Para conferir a lista exata das permissões do IAM necessárias e uma definição recomendada de função personalizada, consulte o [guia de permissões do IAM do Pub/Sub](/pt-BR/integrations/clickpipes/pubsub/auth).

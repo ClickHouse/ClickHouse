@@ -149,7 +149,7 @@ std::pair<String, StoragePtr> createTableFromAST(
         auto table_function = factory.get(table_function_ast, context);
         ColumnsDescription columns;
         if (ast_create_query.columns_list && ast_create_query.columns_list->columns)
-            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list, context, mode);
+            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);
         StoragePtr storage = table_function->execute(table_function_ast, context, ast_create_query.getTable(), std::move(columns));
         storage->renameInMemory(ast_create_query);
 
@@ -192,7 +192,7 @@ std::pair<String, StoragePtr> createTableFromAST(
         }
         else
         {
-            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list, context, mode);
+            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);
             constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints, columns, context);
         }
     }
@@ -289,7 +289,6 @@ void DatabaseOnDisk::createTable(
       * - creating the .sql.tmp file;
       * - adding a table to `tables`;
       * - rename .sql.tmp to .sql.
-      * On a disk with `supportsAtomicFileCreation`, a new .sql is written directly, before adding the table.
       */
 
     /// A race condition would be possible if a table with the same name is simultaneously created using CREATE and using ATTACH.
@@ -315,8 +314,7 @@ void DatabaseOnDisk::createTable(
     if (!create.attach)
         checkMetadataFilenameAvailability(table_name);
 
-    const bool metadata_exists = create.attach && db_disk->existsFileOrDirectory(table_metadata_path);
-    if (metadata_exists)
+    if (create.attach && db_disk->existsFileOrDirectory(table_metadata_path))
     {
         ASTPtr ast_detached = parseQueryFromMetadata(log, local_context, db_disk, table_metadata_path);
         auto & create_detached = ast_detached->as<ASTCreateQuery &>();
@@ -331,12 +329,10 @@ void DatabaseOnDisk::createTable(
                     backQuote(getDatabaseName()), backQuote(table_name));
     }
 
-    String statement = getObjectDefinitionFromCreateQuery(query);
-    String table_metadata_tmp_path;
+    String table_metadata_tmp_path = table_metadata_path + create_suffix;
 
-    if (metadata_exists || !db_disk->supportsAtomicFileCreation())
     {
-        table_metadata_tmp_path = table_metadata_path + create_suffix;
+        String statement = getObjectDefinitionFromCreateQuery(query);
 
         /// Exclusive flags guarantees, that table is not created right now in another thread. Otherwise, exception will be thrown.
         const auto & settings = local_context->getSettingsRef();
@@ -347,7 +343,7 @@ void DatabaseOnDisk::createTable(
             /*fsync_metadata=*/settings[Setting::fsync_metadata]);
     }
 
-    commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path, statement, local_context);
+    commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path, local_context);
     removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, false);
 }
 
@@ -370,36 +366,23 @@ void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & ta
 
 void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                                        const String & table_metadata_tmp_path, const String & table_metadata_path,
-                                       const String & statement, ContextPtr query_context)
+                                       ContextPtr query_context)
 {
     auto db_disk = getDisk();
-    bool metadata_written = false;
     try
     {
         createDirectories();
 
-        if (table_metadata_tmp_path.empty())
-        {
-            writeMetadataFile(db_disk, table_metadata_path, statement, query_context->getSettingsRef()[Setting::fsync_metadata]);
-            metadata_written = true;
-        }
-
         /// Add a table to the map of known tables.
         attachTable(query_context, query.getTable(), table, getTableDataPath(query));
 
-        if (!table_metadata_tmp_path.empty())
-        {
-            /// If it was ATTACH query and file with table metadata already exist
-            /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
-            db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
-        }
+        /// If it was ATTACH query and file with table metadata already exist
+        /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
+        db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
     }
     catch (...)
     {
-        if (!table_metadata_tmp_path.empty())
-            db_disk->removeFileIfExists(table_metadata_tmp_path);
-        else if (metadata_written)
-            db_disk->removeFileIfExists(table_metadata_path);
+        db_disk->removeFileIfExists(table_metadata_tmp_path);
         throw;
     }
 }
