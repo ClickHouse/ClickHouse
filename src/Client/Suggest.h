@@ -6,7 +6,6 @@
 #include <Client/IServerConnection.h>
 #include <Client/LocalConnection.h>
 #include <Client/LineReader.h>
-#include <Common/ThreadWithStackSize.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/ConnectionTimeouts.h>
 #include <atomic>
@@ -38,7 +37,6 @@ public:
               const ConnectionTimeouts & timeouts,
               Int32 suggestion_limit,
               const ClientInfo & client_info,
-              const Settings & settings,
               std::ostream & error_stream);
 
     /// Older server versions cannot execute the query loading suggestions.
@@ -55,18 +53,12 @@ public:
     bool lastExchangeEndedInSync() const { return last_exchange_ended_in_sync.load(); }
 
 private:
-    void fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info, const Settings & settings);
+    void fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info);
 
     void fillWordsFromBlock(const Block & block);
 
     /// Words are fetched asynchronously.
-    /// `clickhouse-local` runs the suggestion query in this thread, which needs more than macOS' 512 KiB `std::thread` stack.
-#if defined(OS_DARWIN)
-    using LoadingThread = ThreadWithStackSize;
-#else
-    using LoadingThread = std::thread;
-#endif
-    LoadingThread loading_thread;
+    std::thread loading_thread;
 
     std::atomic<int> last_error { -1 };
 

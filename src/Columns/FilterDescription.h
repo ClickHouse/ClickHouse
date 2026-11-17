@@ -14,9 +14,6 @@ bool tryConvertAnyColumnToBool(const IColumn & column, IColumnFilter & res);
 
 /// Support methods for implementation of WHERE, PREWHERE and HAVING.
 
-/// Whether `column` may be filtered in place: neither it nor any of its subcolumns is shared.
-/// The caller must hold its own reference to the filter column, which makes the filter column shared.
-bool canInplaceFilter(const ColumnPtr & column);
 
 /// Analyze if the column for filter is constant thus filter is always false or always true.
 struct ConstantFilterDescription

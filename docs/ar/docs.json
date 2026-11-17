@@ -9,59 +9,40 @@
     {
       "menu": [
         {
-          "href": "#",
-          "icon": "/images/icons/icon-clickhouse.svg",
-          "item": "ClickHouse"
-        },
-        {
           "$ref": "./get-started/navigation.json"
-        },
-        {
-          "$ref": "./guides/navigation.json"
         },
         {
           "$ref": "./concepts/navigation.json"
         },
         {
-          "$ref": "./reference/navigation.json"
+          "$ref": "./guides/navigation.json"
         },
         {
-          "$ref": "./products/managed-postgres/navigation.json"
+          "$ref": "./reference/navigation.json"
         }
       ],
-      "tab": "قواعد البيانات"
+      "tab": "قاعدة البيانات"
     },
     {
       "menu": [
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "عمليات النشر"
+          "item": "ClickHouse Cloud"
         },
         {
           "$ref": "./products/cloud/navigation.json"
         },
         {
-          "item": "BYOC",
-          "pages": [
-            "ar/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
-          ]
-        },
-        {
-          "href": "#",
-          "icon": "/images/icons/section-header.svg",
-          "item": "التطبيقات"
+          "$ref": "./products/managed-postgres/navigation.json"
         },
         {
           "$ref": "./clickstack/navigation.json"
         },
         {
           "href": "https://langfuse.com/docs",
-          "item": "هندسة الذكاء الاصطناعي"
-        },
-        {
-          "href": "https://docs.runreveal.com/",
-          "item": "الأمان"
+          "icon": "/images/icons/logo-langfuse.svg",
+          "item": "Langfuse"
         },
         {
           "href": "#",
@@ -69,28 +50,21 @@
           "item": "مفتوح المصدر"
         },
         {
-          "item": "ClickStack",
-          "pages": [
-            "ar/clickstack/index"
-          ]
+          "$ref": "./products/agentic-data-stack/navigation.json"
         },
         {
           "$ref": "./chdb/navigation.json"
         },
         {
           "$ref": "./products/kubernetes-operator/navigation.json"
-        },
-        {
-          "href": "https://www.librechat.ai/docs",
-          "item": "LibreChat"
         }
       ],
-      "tab": "المنتجات"
+      "tab": "الحلول"
     },
     {
       "menu": [
         {
-          "item": "المنظومة",
+          "item": "النظام المتكامل",
           "pages": [
             "ar/integrations/home",
             "ar/integrations/data-catalogs"
@@ -106,7 +80,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "التكاملات"
+      "tab": "عمليات التكامل"
     },
     {
       "menu": [

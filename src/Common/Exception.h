@@ -330,7 +330,6 @@ void tryLogCurrentException(LogFrequencyLimiterImpl && logger, const std::string
   * check_embedded_stacktrace - if DB::Exception has embedded stacktrace then
   *  only this stack trace will be printed.
   * with_extra_info - add information about the filesystem in case of "No space left on device" and similar.
-  * Returns an empty message when no exception is being handled.
   */
 std::string getCurrentExceptionMessage(
     bool with_stacktrace,
@@ -343,7 +342,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
     bool with_extra_info = true,
     bool with_version = true);
 
-/// Returns error code from ErrorCodes; `OK` when no exception is being handled.
+/// Returns error code from ErrorCodes
 int getCurrentExceptionCode();
 int getExceptionErrorCode(std::exception_ptr e);
 

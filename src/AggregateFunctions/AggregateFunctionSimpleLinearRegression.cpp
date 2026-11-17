@@ -222,9 +222,8 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3]);
         )",
         R"(
 ┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])─┐
-├───────────────────────────────k─┬───────────────────────────────b─┤
-│                               1 │                               0 │
-└─────────────────────────────────┴─────────────────────────────────┘
+│ (1,0)                                                             │
+└───────────────────────────────────────────────────────────────────┘
         )"
     },
     {
@@ -234,9 +233,8 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6]);
         )",
         R"(
 ┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])─┐
-├───────────────────────────────k─┬───────────────────────────────b─┤
-│                               1 │                               3 │
-└─────────────────────────────────┴─────────────────────────────────┘
+│ (1,3)                                                             │
+└───────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -244,7 +242,7 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6]);
     FunctionDocumentation::Category category_simpleLinearRegression = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_simpleLinearRegression = {description_simpleLinearRegression, syntax_simpleLinearRegression, arguments_simpleLinearRegression, parameters_simpleLinearRegression, returned_value_simpleLinearRegression, examples_simpleLinearRegression, introduced_in_simpleLinearRegression, category_simpleLinearRegression};
 
-    factory.registerFunction("simpleLinearRegression", {createAggregateFunctionSimpleLinearRegression, documentation_simpleLinearRegression, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction("simpleLinearRegression", {createAggregateFunctionSimpleLinearRegression, documentation_simpleLinearRegression});
 }
 
 }
