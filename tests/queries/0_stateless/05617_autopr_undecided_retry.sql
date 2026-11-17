@@ -76,7 +76,7 @@ GROUP BY o_total FORMAT Null SETTINGS log_comment = 'undecided_empty_max_2', aut
 SELECT o_total, sum(l_price) FROM t_undecided_l INNER JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE o_total = 0.5
 GROUP BY o_total FORMAT Null SETTINGS log_comment = 'undecided_empty_max_3', automatic_parallel_replicas_undecided_retry_after_executions = 18446744073709551615;
 
--- Index analysis selects no rows, so the plans are not compared. Without remembered boundaries this is found only
+-- Index analysis selects no rows, so there is nothing to decide. Without remembered boundaries this is found only
 -- after building the plan with parallel replicas, and is deferred like the other outcomes: the second run builds the
 -- plan again at once, the next two skip it.
 SELECT sum(o_total) FROM t_undecided_o WHERE o_orderkey > 100000
