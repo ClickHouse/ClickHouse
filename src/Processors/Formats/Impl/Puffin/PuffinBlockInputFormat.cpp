@@ -271,13 +271,12 @@ void requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_inde
             blob_index);
 }
 
-void requireDatasketchesThetaV1Properties(const PuffinBlob & blob, size_t blob_index)
+void validateDatasketchesThetaV1Properties(const PuffinBlob & blob, size_t blob_index)
 {
     auto it = blob.properties.find("ndv");
+    if (it == blob.properties.end())
+        return;
     UInt64 ndv = 0;
-    if (it == blob.properties.end() || it->second.empty())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: apache-datasketches-theta-v1 missing required property 'ndv'", blob_index);
     if (!tryParse(ndv, it->second))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -400,8 +399,8 @@ VectorWithMemoryTracking<PuffinBlob> parseFooterJSON(const String & footer_json,
             if (blob_obj->has("compression-codec"))
                 blob.compression_codec = requireBlobMetadataString(blob_obj, "compression-codec", i);
 
-            parseBlobProperties(blob_obj, blob, i, /*required=*/true);
-            requireDatasketchesThetaV1Properties(blob, i);
+            parseBlobProperties(blob_obj, blob, i, /*required=*/false);
+            validateDatasketchesThetaV1Properties(blob, i);
         }
         else
         {
