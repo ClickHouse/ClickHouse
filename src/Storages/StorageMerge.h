@@ -3,6 +3,7 @@
 #include <functional>
 #include <unordered_map>
 
+#include <Processors/QueryPlan/Optimizations/mergeNeutralSum.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/IStorage.h>
@@ -270,7 +271,15 @@ public:
 
     void addFilter(FilterDAGInfo filter);
 
+    /// Supply the aggregate's column dependencies after view expansion into the plan.
+    void setNeutralSumProof(String measure, Names keys);
+
 private:
+    std::optional<QueryPlanOptimizations::NeutralSumProof> neutral_sum_proof;
+    /// Once child pointers escape, or pipeline construction begins, proofs cannot
+    /// destroy/rebuild the plans. A conflicting consumer disables further proofs.
+    bool neutral_children_exposed = false;
+    bool neutral_proof_conflict = false;
     const size_t required_max_block_size;
     const size_t requested_num_streams;
     SharedHeader common_header;
@@ -348,6 +357,9 @@ private:
         bool forget_aggregation_buckets = false;
         /// Set when the child's plan applies the child's row policy itself (interpreter plan, or the read's row-level filter).
         bool applies_row_policy = false;
+        /// Retain the unreduced plan until execution in case a late filter observes multiplicity.
+        std::unique_ptr<QueryPlan> unreduced_plan = nullptr;
+        std::optional<std::pair<StorageID, String>> neutral_projection = std::nullopt;
     };
 
     /// Answer of `getExpandableReads`, unset until it is asked for. The parallel-replicas pass asks first

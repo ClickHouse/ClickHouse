@@ -1087,7 +1087,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
     filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
 
-    if (!query_info.is_internal && context->hasQueryContext())
+    if (optimization_settings.record_projection_usage && !query_info.is_internal && context->hasQueryContext())
     {
         context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
         {
