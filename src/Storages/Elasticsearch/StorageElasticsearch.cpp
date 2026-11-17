@@ -6,32 +6,49 @@
 #include <Columns/IColumn_fwd.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
+
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
+
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
+
 #include <Interpreters/Context.h>
 #include <Columns/ColumnString.h>
+
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Elasticsearch/ElasticsearchConfiguration.h>
 #include <Storages/Elasticsearch/ElasticsearchSettings.h>
 #include <Storages/Elasticsearch/StorageElasticsearch.h>
 #include <Storages/Elasticsearch/ElasticsearchClient.h>
+
 #include <Processors/ISource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+
 #include <Storages/IStorage.h>
 #include <Core/Block.h>
 #include <Storages/StorageInMemoryMetadata.h>
+
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+
 #include <IO/ReadBufferFromString.h>
+#include <IO/Operators.h>
+
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/assert_cast.h>
 #include <Common/Documentation.h>
+#include <Common/JSONBuilder.h>
+
 #include <Storages/StorageFactory.h>
 
 namespace DB
@@ -40,6 +57,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool enable_elasticsearch;
+    extern const SettingsBool parallelize_output_from_storages;
 }
 
 namespace ErrorCodes
@@ -65,10 +83,9 @@ public:
             hit_columns.source_serialization = sample_block->getByPosition(*hit_columns.source_pos).type->getDefaultSerialization();
     }
 
-    String getName() const override { return "Elasticsearch"; }
+    String getName() const override { return "ElasticsearchSource"; }
 
 private:
-
     Chunk generate() override
     {
         if (!has_data)
@@ -97,6 +114,92 @@ private:
     std::shared_ptr<ElasticsearchClient> client;
 };
 
+class ReadFromElasticsearch : public SourceStepWithFilter
+{
+public:
+    [[nodiscard]] std::string getName() const override { return "ReadFromElasticsearch"; }
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void describeActions(FormatSettings & format_settings) const override;
+    void describeActions(JSONBuilder::JSONMap & map) const override;
+
+    ReadFromElasticsearch(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
+        ElasticsearchConfiguration config_,
+        ElasticsearchSettings settings_,
+        SharedHeader sample_block,
+        size_t num_streams_)
+        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
+        , es_settings(std::move(settings_))
+        , es_config(std::move(config_))
+        , max_num_streams(num_streams_)
+    {
+    }
+
+private:
+    ElasticsearchSettings es_settings;
+    ElasticsearchConfiguration es_config;
+    const size_t max_num_streams;
+};
+
+void ReadFromElasticsearch::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
+{
+    const auto & settings = context->getSettingsRef();
+
+    auto sample_block = getOutputHeader();
+
+    String json_column_name = storage_snapshot->metadata->getColumns().getOrdinary().front().name;
+
+    auto client = std::make_shared<ElasticsearchClient>(es_config, context, es_settings);
+    auto source = std::make_shared<ElasticsearchSource>(std::move(client), sample_block, json_column_name);
+
+    source->setStorageLimits(query_info.storage_limits);
+
+    Pipe pipe(std::move(source));
+
+    size_t output_ports = pipe.numOutputPorts();
+    const bool parallelize_output = settings[Setting::parallelize_output_from_storages];
+
+    const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
+    if (parallelize_output && output_ports > 0 && output_ports < resize_to)
+        pipe.resize(resize_to);
+
+    for (const auto & processor : pipe.getProcessors())
+        processors.emplace_back(processor);
+
+    pipeline.init(std::move(pipe));
+}
+
+void ReadFromElasticsearch::describeActions(FormatSettings & format_settings) const
+{
+    const std::string & prefix = format_settings.detail_prefix;
+
+    SourceStepWithFilter::describeActions(format_settings);
+
+    if (!es_config.named_collection_name.empty())
+    {
+        format_settings.out << prefix << "Named collection: " << es_config.named_collection_name << '\n';
+        return;
+    }
+    format_settings.out << prefix << "Index: " << es_config.index << '\n';
+    format_settings.out << prefix << "Query: " << es_config.query << '\n';
+}
+
+void ReadFromElasticsearch::describeActions(JSONBuilder::JSONMap & map) const
+{
+    SourceStepWithFilter::describeActions(map);
+
+    if (!es_config.named_collection_name.empty())
+    {
+        map.add("Named collection", es_config.named_collection_name);
+        return;
+    }
+    map.add("Index", es_config.index);
+    map.add("Query", es_config.query);
+}
+
 StorageElasticsearch::StorageElasticsearch(
     const StorageID & table_id_,
     ElasticsearchConfiguration configuration_,
@@ -123,25 +226,23 @@ StorageElasticsearch::StorageElasticsearch(
     setInMemoryMetadata(storage_metadata);
 }
 
-Pipe StorageElasticsearch::read(
+void StorageElasticsearch::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
-    ContextPtr context,
+    SelectQueryInfo & query_info,
+    ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
-    size_t /*num_streams*/)
+    size_t num_streams)
 {
     storage_snapshot->check(column_names);
+    auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
 
-    Block sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
+    auto reading = std::make_unique<ReadFromElasticsearch>(
+        column_names, query_info, storage_snapshot, context_, config, *storage_settings, std::move(sample_block), num_streams);
 
-    String json_column_name = storage_snapshot->metadata->getColumns().getOrdinary().front().name;
-
-    auto client = std::make_shared<ElasticsearchClient>(config, context, *storage_settings);
-    return Pipe(std::make_shared<ElasticsearchSource>(
-        std::move(client),
-        std::make_shared<Block>(std::move(sample_block)), json_column_name));
+    query_plan.addStep(std::move(reading));
 }
 
 VirtualColumnsDescription StorageElasticsearch::createVirtuals()
