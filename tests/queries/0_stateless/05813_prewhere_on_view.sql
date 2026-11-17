@@ -17,6 +17,15 @@ DROP VIEW IF EXISTS v_prewhere_of_view;
 DROP VIEW IF EXISTS v_prewhere_array_join;
 DROP VIEW IF EXISTS v_prewhere_stateful_alias;
 DROP TABLE IF EXISTS t_prewhere_view_stateful_alias;
+DROP VIEW IF EXISTS v_prewhere_lambda;
+DROP VIEW IF EXISTS v_prewhere_merge;
+DROP VIEW IF EXISTS v_prewhere_merge_stateful_default;
+DROP VIEW IF EXISTS v_prewhere_materialized_view;
+DROP VIEW IF EXISTS v_prewhere_own_alias;
+DROP VIEW IF EXISTS v_prewhere_executable;
+DROP TABLE IF EXISTS mv_prewhere_view;
+DROP TABLE IF EXISTS m_prewhere_view;
+DROP TABLE IF EXISTS m_prewhere_view_stateful_default;
 DROP VIEW IF EXISTS v_prewhere_stateful_default;
 DROP TABLE IF EXISTS t_prewhere_view_stateful_default;
 DROP VIEW IF EXISTS v_prewhere_subcolumns;
@@ -33,6 +42,9 @@ CREATE VIEW v_prewhere_all AS SELECT * FROM t_prewhere_view;
 CREATE VIEW v_prewhere_columns AS SELECT b AS x, s, flag, d, a + b AS total FROM t_prewhere_view WHERE a >= 10;
 CREATE VIEW v_prewhere_definer DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT * FROM t_prewhere_view WHERE b > 10;
 CREATE VIEW v_prewhere_qualified AS SELECT t.a, t.b AS y, arr FROM t_prewhere_view AS t;
+CREATE VIEW v_prewhere_lambda AS SELECT a, arrayMap(e -> e + 1, arr) AS m FROM t_prewhere_view;
+CREATE TABLE m_prewhere_view (a UInt64, b UInt64) ENGINE = Merge(currentDatabase(), '^t_prewhere_view$');
+CREATE VIEW v_prewhere_merge AS SELECT a, b FROM m_prewhere_view;
 CREATE TABLE t_prewhere_view_other (a UInt64) ENGINE = Memory;
 INSERT INTO t_prewhere_view_other VALUES (200), (7);
 
@@ -48,6 +60,9 @@ SELECT count() FROM v_prewhere_all WHERE arrayExists(e -> e = 4, arr) AND a < 50
 SELECT count() FROM v_prewhere_qualified PREWHERE a < 10 AND y > 95;
 -- A condition without a column of the view.
 SELECT count() FROM v_prewhere_all PREWHERE 1;
+-- A view with a lambda, and a view of a `Merge` table over `MergeTree` tables.
+SELECT count() FROM v_prewhere_lambda PREWHERE a < 10;
+SELECT count() FROM v_prewhere_merge PREWHERE a < 10;
 -- The view is not inlined, so that the condition is moved into its query.
 SELECT count() FROM v_prewhere_all PREWHERE a < 10 SETTINGS analyzer_inline_views = 1;
 -- The definer reads the view as its own query.
@@ -112,6 +127,13 @@ CREATE TABLE t_prewhere_view_stateful_default (a UInt64) ENGINE = MergeTree ORDE
 INSERT INTO t_prewhere_view_stateful_default SELECT number FROM numbers(10);
 ALTER TABLE t_prewhere_view_stateful_default ADD COLUMN n UInt64 DEFAULT rowNumberInAllBlocks();
 CREATE VIEW v_prewhere_stateful_default AS SELECT a, n FROM t_prewhere_view_stateful_default;
+-- The same behind a `Merge` table and a materialized view, in a column that the view itself calculates, and in an executable function.
+CREATE TABLE m_prewhere_view_stateful_default (a UInt64, n UInt64) ENGINE = Merge(currentDatabase(), '^t_prewhere_view_stateful_default$');
+CREATE VIEW v_prewhere_merge_stateful_default AS SELECT a, n FROM m_prewhere_view_stateful_default;
+CREATE MATERIALIZED VIEW mv_prewhere_view TO t_prewhere_view_stateful_default AS SELECT a FROM t_prewhere_view;
+CREATE VIEW v_prewhere_materialized_view AS SELECT a FROM mv_prewhere_view;
+CREATE VIEW v_prewhere_own_alias (a UInt64, n UInt64 ALIAS rowNumberInAllBlocks()) AS SELECT a FROM t_prewhere_view;
+CREATE VIEW v_prewhere_executable AS SELECT a, test_function(a, a) AS n FROM t_prewhere_view;
 SELECT count() FROM v_prewhere_swapped PREWHERE a < 10; -- { serverError ILLEGAL_PREWHERE }
 SELECT count() FROM v_prewhere_alias_of_alias PREWHERE c % 2 = 0; -- { serverError ILLEGAL_PREWHERE }
 SELECT count() FROM v_prewhere_stateful PREWHERE a >= 50; -- { serverError ILLEGAL_PREWHERE }
@@ -123,6 +145,10 @@ SELECT count() FROM v_prewhere_of_view PREWHERE a < 10; -- { serverError ILLEGAL
 SELECT count() FROM v_prewhere_array_join PREWHERE a < 10; -- { serverError ILLEGAL_PREWHERE }
 SELECT count() FROM v_prewhere_stateful_alias PREWHERE a < 10; -- { serverError ILLEGAL_PREWHERE }
 SELECT count() FROM v_prewhere_stateful_default PREWHERE a >= 5; -- { serverError ILLEGAL_PREWHERE }
+SELECT count() FROM v_prewhere_merge_stateful_default PREWHERE a >= 5; -- { serverError ILLEGAL_PREWHERE }
+SELECT count() FROM v_prewhere_materialized_view PREWHERE a >= 5; -- { serverError ILLEGAL_PREWHERE }
+SELECT count() FROM v_prewhere_own_alias PREWHERE a >= 5; -- { serverError ILLEGAL_PREWHERE }
+SELECT count() FROM v_prewhere_executable PREWHERE a >= 5; -- { serverError ILLEGAL_PREWHERE }
 
 -- The condition would be analyzed with the rights of the definer, so only the definer moves it into such a view.
 CREATE USER {CLICKHOUSE_DATABASE:Identifier};
@@ -151,6 +177,15 @@ DROP VIEW v_prewhere_of_view;
 DROP VIEW v_prewhere_array_join;
 DROP VIEW v_prewhere_stateful_alias;
 DROP TABLE t_prewhere_view_stateful_alias;
+DROP VIEW v_prewhere_lambda;
+DROP VIEW v_prewhere_merge;
+DROP VIEW v_prewhere_merge_stateful_default;
+DROP VIEW v_prewhere_materialized_view;
+DROP VIEW v_prewhere_own_alias;
+DROP VIEW v_prewhere_executable;
+DROP TABLE mv_prewhere_view;
+DROP TABLE m_prewhere_view;
+DROP TABLE m_prewhere_view_stateful_default;
 DROP VIEW v_prewhere_stateful_default;
 DROP TABLE t_prewhere_view_stateful_default;
 DROP VIEW v_prewhere_subcolumns;

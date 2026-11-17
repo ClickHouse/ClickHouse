@@ -23,6 +23,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/SelectQueryDescription.h>
@@ -180,9 +181,13 @@ bool dependsOnOtherRows(const ASTPtr & expr, const ContextPtr & context)
     if (!expr)
         return false;
     if (const auto * function = expr->as<ASTFunction>())
-        if (auto resolver = FunctionFactory::instance().tryGet(function->name, context);
-            resolver && (resolver->isStateful() || !resolver->isDeterministicInScopeOfQuery() || resolver->getName() == "arrayJoin"))
+    {
+        /// A function that the factory does not know, such as an executable user-defined function, could do any of that.
+        auto resolver = FunctionFactory::instance().tryGet(function->name, context);
+        if (resolver ? (resolver->isStateful() || !resolver->isDeterministicInScopeOfQuery() || resolver->getName() == "arrayJoin")
+                     : function->name != "lambda")
             return true;
+    }
     return std::ranges::any_of(expr->children, [&](const ASTPtr & child) { return dependsOnOtherRows(child, context); });
 }
 
@@ -852,15 +857,33 @@ NameSet StorageView::getPrewhereColumns(const StorageSnapshotPtr & snapshot, con
     countAliases(select.where(), aliases);
 
     /// The condition would change the rows that such functions of the view see, also in the default expression of a column
-    /// of the table, which is calculated at the read of an `ALIAS` column and of a part without the column.
+    /// of the view or of the table, which is calculated at the read of an `ALIAS` column and of a part without the column.
+    auto depends_on_other_rows = [&](const ColumnsDescription & columns)
+    {
+        return std::ranges::any_of(columns, [&](const auto & column) { return dependsOnOtherRows(column.default_desc.expression, view_context); });
+    };
     if (dependsOnOtherRows(select.select(), view_context) || dependsOnOtherRows(select.where(), view_context)
-        || std::ranges::any_of(table_columns, [&](const auto & column) { return dependsOnOtherRows(column.default_desc.expression, view_context); }))
+        || depends_on_other_rows(metadata.getColumns()) || depends_on_other_rows(table_columns))
+        return {};
+
+    /// Other tables may read through tables whose default expressions are not known here. A `Merge` table is looked into.
+    const auto * merge = typeid_cast<const StorageMerge *>(table.get());
+    if (merge ? merge->hasChildTable([&](const StoragePtr & child)
+                {
+                    const auto child_metadata = child->getInMemoryMetadataPtr(context, false);
+                    return !child->isMergeTree() || depends_on_other_rows(child_metadata->getColumns());
+                })
+              : !table->isMergeTree())
         return {};
     const auto table_prewhere_columns = table->supportedPrewhereColumns();
 
     NameSet result;
     for (const auto & column : metadata.getColumns())
     {
+        /// A column that the view calculates is not a column of the table.
+        if (column.default_desc.expression)
+            continue;
+
         ListedColumn listed{column.name, false};
         if (auto it = listed_columns.find(column.name); it != listed_columns.end())
             listed = it->second;

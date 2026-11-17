@@ -12,6 +12,8 @@ the same rows as with WHERE
 10
 10
 10
+10
+10
 100
 the table executes it as its own PREWHERE
 1
