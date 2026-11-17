@@ -8,6 +8,8 @@
 #include <type_traits>
 #include <utility>
 
+#include <base/sort.h>
+
 #include <Common/NaNUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -74,7 +76,8 @@ struct AggregateFunctionTimeseriesMadToGridTraits
 
         const Float64 kth_deviation_at_low = std::max(deviation_of_first(low), deviation_of_last(low));
         const Float64 kth_deviation_before_low = low > 0 ? std::max(deviation_of_first(low - 1), deviation_of_last(low - 1)) : infinity;
-        const Float64 kth_deviation = std::min(kth_deviation_at_low, kth_deviation_before_low);
+        /// `abs` turns `-0.0` (`median - value` for zeros) into `+0.0`, as `|value - median|` in Prometheus.
+        const Float64 kth_deviation = std::abs(std::min(kth_deviation_at_low, kth_deviation_before_low));
 
         if constexpr (!with_next)
             return kth_deviation;
@@ -90,12 +93,18 @@ struct AggregateFunctionTimeseriesMadToGridTraits
         }
     }
 
-    /// Sliding aggregator: keeps the sorted values of the window and computes the median absolute deviation from them.
+    /// Sliding aggregator: keeps the values of the window, sorted unless `one_bucket_windows`, and computes their median absolute deviation.
     struct Aggregator
     {
         AggregateFunctionTimeseriesSlidingSum<Summary> sliding_sum;
 
         static_assert(decltype(sliding_sum)::is_invertible);
+
+        /// Set if every window is one bucket (the window is not longer than the step, or the grid has one point): its values
+        /// are used once, so they are kept unsorted and `getResult` selects the medians from them.
+        bool one_bucket_windows = false;
+        mutable Summary unsorted_window;
+        GridScaleTimestampType unsorted_window_end{};
 
         void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
         {
@@ -108,6 +117,14 @@ struct AggregateFunctionTimeseriesMadToGridTraits
             if (values.empty())
                 return;
 
+            if (one_bucket_windows)
+            {
+                /// Replaces the bucket of the previous grid point, which is out of this window.
+                unsorted_window.values = std::move(values);
+                unsorted_window_end = bucket_end_timestamp;
+                return;
+            }
+
             Summary summary;
             summary.add(std::move(values));
             sliding_sum.add(std::move(summary), bucket_end_timestamp);
@@ -115,11 +132,62 @@ struct AggregateFunctionTimeseriesMadToGridTraits
 
         void removeBefore(GridScaleTimestampType cut_off)
         {
+            if (one_bucket_windows)
+            {
+                if (unsorted_window_end <= cut_off)
+                    unsorted_window.values.clear();
+                return;
+            }
             sliding_sum.removeBefore(cut_off);
+        }
+
+        /// The median absolute deviation of unsorted values, with the medians selected rather than sorted. Destroys the values.
+        static std::optional<ResultType> getUnsortedResult(Summary & window)
+        {
+            const auto & values = window.values;
+            if (values.empty())
+                return std::nullopt;
+
+            if (std::any_of(values.begin(), values.end(), [](ValueType value) { return isNaN(value); }))
+                return std::numeric_limits<Float64>::quiet_NaN();
+
+            window.selectForQuantile(0.5);
+            const Float64 median = *window.quantile(0.5);
+            if (!std::isfinite(median))
+                return std::numeric_limits<Float64>::quiet_NaN();
+
+            /// The middle deviation, or the two middle ones weighted by 0.5. The deviations are not NaN, so `std::less` orders them.
+            auto median_of_deviations = [](auto & deviations) -> Float64
+            {
+                const size_t middle = (deviations.size() - 1) / 2;
+                ::nth_element(deviations.begin(), deviations.begin() + middle, deviations.end());
+                if (deviations.size() % 2 == 1)
+                    return deviations[middle];
+                return deviations[middle] * 0.5 + *std::min_element(deviations.begin() + middle + 1, deviations.end()) * 0.5;
+            };
+
+            /// `Float64` values are replaced by their deviations. The deviations of `Float32` values go to a `Float64` buffer,
+            /// as `kthSmallestDeviation` computes them in `Float64`.
+            if constexpr (std::is_same_v<ValueType, Float64>)
+            {
+                for (Float64 & value : window.values)
+                    value = std::abs(value - median);
+                return median_of_deviations(window.values);
+            }
+            else
+            {
+                VectorWithMemoryTracking<Float64> deviations(values.size());
+                for (size_t i = 0; i < values.size(); ++i)
+                    deviations[i] = std::abs(static_cast<Float64>(values[i]) - median);
+                return median_of_deviations(deviations);
+            }
         }
 
         [[nodiscard]] std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
         {
+            if (one_bucket_windows)
+                return getUnsortedResult(unsorted_window);
+
             const Summary & summary = sliding_sum.getCurrentSum();
             const auto & values = summary.values;
             if (values.empty())
@@ -171,7 +239,9 @@ public:
 
     Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
-        return {};
+        Aggregator aggregator;
+        aggregator.one_bucket_windows = Base::buckets_per_window <= 1;
+        return aggregator;
     }
 };
 

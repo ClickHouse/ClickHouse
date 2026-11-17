@@ -119,6 +119,20 @@ struct AggregateFunctionTimeseriesSortedValues
         const Float64 weight = rank - static_cast<Float64>(lower);
         return static_cast<Float64>(values[lower]) * (1.0 - weight) + static_cast<Float64>(values[upper]) * weight;
     }
+
+    /// For unsorted values: moves the values that `quantile(phi)` reads to their sorted positions, in O(n) instead of sorting.
+    void selectForQuantile(Float64 phi)
+    {
+        if (values.empty() || !(phi >= 0.0 && phi <= 1.0))
+            return;
+
+        /// The same rank as in `quantile`.
+        const Float64 rank = phi * static_cast<Float64>(values.size() - 1);
+        const auto lower = values.begin() + static_cast<size_t>(std::floor(rank));
+        ::nth_element(values.begin(), lower, values.end(), less);
+        if (std::ceil(rank) != std::floor(rank))
+            std::iter_swap(lower + 1, std::min_element(lower + 1, values.end(), less));
+    }
 };
 
 }
