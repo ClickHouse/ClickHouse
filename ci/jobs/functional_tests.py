@@ -772,26 +772,16 @@ def main():
     if args.count:
         print(f"Rerun count set from --count: {args.count}")
         rerun_count = args.count
-    elif is_flaky_check and info.is_merge_queue_event:
-        # The merge-queue flaky check is a drift guard, not a full flakiness
-        # hunt: the PR CI already ran the full flaky check, and this rerun only
-        # needs to catch new tests broken by the current `master` state (e.g. a
-        # setting randomization added to `tests/clickhouse-test` after the PR's
-        # last CI run), or new `master` tests broken by the PR. A randomized
-        # setting drawn with probability 0.4 per run escapes 20 iterations with
-        # probability 0.6^20 ~= 4e-5, so a reduced count keeps merge-queue
-        # latency bounded without losing the signal.
-        rerun_count = 20
     elif is_flaky_check:
         # Large repeat count so the 45-min global_time_limit is the effective stopping
         # condition, not the repeat count.  Tests run in parallel (--jobs N) with fresh
         # random settings per TestCase; --max-failures 5 stops early on broken PRs.
         rerun_count = 50
     elif is_targeted_check and info.is_merge_queue_event:
-        # The merge-queue targeted check is a drift guard like the merge-queue
-        # flaky check: the PR CI already repeated the selection 50 times, and
-        # this run only needs to catch tests broken by the merged `master`
-        # state. A few repetitions still sample the randomized settings, and the
+        # The merge-queue targeted check reruns the PR's coverage selection
+        # against the merged `master` state to catch a PR breaking a test it
+        # touches or covers. The PR CI already repeated the selection 50 times,
+        # so a few repetitions here still sample the randomized settings, and the
         # run usually ends well before its time limit instead of filling it.
         rerun_count = 3
     elif is_targeted_check:
@@ -927,8 +917,6 @@ def main():
             if is_bugfix_validation and not is_labeled_bugfix_validation:
                 # Not a bugfix PR - run a simple sanity test
                 tests = ["00001_select_1"]
-            elif is_flaky_check and info.is_merge_queue_event:
-                tests = targeter.get_merge_queue_tests()
             elif is_flaky_check:
                 # Flaky check runs only changed/new test files in this PR.
                 # Previously failed and coverage-relevant tests are handled
@@ -1309,9 +1297,7 @@ def main():
 
         global_time_limit = 0
         if is_flaky_check:
-            # The merge-queue run gets a tighter budget: it delays merges
-            # directly, and its reduced rerun_count needs less time anyway.
-            FLAKY_CHECK_TIME_LIMIT = 20 * 60 if info.is_merge_queue_event else 45 * 60
+            FLAKY_CHECK_TIME_LIMIT = 45 * 60
             # Floor the budget at a small positive value: `run_tests` interprets
             # `global_time_limit == 0` as "pass no `--global_time_limit`", i.e. no
             # cap at all. If setup already consumed the whole budget (more likely

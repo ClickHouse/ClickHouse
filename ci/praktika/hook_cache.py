@@ -181,7 +181,7 @@ class CacheRunnerHooks:
             # schedule, dispatch, merge_queue) must not reuse a record it
             # produced - otherwise a PR's green result could satisfy e.g. the
             # merge queue's lookup and skip a job the queue must run on the merge
-            # group state (the drift guard). A pull_request run itself may reuse
+            # group state (e.g. the targeted checks). A pull_request run itself may reuse
             # any record. Correctness is unaffected either way: a digest match
             # means identical inputs, so the producing event only encodes how
             # much we trust the result.
