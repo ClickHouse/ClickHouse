@@ -57,6 +57,12 @@ public:
         return true;
     }
 
+    /// Whether this insert has already reserved the key.
+    bool holds(const std::string & path) const
+    {
+        return std::ranges::find(reserved, path) != reserved.end();
+    }
+
     /// Releases a key that this insert has reserved but is not going to write after all.
     void release(const std::string & path)
     {

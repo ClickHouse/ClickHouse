@@ -1111,10 +1111,43 @@ SinkToStoragePtr StorageObjectStorage::createSink(
 
     auto paths = configuration->getPaths();
 
+    /// Every key this insert writes - the one it starts with, and every generated one - is reserved until the
+    /// insert is over, so that a concurrent insert into the same table picks a different one: a key is published
+    /// for the readers only after its object has been committed, and until then the object storage does not have
+    /// it either, so nothing else would tell the two inserts apart and one of them would overwrite the data of the other.
+    ///
+    /// This is done before a truncating insert deletes anything: it fails when a concurrent insert is writing the
+    /// same starting key, see `checkAndGetNewFileOnInsertIfNeeded`. A truncating insert keeps the starting key, so
+    /// the cleanup below does not change it.
+    auto reservations = std::make_shared<WrittenPathReservations>(configuration);
+
+    /// The truncating inserts are coordinated on the raw key of the table, whatever key they start writing: a truncating
+    /// insert that is not split starts from the last key that is not a part of a split tail, while one that is split
+    /// starts from the raw key. If they reserved only their starting keys, both could run at the same time - the split one
+    /// would step over the key the other one is writing in its cleanup, and the table would end up with the objects of
+    /// both rewrites rather than of one of them.
+    ///
+    /// The raw key is the first path of the table, which no insert ever changes. It is reserved before the starting key
+    /// is selected, and the selection is made from the paths of the table read after the reservation: otherwise a
+    /// concurrent truncating insert could rewrite the table and finish between the selection and the reservation, and
+    /// this insert would then write a key that the other one has already removed, publishing it again next to the
+    /// objects of the other rewrite.
+    const String raw_key = paths.front().path;
+    if (settings.truncate_on_insert)
+    {
+        if (!reservations->tryReserveStartingPath(raw_key))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Object in bucket {} with key {} is being written by a concurrent insert into the table, "
+                "and the table cannot be overwritten with {}_truncate_on_insert until that insert is over",
+                configuration->getNamespace(), raw_key, configuration->getTypeName());
+        paths = configuration->getPaths();
+    }
+
     /// The key this insert starts with. With `*_create_new_file_on_insert`, the insert steps aside from an existing
     /// object into a new key - which is registered in the table only after the object has been written and committed,
     /// see below.
-    String first_key = paths.front().path;
+    String first_key = raw_key;
     /// When the data is split by size, the objects after the first one are named as `data.1.parquet`, `data.2.parquet`, ...
     /// The numbering is derived from the key of the table: the next objects are `data.tsv` -> `data.1.tsv`, ...,
     /// and an insert that had to step aside from an existing object into a numbered key continues the numbering from there.
@@ -1124,6 +1157,8 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     /// by size existed - the keys that the inserts with `*_create_new_file_on_insert` alone have stepped aside into are kept
     /// along with their objects. The keys written by a previous split insert do not count: they are deleted below.
     /// A truncating insert that is split claims the whole numbered sequence, and so starts from the key of the table.
+    /// The split tail is read after the paths: a key that a concurrent split insert publishes in between is then
+    /// either absent from the paths, or present in the split tail, and never taken for a key that is not split.
     if (settings.truncate_on_insert && !settings.split_on_write_by_size_bytes)
     {
         const Strings split_tail = configuration->getSplitTailPaths();
@@ -1141,28 +1176,6 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     /// object storage, and starting from 1 would make the N-th insert probe all the keys of the previous inserts again.
     /// A truncating insert overwrites the numbered keys from the beginning, see below.
     size_t sequence_number = settings.create_new_file_on_insert && !settings.truncate_on_insert ? paths.size() : 1;
-    /// Every key this insert writes - the one it starts with, and every generated one - is reserved until the
-    /// insert is over, so that a concurrent insert into the same table picks a different one: a key is published
-    /// for the readers only after its object has been committed, and until then the object storage does not have
-    /// it either, so nothing else would tell the two inserts apart and one of them would overwrite the data of the other.
-    ///
-    /// This is done before a truncating insert deletes anything: it fails when a concurrent insert is writing the
-    /// same starting key, see `checkAndGetNewFileOnInsertIfNeeded`. A truncating insert keeps the starting key, so
-    /// the cleanup below does not change it.
-    auto reservations = std::make_shared<WrittenPathReservations>(configuration);
-
-    /// The truncating inserts are coordinated on the raw key of the table, whatever key they start writing: a truncating
-    /// insert that is not split starts from the last key that is not a part of a split tail, while one that is split
-    /// starts from the raw key. If they reserved only their starting keys, both could run at the same time - the split one
-    /// would step over the key the other one is writing in its cleanup, and the table would end up with the objects of
-    /// both rewrites rather than of one of them. The starting key is reserved as well, in `checkAndGetNewFileOnInsertIfNeeded`.
-    const String & raw_key = paths.front().path;
-    if (settings.truncate_on_insert && first_key != raw_key && !reservations->tryReserveStartingPath(raw_key))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Object in bucket {} with key {} is being written by a concurrent insert into the table, "
-            "and the table cannot be overwritten with {}_truncate_on_insert until that insert is over",
-            configuration->getNamespace(), raw_key, configuration->getTypeName());
 
     /// The written key can differ from the typed URI that the source access check covered, e.g. after `{_schema_hash}`
     /// is expanded, so it is checked before it is probed or written.

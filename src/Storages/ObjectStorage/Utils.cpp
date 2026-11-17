@@ -67,7 +67,8 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
         /// only the starting object, and the table would read the numbered objects of both - a mix of two rewrites
         /// rather than one of them. The reservation also makes a concurrent insert with `*_create_new_file_on_insert`
         /// step aside from the key while the object is not there yet. The caller does it before deleting anything.
-        if (!reservations.tryReserveStartingPath(key))
+        /// The caller has already reserved the raw key of the table, which is the starting key of a split truncating insert.
+        if (!reservations.holds(key) && !reservations.tryReserveStartingPath(key))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Object in bucket {} with key {} is being written by a concurrent insert into the table, "
