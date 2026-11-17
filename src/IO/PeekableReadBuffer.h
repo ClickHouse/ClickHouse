@@ -147,4 +147,13 @@ public:
 
 };
 
+/// Returns true if the `\r` at the current position is followed by `\n` or the end of data, so it ends the row.
+/// Does not move the position.
+inline bool isCRAtEndOfRow(PeekableReadBuffer & in)
+{
+    PeekableReadBufferCheckpoint checkpoint(in, true);
+    ++in.position();
+    return in.eof() || *in.position() == '\n';
+}
+
 }
