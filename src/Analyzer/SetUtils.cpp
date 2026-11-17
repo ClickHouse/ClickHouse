@@ -652,7 +652,7 @@ bool nullableTupleKeyCanHoldAllNullTuple(const DataTypeTuple & key_tuple_type, s
 {
     const auto & elements = key_tuple_type.getElements();
     return elements.size() == rhs_tuple_size
-        && std::ranges::all_of(elements, [](const auto & element) { return element->isNullable(); });
+        && std::ranges::all_of(elements, [](const auto & element) { return canContainNull(*element); });
 }
 
 /// Format: lhs IN rhs

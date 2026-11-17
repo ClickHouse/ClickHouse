@@ -51,15 +51,18 @@ SELECT {{ mode }}, 'all-NULL tuple literal on the right',
 SETTINGS transform_null_in = {{ mode }};
 
 -- A right-hand tuple of materialized NULLs is not constant, so it takes the row-wise rewrite, which reads
--- it like the literal in both analyzers.
+-- it like the literal in both analyzers. A key can hold the all-NULL tuple when each of its fields can hold
+-- NULL, as `Nullable`, `LowCardinality(Nullable)` and `Variant` fields can.
 {% for analyzer in [0, 1] %}
-SELECT {{ mode }}, {{ analyzer }}, 'all-NULL tuple on the right, literal and row-wise',
+{% for fields in ['Nullable(UInt8), Nullable(UInt8)', 'LowCardinality(Nullable(String)), Variant(UInt8, String)'] %}
+SELECT {{ mode }}, {{ analyzer }}, 'all-NULL tuple on the right, {{ fields }}',
     k IN (NULL, NULL) AS literal_tuple,
     k IN (materialize(NULL), materialize(NULL)) AS row_wise,
     k NOT IN (NULL, NULL) AS not_literal_tuple,
     k NOT IN (materialize(NULL), materialize(NULL)) AS not_row_wise
-FROM (SELECT CAST((NULL, NULL), 'Nullable(Tuple(Nullable(UInt8), Nullable(UInt8)))') AS k)
+FROM (SELECT CAST((NULL, NULL), 'Nullable(Tuple({{ fields }}))') AS k)
 SETTINGS transform_null_in = {{ mode }}, enable_analyzer = {{ analyzer }};
+{% endfor %}
 {% endfor %}
 
 -- A member whose NULL field the key cannot hold matches nothing, and an outer NULL member follows the mode.
