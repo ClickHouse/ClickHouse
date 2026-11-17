@@ -1091,13 +1091,15 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     if (paths.empty())
         return;
 
-    /// Reads Keeper nodes in batches of keeper_multiread_batch_size, like the
-    /// cleanup threads do. Zero means no batching: everything in one read.
+    /// The part of a Keeper get response that this function needs.
     struct NodeValue
     {
         Coordination::Error error = Coordination::Error::ZOK;
         std::string data;
     };
+
+    /// Reads the given Keeper nodes, at most `keeper_multiread_batch_size` of them per request.
+    /// Zero means no limit: all nodes are read in one request.
     auto multi_try_get = [&](const std::vector<std::string> & node_paths)
     {
         std::vector<NodeValue> values;
@@ -1147,72 +1149,74 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     buckets_num = std::max<size_t>(buckets_num, 1);
     const bool partitioned = hasPartitioningMode(partitioning_mode);
 
-    /// Figure out which bucket and partition each file belongs to, then fetch
-    /// only those processed nodes with a single multi-get. We used to list the
-    /// processed node of every bucket here, which is O(buckets) Keeper requests
-    /// per poll, almost all of them for buckets this batch has nothing to do
-    /// with (with partition bucketing a writer always lands in the same bucket).
+    /// Find the bucket and the partition key of each file, then read only the processed
+    /// nodes that these files are compared against. Reading the processed node of every
+    /// bucket instead costs O(buckets) Keeper requests on each poll, and with bucketing by
+    /// partition most buckets have nothing to do with the listed files.
     ///
-    /// Without partitioning the partition key is an empty string and the
-    /// bucket-level node is the one to read. With partitioning, a file whose
-    /// partition key can't be parsed has no per-partition node, so nothing is
-    /// read for it and it is never filtered out as processed here, as before.
-    using PartitionKey = std::string;
-    using WatermarkKey = std::pair<Bucket, PartitionKey>;
+    /// The node to read for a file is:
+    /// - without partitioning: the bucket-level processed node;
+    /// - with partitioning: the partition node under it, `<bucket-level node>/<partition key>`.
+    ///   A file whose partition key cannot be parsed has no partition node. Nothing is read
+    ///   for it, and it is never filtered out here as processed.
 
-    std::vector<WatermarkKey> file_keys;
+    using PartitionKey = std::string;
+    /// Identifies one processed node. The partition key is empty without partitioning.
+    using ProcessedNodeKey = std::pair<Bucket, PartitionKey>;
+
+    std::vector<ProcessedNodeKey> file_keys;
     file_keys.reserve(paths.size());
-    std::map<WatermarkKey, std::string> watermark_node_paths;
+    std::map<ProcessedNodeKey, std::string> processed_nodes;
     for (const auto & path : paths)
     {
         const Bucket bucket = use_buckets_for_processing
             ? getBucketForPathImpl(path, buckets_num, bucketing_mode, partitioning_mode, parser)
             : 0;
         PartitionKey partition_key = partitioned ? getPartitionKey(path, partitioning_mode, parser) : "";
-        WatermarkKey key{bucket, std::move(partition_key)};
+        ProcessedNodeKey key{bucket, std::move(partition_key)};
 
         const bool has_processed_node = !partitioned || !key.second.empty();
-        if (has_processed_node && !watermark_node_paths.contains(key))
+        if (has_processed_node && !processed_nodes.contains(key))
         {
             std::filesystem::path node_path = use_buckets_for_processing
                 ? getProcessedPathWithBucket(zk_path_, bucket)
                 : getProcessedPathWithoutBucket(zk_path_);
             if (!key.second.empty())
                 node_path /= key.second;
-            watermark_node_paths.emplace(key, node_path.string());
+            processed_nodes.emplace(key, node_path.string());
         }
         file_keys.push_back(std::move(key));
     }
 
-    std::vector<WatermarkKey> watermark_keys;
-    std::vector<std::string> watermark_paths;
-    watermark_keys.reserve(watermark_node_paths.size());
-    watermark_paths.reserve(watermark_node_paths.size());
-    for (auto & [key, node_path] : watermark_node_paths)
+    std::vector<ProcessedNodeKey> processed_node_keys;
+    std::vector<std::string> processed_node_paths;
+    processed_node_keys.reserve(processed_nodes.size());
+    processed_node_paths.reserve(processed_nodes.size());
+    for (auto & [key, node_path] : processed_nodes)
     {
-        watermark_keys.push_back(key);
-        watermark_paths.push_back(node_path);
+        processed_node_keys.push_back(key);
+        processed_node_paths.push_back(node_path);
     }
 
-    const auto watermark_responses = multi_try_get(watermark_paths);
+    const auto processed_node_values = multi_try_get(processed_node_paths);
 
-    /// Partition child nodes store the last processed path as is, the
-    /// bucket-level node stores NodeMetadata.
-    std::map<WatermarkKey, std::string> last_processed_files;
-    for (size_t i = 0; i < watermark_responses.size(); ++i)
+    /// A partition node stores the last processed path itself.
+    /// The bucket-level node stores serialized NodeMetadata, which has the path in `file_path`.
+    std::map<ProcessedNodeKey, std::string> last_processed_files;
+    for (size_t i = 0; i < processed_node_values.size(); ++i)
     {
-        const auto & response = watermark_responses[i];
+        const auto & response = processed_node_values[i];
         if (response.error == Coordination::Error::ZNONODE)
             continue;
         if (response.error != Coordination::Error::ZOK)
-            throw zkutil::KeeperException::fromPath(response.error, watermark_paths[i]);
+            throw zkutil::KeeperException::fromPath(response.error, processed_node_paths[i]);
         if (response.data.empty())
             continue;
 
-        if (watermark_keys[i].second.empty())
-            last_processed_files[watermark_keys[i]] = NodeMetadata::fromString(response.data).file_path;
+        if (processed_node_keys[i].second.empty())
+            last_processed_files[processed_node_keys[i]] = NodeMetadata::fromString(response.data).file_path;
         else
-            last_processed_files[watermark_keys[i]] = response.data;
+            last_processed_files[processed_node_keys[i]] = response.data;
     }
 
     std::vector<std::string> failed_paths;
