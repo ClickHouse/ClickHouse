@@ -13,11 +13,14 @@
 #include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadPool.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/AdaptiveAggregation/GrowingCountTopK.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/RowDataStore.h>
+#include <Interpreters/Squashing.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 namespace ProfileEvents
@@ -290,12 +293,17 @@ namespace
         {
         }
 
-        /// The record count of partition `sub` of the bucket, in the producers' chunks and in its spill stream.
-        [[nodiscard]] size_t recordsOf(size_t sub) const
+        /// The record counts of the bucket's partitions, in the producers' chunks and in their spill streams. A
+        /// producer keeps the counts of consecutive partitions together, so the producers are read one after another.
+        [[nodiscard]] std::vector<size_t> recordsOfPartitions() const
         {
-            size_t records = spilledOf(sub).recordCount();
+            const size_t partitions = session.layout.partitionsPerBucket();
+            std::vector<size_t> records(partitions);
+            for (size_t sub = 0; sub < partitions; ++sub)
+                records[sub] = spilledOf(sub).recordCount();
             for (const auto & producer : session.producer_buffers)
-                records += producer->recordsOf(first_partition + sub);
+                for (size_t sub = 0; sub < partitions; ++sub)
+                    records[sub] += producer->recordsOf(first_partition + sub);
             return records;
         }
 
@@ -332,13 +340,20 @@ namespace
             }
         }
 
-        /// Frees the records of partition `sub` of the bucket: the producers' chunks and its spill stream, which a unit
-        /// that the top-K pruning skips leaves unread.
-        void release(size_t sub)
+        /// Frees the records of the partitions [first_sub, end_sub) of the bucket: the producers' chunks and the spill
+        /// streams, which a unit that the top-K pruning skips leaves unread. Every producer releases its partitions
+        /// in one batch, and the next producer's are prefetched meanwhile.
+        void release(size_t first_sub, size_t end_sub)
         {
-            for (const auto & producer : session.producer_buffers)
-                producer->releasePartition(first_partition + sub);
-            spilledOf(sub).release();
+            const auto & producers = session.producer_buffers;
+            for (size_t i = 0; i < producers.size(); ++i)
+            {
+                if (i + 1 < producers.size())
+                    producers[i + 1]->prefetchRelease(first_partition + first_sub, end_sub - first_sub);
+                producers[i]->releasePartitions(first_partition + first_sub, end_sub - first_sub);
+            }
+            for (size_t sub = first_sub; sub < end_sub; ++sub)
+                spilledOf(sub).release();
         }
 
     private:
@@ -480,12 +495,48 @@ namespace
         std::vector<std::vector<RoutedCell>> routed;
     };
 
+    /// Squashes the chunks of the units of a bucket, in their order, into chunks of at least `min_rows` rows.
+    /// The last chunk takes the rows that are left. The merge sources hand their chunks to one processor,
+    /// which forwards them one at a time, and a source takes its next bucket only after its chunks are gone.
+    /// A chunk per unit, thousands of them in a large aggregation, makes the merge tasks wait for that
+    /// processor, and the chunks of a top-K hold only a few rows each. The caller guarantees that the chunks
+    /// hold no aggregate states, so the rows of the units that share a chunk are copied into it. A unit that
+    /// makes a chunk alone is passed on as it is, so units that each reach `min_rows` rows are not copied.
+    /// For example, with `min_rows` of 65,409, a bucket of 16 units of 24,000 rows gives 5 chunks of 72,000
+    /// rows and one of 24,000, and a bucket of 16 units of 10 rows gives one chunk of 160 rows. The chunks
+    /// carry no `ChunkInfo` yet: the merge source adds it from the bucket number when it hands a chunk out.
+    void squashUnitChunks(Aggregator::AggregatedChunks & chunks, size_t min_rows)
+    {
+        for (auto run_begin = chunks.begin(); run_begin != chunks.end();)
+        {
+            /// A run takes the units from `run_begin` until its rows reach `min_rows` or the units end.
+            auto run_end = run_begin;
+            size_t run_rows = 0;
+            do
+            {
+                run_rows += run_end->chunk.getNumRows();
+                ++run_end;
+            } while (run_end != chunks.end() && run_rows < min_rows);
+
+            /// A run of several units becomes one chunk, in the place of its first unit.
+            if (std::next(run_begin) != run_end)
+            {
+                Chunks run_chunks;
+                for (auto unit = run_begin; unit != run_end; ++unit)
+                    run_chunks.push_back(std::move(unit->chunk));
+                run_begin->chunk = Squashing::squashWithoutChunkInfo(std::move(run_chunks));
+                chunks.erase(std::next(run_begin), run_end);
+            }
+            run_begin = run_end;
+        }
+    }
+
     /// Decodes the variable-size arguments of argument records of `format` into one column per variable field of
     /// `layout`, in the order of the records. The values of a record follow its key: a `String` as `writeStagedString`
     /// staged it, appended without a read buffer or a virtual call, and another value in its column's own serialization.
     template <typename Format>
     MutableColumns decodeStagedVariableArguments(
-        const Format & format, const AdaptiveArgumentLayout & layout, const RowStorePointers & records)
+        const Format & format, const AdaptiveArgumentLayout & layout, const RowPointers & records)
     {
         MutableColumns columns;
         std::vector<ColumnString *> string_columns;
@@ -494,13 +545,13 @@ namespace
         for (const auto & field : layout.variable_fields)
         {
             auto column = field.type->createColumn();
-            column->reserve(records.ptrs.size());
+            column->reserve(records.size());
             string_columns.push_back(isStagedString(field) ? &assert_cast<ColumnString &>(*column) : nullptr);
             columns.push_back(std::move(column));
         }
 
         const IColumn::SerializationSettings serialization_settings;
-        for (const char * record : records.ptrs)
+        for (const char * record : records)
         {
             const auto [key_pos, key_size] = format.key(record);
             const char * value = key_pos + key_size;
@@ -531,7 +582,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
     const AdaptiveRecordRanges & ranges,
     const Filter & filter,
     PaddedPODArray<AggregateDataPtr> & places,
-    RowStorePointers & records) const
+    RowPointers & records) const
 {
     using Key = AdaptiveRecordKey<Method>;
     const bool prefetch = prefetchesStagedKeys<Key>(table);
@@ -616,7 +667,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
 #endif
 
             places.clear();
-            records.ptrs.clear();
+            records.clear();
             walk = walkStagedRecords<Key>(
                 format,
                 table,
@@ -637,7 +688,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                         it->getMapped() = place;
                     }
                     places.push_back(it->getMapped());
-                    records.ptrs.push_back(record);
+                    records.push_back(record);
                 });
 
             if (!places.empty())
@@ -860,7 +911,7 @@ void Aggregator::executeStagedArgumentRecords(
     const Record & format,
     Arena * arena,
     PaddedPODArray<AggregateDataPtr> & places,
-    const RowStorePointers & records,
+    const RowPointers & records,
     bool use_compiled_functions) const
 {
     const auto & argument_layout = *adaptive_argument_layout;
@@ -878,7 +929,7 @@ void Aggregator::executeStagedArgumentRecords(
             auto column = field->type->createColumn();
             const size_t size = column->sizeOfValueIfFixed();
             chassert(size == format.fixed_key.bytes);
-            column->fillFromRowStorePtrs(field->type, records, format.key_offset, size, 0, rows);
+            column->gatherFromRows(records, format.key_offset, size, 0, rows);
             arguments[field->position] = std::move(column);
         }
     }
@@ -887,7 +938,7 @@ void Aggregator::executeStagedArgumentRecords(
     for (const auto & field : argument_layout.fixed_fields)
     {
         auto column = field.type->createColumn();
-        column->fillFromRowStorePtrs(field.type, records, field.offset, field.size, 0, rows);
+        column->gatherFromRows(records, field.offset, field.size, 0, rows);
         arguments[field.position] = std::move(column);
     }
 
@@ -1098,13 +1149,10 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     const size_t partitions_per_bucket = layout.partitionsPerBucket();
 
     AdaptiveBucketRecords staged(session, bucket);
-    std::vector<size_t> partition_records(partitions_per_bucket);
+    const std::vector<size_t> partition_records = staged.recordsOfPartitions();
     size_t bucket_records = 0;
     for (size_t sub = 0; sub < partitions_per_bucket; ++sub)
-    {
-        partition_records[sub] = staged.recordsOf(sub);
         bucket_records += partition_records[sub];
-    }
 
     size_t source_cells = 0;
     for (size_t i = 1; i < data.size(); ++i)
@@ -1186,8 +1234,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         {
             if constexpr (MapAggregationMethod<Method>)
                 for_each_cell([&](const auto &, AggregateDataPtr * mapped, size_t) { discardAdaptiveSourceState(*mapped); });
-            for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
-                staged.release(sub);
+            staged.release(unit_first_sub, unit_end_sub);
             pruned_records += unit_records;
             ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPrunedUnits);
             continue;
@@ -1315,8 +1362,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationMergeUnits);
 
         /// The conversion copied the keys out of the records, so the unit's records go now.
-        for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
-            staged.release(sub);
+        staged.release(unit_first_sub, unit_end_sub);
 
         /// The next unit creates its states in a fresh arena, so the states of this one free with its arena: at once
         /// where the conversion copied their results out, or with the chunk where they are part of it, as the non-final
@@ -1332,8 +1378,8 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPrunedRecords, pruned_records);
 
     /// Every source cell of the bucket was adopted, merged or discarded and its mapped value nulled, so the bucket tables
-    /// of two-level sources only release their buffers. A single-level source keeps its one buffer, which its destruction
-    /// frees after the last bucket of the merge stopped the source owning states (see `AdaptiveBucketMergingSource`).
+    /// of two-level sources only release their buffers. A single-level source keeps its one buffer, which is freed after
+    /// the last bucket of the merge stopped the source owning states (see `releaseAdaptiveMergeSources`).
     for (size_t i = 1; i < data.size(); ++i)
         if (data[i]->isTwoLevel())
             getDataVariant<Method>(*data[i]).data.impls[bucket].clearAndShrink();
@@ -1351,7 +1397,84 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     /// destination.
     arena_slot.reset();
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationBucketsRetired);
+
+    /// A result of aggregate states keeps a chunk per unit, because squashing would copy the states one by one:
+    /// every copy creates a state and merges the old one into it. A partial result holds states, and so does the
+    /// final result of a function that returns a state, such as `sumState`.
+    const bool holds_states = !final || std::ranges::any_of(aggregate_functions, &IAggregateFunction::isState);
+    if (!holds_states)
+        squashUnitChunks(chunks, params.max_block_size);
     return chunks;
+}
+
+void Aggregator::releaseAdaptiveMergeTable(ManyAggregatedDataVariants & data, const AdaptiveMergeTask & task) const
+{
+    if (task.previous_bucket < 0)
+        return;
+    /// The conversion of the task's last unit emptied the table and kept its buffer.
+    visitTwoLevelVariant(
+        *data[0],
+        [&](auto & method)
+        {
+            auto & table = method.data.impls[task.previous_bucket];
+            chassert(table.empty());
+            table.clearAndShrink();
+        });
+}
+
+void Aggregator::releaseAdaptiveMergeSources(ManyAggregatedDataVariants & data, AdaptiveAggregationSession & session) const
+{
+    /// The first variants are the destination, which keeps its states.
+    resetAggregatorExceptFirst(data);
+
+    /// The destination took the arenas of the sources over (see `prepareVariantsToMerge`). No unit is left to create
+    /// or convert states, so it gives them up, all but its own first one.
+    auto & destination_pools = data[0]->aggregates_pools;
+    Arenas pools(std::make_move_iterator(destination_pools.begin() + 1), std::make_move_iterator(destination_pools.end()));
+    destination_pools.resize(1);
+
+    /// The memory scheduler reads the buffers under the mutex, and finds none from here on.
+    std::vector<std::unique_ptr<PartitionedRecordBuffer>> buffers;
+    {
+        std::lock_guard lock(session.producer_buffers_mutex);
+        buffers = std::exchange(session.producer_buffers, {});
+    }
+
+    std::vector<AdaptiveTopKCountBins> bins;
+    if (session.top_k_pruning)
+        bins = session.top_k_pruning->takeProducerBins();
+
+    /// Item `i` is the `i`-th of each kind, about what one producer left: a source table, an arena, a staging buffer
+    /// and the bins of a producer.
+    const size_t items = std::max({data.size() - 1, pools.size(), buffers.size(), bins.size()});
+    std::atomic<size_t> next_item = 0;
+    const auto release = [&]
+    {
+        for (size_t i = next_item.fetch_add(1, std::memory_order_relaxed); i < items;
+             i = next_item.fetch_add(1, std::memory_order_relaxed))
+        {
+            if (i + 1 < data.size())
+                data[i + 1].reset();
+            if (i < pools.size())
+                pools[i].reset();
+            if (i < buffers.size())
+                buffers[i].reset();
+            if (i < bins.size())
+                bins[i] = {};
+        }
+    };
+
+    /// A job per `adaptive_release_producers_per_job` items, one of them on this thread. The runner is declared last,
+    /// so it joins its jobs before anything they use goes. It reserves the tracking of the jobs before scheduling any,
+    /// because a job that the pool accepted but the runner failed to track would not be joined.
+    const size_t jobs = std::min<size_t>(params.max_threads, items / adaptive_release_producers_per_job);
+    ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
+    runner.reserve(jobs);
+    for (size_t job = 1; job < jobs; ++job)
+        runner.enqueueAndKeepTrack([&release] { release(); }, Priority{});
+    /// `release` returns once every item is taken, so the jobs that have not started by then have nothing to do.
+    release();
+    runner.cancelScheduledAndWaitForStartedAndRethrowFirstError();
 }
 
 AggregatedDataVariantsPtr Aggregator::createAdaptiveMergeDestination() const
