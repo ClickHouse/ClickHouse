@@ -3,6 +3,7 @@
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -396,7 +397,7 @@ namespace
 bool isBoolNode(const IDataType & type)
 {
     const auto * custom_name = type.getCustomName();
-    return custom_name && custom_name->getName() == "Bool";
+    return (custom_name && custom_name->getName() == "Bool") || isSimpleAggregateFunctionOfBool(type);
 }
 
 }

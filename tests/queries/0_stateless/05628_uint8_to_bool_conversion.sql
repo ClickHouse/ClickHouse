@@ -15,6 +15,9 @@ SELECT active, count() FROM users GROUP BY active ORDER BY active;
 CREATE TABLE users_nested (t Tuple(x Bool), m Map(String, Bool)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO users_nested SELECT tuple(255)::Tuple(x UInt8), map('a', 2)::Map(String, UInt8);
 SELECT toUInt8(t.x), toUInt8(m['a']) FROM users_nested;
+CREATE TABLE users_saf (v SimpleAggregateFunction(any, Bool), w SimpleAggregateFunction(sumWithOverflow, Bool)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO users_saf SELECT toUInt8(2), toUInt8(2);
+SELECT toUInt8(v), toUInt8(w) FROM users_saf;
 
 SELECT 'MATERIALIZED VIEW';
 CREATE TABLE mv_src (active UInt8) ENGINE = MergeTree ORDER BY tuple();
@@ -85,6 +88,10 @@ SELECT groupArray(toUInt8(active)), groupArray(arrayMap(x -> toUInt8(x), a)), gr
 SELECT count() FROM flags WHERE active = true;
 DELETE FROM flags WHERE active = true;
 SELECT id FROM flags ORDER BY id;
+CREATE TABLE flags_saf (id UInt32, v UInt8) ENGINE = MergeTree ORDER BY id;
+INSERT INTO flags_saf VALUES (1, 2);
+ALTER TABLE flags_saf MODIFY COLUMN v SimpleAggregateFunction(any, Bool) SETTINGS mutations_sync = 2;
+SELECT toUInt8(v) FROM flags_saf;
 CREATE TABLE keyed (k UInt8) ENGINE = MergeTree ORDER BY k;
 ALTER TABLE keyed MODIFY COLUMN k Bool; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 CREATE TABLE pkeyed (k UInt8) ENGINE = MergeTree PARTITION BY k ORDER BY tuple();
