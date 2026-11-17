@@ -91,6 +91,9 @@ private:
         /// If `parquet_name` is nullopt, the clickhouse and parquet names are equal.
         String name;
         std::optional<String> parquet_name;
+        /// ColumnMapper's path of the node, if it differs from `name`: the mapper names a list element
+        /// `l.element`, while `name` is `l`. The mapped names of the children are relative to it.
+        std::optional<String> column_mapper_path;
         DataTypePtr type_hint;
         bool requested = false;
         /// The element or one of its ancestors is not in the data lake schema (see useColumnMapperIfNeeded).
@@ -105,6 +108,11 @@ private:
             return parquet_name.has_value() ? *parquet_name : name;
         }
 
+        [[nodiscard]] const String & getColumnMapperPath() const
+        {
+            return column_mapper_path.has_value() ? *column_mapper_path : name;
+        }
+
         [[nodiscard]] String getNameForLogging() const
         {
             if (parquet_name.has_value() && *parquet_name != name)
@@ -114,6 +122,12 @@ private:
 
         void appendNameComponent(const String & parquet_field_name, std::string_view mapped_field_name)
         {
+            if (column_mapper_path.has_value())
+            {
+                if (!column_mapper_path->empty())
+                    *column_mapper_path += ".";
+                *column_mapper_path += mapped_field_name;
+            }
             if (!name.empty())
                 name += ".";
             name += mapped_field_name;
@@ -152,6 +166,7 @@ private:
     struct TupleInArray
     {
         String name;
+        String column_mapper_path;
         size_t schema_idx = 0;
         size_t leaves_start = 0;
         size_t leaves_end = 0;

@@ -311,7 +311,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     if (node.schema_context == SchemaContext::None || node.schema_context == SchemaContext::MapKey)
     {
         bool not_in_schema = false;
-        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name, not_in_schema));
+        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.getColumnMapperPath(), not_in_schema));
         node.not_in_datalake_schema |= not_in_schema;
 
         /// A column that is not in the data lake schema is never requested, and its physical name
@@ -670,7 +670,7 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
         if (!literal)
         {
             bool not_in_schema = false;
-            std::string_view child_name = useColumnMapperIfNeeded(child, node.name, not_in_schema);
+            std::string_view child_name = useColumnMapperIfNeeded(child, node.getColumnMapperPath(), not_in_schema);
             literal = !not_in_schema
                 && tuple_type_hint->tryGetPositionByName(child_name, options.format.parquet.case_insensitive_column_matching).has_value();
         }
@@ -801,7 +801,7 @@ bool SchemaConverter::processSubtreeArrayInner(TraversalNode & node)
         {
             const auto & field_id_map = column_mapper->getFieldIdToClickHouseName();
             if (auto it = field_id_map.find(elem_schema.field_id); it != field_id_map.end())
-                subnode.name = std::string(it->second);
+                subnode.column_mapper_path = std::string(it->second);
         }
     }
 
@@ -1118,7 +1118,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     {
         bool not_in_schema = false;
         const String & element_name = element_names_in_file.emplace_back(
-            useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name, not_in_schema));
+            useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.getColumnMapperPath(), not_in_schema));
         std::optional<size_t> idx_in_output_tuple = i - skipped_unsupported_columns;
         if (lookup_by_name)
         {
@@ -1185,8 +1185,8 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     {
         if (is_tuple_in_array)
             tuples_in_arrays.push_back(
-                {.name = node.name, .schema_idx = tuple_schema_idx, .leaves_start = leaves_start,
-                 .leaves_end = leaves_in_arrays.size(), .levels = levels});
+                {.name = node.name, .column_mapper_path = node.getColumnMapperPath(), .schema_idx = tuple_schema_idx,
+                 .leaves_start = leaves_start, .leaves_end = leaves_in_arrays.size(), .levels = levels});
         return;
     }
 
@@ -1388,7 +1388,7 @@ bool SchemaConverter::addMissingElementOfTupleInArray(size_t pos)
     for (Int32 i = 0; i < group.num_children && !through_existing_element; ++i)
     {
         bool not_in_schema = false;
-        const std::string_view child_name = useColumnMapperIfNeeded(file_metadata.schema.at(child_idx), tuple->name, not_in_schema);
+        const std::string_view child_name = useColumnMapperIfNeeded(file_metadata.schema.at(child_idx), tuple->column_mapper_path, not_in_schema);
         through_existing_element = !not_in_schema && (names_equal(rest, child_name) || is_path_prefix(rest, child_name));
         const std::optional<size_t> end = subtreeEnd(file_metadata.schema, child_idx);
         if (!end.has_value())
