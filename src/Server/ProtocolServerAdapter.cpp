@@ -17,7 +17,6 @@ public:
     void start() override { tcp_server->start(); }
     void stop() override { tcp_server->stop(); }
     bool isStopping() const override { return !tcp_server->isOpen(); }
-    bool bindsOnStart() const override { return false; }
     UInt16 portNumber() const override { return tcp_server->portNumber(); }
     size_t currentConnections() const override { return tcp_server->currentConnections(); }
     size_t currentThreads() const override { return tcp_server->currentThreads(); }
@@ -30,13 +29,11 @@ private:
 ProtocolServerAdapter::ProtocolServerAdapter(
     const std::string & listen_host_,
     const char * port_name_,
-    ServerType::Type protocol_type_,
     const std::string & description_,
     std::unique_ptr<TCPServer> tcp_server_,
     bool supports_runtime_reconfiguration_)
     : listen_host(listen_host_)
     , port_name(port_name_)
-    , protocol_type(protocol_type_)
     , description(description_)
     , impl(std::make_unique<TCPServerAdapterImpl>(std::move(tcp_server_)))
     , supports_runtime_reconfiguration(supports_runtime_reconfiguration_)
@@ -57,7 +54,6 @@ public:
         grpc_server->stop();
     }
     bool isStopping() const override { return is_stopping; }
-    bool bindsOnStart() const override { return true; }
     UInt16 portNumber() const override { return grpc_server->portNumber(); }
     size_t currentConnections() const override { return grpc_server->currentConnections(); }
     size_t currentThreads() const override { return grpc_server->currentThreads(); }
@@ -71,13 +67,11 @@ private:
 ProtocolServerAdapter::ProtocolServerAdapter(
     const std::string & listen_host_,
     const char * port_name_,
-    ServerType::Type protocol_type_,
     const std::string & description_,
     std::unique_ptr<IGRPCServer> grpc_server_,
     bool supports_runtime_reconfiguration_)
     : listen_host(listen_host_)
     , port_name(port_name_)
-    , protocol_type(protocol_type_)
     , description(description_)
     , impl(std::make_unique<GRPCServerAdapterImpl>(std::move(grpc_server_)))
     , supports_runtime_reconfiguration(supports_runtime_reconfiguration_)

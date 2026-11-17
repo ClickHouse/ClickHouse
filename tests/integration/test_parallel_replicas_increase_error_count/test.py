@@ -1,3 +1,4 @@
+import uuid
 
 import pytest
 
@@ -71,7 +72,7 @@ def test_increase_error_count(start_cluster):
     assert (
         int(
             node1.query(
-                "SELECT errors_count FROM system.clusters WHERE cluster = 'test_1_shard_3_replicas' AND host_name = 'node3'"
+                f"SELECT errors_count FROM system.clusters WHERE cluster = 'test_1_shard_3_replicas' AND host_name = 'node3'"
             ).strip()
         )
         > 0

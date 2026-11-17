@@ -1,20 +1,22 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
-#include <Compression/registerCompressionCodecs.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
-#include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
+#include <IO/WriteHelpers.h>
 
 #include <span>
 #include <bit>
 #include <concepts>
-#include <cstring>
 
 
 namespace DB
 {
+
+template <typename T>
+using VectorWithMemoryTracking = std::vector<T, AllocatorWithMemoryTracking<T>>;
 
 /// An implementation of the FPC codec for floating-point values described in the paper
 ///   M. Burtscher, P. Ratanaworabhan: "FPC: A high-speed compressor for double-precision floating-point data" (2008).
@@ -26,7 +28,6 @@ public:
     CompressionCodecFPC(UInt8 float_width_, UInt8 compression_level_);
 
     uint8_t getMethodByte() const override;
-    ASTPtr getCodecDescription() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -70,19 +71,14 @@ uint8_t CompressionCodecFPC::getMethodByte() const
 
 void CompressionCodecFPC::updateHash(SipHash & hash) const
 {
-    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
-    hash.update(float_width);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 CompressionCodecFPC::CompressionCodecFPC(UInt8 float_width_, UInt8 compression_level_)
     : float_width(float_width_)
     , compression_level(compression_level_)
 {
-}
-
-ASTPtr CompressionCodecFPC::getCodecDescription() const
-{
-    return makeCodecDescription("FPC", {make_intrusive<ASTLiteral>(static_cast<UInt64>(compression_level))});
+    setCodecDescription("FPC", {make_intrusive<ASTLiteral>(static_cast<UInt64>(compression_level))});
 }
 
 UInt32 CompressionCodecFPC::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -96,14 +92,9 @@ UInt32 CompressionCodecFPC::getMaxCompressedDataSize(UInt32 uncompressed_size) c
 namespace
 {
 
-bool isApplicableToType(const IDataType & column_type)
-{
-    return WhichDataType(column_type).isNativeFloat();
-}
-
 UInt8 getFloatByteWidth(const IDataType & column_type)
 {
-    if (!isApplicableToType(column_type))
+    if (!WhichDataType(column_type).isNativeFloat())
         throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Codec 'FPC' is not applicable for {} because the data type is not Float*",
@@ -154,7 +145,7 @@ void registerCodecFPC(CompressionCodecFactory & factory)
 
         return std::make_shared<CompressionCodecFPC>(float_width, level);
     };
-    factory.registerCompressionCodecWithType("FPC", method_code, codec_builder, {.is_applicable_to_type = isApplicableToType});
+    factory.registerCompressionCodecWithType("FPC", method_code, codec_builder);
 }
 
 namespace

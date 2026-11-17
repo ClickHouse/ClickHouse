@@ -5,9 +5,10 @@
 #include <Common/thread_local_rng.h>
 #include <Core/Types.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <array>
+#include <unordered_map>
+#include <string>
 #include <chrono>
-#include <memory>
+#include <optional>
 
 namespace HistogramMetrics
 {
@@ -22,52 +23,40 @@ namespace HistogramMetrics
     extern Metric & KeeperReadProcessTime;
 }
 
+namespace Coordination
+{
+    struct ZooKeeperRequest;
+}
+
 namespace DB
 {
 
-#define APPLY_FOR_KEEPER_SPANS(M) \
-    M(ClientRequestsQueue,      "zookeeper.client.requests_queue",    INTERNAL, KeeperClientQueueDuration) \
-    M(ReceiveRequest,           "keeper.receive_request",             SERVER,   KeeperReceiveRequestTime) \
-    M(DispatcherRequestsQueue,  "keeper.dispatcher.requests_queue",   INTERNAL, KeeperDispatcherRequestsQueueTime) \
-    M(DispatcherResponsesQueue, "keeper.dispatcher.responses_queue",  INTERNAL, KeeperDispatcherResponsesQueueTime) \
-    M(SendResponse,             "keeper.send_response",               SERVER,   KeeperSendResponseTime) \
-    M(ReadWaitForWrite,         "keeper.read.wait_for_write",         INTERNAL, KeeperReadWaitForWriteTime) \
-    M(ReadProcess,              "keeper.read.process",                INTERNAL, KeeperReadProcessTime) \
-    M(PreCommit,                "keeper.write.pre_commit",            INTERNAL, KeeperWritePreCommitTime) \
-    M(Commit,                   "keeper.write.commit",                INTERNAL, KeeperWriteCommitTime) \
-
-namespace KeeperSpan
-{
-    enum Operation : size_t
-    {
-    #define M(NAME, ...) NAME,
-        APPLY_FOR_KEEPER_SPANS(M)
-    #undef M
-        Count
-    };
-}
-
-struct SpanDescriptor
-{
-    std::string_view operation_name;
-    OpenTelemetry::SpanKind kind;
-    HistogramMetrics::Metric & histogram;
-};
-
 struct MaybeSpan
 {
-    std::unique_ptr<OpenTelemetry::Span> span;
+    const std::string_view operation_name;
+    const OpenTelemetry::SpanKind kind;
+    HistogramMetrics::Metric & histogram;
+    std::optional<OpenTelemetry::Span> span;
     UInt64 start_time_us = 0;
+
+    MaybeSpan(const std::string_view operation_name_, OpenTelemetry::SpanKind kind_, HistogramMetrics::Metric & histogram_)
+        : operation_name(operation_name_), kind(kind_), histogram(histogram_) {}
 };
 
-class ZooKeeperOpentelemetrySpans
+struct ZooKeeperOpentelemetrySpans
 {
-public:
-    ZooKeeperOpentelemetrySpans() = default;
-    ZooKeeperOpentelemetrySpans(const ZooKeeperOpentelemetrySpans &) : ZooKeeperOpentelemetrySpans() {}
-    ZooKeeperOpentelemetrySpans & operator=(const ZooKeeperOpentelemetrySpans &) { return *this; } // NOLINT(cert-oop54-cpp)
-    ZooKeeperOpentelemetrySpans(ZooKeeperOpentelemetrySpans &&) = default;
-    ZooKeeperOpentelemetrySpans & operator=(ZooKeeperOpentelemetrySpans &&) = default;
+    // Keeper client spans
+    MaybeSpan client_requests_queue{"zookeeper.client.requests_queue", OpenTelemetry::SpanKind::INTERNAL, HistogramMetrics::KeeperClientQueueDuration};
+
+    // Keeper server spans
+    MaybeSpan receive_request{"keeper.receive_request", OpenTelemetry::SpanKind::SERVER, HistogramMetrics::KeeperReceiveRequestTime};
+    MaybeSpan dispatcher_requests_queue{"keeper.dispatcher.requests_queue", OpenTelemetry::SpanKind::INTERNAL, HistogramMetrics::KeeperDispatcherRequestsQueueTime};
+    MaybeSpan dispatcher_responses_queue{"keeper.dispatcher.responses_queue", OpenTelemetry::SpanKind::INTERNAL, HistogramMetrics::KeeperDispatcherResponsesQueueTime};
+    MaybeSpan send_response{"keeper.send_response", OpenTelemetry::SpanKind::SERVER, HistogramMetrics::KeeperSendResponseTime};
+    MaybeSpan read_wait_for_write{"keeper.read.wait_for_write", OpenTelemetry::SpanKind::INTERNAL, HistogramMetrics::KeeperReadWaitForWriteTime};
+    MaybeSpan read_process{"keeper.read.process", OpenTelemetry::SpanKind::INTERNAL, HistogramMetrics::KeeperReadProcessTime};
+    MaybeSpan pre_commit{"keeper.write.pre_commit", OpenTelemetry::SpanKind::INTERNAL, HistogramMetrics::KeeperWritePreCommitTime};
+    MaybeSpan commit{"keeper.write.commit", OpenTelemetry::SpanKind::INTERNAL, HistogramMetrics::KeeperWriteCommitTime};
 
     static UInt64 now()
     {
@@ -75,33 +64,28 @@ public:
             std::chrono::system_clock::now().time_since_epoch()).count();
     }
 
-    void maybeInitialize(
-        KeeperSpan::Operation operation,
-        const OpenTelemetry::TracingContext * parent_context,
+    static void maybeInitialize(
+        MaybeSpan & maybe_span,
+        const std::optional<OpenTelemetry::TracingContext> & parent_context,
         UInt64 start_time_us = now());
 
     template <typename MakeAttributes>
-    void maybeFinalize(
-        KeeperSpan::Operation operation,
+    static void maybeFinalize(
+        MaybeSpan & maybe_span,
         MakeAttributes && make_attributes,
         OpenTelemetry::SpanStatus status = OpenTelemetry::SpanStatus::OK,
         const String & error_message = {},
         UInt64 finish_time_us = now())
     {
-        auto & maybe_span = maybe_spans[operation];
-
-        chassert(maybe_span.start_time_us != 0);
-        const auto latency_ms = static_cast<HistogramMetrics::Value>(finish_time_us - maybe_span.start_time_us) / 1000.0;
-        getSpanDescriptor(operation).histogram.observe(latency_ms);
-
         if (!maybe_span.span)
+        {
+            chassert(maybe_span.start_time_us != 0);
+            maybe_span.histogram.observe((finish_time_us - maybe_span.start_time_us) / 1000);
             return;
+        }
 
         maybeFinalizeImpl(maybe_span, make_attributes(), status, error_message, finish_time_us);
     }
-
-private:
-    static const SpanDescriptor & getSpanDescriptor(KeeperSpan::Operation operation);
 
     static void maybeFinalizeImpl(
         MaybeSpan & maybe_span,
@@ -109,8 +93,6 @@ private:
         OpenTelemetry::SpanStatus status = OpenTelemetry::SpanStatus::OK,
         const String & error_message = {},
         UInt64 finish_time_us = now());
-
-    std::array<MaybeSpan, KeeperSpan::Count> maybe_spans = {};
 };
 
 }

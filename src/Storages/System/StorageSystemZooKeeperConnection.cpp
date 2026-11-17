@@ -1,5 +1,4 @@
 #include <Interpreters/Context.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Interpreters/ZooKeeperConnectionLog.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -94,6 +93,3 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemZooKeeperConnection) }
