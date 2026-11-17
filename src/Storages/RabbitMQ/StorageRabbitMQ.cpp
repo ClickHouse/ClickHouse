@@ -1626,6 +1626,17 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         if (!(*rabbitmq_settings)[RabbitMQSetting::rabbitmq_format].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `rabbitmq_format` setting");
 
+        /// The consumer semaphore takes a positive `int`. Zero always failed there, so it is rejected for every definition.
+        /// A value above `int` can wrap to a valid one, so it is rejected only for a new definition, to keep existing tables loadable.
+        const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
+        const UInt64 num_consumers = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_num_consumers].value;
+        if (num_consumers < 1 || (is_fresh_definition && num_consumers > std::numeric_limits<int>::max()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `rabbitmq_num_consumers` must be between 1 and {}, got {}",
+                std::numeric_limits<int>::max(),
+                num_consumers);
+
         return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, args.comment, std::move(rabbitmq_settings), args.mode);
     };
 
