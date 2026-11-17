@@ -25,10 +25,10 @@ public:
     ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDescription & source_columns, const ContextPtr & context);
 
     /// the functions in the actions refer to this context, so keep it while you use the actions
-    ContextPtr getContext() const { return planner_context->getQueryContext(); }
+    [[nodiscard]] ContextPtr getContext() const { return planner_context->getQueryContext(); }
 
-    const Names & getAggregationKeys() const { return aggregation_keys; }
-    const AggregateDescriptions & getAggregates() const { return aggregates; }
+    [[nodiscard]] const Names & getAggregationKeys() const { return aggregation_keys; }
+    [[nodiscard]] const AggregateDescriptions & getAggregates() const { return aggregates; }
 
     /// calculates the aggregation keys and the aggregate function arguments from the source columns
     ActionsDAG buildBeforeAggregationActions();
