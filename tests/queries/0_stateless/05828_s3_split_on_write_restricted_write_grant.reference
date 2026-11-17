@@ -1,0 +1,25 @@
+--- A rollover into a numbered key outside the grant is refused
+ACCESS_DENIED
+data.tsv	100	0	99
+--- A truncating split insert cannot delete a numbered object outside the grant
+ACCESS_DENIED
+data.1.tsv	1	2	2
+data.tsv	1	1	1
+--- A rollover of a partition into a numbered key outside the grant is refused
+ACCESS_DENIED
+--- With a grant covering the numbered keys, the same inserts succeed
+OK
+data.tsv	1	100	100
+OK
+data.1.tsv	100	100	199
+data.2.tsv	100	200	299
+data.tsv	100	0	99
+OK
+part/p0/data.1.tsv	50	100	198
+part/p0/data.2.tsv	50	200	298
+part/p0/data.3.tsv	50	300	398
+part/p0/data.tsv	50	0	98
+part/p1/data.1.tsv	50	101	199
+part/p1/data.2.tsv	50	201	299
+part/p1/data.3.tsv	50	301	399
+part/p1/data.tsv	50	1	99
