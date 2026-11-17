@@ -4770,7 +4770,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         else
             res = ColumnTuple::create(std::move(columns));
     }
-    else if (kind == TypeIndex::Dynamic || kind == TypeIndex::Object)
+    else if (kind == TypeIndex::Dynamic || kind == TypeIndex::Object || kind == TypeIndex::Variant)
     {
         chassert(output_info.nested_columns.size() == 2);
         MutableColumnPtr metadata = formOutputColumn(row_subgroup, output_info.nested_columns[0], num_rows);
@@ -4778,7 +4778,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
 
         res = output_info.input_type->createColumn();
         res->reserve(num_rows);
-        decodeVariantColumn(*metadata, *value, *res, output_info.input_type, output_info.name, num_rows, options.format);
+        decodeVariantColumn(*metadata, *value, *res, output_info.input_type, output_info.name, num_rows, VariantSettings(options.format));
     }
     else
     {

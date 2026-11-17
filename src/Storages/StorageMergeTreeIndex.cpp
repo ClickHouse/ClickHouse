@@ -320,8 +320,7 @@ StorageMergeTreeIndex::StorageMergeTreeIndex(
     if (with_minmax)
     {
         Block minmax_block;
-        const auto & partition_key = source_metadata_snapshot->getPartitionKey();
-        for (const auto & column : MergeTreeData::getMinMaxColumns(partition_key, merge_tree->getSettings()))
+        for (const auto & column : MergeTreeData::getMinMaxColumns(*source_metadata_snapshot, merge_tree->getSettings()))
             minmax_block.insert({nullptr, std::make_shared<DataTypeTuple>(DataTypes{makeNullableSafe(column.type), makeNullableSafe(column.type)}), fmt::format("minmax_{}", column.name)});
         minmax_sample_block = std::make_shared<const Block>(std::move(minmax_block));
     }
