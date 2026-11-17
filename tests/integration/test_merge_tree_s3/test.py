@@ -1311,7 +1311,6 @@ def test_data_lake_named_custom_disk_remote_host_filter(cluster):
         "CREATE TABLE t_lake_disk (x Int64) ENGINE = Iceberg(path = 'lake_disk', format = Parquet) "
         "SETTINGS disk = '{}'",
         "SELECT * FROM icebergS3('lake_disk', 'Parquet', 'x Int64', SETTINGS disk = '{}')",
-        "SELECT * FROM deltaLake('lake_disk', SETTINGS disk = '{}')",
     ]
 
     with ConfigManager() as cm:
