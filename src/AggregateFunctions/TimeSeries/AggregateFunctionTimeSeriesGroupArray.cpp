@@ -120,12 +120,13 @@ The samples can be passed in one of four forms:
 
 If several float samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
-If several histogram samples have the same timestamp, only one of them is kept: the one with the greatest total count (`count_int` for an integer
-histogram, `count_float` for a float one; a NaN count loses to any other count), on ties the one with the greatest `sum`, then the other
-elements decide in the order of the tuple, starting with `flags` (a float histogram beats an integer one) and the gauge marker (a gauge
-histogram beats a counter one). The other counter reset hints don't decide which sample is kept: of samples that differ only in them, the
-kept one gets its hint detected again as described below or, if it is the first sample of the result, the common hint of these samples, or
-an unknown one if their hints differ.
+If several histogram samples have the same timestamp, only one of them is kept: a histogram whose `sum` is the Prometheus stale marker
+(the NaN with the bits `0x7FF0000000000002`) loses, whatever its other elements, to any histogram whose `sum` isn't; then the one with
+the greatest total count (`count_int` for an integer histogram, `count_float` for a float one; a NaN count loses to any other count)
+wins, on ties the one with the greatest `sum`, then the other elements decide in the order of the tuple, starting with `flags` (a float
+histogram beats an integer one) and the gauge marker (a gauge histogram beats a counter one). The other counter reset hints don't decide
+which sample is kept: of samples that differ only in them, the kept one gets its hint detected again as described below or, if it is the
+first sample of the result, the common hint of these samples, or an unknown one if their hints differ.
 The winning histogram payload does not depend on the order of merging. Where merging changes a sample's predecessor or joins separate
 input arrays, its counter reset hint is detected again from the data against the new predecessor by the rules of the inserts into a
 `TimeSeries` table (a decrease of a count is a reset, a change of the schema or of the zero threshold makes the hint unknown), whatever

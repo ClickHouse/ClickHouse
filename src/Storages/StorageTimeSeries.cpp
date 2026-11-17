@@ -1130,7 +1130,8 @@ Because of that, reading the table before a merge can return several rows for th
 
 From [version](#schema-versioning) )DOCS_MD" + histograms_version + R"DOCS_MD( a row also holds the native histogram samples of the time series within the bucket in the column
 `histograms`, an array of tuples sorted by timestamp and merged by the same aggregate function `timeSeriesGroupArray` (for histograms
-with the same timestamp the one with the greatest total count is kept, on ties the greatest sum, then the other elements decide).
+with the same timestamp a stale marker loses to any histogram that isn't one, then the one with the greatest total count is kept, on ties
+the greatest sum, then the other elements decide).
 An integer histogram keeps its counts as `Int64` in the `*_int` elements, a float histogram as `Float64` in the `*_float` elements;
 bit 0 of `flags` tells the flavour. The readers ignore the elements of the other flavour: remote write leaves them 0 and empty,
 and an `INSERT` isn't validated for them.

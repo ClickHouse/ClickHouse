@@ -30,9 +30,10 @@ public:
 
     /// An order over the payload (every element but `timestamp`) of the histogram samples `lhs` and `rhs` of `view`: the greater
     /// sample is preferred. Returns a negative number, 0 or a positive number. The first differing key decides:
-    /// 1. the total count (`count_int` or `count_float` by flavour), compared exactly across flavours;
-    /// 2. `sum`;
-    /// 3. the other elements in the stored order by `IColumn::compareAt` (arrays and tuples lexicographically); of the counter
+    /// 1. a stale marker is less than any non-stale sample;
+    /// 2. the total count (`count_int` or `count_float` by flavour), compared exactly across flavours;
+    /// 3. `sum`;
+    /// 4. the other elements in the stored order by `IColumn::compareAt` (arrays and tuples lexicographically); of the counter
     ///    reset hint only the gauge marker, so samples differing in their counter hints only are equal.
     /// Floats compare as in `CompareHelper`: a NaN is less than any number, two NaNs are equal, as are `0.0` and `-0.0`; only for
     /// payloads equal up to those does the kept sample depend on the order of the samples (the limit of `floatSampleWins` too).

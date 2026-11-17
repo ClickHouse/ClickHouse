@@ -1,6 +1,7 @@
 #include <DataTypes/TimeSeries/TimeSeriesDuplicateTimestampRule.h>
 
 #include <Columns/IColumn.h>
+#include <DataTypes/TimeSeries/TimeSeriesHistogramCounterResetRule.h>
 #include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 #include <base/DecomposedFloat.h>
 
@@ -15,7 +16,7 @@ namespace
     /// `IColumn::compareAt` orders a NaN below any number with this hint, so a NaN count or sum loses to any other.
     constexpr int nan_is_less = -1;
 
-    /// The first key: the total count, compared exactly even across flavours without rounding an integer to `Float64`.
+    /// The second key: the total count, compared exactly even across flavours without rounding an integer to `Float64`.
     int compareCounts(const View & view, size_t lhs, size_t rhs)
     {
         const bool lhs_float = view.isFloatAt(lhs);
@@ -35,6 +36,11 @@ namespace
 
 int TimeSeriesDuplicateTimestampRule::compareHistograms(const View & view, size_t lhs, size_t rhs)
 {
+    /// The other elements of a stale marker are ignored, so they must not let it beat another sample, e.g. by a greater count.
+    const bool lhs_stale = TimeSeriesHistogramCounterResetRule::isStaleMarker(view.sum.getData()[lhs]);
+    const bool rhs_stale = TimeSeriesHistogramCounterResetRule::isStaleMarker(view.sum.getData()[rhs]);
+    if (lhs_stale != rhs_stale)
+        return lhs_stale ? -1 : 1;
     if (const int by_count = compareCounts(view, lhs, rhs))
         return by_count;
     if (const int by_sum = view.sum.compareAt(lhs, rhs, view.sum, nan_is_less))
