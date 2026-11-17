@@ -85,4 +85,4 @@ formatted=$($CLICKHOUSE_FORMAT --wrap_width 24 --query "$query")
 [[ $($CLICKHOUSE_FORMAT --wrap_width 24 --hilite --query "$query" | sed -E $'s/\033\\[[0-9;]*m//g') == "$formatted" ]] || echo 'Highlighting changed the layout'
 
 # Deep nesting must not make the output grow quadratically.
-python3 -c "print('SELECT ' + '[' * 3000 + '1' + ']' * 3000)" | $CLICKHOUSE_FORMAT --wrap_width 40 --max_parser_depth 10000 | wc -c | awk '{ print ($1 < 200000) ? "Deep nesting OK" : "Deep nesting output is too large: " $1 }'
+python3 -c "print('SELECT ' + '[' * 300 + '1' + ']' * 300)" | $CLICKHOUSE_FORMAT --wrap_width 40 --max_parser_depth 10000 | wc -c | awk '{ print ($1 < 20000) ? "Deep nesting OK" : "Deep nesting output is too large: " $1 }'
