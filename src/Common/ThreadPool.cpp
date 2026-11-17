@@ -1154,12 +1154,17 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 
         ALLOW_ALLOCATIONS_IN_SCOPE;
 
+        auto operation_name = [&]() -> std::string
+        {
+            if (job_data->name != DB::ThreadName::UNKNOWN)
+                return std::string(DB::toString(job_data->name));
+            if (job_data->thread_trace_context.isTraceEnabled())
+                return demangle(job_data->job.target_type().name());
+            return "ThreadPool::worker()";
+        };
+
         /// Set up tracing context for this thread by its parent context.
-        DB::OpenTelemetry::TracingContextHolder thread_trace_context(
-            job_data->name != DB::ThreadName::UNKNOWN ? DB::toString(job_data->name) : "ThreadPool::worker()", job_data->thread_trace_context);
-        /// A job without a name: name its span after its type.
-        if (job_data->name == DB::ThreadName::UNKNOWN && thread_trace_context.root_span.isTraceEnabled())
-            thread_trace_context.root_span.operation_name = demangle(job_data->job.target_type().name());
+        DB::OpenTelemetry::TracingContextHolder thread_trace_context(operation_name(), job_data->thread_trace_context);
 
         /// The job may attach to the thread group of the scheduling thread and inherit its cancellation predicates.
         std::optional<DB::ThreadStatus::QueryCancellationBlocker> cancellation_blocker;
