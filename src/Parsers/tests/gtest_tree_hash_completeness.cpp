@@ -293,6 +293,9 @@ TEST(TreeHashCompleteness, CloneOwnsOutputOptions)
         "DROP HYPOTHETICAL INDEX i ON db.t",
         "DELETE FROM db.t WHERE a = 1",
         "UPDATE db.t SET a = 1 WHERE a = 2",
+        "SHOW GRANTS FOR u",
+        "SHOW CREATE USER u",
+        "SHOW USERS",
     };
 
     for (const auto & query : queries)
