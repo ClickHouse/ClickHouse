@@ -15,7 +15,7 @@ trap 'rm -rf "${WORK_DIR}"' EXIT
 
 local_query()
 {
-    ${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg=1 --iceberg_write_table_statistics_ndv=1 --allow_expire_snapshots=1 --allow_experimental_iceberg_compaction=1 \
+    ${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg=1 --iceberg_write_table_statistics_ndv=1 --allow_expire_snapshots=1 \
         --mutations_sync=2 --max_insert_threads=1 "${@:2}" -q "$1" -- --user_files_path="${WORK_DIR}"
 }
 
@@ -140,7 +140,7 @@ if [[ "${IS_CLOUD}" = "1" ]]; then
     # The cloud build compacts in the background through a different code path.
     echo "id:1 s:50/50 d:25/25 n:10/10 dec:100/100 ts:200/200 f:250/250 b:2/2"
 else
-    run t_optimize "INSERT INTO t_optimize $(values 0 20000); ALTER TABLE t_optimize DELETE WHERE id < 10000; OPTIMIZE TABLE t_optimize;"
+    run t_optimize "INSERT INTO t_optimize $(values 0 20000); ALTER TABLE t_optimize DELETE WHERE id < 10000; OPTIMIZE TABLE t_optimize SETTINGS allow_experimental_iceberg_compaction = 1;"
     stats t_optimize "${NAMES}"
 fi
 
@@ -155,7 +155,7 @@ run_partitioned()
 }
 
 echo "optimize ... manifest keeps the parent's sketches"
-run_partitioned t_manifest "OPTIMIZE TABLE t_manifest MANIFEST SETTINGS iceberg_manifest_min_count_to_compact = 1;"
+run_partitioned t_manifest "OPTIMIZE TABLE t_manifest MANIFEST SETTINGS allow_experimental_iceberg_compaction = 1, iceberg_manifest_min_count_to_compact = 1;"
 stats t_manifest "id s p"
 echo "drop partition keeps the parent's sketches"
 run_partitioned t_drop "ALTER TABLE t_drop DROP PARTITION 1;"
