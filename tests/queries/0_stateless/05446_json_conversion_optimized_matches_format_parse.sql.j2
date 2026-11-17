@@ -164,6 +164,23 @@ SETTINGS json_use_optimized_type_conversion = {{ optimized }}{{ ', ' ~ settings 
 {{ check("changed Nullable(Int64) to Nullable(Int8)", "JSON(a Nullable(Int64))", "JSON(a Nullable(Int8))", ['{"a": 5}', '{"a": null}']) }}
 {{ check("changed Array(Int64) to Array(String)", "JSON(a Array(Int64))", "JSON(a Array(String))", ['{"a": [1, 2]}']) }}
 
+-- A CAST to FixedString takes only a string; the parser writes any other value as text.
+{{ check("new FixedString(3) from Int64", "JSON", "JSON(a FixedString(3))", ['{"a": 123}']) }}
+{{ check("new FixedString(3) from Int64 in shared data", "JSON(max_dynamic_paths = 0)", "JSON(max_dynamic_paths = 0, a FixedString(3))", ['{"a": 123}']) }}
+{{ check("changed Int64 to FixedString(3)", "JSON(a Int64)", "JSON(a FixedString(3))", ['{"a": 123}']) }}
+{{ check("new FixedString(19) from DateTime", "JSON", "JSON(a FixedString(19))", ['{"a": "2024-01-15 12:30:00"}']) }}
+{{ check("changed DateTime to FixedString(19)", "JSON(a DateTime)", "JSON(a FixedString(19))", ['{"a": "2024-01-15 12:30:00"}']) }}
+{{ check("changed String to FixedString(3)", "JSON(a String)", "JSON(a FixedString(3))", ['{"a": "abc"}']) }}
+
+-- A Nullable column can hold any value under a NULL, and a Native block carries it as is: here 42 under the
+-- NULL of `a`. The destination gets its default for the NULL, not the hidden value.
+{% for optimized in [1, 0] -%}
+INSERT INTO results
+SELECT {{ optimized }}, 'changed Nullable(UInt8) to UInt8 with a value under a NULL', toString(j::JSON(a UInt8))
+FROM format(Native, 'j JSON(a Nullable(UInt8))', unhex('0101016a174a534f4e2861204e756c6c61626c652855496e74382929030000000000000000012a'))
+SETTINGS json_use_optimized_type_conversion = {{ optimized }}, input_format_null_as_default = 1;
+{% endfor %}
+
 -- JSON text writes inf and nan as strings, so the parser infers String for them.
 {{ check("removed Float64 with inf and nan", "JSON(a Float64)", "JSON", ['{"a": "inf"}', '{"a": "-inf"}', '{"a": "nan"}', '{"a": 1.5}']) }}
 {{ check("removed Float64 with inf to shared data", "JSON(max_dynamic_paths = 0, a Float64)", "JSON(max_dynamic_paths = 0)", ['{"a": "inf"}']) }}

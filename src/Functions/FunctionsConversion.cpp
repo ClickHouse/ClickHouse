@@ -2018,7 +2018,8 @@ bool isStructuralTypeForJSON(const DataTypePtr & type)
 /// Strips Nullable from src column/type where dst type is non-Nullable, so that CAST
 /// doesn't throw CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN. Handles Nullable(T), Array(Nullable(T)),
 /// and LowCardinality(Nullable(T)) recursively. Returns nullopt for patterns it can't handle.
-/// Values under NULLs are type-defaults in typed JSON paths, so stripping is safe.
+/// The value under a NULL can be anything (a Native block carries it as is), so NULL rows get the
+/// nested type default, which is what the parser inserts for a NULL.
 std::optional<std::pair<ColumnPtr, DataTypePtr>> removeNullableForCast(
     const ColumnPtr & src_column,
     const DataTypePtr & src_type,
@@ -2032,7 +2033,10 @@ std::optional<std::pair<ColumnPtr, DataTypePtr>> removeNullableForCast(
     {
         const auto & col_nullable = assert_cast<const ColumnNullable &>(*src_column);
         auto nested_type = assert_cast<const DataTypeNullable &>(*src_type).getNestedType();
-        return std::make_pair(col_nullable.getNestedColumnPtr(), nested_type);
+        const auto & null_map = col_nullable.getNullMapData();
+        if (memoryIsZero(null_map.data(), 0, null_map.size()))
+            return std::make_pair(col_nullable.getNestedColumnPtr(), nested_type);
+        return std::make_pair(col_nullable.getNestedColumnWithDefaultOnNull(), nested_type);
     }
 
     /// Top-level LowCardinality(Nullable(T)) -> non-LowCardinality-Nullable destination.
@@ -2445,6 +2449,10 @@ bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const 
         return castMatchesParse(col_array.getDataPtr(), from_array->getNestedType(), to_array->getNestedType());
     }
 
+    /// A CAST to FixedString is implemented only from a string; the parser writes any other value as text.
+    if (isFixedString(*to_inner))
+        return isStringOrFixedString(*from);
+
     auto all_values_convert_exactly = [&]
     {
         auto probe = castColumnAccurateOrNull({column, from, ""}, makeNullable(to_inner));
@@ -2454,7 +2462,7 @@ bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const 
 
     if (isDateTimeOrDateTime64(*from))
     {
-        if (isStringOrFixedString(*to_inner) || from->equals(*to_inner))
+        if (isString(*to_inner) || from->equals(*to_inner))
             return true;
         return isDateTimeOrDateTime64(*to_inner) && all_values_convert_exactly();
     }
@@ -2534,12 +2542,12 @@ struct ObjectConversionPlan
     /// invalid; a new typed path that does have one below it makes the parser descend instead.
     UnorderedSetWithMemoryTracking<String> new_leaf_typed_paths;
 
-    bool canOptimize() const
+    [[nodiscard]] bool canOptimize() const
     {
         return !dynamic_limits_changed && !has_structural_type_change;
     }
 
-    bool isIdentity() const
+    [[nodiscard]] bool isIdentity() const
     {
         return new_typed_paths.empty()
             && removed_typed_paths.empty()
@@ -2549,7 +2557,7 @@ struct ObjectConversionPlan
             && !dynamic_limits_changed;
     }
 
-    bool hasNewSkipRules() const
+    [[nodiscard]] bool hasNewSkipRules() const
     {
         return !new_skip_paths.empty() || !new_skip_regexps.empty();
     }
@@ -3231,8 +3239,8 @@ ColumnPtr convertObjectColumns(
                 auto src_type = from_tp;
 
                 /// Strip Nullable where destination is non-Nullable to avoid
-                /// CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN from CAST. Values under NULLs are
-                /// type-defaults, which is what the parser inserts here (see can_strip_nullable).
+                /// CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN from CAST. NULL rows become the nested
+                /// type default, which is what the parser inserts here (see can_strip_nullable).
                 if (nullable_mismatch)
                 {
                     if (auto stripped = removeNullableForCast(src_col, src_type, to_tp))
