@@ -122,6 +122,24 @@ forge("merged state is repeated after the states", aggregating(FINAL | ONLY_MERG
       [STATES + STATES[:1]], VERSION, AB)
 forge("well-formed merge", aggregating(FINAL | ONLY_MERGE, aggregates=ANY_SUM), [STATES], VERSION, AB)
 
+# With grouping sets, the merge splits the rows by `__grouping_set`, read as `UInt64`, and keeps its type in the output.
+GROUPING_SETS = 4
+def merging_grouping_sets(keys, sets, aggregates):   # flags, keys, the used keys of every set, aggregates
+    out = bytes([FINAL | GROUPING_SETS]) + vu(len(keys)) + b"".join(sb(k) for k in keys) + vu(len(sets))
+    for used_keys in sets:
+        out += vu(len(used_keys)) + b"".join(sb(k) for k in used_keys)
+    return out + aggregating(FINAL, aggregates=aggregates)[2:-1] + vu(0) + vu(0)   # sort description, sets of the plan
+
+GS = merging_grouping_sets(["k"], [["k"], []], ANY_SUM[:1])
+K_STATE = [("k", U64), STATES[0]]
+K_A = [("k", U64), ("a", U64)]
+forge("grouping set column is a String", GS, [[("__grouping_set", STR)] + K_STATE], VERSION,
+      [("__grouping_set", STR)] + K_A, "MergingAggregated")
+forge("grouping set column is duplicated", GS, [[("__grouping_set", U64)] * 2 + K_STATE], VERSION,
+      [("__grouping_set", U64)] + K_A, "MergingAggregated")
+forge("well-formed grouping sets merge", GS, [[("__grouping_set", U64)] + K_STATE], VERSION,
+      [("__grouping_set", U64)] + K_A, "MergingAggregated")
+
 # `TotalsHaving` finalizes the states it finds in the input by the names of its aggregates.
 def totals_having(aggregates):   # flags (final), then the aggregates as for `Aggregating`, without the keys
     return bytes([FINAL]) + aggregating(FINAL, aggregates=aggregates)[2:]

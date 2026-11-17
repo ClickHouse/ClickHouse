@@ -357,9 +357,23 @@ static void checkMergedAggregatesLayout(
         return;
     }
 
-    if (!header.has("__grouping_set"))
+    /// The transform splits the rows by the values of `__grouping_set` read as `ColumnUInt64`, and the output header
+    /// takes its type from the input.
+    size_t num_grouping_set_columns = 0;
+    for (const auto & column : header)
+    {
+        if (column.name != "__grouping_set")
+            continue;
+        ++num_grouping_set_columns;
+        if (column.type->getTypeId() != TypeIndex::UInt64)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The `__grouping_set` column in the input of a deserialized `MergingAggregated` step has type {} instead of UInt64",
+                column.type->getName());
+    }
+    if (num_grouping_set_columns != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "The input of a deserialized `MergingAggregated` step with grouping sets has no `__grouping_set` column");
+            "The input of a deserialized `MergingAggregated` step with grouping sets has {} `__grouping_set` columns instead of one",
+            num_grouping_set_columns);
 
     for (const auto & grouping_set : grouping_sets_params)
     {
@@ -375,15 +389,9 @@ static void checkMergedAggregatesLayout(
                     "Key {} of a grouping set is not in the input of a deserialized `MergingAggregated` step", key);
             layout.push_back(*column);
         }
-        /// The transform removes the first `__grouping_set` only.
-        bool grouping_set_column_skipped = false;
         for (const auto & column : header)
-        {
-            if (!grouping_set_column_skipped && column.name == "__grouping_set")
-                grouping_set_column_skipped = true;
-            else if (!keys_of_set.contains(column.name))
+            if (column.name != "__grouping_set" && !keys_of_set.contains(column.name))
                 layout.push_back(column);
-        }
 
         checkDeserializedMergedAggregatesLayout(grouping_set.used_keys, aggregates, layout);
     }

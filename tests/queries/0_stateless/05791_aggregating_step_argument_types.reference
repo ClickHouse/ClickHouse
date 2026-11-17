@@ -7,6 +7,9 @@ merged state is duplicated INCORRECT_DATA
 merged key is after the states INCORRECT_DATA
 merged state is repeated after the states INCORRECT_DATA
 well-formed merge accepted
+grouping set column is a String INCORRECT_DATA
+grouping set column is duplicated INCORRECT_DATA
+well-formed grouping sets merge accepted
 finalized column is not a state INCORRECT_DATA
 finalized state is not in the input INCORRECT_DATA
 finalized state is of another function INCORRECT_DATA
