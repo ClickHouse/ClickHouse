@@ -1,6 +1,7 @@
 #pragma once
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Server/StatelessWorker/StatelessWorkerProtocol.h>
+#include <Server/StatelessWorker/WorkerQueryController.h>
 #include <IO/Progress.h>
 #include <Common/ThreadPool.h>
 #include <Common/OpenTelemetryTracingContext.h>
@@ -70,6 +71,9 @@ public:
 
     /// Ignores a task cancelled before its start arrived.
     Result startTask(const String & unique_task_id, DistributedQueryTaskDescription task, const String & unique_temp_file_path, const TaskCollectors & collectors);
+    /// Starts the tasks of a `start_tasks` batch of the query `unique_query_id`, skipping those cancelled before their start or
+    /// already started. A task that cannot be scheduled fails the call; the tasks scheduled before it keep running.
+    void startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors);
     TaskStatus getStatus(const String & task_id, UInt64 wait_milliseconds);
     /// Remembers an unknown id: the coordinator sends the starts of a stage concurrently, so a cancel can overtake a start.
     Result cancelTask(const String & task_id);
@@ -121,6 +125,8 @@ private:
         std::shared_ptr<LogsQueueSlot> logs_queue = std::make_shared<LogsQueueSlot>();
         /// Lines handed to status replies so far.
         std::shared_ptr<ForwardedLogsCounter> forwarded_logs = std::make_shared<ForwardedLogsCounter>();
+        /// The query of a task started by `startTasks`, which keys its `WorkerQueryController`; empty for `startTask`.
+        String unique_query_id;
     };
 
     using TaskStatePtr = std::shared_ptr<TaskState>;
@@ -130,6 +136,11 @@ private:
 
     static TaskSetup setupTask(const String & unique_task_id, const DistributedQueryTaskDescription & task_description,
         const String & unique_temp_file_path, const TaskCollectors & collectors, const OpenTelemetry::TracingContext & trace_context);
+
+    /// Adds a task to `tasks`; false, and nothing added, for a task cancelled before its start or already started.
+    bool tryRegisterTaskLocked(const String & unique_task_id, const TaskStatePtr & task_state) TSA_REQUIRES(tasks_mutex);
+    /// Removes a task from `tasks`; false for an unknown one.
+    bool eraseTaskLocked(const String & unique_task_id) TSA_REQUIRES(tasks_mutex);
 
     /// Schedules a registered task in `thread_pool`; `trace_context_` is the dispatch request's.
     void scheduleTask(const String & unique_task_id, TaskStatePtr task_state, TaskPromisePtr task_promise,
@@ -142,6 +153,7 @@ private:
     static constexpr size_t MAX_CANCELLED_BEFORE_START = 1000;
     std::unordered_set<String> cancelled_before_start TSA_GUARDED_BY(tasks_mutex);
     std::deque<String> cancelled_before_start_order TSA_GUARDED_BY(tasks_mutex);
+    std::unordered_map<String, WorkerQueryControllerPtr> query_controllers TSA_GUARDED_BY(tasks_mutex);
     std::mutex tasks_mutex;
 };
 

@@ -1,0 +1,39 @@
+local
+1000	100000
+100000	49950000
+50000
+aggregation Streaming
+1000	100000
+1000	100000
+1000	100000
+join Streaming
+100000	49950000
+100000	49950000
+100000	49950000
+set Streaming
+50000
+50000
+50000
+aggregation Persisted
+1000	100000
+1000	100000
+1000	100000
+join Persisted
+100000	49950000
+100000	49950000
+100000	49950000
+aggregation	Persisted	0	0	1	1	1	1
+aggregation	Persisted	1	0	1	1	1	1
+aggregation	Persisted	1	8	1	1	1	1
+aggregation	Streaming	0	0	1	1	1	1
+aggregation	Streaming	1	0	1	1	1	1
+aggregation	Streaming	1	8	1	1	1	1
+join	Persisted	0	0	1	1	1	1
+join	Persisted	1	0	1	1	1	1
+join	Persisted	1	8	1	1	1	1
+join	Streaming	0	0	1	1	1	1
+join	Streaming	1	0	1	1	1	1
+join	Streaming	1	8	1	1	1	1
+set	Streaming	0	0	1	1	1	1
+set	Streaming	1	0	1	1	1	1
+set	Streaming	1	8	1	1	1	1

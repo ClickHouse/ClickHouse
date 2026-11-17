@@ -46,6 +46,9 @@ struct StreamSourceAddress
     UInt16 port = 0;
 };
 
+/// Index of a worker in `TaskToHostMap::getWorkerAddresses`.
+using WorkerIndex = size_t;
+
 class TaskToHostMap : public boost::noncopyable
 {
 public:
@@ -54,7 +57,9 @@ public:
     ~TaskToHostMap();
 
     [[nodiscard]] const VectorWithMemoryTracking<WorkerAddress> & getWorkerAddresses() const { return worker_addresses; }
-    [[nodiscard]] const UnorderedMapWithMemoryTracking<String, WorkerAddress> & getTaskHosts() const { return task_hosts; }
+    /// Task id -> index of its worker in `getWorkerAddresses`.
+    [[nodiscard]] const UnorderedMapWithMemoryTracking<String, WorkerIndex> & getTaskWorkerIndices() const { return task_worker_indices; }
+    [[nodiscard]] WorkerIndex getTaskWorkerIndex(const String & task_id) const { return task_worker_indices.at(task_id); }
     [[nodiscard]] const UnorderedMapWithMemoryTracking<String, StreamSourceAddress> & getExchangeStreamSourceHosts() const { return exchange_stream_source_hosts; }
 
 private:
@@ -62,12 +67,16 @@ private:
     void assignHostsForTasks(const DistributedQueryPlan & distributed_query_plan);
 
     VectorWithMemoryTracking<WorkerAddress> worker_addresses;
-    UnorderedMapWithMemoryTracking<String, WorkerAddress> task_hosts;
+    UnorderedMapWithMemoryTracking<String, WorkerIndex> task_worker_indices;
     UnorderedMapWithMemoryTracking<String, StreamSourceAddress> exchange_stream_source_hosts;
     StatelessWorkerAllocationPtr worker_allocation;  /// Keeps the allocated workers alive for the query lifetime
 };
 
 using TaskToHostMapPtr = std::shared_ptr<const TaskToHostMap>;
+
+/// The id of a task on its worker: unique across queries, since the plan's task ids (`stage_N_M`, `main`) are not.
+String makeUniqueTaskId(const UUID & unique_query_id, const String & task_id);
+String makeUniqueTaskId(const String & unique_query_id, const String & task_id);
 
 struct DistributedQueryPlan;
 
@@ -173,6 +182,8 @@ protected:
 
     virtual void startStage(const String & stage_name, const DistributedQueryStage & stage) = 0;
     virtual bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) = 0;
+    /// Sends the tasks that `startStage` only queued; called before a wait for a stage and at the end of `start`.
+    virtual void dispatchQueuedTasks() {}
 
     [[nodiscard]] virtual bool waitsForFilterOnlyStages() const { return false; }
 
@@ -209,18 +220,45 @@ struct ExchangeStreamSources
     UnorderedMapWithMemoryTracking<String, StreamSourceAddress> stream_hosts;
 };
 
+using SerializedQueryPlanPtr = std::shared_ptr<const String>;
+
 /// Contains all info to send a task to remote worker
 struct DistributedQueryTaskDescription
 {
     String initial_query_id;
     DistributedQueryTask task;
-    String serialized_query_plan;
+    /// Shared by the tasks of a stage, so the stage's plan is kept once.
+    SerializedQueryPlanPtr serialized_query_plan;
     ExchangeDescriptions exchanges;
     ExchangeStreamSources exchange_stream_sources;
     /// The initiator's changed settings, applied on the worker so query limits and execution-affecting
     /// settings (e.g. max_memory_usage) are honored remotely.
     SettingsChanges settings_changes;
     /// Wire-format version of the task. A worker that knows only an older version rejects it.
+    UInt64 serialization_version = DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION;
+};
+
+/// The tasks of one query sent to one worker in one `start_tasks` request. Each stage's plan is written once,
+/// before that stage's tasks.
+struct DistributedQueryTaskBatch
+{
+    struct Task
+    {
+        DistributedQueryTask task;
+        ExchangeStreamSources exchange_stream_sources;
+    };
+
+    struct Stage
+    {
+        String name;
+        SerializedQueryPlanPtr serialized_query_plan;
+        VectorWithMemoryTracking<Task> tasks;
+    };
+
+    String initial_query_id;
+    ExchangeDescriptions exchanges;
+    SettingsChanges settings_changes;
+    VectorWithMemoryTracking<Stage> stages;
     UInt64 serialization_version = DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION;
 };
 
