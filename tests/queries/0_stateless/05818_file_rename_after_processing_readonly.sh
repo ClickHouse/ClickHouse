@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# `rename_files_after_processing` renames the files a SELECT has read, a write to the source,
+# `rename_files_after_processing` renames the files a `SELECT` has read, a write to the source,
 # so such a read is refused in readonly mode, which every HTTP GET request implies.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
