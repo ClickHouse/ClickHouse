@@ -1,6 +1,5 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 
 
@@ -11,7 +10,7 @@ namespace
 
 /** ignore(...) is a function that takes any arguments, and always returns 0.
   */
-class FunctionIgnore final : public IFunction
+class FunctionIgnore : public IFunction
 {
 public:
     static constexpr auto name = "ignore";
@@ -20,41 +19,36 @@ public:
         return std::make_shared<FunctionIgnore>();
     }
 
-    [[nodiscard]] bool isVariadic() const override
+    bool isVariadic() const override
     {
         return true;
     }
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-
-    /// The result is unconditionally UInt8, so a Nothing-typed argument must not force the
-    /// declared return type to Nothing (which would mismatch the UInt8 column executeImpl produces).
-    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
-
-    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool isSuitableForConstantFolding() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// We should never return LowCardinality result, cause we declare that result is always constant zero.
     /// (in getResultIfAlwaysReturnsConstantAndHasArguments)
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    [[nodiscard]] bool useDefaultImplementationForSparseColumns() const override { return false; }
+    bool useDefaultImplementationForSparseColumns() const override { return false; }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "(...) -> UInt8";
+        return std::make_shared<DataTypeUInt8>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeUInt8().createColumnConst(input_rows_count, 0u);
     }

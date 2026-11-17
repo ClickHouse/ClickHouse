@@ -14,44 +14,38 @@ public:
         std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_,
         size_t variant_argument_index_);
 
-    [[nodiscard]] String getName() const override { return function_overload_resolver->getName(); }
+    String getName() const override { return function_overload_resolver->getName(); }
 
 protected:
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final;
-    [[nodiscard]] ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final;
+    ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final;
 
     /// Disable all default implementations, they will be used later.
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForSparseColumns() const override { return false; }
-    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return function_overload_resolver->isDeterministicInScopeOfQuery(); }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForSparseColumns() const override { return false; }
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
 
 private:
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
     /// We remember the original IFunctionOverloadResolver to be able to build function for types inside Variant column.
     std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver;
     size_t variant_argument_index;
     /// When true (default), throw an exception if a variant type is incompatible with the function.
     /// When false, return NULL for incompatible rows instead.
-    /// Resolved at construction time from the `variant_throw_on_type_mismatch` setting or the strictness
-    /// override pinned by the caller, see `TypeMismatchStrictness.h`.
+    /// Read from `variant_throw_on_type_mismatch` setting via CurrentThread at construction time.
     bool throw_on_type_mismatch = true;
 };
 
 class FunctionBaseVariantAdaptor final : public IFunctionBase
 {
 public:
-    /// variant_argument_index_ is the argument the adaptor executes per alternative. The resolver
-    /// picks it, because a function may handle some `Variant` arguments itself (see
-    /// `IFunctionOverloadResolver::useDefaultImplementationForVariantWithCustomName`).
     FunctionBaseVariantAdaptor(
         std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_,
-        ColumnsWithTypeAndName arguments_with_type_,
-        size_t variant_argument_index_);
+        ColumnsWithTypeAndName arguments_with_type_);
 
     String getName() const override { return function_overload_resolver->getName(); }
 
@@ -76,10 +70,6 @@ public:
     bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override { return function_overload_resolver->isShortCircuit(settings, number_of_arguments); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-
-    bool isSpatialPredicate() const override { return function_overload_resolver->isSpatialPredicate(); }
-
-    bool isExpensive() const override { return function_overload_resolver->isExpensive(); }
 
 private:
     /// We remember the original IFunctionOverloadResolver to be able to build function for types inside Variant column.

@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/PreparedSets.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
@@ -11,8 +11,6 @@
 namespace DB
 {
 
-class ASTAlterCommand;
-class ActionsChain;
 class Context;
 class QueryPlan;
 
@@ -27,51 +25,21 @@ struct IsStorageTouched
 
 ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
 
-/// Evaluate the AST size of mutation commands without constructing a full MutationsInterpreter.
-size_t evaluateMutationCommandsSize(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
-
-/// Transitive closure of `getColumnDependencies` over @updated_columns: a dependency that is not
-/// read-only is itself updated, so it pulls in its own dependencies. TTL targets are included.
-ColumnDependencies getAllColumnDependencies(
-    const StorageMetadataPtr & metadata_snapshot,
-    const NameSet & updated_columns,
-    const StorageInMemoryMetadata::HasDependencyCallback & has_dependency);
-
 /// Return false if the data isn't going to be changed by mutations.
-/// `on_exception` runs when reading the part fails, before the reads still in flight are waited for.
 IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     ContextPtr context,
-    std::function<void(const Progress & value)> check_operation_is_not_cancelled,
-    std::function<void()> on_exception
+    std::function<void(const Progress & value)> check_operation_is_not_cancelled
 );
 
-/// Build the WHERE-style filter for a mutation command. The parsed
-/// `ASTAlterCommand` is passed in so the caller can reuse the same parse for
-/// other accesses; the function does not call `MutationCommand::ast` itself.
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
-    const ASTAlterCommand * alter,
+    const MutationCommand & command,
     const StoragePtr & storage,
     ContextPtr context
 );
-
-/// Re-run the set-operation normalization (`UNION`/`INTERSECT`/`EXCEPT`) that `executeQuery` applies to
-/// top-level queries on an AST re-parsed from stored SQL text: a serialized mutation command, a table's
-/// stored `CREATE`. Parsing fills only the syntactic list of modes, so such an AST is un-normalized however
-/// explicit its text was, and every consumer that feeds it to the analyzer (`buildQueryTree`) must call this
-/// first; otherwise the analyzer rejects the set operation with "UNION mode UNION_DEFAULT must be normalized".
-void normalizeSetOperations(ASTPtr & ast, const ContextPtr & context);
-
-/// Reject mutation expressions whose `IN` operand is a `Set` with an applicable row policy.
-/// This must run with the submitting context before the mutation is handed to a background context.
-void checkNoRowPolicyForSetOperands(
-    const ASTPtr & mutation_ast,
-    const String & default_database,
-    const ContextPtr & context,
-    bool throw_if_unresolved = false);
 
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
@@ -94,9 +62,6 @@ public:
         bool apply_deleted_mask = true;
         /// Whether we should recalculate skip indexes, TTL expressions, etc. that depend on updated columns.
         bool recalculate_dependencies_of_updated_columns = true;
-        /// Whether the actions only apply pending mutations while reading a part. Such an interpreter
-        /// writes nothing, so diagnostics about what a mutation leaves on disk do not apply to it.
-        bool apply_on_fly_for_read = false;
         /// Number of threads for resulting pipeline.
         size_t max_threads = 1;
     };
@@ -107,15 +72,6 @@ public:
         StoragePtr storage_,
         StorageMetadataPtr metadata_snapshot_,
         MutationCommands commands_,
-        ContextPtr context_,
-        Settings settings_);
-
-    /// Same but with explicit list of available columns
-    MutationsInterpreter(
-        StoragePtr storage_,
-        StorageMetadataPtr metadata_snapshot_,
-        MutationCommands commands_,
-        Names available_columns_,
         ContextPtr context_,
         Settings settings_);
 
@@ -131,36 +87,18 @@ public:
         Settings settings_);
 
     void validate();
-
-    /// Throws if the mutation contains non-deterministic functions, subqueries or virtual columns on a
-    /// Replicated* storage and `allow_nondeterministic_mutations` is disabled.  Static so it can be called
-    /// without constructing a full `MutationsInterpreter`. Functions and subqueries are checked first,
-    /// so they are reported even when the predicate is not analyzable.
-    static void validateNonDeterministicMutationsForStorage(
-        const StoragePtr & storage,
-        const MutationCommands & commands,
-        ContextPtr context);
-
-    /// Returns the name of a virtual column whose value may differ between replicas (`_table`, `_database`,
-    /// `_disk_name`, ...), if the `UPDATE` or `DELETE` commands read it, directly or through `ALIAS` columns,
-    /// or if a projection that the mutation may rebuild reads it. The mutation is checked against
-    /// `metadata_snapshot`, the metadata it will be executed with, or the current metadata of `storage` if it is null.
-    static std::optional<String> findNonDeterministicVirtualColumn(
-        const StoragePtr & storage,
-        const MutationCommands & commands,
-        ContextPtr context,
-        StorageMetadataHandle metadata_snapshot = nullptr);
+    size_t evaluateCommandsSize();
 
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
     QueryPipelineBuilder execute();
 
     /// Only changed columns.
-    [[nodiscard]] Block getUpdatedHeader() const;
+    Block getUpdatedHeader() const;
 
-    [[nodiscard]] const ColumnDependencies & getColumnDependencies() const;
+    const ColumnDependencies & getColumnDependencies() const;
 
     /// Latest mutation stage affects all columns in storage
-    [[nodiscard]] bool isAffectingAllColumns() const;
+    bool isAffectingAllColumns() const;
 
     NameSet grabMaterializedIndices() { return std::move(materialized_indices); }
 
@@ -182,11 +120,11 @@ public:
         void set(const MutationKindEnum & kind);
     };
 
-    [[nodiscard]] MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
+    MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
 
     /// Returns a chain of actions that can be
     /// applied to block to execute mutation commands.
-    [[nodiscard]] std::vector<MutationActions> getMutationActions() const;
+    std::vector<MutationActions> getMutationActions() const;
 
     /// Internal class which represents a data part for MergeTree
     /// or just storage for other storages.
@@ -194,21 +132,20 @@ public:
     /// Additionally we propagate some storage properties.
     struct Source
     {
-        [[nodiscard]] StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & snapshot_, const ContextPtr & context_, bool with_data) const;
+        StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & snapshot_, const ContextPtr & context_, bool with_data) const;
 
-        [[nodiscard]] StoragePtr getStorage() const;
-        [[nodiscard]] const MergeTreeData * getMergeTreeData() const;
-        [[nodiscard]] AlterConversionsPtr getAlterConversions() const { return alter_conversions; }
-        [[nodiscard]] MergeTreeData::DataPartPtr getMergeTreeDataPart() const;
-        [[nodiscard]] bool isMutatingDataPart() const;
+        StoragePtr getStorage() const;
+        const MergeTreeData * getMergeTreeData() const;
+        AlterConversionsPtr getAlterConversions() const { return alter_conversions; }
+        MergeTreeData::DataPartPtr getMergeTreeDataPart() const;
+        bool isMutatingDataPart() const;
 
-        [[nodiscard]] bool supportsLightweightDelete() const;
-        [[nodiscard]] bool materializeTTLRecalculateOnly() const;
-        [[nodiscard]] bool hasSecondaryIndex(const String & name, StorageMetadataPtr metadata) const;
-        [[nodiscard]] bool hasProjection(const String & name) const;
-        [[nodiscard]] bool hasBrokenProjection(const String & name) const;
-        [[nodiscard]] bool hasUnloadedProjection(const String & name) const;
-        [[nodiscard]] bool isCompactPart() const;
+        bool supportsLightweightDelete() const;
+        bool materializeTTLRecalculateOnly() const;
+        bool hasSecondaryIndex(const String & name, StorageMetadataPtr metadata) const;
+        bool hasProjection(const String & name) const;
+        bool hasBrokenProjection(const String & name) const;
+        bool isCompactPart() const;
 
         void read(
             Stage & first_stage,
@@ -244,10 +181,10 @@ private:
     void initQueryPlan(Stage & first_stage, QueryPlan & query_plan);
     void prepareMutationStages(std::vector<Stage> &prepared_stages, bool dry_run);
     QueryPipelineBuilder addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
-    [[nodiscard]] std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
+    std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
     static std::optional<ActionsDAG> createFilterDAGForStage(const Stage & stage);
 
-    ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const ASTAlterCommand * alter) const;
+    ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const MutationCommand & command) const;
 
     Source source;
     StorageMetadataPtr metadata_snapshot;
@@ -276,16 +213,13 @@ private:
     /// Each stage has output_columns that contain columns that are changed at the end of that stage
     /// plus columns needed for the next mutations.
     ///
-    /// First stage is special: it can contain only filters and is executed as a plain read
+    /// First stage is special: it can contain only filters and is executed using InterpreterSelectQuery
     /// to take advantage of table indexes (if there are any). It's necessary because all mutations have
     /// `WHERE clause` part.
 
     struct Stage
     {
-        explicit Stage(ContextPtr context_);
-        ~Stage();
-        Stage(Stage &&) noexcept;
-        Stage & operator=(Stage &&) noexcept;
+        explicit Stage(ContextPtr context_) : expressions_chain(context_) {}
 
         ASTs filters;
         std::unordered_map<String, ASTPtr> column_to_updated;
@@ -294,12 +228,12 @@ private:
         /// the previous stages and also columns needed by the next stages.
         NameSet output_columns;
 
+        std::unique_ptr<ExpressionAnalyzer> analyzer;
+
         /// A chain of actions needed to execute this stage.
         /// First steps calculate filter columns for DELETEs (in the same order as in `filter_column_names`),
         /// then there is (possibly) an UPDATE step, and finally a projection step.
-        std::unique_ptr<ActionsChain> new_actions_chain;
-        PreparedSetsPtr new_prepared_sets;
-
+        ExpressionActionsChain expressions_chain;
         Names filter_column_names;
 
         bool affects_all_columns = false;
@@ -310,12 +244,9 @@ private:
         bool is_readonly = false;
 
         /// Check that stage affects all storage columns
-        [[nodiscard]] bool isAffectingAllColumns(const Names & storage_columns) const;
+        bool isAffectingAllColumns(const Names & storage_columns) const;
     };
 
-    /// The columns this mutation writes into the new part. Assigned at the end of `execute` and
-    /// never earlier: a header taken while `stages` is still being built silently omits the
-    /// columns of the stages appended afterwards.
     std::unique_ptr<Block> updated_header;
     std::vector<Stage> stages;
     bool is_prepared = false; /// Has the sequence of stages been prepared.

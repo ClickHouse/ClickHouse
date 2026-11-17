@@ -1,10 +1,10 @@
-#include <algorithm>
-#include <Common/StringUtils.h>
 #include <Access/Common/AccessFlags.h>
-
-#include <array>
 #include <Access/Common/AccessType.h>
 #include <Common/Exception.h>
+#include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 #include <unordered_map>
 
 
@@ -30,35 +30,26 @@ namespace
             return res;
         }
 
-        [[nodiscard]] Flags accessTypeToFlags(AccessType type) const
+        Flags accessTypeToFlags(AccessType type) const
         {
             return access_type_to_flags_mapping[static_cast<size_t>(type)];
         }
 
-        bool tryKeywordToFlags(std::string_view keyword, Flags & result) const
+        Flags keywordToFlags(std::string_view keyword) const
         {
             auto it = keyword_to_flags_map.find(keyword);
             if (it == keyword_to_flags_map.end())
             {
                 String uppercased_keyword{keyword};
-                toUpperASCII(uppercased_keyword);
+                boost::to_upper(uppercased_keyword);
                 it = keyword_to_flags_map.find(uppercased_keyword);
                 if (it == keyword_to_flags_map.end())
-                    return false;
+                    throw Exception(ErrorCodes::UNKNOWN_ACCESS_TYPE, "Unknown access type: {}", String(keyword));
             }
-            result = it->second;
-            return true;
+            return it->second;
         }
 
-        [[nodiscard]] Flags keywordToFlags(std::string_view keyword) const
-        {
-            Flags result;
-            if (!tryKeywordToFlags(keyword, result))
-                throw Exception(ErrorCodes::UNKNOWN_ACCESS_TYPE, "Unknown access type: {}", String(keyword));
-            return result;
-        }
-
-        [[nodiscard]] Flags keywordsToFlags(const std::vector<std::string_view> & keywords) const
+        Flags keywordsToFlags(const std::vector<std::string_view> & keywords) const
         {
             Flags res;
             for (const auto & keyword : keywords)
@@ -66,7 +57,7 @@ namespace
             return res;
         }
 
-        [[nodiscard]] Flags keywordsToFlags(const Strings & keywords) const
+        Flags keywordsToFlags(const Strings & keywords) const
         {
             Flags res;
             for (const auto & keyword : keywords)
@@ -74,21 +65,21 @@ namespace
             return res;
         }
 
-        [[nodiscard]] std::vector<AccessType> flagsToAccessTypes(const Flags & flags_) const
+        std::vector<AccessType> flagsToAccessTypes(const Flags & flags_) const
         {
             std::vector<AccessType> access_types;
             flagsToAccessTypesRec(flags_, access_types, *all_node);
             return access_types;
         }
 
-        [[nodiscard]] std::vector<std::string_view> flagsToKeywords(const Flags & flags_) const
+        std::vector<std::string_view> flagsToKeywords(const Flags & flags_) const
         {
             std::vector<std::string_view> keywords;
             flagsToKeywordsRec(flags_, keywords, *all_node);
             return keywords;
         }
 
-        [[nodiscard]] String flagsToString(const Flags & flags_) const
+        String flagsToString(const Flags & flags_) const
         {
             auto keywords = flagsToKeywords(flags_);
             if (keywords.empty())
@@ -103,23 +94,23 @@ namespace
             return str;
         }
 
-        [[nodiscard]] const Flags & getAllFlags() const { return all_flags; }
-        [[nodiscard]] const Flags & getGlobalFlags() const { return all_flags_for_target[GLOBAL]; }
-        [[nodiscard]] const Flags & getGlobalWithParameterFlags() const { return all_flags_grantable_on_global_with_parameter_level; }
-        [[nodiscard]] const Flags & getDatabaseFlags() const { return all_flags_for_target[DATABASE]; }
-        [[nodiscard]] const Flags & getTableFlags() const { return all_flags_for_target[TABLE]; }
-        [[nodiscard]] const Flags & getColumnFlags() const { return all_flags_for_target[COLUMN]; }
-        [[nodiscard]] const Flags & getDictionaryFlags() const { return all_flags_for_target[DICTIONARY]; }
-        [[nodiscard]] const Flags & getTableEngineFlags() const { return all_flags_for_target[TABLE_ENGINE]; }
-        [[nodiscard]] const Flags & getSourceFlags() const { return all_flags_for_target[SOURCE]; }
-        [[nodiscard]] const Flags & getUserNameFlags() const { return all_flags_for_target[USER_NAME]; }
-        [[nodiscard]] const Flags & getDefinerFlags() const { return all_flags_for_target[DEFINER]; }
-        [[nodiscard]] const Flags & getNamedCollectionFlags() const { return all_flags_for_target[NAMED_COLLECTION]; }
-        [[nodiscard]] const Flags & getAllFlagsGrantableOnGlobalLevel() const { return getAllFlags(); }
-        [[nodiscard]] const Flags & getAllFlagsGrantableOnGlobalWithParameterLevel() const { return getGlobalWithParameterFlags(); }
-        [[nodiscard]] const Flags & getAllFlagsGrantableOnDatabaseLevel() const { return all_flags_grantable_on_database_level; }
-        [[nodiscard]] const Flags & getAllFlagsGrantableOnTableLevel() const { return all_flags_grantable_on_table_level; }
-        [[nodiscard]] const Flags & getAllFlagsGrantableOnColumnLevel() const { return getColumnFlags(); }
+        const Flags & getAllFlags() const { return all_flags; }
+        const Flags & getGlobalFlags() const { return all_flags_for_target[GLOBAL]; }
+        const Flags & getGlobalWithParameterFlags() const { return all_flags_grantable_on_global_with_parameter_level; }
+        const Flags & getDatabaseFlags() const { return all_flags_for_target[DATABASE]; }
+        const Flags & getTableFlags() const { return all_flags_for_target[TABLE]; }
+        const Flags & getColumnFlags() const { return all_flags_for_target[COLUMN]; }
+        const Flags & getDictionaryFlags() const { return all_flags_for_target[DICTIONARY]; }
+        const Flags & getTableEngineFlags() const { return all_flags_for_target[TABLE_ENGINE]; }
+        const Flags & getSourceFlags() const { return all_flags_for_target[SOURCE]; }
+        const Flags & getUserNameFlags() const { return all_flags_for_target[USER_NAME]; }
+        const Flags & getDefinerFlags() const { return all_flags_for_target[DEFINER]; }
+        const Flags & getNamedCollectionFlags() const { return all_flags_for_target[NAMED_COLLECTION]; }
+        const Flags & getAllFlagsGrantableOnGlobalLevel() const { return getAllFlags(); }
+        const Flags & getAllFlagsGrantableOnGlobalWithParameterLevel() const { return getGlobalWithParameterFlags(); }
+        const Flags & getAllFlagsGrantableOnDatabaseLevel() const { return all_flags_grantable_on_database_level; }
+        const Flags & getAllFlagsGrantableOnTableLevel() const { return all_flags_grantable_on_table_level; }
+        const Flags & getAllFlagsGrantableOnColumnLevel() const { return getColumnFlags(); }
 
     private:
         enum NodeType
@@ -166,21 +157,16 @@ namespace
         static String replaceUnderscoreWithSpace(std::string_view str)
         {
             String res{str};
-            std::replace(res.begin(), res.end(), '_', ' ');
+            boost::replace_all(res, "_", " ");
             return res;
         }
 
         static Strings splitAliases(std::string_view str)
         {
             Strings aliases;
-            for (size_t begin = 0; begin <= str.length();)
-            {
-                size_t end = str.find(',', begin);
-                if (end == std::string_view::npos)
-                    end = str.length();
-                aliases.emplace_back(trim(String{str.substr(begin, end - begin)}, isWhitespaceASCII));
-                begin = end + 1;
-            }
+            boost::split(aliases, str, boost::is_any_of(","));
+            for (auto & alias : aliases)
+                boost::trim(alias);
             return aliases;
         }
 
@@ -230,24 +216,12 @@ namespace
             {
                 auto parent_node = std::make_unique<Node>(parent_keyword);
                 it_parent = nodes.emplace(parent_node->keyword, parent_node.get()).first;
-                chassert(!owned_nodes.contains(parent_node->keyword));
+                assert(!owned_nodes.contains(parent_node->keyword));
                 std::string_view parent_keyword_as_string_view = parent_node->keyword;
                 owned_nodes[parent_keyword_as_string_view] = std::move(parent_node);
             }
             it_parent->second->addChild(std::move(node));
         }
-
-        /// One entry per access type. Expanding `makeNode` at each of the 258 call sites instead
-        /// compiled to 35 KB, since every call has to materialize four string views; driving it
-        /// from a table costs a loop and some rodata.
-        struct NodeDescriptor
-        {
-            AccessType access_type;
-            std::string_view name;
-            std::string_view aliases;
-            NodeType node_type;
-            std::string_view parent_group_name;
-        };
 
         void makeNodes()
         {
@@ -256,19 +230,11 @@ namespace
             size_t next_flag = 0;
 
 #           define MAKE_ACCESS_FLAGS_NODE(name, aliases, node_type, parent_group_name) \
-                NodeDescriptor{AccessType::name, #name, aliases, node_type, #parent_group_name},
+                makeNode(AccessType::name, #name, aliases, node_type, #parent_group_name, nodes, owned_nodes, next_flag);
 
-            static constexpr std::array node_descriptors
-            {
                 APPLY_FOR_ACCESS_TYPES(MAKE_ACCESS_FLAGS_NODE)
-            };
 
 #           undef MAKE_ACCESS_FLAGS_NODE
-
-            for (const auto & descriptor : node_descriptors)
-                makeNode(
-                    descriptor.access_type, descriptor.name, descriptor.aliases, descriptor.node_type,
-                    descriptor.parent_group_name, nodes, owned_nodes, next_flag);
 
             if (!owned_nodes.contains("NONE"))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "'NONE' not declared");
@@ -300,7 +266,7 @@ namespace
             start_node->aliases.emplace_back(start_node->keyword);
             for (auto & alias : start_node->aliases)
             {
-                toUpperASCII(alias);
+                boost::to_upper(alias);
                 keyword_to_flags_map[alias] = start_node->flags;
             }
 
@@ -333,7 +299,7 @@ namespace
             }
             if (start_node->node_type != GROUP)
             {
-                chassert(static_cast<size_t>(start_node->node_type) < std::size(all_flags_for_target));
+                assert(static_cast<size_t>(start_node->node_type) < std::size(all_flags_for_target));
                 all_flags_for_target[start_node->node_type] |= start_node->flags;
             }
             for (const auto & child : start_node->children)
@@ -483,12 +449,6 @@ AccessFlags::ParameterType AccessFlags::getParameterType() const
 
 AccessFlags::AccessFlags(AccessType type) : flags(Helper::instance().accessTypeToFlags(type)) {}
 AccessFlags::AccessFlags(std::string_view keyword) : flags(Helper::instance().keywordToFlags(keyword)) {}
-
-bool AccessFlags::tryFromKeyword(std::string_view keyword, AccessFlags & result)
-{
-    return Helper::instance().tryKeywordToFlags(keyword, result.flags);
-}
-
 AccessFlags::AccessFlags(const std::vector<std::string_view> & keywords) : flags(Helper::instance().keywordsToFlags(keywords)) {}
 AccessFlags::AccessFlags(const Strings & keywords) : flags(Helper::instance().keywordsToFlags(keywords)) {}
 String AccessFlags::toString() const { return Helper::instance().flagsToString(flags); }

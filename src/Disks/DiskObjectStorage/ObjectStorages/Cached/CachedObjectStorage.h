@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/FileCache/FileCacheKey.h>
-#include <Interpreters/FileCache/FileCacheSettings.h>
+#include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/Cache/FileCacheSettings.h>
 #include "config.h"
 
 namespace Poco
@@ -21,35 +21,20 @@ class CachedObjectStorage final : public IObjectStorage
 public:
     CachedObjectStorage(ObjectStoragePtr object_storage_, FileCachePtr cache_, const FileCacheSettings & cache_settings_, const String & cache_config_name_);
 
-    [[nodiscard]] std::string getName() const override { return fmt::format("CachedObjectStorage-{}({})", cache_config_name, object_storage->getName()); }
+    std::string getName() const override { return fmt::format("CachedObjectStorage-{}({})", cache_config_name, object_storage->getName()); }
 
-    [[nodiscard]] ObjectStorageType getType() const override { return object_storage->getType(); }
+    ObjectStorageType getType() const override { return object_storage->getType(); }
 
-    [[nodiscard]] std::string getCommonKeyPrefix() const override { return object_storage->getCommonKeyPrefix(); }
+    std::string getCommonKeyPrefix() const override { return object_storage->getCommonKeyPrefix(); }
 
-    [[nodiscard]] std::string getDescription() const override { return object_storage->getDescription(); }
+    std::string getDescription() const override { return object_storage->getDescription(); }
 
-    [[nodiscard]] bool exists(const StoredObject & object) const override;
+    bool exists(const StoredObject & object) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        bool use_external_buffer = false,
-        bool restrict_seek = false) const override;
-
-    SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
-        const StoredObject & object,
-        const ReadSettings & read_settings,
-        size_t max_size_bytes,
         std::optional<size_t> read_hint = {}) const override;
-
-    void prepareRead(
-        ObjectStoragePtr storage,
-        const StoredObjects & objects,
-        const ReadSettings & read_settings,
-        std::optional<size_t> read_hint,
-        ReadPipeline & pipeline) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
@@ -61,9 +46,7 @@ public:
 
     void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist( /// NOLINT
-        const StoredObjects & objects,
-        StoredObjects * successful_objects = nullptr) override;
+    void removeObjectsIfExist(const StoredObjects & objects) override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -82,9 +65,9 @@ public:
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
-    [[nodiscard]] ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
+    ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
-    [[nodiscard]] std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
 
     void shutdown() override;
 
@@ -96,44 +79,35 @@ public:
         ContextPtr context,
         const ApplyNewSettingsOptions & options) override;
 
-    [[nodiscard]] String getObjectsNamespace() const override;
+    String getObjectsNamespace() const override;
 
-    [[nodiscard]] const std::string & getCacheName() const override { return cache_config_name; }
+    const std::string & getCacheName() const override { return cache_config_name; }
 
-    [[nodiscard]] ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
+    ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
-    [[nodiscard]] bool isRemote() const override { return object_storage->isRemote(); }
+    bool isRemote() const override { return object_storage->isRemote(); }
 
     void removeCacheIfExists(const std::string & path_key_for_cache) override;
 
-    [[nodiscard]] bool supportsCache() const override { return true; }
+    bool supportsCache() const override { return true; }
 
-    [[nodiscard]] std::string getUniqueId(const std::string & path) const override { return object_storage->getUniqueId(path); }
+    std::string getUniqueId(const std::string & path) const override { return object_storage->getUniqueId(path); }
 
-    [[nodiscard]] bool isReadOnly() const override { return object_storage->isReadOnly(); }
+    bool isReadOnly() const override { return object_storage->isReadOnly(); }
 
-    [[nodiscard]] bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
+    bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
-    [[nodiscard]] bool supportsAtomicWrite() const override { return object_storage->supportsAtomicWrite(); }
-
-    [[nodiscard]] bool supportsObjectGenerationComparison() const override { return object_storage->supportsObjectGenerationComparison(); }
-
-    [[nodiscard]] const FileCacheSettings & getCacheSettings() const { return cache_settings; }
+    const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 
 #if USE_AZURE_BLOB_STORAGE
-    [[nodiscard]] std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override
     {
         return object_storage->getAzureBlobStorageClient();
     }
 
-    [[nodiscard]] AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const override
+    AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const override
     {
         return object_storage->getAzureBlobStorageAuthMethod();
-    }
-
-    [[nodiscard]] std::shared_ptr<const AzureBlobStorage::ConnectionParams> getAzureBlobStorageConnectionParams() const override
-    {
-        return object_storage->getAzureBlobStorageConnectionParams();
     }
 #endif
 
@@ -157,25 +131,16 @@ public:
     }
 
 #if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
-    void tagObjects( /// NOLINT
-        const StoredObjects & objects,
-        const std::string & tag_key,
-        const std::string & tag_value,
-        StoredObjects * successful_objects = nullptr) override
+    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override
     {
-        object_storage->tagObjects(objects, tag_key, tag_value, successful_objects);
+        object_storage->tagObjects(objects, tag_key, tag_value);
     }
 #endif
 
-    ObjectStoragePtr getUnderlying() override { return object_storage; }
-
-    [[nodiscard]] ObjectStoragePtr cloneImpl() const override;
-
 private:
-    [[nodiscard]] FileCacheKey getCacheKey(const std::string & path) const;
+    FileCacheKey getCacheKey(const std::string & path) const;
 
-    [[nodiscard]] ReadSettings patchSettings(const ReadSettings & read_settings) const override;
-    [[nodiscard]] WriteSettings patchSettings(const WriteSettings & write_settings) const override;
+    ReadSettings patchSettings(const ReadSettings & read_settings) const override;
 
     ObjectStoragePtr object_storage;
     FileCachePtr cache;
