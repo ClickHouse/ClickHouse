@@ -21,6 +21,7 @@
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
 #include <base/defines.h>
 #include <base/types.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -301,7 +302,7 @@ void AnalyzeStepsStats::collectIOStats(const Processors & processors)
 
 void AnalyzeStepsStats::collectSpillStats(const Processors & processors)
 {
-    std::unordered_map<const TemporaryDataOnDiskScope *, const IQueryPlanStep *> steps_by_scope;
+    UnorderedMapWithMemoryTracking<const TemporaryDataOnDiskScope *, const IQueryPlanStep *> steps_by_scope;
     for (const auto & processor : processors)
     {
         const auto * step = processor->getQueryPlanStep();

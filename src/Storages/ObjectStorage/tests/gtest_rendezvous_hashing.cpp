@@ -7,6 +7,8 @@
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Processors/Formats/IInputFormat.h>
 
+#include <future>
+
 using namespace DB;
 
 namespace DB::ErrorCodes
@@ -33,6 +35,7 @@ namespace
         ~TestIterator() override = default;
         ObjectInfoPtr next(size_t) override
         {
+            std::lock_guard lock(mutex);
             if (objects.empty())
                 return nullptr;
             auto res = objects.front();
@@ -41,10 +44,32 @@ namespace
         }
         size_t estimatedKeysCount() override
         {
+            std::lock_guard lock(mutex);
             return objects.size();
         }
     private:
+        std::mutex mutex;
         std::list<ObjectInfoPtr> objects;
+    };
+
+    class IteratorBlockingAtEnd : public IObjectIterator
+    {
+    public:
+        IteratorBlockingAtEnd(std::shared_ptr<IObjectIterator> iterator_, std::shared_future<void> released_)
+            : iterator(std::move(iterator_)), released(std::move(released_))
+        {
+        }
+        ObjectInfoPtr next(size_t id) override
+        {
+            if (auto object = iterator->next(id))
+                return object;
+            released.wait();
+            return nullptr;
+        }
+        size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
+    private:
+        const std::shared_ptr<IObjectIterator> iterator;
+        const std::shared_future<void> released;
     };
 
     // Make path like '/path/file0'
@@ -99,9 +124,9 @@ namespace
         explicit TestFileBucketInfo(size_t bucket_) : bucket(bucket_) {}
         void serialize(WriteBuffer &, size_t) const override {}
         void deserialize(ReadBuffer &, size_t) override {}
-        String getIdentifier() const override { return "_bucket_" + std::to_string(bucket); }
-        String getFormatName() const override { return "Test"; }
-        std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices &) const override { return nullptr; }
+        [[nodiscard]] String getIdentifier() const override { return "_bucket_" + std::to_string(bucket); }
+        [[nodiscard]] String getFormatName() const override { return "Test"; }
+        [[nodiscard]] std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices &) const override { return nullptr; }
     private:
         size_t bucket;
     };
@@ -367,6 +392,30 @@ TEST(RendezvousHashing, WaitsForOwnerBeforeTakingItsFiles)
     ASSERT_EQ(distributor.getNextTask(0), nullptr);
 }
 
+TEST(RendezvousHashing, GivesQueuedFilesWhileIteratorIsBlocked)
+{
+    std::promise<void> release;
+    auto iterator = std::make_shared<IteratorBlockingAtEnd>(makeIterator(), release.get_future().share());
+    std::vector<std::string> replicas = {"replica2", "replica1"};
+    StorageObjectStorageStableTaskDistributor distributor(iterator, std::move(replicas), false);
+
+    std::vector<std::string> paths;
+    ASSERT_TRUE(extractNForReplica(distributor, paths, 0, 6));
+    ASSERT_TRUE(checkHead(paths, {1, 5, 6, 7, 8, 9}));
+
+    auto blocked = std::async(std::launch::async, [&distributor] { return distributor.getNextTask(0); });
+    const auto blocked_status = blocked.wait_for(std::chrono::milliseconds(100));
+
+    auto queued = std::async(std::launch::async, [&distributor] { return distributor.getNextTask(1); });
+    const auto queued_status = queued.wait_for(std::chrono::seconds(30));
+    release.set_value();
+
+    ASSERT_EQ(blocked_status, std::future_status::timeout);
+    ASSERT_EQ(queued_status, std::future_status::ready);
+    ASSERT_NE(queued.get(), nullptr);
+    ASSERT_NE(blocked.get(), nullptr);
+}
+
 TEST(RendezvousHashing, DoesNotWaitForConnectedOwner)
 {
     auto iterator = makeIterator();
@@ -380,6 +429,32 @@ TEST(RendezvousHashing, DoesNotWaitForConnectedOwner)
     ASSERT_TRUE(extractNForReplica(distributor, paths0, 0, 9));
     paths0.insert(paths0.end(), paths1.begin(), paths1.end());
     ASSERT_TRUE(checkHead(paths0, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}));
+}
+
+TEST(RendezvousHashing, WaitsForOwnerWithHugeWait)
+{
+    /// The largest value of the setting, and the largest one whose conversion to nanoseconds fits but whose
+    /// addition to `now()` does not.
+    for (const auto wait_for_owner :
+         {std::chrono::milliseconds(std::numeric_limits<Int64>::max() / 1000),
+          std::chrono::milliseconds(std::numeric_limits<Int64>::max() / 1'000'000)})
+    {
+        auto iterator = makeIterator();
+        std::vector<std::string> replicas = {"replica2", "replica1"};
+        StorageObjectStorageStableTaskDistributor distributor(iterator, std::move(replicas), false, wait_for_owner);
+
+        std::vector<std::string> paths;
+        ASSERT_TRUE(extractNForReplica(distributor, paths, 0, 6));
+        ASSERT_TRUE(checkHead(paths, {1, 5, 6, 7, 8, 9}));
+
+        /// Replica 0 has no files left: it waits for replica 1 instead of taking its files.
+        auto stolen = std::async(std::launch::async, [&distributor] { return distributor.getNextTask(0); });
+        ASSERT_EQ(stolen.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+
+        /// Replica 1 asks for a task, which ends the wait.
+        ASSERT_NE(distributor.getNextTask(1), nullptr);
+        ASSERT_NE(stolen.get(), nullptr);
+    }
 }
 
 TEST(RendezvousHashing, TakesFilesOfReplicaWithMostRemainingBytes)

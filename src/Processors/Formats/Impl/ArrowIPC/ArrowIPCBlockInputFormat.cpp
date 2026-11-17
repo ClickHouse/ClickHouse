@@ -1026,7 +1026,7 @@ void registerInputFormatArrow(FormatFactory & factory)
         {
             return std::make_shared<ArrowIPCBlockInputFormat>(
                 buf, std::make_shared<const Block>(sample), false, params.max_block_size_rows, format_settings);
-        });
+        }, /*supports_reset_parser=*/ true);
     factory.markFormatSupportsSubsetOfColumns("Arrow");
     factory.registerInputFormat(
         "ArrowStream",
@@ -1037,7 +1037,7 @@ void registerInputFormatArrow(FormatFactory & factory)
         {
             return std::make_shared<ArrowIPCBlockInputFormat>(
                 buf, std::make_shared<const Block>(sample), true, params.max_block_size_rows, format_settings);
-        });
+        }, /*supports_reset_parser=*/ true);
     factory.markFormatSupportsSubsetOfColumns("ArrowStream");
 
     factory.setDocumentation("Arrow", Documentation{
