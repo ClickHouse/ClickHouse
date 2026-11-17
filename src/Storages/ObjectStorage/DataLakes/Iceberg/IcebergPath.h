@@ -128,6 +128,9 @@ public:
     /// Convert a metadata path to an actual storage path for I/O operations.
     [[nodiscard]] String resolve(const IcebergPathFromMetadata & metadata_path) const;
 
+    /// A key for the storage object that `resolve(metadata_path)` addresses, the same for paths the storage treats alike.
+    [[nodiscard]] String storageIdentity(const IcebergPathFromMetadata & metadata_path) const;
+
     static String parseNamespace(std::string_view path);
 
     [[nodiscard]] IcebergPathFromMetadata reverseResolve(const String & storage_path) const

@@ -101,7 +101,7 @@ def test_table_override(started_cluster):
         instance.query(f"SELECT count() FROM {materialized_database}.{table_name}")
     )
 
-    expected = "CREATE TABLE test_database.table_override\\n(\\n    `key` Int32,\\n    `value` String,\\n    `_sign` Int8 MATERIALIZED 1,\\n    `_version` UInt64 MATERIALIZED 1\\n)\\nENGINE = ReplacingMergeTree(_version)\\nPARTITION BY key\\nORDER BY tuple(key)"
+    expected = "CREATE TABLE test_database.table_override\\n(\\n    `key` Int32,\\n    `value` String,\\n    `_sign` Int8 MATERIALIZED 1,\\n    `_version` UInt64 MATERIALIZED 1\\n)\\nENGINE = ReplacingMergeTree(_version)\\nPARTITION BY key\\nORDER BY tuple(key)\\nSETTINGS index_granularity = 8192"
     assert (
         expected
         == instance.query(
@@ -1792,11 +1792,7 @@ def test_backup_database(started_cluster):
     assert "MaterializedPostgreSQL" in error, error
 
     # The backed-up table data can be restored as a standalone ReplacingMergeTree.
-    # `allow_different_table_def` is required because we intentionally restore a
-    # MaterializedPostgreSQL table as a plain ReplacingMergeTree: the create query stored in the
-    # backup is the synthetic nested-table query (without the default `index_granularity` setting,
-    # to match `SHOW CREATE TABLE`), while the freshly created standalone table normalizes its
-    # definition and gains `SETTINGS index_granularity = 8192`. Only the data has to match.
+    # `allow_different_table_def` is not required any more, the query keeps it as the documented recipe does.
     instance.query("DROP DATABASE IF EXISTS restored_db SYNC")
     instance.query("CREATE DATABASE restored_db")
     instance.query(
@@ -1812,6 +1808,61 @@ def test_backup_database(started_cluster):
     instance.query("DROP DATABASE restored_db SYNC")
     pg_manager.drop_materialized_db()
     pg_manager.execute("DROP TABLE IF EXISTS test_backup_tbl")
+
+
+def test_backup_after_postgresql_key_change(started_cluster):
+    # https://github.com/ClickHouse/ClickHouse/issues/128271
+    # The PostgreSQL primary key changes after the nested table was created. The backup must keep the
+    # nested table's own key, otherwise the restored parts are indexed by the wrong column.
+    table = "test_backup_key_change"
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        """CREATE TABLE "{}" (id1 integer NOT NULL, id2 integer NOT NULL, value text, PRIMARY KEY (id1))""",
+    )
+    pg_manager.execute(
+        f"INSERT INTO {table} SELECT g, (g * 7919) % 100003, 'x' FROM generate_series(1, 100000) g"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table}'"],
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id1",
+    )
+
+    pg_manager.execute(
+        f"ALTER TABLE {table} DROP CONSTRAINT {table}_pkey, ADD PRIMARY KEY (id2)"
+    )
+    show_create = instance.query(f"SHOW CREATE TABLE test_database.{table}")
+
+    backup_name = f"Disk('backups', 'mpg_key_change_{uuid.uuid4().hex}')"
+    instance.query(f"BACKUP DATABASE test_database TO {backup_name}")
+    instance.query("DROP DATABASE IF EXISTS restored_key_db SYNC")
+    instance.query("CREATE DATABASE restored_key_db")
+    instance.query(
+        f"RESTORE TABLE test_database.{table} AS restored_key_db.{table} FROM {backup_name} SETTINGS allow_different_table_def = 1"
+    )
+    filtered = instance.query(
+        f"SELECT count() FROM restored_key_db.{table} WHERE id2 < 1000"
+    )
+    scanned = instance.query(f"SELECT countIf(id2 < 1000) FROM restored_key_db.{table}")
+    sorting_key = instance.query(
+        f"SELECT sorting_key FROM system.tables WHERE database = 'restored_key_db' AND name = '{table}'"
+    )
+    assert (filtered, scanned, sorting_key, "ORDER BY tuple(id1)" in show_create) == (
+        "999\n",
+        "999\n",
+        "id1\n",
+        True,
+    ), show_create
+
+    instance.query("DROP DATABASE restored_key_db SYNC")
+    pg_manager.drop_materialized_db()
 
 
 def test_backup_table_engine(started_cluster):
