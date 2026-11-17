@@ -42,13 +42,21 @@ SELECT 'strict glob filtered count:', count() FROM 05238_strict WHERE dt = '2026
 INSERT INTO 05238_strict VALUES (6, 'b', '2026-01-02');
 SELECT 'strict glob after insert:', id, org, dt FROM 05238_strict ORDER BY id;
 
+-- A '/' in a partition value adds a directory the strict glob cannot match, so the insert is
+-- rejected before any object is written, including the row with an ordinary value.
+INSERT INTO 05238_strict VALUES (7, 'c', '2026-01-03'), (8, 'c/d', '2026-01-03'); -- { serverError BAD_ARGUMENTS }
+SELECT 'strict glob after rejected insert:', count() FROM 05238_strict;
+
 DROP TABLE 05238_recursive;
 DROP TABLE 05238_strict;
 "
 
-# Partition column names with glob metacharacters cannot form a strict glob.
-$CLICKHOUSE_CLIENT --hive_partition_strategy_strict_read_glob=1 -q "
-CREATE TABLE 05238_bad_name (id Int64, \`o*rg\` String)
-ENGINE = S3('$path/t2', 'test', 'testtest', format = 'Parquet', partition_strategy = 'hive')
-PARTITION BY \`o*rg\`;
-" 2>&1 | grep -o -m1 "glob metacharacters"
+# Partition column names with glob metacharacters, or with `^` / `$` that the glob-to-regexp
+# conversion leaves as anchors, cannot form a strict glob.
+for name in 'o*rg' 'p$' 'p^'; do
+    $CLICKHOUSE_CLIENT --hive_partition_strategy_strict_read_glob=1 -q "
+    CREATE TABLE 05238_bad_name (id Int64, \`$name\` String)
+    ENGINE = S3('$path/t2', 'test', 'testtest', format = 'Parquet', partition_strategy = 'hive')
+    PARTITION BY \`$name\`;
+    " 2>&1 | grep -o -m1 "cannot match literally"
+done

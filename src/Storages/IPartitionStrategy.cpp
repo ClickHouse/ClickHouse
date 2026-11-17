@@ -14,6 +14,7 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
+#include <algorithm>
 
 namespace DB
 {
@@ -173,11 +174,15 @@ namespace
                     partition_expression_column.name);
             }
 
-            if (strict_read_glob && partition_expression_column.name.find_first_of("*?{}") != std::string::npos)
+            /// The strict read glob interpolates the column names, so they must survive the glob-to-regexp
+            /// conversion literally: `*?{}` are glob syntax, `^$` become regexp anchors (the conversion
+            /// does not escape them) and `/` would add a directory level the glob does not expect.
+            if (strict_read_glob && partition_expression_column.name.find_first_of("*?{}^$/") != std::string::npos)
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Partition column name '{}' contains glob metacharacters, which is not supported with `hive_partition_strategy_strict_read_glob`",
+                    "Partition column name '{}' contains a character the strict read glob cannot match literally (one of `*?{{}}^$/`), "
+                    "which is not supported with `hive_partition_strategy_strict_read_glob`",
                     partition_expression_column.name);
             }
 
@@ -475,6 +480,19 @@ std::string HiveStylePartitionStrategy::getPathForWrite(
         {
             path += '/';
         }
+    }
+
+    /// Each partition column contributes exactly one `key=value/` directory. A `/` inside a value adds
+    /// a level that the strict read glob (`key=*`, where `*` does not cross `/`) can never match, so the
+    /// object would be written but never read back; reject it before anything is written.
+    if (strict_read_glob)
+    {
+        const auto directories = std::count(partition_key.begin(), partition_key.end(), '/');
+        if (directories != static_cast<ptrdiff_t>(getPartitionColumns().size()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Partition key '{}' contains '/' in a partition value, which is not supported with `hive_partition_strategy_strict_read_glob`",
+                partition_key);
     }
 
     /// Not adding '/' because buildExpressionHive() always adds a trailing '/'
