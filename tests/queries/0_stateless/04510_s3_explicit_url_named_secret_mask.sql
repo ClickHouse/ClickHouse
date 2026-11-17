@@ -197,7 +197,7 @@ SELECT * FROM s3(nc_span_missing, secret_access_key = 'SEKRIT_SPAN1', 'SEKRIT_MI
                  session_token = 'SEKRIT_SPAN2',
                  format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
 
--- A constant-expression key can be an effective secret override for a named collection too.
+-- A constant-expression key can be an effective secret override for a named collection too: the whole argument is hidden.
 SELECT * FROM s3(nc_exprkey_missing, concat('secret_', 'access_key') = 'SEKRIT_EXPRVAL',
                  format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
 

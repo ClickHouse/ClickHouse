@@ -26,7 +26,8 @@ explain() {
     # The name of a masked credential stays visible, and every secret is masked individually: the
     # positional password and both credentials, without hiding the arguments around them.
     echo "$dump" | grep -c "identifier: ssl_ca_pem"
-    echo "$dump" | grep -c "constant_value: \[HIDDEN\]"
+    # An argument hidden whole (a key that is not a plain literal) is a constant `'[HIDDEN]'`.
+    echo "$dump" | grep -cE "constant_value: (\\\\')?\[HIDDEN\]"
 }
 
 # In the positional form the main secret is the positional password, so the credentials that follow it
@@ -38,6 +39,7 @@ explain "named collection" \
     "SELECT * FROM mysql(creds, table = 't', ssl_ca_pem = '${SECRET}', ssl_key_pem = '${SECRET}')"
 
 # A key written as a constant expression names a credential just as well - the named collection
-# parser evaluates it - and the query tree cannot evaluate it either, so it fails closed too.
+# parser evaluates it - and the query tree cannot evaluate it either, so it fails closed too: the whole
+# argument is hidden, key included.
 explain "key given as a constant expression" \
     "SELECT * FROM mysql(creds, table = 't', concat('ssl_ca', '_pem') = '${SECRET}')"
