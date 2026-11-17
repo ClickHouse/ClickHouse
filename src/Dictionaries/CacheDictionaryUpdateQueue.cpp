@@ -124,7 +124,23 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::waitForCurrentUpdateFinish
 template <DictionaryKeyType dictionary_key_type>
 void CacheDictionaryUpdateQueue<dictionary_key_type>::stopAndWait()
 {
-    update_queue.clearAndFinish();
+    update_queue.finish();
+
+    /// A lookup may still be waiting for a request that no thread will run.
+    auto discarded = update_queue.drainAll();
+    if (!discarded.empty())
+    {
+        auto exception = std::make_exception_ptr(Exception(ErrorCodes::UNSUPPORTED_METHOD, "CacheDictionaryUpdateQueue finished"));
+        for (auto & unit : discarded)
+        {
+            {
+                std::lock_guard lock(unit->update_mutex);
+                unit->current_exception = exception;
+            }
+            unit->is_update_finished.notify_all();
+        }
+    }
+
     update_pool.wait();
 }
 
@@ -141,6 +157,10 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
 
         try
         {
+            /// Popped after `stopAndWait` finished the queue: fail it instead of starting it.
+            if (update_queue.isFinished())
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "CacheDictionaryUpdateQueue finished");
+
             /// Update
             update_func(unit_to_update);
 
