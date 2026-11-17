@@ -135,7 +135,7 @@ Deleting the key is different. Once a key is permanently deleted, the service da
 
 - AWS KMS: 7 to 30 days (30 by default). [Cancel the key deletion](https://docs.aws.amazon.com/kms/latest/developerguide/deleting-keys-scheduling-key-deletion.html), then enable the key.
 - GCP Cloud KMS: 30 days by default, configurable when the key is created. [Restore the key version](https://docs.cloud.google.com/kms/docs/destroy-restore), then enable it.
-- Azure Key Vault: 7 to 90 days, if soft-delete is enabled on the vault. [Recover the deleted key](https://learn.microsoft.com/en-us/azure/key-vault/general/key-vault-recovery).
+- Azure Key Vault: 7 to 90 days, if soft-delete is enabled on the vault and the key has not been purged. Without purge protection, a deleted key can be permanently purged before this period expires. Enable purge protection to prevent early permanent deletion. [Recover the deleted key](https://learn.microsoft.com/en-us/azure/key-vault/general/key-vault-recovery).
 
 Once the key is usable again, restart the service.
 
