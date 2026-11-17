@@ -1999,7 +1999,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         || !left_result_type->equals(*rhs_query_node->getProjectionColumns().front().type));
             }
 
-            if (in_second_argument->as<QueryNode>() && !left_value_compared_as_single_key)
+            /// `equals` in the rewrite rejects keys that are not comparable for equality (e.g. `AggregateFunction`),
+            /// while the set of regular IN accepts them, so such keys stay on the regular IN path too.
+            if (in_second_argument->as<QueryNode>() && !left_value_compared_as_single_key
+                && in_first_argument->getResultType()->isComparableForEquality())
             {
                 /// The rewrite below produces a correlated subquery, so it requires the setting.
                 /// Checked here rather than at the gate above, so that the shapes which are not
