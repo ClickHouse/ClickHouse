@@ -19,8 +19,7 @@ public:
     void connect(const Poco::Net::SocketAddress & address) override;
     void connect(const Poco::Net::SocketAddress & address, const Poco::Timespan & timeout) override;
     bool pollImpl(Poco::Timespan & timeout, int mode) override;
-    /// Waits through the fiber scheduler, so that the fiber suspends, not the thread. `sendNow`
-    /// and `receiveNow` of `SocketImpl` work as they are, because they never wait for the socket.
+    /// Suspends the fiber, not the thread.
     int waitForSendOrReceive(Poco::Timespan & timeout, int mode) override;
     int sendBytes(const void * buffer, int length, int flags) override;
     int receiveBytes(void * buffer, int length, int flags) override;

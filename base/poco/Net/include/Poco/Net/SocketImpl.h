@@ -218,41 +218,23 @@ namespace Net
         virtual bool pollImpl(Poco::Timespan & timeout, int mode);
         /// Modifies `timeout`
 
-        /// `waitForSendOrReceive`, `sendNow` and `receiveNow` let one thread send data and watch for
-        /// data from the peer at the same time, without blocking in either direction. The send does
-        /// not hide what has arrived: a connection error of the send is held, so that the caller can
-        /// first read what the peer sent before the error, and then get the error.
-        ///
-        /// They see the stream as its reader and writer see it, not the descriptor: a socket type
-        /// that keeps data of its own, or that cannot wait with `poll` of the descriptor, overrides
-        /// them. Like the other methods, they are used by one thread at a time.
+        /// Non-blocking calls, for one thread that sends data and watches for data from the peer.
+        /// A send error is held until the caller has read what arrived. Socket types that buffer
+        /// data or wait in their own way override them.
 
         virtual int waitForSendOrReceive(Poco::Timespan & timeout, int mode);
-        /// Waits up to `timeout` until the stream is ready for one of the directions in `mode`:
-        /// `SELECT_READ` (data has arrived) or `SELECT_WRITE` (data can be sent), or both.
-        /// A closed or failed connection is ready for both directions of `mode`.
-        ///
-        /// Returns the directions that are ready, or 0 on timeout. Lowers `timeout` by the time spent,
-        /// also when a signal interrupts the wait. A negative `timeout` waits without a limit, and
-        /// a zero `timeout` only checks.
+        /// Returns the ready directions of `mode`, or 0 on timeout; a closed connection is ready for
+        /// both. Lowers `timeout`. A negative `timeout` waits without a limit, a zero one only checks.
 
         virtual int sendNow(const void * buffer, int length);
-        /// Sends up to `length` bytes without waiting for the socket. Waits only for the send
-        /// throttler, as a blocking send does. Returns the number of bytes sent, or 0 when the
-        /// socket accepts nothing now.
-        ///
-        /// A connection error is held, not thrown: the result is -1, and so is the result of every
-        /// later call. `receiveNow` still returns what has arrived before the error, and
-        /// `throwHeldSendError` throws the error.
+        /// Returns the bytes sent, 0 when nothing fits, or -1 when a send error is held.
+        /// Waits only for the send throttler.
 
         virtual int receiveNow(void * buffer, int length);
-        /// Receives up to `length` bytes that have arrived, without waiting. Returns the number
-        /// of bytes, 0 when nothing has arrived, or -1 at the end of the stream.
-        /// Throws on a connection error.
+        /// Returns the bytes received, 0 when nothing has arrived, or -1 at the end of the stream.
 
         virtual void throwHeldSendError();
-        /// Throws the connection error that `sendNow` holds, the same exception that `sendBytes`
-        /// throws for it. Throws `IllegalStateException` when no error is held.
+        /// Throws the held send error, as `sendBytes` would.
 
         virtual void setSendBufferSize(int size);
         /// Sets the size of the send buffer.
@@ -540,7 +522,7 @@ namespace Net
         ThrottlerPtr _recvThrottler;
         ThrottlerPtr _sndThrottler;
 
-        /// The error code of the failed `sendNow`, or 0. Cleared when the socket gets a new descriptor.
+        /// The `errno` of the failed `sendNow`, or 0; cleared with a new descriptor.
         int _heldSendError = 0;
 
         friend class Socket;
