@@ -55,16 +55,6 @@ bool INATSConsumer::hasClosedSubscription() const
         subscriptions, [](const auto & subscription) { return !natsSubscription_IsValid(subscription.get()); });
 }
 
-bool INATSConsumer::hasConnectionReconnected() const
-{
-    return connection->getReconnectCount() != connection_reconnect_count;
-}
-
-bool INATSConsumer::isConnectionConnected() const
-{
-    return connection->isConnected();
-}
-
 void INATSConsumer::subscribe()
 {
     if (isSubscribed())
@@ -73,16 +63,14 @@ void INATSConsumer::subscribe()
     if (loadReceived()->isFinished())
         storeReceived(std::make_shared<ConcurrentBoundedQueue<MessageData>>(queue_size));
 
-    /// Read before subscribing, so that a reconnect racing `subscribeImpl` is still reported.
-    const UInt64 reconnect_count_before_subscribe = connection->getReconnectCount();
-
     subscribeImpl();
-
-    connection_reconnect_count = reconnect_count_before_subscribe;
 }
 
-void INATSConsumer::unsubscribe()
+void INATSConsumer::unsubscribe(bool finish_queue)
 {
+    if (finish_queue)
+        loadReceived()->finish();
+
     for (auto & subscription : subscriptions)
     {
         /// The client closes a subscription itself when its fetch is terminated, so draining an
@@ -93,55 +81,28 @@ void INATSConsumer::unsubscribe()
         if (status != NATS_OK)
         {
             if (was_closed)
-                LOG_DEBUG(log, "A subscription of the consumer was already closed by the NATS client");
+                LOG_DEBUG(log, "A subscription of consumer {} was already closed by the NATS client",
+                    static_cast<void *>(this));
             else
-                LOG_WARNING(log, "Failed to start draining a subscription of the consumer: {}", natsStatus_GetText(status));
+                LOG_WARNING(log, "Failed to start draining a subscription of consumer {}: {}",
+                    static_cast<void *>(this), natsStatus_GetText(status));
             continue;
         }
 
         status = natsSubscription_WaitForDrainCompletion(subscription.get(), DRAIN_TIMEOUT_MS);
         if (status != NATS_OK)
-            LOG_WARNING(log, "A subscription of the consumer did not finish draining: {}", natsStatus_GetText(status));
+            LOG_WARNING(log, "A subscription of consumer {} did not finish draining: {}",
+                static_cast<void *>(this), natsStatus_GetText(status));
     }
 
     subscriptions.clear();
 
-    LOG_DEBUG(log, "Consumer unsubscribed");
-}
-
-void INATSConsumer::finishAndReturnUnprocessed(SkippedMessages skipped_messages_action)
-{
-    /// Without a subscription there is nothing to return the leftovers through.
-    if (!isSubscribed())
-    {
-        loadReceived()->finish();
-        dropBuffered();
-        return;
-    }
-
-    nackMessages(consumed_messages);
-
-    if (skipped_messages_action == SkippedMessages::Acknowledge)
-        ackMessages(skipped_messages);
-    else
-        nackMessages(skipped_messages);
-
-    /// After `finish` a message the NATS client thread delivers fails to push and `onMsg` returns it.
-    auto queue = loadReceived();
-    queue->finish();
-
-    MessageData buffered;
-    while (queue->tryPop(buffered))
-    {
-        if (buffered.msg)
-            nackMessage(buffered.msg.get());
-    }
+    LOG_DEBUG(log, "Consumer {} unsubscribed", static_cast<void*>(this));
 }
 
 void INATSConsumer::dropBuffered()
 {
     consumed_messages.clear();
-    skipped_messages.clear();
     auto queue = loadReceived();
     MessageData dropped;
     while (queue->tryPop(dropped)) {}
@@ -163,57 +124,22 @@ ReadBufferPtr INATSConsumer::consume(std::optional<UInt64> timeout_ms)
     return std::make_shared<ReadBufferFromMemory>(current.message);
 }
 
-void INATSConsumer::ackMessages(std::vector<NatsMsgPtr> & messages)
+void INATSConsumer::ackConsumed()
 {
-    for (auto & msg : messages)
+    for (auto & msg : consumed_messages)
     {
         auto status = natsMsg_Ack(msg.get(), nullptr);
         if (status != NATS_OK)
-            LOG_WARNING(log, "Failed to acknowledge a message in the consumer: {} (server may redeliver it)", natsStatus_GetText(status));
+            LOG_WARNING(log, "Failed to acknowledge a message in consumer {}: {} (server may redeliver it)",
+                static_cast<void *>(this), natsStatus_GetText(status));
     }
-    messages.clear();
-}
-
-void INATSConsumer::nackMessages(std::vector<NatsMsgPtr> & messages)
-{
-    for (auto & msg : messages)
-        nackMessage(msg.get());
-    messages.clear();
-}
-
-void INATSConsumer::ackConsumed()
-{
-    ackMessages(consumed_messages);
-    ackMessages(skipped_messages);
-}
-
-void INATSConsumer::markLastConsumedSkipped()
-{
-    /// Core NATS messages are not recorded.
-    if (consumed_messages.empty())
-        return;
-
-    skipped_messages.push_back(std::move(consumed_messages.back()));
-    consumed_messages.pop_back();
+    consumed_messages.clear();
 }
 
 void INATSConsumer::dropConsumed()
 {
+    /// Release without acking, for JetStream the server redelivers these messages.
     consumed_messages.clear();
-    skipped_messages.clear();
-}
-
-void INATSConsumer::returnConsumed()
-{
-    /// The handles are only usable while the subscription they arrived on is alive.
-    if (!isSubscribed())
-    {
-        dropConsumed();
-        return;
-    }
-
-    nackMessages(consumed_messages);
-    nackMessages(skipped_messages);
 }
 
 void INATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, void * consumer)
@@ -240,7 +166,7 @@ void INATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, v
             auto queue = nats_consumer->loadReceived();
             if (!queue->push(std::move(data)))
             {
-                LOG_DEBUG(nats_consumer->log, "Consumer is shutting down, dropping a message");
+                LOG_DEBUG(nats_consumer->log, "Consumer {} is shutting down, dropping a message", static_cast<void *>(nats_consumer));
                 nats_consumer->nackMessage(msg);
             }
         }

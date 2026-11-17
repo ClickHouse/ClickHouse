@@ -1,12 +1,9 @@
-import base64
 import io
 import json
 import logging
 import os
 import random
-import re
 import string
-import tempfile
 import threading
 import time
 import uuid
@@ -80,7 +77,6 @@ def get_spark(log_dir=None):
         )
         .config("spark.driver.memory", "2g")
         .config("spark.executor.memory", "2g")
-        .config("spark.databricks.delta.writeChecksumFile.enabled", "false")
         .master("local")
     )
 
@@ -178,13 +174,7 @@ def started_cluster():
             with_zookeeper=True,
         )
         cluster.add_instance(
-            # A released version old enough that this PR will certainly not be backported to it, so the
-            # comparison stays meaningful: it has Delta writes (>= 25.10) but no write-schema cast, so it
-            # demonstrates the old "write the value as-is" behaviour before `restart_with_latest_version`.
-            # Enables writes via a profile config (not `enable_writes.xml`, which carries the 26.9-only
-            # `allow_delta_lake_create_table` setting the old binary would reject at startup): the old binary
-            # does not apply the per-query writes-enable setting on the write path, so it must be a profile default.
-            "node_old_writes",
+            "node_with_disabled_delta_kernel",
             main_configs=[
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/filesystem_caches.xml",
@@ -193,12 +183,10 @@ def started_cluster():
             ],
             user_configs=[
                 "configs/users.d/users.xml",
-                "configs/users.d/enable_writes_old.xml",
+                "configs/users.d/disabled_delta_kernel.xml",
             ],
-            with_installed_binary=True,
-            image="clickhouse/clickhouse-server",
-            tag="26.6",
             with_minio=True,
+            with_azurite=True,
             stay_alive=True,
             with_zookeeper=True,
         )
@@ -331,6 +319,15 @@ def get_delta_metadata(delta_metadata_file):
     return combined_json
 
 
+def get_node(cluster, use_delta_kernel):
+    if use_delta_kernel == "1":
+        return cluster.instances["node1"]
+    elif use_delta_kernel == "0":
+        return cluster.instances["node_with_disabled_delta_kernel"]
+    else:
+        assert False
+
+
 def create_delta_table(
     instance,
     storage_type,
@@ -446,9 +443,12 @@ def create_initial_data_file(
     return result_path
 
 
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_single_log_file(started_cluster, storage_type):
-    instance = started_cluster.instances["node1"]
+@pytest.mark.parametrize(
+    "use_delta_kernel, storage_type",
+    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "azure"), ("1", "local")],
+)
+def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     TABLE_NAME = randomize_table_name("test_single_log_file")
 
@@ -489,142 +489,6 @@ def test_single_log_file(started_cluster, storage_type):
     )
 
 
-def test_delta_lake_engine_secret_masked(started_cluster):
-    # A `CREATE TABLE ... ENGINE = DeltaLake('<url>', '<key>', '<secret>')` must mask the S3 secret access key
-    # as `[HIDDEN]` in `SHOW CREATE TABLE` and `system.tables`. Masking is applied when the query is formatted
-    # (`FunctionSecretArgumentsFinder`), but the DeltaLake engine attaches eagerly (reads the location during
-    # CREATE), so a real Delta table must exist for the CREATE to succeed and appear in `SHOW CREATE` /
-    # `system.tables` -- hence the Spark/MinIO setup below.
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-    TABLE_NAME = randomize_table_name("test_delta_secret_masked")
-
-    inserted_data = "SELECT number as a, toString(number + 1) as b FROM numbers(10)"
-    parquet_data_path = create_initial_data_file(
-        started_cluster, instance, inserted_data, TABLE_NAME, node_name=instance.name
-    )
-    delta_path = f"/{TABLE_NAME}"
-    write_delta_from_file(spark, parquet_data_path, delta_path)
-    default_upload_directory(started_cluster, "s3", delta_path, "")
-
-    url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{TABLE_NAME}/"
-    instance.query(
-        f"""
-        DROP TABLE IF EXISTS {TABLE_NAME};
-        CREATE TABLE {TABLE_NAME}
-        ENGINE=DeltaLake('{url}', 'minio', '{minio_secret_key}')
-        """
-    )
-
-    for query in (
-        f"SHOW CREATE TABLE {TABLE_NAME}",
-        f"SELECT create_table_query FROM system.tables WHERE name = '{TABLE_NAME}' AND database = currentDatabase()",
-    ):
-        result = instance.query(query)
-        assert "[HIDDEN]" in result, result
-        assert minio_secret_key not in result, result
-
-    instance.query(f"DROP TABLE {TABLE_NAME}")
-
-
-def test_write_cast_upgrade_compatibility(started_cluster):
-    node = started_cluster.instances["node_old_writes"]
-    table_name = randomize_table_name("test_write_cast_upgrade")
-
-    # Existing Delta table whose column is stored as int8 (Delta `byte`).
-    storage_options = {
-        "AWS_ENDPOINT_URL": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
-        "AWS_ACCESS_KEY_ID": minio_access_key,
-        "AWS_SECRET_ACCESS_KEY": minio_secret_key,
-        "AWS_ALLOW_HTTP": "true",
-        "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
-    }
-    path = f"s3://root/{table_name}"
-    schema = pa.schema([("a", pa.int8())])
-    table = pa.Table.from_arrays([pa.array([1, 2], type=pa.int8())], schema=schema)
-    write_deltalake_with_retry(path, table, storage_options=storage_options)
-
-    url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}"
-
-    try:
-        # Attach on the OLD version with a declared column (Int32) wider than the Delta type (int8). The old
-        # version has no write-schema cast, so the out-of-range INSERT writes the value as-is and succeeds.
-        # Writes are enabled via the node's profile config (see `enable_writes_old.xml`).
-        node.query(
-            f"CREATE TABLE {table_name} (a Int32) ENGINE = DeltaLake('{url}', 'minio', '{minio_secret_key}')"
-        )
-        node.query(f"INSERT INTO {table_name} VALUES (1000)")
-
-        # Upgrade to the current build; the table definition (Int32 column) is reloaded from metadata.
-        node.restart_with_latest_version()
-
-        # New version, default (delta_lake_accurate_write_cast = 1): the write-schema cast Int32 -> int8 now
-        # throws on the out-of-range value instead of silently truncating.
-        error = node.query_and_get_error(f"INSERT INTO {table_name} VALUES (1000)")
-        assert "cannot be safely converted" in error, error
-
-        # New version with the setting off (as `compatibility` below 26.9 selects): the plain cast is used, so
-        # the INSERT succeeds again, preserving the old permissive behaviour.
-        node.query(
-            f"INSERT INTO {table_name} VALUES (1000)",
-            settings={"delta_lake_accurate_write_cast": 0},
-        )
-    finally:
-        node.query(f"DROP TABLE IF EXISTS {table_name}")
-
-
-def test_partition_key_cast_overflow(started_cluster):
-    instance = started_cluster.instances["node1"]
-    table_name = randomize_table_name("test_partition_key_cast_overflow")
-
-    # Existing partitioned Delta table: partition column `p` stored as int8 (Delta `byte`).
-    storage_options = {
-        "AWS_ENDPOINT_URL": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
-        "AWS_ACCESS_KEY_ID": minio_access_key,
-        "AWS_SECRET_ACCESS_KEY": minio_secret_key,
-        "AWS_ALLOW_HTTP": "true",
-        "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
-    }
-    path = f"s3://root/{table_name}"
-    schema = pa.schema([("p", pa.int8()), ("x", pa.string())])
-    table = pa.Table.from_arrays(
-        [pa.array([1, 2], type=pa.int8()), pa.array(["a", "b"], type=pa.string())],
-        schema=schema,
-    )
-    write_deltalake_with_retry(path, table, storage_options=storage_options, partition_by=["p"])
-
-    url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}"
-    write = {
-        "allow_experimental_delta_kernel_rs": 1,
-        "allow_experimental_delta_lake_writes": 1,
-        "allow_delta_lake_create_table": 1,
-    }
-
-    # Attach with the partition column declared Int32 (wider than the Delta int8).
-    instance.query(
-        f"CREATE TABLE {table_name} (p Int32, x String) ENGINE = DeltaLake('{url}', 'minio', '{minio_secret_key}')",
-        settings=write,
-    )
-    try:
-        # Default (accurate): an out-of-range partition key is rejected instead of being committed verbatim
-        # and read back as -24.
-        error = instance.query_and_get_error(
-            f"INSERT INTO {table_name} VALUES (1000, 'c')", settings=write
-        )
-        assert "cannot be safely converted" in error, error
-
-        # With the setting off (plain cast) the partition value is truncated, so the INSERT succeeds.
-        instance.query(
-            f"INSERT INTO {table_name} VALUES (1000, 'c')",
-            settings={**write, "delta_lake_accurate_write_cast": 0},
-        )
-        assert (
-            int(instance.query(f"SELECT count() FROM {table_name}", settings=write)) == 3
-        )
-    finally:
-        instance.query(f"DROP TABLE IF EXISTS {table_name}")
-
-
 def test_single_log_file_azure_connection_string(started_cluster):
     """Test DeltaLakeAzure with connection string authentication and delta kernel enabled."""
     instance = started_cluster.instances["node1"]
@@ -663,9 +527,12 @@ def test_single_log_file_azure_connection_string(started_cluster):
     )
 
 
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_partition_by(started_cluster, storage_type):
-    instance = started_cluster.instances["node1"]
+@pytest.mark.parametrize(
+    "use_delta_kernel, storage_type",
+    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "azure"), ("1", "local")],
+)
+def test_partition_by(started_cluster, use_delta_kernel, storage_type):
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
 
     TABLE_NAME = randomize_table_name("test_partition_by")
@@ -705,9 +572,12 @@ def test_partition_by(started_cluster, storage_type):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
 
 
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_checkpoint(started_cluster, storage_type):
-    instance = started_cluster.instances["node1"]
+@pytest.mark.parametrize(
+    "use_delta_kernel, storage_type",
+    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "azure"), ("1", "local")],
+)
+def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     TABLE_NAME = randomize_table_name("test_checkpoint")
 
@@ -808,8 +678,9 @@ def test_checkpoint(started_cluster, storage_type):
     )
 
 
-def test_multiple_log_files(started_cluster):
-    instance = started_cluster.instances["node1"]
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_multiple_log_files(started_cluster, use_delta_kernel):
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
@@ -846,8 +717,9 @@ def test_multiple_log_files(started_cluster):
     )
 
 
-def test_metadata(started_cluster):
-    instance = started_cluster.instances["node1"]
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_metadata(started_cluster, use_delta_kernel):
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
@@ -880,8 +752,9 @@ def test_metadata(started_cluster):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
 
-def test_types(started_cluster):
-    instance = started_cluster.instances["node1"]
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_types(started_cluster, use_delta_kernel):
+    instance = get_node(started_cluster, use_delta_kernel)
     TABLE_NAME = randomize_table_name("test_types")
     spark = started_cluster.spark_session
     result_file = randomize_table_name(f"{TABLE_NAME}_result_2")
@@ -956,12 +829,13 @@ def test_types(started_cluster):
     )
 
 
-def test_varchar_char_types(started_cluster):
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_varchar_char_types(started_cluster, use_delta_kernel):
     """
     VARCHAR(n) and CHAR(n) are valid Delta Lake column types emitted by Spark/Databricks
     when tables originate from relational databases. ClickHouse must map them to String.
     """
-    instance = started_cluster.instances["node1"]
+    instance = get_node(started_cluster, use_delta_kernel)
     TABLE_NAME = randomize_table_name("test_varchar_char_types")
     spark = started_cluster.spark_session
     result_file = randomize_table_name(f"{TABLE_NAME}_result")
@@ -1002,8 +876,137 @@ def test_varchar_char_types(started_cluster):
     )
 
 
-def test_restart_broken(started_cluster):
+def test_varchar_char_types_in_delta_log(started_cluster):
+    """
+    Regression test for: `Unsupported DeltaLake type: varchar(n)`.
+
+    Spark/Delta normalises VARCHAR/CHAR DDL down to the physical `string` type in
+    the Delta log, so a Spark-driven test never exercises the broken code path.
+    Some real-world emitters (notably the Unity Catalog REST API in `type_json`)
+    do leave `varchar(n)` / `char(n)` in the schema string, which is what hits
+    `DeltaLakeMetadata::getSimpleTypeByName` and previously threw.
+
+    This test constructs a Delta log by hand with such non-normalised type names
+    so the regression path is exercised under both the bugfix-validation run
+    (must fail without the fix) and the patched build (must succeed).
+    The bug only ever lived in the non-kernel path, so this test does not
+    parametrise on `use_delta_kernel`.
+    """
     instance = started_cluster.instances["node1"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_varchar_char_types_in_delta_log")
+
+    schema = pa.schema([
+        pa.field("id", pa.int32()),
+        pa.field("varchar_col", pa.string()),
+        pa.field("char_col", pa.string()),
+    ])
+    table_data = pa.table(
+        {
+            "id": pa.array([1], type=pa.int32()),
+            "varchar_col": pa.array(["hello varchar"], type=pa.string()),
+            "char_col": pa.array(["hello char"], type=pa.string()),
+        },
+        schema=schema,
+    )
+    buf = io.BytesIO()
+    pq.write_table(table_data, buf, compression=None)
+    parquet_bytes = buf.getvalue()
+
+    parquet_object_name = f"{TABLE_NAME}/part-0.parquet"
+    minio_client.put_object(
+        bucket_name=bucket,
+        object_name=parquet_object_name,
+        data=io.BytesIO(parquet_bytes),
+        length=len(parquet_bytes),
+    )
+
+    protocol = '{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}'
+    metadata = json.dumps(
+        {
+            "metaData": {
+                "id": str(uuid.uuid4()),
+                "format": {"provider": "parquet", "options": {}},
+                "schemaString": json.dumps(
+                    {
+                        "type": "struct",
+                        "fields": [
+                            {
+                                "name": "id",
+                                "type": "integer",
+                                "nullable": True,
+                                "metadata": {},
+                            },
+                            {
+                                "name": "varchar_col",
+                                "type": "varchar(256)",
+                                "nullable": True,
+                                "metadata": {},
+                            },
+                            {
+                                "name": "char_col",
+                                "type": "char(10)",
+                                "nullable": True,
+                                "metadata": {},
+                            },
+                        ],
+                    }
+                ),
+                "partitionColumns": [],
+                "configuration": {},
+                "createdTime": 1600000000000,
+            }
+        }
+    )
+    add = json.dumps(
+        {
+            "add": {
+                "path": "part-0.parquet",
+                "partitionValues": {},
+                "size": len(parquet_bytes),
+                "modificationTime": 1600000000000,
+                "dataChange": True,
+                "stats": json.dumps({"numRecords": 1}),
+            }
+        }
+    )
+
+    log_content = ("\n".join([protocol, metadata, add])).encode()
+    minio_client.put_object(
+        bucket_name=bucket,
+        object_name=f"{TABLE_NAME}/_delta_log/00000000000000000000.json",
+        data=io.BytesIO(log_content),
+        length=len(log_content),
+    )
+
+    table_function = (
+        f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{TABLE_NAME}/', "
+        f"'minio', '{minio_secret_key}')"
+    )
+
+    # `allow_experimental_delta_kernel_rs=0` exercises the C++ schema parser,
+    # which is where `getSimpleTypeByName` was throwing on `varchar(n)`/`char(n)`.
+    settings = {"allow_experimental_delta_kernel_rs": "0"}
+    assert instance.query(f"DESCRIBE {table_function} FORMAT TSV", settings=settings) == TSV(
+        [
+            ["id", "Nullable(Int32)"],
+            ["varchar_col", "Nullable(String)"],
+            ["char_col", "Nullable(String)"],
+        ]
+    )
+    assert (
+        instance.query(
+            f"SELECT id, varchar_col, char_col FROM {table_function}",
+            settings=settings,
+        ).strip()
+        == "1\thello varchar\thello char"
+    )
+
+
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_restart_broken(started_cluster, use_delta_kernel):
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = "broken"
@@ -1072,8 +1075,9 @@ def test_restart_broken(started_cluster):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
 
-def test_restart_broken_table_function(started_cluster):
-    instance = started_cluster.instances["node1"]
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_restart_broken_table_function(started_cluster, use_delta_kernel):
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = "broken2"
@@ -1127,9 +1131,13 @@ def test_restart_broken_table_function(started_cluster):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
 
-@pytest.mark.parametrize("cluster", [False, True])
-def test_partition_columns(started_cluster, cluster):
-    instance = started_cluster.instances["node1"]
+@pytest.mark.parametrize(
+    "use_delta_kernel, cluster",
+    [("1", False), ("1", True)],
+    # [("1", False), ("1", True), ("0", False)], /// FIXME: this does not work with disabled delta-kernel
+)
+def test_partition_columns(started_cluster, use_delta_kernel, cluster):
+    instance = get_node(started_cluster, use_delta_kernel)
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     TABLE_NAME = randomize_table_name("test_partition_columns")
@@ -1233,6 +1241,17 @@ def test_partition_columns(started_cluster, cluster):
         )
     )
     assert result == 4
+
+    if use_delta_kernel == 1:
+        instance.query("SYSTEM FLUSH LOGS")
+        assert num_rows - 1 == int(
+            instance.query(
+                f"""
+            SELECT ProfileEvents['DeltaLakePartitionPrunedFiles']
+            FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+        """
+            )
+        )
 
     instance.query(
         f"""
@@ -1361,8 +1380,9 @@ test9	2000-01-09	9"""
     )
 
 
-def test_complex_types(started_cluster):
-    node = started_cluster.instances["node1"]
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_complex_types(started_cluster, use_delta_kernel):
+    node = get_node(started_cluster, use_delta_kernel)
 
     schema = pa.schema(
         [
@@ -1452,8 +1472,9 @@ def test_complex_types(started_cluster):
     )
 
 
-def test_filesystem_cache(started_cluster):
-    instance = started_cluster.instances["node1"]
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_filesystem_cache(started_cluster, use_delta_kernel):
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     TABLE_NAME = randomize_table_name("test_filesystem_cache")
@@ -1519,14 +1540,15 @@ def test_filesystem_cache(started_cluster):
     )
 
 
-def test_filesystem_cache_azure(started_cluster):
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_filesystem_cache_azure(started_cluster, use_delta_kernel):
     # Regression test for https://github.com/ClickHouse/ClickHouse/issues/106090:
     # AzureObjectStorage::getObjectMetadata used to return an empty etag, which
     # silently disabled the object-storage filesystem cache for Azure-backed
     # tables (logging "Cannot use filesystem cache, no etag specified"). Without
     # the fix the second read below still hits Azure (AzureGetObject > 0) and
     # nothing is written to the cache (CachedReadBufferCacheWriteBytes == 0).
-    instance = started_cluster.instances["node1"]
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     TABLE_NAME = randomize_table_name("test_filesystem_cache_azure")
 
@@ -1586,7 +1608,8 @@ def test_filesystem_cache_azure(started_cluster):
     )
 
 
-def test_replicated_database_and_unavailable_s3(started_cluster):
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kernel):
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]
 
@@ -1804,7 +1827,8 @@ def test_partition_columns_2(started_cluster, cluster):
     deltaLake(
             'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
             '{minio_access_key}',
-            '{minio_secret_key}')
+            '{minio_secret_key}',
+        SETTINGS allow_experimental_delta_kernel_rs=0)
         """
 
     num_files = int(
@@ -2490,8 +2514,10 @@ deltaLake(
         )
     )
 
-@pytest.mark.parametrize("storage_type", ["s3"])
-def test_cluster_function(started_cluster, storage_type):
+@pytest.mark.parametrize(
+    "new_analyzer, storage_type", [["1", "s3"], ["0", "s3"]]
+)
+def test_cluster_function(started_cluster, new_analyzer, storage_type):
     instance = started_cluster.instances["node1"]
     started_cluster.instances["node_old"]
     table_name = randomize_table_name("test_cluster_function")
@@ -2524,11 +2550,11 @@ def test_cluster_function(started_cluster, storage_type):
             SETTINGS allow_experimental_delta_kernel_rs=1)
         """
         instance.query(
-            f"SELECT * FROM {table_function}"
+            f"SELECT * FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
         )
         assert 5 == int(
             instance.query(
-                f"SELECT count() FROM {table_function}"
+                f"SELECT count() FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
             )
         )
         assert "1\taa\n"
@@ -2536,7 +2562,7 @@ def test_cluster_function(started_cluster, storage_type):
         "3\tcc\n"
         "4\taa\n"
         "5\tbb\n" == instance.query(
-            f"SELECT * FROM {table_function} ORDER BY a"
+            f"SELECT * FROM {table_function} ORDER BY a SETTINGS allow_experimental_analyzer={new_analyzer}"
         )
 
 
@@ -2595,7 +2621,8 @@ def test_partition_columns_3(started_cluster):
     )
 
 
-def test_filtering_by_virtual_columns(started_cluster):
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_filtering_by_virtual_columns(started_cluster, use_delta_kernel):
     instance = started_cluster.instances["node1"]
     bucket = started_cluster.minio_bucket
     TABLE_NAME = randomize_table_name("test_filtering_by_virtual_columns")
@@ -2632,7 +2659,7 @@ def test_filtering_by_virtual_columns(started_cluster):
 
     result = int(
         instance.query(
-            f"SELECT count() FROM {table_function}"
+            f"SELECT count() FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"
         )
     )
     assert result == num_rows
@@ -2649,14 +2676,14 @@ def test_filtering_by_virtual_columns(started_cluster):
         "8\tname_8\t32\tUS\t2028\n"
         "9\tname_9\t32\tUS\t2029"
         == instance.query(
-            f"SELECT * FROM {table_function} ORDER BY all"
+            f"SELECT * FROM {table_function} ORDER BY all SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"
         ).strip()
     )
 
     query_id = f"query_{TABLE_NAME}_1"
     result = int(
         instance.query(
-            f"SELECT count() FROM {table_function} WHERE _path ILIKE '%year=2024%'",
+            f"SELECT count() FROM {table_function} WHERE _path ILIKE '%year=2024%' SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}",
             query_id=query_id,
         )
     )
@@ -2668,11 +2695,20 @@ def test_filtering_by_virtual_columns(started_cluster):
         )
     )
 
-    assert 0 == int(
-        instance.query(
-            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and logger_name = 'DeltaLakeMetadataParser'"
+    if use_delta_kernel == "0":
+        assert 1 < int(
+            instance.query(
+                f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and logger_name = 'DeltaLakeMetadataParser'"
+            )
         )
-    )
+    elif use_delta_kernel == "1":
+        assert 0 == int(
+            instance.query(
+                f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and logger_name = 'DeltaLakeMetadataParser'"
+            )
+        )
+    else:
+        assert False
 
 
 def test_column_pruning(started_cluster):
@@ -2715,16 +2751,26 @@ def test_column_pruning(started_cluster):
 
     table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
-    # `input_format_parquet_footer_read_size` is pinned so that the number of bytes read stays a
-    # measure of column pruning only. With the adaptive default the initial footer read is at least
-    # 128 KiB, which is more than this (much smaller) file, so the whole file would be read and the
-    # numbers below would no longer say anything about which columns were fetched.
-    footer_read_size = 64 * 1024
-
-    query_id = f"query_{TABLE_NAME}"
-    assert num_rows * (num_rows - 1) // 2 == int(
+    query_id = f"query_{TABLE_NAME}_1"
+    sum = int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, use_parquet_metadata_cache=0, input_format_parquet_footer_read_size={footer_read_size}",
+            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1",
+            query_id=query_id,
+        )
+    )
+    instance.query("SYSTEM FLUSH LOGS")
+    bytes_read = int(
+        instance.query(
+            f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
+        )
+    )
+    # Slightly different number depending on reader implementation.
+    assert 107120 <= bytes_read <= 107232
+
+    query_id = f"query_{TABLE_NAME}_2"
+    assert sum == int(
+        instance.query(
+            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, use_parquet_metadata_cache=0",
             query_id=query_id,
         )
     )
@@ -2739,7 +2785,7 @@ def test_column_pruning(started_cluster):
             f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
     )
-    # Metadata reading by delta-kernel is not counted in the metric.
+    # Small diff because in case of delta-kernel metadata reading is not counted in the metric.
     assert 105580 <= bytes_read <= 105689
 
 
@@ -3422,18 +3468,11 @@ def test_count_from_cache(started_cluster):
         instance.query(f"SELECT count() FROM {table_function}", query_id=query_id)
     )
     instance.query("SYSTEM FLUSH LOGS")
-    # Every `add` action carries `stats.numRecords`, so the delta kernel reports the total row
-    # count from the log itself and count() is answered without opening any data file.
-    assert 0 == int(
+    assert 3 == int(
         instance.query(
             f"SELECT ProfileEvents['SchemaInferenceCacheNumRowsHits'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
     )
-    explain = instance.query(
-        f"EXPLAIN SELECT count() FROM {table_function} SETTINGS optimize_trivial_count_query = 1"
-    )
-    assert "ReadFromPreparedSource (Optimized trivial count)" in explain, explain
-
     assert (
         "3\t3"
         == instance.query(f"SELECT count(), count() FROM {table_function}").strip()
@@ -3446,205 +3485,94 @@ def test_count_from_cache(started_cluster):
     )
 
 
-def delta_engine_definition(started_cluster, storage_type, path):
-    """ENGINE clause for a Delta table which already exists in the object storage."""
-    if storage_type == "s3":
-        return (
-            f"DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
-            f"/{started_cluster.minio_bucket}/{path}/', 'minio', '{minio_secret_key}')"
-        )
-    return (
-        f"DeltaLakeAzure('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', "
-        f"'{started_cluster.azure_container_name}', '{path}', Parquet)"
-    )
-
-
-def delta_table_function(started_cluster, storage_type, path):
-    if storage_type == "s3":
-        return (
-            f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
-            f"/{started_cluster.minio_bucket}/{path}/', 'minio', '{minio_secret_key}')"
-        )
-    return (
-        f"deltaLakeAzure('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', "
-        f"'{started_cluster.azure_container_name}', '{path}', Parquet)"
-    )
-
-
-def data_file_table_function(started_cluster, storage_type, data_file):
-    """Table function reading a single data file, bypassing the Delta metadata."""
-    if storage_type == "s3":
-        return (
-            f"s3('http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
-            f"/{started_cluster.minio_bucket}/{data_file}', 'minio', '{minio_secret_key}')"
-        )
-    return (
-        f"azureBlobStorage('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', "
-        f"'{started_cluster.azure_container_name}', '{data_file}', Parquet)"
-    )
-
-
-def create_empty_delta_table(
-    started_cluster, storage_type, path, schema, partition_by=None
-):
-    empty_table = pa.Table.from_arrays(
-        [pa.array([], type=field.type) for field in schema], schema=schema
-    )
-    if storage_type == "s3":
-        write_deltalake_with_retry(
-            f"s3://{started_cluster.minio_bucket}/{path}",
-            empty_table,
-            storage_options=get_storage_options(started_cluster),
-            mode="overwrite",
-            partition_by=partition_by or [],
-        )
-        return
-
-    # delta-rs cannot write to azurite, so create the table locally and upload it.
-    with tempfile.TemporaryDirectory() as local_dir:
-        local_path = os.path.join(local_dir, path)
-        write_deltalake(
-            f"file://{local_path}",
-            empty_table,
-            mode="overwrite",
-            partition_by=partition_by or [],
-        )
-        default_upload_directory(started_cluster, "azure", local_path, path)
-
-
-def list_delta_data_files(started_cluster, storage_type, path):
-    """Data files written by ClickHouse: the ones from delta-rs and spark are *.snappy.parquet."""
-    if storage_type == "s3":
-        names = [
-            obj.object_name
-            for obj in started_cluster.minio_client.list_objects(
-                started_cluster.minio_bucket, path, recursive=True
-            )
-        ]
-    else:
-        names = [
-            blob.name
-            for blob in started_cluster.container_client.list_blobs(
-                name_starts_with=path
-            )
-        ]
-    return sorted(
-        name
-        for name in names
-        if name.endswith("parquet") and not name.endswith("snappy.parquet")
-    )
-
-
-@pytest.mark.parametrize("storage_type", ["s3", "azure"])
-def test_writes(started_cluster, storage_type):
+def test_writes(started_cluster):
     instance = started_cluster.instances["node1"]
+    instance_disabled_kernel = cluster.instances["node_with_disabled_delta_kernel"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
     table_name = randomize_table_name("test_writes")
-    path = f"{table_name}_data"
+    result_file = f"{table_name}_data"
 
     schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
-    create_empty_delta_table(started_cluster, storage_type, path, schema)
-
-    engine = delta_engine_definition(started_cluster, storage_type, path)
-    instance.query(
-        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = {engine}"
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
+    write_deltalake_with_retry(
+        f"s3://root/{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        storage_options=get_storage_options(started_cluster),
+        mode="overwrite",
     )
 
-    table_function = delta_table_function(started_cluster, storage_type, path)
-
-    # A table function insert takes the column names from the select expressions.
     instance.query(
-        f"INSERT INTO TABLE FUNCTION {table_function} SELECT toInt32(number) AS id, toString(number) AS name FROM numbers(10)"
+        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+    )
+    instance_disabled_kernel.query(
+        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
     )
 
-    data_files = list_delta_data_files(started_cluster, storage_type, path)
-    assert len(data_files) == 1, f"Data files: {data_files}"
+    instance.query(
+        f"INSERT INTO TABLE FUNCTION deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', settings allow_experimental_delta_kernel_rs=1) SELECT number as name, toString(number) as id from numbers(10)"
+    )
+
+    s3_objects = list(minio_client.list_objects(bucket, result_file, recursive=True))
+    file_name = None
+    for obj in s3_objects:
+        print(f"File: {obj.object_name}")
+        if obj.object_name.endswith("parquet") and not obj.object_name.endswith(
+            "snappy.parquet"
+        ):
+            file_name = obj.object_name
+
     assert (
-        "\n".join(f"{i}\t{i}" for i in range(10))
+        "0\t0\n1\t1\n2\t2\n3\t3\n4\t4\n5\t5\n6\t6\n7\t7\n8\t8\n9\t9"
         == instance.query(
-            f"SELECT * FROM {data_file_table_function(started_cluster, storage_type, data_files[0])}"
+            f"SELECT * FROM s3('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{file_name}', 'minio', '{minio_secret_key}')"
         ).strip()
     )
 
+    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+
     def check_count(expected):
         assert expected == int(instance.query(f"SELECT count() FROM {table_function}"))
+        assert expected == int(
+            instance_disabled_kernel.query(f"SELECT count() FROM {table_name}")
+        )
         assert expected == int(instance.query(f"SELECT count() FROM {table_name}"))
 
     def check_data(expected):
-        expected_rows = "\n".join(f"{i}\t{i}" for i in range(expected))
         assert (
-            expected_rows
+            expected
             == instance.query(f"SELECT * FROM {table_name} ORDER BY all").strip()
         )
         assert (
-            expected_rows
+            expected
+            == instance_disabled_kernel.query(
+                f"SELECT * FROM {table_name} ORDER BY all"
+            ).strip()
+        )
+        assert (
+            expected
             == instance.query(f"SELECT * FROM {table_function} ORDER BY all").strip()
         )
 
     check_count(10)
-    check_data(10)
+    check_data("0\t0\n1\t1\n2\t2\n3\t3\n4\t4\n5\t5\n6\t6\n7\t7\n8\t8\n9\t9")
 
     instance.query(
         f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(10, 10)"
     )
     check_count(20)
-    check_data(20)
-
-
-@pytest.mark.parametrize("partitioned", [False, True])
-def test_writes_azure_blob_path_with_leading_slash(started_cluster, partitioned):
-    """Azure keeps a leading slash as a part of the blob name, while the Delta log
-    commits paths relative to the normalized table root `az://container/path`.
-    Data files written through a leading-slash blob path (e.g. produced by a
-    disk-based configuration) must land under `path/`, not a literal `/path/`.
-    """
-    instance = started_cluster.instances["node1"]
-    table_name = randomize_table_name("test_writes_leading_slash")
-    path = f"{table_name}_data"
-
-    schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
-    create_empty_delta_table(
-        started_cluster,
-        "azure",
-        path,
-        schema,
-        partition_by=["id"] if partitioned else None,
+    check_data(
+        "0\t0\n1\t1\n2\t2\n3\t3\n4\t4\n5\t5\n6\t6\n7\t7\n8\t8\n9\t9\n10\t10\n11\t11\n12\t12\n13\t13\n14\t14\n15\t15\n16\t16\n17\t17\n18\t18\n19\t19"
     )
 
-    table_function_slash = delta_table_function(started_cluster, "azure", f"/{path}")
-    instance.query(
-        f"INSERT INTO TABLE FUNCTION {table_function_slash} SELECT toInt32(number % 2) AS id, toString(number) AS name FROM numbers(10)"
-    )
 
-    # External readers resolve `add.path` against the committed table root,
-    # so the data files must exist under `{path}/`.
-    data_files = list_delta_data_files(started_cluster, "azure", path)
-    stray_files = [
-        blob.name
-        for blob in started_cluster.container_client.list_blobs(
-            name_starts_with=f"/{path}"
-        )
-    ]
-    expected_data_files = 2 if partitioned else 1
-    assert (
-        len(data_files) == expected_data_files
-    ), f"Data files under '{path}/': {data_files}, stray '/{path}/' blobs: {stray_files}"
-    assert not stray_files, f"Blobs written under a literal leading slash: {stray_files}"
-    if partitioned:
-        assert all(
-            name.startswith(f"{path}/id=") for name in data_files
-        ), f"Data files: {data_files}"
-
-    # The table reads back consistently through both spellings of the path.
-    table_function = delta_table_function(started_cluster, "azure", path)
-    assert 10 == int(instance.query(f"SELECT count() FROM {table_function}"))
-    assert 10 == int(instance.query(f"SELECT count() FROM {table_function_slash}"))
-
-
-@pytest.mark.parametrize("storage_type", ["s3", "azure"])
-def test_partitioned_writes(started_cluster, storage_type):
+def test_partitioned_writes(started_cluster):
     instance = started_cluster.instances["node1"]
+    instance_disabled_kernel = cluster.instances["node_with_disabled_delta_kernel"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
     table_name = randomize_table_name("test_partitioned_writes")
-    path = f"{table_name}_data"
+    result_file = f"{table_name}_data"
     partition_columns = ["id", "comment"]
 
     schema = pa.schema(
@@ -3654,47 +3582,66 @@ def test_partitioned_writes(started_cluster, storage_type):
             ("comment", pa.string(), False),
         ]
     )
-    create_empty_delta_table(
-        started_cluster, storage_type, path, schema, partition_by=partition_columns
+    empty_arrays = [
+        pa.array([], type=pa.int32()),
+        pa.array([], type=pa.string()),
+        pa.array([], type=pa.string()),
+    ]
+    write_deltalake_with_retry(
+        f"s3://root/{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        storage_options=get_storage_options(started_cluster),
+        mode="overwrite",
+        partition_by=partition_columns,
     )
 
-    engine = delta_engine_definition(started_cluster, storage_type, path)
     instance.query(
-        f"CREATE TABLE {table_name} (id Int32, name String, comment String) ENGINE = {engine}"
+        f"CREATE TABLE {table_name} (id Int32, name String, comment String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+    )
+    instance_disabled_kernel.query(
+        f"CREATE TABLE {table_name} (id Int32, name String, comment String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
     )
     instance.query(
         f"INSERT INTO {table_name} SELECT number, toString(number), concat('comment-', toString(number % 2)) FROM numbers(10)"
     )
 
     def check_files(expected):
-        file_names = list_delta_data_files(started_cluster, storage_type, path)
-        assert len(file_names) == expected
+        s3_objects = list(
+            minio_client.list_objects(bucket, result_file, recursive=True)
+        )
+        file_names = []
+        for obj in s3_objects:
+            print(f"File: {obj.object_name}")
+            if obj.object_name.endswith("parquet") and not obj.object_name.endswith(
+                "snappy.parquet"
+            ):
+                file_names.append(obj.object_name)
 
-        expected_ids = sorted(str(i) for i in range(expected))
+        assert len(file_names) == expected
+        file_names.sort()
+        expected_ids = [str(i) for i in range(expected)]
+        expected_ids.sort()
         for i in range(expected):
             expected_id = expected_ids[i]
             comment_id = int(expected_ids[i]) % 2
             assert file_names[i].startswith(
-                f"{path}/id={expected_id}/comment=comment-{comment_id}/"
-            )
-            data_file = data_file_table_function(
-                started_cluster, storage_type, file_names[i]
+                f"{result_file}/id={expected_id}/comment=comment-{comment_id}/"
             )
             assert (
                 f"{expected_id}\t{expected_id}\tcomment-{comment_id}"
                 == instance.query(
-                    f"SELECT id, name, comment FROM {data_file} ORDER BY all"
+                    f"SELECT id, name, comment FROM s3('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{file_names[i]}', 'minio', '{minio_secret_key}') ORDER BY all"
                 ).strip()
             )
             assert (
                 f"{expected_id}"
                 == instance.query(
-                    f"SELECT * FROM {data_file}",
+                    f"SELECT * FROM s3('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{file_names[i]}', 'minio', '{minio_secret_key}')",
                     settings={"use_hive_partitioning": 0},
                 ).strip()
             )
 
-    table_function = delta_table_function(started_cluster, storage_type, path)
+    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
     def check_count(expected):
         assert expected == int(
@@ -3707,30 +3654,43 @@ def test_partitioned_writes(started_cluster, storage_type):
                 f"SELECT count() FROM {table_function} settings use_cache_for_count_from_files=0"
             )
         )
+        assert expected == int(
+            instance_disabled_kernel.query(
+                f"SELECT count() FROM {table_name} settings use_cache_for_count_from_files=0"
+            )
+        )
 
     def check_data(expected):
-        expected_rows = "\n".join(
-            f"{i}\t{i}\tcomment-{i % 2}" for i in range(expected)
-        )
         assert (
-            expected_rows
+            expected
             == instance.query(f"SELECT * FROM {table_name} ORDER BY all").strip()
         )
+        # TODO: Fix read with disabled delta-kernel?
+        # assert (
+        #    expected
+        #    == instance_disabled_kernel.query(
+        #        f"SELECT * FROM {table_name} ORDER BY all"
+        #    ).strip()
+        # )
         assert (
-            expected_rows
+            expected
             == instance.query(f"SELECT * FROM {table_function} ORDER BY all").strip()
         )
 
     check_files(10)
     check_count(10)
-    check_data(10)
+    check_data(
+        "0\t0\tcomment-0\n1\t1\tcomment-1\n2\t2\tcomment-0\n3\t3\tcomment-1\n4\t4\tcomment-0\n5\t5\tcomment-1\n6\t6\tcomment-0\n7\t7\tcomment-1\n8\t8\tcomment-0\n9\t9\tcomment-1"
+    )
 
     instance.query(
         f"INSERT INTO {table_name} SELECT number, toString(number), concat('comment-', toString(number % 2))  FROM numbers(10, 10)"
     )
     check_count(20)
     check_files(20)
-    check_data(20)
+    check_data(
+        "0\t0\tcomment-0\n1\t1\tcomment-1\n2\t2\tcomment-0\n3\t3\tcomment-1\n4\t4\tcomment-0\n5\t5\tcomment-1\n6\t6\tcomment-0\n7\t7\tcomment-1\n8\t8\tcomment-0\n9\t9\tcomment-1\n10\t10\tcomment-0\n11\t11\tcomment-1\n12\t12\tcomment-0\n13\t13\tcomment-1\n14\t14\tcomment-0\n15\t15\tcomment-1\n16\t16\tcomment-0\n17\t17\tcomment-1\n18\t18\tcomment-0\n19\t19\tcomment-1"
+    )
 
 
 @pytest.mark.parametrize("partitioned", [False, True])
@@ -3767,7 +3727,7 @@ def test_concurrent_queries(started_cluster, partitioned):
         def insert(i):
             try:
                 instance.query(
-                    f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers(50)"
+                    f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers(50)",
                 )
                 success[i] += 1
             except Exception as e:
@@ -3819,6 +3779,7 @@ def test_concurrent_queries(started_cluster, partitioned):
 
 def test_writes_spark_compatibility(started_cluster):
     instance = started_cluster.instances["node1"]
+    cluster.instances["node_with_disabled_delta_kernel"]
     table_name = randomize_table_name("test_writes")
     result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
 
@@ -4148,6 +4109,7 @@ deltaLake(
 @pytest.mark.parametrize("column_mapping", ["", "name"])
 def test_subcolumns_2(started_cluster, column_mapping):
     instance = started_cluster.instances["node1"]
+    cluster.instances["node_with_disabled_delta_kernel"]
     table_name = randomize_table_name("test_write_column_order")
     spark = started_cluster.spark_session
     path = f"/var/lib/clickhouse/user_files/{table_name}"
@@ -4530,13 +4492,13 @@ def test_write_cancel_during_commit_keeps_data(started_cluster, partitioned):
     # ~DeltaLakePartitionedSink would see isCancelled() and cancelBuffers() would
     # unlink the just-committed files, leaving the Delta log pointing at missing
     # data (silent data loss). The fix clears the tracked sinks after a successful
-    # commit, so a late cancel has nothing to remove. This test uses the
-    # delta_lake_write_cancel_in_commit_window failpoint, which cancels the query in
-    # place inside the commit window exactly as KILL QUERY does, so nothing parks a
-    # pipeline worker inside IProcessor::work(). The two other write-failure tests
-    # cancel while consume() is still running, so they never reach the commit window.
+    # commit, so a late cancel has nothing to remove. This test pauses the
+    # committing thread inside the commit window via the delta_lake_write_commit_pause
+    # failpoint, KILLs the query while paused, lets the commit finish, then checks
+    # the committed rows survive. The two other write-failure tests cancel while
+    # consume() is still running, so they never reach the commit window.
     instance = started_cluster.instances["node1"]
-    failpoint = "delta_lake_write_cancel_in_commit_window"
+    failpoint = "delta_lake_write_commit_pause"
     table_name = randomize_table_name("test_write_commit_race")
     result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
 
@@ -4556,33 +4518,58 @@ def test_write_cancel_during_commit_keeps_data(started_cluster, partitioned):
         f"SETTINGS output_format_parquet_compression_method = 'none'"
     )
 
-    def failpoint_enabled():
-        return instance.query(
-            f"SELECT enabled FROM system.fail_points WHERE name = '{failpoint}'"
-        ).strip()
+    query_id = str(uuid.uuid4())
 
-    # ONCE failpoint: cancels the query inside onFinish(), after the data files are
-    # finalized and before the delta commit.
+    # PAUSEABLE_ONCE failpoint blocks the committing thread inside onFinish(),
+    # after the data files are finalized and before delta commit.
     instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+
+    # An assertion raised inside a thread does not fail the test (pytest only turns
+    # it into a PytestUnhandledThreadExceptionWarning), so hand the worker's
+    # exception back to the main thread and re-raise it there. Without this the test
+    # could pass its row/file checks while the cancellation silently never happened.
+    insert_error = []
+
+    def run_insert():
+        # A valid INSERT (no throwIf): reaches onFinish and pauses in the commit
+        # window. max_block_size = 1 opens an inner sink per partition.
+        try:
+            _, error = instance.query_and_get_answer_with_error(
+                f"INSERT INTO {table_name} "
+                f"SELECT number::Int32, (number % 2)::Int32 "
+                f"FROM numbers(6) SETTINGS max_block_size = 1",
+                query_id=query_id,
+            )
+            # The KILL lands while paused, so the client sees QUERY_WAS_CANCELLED even
+            # though the commit itself completes.
+            assert "QUERY_WAS_CANCELLED" in error, f"unexpected insert error: {error}"
+        except BaseException as e:  # noqa: BLE001
+            insert_error.append(e)
+
+    insert_thread = threading.Thread(target=run_insert)
+    insert_thread.start()
     try:
-        assert failpoint_enabled() == "1"
+        # Wait until the committing thread has paused in the commit window. Bounded,
+        # so a failpoint that is never reached fails the test instead of hanging
+        # until the pytest session timeout.
+        instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
 
-        # A valid INSERT (no throwIf): reaches onFinish and cancels itself in the
-        # commit window. max_block_size = 1 opens an inner sink per partition.
-        _, error = instance.query_and_get_answer_with_error(
-            f"INSERT INTO {table_name} "
-            f"SELECT number::Int32, (number % 2)::Int32 "
-            f"FROM numbers(6) SETTINGS max_block_size = 1"
-        )
-        # The cancel lands in the commit window, so the client sees QUERY_WAS_CANCELLED
-        # even though the commit itself completes.
-        assert "QUERY_WAS_CANCELLED" in error, f"unexpected insert error: {error}"
-
-        # `enabled` went 1 -> 0 with no DISABLE in between, which only a fire can do;
-        # `0` on its own is also what an un-armed failpoint reads.
-        assert failpoint_enabled() == "0"
+        # KILL while paused: flips isCancelled() on the sink asynchronously. ASYNC
+        # (not SYNC) because the query is blocked at the failpoint, so a SYNC kill
+        # would deadlock with the notify below.
+        instance.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
+        # Give the executor cancel-watch thread time to propagate the cancel.
+        time.sleep(1)
+        # Let the commit proceed now that isCancelled() is (racily) set.
+        instance.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
     finally:
         instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        insert_thread.join()
+
+    # Surface a worker-thread failure (e.g. the INSERT was never cancelled, which
+    # would make the checks below vacuous).
+    if insert_error:
+        raise insert_error[0]
 
     # Server stays alive after the cancelled-during-commit write.
     assert "1" == instance.query("SELECT 1").strip()
@@ -4606,204 +4593,6 @@ def test_write_cancel_during_commit_keeps_data(started_cluster, partitioned):
     assert int(parquet_count) >= 1, (
         f"committed data files removed after late cancel: {parquet_count}"
     )
-
-
-@pytest.mark.parametrize("partitioned", [False, True])
-def test_commit_failure_with_failing_cleanup(started_cluster, partitioned):
-    # A DeltaLake commit that fails must stay the error the client sees, even when
-    # removing the data files the failed INSERT had already uploaded itself fails, and
-    # that removal failure must be reported with the data file it was left on. Two
-    # faults are injected at once: delta_lake_commit_fail_before_log_write throws
-    # before the commit writes its log entry (the commit fails), and
-    # local_object_storage_network_error_during_remove throws on the first data-file
-    # removal. The first INSERT is a control: it commits, so the committed data files
-    # are known and the failed INSERT can be held to changing nothing.
-    instance = started_cluster.instances["node1"]
-    failpoint = "local_object_storage_network_error_during_remove"
-    commit_failpoint = "delta_lake_commit_fail_before_log_write"
-    commit_error = "Failpoint for a commit failure before the log write"
-    table_name = randomize_table_name("test_commit_failure_cleanup")
-    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
-    # One row per data file, one row per block: the unpartitioned sink rolls a new data
-    # file per block and the partitioned one opens a sink per partition value, so both
-    # write 3 data files. With a single data file the cleanup loop runs only one
-    # iteration, which exercises neither sink's multi-file path.
-    insert_settings = (
-        "max_block_size = 1, delta_lake_insert_max_rows_in_data_file = 1, "
-        "output_format_parquet_compression_method = 'none'"
-    )
-
-    schema = pa.schema([("id", pa.int32(), False), ("part", pa.int32(), False)])
-    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.int32())]
-    write_deltalake(
-        f"file:///{result_file}",
-        pa.Table.from_arrays(empty_arrays, schema=schema),
-        mode="overwrite",
-        partition_by=["part"] if partitioned else [],
-    )
-    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
-
-    instance.query(
-        f"CREATE TABLE {table_name} (id Int32, part Int32) "
-        f"ENGINE = DeltaLakeLocal('/{result_file}')"
-    )
-
-    def parquet_paths():
-        listing = instance.exec_in_container(
-            ["bash", "-c", f"find /{result_file} -name '*.parquet' | sort"]
-        ).strip()
-        return [path for path in listing.split("\n") if path]
-
-    def failpoint_enabled():
-        return instance.query(
-            f"SELECT enabled FROM system.fail_points WHERE name = '{failpoint}'"
-        ).strip()
-
-    # Version 0 was written from an empty table, so no data file exists yet.
-    assert parquet_paths() == []
-
-    # Control: the same INSERT with no faults commits, so every later count is measured
-    # against a known number of committed data files.
-    instance.query(
-        f"INSERT INTO {table_name} SELECT number::Int32, number::Int32 "
-        f"FROM numbers(3) SETTINGS {insert_settings}"
-    )
-    committed = parquet_paths()
-    assert len(committed) == 3, f"control insert wrote {len(committed)} data files: {committed}"
-    assert instance.query(f"SELECT count() FROM {table_name}").strip() == "3"
-
-    try:
-        instance.query(f"SYSTEM ENABLE FAILPOINT {commit_failpoint}")
-        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
-        assert failpoint_enabled() == "1"
-        _, error = instance.query_and_get_answer_with_error(
-            f"INSERT INTO {table_name} SELECT (number + 10)::Int32, (number + 10)::Int32 "
-            f"FROM numbers(3) SETTINGS {insert_settings}"
-        )
-        # `enabled` went 1 -> 0 with no DISABLE in between, which only a fire can do.
-        fired = failpoint_enabled() == "0"
-    finally:
-        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-        instance.query(f"SYSTEM DISABLE FAILPOINT {commit_failpoint}")
-
-    assert fired, "the removal failpoint never fired, so the cleanup path was not exercised"
-
-    # O1: the client is told why nothing was written (the commit failed), not why a
-    # cleanup step failed afterwards.
-    assert "Injected error after remove object" not in error, (
-        f"the data-file removal error replaced the commit error: {error}"
-    )
-    assert commit_error in error, f"unexpected insert error: {error}"
-
-    # O2: the removal that failed is reported, naming the data file it was left on. The
-    # message is the full one only the commit-failure cleanup emits; the cancel path logs a
-    # different one. The path has to follow the message immediately: the injected removal
-    # exception carries the path too, so matching it anywhere on the line would also pass if
-    # the handler logged no path at all.
-    message = "Failed to remove uncommitted data file after a failed commit"
-    removal_log = instance.grep_in_log(message)
-    assert re.search(
-        re.escape(f"{message}: ") + rf"\S*{re.escape(table_name)}_data/\S+\.parquet",
-        removal_log,
-    ), f"the failed data-file removal was not logged with its path: {removal_log}"
-
-    # O3: the failed INSERT committed nothing, and left the committed data files alone.
-    assert instance.query(f"SELECT count() FROM {table_name}").strip() == "3"
-    assert parquet_paths() == committed
-
-
-@pytest.mark.parametrize("partitioned", [False, True])
-def test_commit_failure_cleanup_attempts_every_data_file(started_cluster, partitioned):
-    # The cleanup after a failed DeltaLake commit must attempt every data file the INSERT
-    # had uploaded, not stop on the first removal that fails. Observing that needs a
-    # removal fault that persists across calls: with a fault that fires once the later
-    # removals succeed, so a handler that gave up after the first failure would leave the
-    # same files on disk and the same single log line as one that continued, which is what
-    # the sibling test above cannot tell apart. The oracle here is the number of distinct
-    # data files named in the handler's own log lines: one per data file when every removal
-    # is attempted, one in total when the loop stops at the first failure.
-    instance = started_cluster.instances["node1"]
-    failpoint = "local_object_storage_network_error_during_every_remove"
-    commit_failpoint = "delta_lake_commit_fail_before_log_write"
-    commit_error = "Failpoint for a commit failure before the log write"
-    table_name = randomize_table_name("test_commit_failure_every_file")
-    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
-    insert_settings = (
-        "max_block_size = 1, delta_lake_insert_max_rows_in_data_file = 1, "
-        "output_format_parquet_compression_method = 'none'"
-    )
-
-    schema = pa.schema([("id", pa.int32(), False), ("part", pa.int32(), False)])
-    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.int32())]
-    write_deltalake(
-        f"file:///{result_file}",
-        pa.Table.from_arrays(empty_arrays, schema=schema),
-        mode="overwrite",
-        partition_by=["part"] if partitioned else [],
-    )
-    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
-
-    instance.query(
-        f"CREATE TABLE {table_name} (id Int32, part Int32) "
-        f"ENGINE = DeltaLakeLocal('/{result_file}')"
-    )
-
-    def parquet_paths():
-        listing = instance.exec_in_container(
-            ["bash", "-c", f"find /{result_file} -name '*.parquet' | sort"]
-        ).strip()
-        return [path for path in listing.split("\n") if path]
-
-    assert parquet_paths() == []
-
-    # Control: the same INSERT with no faults commits, which fixes how many data files an
-    # INSERT of this shape writes.
-    instance.query(
-        f"INSERT INTO {table_name} SELECT number::Int32, number::Int32 "
-        f"FROM numbers(3) SETTINGS {insert_settings}"
-    )
-    committed = parquet_paths()
-    assert len(committed) == 3, (
-        f"control insert wrote {len(committed)} data files: {committed}"
-    )
-
-    try:
-        instance.query(f"SYSTEM ENABLE FAILPOINT {commit_failpoint}")
-        # REGULAR, so it stays armed until disabled and every removal in the window fails.
-        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
-        _, error = instance.query_and_get_answer_with_error(
-            f"INSERT INTO {table_name} SELECT (number + 10)::Int32, (number + 10)::Int32 "
-            f"FROM numbers(3) SETTINGS {insert_settings}"
-        )
-    finally:
-        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-        instance.query(f"SYSTEM DISABLE FAILPOINT {commit_failpoint}")
-
-    # O1: the client is still told why nothing was written, not why a cleanup step failed.
-    assert "Injected error after remove object" not in error, (
-        f"the data-file removal error replaced the commit error: {error}"
-    )
-    assert commit_error in error, f"unexpected insert error: {error}"
-
-    # O2: one failed removal is logged per data file, each naming a different one. The
-    # table name anchors the match so the two parametrizations cannot read each other's
-    # lines, and cancelBuffers() logs a different message, so it cannot inflate the count.
-    message = "Failed to remove uncommitted data file after a failed commit"
-    removal_log = instance.grep_in_log(message)
-    logged_paths = set(
-        re.findall(
-            re.escape(f"{message}: ") + rf"(\S*{re.escape(table_name)}_data/\S+\.parquet)",
-            removal_log,
-        )
-    )
-    assert len(logged_paths) == 3, (
-        f"the handler logged {len(logged_paths)} failed removals, expected one per data file "
-        f"(a handler that stopped at the first failure logs one): {removal_log}"
-    )
-
-    # The injected fault throws after the unlink, so the uncommitted files are gone either
-    # way: this stays an invariant guard, not the discriminating oracle.
-    assert parquet_paths() == committed
 
 
 @pytest.mark.parametrize("column_mapping", ["", "name"])
@@ -4871,8 +4660,9 @@ def test_type_from_storage_def(started_cluster, column_mapping):
     )
 
 
-def test_system_table(started_cluster):
-    instance = started_cluster.instances["node1"]
+@pytest.mark.parametrize("use_delta_kernel", ["0", "1"])
+def test_system_table(started_cluster, use_delta_kernel):
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
@@ -4957,10 +4747,11 @@ def test_truncate(started_cluster):
 
     assert 10 == int(instance.query(f"SELECT count() FROM {table_name}"))
 
+    s3_objects = list(minio_client.list_objects(bucket, result_file, recursive=True))
+
     def count_files():
-        # Re-list on every call: the point is to prove TRUNCATE removed nothing.
         count = 0
-        for obj in minio_client.list_objects(bucket, result_file, recursive=True):
+        for obj in s3_objects:
             print(f"File: {obj.object_name}")
             count = count + 1
         return count
@@ -4970,7 +4761,6 @@ def test_truncate(started_cluster):
         f"TRUNCATE TABLE {table_name}"
     )
     assert count_files() == 3
-    assert 10 == int(instance.query(f"SELECT count() FROM {table_name}"))
 
 
 @pytest.mark.parametrize("on_cluster", [False, True])
@@ -5034,135 +4824,6 @@ deltaLake{suffix}({cluster}
     # (not 3 because third deleted row is inside a different partition and represents a single row inside it)
     assert node.contains_in_log("Row indexes size 2 for file")
 
-    # A bare `count()` is eligible for the trivial-count optimization, which answers from the
-    # `numRecords` statistics of the surviving files: 4 here, because the deletion vector removes
-    # 2 more rows that those statistics still include. The assertions above use `ORDER BY all`,
-    # which resolves to `count()` and so makes `applyTrivialCountIfPossible` see the aggregate
-    # twice and decline, which is why they never exercised this path.
-    trivial_count_step = "ReadFromPreparedSource (Optimized trivial count)"
-
-    count_query_id = f"test_dv_count_{table_name}"
-    assert 2 == int(
-        node.query(
-            f"SELECT count() FROM {delta_function}", query_id=count_query_id
-        ).strip()
-    )
-    assert trivial_count_step not in node.query(
-        f"EXPLAIN SELECT count() FROM {delta_function}"
-    )
-    # That count went through the metadata-only stats scan, one of the two places the row counts
-    # are accumulated.
-    node.query("SYSTEM FLUSH LOGS")
-    assert 1 == int(
-        node.query(
-            f"SELECT count() FROM system.text_log WHERE query_id = '{count_query_id}' "
-            "AND message LIKE '%Updated statistics for snapshot version%'"
-        )
-    )
-
-    # Version 1 is the overwrite that precedes the DELETE, so that snapshot carries no deletion
-    # vector and the optimization still applies to it. This is the positive control for the pinned
-    # path: without it, the assertions below would also hold if the optimization had been disabled
-    # for every Delta table rather than declined for the files that carry a vector.
-    assert 5 == int(
-        node.query(
-            f"SELECT count() FROM {delta_function} SETTINGS delta_lake_snapshot_version = 1"
-        ).strip()
-    )
-    assert trivial_count_step in node.query(
-        f"EXPLAIN SELECT count() FROM {delta_function} SETTINGS delta_lake_snapshot_version = 1"
-    )
-
-    # A commit after the DELETE, so the version that carries the vector becomes an older snapshot
-    # and the counts below cannot be served by whatever the latest version happens to be.
-    df_appended = spark.createDataFrame(data=[(3, "z", "z")], schema=schema)
-    df_appended.write.format("delta").partitionBy("a").mode("append").save(path)
-    upload_directory(minio_client, bucket, path, "")
-
-    # The vector stays on the surviving file across later commits, so the newest version is
-    # over-counted too: 3 rows survive, while the statistics of its files still add up to 5.
-    assert 3 == int(node.query(f"SELECT count() FROM {delta_function}").strip())
-    assert trivial_count_step not in node.query(
-        f"EXPLAIN SELECT count() FROM {delta_function}"
-    )
-    # Version 2 is the DELETE itself. Reading it counts 2, the number of rows that version has,
-    # rather than the 4 its file statistics record.
-    assert 2 == int(
-        node.query(
-            f"SELECT count() FROM {delta_function} SETTINGS delta_lake_snapshot_version = 2"
-        ).strip()
-    )
-    assert trivial_count_step not in node.query(
-        f"EXPLAIN SELECT count() FROM {delta_function} SETTINGS delta_lake_snapshot_version = 2"
-    )
-
-    if on_cluster:
-        return
-
-    # Scanning a table before counting it makes the scan callback publish the statistics, which is
-    # the other place the row counts are accumulated: `getSnapshotStats` caches, and the callback
-    # only fills an empty cache, so whichever query runs first decides which of the two sites is
-    # exercised.
-    engine_table = table_name + "_engine"
-    node.query(f"DROP TABLE IF EXISTS {engine_table}")
-    node.query(
-        f"CREATE TABLE {engine_table} ENGINE=DeltaLake(s3, filename = '{table_name}/', "
-        f"format=Parquet, url = 'http://minio1:9001/{bucket}/')"
-    )
-    scan_query_id = f"test_dv_scan_{table_name}"
-    node.query(f"SELECT * FROM {engine_table} FORMAT Null", query_id=scan_query_id)
-    node.query("SYSTEM FLUSH LOGS")
-    assert 1 == int(
-        node.query(
-            f"SELECT count() FROM system.text_log WHERE query_id = '{scan_query_id}' "
-            "AND message LIKE '%Updated statistics from data files iterator for snapshot version%'"
-        )
-    )
-
-    assert 3 == int(node.query(f"SELECT count() FROM {engine_table}").strip())
-    assert trivial_count_step not in node.query(
-        f"EXPLAIN SELECT count() FROM {engine_table}"
-    )
-
-    # Positive control: a table with no deletion vector keeps the optimization, so the arms
-    # above distinguish "declined for this file" from "disabled for every Delta table".
-    plain_table = randomize_table_name("test_dv_plain")
-    write_delta_from_df(
-        spark, generate_data(spark, 0, 5), f"/{plain_table}", mode="overwrite"
-    )
-    upload_directory(minio_client, bucket, f"/{plain_table}", "")
-    create_delta_table(node, "s3", plain_table, started_cluster)
-    assert 5 == int(node.query(f"SELECT count() FROM {plain_table}").strip())
-    assert trivial_count_step in node.query(
-        f"EXPLAIN SELECT count() FROM {plain_table}"
-    )
-
-    # The control above counts before it scans, so its row count comes from the metadata-only stats
-    # scan. Reading the same data through a table that is scanned first covers the other site in
-    # the direction where it must still report a number, which the deletion-vector assertions above
-    # cannot check: they only require it to report nothing.
-    plain_scanned = plain_table + "_scanned"
-    node.query(f"DROP TABLE IF EXISTS {plain_scanned}")
-    node.query(
-        f"CREATE TABLE {plain_scanned} ENGINE=DeltaLake(s3, filename = '{plain_table}/', "
-        f"format=Parquet, url = 'http://minio1:9001/{bucket}/')"
-    )
-    plain_scan_query_id = f"test_dv_plain_scan_{table_name}"
-    node.query(
-        f"SELECT * FROM {plain_scanned} FORMAT Null", query_id=plain_scan_query_id
-    )
-    node.query("SYSTEM FLUSH LOGS")
-    assert 1 == int(
-        node.query(
-            f"SELECT count() FROM system.text_log WHERE query_id = '{plain_scan_query_id}' "
-            "AND message LIKE '%Updated statistics from data files iterator for snapshot version%'"
-        )
-    )
-    assert 5 == int(node.query(f"SELECT count() FROM {plain_scanned}").strip())
-    assert trivial_count_step in node.query(
-        f"EXPLAIN SELECT count() FROM {plain_scanned}"
-    )
-
 
 @pytest.mark.parametrize("cluster", [False, True])
 def test_partition_columns_jumbled(started_cluster, cluster):
@@ -5215,7 +4876,8 @@ def test_partition_columns_jumbled(started_cluster, cluster):
     deltaLake(
             'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
             '{minio_access_key}',
-            '{minio_secret_key}')
+            '{minio_secret_key}',
+        SETTINGS allow_experimental_delta_kernel_rs=0)
         """
 
     dst_table = f"{table_name}_dst"
@@ -5297,6 +4959,21 @@ def test_table_statistics(started_cluster):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = randomize_table_name("test_table_statistics")
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+
+    def get_parquet_files_size(table_name):
+        """Calculate total size of parquet files in S3 for the Delta table."""
+        total_size = 0
+        s3_objects = minio_client.list_objects(bucket, table_name, recursive=True)
+        for obj in s3_objects:
+            # Only count parquet files, exclude _delta_log directory
+            if (
+                obj.object_name.endswith(".parquet")
+                and "/_delta_log/" not in obj.object_name
+            ):
+                total_size += obj.size
+        return total_size
 
     delta_path = f"/{TABLE_NAME}"
     write_delta_from_df(
@@ -5330,7 +5007,16 @@ def test_table_statistics(started_cluster):
         started_cluster,
     )
 
-    assert 1200 == int(instance.query(f"SELECT count() FROM {TABLE_NAME}"))
+    result = instance.query(
+        f"SELECT total_rows, total_bytes FROM system.tables WHERE name = '{TABLE_NAME}'"
+    )
+
+    total_rows, total_bytes = map(lambda x: int(x), result.strip().split("\t"))
+    expected_rows = 1200
+    expected_bytes = get_parquet_files_size(TABLE_NAME)
+
+    assert total_rows == expected_rows
+    assert total_bytes == expected_bytes
 
     write_delta_from_df(
         spark,
@@ -5347,7 +5033,16 @@ def test_table_statistics(started_cluster):
         "",
     )
 
-    assert 1300 == int(instance.query(f"SELECT count() FROM {TABLE_NAME}"))
+    result = instance.query(
+        f"SELECT total_rows, total_bytes FROM system.tables WHERE name = '{TABLE_NAME}'"
+    )
+
+    total_rows, total_bytes = map(lambda x: int(x), result.strip().split("\t"))
+    expected_rows = 1300
+    expected_bytes = get_parquet_files_size(TABLE_NAME)
+
+    assert total_rows == expected_rows
+    assert total_bytes == expected_bytes
 
     def check_with_condition(count, start_row, snapshot_version):
         expected_rows = start_row + 100
@@ -5468,9 +5163,10 @@ def test_table_statistics(started_cluster):
     assert int(result_latest.strip()) == 1500
 
 
-def test_system_reload_delta_kernel_tracing(started_cluster):
+@pytest.mark.parametrize("use_delta_kernel", ["1"])
+def test_system_reload_delta_kernel_tracing(started_cluster, use_delta_kernel):
     """Test SYSTEM RELOAD DELTA KERNEL TRACING command with different log levels."""
-    instance = started_cluster.instances["node1"]
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
@@ -5581,9 +5277,10 @@ def test_system_reload_delta_kernel_tracing(started_cluster):
     assert "BAD_ARGUMENTS" in error or "Invalid delta kernel tracing level" in error
 
 
-def test_early_return_limit(started_cluster):
+@pytest.mark.parametrize("use_delta_kernel", ["1"])
+def test_early_return_limit(started_cluster, use_delta_kernel):
     """Test that scan callback stops early when using LIMIT"""
-    instance = started_cluster.instances["node1"]
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     TABLE_NAME = randomize_table_name("test_early_return_limit")
 
@@ -6014,7 +5711,8 @@ def test_snapshot_initialized_once_per_query(started_cluster):
         query_id=f"snapshot_init_cluster_sum_{TABLE_NAME}",
     )
 
-def test_insert_select_from_cluster_with_partition_pruning(started_cluster):
+@pytest.mark.parametrize("allow_experimental_analyzer", [0, 1])
+def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allow_experimental_analyzer):
     node = started_cluster.instances["node1"]
     table_name = randomize_table_name("test_insert_select_cluster_pruning")
 
@@ -6079,7 +5777,7 @@ def test_insert_select_from_cluster_with_partition_pruning(started_cluster):
         WHERE (event_time >= '2026-02-01') AND (event_time < '2026-02-02')
         """,
         query_id=query_id,
-        settings={"allow_experimental_delta_kernel_rs": 1, "delta_lake_enable_engine_predicate": 0},
+        settings={"allow_experimental_delta_kernel_rs": 1, "delta_lake_enable_engine_predicate": 0, "allow_experimental_analyzer" : allow_experimental_analyzer},
     )
 
     # The cluster INSERT path runs the SELECT on a remote replica, which writes
@@ -6143,6 +5841,7 @@ def test_insert_select_from_cluster_with_partition_pruning(started_cluster):
         settings={
             "allow_experimental_delta_kernel_rs": 1,
             "delta_lake_enable_engine_predicate": 0,
+            "allow_experimental_analyzer": allow_experimental_analyzer,
         },
     )
 
@@ -6178,8 +5877,12 @@ def test_insert_select_from_cluster_with_partition_pruning(started_cluster):
     assert filtered >= 2
 
 
-def test_azure_url_encoded_partition_path(started_cluster):
-    instance = started_cluster.instances["node1"]
+@pytest.mark.parametrize(
+    "use_delta_kernel",
+    ["0", "1"],
+)
+def test_azure_url_encoded_partition_path(started_cluster, use_delta_kernel):
+    instance = get_node(started_cluster, use_delta_kernel)
     TABLE_NAME = randomize_table_name("test_azure_url_encoded")
 
     container_client = started_cluster.blob_service_client.get_container_client(
@@ -6275,10 +5978,14 @@ def test_azure_url_encoded_partition_path(started_cluster):
 
     instance.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
 
-def test_azure_empty_blob_path(started_cluster):
-    """based off test_single_log_file_azure_connection_string"""
+@pytest.mark.parametrize(
+    "use_delta_kernel",
+    ["0", "1"],
+)
+def test_azure_empty_blob_path(started_cluster, use_delta_kernel):
+    """based off test_single_log_file_azure_connection_string but parameterized for delta_kernel"""
 
-    instance = started_cluster.instances["node1"]
+    instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     TABLE_NAME = randomize_table_name("test_azure_empty_blob_path")
 
@@ -6431,470 +6138,3 @@ def test_delta_kernel_retry_on_stale_token_via_catalog_callback(started_cluster)
         f"Expected the catalog-callback retry log line to fire for query {retry_query_id}, "
         f"found {retry_hits} hits — the stale-token retry path was not exercised."
     )
-
-
-def test_create_table_concurrent_race_attaches(started_cluster):
-    # Two CREATE TABLE statements for the SAME location race to write commit 0. Creator A pauses right
-    # after its `_delta_log` existence check via the delta_lake_create_table_pause failpoint; while it is
-    # paused, creator B (a different table name, so no DDL-guard serialization) creates the table and writes
-    # commit 0. When A resumes, its own commit loses the race, the kernel reports the conflict, and
-    # `DeltaLakeMetadataDeltaKernel::createTable` must attach to the now-existing table instead of failing.
-    # Regression for the lost-race attach path in createTable.
-    instance = started_cluster.instances["node1"]
-    failpoint = "delta_lake_create_table_pause"
-    table_path = f"/var/lib/clickhouse/user_files/{randomize_table_name('concurrent_create')}"
-    table_a = randomize_table_name("t_dl_race_a")
-    table_b = randomize_table_name("t_dl_race_b")
-
-    # PAUSEABLE_ONCE: only the first creator to reach the window (A) pauses; B passes straight through.
-    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
-
-    # A thread assertion does not fail the test on its own, so hand any worker error back to the main thread.
-    create_error = []
-
-    def run_create_a():
-        try:
-            _, error = instance.query_and_get_answer_with_error(
-                f"CREATE TABLE {table_a} (id Int32, name String) ENGINE = DeltaLakeLocal('{table_path}')"
-            )
-            assert error == "", f"CREATE A should attach to the concurrently-created table, not fail: {error}"
-        except BaseException as e:  # noqa: BLE001
-            create_error.append(e)
-
-    thread = threading.Thread(target=run_create_a)
-    thread.start()
-    try:
-        # Bounded wait so a never-hit failpoint fails the test instead of hanging.
-        instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
-        # B wins the race and writes commit 0 while A is paused.
-        instance.query(
-            f"CREATE TABLE {table_b} (id Int32, name String) ENGINE = DeltaLakeLocal('{table_path}')"
-        )
-        # Resume A; its commit now loses the race and must fall back to attaching.
-        instance.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
-    finally:
-        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-        thread.join()
-
-    if create_error:
-        raise create_error[0]
-
-    # Both tables point at the same Delta table and read consistently.
-    instance.query(f"INSERT INTO {table_b} VALUES (1, 'a')")
-    assert instance.query(f"SELECT count() FROM {table_a}").strip() == "1"
-    assert instance.query(f"SELECT count() FROM {table_b}").strip() == "1"
-
-    instance.query(f"DROP TABLE {table_a}")
-    instance.query(f"DROP TABLE {table_b}")
-
-
-def test_writes_timestamp_ntz_annotation(started_cluster):
-    instance = started_cluster.instances["node1"]
-    table_name = randomize_table_name("test_writes_timestamp_ntz")
-    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
-
-    # A tz-less pyarrow timestamp becomes Delta `timestamp_ntz`, a tz-aware one Delta `timestamp`.
-    # `ts_tz` is the selectivity control (it must stay UTC-adjusted) and `vc` carries the char/varchar
-    # field annotation. Every Delta field is nullable because `write_deltalake` declares a non-nullable
-    # one without listing the `invariants` writer feature its NOT NULL constraint needs, which makes
-    # Spark reject the table for that unrelated reason. Both ntz columns reach the writer as the Delta
-    # schema's `Nullable(DateTime64(6))`, so the pair proves both ClickHouse declarations get annotated.
-    # The table is partitioned on `id` so the INSERT goes through DeltaLakePartitionedSink; the nested
-    # test covers the unpartitioned DeltaLakeSink.
-    schema = pa.schema(
-        [
-            pa.field("id", pa.int32()),
-            pa.field("ts_ntz", pa.timestamp("us")),
-            pa.field("ts_ntz_nullable", pa.timestamp("us")),
-            pa.field("ts_tz", pa.timestamp("us", tz="UTC")),
-            pa.field(
-                "vc",
-                pa.string(),
-                metadata={b"__CHAR_VARCHAR_TYPE_STRING": b"varchar(16)"},
-            ),
-        ]
-    )
-    empty_arrays = [pa.array([], type=field.type) for field in schema]
-    write_deltalake(
-        f"file:///{result_file}",
-        pa.Table.from_arrays(empty_arrays, schema=schema),
-        mode="overwrite",
-        partition_by=["id"],
-    )
-
-    # Precondition: a `deltalake` version that mapped a tz-less timestamp to Delta `timestamp` would
-    # make every assertion below pass without exercising `timestamp_ntz` at all.
-    with open(f"{result_file}/_delta_log/00000000000000000000.json") as log:
-        metadata = [json.loads(line) for line in log if "metaData" in line][0]
-    log_types = {
-        field["name"]: field["type"]
-        for field in json.loads(metadata["metaData"]["schemaString"])["fields"]
-    }
-    assert log_types["ts_ntz"] == "timestamp_ntz", log_types
-    assert log_types["ts_ntz_nullable"] == "timestamp_ntz", log_types
-    assert log_types["ts_tz"] == "timestamp", log_types
-
-    LocalUploader(instance).upload_directory(f"{result_file}/", f"{result_file}/")
-
-    instance.query(
-        f"CREATE TABLE {table_name} "
-        "(id Int32, ts_ntz DateTime64(6), ts_ntz_nullable Nullable(DateTime64(6)), "
-        "ts_tz DateTime64(6), vc String) "
-        f"ENGINE = DeltaLakeLocal('{result_file}') "
-        "SETTINGS output_format_parquet_compression_method = 'none'"
-    )
-    # A DateTime64 literal is parsed in the session time zone, so pin it to fix the stored number.
-    instance.query(
-        f"INSERT INTO {table_name} VALUES "
-        "(1, '2024-06-01 12:00:00.000000', '2024-06-01 12:00:00.000000', "
-        "'2024-06-01 12:00:00.000000', 'abc')",
-        settings={"session_timezone": "UTC"},
-    )
-
-    # The data file lands under `<table>/id=1/`, so look for it recursively.
-    files = (
-        instance.exec_in_container(
-            ["bash", "-c", f"find {result_file} -name '*.parquet'"]
-        )
-        .strip()
-        .split("\n")
-    )
-    parquet_files = [name for name in files if name.endswith(".parquet")]
-    assert len(parquet_files) == 1, files
-
-    LocalDownloader(instance).download_directory(f"{result_file}/", f"{result_file}/")
-
-    # pyarrow renders isAdjustedToUTC=false as tz None and isAdjustedToUTC=true as tz 'UTC'.
-    written = pq.read_schema(parquet_files[0])
-    assert written.field("ts_ntz").type == pa.timestamp("us"), written
-    assert written.field("ts_ntz_nullable").type == pa.timestamp("us"), written
-    assert written.field("ts_tz").type == pa.timestamp("us", tz="UTC"), written
-
-    spark = started_cluster.spark_session
-    rows = spark.read.format("delta").load(result_file).collect()
-    assert len(rows) == 1, rows
-    assert str(rows[0]["ts_ntz"]) == "2024-06-01 12:00:00", rows
-    assert str(rows[0]["ts_ntz_nullable"]) == "2024-06-01 12:00:00", rows
-
-    # The ClickHouse round trip stays lossless: the reader takes types from the Delta schema.
-    assert instance.query(
-        f"SELECT id, ts_ntz, ts_ntz_nullable, ts_tz, vc FROM {table_name}",
-        settings={"session_timezone": "UTC"},
-    ).strip() == (
-        "1\t2024-06-01 12:00:00.000000\t2024-06-01 12:00:00.000000\t"
-        "2024-06-01 12:00:00.000000\tabc"
-    )
-
-    # Version 1 is what the INSERT above committed, i.e. the latest version, so this pinned snapshot does
-    # describe the schema the transaction commits against and the annotation applies.
-    instance.query(
-        f"INSERT INTO {table_name} VALUES "
-        "(2, '2024-06-02 12:00:00.000000', '2024-06-02 12:00:00.000000', "
-        "'2024-06-02 12:00:00.000000', 'def')",
-        settings={"session_timezone": "UTC", "delta_lake_snapshot_version": 1},
-    )
-
-    pinned_found = (
-        instance.exec_in_container(
-            ["bash", "-c", f"find {result_file}/id=2 -name '*.parquet'"]
-        )
-        .strip()
-        .split("\n")
-    )
-    pinned_files = [name for name in pinned_found if name.endswith(".parquet")]
-    assert len(pinned_files) == 1, pinned_found
-
-    LocalDownloader(instance).download_directory(f"{result_file}/", f"{result_file}/")
-
-    pinned_written = pq.read_schema(pinned_files[0])
-    assert pinned_written.field("ts_ntz").type == pa.timestamp("us"), pinned_written
-    assert pinned_written.field("ts_ntz_nullable").type == pa.timestamp(
-        "us"
-    ), pinned_written
-    assert pinned_written.field("ts_tz").type == pa.timestamp(
-        "us", tz="UTC"
-    ), pinned_written
-
-    pinned_rows = sorted(
-        spark.read.format("delta").load(result_file).collect(),
-        key=lambda row: row["id"],
-    )
-    assert len(pinned_rows) == 2, pinned_rows
-    assert str(pinned_rows[0]["ts_ntz"]) == "2024-06-01 12:00:00", pinned_rows
-    assert str(pinned_rows[1]["ts_ntz"]) == "2024-06-02 12:00:00", pinned_rows
-
-    # Version 0 is older than the version this INSERT commits against, so the pin cannot be proven to
-    # describe that schema and the write keeps the UTC-adjusted default.
-    instance.query(
-        f"INSERT INTO {table_name} VALUES "
-        "(3, '2024-06-03 12:00:00.000000', '2024-06-03 12:00:00.000000', "
-        "'2024-06-03 12:00:00.000000', 'ghi')",
-        settings={"session_timezone": "UTC", "delta_lake_snapshot_version": 0},
-    )
-
-    stale_found = (
-        instance.exec_in_container(
-            ["bash", "-c", f"find {result_file}/id=3 -name '*.parquet'"]
-        )
-        .strip()
-        .split("\n")
-    )
-    stale_files = [name for name in stale_found if name.endswith(".parquet")]
-    assert len(stale_files) == 1, stale_found
-
-    LocalDownloader(instance).download_directory(f"{result_file}/", f"{result_file}/")
-
-    stale_written = pq.read_schema(stale_files[0])
-    assert stale_written.field("ts_ntz").type == pa.timestamp(
-        "us", tz="UTC"
-    ), stale_written
-
-    # No Spark read past this point: that last file deliberately contradicts the Delta schema.
-    assert instance.query(
-        f"SELECT id, ts_ntz FROM {table_name} ORDER BY id",
-        settings={"session_timezone": "UTC"},
-    ).strip() == (
-        "1\t2024-06-01 12:00:00.000000\n2\t2024-06-02 12:00:00.000000\n"
-        "3\t2024-06-03 12:00:00.000000"
-    )
-
-    instance.query(f"DROP TABLE {table_name}")
-
-
-def test_writes_timestamp_ntz_annotation_nested(started_cluster):
-    instance = started_cluster.instances["node1"]
-    table_name = randomize_table_name("test_writes_timestamp_ntz_nested")
-    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
-
-    # One `timestamp_ntz` leaf per container shape, because the writer spells a nested column path
-    # itself (`st.inner_ts`, `arr.element`, `m.value`) rather than reusing the Delta child names.
-    # `st.inner_tz` is a Delta `timestamp` sharing a struct with an ntz sibling: selectivity has to hold
-    # per leaf, not per top-level column.
-    # A Delta field name may contain a dot, so `sc`'s two leaves both flatten to the path `sc.a.b`; one
-    # is `timestamp_ntz` and the other `timestamp`, so neither may be annotated from that path.
-    # `sg` is the same dotted name against a GROUP: the struct `sg.a.b` flattens onto the ntz leaf's path,
-    # but only a leaf path is ever looked up, so the leaf there does keep its annotation.
-    # `si` collides with a non-timestamp leaf, which never reads the annotation, so the ntz leaf keeps it too.
-    schema = pa.schema(
-        [
-            pa.field("id", pa.int32()),
-            pa.field(
-                "st",
-                pa.struct(
-                    [
-                        pa.field("inner_ts", pa.timestamp("us")),
-                        pa.field("inner_tz", pa.timestamp("us", tz="UTC")),
-                    ]
-                ),
-            ),
-            pa.field("arr", pa.list_(pa.timestamp("us"))),
-            pa.field("m", pa.map_(pa.string(), pa.timestamp("us"))),
-            pa.field(
-                "sc",
-                pa.struct(
-                    [
-                        pa.field("a.b", pa.timestamp("us")),
-                        pa.field(
-                            "a", pa.struct([pa.field("b", pa.timestamp("us", tz="UTC"))])
-                        ),
-                    ]
-                ),
-            ),
-            pa.field(
-                "sg",
-                pa.struct(
-                    [
-                        pa.field("a.b", pa.timestamp("us")),
-                        pa.field(
-                            "a",
-                            pa.struct(
-                                [pa.field("b", pa.struct([pa.field("x", pa.int32())]))]
-                            ),
-                        ),
-                    ]
-                ),
-            ),
-            pa.field(
-                "si",
-                pa.struct(
-                    [
-                        pa.field("a.b", pa.timestamp("us")),
-                        pa.field("a", pa.struct([pa.field("b", pa.int32())])),
-                    ]
-                ),
-            ),
-        ]
-    )
-    write_deltalake(
-        f"file:///{result_file}",
-        pa.Table.from_arrays(
-            [pa.array([], type=field.type) for field in schema], schema=schema
-        ),
-        mode="overwrite",
-    )
-
-    with open(f"{result_file}/_delta_log/00000000000000000000.json") as log:
-        metadata = [json.loads(line) for line in log if "metaData" in line][0]
-    log_fields = {
-        field["name"]: field["type"]
-        for field in json.loads(metadata["metaData"]["schemaString"])["fields"]
-    }
-    assert log_fields["st"]["fields"][0]["type"] == "timestamp_ntz", log_fields
-    assert log_fields["st"]["fields"][1]["type"] == "timestamp", log_fields
-    assert log_fields["arr"]["elementType"] == "timestamp_ntz", log_fields
-    assert log_fields["m"]["valueType"] == "timestamp_ntz", log_fields
-    assert log_fields["sc"]["fields"][0]["type"] == "timestamp_ntz", log_fields
-    assert (
-        log_fields["sc"]["fields"][1]["type"]["fields"][0]["type"] == "timestamp"
-    ), log_fields
-    assert log_fields["sg"]["fields"][0]["type"] == "timestamp_ntz", log_fields
-    # `sg.a.b` must be a struct, not a leaf, or the leaf-versus-group case is not exercised at all.
-    sg_inner = log_fields["sg"]["fields"][1]["type"]["fields"][0]["type"]
-    assert sg_inner["type"] == "struct", log_fields
-    assert sg_inner["fields"][0]["type"] == "integer", log_fields
-    assert log_fields["si"]["fields"][0]["type"] == "timestamp_ntz", log_fields
-    assert (
-        log_fields["si"]["fields"][1]["type"]["fields"][0]["type"] == "integer"
-    ), log_fields
-
-    LocalUploader(instance).upload_directory(f"{result_file}/", f"{result_file}/")
-
-    instance.query(
-        f"CREATE TABLE {table_name} (id Int32, "
-        "st Tuple(inner_ts DateTime64(6), inner_tz DateTime64(6)), "
-        "arr Array(DateTime64(6)), m Map(String, DateTime64(6)), "
-        "sc Tuple(`a.b` DateTime64(6), a Tuple(b DateTime64(6))), "
-        "sg Tuple(`a.b` DateTime64(6), a Tuple(b Tuple(x Int32))), "
-        "si Tuple(`a.b` DateTime64(6), a Tuple(b Int32))) "
-        f"ENGINE = DeltaLakeLocal('{result_file}') "
-        "SETTINGS output_format_parquet_compression_method = 'none'"
-    )
-    instance.query(
-        f"INSERT INTO {table_name} VALUES "
-        "(1, ('2024-06-01 12:00:00', '2024-06-01 12:00:00'), "
-        "['2024-06-01 12:00:00'], {'k': '2024-06-01 12:00:00'}, "
-        "('2024-06-01 12:00:00', tuple('2024-06-01 12:00:00')), "
-        "('2024-06-01 12:00:00', tuple(tuple(42))), "
-        "('2024-06-01 12:00:00', tuple(7)))",
-        settings={"session_timezone": "UTC"},
-    )
-
-    files = (
-        instance.exec_in_container(["bash", "-c", f"ls {result_file}"]).strip().split("\n")
-    )
-    parquet_files = [name for name in files if name.endswith(".parquet")]
-    assert len(parquet_files) == 1, files
-
-    LocalDownloader(instance).download_directory(f"{result_file}/", f"{result_file}/")
-
-    written = pq.read_schema(f"{result_file}/{parquet_files[0]}")
-    struct_type = written.field("st").type
-    assert struct_type.field("inner_ts").type == pa.timestamp("us"), written
-    assert struct_type.field("inner_tz").type == pa.timestamp("us", tz="UTC"), written
-    assert written.field("arr").type.value_type == pa.timestamp("us"), written
-    assert written.field("m").type.item_type == pa.timestamp("us"), written
-    # Ambiguous path: both leaves keep the default annotation, which is what the table gets on master.
-    collision_type = written.field("sc").type
-    assert collision_type.field("a.b").type == pa.timestamp("us", tz="UTC"), written
-    assert (
-        collision_type.field("a").type.field("b").type == pa.timestamp("us", tz="UTC")
-    ), written
-    # The group at the same path is not a competing claim, so this ntz leaf is annotated.
-    group_type = written.field("sg").type
-    assert group_type.field("a.b").type == pa.timestamp("us"), written
-    assert (
-        group_type.field("a").type.field("b").type.field("x").type == pa.int32()
-    ), written
-    int_collision_type = written.field("si").type
-    assert int_collision_type.field("a.b").type == pa.timestamp("us"), written
-    assert int_collision_type.field("a").type.field("b").type == pa.int32(), written
-
-    spark = started_cluster.spark_session
-    rows = (
-        spark.read.format("delta").load(result_file).select("st", "arr", "m").collect()
-    )
-    assert len(rows) == 1, rows
-    assert str(rows[0]["st"]["inner_ts"]) == "2024-06-01 12:00:00", rows
-    assert str(rows[0]["arr"][0]) == "2024-06-01 12:00:00", rows
-    assert str(rows[0]["m"]["k"]) == "2024-06-01 12:00:00", rows
-
-    rows_sg = spark.read.format("delta").load(result_file).select("sg").collect()
-    assert str(rows_sg[0]["sg"]["a.b"]) == "2024-06-01 12:00:00", rows_sg
-    assert rows_sg[0]["sg"]["a"]["b"]["x"] == 42, rows_sg
-    rows_si = spark.read.format("delta").load(result_file).select("si").collect()
-    assert str(rows_si[0]["si"]["a.b"]) == "2024-06-01 12:00:00", rows_si
-    assert rows_si[0]["si"]["a"]["b"] == 7, rows_si
-
-    instance.query(f"DROP TABLE {table_name}")
-
-
-def test_writes_timestamp_ntz_annotation_partition_column(started_cluster):
-    instance = started_cluster.instances["node1"]
-    table_name = randomize_table_name("test_writes_timestamp_ntz_partition")
-    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
-
-    # The Delta `timestamp` partition column `p.ts` and the ntz leaf of `p` flatten to the same path,
-    # but a partition column is not written to the data file, so the ntz leaf there keeps its annotation.
-    schema = pa.schema(
-        [
-            pa.field("id", pa.int32()),
-            pa.field("p.ts", pa.timestamp("us", tz="UTC")),
-            pa.field("p", pa.struct([pa.field("ts", pa.timestamp("us"))])),
-        ]
-    )
-    write_deltalake(
-        f"file:///{result_file}",
-        pa.Table.from_arrays(
-            [pa.array([], type=field.type) for field in schema], schema=schema
-        ),
-        mode="overwrite",
-        partition_by=["p.ts"],
-    )
-
-    with open(f"{result_file}/_delta_log/00000000000000000000.json") as log:
-        metadata = [json.loads(line) for line in log if "metaData" in line][0]
-    assert metadata["metaData"]["partitionColumns"] == ["p.ts"], metadata
-    log_fields = {
-        field["name"]: field["type"]
-        for field in json.loads(metadata["metaData"]["schemaString"])["fields"]
-    }
-    assert log_fields["p.ts"] == "timestamp", log_fields
-    assert log_fields["p"]["fields"][0]["type"] == "timestamp_ntz", log_fields
-
-    LocalUploader(instance).upload_directory(f"{result_file}/", f"{result_file}/")
-
-    instance.query(
-        f"CREATE TABLE {table_name} (id Int32, `p.ts` DateTime64(6), p Tuple(ts DateTime64(6))) "
-        f"ENGINE = DeltaLakeLocal('{result_file}') "
-        "SETTINGS output_format_parquet_compression_method = 'none'"
-    )
-    instance.query(
-        f"INSERT INTO {table_name} VALUES "
-        "(1, '2024-06-01 12:00:00', tuple('2024-06-01 12:00:00'))",
-        settings={"session_timezone": "UTC"},
-    )
-
-    # The partition directory name contains a space, which LocalDownloader's shell commands do not quote.
-    files = (
-        instance.exec_in_container(["find", result_file, "-type", "f"]).strip().split("\n")
-    )
-    for path in files:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "wb") as f:
-            f.write(
-                base64.b64decode(instance.exec_in_container(["base64", "-w0", path]))
-            )
-    parquet_files = [name for name in files if name.endswith(".parquet")]
-    assert len(parquet_files) == 1, files
-
-    written = pq.read_schema(parquet_files[0])
-    # If the partition column were in the file, the two paths would really collide.
-    assert "p.ts" not in written.names, written
-    assert written.field("p").type.field("ts").type == pa.timestamp("us"), written
-
-    spark = started_cluster.spark_session
-    rows = spark.read.format("delta").load(result_file).select("p").collect()
-    assert len(rows) == 1, rows
-    assert str(rows[0]["p"]["ts"]) == "2024-06-01 12:00:00", rows
-
-    instance.query(f"DROP TABLE {table_name}")

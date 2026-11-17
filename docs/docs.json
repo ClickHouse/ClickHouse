@@ -21,10 +21,10 @@
       "view",
       "download-pdf",
       {
-        "description": "Setup instructions for the ClickHouse documentation MCP server",
-        "href": "https://clickhouse.com/docs/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server",
+        "description": "Setup instructions for docs MCP server",
+        "href": "https://clickhouse.com/docs#claude-code",
         "icon": "/images/icons/icon-mcp.svg",
-        "title": "Set up the ClickHouse documentation MCP server"
+        "title": "Set up docs MCP server"
       }
     ]
   },
@@ -66,48 +66,32 @@
           {
             "menu": [
               {
-                "href": "#",
-                "icon": "/images/icons/icon-clickhouse.svg",
-                "item": "ClickHouse"
-              },
-              {
                 "$ref": "./get-started/navigation.json"
-              },
-              {
-                "$ref": "./guides/navigation.json"
               },
               {
                 "$ref": "./concepts/navigation.json"
               },
               {
-                "$ref": "./reference/navigation.json"
+                "$ref": "./guides/navigation.json"
               },
               {
-                "$ref": "./products/managed-postgres/navigation.json"
+                "$ref": "./reference/navigation.json"
               }
             ],
-            "tab": "Databases"
+            "tab": "Database"
           },
           {
             "menu": [
               {
                 "href": "#",
                 "icon": "/images/icons/section-header.svg",
-                "item": "Deployments"
+                "item": "ClickHouse Cloud"
               },
               {
                 "$ref": "./products/cloud/navigation.json"
               },
               {
-                "item": "BYOC",
-                "pages": [
-                  "products/cloud/guides/infrastructure/deployment-options/byoc/overview"
-                ]
-              },
-              {
-                "href": "#",
-                "icon": "/images/icons/section-header.svg",
-                "item": "Applications"
+                "$ref": "./products/managed-postgres/navigation.json"
               },
               {
                 "$ref": "./clickstack/navigation.json"
@@ -115,12 +99,7 @@
               {
                 "href": "https://langfuse.com/docs",
                 "icon": "/images/icons/logo-langfuse.svg",
-                "item": "AI Engineering"
-              },
-              {
-                "href": "https://docs.runreveal.com/",
-                "icon": "/images/integrations/logos/runreveal.webp",
-                "item": "Security"
+                "item": "Langfuse"
               },
               {
                 "href": "#",
@@ -128,23 +107,16 @@
                 "item": "Open source"
               },
               {
-                "item": "ClickStack",
-                "pages": [
-                  "clickstack"
-                ]
+                "$ref": "./products/agentic-data-stack/navigation.json"
               },
               {
                 "$ref": "./chdb/navigation.json"
               },
               {
                 "$ref": "./products/kubernetes-operator/navigation.json"
-              },
-              {
-                "href": "https://www.librechat.ai/docs",
-                "item": "LibreChat"
               }
             ],
-            "tab": "Products"
+            "tab": "Solutions"
           },
           {
             "menu": [
@@ -225,9 +197,6 @@
   },
   "scripts": [
     {
-      "src": "/_site/customizations/clickstack-availability.js"
-    },
-    {
       "src": "/_site/customizations/settings-legacy-redirect.js"
     },
     {
@@ -243,16 +212,7 @@
       "src": "/_site/customizations/navbar-cta.js"
     },
     {
-      "src": "/_site/customizations/cloud-sidebar-ad.js"
-    },
-    {
-      "src": "/_site/customizations/section-ticker.js"
-    },
-    {
       "src": "/_site/customizations/tab-nav.js"
-    },
-    {
-      "src": "/_site/customizations/webterminal.js"
     },
     {
       "src": "/_site/customizations/nav-icon-preload.js"

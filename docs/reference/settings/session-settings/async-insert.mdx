@@ -90,14 +90,6 @@ Only takes effect if setting [`async_insert_deduplicate`](/reference/settings/se
 
 Timeout for polling data from asynchronous insert queue
 
-## async_insert_select_as_async_insert {#async_insert_select_as_async_insert}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Enable async inserts for `INSERT ... SELECT` queries by default."}]}]}/>
-
-Whether a user-initiated `INSERT ... SELECT` may use the asynchronous insert queue when `async_insert` is enabled and the query is eligible (a single small block into a `MergeTree`-family destination with no dependent views). When disabled, `INSERT ... SELECT` always runs synchronously regardless of `async_insert`. Internal inserts (refreshable materialized view, `POPULATE`, `CREATE TABLE ... AS SELECT`) are always synchronous and ignore this setting.
-
 ## async_insert_use_adaptive_busy_timeout {#async_insert_use_adaptive_busy_timeout}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

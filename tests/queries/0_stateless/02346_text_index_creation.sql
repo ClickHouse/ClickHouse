@@ -1,4 +1,3 @@
--- Tags: no-msan
 DROP TABLE IF EXISTS tab;
 
 SELECT 'Must not have no arguments.';
@@ -487,7 +486,7 @@ ORDER BY tuple();
 
 DROP TABLE tab;
 
-SELECT '-- posting_list_codec must be none, bitpacking or pfor.';
+SELECT '-- posting_list_codec must be none or bitpacking.';
 
 CREATE TABLE tab
 (
@@ -503,16 +502,6 @@ CREATE TABLE tab
 (
     str String,
     INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking')
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-
-DROP TABLE tab;
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'pfor')
 )
 ENGINE = MergeTree
 ORDER BY tuple();

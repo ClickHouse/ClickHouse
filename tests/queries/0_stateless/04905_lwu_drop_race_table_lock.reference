@@ -1,0 +1,3 @@
+update: update=ok drop=ok
+alter: update=ok drop=ok
+alias: update=ok drop=ok

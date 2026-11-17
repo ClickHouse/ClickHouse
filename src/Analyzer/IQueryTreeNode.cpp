@@ -1,7 +1,6 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/IQueryTreeNode.h>
 
-#include <typeinfo>
 #include <unordered_map>
 
 #include <Common/SipHash.h>
@@ -109,9 +108,7 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
             continue;
         }
 
-        /// isEqualImpl implementations downcast rhs to their own exact class, so the gate must compare
-        /// dynamic types: getNodeType is coarser, all column transformer kinds report TRANSFORMER.
-        if (typeid(*lhs_node_to_compare) != typeid(*rhs_node_to_compare) ||
+        if (lhs_node_to_compare->getNodeType() != rhs_node_to_compare->getNodeType() ||
             !lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare, compare_options))
             return false;
 
