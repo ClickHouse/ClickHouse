@@ -688,6 +688,15 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                         *code, exception.getPathForFirstFailedOp(), zookeeper_path.string());
                 continue;
             }
+            if (*code == Coordination::Error::ZNONODE)
+            {
+                /// The parent node can be removed concurrently, when the last other table under it is dropped
+                /// (see `StorageObjectStorageQueue::tryRemoveEmptyDatabaseNode`). Recreate it and retry.
+                LOG_INFO(log, "Parent of {} does not exist, it was removed concurrently, will retry", zookeeper_path.string());
+                zk_retries.resetFailures();
+                zk_retries.retryLoop([&] { getZooKeeper(log, zookeeper_name)->createAncestors(zookeeper_path); });
+                continue;
+            }
             if (*code != Coordination::Error::ZOK)
                 zkutil::KeeperMultiException::check(*code, requests, responses);
         }

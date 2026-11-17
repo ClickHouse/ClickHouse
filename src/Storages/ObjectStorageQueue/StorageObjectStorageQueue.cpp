@@ -649,8 +649,32 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
         }
 
         ObjectStorageQueueMetadataFactory::instance().remove(zookeeper_name, zk_path, getStorageID(), is_drop, keep_data_in_keeper);
+
+        /// The default `keeper_path` is `<s3queue_default_zookeeper_path>/<database UUID>/<table UUID>`.
+        /// Remove the per-database node once the last table under it is dropped, otherwise it stays in Keeper forever.
+        if (is_drop && !keep_data_in_keeper && !can_be_moved_between_databases)
+            tryRemoveEmptyDatabaseNode();
     }
     LOG_TRACE(log, "Shut down storage");
+}
+
+void StorageObjectStorageQueue::tryRemoveEmptyDatabaseNode() const
+{
+    const auto database_path = zk_path.parent_path();
+    try
+    {
+        /// Fails with ZNOTEMPTY while other tables of the database still use the node, which is expected.
+        /// A table created concurrently under the same node recreates it (see `ObjectStorageQueueMetadata::syncWithKeeper`).
+        auto code = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name)->tryRemove(database_path);
+        if (code == Coordination::Error::ZOK)
+            LOG_TRACE(log, "Removed empty keeper node {}", database_path.string());
+        else if (code != Coordination::Error::ZNOTEMPTY && code != Coordination::Error::ZNONODE)
+            LOG_WARNING(log, "Cannot remove keeper node {}: {}", database_path.string(), code);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, fmt::format("Cannot remove keeper node {}", database_path.string()));
+    }
 }
 
 void StorageObjectStorageQueue::scheduleStreamingTasksImpl()
