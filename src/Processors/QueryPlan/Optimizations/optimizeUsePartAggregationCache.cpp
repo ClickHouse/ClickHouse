@@ -98,7 +98,10 @@ static bool hasLambda(const ActionsDAG & dag)
 
 /// Collect all ExpressionStep/FilterStep actions between AggregatingStep and ReadFromMergeTree.
 /// Returned in bottom-up order (ReadFromMergeTree → AggregatingStep).
-static std::vector<IntermediateStepAction> collectIntermediateActions(QueryPlan::Node & node)
+/// The actions are built with the query's `ExpressionActionsSettings` (as `ExpressionStep` and
+/// `FilterStep` do when building the pipeline), so the cache population evaluates them the same
+/// way as the query itself: short-circuit evaluation, `max_temporary_columns` and the other limits apply.
+static std::vector<IntermediateStepAction> collectIntermediateActions(QueryPlan::Node & node, const ExpressionActionsSettings & actions_settings)
 {
     std::vector<IntermediateStepAction> actions;
     QueryPlan::Node * current = &node;
@@ -111,9 +114,9 @@ static std::vector<IntermediateStepAction> collectIntermediateActions(QueryPlan:
             break;
 
         if (auto * expr = typeid_cast<ExpressionStep *>(step))
-            actions.push_back({std::make_shared<ExpressionActions>(expr->getExpression().clone()), {}, false});
+            actions.push_back({std::make_shared<ExpressionActions>(expr->getExpression().clone(), actions_settings), {}, false});
         else if (auto * filter = typeid_cast<FilterStep *>(step))
-            actions.push_back({std::make_shared<ExpressionActions>(filter->getExpression().clone()),
+            actions.push_back({std::make_shared<ExpressionActions>(filter->getExpression().clone(), actions_settings),
                 filter->getFilterColumnName(), filter->removesFilterColumn()});
 
         if (current->children.size() != 1)
@@ -288,7 +291,8 @@ void optimizeUsePartAggregationCache(
     /// optimization entirely. Actual spilling is instead detected per part inside the populator
     /// (see `populatePartAggregationCache`), which skips caching any part that spilled to disk.
 
-    auto intermediate_actions = collectIntermediateActions(*node.children.front());
+    const ExpressionActionsSettings actions_settings(context);
+    auto intermediate_actions = collectIntermediateActions(*node.children.front(), actions_settings);
 
     /// If ReadFromMergeTree has a prewhere/where filter, convert it to an IntermediateStepAction
     /// so the populator applies it when reading data.
@@ -298,7 +302,7 @@ void optimizeUsePartAggregationCache(
     {
         filter_dag_for_hash = &prewhere->prewhere_actions;
         intermediate_actions.insert(intermediate_actions.begin(), IntermediateStepAction{
-            std::make_shared<ExpressionActions>(prewhere->prewhere_actions.clone()),
+            std::make_shared<ExpressionActions>(prewhere->prewhere_actions.clone(), actions_settings),
             prewhere->prewhere_column_name,
             prewhere->remove_prewhere_column});
     }
