@@ -402,14 +402,19 @@ void ThreadStatus::applyQuerySettings()
     resolveMemorySampleConfig();
 
 #if USE_JEMALLOC
-    if (settings[Setting::jemalloc_enable_profiler])
+    /// Both settings are state of the OS thread, which the fibers that run on it share and a fiber may leave
+    /// for another thread. So fibers do not get them, as they do not get the query profiler above.
+    if (boundToOSThread())
     {
-        jemalloc_profiler_enabled = true;
-        Jemalloc::getThreadProfileActiveMib().setValue(true);
-    }
+        if (settings[Setting::jemalloc_enable_profiler])
+        {
+            jemalloc_profiler_enabled = true;
+            Jemalloc::getThreadProfileActiveMib().setValue(true);
+        }
 
-    if (settings[Setting::jemalloc_collect_profile_samples_in_trace_log])
-        Jemalloc::setCollectLocalProfileSamplesInTraceLog(true);
+        if (settings[Setting::jemalloc_collect_profile_samples_in_trace_log])
+            Jemalloc::setCollectLocalProfileSamplesInTraceLog(true);
+    }
 #endif
 }
 
@@ -519,16 +524,20 @@ void ThreadStatus::detachFromGroup()
     thread_group.reset();
 
 #if USE_JEMALLOC
-    if (std::exchange(jemalloc_profiler_enabled, false))
+    /// A fiber did not set them in `applyQuerySettings`, and must not reset them for the OS thread it runs on.
+    if (boundToOSThread())
     {
-        /// `prof.thread_active_init` / `thread.prof.active` are only available on jemalloc builds
-        /// with `JEMALLOC_PROF`. If either MIB is unavailable, the matching `setValue`/`getValue`
-        /// in `MibCache` is a no-op / would assert, so route the read through `tryGetValue` and
-        /// skip the per-thread reset entirely on builds without prof.
-        if (bool thread_active_init = false; Jemalloc::getThreadProfileInitMib().tryGetValue(thread_active_init))
-            Jemalloc::getThreadProfileActiveMib().setValue(thread_active_init);
+        if (std::exchange(jemalloc_profiler_enabled, false))
+        {
+            /// `prof.thread_active_init` / `thread.prof.active` are only available on jemalloc builds
+            /// with `JEMALLOC_PROF`. If either MIB is unavailable, the matching `setValue`/`getValue`
+            /// in `MibCache` is a no-op / would assert, so route the read through `tryGetValue` and
+            /// skip the per-thread reset entirely on builds without prof.
+            if (bool thread_active_init = false; Jemalloc::getThreadProfileInitMib().tryGetValue(thread_active_init))
+                Jemalloc::getThreadProfileActiveMib().setValue(thread_active_init);
+        }
+        Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
     }
-    Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
 #endif
 
     /// Last: memory and jemalloc samples taken above still belong to the query.
