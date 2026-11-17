@@ -35,6 +35,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/IAST.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/defines.h>
 #include <base/types.h>
 #include <boost/algorithm/string/trim.hpp>
@@ -47,6 +48,30 @@
 namespace DB
 {
 struct Settings;
+
+namespace Setting
+{
+extern const SettingsUInt64 low_cardinality_max_dictionary_size;
+extern const SettingsBool low_cardinality_use_single_dictionary_for_part;
+extern const SettingsUInt64 max_compress_block_size;
+extern const SettingsUInt64 min_compress_block_size;
+}
+
+namespace MergeTreeSetting
+{
+extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
+extern const MergeTreeSettingsUInt64 index_granularity;
+extern const MergeTreeSettingsUInt64 index_granularity_bytes;
+extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
+extern const MergeTreeSettingsUInt64 max_compress_block_size;
+extern const MergeTreeSettingsUInt64 min_compress_block_size;
+extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
+extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
+extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
+extern const MergeTreeSettingsBool use_compact_variant_discriminators_serialization;
+}
 
 namespace ErrorCodes
 {
@@ -253,40 +278,57 @@ public:
 /// as a column of `target_type` in a `MergeTree` table with the default settings. The numerator depends only on the rows, so
 /// the ratios of several targets for the same rows rank the targets.
 
-/// The defaults of `MergeTree` the estimate follows.
-constexpr size_t GRANULE_ROWS = 8192;
-/// `index_granularity_bytes`: the writer ends a granule earlier when its rows take this much (over all columns of the table).
-constexpr size_t GRANULE_BYTES = 10 * 1024 * 1024;
 /// A state holds at most this many bytes of rows. A wider granule is written in pieces; a piece writes what a serialization
 /// writes per call, which the writer writes once per granule: the header of a `LowCardinality` column (16 bytes), the end of a
 /// granule of a sparse column, the format of compact `Variant` discriminators.
 constexpr size_t PENDING_BYTES = DBMS_DEFAULT_BUFFER_SIZE;
-constexpr size_t DEFAULT_MIN_COMPRESS_BLOCK_SIZE = 65536;
-constexpr size_t DEFAULT_MAX_COMPRESS_BLOCK_SIZE = DBMS_DEFAULT_BUFFER_SIZE;
 
-/// The serialization `MergeTreeDataWriter` chooses for a new part: `String` with a separate size stream, sparse columns.
-const SerializationInfoSettings & mergeTreeInfoSettings()
+/// How a new `MergeTree` table without `SETTINGS` writes a column, as far as the estimate follows it: the defaults of
+/// `MergeTreeSettings`, and of `Settings` where the writer takes a setting from the query.
+struct MergeTreeDefaults
 {
-    static const SerializationInfoSettings settings(
-        0.9375,
-        /*choose_kind_=*/true,
-        /*compute_exact_num_defaults_=*/true,
-        MergeTreeSerializationInfoVersion::WITH_TYPES,
-        MergeTreeStringSerializationVersion::WITH_SIZE_STREAM,
-        MergeTreeNullableSerializationVersion::BASIC,
-        MergeTreeMapSerializationVersion::BASIC,
-        /*propagate_types_serialization_versions_to_nested_types_=*/true);
-    return settings;
-}
+    /// `index_granularity` and `index_granularity_bytes`.
+    size_t granule_rows = 0;
+    size_t granule_bytes = 0;
+    size_t min_compress_block_size = 0;
+    size_t max_compress_block_size = 0;
+    /// The serialization the writer chooses for a new part, as `MergeTreeDataWriter` builds it: for example `String` with a
+    /// separate size stream, sparse columns.
+    SerializationInfoSettings info_settings;
+    /// What the wide writer serializes with, as `MergeTreeWriterSettings` has it, as far as it matters for the types estimated here.
+    ISerialization::SerializeBinaryBulkSettings bulk_settings;
+};
 
-/// The settings `MergeTreeDataPartWriterWide` serializes with, as far as they matter for the types estimated here.
-ISerialization::SerializeBinaryBulkSettings mergeTreeBulkSettings()
+const MergeTreeDefaults & mergeTreeDefaults()
 {
-    ISerialization::SerializeBinaryBulkSettings settings;
-    settings.low_cardinality_max_dictionary_size = 8192;
-    settings.low_cardinality_use_single_dictionary_for_part = false;
-    settings.use_compact_variant_discriminators_serialization = true;
-    return settings;
+    static const MergeTreeDefaults defaults = []
+    {
+        const MergeTreeSettings table;
+        const Settings query;
+        MergeTreeDefaults result;
+        result.granule_rows = table[MergeTreeSetting::index_granularity];
+        result.granule_bytes = table[MergeTreeSetting::index_granularity_bytes];
+        /// The setting of the table if it is not 0, otherwise the one of the query.
+        result.min_compress_block_size = table[MergeTreeSetting::min_compress_block_size]
+            ? table[MergeTreeSetting::min_compress_block_size] : query[Setting::min_compress_block_size];
+        result.max_compress_block_size = table[MergeTreeSetting::max_compress_block_size]
+            ? table[MergeTreeSetting::max_compress_block_size] : query[Setting::max_compress_block_size];
+        result.info_settings = SerializationInfoSettings(
+            static_cast<double>(table[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
+            /*choose_kind_=*/true,
+            table[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
+            table[MergeTreeSetting::serialization_info_version],
+            table[MergeTreeSetting::string_serialization_version],
+            table[MergeTreeSetting::nullable_serialization_version],
+            table[MergeTreeSetting::map_serialization_version_for_zero_level_parts],
+            table[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types]);
+        result.bulk_settings.low_cardinality_max_dictionary_size = query[Setting::low_cardinality_max_dictionary_size];
+        result.bulk_settings.low_cardinality_use_single_dictionary_for_part = query[Setting::low_cardinality_use_single_dictionary_for_part];
+        result.bulk_settings.use_compact_variant_discriminators_serialization
+            = table[MergeTreeSetting::use_compact_variant_discriminators_serialization];
+        return result;
+    }();
+    return defaults;
 }
 
 String streamName(const ISerialization::SubstreamPath & path)
@@ -344,8 +386,8 @@ public:
         , source_type(arguments[0])
         , source_serialization(source_type->getDefaultSerialization())
         , target_type(std::move(target_type_))
-        , max_compress_block_size(block_size_bytes.value_or(DEFAULT_MAX_COMPRESS_BLOCK_SIZE))
-        , min_compress_block_size(block_size_bytes.value_or(DEFAULT_MIN_COMPRESS_BLOCK_SIZE))
+        , max_compress_block_size(block_size_bytes.value_or(merge_tree.max_compress_block_size))
+        , min_compress_block_size(block_size_bytes.value_or(merge_tree.min_compress_block_size))
         , validation_settings(std::move(validation_settings_))
     {
         /// `Dynamic` and `JSON`, also nested. As a target, their substreams depend on the data and the writer has more rules for
@@ -394,7 +436,7 @@ public:
 
         /// The codecs of the substreams are resolved here, so that a codec the target type cannot take is reported here too.
         ISerialization::EnumerateStreamsSettings enumerate_settings;
-        auto serialization = target_type->getSerialization(mergeTreeInfoSettings());
+        auto serialization = target_type->getSerialization(merge_tree.info_settings);
         serialization->enumerateStreams(
             enumerate_settings,
             [this](const ISerialization::SubstreamPath & path)
@@ -536,9 +578,9 @@ private:
 
     /// The pending rows complete the granule by rows, or take `PENDING_BYTES`. Checked for every row added one at a time. Where a
     /// granule ends by bytes depends on the converted rows, and `writePending` finds it.
-    static bool isPendingFull(const Data & data_ref)
+    bool isPendingFull(const Data & data_ref) const
     {
-        return data_ref.granule_rows + data_ref.pending->size() >= GRANULE_ROWS || data_ref.pending->byteSize() >= PENDING_BYTES;
+        return data_ref.granule_rows + data_ref.pending->size() >= merge_tree.granule_rows || data_ref.pending->byteSize() >= PENDING_BYTES;
     }
 
     void addRows(Data & data_ref, const IColumn & column, size_t row_begin, size_t row_end) const
@@ -551,7 +593,7 @@ private:
         {
             auto & pending = pendingOf(data_ref);
             const size_t pending_bytes = pending.byteSize();
-            const size_t room_rows = GRANULE_ROWS - std::min(GRANULE_ROWS, data_ref.granule_rows + pending.size());
+            const size_t room_rows = merge_tree.granule_rows - std::min(merge_tree.granule_rows, data_ref.granule_rows + pending.size());
             const size_t room_bytes = PENDING_BYTES - std::min(PENDING_BYTES, pending_bytes);
             const size_t rows = std::max<size_t>(1, std::min({row_end - row_begin, room_rows, room_bytes / bytes_per_row}));
             pending.insertRangeFrom(column, row_begin, rows);
@@ -596,18 +638,18 @@ private:
             converted = cast->execute(arguments, cast->getResultType(), rows->size(), /*dry_run=*/false);
         }
 
-        /// The writer sizes granules on the rows it writes, which are in the target type: a granule ends after `GRANULE_ROWS`
-        /// rows, or at the row where its rows reach `GRANULE_BYTES`. The rows after that end stay pending, in their own type.
+        /// The writer sizes granules on the rows it writes, which are in the target type: a granule ends after `index_granularity`
+        /// rows, or at the row where its rows reach `index_granularity_bytes`. The rows after that end stay pending, in their own type.
         size_t write_rows = converted->size();
         size_t write_bytes = converted->byteSize();
-        if (data_ref.granule_bytes + write_bytes >= GRANULE_BYTES)
+        if (data_ref.granule_bytes + write_bytes >= merge_tree.granule_bytes)
         {
             write_rows = 0;
             write_bytes = 0;
-            while (write_rows < converted->size() && data_ref.granule_bytes + write_bytes < GRANULE_BYTES)
+            while (write_rows < converted->size() && data_ref.granule_bytes + write_bytes < merge_tree.granule_bytes)
                 write_bytes += converted->byteSizeAt(write_rows++);
         }
-        const bool ends_granule = data_ref.granule_rows + write_rows >= GRANULE_ROWS || data_ref.granule_bytes + write_bytes >= GRANULE_BYTES;
+        const bool ends_granule = data_ref.granule_rows + write_rows >= merge_tree.granule_rows || data_ref.granule_bytes + write_bytes >= merge_tree.granule_bytes;
 
         MutableColumnPtr rest;
         if (write_rows < rows->size())
@@ -663,7 +705,7 @@ private:
         auto part = std::make_unique<TargetPart>();
 
         /// Sparse or not by the default values of the first rows, as a part by those of the rows inserted.
-        auto info = target_type->createSerializationInfo(mergeTreeInfoSettings());
+        auto info = target_type->createSerializationInfo(merge_tree.info_settings);
         info->add(first_granule);
         part->serialization = target_type->getSerialization(*info);
 
@@ -685,7 +727,7 @@ private:
             },
             ISerialization::SubstreamData(part->serialization).withType(target_type).withColumn(first_granule.getPtr()));
 
-        part->settings = mergeTreeBulkSettings();
+        part->settings = merge_tree.bulk_settings;
         part->settings.getter = [streams = &part->streams](const ISerialization::SubstreamPath & path) -> WriteBuffer *
         {
             if (ISerialization::isEphemeralSubcolumn(path, path.size()))
@@ -741,6 +783,7 @@ private:
                 ErrorCodes::INCORRECT_DATA, "The state of aggregate function {} is incomplete after an earlier error", getName());
     }
 
+    const MergeTreeDefaults & merge_tree = mergeTreeDefaults();
     const DataTypePtr source_type;
     const SerializationPtr source_serialization;
     const DataTypePtr target_type;
