@@ -31,3 +31,8 @@ SELECT countIf(toStartOfInterval(t, INTERVAL 5 MINUTE) != toStartOfFiveMinutes(t
      + countIf(toStartOfInterval(t, INTERVAL 10 MINUTE) != toStartOfTenMinutes(t))
      + countIf(toStartOfInterval(t, INTERVAL 15 MINUTE) != toStartOfFifteenMinutes(t))
 FROM (SELECT toDateTime64('1960-01-01 00:00:00', 0, 'UTC') + INTERVAL 4999 * number SECOND AS t FROM numbers(20000));
+
+SELECT 'an interval that does not divide an hour keeps the grid counted from the epoch';
+SELECT toStartOfInterval(toDateTime64('1969-12-31 23:59:00', 0, 'UTC'), INTERVAL 7 MINUTE);
+SELECT toStartOfInterval(toDateTime64('1970-01-01 00:59:00', 0, 'Europe/Berlin'), INTERVAL 7 MINUTE);
+SELECT toStartOfInterval(toDateTime64('1969-12-31 12:00:00', 0, 'UTC'), INTERVAL 2880 MINUTE) = toStartOfInterval(toDateTime64('1969-12-31 12:00:00', 0, 'UTC'), INTERVAL 2 DAY);
