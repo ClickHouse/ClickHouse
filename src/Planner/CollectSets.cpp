@@ -95,6 +95,11 @@ public:
             if (sets.findStorage(set_key))
                 return;
             auto ast = in_second_argument->toAST();
+#if CLICKHOUSE_CLOUD
+            if (storage_set->getName() == "SharedSet")
+                sets.addFromStorage(set_key, std::move(ast), static_cast<StorageSharedSet *>(storage_set)->getSet(planner_context.getQueryContext()), second_argument_table->getStorageID());
+            else
+#endif
             sets.addFromStorage(set_key, std::move(ast), storage_set->getSet(), second_argument_table->getStorageID());
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
@@ -127,11 +132,6 @@ public:
             if (sets.findTuple(set_key, set_element_types))
                 return;
 
-#if CLICKHOUSE_CLOUD
-            if (storage_set->getName() == "SharedSet")
-                sets.addFromStorage(set_key, in_second_argument->toAST(), static_cast<StorageSharedSet *>(storage_set)->getSet(planner_context.getQueryContext()), second_argument_table->getStorageID());
-            else
-#endif
             sets.addFromTuple(set_key, /*ast=*/ nullptr, std::move(set), settings, /*source_node=*/ in_second_argument->clone());
         }
         else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
