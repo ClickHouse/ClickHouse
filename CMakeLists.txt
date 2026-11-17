@@ -638,6 +638,8 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
         add_compile_definitions (_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS _LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS)
         if (ENABLE_CFI_DIAGNOSTICS)
             set (CFI_FLAGS "-fsanitize=cfi -fsanitize-recover=cfi -fno-sanitize-trap=cfi")
+            # For `__ubsan_default_options` in base/base/sanitizer_options.h.
+            add_compile_definitions (CFI_DIAGNOSTICS=1)
         else ()
             set (CFI_FLAGS "-fsanitize=cfi -fno-sanitize-recover=cfi -fsanitize-trap=cfi")
         endif ()
