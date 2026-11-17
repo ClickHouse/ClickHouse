@@ -462,6 +462,30 @@ export const CloudRegionsMap = () => {
     "hoverOnly": false
   },
   {
+    "code": "canadacentral",
+    "name": "Canada Central",
+    "provider": "Azure",
+    "tags": [
+      "BYOC"
+    ],
+    "x": 27.3,
+    "y": 37.8,
+    "position": "top-right",
+    "hoverOnly": true
+  },
+  {
+    "code": "centralindia",
+    "name": "Central India",
+    "provider": "Azure",
+    "tags": [
+      "BYOC"
+    ],
+    "x": 68.5,
+    "y": 54.0,
+    "position": "bottom-right",
+    "hoverOnly": true
+  },
+  {
     "code": "eastus2",
     "name": "East US 2",
     "provider": "Azure",
@@ -472,6 +496,18 @@ export const CloudRegionsMap = () => {
     "x": 27.6,
     "y": 43.5,
     "position": "bottom-right",
+    "hoverOnly": true
+  },
+  {
+    "code": "francecentral",
+    "name": "France Central",
+    "provider": "Azure",
+    "tags": [
+      "BYOC"
+    ],
+    "x": 48.8,
+    "y": 35.0,
+    "position": "bottom-left",
     "hoverOnly": true
   },
   {
@@ -549,8 +585,10 @@ export const CloudRegionsMap = () => {
     return () => observer.disconnect();
   }, []);
   const colors = { AWS: 'var(--map-aws)', 'Google Cloud': 'var(--map-gcp)', Azure: 'var(--map-azure)' };
-  const filters = ['AWS', 'GCP', 'Azure', 'Private regions', 'HIPAA compliant'];
-  const matches = (region, filter) => !filter || (filter === 'GCP' ? region.provider === 'Google Cloud' : filter === 'Private regions' ? region.tags.includes('Private') : filter === 'HIPAA compliant' ? region.tags.includes('HIPAA') : region.provider === filter);
+  // BYOC-only: neither Public nor Private; drawn as a dashed ring.
+  const isByocOnly = region => region.tags.includes('BYOC') && !region.tags.includes('Public') && !region.tags.includes('Private');
+  const filters = ['AWS', 'GCP', 'Azure', 'Private regions', 'BYOC only', 'HIPAA compliant'];
+  const matches = (region, filter) => !filter || (filter === 'GCP' ? region.provider === 'Google Cloud' : filter === 'Private regions' ? region.tags.includes('Private') : filter === 'BYOC only' ? isByocOnly(region) : filter === 'HIPAA compliant' ? region.tags.includes('HIPAA') : region.provider === filter);
   const positions = {
     'top-left': {bottom: '100%', right: '100%'},
     'top-center': {bottom: '100%', left: '50%', transform: 'translateX(-50%)'},
@@ -600,11 +638,12 @@ export const CloudRegionsMap = () => {
             const isActive = matchesSearch(region) && matches(region, activeFilter);
             const color = colors[region.provider];
             const isPrivate = region.tags.includes('Private');
+            const isByoc = isByocOnly(region);
             const isEmphasized = emphasized === region.code;
             const showLabel = !region.hoverOnly || isEmphasized || !!activeFilter || !!query;
             const corner = /^(top|bottom)-(left|right)$/.test(region.position);
             return <button type="button" className="presence-pin" key={region.code} aria-label={`${region.provider}: ${region.name} (${region.code}) — ${region.tags.join(', ')}`} aria-hidden={!isActive} tabIndex={isActive ? 0 : -1} onMouseEnter={() => setHovered(region.code)} onMouseLeave={() => setHovered(null)} onFocus={() => setFocused(region.code)} onBlur={() => setFocused(null)} style={{position: 'absolute', left: `${region.x}%`, top: `${region.y}%`, width: 10, height: 10, padding: 0, border: 0, background: 'transparent', transform: 'translate(-50%, -50%)', color, cursor: 'default', opacity: !isActive ? 0 : emphasized && !isEmphasized ? .4 : 1, pointerEvents: isActive ? 'auto' : 'none', zIndex: isEmphasized ? 20 : 1}}>
-              <span style={{position: 'relative', display: 'block', width: 10, height: 10, boxSizing: 'border-box', borderRadius: '50%', border: isPrivate ? `2px solid ${color}` : 'none', background: isPrivate ? 'transparent' : color}}>
+              <span style={{position: 'relative', display: 'block', width: 10, height: 10, boxSizing: 'border-box', borderRadius: '50%', border: isByoc ? `2px dashed ${color}` : isPrivate ? `2px solid ${color}` : 'none', background: isPrivate || isByoc ? 'transparent' : color}}>
                 <span style={{position: 'absolute', inset: 0, borderRadius: '50%', transform: 'scale(2.5)', opacity: .1, background: color, pointerEvents: 'none'}} />
                 <span style={{position: 'absolute', inset: 0, borderRadius: '50%', transform: 'scale(4)', opacity: .1, background: color, pointerEvents: 'none'}} />
               </span>
@@ -644,7 +683,7 @@ export const CloudRegionsMap = () => {
           const filterColors = [...new Set(regions.filter(region => matches(region, filter)).map(region => colors[region.provider]))];
           return <button type="button" className="presence-filter" key={filter} aria-pressed={activeFilter === filter} onClick={() => {setActiveFilter(old => old === filter ? null : filter); setOptionIndex(-1); setRegionOpen(false); setHovered(null); setFocused(null);}} style={{display: 'flex', alignItems: 'center', gap: 16, border: 0, borderRadius: 6, padding: '4px 12px', color: 'var(--map-text)', fontSize: 14, cursor: 'pointer', opacity: !activeFilter || activeFilter === filter ? 1 : .5}}>
             <span style={{display: 'inline-flex', gap: 8}}>
-              {filter === 'HIPAA compliant' ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/></svg> : filterColors.map(color => <span key={color} style={{width: 10, height: 10, boxSizing: 'border-box', borderRadius: '50%', border: filter === 'Private regions' ? `2px solid ${color}` : 'none', background: filter === 'Private regions' ? 'transparent' : color}} />)}
+              {filter === 'HIPAA compliant' ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/></svg> : filterColors.map(color => <span key={color} style={{width: 10, height: 10, boxSizing: 'border-box', borderRadius: '50%', border: filter === 'BYOC only' ? `2px dashed ${color}` : filter === 'Private regions' ? `2px solid ${color}` : 'none', background: filter === 'Private regions' || filter === 'BYOC only' ? 'transparent' : color}} />)}
             </span>
             {filter}
           </button>;
