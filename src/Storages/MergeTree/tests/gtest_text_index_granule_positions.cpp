@@ -28,7 +28,7 @@ using Occurrences = std::vector<std::pair<UInt32, UInt32>>;
 struct PaddedDocument
 {
     explicit PaddedDocument(std::string_view text) : buffer(text), length(text.size()) { buffer.resize(length + 16); }
-    std::string_view view() const { return {buffer.data(), length}; }
+    [[nodiscard]] std::string_view view() const { return {buffer.data(), length}; }
 
     std::string buffer;
     size_t length;

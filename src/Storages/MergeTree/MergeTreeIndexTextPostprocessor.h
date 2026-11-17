@@ -70,7 +70,7 @@ public:
     [[nodiscard]] ActionsDAG getOriginalActionsDAG(const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description, const ASTPtr & source_ast = nullptr) const;
 
     /// arrayExists(e -> hasPhrase(arrayMap(x -> postprocessor(x), tokens(e, '<tokenizer>')), phrase_tokens, 'array'), col).
-    ActionsDAG getPhraseActionsDAG(
+    [[nodiscard]] ActionsDAG getPhraseActionsDAG(
         const String & col_name,
         const DataTypePtr & col_type,
         const String & tokenizer_description,
