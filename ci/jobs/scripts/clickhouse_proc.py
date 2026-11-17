@@ -550,6 +550,27 @@ class ClickHouseProc:
     # TERM deadline for one all-thread backtrace capture (seconds).
     STACK_CAPTURE_TIMEOUT_S = 300
 
+    # With `filesystem_isolation`, the pid file has the supervisor outside of the
+    # isolation, and the server runs under it: supervisor -> init of the PID
+    # namespace -> (watchdog ->) server. A debugger needs the server itself.
+    _SERVER_WRAPPER_NAMES = ("clickhouse-isol", "clickhouse-init", "ClickHouseWatch")
+
+    @classmethod
+    def _serving_pid(cls, pid):
+        for _ in range(len(cls._SERVER_WRAPPER_NAMES)):
+            try:
+                with open(f"/proc/{pid}/comm") as f:
+                    name = f.read().strip()
+                with open(f"/proc/{pid}/task/{pid}/children") as f:
+                    children = f.read().split()
+            except OSError:
+                return pid
+            if name not in cls._SERVER_WRAPPER_NAMES or not children:
+                return pid
+            # The first child: the init also adopts the orphans of the namespace.
+            pid = int(children[0])
+        return pid
+
     def _capture_server_stacks(self, tag):
         """Write an all-thread backtrace of each running server into `log_dir`.
 
@@ -560,6 +581,7 @@ class ClickHouseProc:
         for pid in (self.pid_0, self.pid_1, self.pid_2):
             if not pid:
                 continue
+            pid = self._serving_pid(pid)
             # gdb exits 0 even when the attach is refused, so its stderr goes
             # into the same file: the artifact explains its own emptiness.
             out = f"{self.log_dir}/{tag}-stacks-{pid}.log"

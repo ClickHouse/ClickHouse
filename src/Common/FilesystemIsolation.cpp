@@ -27,6 +27,9 @@ std::atomic<int> applied_mode{-1};
 std::mutex status_mutex;
 std::optional<FilesystemIsolationStatus> saved_status;
 
+/// The socket to the supervisor outside of the isolation, or -1 if the filesystem is not isolated.
+std::atomic<int> supervisor_socket{-1};
+
 std::optional<FilesystemIsolationMode> loadMode(const std::atomic<int> & mode_holder)
 {
     const int mode = mode_holder.load(std::memory_order_relaxed);
@@ -72,6 +75,8 @@ std::optional<FilesystemIsolationStatus> getFilesystemIsolationStatus()
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <base/defines.h>
+#include <base/errnoToString.h>
+#include <base/getThreadId.h>
 #include <base/scope_guard.h>
 
 #include <Poco/Glob.h>
@@ -92,13 +97,23 @@ std::optional<FilesystemIsolationStatus> getFilesystemIsolationStatus()
 #include <elf.h>
 #include <link.h>
 #include <fcntl.h>
+#include <linux/audit.h>
 #include <linux/capability.h>
+#include <linux/filter.h>
+#include <linux/seccomp.h>
+#include <poll.h>
 #include <sched.h>
+#include <csignal>
+#include <sys/file.h>
 #include <sys/mount.h>
 #include <sys/prctl.h>
+#include <sys/resource.h>
+#include <sys/signalfd.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <sys/syscall.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -109,6 +124,10 @@ namespace DB
 
 namespace
 {
+
+/// Newer than the kernel headers of the sysroot. The same numbers on every architecture.
+constexpr long syscall_pidfd_send_signal = 424; // NOLINT(google-runtime-int)
+constexpr long syscall_pidfd_open = 434; // NOLINT(google-runtime-int)
 
 /// A directory the new root is mounted on before `pivot_root` moves it to `/`. It is only needed to have a place
 /// for the mount: `pivot_root` detaches the new root from it, so its original content stays visible inside the old
@@ -462,8 +481,14 @@ struct MountInfo
 {
     uint64_t id = 0;
     uint64_t parent_id = 0;
+    /// `major:minor` of the filesystem.
+    std::string device;
+    /// The directory of the filesystem that is mounted, which differs from `/` for a bind mount.
+    std::string root;
     std::string mount_point;
     std::string filesystem_type;
+    /// The options of the filesystem, such as `upperdir=` of an overlay, without the unescaping of each option.
+    std::string super_options;
 };
 
 /// Every mount in `/proc/self/mountinfo`.
@@ -501,12 +526,21 @@ std::vector<MountInfo> readMountInfo()
         MountInfo mount;
         mount.id = parseFromString<uint64_t>(fields[0]);
         mount.parent_id = parseFromString<uint64_t>(fields[1]);
+        mount.device = std::string(fields[2]);
+        mount.root = decodeMountInfoPath(fields[3]);
         mount.mount_point = decodeMountInfoPath(fields[4]);
         /// The type of the filesystem is the field after the separator ` - `, which follows the optional fields.
         if (const size_t separator = line.find(" - ", field_begin); separator != std::string_view::npos)
         {
             const size_t type_begin = separator + 3;
-            mount.filesystem_type = std::string(line.substr(type_begin, line.find(' ', type_begin) - type_begin));
+            const size_t type_end = line.find(' ', type_begin);
+            mount.filesystem_type = std::string(line.substr(type_begin, type_end - type_begin));
+            /// Then the source and the options.
+            if (type_end != std::string_view::npos)
+            {
+                if (const size_t source_end = line.find(' ', type_end + 1); source_end != std::string_view::npos)
+                    mount.super_options = std::string(line.substr(source_end + 1));
+            }
         }
         mounts.push_back(std::move(mount));
     }
@@ -718,42 +752,87 @@ void mountDevpts(const std::string & path)
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot mount a devpts at {}", path);
 }
 
-/// Enters a new mount namespace (and a new user namespace, if `with_user_namespace`) in which no mount propagates
-/// to the original one.
-void enterNamespaces(bool with_user_namespace, uid_t uid, gid_t gid)
+/// Creates a child process in new PID and mount namespaces, as `fork` does: it returns twice. The current process
+/// stays in its namespaces. A raw `clone`, because `fork` has no flags for the namespaces. The child has a single
+/// thread, like the current process.
+pid_t cloneIntoPidAndMountNamespaces()
 {
-    if (0 != ::unshare(CLONE_NEWNS | (with_user_namespace ? CLONE_NEWUSER : 0)))
-        throw ErrnoException(
-            ErrorCodes::SYSTEM_ERROR, "Cannot create a {}", with_user_namespace ? "user and a mount namespace" : "mount namespace");
+    const unsigned long flags = CLONE_NEWPID | CLONE_NEWNS | SIGCHLD; // NOLINT(google-runtime-int)
+#if defined(__s390x__)
+    /// The stack goes first on s390x.
+    return static_cast<pid_t>(::syscall(SYS_clone, nullptr, flags, nullptr, nullptr, nullptr));
+#else
+    return static_cast<pid_t>(::syscall(SYS_clone, flags, nullptr, nullptr, nullptr, nullptr));
+#endif
+}
 
-    if (with_user_namespace)
-    {
-        /// An unprivileged process can map only its own user and group, and only after it gives up `setgroups`.
-        writeFile("/proc/self/setgroups", "deny");
-        writeFile("/proc/self/uid_map", fmt::format("{0} {0} 1\n", uid));
-        writeFile("/proc/self/gid_map", fmt::format("{0} {0} 1\n", gid));
-    }
+/// In a new user namespace, maps only the user and group of the process to themselves. An unprivileged process can
+/// map only its own user and group, and only after it gives up `setgroups`.
+void writeIdMaps(uid_t uid, gid_t gid)
+{
+    writeFile("/proc/self/setgroups", "deny");
+    writeFile("/proc/self/uid_map", fmt::format("{0} {0} 1\n", uid));
+    writeFile("/proc/self/gid_map", fmt::format("{0} {0} 1\n", gid));
+}
 
+/// In a new mount namespace, so that no mount propagates to the original one.
+void makeMountsPrivate()
+{
     if (0 != ::mount(nullptr, "/", nullptr, MS_REC | MS_PRIVATE, nullptr))
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot make the mounts private");
 }
 
-/// Checks in a child process whether this process would be allowed to create the namespaces and to mount a
-/// filesystem in them. Returns the reason if not. The current process is left untouched: once it enters a user
+/// Moves the current process into new user and mount namespaces, in which no mount propagates to the original one.
+void enterUserAndMountNamespaces(uid_t uid, gid_t gid)
+{
+    if (::unshare(CLONE_NEWNS | CLONE_NEWUSER) != 0)
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot create a user and a mount namespace");
+    writeIdMaps(uid, gid);
+    makeMountsPrivate();
+}
+
+/// A new instance of `proc` for the PID namespace of the calling process, which must be inside it. Only the processes
+/// of that namespace are in it, so `/proc/<pid>/root`, `/proc/<pid>/cwd` and `/proc/<pid>/fd` lead nowhere outside.
+void mountProc(const std::string & path)
+{
+    if (::mount("proc", path.c_str(), "proc", MS_NOSUID | MS_NODEV | MS_NOEXEC, nullptr) != 0)
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot mount a new proc at {}", path);
+}
+
+void installSupervisorSeccompFilter();
+
+/// Checks in a child process whether this process would be allowed to create the namespaces and to mount the
+/// filesystems in them. Returns the reason if not. The current process is left untouched: once it enters a user
 /// namespace, it loses its capabilities of the initial one for good, even if nothing can be mounted there (as with
-/// the restriction of unprivileged user namespaces by AppArmor in Ubuntu).
+/// the restriction of unprivileged user namespaces by AppArmor in Ubuntu). Without a user namespace, also the new PID
+/// namespace with a new `proc` in it, and what the supervisor outside of it needs.
 std::string probeNamespaces(bool with_user_namespace, uid_t uid, gid_t gid)
 {
+    if (!with_user_namespace)
+    {
+#if !defined(__x86_64__) && !defined(__aarch64__)
+        return "the seccomp filter of the supervisor outside of the isolation is implemented only for x86_64 and AArch64";
+#endif
+        /// The supervisor holds the process that serves by a pidfd.
+        if (const int pidfd = static_cast<int>(::syscall(syscall_pidfd_open, ::getpid(), 0)); pidfd >= 0)
+            closeDescriptor(pidfd);
+        else
+            return fmt::format("cannot create a pidfd, which needs Linux 5.3 or newer: {}", errnoToString(errno));
+    }
+
     int pipe_fds[2];
     if (0 != ::pipe2(pipe_fds, O_CLOEXEC))
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot create a pipe");
 
-    const pid_t pid = ::fork();
+    const pid_t pid = with_user_namespace ? ::fork() : cloneIntoPidAndMountNamespaces();
     if (pid < 0)
     {
+        const int error = errno;
         closeDescriptor(pipe_fds[0]);
         closeDescriptor(pipe_fds[1]);
-        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot fork a process to check whether the filesystem can be isolated");
+        if (with_user_namespace)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot fork a process to check whether the filesystem can be isolated");
+        return fmt::format("cannot create the PID and mount namespaces: {}", errnoToString(error));
     }
 
     if (pid == 0)
@@ -763,13 +842,32 @@ std::string probeNamespaces(bool with_user_namespace, uid_t uid, gid_t gid)
         int exit_code = 0;
         try
         {
-            enterNamespaces(with_user_namespace, uid, gid);
+            if (with_user_namespace)
+                enterUserAndMountNamespaces(uid, gid);
+            else
+                makeMountsPrivate();
             mountTmpfs(staging_directory, MS_NOSUID | MS_NODEV, "mode=0755");
             const std::string pts = std::string(staging_directory) + "/pts";
             createDirectories(pts);
             mountDevpts(pts);
-            /// In its own mount namespace, so the original one is untouched.
-            remountReadOnly("/proc/sys");
+            if (with_user_namespace)
+            {
+                /// In its own mount namespace, so the original one is untouched.
+                remountReadOnly("/proc/sys");
+            }
+            else
+            {
+                /// In the new PID namespace, whose init this child is.
+                const std::string proc = std::string(staging_directory) + "/proc";
+                createDirectories(proc);
+                mountProc(proc);
+                /// The controls of the new `proc`, as the server makes them read-only.
+                remountReadOnly(proc + "/sys");
+                /// The filter of the supervisor, which a policy outside may refuse. Last, because it allows no mount.
+                if (::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0)
+                    throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot set PR_SET_NO_NEW_PRIVS");
+                installSupervisorSeccompFilter();
+            }
         }
         catch (const Exception & e)
         {
@@ -809,6 +907,561 @@ std::string probeNamespaces(bool with_user_namespace, uid_t uid, gid_t gid)
     if (!message.empty())
         return message;
     return fmt::format("the process that checks whether the filesystem can be isolated terminated with the status {}", status);
+}
+
+/// The signals that the server handles and that are sent to it through its pid file: the requests to terminate, to
+/// reopen the logs (`SIGHUP`), to print the stack traces (`SIGTSTP`), and `SIGABRT` for a crash report and a core dump.
+constexpr std::array relayed_signals = {SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGTSTP, SIGABRT};
+
+/// The signals that the supervisor and the init of the PID namespace handle. They are blocked in the supervisor before
+/// it creates the init, so that none is lost or acts by default before they are read from a `signalfd`.
+sigset_t getHandledSignals()
+{
+    sigset_t signals;
+    sigemptyset(&signals);
+    sigaddset(&signals, SIGCHLD);
+    for (const int sig : relayed_signals)
+        sigaddset(&signals, sig);
+    return signals;
+}
+
+bool isRelayedSignal(int sig)
+{
+    return std::find(relayed_signals.begin(), relayed_signals.end(), sig) != relayed_signals.end();
+}
+
+/// `CLICKHOUSE_WATCHDOG_NO_FORWARD=1`, as with systemd, which sends the signals to every process of the service.
+bool isForwardingDisabled()
+{
+    const char * value = std::getenv("CLICKHOUSE_WATCHDOG_NO_FORWARD"); // NOLINT(concurrency-mt-unsafe)
+    return value && std::string_view(value) == "1";
+}
+
+/// Writes a message to `stderr` without allocating, for the supervisor and the init.
+void writeToStderr(std::string_view message)
+{
+    while (!message.empty())
+    {
+        const ssize_t res = ::write(STDERR_FILENO, message.data(), message.size());
+        if (res < 0 && errno == EINTR)
+            continue;
+        if (res <= 0)
+            return;
+        message.remove_prefix(res);
+    }
+}
+
+void setProcessName(const char * name)
+{
+    [[maybe_unused]] const int res = ::prctl(PR_SET_NAME, name, 0, 0, 0);
+}
+
+/// The pid file that the supervisor owns: created and locked before the namespaces, so that a server already running
+/// stops the startup, and removed when the supervisor exits. The server inside the isolation does not see it, and its
+/// directory must not be writable inside (see `checkPidFile`). Still, it is created and removed relative to a
+/// descriptor of its directory, without following a symbolic link, and removed only if its name still refers to it.
+struct SupervisorPidFile
+{
+    int directory_fd = -1;
+    int fd = -1;
+    std::string name;
+    dev_t device = 0;
+    ino_t inode = 0;
+
+    void close()
+    {
+        if (fd >= 0)
+            closeDescriptor(fd);
+        if (directory_fd >= 0)
+            closeDescriptor(directory_fd);
+        fd = -1;
+        directory_fd = -1;
+    }
+
+    void remove() const
+    {
+        struct stat st{};
+        if (fd >= 0 && ::fstatat(directory_fd, name.c_str(), &st, AT_SYMLINK_NOFOLLOW) == 0 && st.st_dev == device
+            && st.st_ino == inode)
+            ::unlinkat(directory_fd, name.c_str(), 0);
+    }
+};
+
+SupervisorPidFile createPidFile(const std::string & path, pid_t pid)
+{
+    SupervisorPidFile result;
+    const fs::path normal = fs::absolute(path).lexically_normal();
+    result.name = normal.filename().string();
+    /// Without following a symbolic link on the way, which `checkPidFile` has refused.
+    result.directory_fd = ::open("/", O_PATH | O_DIRECTORY | O_CLOEXEC);
+    if (result.directory_fd < 0)
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot open /");
+    try
+    {
+        for (const auto & component : normal.parent_path().relative_path())
+        {
+            if (component.empty() || component == ".")
+                continue;
+            const int next = ::openat(result.directory_fd, component.c_str(), O_PATH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+            if (next < 0)
+                throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot open the directory {} on the way to the pid file {}", component.string(), path);
+            closeDescriptor(result.directory_fd);
+            result.directory_fd = next;
+        }
+        /// Not blocking on a FIFO.
+        result.fd = ::openat(result.directory_fd, result.name.c_str(), O_WRONLY | O_CREAT | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0666);
+        if (result.fd < 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot open the pid file {}", path);
+        struct stat st{};
+        if (::fstat(result.fd, &st) != 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot stat the pid file {}", path);
+        if (!S_ISREG(st.st_mode) || st.st_nlink != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pid file {} is not a regular file with a single link", path);
+        result.device = st.st_dev;
+        result.inode = st.st_ino;
+        if (::flock(result.fd, LOCK_EX | LOCK_NB) != 0)
+        {
+            if (errno == EWOULDBLOCK)
+                throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot lock file {}. Another server instance in same directory is already running.", path);
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot lock the pid file {}", path);
+        }
+        if (::ftruncate(result.fd, 0) != 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot truncate the pid file {}", path);
+        const std::string content = std::to_string(pid);
+        if (::write(result.fd, content.data(), content.size()) != static_cast<ssize_t>(content.size()))
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot write the pid file {}", path);
+    }
+    catch (...)
+    {
+        result.close();
+        throw;
+    }
+    return result;
+}
+
+/// Closes every descriptor that is not in `keep`.
+void closeOtherDescriptors(std::initializer_list<int> keep)
+{
+    std::vector<int> to_close;
+    {
+        DIR * dir = ::opendir("/proc/self/fd");
+        if (!dir)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot open /proc/self/fd");
+        SCOPE_EXIT({ ::closedir(dir); });
+        const int own_fd = ::dirfd(dir);
+        while (const dirent * entry = ::readdir(dir)) /// NOLINT(concurrency-mt-unsafe): the directory stream is not shared.
+        {
+            if (entry->d_name[0] == '.')
+                continue;
+            const int fd = std::stoi(entry->d_name);
+            if (fd != own_fd && std::find(keep.begin(), keep.end(), fd) == keep.end())
+                to_close.push_back(fd);
+        }
+    }
+    for (const int fd : to_close)
+        closeDescriptor(fd);
+}
+
+/// The system calls of the loop of the supervisor, and of what it calls: the C library and the allocator.
+void installSupervisorSeccompFilter()
+{
+#if defined(__x86_64__) || defined(__aarch64__)
+#    if defined(__x86_64__)
+    constexpr UInt32 arch = AUDIT_ARCH_X86_64;
+#    else
+    constexpr UInt32 arch = AUDIT_ARCH_AARCH64;
+#    endif
+    const std::vector<UInt32> allowed = {
+        __NR_read, __NR_write, __NR_close, __NR_ppoll, __NR_recvmsg, __NR_recvfrom, __NR_sendto, __NR_sendmsg,
+        __NR_wait4, __NR_waitid, __NR_kill, __NR_tgkill, __NR_getpid, __NR_gettid, __NR_unlinkat, __NR_newfstatat, __NR_exit,
+        __NR_exit_group, __NR_rt_sigprocmask, __NR_rt_sigaction, __NR_rt_sigreturn, __NR_restart_syscall,
+        __NR_prlimit64, __NR_setrlimit, __NR_clock_gettime, __NR_gettimeofday, __NR_brk, __NR_mmap, __NR_munmap,
+        __NR_mremap, __NR_madvise, __NR_futex, __NR_sched_yield, syscall_pidfd_open, syscall_pidfd_send_signal,
+#    if defined(__NR_statx)
+        __NR_statx,
+#    endif
+#    if defined(__x86_64__)
+        __NR_poll,
+#    endif
+    };
+    std::vector<sock_filter> program;
+    program.push_back(BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)));
+    program.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, arch, 1, 0));
+    program.push_back(BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS));
+    program.push_back(BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)));
+    for (size_t i = 0; i < allowed.size(); ++i)
+        program.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, allowed[i], static_cast<UInt8>(allowed.size() - i), 0));
+    program.push_back(BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS));
+    program.push_back(BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+
+    sock_fprog fprog{.len = static_cast<unsigned short>(program.size()), .filter = program.data()};
+    if (::prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &fprog, 0, 0) != 0)
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot install the seccomp filter of the supervisor");
+#else
+    /// `probeNamespaces` does not let the isolation start there.
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The seccomp filter of the supervisor is not implemented for this architecture");
+#endif
+}
+
+/// A notification of the server that the supervisor relays to systemd: `READY=1`, `STOPPING=1`, or `STATUS=` with
+/// printable text. Not `MAINPID=`: a PID inside the namespace means another process outside, and the supervisor is
+/// the main process anyway.
+bool isRelayedNotification(std::string_view message)
+{
+    if (message == "READY=1" || message == "STOPPING=1")
+        return true;
+    if (!message.starts_with("STATUS=") || message.size() > 256)
+        return false;
+    return std::all_of(message.begin(), message.end(), [](char c) { return c >= 0x20 && c < 0x7f; });
+}
+
+/// The messages of the server to the supervisor, besides the notifications: a request for its PID outside of the
+/// namespace, and the registration of the process that serves, which gets the signals sent through the pid file. The
+/// supervisor answers the request and every notification, which the server waits for.
+constexpr std::string_view host_pid_request = "HOST_PID";
+constexpr std::string_view host_pid_reply_prefix = "HOST_PID=";
+constexpr std::string_view serving_registration = "SERVING";
+constexpr std::string_view notify_reply_prefix = "NOTIFY=";
+
+struct NotifySocket
+{
+    int fd = -1;
+    sockaddr_un address{};
+    socklen_t address_size = 0;
+};
+
+/// The socket of systemd from `NOTIFY_SOCKET`, as `systemdNotify` reads it, with a name starting with `@` for an
+/// abstract socket.
+NotifySocket openNotifySocket()
+{
+    NotifySocket result;
+    const char * path = std::getenv("NOTIFY_SOCKET"); // NOLINT(concurrency-mt-unsafe)
+    if (!path || (*path != '/' && *path != '@'))
+        return result;
+    const size_t length = std::strlen(path);
+    if (length < 2 || length >= sizeof(result.address.sun_path))
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "Wrong UNIX path \"{}\" in NOTIFY_SOCKET env var", path);
+    result.address.sun_family = AF_UNIX;
+    std::memcpy(result.address.sun_path, path, length);
+    result.address_size = static_cast<socklen_t>(offsetof(sockaddr_un, sun_path) + length);
+    if (*path == '@')
+        result.address.sun_path[0] = '\0';
+    else
+        ++result.address_size; /// With the terminating zero.
+    result.fd = ::socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+    if (result.fd < 0)
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Can't create UNIX socket for systemd notify");
+    return result;
+}
+
+/// Receives one message of the server, at most `max_size` bytes, with the PID of its sender outside of the namespace.
+/// Returns the size, 0 for nothing or a message that is dropped, -1 when nothing can be received anymore.
+ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender)
+{
+    iovec iov{.iov_base = buf, .iov_len = max_size};
+    alignas(cmsghdr) char control[CMSG_SPACE(sizeof(ucred))];
+    msghdr msg{};
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    msg.msg_control = control;
+    msg.msg_controllen = sizeof(control);
+    const ssize_t size = ::recvmsg(fd, &msg, MSG_DONTWAIT | MSG_CMSG_CLOEXEC);
+    if (size < 0)
+        return (errno == EAGAIN || errno == EINTR) ? 0 : -1;
+
+    sender = 0;
+    for (cmsghdr * cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg, cmsg))
+    {
+        if (cmsg->cmsg_level != SOL_SOCKET)
+            continue;
+        if (cmsg->cmsg_type == SCM_CREDENTIALS && cmsg->cmsg_len == CMSG_LEN(sizeof(ucred)))
+        {
+            ucred credentials{};
+            std::memcpy(&credentials, CMSG_DATA(cmsg), sizeof(credentials));
+            sender = credentials.pid;
+        }
+        else if (cmsg->cmsg_type == SCM_RIGHTS)
+        {
+            /// The space is only for the credentials, so the kernel does not pass descriptors, but if it did, they are
+            /// not accepted.
+            const size_t count = (cmsg->cmsg_len - CMSG_LEN(0)) / sizeof(int);
+            for (size_t i = 0; i < count; ++i)
+            {
+                int passed = -1;
+                std::memcpy(&passed, CMSG_DATA(cmsg) + i * sizeof(int), sizeof(int));
+                closeDescriptor(passed);
+            }
+        }
+    }
+    if ((msg.msg_flags & (MSG_TRUNC | MSG_CTRUNC)) || static_cast<size_t>(size) > max_size)
+        return 0;
+    return size;
+}
+
+/// Exits with the status of the server: with the same code, or by the same signal, without a core dump of the
+/// supervisor, so that a service manager sees the same as without the isolation.
+[[noreturn]] void exitWithStatus(int status)
+{
+    if (WIFEXITED(status))
+        ::_exit(WEXITSTATUS(status));
+    if (WIFSIGNALED(status))
+    {
+        const int sig = WTERMSIG(status);
+        rlimit no_core{0, 0};
+        ::setrlimit(RLIMIT_CORE, &no_core);
+        ::signal(sig, SIG_DFL);
+        sigset_t signals;
+        sigemptyset(&signals);
+        sigaddset(&signals, sig);
+        ::sigprocmask(SIG_UNBLOCK, &signals, nullptr);
+        ::kill(::getpid(), sig);
+        /// A signal that does not terminate a process.
+        ::_exit(128 + sig);
+    }
+    ::_exit(1);
+}
+
+/// The loop of the supervisor, the original process, which stays outside of the namespaces. `init_pid` is the init of
+/// the PID namespace, `server_socket` the end of the socket pair to the server, `exit_status_fd` the pipe on which the
+/// init writes the status of the server.
+[[noreturn]] void runSupervisor(pid_t init_pid, int server_socket, int exit_status_fd, const SupervisorPidFile & pid_file)
+{
+    setProcessName("clickhouse-isol");
+    /// A signal sent to the supervisor goes straight to the process that serves, as it went when the pid file had its
+    /// PID. That process registers itself where the pid file used to be created, and a signal that arrives before is
+    /// held until then. It is held by a pidfd, so a reused PID is never signalled, and its PID is the sender that the
+    /// kernel attests. The processes inside are in a process group of their own, so a signal to the process group of
+    /// the supervisor, such as `SIGINT` on Ctrl+C, reaches the server only from here, once: the server takes a second
+    /// termination signal as an immediate termination. Not, with `CLICKHOUSE_WATCHDOG_NO_FORWARD=1`, a signal from the
+    /// parent, the service manager, which sends the signals to every process of the service, as systemd does.
+    const bool forwarding_disabled = isForwardingDisabled();
+    const pid_t parent_pid = ::getppid();
+    int serving_pidfd = -1;
+    uint64_t pending_signals = 0;
+
+    int signal_fd = -1;
+    NotifySocket notify;
+    try
+    {
+        notify = openNotifySocket();
+        const sigset_t handled = getHandledSignals();
+        signal_fd = ::signalfd(-1, &handled, SFD_CLOEXEC);
+        if (signal_fd < 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot create a signalfd");
+        closeOtherDescriptors({STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO, server_socket, exit_status_fd, pid_file.directory_fd, pid_file.fd, signal_fd, notify.fd});
+        /// It has nothing to do that needs a capability.
+        restrictCapabilities(0);
+        installSupervisorSeccompFilter();
+    }
+    catch (...)
+    {
+        writeToStderr(fmt::format("Cannot isolate the filesystem: cannot set up the supervisor: {}\n", getCurrentExceptionMessage(false)));
+        ::kill(init_pid, SIGKILL);
+        pid_file.remove();
+        ::_exit(1);
+    }
+
+    auto reply = [&](std::string_view prefix, long value) // NOLINT(google-runtime-int)
+    {
+        char text[64];
+        const int length = std::snprintf(text, sizeof(text), "%.*s%ld", static_cast<int>(prefix.size()), prefix.data(), value);
+        if (length > 0)
+            ::send(server_socket, text, length, MSG_DONTWAIT | MSG_NOSIGNAL);
+    };
+
+    /// Held until the next registration if no process serves, as after the server exited and before the watchdog
+    /// restarts it (`CLICKHOUSE_WATCHDOG_RESTART=1`).
+    auto deliver = [&](int sig)
+    {
+        if (serving_pidfd >= 0 && ::syscall(syscall_pidfd_send_signal, serving_pidfd, sig, nullptr, 0) == 0)
+            return;
+        if (serving_pidfd < 0 || errno == ESRCH)
+        {
+            if (serving_pidfd >= 0)
+                closeDescriptor(serving_pidfd);
+            serving_pidfd = -1;
+            pending_signals |= uint64_t(1) << sig;
+            return;
+        }
+        char text[128];
+        const int length = std::snprintf(text, sizeof(text), "Cannot send the signal %d to the server: errno %d\n", sig, errno);
+        if (length > 0)
+            writeToStderr(std::string_view(text, std::min<size_t>(length, sizeof(text) - 1)));
+    };
+
+    char buf[512];
+    pollfd fds[2] = {{.fd = signal_fd, .events = POLLIN, .revents = 0}, {.fd = server_socket, .events = POLLIN, .revents = 0}};
+    while (true)
+    {
+        if (::poll(fds, 2, -1) < 0)
+        {
+            if (errno == EINTR)
+                continue;
+            ::kill(init_pid, SIGKILL);
+            exitWithStatus(1 << 8);
+        }
+
+        if (fds[1].revents)
+        {
+            pid_t sender = 0;
+            const ssize_t size = receiveFromServer(server_socket, buf, sizeof(buf), sender);
+            /// Every process of the server has closed its end: stop polling it.
+            if (size < 0 || (size == 0 && (fds[1].revents & (POLLHUP | POLLERR))))
+                fds[1].fd = -1;
+            std::string_view message(buf, size > 0 ? size : 0);
+            if (message.ends_with('\n'))
+                message.remove_suffix(1);
+            if (message.empty() || sender <= 0)
+            {
+                /// Nothing, or not from a process.
+            }
+            else if (message == serving_registration)
+            {
+                const int pidfd = static_cast<int>(::syscall(syscall_pidfd_open, sender, 0));
+                if (pidfd >= 0)
+                {
+                    if (serving_pidfd >= 0)
+                        closeDescriptor(serving_pidfd);
+                    serving_pidfd = pidfd;
+                    const uint64_t to_deliver = pending_signals;
+                    pending_signals = 0;
+                    for (const int sig : relayed_signals)
+                    {
+                        if (to_deliver & (uint64_t(1) << sig))
+                            deliver(sig);
+                    }
+                }
+            }
+            else if (message == host_pid_request)
+                reply(host_pid_reply_prefix, sender);
+            else if (message.starts_with("MAINPID="))
+            {
+                /// A PID inside the namespace means another process outside, and the supervisor is the main process.
+                reply(notify_reply_prefix, 0);
+            }
+            else if (!isRelayedNotification(message))
+                reply(notify_reply_prefix, EINVAL);
+            else if (notify.fd < 0)
+                reply(notify_reply_prefix, 0); /// Not started by systemd.
+            else
+            {
+                buf[message.size()] = '\n';
+                const ssize_t res = ::sendto(notify.fd, buf, message.size() + 1, MSG_NOSIGNAL, reinterpret_cast<const sockaddr *>(&notify.address), notify.address_size);
+                reply(notify_reply_prefix, res < 0 ? errno : 0);
+            }
+        }
+
+        if (fds[0].revents & POLLIN)
+        {
+            signalfd_siginfo info{};
+            if (::read(signal_fd, &info, sizeof(info)) != sizeof(info))
+                continue;
+            const int sig = static_cast<int>(info.ssi_signo);
+            if (sig == SIGCHLD)
+            {
+                int status = 0;
+                const pid_t pid = ::waitpid(init_pid, &status, WNOHANG);
+                if (pid != init_pid || !(WIFEXITED(status) || WIFSIGNALED(status)))
+                    continue;
+                /// The status of the server, if the init could report it.
+                int server_status = 0;
+                if (WIFEXITED(status) && WEXITSTATUS(status) == 0
+                    && ::read(exit_status_fd, &server_status, sizeof(server_status)) == sizeof(server_status))
+                    status = server_status;
+                pid_file.remove();
+                exitWithStatus(status);
+            }
+            if (!isRelayedSignal(sig) || (forwarding_disabled && static_cast<pid_t>(info.ssi_pid) == parent_pid))
+                continue;
+            deliver(sig);
+        }
+    }
+}
+
+/// The init of the PID namespace, the first process in it. It reaps the orphans and exits with the status of the
+/// server; the signals for the server come to it from the supervisor directly. If the supervisor dies, so does the
+/// init, and with it every process of the namespace. Returns in the server, its only child; does not return in the
+/// init itself.
+void runInit(int server_socket, int exit_status_fd, const sigset_t & original_signal_mask)
+{
+    pid_t server_pid = -1;
+    try
+    {
+        if (::prctl(PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0) != 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot set PR_SET_PDEATHSIG");
+        /// Out of the process group of the supervisor, which relays the signals sent to the group.
+        if (::setpgid(0, 0) != 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot create a process group");
+        /// The supervisor could have died before that: then its end of the socket pair is closed.
+        pollfd fd{.fd = server_socket, .events = 0, .revents = 0};
+        if (::poll(&fd, 1, 0) > 0 && (fd.revents & POLLHUP))
+            ::_exit(1);
+
+        /// `pivot_root` moves the root and the working directory of every process of the mount namespace that are at the
+        /// original root to the new one, including the ones of the init, which keeps nothing of the original filesystem.
+        if (::chdir("/") != 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot change the directory to /");
+
+        server_pid = ::fork();
+        if (server_pid < 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot fork the server");
+        if (server_pid == 0)
+        {
+            closeDescriptor(exit_status_fd);
+            updateCurrentThreadIdAfterFork();
+            if (::sigprocmask(SIG_SETMASK, &original_signal_mask, nullptr) != 0)
+                throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot restore the signal mask");
+            /// The notifications go through the supervisor.
+            ::unsetenv("NOTIFY_SOCKET"); // NOLINT(concurrency-mt-unsafe)
+            supervisor_socket.store(server_socket, std::memory_order_relaxed);
+            return;
+        }
+
+        setProcessName("clickhouse-init");
+        closeDescriptor(server_socket);
+        /// The init only waits and signals the processes of its own user. It is not dumpable, so the server cannot
+        /// ptrace it or reach anything through its `/proc/1` entries.
+        restrictCapabilities(0);
+        if (::prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot set PR_SET_DUMPABLE");
+    }
+    catch (...)
+    {
+        writeToStderr(fmt::format("Cannot isolate the filesystem: {}\n", getCurrentExceptionMessage(false)));
+        if (server_pid > 0)
+            ::kill(server_pid, SIGKILL);
+        ::_exit(1);
+    }
+
+    const sigset_t handled = getHandledSignals();
+    const int signal_fd = ::signalfd(-1, &handled, SFD_CLOEXEC);
+    if (signal_fd < 0)
+    {
+        writeToStderr("Cannot isolate the filesystem: cannot create a signalfd in the init\n");
+        ::kill(server_pid, SIGKILL);
+        ::_exit(1);
+    }
+
+    while (true)
+    {
+        signalfd_siginfo info{};
+        if (::read(signal_fd, &info, sizeof(info)) != sizeof(info))
+            continue;
+        if (static_cast<int>(info.ssi_signo) == SIGCHLD)
+        {
+            /// The init of a PID namespace reaps every orphan in it.
+            int status = 0;
+            pid_t pid;
+            while ((pid = ::waitpid(-1, &status, WNOHANG)) > 0)
+            {
+                if (pid == server_pid && (WIFEXITED(status) || WIFSIGNALED(status)))
+                {
+                    [[maybe_unused]] const ssize_t res = ::write(exit_status_fd, &status, sizeof(status));
+                    ::_exit(0);
+                }
+            }
+        }
+    }
 }
 
 #if defined(__GLIBC__)
@@ -1284,9 +1937,252 @@ std::vector<Mount> planMounts(const std::vector<FilesystemIsolationPath> & paths
     return mounts;
 }
 
+/// Where `path`, an existing path without symbolic links, is in its filesystem: the device of the filesystem and the
+/// path inside it, which are the same under every name that bind mounts give it. Nothing if it does not exist.
+std::optional<std::pair<std::string, std::string>> getFilesystemLocation(const std::string & path, const std::vector<MountInfo> & mount_info)
+{
+    const auto id = getMountIdOfPath(path);
+    if (!id)
+        return {};
+    for (const auto & mount : mount_info)
+    {
+        if (mount.id != *id)
+            continue;
+        if (!isSameOrInside(path, mount.mount_point))
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "The path {} is not inside its mount point {}", path, mount.mount_point);
+        std::string location = (fs::path(mount.root) / fs::path(path).lexically_relative(mount.mount_point)).lexically_normal().string();
+        while (location.size() > 1 && location.ends_with('/'))
+            location.pop_back();
+        return std::make_pair(mount.device, std::move(location));
+    }
+    throw Exception(ErrorCodes::SYSTEM_ERROR, "There is no mount with the ID {} of {} in /proc/self/mountinfo", *id, path);
 }
 
-FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const FilesystemIsolationPathsCollector & collect_paths)
+/// The upper directory of an overlay from its options, where `\,` is a comma and `\\` a backslash.
+std::optional<std::string> getOverlayUpperDirectory(const std::string & super_options)
+{
+    std::string option;
+    for (size_t i = 0; i <= super_options.size(); ++i)
+    {
+        if (i == super_options.size() || super_options[i] == ',')
+        {
+            if (option.starts_with("upperdir="))
+                return decodeMountInfoPath(option.substr(std::string_view("upperdir=").size()));
+            option.clear();
+            continue;
+        }
+        if (super_options[i] == '\\' && i + 1 < super_options.size() && (super_options[i + 1] == ',' || super_options[i + 1] == '\\'))
+            ++i;
+        option += super_options[i];
+    }
+    return {};
+}
+
+/// Why the pid file cannot be used with the isolation, or empty. The supervisor outside creates and removes it, so code
+/// inside must not be able to change the pid file or a directory on the way to it, or it could make the supervisor write
+/// or remove another file of the host at its next start. Such a directory is found by its path, by its location in its
+/// filesystem, which a bind mount on the host can give another path, and through the upper directory of an overlay. A
+/// storage can be visible under other names in ways that cannot be found, so no symbolic link is allowed on the way:
+/// then code inside can only move directories within what it can write anyway.
+std::string checkPidFile(const std::string & pid_file, const std::vector<Mount> & mounts)
+{
+    /// Component by component, as the kernel resolves it: `..` after a link would lead elsewhere than without the link.
+    /// With no link allowed, `..` is the parent of the directory before it.
+    std::vector<fs::path> on_the_way = {"/"};
+    for (const auto & component : fs::absolute(pid_file).relative_path())
+    {
+        if (component.empty() || component == ".")
+            continue;
+        if (component == "..")
+        {
+            if (on_the_way.size() > 1)
+                on_the_way.pop_back();
+            continue;
+        }
+        const fs::path entry = on_the_way.back() / component;
+        struct stat st{};
+        if (::lstat(entry.c_str(), &st) == 0 && S_ISLNK(st.st_mode))
+            return fmt::format(
+                "the pid file {} has the symbolic link {} on its way, which code inside could change if the directory of the "
+                "link is writable inside under any name, and make the supervisor outside, which creates and removes the pid "
+                "file, write or remove another file. Use a path without symbolic links, such as one in `/run` rather than "
+                "`/var/run`",
+                pid_file, entry.string());
+        on_the_way.push_back(entry);
+    }
+
+    const std::vector<MountInfo> mount_info = readMountInfo();
+    std::vector<std::pair<const Mount *, std::pair<std::string, std::string>>> writable_locations;
+    for (const auto & mount : mounts)
+    {
+        if (mount.access != FilesystemIsolationPath::Access::ReadWrite)
+            continue;
+        if (auto location = getFilesystemLocation(mount.path, mount_info))
+            writable_locations.emplace_back(&mount, std::move(*location));
+        /// What is written to an overlay goes to its upper directory.
+        const auto id = getMountIdOfPath(mount.path);
+        for (const auto & info : mount_info)
+        {
+            if (!id || info.id != *id || info.filesystem_type != "overlay")
+                continue;
+            const auto upper = getOverlayUpperDirectory(info.super_options);
+            if (!upper)
+                continue;
+            const std::string in_overlay = (fs::path(info.root) / fs::path(mount.path).lexically_relative(info.mount_point)).lexically_normal().string();
+            const std::string upper_path = (fs::path(*upper) / fs::path(in_overlay).relative_path()).lexically_normal().string();
+            if (auto location = getFilesystemLocation(upper_path, mount_info))
+                writable_locations.emplace_back(&mount, std::move(*location));
+        }
+    }
+
+    for (const auto & entry : on_the_way)
+    {
+        const Mount * writable = nullptr;
+        for (const auto & mount : mounts)
+        {
+            if (mount.access == FilesystemIsolationPath::Access::ReadWrite && isSameOrInside(entry.string(), mount.path))
+                writable = &mount;
+        }
+        if (!writable)
+        {
+            if (const auto location = getFilesystemLocation(entry.string(), mount_info))
+            {
+                for (const auto & [mount, writable_location] : writable_locations)
+                {
+                    if (location->first == writable_location.first && isSameOrInside(location->second, writable_location.second))
+                        writable = mount;
+                }
+            }
+        }
+        if (writable)
+            return fmt::format(
+                "the pid file {} is in a path writable inside the isolation ({}, {}), where code inside could replace a "
+                "directory on its way, and make the supervisor outside, which creates and removes the pid file, write or "
+                "remove another file. Move the pid file out of it",
+                pid_file, writable->path, writable->source);
+    }
+    return {};
+}
+
+/// Why the paths cannot be made visible in a new PID namespace, or empty: a mount of `proc` inside one of them, as a
+/// `/host/proc` of a monitoring agent, would come with its recursive bind mount, and show the processes outside of the
+/// PID namespace, and their files through `/proc/<pid>/root`.
+std::string findProcMountInside(const std::vector<Mount> & mounts)
+{
+    for (const auto & info : readMountInfo())
+    {
+        if (info.filesystem_type != "proc")
+            continue;
+        for (const auto & mount : mounts)
+        {
+            if (isSameOrInside(info.mount_point, mount.path))
+                return fmt::format(
+                    "the path {} ({}) has a mount of `proc` at {}, which would show the processes outside of the isolation, "
+                    "and their files through `/proc/<pid>/root`",
+                    mount.path, mount.source, info.mount_point);
+        }
+    }
+    return {};
+}
+
+/// After the mounts, in the new PID namespace: every mount of `proc` is the new one or a part of it, which have its
+/// device. A mount that appeared since `findProcMountInside` is not taken.
+void checkNoOtherProcMount()
+{
+    const std::vector<MountInfo> mount_info = readMountInfo();
+    std::string device;
+    for (const auto & info : mount_info)
+    {
+        if (info.mount_point == "/proc" && info.filesystem_type == "proc")
+            device = info.device;
+    }
+    for (const auto & info : mount_info)
+    {
+        if (info.filesystem_type == "proc" && info.device != device)
+            throw Exception(
+                ErrorCodes::SYSTEM_ERROR,
+                "Cannot isolate the filesystem: there is a mount of `proc` at {} that is not the one of the new PID namespace",
+                info.mount_point);
+    }
+}
+
+/// Without a user namespace: the current process stays outside as the supervisor, creates the init of new PID and
+/// mount namespaces, which forks the server, and never returns. Returns in the server only.
+void startSupervisedServer(const std::string & pid_file)
+{
+    const pid_t supervisor_pid = ::getpid();
+    int server_sockets[2];
+    if (::socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, server_sockets) != 0)
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot create a socket pair");
+    const int pass_credentials = 1;
+    int exit_status_pipe[2] = {-1, -1};
+    SupervisorPidFile supervisor_pid_file;
+    sigset_t original_signal_mask;
+    try
+    {
+        if (::setsockopt(server_sockets[0], SOL_SOCKET, SO_PASSCRED, &pass_credentials, sizeof(pass_credentials)) != 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot set SO_PASSCRED");
+        if (::pipe2(exit_status_pipe, O_CLOEXEC) != 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot create a pipe");
+        if (!pid_file.empty())
+            supervisor_pid_file = createPidFile(pid_file, supervisor_pid);
+    }
+    catch (...)
+    {
+        for (const int fd : {server_sockets[0], server_sockets[1], exit_status_pipe[0], exit_status_pipe[1]})
+        {
+            if (fd >= 0)
+                closeDescriptor(fd);
+        }
+        throw;
+    }
+
+    const sigset_t handled_signals = getHandledSignals();
+    if (::sigprocmask(SIG_BLOCK, &handled_signals, &original_signal_mask) != 0)
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot block the signals");
+
+    const pid_t init_pid = cloneIntoPidAndMountNamespaces();
+    if (init_pid < 0)
+    {
+        const int clone_error = errno;
+        ::sigprocmask(SIG_SETMASK, &original_signal_mask, nullptr);
+        for (const int fd : {server_sockets[0], server_sockets[1], exit_status_pipe[0], exit_status_pipe[1]})
+            closeDescriptor(fd);
+        supervisor_pid_file.remove();
+        supervisor_pid_file.close();
+        errno = clone_error;
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot create a process in new namespaces");
+    }
+
+    if (init_pid > 0)
+    {
+        closeDescriptor(server_sockets[1]);
+        closeDescriptor(exit_status_pipe[1]);
+        runSupervisor(init_pid, server_sockets[0], exit_status_pipe[0], supervisor_pid_file);
+    }
+
+    closeDescriptor(server_sockets[0]);
+    closeDescriptor(exit_status_pipe[0]);
+    /// In the init, which has a single thread and runs nothing else before: the directory of the pid file is a way
+    /// out of the isolation.
+    supervisor_pid_file.close();
+    runInit(server_sockets[1], exit_status_pipe[1], original_signal_mask);
+
+}
+
+/// The capabilities the server keeps when it has `CAP_SYS_ADMIN`: all but `dangerous_capabilities`.
+uint64_t getCapabilitiesToKeep()
+{
+    uint64_t keep = ~uint64_t(0);
+    for (const auto capability : dangerous_capabilities)
+        keep &= ~(uint64_t(1) << capability);
+    return keep;
+}
+
+}
+
+FilesystemIsolationStatus isolateFilesystem(
+    FilesystemIsolationMode mode, const FilesystemIsolationPathsCollector & collect_paths, const std::string & pid_file)
 {
     requested_mode.store(static_cast<int>(mode), std::memory_order_relaxed);
 
@@ -1296,8 +2192,7 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
 #if defined(THREAD_SANITIZER)
     /// The runtime of the thread sanitizer starts its own background thread in the child of every `fork`, even if the
     /// parent did not have one, as in the process that `--daemon` forks, and there is no way to stop it then. It is
-    /// not a thread of the server, and it does not prevent entering a new mount namespace. A user namespace cannot be
-    /// entered with it, which `probeNamespaces` finds out, as its child has the same thread.
+    /// not a thread of the server, and it does not prevent creating a child in new namespaces.
     constexpr size_t max_threads = 2;
 #else
     constexpr size_t max_threads = 1;
@@ -1324,14 +2219,15 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
                 "to run without the isolation",
                 reason);
 
-        FilesystemIsolationStatus status;
-        status.not_isolated_reason = reason;
-        return rememberStatus(mode, std::move(status));
+        FilesystemIsolationStatus not_isolated;
+        not_isolated.not_isolated_reason = reason;
+        return rememberStatus(mode, std::move(not_isolated));
     }
 
     /// Everything that needs the original filesystem is done before entering the namespaces.
     Traversal traversal;
-    std::vector<FilesystemIsolationPath> all_paths = collect_paths ? collect_paths() : std::vector<FilesystemIsolationPath>{};
+    std::vector<FilesystemIsolationPath> all_paths
+        = collect_paths ? collect_paths(/* with_supervisor= */ !with_user_namespace) : std::vector<FilesystemIsolationPath>{};
     const std::vector<std::string> mapped_files = getMappedFiles();
     for (const auto & file : mapped_files)
         all_paths.push_back({file, FilesystemIsolationPath::Access::ReadOnly, "mapped into the process"});
@@ -1359,6 +2255,32 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
 #endif
     }
     const std::vector<Mount> mounts = planMounts(all_paths, traversal);
+
+    /// In a user namespace, the kernel refuses the server the files of the processes outside of it through any `proc`.
+    if (!with_user_namespace)
+    {
+        if (const std::string reason = findProcMountInside(mounts); !reason.empty())
+        {
+            if (mode == FilesystemIsolationMode::Enforce)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot isolate the filesystem: {}", reason);
+            FilesystemIsolationStatus not_isolated;
+            not_isolated.not_isolated_reason = reason;
+            return rememberStatus(mode, std::move(not_isolated));
+        }
+    }
+
+    /// With a user namespace, there is no supervisor: the server creates the pid file itself, inside.
+    if (!with_user_namespace && !pid_file.empty())
+    {
+        if (const std::string reason = checkPidFile(pid_file, mounts); !reason.empty())
+        {
+            if (mode == FilesystemIsolationMode::Enforce)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot isolate the filesystem: {}", reason);
+            FilesystemIsolationStatus not_isolated;
+            not_isolated.not_isolated_reason = reason;
+            return rememberStatus(mode, std::move(not_isolated));
+        }
+    }
     for (auto & alias : getLibraryAliases(mapped_files))
         traversal.links.push_back(std::move(alias));
     for (auto & alias : getLibraryAliases(executable_dependencies))
@@ -1375,8 +2297,16 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     if (with_user_namespace)
         status.lost_capabilities = capabilityNames(capabilities.effective);
 
-    /// From here on, any failure is final: the process cannot return to the original filesystem.
-    enterNamespaces(with_user_namespace, uid, gid);
+    /// From here on, in the server, any failure is final: the process cannot return to the original filesystem.
+    if (with_user_namespace)
+        enterUserAndMountNamespaces(uid, gid);
+    else
+    {
+        status.created_pid_namespace = true;
+        status.supervisor_pid = ::getpid();
+        startSupervisedServer(pid_file);
+        makeMountsPrivate();
+    }
 
     mountTmpfs(staging_directory, MS_NOSUID | MS_NODEV, "mode=0755");
     const std::string put_old = std::string(staging_directory) + old_root;
@@ -1387,12 +2317,24 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     if (0 != ::chdir("/"))
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot change the directory to the new root");
 
-    /// A new `proc` cannot be mounted without a new PID namespace, so the original one is mounted, with its mounts
-    /// inside, which a user namespace requires. It goes first, because the other mounts read `/proc/self/mountinfo`.
-    bindMount("/proc", 0);
+    /// It goes first, because the other mounts read `/proc/self/mountinfo`. Without a user namespace, a new `proc` of the
+    /// new PID namespace, in which no process outside is visible: the server keeps the capabilities it uses, and a
+    /// process outside of the same user and without capabilities would let it reach its filesystem through
+    /// `/proc/<pid>/root`. In a user namespace, the kernel refuses that to the server for every process outside of it,
+    /// and a new `proc` cannot be mounted without a new PID namespace, which a container that hides some of the files of
+    /// `/proc` refuses as well: the original one is mounted, with its mounts inside, which a user namespace requires.
+    if (with_user_namespace)
+        bindMount("/proc", 0);
+    else
+    {
+        createDirectories("/proc");
+        mountProc("/proc");
+    }
     for (const auto * control : proc_global_controls)
         remountReadOnly(control);
-    status.visible_paths.push_back("/proc (with /proc/sys, /proc/sysrq-trigger, /proc/bus, /proc/fs, /proc/irq read-only)");
+    status.visible_paths.push_back(with_user_namespace
+        ? "/proc (with /proc/sys, /proc/sysrq-trigger, /proc/bus, /proc/fs, /proc/irq read-only)"
+        : "/proc (a new instance for the PID namespace, with /proc/sys, /proc/sysrq-trigger, /proc/bus, /proc/fs, /proc/irq read-only)");
 
     /// A private `/tmp`, empty and not shared with anything outside. Mounted first, so that the paths inside `/tmp`
     /// are mounted on top of it.
@@ -1434,9 +2376,12 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
         status.visible_paths.push_back(fmt::format("{} ({}, {})", mount.path, describeAccess(mount.access), mount.source));
     }
 
-    /// A link inside a bind mount exists there already.
+    /// A link inside a bind mount exists there already. One in `/proc` or `/sys`, as `/proc/self` on the way of
+    /// `/dev/stdout`, is what these filesystems show, and the PIDs in the new `proc` differ from the original ones.
     for (const auto & link : traversal.links)
     {
+        if (isSameOrInside(link.path, "/proc") || isSameOrInside(link.path, "/sys"))
+            continue;
         struct stat st{};
         if (0 == ::lstat(link.path.c_str(), &st))
             continue;
@@ -1448,6 +2393,8 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     /// A directory inside a bind mount exists there already.
     for (const auto & directory : traversal.directories)
     {
+        if (isSameOrInside(directory, "/proc") || isSameOrInside(directory, "/sys"))
+            continue;
         struct stat st{};
         if (0 != ::lstat(directory.c_str(), &st))
             createDirectories(directory);
@@ -1460,6 +2407,8 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
 
     if (0 != ::umount2(old_root, MNT_DETACH))
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot unmount the original root filesystem");
+    if (!with_user_namespace)
+        checkNoOtherProcMount();
     if (0 != ::rmdir(old_root))
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot remove {}", old_root);
 
@@ -1475,14 +2424,100 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
         restrictCapabilities(0);
     }
     else
-    {
-        uint64_t keep = ~uint64_t(0);
-        for (const auto capability : dangerous_capabilities)
-            keep &= ~(uint64_t(1) << capability);
-        restrictCapabilities(keep);
-    }
+        restrictCapabilities(getCapabilitiesToKeep());
 
     return rememberStatus(mode, std::move(status));
+}
+
+namespace
+{
+
+std::mutex supervisor_request_mutex;
+
+/// Sends `request` to the supervisor and returns the rest of its answer after `reply_prefix`, or nothing if the
+/// supervisor does not answer within 10 seconds. An answer to an earlier request that timed out is skipped.
+std::optional<std::string> requestFromSupervisor(int fd, std::string_view request, std::string_view reply_prefix)
+{
+    std::lock_guard lock(supervisor_request_mutex);
+    if (::send(fd, request.data(), request.size(), MSG_NOSIGNAL) < 0)
+        return std::nullopt;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (true)
+    {
+        const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+        if (left <= 0)
+            return std::nullopt;
+        pollfd poll_fd{.fd = fd, .events = POLLIN, .revents = 0};
+        const int res = ::poll(&poll_fd, 1, static_cast<int>(left));
+        if (res < 0 && errno == EINTR)
+            continue;
+        if (res <= 0)
+            return std::nullopt;
+        char buf[64];
+        const ssize_t size = ::recv(fd, buf, sizeof(buf), MSG_DONTWAIT);
+        if (size < 0 && (errno == EAGAIN || errno == EINTR))
+            continue;
+        if (size <= 0)
+            return std::nullopt;
+        const std::string_view reply(buf, size);
+        if (reply.starts_with(reply_prefix))
+            return std::string(reply.substr(reply_prefix.size()));
+    }
+}
+
+std::optional<int> parseNumber(std::string_view text)
+{
+    if (text.empty() || text.size() > 9)
+        return std::nullopt;
+    int value = 0;
+    for (const char c : text)
+    {
+        if (c < '0' || c > '9')
+            return std::nullopt;
+        value = value * 10 + (c - '0');
+    }
+    return value;
+}
+
+}
+
+bool notifyFilesystemIsolationSupervisor(std::string_view message)
+{
+    const int fd = supervisor_socket.load(std::memory_order_relaxed);
+    if (fd < 0)
+        return false;
+    const auto reply = requestFromSupervisor(fd, message, notify_reply_prefix);
+    if (!reply)
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "Failed to notify systemd: the supervisor of the filesystem isolation did not answer");
+    const auto error = parseNumber(*reply);
+    if (!error)
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "Failed to notify systemd: unexpected answer of the supervisor of the filesystem isolation");
+    if (*error != 0)
+    {
+        errno = *error;
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Failed to notify systemd, sendto returned error");
+    }
+    return true;
+}
+
+std::optional<int> getFilesystemIsolationHostPid()
+{
+    const int fd = supervisor_socket.load(std::memory_order_relaxed);
+    if (fd < 0)
+        return std::nullopt;
+    const auto reply = requestFromSupervisor(fd, host_pid_request, host_pid_reply_prefix);
+    if (!reply)
+        return std::nullopt;
+    return parseNumber(*reply);
+}
+
+void registerFilesystemIsolationServingProcess()
+{
+    const int fd = supervisor_socket.load(std::memory_order_relaxed);
+    if (fd < 0)
+        return;
+    if (::send(fd, serving_registration.data(), serving_registration.size(), MSG_NOSIGNAL) < 0)
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot register with the supervisor of the filesystem isolation");
 }
 
 }
@@ -1492,7 +2527,7 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
 namespace DB
 {
 
-FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const FilesystemIsolationPathsCollector &)
+FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const FilesystemIsolationPathsCollector &, const std::string &)
 {
     requested_mode.store(static_cast<int>(mode), std::memory_order_relaxed);
 
@@ -1502,6 +2537,20 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     if (mode == FilesystemIsolationMode::BestEffort)
         status.not_isolated_reason = "the filesystem isolation is implemented only on Linux";
     return rememberStatus(mode, std::move(status));
+}
+
+bool notifyFilesystemIsolationSupervisor(std::string_view)
+{
+    return false;
+}
+
+std::optional<int> getFilesystemIsolationHostPid()
+{
+    return std::nullopt;
+}
+
+void registerFilesystemIsolationServingProcess()
+{
 }
 
 }

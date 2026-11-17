@@ -122,7 +122,8 @@ public:
         const Poco::Util::AbstractConfiguration & config_,
         const std::string & config_path,
         const std::string & working_directory_,
-        const std::string & startup_directory_)
+        const std::string & startup_directory_,
+        bool with_supervisor_ = false)
         : config(config_)
         , working_directory(working_directory_)
         , startup_directory(startup_directory_)
@@ -131,6 +132,7 @@ public:
         , config_directory(config_file.parent_path())
         , data_path(getDataPath(config, working_directory))
         , runtime_directory(is_daemon ? coreDirectory() : working_directory)
+        , with_supervisor(with_supervisor_)
     {
     }
 
@@ -144,10 +146,10 @@ public:
         for (const auto * path : system_certificate_directories)
             addLinkTargetsInside(path, "the CA certificates of the system");
 
-        /// The socket of the service manager, which the server notifies when it is ready (`systemdNotify`). Only the
-        /// socket is visible, not its directory. A socket on a read-only mount can still be sent to. A name starting
-        /// with `@` is an abstract socket, which is not in the filesystem.
-        if (const char * notify_socket = std::getenv("NOTIFY_SOCKET"); notify_socket && *notify_socket == '/') // NOLINT(concurrency-mt-unsafe)
+        /// The socket of the service manager, which the server notifies when it is ready (`systemdNotify`), unless the
+        /// supervisor does. Only the socket is visible, not its directory. A socket on a read-only mount can still be
+        /// sent to. A name starting with `@` is an abstract socket, which is not in the filesystem.
+        if (const char * notify_socket = std::getenv("NOTIFY_SOCKET"); !with_supervisor && notify_socket && *notify_socket == '/') // NOLINT(concurrency-mt-unsafe)
             add(notify_socket, Access::ReadOnly, "the environment variable NOTIFY_SOCKET");
 
         /// If it is a link, as `/dev/log -> /run/systemd/journal/dev-log` with systemd, the directory of its target, so
@@ -173,6 +175,13 @@ public:
         return std::move(paths);
     }
 
+    /// The pid file, where `BaseDaemon::initialize` would create it, or empty if there is none.
+    [[nodiscard]] std::string pidFile() const
+    {
+        const std::string value = config.getString("pid", "");
+        return value.empty() ? std::string{} : absolute(value, logDirectory()).string();
+    }
+
 private:
     const Poco::Util::AbstractConfiguration & config;
     const fs::path working_directory;
@@ -187,6 +196,7 @@ private:
     /// with `--daemon`, the directory of the core dumps, where `BaseDaemon::initialize` changes to at its end. Only
     /// `path` is resolved against `working_directory`, the original working directory, in any case.
     const fs::path runtime_directory;
+    const bool with_supervisor;
     std::vector<FilesystemIsolationPath> paths;
 
     /// Without `.` and empty components, so that equal paths compare equal, but with `..`: after a symbolic link it
@@ -715,8 +725,11 @@ private:
     {
         for (const auto * key : {"logger.stderr", "logger.stdout"})
             addKeyLocation(key, Access::ReadWrite, startup_directory);
-        for (const auto * key : {"logger.log", "logger.errorlog", "pid"})
+        for (const auto * key : {"logger.log", "logger.errorlog"})
             addKeyLocation(key, Access::ReadWrite, logDirectory());
+        /// Unless the supervisor outside of the isolation owns it.
+        if (!with_supervisor)
+            addKeyLocation("pid", Access::ReadWrite, logDirectory());
         /// With `--daemon`, `stderr.log` and `stdout.log` are created in the directory of the log by default.
         if (is_daemon && !config.getString("logger.log", "").empty())
             add(logDirectory(), Access::ReadWrite, "the directory of `logger.log`");
@@ -924,9 +937,19 @@ std::vector<FilesystemIsolationPath> collectFilesystemIsolationPaths(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_path,
     const std::string & working_directory,
+    const std::string & startup_directory,
+    bool with_supervisor)
+{
+    return Collector(config, config_path, working_directory, startup_directory, with_supervisor).collect();
+}
+
+std::string getFilesystemIsolationPidFile(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_path,
+    const std::string & working_directory,
     const std::string & startup_directory)
 {
-    return Collector(config, config_path, working_directory, startup_directory).collect();
+    return Collector(config, config_path, working_directory, startup_directory).pidFile();
 }
 
 }

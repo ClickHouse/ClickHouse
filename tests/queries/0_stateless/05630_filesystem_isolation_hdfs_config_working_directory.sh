@@ -74,8 +74,10 @@ if ! grep -q 'Ready for connections' "$DIR/log/server.log" 2>/dev/null || ! grep
     cat "$DIR/server.out" "$DIR/log/server.err.log" >&2
     exit 1
 fi
+# The supervisor stays outside of the namespaces, and its child, the init of the PID namespace, is inside.
+INSIDE=$(cut -d' ' -f1 "/proc/$PID/task/$PID/children")
 
-echo "in the working directory: $([ -f "/proc/$PID/root$DIR/work/client/hdfs-site.xml" ] && echo visible || echo invisible)"
-echo "keytab: $([ -f "/proc/$PID/root$DIR/keys/client.keytab" ] && echo visible || echo invisible)"
-echo "keytab of a user: $([ -f "/proc/$PID/root$DIR/user_keys/alice.keytab" ] && echo visible || echo invisible)"
-echo "cache of the tickets: $(awk -v dir="$DIR/tickets" '$2 == dir && $4 ~ /^rw(,|$)/' "/proc/$PID/mounts" | grep -q . && echo writable || echo absent)"
+echo "in the working directory: $([ -f "/proc/$INSIDE/root$DIR/work/client/hdfs-site.xml" ] && echo visible || echo invisible)"
+echo "keytab: $([ -f "/proc/$INSIDE/root$DIR/keys/client.keytab" ] && echo visible || echo invisible)"
+echo "keytab of a user: $([ -f "/proc/$INSIDE/root$DIR/user_keys/alice.keytab" ] && echo visible || echo invisible)"
+echo "cache of the tickets: $(awk -v dir="$DIR/tickets" '$2 == dir && $4 ~ /^rw(,|$)/' "/proc/$INSIDE/mounts" | grep -q . && echo writable || echo absent)"

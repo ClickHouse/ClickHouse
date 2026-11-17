@@ -1,0 +1,9 @@
+enforce, in path: refused
+best_effort, in path: not isolated
+enforce, through a link in path: refused
+enforce, through a bind mount of path: refused
+enforce, pid file writable inside: refused
+enforce, through the upper directory of an overlay of path: refused
+enforce, through a link outside of path: refused
+enforce, through a link and .. outside of path: refused
+marker: unchanged

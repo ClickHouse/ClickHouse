@@ -64,10 +64,12 @@ if ! grep -q 'Ready for connections' "$DIR/log/server.log" 2>/dev/null || ! grep
     cat "$DIR/server.out" "$DIR/log/server.err.log" >&2
     exit 1
 fi
+# The supervisor stays outside of the namespaces, and its child, the init of the PID namespace, is inside.
+INSIDE=$(cut -d' ' -f1 "/proc/$PID/task/$PID/children")
 
 echo "directory of the scripts: $([ -d "$DIR/data/user_scripts" ] && echo created || echo absent)"
 # The options of the mount at `user_scripts` inside the server: `ro` without `noexec`.
-OPTIONS=$(awk -v dir="$DIR/data/user_scripts" '$2 == dir { print $4 }' "/proc/$PID/mounts" | tail -n1)
+OPTIONS=$(awk -v dir="$DIR/data/user_scripts" '$2 == dir { print $4 }' "/proc/$INSIDE/mounts" | tail -n1)
 if [ -z "$OPTIONS" ]; then
     echo "mount of the scripts: absent"
 elif [[ ",$OPTIONS," == *",ro,"* && ",$OPTIONS," != *",noexec,"* ]]; then

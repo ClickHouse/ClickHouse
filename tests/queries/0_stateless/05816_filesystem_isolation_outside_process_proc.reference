@@ -1,0 +1,13 @@
+outside process without capabilities: yes
+namespaces: PID and mount
+seccomp filter of the server: installed
+init of the PID namespace: clickhouse-init
+seccomp filter of the program: installed
+outside process visible: no
+direct read: denied
+read through /proc/<pid>/root: denied
+write through /proc/<pid>/root: denied
+read through /proc/<pid>/cwd: denied
+read through /proc/<pid>/fd: denied
+marker: unchanged
+proc of the host inside path: refused
