@@ -25,6 +25,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
+#include <optional>
+
 
 namespace ProfileEvents
 {
@@ -202,6 +204,12 @@ void SelectStreamFactory::createForShardImpl(
     {
         StoragePtr main_table_storage;
 
+        /// A table function is not checked for existence on the replicas, so the local replicas are left out.
+        std::optional<Cluster::ShardInfo> remote_replicas;
+        if (table_func_ptr)
+            remote_replicas = makeShardInfoWithoutLocalReplicas(shard_info);
+        const bool has_remote_replicas = remote_replicas ? remote_replicas->pool != nullptr : shard_info.hasRemoteConnections();
+
         if (table_func_ptr)
         {
             TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
@@ -216,7 +224,7 @@ void SelectStreamFactory::createForShardImpl(
                 const bool missing_table = e.code() == ErrorCodes::UNKNOWN_TABLE || e.code() == ErrorCodes::UNKNOWN_DATABASE;
                 const bool skip_missing_table = settings[Setting::skip_unavailable_shards]
                     && settings[Setting::skip_unavailable_shards_mode] != SkipUnavailableShardsMode::UNAVAILABLE;
-                if (!missing_table || !(skip_missing_table || shard_info.hasRemoteConnections()))
+                if (!missing_table || !(skip_missing_table || has_remote_replicas))
                     throw;
             }
         }
@@ -232,19 +240,12 @@ void SelectStreamFactory::createForShardImpl(
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
             /// The table of a table function has no name.
             const String missing_table_name = table_func_ptr ? table_func_ptr->formatForLogging() : main_table.getNameForLogs();
-            if (shard_info.hasRemoteConnections())
+            if (has_remote_replicas)
             {
                 LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
                     "There is no table {} on local replica of shard {}, will try remote replicas.",
                     missing_table_name, shard_info.shard_num);
-                if (table_func_ptr)
-                {
-                    /// A table function is not checked for existence on the replicas, so the replica on this server is left out.
-                    const auto remote_replicas = makeShardInfoWithoutLocalReplicas(shard_info, settings);
-                    emplace_remote_stream(/*lazy=*/false, &remote_replicas);
-                }
-                else
-                    emplace_remote_stream();
+                emplace_remote_stream(/*lazy=*/false, remote_replicas ? &*remote_replicas : nullptr);
             }
             else if (settings[Setting::skip_unavailable_shards])
             {

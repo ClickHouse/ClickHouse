@@ -61,8 +61,9 @@ namespace ClusterProxy
 
 class SelectStreamFactory;
 
-/// Returns the shard without its replicas on this server, so that only the replicas on other servers are asked.
-Cluster::ShardInfo makeShardInfoWithoutLocalReplicas(const Cluster::ShardInfo & shard_info, const Settings & settings);
+/// Returns the shard without its local replicas, so that only the other replicas are asked.
+/// The `pool` of the result is nullptr if there is none.
+Cluster::ShardInfo makeShardInfoWithoutLocalReplicas(const Cluster::ShardInfo & shard_info);
 
 /// `database` is an initiator-only setting: it selects the default database for the user's query
 /// (the equivalent of `USE`), and a remote server applies it the same way. But a query sent to a

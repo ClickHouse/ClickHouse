@@ -58,7 +58,7 @@ SELECT count() FROM t_saved SETTINGS skip_unavailable_shards = 0; -- { serverErr
 SELECT count() FROM t_saved SETTINGS skip_unavailable_shards_mode = 'unavailable'; -- { serverError UNKNOWN_TABLE }
 
 SELECT '--- the remote replica of the shard of the missing local table answers, whatever the shard skip settings are';
--- The first replica of the only shard is this server, the second one has the table in shard_1.
+-- The two replicas of the only shard are both this server, but the second one has the default database shard_1, so it is a remote replica.
 DESCRIBE cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain));
 DESCRIBE cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain)) SETTINGS skip_unavailable_shards = 1, skip_unavailable_shards_mode = 'unavailable';
 DESCRIBE cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain)) SETTINGS skip_unavailable_shards = 1;
@@ -67,6 +67,8 @@ SELECT count() FROM cluster('test_cluster_one_shard_local_and_remote_replica', v
 CREATE TABLE t_saved_replicas AS cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain));
 SELECT count() FROM t_saved_replicas;
 SELECT count() FROM t_saved_replicas SETTINGS skip_unavailable_shards = 1, skip_unavailable_shards_mode = 'unavailable';
+DESCRIBE cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain)) SETTINGS use_hedged_requests = 0;
+SELECT count() FROM cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain)) SETTINGS use_hedged_requests = 0;
 
 SELECT '--- custom-key parallel replicas ask the local replica as a remote one, so its missing table is an error';
 SELECT x FROM cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain))

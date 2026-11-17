@@ -120,7 +120,7 @@
                 </replica>
                 <replica>
                     <default_database>shard_1</default_database>
-                    <host>127.0.0.2</host>
+                    <host>127.0.0.1</host>
                     <port>9000</port>
                 </replica>
             </shard>

@@ -208,12 +208,13 @@ ColumnsDescription getStructureOfRemoteTable(
     {
         /// The local replica has been asked above, only the remote replicas of the shard are left.
         const bool local_replica_asked = missing_table && shard_info.isLocal();
-        if (local_replica_asked && !shard_info.hasRemoteConnections())
-            continue;
-
         std::optional<Cluster::ShardInfo> remote_replicas;
         if (local_replica_asked)
-            remote_replicas = ClusterProxy::makeShardInfoWithoutLocalReplicas(shard_info, context->getSettingsRef());
+        {
+            remote_replicas = ClusterProxy::makeShardInfoWithoutLocalReplicas(shard_info);
+            if (!remote_replicas->pool)
+                continue;
+        }
 
         try
         {
