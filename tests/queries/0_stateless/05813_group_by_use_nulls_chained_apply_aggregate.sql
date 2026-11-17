@@ -82,3 +82,15 @@ WITH (x -> x) AS sum SELECT * APPLY abs APPLY sum APPLY max FROM numbers(3) GROU
 WITH (x -> x) AS sum SELECT max(sum(abs(number))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
 SELECT * APPLY (x -> x + (SELECT count() FROM numbers(2))) APPLY sum FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
 SELECT sum(number + (SELECT count() FROM numbers(2))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+SELECT number, * APPLY (x -> tuple(x)) APPLY (x -> (isNull(x.*), any(isNull(x.1)))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+SELECT number, (isNull(tuple(number).1), any(isNull(tuple(number).1))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+SELECT number, * APPLY (x -> tuple(x)) APPLY (x -> (isNull(x.COLUMNS('1')), any(isNull(x.1)))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+WITH x AS a SELECT number, * APPLY (x -> tuple(x)) APPLY (x -> (isNull(a.*), any(isNull(x.1)))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+SELECT number, * APPLY (x -> tuple(x)) APPLY (x -> (x.*, any(isNull(x.1)))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+SELECT number, (tuple(number).1, any(isNull(tuple(number).1))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+SELECT * APPLY (x -> x) APPLY (x -> sum(COLUMNS(x))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+SELECT sum(number) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+SELECT * APPLY (x -> tuple(x)) APPLY (x -> sum(x.*)) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+SELECT sum(tuple(number).1) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+SELECT * APPLY (x -> tuple(x)) APPLY (x -> any(toTypeName(x.*))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+SELECT any(toTypeName(tuple(number).1)) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;

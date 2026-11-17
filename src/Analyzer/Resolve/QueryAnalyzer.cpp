@@ -3126,6 +3126,14 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         bool is_used_in_aggregate_function = false;
         bool is_used_elsewhere = false;
         bool uses_alias_or_sql_udf = false;
+        auto process_name_use = [&](const std::string & name, Place place)
+        {
+            if (name == argument_names[0])
+                (place == Place::IN_AGGREGATE_FUNCTION ? is_used_in_aggregate_function : is_used_elsewhere) = true;
+            else
+                uses_alias_or_sql_udf |= is_alias_of_enclosing_scope(name, IdentifierLookupContext::EXPRESSION);
+        };
+
         std::vector<std::pair<const IQueryTreeNode *, Place>> nodes_to_process{{lambda.getExpression().get(), Place::OUTSIDE}};
         while (!nodes_to_process.empty())
         {
@@ -3136,12 +3144,18 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
             if (const auto * identifier = subtree_node->as<IdentifierNode>())
             {
-                const auto & name = identifier->getIdentifier().at(0);
-                if (name == argument_names[0])
-                    (place == Place::IN_AGGREGATE_FUNCTION ? is_used_in_aggregate_function : is_used_elsewhere) = true;
-                else
-                    uses_alias_or_sql_udf |= is_alias_of_enclosing_scope(name, IdentifierLookupContext::EXPRESSION);
+                process_name_use(identifier->getIdentifier().at(0), place);
                 continue;
+            }
+
+            /// A matcher keeps its qualifier and the identifiers of `COLUMNS(...)` in members, not in children.
+            if (const auto * matcher = subtree_node->as<MatcherNode>())
+            {
+                if (matcher->isQualified())
+                    process_name_use(matcher->getQualifiedIdentifier().at(0), place);
+                else if (matcher->getMatcherType() == MatcherNodeType::COLUMNS_LIST)
+                    for (const auto & column_identifier : matcher->getColumnsIdentifiers())
+                        process_name_use(column_identifier.at(0), place);
             }
 
             if (const auto * nested_lambda = subtree_node->as<LambdaNode>();
