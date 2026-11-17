@@ -1291,9 +1291,8 @@ void FillingTransform::transformRange(
 
         logDebug("next_row updated", next_row);
 
-        /// The first original row equal to the filling row up to `getFromKey` is in the group the row was set up for:
-        /// its keys without `FROM` take that row's values, as when `FillingRow::next` reaches a row.
-        /// A copied key equals the original row, so, as in `FillingRow::next`, its TO or STALENESS does not stop the row.
+        /// At the first original row of its group, the filling row's keys without `FROM` take that row's values.
+        /// Copied keys equal the original row, so they do not take part in the TO or STALENESS check.
         std::optional<bool> constraints_satisfied_before_copy;
         if (const auto from_key = filling_row.getFromKey())
         {
