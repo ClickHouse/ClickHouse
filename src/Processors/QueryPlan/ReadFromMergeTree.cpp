@@ -1343,7 +1343,8 @@ Pipe ReadFromMergeTree::read(
     ReadType read_type,
     size_t max_streams,
     size_t min_marks_for_concurrent_read,
-    bool use_uncompressed_cache)
+    bool use_uncompressed_cache,
+    size_t min_marks_per_task_at_read_end)
 {
     const auto & settings = context->getSettingsRef();
     size_t sum_marks = parts_with_range.getMarksCountAllParts();
@@ -1358,6 +1359,7 @@ Pipe ReadFromMergeTree::read(
         .threads = max_streams,
         .sum_marks = sum_marks,
         .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
+        .min_marks_per_task_at_read_end = min_marks_per_task_at_read_end,
         .preferred_block_size_bytes = settings[Setting::preferred_block_size_bytes],
         .use_uncompressed_cache = use_uncompressed_cache,
         .use_columns_cache = settings[Setting::use_columns_cache],
@@ -1989,6 +1991,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
     if (0 == info.sum_marks)
         return {};
 
+    /// The size of the tasks at the end of the read, or zero when the end of the read is cut like the rest.
+    size_t min_marks_per_task_at_read_end = 0;
+
     if (num_streams > 1)
     {
         const size_t initial_num_streams = num_streams;
@@ -2068,16 +2073,19 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
 
         /// The number of streams is final here, which fixes the share of the marks that a stream gets. A
         /// stream that has read its share takes tasks from the shares of other streams, one task at a time,
-        /// so the last streams of a read work alone for up to one task each. The share of a stream is
-        /// therefore cut into at least `min_tasks_per_stream` tasks, which keeps that time at about 3% of a
-        /// share, unless that needs tasks below `merge_tree_min_read_task_size`. For example, 192 streams
-        /// over 12,288 marks have 64 marks each: the default task of 24 marks gives a stream three tasks, and
-        /// the smallest task of 8 marks gives it eight. 16 streams have 768 marks each, which is 32 default
-        /// tasks, so their task stays.
+        /// so the last streams of a read work alone for up to one task each. The pool therefore cuts the end
+        /// of the read (see `MergeTreeReadPool::getMinMarksPerTask`) into smaller tasks, of
+        /// 1/`tasks_per_share_at_read_end` of a share, which keeps that time at about 3% of a share, unless
+        /// that needs tasks below `merge_tree_min_read_task_size`. For example, 192 streams over 12,288
+        /// marks have 64 marks each: the default task is 24 marks, and the tasks at the end of the read are
+        /// the smallest task of 8 marks. 16 streams have 768 marks each, which is 32 default tasks, so all
+        /// their tasks are default ones.
         if (pool_cuts_tasks_of_exact_size && num_streams > 1)
         {
-            static constexpr size_t min_tasks_per_stream = 32;
-            info.min_marks_for_concurrent_read = task_marks_for_share(num_streams, min_tasks_per_stream);
+            static constexpr size_t tasks_per_share_at_read_end = 32;
+            const size_t task_marks = task_marks_for_share(num_streams, tasks_per_share_at_read_end);
+            if (task_marks < info.min_marks_for_concurrent_read)
+                min_marks_per_task_at_read_end = task_marks;
         }
     }
 
@@ -2144,7 +2152,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
             read_type,
             num_streams,
             info.min_marks_for_concurrent_read,
-            info.use_uncompressed_cache);
+            info.use_uncompressed_cache,
+            min_marks_per_task_at_read_end);
 
         if (merging_pipes.empty())
             return non_intersecting_parts_ranges_read_pipe;
@@ -2174,7 +2183,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         read_type,
         num_streams,
         info.min_marks_for_concurrent_read,
-        info.use_uncompressed_cache);
+        info.use_uncompressed_cache,
+        min_marks_per_task_at_read_end);
 }
 
 static ActionsDAG createProjection(const Block & header)

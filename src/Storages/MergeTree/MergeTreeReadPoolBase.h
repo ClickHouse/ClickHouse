@@ -25,6 +25,11 @@ public:
         size_t threads = 0;
         size_t sum_marks = 0;
         size_t min_marks_for_concurrent_read = 0;
+        /// The size of the tasks that `MergeTreeReadPool` cuts at the end of the read (see
+        /// `MergeTreeReadPool::getMinMarksPerTask`), or zero when the end of the read is cut like the rest.
+        /// The caller guarantees that it is below `min_marks_for_concurrent_read` and not below
+        /// `merge_tree_min_read_task_size`.
+        size_t min_marks_per_task_at_read_end = 0;
         size_t preferred_block_size_bytes = 0;
 
         bool use_uncompressed_cache = false;
