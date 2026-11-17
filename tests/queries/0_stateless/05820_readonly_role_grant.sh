@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Under readonly, granting a role is refused like granting a privilege, and revoking one is refused ON CLUSTER.
+# Under readonly, granting or revoking a role is refused like granting a privilege.
 
 A="a_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 B="b_${CLICKHOUSE_TEST_UNIQUE_NAME}"
@@ -39,11 +39,11 @@ run 2 "GRANT $R TO $B"
 run 1 "GRANT $R TO $B ON CLUSTER test_shard_localhost"
 granted
 
-$CLICKHOUSE_CLIENT -q "GRANT $R TO $B"
-run 1 "REVOKE $R FROM $B ON CLUSTER test_shard_localhost"
+run 0 "GRANT $R TO $B"
 granted
 run 1 "REVOKE $R FROM $B"
+run 2 "REVOKE $R FROM $B"
+run 1 "REVOKE $R FROM $B ON CLUSTER test_shard_localhost"
 granted
-
-run 0 "GRANT $R TO $B"
+run 0 "REVOKE $R FROM $B"
 granted

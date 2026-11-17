@@ -1115,6 +1115,12 @@ bool ContextAccess::checkAdminOptionImplHelper(const ContextPtr & context, const
         return false;
     }
 
+    if (params.readonly)
+    {
+        show_error(ErrorCodes::READONLY, "{}: Cannot change grants in readonly mode.", getUserName());
+        return false;
+    }
+
     if (isGranted(context, AccessType::ROLE_ADMIN))
         return true;
 
