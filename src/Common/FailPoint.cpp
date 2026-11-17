@@ -258,6 +258,7 @@ static struct InitFiu
     REGULAR(refresh_mv_skip_execution) \
     REGULAR(refresh_mv_incremental_fail_after_append) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
+    ONCE(column_aggregate_function_expand_exception) \
     ONCE(space_saving_copy_arena_throw) \
     ONCE(adaptive_aggregation_drain_create_states_throw) \
     ONCE(aggregator_merge_collect_states_throw) \
@@ -352,6 +353,7 @@ static struct InitFiu
     PAUSEABLE(backup_from_snapshot_pause_after_admin_lock_release) \
     PAUSEABLE(backup_from_snapshot_pause_before_holder_multi) \
     PAUSEABLE(backup_from_snapshot_pause_before_mount_parent_removal) \
+    PAUSEABLE(backup_from_snapshot_pause_before_collecting_snapshot_file) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_before_data_restore_tasks) \
