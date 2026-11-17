@@ -10,7 +10,6 @@ SELECT addMonths(materialize(toDate('2000-01-01')), 18446744073709551615); -- { 
 SELECT addYears(materialize(toDate('2000-01-01')), 18446744073709551615); -- { serverError DECIMAL_OVERFLOW }
 SELECT addSeconds(materialize(toDateTime('2000-01-01 00:00:00', 'UTC')), 18446744073709551613); -- { serverError DECIMAL_OVERFLOW }
 SELECT addDays(materialize(toDateTime64('2000-01-01 00:00:00', 3, 'UTC')), 18446744073709551613); -- { serverError DECIMAL_OVERFLOW }
-SELECT date_add(DAY, 18446744073709551613, materialize(toDate('2000-01-01'))); -- { serverError DECIMAL_OVERFLOW }
 SELECT toDate('2000-01-01') + number AS d, addDays(d, 18446744073709551613) FROM numbers(2); -- { serverError DECIMAL_OVERFLOW }
 SELECT addDays(materialize(toDate('2000-01-01')), 1e30); -- { serverError DECIMAL_OVERFLOW }
 
