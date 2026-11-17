@@ -44,7 +44,7 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to);
 
 /// Whether `to` has `Bool` (or `SimpleAggregateFunction(f, Bool)` with `f` returning `Bool`) where `from` has another type, so
 /// that the conversion maps nonzero to 1. This holds at any nesting level (`Array(UInt8)` to `Array(Bool)`) except inside a
-/// `JSON` typed path, a `Variant` alternative or the arguments of an `AggregateFunction` or `SimpleAggregateFunction`.
+/// `JSON` typed path, a `Variant` alternative or an `AggregateFunction` state.
 bool convertsToBool(const IDataType & from, const IDataType & to);
 
 /// Whether a conversion from `from` to `to` can be skipped: `from.equals(to)`, which compares only the representation
