@@ -21,4 +21,5 @@ x	UInt8
 1
 1
 1
+--- custom-key parallel replicas ask the local replica as a remote one, so its missing table is an error
 3

@@ -68,6 +68,12 @@ CREATE TABLE t_saved_replicas AS cluster('test_cluster_one_shard_local_and_remot
 SELECT count() FROM t_saved_replicas;
 SELECT count() FROM t_saved_replicas SETTINGS skip_unavailable_shards = 1, skip_unavailable_shards_mode = 'unavailable';
 
+SELECT '--- custom-key parallel replicas ask the local replica as a remote one, so its missing table is an error';
+SELECT x FROM cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain))
+SETTINGS prefer_localhost_replica = 1, enable_parallel_replicas = 1, max_parallel_replicas = 2, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'x', serialize_query_plan = 0; -- { serverError UNKNOWN_TABLE }
+SELECT x FROM cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain))
+SETTINGS prefer_localhost_replica = 1, enable_parallel_replicas = 1, max_parallel_replicas = 2, parallel_replicas_mode = 'custom_key_range', parallel_replicas_custom_key = 'x', serialize_query_plan = 0; -- { serverError UNKNOWN_TABLE }
+
 CREATE TABLE t_plain (x UInt8) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t_plain VALUES (2), (3);
 SELECT count() FROM t_saved;
