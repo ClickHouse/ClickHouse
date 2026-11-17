@@ -94,6 +94,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
     extern const int DUPLICATE_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
@@ -1001,6 +1002,11 @@ void checkFunctionHasEmptyNullsAction(const ASTFunction & node)
 
 void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
 {
+    if (node.hasOrderByCombinator())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "ORDER BY inside the arguments of function {} is not supported in this context",
+            backQuote(node.name));
+
     auto column_name = ast->getColumnName();
     if (data.hasColumn(column_name))
         return;

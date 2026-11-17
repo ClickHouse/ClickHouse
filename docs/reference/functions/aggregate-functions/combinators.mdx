@@ -230,6 +230,48 @@ FROM
 Every unique combination of arguments will be aggregated only once. Repeating values are ignored.
 Examples: `sum(DISTINCT x)` (or `sumDistinct(x)`), `groupArray(DISTINCT x)` (or `groupArrayDistinct(x)`), `corrStable(DISTINCT x, y)` (or `corrStableDistinct(x, y)`) and so on.
 
+## -OrderBy {#-orderby}
+
+Feeds the rows to the aggregate function in the specified order. This matters for aggregate functions whose result depends on the order of rows, such as `groupArray`, `any`, `anyLast`, `argMin`, or `groupConcat`. With `LIMIT N`, only the first `N` rows in this order are aggregated.
+
+**Syntax**
+
+```sql
+aggregate_function(arg [, arg2, ...] ORDER BY sort_expr [ASC|DESC] [NULLS FIRST|LAST] [COLLATE 'locale'] [, sort_expr2 ...] [LIMIT N])
+```
+
+`WITH FILL` is not supported.
+
+Rows in which a sort key is `NULL` are not skipped: they are placed according to `NULLS FIRST` or `NULLS LAST` (the default). `NULL` values of the aggregate function arguments are handled by the aggregate function as usual.
+
+The combinator buffers all rows of a group in memory and sorts them when the result is calculated, so it is not suitable for very large groups.
+
+**Examples**
+
+```sql
+SELECT groupArray(value ORDER BY ts) FROM events;
+SELECT groupArray(value ORDER BY score DESC LIMIT 10) FROM scores;
+SELECT groupArray(v ORDER BY a ASC NULLS FIRST, b DESC) FROM data;
+SELECT user_id, sum(amount ORDER BY ts LIMIT 100) FROM events GROUP BY user_id;
+SELECT groupArray(DISTINCT v ORDER BY v DESC) FROM data;
+```
+
+**Parametric form**
+
+The syntax above is rewritten to the parametric form `<aggregate_function>OrderBy`, which can also be used directly. The first parameter is a string with the sort description: the sort keys are referenced by their positions `0`, `1`, ... among the trailing arguments, followed by the optional `LIMIT`. The remaining parameters are passed to the nested aggregate function. For example, the following queries are equivalent:
+
+```sql
+SELECT groupArray(value ORDER BY score DESC LIMIT 10) FROM scores;
+SELECT groupArrayOrderBy('0 DESC LIMIT 10')(value, score) FROM scores;
+```
+
+So are these, where `3` is the parameter of `uniqUpTo`:
+
+```sql
+SELECT uniqUpTo(3)(x ORDER BY ts) FROM t;
+SELECT uniqUpToOrderBy('0 ASC', 3)(x, ts) FROM t;
+```
+
 ## -OrDefault {#-ordefault}
 
 Changes behavior of an aggregate function.

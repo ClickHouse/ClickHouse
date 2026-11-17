@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <Analyzer/TableNode.h>
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -273,6 +274,8 @@ private:
     ProjectionNames resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
 
     void validateSortingKeyType(const DataTypePtr & sorting_key_type, const IdentifierResolveScope & scope) const;
+
+    void validateOrderByCombinatorSortKeyTypes(const AggregateFunctionPtr & aggregate_function, const IdentifierResolveScope & scope) const;
 
     void resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope, bool validate_key_types);
 
