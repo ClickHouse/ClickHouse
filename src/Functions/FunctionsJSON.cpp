@@ -164,6 +164,7 @@ public:
             }
 
             String error;
+            const bool trivial_default = result_type->isDefaultInsertTrivial();
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (!col_json_const)
@@ -184,9 +185,14 @@ public:
                         added_to_column = impl.insertResultToColumn(*to, element, last_key, format_settings, error);
                 }
 
-                /// We add default value (=null or zero) if something goes wrong, we don't throw exceptions in these JSON functions.
+                /// We add the default of the result type if something goes wrong, we don't throw exceptions in these JSON functions.
                 if (!added_to_column)
-                    to->insertDefault();
+                {
+                    if (trivial_default)
+                        to->insertDefault();
+                    else
+                        result_type->insertDefaultInto(*to);
+                }
             }
             return to;
         }
@@ -643,10 +649,10 @@ public:
         format_settings.null_as_default = false;
     }
 
-    String getName() const override { return Name::name; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    [[nodiscard]] String getName() const override { return Name::name; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         if constexpr (requires { Impl<DummyJSONParser>::number_of_constant_arguments; })
         {
@@ -658,12 +664,12 @@ public:
         else
             return {};
     }
-    bool useDefaultImplementationForLowCardinalityColumns() const override
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override
     {
         return !functionForcesTheReturnType<Impl>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (null_presence.has_null_constant)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
@@ -727,7 +733,7 @@ public:
 
 private:
 
-    ColumnPtr
+    [[nodiscard]] ColumnPtr
     chooseAndRunJSONParser(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
 #if USE_SIMDJSON
@@ -1662,7 +1668,7 @@ private:
     }
 
     /// Always a partial match, independent of `type_json_use_partial_match_to_skip_paths_by_regexp`, see `ignores_allow_simdjson`.
-    bool isSkipped(const String & path) const
+    [[nodiscard]] bool isSkipped(const String & path) const
     {
         return skip_matcher && re2::RE2::PartialMatch(path, *skip_matcher);
     }

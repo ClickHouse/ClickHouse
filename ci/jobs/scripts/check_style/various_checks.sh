@@ -18,6 +18,16 @@ for test_case in "${tests_with_query_log[@]}"; do
     } || echo "Query to system.query_log/system.query_thread_log does not have current_database = currentDatabase() condition in $test_case"
 done
 
+# Queries to system.text_log should have an event_time condition: the table is large on CI servers,
+# and a full scan exceeds max_rows_to_read of the test profile. A test that must scan it all sets max_rows_to_read = 0.
+tests_with_text_log=( $(
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
+        xargs grep --with-filename -E 'system\.text_log\b' | grep -vE '^[^:]*:\s*(--|#)' | cut -d: -f1 | sort -u
+) )
+for test_case in "${tests_with_text_log[@]}"; do
+    grep -qiE '\bevent_time(_microseconds)?\s*(>|<|=|BETWEEN\b)|max_rows_to_read\s*=\s*0' "$test_case" || echo "Query to system.text_log does not have an event_time condition in $test_case"
+done
+
 grep -iE 'SYSTEM STOP MERGES;?$' -R $ROOT_PATH/tests/queries && echo "Merges cannot be disabled globally in fast/stateless tests, because it will break concurrently running queries"
 
 
@@ -171,8 +181,6 @@ FUNCTIONS_WITH_CONTEXT_EXCEPTIONS=(
     # without a query context (e.g. by `system.functions` which only needs to read
     # `getSignatureString`). These are non-deterministic functions and are not used
     # in default expressions.
-    -e /timeSeriesTagsToGroup.cpp
-    -e /timeSeriesStoreTags.cpp
     -e /FunctionsTransactionCounters.cpp
     -e /FunctionNaiveBayesClassifier.cpp
     # Holds the context weakly and only touches it from getReturnTypeImpl (type analysis, while the

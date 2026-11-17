@@ -347,7 +347,7 @@ SerializationPtr DataTypeTuple::doGetSerialization(const SerializationInfoSettin
         serializations[i] = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(serialization, elem_name, SubstreamType::TupleElement));
     }
 
-    return SerializationTuple::create(std::move(serializations), has_explicit_names);
+    return SerializationTuple::create(std::move(serializations), elems, has_explicit_names);
 }
 
 SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info) const
@@ -365,7 +365,7 @@ SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info)
     auto kinds = info.getKindStack();
     /// Compatibility with older version that may propagate Sparse serialization for Tuple itself (in serialization.json)
     std::erase(kinds, ISerialization::Kind::SPARSE);
-    return wrapSerializationBasedOnKindStack(SerializationTuple::create(std::move(serializations), has_explicit_names), kinds, info.getSettings());
+    return wrapSerializationBasedOnKindStack(SerializationTuple::create(std::move(serializations), elems, has_explicit_names), kinds, info.getSettings());
 }
 
 MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const SerializationInfoSettings & settings) const
@@ -467,7 +467,7 @@ void registerDataTypeTuple(DataTypeFactory & factory)
 {
     factory.registerDataType("Tuple", create, DataTypeFactory::Case::Sensitive, Documentation{
             .description = R"DOCS_MD(
-A tuple of elements, each having an individual [type](/reference/data-types). Tuple must contain at least one element.
+A tuple of elements, each having an individual [type](/reference/data-types/index). Tuple must contain at least one element.
 
 Tuples are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](/reference/statements/in) and [Higher order functions](/reference/functions/regular-functions/overview#higher-order-functions).
 
