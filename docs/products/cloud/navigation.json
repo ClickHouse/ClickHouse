@@ -275,6 +275,7 @@
                 "products/cloud/features/ai-ml/mcp/remote-mcp"
               ]
             },
+            "products/cloud/features/ai-ml/linked-billing-claude-platform",
             "products/cloud/features/ai-ml/model-developer-terms"
           ]
         },
