@@ -165,6 +165,7 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
     /// Resolve relative URLs against the url_base setting.
     const auto & url_base = context->getSettingsRef()[Setting::url_base].value;
     filename = StorageURL::resolveURLBase(filename, url_base);
+    filename = StorageURL::encodeSpacesInHTTPURL(filename, configuration.http_method);
     configuration.url = filename;
 
     /// Dispatch to another backend based on the URL scheme (file://, s3://, az://, hdfs://, ...).
@@ -432,7 +433,8 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
     if (structure == "auto")
     {
         ColumnsDescription columns;
-        String sample_path = filename;
+        /// The index-page backend replaces it with the path of the file it read the schema from.
+        String sample_path;
 
         if (configuration.http_method.empty() && urlPathHasListableGlobs(filename))
         {
@@ -458,6 +460,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
         }
         else if (format == "auto")
         {
+            sample_path = getSamplePath(filename, context);
             columns = StorageURL::getTableStructureAndFormatFromData(
                 filename,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
@@ -467,6 +470,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
         }
         else
         {
+            sample_path = getSamplePath(filename, context);
             columns = StorageURL::getTableStructureFromData(format,
                 filename,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
