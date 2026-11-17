@@ -1179,7 +1179,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         write_padding();
     }
 
-    if (start_from_offset != serialized_value->size())
+    /// After a cut, the ellipsis takes the place of the line feed marker: the next line starts with `line_continuation`.
+    if (start_from_offset != serialized_value->size() && !is_cut)
     {
         if (color)
             out << "\033[90m";
