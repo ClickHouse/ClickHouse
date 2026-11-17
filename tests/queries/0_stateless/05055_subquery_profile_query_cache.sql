@@ -6,6 +6,9 @@
 -- A profile that does not mention `use_query_cache` contributes nothing, so the outer query's
 -- `use_query_cache` still does not propagate into the subquery. See #119019.
 
+-- The subquery query result cache is not used with plan-based parallel replicas:
+-- https://github.com/ClickHouse/ClickHouse/issues/131463
+SET parallel_replicas_plan_based = 0;
 
 -- A positive `parallel_replicas_min_number_of_rows_per_replica` makes the planner build one more plan
 -- (with different settings) to estimate the rows to read, which can create one more subquery cache entry.
