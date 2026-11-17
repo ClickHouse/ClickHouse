@@ -9,16 +9,6 @@
 04196_unique_key_read_skips_an_uncommitted_part
 04198_unique_key_read_sees_a_lost_reply_commit
 
-    A read of `mergeTreeProjection` on a remote replica throws `NOT_FOUND_COLUMN_IN_BLOCK`: the replica resolves the projection as the base table
-    https://github.com/ClickHouse/ClickHouse/issues/128537
-03401_normal_projection_with_part_offset
-03401_normal_projection_with_part_offset_no_sorting
-03785_rebuild_projection_with_part_offset
-04627_lwd_rebuild_normal_projection_no_where
-05339_projection_rebuild_by_mutation_after_lightweight_delete
-05401_lwd_rebuild_projection_part_offset_multi_block
-05569_projection_calculation_subquery_names
-
     A `GLOBAL IN` set built from `input()` has no plan to ship, so plan-based keeps the read local
 05237_parallel_replicas_input_table_function
 
@@ -51,10 +41,6 @@
 
     A replica throws `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` on `hasToken(CAST(s, 'String'), ...)`: the text index does not skip the NULL granule there
 05340_text_index_preprocessor_cast_drop_nullable
-
-    A replica throws `NOT_FOUND_COLUMN_IN_BLOCK` for `_parent_part_offset` when reading a projection
-03546_merge_tree_projection_shared_snapshot
-05427_projection_where_order_by_columns
 
     A replica throws `NOT_IMPLEMENTED` (`createColumn` for a `Function` type) for a lambda in the shipped fragment
 05033_lazy_materialization_column_function_structure_equals
