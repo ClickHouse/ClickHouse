@@ -1053,13 +1053,14 @@ void throwIfEngineIsUnknownAndNotGranted(
 /// insert by another user, could go outside a filter such as `WRITE ON S3('<regex>')`. Without this grant,
 /// a filtered grant, which passes the check of the function's URI, would be enough to create the table.
 /// Engines without a source, such as `Merge`, are not affected by source grants, so they keep their behavior.
-std::optional<String> InterpreterCreateQuery::getSourceEngineOfTableFunction(const ASTPtr & table_function_ast, const ContextPtr & query_context)
+std::optional<String> InterpreterCreateQuery::getSourceEngineOfTableFunction(
+    const ASTPtr & table_function_ast, const ContextPtr & query_context, bool is_replayed_definition)
 {
     /// The arguments are parsed, because `url` takes the engine of the scheme, e.g. `S3` for `url('s3://...')`. A copy is
     /// parsed, because parsing may change the arguments, e.g. `mysql` takes out its `SETTINGS`, which the structure
     /// inference of the table still needs.
     const ASTPtr parsed_ast = table_function_ast->clone();
-    const auto table_function = TableFunctionFactory::instance().get(parsed_ast, query_context);
+    const auto table_function = TableFunctionFactory::instance().get(parsed_ast, query_context, is_replayed_definition);
     /// A definition that cannot be a table is refused the same way whatever the grants of the user.
     throwIfTableFunctionCannotBeUsedToCreateTable(parsed_ast, *table_function, query_context);
     String engine_name = table_function->getEngineNameForAccessCheck();
@@ -1098,7 +1099,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
     /// A table function inherited by `CREATE TABLE copy AS src` from `src`.
     if (create.as_table_function)
-        if (auto engine_name = getSourceEngineOfTableFunction(create.as_table_function->ptr(), getContext()))
+        if (auto engine_name = getSourceEngineOfTableFunction(
+                create.as_table_function->ptr(), getContext(), isReplayedTableDefinition(mode, create, getContext())))
             getContext()->checkAccess(AccessType::TABLE_ENGINE, *engine_name);
 
     /// If this is a TimeSeries table then we need to normalize list of columns (add missing columns and reorder), and also set inner table engines.
@@ -4387,8 +4389,13 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 
     /// Required here, not where the table is built: `ON CLUSTER` and `Replicated` databases build it with full access.
     if (create.as_table_function)
-        if (auto engine_name = getSourceEngineOfTableFunction(create.as_table_function->ptr(), getContext()))
+    {
+        const auto mode = getLoadingStrictnessLevel(
+            create.attach, /*force_attach*/ false, /*force_restore*/ false, isSecondaryDDLReplay(getContext()));
+        if (auto engine_name = getSourceEngineOfTableFunction(
+                create.as_table_function->ptr(), getContext(), isReplayedTableDefinition(mode, create, getContext())))
             required_access.emplace_back(AccessType::TABLE_ENGINE, *engine_name);
+    }
 
     /// `ATTACH TABLE ... FROM '<path>'` reads a directory in `user_files` as the table data and then moves it to the
     /// data path of the new table. Reading it needs `READ` on the FILE source like the `file` function does, and

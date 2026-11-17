@@ -98,7 +98,9 @@ public:
 
     /// The engine of a table created from the table function, when its `TABLE ENGINE` grant is required, i.e. when the
     /// engine has a source. A definition that cannot be a table is refused.
-    static std::optional<String> getSourceEngineOfTableFunction(const ASTPtr & table_function_ast, const ContextPtr & query_context);
+    /// `is_replayed_definition`: see `ITableFunction::setReplayedDefinition`.
+    static std::optional<String> getSourceEngineOfTableFunction(
+        const ASTPtr & table_function_ast, const ContextPtr & query_context, bool is_replayed_definition = false);
 
     static String getDatabaseDefaultTableEngineName(const ASTCreateQuery & create, ContextPtr local_context);
 
