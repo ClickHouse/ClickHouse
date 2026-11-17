@@ -185,3 +185,10 @@ macro(enable_heavy_build_check_if_needed)
         set(USING_HEAVY_BUILD_CHECK_LAUNCHER 1)
     endif()
 endmacro()
+
+# Like file(WRITE), but leaves the file untouched when it already has this content, so its dependents are not rebuilt.
+function(write_file_if_changed path content)
+    file(WRITE "${path}.tmp" "${content}")
+    file(COPY_FILE "${path}.tmp" "${path}" ONLY_IF_DIFFERENT)
+    file(REMOVE "${path}.tmp")
+endfunction()

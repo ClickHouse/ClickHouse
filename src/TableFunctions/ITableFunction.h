@@ -117,6 +117,9 @@ public:
     /// (e.g. `generateRandom`). Counterpart of `IFunction::isDeterministicInScopeOfQuery`.
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
 
+    /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by `ITableFunctionCluster`.
+    [[nodiscard]] virtual bool isClusterFunction() const { return false; }
+
     /// The name of the named collection the table function arguments were resolved from, or an empty
     /// string. When a permanent table is created from the table function (`CREATE TABLE ... AS f(...)`),
     /// the table is registered as a dependency of the collection so that `DROP NAMED COLLECTION` is
@@ -126,11 +129,11 @@ public:
     virtual String getUsedNamedCollectionName() const { return {}; }
 
     /// Whether `DROP TABLE` can delete the data of the returned storage (see `data_lake_delete_data_on_drop`).
-    virtual bool canDeleteDataOnDrop() const { return false; }
+    [[nodiscard]] virtual bool canDeleteDataOnDrop() const { return false; }
 
-    // INSERT INTO TABLE FUNCTION ... PARTITION BY
-    // Set partition by expression so `ITableFunctionObjectStorage` can construct a proper representation
-    virtual void setPartitionBy(const ASTPtr &) {}
+    /// The function sets the expression of `INSERT INTO FUNCTION ... PARTITION BY`.
+    /// Only the interpreter of `INSERT INTO FUNCTION` calls it.
+    void setPartitionBy(const ASTPtr & partition_by_) { partition_by = partition_by_; }
 
     /// Create storage according to the query.
     /// `check_create_temporary_table` is passed as false by database engines that resolve their
@@ -172,6 +175,10 @@ public:
     /// Check the `TABLE ENGINE` grant, for engines that opt in via `requiresTableEngineGrant`.
     void checkEngineAccess(ContextPtr context) const;
 
+    /// The function returns the name of the table engine that this function uses, as the `TABLE ENGINE` grant names it:
+    /// a cluster function is checked as its non-clustered engine. It is empty when the function has no engine.
+    [[nodiscard]] String getEngineNameForAccessCheck() const;
+
     /// `uri` normalized by Poco; an unparsable URI becomes empty.
     static String normalizeURIForAccessCheck(const String & uri);
 
@@ -184,9 +191,9 @@ public:
 protected:
     virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
 
-    /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by
-    /// `ITableFunctionCluster`. Protected so derived functions can branch on the cluster context.
-    virtual bool isClusterFunction() const { return false; }
+    /// Set only for `INSERT INTO FUNCTION ... PARTITION BY`. Each partition's destination then comes from the data,
+    /// so it needs its own write access check.
+    ASTPtr partition_by;
 
     /// Check `access_type` on the name the function was given, before that name is resolved.
     void checkSourceTableAccess(const ContextPtr & context, const StorageID & table_id, AccessType access_type) const;
