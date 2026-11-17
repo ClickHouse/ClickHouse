@@ -166,7 +166,6 @@ extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
 extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
 extern const SettingsUInt64 iceberg_max_number_datafiles_to_compact;
 extern const SettingsUInt64 iceberg_data_file_size_lower_threshold_compaction;
-extern const SettingsUInt64 iceberg_data_file_size_upper_threshold_compaction;
 extern const SettingsBool use_iceberg_table_statistics_ndv;
 }
 
@@ -872,11 +871,10 @@ void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
             "iceberg_snapshot_lease_seconds",
             "iceberg_outdated_snapshot_lifetime_seconds",
             "iceberg_compaction_commit_batch_size",
-            "iceberg_compaction_max_rows_in_data_file",
-            "iceberg_compaction_max_bytes_in_data_file",
             "iceberg_max_number_datafiles_to_compact",
             "iceberg_data_file_size_lower_threshold_compaction",
-            "iceberg_data_file_size_upper_threshold_compaction",
+            "iceberg_compaction_max_bytes_to_merge",
+            "iceberg_compaction_max_rows_to_merge",
         });
 
         auto check_setting = [](std::string_view setting_name)
