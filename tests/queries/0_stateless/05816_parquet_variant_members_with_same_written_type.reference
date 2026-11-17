@@ -1,13 +1,15 @@
 --- v Variant(UInt32, Int64)
 -5	Int64
-1	Int64
+4294967295	Int64
 \N	None
 --- v Variant(UInt8, Int16, String)
 1000	Int16
 7	Int16
 x	String
 --- v Variant(UInt32, UInt64)
-3	UInt32
-4	UInt32
---- v Variant(Array(Int64), Array(String))
-[1,2]	Array(Int64)
+3	UInt64
+4294967296	UInt64
+--- v Variant(DateTime64(3), DateTime64(5))
+2024-01-01 00:00:00.12345	DateTime64(5)
+--- No member can hold the values of the others
+none of these members can hold the values of the others

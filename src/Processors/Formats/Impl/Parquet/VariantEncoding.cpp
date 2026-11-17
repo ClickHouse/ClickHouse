@@ -26,6 +26,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <Columns/ColumnObject.h>
@@ -55,6 +56,7 @@
 #include <optional>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 namespace DB::ErrorCodes
 {
@@ -1007,12 +1009,23 @@ String getWrittenTypeName(const IDataType & type)
     }
 }
 
-/// The types that the values of the members of an ordinary `Variant` are read as into `Dynamic`, in the
-/// order of the members. Throws if a member cannot be restored from them.
-DataTypes getWrittenTypesOfVariantMembers(const DataTypeVariant & type, std::string_view column_name)
+struct WrittenTypesOfVariantMembers
+{
+    /// In the order of the members.
+    DataTypes types;
+    UnorderedMapWithMemoryTracking<String, size_t> member_of_written_type;
+};
+
+/// The types that the values of the members of an ordinary `Variant` are read as into `Dynamic`, and the member
+/// that the values of each of these types are read into. When several members are written as the same type, it is
+/// the member of exactly that type, or the member that is the least supertype of them. Throws if a member cannot be
+/// restored.
+WrittenTypesOfVariantMembers getWrittenTypesOfVariantMembers(const DataTypeVariant & type, std::string_view column_name)
 {
     const auto & members = type.getVariants();
-    DataTypes res(members.size());
+    WrittenTypesOfVariantMembers res;
+    res.types.resize(members.size());
+    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<size_t>> members_of_written_type;
     for (size_t i = 0; i < members.size(); ++i)
     {
         const String name = getWrittenTypeName(*members[i]);
@@ -1022,30 +1035,47 @@ DataTypes getWrittenTypesOfVariantMembers(const DataTypeVariant & type, std::str
                 "The type {} cannot be stored in the Parquet variant column '{}': its member {} cannot be read back. "
                 "Use `Dynamic` instead",
                 type.getName(), column_name, members[i]->getName());
-        res[i] = getDataTypesCache().getType(name);
+        res.types[i] = getDataTypesCache().getType(name);
+        members_of_written_type[name].push_back(i);
+    }
+
+    for (const auto & [name, indices] : members_of_written_type)
+    {
+        const DataTypePtr & written_type = res.types[indices.front()];
+        DataTypes group;
+        Strings group_names;
+        for (size_t i : indices)
+        {
+            group.push_back(members[i]);
+            group_names.push_back(members[i]->getName());
+        }
+        const DataTypePtr supertype = indices.size() == 1 ? members[indices.front()] : tryGetLeastSupertype(group);
+
+        auto it = std::find_if(indices.begin(), indices.end(), [&](size_t i) { return members[i]->equals(*written_type); });
+        if (it == indices.end() && supertype)
+            it = std::find_if(indices.begin(), indices.end(), [&](size_t i) { return members[i]->equals(*supertype); });
+        if (it == indices.end())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The type {} cannot be stored in the Parquet variant column '{}': the values of its members {} are all read "
+                "as {}, and none of these members can hold the values of the others",
+                type.getName(), column_name, fmt::join(group_names, ", "),
+                name);
+        res.member_of_written_type.emplace(name, *it);
     }
     return res;
 }
 
 /// Converts the values read as `Dynamic` to an ordinary `Variant`, putting every value into the member
-/// that values of its type are written from. When several members are written as the same type, the values
-/// go to the member of exactly that type if there is one, and to the first of them otherwise.
+/// chosen for its type by `getWrittenTypesOfVariantMembers`.
 ColumnPtr convertDynamicToVariant(const ColumnPtr & dynamic, const DataTypeVariant & type, std::string_view column_name)
 {
-    const DataTypes written_types = getWrittenTypesOfVariantMembers(type, column_name);
+    const auto [written_types, member_of_written_type] = getWrittenTypesOfVariantMembers(type, column_name);
     const auto written_variant_type = std::make_shared<DataTypeVariant>(written_types);
     const ColumnPtr written = castColumn({dynamic, std::make_shared<DataTypeDynamic>(), ""}, written_variant_type);
     const auto & written_variant = assert_cast<const ColumnVariant &>(*written);
 
     const auto & members = type.getVariants();
-    UnorderedMapWithMemoryTracking<String, size_t> member_of_written_type;
-    for (size_t i = 0; i < members.size(); ++i)
-    {
-        auto [it, inserted] = member_of_written_type.try_emplace(written_types[i]->getName(), i);
-        if (!inserted && members[i]->equals(*written_types[i]))
-            it->second = i;
-    }
-
     const size_t num_written = written_variant_type->getVariants().size();
     Columns variants(num_written);
     VectorWithMemoryTracking<ColumnVariant::Discriminator> local_to_global(num_written);
