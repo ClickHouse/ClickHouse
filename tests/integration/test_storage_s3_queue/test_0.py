@@ -964,6 +964,7 @@ PAUSE_AFTER_MOVE_SOURCE_LOOKUP_FAILPOINT = (
 PAUSE_AFTER_COMMIT_FAILPOINT = "object_storage_queue_pause_after_commit"
 PAUSE_AFTER_LISTING_FAILPOINT = "object_storage_queue_pause_after_listing"
 PAUSE_BEFORE_TAGS_FETCH_FAILPOINT = "object_storage_queue_pause_before_tags_fetch"
+PAUSE_AFTER_TAGS_FETCH_FAILPOINT = "object_storage_queue_pause_after_tags_fetch"
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
@@ -2270,6 +2271,84 @@ def test_tags_of_the_version_the_one_format_consumed(started_cluster):
         }
         == {replaced}
     )
+    assert node.query(f"SELECT generation FROM {table_name}_dst") == "old\n"
+
+
+def test_tags_of_the_version_a_byte_reading_format_consumed(started_cluster):
+    """A format that reads bytes learns its version only from the response, after the tags are fetched. Rows must never
+    be returned with the tags of another version than the one whose bytes they were read from."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = f"versioned-{token}"
+    table_name = f"tags_csv_format_{token}"
+    files_path = f"{table_name}_data"
+    source_key = f"{files_path}/part.csv"
+    minio = started_cluster.minio_client
+    minio.make_bucket(bucket)
+    minio.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+    data = b"1,2,3\n"
+    ingested = client.put_object(
+        Bucket=bucket, Key=source_key, Body=data, Tagging="generation=old"
+    )["VersionId"]
+
+    def source_versions():
+        return {
+            version["VersionId"]
+            for version in client.list_object_versions(
+                Bucket=bucket, Prefix=source_key
+            ).get("Versions", [])
+        }
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        format="a UInt8, b UInt8, c UInt8",
+        file_format="CSV",
+        after_processing="delete",
+        bucket=bucket,
+        # The reset file is read again by the next poll.
+        additional_settings={
+            "polling_min_timeout_ms": 100,
+            "polling_max_timeout_ms": 100,
+        },
+    )
+    node.query(
+        f"CREATE TABLE {table_name}_dst (generation String) ENGINE = MergeTree ORDER BY tuple()"
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_BEFORE_TAGS_FETCH_FAILPOINT}")
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_AFTER_TAGS_FETCH_FAILPOINT}")
+    try:
+        node.query(
+            f"CREATE MATERIALIZED VIEW {table_name}_mv TO {table_name}_dst "
+            f"AS SELECT _tags['generation'] AS generation FROM {table_name}"
+        )
+        wait_failpoint_paused(node, PAUSE_BEFORE_TAGS_FETCH_FAILPOINT)
+        # The same bytes are uploaded again with other tags, so the tags are fetched from the new version.
+        replaced = client.put_object(
+            Bucket=bucket, Key=source_key, Body=data, Tagging="generation=new"
+        )["VersionId"]
+        assert replaced != ingested
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_TAGS_FETCH_FAILPOINT}")
+        wait_failpoint_paused(node, PAUSE_AFTER_TAGS_FETCH_FAILPOINT)
+        # The new version is removed before the read, so the bytes of the old version are read.
+        client.delete_object(Bucket=bucket, Key=source_key, VersionId=replaced)
+        assert source_versions() == {ingested}
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_TAGS_FETCH_FAILPOINT}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_TAGS_FETCH_FAILPOINT}")
+
+    # The file is read again with its own tags, and the version that was read is deleted.
+    wait_until(lambda: source_versions() == set(), timeout=60)
     assert node.query(f"SELECT generation FROM {table_name}_dst") == "old\n"
 
 

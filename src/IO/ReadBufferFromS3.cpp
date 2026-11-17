@@ -760,12 +760,11 @@ ObjectMetadata ReadBufferFromS3::getObjectMetadataFromTheLastRequest() const
 
 std::optional<Field> ReadBufferFromS3::getMetadata(const String & name) const
 {
+    /// Every response, of `nextImpl` and of `readBigAt` alike, is recorded by `sendRequest` under the mutex. `impl` is
+    /// not consulted, so this may be called while another thread (e.g. a prefetch or parallel parsing) reads the buffer.
+    std::lock_guard lock(response_version_id_mutex);
     if (name == "version_id")
     {
-        if (impl)
-            return impl->getObjectMetadata().version_id;
-        /// `readBigAt` never sets `impl`, so the version comes from its last response.
-        std::lock_guard lock(response_version_id_mutex);
         if (!response_version_id.empty())
             return response_version_id;
         return S3::pinnableVersionId(version_id);
@@ -774,13 +773,6 @@ std::optional<Field> ReadBufferFromS3::getMetadata(const String & name) const
     /// `versionId` selects an older version than the one the caller listed.
     if (name == "etag")
     {
-        if (impl)
-        {
-            if (auto etag = impl->getObjectMetadata().etag; !etag.empty())
-                return etag;
-            return std::nullopt;
-        }
-        std::lock_guard lock(response_version_id_mutex);
         if (!last_response_etag.empty())
             return last_response_etag;
         return std::nullopt;

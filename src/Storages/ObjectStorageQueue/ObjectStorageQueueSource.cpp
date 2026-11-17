@@ -84,6 +84,7 @@ namespace FailPoints
     extern const char object_storage_queue_pause_after_listing[];
     extern const char object_storage_queue_fail_tags_fetch[];
     extern const char object_storage_queue_pause_before_tags_fetch[];
+    extern const char object_storage_queue_pause_after_tags_fetch[];
     extern const char object_storage_queue_fail_selected_version_lookup[];
 }
 
@@ -1330,22 +1331,36 @@ Chunk ObjectStorageQueueSource::generateImpl()
         return object_storage->getObjectMetadata(path, /*with_tags=*/true).tags;
     };
 
-    /// Returns an error if the `_tags` attached to the rows of the file describe another generation than the one consumed.
-    auto check_tags_generation = [&]() -> std::optional<String>
+    /// Returns an error if the `_tags` attached to the rows of the file describe another generation than the one read.
+    auto check_tags_generation = [&](const String & read_etag, const String & read_version_id) -> std::optional<String>
     {
         if (!tags_generation)
             return std::nullopt;
-        const auto & consumed = processed_files.back();
-        const bool both_versions_known = !tags_generation->version_id.empty() && !consumed.version_id.empty();
+        const bool both_versions_known = !tags_generation->version_id.empty() && !read_version_id.empty();
         const bool mismatch = both_versions_known
-            ? tags_generation->version_id != consumed.version_id
-            : !tags_generation->etag.empty() && !consumed.etag.empty() && tags_generation->etag != consumed.etag;
+            ? tags_generation->version_id != read_version_id
+            : !tags_generation->etag.empty() && !read_etag.empty() && tags_generation->etag != read_etag;
         if (!mismatch)
             return std::nullopt;
         return fmt::format(
             "The object {} was rewritten while it was read: its tags are of the generation with `ETag` {} and version '{}', "
-            "but the generation with `ETag` {} and version '{}' was consumed",
-            consumed.metadata->getPath(), tags_generation->etag, tags_generation->version_id, consumed.etag, consumed.version_id);
+            "but the generation with `ETag` {} and version '{}' was read",
+            processed_files.back().metadata->getPath(), tags_generation->etag, tags_generation->version_id, read_etag, read_version_id);
+    };
+
+    /// The generation reported by the responses the read buffer has got so far, if it reports any.
+    auto get_read_generation = [&]() -> std::optional<TagsGeneration>
+    {
+        const auto * provider = dynamic_cast<const IReadBufferMetadataProvider *>(reader.readBuffer());
+        if (!provider)
+            return std::nullopt;
+        auto etag = provider->getMetadata("etag");
+        if (!etag.has_value())
+            return std::nullopt;
+        TagsGeneration generation{.etag = etag->safeGet<String>(), .version_id = {}};
+        if (auto version_id = provider->getMetadata("version_id"); version_id.has_value())
+            generation.version_id = version_id->safeGet<String>();
+        return generation;
     };
 
 #if USE_AWS_S3
@@ -1647,6 +1662,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
                             metadata_with_tags->tags = fetch_tags_of_consumed_version(object_info_for_tags->getPath(), *metadata_with_tags);
                             object_info_for_tags->setObjectMetadata(*metadata_with_tags);
+
+                            FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_after_tags_fetch);
                         }
                         catch (...)
                         {
@@ -1747,6 +1764,34 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
         if (result)
         {
+            /// The tags were fetched before the read reported its generation. Check them against the generation of the
+            /// rows before the rows escape: a rewrite in between attaches the tags of another generation to them.
+            /// The read has got a response by now, as it produced rows.
+            if (tags_generation)
+            {
+                std::optional<String> message;
+                if (auto read_generation = get_read_generation())
+                    message = check_tags_generation(read_generation->etag, read_generation->version_id);
+                if (message)
+                {
+                    processed_files.back().state = FileState::ErrorOnRead;
+                    processed_files.back().exception_during_read = *message;
+                    processed_files.back().exception_during_read_code = ErrorCodes::S3_OBJECT_CHANGED_DURING_READ;
+
+                    /// Earlier rows of the file are already in the insert, so fail the whole insert.
+                    if (file_status->processed_rows > 0)
+                        throw Exception(ErrorCodes::S3_OBJECT_CHANGED_DURING_READ, "{}", *message);
+
+                    LOG_DEBUG(log, "{}. Will reset the file", *message);
+                    if (mode == ObjectStorageQueueMode::ORDERED)
+                        return {};
+
+                    reader = {};
+                    progress->processed_files -= 1;
+                    continue;
+                }
+            }
+
             const auto & object_metadata = reader.getObjectInfo()->getObjectMetadata();
             const auto row_offset = file_status->processed_rows.load();
 
@@ -1859,9 +1904,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
         }
 #endif
 
-        /// The tags were fetched before the read reported its generation: a rewrite in between attaches the tags of
-        /// another generation than the one whose rows were read.
-        if (auto message = check_tags_generation())
+        /// Each chunk was checked before it was returned; this covers a file without rows and a response of the read
+        /// received after its last chunk.
+        if (auto message = check_tags_generation(processed_files.back().etag, processed_files.back().version_id))
         {
             processed_files.back().state = FileState::ErrorOnRead;
             processed_files.back().exception_during_read = *message;
