@@ -781,8 +781,12 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
                     auto & result_paths_column = assert_cast<ColumnString &>(result_array_column.getData());
                     for (const auto & typed_path : typed_path_names)
                         result_paths_column.insertData(typed_path.data(), typed_path.size());
-                    for (const auto & [dynamic_path, _] : object_column.getDynamicPaths())
-                        result_paths_column.insertData(dynamic_path.data(), dynamic_path.size());
+                    for (const auto & [dynamic_path, dynamic_column] : object_column.getDynamicPaths())
+                    {
+                        /// A dynamic path stays in the structure when all its values are NULL.
+                        if (dynamic_column->getNumberOfDefaultRows() != dynamic_column->size())
+                            result_paths_column.insertData(dynamic_path.data(), dynamic_path.size());
+                    }
                     const auto [shared_data_paths, _] = object_column.getSharedDataPathsAndValues();
                     result_paths_column.insertRangeFrom(*shared_data_paths, 0, shared_data_paths->size());
                     result_array_column.getOffsets().push_back(result_paths_column.size());

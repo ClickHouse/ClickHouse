@@ -242,8 +242,20 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
     {
         for (const auto & path : typed_paths)
             paths_column.insertData(path.data(), path.size());
+
+        /// Wide parts count the non-null values of each dynamic path over all written rows, so 0 means the part has none.
+        const ColumnObject::Statistics * statistics
+            = settings.data_part_type == MergeTreeDataPartType::Wide ? object_structure_state->statistics.get() : nullptr;
         for (const auto & path : *object_structure_state->sorted_dynamic_paths)
+        {
+            if (statistics)
+            {
+                auto it = statistics->dynamic_paths_statistics.find(path);
+                if (it != statistics->dynamic_paths_statistics.end() && it->second == 0)
+                    continue;
+            }
             paths_column.insertData(path.data(), path.size());
+        }
         object_distinct_paths_state->insert_dynamic_and_typed_paths = false;
     }
 
