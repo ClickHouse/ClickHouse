@@ -18,6 +18,7 @@
 #include <Interpreters/AdaptiveAggregation/GrowingCountTopK.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/RowDataStore.h>
+#include <Interpreters/Squashing.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 namespace ProfileEvents
@@ -491,6 +492,42 @@ namespace
         const size_t first_partition;
         std::vector<std::vector<RoutedCell>> routed;
     };
+
+    /// Squashes the chunks of the units of a bucket, in their order, into chunks of at least `min_rows` rows.
+    /// The last chunk takes the rows that are left. The merge sources hand their chunks to one processor,
+    /// which forwards them one at a time, and a source takes its next bucket only after its chunks are gone.
+    /// A chunk per unit, thousands of them in a large aggregation, makes the merge tasks wait for that
+    /// processor, and the chunks of a top-K hold only a few rows each. The caller guarantees that the chunks
+    /// hold no aggregate states, so the rows of the units that share a chunk are copied into it. A unit that
+    /// makes a chunk alone is passed on as it is, so units that each reach `min_rows` rows are not copied.
+    /// For example, with `min_rows` of 65,409, a bucket of 16 units of 24,000 rows gives 5 chunks of 72,000
+    /// rows and one of 24,000, and a bucket of 16 units of 10 rows gives one chunk of 160 rows. The chunks
+    /// carry no `ChunkInfo` yet: the merge source adds it from the bucket number when it hands a chunk out.
+    void squashUnitChunks(Aggregator::AggregatedChunks & chunks, size_t min_rows)
+    {
+        for (auto run_begin = chunks.begin(); run_begin != chunks.end();)
+        {
+            /// A run takes the units from `run_begin` until its rows reach `min_rows` or the units end.
+            auto run_end = run_begin;
+            size_t run_rows = 0;
+            do
+            {
+                run_rows += run_end->chunk.getNumRows();
+                ++run_end;
+            } while (run_end != chunks.end() && run_rows < min_rows);
+
+            /// A run of several units becomes one chunk, in the place of its first unit.
+            if (std::next(run_begin) != run_end)
+            {
+                Chunks run_chunks;
+                for (auto unit = run_begin; unit != run_end; ++unit)
+                    run_chunks.push_back(std::move(unit->chunk));
+                run_begin->chunk = Squashing::squashWithoutChunkInfo(std::move(run_chunks));
+                chunks.erase(std::next(run_begin), run_end);
+            }
+            run_begin = run_end;
+        }
+    }
 
     /// Decodes the variable-size arguments of argument records of `format` into one column per variable field of
     /// `layout`, in the order of the records. The values of a record follow its key: a `String` as `writeStagedString`
@@ -1358,6 +1395,13 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     /// destination.
     arena_slot.reset();
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationBucketsRetired);
+
+    /// A result of aggregate states keeps a chunk per unit, because squashing would copy the states one by one:
+    /// every copy creates a state and merges the old one into it. A partial result holds states, and so does the
+    /// final result of a function that returns a state, such as `sumState`.
+    const bool holds_states = !final || std::ranges::any_of(aggregate_functions, &IAggregateFunction::isState);
+    if (!holds_states)
+        squashUnitChunks(chunks, params.max_block_size);
     return chunks;
 }
 

@@ -422,7 +422,8 @@ private:
 };
 
 /// Worker of the adaptive bucket merge: claims the buckets in the order of the session, which takes the heaviest first
-/// under the top-K pruning, and converts each into one chunk per merge unit (see
+/// under the top-K pruning, and converts each into chunks of at least `max_block_size` rows and a last one of the rows
+/// left, or into one chunk per merge unit when the result holds aggregate states (see
 /// `Aggregator::mergeAndConvertAdaptiveBucket`). The chunks are handed out one per call, and the next bucket is claimed
 /// once the previous one's chunks are gone; the downstream transform forwards them as they come, since the adaptive
 /// output order is free. The task keeps the table of the bucket merged last, which the next bucket takes over.
