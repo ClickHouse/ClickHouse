@@ -16,6 +16,9 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <IO/CompressionMethod.h>
+
+#include <Common/StringUtils.h>
 
 
 namespace DB
@@ -190,8 +193,16 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     child = r.readChildOfType<ASTLiteral>("compression");
     if (child)
     {
-        if (!infile)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'compression' is only valid together with 'infile' during AST JSON deserialization");
+        /// Mirrors ParserInsertQuery: 'compression' needs a data stream ('infile', a bare 'format', or
+        /// input()). input() carries a stream even when its format comes from 'settings' rather than a
+        /// 'format' field, so do not require 'format' there.
+        bool has_data_stream = infile
+            || (select && selectReadsInlineDataViaInputFunction(select))
+            || (!select && !format.empty());
+        if (!has_data_stream)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'compression' is only valid together with 'infile', a bare 'format' (no 'select'), "
+                "or a 'select' that reads via input() during AST JSON deserialization");
         if (child->as<ASTLiteral &>().value.getType() != Field::Types::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'compression' must be a string literal during AST JSON deserialization");
         compression = child;
@@ -311,6 +322,15 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     ///
     char delim = settings_ast ? settings.nl_or_ws : ' ';
 
+    /// Inline-data COMPRESSION is parsed before the VALUES/FORMAT/SELECT clause, so print it before
+    /// that too (FROM INFILE prints its own COMPRESSION right after the file name, above).
+    if (!infile && compression)
+    {
+        ostr << delim
+            << "COMPRESSION" << " " << quoteString(compression->as<ASTLiteral &>().value.safeGet<std::string>());
+        delim = ' ';
+    }
+
     if (select)
     {
         ostr << delim;
@@ -324,10 +344,8 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         /// For INSERT ... SELECT ... FROM input('...') FORMAT Values,
         /// the FORMAT clause must be preserved in the formatted output.
         if (!format.empty())
-        {
             ostr << delim
                 << "FORMAT" << " " << format;
-        }
     }
     else
     {
@@ -376,6 +394,33 @@ static void tryFindInputFunctionImpl(const ASTPtr & ast, ASTPtr & input_function
 void ASTInsertQuery::tryFindInputFunction(ASTPtr & input_function) const
 {
     tryFindInputFunctionImpl(select, input_function);
+}
+
+CompressionMethod ASTInsertQuery::resolveCompressionMethod(CompressionMethod auto_fallback) const
+{
+    if (!compression)
+        return CompressionMethod::None;
+
+    const auto & compression_method_node = compression->as<ASTLiteral &>();
+    String compression_method_string = compression_method_node.value.safeGet<std::string>();
+    /// `chooseCompressionMethod` matches every hint case-insensitively; do the same for 'auto' so
+    /// `COMPRESSION 'AUTO'` uses `auto_fallback` instead of silently resolving to `None`.
+    toLowerASCII(compression_method_string);
+    if (compression_method_string == "auto")
+        return auto_fallback;
+    return chooseCompressionMethod("", compression_method_string);
+}
+
+bool ASTInsertQuery::isCompressionEffective() const
+{
+    return resolveCompressionMethod(CompressionMethod::None) != CompressionMethod::None;
+}
+
+bool selectReadsInlineDataViaInputFunction(const ASTPtr & select)
+{
+    ASTPtr input_function;
+    tryFindInputFunctionImpl(select, input_function);
+    return input_function != nullptr;
 }
 
 }

@@ -1,0 +1,9 @@
+client, explicit gzip
+1	A
+2	B
+client, auto
+1	A
+2	B
+local, explicit gzip
+1	A
+2	B
