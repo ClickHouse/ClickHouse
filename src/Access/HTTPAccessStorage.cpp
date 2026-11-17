@@ -226,7 +226,9 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
     {
         std::lock_guard lock(cache_mutex);
         auto it = cache.find(user_name);
-        if (it != cache.end() && it->second.hash == key_hash && std::chrono::steady_clock::now() - it->second.time <= cache_ttl)
+        if (it != cache.end() && std::chrono::steady_clock::now() - it->second.time > cache_ttl)
+            cache.erase(it);
+        else if (it != cache.end() && it->second.hash == key_hash)
             response = it->second.response;
     }
 
