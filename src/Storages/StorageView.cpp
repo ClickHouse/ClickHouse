@@ -1,7 +1,6 @@
 #include <Access/AccessControl.h>
 #include <Access/DefinerDependencies.h>
 #include <Access/User.h>
-#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -62,7 +61,6 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
-#include <Analyzer/Utils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Planner/findQueryForParallelReplicas.h>
 
@@ -261,7 +259,7 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
         || select->group_by_with_totals || select->group_by_with_rollup
         || select->group_by_with_cube || select->group_by_with_grouping_sets
         || select->having() || select->qualify()
-        || select->orderBy() || select->order_by_all || select->shuffle
+        || select->orderBy() || select->order_by_all
         || select->limitLength() || select->limitOffset()
         || select->limitAfter() || select->limitUntil()
         || select->limitBy() || select->limit_by_all
@@ -339,6 +337,10 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
 
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
+  *
+  * The context is also marked as a view inner context so that the query analyzer
+  * resolves positional arguments inside the view even on remote/secondary nodes
+  * (views are expanded on remote nodes, unlike the outer query).
   */
 ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
 {
@@ -412,12 +414,6 @@ public:
             return {};
         return {&view_plan};
     }
-
-    /// `getBuiltChildPlans` is deliberately left at the base implementation, which reports no child plans.
-    /// It is what the query plan captured into `system.query_log` walks, and that table is readable beyond
-    /// the user who ran the query, so returning `view_plan` here would write a sealed view's internals into
-    /// the log for readers that `show_plan` is meant to keep them from. The cost is that a sealed view is an
-    /// opaque leaf of the captured plan.
 
     void describePipeline(FormatSettings & settings) const override
     {
@@ -583,9 +579,6 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
         QueryTreePassManager pass_manager(context);
         addQueryTreePasses(pass_manager);
         pass_manager.runOnlyResolve(inner_query_tree);
-        /// Each replica would expand the body itself, and a decorrelated subquery reads the table again.
-        if (containsCorrelatedSubquery(inner_query_tree))
-            return nullptr;
     }
     catch (const Exception &)
     {
@@ -618,7 +611,7 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                     /// result semantics when evaluated per-replica must disqualify the view.
                     if (query_node.hasGroupBy() || query_node.hasHaving()
                         || query_node.hasWindow() || query_node.hasQualify()
-                        || query_node.hasOrderBy() || query_node.isShuffle() || query_node.isDistinct()
+                        || query_node.hasOrderBy() || query_node.isDistinct()
                         || query_node.hasLimitByLimit() || query_node.hasLimitByOffset()
                         || query_node.hasLimitBy()
                         || query_node.hasLimit() || query_node.hasOffset()

@@ -42,7 +42,7 @@ struct JoinOnKeyColumns
         const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_,
         bool keep_lowcardinality = false);
 
-    [[nodiscard]] bool isRowFiltered(size_t i) const
+    bool isRowFiltered(size_t i) const
     {
         return join_mask_column.isRowFiltered(i);
     }
@@ -53,15 +53,12 @@ struct JoinOnKeyColumns
     /// 1 = skip), prepared once per call: without an ON-section condition the null map is
     /// returned directly, no copy (nullptr when the keys are not nullable either = no row
     /// is skipped); with one, `buffer` is filled with the merged null-and-mask bytes.
-    /// Only the positions the caller will probe are written (continuation chunks
-    /// visit a subset of the source block); the rest of `buffer` stays
+    /// Only the positions the caller will probe are written (continuation chunks and
+    /// scattered shards visit a subset of the source block); the rest of `buffer` stays
     /// uninitialized and must not be read.
     const UInt8 * buildRowSkipData(IColumn::Filter & buffer, size_t range_begin, size_t range_size) const;
+    const UInt8 * buildRowSkipData(IColumn::Filter & buffer, const ScatteredBlock::Indexes & indexes) const;
 };
-
-/// `JoinOnKeyColumns::buildRowSkipData` for the given NULL key map and ON-section mask.
-const UInt8 * buildRowSkipData(
-    ConstNullMapPtr null_map, const JoinCommon::JoinMask & mask, IColumn::Filter & buffer, size_t range_begin, size_t range_size);
 
 struct LazyOutput
 {
@@ -92,14 +89,20 @@ struct LazyOutput
     std::optional<size_t> row_store_row_length;
     bool has_columns = false;
 
-    [[nodiscard]] const PaddedPODArray<UInt64> & getRowRefs() const { return row_refs; }
-    [[nodiscard]] size_t getRowCount() const { return row_count; }
+    const PaddedPODArray<UInt64> & getRowRefs() const { return row_refs; }
+    size_t getRowCount() const { return row_count; }
 
     void reserve(size_t size) { row_refs.reserve(size); }
 
     /// `ref_word` is either an inline single ref or a RowRefList list word (pointer + count).
-    /// Out of line: inlined into the probe loops it makes them slower even where it does not run.
-    NO_INLINE void addRef(UInt64 ref_word);
+    void addRef(UInt64 ref_word)
+    {
+        chassert(ref_word != 0);
+        row_refs.emplace_back(ref_word);
+        const auto rows = refWordRows(ref_word);
+        row_count += rows;
+        hash_table_matches += rows;
+    }
 
     void addDefault()
     {
@@ -224,7 +227,7 @@ public:
         lazy_output.has_columns = plan.has_columns;
     }
 
-    [[nodiscard]] size_t size() const { return columns.size(); }
+    size_t size() const { return columns.size(); }
 
     ColumnWithTypeAndName moveColumn(size_t i)
     {
@@ -233,16 +236,7 @@ public:
 
     /// Encoded RowRef word (inline single ref, including an ASOF match) or a RowRefList
     /// list word (pointer + count).
-    ALWAYS_INLINE void appendFromBlock(UInt64 ref_word)
-    {
-#ifndef NDEBUG
-        /// `ref_word` may be an inline single ref or a list word (pointer + count); firstWord yields
-        /// the head ref of either, whose block is valid for the column-structure assertion.
-        checkColumns(*lazy_output.stored_columns[refWordBlockNo(RowRefList::fromWord(ref_word).firstWord())]);
-#endif
-        if (record_row_refs)
-            lazy_output.addRef(ref_word);
-    }
+    void appendFromBlock(UInt64 ref_word);
 
     void appendDefaultRow()
     {
@@ -250,7 +244,7 @@ public:
             lazy_output.addDefault();
     }
 
-    [[nodiscard]] const IColumn & leftAsofKey() const { return *left_asof_key; }
+    const IColumn & leftAsofKey() const { return *left_asof_key; }
 
     /// `PreSelectedRows` returns false. It keeps one ref per right row for the additional filter.
     static constexpr bool appendsWholeKey() { return true; }

@@ -1,5 +1,4 @@
 #include <cstddef>
-#include <Formats/FormatSettings.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -70,7 +69,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     }
 
     std::unique_ptr<ReadBuffer> input_buffer = with_buffers
-        ? getReadBufferFromASTInsertQuery(ast, context)
+        ? getReadBufferFromASTInsertQuery(ast, settings[Setting::snappy_mode])
         : std::make_unique<EmptyReadBuffer>();
 
     /// Create a source from input buffer using format from query
@@ -133,7 +132,7 @@ Pipe getSourceFromASTInsertQuery(
     return getSourceFromInputFormat(ast, std::move(format), std::move(context), input_function);
 }
 
-std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast, const ContextPtr & context)
+std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast, SnappyMode snappy_mode)
 {
     const auto * insert_query = ast->as<ASTInsertQuery>();
     if (!insert_query)
@@ -141,10 +140,6 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast, 
 
     if (insert_query->infile)
     {
-        /// Checked here, before the file is opened: the asynchronous insert queue reads the data without the format check above.
-        if (context->getApplicationType() == Context::ApplicationType::SERVER)
-            throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has infile and was send directly to server");
-
         /// Data can be from infile
         const auto & in_file_node = insert_query->infile->as<ASTLiteral &>();
         const auto in_file = in_file_node.value.safeGet<std::string>();
@@ -161,7 +156,7 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast, 
         /// Buffer for reading from file is created and wrapped with appropriate compression method
         return wrapReadBufferWithCompressionMethod(
             std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method),
-            /*zstd_window_log_max=*/ 0, context->getSettingsRef()[Setting::snappy_mode]);
+            /*zstd_window_log_max=*/ 0, snappy_mode);
     }
 
     ConcatReadBuffer::Buffers buffers;

@@ -68,7 +68,7 @@ struct TaskRuntimeData
         is_done.wait();
     }
 
-    [[nodiscard]] bool executeStep() const
+    bool executeStep() const
     {
         ProfileEventTimeIncrement<Microseconds> watch(events.execute_ms);
         return task->executeStep();

@@ -41,8 +41,7 @@ class ReadBuffer;
 
 /// Prepares a read buffer, that allows to read inlined data
 /// from ASTInsertQuert directly, and from tail buffer, if it exists.
-/// The `snappy_mode` setting of `context` selects the snappy framing for snappy-compressed data (e.g. `INSERT ... FROM INFILE`).
-/// Throws for `INSERT ... FROM INFILE` in the server: the client reads the file, the server must not open the path.
-std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast, const ContextPtr & context);
+/// `snappy_mode` selects the snappy framing used when the data (e.g. `INSERT ... FROM INFILE`) is snappy-compressed.
+std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast, SnappyMode snappy_mode = SnappyMode::Basic);
 
 }

@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 SET enable_named_columns_in_function_tuple=1;
 
 SELECT JSONExtract('{"hello":[{"world":"wtf"}]}', 'Tuple(hello Array(Tuple(world String)))') AS x,

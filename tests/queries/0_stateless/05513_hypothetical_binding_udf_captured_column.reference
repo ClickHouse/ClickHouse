@@ -1,6 +1,0 @@
-status:       applicable
-status:       not_applicable
-reason:       Hypothetical index no longer matches the table: column `b` was UInt64, now Float64. Run CREATE HYPOTHETICAL INDEX again
-status:       applicable
-status:       not_applicable
-reason:       Hypothetical projection no longer matches the table: column `b` was UInt64, now Float64. Run CREATE HYPOTHETICAL PROJECTION again

@@ -29,7 +29,6 @@ Contains information about normal and aggregate functions.
 - `categories` ([String](/reference/data-types/string)) — The category of the function.
 - `deterministic` ([Nullable(UInt8)](/reference/data-types/nullable)) — Whether the function returns the same result for the same arguments. NULL when unknown (e.g. aggregate or user-defined functions).
 - `higher_order` ([Nullable(UInt8)](/reference/data-types/nullable)) — Whether the function is higher-order — i.e. accepts at least one lambda expression as an argument (e.g. arrayMap, arrayFilter, mapApply). NULL when unknown.
-- `signature` ([String](/reference/data-types/string)) — Declarative signature of the function, when available.
 
 ## Example {#example}
 

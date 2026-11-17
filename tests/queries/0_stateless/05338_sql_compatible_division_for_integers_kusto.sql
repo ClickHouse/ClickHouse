@@ -4,7 +4,7 @@ SELECT kqlDivide(materialize(toIntervalHour(3)), materialize(toIntervalMinute(12
 SELECT kqlDivide(toIntervalMillisecond(15), toIntervalMillisecond(0));
 SELECT kqlDivide(CAST(NULL, 'Nullable(IntervalMillisecond)'), toIntervalMillisecond(10));
 
-SET enable_kusto_dialect = 1;
+SET allow_experimental_kusto_dialect = 1;
 SET dialect = 'kusto';
 print 15ms / 10ms, 3h / 120m, 7 / 2, 7.0 / 2;
 datatable (a:timespan, b:timespan) [15ms, 10ms, 3h, 120m] | project r = a / b;
