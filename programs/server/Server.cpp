@@ -26,6 +26,7 @@
 #include <Common/ErrorHandlers.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <base/getMemoryAmount.h>
+#include <base/getPageSize.h>
 #include <base/errnoToString.h>
 #include <base/coverage.h>
 #include <base/getFQDNOrHostName.h>
@@ -1149,6 +1150,15 @@ try
         std::thread::hardware_concurrency(),
         getNumberOfCPUCoresToUse() // on ARM processors it can show only enabled at current moment cores
     );
+
+#if USE_JEMALLOC
+    /// The two can differ: the jemalloc page size is fixed at build time or, on aarch64, chosen at startup.
+    LOG_INFO(
+        log,
+        "jemalloc page size: {}; OS page size: {}.",
+        ReadableSize(Jemalloc::getValue<size_t>("arenas.page")),
+        ReadableSize(getPageSize()));
+#endif
 
     /// Log the CPU instruction sets detected at runtime.
     String cpu_info;
