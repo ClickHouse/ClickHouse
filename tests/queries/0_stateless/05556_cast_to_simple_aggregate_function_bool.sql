@@ -106,17 +106,18 @@ SELECT toUInt8(JSONExtract('{"a":2}', 'a', 'Bool')), toUInt8(JSONExtract('{"a":2
 SELECT toUInt8(JSONExtract('{"a":2}', 'a', 'LowCardinality(Bool)')), toUInt8(JSONExtract('{"a":2}', 'a', 'LowCardinality(SimpleAggregateFunction(any, Bool))'));
 
 -- An INSERT from UInt8 stores 2 as is; the correlated equality must not depend on the substitution.
+-- An implicit min-max index of a `Bool` column holding 2 prunes the matching granule (as in `05339`), so the tables opt out.
 SELECT 'correlated';
 DROP TABLE IF EXISTS ov;
 DROP TABLE IF EXISTS i8;
 DROP TABLE IF EXISTS i16;
 DROP TABLE IF EXISTS im;
 DROP TABLE IF EXISTS ob;
-CREATE TABLE ov (k UInt8, v SimpleAggregateFunction(any, Bool)) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE i8 (u UInt8) ENGINE = MergeTree ORDER BY u;
-CREATE TABLE i16 (u UInt16) ENGINE = MergeTree ORDER BY u;
-CREATE TABLE im (k UInt8, m SimpleAggregateFunction(max, Bool)) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE ob (k UInt8, b Bool) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE ov (k UInt8, v SimpleAggregateFunction(any, Bool)) ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE i8 (u UInt8) ENGINE = MergeTree ORDER BY u SETTINGS add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE i16 (u UInt16) ENGINE = MergeTree ORDER BY u SETTINGS add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE im (k UInt8, m SimpleAggregateFunction(max, Bool)) ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE ob (k UInt8, b Bool) ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO ov SELECT 1, toUInt8(2);
 INSERT INTO i8 VALUES (2);
 INSERT INTO i16 VALUES (2);
