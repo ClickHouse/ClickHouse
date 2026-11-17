@@ -950,6 +950,7 @@ With `target_type`, the estimate follows how a new `MergeTree` table with the de
 - values converted as `CAST` converts them, as `ALTER TABLE ... MODIFY COLUMN` does, with the settings of the query (a `SETTINGS` clause in a subquery doesn't apply).
 
 The estimate is approximate, and it does not read the settings of any table.
+A state kept unfinished in a `Memory` table is finished by the query that reads it, so the rows it has not written yet are converted with that query's settings.
 A table sizes its granules from its insert blocks and from all its columns together, while the function sees one column and no insert blocks, so the granules of wide rows can differ.
 The numerator of a `LowCardinality` column is the size of its values, not of its dictionary.
 The result can depend on how a query splits the rows between threads.
