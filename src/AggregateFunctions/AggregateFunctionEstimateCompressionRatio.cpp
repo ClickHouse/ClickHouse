@@ -635,8 +635,8 @@ private:
         }
     }
 
-    /// Writes the pending rows to the part, up to the end of the open granule; the rows after it stay pending. The pending rows
-    /// are a granule, or a piece of one.
+    /// Converts the pending rows and writes them to the part. They complete the open granule or are a piece of it; when their
+    /// converted bytes end the granule earlier, the rows after its end go on into the next granules.
     void writePending(Data & data_ref) const
     {
         throwIfBroken(data_ref);
@@ -649,33 +649,34 @@ private:
 
         ColumnPtr rows = data_ref.pending->getPtr();
         ColumnPtr converted = convert(rows);
-        const auto [write_rows, write_bytes] = rowsToGranuleEnd(data_ref, *converted);
-        chassert(write_rows > 0);
-        const bool ends_granule = data_ref.granule_rows + write_rows >= merge_tree.granule_rows
-            || data_ref.granule_bytes + write_bytes >= merge_tree.granule_bytes;
-
-        MutableColumnPtr rest;
-        if (write_rows < rows->size())
-            rest = IColumn::mutate(rows->cut(write_rows, rows->size() - write_rows));
-        const UInt64 rows_bytes = sourceBytes(*rows, write_rows, /*first_in_part=*/!data_ref.part);
+        const UInt64 rows_bytes = sourceBytes(*rows, /*first_in_part=*/!data_ref.part);
 
         data_ref.broken = true;
         if (!data_ref.part)
             data_ref.part = openPart(*converted);
 
-        /// Before a granule, a stream that holds `min_compress_block_size` bytes ends its compressed block, as in
-        /// `MergeTreeDataPartWriterWide::getCurrentMarksForColumn`.
         auto & part = *data_ref.part;
-        if (data_ref.granule_rows == 0)
-            for (auto & [_, stream] : part.streams)
-                if (stream->offset() >= min_compress_block_size)
-                    stream->endBlock();
-        part.serialization->serializeBinaryBulkWithMultipleStreams(*converted, 0, write_rows, part.settings, part.state);
+        for (size_t offset = 0; offset < converted->size();)
+        {
+            const auto [write_rows, write_bytes] = rowsToGranuleEnd(data_ref, *converted, offset);
+            chassert(write_rows > 0);
 
-        data_ref.granule_rows = ends_granule ? 0 : data_ref.granule_rows + write_rows;
-        data_ref.granule_bytes = ends_granule ? 0 : data_ref.granule_bytes + write_bytes;
+            /// Before a granule, a stream that holds `min_compress_block_size` bytes ends its compressed block, as in
+            /// `MergeTreeDataPartWriterWide::getCurrentMarksForColumn`.
+            if (data_ref.granule_rows == 0)
+                for (auto & [_, stream] : part.streams)
+                    if (stream->offset() >= min_compress_block_size)
+                        stream->endBlock();
+            part.serialization->serializeBinaryBulkWithMultipleStreams(*converted, offset, write_rows, part.settings, part.state);
+
+            const bool ends_granule = data_ref.granule_rows + write_rows >= merge_tree.granule_rows
+                || data_ref.granule_bytes + write_bytes >= merge_tree.granule_bytes;
+            data_ref.granule_rows = ends_granule ? 0 : data_ref.granule_rows + write_rows;
+            data_ref.granule_bytes = ends_granule ? 0 : data_ref.granule_bytes + write_bytes;
+            offset += write_rows;
+        }
         data_ref.source_bytes += rows_bytes;
-        data_ref.pending = std::move(rest);
+        data_ref.pending.reset();
         data_ref.broken = false;
     }
 
@@ -691,29 +692,32 @@ private:
         return cast->execute(arguments, cast->getResultType(), rows->size(), /*dry_run=*/false);
     }
 
-    /// How many of the converted rows the open granule takes, and their bytes. A granule ends after `index_granularity` rows,
-    /// or at the row where its converted rows reach `index_granularity_bytes`. That approximates the writer, which picks one
-    /// granule size per insert block, from the bytes of all the columns of the block (`computeIndexGranularity`); neither is
-    /// known here.
-    std::pair<size_t, size_t> rowsToGranuleEnd(const Data & data_ref, const IColumn & converted) const
+    /// How many of the converted rows from `offset` the open granule takes, and their bytes. A granule ends after
+    /// `index_granularity` rows, or at the row where its converted rows reach `index_granularity_bytes`. That approximates the
+    /// writer, which picks one granule size per insert block, from the bytes of all the columns of the block
+    /// (`computeIndexGranularity`); neither is known here.
+    std::pair<size_t, size_t> rowsToGranuleEnd(const Data & data_ref, const IColumn & converted, size_t offset) const
     {
-        const size_t bytes = converted.byteSize();
-        if (data_ref.granule_bytes + bytes < merge_tree.granule_bytes)
-            return {converted.size(), bytes};
+        if (offset == 0)
+        {
+            const size_t bytes = converted.byteSize();
+            if (data_ref.granule_bytes + bytes < merge_tree.granule_bytes)
+                return {converted.size(), bytes};
+        }
 
-        size_t rows = 0;
-        size_t rows_bytes = 0;
-        while (rows < converted.size() && data_ref.granule_bytes + rows_bytes < merge_tree.granule_bytes)
-            rows_bytes += converted.byteSizeAt(rows++);
-        return {rows, rows_bytes};
+        size_t end = offset;
+        size_t bytes = 0;
+        while (end < converted.size() && data_ref.granule_bytes + bytes < merge_tree.granule_bytes)
+            bytes += converted.byteSizeAt(end++);
+        return {end - offset, bytes};
     }
 
-    /// The numerator of the first `limit` rows: their bytes serialized in their own type, as the function without a target type
-    /// counts them. The prefix and suffix of the serialization (for example, the mode of `Variant` discriminators) are counted
-    /// once per part, with its first rows, so that the numerator does not depend on where the granules of the target end. The
-    /// rows themselves write nothing per call: the source types that would (`LowCardinality`, sparse, `Dynamic`) are removed by
-    /// the factory, made dense in `addBatchSparseSinglePlace`, or rejected in the constructor.
-    UInt64 sourceBytes(const IColumn & rows, size_t limit, bool first_in_part) const
+    /// The numerator of the rows: their bytes serialized in their own type, as the function without a target type counts them.
+    /// The prefix and suffix of the serialization (for example, the mode of `Variant` discriminators) are counted once per part,
+    /// with its first rows, so that the numerator does not depend on where the granules of the target end. The rows themselves
+    /// write nothing per call: the source types that would (`LowCardinality`, sparse, `Dynamic`) are removed by the factory,
+    /// made dense in `addBatchSparseSinglePlace`, or rejected in the constructor.
+    UInt64 sourceBytes(const IColumn & rows, bool first_in_part) const
     {
         NullWriteBufferWithMemory out(16384);
         ISerialization::SerializeBinaryBulkSettings settings;
@@ -721,7 +725,7 @@ private:
         ISerialization::SerializeBinaryBulkStatePtr state;
         source_serialization->serializeBinaryBulkStatePrefix(rows, settings, state);
         const size_t prefix_end = out.count();
-        source_serialization->serializeBinaryBulkWithMultipleStreams(rows, 0, limit, settings, state);
+        source_serialization->serializeBinaryBulkWithMultipleStreams(rows, 0, rows.size(), settings, state);
         const size_t rows_end = out.count();
         source_serialization->serializeBinaryBulkStateSuffix(settings, state);
         out.finalize();
@@ -772,7 +776,7 @@ private:
     void finish(Data & data_ref) const
     {
         throwIfBroken(data_ref);
-        while (data_ref.pending && !data_ref.pending->empty())
+        if (data_ref.pending && !data_ref.pending->empty())
             writePending(data_ref);
         data_ref.granule_rows = 0;
         data_ref.granule_bytes = 0;
