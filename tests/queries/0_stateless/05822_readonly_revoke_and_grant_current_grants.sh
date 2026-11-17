@@ -10,10 +10,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 A="a_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 B="b_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+C="c_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 cleanup()
 {
-    $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $A, $B"
+    $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $A, $B, $C"
 }
 trap cleanup EXIT
 cleanup
@@ -53,3 +54,12 @@ get "GRANT CURRENT GRANTS(SELECT ON *.*) TO $B"
 grants
 run 0 "GRANT CURRENT GRANTS(SELECT ON *.*) TO $B"
 grants
+
+# ON CLUSTER: the initiator's check passes the temporary database without reaching readonly.
+$CLICKHOUSE_CLIENT -m -q "
+GRANT CLUSTER ON *.* TO $A;
+CREATE USER $C IDENTIFIED WITH no_password;
+GRANT SELECT ON _temporary_and_external_tables.* TO $C;
+"
+run 1 "REVOKE SELECT ON _temporary_and_external_tables.* FROM $C ON CLUSTER test_shard_localhost"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.grants WHERE user_name = '$C' AND database = '_temporary_and_external_tables'"
