@@ -2,6 +2,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 #include <base/arithmeticOverflow.h>
 
@@ -13,6 +14,12 @@ namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
 extern const int ARGUMENT_OUT_OF_BOUND;
+extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+extern const char aggregator_merge_batch_throw[];
 }
 
 namespace
@@ -288,6 +295,14 @@ void IAggregateFunction::mergeBatchOrDefer(
 
         mergeImpl(places[i] + place_offset, rhs[i], arena);
     }
+}
+
+void IAggregateFunction::injectMergeBatchFault()
+{
+    fiu_do_on(FailPoints::aggregator_merge_batch_throw,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault in the batch merge of aggregate function states");
+    });
 }
 
 void IAggregateFunction::insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const

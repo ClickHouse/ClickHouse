@@ -292,6 +292,7 @@ public:
             const ContextPtr & context_,
             bool distributed_processing_ = false,
             String archive_member_path_ = {},
+            std::optional<FormatSettings> format_settings_ = std::nullopt,
             RWLockImpl::LockHolder read_lock_ = {});
 
         String next();
@@ -341,6 +342,7 @@ private:
         ExpressionActionsPtr deferred_filter_actions;
         NamesAndTypesList virtual_columns;
         NamesAndTypesList hive_columns;
+        const std::optional<FormatSettings> format_settings;
         /// A known archive member is part of the user-visible `_path` / `_file` value, although
         /// this iterator must open the outer archive file.
         const String archive_member_path;

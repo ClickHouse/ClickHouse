@@ -56,15 +56,15 @@ public:
     StorageLocalConfiguration() = default;
     StorageLocalConfiguration(const StorageLocalConfiguration & other) = default;
 
-    ObjectStorageType getType() const override { return type; }
-    std::string getTypeName() const override { return type_name; }
-    std::string getEngineName() const override { return "Local"; }
+    [[nodiscard]] ObjectStorageType getType() const override { return type; }
+    [[nodiscard]] std::string getTypeName() const override { return type_name; }
+    [[nodiscard]] std::string getEngineName() const override { return "Local"; }
 
-    Path getRawPath() const override { return path; }
+    [[nodiscard]] Path getRawPath() const override { return path; }
     void setRawPath(const Path & p) override { path = p; }
-    const String & getRawURI() const override { return path.path; }
+    [[nodiscard]] const String & getRawURI() const override { return path.path; }
 
-    const Paths & getPathsUnlocked() const override { return paths; }
+    [[nodiscard]] const Paths & getPathsUnlocked() const override { return paths; }
     Paths & getMutablePathsUnlocked() override { return paths; }
     void setPathsUnlocked(const Paths & paths_) override
     {
@@ -77,9 +77,9 @@ public:
             path = paths[0];
     }
 
-    String getNamespace() const override { return ""; }
-    String getDataSourceDescription() const override { return ""; }
-    StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
+    [[nodiscard]] String getNamespace() const override { return ""; }
+    [[nodiscard]] String getDataSourceDescription() const override { return ""; }
+    [[nodiscard]] StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;
 

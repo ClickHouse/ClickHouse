@@ -880,7 +880,7 @@ namespace
             StorageFile::getSchemaCache(getContext()).addColumns(cache_key, columns);
         }
 
-        String getLastFilePath() const override
+        [[nodiscard]] String getLastFilePath() const override
         {
             if (current_index != 0)
                 return paths[current_index - 1];
@@ -892,7 +892,7 @@ namespace
             format = format_name;
         }
 
-        bool supportsLastReadBufferRecreation() const override { return true; }
+        [[nodiscard]] bool supportsLastReadBufferRecreation() const override { return true; }
 
         std::unique_ptr<ReadBuffer> recreateLastReadBuffer() override
         {
@@ -1163,12 +1163,12 @@ namespace
             format = format_name;
         }
 
-        String getLastFilePath() const override
+        [[nodiscard]] String getLastFilePath() const override
         {
             return last_read_file_path;
         }
 
-        bool supportsLastReadBufferRecreation() const override { return true; }
+        [[nodiscard]] bool supportsLastReadBufferRecreation() const override { return true; }
 
         std::unique_ptr<ReadBuffer> recreateLastReadBuffer() override
         {
@@ -1651,6 +1651,7 @@ StorageFileSource::FilesIterator::FilesIterator(
     const ContextPtr & context_,
     bool distributed_processing_,
     String archive_member_path_,
+    std::optional<FormatSettings> format_settings_,
     RWLockImpl::LockHolder read_lock_)
     : WithContext(context_)
     , files(files_)
@@ -1658,6 +1659,7 @@ StorageFileSource::FilesIterator::FilesIterator(
     , distributed_processing(distributed_processing_)
     , virtual_columns(virtual_columns_)
     , hive_columns(hive_columns_)
+    , format_settings(std::move(format_settings_))
     , archive_member_path(std::move(archive_member_path_))
     , total_files_count(files_.size())
     , read_lock(std::move(read_lock_))
@@ -1685,7 +1687,7 @@ StorageFileSource::FilesIterator::FilesIterator(
                 filter_sources,
                 VirtualColumnUtils::getFilterByPathAndFileIndexes(
                     filter_paths, actions, virtual_columns_, hive_columns_, context_,
-                    /*format_settings=*/std::nullopt,
+                    format_settings,
                     archive_member_path.empty() ? nullptr : &archive_member_names));
         }
         else
@@ -1729,7 +1731,7 @@ String StorageFileSource::FilesIterator::next()
                 filtered_files,
                 VirtualColumnUtils::getFilterByPathAndFileIndexes(
                     filter_paths, deferred_filter_actions, virtual_columns, hive_columns, getContext(),
-                    /*format_settings=*/std::nullopt,
+                    format_settings,
                     archive_member_path.empty() ? nullptr : &archive_member_names));
             if (filtered_files.empty())
                 continue;
@@ -3023,6 +3025,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         context,
         storage->distributed_processing,
         storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{},
+        storage->format_settings,
         std::move(read_lock));
 }
 
