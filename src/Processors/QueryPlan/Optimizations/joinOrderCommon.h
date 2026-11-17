@@ -103,7 +103,7 @@ struct JoinSideStats
 
 /// Base-table NDV can exceed the rows of a multi-relation input, which cannot hold more distinct keys
 /// than rows. Cap it by those rows, but only while the input still has at least as many rows as the
-/// other side of the equality has distinct keys. `1 / max(NDV)` assumes that the keys of the side with
+/// known NDV upper bound on the other side of the equality. `1 / max(NDV)` assumes that the keys of the side with
 /// fewer distinct values are contained in the other side. If the cap made the capped side the smaller
 /// one, the input, which is typically a filtered sample of a larger key domain (for example a primary
 /// key side filtered by a join with a dimension), would be assumed to match the other side completely,
@@ -115,7 +115,7 @@ inline ColumnDistinctValues capColumnDistinctValuesBySubtreeRows(
     if (!side.multi_relation || !side.rows || *side.rows == 0)
         return stats;
     const UInt64 rows = *side.rows;
-    if (stats.ndv && other.ndv && *other.ndv <= rows)
+    if (stats.ndv && other.upper_bound > 0 && other.upper_bound <= rows)
         stats.ndv = std::min(*stats.ndv, rows);
     if (other.upper_bound <= rows)
         stats.upper_bound = std::min(stats.upper_bound, rows);

@@ -123,6 +123,33 @@ INNER JOIN ndv_d1 AS d1 ON d2.w = d1.w
 WHERE d1.y = 1999
 SETTINGS query_plan_optimize_join_order_algorithm = 'greedy', enable_join_transitive_predicates = 1);
 
+-- Without f.k statistics, f's known row count is still an NDV upper bound. The cap must keep
+-- the NDV used for costing consistent with the displayed upper bound: both joins return 100 rows.
+CREATE TABLE ndv_partial_f (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
+INSERT INTO ndv_partial_f SELECT number FROM numbers(100);
+
+SELECT 'greedy direct partial statistics',
+    countIf(explain LIKE '%Selectivity: estimated (NDV) 0.01%') = 2,
+    countIf(explain LIKE '%Output rows: estimated 100.00 · actual 100.00 · q-error 1.00%') = 2
+FROM (EXPLAIN ANALYZE indexes = 0
+SELECT count() FROM ndv_d2 AS d2
+INNER JOIN ndv_d1 AS d1 ON d2.w = d1.w
+INNER JOIN ndv_partial_f AS f ON d2.k = f.k
+WHERE d1.y = 1999
+SETTINGS query_plan_optimize_join_order_algorithm = 'greedy', enable_join_transitive_predicates = 0);
+
+SELECT 'greedy equivalence partial statistics',
+    countIf(explain LIKE '%Selectivity: estimated (NDV) 0.01%') = 2,
+    countIf(explain LIKE '%Output rows: estimated 100.00 · actual 100.00 · q-error 1.00%') = 2
+FROM (EXPLAIN ANALYZE indexes = 0
+SELECT count() FROM ndv_d2 AS d2
+INNER JOIN ndv_d1 AS d1 ON d2.w = d1.w
+INNER JOIN ndv_partial_f AS f ON d2.k = f.k
+WHERE d1.y = 1999
+SETTINGS query_plan_optimize_join_order_algorithm = 'greedy', enable_join_transitive_predicates = 1);
+
+DROP TABLE ndv_partial_f;
+
 -- f.k = d2.k is costed both with d2 as a leaf and with d2 inside {d1, d2}.
 -- A cached selectivity from the first context must not bypass the second context's row cap.
 SELECT 'cache context',
