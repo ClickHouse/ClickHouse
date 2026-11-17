@@ -43,3 +43,17 @@ SELECT accurateCastOrNull(materialize(toFixedString('abc', 3)), 'FixedString(2)'
 SELECT accurateCastOrNull(materialize([1e300, 1]::Array(Float64)), 'QBit(Float32, 2)');
 SELECT accurateCastOrNull(materialize([1, NULL]::Array(Nullable(Float32))), 'QBit(Float32, 2)');
 SELECT accurateCastOrNull(materialize([1, 2]::Array(Float64)), 'QBit(Float32, 2)');
+
+SELECT accurateCastOrNull(tuple(materialize([toUInt64(1)])), 'Nullable(Tuple(Array(AggregateFunction(sum, UInt64))))'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT DISTINCT accurateCastOrNull(tuple(materialize([tuple(toFixedString(NULL, 1))])), 'Nullable(Tuple(Array(Tuple(UInt64))))'); -- { serverError CANNOT_CONVERT_TYPE }
+
+-- A Variant or Dynamic element converts each of its members as with accurateCast.
+SELECT accurateCastOrNull(tuple(materialize([CAST('1', 'Variant(String)')])), 'Nullable(Tuple(Array(UInt64)))');
+SELECT accurateCastOrNull(tuple(materialize([CAST('1', 'String')::Dynamic])), 'Nullable(Tuple(Array(UInt64)))');
+SELECT accurateCastOrNull(tuple(materialize([CAST('abc', 'Variant(String)')])), 'Nullable(Tuple(Array(UInt64)))'); -- { serverError CANNOT_PARSE_TEXT }
+SELECT accurateCastOrNull(tuple(materialize([CAST(toIPv4('1.2.3.4'), 'Variant(IPv4, UInt16)')])), 'Nullable(Tuple(Array(Decimal32(2))))') SETTINGS allow_suspicious_variant_types = 1; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCastOrNull(tuple(materialize([toIPv4('1.2.3.4')::Dynamic])), 'Nullable(Tuple(Array(Decimal32(2))))'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCastOrNull(materialize(CAST(toIPv4('1.2.3.4'), 'Variant(IPv4, UInt16)')), 'Decimal32(2)') SETTINGS allow_suspicious_variant_types = 1;
+SELECT accurateCastOrNull(materialize(CAST('abc', 'Variant(String)')), 'UInt64');
+SELECT accurateCastOrNull(tuple(materialize(CAST('abc', 'Variant(String)'))), 'Nullable(Tuple(UInt64))');
+SELECT accurateCastOrNull(tuple(materialize([CAST('abc', 'Variant(String)')])), 'Nullable(Tuple(Array(Nullable(UInt64))))');

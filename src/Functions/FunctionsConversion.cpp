@@ -862,7 +862,8 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
     };
 }
 
-FunctionCast::WrapperType FunctionCast::createAggregateFunctionWrapper(const DataTypePtr & from_type_untyped, const DataTypeAggregateFunction * to_type) const
+FunctionCast::WrapperType FunctionCast::createAggregateFunctionWrapper(
+    const DataTypePtr & from_type_untyped, const DataTypeAggregateFunction * to_type, bool requested_result_is_nullable) const
 {
     /// Conversion from String through parsing.
     if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
@@ -933,7 +934,7 @@ FunctionCast::WrapperType FunctionCast::createAggregateFunctionWrapper(const Dat
         }
     }
 
-    if (cast_type == CastType::accurateOrNull)
+    if (cast_type == CastType::accurateOrNull && requested_result_is_nullable)
         return createToNullableColumnWrapper();
     else
         throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
@@ -2180,11 +2181,15 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(
     ElementWrappers variant_wrappers;
     variant_wrappers.reserve(variant_types.size());
 
+    /// An unasked conversion converts every member strictly, as accurateCast does.
+    const bool reports_failures = cast_type == CastType::accurateOrNull
+        && (report_failures_as_null || isNullableOrLowCardinalityNullable(to_type));
+
     /// Create conversion wrapper for each variant.
     for (const auto & variant_type : variant_types)
     {
         WrapperType wrapper;
-        if (cast_type == CastType::accurateOrNull)
+        if (reports_failures)
         {
             /// Create wrapper only if we support conversion from variant to the resulting type.
             wrapper = createWrapperIfCanConvert(variant_type, to_type, report_failures_as_null);
@@ -2193,7 +2198,7 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(
     }
 
     bool keep_nullable = settings.cast_keep_nullable;
-    return [this, variant_wrappers, variant_types, to_type, keep_nullable]
+    return [this, variant_wrappers, variant_types, to_type, keep_nullable, reports_failures]
            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
     {
         const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
@@ -2214,7 +2219,7 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(
             {
                 cast_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
             }
-            else if (cast_type != CastType::accurateOrNull && !variant_col->empty())
+            else if (!reports_failures && !variant_col->empty())
             {
                 /// The conversion is prepared only for a variant with values, so a variant that cannot be
                 /// converted fails the conversion only if the column contains values of it.
@@ -2441,12 +2446,14 @@ FunctionCast::WrapperType FunctionCast::createVariantWrapper(const DataTypePtr &
     return createColumnToVariantWrapper(from_type, assert_cast<const DataTypeVariant &>(*to_type));
 }
 
-FunctionCast::WrapperType FunctionCast::createDynamicToColumnWrapper(const DataTypePtr &, bool report_failures_as_null) const
+FunctionCast::WrapperType FunctionCast::createDynamicToColumnWrapper(const DataTypePtr & to_type, bool report_failures_as_null) const
 {
-    auto nested_convert = [this, report_failures_as_null](ColumnsWithTypeAndName & args, const DataTypePtr & result_type) -> ColumnPtr
+    const bool reports_failures = cast_type == CastType::accurateOrNull
+        && (report_failures_as_null || isNullableOrLowCardinalityNullable(to_type));
+    auto nested_convert = [this, report_failures_as_null, reports_failures](ColumnsWithTypeAndName & args, const DataTypePtr & result_type) -> ColumnPtr
     {
         WrapperType wrapper;
-        if (cast_type == CastType::accurateOrNull)
+        if (reports_failures)
         {
             /// Create wrapper only if we support conversion from variant to the resulting type.
             wrapper = createWrapperIfCanConvert(args[0].type, result_type, report_failures_as_null);
@@ -3494,7 +3501,7 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
         case TypeIndex::Object:
             return createObjectWrapper(from_type, checkAndGetDataType<DataTypeObject>(to_type.get()), requested_result_is_nullable);
         case TypeIndex::AggregateFunction:
-            return createAggregateFunctionWrapper(from_type, checkAndGetDataType<DataTypeAggregateFunction>(to_type.get()));
+            return createAggregateFunctionWrapper(from_type, checkAndGetDataType<DataTypeAggregateFunction>(to_type.get()), requested_result_is_nullable);
         case TypeIndex::Interval:
             return createIntervalWrapper(from_type, checkAndGetDataType<DataTypeInterval>(to_type.get())->getKind());
         default:

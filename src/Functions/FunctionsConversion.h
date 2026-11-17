@@ -6116,7 +6116,8 @@ private:
     requires IsDataTypeDecimal<ToDataType>
     WrapperType createDecimalWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const;
 
-    WrapperType createAggregateFunctionWrapper(const DataTypePtr & from_type_untyped, const DataTypeAggregateFunction * to_type) const;
+    WrapperType createAggregateFunctionWrapper(
+        const DataTypePtr & from_type_untyped, const DataTypeAggregateFunction * to_type, bool requested_result_is_nullable) const;
 
     WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray & to_type) const;
 
