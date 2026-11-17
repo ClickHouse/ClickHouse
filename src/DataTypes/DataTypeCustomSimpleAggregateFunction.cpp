@@ -53,6 +53,7 @@ void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const Aggreg
         "sumMappedArrays",
         "minMappedArrays",
         "maxMappedArrays",
+        "timeSeriesGroupArray",
     };
 
     // check function
@@ -173,6 +174,26 @@ String DataTypeCustomSimpleAggregateFunction::getFunctionName() const
     return function->getName();
 }
 
+DataTypeCustomDescPtr DataTypeCustomSimpleAggregateFunction::rederiveFor(
+    const DataTypePtr &, const RewriteNestedFn & rewrite_nested) const
+{
+    /// This name keeps its own copy of the argument types, and both the printed name and the binary
+    /// type encoding are built from that copy rather than from the storage type. It has to go through
+    /// the same rewrite as the storage type: for an aggregate state below a wrapper, announcing the
+    /// copy untouched would name one state version while the payload is written with another.
+    DataTypes new_argument_types = argument_types;
+    for (auto & argument_type : new_argument_types)
+    {
+        auto rewritten = rewrite_nested(argument_type);
+        if (!rewritten)
+            return nullptr;
+        argument_type = std::move(rewritten);
+    }
+
+    return std::make_unique<DataTypeCustomDesc>(
+        std::make_unique<DataTypeCustomSimpleAggregateFunction>(function, new_argument_types, parameters));
+}
+
 DataTypePtr createSimpleAggregateFunctionType(const AggregateFunctionPtr & function, const DataTypes & argument_types, const Array & parameters)
 {
     auto custom_desc = std::make_unique<DataTypeCustomDesc>(
@@ -240,15 +261,16 @@ The following aggregate functions are supported:
 - [`sumMap` (`sumMappedArrays`)](/reference/functions/aggregate-functions/sumMap)
 - [`minMap` (`minMappedArrays`)](/reference/functions/aggregate-functions/minMap)
 - [`maxMap` (`maxMappedArrays`)](/reference/functions/aggregate-functions/maxMap)
+- [`timeSeriesGroupArray`](/reference/functions/aggregate-functions/timeSeriesGroupArray) (with a single argument of type `Array(Tuple(timestamp, value))`)
 
-:::note
+<Note>
 Values of the `SimpleAggregateFunction(func, Type)` have the same `Type`,
 so unlike with the `AggregateFunction` type there is no need to apply
 `-Merge`/`-State` combinators.
 
 The `SimpleAggregateFunction` type has better performance than the `AggregateFunction`
 for the same aggregate functions.
-:::
+</Note>
 
 ## Example {#example}
 

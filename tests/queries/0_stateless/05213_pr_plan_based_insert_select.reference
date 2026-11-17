@@ -1,0 +1,10 @@
+mt source table count()	100000
+-- without the local pipeline
+4
+100000
+-- with the local pipeline
+3
+100000
+-- plan-based implementation asked for in the query text
+4
+100000

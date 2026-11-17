@@ -24,13 +24,14 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_STORAGE;
 }
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_ytsaurus_table_engine;
+    extern const SettingsBool enable_ytsaurus_table_engine;
 }
 
 namespace YTsaurusSetting
@@ -39,6 +40,12 @@ namespace YTsaurusSetting
     extern const YTsaurusSettingsBool enable_heavy_proxy_redirection;
 }
 
+
+void YTsaurusStorageConfiguration::validate() const
+{
+    if (cypress_path.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty `cypress_path` is passed to the YTsaurus data source");
+}
 
 StorageYTsaurus::StorageYTsaurus(
     const StorageID & table_id_,
@@ -125,6 +132,7 @@ YTsaurusStorageConfiguration StorageYTsaurus::processNamedCollectionResult(
         if (!column_description.empty())
             configuration.ytsaurus_columns_description = std::move(column_description);
     }
+    configuration.validate();
     return configuration;
 }
 
@@ -148,6 +156,7 @@ YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args,
     else
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Incorrect Ytsarurus table schema. Expected YTsaurus(http_proxy_url, cypress_path, oauth_token)");
+    configuration.validate();
     return configuration;
 }
 
@@ -156,16 +165,24 @@ void registerStorageYTsaurus(StorageFactory & factory)
 {
     factory.registerStorage("YTsaurus", [](const StorageFactory::Arguments & args)
     {
-        if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_ytsaurus_table_engine])
+        if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef()[Setting::enable_ytsaurus_table_engine])
             throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Table engine YTsaurus is experimental. "
-                "Set `allow_experimental_ytsaurus_table_engine` setting to enable it");
+                "Set `enable_ytsaurus_table_engine` setting to enable it");
+        auto configuration = StorageYTsaurus::getConfiguration(
+            args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext(), &args.table_id);
+        /// Skipped for a stored definition so that a forbidden header does not block server startup;
+        /// the client still checks it.
+        if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()))
+            YTsaurusClient::checkHeaders(args.getLocalContext(), configuration.oauth_token);
         return std::make_shared<StorageYTsaurus>(
             args.table_id,
-            StorageYTsaurus::getConfiguration(args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext(), &args.table_id),
+            std::move(configuration),
             args.columns,
             args.constraints,
             args.comment);
     },
+    /// YTsaurus('http_proxy_url', 'cypress_path', 'oauth_token')
+    SecretArgumentsSpec{.positional_secret_slots = {2}, .secret_keys = {"oauth_token"}},
     {
         .supports_settings = true,
         .source_access_type = AccessTypeObjects::Source::YTSAURUS,
@@ -193,15 +210,15 @@ The YTsaurus table engine allows you to import data from a YTsaurus cluster.
     ) ENGINE = YTsaurus('http_proxy_url', 'cypress_path', 'oauth_token')
 ```
 
-:::info
+<Info>
 This is an experimental feature that may change in backwards-incompatible ways in future releases.
 Enable usage of the YTsaurus table engine
-using setting [`allow_experimental_ytsaurus_table_engine`](/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_table_engine).
+using setting [`enable_ytsaurus_table_engine`](/reference/settings/session-settings/enable#enable_ytsaurus_table_engine).
 
 You can do so using:
 
-`SET allow_experimental_ytsaurus_table_engine = 1`.
-:::
+`SET enable_ytsaurus_table_engine = 1`.
+</Info>
 
 **Engine parameters**
 

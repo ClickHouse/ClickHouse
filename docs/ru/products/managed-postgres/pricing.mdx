@@ -56,7 +56,7 @@ ClickHouse Managed Postgres построен на локальном NVMe-хра
       <li>Включает <a href="/ru/products/managed-postgres/high-availability">Высокую доступность</a></li>
       <li><a href="/ru/products/managed-postgres/monitoring/query-insights">Query Insights</a> со сроком хранения 1 день</li>
       <li><a href="/ru/products/managed-postgres/extensions">Более 90 расширений Postgres</a></li>
-      <li><a href="/ru/products/managed-postgres/clickhouse-integration">Нативный CDC для ClickHouse</a></li>
+<li><a href="/ru/products/managed-postgres/sync-to-clickhouse/clickpipes">Нативный CDC для ClickHouse</a></li>
       <li><a href="/ru/products/managed-postgres/extensions">расширение <code>pg&#95;clickhouse</code></a></li>
       <li><a href="/ru/products/managed-postgres/migrations/clickpipes">Полностью управляемая миграция данных</a></li>
       <li>Экспертная поддержка, время ответа — 1 рабочий день</li>
@@ -75,6 +75,7 @@ ClickHouse Managed Postgres построен на локальном NVMe-хра
       <li><a href="/ru/products/managed-postgres/scaling">До 96 vCPU и 768 ГБ оперативной памяти</a></li>
       <li><a href="/ru/products/managed-postgres/scaling">Автомасштабирование хранилища</a></li>
       <li><a href="/ru/products/managed-postgres/read-replicas">Реплики для чтения</a></li>
+      <li><a href="/ru/products/managed-postgres/upgrades#scheduled-upgrades">Обновления по расписанию</a></li>
       <li><a href="/ru/products/managed-postgres/security">Приватная сеть</a></li>
       <li><a href="/ru/products/managed-postgres/backup-and-restore">Резервные копии со сроком хранения 7 дней</a></li>
       <li><a href="/ru/products/managed-postgres/monitoring/query-insights">Query Insights</a> со сроком хранения 7 дней</li>
@@ -91,18 +92,16 @@ ClickHouse Managed Postgres построен на локальном NVMe-хра
       <li>Поддержка уровня Enterprise со временем ответа в течение 30 минут для инцидентов Severity 1</li>
       <li>Частные регионы</li>
       <li>Закрепленный ведущий инженер поддержки</li>
-      <li><a href="/ru/products/managed-postgres/extensions">Пользовательские расширения</a> (&#42;требуется одобрение)</li>
+      <li><a href="/ru/products/managed-postgres/extensions">Пользовательские расширения</a> (*требуется одобрение)</li>
       <li><a href="/ru/products/managed-postgres/migrations/clickpipes">Руководства по миграции с консультационной поддержкой</a></li>
-      <li><a href="/ru/products/managed-postgres/upgrades">Обновления по расписанию</a></li>
+      <li><a href="/ru/products/managed-postgres/upgrades#days-of-the-week">Выбор дней недели для обновлений по расписанию</a></li>
     </ul>
   </div>
 </div>
 
-<div id="instance-types">
-  ### Типы инстансов
-</div>
+### Типы инстансов
 
-Конфигурации инстансов сгруппированы в три категории, чтобы упростить выбор инфраструктуры с учётом характеристик рабочей нагрузки. Не все типы инстансов доступны в каждом регионе AWS.
+Конфигурации инстансов сгруппированы в три категории, чтобы упростить выбор инфраструктуры с учётом характеристик рабочей нагрузки. Не все типы инстансов доступны в каждом регионе. Перечисленные ниже семейства инстансов относятся к AWS. GCP находится в закрытой предварительной версии, и его типы инстансов сообщаются вам в процессе онбординга.
 
 * **Оптимизированные для памяти:** Предназначены для рабочих нагрузок с интенсивным использованием памяти и соотношением памяти к CPU 1:8. Поддерживают семейства `r8id` и `r6id` на базе x86, а также семейства `r8gd` и `r6gd` на ARM64 (на базе AWS Graviton). Лучше всего подходят для больших рабочих наборов данных, высокого коэффициента попаданий в кэш и нагрузок на базу данных, ограниченных объёмом памяти.
 * **Оптимизированные для хранилища:** Предназначены для рабочих нагрузок, которым требуются большие объёмы локального NVMe-хранилища без пропорционального масштабирования вычислительных ресурсов. Поддерживают семейства `i8g` и `i8ge` на ARM64 (на базе AWS Graviton), а также семейства `i7i` и `i7ie` на базе x86; доступны конфигурации с объёмом локального NVMe-хранилища до 60 ТБ. Лучше всего подходят для больших датасетов, рабочих нагрузок временных рядов, хранения логов и событий, а также OLTP-нагрузок с высокими требованиями к хранилищу.
@@ -127,12 +126,20 @@ ClickHouse Managed Postgres построен на локальном NVMe-хра
   ## Основные моменты бета-цен
 </div>
 
-В бета-период:
+<div id="aws-public-beta-pricing">
+  ### Цены в период Public Beta на AWS
+</div>
+
+В бета-период на AWS:
 
 * Сервис предоставляется бесплатно до начала тарификации по факту использования **15 июня 2026 года**
 * Нативный CDC (фиксация изменений данных) через **ClickPipes** включен без дополнительной платы
 * В настоящее время плата не взимается за **исходящий сетевой трафик** и **резервные копии**
 * Для всех тарифных планов в настоящее время действуют **бета-цены со скидкой 50%**
+
+### Стоимость в закрытой предварительной версии на GCP
+
+ClickHouse Managed Postgres на GCP предоставляется бесплатно на время закрытой предварительной версии. Стоимость после её завершения пока прорабатывается. Если вам нужна дополнительная информация, свяжитесь с нами, чтобы узнать, какой может быть итоговая стоимость. Записаться в список ожидания закрытой предварительной версии на GCP можно [здесь](https://clickhouse.com/cloud/postgres#gcp-waitlist).
 
 <div id="disclaimers">
   ## Оговорки

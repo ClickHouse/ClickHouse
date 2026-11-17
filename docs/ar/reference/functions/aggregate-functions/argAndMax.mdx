@@ -13,8 +13,8 @@ doc_type: 'reference'
 
 قُدِّم في: v1.1.0
 
-يحسب قيمة `arg` وقيمة `val` عند أكبر قيمة لـ `val`.
-إذا كانت هناك عدة صفوف لها القيمة القصوى نفسها لـ `val`، فإن تحديد أيٍّ من `arg` و`val` المرتبطين ستتم إعادته غير حتمي.
+يحسب قيمة `arg` وقيمة `val` عند أكبر قيمة من `val`.
+إذا كانت هناك عدة صفوف لها أكبر قيمة من `val` نفسها، فإن تحديد أيٍّ من `arg` و`val` المرتبطين ستتم إعادته غير حتمي.
 يتصرف كلٌّ من الجزأين `arg` و`max` باعتبارهما [دالتين تجميعيتين](/ar/reference/functions/aggregate-functions/index)، كما أن كليهما [يتجاهل `Null`](/ar/reference/functions/aggregate-functions/index#null-processing) أثناء المعالجة ويُرجع قيماً غير `Null` إذا كانت متاحة.
 
 <Note>
@@ -39,13 +39,22 @@ argAndMax(arg, val)
 
 **القيمة المُعادة**
 
-تعيد قيمة من النوع `Tuple` تحتوي على قيمة `arg` المقابلة لأكبر قيمة `val`، وأكبر قيمة `val`. [`Tuple`](/ar/reference/data-types/tuple)
+تعيد قيمة من النوع `Tuple` تحتوي على قيمة `arg` المقابلة لأكبر قيمة من `val`، وأكبر قيمة من `val`. [`Tuple`](/ar/reference/data-types/tuple)
 
 **أمثلة**
 
 **الاستخدام الأساسي**
 
 ```sql title=Query
+CREATE TABLE salary
+(
+    user String,
+    salary UInt32
+)
+ENGINE = Memory AS
+SELECT *
+FROM VALUES(('worker', 1000), ('manager', 3000), ('director', 5000));
+
 SELECT argAndMax(user, salary) FROM salary;
 ```
 

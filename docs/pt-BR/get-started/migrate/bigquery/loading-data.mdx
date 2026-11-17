@@ -65,7 +65,7 @@ O tempo de exportação de dados do BigQuery para o ClickHouse depende do tamanh
   </Step>
 
   <Step title="Importando dados do GCS para o ClickHouse" id="2-importing-data-into-clickhouse-from-gcs">
-    Quando a exportação for concluída, podemos importar esses dados para uma tabela no ClickHouse. Você pode usar o [Console SQL do ClickHouse](/pt-BR/integrations/connectors/sql-clients/sql-console) ou o [`clickhouse-client`](/pt-BR/concepts/features/interfaces/cli) para executar os comandos abaixo.
+    Quando a exportação for concluída, podemos importar esses dados para uma tabela no ClickHouse. Você pode usar o [Console SQL do ClickHouse](/pt-BR/integrations/connectors/sql-clients/sql-console) ou o [`clickhouse-client`](/pt-BR/concepts/features/interfaces/client) para executar os comandos abaixo.
 
     Primeiro, você deve [criar sua tabela](/pt-BR/reference/statements/create/table) no ClickHouse:
 
@@ -117,7 +117,7 @@ O tempo de exportação de dados do BigQuery para o ClickHouse depende do tamanh
     </Info>
   </Step>
 
-  <Step title="Testando se a exportação de dados foi bem-sucedida" id="3-testing-successful-data-export">
+  <Step title="Testando a exportação de dados" id="3-testing-successful-data-export">
     Para testar se seus dados foram inseridos corretamente, basta executar uma consulta `SELECT` na sua nova tabela:
 
     ```sql

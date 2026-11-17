@@ -14,9 +14,11 @@ ${CLICKHOUSE_CLIENT} --query "SELECT 1 FORMAT Null"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS metric_log"
 
 
-${CLICKHOUSE_CLIENT} --output-format-pretty-multiline-fields 0 --output_format_pretty_fallback_to_vertical 0 --query "SHOW CREATE TABLE system.metric_log" --format Pretty | grep -P '^COMMENT'
-${CLICKHOUSE_CLIENT} --output-format-pretty-multiline-fields 0 --output_format_pretty_fallback_to_vertical 0 --query "SHOW CREATE TABLE system.metric_log" --format PrettyCompact | grep -P '^COMMENT'
-${CLICKHOUSE_CLIENT} --output-format-pretty-multiline-fields 0 --output_format_pretty_fallback_to_vertical 0 --query "SHOW CREATE TABLE system.metric_log" --format PrettySpace | grep -P '^COMMENT'
+sentinel='It is safe to truncate or drop this table at any time.'
+
+${CLICKHOUSE_CLIENT} --output-format-pretty-multiline-fields 0 --output_format_pretty_fallback_to_vertical 0 --query "SHOW CREATE TABLE system.metric_log" --format Pretty | grep -o -F "$sentinel"
+${CLICKHOUSE_CLIENT} --output-format-pretty-multiline-fields 0 --output_format_pretty_fallback_to_vertical 0 --query "SHOW CREATE TABLE system.metric_log" --format PrettyCompact | grep -o -F "$sentinel"
+${CLICKHOUSE_CLIENT} --output-format-pretty-multiline-fields 0 --output_format_pretty_fallback_to_vertical 0 --query "SHOW CREATE TABLE system.metric_log" --format PrettySpace | grep -o -F "$sentinel"
 
 # Just in case, non-Pretty format:
-${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE system.metric_log" --format TSV | grep -o -P '\\nCOMMENT.+$'
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE system.metric_log" --format TSV | grep -o -F "$sentinel"

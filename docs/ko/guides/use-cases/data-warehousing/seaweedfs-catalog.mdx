@@ -72,7 +72,7 @@ SeaweedFS는 S3 호환 게이트웨이를 제공하는 오픈 소스 분산 파�
 services:
   seaweedfs:
     image: chrislusf/seaweedfs:latest
-    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics
+    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics -admin.port=12646
     ports:
       - "8333:8333"   # S3 endpoint
       - "8181:8181"   # Iceberg REST catalog
@@ -101,7 +101,7 @@ networks:
     driver: bridge
 ```
 
-`mini` 명령은 전체 SeaweedFS 스택을 단일 컨테이너에서 시작합니다. `-tableBucket=analytics` 플래그는 Iceberg 웨어하우스로 사용될 `analytics`라는 이름의 S3 Tables 버킷을 미리 생성합니다.
+`mini` 명령은 전체 SeaweedFS 스택을 단일 컨테이너에서 시작합니다. `-tableBucket=analytics` 플래그는 Iceberg 웨어하우스로 사용될 `analytics`라는 이름의 S3 Tables 버킷을 미리 생성합니다. `-admin.port=12646`은 SeaweedFS가 이를 기반으로 설정하는 관리자 gRPC 포트가 Linux 임시 포트 범위보다 낮게 유지되도록 하여, 시작 시 연결이 해당 포트를 먼저 점유하는 상황을 방지합니다.
 
 **3단계:** 다음 명령을 실행하여 서비스를 시작하세요:
 

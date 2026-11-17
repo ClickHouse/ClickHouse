@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/IAccumulatingTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
@@ -15,7 +16,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class MergingAggregatedTransform final : public IAccumulatingTransform
 {
 public:
-    MergingAggregatedTransform(SharedHeader header_, Aggregator::Params params_, bool final_, GroupingSetsParamsList grouping_sets_params);
+    MergingAggregatedTransform(SharedHeader header_, Aggregator::Params params_, bool final_, GroupingSetsParamsList grouping_sets_params, size_t output_streams_ = 1);
 
     ~MergingAggregatedTransform() override;
 
@@ -38,7 +39,7 @@ private:
         AggregatingTransformParamsPtr params;
     };
 
-    using GroupingSets = std::vector<GroupingSet>;
+    using GroupingSets = VectorWithMemoryTracking<GroupingSet>;
     GroupingSets grouping_sets;
 
     UInt64 total_input_rows = 0;
@@ -49,6 +50,9 @@ private:
 
     bool consume_started = false;
     bool generate_started = false;
+
+    /// How many streams `MergingAggregatedStep` spreads the output over; 1 when it doesn't.
+    size_t output_streams = 1;
 
     void addChunk(Columns columns, size_t num_rows, Int32 bucket_num, bool is_overflows);
 };

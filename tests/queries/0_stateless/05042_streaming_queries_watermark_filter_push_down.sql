@@ -19,7 +19,9 @@ CREATE TABLE t_stream_watermark_push_down
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
 
-INSERT INTO t_stream_watermark_push_down SELECT toDateTime64('2020-01-01 00:00:00', 3) + number, map('env', if(number < 3, 'prod', 'staging')) FROM numbers(100);
+INSERT INTO t_stream_watermark_push_down SELECT toDateTime64('2020-01-01 00:00:00', 3) + number, map('env', if(number < 10 and number % 2 = 0, 'prod', 'staging')) FROM numbers(100);
+INSERT INTO t_stream_watermark_push_down SELECT toDateTime64('2020-01-01 00:00:00', 3) + number, map('env', if(number < 10 and number % 2 = 0, 'prod', 'staging')) FROM numbers(100);
+INSERT INTO t_stream_watermark_push_down SELECT toDateTime64('2020-01-01 00:00:00', 3) + number, map('env', if(number < 10 and number % 2 = 0, 'prod', 'staging')) FROM numbers(100);
 
 SELECT ts FROM (SELECT ts FROM t_stream_watermark_push_down STREAM BOUNDED WATERMARK FOR ts AS ts - toIntervalSecond(5) PREWHERE ('prod') IN (map[materialize('env')])) ORDER BY ts
 SETTINGS log_comment = '05042_streaming_queries_watermark_filter_push_down';

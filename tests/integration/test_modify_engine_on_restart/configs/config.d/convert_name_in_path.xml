@@ -1,0 +1,5 @@
+<clickhouse>
+<!-- The position of {uuid} in the path is described through the name of the table, which RENAME TABLE changes. -->
+<default_replica_path>/clickhouse/tables/{database}/{table}/{uuid}/{shard}</default_replica_path>
+<default_replica_name>{replica}</default_replica_name>
+</clickhouse>

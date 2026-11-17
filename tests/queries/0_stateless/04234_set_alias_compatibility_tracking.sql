@@ -2,13 +2,15 @@
 -- Manually changing a setting via its alias name must remove it from the
 -- compatibility-tracking set, so the next `SET compatibility=` doesn't revert it.
 
-SET compatibility = '24.1';
-SELECT 'after compat 24.1', name, value FROM system.settings WHERE name = 'allow_experimental_analyzer';
+SET enable_lightweight_update = DEFAULT;
+
+SET compatibility = '25.7';
+SELECT 'after compat 25.7', name, value FROM system.settings WHERE name = 'enable_lightweight_update';
 
 -- Set the canonical setting through its alias name.
-SET enable_analyzer = 1;
-SELECT 'after alias set', name, value FROM system.settings WHERE name = 'allow_experimental_analyzer';
+SET allow_experimental_lightweight_update = 1;
+SELECT 'after alias set', name, value FROM system.settings WHERE name = 'enable_lightweight_update';
 
 -- Changing compatibility again must keep the manual value.
-SET compatibility = '24.2';
-SELECT 'after compat 24.2', name, value FROM system.settings WHERE name = 'allow_experimental_analyzer';
+SET compatibility = '25.6';
+SELECT 'after compat 25.6', name, value FROM system.settings WHERE name = 'enable_lightweight_update';

@@ -107,7 +107,7 @@ Peak memory usage: 485.15 MiB.
   ### Crear la tabla Iceberg
 </div>
 
-Para escribir datos en Iceberg, cree una tabla con el [motor de tabla `IcebergS3`](/es/reference/engines/table-engines/integrations/iceberg).
+Para realizar lecturas directas de una tabla Iceberg existente, recomendamos la [función de tabla `icebergS3`](/es/reference/functions/table-functions/iceberg). Esta guía muestra cómo crear y poblar tablas Iceberg independientes, por lo que utiliza el [motor de tabla `IcebergS3`](/es/reference/engines/table-engines/integrations/iceberg) con un esquema explícito. Las ubicaciones de S3 de ejemplo ya contienen las tablas completas; para ejecutar las sentencias `CREATE` e `INSERT`, sustituya ambas ubicaciones por prefijos de S3 vacíos con permisos de escritura y credenciales bajo su control.
 
 Tenga en cuenta que el esquema debe simplificarse con respecto a la tabla de origen MergeTree. ClickHouse admite un sistema de tipos más amplio que Iceberg y que los archivos Parquet subyacentes; tipos como `Enum`, `LowCardinality` y `UInt8` no son compatibles con Iceberg y deben convertirse a tipos compatibles.
 
@@ -138,8 +138,10 @@ ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats
 
 Use `INSERT INTO SELECT` para escribir datos de la tabla MergeTree en la tabla Iceberg. En este ejemplo, escribimos solo las transacciones de Londres:
 
+Este ejemplo requiere la [`configuración allow_insert_into_iceberg`](/es/reference/settings/session-settings/allow#allow_insert_into_iceberg). Consulte la [matriz de compatibilidad](/es/guides/use-cases/data-warehousing/support-matrix) para conocer la madurez y las limitaciones actuales.
+
 ```sql
-SET allow_experimental_insert_into_iceberg = 1;
+SET allow_insert_into_iceberg = 1;
 
 INSERT INTO uk.uk_iceberg SELECT *
 FROM uk.uk_price_paid

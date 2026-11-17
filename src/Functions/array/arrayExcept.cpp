@@ -226,13 +226,33 @@ public:
     static constexpr auto name = "arrayExcept";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayExcept>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// Both array element types must be identical after stripping Nullable;
+    /// the DSL doesn't model that "equal up to Nullable" relation, so the
+    /// runtime enforces it. The result is the source array's type.
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(A : Array, Array) -> A";
+    }
+
+    /// The signature above is documentation-only, so the types-only entry point must not
+    /// apply it directly: route it through the authoritative resolver below, which only
+    /// looks at the argument types.
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto mandatory_args = FunctionArgumentDescriptors{
             {"source", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
@@ -263,24 +283,42 @@ public:
                 arguments[1].type->getName());
         }
 
+        const auto is_supported_type = [](const DataTypePtr & type)
+        {
+            const WhichDataType column_type(type->getColumnType());
+            return column_type.isInteger() || column_type.isFloat() || column_type.isStringOrFixedString();
+        };
+
+        if (!is_supported_type(source_nested))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported type {}. Consider arrayFilter(x -> NOT has (exclude), source)", arguments[0].type->getName());
+
         return arguments[0].type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
     {
         if (return_type->onlyNull())
             return return_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        auto source_full_col = arguments[0].column->convertToFullColumnIfConst();
         const bool exclude_is_const = isColumnConst(*arguments[1].column);
 
         // We expect some form of arrays for both params
-        const ColumnArray * source_col = checkAndGetColumn<ColumnArray>(source_full_col.get());
         const ColumnArray * exclude_col = exclude_is_const
             ? typeid_cast<const ColumnArray *>(&typeid_cast<const ColumnConst *>(arguments[1].column.get())->getDataColumn())
             : checkAndGetColumn<ColumnArray>(arguments[1].column.get());
 
-        if (!source_col || !exclude_col)
+        if (!exclude_col)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments must be arrays");
+
+        if (exclude_col->getData().empty())
+        {
+            return exclude_is_const ? arguments[0].column : arguments[0].column->convertToFullColumnIfConst();
+        }
+
+        auto source_full_col = arguments[0].column->convertToFullColumnIfConst();
+        const ColumnArray * source_col = checkAndGetColumn<ColumnArray>(source_full_col.get());
+
+        if (!source_col)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments must be arrays");
 
         // With a little twist that they might be nullable...

@@ -18,7 +18,7 @@ doc_type: 'reference'
 Exécute une requête SQL à l’aide du moteur chDB.
 
 Il s’agit de la principale fonction de requête, qui exécute des instructions SQL à l’aide du
-moteur ClickHouse intégré. Elle prend en charge divers formats de sortie et peut fonctionner avec des bases de données en mémoire
+moteur ClickHouse embarqué. Elle prend en charge divers formats de sortie et peut fonctionner avec des bases de données temporaires
 ou sur fichier.
 
 **Syntaxe**
@@ -31,9 +31,9 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 
 | Paramètre       | Type | Par défaut | Description                                                                                                                                                                                                                                                                                                                                              |
 | --------------- | ---- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sql`           | str  | *requis*   | Chaîne de requête SQL à exécuter                                                                                                                                                                                                                                                                                                                         |
+| `sql`           | str  | *obligatoire*   | Chaîne de requête SQL à exécuter                                                                                                                                                                                                                                                                                                                         |
 | `output_format` | str  | `"CSV"`    | Format de sortie des résultats. Formats pris en charge :<br />• `"CSV"` - valeurs séparées par des virgules<br />• `"JSON"` - format JSON<br />• `"Arrow"` - format Apache Arrow<br />• `"Parquet"` - format Parquet<br />• `"DataFrame"` - DataFrame pandas<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - Active la journalisation détaillée |
-| `path`          | str  | `""`       | Chemin du fichier de la base de données. Par défaut, utilise une base de données en mémoire.<br />Peut être un chemin de fichier ou `":memory:"` pour une base de données en mémoire                                                                                                                                                                     |
+| `path`          | str  | `""`       | Chemin du fichier de la base de données. Par défaut, utilise une base de données temporaire non persistante (équivalente à `":memory:"`).<br />Fournissez un chemin de fichier pour assurer la persistance sur disque                                                                                                                                    |
 | `udf_path`      | str  | `""`       | Chemin vers le répertoire legacy des UDF basées sur des sous-processus. Non requis pour les UDF Python natives ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                                                      |
 
 **Renvoie**
@@ -52,7 +52,7 @@ Renvoie le résultat de la requête dans le format spécifié :
 | Exception     | Condition                                                                  |
 | ------------- | -------------------------------------------------------------------------- |
 | `ChdbError`   | Si l&#39;exécution de la requête SQL échoue                                |
-| `ImportError` | Si les dépendances requises pour les formats DataFrame/Arrow sont absentes |
+| `ImportError` | Si les dépendances obligatoires pour les formats DataFrame/Arrow sont absentes |
 
 **Exemples**
 
@@ -85,7 +85,7 @@ Renvoie le résultat de la requête dans le format spécifié :
 Exécute une requête SQL à l’aide du moteur chDB.
 
 Il s’agit de la principale fonction de requête, qui exécute des instructions SQL à l’aide du
-moteur ClickHouse intégré. Elle prend en charge divers formats de sortie et peut fonctionner avec des bases de données en mémoire
+moteur ClickHouse embarqué. Elle prend en charge divers formats de sortie et peut fonctionner avec des bases de données temporaires
 ou sur fichier.
 
 **Syntaxe**
@@ -98,9 +98,9 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 
 | Paramètre       | Type | Par défaut | Description                                                                                                                                                                                                                                                                                                                                              |
 | --------------- | ---- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sql`           | str  | *required* | Chaîne de requête SQL à exécuter                                                                                                                                                                                                                                                                                                                         |
+| `sql`           | str  | *obligatoire* | Chaîne de requête SQL à exécuter                                                                                                                                                                                                                                                                                                                         |
 | `output_format` | str  | `"CSV"`    | Format de sortie des résultats. Formats pris en charge :<br />• `"CSV"` - Valeurs séparées par des virgules<br />• `"JSON"` - Format JSON<br />• `"Arrow"` - Format Apache Arrow<br />• `"Parquet"` - Format Parquet<br />• `"DataFrame"` - DataFrame pandas<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - Active la journalisation détaillée |
-| `path`          | str  | `""`       | Chemin du fichier de la base de données. Par défaut, utilise une base de données en mémoire.<br />Peut être un chemin de fichier ou `":memory:"` pour une base de données en mémoire                                                                                                                                                                     |
+| `path`          | str  | `""`       | Chemin du fichier de la base de données. Par défaut, une base de données temporaire non persistante est utilisée (équivalente à `":memory:"`).<br />Indiquez un chemin de fichier pour conserver les données sur disque                                                                                                                                  |
 | `udf_path`      | str  | `""`       | Chemin vers le répertoire legacy des UDF basées sur des sous-processus. Non nécessaire pour les UDF Python natives ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                                                  |
 
 **Renvoie**
@@ -119,7 +119,7 @@ Renvoie le résultat de la requête dans le format spécifié :
 | Exception                 | Condition                                                                  |
 | ------------------------- | -------------------------------------------------------------------------- |
 | [`ChdbError`](#chdberror) | Si l’exécution de la requête SQL échoue                                    |
-| `ImportError`             | Si les dépendances requises pour les formats DataFrame/Arrow sont absentes |
+| `ImportError`             | Si les dépendances obligatoires pour les formats DataFrame/Arrow sont absentes |
 
 **Exemples**
 
@@ -246,8 +246,7 @@ Les fonctions de session suivantes sont disponibles :
 Crée une connexion au serveur d’arrière-plan de chDB.
 
 Cette fonction établit une [connexion](#chdb-state-sqlitelike-connection) au moteur de base de données chDB (ClickHouse).
-Une seule connexion ouverte est autorisée par processus.
-Plusieurs appels avec la même chaîne de connexion renverront le même objet de connexion.
+Chaque appel renvoie une connexion indépendante, et autant de connexions que nécessaire au même chemin de base de données peuvent être ouvertes simultanément.
 
 ```python
 chdb.connect(connection_string: str = ':memory:') → Connection
@@ -263,7 +262,7 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 
 | Format                    | Description                                    |
 | ------------------------- | ---------------------------------------------- |
-| `":memory:"`              | Base de données en mémoire (par défaut)        |
+| `":memory:"`              | Base de données temporaire (par défaut)        |
 | `"test.db"`               | Fichier de base de données avec chemin relatif |
 | `"file:test.db"`          | Identique à un chemin relatif                  |
 | `"/path/to/test.db"`      | Fichier de base de données avec chemin absolu  |
@@ -274,7 +273,7 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 | Format                                             | Description                    |
 | -------------------------------------------------- | ------------------------------ |
 | `"file:test.db?param1=value1&param2=value2"`       | Chemin relatif avec paramètres |
-| `"file::memory:?verbose&log-level=test"`           | En mémoire avec paramètres     |
+| `"file::memory:?verbose&log-level=test"`           | Temporaire avec paramètres     |
 | `"///path/to/test.db?param1=value1&param2=value2"` | Chemin absolu avec paramètres  |
 
 **Gestion des paramètres de requête**
@@ -284,7 +283,7 @@ Gestion spéciale des paramètres :
 
 | Paramètre spécial | Devient        | Description                         |
 | ----------------- | -------------- | ----------------------------------- |
-| `mode=ro`         | `--readonly=1` | Mode en lecture seule               |
+| `mode=ro`         | `--readonly=1` | Mode lecture seule                  |
 | `verbose`         | (flag)         | Active la journalisation détaillée  |
 | `log-level=test`  | (setting)      | Définit le niveau de journalisation |
 
@@ -302,15 +301,14 @@ Pour obtenir la liste complète des paramètres, consultez `clickhouse local --h
 | -------------- | ------------------------------------------- |
 | `RuntimeError` | Si la connexion à la base de données échoue |
 
-<Warning>
-  Une seule connexion par processus est prise en charge.
-  La création d&#39;une nouvelle connexion fermera toute connexion existante.
-</Warning>
+<Note>
+  Un processus exécute un moteur embarqué lié à un chemin de base de données. Plusieurs connexions au même chemin peuvent coexister et exécuter des requêtes simultanément. L’ouverture d’un chemin *différent* alors qu’une connexion est ouverte déclenche une `RuntimeError` ; fermez d’abord les connexions ouvertes.
+</Note>
 
 **Exemples**
 
 ```pycon
->>> # In-memory database
+>>> # Temporary database
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
@@ -359,8 +357,7 @@ fournit des informations sur l’erreur provenant du moteur ClickHouse sous-jace
 Bases : `object`
 
 La session conserve l’état de la requête.
-Si path vaut None, un répertoire temporaire sera créé et utilisé comme chemin de la base de données,
-et ce répertoire temporaire sera supprimé à la fermeture de la session.
+Si path vaut None, la session utilise la base de données temporaire (`:memory:`) à l’échelle du processus, de sorte que toutes les sessions sans path voient les tables les unes des autres ; son répertoire temporaire n’est supprimé que lorsque la dernière session ou connexion de ce type est fermée.
 Vous pouvez également fournir un path pour créer une base de données à cet emplacement, où vos données seront conservées.
 
 Vous pouvez aussi utiliser une chaîne de connexion pour transmettre le path et d’autres paramètres.
@@ -373,13 +370,13 @@ class chdb.session.Session(path=None)
 
 | Chaîne de connexion                                | Description                                           |
 | -------------------------------------------------- | ----------------------------------------------------- |
-| `":memory:"`                                       | Base de données en mémoire                            |
+| `":memory:"`                                       | Base de données temporaire                            |
 | `"test.db"`                                        | Chemin relatif                                        |
 | `"file:test.db"`                                   | Identique à ci-dessus                                 |
 | `"/path/to/test.db"`                               | Chemin absolu                                         |
 | `"file:/path/to/test.db"`                          | Identique à ci-dessus                                 |
 | `"file:test.db?param1=value1&param2=value2"`       | Chemin relatif avec paramètres de requête             |
-| `"file::memory:?verbose&log-level=test"`           | Base de données en mémoire avec paramètres de requête |
+| `"file::memory:?verbose&log-level=test"`           | Base de données temporaire avec paramètres de requête |
 | `"///path/to/test.db?param1=value1&param2=value2"` | Chemin absolu avec paramètres de requête              |
 
 <Info>
@@ -395,12 +392,12 @@ class chdb.session.Session(path=None)
   * « mode=ro » devient « –readonly=1 » pour ClickHouse (mode lecture seule)
 </Info>
 
-<Warning>
+<Note>
   **Important**
 
-  * Il ne peut y avoir qu&#39;une seule session à la fois. Si vous souhaitez créer une nouvelle session, vous devez fermer la session existante.
-  * La création d&#39;une nouvelle session fermera la session existante.
-</Warning>
+  * Plusieurs sessions peuvent coexister, à condition qu’elles partagent le même chemin de base de données.
+  * Pour utiliser un autre chemin de base de données, fermez d’abord la ou les sessions ouvertes.
+</Note>
 
 ***
 
@@ -745,8 +742,7 @@ id,name
 Crée une [Connection](#chdb-state-sqlitelike-connection) vers le serveur d’arrière-plan de chDB.
 
 Cette fonction établit une connexion avec le moteur de base de données chDB (ClickHouse).
-Une seule connexion ouverte est autorisée par processus. Plusieurs appels avec la même
-chaîne de connexion renverront le même objet de connexion.
+Chaque appel renvoie une connexion indépendante, et plusieurs connexions vers le même chemin de base de données peuvent être ouvertes simultanément.
 
 **Syntaxe**
 
@@ -766,7 +762,7 @@ Formats de chaîne de connexion pris en charge :
 
 | Format                    | Description                                    |
 | ------------------------- | ---------------------------------------------- |
-| `":memory:"`              | Base de données en mémoire (par défaut)        |
+| `":memory:"`              | Base de données temporaire (par défaut)        |
 | `"test.db"`               | Fichier de base de données avec chemin relatif |
 | `"file:test.db"`          | Identique au chemin relatif                    |
 | `"/path/to/test.db"`      | Fichier de base de données avec chemin absolu  |
@@ -777,7 +773,7 @@ Formats de chaîne de connexion pris en charge :
 | Format                                             | Description                    |
 | -------------------------------------------------- | ------------------------------ |
 | `"file:test.db?param1=value1&param2=value2"`       | Chemin relatif avec paramètres |
-| `"file::memory:?verbose&log-level=test"`           | En mémoire avec paramètres     |
+| `"file::memory:?verbose&log-level=test"`           | Temporaire avec paramètres     |
 | `"///path/to/test.db?param1=value1&param2=value2"` | Chemin absolu avec paramètres  |
 
 **Gestion des paramètres de requête**
@@ -805,17 +801,14 @@ Pour obtenir la liste complète des paramètres, consultez `clickhouse local --h
 | -------------- | ------------------------------------------- |
 | `RuntimeError` | Si la connexion à la base de données échoue |
 
-<Warning>
-  **Avertissement**
-
-  Une seule connexion par processus est prise en charge.
-  La création d&#39;une nouvelle connexion fermera toute connexion existante.
-</Warning>
+<Note>
+  Un processus exécute un moteur embarqué lié à un chemin de base de données. Plusieurs connexions au même chemin peuvent coexister et exécuter des requêtes simultanément. L’ouverture d’un chemin *différent* alors qu’une connexion est ouverte déclenche une `RuntimeError` ; fermez d’abord les connexions ouvertes.
+</Note>
 
 **Exemples**
 
 ```pycon
->>> # In-memory database
+>>> # Temporary database
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
@@ -1851,9 +1844,9 @@ chdb.dbapi.connect(*args, **kwargs)
 
 **Paramètres**
 
-| Paramètre | Type | Par défaut | Description                                                                         |
-| --------- | ---- | ---------- | ----------------------------------------------------------------------------------- |
-| `path`    | str  | `None`     | Chemin du fichier de la base de données. `None` pour une base de données en mémoire |
+| Paramètre | Type | Par défaut | Description                                                                                          |
+| --------- | ---- | ---------- | ---------------------------------------------------------------------------------------------------- |
+| `path`    | str  | `None`     | Chemin du fichier de la base de données. `None` pour une base de données temporaire, non persistante |
 
 **Exceptions levées**
 
@@ -1931,7 +1924,7 @@ Bases : `object`
 Connexion à la base de données chDB conforme à DB-API 2.0.
 
 Cette classe fournit une interface DB-API standard permettant de se connecter aux bases de données chDB et d’interagir
-avec elles. Elle prend en charge les bases de données en mémoire et basées sur des fichiers.
+avec elles. Elle prend en charge les bases de données temporaires et sur fichier.
 
 La connexion gère le moteur chDB sous-jacent et fournit des méthodes pour
 exécuter des requêtes, gérer les transactions (sans effet pour ClickHouse) et créer des curseurs.
@@ -1942,9 +1935,9 @@ class chdb.dbapi.connections.Connection(path=None)
 
 **Paramètres**
 
-| Paramètre | Type | Par défaut | Description                                                                                                                                                                          |
-| --------- | ---- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `path`    | str  | `None`     | Chemin du fichier de la base de données. Si None, utilise une base de données en mémoire. Peut être un chemin de fichier comme &#39;database.db&#39; ou None pour &#39;:memory:&#39; |
+| Paramètre | Type | Par défaut | Description                                                                                                                                                                                                                                                     |
+| --------- | ---- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`    | str  | `None`     | Chemin du fichier de la base de données. Si None (valeur par défaut), utilise une base de données temporaire non persistante (équivalente à `':memory:'`). Fournissez un chemin de fichier tel que &#39;database.db&#39; pour la rendre persistante sur disque. |
 
 **Variables**
 
@@ -1956,7 +1949,7 @@ class chdb.dbapi.connections.Connection(path=None)
 **Exemples**
 
 ```pycon
->>> # In-memory database
+>>> # Temporary database
 >>> conn = Connection()
 >>> cursor = conn.cursor()
 >>> cursor.execute("SELECT 1")
@@ -3448,7 +3441,7 @@ Gestion des connexions :
 ```python
 import chdb.dbapi as dbapi
 
-# In-memory database (default)
+# Temporary database (default)
 conn1 = dbapi.connect()
 
 # Persistent database file

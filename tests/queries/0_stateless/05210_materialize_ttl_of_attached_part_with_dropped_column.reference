@@ -1,0 +1,15 @@
+the part type	Compact
+the part still has the dropped column	1
+rows after materializing the TTL	100	4950
+the rewrite dropped the column	0
+unfinished mutations	0
+replicated: the table metadata version	2
+replicated: the part still has the dropped column	1
+replicated: rows after materializing the TTL	100	4950
+replicated: the rewrite dropped the column	0
+replicated: unfinished mutations	0
+cloned: the table metadata version	0
+cloned: the part still has the dropped column	1
+cloned: rows after materializing the TTL	100	4950
+cloned: the rewrite dropped the column	0
+cloned: unfinished mutations	0

@@ -68,6 +68,11 @@ static std::optional<Exception> checkTupleNames(const Strings & names)
     return {};
 }
 
+bool DataTypeTuple::hasValidElementNames(const Strings & names)
+{
+    return !checkTupleNames(names).has_value();
+}
+
 DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_)
     : elems(elems_), names(names_), has_explicit_names(true)
 {
@@ -224,6 +229,13 @@ void DataTypeTuple::insertDefaultInto(IColumn & column) const
     });
 }
 
+bool DataTypeTuple::isDefaultInsertTrivial() const
+{
+    return elems.empty()
+        || std::ranges::all_of(elems.begin(), elems.end(),
+            [](const DataTypePtr & elem) { return elem->isDefaultInsertTrivial(); });
+}
+
 bool DataTypeTuple::equals(const IDataType & rhs) const
 {
     if (typeid(rhs) != typeid(*this))
@@ -335,7 +347,7 @@ SerializationPtr DataTypeTuple::doGetSerialization(const SerializationInfoSettin
         serializations[i] = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(serialization, elem_name, SubstreamType::TupleElement));
     }
 
-    return SerializationTuple::create(std::move(serializations), has_explicit_names);
+    return SerializationTuple::create(std::move(serializations), elems, has_explicit_names);
 }
 
 SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info) const
@@ -353,7 +365,7 @@ SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info)
     auto kinds = info.getKindStack();
     /// Compatibility with older version that may propagate Sparse serialization for Tuple itself (in serialization.json)
     std::erase(kinds, ISerialization::Kind::SPARSE);
-    return wrapSerializationBasedOnKindStack(SerializationTuple::create(std::move(serializations), has_explicit_names), kinds, info.getSettings());
+    return wrapSerializationBasedOnKindStack(SerializationTuple::create(std::move(serializations), elems, has_explicit_names), kinds, info.getSettings());
 }
 
 MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const SerializationInfoSettings & settings) const
@@ -398,13 +410,11 @@ SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(const IColum
 }
 
 
-void DataTypeTuple::forEachChild(const ChildCallback & callback) const
+DataTypePtr DataTypeTuple::doCloneWithChildren(const DataTypes & new_children) const
 {
-    for (const auto & elem : elems)
-    {
-        callback(*elem);
-        elem->forEachChild(callback);
-    }
+    if (has_explicit_names)
+        return std::make_shared<DataTypeTuple>(new_children, names);
+    return std::make_shared<DataTypeTuple>(new_children);
 }
 
 void DataTypeTuple::updateHashImpl(SipHash & hash) const
@@ -631,11 +641,6 @@ ORDER BY key ASC;
 
 ## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
 
-:::note Beta Feature
-Requires `SET enable_nullable_tuple_type = 1`
-This is a Beta feature.
-:::
-
 Allows the entire tuple to be `NULL`, as opposed to `Tuple(Nullable(T1), Nullable(T2), ...)` where only individual elements can be `NULL`.
 
 | Type                                       | Tuple can be NULL | Elements can be NULL |
@@ -646,8 +651,6 @@ Allows the entire tuple to be `NULL`, as opposed to `Tuple(Nullable(T1), Nullabl
 Example:
 
 ```sql
-SET enable_nullable_tuple_type = 1;
-
 CREATE TABLE test (
     id UInt32,
     data Nullable(Tuple(String, Int64))

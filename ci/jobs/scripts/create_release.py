@@ -40,7 +40,6 @@ import dataclasses
 import json
 import os
 import re
-import shlex
 import shutil
 import sys
 import tempfile
@@ -57,11 +56,10 @@ from ci.jobs.scripts.clickhouse_version import (
 )
 from ci.praktika.gh import GH
 from ci.praktika.git import Git
+from ci.praktika.s3 import S3
 from ci.praktika.utils import Shell
 
-# S3Helper requires boto3 (installed on release machines); ssh has no external deps.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../tests/ci"))
-from s3_helper import S3Helper  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../tools"))
 from ssh import SSHAgent  # noqa: E402
 
 GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse")
@@ -97,28 +95,12 @@ class Labels:
     RELEASE_LTS = "release-lts"
 
 
-def is_latest_release_branch(branch: str, repo: str = GITHUB_REPOSITORY) -> bool:
-    """Whether `branch` is the latest release branch — i.e. the head branch of
-    the most recently created `release`-labeled PR. Release-domain logic (knows
-    the `release` label / branch convention), so it lives here rather than in
-    the generic praktika GH helper.
-
-    The `gh pr list` read is retried and a persistent failure raises: mistaking
-    a transient GitHub error for "not the latest branch" would silently skip the
-    floating `latest` docker tag for an otherwise successful release. A
-    successful `--json` read always prints at least `[]`, so an empty result
-    means the command failed; genuinely no release PR is an empty JSON array."""
-    raw = GH.get_output_with_retries(
-        f'gh pr list --label release --repo {shlex.quote(repo)} --search "sort:created"'
-        f" -L1 --json headRefName"
-    )
-    if not raw:
-        raise RuntimeError(
-            f"gh pr list failed for release PRs in repo [{repo}] after retries; "
-            f"refusing to treat a failed lookup as 'not the latest release branch'"
-        )
-    prs = json.loads(raw)
-    latest_branch = prs[0]["headRefName"] if prs else ""
+def is_latest_release_branch(branch: str) -> bool:
+    """Whether `branch` has the highest major.minor among the release branches of `origin`."""
+    # A glob cannot say "digits only": one or two digits for each of major and minor
+    patterns = " ".join(f"'refs/remotes/origin/{major}.{minor}'" for major in ("[1-9]", "[1-9][0-9]") for minor in ("[1-9]", "[1-9][0-9]"))
+    latest_branch = Shell.get_output(f"git for-each-ref --sort=-version:refname --count=1 --format='%(refname:lstrip=3)' {patterns}", strict=True)
+    assert latest_branch, "no release branches among the origin branches"
     print(
         f"Latest release branch [{latest_branch}], checking [{branch}]:"
         f" is_latest={latest_branch == branch}"
@@ -164,16 +146,18 @@ class ReleaseProgress:
 
 
 class ReleaseContextManager:
-    def __init__(self, release_progress):
+    def __init__(self, release_progress, commit_sha=None):
         self.release_progress = release_progress
         self.release_info = None
+        # Only STARTED reads it; passed in because the module-global `args` is unset in-process.
+        self.commit_sha = commit_sha
 
     def __enter__(self):
         if self.release_progress == ReleaseProgress.STARTED:
             self.release_info = ReleaseInfo(
                 release_branch="NA",
                 release_type="NA",
-                commit_sha=args.ref,
+                commit_sha=self.commit_sha,
                 release_tag="NA",
                 version="NA",
                 codename="NA",
@@ -237,7 +221,12 @@ class ReleaseInfo:
         return self
 
     def prepare(
-        self, commit_ref: str, release_type: str, dry_run: bool = False
+        self,
+        commit_ref: str,
+        release_type: str,
+        dry_run: bool = False,
+        skip_repo: bool = False,
+        skip_docker: bool = False,
     ) -> "ReleaseInfo":
         assert release_type in ("patch", "new")
         # `commit_ref` (the workflow `ref` input) is interpolated into git
@@ -294,7 +283,7 @@ class ReleaseInfo:
                 branch_version = CHVersion.get_current_version()
             self.is_bump_landed = version.is_older(branch_version)
 
-            if is_latest_release_branch(release_branch, repo=GITHUB_REPOSITORY):
+            if is_latest_release_branch(release_branch):
                 print("This is going to be the latest release!")
                 latest_release = True
 
@@ -352,10 +341,19 @@ class ReleaseInfo:
                     f"release tag [{released.split()[0]}]: either the ref targets a commit with a "
                     f"superseded release, or there is a bug in the release/versioning logic"
                 )
+        # skip-repo/skip-docker only re-publish an existing release, so reject them against a ref that resolves to a new (untagged) release.
+        assert self.is_tag_pushed or not (skip_repo or skip_docker), (
+            "skip-repo/skip-docker re-publish an existing release and must be "
+            "run against its release tag (recovery); the given ref resolves to "
+            "a new release. Pass the release tag as the ref."
+        )
         self.release_type = release_type
         return self
 
     def push_release_tag(self, dry_run: bool) -> None:
+        # A recovery finds the tag already published — nothing to do.
+        if self.is_tag_pushed:
+            return
         print(
             f"Create and push release tag [{self.release_tag}], commit [{self.commit_sha}]"
         )
@@ -383,6 +381,9 @@ class ReleaseInfo:
             print("WARNING: failed to create backport labels for the new branch")
 
     def push_new_release_branch(self, dry_run: bool) -> None:
+        # A recovery/rerun of an already-tagged release re-runs nothing here.
+        if self.is_tag_pushed:
+            return
         version = CHVersion.get_current_version()
         new_release_branch = self.release_branch
         version_after_release = copy(version)
@@ -421,6 +422,13 @@ class ReleaseInfo:
         )
 
     def update_version_and_contributors_list(self, dry_run: bool) -> None:
+        # A superseded (late) recovery must not rewrite the branch version backwards.
+        if self.release_type == "patch" and self.is_bump_landed:
+            print(
+                f"Branch {self.release_branch} already advanced past this release "
+                f"(late recovery) — skipping version bump"
+            )
+            return
         with checkout(self.commit_sha):
             version = CHVersion.get_current_version()
             if self.release_type == "patch":
@@ -636,13 +644,12 @@ class PackageDownloader:
     def __init__(self, release, commit_sha, version):
         assert version.startswith(release), "Invalid release branch or version"
         with_signed_macos = release_packages.commit_has_macos_signing(commit_sha)
+        with_illumos = release_packages.commit_has_illumos_build(commit_sha)
         self.with_signed_macos = with_signed_macos
         self.package_names = list(self.PACKAGES)
         self.release = release
-        self.s3_release_prefix = release_packages.s3_release_prefix(release)
-        self.commit_sha = commit_sha
+        self.s3_commit_prefix = release_packages.s3_commit_prefix(release, commit_sha)
         self.version = version
-        self.s3 = S3Helper()
         self.deb_package_files = []
         self.rpm_package_files = []
         self.tgz_package_files = []
@@ -650,9 +657,13 @@ class PackageDownloader:
         self.macos_signed_files = (
             [f"{f}.zip" for f in self.macos_package_files] if with_signed_macos else []
         )
+        self.illumos_package_files = (
+            ["clickhouse-illumos-amd64.zst"] if with_illumos else []
+        )
         self.file_to_job_name = {}
         self.macos_binary_to_job_name = {}
         self.macos_signed_to_job_name = {}
+        self.illumos_binary_to_job_name = {}
 
         Shell.check(f"mkdir -p {self.LOCAL_DIR}")
 
@@ -683,6 +694,9 @@ class PackageDownloader:
                 assert dest_zip in self.macos_signed_files
                 self.macos_signed_to_job_name[dest_zip] = job_name_sign
 
+        if with_illumos:
+            self.illumos_binary_to_job_name["clickhouse-illumos-amd64.zst"] = "build_amd_illumos"
+
     def get_deb_packages_files(self):
         return self.deb_package_files
 
@@ -707,6 +721,7 @@ class PackageDownloader:
         assert self.local_rpm_packages_ready()
         assert self.local_macos_packages_ready()
         assert self.local_macos_signed_ready()
+        assert self.local_illumos_packages_ready()
         res = []
         for pkg in (
             self.deb_package_files
@@ -714,6 +729,7 @@ class PackageDownloader:
             + self.tgz_package_files
             + self.macos_package_files
             + self.macos_signed_files
+            + self.illumos_package_files
         ):
             res.append(self.LOCAL_DIR + "/" + pkg)
         return res
@@ -730,16 +746,15 @@ class PackageDownloader:
             local_path = self.LOCAL_DIR + "/" + package_file
             print(f"Downloading: [{package_file}]")
             s3_path = "/".join([
-                self.s3_release_prefix,
-                self.commit_sha,
+                self.s3_commit_prefix,
                 self.file_to_job_name[package_file],
                 package_file,
             ])
-            self.s3.download_file(
-                bucket=S3_BUILDS_BUCKET,
-                s3_path=s3_path,
-                local_file_path=local_path,
-            )
+            if not S3.copy_file_from_s3(
+                s3_path=f"{S3_BUILDS_BUCKET}/{s3_path}",
+                local_path=local_path,
+            ):
+                raise AssertionError(f"No such object [s3://{S3_BUILDS_BUCKET}/{s3_path}]")
 
         for macos_binary, job_name in self.macos_binary_to_job_name.items():
             local_path = self.LOCAL_DIR + "/" + macos_binary
@@ -750,31 +765,43 @@ class PackageDownloader:
             # be skipped — always re-download to overwrite it.
             print(f"Downloading: [{job_name}] binary to [{macos_binary}]")
             s3_path = "/".join([
-                self.s3_release_prefix,
-                self.commit_sha,
+                self.s3_commit_prefix,
                 job_name,
                 "clickhouse",
             ])
-            self.s3.download_file(
-                bucket=S3_BUILDS_BUCKET,
-                s3_path=s3_path,
-                local_file_path=local_path,
-            )
+            if not S3.copy_file_from_s3(
+                s3_path=f"{S3_BUILDS_BUCKET}/{s3_path}",
+                local_path=local_path,
+            ):
+                raise AssertionError(f"No such object [s3://{S3_BUILDS_BUCKET}/{s3_path}]")
 
         for macos_zip, job_name in self.macos_signed_to_job_name.items():
             local_path = self.LOCAL_DIR + "/" + macos_zip
             print(f"Downloading: [{job_name}] signed zip to [{macos_zip}]")
             s3_path = "/".join([
-                self.s3_release_prefix,
-                self.commit_sha,
+                self.s3_commit_prefix,
                 job_name,
                 release_packages.MACOS_SIGNED_S3_OBJECT,
             ])
-            self.s3.download_file(
-                bucket=S3_BUILDS_BUCKET,
-                s3_path=s3_path,
-                local_file_path=local_path,
-            )
+            if not S3.copy_file_from_s3(
+                s3_path=f"{S3_BUILDS_BUCKET}/{s3_path}",
+                local_path=local_path,
+            ):
+                raise AssertionError(f"No such object [s3://{S3_BUILDS_BUCKET}/{s3_path}]")
+
+        for illumos_binary, job_name in self.illumos_binary_to_job_name.items():
+            local_path = self.LOCAL_DIR + "/" + illumos_binary
+            print(f"Downloading: [{job_name}] binary to [{illumos_binary}]")
+            s3_path = "/".join([
+                self.s3_commit_prefix,
+                job_name,
+                release_packages.ILLUMOS_S3_OBJECT,
+            ])
+            if not S3.copy_file_from_s3(
+                s3_path=f"{S3_BUILDS_BUCKET}/{s3_path}",
+                local_path=local_path,
+            ):
+                raise AssertionError(f"No such object [s3://{S3_BUILDS_BUCKET}/{s3_path}]")
 
     def local_deb_packages_ready(self) -> bool:
         return all(Path(self.LOCAL_DIR + "/" + f).is_file() for f in self.deb_package_files)
@@ -790,6 +817,9 @@ class PackageDownloader:
 
     def local_macos_signed_ready(self) -> bool:
         return all(Path(self.LOCAL_DIR + "/" + f).is_file() for f in self.macos_signed_files)
+
+    def local_illumos_packages_ready(self) -> bool:
+        return all(Path(self.LOCAL_DIR + "/" + f).is_file() for f in self.illumos_package_files)
 
 
 @contextmanager
@@ -848,29 +878,14 @@ def parse_args() -> argparse.Namespace:
         help="Initial step to prepare info like release branch, release tag, etc.",
     )
     parser.add_argument(
-        "--push-release-tag",
+        "--skip-repo",
         action="store_true",
-        help="Creates and pushes git tag",
+        help="Recovery run that only re-exports repo packages for an already-created release",
     )
     parser.add_argument(
-        "--push-new-release-branch",
+        "--skip-docker",
         action="store_true",
-        help="Creates and pushes new release branch and corresponding service gh tags for backports",
-    )
-    parser.add_argument(
-        "--create-bump-version-pr",
-        action="store_true",
-        help="Updates version, contributors list and creates PR",
-    )
-    parser.add_argument(
-        "--download-packages",
-        action="store_true",
-        help="Downloads all required packages from s3",
-    )
-    parser.add_argument(
-        "--create-gh-release",
-        action="store_true",
-        help="Create GH Release object and attach all packages",
+        help="Recovery run that only rebuilds docker images for an already-created release",
     )
     parser.add_argument(
         "--post-status",
@@ -907,7 +922,9 @@ if __name__ == "__main__":
         _ssh_agent.print_keys()
 
     if args.prepare_release_info:
-        with ReleaseContextManager(release_progress=ReleaseProgress.STARTED) as release_info:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.STARTED, commit_sha=args.ref
+        ) as release_info:
             assert (
                 args.ref and args.release_type
             ), "--ref and --release-type must be provided with --prepare-release-info"
@@ -915,48 +932,8 @@ if __name__ == "__main__":
                 commit_ref=args.ref,
                 release_type=args.release_type,
                 dry_run=args.dry_run,
-            )
-
-    if args.download_packages:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.DOWNLOAD_PACKAGES
-        ) as release_info:
-            p = PackageDownloader(
-                release=release_info.release_branch,
-                commit_sha=release_info.commit_sha,
-                version=release_info.version,
-            )
-            p.run()
-
-    if args.push_release_tag:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.PUSH_RELEASE_TAG
-        ) as release_info:
-            release_info.push_release_tag(dry_run=args.dry_run)
-
-    if args.push_new_release_branch:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.PUSH_NEW_RELEASE_BRANCH
-        ) as release_info:
-            release_info.push_new_release_branch(dry_run=args.dry_run)
-
-    if args.create_bump_version_pr:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.BUMP_VERSION
-        ) as release_info:
-            release_info.update_version_and_contributors_list(dry_run=args.dry_run)
-
-    if args.create_gh_release:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.CREATE_GH_RELEASE
-        ) as release_info:
-            p = PackageDownloader(
-                release=release_info.release_branch,
-                commit_sha=release_info.commit_sha,
-                version=release_info.version,
-            )
-            release_info.create_gh_release(
-                packages_files=p.get_all_packages_files(), dry_run=args.dry_run
+                skip_repo=args.skip_repo,
+                skip_docker=args.skip_docker,
             )
 
     if args.post_status:

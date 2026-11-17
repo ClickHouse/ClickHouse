@@ -266,12 +266,14 @@ PR=<pr-number>
 SHA=<candidate-sha>
 ARCH=arm        # arm or amd, matching the run/result being reproduced
 JOB="build_${ARCH}_release"
-REPORT="https://clickhouse-builds.s3.amazonaws.com/PRs/${PR}/${SHA}/${JOB}/artifact_report_${JOB}.json"
+# The S3 layout inserts the normalized workflow name after <sha>: PR builds are
+# under "pr", master/reference builds under "masterci".
+REPORT="https://clickhouse-builds.s3.amazonaws.com/PRs/${PR}/${SHA}/pr/${JOB}/artifact_report_${JOB}.json"
 curl -fsS "$REPORT" | jq -r '.build_urls[] | select(endswith("/clickhouse"))'
 
 # Exact master/reference binary.
 SHA=<reference-sha>
-URL="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${SHA}/${JOB}/clickhouse"
+URL="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${SHA}/masterci/${JOB}/clickhouse"
 curl -sfI "$URL"
 ```
 

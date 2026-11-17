@@ -24,6 +24,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ProcessList.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/setThreadName.h>
@@ -31,6 +32,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/createHardLink.h>
 #include <Common/logger_useful.h>
@@ -40,8 +42,8 @@
 
 #include <base/range.h>
 
-#include <climits>
 #include <filesystem>
+#include <functional>
 
 
 namespace CurrentMetrics
@@ -69,7 +71,7 @@ namespace Setting
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsBool insert_distributed_one_random_shard;
     extern const SettingsUInt64 insert_shard_id;
-    extern const SettingsUInt64 max_distributed_connections;
+    extern const SettingsNonZeroUInt64 max_distributed_connections;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsUInt64 max_network_bandwidth;
     extern const SettingsUInt64 max_network_bytes;
@@ -78,7 +80,6 @@ namespace Setting
     extern const SettingsBool prefer_localhost_replica;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
-    extern const SettingsBool use_compact_format_in_distributed_parts_names;
 }
 
 namespace DistributedSetting
@@ -89,7 +90,6 @@ namespace DistributedSetting
 
 namespace ErrorCodes
 {
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
@@ -97,6 +97,11 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
+}
+
+namespace FailPoints
+{
+    extern const char distributed_sink_pause_before_push[];
 }
 
 namespace
@@ -155,11 +160,20 @@ static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log
 }
 
 
-static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & block, size_t repeats, LoggerPtr log)
+static void writeBlockConvert(
+    PushingPipelineExecutor & executor,
+    const Block & block,
+    size_t repeats,
+    LoggerPtr log,
+    const std::function<void()> & check_before_push = {})
 {
     Block adopted_block = adoptBlock(executor.getHeader(), block, log);
     for (size_t i = 0; i < repeats; ++i)
+    {
+        if (check_before_push)
+            check_before_push();
         executor.push(adopted_block);
+    }
 }
 
 
@@ -209,7 +223,9 @@ void DistributedSink::consume(Chunk & chunk)
 {
     if (is_first_chunk)
     {
-        storage.delayInsertOrThrowIfNeeded();
+        /// A write to a local shard runs this sink in a nested pipeline that a `KILL` of the query does not cancel.
+        auto query_status = context->getProcessListElementSafe();
+        storage.delayInsertOrThrowIfNeeded([&] { return isCancelled() || (query_status && query_status->isKilled()); });
         is_first_chunk = false;
     }
 
@@ -337,6 +353,11 @@ void DistributedSink::initWritingJobs(const Block & first_block, size_t start, s
 void DistributedSink::waitForJobs()
 {
     pool->wait();
+
+    /// Neither the elapsed-time verdict below nor the job count says anything useful about an insert
+    /// that is being cancelled.
+    if (isCancelled())
+        return;
 
     if (insert_timeout)
     {
@@ -478,7 +499,8 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     /// The RemoteSink constructor sends the query to the shard and reads its header,
                     /// so a missing table or any other "before processing" exception surfaces here.
                     job.pipeline = QueryPipeline(std::make_shared<RemoteSink>(
-                        *job.connection_entry, timeouts, query_string, settings, context->getClientInfo()));
+                        *job.connection_entry, timeouts, query_string, settings, context->getClientInfo(),
+                        context->getProcessListElementSafe()));
                     job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
                     job.executor->start();
                 }
@@ -503,6 +525,8 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
             CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
 
             Block adopted_shard_block = adoptBlock(job.executor->getHeader(), shard_block, log);
+            FailPointInjection::pauseFailPoint(FailPoints::distributed_sink_pause_before_push);
+            throwIfCancelled();
             job.executor->push(adopted_shard_block);
         }
         else // local
@@ -534,7 +558,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 job.executor->start();
             }
 
-            writeBlockConvert(*job.executor, shard_block, shard_info.getLocalNodeCount(), log);
+            writeBlockConvert(*job.executor, shard_block, shard_info.getLocalNodeCount(), log, [this] { throwIfCancelled(); });
         }
 
         job.blocks_written += 1;
@@ -699,19 +723,17 @@ void DistributedSink::onFinish()
 
 void DistributedSink::onCancel() noexcept
 {
-    std::lock_guard lock(execution_mutex);
-    if (pool && !pool->isFinished())
-    {
-        try
-        {
-            pool->wait();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(storage.log, "Error occurs on cancellation.");
-        }
-    }
+    /// Never waits: `writeSync` holds `execution_mutex` across its own wait for the writing jobs, so
+    /// waiting here would make cancellation as slow as the insert it is meant to interrupt. This runs
+    /// at most once, so when the lock is contended it cancels nothing and the destructor does it.
+    std::unique_lock lock(execution_mutex, std::try_to_lock);
+    if (lock.owns_lock())
+        cancelExecutors();
+}
 
+
+void DistributedSink::cancelExecutors() noexcept
+{
     for (auto & shard_jobs : per_shard_jobs)
     {
         for (JobReplica & job : shard_jobs.replicas_jobs)
@@ -727,12 +749,29 @@ void DistributedSink::onCancel() noexcept
             }
         }
     }
+}
 
+
+void DistributedSink::throwIfCancelled()
+{
+    if (isCancelled())
+        throw Exception(ErrorCodes::ABORTED, "Writing job was cancelled");
+}
+
+
+DistributedSink::~DistributedSink()
+{
+    /// A cancelled insert reaches neither `onFinish` nor, when the lock is contended, `onCancel`. Doing
+    /// it here keeps every executor cancelled under `execution_mutex`, rather than leaving
+    /// `~PushingPipelineExecutor` to depend on an exception being in flight on the destroying thread.
+    std::lock_guard lock(execution_mutex);
+    cancelExecutors();
 }
 
 
 IColumn::Selector DistributedSink::createSelector(const Block & source_block) const
 {
+    storage.checkShardingKeySetsAreBuilt();
     Block current_block_with_sharding_key_expr = source_block;
     storage.getShardingKeyExpr()->execute(current_block_with_sharding_key_expr);
 
@@ -792,8 +831,7 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
             writeToLocal(shard_info, block_to_send, shard_info.getLocalNodeCount());
         else
         {
-            const auto & path = shard_info.insertPathForInternalReplication(
-                settings[Setting::prefer_localhost_replica], settings[Setting::use_compact_format_in_distributed_parts_names]);
+            const auto & path = shard_info.insertPathForInternalReplication();
             if (path.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory name for async inserts is empty");
             writeToShard(shard_info, block_to_send, {path});
@@ -804,11 +842,7 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
         std::vector<std::string> dir_names;
         for (const auto & address : cluster->getShardsAddresses()[shard_id])
             if (!address.is_local || !settings[Setting::prefer_localhost_replica])
-                dir_names.push_back(address.toFullString(settings[Setting::use_compact_format_in_distributed_parts_names]));
-
-        /// Reject before the local write below, otherwise a shard holding both this server and a
-        /// too long remote destination inserts locally and still reports the INSERT as failed.
-        checkDirectoryNameLengths(shard_info, dir_names);
+                dir_names.push_back(address.toFullString());
 
         if (shard_info.isLocal() && settings[Setting::prefer_localhost_replica])
             writeToLocal(shard_info, block_to_send, shard_info.getLocalNodeCount());
@@ -854,25 +888,10 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
 }
 
 
-void DistributedSink::checkDirectoryNameLengths(const Cluster::ShardInfo & shard_info, const std::vector<std::string> & dir_names) const
-{
-    /// The name embeds `user:password@host:port`, hence it is not reported
-    /// (see `maskDataPath` in StorageSystemDistributionQueue.cpp).
-    for (const auto & dir_name : dir_names)
-        if (dir_name.size() > NAME_MAX)
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                "The max length of a directory name for async distributed INSERT into table {} (cluster {}, shard {}) is {}, current length is {}",
-                storage.getStorageID().getFullNameNotQuoted(), storage.getClusterName(), shard_info.shard_num, NAME_MAX, dir_name.size());
-}
-
-
 void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const Block & block, const std::vector<std::string> & dir_names)
 {
     OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
     span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
-
-    /// Every directory this function creates is named after an element of `dir_names`.
-    checkDirectoryNameLengths(shard_info, dir_names);
 
     const auto & settings = context->getSettingsRef();
     const auto & distributed_settings = storage.getDistributedSettingsRef();
@@ -966,16 +985,20 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             /// `client_agent` is intentionally excluded from the embedded `ClientInfo` here and written
             /// as a trailing header field below, so that older binaries draining these queue files read
             /// the embedded `ClientInfo` in the old, append-compatible layout.
-            if (OpenTelemetry::CurrentContext().isTraceEnabled())
             {
-                // if the distributed tracing is enabled, use the trace context in current thread as parent of next span
                 auto client_info = context->getClientInfo();
-                client_info.client_trace_context = OpenTelemetry::CurrentContext();
+                // if the distributed tracing is enabled, use the trace context in current thread as parent of next span
+                if (OpenTelemetry::CurrentContext().isTraceEnabled())
+                    client_info.client_trace_context = OpenTelemetry::CurrentContext();
+                /// Background contexts (e.g. the ones of `Kafka` / `RabbitMQ` streaming into views) have
+                /// `query_kind = NO_QUERY`, for which `ClientInfo::write` stores nothing but the kind. The
+                /// replayed insert would then reach the shard with an empty `initial_user`, which a shard
+                /// accepting the interserver `<secret>` executes with full access, losing the identity
+                /// (e.g. the definer of a `SQL SECURITY DEFINER` view) that the query is bound to.
+                /// `RemoteInserter` sends the insert as a secondary query anyway, so persist it as such.
+                if (client_info.query_kind == ClientInfo::QueryKind::NO_QUERY)
+                    client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
                 client_info.write(header_buf, DBMS_TCP_PROTOCOL_VERSION, /*with_trailing_fields=*/ false);
-            }
-            else
-            {
-                context->getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION, /*with_trailing_fields=*/ false);
             }
 
             writeVarUInt(block.rows(), header_buf);

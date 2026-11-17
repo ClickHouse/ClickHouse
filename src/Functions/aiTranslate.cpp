@@ -1,3 +1,4 @@
+#include <Access/Common/AccessFlags.h>
 #include <Functions/FunctionBaseAI.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -19,13 +20,32 @@ public:
 
     explicit FunctionAiTranslate(ContextPtr context_) : FunctionBaseAI(context_) {}
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAiTranslate>(context_); }
+    static FunctionPtr create(ContextPtr context_)
+    {
+        context_->checkAccess(AccessType::aiTranslate);
+        return std::make_shared<FunctionAiTranslate>(context_);
+    }
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
+    {
+        /// `instructions` and `temperature` are optional, but `temperature` is only
+        /// valid once `instructions` is present, so the optional positions are spelled
+        /// as explicit prefix alternatives rather than two independent optionals (see
+        /// the note in `aiGenerate.cpp`).
+        return
+            "(const String, Nullable(String), const String) -> Nullable(String)"
+            " OR (const String, Nullable(String), const String, const String) -> Nullable(String)"
+            " OR (const String, Nullable(String), const String, const String, const Number) -> Nullable(String)"
+            " OR (const String, String, const String) -> String"
+            " OR (const String, String, const String, const String) -> String"
+            " OR (const String, String, const String, const String, const Number) -> String";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
@@ -35,7 +55,6 @@ public:
             {"params", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringToStringMap), &isColumnConst, "const Map(String, String)"},
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
         return wrapReturnTypeForNullablePrompt(arguments, 0, std::make_shared<DataTypeString>());
     }
 
@@ -43,7 +62,7 @@ private:
     static constexpr float default_temp = 0.3f;
     static constexpr size_t target_language_arg_index = 1;
 
-    AIParamSpecs functionParams() const override
+    [[nodiscard]] AIParamSpecs functionParams() const override
     {
         return {
             {"temperature", AIParamKind::Float, Field(static_cast<Float64>(default_temp))},
@@ -58,7 +77,7 @@ private:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "aiTranslate: 'target_language' must not be empty");
     }
 
-    String buildSystemPrompt(const ColumnsWithTypeAndName & arguments, const AIParams & params) const override
+    [[nodiscard]] String buildSystemPrompt(const ColumnsWithTypeAndName & arguments, const AIParams & params) const override
     {
         auto target_language = String(arguments[target_language_arg_index].column->getDataAt(0));
         auto prompt = "Translate the following text into " + target_language + ". Return only the translation, nothing else.";
@@ -69,7 +88,7 @@ private:
         return prompt;
     }
 
-    String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
+    [[nodiscard]] String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
     {
         return String(arguments[0].column->getDataAt(row));
     }
@@ -95,8 +114,8 @@ are taken from the `credentials` key of the optional parameter map, or from the
         },
         .returned_value = {"The translated text, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
-            {"Translate to French", "SET allow_experimental_ai_functions = 1;\nSELECT aiTranslate('Hello, world!', 'French')", "Bonjour le monde!"},
-            {"Translate to Japanese with style instructions", "SET allow_experimental_ai_functions = 1;\nCREATE TABLE articles (body String) ENGINE = Memory;\nINSERT INTO articles VALUES ('ClickHouse processes analytical queries quickly.');\nSELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5", ""},
+            {"Translate to French", "SELECT aiTranslate('Hello, world!', 'French')", "Bonjour le monde!"},
+            {"Translate to Japanese with style instructions", "CREATE TABLE articles (body String) ENGINE = Memory;\nINSERT INTO articles VALUES ('ClickHouse processes analytical queries quickly.');\nSELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5", ""},
         },
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});

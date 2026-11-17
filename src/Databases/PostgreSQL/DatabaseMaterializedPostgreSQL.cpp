@@ -25,6 +25,7 @@
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseFactory.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/AlterCommands.h>
@@ -37,6 +38,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Common/escapeForFileName.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -48,6 +50,7 @@ namespace Setting
 namespace MaterializedPostgreSQLSetting
 {
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_unmaterialized_tables_list;
 }
 
 namespace FailPoints
@@ -122,9 +125,16 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
             /* is_materialized_postgresql_database = */ true);
 
     std::set<String> tables_to_replicate;
+    std::set<String> new_unmaterialized_published_tables;
     try
     {
-        tables_to_replicate = replication_handler->fetchRequiredTables();
+        /// The tables that were already replicated before the restart: their nested tables exist.
+        std::set<String> nested_tables_on_disk;
+        if (is_attach)
+            for (auto iterator = getTablesIterator(getContext(), {}, /* skip_not_loaded */ false); iterator->isValid(); iterator->next())
+                nested_tables_on_disk.insert(iterator->name());
+
+        tables_to_replicate = replication_handler->fetchRequiredTables(nested_tables_on_disk, new_unmaterialized_published_tables);
     }
     catch (...)
     {
@@ -170,6 +180,7 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     {
         std::lock_guard tables_lock(tables_mutex);
         materialized_tables = std::move(new_materialized_tables);
+        unmaterialized_published_tables = std::move(new_unmaterialized_published_tables);
     }
 
     replication_handler->startup(/* delayed */false);
@@ -228,7 +239,7 @@ void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges 
         if (!settings->has(change.name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} does not support setting `{}`", getEngineName(), change.name);
 
-        if (change.name == "materialized_postgresql_tables_list")
+        if (change.name == "materialized_postgresql_tables_list" || change.name == "materialized_postgresql_unmaterialized_tables_list")
         {
             if (!query_context->isInternalQuery())
                 throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Changing setting `{}` is not allowed", change.name);
@@ -250,7 +261,7 @@ void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges 
     bool need_update_on_disk = false;
     for (const auto & change : settings_changes)
     {
-        if (change.name == "materialized_postgresql_tables_list")
+        if (change.name == "materialized_postgresql_tables_list" || change.name == "materialized_postgresql_unmaterialized_tables_list")
         {
             need_update_on_disk = true;
         }
@@ -345,20 +356,34 @@ String DatabaseMaterializedPostgreSQL::getFormattedTablesList(const String & exc
 }
 
 
+void DatabaseMaterializedPostgreSQL::addUnmaterializedTablesListChange(SettingsChanges & changes, const String & except) const
+{
+    String unmaterialized_tables_list;
+    for (const auto & table_name : unmaterialized_published_tables)
+    {
+        if (table_name == except)
+            continue;
+
+        if (!unmaterialized_tables_list.empty())
+            unmaterialized_tables_list += ',';
+
+        /// Quoted, because a PostgreSQL table name can contain commas and leading or trailing whitespace.
+        unmaterialized_tables_list += backQuote(table_name);
+    }
+
+    if (unmaterialized_tables_list.empty() && (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_unmaterialized_tables_list].value.empty())
+        return;
+
+    changes.emplace_back("materialized_postgresql_unmaterialized_tables_list", unmaterialized_tables_list);
+}
+
+
 ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
-    if (!local_context->hasQueryContext())
+    /// An existing table is described by its nested table: its columns and sorting key are fixed when it is
+    /// created and can differ from the current PostgreSQL table.
+    if (!local_context->hasQueryContext() || DatabaseAtomic::tryGetTable(table_name, getContext()))
         return DatabaseAtomic::getCreateTableQueryImpl(table_name, local_context, throw_on_error);
-
-    /// Use the table's actual (stable) UUID rather than a freshly generated one. Otherwise every
-    /// call to this method returns a slightly different definition, which breaks operations that
-    /// read the table metadata several times and expect it to stay consistent - most notably
-    /// BACKUP, which kept retrying with "Table ... was created or changed its definition during
-    /// scanning" and never finished. Fall back to a generated UUID only if the table does not exist
-    /// yet. Fetched before acquiring `handler_mutex` to avoid lock ordering issues.
-    UUID table_uuid = UUIDHelpers::generateV4();
-    if (auto existing_table = DatabaseAtomic::tryGetTable(table_name, getContext()))
-        table_uuid = existing_table->getStorageID().uuid;
 
     std::lock_guard lock(handler_mutex);
 
@@ -367,7 +392,7 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
     {
         auto storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(TSA_SUPPRESS_WARNING_FOR_READ(database_name), table_name), getContext(), remote_database_name, table_name);
         ast_storage = replication_handler->getCreateNestedTableQuery(storage.get(), table_name);
-        assert_cast<ASTCreateQuery *>(ast_storage.get())->uuid = table_uuid;
+        assert_cast<ASTCreateQuery *>(ast_storage.get())->uuid = UUIDHelpers::generateV4();
     }
     catch (...)
     {
@@ -385,11 +410,11 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
 }
 
 
-ASTPtr DatabaseMaterializedPostgreSQL::createAlterSettingsQuery(const SettingChange & new_setting)
+ASTPtr DatabaseMaterializedPostgreSQL::createAlterSettingsQuery(const SettingsChanges & new_settings)
 {
     auto set = make_intrusive<ASTSetQuery>();
     set->is_standalone = false;
-    set->changes = {new_setting};
+    set->changes = new_settings;
 
     auto command = make_intrusive<ASTAlterCommand>();
     command->type = ASTAlterCommand::Type::MODIFY_DATABASE_SETTING;
@@ -451,16 +476,18 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
 
         try
         {
-            auto tables_to_replicate = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
-            if (tables_to_replicate.empty())
+            SettingsChanges new_settings;
             {
                 std::lock_guard tables_lock(tables_mutex);
-                tables_to_replicate = getFormattedTablesList();
-            }
+                auto tables_to_replicate = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
+                if (tables_to_replicate.empty())
+                    tables_to_replicate = getFormattedTablesList();
 
-            /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
-            SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name));
-            auto alter_query = createAlterSettingsQuery(new_setting);
+                /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
+                new_settings.emplace_back("materialized_postgresql_tables_list", tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name));
+                addUnmaterializedTablesListChange(new_settings, table_name);
+            }
+            auto alter_query = createAlterSettingsQuery(new_settings);
 
             /// Executed without `tables_mutex`: the ALTER reaches `applySettingsChanges`, which takes
             /// `handler_mutex`, and the two mutexes must always be taken in that order.
@@ -472,8 +499,17 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
                 materialized_tables[table_name] = storage;
             }
 
-            std::lock_guard lock(handler_mutex);
-            replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
+            {
+                std::lock_guard lock(handler_mutex);
+                replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
+            }
+
+            /// Only after the replication of the table is set up: if it fails, the nested table is dropped below,
+            /// and `getTablesForBackup` must keep refusing to omit the table.
+            {
+                std::lock_guard tables_lock(tables_mutex);
+                unmaterialized_published_tables.erase(table_name);
+            }
         }
         catch (...)
         {
@@ -500,7 +536,7 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
     if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
     {
         StoragePtr table_to_delete;
-        String tables_to_replicate;
+        SettingsChanges new_settings;
         {
             std::lock_guard tables_lock(tables_mutex);
 
@@ -512,12 +548,13 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
                 throw Exception(ErrorCodes::UNKNOWN_TABLE, "Materialized table `{}` does not exist", table_name);
 
             table_to_delete = it->second;
-            tables_to_replicate = getFormattedTablesList(table_name);
+
+            /// The list of tables can be empty if postgres database had no tables when this database was created.
+            new_settings.emplace_back("materialized_postgresql_tables_list", getFormattedTablesList(table_name));
+            addUnmaterializedTablesListChange(new_settings, table_name);
         }
 
-        /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
-        SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate);
-        auto alter_query = createAlterSettingsQuery(new_setting);
+        auto alter_query = createAlterSettingsQuery(new_settings);
 
         {
             auto current_context = Context::createCopy(getContext()->getGlobalContext());
@@ -721,6 +758,20 @@ DatabaseMaterializedPostgreSQL::getTablesForBackup(const FilterByNameFunction & 
                     "producing a partial database backup that silently omits this table.",
                     storage->getStorageID().getNameForLogs());
         }
+
+        for (const auto & table_name : unmaterialized_published_tables)
+        {
+            if (filter && !filter(table_name))
+                continue;
+
+            throw Exception(
+                ErrorCodes::CANNOT_BACKUP_TABLE,
+                "Cannot back up table {}.{}: it is in the publication, but it is not replicated, because its nested "
+                "ReplacingMergeTree table does not exist (for example, its initial snapshot from PostgreSQL has failed). "
+                "Failing closed instead of producing a partial database backup that silently omits this table. "
+                "Run `ATTACH TABLE` to replicate it.",
+                backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(table_name));
+        }
     }
 
     return DatabaseAtomic::getTablesForBackup(filter, local_context);
@@ -778,12 +829,14 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             configuration.password = safeGetLiteralValue<String>(positional_arguments[3], engine_name);
         }
 
-        /// An internal metadata replay (server startup / restore, the same distinction
+        /// The server's own replay of stored metadata (server startup, the same distinction
         /// `DatabaseDataLake` uses) must keep loading whatever definition was already persisted:
         /// startup rebuilds every database from persisted metadata with an ATTACH query and
         /// `loadMetadata` aborts on the first exception, so a validation added after the database
         /// was created must not turn its stored definition into a server that cannot boot.
-        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+        /// The loader flag, not `internal`, is the discriminator: wrappers such as `PARALLEL WITH`
+        /// run user statements as internal ones, and those must stay fail-closed.
+        const bool is_internal_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
 
         /// A named collection may specify the endpoint as `addresses_expr`, which fills only
         /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
@@ -811,7 +864,7 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         /// Enforce the server's outbound-host policy, exactly like the table engine and the table
         /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to open a
         /// long-lived replication connection to a host that `remote_url_allow_hosts` forbids elsewhere.
-        /// Skip it only for an internal metadata replay: enforcing the policy there would turn one
+        /// Skip it only for the server's own metadata replay: enforcing the policy there would turn one
         /// database created before the whitelist was tightened into a server that cannot boot.
         /// A user-issued `ATTACH DATABASE` is not a replay and stays fail-closed, otherwise it
         /// would be a direct bypass of the policy.
@@ -824,6 +877,10 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         auto postgresql_replica_settings = std::make_unique<MaterializedPostgreSQLSettings>();
         if (engine_define->settings)
             postgresql_replica_settings->loadFromQuery(*engine_define);
+
+        /// A definition stored by an older version, which did not check it, must still be loaded.
+        if (!is_internal_metadata_replay && isFreshTableDefinition(args.mode, args.create_query.attach_short_syntax))
+            postgresql_replica_settings->checkConsistencyForFreshDefinition();
 
         auto connection_info = postgres::formatConnectionString(
             configuration.database,
@@ -839,12 +896,13 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             args.database_name, configuration.database, connection_info,
             std::move(postgresql_replica_settings));
     };
-    factory.registerDatabase("MaterializedPostgreSQL", create_fn, {
+    factory.registerDatabase("MaterializedPostgreSQL", create_fn, mysqlPostgreSQLSecretArguments(3), {
         .supports_arguments = true,
         .supports_settings = true,
         .supports_table_overrides = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::POSTGRES,
+        .has_builtin_setting_fn = MaterializedPostgreSQLSettings::hasBuiltin,
     }, Documentation{
         .description = R"DOCS_MD(
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -855,20 +913,20 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-:::note
+<Note>
 ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes/home) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
-:::
+</Note>
 
 Creates a ClickHouse database with tables from PostgreSQL database. Firstly, database with engine `MaterializedPostgreSQL` creates a snapshot of PostgreSQL database and loads required tables. Required tables can include any subset of tables from any subset of schemas from specified database. Along with the snapshot database engine acquires LSN and once initial dump of tables is performed - it starts pulling updates from WAL. After database is created, newly added tables to PostgreSQL database are not automatically added to replication. They have to be added manually with `ATTACH TABLE db.table` query.
 
 Replication is implemented with PostgreSQL Logical Replication Protocol, which does not allow to replicate DDL, but allows to know whether replication breaking changes happened (column type changes, adding/removing columns). Such changes are detected and according tables stop receiving updates. In this case you should use `ATTACH`/ `DETACH PERMANENTLY` queries to reload table completely. If DDL does not break replication (for example, renaming a column) table will still receive updates (insertion is done by position).
 
-:::note
-This database engine is experimental. To use it, set `allow_experimental_database_materialized_postgresql` to 1 in your configuration files or by using the `SET` command:
+<Note>
+This database engine is experimental. To use it, set `enable_database_materialized_postgresql` to 1 in your configuration files or by using the `SET` command:
 ```sql
-SET allow_experimental_database_materialized_postgresql=1
+SET enable_database_materialized_postgresql=1
 ```
-:::
+</Note>
 
 ## Creating a database {#creating-a-database}
 
@@ -907,9 +965,9 @@ After `MaterializedPostgreSQL` database is created, it does not automatically de
 ATTACH TABLE postgres_database.new_table;
 ```
 
-:::warning
+<Warning>
 Before version 22.1, adding a table to replication left a non-removed temporary replication slot (named `{db_name}_ch_replication_slot_tmp`). If attaching tables in ClickHouse version before 22.1, make sure to delete it manually (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`). Otherwise disk usage will grow. This issue is fixed in 22.1.
-:::
+</Warning>
 
 ## Dynamically removing tables from replication {#dynamically-removing-table-from-replication}
 
@@ -997,9 +1055,9 @@ FROM pg_class
 WHERE oid = 'postgres_table'::regclass;
 ```
 
-:::note
+<Note>
 [**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) values are replicated. When PostgreSQL sends an unchanged TOAST reference during an update, the existing value is preserved. An unchanged TOAST replica identity column requires PostgreSQL to send an old key tuple, otherwise the row cannot be identified.
-:::
+</Note>
 
 ## Settings {#settings}
 
@@ -1036,6 +1094,7 @@ Default value: `65536`.
 ### `materialized_postgresql_replication_slot` {#materialized-postgresql-replication-slot}
 
 A user-created replication slot. Must be used together with `materialized_postgresql_snapshot`.
+Cannot be used together with `materialized_postgresql_use_unique_replication_consumer_identifier`.
 
 ### `materialized_postgresql_snapshot` {#materialized-postgresql-snapshot}
 
@@ -1059,6 +1118,7 @@ ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_bloc
 
 Use a unique replication consumer identifier for replication. Default: `0`.
 If set to `1`, allows to setup several `MaterializedPostgreSQL` tables pointing to the same `PostgreSQL` table.
+Cannot be used together with `materialized_postgresql_replication_slot`: a user-managed replication slot has a single fixed name and cannot be unique per consumer. Such a combination is rejected on `CREATE` and on `ATTACH` with a full definition, but a database or table that was already created with it can still be loaded.
 
 ### `materialized_postgresql_use_extended_date_and_time_types` {#materialized-postgresql-use-extended-date-and-time-types}
 

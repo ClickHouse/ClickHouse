@@ -9,13 +9,20 @@ class SerializationArray final : public SimpleTextSerialization
 {
 private:
     SerializationPtr nested;
+    /// Cached `nested->supportsPooling`, so that the check is O(1) instead of a walk over the whole nested
+    /// chain: `create` asks it of every level, which is quadratic in the depth for a deeply nested `Array`.
+    bool nested_supports_pooling;
 
-    explicit SerializationArray(const SerializationPtr & nested_) : nested(nested_) {}
+    explicit SerializationArray(const SerializationPtr & nested_) : nested(nested_), nested_supports_pooling(nested->supportsPooling()) {}
 
 public:
     static UInt128 getHash(const SerializationPtr & nested_);
     static SerializationPtr create(const SerializationPtr & nested_);
-    bool supportsPooling() const override { return nested->supportsPooling(); }
+    bool supportsPooling() const override { return nested_supports_pooling; }
+
+    /// Whether a resolved subcolumn is really the array sizes, which its name alone cannot tell.
+    /// `Map` sizes are the same substream, so this covers them too.
+    static bool isArraySizesSubcolumn(const SubstreamPath & path);
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -80,6 +87,7 @@ public:
         SubstreamsCache * cache) const override;
 
     static void serializeOffsetsBinaryBulk(const IColumn & offsets_column, size_t offset, size_t limit, SerializeBinaryBulkSettings & settings);
+    static void serializeOffsetsBinaryBulk(const IColumn & offsets_column, size_t offset, size_t limit, WriteBuffer & stream, bool position_independent_encoding);
     static bool deserializeOffsetsBinaryBulk(IColumn & offsets_column, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache);
     static size_t deserializeOffsetsBinaryBulkAndGetNestedLimit(IColumn & offsets_column, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache);
 
@@ -91,9 +99,9 @@ public:
 
         explicit SubcolumnCreator(const ColumnPtr & offsets_) : offsets(offsets_) {}
 
-        DataTypePtr create(const DataTypePtr & prev) const override;
-        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
-        ColumnPtr create(const ColumnPtr & prev) const override;
+        [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override;
+        [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
+        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override;
     };
 
     const SerializationPtr & getNestedSerialization() const { return nested; }
@@ -102,5 +110,8 @@ private:
     template <typename ReturnType>
     ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
 };
+
+/// Converts the offsets of an array (a `ColumnArray::ColumnOffsets`) to the sizes of its elements.
+ColumnPtr arrayOffsetsToSizes(const IColumn & column);
 
 }

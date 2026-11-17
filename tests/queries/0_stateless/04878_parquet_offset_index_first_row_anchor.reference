@@ -6,3 +6,6 @@ Code: 117
 Invalid offset index: first page starts at row
 Code: 117
 Page doesn't contain requested row
+ok
+Code: 117
+doesn't match offset index: page has

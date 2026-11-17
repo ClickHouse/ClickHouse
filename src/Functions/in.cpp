@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnConst.h>
@@ -15,8 +16,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -41,21 +42,32 @@ public:
         return std::make_shared<FunctionIn>(std::move(name), negative, null_is_skipped, ignore_set);
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return function_name;
     }
 
     /// The `IgnoreSet` variants are called with the left operand alone during type analysis, but
     /// `inIgnoreSet(x, set)` written explicitly stays valid, hence the variadic arity.
-    bool isVariadic() const override { return ignore_set; }
+    [[nodiscard]] bool isVariadic() const override { return ignore_set; }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return ignore_set ? 0 : 2;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
+    {
+        /// The `IgnoreSet` variants are called with the left operand alone during type analysis,
+        /// hence the optional second argument there.
+        return ignore_set ? "(Any, [Any]) -> UInt8" : "(Any, Any) -> UInt8";
+    }
+
+    /// The `Any` matchers document the arity and return type, but they cannot express the legacy
+    /// rejection of an argument with a dynamic structure (`Dynamic`, `JSON`/`Object`, and nested
+    /// forms), nor the exact arity diagnostic of the `IgnoreSet` variants. Restore both here, then
+    /// delegate to the signature.
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (ignore_set && (arguments.empty() || arguments.size() > 2))
             throw Exception(
@@ -64,10 +76,10 @@ public:
                 getName(),
                 arguments.size());
 
-        if (arguments[0]->hasDynamicStructure())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-
-        return std::make_shared<DataTypeUInt8>();
+        if (arguments[0].type->hasDynamicStructure())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}", arguments[0].type->getName(), getName());
+        return IFunction::getReturnTypeImpl(arguments);
     }
 
     /// We can't use the default constant-folding wrapper because it would wrap a
@@ -75,37 +87,63 @@ public:
     /// would then see a subquery-IN with an unbuilt set as "always false" (the
     /// dry-run path returns 0) and skip the filter entirely. Handle the size-0
     /// ColumnConst arguments produced by `ActionsDAG::addColumn` directly below.
-    bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
 
-    bool useDefaultImplementationForDynamic() const override
+    [[nodiscard]] bool useDefaultImplementationForDynamic() const override
     {
         return false;
     }
 
-    bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    /// An empty set makes the result independent of the left operand, so the result is constant
+    /// even when that operand is not. Reporting it here keeps DAG nodes in agreement with
+    /// `executeImpl`, which returns a ColumnConst for the same case.
+    [[nodiscard]] ColumnPtr getConstantResultForNonConstArguments(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    {
+        /// The -IgnoreSet variants carry no set to inspect: they exist to resolve types without one.
+        if (ignore_set || arguments.size() != 2)
+            return nullptr;
+
+        /// Fold only a non-`Nullable` result: a NULL left operand yields NULL, so the set no longer
+        /// determines the result on its own. `LowCardinality` does not affect the value.
+        if (!isUInt8(removeLowCardinality(result_type)))
+            return nullptr;
+
+        const ColumnSet * column_set = tryGetColumnSet(arguments[1].column);
+        if (!column_set)
+            return nullptr;
+
+        auto future_set = column_set->getData();
+        if (!future_set)
+            return nullptr;
+
+        if (!isImmutableEmptySet(*future_set))
+            return nullptr;
+
+        return result_type->createColumnConst(1, static_cast<UInt8>(negative));
+    }
+
+    [[nodiscard]] ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return executeImpl(arguments, true, input_rows_count);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return executeImpl(arguments, false, input_rows_count);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, bool dry_run, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, bool dry_run, size_t input_rows_count) const
     {
         if (ignore_set)
             return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
 
-        /// Second argument must be ColumnSet (possibly wrapped in ColumnConst).
         ColumnPtr column_set_ptr = arguments[1].column;
-        const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(column_set_ptr.get());
-        if (!column_set)
-            column_set = checkAndGetColumn<const ColumnSet>(column_set_ptr.get());
+        const ColumnSet * column_set = tryGetColumnSet(column_set_ptr);
         if (!column_set)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function '{}' must be Set; found {}",
                 getName(), column_set_ptr->getName());
@@ -128,9 +166,9 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set is passed as the second argument for function '{}'", getName());
         }
 
-        /// Empty set: return a constant result. Must be checked before input_rows_count == 0
-        /// so that header evaluation produces a ColumnConst detectable by ConstantFilterDescription.
-        if (set->getTotalRowCount() == 0)
+        /// Empty set: return a constant result, checked before input_rows_count == 0 so that header
+        /// evaluation produces a `ColumnConst` detectable by `ConstantFilterDescription`.
+        if (set->getTotalRowCount() == 0 && canReportEmptySetAsConstant(*future_set))
             return ColumnConst::create(ColumnUInt8::create(1, negative), input_rows_count);
 
         /// Unwrap ColumnConst for the first argument if needed.
@@ -171,6 +209,36 @@ public:
     }
 
 private:
+    /// The set argument arrives either bare or wrapped in a ColumnConst.
+    static const ColumnSet * tryGetColumnSet(const ColumnPtr & column)
+    {
+        if (const auto * column_set = checkAndGetColumnConstData<const ColumnSet>(column.get()))
+            return column_set;
+        return checkAndGetColumn<const ColumnSet>(column.get());
+    }
+
+    /// Emptiness is a property of the plan only for a tuple set, which is finished in its constructor
+    /// and never mutated afterwards. A storage-backed set is the live set of an `ENGINE = Set` table
+    /// and grows on INSERT, and a subquery set is still consulted for index analysis.
+    static bool isImmutableEmptySet(const FutureSet & future_set)
+    {
+        const auto * tuple_set = typeid_cast<const FutureSetFromTuple *>(&future_set);
+        if (!tuple_set)
+            return false;
+
+        auto set = tuple_set->get();
+        return set && set->getTotalRowCount() == 0;
+    }
+
+    /// A tuple set is reported as constant by the DAG node too, and a subquery set holds no value while
+    /// step headers are being declared. A storage-backed set is readable straight away and is not folded,
+    /// so a constant here would land in a declared header that the stream cannot fill.
+    static bool canReportEmptySetAsConstant(const FutureSet & future_set)
+    {
+        return typeid_cast<const FutureSetFromTuple *>(&future_set)
+            || typeid_cast<const FutureSetFromSubquery *>(&future_set);
+    }
+
     String function_name;
     bool negative;
     bool null_is_skipped;

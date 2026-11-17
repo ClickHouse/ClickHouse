@@ -4,6 +4,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <Common/Arena.h>
+#include <Common/StringWithMemoryTracking.h>
 
 
 namespace DB
@@ -23,9 +24,20 @@ inline std::string_view readStringBinaryInto(Arena & arena, ReadBuffer & buf)
     if (unlikely(size > DEFAULT_MAX_STRING_SIZE))
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
 
-    char * data = arena.alloc(size);
-    buf.readStrict(data, size);
+    if (buf.available() >= size)
+    {
+        char * data = arena.alloc(size);
+        buf.readStrict(data, size);
+        return std::string_view(data, size);
+    }
 
+    /// An `Arena` cannot reuse a superseded block, so it is allocated once the value is complete;
+    /// the staging container enforces the memory limit.
+    StringWithMemoryTracking staged;
+    readStringGrowing(staged, size, buf);
+
+    char * data = arena.alloc(size);
+    memcpy(data, staged.data(), size);
     return std::string_view(data, size);
 }
 
