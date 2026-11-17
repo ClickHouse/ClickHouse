@@ -69,7 +69,7 @@ public:
 private:
     void findPositionalAndNamedSecretArguments(const SecretArgumentsSpec & spec);
     void findSecretSettingArguments(const SecretArgumentsSpec & spec);
-    void markNamedArgumentsWithRejectedKeys(const std::function<bool(std::string_view)> & accepted_keys);
+    void markNamedArgumentsWithRejectedKeys(const SecretArgumentsSpec & spec);
 };
 
 }

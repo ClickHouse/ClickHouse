@@ -1387,7 +1387,7 @@ SELECT * FROM remote_system.one;
     factory.registerDatabase(
         "Remote",
         create_fn,
-        mysqlPostgreSQLSecretArguments(3, isRemoteNamedCollectionKey),
+        mysqlPostgreSQLSecretArguments(3, isRemoteNamedCollectionKey, /* is_engine= */ true),
         features,
         Documentation{
             .description = common_description,
@@ -1397,7 +1397,7 @@ SELECT * FROM remote_system.one;
     factory.registerDatabase(
         "RemoteSecure",
         create_fn,
-        mysqlPostgreSQLSecretArguments(3, isRemoteNamedCollectionKey),
+        mysqlPostgreSQLSecretArguments(3, isRemoteNamedCollectionKey, /* is_engine= */ true),
         features,
         Documentation{
             .description = common_description,

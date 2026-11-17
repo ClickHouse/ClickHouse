@@ -707,7 +707,7 @@ void registerStorageMySQL(StorageFactory & factory)
             args.getContext(),
             mysql_settings);
     },
-    mysqlPostgreSQLSecretArguments(4, [](std::string_view key) { return StorageMySQL::isNamedCollectionKey(key, /* require_table_or_query= */ true); }),
+    mysqlPostgreSQLSecretArguments(4, [](std::string_view key) { return StorageMySQL::isNamedCollectionKey(key, /* require_table_or_query= */ true); }, /* is_engine= */ true),
     {
         .supports_settings = true,
         .supports_schema_inference = true,

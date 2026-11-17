@@ -979,7 +979,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     mysqlPostgreSQLSecretArguments(
         4,
         [](std::string_view key)
-        { return StoragePostgreSQL::isNamedCollectionKey(key, /* require_table= */ true, /* with_storage_settings= */ true); }),
+        { return StoragePostgreSQL::isNamedCollectionKey(key, /* require_table= */ true, /* with_storage_settings= */ true); }, /* is_engine= */ true),
     {
         .supports_settings = true,
         .supports_schema_inference = true,

@@ -21,6 +21,31 @@ constexpr std::string_view s3_secret_keys[]
     = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "google_service_account_key",
        "external_id", "role_session_name"};
 
+/// The `key = value` arguments the explicit-url form of the S3 table function and engine reads
+/// (`S3StorageParsedArguments::fromAST`), and `path`, which the form of a data lake on a `disk` reads (`parseFromDisk`).
+/// The parsers ignore any other.
+constexpr std::string_view s3_explicit_form_keys[]
+    = {"access_key_id", "compression_method", "format", "no_sign", "partition_columns_in_data_file", "partition_strategy",
+       "path", "secret_access_key", "session_token", "storage_class", "storage_class_name", "structure"};
+
+bool isS3ExplicitFormKey(std::string_view key)
+{
+    return std::ranges::contains(s3_explicit_form_keys, key);
+}
+
+/// Which keys of `key = value` arguments a form accepts, the same as for the Azure engines:
+/// - `Unchecked`: not known here (the `S3` database engine, backups); only the rules below apply.
+/// - `NamedCollection`: the keys of `S3StorageParsedArguments::fromNamedCollection`; any other argument is hidden whole.
+/// - `ExplicitForm`: the keys of the explicit-url form. A valid S3 key that this form does not read keeps its key and
+///   has its value hidden; any other argument is hidden whole.
+/// In both checked modes an argument whose key is not a plain literal is hidden whole.
+enum class S3Keys
+{
+    Unchecked,
+    NamedCollection,
+    ExplicitForm,
+};
+
 /// Single source of truth for reading an S3-style argument list the way the S3 parsers do:
 /// `headers(..)` / `extra_credentials(..)` can appear at any position and are stripped before
 /// positional slots are assigned; `key = value` arguments are named, and those with a key from
@@ -32,10 +57,9 @@ constexpr std::string_view s3_secret_keys[]
 /// are masked (the query is logged before validation and the intended slot is unknowable). The
 /// backup locator (`BackupInfo::fromAST`) instead collects positionals independently of named
 /// overrides; it passes `positionals_allowed_after_named` to collect them in order.
-/// With `mask_rejected_keys`, a `key = value` argument whose key `S3StorageParsedArguments::fromNamedCollection` rejects
-/// (see `isS3NamedCollectionKey`), or whose key is not a plain literal, is hidden whole.
+/// `keys` tells which keys the form accepts (see `S3Keys`).
 std::vector<size_t> classifyS3Arguments(
-    FunctionSecretArgumentsFinder & finder, size_t start = 0, bool positionals_allowed_after_named = false, bool mask_rejected_keys = false)
+    FunctionSecretArgumentsFinder & finder, size_t start = 0, bool positionals_allowed_after_named = false, S3Keys keys = S3Keys::Unchecked)
 {
     /// The parsers strip the nested maps before positional slots are assigned.
     maskHeadersAndExtraCredentials(finder);
@@ -56,12 +80,20 @@ std::vector<size_t> classifyS3Arguments(
                 String key;
                 if (f->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
                 {
-                    if (mask_rejected_keys && !isS3NamedCollectionKey(key))
+                    const bool accepted = keys == S3Keys::Unchecked
+                        || (keys == S3Keys::NamedCollection ? isS3NamedCollectionKey(key) : isS3ExplicitFormKey(key));
+                    if (!accepted && !(keys == S3Keys::ExplicitForm && isS3NamedCollectionKey(key)))
                     {
-                        /// The parser rejects the key, but only after the query is formatted for logging. The value
-                        /// can be a secret under a misspelled key (`secret_acces_key`), and the key itself can be the
-                        /// secret (`'secret' = 'x'`), so fail closed and hide the argument whole, whatever its value.
+                        /// The parser rejects or ignores the key, but only after the query is formatted for logging. The
+                        /// value can be a secret under a misspelled key (`secret_acces_key`), and the key itself can be
+                        /// the secret (`'secret' = 'x'`), so fail closed and hide the argument whole, whatever its value.
                         finder.markSecretArgument(i);
+                    }
+                    else if (!accepted)
+                    {
+                        /// A valid S3 key that the explicit-url form does not read: it stays as written in the
+                        /// definition, so hide its value.
+                        finder.markSecretArgument(i, /* argument_is_named= */ true);
                     }
                     else if (isS3SecretKey(key))
                     {
@@ -97,9 +129,9 @@ std::vector<size_t> classifyS3Arguments(
                 {
                     /// The parsers evaluate the key as a constant expression, so it can name any secret
                     /// key. We cannot evaluate it here, so fail closed and hide the value (the key
-                    /// expression itself stays visible; keys are not secrets). Where the accepted keys are known
-                    /// (`mask_rejected_keys`), such a key can hide a secret like a rejected one: hide it whole.
-                    finder.markSecretArgument(i, /* argument_is_named= */ !mask_rejected_keys);
+                    /// expression itself stays visible; keys are not secrets). Where the accepted keys are known,
+                    /// such a key can hide a secret like a rejected one: hide it whole.
+                    finder.markSecretArgument(i, /* argument_is_named= */ keys == S3Keys::Unchecked);
                 }
                 continue;
             }
@@ -212,15 +244,51 @@ void maskS3UrlArgument(FunctionSecretArgumentsFinder & finder, const std::vector
 /// Masks the secrets of an S3 named-collection form: the secret named overrides (every occurrence,
 /// in any order; the span covering them may hide a non-secret argument in between, which is safe)
 /// and the `headers(...)` / `extra_credentials(...)` map overrides.
-/// `mask_rejected_keys`: the collection is parsed by `S3StorageParsedArguments::fromNamedCollection`, so the value of an
-/// override with a key it rejects is masked too. Other parsers (the `S3` database engine) accept other keys.
-void findS3NamedCollectionSecretArguments(FunctionSecretArgumentsFinder & finder, size_t start, bool mask_rejected_keys)
+/// `keys`: `NamedCollection` when the collection is parsed by `S3StorageParsedArguments::fromNamedCollection`; other parsers
+/// (the `S3` database engine) accept other keys.
+void findS3NamedCollectionSecretArguments(FunctionSecretArgumentsFinder & finder, size_t start, S3Keys keys)
 {
     /// After the collection name every argument must be a named `option = value` override or a nested
     /// map; a positional argument is invalid but logged before validation rejects it, so fail closed
     /// and hide every positional the classification returns.
-    maskS3PositionalsFrom(
-        finder, classifyS3Arguments(finder, start, /* positionals_allowed_after_named= */ false, mask_rejected_keys), 0);
+    maskS3PositionalsFrom(finder, classifyS3Arguments(finder, start, /* positionals_allowed_after_named= */ false, keys), 0);
+}
+
+/// The parsers strip only the first `extra_credentials(...)`: another one takes a positional slot, so the slots of the
+/// secrets are unknowable. Then every argument is hidden, the same as for the Azure engines.
+bool maskEveryArgumentIfSeveralExtraCredentials(FunctionSecretArgumentsFinder & finder)
+{
+    size_t count = 0;
+    for (size_t i = 0, size = finder.function->arguments->size(); i < size; ++i)
+        if (const auto f = finder.function->arguments->at(i)->getFunction(); f && f->name() == "extra_credentials")
+            ++count;
+    if (count <= 1)
+        return false;
+    finder.maskEveryArgument();
+    return true;
+}
+
+/// Whether the arguments of an engine's named-collection form from `start` can be shown: only an argument written in
+/// the definition can carry a credential, and each has to be readable enough to tell that it does not. An override with
+/// a key `S3StorageParsedArguments::fromNamedCollection` does not accept, a key that is not a plain literal, a value that
+/// is not a plain literal or identifier, or a positional argument makes the engine hide every argument, the same as for
+/// the Azure engines. The nested maps are hidden on their own.
+bool s3CollectionArgumentsAreShowable(const FunctionSecretArgumentsFinder & finder, size_t start)
+{
+    for (size_t i = start, size = finder.function->arguments->size(); i < size; ++i)
+    {
+        const auto f = finder.function->arguments->at(i)->getFunction();
+        if (f && (f->name() == "headers" || f->name() == "extra_credentials"))
+            continue;
+        if (!f || f->name() != "equals" || !f->hasArguments() || f->arguments->size() != 2)
+            return false;
+        String key;
+        if (!f->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true) || !isS3NamedCollectionKey(key))
+            return false;
+        if (!f->arguments->at(1)->tryGetString(nullptr, /* allow_identifier= */ true) && !f->arguments->at(1)->tryGetLiteralText(nullptr))
+            return false;
+    }
+    return true;
 }
 
 void findS3FunctionSecretArguments(FunctionSecretArgumentsFinder & finder, bool is_cluster_function)
@@ -232,11 +300,14 @@ void findS3FunctionSecretArguments(FunctionSecretArgumentsFinder & finder, bool 
     {
         /// s3(named_collection, ..., secret_access_key = 'secret_access_key', ...)
         /// s3Cluster('cluster_name', named_collection, ..., secret_access_key = 'secret_access_key', ...)
-        findS3NamedCollectionSecretArguments(finder, url_slot + 1, /* mask_rejected_keys= */ true);
+        findS3NamedCollectionSecretArguments(finder, url_slot + 1, S3Keys::NamedCollection);
         return;
     }
 
-    const auto positional = classifyS3Arguments(finder);
+    if (maskEveryArgumentIfSeveralExtraCredentials(finder))
+        return;
+
+    const auto positional = classifyS3Arguments(finder, 0, /* positionals_allowed_after_named= */ false, S3Keys::ExplicitForm);
     maskS3UrlArgument(finder, positional, url_slot);
 
     /// The table function accepts a positional `structure`, unless a `structure = ...` named override
@@ -265,11 +336,19 @@ void findS3TableEngineSecretArguments(FunctionSecretArgumentsFinder & finder)
     if (finder.isNamedCollectionName(0))
     {
         /// S3(named_collection, ..., secret_access_key = 'secret_access_key')
-        findS3NamedCollectionSecretArguments(finder, 1, /* mask_rejected_keys= */ true);
+        if (!s3CollectionArgumentsAreShowable(finder, 1))
+        {
+            finder.maskEveryArgument();
+            return;
+        }
+        findS3NamedCollectionSecretArguments(finder, 1, S3Keys::NamedCollection);
         return;
     }
 
-    const auto positional = classifyS3Arguments(finder);
+    if (maskEveryArgumentIfSeveralExtraCredentials(finder))
+        return;
+
+    const auto positional = classifyS3Arguments(finder, 0, /* positionals_allowed_after_named= */ false, S3Keys::ExplicitForm);
     maskS3UrlArgument(finder, positional, 0);
 
     /// The table engine takes its structure from the column list, never as an argument.
@@ -281,7 +360,7 @@ void findS3DatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
     if (finder.isNamedCollectionName(0))
     {
         /// S3(named_collection, ..., secret_access_key = 'password', ...)
-        findS3NamedCollectionSecretArguments(finder, 1, /* mask_rejected_keys= */ false);
+        findS3NamedCollectionSecretArguments(finder, 1, S3Keys::Unchecked);
     }
     else
     {

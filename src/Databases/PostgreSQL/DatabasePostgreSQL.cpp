@@ -817,7 +817,7 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             use_table_cache,
             args.uuid);
     };
-    factory.registerDatabase("PostgreSQL", create_fn, mysqlPostgreSQLSecretArguments(3, [](std::string_view key) { return StoragePostgreSQL::isNamedCollectionKey(key, /* require_table= */ false, /* with_storage_settings= */ true); }), {
+    factory.registerDatabase("PostgreSQL", create_fn, mysqlPostgreSQLSecretArguments(3, [](std::string_view key) { return StoragePostgreSQL::isNamedCollectionKey(key, /* require_table= */ false, /* with_storage_settings= */ true); }, /* is_engine= */ true), {
         .supports_arguments = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::POSTGRES,

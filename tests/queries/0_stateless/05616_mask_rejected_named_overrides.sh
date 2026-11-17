@@ -6,6 +6,8 @@
 # secret key: `secret_acces_key`, `passwd`, `pass`) is rejected only after the query is formatted
 # for logging. The whole argument must be hidden: the value can be a secret under a misspelled key,
 # and the key itself can be the secret. The values of accepted non-secret keys stay visible.
+# In the named-collection form of a table or database engine, every argument is hidden then: each
+# argument of a definition has to be readable enough to tell that it carries no credential.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -80,6 +82,17 @@ if echo "$dump" | grep -q "$SECRET"; then
 else
     echo "OK"
 fi
+
+# The explicit-url S3 form ignores a key it does not read: an unknown key hides the whole argument, a valid
+# S3 key that this form does not read hides its value.
+format "s3 explicit url, unknown and unread keys" \
+    "SELECT * FROM s3('http://127.0.0.1:1/x', 'CSV', secret_acces_key = '${SECRET}', filename = '${SECRET}', structure = 'x Int32')"
+# The parser strips only the first extra_credentials(...): with two, every argument is hidden.
+format "s3 explicit url, two extra_credentials" \
+    "SELECT * FROM s3('http://127.0.0.1:1/x', extra_credentials(role_arn = 'a'), extra_credentials(role_arn = 'b'), 'ak', '${SECRET}')"
+# The value of an accepted key that is not a plain literal can nest a secret.
+format "mysql value that is an expression" \
+    "SELECT * FROM mysql(nc, table = headers('Authorization' = '${SECRET}'))"
 
 # A key is compared as the parser compares it: case-sensitively, with the aliases of `user`, `db` and `host`.
 format "aliases and case" \
