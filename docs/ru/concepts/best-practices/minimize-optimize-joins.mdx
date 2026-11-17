@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 На этой странице приведены практические рекомендации о том, как по возможности избегать JOIN, а если без них не обойтись — снижать их стоимость. Синтаксис и семантика описаны в [справочнике по предложению `JOIN`](/ru/reference/statements/select/join). Алгоритмы выполнения и выбор алгоритма описаны в разделе [Соединение таблиц](/ru/concepts/features/operations/select/joining-tables).
 
 ## Старайтесь избегать JOIN {#prefer-avoiding-joins}
@@ -54,7 +52,15 @@ ClickHouse поддерживает несколько алгоритмов JOIN
 
 <br />
 
-<Image img="/images/guides/joins-4.webp" size="lg" alt="Дерево решений для оптимизации производительности JOIN" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Дерево решений для оптимизации производительности JOIN](/images/guides/joins-4.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -78,7 +84,15 @@ ClickHouse поддерживает несколько алгоритмов JOIN
 
 <br />
 
-<Image img="/images/guides/joins-5.webp" size="lg" alt="Дерево решений для оптимизации JOIN по памяти" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Дерево решений для оптимизации JOIN по памяти](/images/guides/joins-5.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

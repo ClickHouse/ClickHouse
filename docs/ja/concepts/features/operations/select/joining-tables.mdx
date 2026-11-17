@@ -6,8 +6,6 @@ slug: /guides/joining-tables
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickHouse は幅広い JOIN アルゴリズムをサポートしており、それぞれ実行速度とメモリ使用量のトレードオフが異なります。JOIN の構文とセマンティクスについては、[`JOIN` 句のリファレンス](/ja/reference/statements/select/join)を参照してください。最適化に関する具体的な指針と実例については、[JOIN を最小限に抑えて最適化する](/ja/concepts/best-practices/minimize-optimize-joins)を参照してください。
 
 ## JOIN アルゴリズムの選択 {#choosing-a-join-algorithm}
@@ -16,7 +14,15 @@ ClickHouse は複数の [JOIN アルゴリズム](https://clickhouse.com/blog/cl
 
 <br />
 
-<Image img="/images/guides/joins-2.png" size="lg" alt="JOIN におけるメモリ使用量ごとの速度" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![JOIN におけるメモリ使用量ごとの速度](/images/guides/joins-2.png)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -26,7 +32,15 @@ ClickHouse は複数の [JOIN アルゴリズム](https://clickhouse.com/blog/cl
 
 <br />
 
-<Image img="/images/guides/joins-3.webp" size="lg" alt="JOIN の機能" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![JOIN の機能](/images/guides/joins-3.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

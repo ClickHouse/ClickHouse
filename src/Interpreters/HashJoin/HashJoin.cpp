@@ -1047,11 +1047,20 @@ void HashJoin::initRowStore(const Block & block)
     size_t remaining_columns = 0;
 
     /// A candidate chosen at planning goes to the row store if it arrives as a plain column
-    /// and is later reconstructed in the output.
+    /// and is later reconstructed in the output. A tuple is plain only if every element is.
+    auto is_wrapped = [&](const IColumn & column)
+    {
+        bool has_wrapped_subcolumn = false;
+        column.forEachSubcolumnRecursively([&](const IColumn & subcolumn)
+        {
+            if (typeid_cast<const ColumnReplicated *>(&subcolumn) || subcolumn.isSparse())
+                has_wrapped_subcolumn = true;
+        });
+        return has_wrapped_subcolumn || typeid_cast<const ColumnReplicated *>(&column) || column.isSparse();
+    };
     auto can_be_in_row_store = [&](const String & name, const ColumnPtr & column)
     {
-        return table_join->getRowStoreCandidateColumns().contains(name)
-            && !typeid_cast<const ColumnReplicated *>(column.get()) && !column->isSparse()
+        return table_join->getRowStoreCandidateColumns().contains(name) && !is_wrapped(*column)
             && (sample_block_with_columns_to_add.has(name) || name == asof_key_name);
     };
 
@@ -1067,31 +1076,12 @@ void HashJoin::initRowStore(const Block & block)
             access_indexes.push_back({ColumnAccessIndex::Type::Columns, remaining_columns++});
     }
 
-    /// Disable row store if it would be built from a single column.
-    if (row_store_columns.size() <= 1)
-    {
-        data->row_store_state = RowStoreState::Disabled;
-        return;
-    }
-
-    /// Add each field's offset, size and nullability to the row store access indexes.
     RowDataStore::RowLayoutPtr layout = RowDataStore::computeLayout(row_store_columns, row_store_types);
 
     if (RowDataStore::cacheMissReduction(*layout) < MIN_CACHE_MISSES_SAVED_BY_ROW_STORE)
     {
         data->row_store_state = RowStoreState::Disabled;
         return;
-    }
-
-    for (auto & access_index : access_indexes)
-    {
-        if (access_index.type != ColumnAccessIndex::Type::RowStore)
-            continue;
-        const auto & field = (*layout)[access_index.index];
-        access_index.field_offset = field.offset;
-        access_index.field_size = field.size;
-        access_index.is_nullable = field.is_nullable;
-        access_index.is_string = field.is_string;
     }
 
     data->row_store_state = RowStoreState::Initialized;
@@ -1568,7 +1558,7 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
 
     auto elem = sample_block_with_columns_to_add.getByName(column_name);
     if (or_null && JoinCommon::canBecomeNullable(elem.type))
-        elem.type = makeNullable(elem.type);
+        elem.type = JoinCommon::convertTypeToNullable(elem.type);
     return elem.type;
 }
 
@@ -1638,7 +1628,7 @@ public:
         return {std::move(result.block), nullptr, !current_result};
     }
 
-    std::optional<size_t> getMatchedRightRows() const override
+    [[nodiscard]] std::optional<size_t> getMatchedRightRows() const override
     {
         return matched_right_rows;
     }
@@ -1995,12 +1985,12 @@ private:
     std::vector<GatherColumn> emit_gather;
     std::optional<size_t> emit_row_store_row_length;
 
-    bool isBucketInRange(size_t bucket) const
+    [[nodiscard]] bool isBucketInRange(size_t bucket) const
     {
         return num_buckets <= 1 || (bucket % num_buckets) == bucket_idx;
     }
 
-    bool isBlockInRange(size_t block_no) const
+    [[nodiscard]] bool isBlockInRange(size_t block_no) const
     {
         return num_buckets <= 1 || (block_no % num_buckets) == bucket_idx;
     }
