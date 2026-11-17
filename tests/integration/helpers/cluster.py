@@ -230,6 +230,10 @@ DEFAULT_THREAD_FUZZER_SETTINGS = {
 DOCKER_BASE_TAG = os.environ.get("DOCKER_BASE_TAG", "latest")
 
 SANITIZER_SIGN = "=================="
+# The first line of a UBSan report, which has no banner. It is how violations are reported by builds with
+# `ENABLE_CFI_DIAGNOSTICS`, where the server keeps running after one.
+UBSAN_SIGN = ": runtime error: "
+SANITIZER_SIGNS = (SANITIZER_SIGN, UBSAN_SIGN)
 
 CLICKHOUSE_START_COMMAND = (
     "clickhouse server --config-file=/etc/clickhouse-server/{main_config_file}"
@@ -4758,20 +4762,22 @@ class ClickHouseCluster:
             # Check server logs for Fatal messages and sanitizer failures.
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
             for name, instance in self.instances.items():
-                if not ignore_sanitizer and instance.contains_in_log(
-                    SANITIZER_SIGN, from_host=True, filename="stderr.log"
-                ):
-                    sanitizer_assert_instance = instance.grep_in_log(
-                        SANITIZER_SIGN,
-                        from_host=True,
-                        filename="stderr.log",
-                        after=1000,
-                    )
-                    logging.error(
-                        "Sanitizer in instance %s log %s",
-                        name,
-                        sanitizer_assert_instance,
-                    )
+                for sign in SANITIZER_SIGNS:
+                    if not ignore_sanitizer and instance.contains_in_log(
+                        sign, from_host=True, filename="stderr.log"
+                    ):
+                        sanitizer_assert_instance = instance.grep_in_log(
+                            sign,
+                            from_host=True,
+                            filename="stderr.log",
+                            after=1000,
+                        )
+                        logging.error(
+                            "Sanitizer in instance %s log %s",
+                            name,
+                            sanitizer_assert_instance,
+                        )
+                        break
 
                 if not ignore_logical_errors:
                     logical_error_log = instance.grep_in_log("LOGICAL_ERROR", from_host=True)
@@ -4806,7 +4812,7 @@ class ClickHouseCluster:
                 # Search for sinitizer signs in docker.log if it's still empty
                 with open(self.docker_logs_path, "r", errors="replace") as f:
                     for line in f:
-                        if SANITIZER_SIGN in line:
+                        if any(sign in line for sign in SANITIZER_SIGNS):
                             sanitizer_assert_instance = line.split("|")[0].strip()
                             break
 
@@ -4823,7 +4829,7 @@ class ClickHouseCluster:
                     if not os.path.exists(keeper_stderr):
                         continue
                     with open(keeper_stderr, "r", errors="replace") as f:
-                        if any(SANITIZER_SIGN in line for line in f):
+                        if any(sign in line for line in f for sign in SANITIZER_SIGNS):
                             sanitizer_assert_instance = f"zoo{i}"
                             logging.error(
                                 "Sanitizer in Keeper instance zoo%s log %s",
