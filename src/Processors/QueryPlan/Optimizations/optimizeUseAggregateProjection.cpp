@@ -754,40 +754,36 @@ static VectorWithMemoryTracking<StatisticsAggregate> getStatisticsAggregates(
         if (is_nullable && !column->statistics.types_to_desc.contains(StatisticsType::Basic))
             return {};
 
-        /// Like the trivial count optimization, answer `count(column)` with the number of rows, minus the NULL count
-        /// of a `Nullable` column (`count(expr)` was declined above, because its argument has to be evaluated, and that
-        /// can throw). The column is kept to check that a part stores it: otherwise a read evaluates its `DEFAULT`,
-        /// which can throw.
-        if (kind == StatisticsAggregate::Kind::Count)
-        {
-            result.push_back({.kind = kind, .column_name = node->result_name, .aggregate = &aggregate, .is_nullable = is_nullable});
-            continue;
-        }
-
-        if (!is_min_max)
+        /// Like the trivial count optimization, `count(column)` is the number of rows, minus the NULL count of a
+        /// `Nullable` column (`count(expr)` was declined above, because its argument has to be evaluated, and that can
+        /// throw). The column is kept to check that a part stores it: otherwise a read evaluates its `DEFAULT`, which
+        /// can throw.
+        Field::Types::Which expected_field_type = Field::Types::Null;
+        if (kind != StatisticsAggregate::Kind::Count && !is_min_max)
         {
             if (!column->statistics.types_to_desc.contains(StatisticsType::Basic) || !canStatisticsTrackSum(column->type))
                 return {};
-
-            result.push_back({.kind = kind, .column_name = node->result_name, .aggregate = &aggregate, .is_nullable = is_nullable});
-            continue;
         }
+        else if (is_min_max)
+        {
+            if (!column->statistics.types_to_desc.contains(StatisticsType::MinMax)
+                && !column->statistics.types_to_desc.contains(StatisticsType::Basic))
+                return {};
 
-        if (!column->statistics.types_to_desc.contains(StatisticsType::MinMax)
-            && !column->statistics.types_to_desc.contains(StatisticsType::Basic))
-            return {};
+            /// `basic` is declared for every column type, but it records min/max only for numeric-like
+            /// columns, so a `String` column with the default `auto_statistics_types` passes the check
+            /// above while no part will ever provide min/max. Decline here instead of loading the
+            /// estimates of every part before falling back to a normal read.
+            if (!canStatisticsTrackMinMax(column->type))
+                return {};
 
-        /// `basic` is declared for every column type, but it records min/max only for numeric-like
-        /// columns, so a `String` column with the default `auto_statistics_types` passes the check
-        /// above while no part will ever provide min/max. Decline here instead of loading the
-        /// estimates of every part before falling back to a normal read.
-        if (!canStatisticsTrackMinMax(column->type))
-            return {};
+            expected_field_type = removeNullable(column->type)->getDefault().getType();
+        }
 
         result.push_back({
             .kind = kind,
             .column_name = node->result_name,
-            .expected_field_type = removeNullable(column->type)->getDefault().getType(),
+            .expected_field_type = expected_field_type,
             .aggregate = &aggregate,
             .is_nullable = is_nullable});
     }
@@ -1152,11 +1148,11 @@ static Block makeBlockFromStatistics(
                     return false;
 
                 part_non_null_rows[i] = part->rows_count - *estimate.estimated_null_count;
-
-                /// A part of NULLs only contributes no value, and records no min/max.
-                if (part_non_null_rows[i] == 0 || stats_aggregate.kind == StatisticsAggregate::Kind::Count)
-                    continue;
             }
+
+            /// `count` needs no value, and a part of NULLs only has none: it records no min/max.
+            if (stats_aggregate.kind == StatisticsAggregate::Kind::Count || part_non_null_rows[i] == 0)
+                continue;
 
             const auto & value = stats_aggregate.isSum() ? estimate.estimated_sum
                 : stats_aggregate.kind == StatisticsAggregate::Kind::Min ? estimate.estimated_min
@@ -1254,15 +1250,11 @@ static Block makeBlockFromStatistics(
         auto * place = column->getData().back();
 
         /// Over a `Nullable` column with no non-NULL rows, the state stays as created, and the result is NULL.
-        if (stats_aggregate.kind == StatisticsAggregate::Kind::Count)
-        {
-            function->setSumAndCount(place, {}, folded_non_null_rows[i]);
-        }
-        else if (stats_aggregate.isSum())
+        if (stats_aggregate.kind == StatisticsAggregate::Kind::Count || stats_aggregate.isSum())
         {
             /// Unlike for min/max, `add` cannot build the state from the value: the sum may not fit in the argument
             /// type (the sum of an `Int16` column is an `Int64`), and the state of `avg` and `sumCount` also holds the
-            /// number of rows.
+            /// number of rows. `count` takes only the rows.
             if (folded_non_null_rows[i] != 0)
                 function->setSumAndCount(place, folded_values[i], folded_non_null_rows[i]);
         }
