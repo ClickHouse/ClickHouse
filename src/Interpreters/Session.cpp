@@ -63,6 +63,8 @@ struct NamedSessionData
     NamedSessionsStorage & parent;
     /// The roles of the authentication which created the session: `EXECUTE AS` changes the roles of `context`.
     std::vector<UUID> authentication_roles;
+    /// The settings returned by the authentication which created the session, set only once they are applied to `context`.
+    SettingsChanges authentication_settings;
 
     NamedSessionData(NamedSessionKey key_, ContextPtr context_, std::chrono::steady_clock::duration timeout_, NamedSessionsStorage & parent_)
         : key(std::move(key_)), context(Context::createCopy(context_)), timeout(timeout_), parent(parent_)
@@ -651,10 +653,11 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     else
     {
         const auto & session_roles = new_named_session->authentication_roles;
-        if (std::set<UUID>(session_roles.begin(), session_roles.end()) != std::set<UUID>(external_roles.begin(), external_roles.end()))
+        if (std::set<UUID>(session_roles.begin(), session_roles.end()) != std::set<UUID>(external_roles.begin(), external_roles.end())
+            || new_named_session->authentication_settings != settings_from_auth_server)
         {
             new_named_session->release();
-            throw Exception(ErrorCodes::ACCESS_DENIED, "Session {} cannot be reused: the roles of this authentication differ from the roles of the session", session_name_);
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Session {} cannot be reused: the roles or settings of this authentication differ from those of the session", session_name_);
         }
     }
 
@@ -674,6 +677,12 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     {
         new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
         max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
+
+        /// As in the unnamed `makeSessionContext`. A reuse compares with `authentication_settings`, so they are
+        /// stored only after being applied: a session whose creation failed here cannot be reused without them.
+        new_session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
+        new_session_context->applySettingsChanges(settings_from_auth_server);
+        new_named_session->authentication_settings = settings_from_auth_server;
     }
     else
     {
@@ -810,7 +819,12 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id && !query_context->getAccess()->tryGetUser())
+    {
         query_context->setUser(*user_id, effective_external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
+        /// Without a session context (e.g. gRPC without `session_id`, Prometheus) apply them as `makeSessionContext` does.
+        query_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
+        query_context->applySettingsChanges(settings_from_auth_server);
+    }
 
     if (apply_initiator_roles && user_id)
         query_context->setCurrentRoles(std::vector<UUID>{}, /* check_grants= */ false);

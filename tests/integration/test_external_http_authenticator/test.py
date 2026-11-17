@@ -299,3 +299,15 @@ def test_directory_named_session_execute_as(started_cluster: ClickHouseCluster):
 def test_directory_role_with_settings(started_cluster: ClickHouseCluster):
     for user in ["ro_user", "prof_user"]:
         assert "Authentication failed" in node_dir1.query_and_get_error("SELECT 1", user=user, password=GOOD_PASSWORD)
+
+
+def test_directory_named_session_settings(started_cluster: ClickHouseCluster):
+    # Settings returned by the service apply to named sessions too, and a session cannot be reused with other settings.
+    node = node_dir1
+    assert http_as(node, "ro_session", "SELECT getSetting('readonly')").text == "1\n"
+    assert http_as(node, "ro_session", "SELECT getSetting('readonly')", session_id="s_ro").text == "1\n"
+    assert "readonly" in http_as(node, "ro_session", "SET readonly = 0", session_id="s_ro").text
+    assert http_as(node, "ro_session", "SELECT count() FROM t", session_id="s_ro").text == "3\n"
+    response = http_as(node, "ro_session", "SELECT 1", tenant="x", session_id="s_ro")
+    assert response.status_code != 200 and "cannot be reused" in response.text
+    assert http_as(node, "ro_session", "SELECT getSetting('readonly')", session_id="s_ro").text == "1\n"

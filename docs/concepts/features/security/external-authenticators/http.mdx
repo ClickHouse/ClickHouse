@@ -182,7 +182,7 @@ The TTL does not affect sessions that are already established. A native protocol
 
 ### Distributed queries {#http-user-directory-distributed}
 
-Configure the directory and create the roles on every node. The cluster must define a `<secret>`. The initiator pushes the user and its roles to shards, which materialize the user and apply the roles without calling the service.
+Configure the directory and create the roles on every node. The cluster must define a `<secret>`. The initiator pushes the user and its roles to shards, which materialize the user and apply the roles without calling the service. Define the roles identically on all nodes: settings attached to a role on a shard are not applied to the roles pushed by the initiator, and the check that rejects roles with settings runs only on the node where the user authenticates.
 
 ### Limitations {#http-user-directory-limitations}
 
@@ -190,7 +190,7 @@ Configure the directory and create the roles on every node. The cluster must def
 - `INSERT` into a `Distributed` table on a cluster with `<secret>`, both foreground and background, does not carry the roles to shards.
 - `ON CLUSTER` queries with `distributed_ddl_use_initial_user_and_roles` fail with `UNKNOWN_USER` on hosts that have not seen the user.
 - Such users should not be used as `DEFINER`, because a definer has no session roles.
-- A named session (`session_id`) can be reused only with the roles of the authentication that created it, and settings returned by the service are not applied to named sessions.
+- Settings returned by the service are applied when a named session (`session_id`) is created, and the session can be reused only by an authentication that returns the same roles and settings.
 - Materialized users stay in memory (`system.users`) until restart.
 - A user name that exists in another user directory is never authenticated by this one.
 - A user name containing `:` is never authenticated by this directory, because HTTP Basic credentials cannot carry it.

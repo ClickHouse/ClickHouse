@@ -81,6 +81,10 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
         if user_name == "tenant_user":
             response = {"roles": TENANT_ROLES.get(self.headers.get("X-Tenant"), [])}
+        elif user_name == "ro_session":
+            # Another `X-Tenant` yields other settings, which must not reuse the session.
+            settings = {"readonly": "1", **({"max_threads": "2"} if self.headers.get("X-Tenant") else {})}
+            response = {"roles": ["r_reader"], "settings": settings}
         else:
             response = DIRECTORY_USERS.get(user_name)
 
