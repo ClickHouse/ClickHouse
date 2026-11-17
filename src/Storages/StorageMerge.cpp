@@ -82,6 +82,7 @@
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
@@ -2098,7 +2099,10 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
 
         /// Converting query to AST because types might be different in the source table.
         /// Need to resolve types again.
-        auto ast = modified_query_info.query_tree->toAST();
+        /// The child's analyzer rebuilds the `grouping` specializations that do not resolve from the query text.
+        auto query_tree_for_ast = modified_query_info.query_tree->clone();
+        removeGroupingFunctionSpecializations(query_tree_for_ast, /*keep_ordinary=*/ true);
+        auto ast = query_tree_for_ast->toAST();
         /// The analyzer substitutes the inserted block of a materialized view for its source table only when given it.
         /// A child that is the source table itself reads the table, as it does at `FetchColumns`.
         auto view_source = modified_context->isViewInnerQuery() ? nullptr : modified_context->getViewSource();
@@ -2979,6 +2983,21 @@ void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)
 QueryPlanRawPtrs ReadFromMerge::getChildPlans(bool /*for_explain*/)
 {
     filterTablesAndCreateChildrenPlans();
+
+    QueryPlanRawPtrs plans;
+    for (auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized())
+            plans.push_back(&child_plan.plan);
+
+    return plans;
+}
+
+QueryPlanRawPtrs ReadFromMerge::getBuiltChildPlans()
+{
+    /// Deliberately does not call `filterTablesAndCreateChildrenPlans`: planning the children here
+    /// would be work done only because someone looked at the plan.
+    if (!child_plans)
+        return {};
 
     QueryPlanRawPtrs plans;
     for (auto & child_plan : *child_plans)

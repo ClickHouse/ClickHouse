@@ -488,7 +488,7 @@ Number of times automatic parallel replicas did not even build the plan with par
 
 ### AutoParallelReplicasStatisticsDrifted {#autoparallelreplicasstatisticsdrifted}
 
-Number of times the rows read from storage differed from the cached statistics by more than 2x, so automatic parallel replicas recollected them instead of deciding
+Number of times the rows read from storage differed from the cached statistics by more than `automatic_parallel_replicas_statistics_drift_ratio`, so automatic parallel replicas recollected them instead of deciding
 
 ### AzureClients {#azureclients}
 
