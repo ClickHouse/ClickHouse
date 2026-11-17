@@ -266,6 +266,7 @@ void MetadataStorageFromPlainObjectStoragePublishOperation::finalize()
 
 MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
     bool recursive_,
+    bool materialize_only_,
     std::filesystem::path path_,
     std::string directory_remote_path_,
     std::shared_ptr<FsSnapshot> fs_tree_,
@@ -273,6 +274,7 @@ MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFr
     std::shared_ptr<PlainRewritableLayout> layout_,
     std::shared_ptr<PlainRewritableMetrics> metrics_)
     : recursive(recursive_)
+    , materialize_only(materialize_only_)
     , path(std::move(path_))
     , directory_remote_path(std::move(directory_remote_path_))
     , fs_tree(std::move(fs_tree_))
@@ -288,6 +290,10 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
 {
     if (fs_tree->getDirectoryRemoteInfo(path))
         return;
+
+    /// A directory removed after the transaction was planned is not recreated.
+    if (materialize_only && !fs_tree->existsDirectory(path))
+        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path.parent_path());
 
     if (fs_tree->existsFile(path))
         throw Exception(ErrorCodes::CANNOT_CREATE_DIRECTORY, "File '{}' already exists", path.parent_path());
