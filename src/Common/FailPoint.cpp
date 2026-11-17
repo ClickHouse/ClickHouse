@@ -217,6 +217,8 @@ static struct InitFiu
     ONCE(column_aggregate_function_expand_exception) \
     ONCE(space_saving_copy_arena_throw) \
     ONCE(adaptive_aggregation_drain_create_states_throw) \
+    ONCE(aggregator_merge_collect_states_throw) \
+    ONCE(aggregator_merge_batch_throw) \
     REGULAR(keepermap_fail_drop_data) \
     PAUSEABLE_ONCE(keepermap_create_pause_before_drop_lock_version) \
     REGULAR(keeper_fault_on_watch_request) \
