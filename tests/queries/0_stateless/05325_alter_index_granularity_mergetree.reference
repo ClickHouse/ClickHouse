@@ -1,0 +1,5 @@
+read_after_alter	20000	199990000
+distinct_marks_per_part	2
+total	40000	799980000
+granularity_stated_after_reset	1
+total_after_attach	40000	799980000

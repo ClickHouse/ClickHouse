@@ -3058,6 +3058,8 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     /// NOTE: will rewrite the AST to add immutable settings.
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition);
 
+    void addImmutableSettingsIfAbsent(SettingsChanges & changes) const;
+
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
 
@@ -3105,8 +3107,11 @@ void MergeTreeSettingsImpl::loadFromQuery(
         storage_def.set(storage_def.settings, settings_ast);
     }
 
-    SettingsChanges & changes = storage_def.settings->changes;
+    addImmutableSettingsIfAbsent(storage_def.settings->changes);
+}
 
+void MergeTreeSettingsImpl::addImmutableSettingsIfAbsent(SettingsChanges & changes) const
+{
 #define ADD_IF_ABSENT(NAME)                                                                                   \
     if (std::find_if(changes.begin(), changes.end(),                                                          \
                   [](const SettingChange & c) { return c.name == #NAME; })                                    \
@@ -3542,6 +3547,11 @@ void MergeTreeSettings::loadFromQuery(
     ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition)
 {
     impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata, for_system_database, stored_definition);
+}
+
+void MergeTreeSettings::addImmutableSettingsIfAbsent(SettingsChanges & changes) const
+{
+    impl->addImmutableSettingsIfAbsent(changes);
 }
 
 void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
