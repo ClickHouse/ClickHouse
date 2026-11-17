@@ -40,7 +40,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsString s3queue_default_zookeeper_path;
-    extern const SettingsBool allow_experimental_object_storage_queue_hive_partitioning;
+    extern const SettingsBool enable_object_storage_queue_hive_partitioning;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
 }
 
@@ -130,11 +130,11 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     if ((*queue_settings)[ObjectStorageQueueSetting::use_hive_partitioning])
     {
         if (!is_attach &&
-            !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_object_storage_queue_hive_partitioning])
+            !args.getLocalContext()->getSettingsRef()[Setting::enable_object_storage_queue_hive_partitioning])
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Experimental 'use_hive_partitioning' setting is not enabled "
-                            "(the setting 'allow_experimental_object_storage_queue_hive_partitioning')");
+                            "(the setting 'enable_object_storage_queue_hive_partitioning')");
         }
     }
 
@@ -208,8 +208,6 @@ void registerStorageS3Queue(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-import ScalePlanFeatureBadge from '@theme/badges/ScalePlanFeatureBadge'
-
 # S3Queue table engine
 
 This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ecosystem and allows streaming import. This engine is similar to the [Kafka](/reference/engines/table-engines/integrations/kafka), [RabbitMQ](/reference/engines/table-engines/integrations/rabbitmq) engines, but provides S3-specific features.
