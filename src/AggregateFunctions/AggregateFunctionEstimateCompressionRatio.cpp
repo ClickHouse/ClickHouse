@@ -310,26 +310,14 @@ struct TargetPart
     }
 };
 
-/// How the rows of a state are converted to the target type: the cast and the type validation of the query that created the
-/// function, with its settings copied (nothing of the query is kept). A state keeps the conversion of the function that added
-/// its pending rows, so that a function created by another query that reads the state (a `-Merge` of a live state kept in a
-/// `Memory` table) converts them as the query that added them would have.
-struct Conversion
-{
-    /// Null when the target type is the source type.
-    FunctionBasePtr cast;
-    std::optional<DataTypeValidationSettings> validation_settings;
-};
-
 struct EstimateCompressionRatioWithTargetData
 {
     /// The bytes of the rows in the source type: the granules written and the merged states.
     UInt64 source_bytes = 0;
     /// The compressed bytes in the target type: the finished parts and the merged states.
     UInt64 compressed_bytes = 0;
-    /// Rows of the source type waiting to be written, and the conversion of the function that added them.
+    /// Rows of the source type waiting to be written.
     MutableColumnPtr pending;
-    std::shared_ptr<const Conversion> conversion;
     /// The rows and bytes of the open granule written so far, when it is written in pieces.
     size_t granule_rows = 0;
     size_t granule_bytes = 0;
@@ -356,9 +344,9 @@ public:
         , source_type(arguments[0])
         , source_serialization(source_type->getDefaultSerialization())
         , target_type(std::move(target_type_))
-        , converts(!source_type->equals(*target_type))
         , max_compress_block_size(block_size_bytes.value_or(DEFAULT_MAX_COMPRESS_BLOCK_SIZE))
         , min_compress_block_size(block_size_bytes.value_or(DEFAULT_MIN_COMPRESS_BLOCK_SIZE))
+        , validation_settings(std::move(validation_settings_))
     {
         /// `Dynamic` and `JSON`, also nested. As a target, their substreams depend on the data and the writer has more rules for
         /// them. As a source, the rows waiting for a granule take the dynamic structure of the blocks they came in, which their
@@ -392,9 +380,7 @@ public:
         /// target type. It copies the conversion settings of the query, or of the server when there is no query (a table being
         /// loaded, a TTL `GROUP BY` in a background merge). Prepared here, so that a conversion the types do not allow is an
         /// error before any row comes.
-        auto own_conversion = std::make_shared<Conversion>();
-        own_conversion->validation_settings = std::move(validation_settings_);
-        if (converts)
+        if (!source_type->equals(*target_type))
         {
             ContextPtr context = CurrentThread::tryGetQueryContext();
             if (!context)
@@ -402,10 +388,9 @@ public:
             ColumnsWithTypeAndName cast_arguments{
                 {source_type->createColumn(), source_type, ""},
                 {DataTypeString().createColumnConst(1, target_type->getName()), std::make_shared<DataTypeString>(), ""}};
-            own_conversion->cast = FunctionFactory::instance().get("_CAST", context)->build(cast_arguments);
-            own_conversion->cast->prepare({});
+            cast = FunctionFactory::instance().get("_CAST", context)->build(cast_arguments);
+            cast->prepare({});
         }
-        conversion = std::move(own_conversion);
 
         /// The codecs of the substreams are resolved here, so that a codec the target type cannot take is reported here too.
         ISerialization::EnumerateStreamsSettings enumerate_settings;
@@ -533,7 +518,6 @@ private:
             data_ref.pending = source_type->createColumn();
             /// Otherwise the first row allocates 4 KiB, which a group of a few rows does not need.
             data_ref.pending->reserve(1);
-            data_ref.conversion = conversion;
         }
         return *data_ref.pending;
     }
@@ -586,21 +570,18 @@ private:
 
         /// As `CAST`, which rejects suspicious and experimental types the settings do not allow. Here and not when the function is
         /// created, so that a state type that names such a type can still be read and merged (`ATTACH`, `-Merge`).
-        const Conversion & rows_conversion = *data_ref.conversion;
-        if (!data_ref.part && rows_conversion.validation_settings)
-            validateDataType(target_type, *rows_conversion.validation_settings);
+        if (!data_ref.part && validation_settings)
+            validateDataType(target_type, *validation_settings);
 
         ColumnPtr rows = data_ref.pending->getPtr();
         /// A value the target type cannot hold is an error here, before the state changes.
         ColumnPtr converted = rows;
-        if (converts)
+        if (cast)
         {
-            /// With the types the cast was built for, not this function's: a `DateTime` without a time zone takes the session's
-            /// when the type is created, and a function created by another query that reads the state may have another.
             ColumnsWithTypeAndName arguments{
-                {rows, rows_conversion.cast->getArgumentTypes()[0], ""},
+                {rows, source_type, ""},
                 {DataTypeString().createColumnConst(rows->size(), target_type->getName()), std::make_shared<DataTypeString>(), ""}};
-            converted = rows_conversion.cast->execute(arguments, rows_conversion.cast->getResultType(), rows->size(), /*dry_run=*/false);
+            converted = cast->execute(arguments, cast->getResultType(), rows->size(), /*dry_run=*/false);
         }
 
         /// The writer sizes granules on the rows it writes, which are in the target type: a granule ends after `GRANULE_ROWS`
@@ -751,12 +732,14 @@ private:
     const DataTypePtr source_type;
     const SerializationPtr source_serialization;
     const DataTypePtr target_type;
-    const bool converts;
     const size_t max_compress_block_size;
     const size_t min_compress_block_size;
+    /// The settings of the query that created the function, which `CAST` would validate the target type with.
+    const std::optional<DataTypeValidationSettings> validation_settings;
+    /// Null when the target type is the source type. It converts every row this function writes, also the pending rows of a
+    /// state that another function added (a live state kept in a `Memory` table and merged by a later query).
+    FunctionBasePtr cast;
     ASTPtr codec_description;
-    /// The conversion of this function, given to the states it adds rows to.
-    std::shared_ptr<const Conversion> conversion;
     UnorderedMapWithMemoryTracking<String, StreamLayout> stream_layouts;
 };
 
