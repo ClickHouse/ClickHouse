@@ -38,7 +38,7 @@ struct IcebergObjectSerializableInfo
     std::optional<UInt64> first_row_id;
     std::vector<std::pair<String, Field>> identity_partition_columns;
 
-    bool hasPositionDeletes() const { return deletion_vector.has_value() || !position_deletes_objects.empty(); }
+    [[nodiscard]] bool hasPositionDeletes() const { return deletion_vector.has_value() || !position_deletes_objects.empty(); }
 
     void serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const;
     void deserializeForClusterFunctionProtocol(ReadBuffer & in, size_t protocol_version);

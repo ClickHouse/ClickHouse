@@ -350,6 +350,9 @@ class QueryMetadataCache;
 class CursorTreeNode;
 using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 
+/// The cursor that a bounded streaming read of a `MergeTree` table (`STREAM BOUNDED`) advanced to.
+/// It exists only for the incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`), which
+/// persists it to resume the next refresh. Other streaming queries must not rely on it.
 struct StreamingCursor
 {
     std::mutex mutex;
@@ -381,7 +384,7 @@ struct SharedContextHolder
 
     SharedContextHolder & operator=(SharedContextHolder &&) noexcept;
 
-    ContextSharedPart * get() const { return shared.get(); }
+    [[nodiscard]] ContextSharedPart * get() const { return shared.get(); }
     void reset();
 
 private:
@@ -795,6 +798,7 @@ protected:
     mutable std::mutex sample_block_cache_mutex;
 
     QueryMetadataCacheWeakPtr query_metadata_cache;
+    QueryPlanLogCapturePtr query_plan_log_capture;
 
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
@@ -969,6 +973,9 @@ public:
     void setUserFilesPath(const String & path);
     void setUserScriptsPath(const String & path);
     void setDynamicUserDefinedExecutableFunctionsPath(const String & path);
+
+    void enablePlanLogCapture();
+    QueryPlanLogCapturePtr getPlanLogCapture() const;
 
     void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);
     void setTemporaryStoragePolicy(const String & policy_name, size_t max_size);
@@ -2123,7 +2130,7 @@ public:
     bool isAutomaticParallelReplicasProbe() const { return is_automatic_parallel_replicas_probe; }
     void setIsAutomaticParallelReplicasProbe(bool value) { is_automatic_parallel_replicas_probe = value; }
 
-    bool totalsWithoutStorageAccess() const { return totals_without_storage_access; }
+    [[nodiscard]] bool totalsWithoutStorageAccess() const { return totals_without_storage_access; }
     void setTotalsWithoutStorageAccess(bool value) { totals_without_storage_access = value; }
 
     ActionLocksManagerPtr getActionLocksManager() const;
@@ -2477,23 +2484,23 @@ struct HTTPContext : public IHTTPContext
         : context(Context::createCopy(context_))
     {}
 
-    uint64_t getMaxHstsAge() const override;
+    [[nodiscard]] uint64_t getMaxHstsAge() const override;
 
-    uint64_t getMaxUriSize() const override;
+    [[nodiscard]] uint64_t getMaxUriSize() const override;
 
-    uint64_t getMaxFields() const override;
+    [[nodiscard]] uint64_t getMaxFields() const override;
 
-    uint64_t getMaxFieldNameSize() const override;
+    [[nodiscard]] uint64_t getMaxFieldNameSize() const override;
 
-    uint64_t getMaxFieldValueSize() const override;
+    [[nodiscard]] uint64_t getMaxFieldValueSize() const override;
 
-    uint64_t getMaxRequestHeaderSize() const override;
+    [[nodiscard]] uint64_t getMaxRequestHeaderSize() const override;
 
-    Poco::Timespan getHeadersReadTimeout() const override;
+    [[nodiscard]] Poco::Timespan getHeadersReadTimeout() const override;
 
-    Poco::Timespan getReceiveTimeout() const override;
+    [[nodiscard]] Poco::Timespan getReceiveTimeout() const override;
 
-    Poco::Timespan getSendTimeout() const override;
+    [[nodiscard]] Poco::Timespan getSendTimeout() const override;
 
     ContextPtr context;
 };
