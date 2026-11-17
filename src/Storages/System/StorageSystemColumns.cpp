@@ -94,18 +94,19 @@ public:
         ColumnPtr databases_,
         ColumnPtr tables_,
         Storages storages_,
-        ContextPtr context)
+        ContextPtr context_)
         : ISource(header_)
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
         , tables(std::move(tables_))
         , storages(std::move(storages_))
-        , client_info_interface(context->getClientInfo().interface)
+        , client_info_interface(context_->getClientInfo().interface)
         , total_tables(tables->size())
-        , access(context->getAccess())
-        , query_id(context->getCurrentQueryId())
-        , lock_acquire_timeout(std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()))
+        , access(context_->getAccess())
+        , query_id(context_->getCurrentQueryId())
+        , lock_acquire_timeout(std::chrono::milliseconds(context_->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()))
+        , context(std::move(context_))
     {
         need_to_check_access_for_tables = !access->isGranted(AccessType::SHOW_COLUMNS);
     }
@@ -348,6 +349,7 @@ private:
     bool need_to_check_access_for_tables;
     String query_id;
     std::chrono::milliseconds lock_acquire_timeout;
+    ContextPtr context;
 };
 
 class ReadFromSystemColumns : public SourceStepWithFilter
