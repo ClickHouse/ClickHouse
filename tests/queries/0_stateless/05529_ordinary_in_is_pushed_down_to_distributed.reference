@@ -65,7 +65,7 @@ Distributed, reading may be cut on the shards	in(`id`, `_data_`)
 Distributed, time may be cut	in(`id`, `_data_`)
 Distributed, time may be cut only here	in(`id`, `_data_`)
 Distributed, time may be cut on the shards	in(`id`, `_data_`)
-Distributed, other nulls on the shards	in(`id`, `_data_`)
+Distributed, other nulls on the shards	
 Distributed, custom key	
 Distributed, parallel replicas	in(`id`, `_data_`)
 Distributed, parallel replicas without in	

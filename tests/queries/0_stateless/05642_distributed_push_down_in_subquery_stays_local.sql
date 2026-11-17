@@ -23,6 +23,8 @@ SELECT count() FROM events_view WHERE id IN (SELECT id FROM lookup) SETTINGS max
 SELECT count() FROM events_view WHERE id IN (SELECT id FROM lookup) SETTINGS max_bytes_to_transfer = 2, transfer_overflow_mode = 'break';
 SELECT count() FROM (SELECT id FROM events SETTINGS max_rows_in_set = 2) WHERE id IN (SELECT id FROM lookup);
 SELECT count() FROM (SELECT nullIf(id, 7) AS n FROM events SETTINGS transform_null_in = 0) WHERE n IN (SELECT nullIf(id, 1) FROM lookup) SETTINGS transform_null_in = 1;
+-- 2 and 3 match `true` only if the setting is disabled.
+SELECT count() FROM (SELECT toUInt8(id % 4) AS u FROM events SETTINGS transform_null_in = 1) WHERE u IN (SELECT true FROM lookup) SETTINGS transform_null_in = 0;
 -- The other conjuncts are sent, but not under `NOT`.
 SELECT count() FROM (SELECT id < 50 AND id IN (SELECT id FROM lookup) AS c FROM events_view) WHERE c SETTINGS max_rows_to_transfer = 2, max_rows_to_read_leaf = 100;
 SELECT count() FROM (SELECT id < 50 AND id IN (SELECT id FROM lookup) AS c FROM events_view) WHERE NOT c SETTINGS max_rows_to_transfer = 2;

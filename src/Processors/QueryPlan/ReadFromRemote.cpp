@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/hasNullable.h>
 #include <DataTypes/transformTypesRecursively.h>
 
 #include <Analyzer/QueryNode.h>
@@ -598,8 +597,7 @@ ASTPtr tryBuildAdditionalFilterAST(
         {
             TableForSet table;
             if (sets_to_send->send
-                && (set->getSetAndKey()->set->transformNullIn() == context->getSettingsRef()[Setting::transform_null_in]
-                    || !hasTypeThatCanContainNulls(node->children.at(0)->result_type)))
+                && set->getSetAndKey()->set->transformNullIn() == context->getSettingsRef()[Setting::transform_null_in])
                 table = getTableForSet(set, *external_tables, context);
 
             if (!table.name.empty())
