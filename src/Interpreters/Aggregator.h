@@ -194,14 +194,14 @@ public:
         /// `AdaptiveTopKPruning`): the count bins bound the ranks from above, which serves a descending
         /// order only. It prunes under a throw-mode group limit too: the merge checks the limit against the
         /// groups it builds (see `checkMergedGroupLimit`).
-        bool adaptiveTopKPrunes() const { return bucket_top_k && !bucket_top_k_ascending; }
+        [[nodiscard]] bool adaptiveTopKPrunes() const { return bucket_top_k && !bucket_top_k_ascending; }
 
         /// Whether a frozen producer of the adaptive aggregation may thaw: not with
         /// `adaptive_aggregator_disable_thaw`. A thaw keeps the top-K pruning exact, because a producer that
         /// froze counts the groups of its table into its bins at its finish. Under the pruning, a lone
         /// `count()` also weighs what the pruning would free (see
         /// `Aggregator::adaptiveTopKPruningFreesStaging`).
-        bool adaptiveMayThaw() const { return !adaptive_aggregator_disable_thaw; }
+        [[nodiscard]] bool adaptiveMayThaw() const { return !adaptive_aggregator_disable_thaw; }
 
         /// Top-K threshold merge (Fagin's Threshold Algorithm), set by the same plan optimization
         /// as `bucket_top_k` (never by users) when the plan proves this aggregation feeds
@@ -398,7 +398,7 @@ public:
             bool serialize_string_with_zero_byte_,
             bool enable_packed_string_keys_);
 
-        Params cloneWithKeys(const Names & keys_, bool only_merge_ = false) const
+        [[nodiscard]] Params cloneWithKeys(const Names & keys_, bool only_merge_ = false) const
         {
             Params new_params = *this;
             new_params.keys = keys_;
@@ -407,7 +407,7 @@ public:
             return new_params;
         }
 
-        Params cloneWithKeysAndAggregates(const Names & keys_, const AggregateDescriptions & aggregates_, bool only_merge_ = false) const
+        [[nodiscard]] Params cloneWithKeysAndAggregates(const Names & keys_, const AggregateDescriptions & aggregates_, bool only_merge_ = false) const
         {
             Params new_params = cloneWithKeys(keys_, only_merge_);
             new_params.aggregates = aggregates_;
@@ -418,7 +418,7 @@ public:
         static Block
         getHeader(const Block & header, bool only_merge, const Names & keys, const AggregateDescriptions & aggregates, bool final);
 
-        Block getHeader(const Block & header_, bool final) const { return getHeader(header_, only_merge, keys, aggregates, final); }
+        [[nodiscard]] Block getHeader(const Block & header_, bool final) const { return getHeader(header_, only_merge, keys, aggregates, final); }
 
         /// Returns keys and aggregated for EXPLAIN query
         void explain(ExplainFormatSettings & settings) const;
@@ -493,7 +493,7 @@ public:
         const std::atomic<UInt32> * taken = nullptr;
         UInt32 total = 0;
 
-        size_t get() const { return taken && taken->load(std::memory_order_relaxed) >= total ? idle : busy; }
+        [[nodiscard]] size_t get() const { return taken && taken->load(std::memory_order_relaxed) >= total ? idle : busy; }
     };
 
     /// Merges bucket `bucket` of an adaptive aggregation and converts it, one merge unit at a time, as a step of `task`.
@@ -511,7 +511,9 @@ public:
     /// `merged_group_count` receives the number of groups that the merge builds over all the bucket's units, before any
     /// top-K truncation. The groups that the top-K pruning skips, with their unit or with their count bin, add none, and
     /// so do the units that a settled ascending top-K skips. `parallel_merge` tells when the source states of one group
-    /// merge together on the pool (see `mergeSourceStates`).
+    /// merge together on the pool (see `mergeSourceStates`). The merge returns the chunks of the bucket's units
+    /// squashed into chunks of at least `max_block_size` rows, the last one taking the rows left. A result of aggregate
+    /// states, which a partial merge and a function like `sumState` return, keeps a chunk per unit.
     AggregatedChunks mergeAndConvertAdaptiveBucket(
         ManyAggregatedDataVariants & data,
         AdaptiveAggregationSession & session,
@@ -522,6 +524,21 @@ public:
         std::atomic<bool> & is_cancelled,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater,
         size_t * merged_group_count) const;
+
+    /// Frees the table that `task` kept from the bucket it merged last (see `mergeAndConvertAdaptiveBucket`), once
+    /// the task has no bucket left to merge. The kept tables would otherwise wait for the destruction of the
+    /// destination, which one thread does at the end of the query: it frees the table of every task, and where the
+    /// states have destructors it first walks all their cells for states to destroy, although every cell is empty.
+    void releaseAdaptiveMergeTable(ManyAggregatedDataVariants & data, const AdaptiveMergeTask & task) const;
+
+    /// Ends the sources of an adaptive in-memory merge of `data` once every bucket merged, and frees what the producers
+    /// left: the source tables with their cell indexes and arenas, the staging buffers and the count bins of the top-K
+    /// pruning. Every bucket took the states out of its source cells, so the source tables stop owning states and
+    /// their destruction only frees memory. `data` is the result of `prepareVariantsToMerge`, which made it the only
+    /// owner of the source tables. The caller guarantees that no merge task reads the sources any more. With many
+    /// producers the work is spread over the thread pool: one thread would otherwise free everything at the end of
+    /// the query, which with 192 producers takes several milliseconds.
+    void releaseAdaptiveMergeSources(ManyAggregatedDataVariants & data, AdaptiveAggregationSession & session) const;
 
     /// The destination of the adaptive merge: an empty two-level variants of the aggregation's method with an arena slot
     /// per bucket, which holds the arena in which the merge creates the states of the bucket's unit. For a merge that goes
@@ -636,7 +653,9 @@ public:
 
     /// `adaptive_session` (or nullptr when the adaptive aggregation is off) puts the destination of the adaptive merge
     /// in front of the tables when the session is engaged. It also gives the adaptive verdict of the run to the
-    /// hash-table statistics.
+    /// hash-table statistics. The adaptive bucket merge takes the tables over and leaves `data_variants` empty,
+    /// because it frees them itself (see `releaseAdaptiveMergeSources`). Every other merge shares them with the
+    /// caller, which keeps `data_variants` as it was.
     ManyAggregatedDataVariants prepareVariantsToMerge(
         ManyAggregatedDataVariants && data_variants, AdaptiveAggregationSession * adaptive_session) const;
 
@@ -1372,6 +1391,10 @@ private:
     /// hash tables have already been detached from these states, so nothing else will destroy them).
     void destroyDeferredMergeSources(DeferredMerges & deferred) const noexcept;
 
+    /// Destroy the states of the aggregate functions from `first_function` on of the detached source rows `src_places`,
+    /// except, with `skip_compiled`, those of the compiled functions (see `mergeAndDestroyDetachedBatch`).
+    void destroyDetachedSources(PaddedPODArray<AggregateDataPtr> & src_places, size_t first_function, bool skip_compiled) const noexcept;
+
     /// Merge NULL key data from hash table `src` into `dst`.
     /// `deferred` is the same as for `mergeDataImpl`.
     template <typename Method, typename Table>
@@ -1673,7 +1696,7 @@ private:
     /// The ranks of the groups in a chunk of the final conversion when `Params::bucket_top_k` is set: the
     /// result column of the aggregate `Params::bucket_top_k_rank_index`, which is `UInt64` for every rank the
     /// plan optimization admits.
-    std::span<const UInt64> bucketTopKRanks(const Chunk & chunk) const;
+    [[nodiscard]] std::span<const UInt64> bucketTopKRanks(const Chunk & chunk) const;
 
     /// `merged_group_count`, when non-null, receives the number of groups merged for the bucket:
     /// every group of the bucket (see `convertOneBucketToChunk`), or, with the top-K threshold

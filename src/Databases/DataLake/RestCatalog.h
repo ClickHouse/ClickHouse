@@ -122,7 +122,7 @@ public:
         /// `s3.endpoint`, the one from `overrides` takes precedence over the one from `defaults`.
         std::string storage_endpoint;
 
-        std::string toString() const;
+        [[nodiscard]] std::string toString() const;
     };
 
     /// Credentials together with the catalog configuration they resolve to

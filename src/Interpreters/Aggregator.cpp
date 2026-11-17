@@ -43,6 +43,7 @@
 #include <Common/CacheLine.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/Prefetching.h>
@@ -103,6 +104,12 @@ namespace ErrorCodes
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char aggregator_merge_collect_states_throw[];
 }
 
 }
@@ -2937,7 +2944,7 @@ public:
         takeRow(1);
     }
 
-    UInt64 getBytes() const { return bytes; }
+    [[nodiscard]] UInt64 getBytes() const { return bytes; }
 
     /// The retained sample, in key order, or nothing if the meter kept none.
     Columns detachSample()
@@ -3919,9 +3926,12 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
     {
         if (dst_places.empty())
             return;
+        /// `mergeAndDestroyDetachedBatch` owns the batch from the call on, also when it throws, so the `catch` must not see it.
+        SCOPE_EXIT({
+            dst_places.clear();
+            src_places.clear();
+        });
         mergeAndDestroyDetachedBatch(dst_places, src_places, deferred_ptr, arena, is_cancelled, /*skip_compiled=*/ false);
-        dst_places.clear();
-        src_places.clear();
     };
 
     /// The NULL key of the single-key nullable methods lives in a dedicated slot outside the cells,
@@ -4081,11 +4091,19 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
                     static_assert(false, "The aggregation method's table supports neither cell iteration nor sub-table pairing");
                 }
 
+                if (!src_places.empty())
+                    fiu_do_on(FailPoints::aggregator_merge_collect_states_throw,
+                    {
+                        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault while collecting the states of a merge");
+                    });
+
                 flush_merges();
             }
         }
         catch (...)
         {
+            /// The queued states are detached from their source tables and not merged yet.
+            destroyDetachedSources(src_places, /*first_function=*/ 0, /*skip_compiled=*/ false);
             destroyDeferredMergeSources(deferred);
             throw;
         }
@@ -5214,21 +5232,37 @@ void NO_INLINE Aggregator::mergeDataImpl(
         src = nullptr;
     };
 
-    if (parallel_worker)
+    try
     {
-        if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type> ||
-            std::is_same_v<Method, typename decltype(AggregatedDataVariants::key16)::element_type>)
-            table_src.mergeToViaIndexFilter(table_dst, std::move(merge), parallel_worker->worker_id, parallel_worker->total_worker);
-    }
-    else
-    {
-        if (prefetch)
-            table_src.template mergeToViaEmplace<decltype(merge), true>(table_dst, std::move(merge));
+        if (parallel_worker)
+        {
+            if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type> ||
+                std::is_same_v<Method, typename decltype(AggregatedDataVariants::key16)::element_type>)
+                table_src.mergeToViaIndexFilter(table_dst, std::move(merge), parallel_worker->worker_id, parallel_worker->total_worker);
+        }
         else
-            table_src.template mergeToViaEmplace<decltype(merge), false>(table_dst, std::move(merge));
-        table_src.clearAndShrink();
+        {
+            if (prefetch)
+                table_src.template mergeToViaEmplace<decltype(merge), true>(table_dst, std::move(merge));
+            else
+                table_src.template mergeToViaEmplace<decltype(merge), false>(table_dst, std::move(merge));
+            table_src.clearAndShrink();
+        }
+
+        if (!src_places.empty())
+            fiu_do_on(FailPoints::aggregator_merge_collect_states_throw,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault while collecting the states of a merge");
+            });
+    }
+    catch (...)
+    {
+        /// The queued states are detached from `table_src` and not merged yet.
+        destroyDetachedSources(src_places, /*first_function=*/ 0, /*skip_compiled=*/ false);
+        throw;
     }
 
+    /// `mergeAndDestroyDetachedBatch` owns the batch from the call on, also when it throws, so the `catch` must not see it.
 #if USE_EMBEDDED_COMPILER
     if (use_compiled_functions)
     {
@@ -5280,16 +5314,24 @@ void Aggregator::mergeAndDestroyDetachedBatch(
     catch (...)
     {
         /// The source states are detached from their hash table, so nobody else will destroy them. The function
-        /// that threw has handled its own states of the batch (`mergeAndDestroyBatchOrDefer` destroys or records
-        /// all of them); the states of the following functions are untouched and are destroyed here.
-        for (size_t k = i + 1; k < params.aggregates_size; ++k)
-        {
-            if (is_skipped(k))
-                continue;
-            for (auto * src : src_places)
-                aggregate_functions[k]->destroy(src + offsets_of_aggregate_states[k]);
-        }
+        /// that threw has handled its own states of the batch (`mergeAndDestroyBatch` destroys all of them,
+        /// `mergeAndDestroyBatchOrDefer` destroys or records them); the states of the following functions are
+        /// untouched and are destroyed here.
+        destroyDetachedSources(src_places, i + 1, skip_compiled);
         throw;
+    }
+}
+
+void Aggregator::destroyDetachedSources(
+    PaddedPODArray<AggregateDataPtr> & src_places, size_t first_function, [[maybe_unused]] bool skip_compiled) const noexcept
+{
+    for (size_t k = first_function; k < params.aggregates_size; ++k)
+    {
+#if USE_EMBEDDED_COMPILER
+        if (skip_compiled && is_aggregate_function_compiled[k])
+            continue;
+#endif
+        aggregate_functions[k]->destroyBatch(0, src_places.size(), src_places.data(), offsets_of_aggregate_states[k]);
     }
 }
 
@@ -5970,6 +6012,12 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
         first->aggregates_pools.insert(first->aggregates_pools.end(),
             non_empty_data[i]->aggregates_pools.begin(), non_empty_data[i]->aggregates_pools.end());
     }
+
+    /// The bucket merge frees the tables itself once its last bucket merged (see `releaseAdaptiveMergeSources`), so it
+    /// takes them over. The other merges only share them: their caller frees them, the large ones in parallel (see
+    /// `ManyAggregatedData`).
+    if (bucket_merge)
+        data_variants.clear();
 
     return non_empty_data;
 }
