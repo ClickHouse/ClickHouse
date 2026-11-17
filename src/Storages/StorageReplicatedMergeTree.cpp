@@ -2791,6 +2791,11 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                     String quorum_path;
                     ReplicatedMergeTreeQuorumEntry quorum_entry;
 
+                    /// Fence a removed and recreated non-parallel `status`, including failed quorums.
+                    const String quorum_last_part_path = fs::path(zookeeper_path) / "quorum" / "last_part";
+                    Coordination::Stat last_part_stat;
+                    String last_part = zookeeper->get(quorum_last_part_path, &last_part_stat);
+
                     if (zookeeper->tryGet(quorum_unparallel_path, quorum_str, &quorum_stat))
                         quorum_path = quorum_unparallel_path;
                     else
@@ -2804,6 +2809,11 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                     if (quorum_entry.part_name == entry.new_part_name)
                     {
                         ops.emplace_back(zkutil::makeRemoveRequest(quorum_path, quorum_stat.version));
+                        if (quorum_path == quorum_unparallel_path)
+                        {
+                            /// Preserve the watermark, but advance its version to fence stale quorum updates.
+                            ops.emplace_back(zkutil::makeSetRequest(quorum_last_part_path, last_part, last_part_stat.version));
+                        }
                         auto part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
 
                         if (part_info.min_block != part_info.max_block)
@@ -5381,9 +5391,21 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_
     String value;
     Coordination::Stat stat;
 
-    /// If there is no node, then all quorum INSERTs have already reached the quorum, and nothing is needed.
-    while (zookeeper->tryGet(quorum_status_path, value, &stat))
+    while (true)
     {
+        Coordination::Stat added_parts_stat;
+        String old_added_parts;
+        if (!is_parallel)
+        {
+            /// Read `last_part` before `status`: the latter can be removed and recreated with the same version.
+            /// Every successful non-parallel quorum advances the former, fencing updates to an obsolete status.
+            old_added_parts = zookeeper->get(quorum_last_part_path, &added_parts_stat);
+        }
+
+        /// If there is no node, then the quorum has already been reached, and nothing is needed.
+        if (!zookeeper->tryGet(quorum_status_path, value, &stat))
+            break;
+
         ReplicatedMergeTreeQuorumEntry quorum_entry(value);
         if (quorum_entry.part_name != part_name)
         {
@@ -5406,9 +5428,6 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_
 
             if (!is_parallel)
             {
-                Coordination::Stat added_parts_stat;
-                String old_added_parts = zookeeper->get(quorum_last_part_path, &added_parts_stat);
-
                 ReplicatedMergeTreeQuorumAddedParts parts_with_quorum(format_version);
 
                 if (!old_added_parts.empty())
@@ -5452,7 +5471,18 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_
             quorum_entry.replicas.size(),
             quorum_entry.required_number_of_replicas);
         /// We update the node, registering there one more replica.
-        auto code = zookeeper->trySet(quorum_status_path, quorum_entry.toString(), stat.version);
+        Coordination::Error code;
+        if (is_parallel)
+            code = zookeeper->trySet(quorum_status_path, quorum_entry.toString(), stat.version);
+        else
+        {
+            /// Fence replica acknowledgments as well as finalization against a recreated `status` node.
+            Coordination::Requests ops;
+            Coordination::Responses responses;
+            ops.emplace_back(zkutil::makeCheckRequest(quorum_last_part_path, added_parts_stat.version));
+            ops.emplace_back(zkutil::makeSetRequest(quorum_status_path, quorum_entry.toString(), stat.version));
+            code = zookeeper->tryMulti(ops, responses);
+        }
 
         if (code == Coordination::Error::ZOK)
         {

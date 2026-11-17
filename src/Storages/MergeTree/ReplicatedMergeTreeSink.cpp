@@ -236,13 +236,6 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const ZooKeeperWithFault
             Strings replicas = zookeeper->getChildren(fs::path(storage.zookeeper_path) / "replicas");
             replicas_number = replicas.size();
 
-            /// With only the writing replica registered, majority quorum is the same as explicit quorum 1.
-            if (!required_quorum_size && replicas_number == 1 && replicas.front() == storage.replica_name)
-            {
-                required_quorum_size = 0;
-                return;
-            }
-
             quorum_info.status_path = fs::path(storage.zookeeper_path) / "quorum" / "status";
 
             Strings exists_paths;
@@ -290,10 +283,20 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const ZooKeeperWithFault
 
             String quorum_status;
             if (!quorum_parallel && zookeeper->tryGet(quorum_info.status_path, quorum_status))
-                throw Exception(
-                    ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE,
-                    "Quorum for previous write has not been satisfied yet. Status: {}",
-                    quorum_status);
+            {
+                ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_status);
+                /// An interrupted single-replica insert may have committed its part but not finalized
+                /// its already-satisfied quorum. Complete it before admitting another insert.
+                if (quorum_entry.replicas.size() >= quorum_entry.required_number_of_replicas)
+                    storage.updateQuorum(quorum_entry.part_name, false);
+
+                /// Re-read after finalization: another insert may have created a new pending quorum.
+                if (zookeeper->tryGet(quorum_info.status_path, quorum_status))
+                    throw Exception(
+                        ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE,
+                        "Quorum for previous write has not been satisfied yet. Status: {}",
+                        quorum_status);
+            }
 
             /// Both checks are implicitly made also later (otherwise there would be a race condition).
 
@@ -1319,6 +1322,8 @@ void ReplicatedMergeTreeSink::onStart()
     * And also check that during the insertion, the replica was not reinitialized or disabled (by the value of `is_active` node).
     * TODO Too complex logic, you can do better.
     */
+    /// Keep the registered-replica snapshot for this sink, including across multiple blocks.
+    /// A replica added later does not increase the quorum recorded for those parts.
     total_replicas_count = checkQuorumPrecondition(zookeeper);
 }
 
@@ -1364,6 +1369,17 @@ void ReplicatedMergeTreeSink::waitForQuorum(
         /// If the node has time to disappear, and then appear again for the next insert.
         if (quorum_entry.part_name != part_name)
             break;
+
+        /// `commitPart` already records the writer's acknowledgement. For single-replica `auto`
+        /// quorum that is sufficient, but no other replica will call `updateQuorum` to finalize it.
+        /// Keep quorum bookkeeping enabled: non-parallel inserts must advance `/quorum/last_part`.
+        /// Inspect the stored confirmations rather than adding an acknowledgement unconditionally:
+        /// a deduplicated insert can wait for a part that this replica has not fetched yet.
+        if (quorum_entry.replicas.size() >= quorum_entry.required_number_of_replicas)
+        {
+            storage.updateQuorum(part_name, quorum_parallel);
+            continue;
+        }
 
         /// Wait for the quorum watch to fire, but in bounded steps so that a cancelled query stops waiting
         /// promptly instead of blocking for the whole quorum_timeout_ms. The watch is only signalled when the
