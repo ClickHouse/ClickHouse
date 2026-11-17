@@ -14816,8 +14816,13 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
     return true;
 }
 
-/// On-fly `CLEAR`/`DROP` `IN PARTITION` applies only to that partition.
-static bool dropCommandAppliesToPart(const MutationCommand & command, const MergeTreeDataPartPtr & part, const ContextPtr & context)
+/// On-fly `CLEAR`/`DROP` `IN PARTITION` applies only to `partition_id`.
+/// A patch part's own id is not the partition it updates; callers pass the original one.
+static bool dropCommandAppliesToPartition(
+    const MutationCommand & command,
+    const String & partition_id,
+    const MergeTreeData & storage,
+    const ContextPtr & context)
 {
     if (command.type != MutationCommand::Type::DROP_COLUMN)
         return true;
@@ -14828,22 +14833,27 @@ static bool dropCommandAppliesToPart(const MutationCommand & command, const Merg
 
     if (alter->partition)
     {
-        const auto command_partition_id = part->storage.getPartitionIDFromQuery(ASTPtr(alter->partition), context);
-        return part->info.getPartitionId() == command_partition_id;
+        const auto command_partition_id = storage.getPartitionIDFromQuery(ASTPtr(alter->partition), context);
+        return partition_id == command_partition_id;
     }
 
     if (alter->partitions)
     {
         for (const auto & partition_ast : alter->partitions->children)
         {
-            const auto command_partition_id = part->storage.getPartitionIDFromQuery(partition_ast, context);
-            if (part->info.getPartitionId() == command_partition_id)
+            const auto command_partition_id = storage.getPartitionIDFromQuery(partition_ast, context);
+            if (partition_id == command_partition_id)
                 return true;
         }
         return false;
     }
 
     return true;
+}
+
+static bool dropCommandAppliesToPart(const MutationCommand & command, const MergeTreeDataPartPtr & part, const ContextPtr & context)
+{
+    return dropCommandAppliesToPartition(command, part->info.getOriginalPartitionId(), part->storage, context);
 }
 
 AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
@@ -14869,6 +14879,13 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     for (auto & patch : patches)
     {
         auto patch_commands = mutations->getOnFlyMutationCommandsForPart(patch.part);
+        /// The same partition filter as the base part. A `CLEAR` in one partition must not
+        /// discard a patch that updates another partition.
+        const auto patch_partition_id = patch.part->info.getOriginalPartitionId();
+        std::erase_if(patch_commands, [&](const MutationCommand & command)
+        {
+            return !dropCommandAppliesToPartition(command, patch_partition_id, part->storage, query_context);
+        });
         auto patch_conversions = std::make_shared<AlterConversions>(patch_commands, PatchPartsForReader{}, query_context);
         auto patch_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(std::move(patch.part), std::move(patch_conversions));
 
