@@ -159,10 +159,10 @@ SETTINGS json_use_optimized_type_conversion = {{ optimized }}{{ ', ' ~ settings 
 {{ check("removed Float64 with inf to shared data", "JSON(max_dynamic_paths = 0, a Float64)", "JSON(max_dynamic_paths = 0)", ['{"a": "inf"}']) }}
 {{ check("removed Array(Float32) with nan", "JSON(a Array(Float32))", "JSON", ['{"a": ["nan", 1]}']) }}
 
--- DateTime and DateTime64 are serialized according to date_time_output_format, which the CAST to String
--- does not implement.
-{{ check("new String from DateTime, unix_timestamp output", "JSON", "JSON(a String)", ['{"a": "2024-01-15 12:30:00"}'], "date_time_output_format = 'unix_timestamp'") }}
-{{ check("new String from DateTime, iso output", "JSON", "JSON(a String)", ['{"a": "2024-01-15 12:30:00"}'], "date_time_output_format = 'iso'") }}
+-- Accepted differences: format+parse writes a DateTime according to date_time_output_format, the optimized
+-- conversion writes it as a CAST to String does, so the result does not depend on an output setting.
+{{ check("accepted: new String from DateTime, unix_timestamp output", "JSON", "JSON(a String)", ['{"a": "2024-01-15 12:30:00"}'], "date_time_output_format = 'unix_timestamp'") }}
+{{ check("accepted: new String from DateTime, iso output", "JSON", "JSON(a String)", ['{"a": "2024-01-15 12:30:00"}'], "date_time_output_format = 'iso'") }}
 {{ check("new String from Date, unix_timestamp output", "JSON", "JSON(a String)", ['{"a": "2024-01-15"}'], "date_time_output_format = 'unix_timestamp', input_format_try_infer_datetimes = 0") }}
 
 -- Default inference makes array elements nullable, so a null element reaches a non-Nullable element type.

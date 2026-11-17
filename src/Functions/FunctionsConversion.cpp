@@ -2191,30 +2191,37 @@ bool nullableMismatchIsOnlyDifference(const DataTypePtr & src_type, const DataTy
     return false;
 }
 
-/// Returns true if CAST and format+parse produce different results for the given type,
-/// meaning we must fall back to format+parse. Checks the type itself and all nested subtypes.
-/// Cases:
-/// - DateTime/DateTime64 with an explicit timezone (format+parse writes the text in the source
-///   timezone and reads it back in the destination one, shifting the value, while CAST keeps it),
-///   or with a non-default date_time_output_format, which CAST does not implement
-/// - String when try_infer_numbers_from_strings is enabled (CAST keeps as String,
-///   but format+parse would infer "123" as Int64)
+/// Returns true if CAST and format+parse produce different results for the given type, meaning we
+/// must fall back to format+parse: a String with try_infer_numbers_from_strings, which CAST keeps as
+/// String while format+parse infers "123" as Int64. Checks the type itself and all nested subtypes.
+/// A DateTime is converted with CAST, which keeps its instant whatever the time zones and the
+/// date_time_output_format.
 bool needsFormatParseFallback(const DataTypePtr & type, const FormatSettings & format_settings)
 {
-    auto check = [&](const IDataType & t) -> bool
-    {
-        if (isDateTime(t))
-            return assert_cast<const DataTypeDateTime &>(t).hasExplicitTimeZone()
-                || format_settings.date_time_output_format != FormatSettings::DateTimeOutputFormat::Simple;
-        if (isDateTime64(t))
-            return assert_cast<const DataTypeDateTime64 &>(t).hasExplicitTimeZone()
-                || format_settings.date_time_output_format != FormatSettings::DateTimeOutputFormat::Simple;
-        if (isStringOrFixedString(t))
-            return format_settings.json.try_infer_numbers_from_strings;
+    if (!format_settings.json.try_infer_numbers_from_strings)
         return false;
-    };
+    return anyInTypeTree(*type, [](const IDataType & t) { return isStringOrFixedString(t); });
+}
 
-    return anyInTypeTree(*type, check);
+/// True if both types are DateTime or DateTime64 under the same Array nesting, with any Nullable and
+/// LowCardinality wrappers. A CAST between them keeps every instant.
+bool isDateTimeToDateTimeConversion(const DataTypePtr & from, const DataTypePtr & to)
+{
+    auto from_inner = removeLowCardinalityAndNullable(from);
+    auto to_inner = removeLowCardinalityAndNullable(to);
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from_inner.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to_inner.get());
+    if (from_array && to_array)
+        return isDateTimeToDateTimeConversion(from_array->getNestedType(), to_array->getNestedType());
+    return isDateTimeOrDateTime64(*from_inner) && isDateTimeOrDateTime64(*to_inner);
+}
+
+/// True if a value of `value_type` is a date and time value and goes into a date and time value of
+/// `dest_type`, so the text round trip between them must keep the instant.
+bool convertsDateTimeValue(const DataTypePtr & value_type, const DataTypePtr & dest_type)
+{
+    auto is_date_time = [](const IDataType & t) { return isDateTimeOrDateTime64(t); };
+    return value_type && anyInTypeTree(*value_type, is_date_time) && anyInTypeTree(*dest_type, is_date_time);
 }
 
 /// Returns the type the JSON parser infers in Dynamic for the serialized values of a typed path type,
@@ -2285,7 +2292,8 @@ DataTypePtr getPromotedTypeForDynamicImpl(const DataTypePtr & type, const Format
             auto promoted_nested = getPromotedTypeForDynamicImpl(array_type.getNestedType(), format_settings);
             if (!promoted_nested)
                 return nullptr;
-            if (promoted_nested->equals(*array_type.getNestedType()))
+            /// Not equals: it ignores the time zone, which a promoted DateTime drops.
+            if (promoted_nested == array_type.getNestedType())
                 return type;
             return std::make_shared<DataTypeArray>(promoted_nested);
         }
@@ -2295,7 +2303,7 @@ DataTypePtr getPromotedTypeForDynamicImpl(const DataTypePtr & type, const Format
             auto promoted_nested = getPromotedTypeForDynamicImpl(nullable_type.getNestedType(), format_settings);
             if (!promoted_nested)
                 return nullptr;
-            if (promoted_nested->equals(*nullable_type.getNestedType()))
+            if (promoted_nested == nullable_type.getNestedType())
                 return type;
             return std::make_shared<DataTypeNullable>(promoted_nested);
         }
@@ -2379,8 +2387,7 @@ bool parsesDateTimeNumbersUnlikeCast(const DataTypePtr & to_type, const FormatSe
 
 /// Returns true if CAST(from_type, to_type) produces the same result as
 /// JSON format+parse for the same value.
-bool isDynamicElementToTypedCastSafe(
-    const DataTypePtr & from_type, const DataTypePtr & to_type, const FormatSettings & format_settings)
+bool isDynamicElementToTypedCastSafe(const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
     auto from_inner = removeNullable(from_type);
     auto to_inner = removeNullable(to_type);
@@ -2413,19 +2420,20 @@ bool isDynamicElementToTypedCastSafe(
         return true;
     }
 
-    /// From Date/DateTime/DateTime64 → to String only.
+    /// From Date/DateTime/DateTime64 → to String, and DateTime/DateTime64 → DateTime/DateTime64, whose
+    /// CAST keeps the instant; castMatchesParse checks that each value fits the destination range.
+    /// The CAST writes the simple text form whatever date_time_output_format says, which is the result
+    /// the conversion is meant to give.
     /// Cross-cast to numeric is disallowed because CAST interprets the
     /// internal numeric representation, while format+parse would go through
     /// a text date representation that cannot be parsed as a number.
-    /// Cross-cast between Date/DateTime/DateTime64 is also disallowed because
+    /// Cross-cast between Date and DateTime/DateTime64 is also disallowed because
     /// castColumnAccurate may fail on text representations (e.g. DateTime64
     /// text "2024-01-15 12:30:00" cannot be parsed as Date by the CAST path).
-    /// DateTime and DateTime64 are serialized according to date_time_output_format while the CAST
-    /// always writes the simple text form, so they match only under that format; Date and Date32
-    /// have a single text form.
     if (isDateOrDateTime(*from_inner) && isStringOrFixedString(*to_inner))
-        return isDateOrDate32(*from_inner)
-            || format_settings.date_time_output_format == FormatSettings::DateTimeOutputFormat::Simple;
+        return true;
+    if (isDateTimeOrDateTime64(*from_inner) && isDateTimeOrDateTime64(*to_inner))
+        return true;
 
     /// "Simple non-nested" = any type without subtypes: numbers, strings, dates,
     /// decimals, UUID, IPv4, IPv6, Enum, etc. Types with subtypes (Array, Tuple,
@@ -2454,7 +2462,7 @@ bool isDynamicElementToTypedCastSafe(
         /// the element default. Only the top-level wrapper is handled that way (see removeNullable above).
         if (hasNullableMismatchForCast(from_arr.getNestedType(), to_arr.getNestedType()))
             return false;
-        return isDynamicElementToTypedCastSafe(from_arr.getNestedType(), to_arr.getNestedType(), format_settings);
+        return isDynamicElementToTypedCastSafe(from_arr.getNestedType(), to_arr.getNestedType());
     }
 
     return false;
@@ -2478,10 +2486,12 @@ bool isLosslessNumericWidening(const IDataType & from, const IDataType & to)
     return false;
 }
 
-/// True if a CAST of these values gives what parsing their JSON text gives. For a number the parser checks
-/// the range but not exactness, while a CAST wraps or rejects, so the two agree only on values that convert
-/// exactly; checking that per value keeps ordinary numbers on the CAST. A number parsed from the text of a
-/// date or an address, or an array from a non-array, never matches the CAST.
+/// True if a CAST of these values gives the result the conversion must give, which is what parsing their JSON
+/// text gives, except for a DateTime: its text has no time zone, so the CAST, which keeps the instant, is the
+/// reference. For a number the parser checks the range but not exactness, while a CAST wraps or rejects, so
+/// the two agree only on values that convert exactly; checking that per value keeps ordinary numbers on the
+/// CAST, and a DateTime outside the destination range goes to the parser, which saturates it. A number or a
+/// date parsed from the text of a date and time or an address, or an array from a non-array, never matches.
 bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const DataTypePtr & to)
 {
     if (const auto * from_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(from.get()))
@@ -2505,6 +2515,20 @@ bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const 
         return castMatchesParse(col_array.getDataPtr(), from_array->getNestedType(), to_array->getNestedType());
     }
 
+    auto all_values_convert_exactly = [&]
+    {
+        auto probe = castColumnAccurateOrNull({column, from, ""}, makeNullable(to_inner));
+        const auto & null_map = assert_cast<const ColumnNullable &>(*probe).getNullMapData();
+        return memoryIsZero(null_map.data(), 0, null_map.size());
+    };
+
+    if (isDateTimeOrDateTime64(*from))
+    {
+        if (isStringOrFixedString(*to_inner) || from->equals(*to_inner))
+            return true;
+        return isDateTimeOrDateTime64(*to_inner) && all_values_convert_exactly();
+    }
+
     if (!isNumber(*to_inner) || from->equals(*to_inner))
         return true;
 
@@ -2514,14 +2538,11 @@ bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const 
     if (!isNumber(*from) && !isStringOrFixedString(*from))
         return false;
 
-    auto probe = castColumnAccurateOrNull({column, from, ""}, makeNullable(to_inner));
-    const auto & null_map = assert_cast<const ColumnNullable &>(*probe).getNullMapData();
-    return memoryIsZero(null_map.data(), 0, null_map.size());
+    return all_values_convert_exactly();
 }
 
 /// Returns true if all variant types in the Dynamic column can be safely CAST to dest_type.
-bool canCastDynamicToTyped(
-    const ColumnDynamic & col_dynamic, const DataTypePtr & dest_type, const FormatSettings & format_settings)
+bool canCastDynamicToTyped(const ColumnDynamic & col_dynamic, const DataTypePtr & dest_type)
 {
     const auto & variant_info = col_dynamic.getVariantInfo();
     const auto & variant_types = assert_cast<const DataTypeVariant &>(
@@ -2536,7 +2557,7 @@ bool canCastDynamicToTyped(
     {
         if (i == col_dynamic.getSharedVariantDiscriminator())
             continue;
-        if (!isDynamicElementToTypedCastSafe(variant_types[i], dest_type, format_settings))
+        if (!isDynamicElementToTypedCastSafe(variant_types[i], dest_type))
             return false;
         if (!castMatchesParse(variant_column.getVariantPtrByGlobalDiscriminator(i), variant_types[i], dest_type))
             return false;
@@ -2881,6 +2902,18 @@ FormatSettings getJSONRoundTripFormatSettings(const FormatSettings & format_sett
     return result;
 }
 
+/// The round trip of date and time values into date and time values: text holds the wall clock of a
+/// DateTime without its time zone, so it would come back at another instant in another zone or in the
+/// repeated hour of a daylight saving time fall-back. ISO text in UTC carries the instant; it is ours,
+/// so it is read with best effort whatever date_time_input_format says for user text.
+FormatSettings getJSONRoundTripFormatSettingsForInstants(const FormatSettings & format_settings)
+{
+    FormatSettings result = getJSONRoundTripFormatSettings(format_settings);
+    result.date_time_output_format = FormatSettings::DateTimeOutputFormat::ISO;
+    result.date_time_input_format = FormatSettings::DateTimeInputFormat::BestEffort;
+    return result;
+}
+
 /// Convert a single typed path column to ColumnDynamic.
 /// Uses the JSON parser + DynamicNode path (via buildJSONExtractTree) to ensure
 /// type inference matches the standard Object deserialization pipeline.
@@ -2943,7 +2976,10 @@ ColumnPtr convertDynamicColumnToTyped(
     JSONParserForConversion parser;
     JSONExtractInsertSettings insert_settings;
 
-    FormatSettings json_format_settings = getJSONRoundTripFormatSettings(format_settings);
+    const FormatSettings round_trip_format_settings = getJSONRoundTripFormatSettings(format_settings);
+    const FormatSettings instants_format_settings = getJSONRoundTripFormatSettingsForInstants(format_settings);
+    const auto & col_dynamic = assert_cast<const ColumnDynamic &>(*src_column);
+    const bool dest_has_date_time = anyInTypeTree(*dest_type, [](const IDataType & t) { return isDateTimeOrDateTime64(t); });
 
     WriteBufferFromOwnString write_buf;
     for (size_t i = 0; i < rows; ++i)
@@ -2953,6 +2989,10 @@ ColumnPtr convertDynamicColumnToTyped(
             dest_type->insertDefaultInto(*dest_column);
             continue;
         }
+
+        const FormatSettings & json_format_settings = dest_has_date_time && convertsDateTimeValue(col_dynamic.getTypeAt(i), dest_type)
+            ? instants_format_settings
+            : round_trip_format_settings;
 
         write_buf.restart();
         dynamic_serialization->serializeTextJSON(*src_column, i, write_buf, json_format_settings);
@@ -3006,7 +3046,9 @@ ColumnPtr convertTypedColumnToTyped(
     JSONParserForConversion parser;
     JSONExtractInsertSettings insert_settings;
 
-    FormatSettings json_format_settings = getJSONRoundTripFormatSettings(format_settings);
+    FormatSettings json_format_settings = isDateTimeToDateTimeConversion(src_type, dest_type)
+        ? getJSONRoundTripFormatSettingsForInstants(format_settings)
+        : getJSONRoundTripFormatSettings(format_settings);
 
     /// A null under type_json_skip_null_typed_paths is not written at all, so the value never reaches
     /// the parser and the destination keeps its default. Serializing it as `null` instead would make
@@ -3211,17 +3253,21 @@ ColumnPtr convertObjectColumns(
             /// zero CAST produces (not e.g. an Enum's first value), and a NULL must become a default at all.
             /// A NULL becomes a default with null_as_default, or with type_json_skip_null_typed_paths when the
             /// path itself is the dropped Nullable, since then it is left out of the serialized object.
+            /// Between DateTime types the defaults are the same instant, so the nested types may differ.
+            const bool converts_instants = isDateTimeToDateTimeConversion(from_tp, to_tp);
             const bool nullable_mismatch = hasNullableMismatchForCast(from_tp, to_tp);
             const bool can_strip_nullable = nullable_mismatch
-                && nullableMismatchIsOnlyDifference(from_tp, to_tp)
+                && (converts_instants || nullableMismatchIsOnlyDifference(from_tp, to_tp))
                 && to_tp->isDefaultInsertTrivial()
                 && (format_settings.null_as_default
                     || (format_settings.json.type_json_skip_null_typed_paths
                         && !hasNullableMismatchForCast(removeNullableOrLowCardinalityNullable(from_tp), to_tp)));
 
-            if (skip_invalid
-                || needsFormatParseFallback(from_tp, format_settings)
-                || parsesDateTimeNumbersUnlikeCast(to_tp, format_settings)
+            /// A CAST between DateTime types cannot fail and does not depend on how the values are written as text.
+            if ((!converts_instants
+                    && (skip_invalid
+                        || needsFormatParseFallback(from_tp, format_settings)
+                        || parsesDateTimeNumbersUnlikeCast(to_tp, format_settings)))
                 || (nullable_mismatch && !can_strip_nullable))
             {
                 dst_typed_columns[path]
@@ -3248,7 +3294,7 @@ ColumnPtr convertObjectColumns(
                     dst_typed_columns[path]
                         = castColumnWithSettings({src_col, src_type, ""}, to_tp, convert_settings, CastType::nonAccurate);
                 else
-                    dst_typed_columns[path] = convertTypedColumnToTyped(it->second, from_tp, to_tp, rows, format_settings, /*skip_on_failure=*/false);
+                    dst_typed_columns[path] = convertTypedColumnToTyped(it->second, from_tp, to_tp, rows, format_settings, /*skip_on_failure=*/skip_invalid);
             }
         }
     }
@@ -3268,7 +3314,7 @@ ColumnPtr convertObjectColumns(
                 it_col->second, it_type->second, rows, format_settings, /*skip_on_failure=*/true);
         }
         else if (it_type->second->isDefaultInsertTrivial()
-            && canCastDynamicToTyped(dynamic_col, it_type->second, format_settings))
+            && canCastDynamicToTyped(dynamic_col, it_type->second))
         {
             /// CAST fills an absent (NULL) row with the plain zero, so it is only correct for a destination
             /// whose default is that zero; an Enum and the like need the parser's insertDefaultInto.
@@ -3427,7 +3473,8 @@ ColumnPtr convertObjectColumns(
         UnorderedMapWithMemoryTracking<String, TypedNodePtr> new_typed_path_nodes;
         JSONParserForConversion shared_data_parser;
         JSONExtractInsertSettings shared_data_insert_settings;
-        FormatSettings json_format_settings = getJSONRoundTripFormatSettings(format_settings);
+        const FormatSettings round_trip_format_settings = getJSONRoundTripFormatSettings(format_settings);
+        const FormatSettings instants_format_settings = getJSONRoundTripFormatSettingsForInstants(format_settings);
 
         for (const auto & [path, _] : new_typed_path_mutable_columns)
             new_typed_path_nodes[path] = buildJSONExtractTree<JSONParserForConversion>(plan.new_typed_paths.at(path), "JSON type conversion");
@@ -3465,8 +3512,13 @@ ColumnPtr convertObjectColumns(
                     /// Deserialize from shared data into reusable Dynamic, serialize to JSON text,
                     /// then parse with JSON parser + typed node to match Object deserialization behavior.
                     ColumnObject::deserializeValueFromSharedData(src_values_col, idx, *reusable_dynamic_col);
+                    const size_t value_row = reusable_dynamic_col->size() - 1;
+                    const auto value_type = assert_cast<const ColumnDynamic &>(*reusable_dynamic_col).getTypeAt(value_row);
+                    const FormatSettings & json_format_settings = convertsDateTimeValue(value_type, plan.new_typed_paths.at(String(path)))
+                        ? instants_format_settings
+                        : round_trip_format_settings;
                     WriteBufferFromOwnString write_buf;
-                    reusable_dynamic_serialization->serializeTextJSON(*reusable_dynamic_col, reusable_dynamic_col->size() - 1, write_buf, json_format_settings);
+                    reusable_dynamic_serialization->serializeTextJSON(*reusable_dynamic_col, value_row, write_buf, json_format_settings);
                     reusable_dynamic_col->popBack(1);
 
                     JSONParserForConversion::Element element;

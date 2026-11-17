@@ -1,0 +1,37 @@
+-- typed path whose type changes
+1767225600
+1767193200123
+1793514600
+[1767193200]
+1767193200
+-- a null becomes the destination default
+1767193200
+0
+[1767193200,0]
+-- settings that change how a DateTime is written or read as text
+1767225600
+1767225600
+1767225600
+1767225600
+-- a value outside the destination range saturates
+4294967295
+0
+-- into a String the wall clock of the source time zone, whatever date_time_output_format says
+2026-01-01 00:00:00
+2026-01-01 00:00:00
+-- the text of a date and time is not a number or a date
+-- typed path removed: the inferred type, without a time zone
+1767193200	DateTime
+1767193200	DateTime
+1767193200123	DateTime64(9)
+[1767193200]	Array(Nullable(DateTime))
+1767193200	DateTime
+2026-01-01 00:00:00	String
+-- dynamic value into a new typed path
+1767225600
+1767225600
+1767225600
+1767225600
+1767193200
+-- MODIFY COLUMN
+1767225600

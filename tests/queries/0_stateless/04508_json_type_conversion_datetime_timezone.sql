@@ -1,8 +1,8 @@
 SET session_timezone = 'UTC';
 SET json_use_optimized_type_conversion = 1;
 
--- Test 1: DateTime('Asia/Tokyo') removed typed path — serialized in Tokyo timezone,
--- re-parsed in session timezone (UTC). Text stays the same, epoch shifts.
+-- Test 1: DateTime('Asia/Tokyo') removed typed path — keeps the instant and gets the inferred DateTime type,
+-- without a time zone, so it is shown in the session time zone (UTC).
 SELECT 'Test 1: DateTime with explicit timezone removal';
 SELECT '{"dt":"2024-01-15 21:30:00"}'::JSON(dt DateTime('Asia/Tokyo')) as json;
 SELECT ('{"dt":"2024-01-15 21:30:00"}'::JSON(dt DateTime('Asia/Tokyo'))::JSON).dt as dt,
@@ -19,8 +19,8 @@ SELECT 'Test 3: DateTime with explicit timezone, changed typed path';
 SELECT '{"dt":"2024-01-15 21:30:00"}'::JSON(dt DateTime('Asia/Tokyo')) as json;
 SELECT ('{"dt":"2024-01-15 21:30:00"}'::JSON(dt DateTime('Asia/Tokyo'))::JSON(dt String)).dt as dt;
 
--- Test 4: date_time_output_format = 'UnixTimestamp' — DateTime serialized as quoted epoch,
--- DynamicNode infers String.
+-- Test 4: date_time_output_format = 'UnixTimestamp' — the inferred type does not depend on how
+-- a DateTime is shown, so it stays DateTime.
 SELECT 'Test 4: date_time_output_format = UnixTimestamp, removal';
 SET date_time_output_format = 'unix_timestamp';
 SELECT ('{"dt":"2024-01-15 12:30:00"}'::JSON(dt DateTime)::JSON).dt as dt,
