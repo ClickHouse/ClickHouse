@@ -117,6 +117,18 @@ for table, mode in zip(sys.argv[1::2], sys.argv[2::2]):
                 "type": {"type": "list", "element-id": element, "element-required": False, "element": {"type": "struct", "fields": [
                     {"id": x, "name": "x", "required": False, "type": "int"},
                     {"id": y, "name": "y", "required": False, "type": "int", "initial-default": 9}]}}})
+    elif mode == "dropped_member":
+        # The field `x` of both defaults was dropped from the struct after `l` and `m` were added; the `x` of `m` was added
+        # again with a new id.
+        x, y, element = new_id(), new_id(), new_id()
+        fields.append({"id": new_id(), "name": "l", "required": False, "initial-default": [{str(x): 1, str(y): 2}, {str(x): 3, str(y): 4}],
+            "type": {"type": "list", "element-id": element, "element-required": False, "element": {"type": "struct", "fields": [
+                {"id": y, "name": "y", "required": False, "type": "int"}]}}})
+        x, y, key, value = new_id(), new_id(), new_id(), new_id()
+        fields.append({"id": new_id(), "name": "m", "required": False, "initial-default": {"keys": ["a"], "values": [{str(x): 5, str(y): 6}]},
+            "type": {"type": "map", "key-id": key, "key": "string", "value-id": value, "value-required": False, "value": {"type": "struct", "fields": [
+                {"id": y, "name": "y", "required": False, "type": "int"},
+                {"id": new_id(), "name": "x", "required": False, "type": "int", "initial-default": 7}]}}})
     elif mode == "bad_long":
         fields.append({"id": new_id(), "name": "d", "required": False, "type": "long", "initial-default": "abc"})
     elif mode == "bad_timestamp":
@@ -579,6 +591,23 @@ for format in Parquet ORC Avro; do
             SELECT 'absent list', l, t FROM icebergLocal('${table}/');
             SELECT 'absent list', l.x, l.y, t.l.y FROM icebergLocal('${table}/');
             SELECT 'absent list', count() FROM icebergLocal('${table}/') WHERE has(l.y, 9) AND has(t.l.y, 9);"
+    fi
+
+    # A default of a list or a map of structs keeps the values of the fields dropped from the struct since; they are not read.
+    table="${format}_dropped_member"
+    create+="
+        CREATE TABLE t_dropped_member (k Int32) ENGINE = IcebergLocal('${table}/', '${format}');
+        INSERT INTO t_dropped_member VALUES (1);"
+    evolve+=("${table}" dropped_member)
+    bind+=("${table}")
+    before+="
+        SELECT 'dropped member', k, l, m FROM icebergLocal('${table}/');"
+    after+="
+        SELECT 'dropped member', k, l, m FROM icebergLocal('${table}/');"
+    if [ "${format}" != Avro ]; then
+        after+="
+            SELECT 'dropped member', l.y, m.values.y, m.values.x FROM icebergLocal('${table}/');
+            SELECT 'dropped member', count() FROM icebergLocal('${table}/') WHERE has(l.y, 4);"
     fi
 
     ${LOCAL} --allow_insert_into_iceberg=1 -q "${create}"

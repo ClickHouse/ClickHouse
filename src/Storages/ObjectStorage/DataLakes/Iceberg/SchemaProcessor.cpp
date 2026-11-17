@@ -618,7 +618,7 @@ Field parseIcebergDefaultValue(
         auto fields = type_object->getArray(f_fields);
         Tuple result;
         result.reserve(fields->size());
-        size_t used_keys = 0;
+        /// An `initial-default` never changes, so it can still hold the values of fields dropped from the struct since.
         for (UInt32 i = 0; i < fields->size(); ++i)
         {
             auto child = fields->getObject(i);
@@ -626,18 +626,13 @@ Field parseIcebergDefaultValue(
             const bool child_required = child->getValue<bool>(f_required);
             const String child_name = child->getValue<String>(f_name);
             if (value_object->has(key))
-            {
-                ++used_keys;
                 result.push_back(
                     parseIcebergDefaultValue(value_object->get(key), child->get(f_type), element_types[i], child_required, child_name));
-            }
             else if (auto child_default = getIcebergInitialDefault(child, element_types[i]))
                 result.push_back(std::move(*child_default));
             else
                 result.push_back(parseIcebergDefaultValue({}, child->get(f_type), element_types[i], child_required, child_name));
         }
-        if (used_keys != value_object->size())
-            throwInvalidDefault(value, iceberg_type, field_name);
         return result;
     }
     if (type_name == f_list)
