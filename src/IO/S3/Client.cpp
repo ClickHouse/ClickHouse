@@ -214,17 +214,6 @@ void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_c
     assert_cast<const Client::RetryStrategy &>(*client_config.retryStrategy);
 }
 
-/// A write with a precondition. After a lost response only a later attempt tells whether it landed: the precondition
-/// fails on the object of the earlier attempt, and the idempotency id proves that object to be its own.
-template <typename RequestType>
-bool isConditionalWrite(const RequestType & request)
-{
-    if constexpr (std::is_same_v<RequestType, PutObjectRequest> || std::is_same_v<RequestType, CompleteMultipartUploadRequest>)
-        return request.IfNoneMatchHasBeenSet() || request.IfMatchHasBeenSet();
-    else
-        return false;
-}
-
 void addAdditionalAMZHeadersToCanonicalHeadersList(
     Aws::AmazonWebServiceRequest & request,
     const NormalizedHTTPHeaderEntries & extra_headers
@@ -631,11 +620,6 @@ bool Client::isObjectWrittenWithIdempotencyId(
 
 Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const
 {
-    /// The outcome of a conditional write tells its caller whether a rollback may delete what the write published.
-    std::optional<ThreadStatus::QueryCancellationBlocker> cancellation_blocker;
-    if (isConditionalWrite(request))
-        cancellation_blocker.emplace();
-
     auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](Model::CompleteMultipartUploadRequest & req) { return CompleteMultipartUpload(req); });
 
@@ -696,11 +680,6 @@ Model::CopyObjectOutcome Client::CopyObject(CopyObjectRequest & request) const
 
 Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
 {
-    /// The outcome of a conditional write tells its caller whether a rollback may delete what the write published.
-    std::optional<ThreadStatus::QueryCancellationBlocker> cancellation_blocker;
-    if (isConditionalWrite(request))
-        cancellation_blocker.emplace();
-
     auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request,
         [this](Model::PutObjectRequest & req)
