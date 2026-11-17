@@ -117,8 +117,10 @@ public:
 
     /// `visit` leaves an operand of `IN` unqualified in a select query with a parametrised alias, which it can name.
     /// Qualify such operands of a parameterized view when it is called, before its parameters are substituted.
-    void visitParameterizedView(ASTPtr & ast, const NameToNameMap & values) const
+    /// They name tables of the database of the view, not the temporary tables of the caller.
+    void visitParameterizedView(ASTPtr & ast, const NameToNameMap & values)
     {
+        external_tables.clear();
         parameter_values = &values;
         visit(ast);
         parameter_values = nullptr;
