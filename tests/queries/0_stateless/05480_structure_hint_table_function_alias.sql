@@ -58,6 +58,17 @@ INSERT INTO t_structure_hint_alias_dotted SELECT `a.b` FROM file(currentDatabase
 SELECT * FROM t_structure_hint_alias_dotted ORDER BY ALL;
 DROP TABLE t_structure_hint_alias_dotted;
 
+-- generateRandom and null take their structure from the hint, so a name with a dot is a column there, like in input.
+DROP TABLE IF EXISTS t_structure_hint_alias_generated;
+CREATE TABLE t_structure_hint_alias_generated (n Nested(a UInt32, b UInt32)) ENGINE = Memory;
+INSERT INTO t_structure_hint_alias_generated SELECT n.a, n.b FROM generateRandom(1, 10, 0) LIMIT 1;
+INSERT INTO t_structure_hint_alias_generated SELECT g.n.a, g.n.b FROM generateRandom(1, 10, 0) AS g LIMIT 1;
+INSERT INTO t_structure_hint_alias_generated SELECT `n.a`, `n.b` FROM generateRandom(1, 10, 0) LIMIT 1;
+INSERT INTO t_structure_hint_alias_generated SELECT n.a, n.b FROM null();
+INSERT INTO t_structure_hint_alias_generated SELECT `n.a`, `n.b` FROM null();
+SELECT * FROM t_structure_hint_alias_generated;
+DROP TABLE t_structure_hint_alias_generated;
+
 -- Choosing the hint column names must not run the schema inference of the source.
 TRUNCATE TABLE t_structure_hint_alias;
 SET log_comment = '05480_structure_hint_alias_no_inference';

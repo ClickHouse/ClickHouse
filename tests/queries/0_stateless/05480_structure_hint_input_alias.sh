@@ -24,3 +24,13 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_analyzer=1" -d 'INSERT INTO t_s
 
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM t_structure_hint_input_dotted ORDER BY ALL"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_structure_hint_input_dotted"
+
+# A column of another table in a JOIN is not hinted, it must not turn into a column of input().
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_structure_hint_input_join"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_structure_hint_input_join (id UInt32, v UInt32) ENGINE = Memory"
+
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_analyzer=1" -d 'INSERT INTO t_structure_hint_input_join SELECT i.id, g.v FROM input() AS i JOIN (SELECT 1 AS id2, 99 AS v) AS g ON i.id = g.id2 FORMAT JSONEachRow {"id":1,"v":10}'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_analyzer=1" -d 'INSERT INTO t_structure_hint_input_join SELECT id, g.v FROM input() AS i JOIN (SELECT 2 AS id2, 98 AS v) AS g ON id = g.id2 FORMAT JSONEachRow {"id":2,"v":20}'
+
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM t_structure_hint_input_join ORDER BY ALL"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_structure_hint_input_join"

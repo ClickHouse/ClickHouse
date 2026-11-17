@@ -5759,6 +5759,21 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         const auto & expression_list = scope.scope_node->as<QueryNode &>().getProjection();
         auto expression = expression_list.begin();
 
+        auto hint_table_function_name = table_function_ptr->getName();
+        bool hint_is_structure
+            = hint_table_function_name == "input" || hint_table_function_name == "generateRandom" || hint_table_function_name == "null";
+        NameSet table_names;
+        if (hint_is_structure)
+        {
+            for (const auto & join_table_expression : extractTableExpressions(scope.scope_node->as<QueryNode &>().getJoinTreeNodeTyped()))
+            {
+                if (join_table_expression->hasAlias())
+                    table_names.insert(join_table_expression->getAlias());
+                if (const auto * table_node = join_table_expression->as<TableNode>())
+                    table_names.insert(table_node->getStorageID().table_name);
+            }
+        }
+
         /// We want to go through SELECT expression list and correspond each expression to column in insert table
         /// which type will be used as a hint for the file structure inference.
         for (; expression != expression_list.end() && insert_column_name_it != insert_column_names_end; ++expression)
@@ -5766,12 +5781,12 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             if (auto * identifier_node = (*expression)->as<IdentifierNode>())
             {
                 auto column_name = getStructureHintColumnName(
-                    identifier_node->getIdentifier().getParts(), table_function_node->getAlias(), table_function_ptr->getName() == "input",
+                    identifier_node->getIdentifier().getParts(), table_function_node->getAlias(), hint_is_structure, table_names,
                     use_structure_from_insertion_table_in_table_functions == 1);
 
                 if (column_name.empty())
                 {
-                    if (use_structure_from_insertion_table_in_table_functions == 2)
+                    if (use_structure_from_insertion_table_in_table_functions == 2 && !hint_is_structure)
                     {
                         use_columns_from_insert_query = false;
                         break;

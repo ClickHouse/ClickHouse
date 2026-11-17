@@ -155,6 +155,7 @@
 #include <Common/HTTPHeaderFilter.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -3641,6 +3642,22 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             const auto & expression_list = select_query_hint->select()->as<ASTExpressionList>()->children;
             auto expression = expression_list.begin();
 
+            auto hint_table_function_name = table_function_ptr->getName();
+            bool hint_is_structure
+                = hint_table_function_name == "input" || hint_table_function_name == "generateRandom" || hint_table_function_name == "null";
+            NameSet table_names;
+            if (hint_is_structure)
+            {
+                for (const auto * other_table_expression : getTableExpressions(*select_query_hint))
+                {
+                    DatabaseAndTableWithAlias table(*other_table_expression, "");
+                    if (!table.alias.empty())
+                        table_names.insert(table.alias);
+                    if (!table.table.empty())
+                        table_names.insert(table.table);
+                }
+            }
+
             /// We want to go through SELECT expression list and correspond each expression to column in insert table
             /// which type will be used as a hint for the file structure inference.
             for (; expression != expression_list.end() && insert_column_name_it != insert_column_names_end; ++expression)
@@ -3648,12 +3665,12 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                 if (auto * identifier = (*expression)->as<ASTIdentifier>())
                 {
                     auto column_name = getStructureHintColumnName(
-                        identifier->name_parts, table_expression->tryGetAlias(), table_function_ptr->getName() == "input",
+                        identifier->name_parts, table_expression->tryGetAlias(), hint_is_structure, table_names,
                         use_structure_from_insertion_table_in_table_functions == 1);
 
                     if (column_name.empty())
                     {
-                        if (use_structure_from_insertion_table_in_table_functions == 2)
+                        if (use_structure_from_insertion_table_in_table_functions == 2 && !hint_is_structure)
                         {
                             use_columns_from_insert_query = false;
                             break;

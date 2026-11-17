@@ -313,7 +313,12 @@ void removeMisboundDefaultsFromStructureHint(
         structure_hint.modify(name, [](ColumnDescription & column) { column.default_desc = {}; });
 }
 
-String getStructureHintColumnName(const Strings & identifier_parts, const String & table_function_alias, bool is_input, bool is_forced)
+String getStructureHintColumnName(
+    const Strings & identifier_parts,
+    const String & table_function_alias,
+    bool hint_is_structure,
+    const NameSet & table_names,
+    bool is_forced)
 {
     if (identifier_parts.empty())
         return {};
@@ -322,8 +327,11 @@ String getStructureHintColumnName(const Strings & identifier_parts, const String
     if (identifier_parts.size() > 1 && !table_function_alias.empty() && identifier_parts.front() == table_function_alias)
         ++parts_begin;
 
-    if (is_input)
+    if (hint_is_structure)
     {
+        if (parts_begin == identifier_parts.begin() && identifier_parts.size() > 1 && table_names.contains(identifier_parts.front()))
+            return {};
+
         String column_name = *parts_begin;
         for (auto it = std::next(parts_begin); it != identifier_parts.end(); ++it)
             column_name += "." + *it;
