@@ -1527,14 +1527,14 @@ void NativeORCBlockInputFormat::prepareFileReader()
     {
         for (const auto & column : header)
         {
-            const auto [absent, default_applies] = getORCFieldAbsence(
-                column_mapper->getIcebergFieldPath(column.name), *column_mapper, file_schema, field_ids_cache);
+            const String field = column_mapper->getIcebergFieldPath(column.name);
+            const auto [absent, default_applies] = getORCFieldAbsence(field, *column_mapper, file_schema, field_ids_cache);
             if (!absent)
                 continue;
             absent_columns.insert(column.name);
             if (!default_applies)
                 continue;
-            if (auto value = column_mapper->getIcebergInitialDefault(column.name, column.type))
+            if (auto value = column_mapper->getIcebergInitialDefault(field, column.name, column.type))
                 absent_column_defaults.emplace(column.name, std::move(*value));
         }
     }
@@ -3446,7 +3446,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                     continue;
                 /// The hint can have only the requested elements of a struct: the default is projected to it.
                 const auto & element_type = tuple_type_hint->getElement(pos);
-                auto value = column_mapper->getIcebergInitialDefault(element_path, element_type);
+                auto value = column_mapper->getIcebergInitialDefault(element_path, element_path, element_type);
                 auto element = element_type->createColumnConst(orc_column->numElements, *value);
                 tuple_elements.emplace_back(element->convertToFullColumnIfConst());
                 tuple_types.emplace_back(element_type);

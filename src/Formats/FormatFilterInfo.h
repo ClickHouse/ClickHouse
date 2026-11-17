@@ -127,10 +127,10 @@ public:
         auto it = iceberg_initial_defaults.find(path);
         return it == iceberg_initial_defaults.end() ? nullptr : &it->second.value;
     }
-    /// The `initial-default` of `path` as a value of `type`, the type that a reader reads the field with. It can have only some of
-    /// the elements of a struct, at any depth (a read of some of its subcolumns): they are taken from the default by name.
-    /// For a subcolumn of a field (`l.y` of a list of structs `l`), the subcolumn of the field's default.
-    [[nodiscard]] std::optional<Field> getIcebergInitialDefault(const String & path, const DataTypePtr & type) const;
+    /// The `initial-default` of the field `field` as a value of `type`, the type that a reader reads the field with. It can have only
+    /// some of the elements of a struct, at any depth (a read of some of its subcolumns): they are taken from the default by name.
+    /// If `path` is a subcolumn of the field (`l.y` of a list of structs `l`), the subcolumn of the field's default.
+    [[nodiscard]] std::optional<Field> getIcebergInitialDefault(const String & field, const String & path, const DataTypePtr & type) const;
     void removeIcebergInitialDefault(const String & path) { iceberg_initial_defaults.erase(path); }
     [[nodiscard]] bool hasIcebergInitialDefaults() const { return !iceberg_initial_defaults.empty(); }
     /// 0 if there are no defaults.

@@ -152,6 +152,15 @@ for table, mode in zip(sys.argv[1::2], sys.argv[2::2]):
         fields.append({"id": new_id(), "name": "l", "required": False, "initial-default": [{str(member): 5}, {str(member): 6}],
             "type": {"type": "list", "element-id": element, "element-required": False, "element": {"type": "struct", "fields": [
                 {"id": member, "name": "element", "required": False, "type": "int"}]}}})
+        # `q.element.y` is also the path of the field `y` of the elements of `q`, which has its own default.
+        member, child, sibling, element, sibling_element = new_id(), new_id(), new_id(), new_id(), new_id()
+        fields.append({"id": new_id(), "name": "q", "required": False,
+            "initial-default": [{str(member): {str(child): 5}, str(sibling): [1]}, {str(member): {str(child): 6}, str(sibling): [2]}],
+            "type": {"type": "list", "element-id": element, "element-required": False, "element": {"type": "struct", "fields": [
+                {"id": member, "name": "element", "required": False, "type": {"type": "struct", "fields": [
+                    {"id": child, "name": "y", "required": False, "type": "int"}]}},
+                {"id": sibling, "name": "y", "required": False, "initial-default": [9],
+                    "type": {"type": "list", "element-id": sibling_element, "element-required": False, "element": "int"}}]}}})
     elif mode == "absent_parent":
         def struct_field(name, field, default):
             result = {"id": new_id(), "name": name, "required": False, "type": {"type": "struct", "fields": [field]}}
@@ -680,7 +689,10 @@ for format in Parquet ORC Avro; do
     after+="
         SELECT 'element member', l FROM icebergLocal('${table}/');
         SELECT 'element member', l.element FROM icebergLocal('${table}/');
-        SELECT 'element member', count() FROM icebergLocal('${table}/') WHERE has(l.element, 5);"
+        SELECT 'element member', count() FROM icebergLocal('${table}/') WHERE has(l.element, 5);
+        SELECT 'element member', q FROM icebergLocal('${table}/');
+        SELECT 'element member', q.element.y, q.y FROM icebergLocal('${table}/');
+        SELECT 'element member', count() FROM icebergLocal('${table}/') WHERE has(q.element.y, 5);"
 
     # A field of an absent struct that has no default is NULL, whatever its own default; also in an Avro file read through the
     # subcolumns of the table function's default format.

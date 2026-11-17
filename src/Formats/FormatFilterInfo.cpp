@@ -254,16 +254,14 @@ static Field projectIcebergInitialDefault(const Field & value, const DataTypePtr
     return convertFieldToTypeOrThrow(value, *to);
 }
 
-std::optional<Field> ColumnMapper::getIcebergInitialDefault(const String & path, const DataTypePtr & type) const
+std::optional<Field> ColumnMapper::getIcebergInitialDefault(const String & field, const String & path, const DataTypePtr & type) const
 {
-    if (auto it = iceberg_initial_defaults.find(path); it != iceberg_initial_defaults.end())
-        return projectIcebergInitialDefault(it->second.value, it->second.type, type);
-
-    const String field = getIcebergFieldPath(path);
-    auto it = field.empty() || field == path ? iceberg_initial_defaults.end() : iceberg_initial_defaults.find(field);
+    auto it = iceberg_initial_defaults.find(field);
     if (it == iceberg_initial_defaults.end())
         return {};
     const auto & [value, field_type] = it->second;
+    if (path == field)
+        return projectIcebergInitialDefault(value, field_type, type);
     const String subcolumn_name = path.substr(field.size() + 1);
     auto subcolumn_type = field_type->tryGetSubcolumnType(subcolumn_name);
     if (!subcolumn_type)

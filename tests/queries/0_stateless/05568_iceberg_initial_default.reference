@@ -149,6 +149,9 @@ null element	1
 element member	[(5),(6)]
 element member	[5,6]
 element member	1
+element member	[((5),[1]),((6),[2])]
+element member	[5,6]	[[1],[2]]
+element member	1
 absent parent	(NULL)	((NULL))	((6))
 absent parent	\N	\N	6
 absent parent	0
@@ -238,6 +241,9 @@ null element	1
 element member	[(5),(6)]
 element member	[5,6]
 element member	1
+element member	[((5),[1]),((6),[2])]
+element member	[5,6]	[[1],[2]]
+element member	1
 absent parent	(NULL)	((NULL))	((6))
 absent parent	\N	\N	6
 absent parent	0
@@ -265,6 +271,9 @@ null element	1	[(NULL,5)]	{'a':(NULL,5)}
 null element	1
 element member	[(5),(6)]
 element member	[5,6]
+element member	1
+element member	[((5),[1]),((6),[2])]
+element member	[5,6]	[[1],[2]]
 element member	1
 absent parent	(NULL)	((NULL))	((6))
 absent parent	\N	\N	6

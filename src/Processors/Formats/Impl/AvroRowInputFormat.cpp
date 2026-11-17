@@ -1303,7 +1303,7 @@ AvroDeserializer::AvroDeserializer(
             const auto & column = header.getByPosition(i);
             if (!absent_columns.contains(column.name) || absent_columns_without_default.contains(column.name))
                 continue;
-            if (auto value = column_mapper->getIcebergInitialDefault(column.name, column.type))
+            if (auto value = column_mapper->getIcebergInitialDefault(column_mapper->getIcebergFieldPath(column.name), column.name, column.type))
                 absent_column_defaults[i] = std::move(*value);
         }
     }
