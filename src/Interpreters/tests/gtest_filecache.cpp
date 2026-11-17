@@ -4786,10 +4786,10 @@ namespace ProfileEvents
 
 TEST_F(FileCacheTest, LRUPendingPriorityIncreasesBuffer)
 {
-    /// A queue without a cache, so that no cleanup task applies the records while the test checks them.
+    /// A queue without a cache, so that no cleanup task applies the increases while the test checks them.
     ServerUUID::setRandomForUnitTests();
     LRUFileCachePriority priority(IFileCachePriority::QueueType::Main, /* max_size */100, /* max_elements */10);
-    priority.setBatchPriorityIncrease({.enabled = true, .buffer_size = 2, .max_batch_size = 64});
+    priority.setBatchPriorityIncreaseSettings({.enabled = true, .buffer_size = 2, .max_batch_size = 64});
     size_t notifications = 0;
     priority.setApplyPriorityIncreasesNotifier([&] { ++notifications; });
 
@@ -4838,7 +4838,7 @@ TEST_F(FileCacheTest, LRUPendingPriorityIncreasesBuffer)
     /// The request is still open, so no new notification. The cleanup task applies the batch and closes it.
     hit(3);
     ASSERT_EQ(notifications, 1u);
-    ASSERT_FALSE(priority.applyPendingPriorityIncreasesBatch());
+    priority.applyAllPendingPriorityIncreases();
     ASSERT_EQ(priority.getPendingPriorityIncreasesApprox(), 0u);
     ASSERT_EQ(queue_offsets(), (std::vector<size_t>{0, 10, 20, 30}));
 

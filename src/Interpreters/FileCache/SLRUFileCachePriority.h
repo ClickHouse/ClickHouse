@@ -136,11 +136,11 @@ protected:
         probationary_queue.setInvalidateNotifier(threshold, on_invalidate);
     }
 
-    void setBatchPriorityIncrease(const BatchPriorityIncreaseSettings & settings) override
+    void setBatchPriorityIncreaseSettings(const BatchPriorityIncreaseSettings & settings) override
     {
-        IFileCachePriority::setBatchPriorityIncrease(settings);
-        protected_queue.setBatchPriorityIncrease(settings);
-        probationary_queue.setBatchPriorityIncrease(settings);
+        IFileCachePriority::setBatchPriorityIncreaseSettings(settings);
+        protected_queue.setBatchPriorityIncreaseSettings(settings);
+        probationary_queue.setBatchPriorityIncreaseSettings(settings);
     }
 
     void setApplyPriorityIncreasesNotifier(std::function<void()> notifier) override
@@ -150,11 +150,10 @@ protected:
         probationary_queue.setApplyPriorityIncreasesNotifier(notifier);
     }
 
-    bool applyPendingPriorityIncreasesBatch() override
+    void applyAllPendingPriorityIncreases() override
     {
-        const bool protected_has_more = protected_queue.applyPendingPriorityIncreasesBatch();
-        const bool probationary_has_more = probationary_queue.applyPendingPriorityIncreasesBatch();
-        return protected_has_more || probationary_has_more;
+        protected_queue.applyAllPendingPriorityIncreases();
+        probationary_queue.applyAllPendingPriorityIncreases();
     }
 
     size_t getPendingPriorityIncreasesApprox() const override

@@ -232,7 +232,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["FilesystemCacheFiles"] = { total_files,
             "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
         new_values["FilesystemCachePendingPriorityIncreases"] = { pending_priority_increases,
-            "Approximate number of filesystem cache hits whose priority increase is buffered and not yet applied to the priority queue (see the `lru_batch_priority_increase` cache setting)." };
+            "Approximate number of buffered filesystem cache priority increases not yet applied to the priority queue (see the `lru_batch_priority_increase` cache setting)." };
     }
 
     /// Experimental ReaderExecutor read-path efficiency KPI: modeled cost (ms) per MiB of

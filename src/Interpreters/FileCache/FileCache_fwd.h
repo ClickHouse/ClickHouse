@@ -23,6 +23,7 @@ static constexpr size_t FILECACHE_DEFAULT_BATCH_PRIORITY_INCREASE_BUFFER_SIZE = 
 static constexpr size_t FILECACHE_DEFAULT_BATCH_PRIORITY_INCREASE_MAX_BATCH_SIZE = 64;
 /// With one slot, a ring cannot tell a written slot from a free one.
 static constexpr size_t FILECACHE_MIN_BATCH_PRIORITY_INCREASE_BUFFER_SIZE = 2;
+static constexpr size_t FILECACHE_MAX_BATCH_PRIORITY_INCREASE_BUFFER_SIZE = 4096;
 static constexpr auto FILECACHE_DEFAULT_CONFIG_PATH = "filesystem_caches";
 
 static constexpr auto FILECACHE_DEFAULT_CACHE_POLICY = FileCachePolicy::SLRU;

@@ -387,15 +387,15 @@ public:
     };
 
     /// Wrappers propagate it down.
-    virtual void setBatchPriorityIncrease(const BatchPriorityIncreaseSettings & settings)
+    virtual void setBatchPriorityIncreaseSettings(const BatchPriorityIncreaseSettings & settings)
     {
-        batch_priority_increase.store(settings.enabled, std::memory_order_relaxed);
+        batch_priority_increase_enabled.store(settings.enabled, std::memory_order_relaxed);
         batch_priority_increase_buffer_size.store(settings.buffer_size, std::memory_order_relaxed);
         batch_priority_increase_max_batch_size.store(settings.max_batch_size, std::memory_order_relaxed);
     }
 
     /// Hook fired when pending priority increases should be applied (FileCache wakes its cleanup task,
-    /// which calls `applyPendingPriorityIncreasesBatch`). Set once on startup. Wrappers propagate it down.
+    /// which calls `applyAllPendingPriorityIncreases`). Set once on startup. Wrappers propagate it down.
     virtual void setApplyPriorityIncreasesNotifier(std::function<void()> notifier) { apply_priority_increases_notifier = notifier; }
 
     /// Remove up to `max_batch` invalidated entries (driven by `FileCache`'s cleanup task), each
@@ -403,11 +403,11 @@ public:
     /// Returns the number removed.
     virtual size_t removeInvalidatedEntries(size_t max_batch) = 0;
 
-    /// Apply one batch of the pending priority increases under the queue write lock
-    /// (driven by `FileCache`'s cleanup task). Returns true if more may be pending.
-    virtual bool applyPendingPriorityIncreasesBatch() = 0;
+    /// Apply the priority increases pending at the call, one batch per lock of the queue, so that hits and
+    /// inserts wait for at most one batch (driven by `FileCache`'s cleanup task).
+    virtual void applyAllPendingPriorityIncreases() = 0;
 
-    /// The number of cache hits whose priority increase is recorded but not applied yet.
+    /// The number of priority increases recorded and not applied yet. Repeated hits of a thread on one entry make one.
     virtual size_t getPendingPriorityIncreasesApprox() const = 0;
 
     struct UsageStat
@@ -529,7 +529,7 @@ protected:
     std::atomic<size_t> invalidated_threshold = 0;
     std::function<void()> invalidate_notifier;
 
-    std::atomic<bool> batch_priority_increase = false;
+    std::atomic<bool> batch_priority_increase_enabled = false;
     std::atomic<size_t> batch_priority_increase_buffer_size = BatchPriorityIncreaseSettings{}.buffer_size;
     std::atomic<size_t> batch_priority_increase_max_batch_size = BatchPriorityIncreaseSettings{}.max_batch_size;
     std::function<void()> apply_priority_increases_notifier;

@@ -138,23 +138,24 @@ protected:
         getPriority(SegmentType::System).setInvalidateNotifier(threshold, on_invalidate);
     }
 
-    void setBatchPriorityIncrease(const BatchPriorityIncreaseSettings & settings) override
+    void setBatchPriorityIncreaseSettings(const BatchPriorityIncreaseSettings & settings) override
     {
-        getPriority(SegmentType::Data).setBatchPriorityIncrease(settings);
-        getPriority(SegmentType::System).setBatchPriorityIncrease(settings);
+        IFileCachePriority::setBatchPriorityIncreaseSettings(settings);
+        getPriority(SegmentType::Data).setBatchPriorityIncreaseSettings(settings);
+        getPriority(SegmentType::System).setBatchPriorityIncreaseSettings(settings);
     }
 
     void setApplyPriorityIncreasesNotifier(std::function<void()> notifier) override
     {
+        IFileCachePriority::setApplyPriorityIncreasesNotifier(notifier);
         getPriority(SegmentType::Data).setApplyPriorityIncreasesNotifier(notifier);
         getPriority(SegmentType::System).setApplyPriorityIncreasesNotifier(notifier);
     }
 
-    bool applyPendingPriorityIncreasesBatch() override
+    void applyAllPendingPriorityIncreases() override
     {
-        const bool data_has_more = getPriority(SegmentType::Data).applyPendingPriorityIncreasesBatch();
-        const bool system_has_more = getPriority(SegmentType::System).applyPendingPriorityIncreasesBatch();
-        return data_has_more || system_has_more;
+        getPriority(SegmentType::Data).applyAllPendingPriorityIncreases();
+        getPriority(SegmentType::System).applyAllPendingPriorityIncreases();
     }
 
     size_t getPendingPriorityIncreasesApprox() const override
