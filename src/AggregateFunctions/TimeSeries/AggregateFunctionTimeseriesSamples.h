@@ -236,6 +236,14 @@ private:
     /// Sorts the tail `[unsorted_begin, size)` of a buffer whose prefix `[0, unsorted_begin)` is sorted and unique, and merges the tail into the prefix.
     static void sortUnsortedTail(Buffer & buf, size_t unsorted_begin)
     {
+        /// With a short sorted prefix a merge would copy almost the whole buffer, so the buffer is sorted in place.
+        if (unsorted_begin < buf.size() / 2)
+        {
+            ::sort(buf.begin(), buf.end(), lessByTimestamp);
+            deduplicateSorted(buf);
+            return;
+        }
+
         auto tail_begin = buf.begin() + unsorted_begin;
         ::sort(tail_begin, buf.end(), lessByTimestamp);
 
@@ -262,7 +270,7 @@ private:
         unsorted_begin = SORTED;
     }
 
-    bool isSorted() const { return unsorted_begin == SORTED; }
+    [[nodiscard]] bool isSorted() const { return unsorted_begin == SORTED; }
 
     /// Duplicates (the same timestamps coming from many series) can make the unsorted tail much longer than the number of distinct timestamps.
     /// So before the buffer would be reallocated, the unsorted tail is sorted and deduplicated, which can leave enough room to avoid growing.
