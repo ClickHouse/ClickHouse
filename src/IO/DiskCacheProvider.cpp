@@ -211,7 +211,8 @@ ChainedBuffers DiskCacheReader::read(ByteRange subrange)
 
     const auto read_range = readSegmentInto(result, segment(), sub_in_object, object_file_offset,
         local_throttler, anchors);
-    segment().markRead(read_range.offset, read_range.size);
+    if (counts_hits)
+        segment().markRead(read_range.offset, read_range.size);
     return result;
 }
 

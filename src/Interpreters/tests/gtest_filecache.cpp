@@ -5425,3 +5425,53 @@ TEST_F(FileCacheTest, DiskCacheProviderTemporaryModeDropsUnusedSegments)
     EXPECT_TRUE(cached(written_by_normal_writer));
 }
 
+
+TEST_F(FileCacheTest, DiskCacheProviderTemporaryModeReadsNotCountedInEfficiency)
+{
+    /// The temporary-cache mode counts no cache hit, so its reads do not count in the cache efficiency either.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+    FileCacheSettings settings;
+    settings[FileCacheSetting::max_size] = 10_KiB;
+    settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
+    settings[FileCacheSetting::boundary_alignment] = 1_KiB;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    auto cache = std::make_shared<FileCache>("disk_cache_provider_temporary_efficiency", settings);
+    cache->initialize();
+
+    const String data(1_KiB, 'x');
+    FilesystemCacheSettings temporary_settings;
+    temporary_settings.read_if_exists_otherwise_bypass = true;
+    temporary_settings.cache_temporarily = true;
+    DiskCacheProvider temporary(cache, temporary_settings);
+    DiskCacheProvider regular(cache, FilesystemCacheSettings{});
+
+    const StoredObject object("temporary_mode_efficiency", "", data.size());
+    {
+        auto cells = regular.resolve(object, 0, ByteRange{0, data.size()});
+        CacheWriter & writer = *cells.back().writer;
+        auto role = writer.takeFillRole();
+        ASSERT_TRUE(role);
+        EXPECT_EQ(writer.write(bytesAt(0, data), role), data.size());
+    }
+    auto active_bytes = [&]
+    {
+        auto infos = cache->tryGetFileSegmentInfos(FileCacheKey::fromPath(object.remote_path), FileCache::getCommonOrigin().user_id);
+        EXPECT_EQ(infos.size(), 1);
+        return infos.at(0).efficiency.value().active_bytes;
+    };
+    /// Filling the cache is not a read from it.
+    ASSERT_EQ(active_bytes(), 0);
+
+    auto read = [&](DiskCacheProvider & provider)
+    {
+        auto cells = provider.resolve(object, 0, ByteRange{0, data.size()});
+        EXPECT_EQ(cells.front().reader->read(ByteRange{0, data.size()}).totalBytes(), data.size());
+    };
+    read(temporary);
+    EXPECT_EQ(active_bytes(), 0);
+    read(regular);
+    EXPECT_EQ(active_bytes(), data.size());
+}

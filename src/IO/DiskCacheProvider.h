@@ -47,6 +47,7 @@ private:
     ReaderAnchorCache * anchors = nullptr;
     /// Whether this reader served any bytes; the destructor then bumps the segment's cache priority.
     bool served = false;
+    /// False in the temporary-cache mode: a read is neither a cache hit nor a read in the cache efficiency.
     bool counts_hits = true;
     LoggerPtr log = getLogger("DiskCacheReader");
 };
