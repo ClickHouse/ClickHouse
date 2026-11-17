@@ -496,6 +496,10 @@ BlockIO InterpreterGrantQuery::execute()
         auto required_access = getRequiredAccessForExecutingOnCluster(elements_to_grant, elements_to_revoke);
         checkAdminOptionForExecutingOnCluster(*current_user_access, roles_to_grant, roles_to_revoke);
         current_user_access->checkGranteesAreAllowed(grantees);
+        /// The DDL worker applies the query with full access, and the check of `access_to_check` passes
+        /// some elements (e.g. the temporary database) without reaching readonly.
+        if (!elements_to_grant.empty() || !elements_to_revoke.empty())
+            current_user_access->checkCanChangeGrants();
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
         return executeDDLQueryOnCluster(updated_query, getContext(), params);
