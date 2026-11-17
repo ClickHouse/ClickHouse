@@ -1507,7 +1507,7 @@ public:
         , task_to_host_map(std::move(task_to_host_map_))
         , running_tasks(8, context, cancellation, stage_wakeup, logger)
         , batch_dispatch(context->getSettingsRef()[Setting::distributed_plan_task_dispatch_batching])
-        , stages_per_flush(context->getSettingsRef()[Setting::distributed_plan_task_dispatch_stages_per_flush])
+        , stages_per_flush(stagesPerFlush(context))
     {
         /// A null map belongs to an in-process plan, which createDistributedQueryExecutor routes to
         /// the local executor instead.
@@ -2068,6 +2068,13 @@ protected:
         InternalTextLogsQueuePtr initiator_logs_queue = CurrentThread::getInternalTextLogsQueue();
     };
 
+    static std::optional<UInt64> stagesPerFlush(const ContextPtr & query_context)
+    {
+        if (const UInt64 stages = query_context->getSettingsRef()[Setting::distributed_plan_task_dispatch_stages_per_flush])
+            return stages;
+        return std::nullopt;
+    }
+
     RunningTaskInfo buildTaskInfo(const String & task_id) const
     {
         return {worker_endpoint_uris.at(task_to_host_map->getTaskWorkerIndex(task_id)), makeUniqueTaskId(unique_query_id, task_id)};
@@ -2081,8 +2088,11 @@ protected:
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = getTaskSettingsChanges(context);
         queueStageTasks(stage_name, stage, task_description);
-        if (stages_per_flush && ++stages_since_flush >= stages_per_flush)
+        if (stages_per_flush && ++stages_since_flush >= *stages_per_flush)
+        {
+            stages_since_flush = 0;
             dispatchQueuedTasks();
+        }
     }
 
     void checkBeforeStartingTask()
@@ -2203,7 +2213,6 @@ protected:
 
     void dispatchQueuedTasks() override
     {
-        stages_since_flush = 0;
         for (auto & [worker, batches] : queued_batches)
         {
             /// This is processing batches queued for one worker now
@@ -2319,8 +2328,8 @@ protected:
     VectorWithMemoryTracking<String> worker_endpoint_uris;
     TaskTracker running_tasks;
     const bool batch_dispatch;
-    const UInt64 stages_per_flush;
-    /// Stages queued since the last `dispatchQueuedTasks`; query thread only.
+    const std::optional<UInt64> stages_per_flush;
+    /// Stages queued since `startStage` last flushed; query thread only.
     size_t stages_since_flush = 0;
     /// The batches `startStage` built and `dispatchQueuedTasks` has not handed over yet; query thread only.
     UnorderedMapWithMemoryTracking<WorkerIndex, VectorWithMemoryTracking<QueuedBatch>> queued_batches;
