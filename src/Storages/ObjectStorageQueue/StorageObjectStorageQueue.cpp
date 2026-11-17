@@ -661,6 +661,19 @@ void StorageObjectStorageQueue::scheduleStreamingTasksImpl()
         task->schedule();
 }
 
+ActionLock StorageObjectStorageQueue::getActionLock(StorageActionBlockType action_type)
+{
+    auto lock = IStreamingStorage::getActionLock(action_type);
+
+    /// A table which does not consume releases its locks in `threadFunc`. The next poll can
+    /// be minutes away, so run the streaming tasks now. A task which is in the middle of
+    /// a cycle runs again right after it.
+    if (action_type == ActionLocks::StreamConsume && !shutdown_called)
+        scheduleStreamingTasksImpl();
+
+    return lock;
+}
+
 void StorageObjectStorageQueue::rebuildObjectStorageClient(ContextPtr rebuild_context)
 {
     /// Force a client rebuild under `rebuild_context` (re-resolving credentials) without detaching the table.
@@ -995,6 +1008,10 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
                 }
 
                 LOG_DEBUG(log, "Stopped streaming to {} attached views", dependencies_count);
+
+                /// The cycle could be the last one before the table was stopped or paused.
+                if (stream_control.isBlocked())
+                    releaseStreamingLocks();
             }
             else
             {

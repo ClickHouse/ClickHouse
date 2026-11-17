@@ -124,6 +124,10 @@ public:
 
     static constexpr auto engine_names = {"S3Queue", "AzureQueue"};
 
+    /// STOP/PAUSE: also wake the streaming tasks, so that the table releases the locks
+    /// which it holds right away and not at its next poll.
+    ActionLock getActionLock(StorageActionBlockType action_type) override;
+
     void checkTableCanBeRenamed(const StorageID & new_name) const override;
     void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override;
 
