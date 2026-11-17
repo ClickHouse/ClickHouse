@@ -200,9 +200,11 @@ void splitPartsAmongReaders(std::vector<PartToRead> & parts, size_t min_pieces)
 
 /// Readers of parts on a remote disk, such as S3: a reader there waits for each response most of the
 /// time, and the read is bound by how many requests are in flight rather than by the link to the
-/// device. Over cold TPC-H SF100 on S3 on an A10G, the sum of Q6 took 8.8 s with 4 readers and
-/// 3.6 s with 16, where the device waited for the readers 5.8 s and 0.4 s.
-constexpr size_t remote_disk_readers = 16;
+/// device. Over cold TPC-H SF100 on S3 on an A10G, the sum of Q6 took 8.8 s with 4 readers, 3.6 s
+/// with 8 and 3.3 s with 16, where the device waited for the readers 5.8 s with 4 and 0.4 s with 16.
+/// Yet each reader holds the expanded columns of a part on the device, and Q1, of seven columns, ran
+/// the 22 GiB of the device out of memory with 12 readers.
+constexpr size_t remote_disk_readers = 8;
 
 /// Two readers fill the link when they only copy compressed blocks into pinned memory; a reader
 /// that also expands the columns is bound by the CPU, and a quarter of the cores keep up with the
