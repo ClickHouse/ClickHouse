@@ -39,11 +39,12 @@ SELECT count() FROM v_merge;
 
 -- The same for a partition and for `ReplicatedMergeTree`.
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_part (p String, k UInt8, id UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_part', 'r1') PARTITION BY (p, k) ORDER BY id;
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_part VALUES ({CLICKHOUSE_DATABASE:String}, 0, 1), ({CLICKHOUSE_DATABASE:String}, 1, 2), ({CLICKHOUSE_DATABASE_1:String}, 0, 3), ({CLICKHOUSE_DATABASE_1:String}, 1, 4), ({CLICKHOUSE_DATABASE_1:String}, 2, 5), ({CLICKHOUSE_DATABASE_1:String}, 3, 6), ('x', 4, 7), ('x', 5, 8), ({CLICKHOUSE_DATABASE_1:String}, 6, 9);
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_part VALUES ({CLICKHOUSE_DATABASE:String}, 0, 1), ({CLICKHOUSE_DATABASE:String}, 1, 2), ({CLICKHOUSE_DATABASE_1:String}, 0, 3), ({CLICKHOUSE_DATABASE_1:String}, 1, 4), ({CLICKHOUSE_DATABASE_1:String}, 2, 5), ({CLICKHOUSE_DATABASE_1:String}, 3, 6), ('x', 4, 7), ('x', 5, 8), ({CLICKHOUSE_DATABASE_1:String}, 6, 9), ({CLICKHOUSE_DATABASE_1:String}, 7, 10);
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_part DELETE IN PARTITION (currentDatabase(), 0) WHERE 1 SETTINGS mutations_sync = 2;
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_part DELETE IN PARTITION (currentDatabase, 1) WHERE 1 SETTINGS mutations_sync = 2;
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_part DROP PARTITION (currentDatabase(), 2);
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_part DROP PARTITION (currentDatabase, 3);
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_part DELETE WHERE p = currentDatabase AND k = 7 SETTINGS mutations_sync = 2, optimize_mutations_with_partition_pruning = 1;
 -- An alias or a lambda parameter with the name of the function is not the function.
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_part DROP PARTITION (('x' AS database), if(database = 'x', 4, 5));
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_part DELETE IN PARTITION (arrayMap(database -> database, ['x'])[1], 5) WHERE 1 SETTINGS mutations_sync = 2;
