@@ -66,6 +66,10 @@
 04836_merge_table_parallel_replicas_duplicate_announcement
 05399_autopr_plan_without_parallel_replicas
 
+    Automatic parallel replicas collects no statistics: the shipped plan has no matching step in the single-node plan
+    https://github.com/ClickHouse/ClickHouse/issues/131450
+05395_autopr_nested_query_shapes
+
     The test describes query-based behaviour (setting semantics, statistics, step names)
 01513_optimize_aggregation_in_order_memory_long
 01655_plan_optimizations_optimize_read_in_window_order_long
