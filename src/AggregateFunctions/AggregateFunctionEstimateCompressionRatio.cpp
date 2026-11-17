@@ -724,7 +724,10 @@ private:
     /// How many of the converted rows from `offset` the open granule takes, and their bytes. A granule ends after
     /// `index_granularity` rows, or at the row where its converted rows reach `index_granularity_bytes`. That approximates the
     /// writer, which picks one granule size per insert block, from the bytes of all the columns of the block
-    /// (`computeIndexGranularity`); neither is known here.
+    /// (`computeIndexGranularity`); neither is known here. The rows are summed one by one only for the piece that ends the
+    /// granule, which is exact for most types; for a `LowCardinality` target, `byteSizeAt` counts the value of each row where
+    /// `byteSize` counts the dictionary once (counting rows at their average size instead changed no `LowCardinality` estimate
+    /// measured and made `String` ones less exact).
     std::pair<size_t, size_t> rowsToGranuleEnd(const Data & data_ref, const IColumn & converted, size_t offset) const
     {
         if (offset == 0)
@@ -978,6 +981,7 @@ The estimate is approximate, and it does not read the settings of any table.
 A state kept in a `Memory` table keeps the conversion settings of the query that added its rows, whichever query reads it.
 A table sizes its granules from its insert blocks and from all its columns together, while the function sees one column and no insert blocks, so the granules of wide rows can differ.
 The numerator of a `LowCardinality` column is the size of its values, not of its dictionary.
+As `LowCardinality`, the estimated size of wide values with few distinct values is a few percent too large (up to about 11% for 1.2 KB values with 1000 distinct ones), because the function writes the rows of a granule in pieces of 1 MiB, where a table writes them at once.
 The result can depend on how a query splits the rows between threads.
 The rows of a group that one thread gathers join the rows of the other threads while they are fewer than a granule and less than 1 MiB; beyond that, they are estimated as a separate part.
 States that are serialized (in a distributed query, an external aggregation, or an `AggregateFunction` column) are separate parts too.
