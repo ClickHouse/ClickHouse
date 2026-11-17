@@ -717,10 +717,14 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     {
         table_structure = fetchTableStructure(*tx, table_name);
     }
+    catch (const Exception &)
+    {
+        throw;
+    }
     catch (...)
     {
-        tryLogCurrentException(log);
-        table_structure = std::make_unique<PostgreSQLTableStructure>();
+        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                        "Cannot fetch structure of table {}: {}", table_name, getCurrentExceptionMessage(false));
     }
     if (!table_structure->physical_columns)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No table attributes");
