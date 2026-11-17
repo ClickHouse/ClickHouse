@@ -7,8 +7,6 @@ slug: /guides/working-with-joins
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickHouse는 표준 SQL 조인을 완벽하게 지원하여 효율적인 데이터 분석이 가능합니다.
 이 가이드에서는 벤 다이어그램과 [relational dataset repository](https://relational.fit.cvut.cz/dataset/IMDb)에서 가져온 정규화된 [IMDB](https://en.wikipedia.org/wiki/IMDb) 데이터셋에 대한 예시 쿼리를 통해, 일반적으로 자주 사용되는 조인 유형 몇 가지와 그 사용 방법을 살펴봅니다.
 
@@ -22,7 +20,15 @@ ClickHouse는 표준 SQL 조인을 완벽하게 지원하여 효율적인 데이
 
 다음 4개의 테이블을 예시 데이터셋에서 사용합니다:
 
-<Image img="/images/starter_guides/joins/imdb_schema.webp" alt="IMDB 스키마" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![IMDB 스키마](/images/starter_guides/joins/imdb_schema.webp)
+
+</Frame>
+
+</div>
 
 이 4개 테이블의 데이터는 하나 이상의 장르를 가질 수 있는 영화를 나타냅니다.
 영화 속 배역은 배우가 연기합니다.
@@ -56,7 +62,15 @@ ClickHouse는 다음과 같은 JOIN 유형을 지원합니다:
 `INNER JOIN`은 조인 키(join keys)가 일치하는 각 행 쌍에 대해 왼쪽 테이블 행의 컬럼 값과 오른쪽 테이블 행의 컬럼 값을 결합해 반환합니다.
 한 행에 일치하는 항목이 둘 이상 있으면 해당하는 모든 항목이 반환됩니다(즉, 조인 키가 일치하는 행에 대해서는 [카테시안 곱](https://en.wikipedia.org/wiki/Cartesian_product)이 생성됩니다).
 
-<Image img="/images/starter_guides/joins/inner_join.webp" alt="Inner Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Inner Join](/images/starter_guides/joins/inner_join.webp)
+
+</Frame>
+
+</div>
 
 이 쿼리는 `movies` 테이블과 `genres` 테이블을 조인하여 각 영화의 장르를 찾습니다:
 
@@ -104,7 +118,15 @@ LIMIT 10;
 
 `FULL OUTER JOIN` 쿼리는 `LEFT`와 `RIGHT OUTER JOIN`을 결합한 것으로, 왼쪽 및 오른쪽 테이블에서 일치하는 행이 없는 값을 각각 반대쪽 테이블 컬럼의 기본값과 함께 반환합니다.
 
-<Image img="/images/starter_guides/joins/outer_join.webp" alt="외부 조인" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![외부 조인](/images/starter_guides/joins/outer_join.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   ClickHouse는 기본값 대신 [NULL](/ko/reference/syntax#null)을 반환하도록 [구성](/ko/reference/settings/session-settings/join#join_use_nulls)할 수 있습니다(다만 [성능상의 이유](/ko/reference/data-types/nullable#storage-features)로 권장되지 않습니다).
@@ -149,7 +171,15 @@ LIMIT 10;
 `CROSS JOIN`은 조인 키를 고려하지 않고 두 테이블의 전체 카테시안 곱을 생성합니다.
 왼쪽 테이블의 각 행은 오른쪽 테이블의 각 행 각각과 결합됩니다.
 
-<Image img="/images/starter_guides/joins/cross_join.webp" alt="크로스 조인" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![크로스 조인](/images/starter_guides/joins/cross_join.webp)
+
+</Frame>
+
+</div>
 
 따라서 다음 쿼리는 `movies` 테이블의 각 행을 `genres` 테이블의 각 행과 결합합니다:
 
@@ -249,7 +279,15 @@ ALL
 
 `RIGHT SEMI JOIN` 쿼리도 이와 비슷하며, 왼쪽 테이블에서 하나 이상 일치하는 오른쪽 테이블의 모든 행에 대한 값을 반환하지만, 첫 번째로 찾은 일치 항목만 반환됩니다.
 
-<Image img="/images/starter_guides/joins/semi_join.webp" alt="Semi Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Semi Join](/images/starter_guides/joins/semi_join.webp)
+
+</Frame>
+
+</div>
 
 이 쿼리는 2023년에 영화에 출연한 모든 배우를 찾습니다.
 일반적인 (`INNER`) 조인을 사용하면, 2023년에 역할이 2개 이상인 동일한 배우가 여러 번 표시될 수 있다는 점에 유의하십시오:
@@ -288,7 +326,15 @@ LIMIT 10;
 
 마찬가지로 `RIGHT ANTI JOIN`은 오른쪽 테이블에서 일치하는 항목이 없는 모든 행의 컬럼 값을 반환합니다.
 
-<Image img="/images/starter_guides/joins/anti_join.webp" alt="안티 조인" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![안티 조인](/images/starter_guides/joins/anti_join.webp)
+
+</Frame>
+
+</div>
 
 앞의 외부 조인 예시 쿼리는 anti join을 사용해 데이터셋에 장르가 없는 영화를 찾는 방식으로도 표현할 수 있습니다:
 
@@ -328,7 +374,15 @@ LIMIT 10;
 
 또한 `INNER ANY JOIN`은 카테시안 곱이 비활성화된 `INNER JOIN`입니다.
 
-<Image img="/images/starter_guides/joins/any_join.webp" alt="Any Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Any Join](/images/starter_guides/joins/any_join.webp)
+
+</Frame>
+
+</div>
 
 다음 예시는 [values](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/TableFunctions/TableFunctionValues.h) [테이블 함수](/ko/reference/functions/table-functions/index)로 생성한 두 개의 임시 테이블(`left_table` 및 `right_table`)을 사용해 `LEFT ANY JOIN`을 추상적인 예로 보여줍니다:
 
@@ -403,14 +457,30 @@ INNER ANY JOIN right_table AS r ON l.c = r.c;
 
 이는 특히 시계열(time-series) 분석에 유용하며, 쿼리 복잡도를 크게 줄일 수 있습니다.
 
-<Image img="/images/starter_guides/joins/asof_join.webp" alt="Asof Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Asof Join](/images/starter_guides/joins/asof_join.webp)
+
+</Frame>
+
+</div>
 
 다음 예시는 주식 시장 데이터에 대해 시계열 분석을 수행합니다.
 `quotes` 테이블에는 하루 중 특정 시각의 주식 심볼 시세가 저장됩니다.
 예시 데이터에서는 가격이 10초마다 갱신됩니다.
 `trades` 테이블에는 심볼 거래 내역이 있으며, 특정 시각에 특정 수량의 심볼이 매수됩니다:
 
-<Image img="/images/starter_guides/joins/asof_example.webp" alt="Asof Example" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Asof Example](/images/starter_guides/joins/asof_example.webp)
+
+</Frame>
+
+</div>
 
 각 거래의 실제 비용을 계산하려면 각 거래를 가장 가까운 시세 시각과 매칭해야 합니다.
 

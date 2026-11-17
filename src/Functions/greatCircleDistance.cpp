@@ -354,7 +354,7 @@ public:
     explicit FunctionGeoDistance(ContextPtr context)
         : TargetSpecific::Default::FunctionGeoDistance<method>(context)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionGeoDistance<method>>(context);
@@ -364,7 +364,7 @@ public:
         impl = std::make_unique<TargetSpecific::Default::FunctionGeoDistance<method>>(context);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return impl->executeImpl(arguments, result_type, input_rows_count);
     }
