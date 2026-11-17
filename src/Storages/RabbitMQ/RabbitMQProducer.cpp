@@ -82,6 +82,10 @@ void RabbitMQProducer::stopProducingTask()
 void RabbitMQProducer::finishImpl()
 {
     connection.disconnect();
+    if (query_status)
+        query_status->throwIfKilled();
+    if (!publish_error.empty())
+        throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "{}", publish_error);
 }
 
 void RabbitMQProducer::produce(const String & message, size_t, const Columns &, size_t)
@@ -92,7 +96,7 @@ void RabbitMQProducer::produce(const String & message, size_t, const Columns &, 
     LOG_TEST(log, "Pushing message with id {}", payload.id);
     if (!payloads.push(std::move(payload)))
     {
-        /// The producing task has failed and closed the queue: rethrows its exception.
+        /// The producing task has stopped and closed the queue: `finish` throws its error.
         finish();
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
     }
@@ -257,46 +261,47 @@ void RabbitMQProducer::startProducingTaskLoop()
 {
     LOG_TRACE(log, "Starting producer loop");
 
-    try
+    while ((!payloads.isFinishedAndEmpty() || !returned.empty() || !delivery_record.empty()) && !shutdown_called.load())
     {
-        while ((!payloads.isFinishedAndEmpty() || !returned.empty() || !delivery_record.empty()) && !shutdown_called.load())
+        if (query_status && query_status->isKilled())
+            break;
+
+        /// If onReady callback is not received, producer->usable() will anyway return true,
+        /// but must publish only after onReady callback.
+        if (producer_ready)
         {
-            if (query_status)
-                query_status->throwIfKilled();
+            /* Publish main paylods only when there are no returned messages. This way it is ensured that returned messages are republished
+             * as fast as possible and no new publishes are made before returned messages are handled
+             */
+            if (!returned.empty() && producer_channel->usable())
+                publish(returned, true);
+            else if (!payloads.empty() && producer_channel->usable())
+                publish(payloads, false);
+        }
 
-            /// If onReady callback is not received, producer->usable() will anyway return true,
-            /// but must publish only after onReady callback.
-            if (producer_ready)
+        iterateEventLoop();
+
+        if (!producer_channel->usable())
+        {
+            /// The broker closes only the channel when it rejects a publish, e.g. NOT_FOUND for a missing exchange.
+            /// A new channel is rejected the same way.
+            if (!reconnect_failed && connection.isConnected())
             {
-                /* Publish main paylods only when there are no returned messages. This way it is ensured that returned messages are republished
-                 * as fast as possible and no new publishes are made before returned messages are handled
-                 */
-                if (!returned.empty() && producer_channel->usable())
-                    publish(returned, true);
-                else if (!payloads.empty() && producer_channel->usable())
-                    publish(payloads, false);
+                publish_error = fmt::format("Cannot publish to RabbitMQ exchange '{}': {}", exchange_name, channel_error);
+                break;
             }
 
-            iterateEventLoop();
-
-            if (!producer_channel->usable())
-            {
-                /// The broker closes only the channel when it rejects a publish, e.g. NOT_FOUND for a missing exchange.
-                /// A new channel is rejected the same way.
-                if (!reconnect_failed && connection.isConnected())
-                    throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "Cannot publish to RabbitMQ exchange '{}': {}", exchange_name, channel_error);
-
-                reconnect_failed = !connection.reconnect();
-                if (!reconnect_failed)
-                    setupChannel();
-            }
+            reconnect_failed = !connection.reconnect();
+            if (!reconnect_failed)
+                setupChannel();
         }
     }
-    catch (...)
+
+    if (!publish_error.empty() || (query_status && query_status->isKilled()))
     {
         /// Nothing pops `payloads` anymore, so `produce` must not wait for free space in it.
         payloads.finish();
-        throw;
+        return;
     }
 
     size_t try_num = 0;
