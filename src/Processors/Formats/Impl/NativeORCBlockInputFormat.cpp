@@ -2290,27 +2290,12 @@ static bool orcUnionBranchMatchesType(const ORC::Type * orc_branch_type, const D
                 /// Match by field name, like the non-union ORC struct path: the target tuple may be
                 /// a subset of the ORC struct's fields, in any order. Each target field must map to
                 /// an ORC field with a recursively matching type; extra ORC fields are projected out
-                /// by the repair cast. Build a name -> ORC subtype map for the lookup.
-                UnorderedMapWithMemoryTracking<String, const ORC::Type *> orc_field_by_name;
-                orc_field_by_name.reserve(orc_branch_type->getSubtypeCount());
-                for (size_t i = 0; i < orc_branch_type->getSubtypeCount(); ++i)
-                {
-                    String field_name = orc_branch_type->getFieldName(i);
-                    if (case_insensitive)
-                        boost::to_lower(field_name);
-                    orc_field_by_name.emplace(std::move(field_name), orc_branch_type->getSubtype(i));
-                }
-
-                const auto & element_names = tuple_type.getElementNames();
+                /// by the repair cast.
+                const auto field_positions = matchORCStructFieldsByName(orc_branch_type, tuple_type, case_insensitive);
                 for (size_t i = 0; i < elements.size(); ++i)
-                {
-                    String element_name = element_names[i];
-                    if (case_insensitive)
-                        boost::to_lower(element_name);
-                    auto it = orc_field_by_name.find(element_name);
-                    if (it == orc_field_by_name.end() || !orcUnionBranchMatchesType(it->second, elements[i], case_insensitive))
+                    if (!field_positions[i]
+                        || !orcUnionBranchMatchesType(orc_branch_type->getSubtype(*field_positions[i]), elements[i], case_insensitive))
                         return false;
-                }
                 return true;
             }
 
@@ -2586,11 +2571,11 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             {
                 /// A value-checking cast (e.g. Int8 -> Enum8) must not inspect the placeholder values ORC leaves at
                 /// null-payload positions: those rows become the Variant NULL discriminator below and are never read.
+                const RequestedTypeCastSettings cast_settings{.null_as_default = null_as_default, .case_insensitive = case_insensitive_matching};
                 if (branch_null_maps[i])
-                    castColumnToRequestedType(
-                        branch_non_nullable, branch_hints[i], *branch_null_maps[i], {.case_insensitive = case_insensitive_matching});
+                    castColumnToRequestedType(branch_non_nullable, branch_hints[i], *branch_null_maps[i], cast_settings);
                 else
-                    castColumnToRequestedType(branch_non_nullable, branch_hints[i], {.case_insensitive = case_insensitive_matching});
+                    castColumnToRequestedType(branch_non_nullable, branch_hints[i], cast_settings);
                 branch_non_nullable.type = branch_hints[i];
             }
 

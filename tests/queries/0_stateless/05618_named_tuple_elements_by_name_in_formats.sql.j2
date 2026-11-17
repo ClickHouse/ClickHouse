@@ -69,4 +69,14 @@ FROM numbers(4) SETTINGS output_format_parquet_row_group_size = 2;
 SELECT count() FROM file(currentDatabase() || '_05618_pruning.Parquet', 'Parquet', 'd Date32') WHERE d > '1960-01-01' SETTINGS input_format_parquet_filter_push_down = 1;
 SELECT count() FROM file(currentDatabase() || '_05618_pruning.Parquet', 'Parquet', 'd Date32') WHERE d > '1960-01-01' SETTINGS input_format_parquet_filter_push_down = 0;
 
+INSERT INTO FUNCTION file(currentDatabase() || '_05618_union.ORC', 'ORC') SELECT
+    number AS id,
+    [CAST(CAST(tuple(NULL), 'Tuple(a Nullable(Int8))'), 'Variant(Tuple(a Nullable(Int8)), String)'), NULL][number + 1] AS v1,
+    CAST([1, NULL]::Array(Nullable(Int8)), 'Variant(Array(Nullable(Int8)), String)') AS v2,
+    CAST(CAST(('hello', 42), 'Tuple(A String, a Int32)'), 'Variant(Tuple(A String, a Int32), UInt64)') AS v3,
+    CAST(CAST((11, 'x'), 'Tuple(AB Int32, ab String)'), 'Variant(Tuple(AB Int32, ab String), UInt64)') AS v4
+FROM numbers(2);
+SELECT * FROM file(currentDatabase() || '_05618_union.ORC', 'ORC', 'id UInt64, v1 Variant(Tuple(a Int8), String), v2 Variant(Array(Int8), String)') ORDER BY id SETTINGS input_format_null_as_default = 1;
+SELECT * FROM file(currentDatabase() || '_05618_union.ORC', 'ORC', 'id UInt64, v3 Variant(Tuple(A String, a Int64), UInt64), v4 Variant(Tuple(Ab Int64, aB String), UInt64)') ORDER BY id SETTINGS input_format_orc_case_insensitive_column_matching = 1;
+
 SELECT CAST(CAST(tuple(1), 'Tuple(a Int32)'), 'Tuple(b Int32)');
