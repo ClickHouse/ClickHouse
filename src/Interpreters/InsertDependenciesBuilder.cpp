@@ -121,6 +121,7 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsMilliseconds log_queries_min_query_duration_ms;
     extern const SettingsLogQueriesType log_queries_min_type;
+    extern const SettingsBool log_query_settings;
     extern const SettingsBool log_query_views;
     extern const SettingsBool log_queries;
     extern const SettingsUInt64 log_queries_cut_to_length;
@@ -2023,6 +2024,12 @@ void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_p
 
             if (settings[Setting::log_profile_events] != 0)
                 element.profile_counters = std::move(profile_counters);
+
+            if (settings[Setting::log_query_settings])
+            {
+                if (auto it = insert_contexts.find(view_id); it != insert_contexts.end())
+                    element.view_settings = it->second->getSettingsRef().changedToFlatMap(/* show_secrets */ false);
+            }
 
             element.status = event_status;
             element.exception_code = 0;

@@ -12,6 +12,7 @@
 #include <Interpreters/SystemLog.h>
 #include <Storages/ColumnsDescription.h>
 #include <base/types.h>
+#include <Common/FlatStringMap.h>
 #include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
@@ -52,6 +53,7 @@ struct QueryViewsLogElement
     UInt64 written_bytes{};
     Int64 peak_memory_usage{};
     std::optional<ProfileEvents::Counters::Snapshot> profile_counters;
+    std::optional<FlatStringMap> view_settings;
 
     ViewStatus status = ViewStatus::QUERY_START;
     Int32 exception_code{};
