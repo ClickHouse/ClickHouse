@@ -2972,8 +2972,8 @@ void StorageFile::read(
     size_t num_streams)
 {
     /// A storage carrying a renaming rule renames the files it read once its readers are destroyed
-    /// (`StorageFileSource::beforeDestroy`), so reading it needs `WRITE` on the source besides `READ`, and is refused in
-    /// readonly mode. This context is the reading query's, not that of the query which built the storage.
+    /// (`StorageFileSource::beforeDestroy`), so reading it needs `WRITE` on the source besides `READ`.
+    /// This context is the reading query's, not that of the query which built the storage.
     if (!file_renamer.isEmpty())
         checkAccessForRenamingFiles(context);
 
