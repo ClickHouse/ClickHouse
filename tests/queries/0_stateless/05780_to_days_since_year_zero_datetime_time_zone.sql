@@ -14,3 +14,9 @@ SELECT countIf(toDaysSinceYearZero(t) != toDaysSinceYearZero(toDate(t)) OR toDay
 FROM (SELECT toTimeZone(toDateTime('2024-01-01 00:00:00', 'UTC') + number * 1800, 'America/Los_Angeles') AS t FROM numbers(2000));
 SELECT countIf(toDaysSinceYearZero(t) != toDaysSinceYearZero(toDate(t)) OR toDaysSinceYearZero(t) != toDaysSinceYearZero(toDateTime64(t, 0, 'Pacific/Auckland')))
 FROM (SELECT toTimeZone(toDateTime('2024-01-01 00:00:00', 'UTC') + number * 1800, 'Pacific/Auckland') AS t FROM numbers(2000));
+
+SELECT 'the local day at the epoch is the day before it west of UTC';
+SELECT toDaysSinceYearZero(toDateTime(0, 'America/Los_Angeles'));
+SELECT toDaysSinceYearZero(toDateTime64(0, 0, 'America/Los_Angeles'));
+SELECT toDaysSinceYearZero(toDateTime(0, 'UTC'), 'America/Los_Angeles');
+SELECT TO_DAYS(toDateTime(0, 'UTC'), 'America/Los_Angeles');
