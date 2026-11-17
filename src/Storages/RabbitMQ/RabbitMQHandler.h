@@ -72,8 +72,9 @@ private:
     std::atomic<bool> connection_running, loop_running;
     std::atomic<UInt8> loop_state;
     std::mutex startup_mutex;
-    /// Bounds each blocking wait of startLoop(), so that it sees a stop request. On the heap: it is closed by the loop.
-    uv_timer_t * wake_timer;
+    /// Wakes `startLoop` blocked in the poller when a stop is requested. Thread-safe to signal.
+    /// On the heap: it is closed asynchronously by the loop, which can outlive the handler.
+    uv_async_t * wake_async;
 };
 
 using RabbitMQHandlerPtr = std::shared_ptr<RabbitMQHandler>;

@@ -81,8 +81,8 @@ TEST(RabbitMQHandler, BlockingLoopHonoursTimeoutAfterIdlePeriod)
     EXPECT_GE(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count(), 400);
 }
 
-/// The looping task must block between events instead of spinning, see a stop request within its wake
-/// interval, and leave no active handle behind, so the non-blocking loops used elsewhere are unaffected.
+/// The looping task must block between events instead of spinning, be woken up by a stop request
+/// promptly, and leave no active handle behind, so the non-blocking loops used elsewhere are unaffected.
 TEST(RabbitMQHandler, LoopingTaskBlocksAndStops)
 {
     UVLoop loop;

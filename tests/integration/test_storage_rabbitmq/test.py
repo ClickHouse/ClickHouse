@@ -2124,7 +2124,7 @@ def test_rabbitmq_vhost(rabbitmq_cluster, db, unique):
 def test_rabbitmq_trickle_does_not_spin_event_loop(rabbitmq_cluster, db, unique):
     # A trickle of messages must not keep a core busy: the event loop blocks in the poller.
     if instance.is_built_with_sanitizer():
-        pytest.skip("CPU-tick bound is meaningless under sanitizers; covered by gtest IdleLoopThreadDoesNotSpin")
+        pytest.skip("CPU-tick bound is meaningless under sanitizers; covered by gtest LoopingTaskBlocksAndStops")
     instance.query(
         f"""
         CREATE TABLE {db}.trickle (key UInt64, value UInt64)
