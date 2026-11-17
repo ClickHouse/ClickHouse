@@ -229,6 +229,9 @@ ASTPtr makeASTForQueryParameter(const Field & literal, const String & type_name,
             {
                 if (isDateTime64(type) || isTime64(type))
                     return std::make_shared<DataTypeDecimal<Decimal128>>(DecimalUtils::max_precision<Decimal128>, getDecimalScale(*type));
+                /// A custom name re-derived over the decimals may be invalid, e.g. `SimpleAggregateFunction(timeSeriesGroupArray, ...)`.
+                if (type->hasCustomName())
+                    return type->cloneWithChildren(type->getChildren());
                 return type;
             },
             CustomizationPolicy::Refuse);
