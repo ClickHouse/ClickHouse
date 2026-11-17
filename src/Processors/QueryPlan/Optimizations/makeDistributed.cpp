@@ -1264,7 +1264,7 @@ static void tryPushScatterBelowUnion(QueryPlan::Node & node, const QueryPlanOpti
     }
 
     /// Keep the stream width the removed scatter delivered.
-    union_step->narrowToMaxThreads();
+    union_step->resizeToMaxThreads();
 
     node.step = std::move(node.children[0]->step);
     node.children = std::move(node.children[0]->children);

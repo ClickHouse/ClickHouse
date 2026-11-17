@@ -5,6 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Block.h>
+#include <Core/ProtocolDefines.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -125,6 +126,17 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
 
     *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), new_max_threads, &processors);
 
+    /// A `Resize`, not the `Concat` of the narrowing below: the branches can be exchange receivers whose
+    /// senders also feed the other buckets, so every branch must stay consumed. A branch left undemanded
+    /// would block its senders, and with them the same branch in every other bucket.
+    if (resize_to_max_threads && pipeline->getNumStreams() > new_max_threads)
+    {
+        QueryPipelineProcessorsCollector collector(*pipeline, this);
+        pipeline->resize(new_max_threads);
+        auto added_processors = collector.detachProcessors();
+        processors.insert(processors.end(), added_processors.begin(), added_processors.end());
+    }
+
     /// The `max_streams_for_union_step*` cap only applies to steps built for SQL
     /// `UNION ALL` / `UNION DISTINCT`, and only while no downstream step relies on
     /// per-stream sortedness of the union output. For all other cases the narrowing
@@ -139,7 +151,7 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
             "Invalid value for `max_streams_for_union_step_to_max_threads_ratio`: {}. Must be a finite non-negative number.",
             max_streams_ratio);
 
-    if (!allow_narrowing && !narrow_to_max_threads)
+    if (!allow_narrowing)
         return pipeline;
 
     size_t effective_max_streams = settings.max_streams_for_union_step;
@@ -159,9 +171,6 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
         else
             effective_max_streams = max_streams_from_ratio;
     }
-
-    if (narrow_to_max_threads)
-        effective_max_streams = effective_max_streams ? std::min(effective_max_streams, new_max_threads) : new_max_threads;
 
     if (effective_max_streams && pipeline->getNumStreams() > effective_max_streams)
     {
@@ -188,7 +197,7 @@ void UnionStep::serialize(Serialization & ctx) const
     UInt8 flags = 0;
     if (allow_narrowing)
         flags |= 1;
-    if (narrow_to_max_threads)
+    if (resize_to_max_threads && ctx.step_version >= 1)
         flags |= 2;
     writeIntBinary(flags, ctx.out);
 }
@@ -202,21 +211,24 @@ QueryPlanStepPtr UnionStep::deserialize(Deserialization & ctx)
     readIntBinary(flags, ctx.in);
     auto step = std::make_unique<UnionStep>(ctx.input_headers, /*max_threads_=*/0, /*allow_narrowing_=*/flags & 1);
     if (flags & 2)
-        step->narrowToMaxThreads();
+        step->resizeToMaxThreads();
     return step;
 }
 
 QueryPlanStepPtr UnionStep::clone() const
 {
     auto step = std::make_unique<UnionStep>(input_headers, max_threads, allow_narrowing);
-    step->narrow_to_max_threads = narrow_to_max_threads;
+    step->resize_to_max_threads = resize_to_max_threads;
     return step;
 }
 
 void registerUnionStep(QueryPlanStepRegistry & registry);
 void registerUnionStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Union", &UnionStep::deserialize);
+    const QueryPlanStepRegistry::StepVersions versions{
+        {0, 0},
+        {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_UNION_RESIZE_TO_MAX_THREADS}};
+    registry.registerStep("Union", &UnionStep::deserialize, versions);
 }
 
 }

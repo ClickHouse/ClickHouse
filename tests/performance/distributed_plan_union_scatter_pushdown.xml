@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: `make_distributed_plan` cannot run `ReadFromObjectStorage` remotely. -->
     <!-- Compare `distributed_plan_optimize_exchanges` on and off.
          - Empty-key aggregation: the scatter moves under the union and the empty-key shuffle is removed.
          - Keyed join over a two-branch `UNION ALL`: each branch shuffles by the join key directly.
