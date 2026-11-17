@@ -8,3 +8,8 @@ the time zone argument
 it agrees with Date and DateTime64 around every midnight
 0
 0
+the local day at the epoch is the day before it west of UTC
+719527
+719527
+719527
+719527
