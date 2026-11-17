@@ -13,3 +13,4 @@ t_bool	NOT b	1	1	1
 t_notnull	s = 'x'	1	1	1
 t_cdf	s < 'x' SETTINGS delta_lake_snapshot_start_version = 0	2	2	0
 t_cdf	s != 'x' SETTINGS delta_lake_snapshot_start_version = 0	3	3	0
+t_cdf_pruned	2

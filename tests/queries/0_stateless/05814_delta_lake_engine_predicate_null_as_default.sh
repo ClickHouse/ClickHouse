@@ -64,6 +64,8 @@ str_files() {
 
 log str "${PROTOCOL}" "$(metadata str s string true)" "$(str_files str)"
 log cdf "${CDF_PROTOCOL}" "$(metadata cdf s string true '"delta.enableChangeDataFeed":"true"')" "$(str_files cdf)"
+# `cdf_pruned` lists `y.parquet` but does not have it: the query below succeeds only if the predicate skips that file.
+cp -r "${ROOT}/cdf" "${ROOT}/cdf_pruned" && rm "${ROOT}/cdf_pruned/y.parquet"
 log int "${PROTOCOL}" "$(metadata int i integer true)" \
     "$(add int mixed '{"numRecords":2,"minValues":{"i":7},"maxValues":{"i":7},"nullCount":{"i":1}}')" \
     "$(add int nine '{"numRecords":1,"minValues":{"i":9},"maxValues":{"i":9},"nullCount":{"i":0}}')"
@@ -88,6 +90,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE results (query_id String, n UInt64) ENGINE = Memory;
     CREATE TABLE t_str (s String) ENGINE = DeltaLakeLocal('${ROOT}/str', Parquet);
     CREATE TABLE t_cdf (s String) ENGINE = DeltaLakeLocal('${ROOT}/cdf', Parquet);
+    CREATE TABLE t_cdf_pruned (s String) ENGINE = DeltaLakeLocal('${ROOT}/cdf_pruned', Parquet);
     CREATE TABLE t_int (i Int32) ENGINE = DeltaLakeLocal('${ROOT}/int', Parquet);
     CREATE TABLE t_date (d Date32) ENGINE = DeltaLakeLocal('${ROOT}/date', Parquet);
     CREATE TABLE t_bool (b Bool) ENGINE = DeltaLakeLocal('${ROOT}/bool', Parquet);
@@ -127,4 +130,6 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT table, condition, anyIf(n, NOT full_scan) AS with_predicate, anyIf(n, full_scan) AS full_scan_count,
         anyIf(scanned_files, NOT full_scan) AS scanned
     FROM report GROUP BY table, condition ORDER BY min(event_time_microseconds) FORMAT TSVRaw;
+
+    SELECT 't_cdf_pruned', count() FROM t_cdf_pruned WHERE s < 'x' SETTINGS delta_lake_snapshot_start_version = 0;
 " < /dev/null
