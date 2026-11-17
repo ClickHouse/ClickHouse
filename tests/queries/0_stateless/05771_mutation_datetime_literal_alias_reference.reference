@@ -1,0 +1,12 @@
+two comparisons
+1
+1	1
+2	0
+a comparison with a string keeps the string
+1	11
+2	10
+two assignments
+1	1577804400	1577804400
+2	1577890800	1577890800
+a delete over two comparisons
+2

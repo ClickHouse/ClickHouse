@@ -103,6 +103,9 @@ struct LiteralUse
     /// Whether it is the cast of an element of the tuple of `IN` to the type of the left argument, which the analyzer makes
     /// without an AST. The type counts only if the left argument of `IN` in the AST is an identifier (see `collectLiteralUses`).
     bool is_in_element_cast = false;
+    /// Whether it is the evaluation of an identifier that names the alias of the literal, such as `lit` in
+    /// `event = ('...' AS lit) AND other = lit`, which is then converted at its own position (see `addArgumentUse`).
+    bool is_alias_reference = false;
 };
 
 /// The evaluations of the string literals of the expression, by the literal.
@@ -137,8 +140,9 @@ const IAST * tryGetArgumentAST(const ASTPtr & function_ast, size_t position, siz
 /// as in a comparison with an expression that is not an identifier, or as an argument of another function, reads it otherwise.
 ///
 /// A converted literal keeps its alias (see `wrapWithTimezone`), so an identifier that names the alias elsewhere, such as `lit`
-/// in `event = ('...' AS lit) AND s = lit`, still names the string: such an evaluation, which the analyzer makes with a copy of
-/// the literal, does not count, where the AST of the function shows it.
+/// in `event = ('...' AS lit) AND s = lit`, still names the string. Such an evaluation, which the analyzer makes with a copy of
+/// the literal, where the AST of the function or of the assignment shows the identifier, counts for the identifier instead, so
+/// `other = lit` with a `DateTime` column `other` becomes `other = toDateTime(lit, '...')`, while `s = lit` is left as it is.
 class LiteralUsesCollector
 {
 public:
@@ -148,10 +152,13 @@ public:
     void collectAssigned(const QueryTreeNodePtr & node, const IAST * ast, const DataTypePtr & column_type)
     {
         const auto * literal = tryGetStringLiteral(node);
+        const auto type = column_type ? getZonelessDateTimeType(column_type) : nullptr;
         if (!literal)
             collect(node);
         else if (literal == ast)
-            uses[literal].push_back({column_type ? getZonelessDateTimeType(column_type) : nullptr});
+            uses[literal].push_back({type});
+        else if (ast && ast->as<ASTIdentifier>())
+            uses[ast].push_back({type, nullptr, nullptr, /*is_in_element_cast=*/false, /*is_alias_reference=*/true});
     }
 
     void collect(const QueryTreeNodePtr & node)
@@ -192,16 +199,25 @@ public:
     }
 
 private:
-    /// Adds the evaluation `use` of the literal `literal` that is the argument `position` of `function`, unless the AST of the
-    /// function shows that it is an identifier that names the alias of the literal there. If the AST does not tell, the literal
-    /// is read otherwise.
+    /// Adds the evaluation `use` of the literal `literal` that is the argument `position` of `function`, or of the identifier
+    /// that names the alias of the literal there, if the AST of the function shows it. If the AST does not tell, the literal is
+    /// read otherwise.
     void addArgumentUse(const FunctionNode & function, size_t position, const IAST * literal, LiteralUse use)
     {
         const auto * argument_ast = tryGetArgumentAST(function.getOriginalAST(), position, function.getArguments().getNodes().size());
         if (!argument_ast)
+        {
             uses[literal].push_back({});
+        }
         else if (argument_ast == literal)
+        {
             uses[literal].push_back(std::move(use));
+        }
+        else if (argument_ast->as<ASTIdentifier>())
+        {
+            use.is_alias_reference = true;
+            uses[argument_ast].push_back(std::move(use));
+        }
     }
 
     void collectFunction(const FunctionNode & function)
@@ -517,11 +533,15 @@ std::unordered_map<const IAST *, Conversion> getConversions(const LiteralUses & 
         if (!reading)
             continue;
 
-        /// A literal that is not evaluated with the other value of the setting is read only as with this one.
+        /// A literal that is not evaluated with the other value of the setting is read only as with this one. An identifier that
+        /// names the alias of a literal and is not evaluated so with the other value names something else then, such as a column
+        /// with its name, so it is left as it is.
         const auto alternative_it = alternative_uses ? alternative_uses->find(literal) : LiteralUses::const_iterator{};
         if (!alternative_uses || alternative_it == alternative_uses->end())
         {
-            conversions.emplace(literal, Conversion{reading->type});
+            const bool is_alias_reference = std::ranges::any_of(literal_uses, [](const LiteralUse & use) { return use.is_alias_reference; });
+            if (!alternative_uses || !is_alias_reference)
+                conversions.emplace(literal, Conversion{reading->type});
             continue;
         }
 
