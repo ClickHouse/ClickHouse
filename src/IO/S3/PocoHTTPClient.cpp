@@ -484,14 +484,23 @@ void PocoHTTPClient::makeRequestInternal(
     Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
-    /// The client decides a failed conditional write from the answers to all its attempts, which reach the tracker of
-    /// the current thread. An attempt sent elsewhere would lose its answer, and the write could be taken for not applied.
+    /// The client decides a tracked write from the answers to all its attempts, which reach its tracker through the
+    /// thread that sends them. An attempt sent under another tracker, or under none, would lose its answer, and the
+    /// write could be taken for not applied.
     auto * tracker = WriteOutcomeTracker::currentRaw();
-    const bool is_write = request.GetMethod() == Aws::Http::HttpMethod::HTTP_PUT || request.GetMethod() == Aws::Http::HttpMethod::HTTP_POST;
-    if (is_write && (request.HasHeader("if-none-match") || request.HasHeader("if-match")) && !tracker)
+    const auto tracked_write = getClickHouseTrackedWrite(request);
+    if (tracked_write && (!tracker || tracker->getId() != *tracked_write))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "An attempt of a conditional write to {} is sent without the tracker of its outcome",
+            "An attempt of a tracked write to {} is sent on a thread without its tracker",
+            request.GetUri().GetURIString());
+
+    /// Only the answers to all attempts of a write with a precondition can prove its outcome.
+    const bool is_write = request.GetMethod() == Aws::Http::HttpMethod::HTTP_PUT || request.GetMethod() == Aws::Http::HttpMethod::HTTP_POST;
+    if (is_write && (request.HasHeader("if-none-match") || request.HasHeader("if-match")) && !tracked_write)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "An attempt of a conditional write to {} does not track its outcome",
             request.GetUri().GetURIString());
 
     try
@@ -501,7 +510,7 @@ void PocoHTTPClient::makeRequestInternal(
     catch (...)
     {
         /// The body may have been sent before the exception, so the attempt may have been applied.
-        if (tracker)
+        if (tracked_write)
             tracker->markMayHaveBeenApplied();
         throw;
     }

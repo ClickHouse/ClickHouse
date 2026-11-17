@@ -2,7 +2,16 @@
 
 #include <stdexcept>
 
+#include <Common/CurrentMetrics.h>
+#include <Common/ThreadPool.h>
 #include <Common/WriteOutcomeTracker.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
+}
 
 using namespace DB;
 
@@ -78,4 +87,25 @@ TEST(WriteOutcomeTracker, ExitGuardWithoutTrackerDoesNothing)
 {
     WriteOutcomeTracker::ExitGuard guard(nullptr);
     guard.set(WriteOutcome::Applied);
+}
+
+TEST(WriteOutcomeTracker, ThreadPoolJobRunsUnderTheTrackerOfItsScheduler)
+{
+    ThreadPool pool(
+        CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, /*max_threads=*/ 1);
+
+    auto tracker = std::make_shared<WriteOutcomeTracker>();
+    std::shared_ptr<WriteOutcomeTracker> seen_under_scope;
+    {
+        WriteOutcomeTracker::Scope scope(tracker);
+        pool.scheduleOrThrowOnError([&] { seen_under_scope = WriteOutcomeTracker::current(); });
+        pool.wait();
+    }
+    EXPECT_EQ(seen_under_scope, tracker);
+
+    /// The worker thread does not keep the tracker after the job.
+    auto seen_without_scope = std::make_shared<WriteOutcomeTracker>();
+    pool.scheduleOrThrowOnError([&] { seen_without_scope = WriteOutcomeTracker::current(); });
+    pool.wait();
+    EXPECT_EQ(seen_without_scope, nullptr);
 }

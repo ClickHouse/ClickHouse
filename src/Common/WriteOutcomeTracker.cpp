@@ -9,6 +9,13 @@ namespace
 
 thread_local WriteOutcomeTracker::Scope * current_scope = nullptr;
 
+std::atomic<uint64_t> next_tracker_id = 0;
+
+}
+
+WriteOutcomeTracker::WriteOutcomeTracker()
+    : id(++next_tracker_id)
+{
 }
 
 std::optional<WriteOutcome> WriteOutcomeTracker::getOutcome() const

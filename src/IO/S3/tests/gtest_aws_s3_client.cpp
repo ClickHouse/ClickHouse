@@ -1614,6 +1614,24 @@ TEST(IOTestAwsS3Client, ReadWithMatchingIfMatchSucceeds)
 /// data-transfer timeouts are: a looser component is lowered to the cap, a non-positive one
 /// (unbounded downstream) takes the cap, and one already tighter than the cap is kept rather than
 /// raised. The connect timeout is passed through untouched.
+/// The `clickhouse-request` header carries the attempt number and the mark of a tracked write, and each keeps the other.
+TEST(IOTestAwsS3Client, ClickHouseRequestFieldsKeepEachOther)
+{
+    DB::S3::PutObjectRequest request;
+    EXPECT_FALSE(DB::S3::getClickHouseTrackedWrite(request).has_value());
+    const auto request_info = [&] { return request.GetAdditionalCustomHeaders().at("clickhouse-request"); };
+
+    DB::S3::setClickHouseTrackedWrite(request, 7);
+    DB::S3::setClickHouseAttemptNumber(request, 3);
+    EXPECT_EQ(DB::S3::getClickHouseTrackedWrite(request), 7u);
+    EXPECT_EQ(request_info(), "tracked-write=7;attempt=3");
+
+    DB::S3::setClickHouseAttemptNumber(request, 4);
+    DB::S3::setClickHouseTrackedWrite(request, 8);
+    EXPECT_EQ(DB::S3::getClickHouseTrackedWrite(request), 8u);
+    EXPECT_EQ(request_info(), "attempt=4;tracked-write=8");
+}
+
 /// Only a known answer that refuses a request before it is applied proves that an attempt of a write was not applied.
 TEST(IOTestAwsS3Client, AttemptMayHaveBeenApplied)
 {

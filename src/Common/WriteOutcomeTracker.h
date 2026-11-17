@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <optional>
 
@@ -27,6 +28,11 @@ enum class WriteOutcome : uint8_t
 class WriteOutcomeTracker
 {
 public:
+    WriteOutcomeTracker();
+
+    /// Names the tracker in the requests of its write, so that the HTTP client can check the thread of each attempt.
+    uint64_t getId() const { return id; }
+
     /// The storage tracks the outcome of the write. Without it, an outcome that is not set proves nothing.
     void attach() { attached.store(true); }
     bool isAttached() const { return attached.load(); }
@@ -78,6 +84,7 @@ public:
 private:
     static constexpr uint8_t not_set = 0xFF;
 
+    const uint64_t id;
     std::atomic<bool> attached = false;
     std::atomic<bool> may_have_been_applied = false;
     std::atomic<uint8_t> outcome = not_set;

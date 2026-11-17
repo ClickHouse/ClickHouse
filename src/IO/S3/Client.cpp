@@ -745,6 +745,8 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
     checkConditionalWriteIsTracked(request);
     const auto & tracker = request.getOutcomeTracker();
     WriteOutcomeTracker::ExitGuard outcome_guard(tracker);
+    if (tracker)
+        setClickHouseTrackedWrite(request, tracker->getId());
     auto outcome = [&]
     {
         std::optional<WriteOutcomeTracker::Scope> attempts;
@@ -814,6 +816,8 @@ Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
     checkConditionalWriteIsTracked(request);
     const auto & tracker = request.getOutcomeTracker();
     WriteOutcomeTracker::ExitGuard outcome_guard(tracker);
+    if (tracker)
+        setClickHouseTrackedWrite(request, tracker->getId());
     auto outcome = [&]
     {
         std::optional<WriteOutcomeTracker::Scope> attempts;

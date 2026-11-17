@@ -341,6 +341,12 @@ size_t getClickHouseAttemptNumber(const Aws::AmazonWebServiceRequest & request);
 size_t getClickHouseAttemptNumber(const Aws::Http::HttpRequest & request);
 void setClickHouseAttemptNumber(Aws::AmazonWebServiceRequest & request, size_t attempt);
 
+/// Marks the request as an attempt of the write whose outcome the tracker with this id tracks (`WriteOutcomeTracker`),
+/// so that the HTTP client can check that the attempt runs under that tracker.
+void setClickHouseTrackedWrite(Aws::AmazonWebServiceRequest & request, uint64_t tracker_id);
+std::optional<uint64_t> getClickHouseTrackedWrite(const Aws::AmazonWebServiceRequest & request);
+std::optional<uint64_t> getClickHouseTrackedWrite(const Aws::Http::HttpRequest & request);
+
 }
 
 #endif

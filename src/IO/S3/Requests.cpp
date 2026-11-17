@@ -1,3 +1,4 @@
+#include <charconv>
 #include <IO/S3/Requests.h>
 #include <Common/StringUtils.h>
 
@@ -388,9 +389,69 @@ static String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const Str
     return it->second;
 }
 
+static constexpr auto CLICKHOUSE_REQUEST_HEADER = "clickhouse-request";
+
+/// Sets one `key=value` field of the `clickhouse-request` header and keeps the other fields.
+static void setClickHouseRequestField(Aws::AmazonWebServiceRequest & request, const String & key, const String & value)
+{
+    const String prefix = key + "=";
+    const String request_info = getOrEmpty(request.GetAdditionalCustomHeaders(), CLICKHOUSE_REQUEST_HEADER);
+    String new_info;
+    size_t field_begin = 0;
+    while (field_begin < request_info.size())
+    {
+        size_t field_end = request_info.find(';', field_begin);
+        if (field_end == String::npos)
+            field_end = request_info.size();
+        const auto field = request_info.substr(field_begin, field_end - field_begin);
+        if (!field.empty() && !field.starts_with(prefix))
+            new_info += field + ";";
+        field_begin = field_end + 1;
+    }
+    request.SetAdditionalCustomHeaderValue(CLICKHOUSE_REQUEST_HEADER, new_info + prefix + value);
+}
+
+/// A malformed id gives 0, which no tracker has, so the check of the attempt fails.
+static std::optional<uint64_t> getTrackedWriteFromInfo(const Aws::String & request_info)
+{
+    static const Aws::String key = "tracked-write=";
+
+    const auto key_begin = request_info.find(key);
+    if (key_begin == Aws::String::npos)
+        return std::nullopt;
+
+    const auto val_begin = key_begin + key.size();
+    auto val_end = request_info.find(';', val_begin);
+    if (val_end == Aws::String::npos)
+        val_end = request_info.size();
+
+    uint64_t value = 0;
+    const auto * end = request_info.data() + val_end;
+    const auto [ptr, error] = std::from_chars(request_info.data() + val_begin, end, value);
+    if (error != std::errc() || ptr != end)
+        return 0;
+    return value;
+}
+
 void setClickHouseAttemptNumber(Aws::AmazonWebServiceRequest & request, size_t attempt)
 {
-    request.SetAdditionalCustomHeaderValue("clickhouse-request", fmt::format("attempt={}", attempt));
+    setClickHouseRequestField(request, "attempt", std::to_string(attempt));
+}
+
+void setClickHouseTrackedWrite(Aws::AmazonWebServiceRequest & request, uint64_t tracker_id)
+{
+    setClickHouseRequestField(request, "tracked-write", std::to_string(tracker_id));
+}
+
+std::optional<uint64_t> getClickHouseTrackedWrite(const Aws::AmazonWebServiceRequest & request)
+{
+    /// `GetHeaders` of a model request has no custom headers: the SDK adds them to the HTTP request.
+    return getTrackedWriteFromInfo(getOrEmpty(request.GetAdditionalCustomHeaders(), CLICKHOUSE_REQUEST_HEADER));
+}
+
+std::optional<uint64_t> getClickHouseTrackedWrite(const Aws::Http::HttpRequest & request)
+{
+    return getTrackedWriteFromInfo(getOrEmpty(request.GetHeaders(), CLICKHOUSE_REQUEST_HEADER));
 }
 
 size_t getClickHouseAttemptNumber(const Aws::AmazonWebServiceRequest & request)
