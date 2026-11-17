@@ -2784,7 +2784,8 @@ def test_failed_lookup_of_the_selected_version_keeps_the_ordered_position(starte
     selected_version = client.put_object(Bucket=bucket, Key=f"{files_path}/a.csv", Body=b"1,2,3\n")["VersionId"]
     client.put_object(Bucket=bucket, Key=f"{files_path}/b.csv", Body=b"4,5,6\n")
 
-    # The `One` format reads no bytes, so `b.csv` is consumed although the selected version is not one of its versions.
+    # The `One` format reads no bytes, so `b.csv` is consumed although the selected version is not one of its versions;
+    # its `_tags`, requested by the background insert, are those of the latest version described by its listed metadata.
     url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/*?versionId={selected_version}"
     node.query(
         f"""
