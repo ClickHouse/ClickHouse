@@ -4,7 +4,10 @@ intact
 --- HTTP GET
 method GET implies readonly
 intact
---- fileCluster, refused on the initiator
+--- fileCluster
+(READONLY)
+intact
+--- fileCluster under EXPLAIN PLAN optimize = 0 contacts no worker and is refused on the initiator
 (READONLY)
 intact
 --- DESCRIBE builds no reader and is allowed

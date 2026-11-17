@@ -11,7 +11,7 @@ mkdir -p "${FILES_DIR}"
 USER_NAME="u_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 RENAME="rename_files_after_processing = 'processed_%a'"
 
-for name in readonly_2 http_get cluster_readonly_2 describe_readonly_2 no_setting_readonly_2 readonly_0; do
+for name in readonly_2 http_get cluster_readonly_2 cluster_explain_readonly_2 describe_readonly_2 no_setting_readonly_2 readonly_0; do
     echo 7 > "${FILES_DIR}/${name}.csv"
 done
 
@@ -45,11 +45,19 @@ ${CLICKHOUSE_CURL} -sS --get "${CLICKHOUSE_URL}&user=${USER_NAME}" --data-urlenc
     grep -o -m1 'method GET implies readonly'
 file_state http_get
 
-echo '--- fileCluster, refused on the initiator'
+echo '--- fileCluster'
 ${CLICKHOUSE_CLIENT} --user "${USER_NAME}" --readonly 2 -q \
     "SELECT * FROM fileCluster('test_shard_localhost', '${FILES_DIR}/cluster_readonly_2.csv', 'CSV', 'x UInt8') SETTINGS ${RENAME}" 2>&1 |
     grep -o -m1 '(READONLY)'
 file_state cluster_readonly_2
+
+echo '--- fileCluster under EXPLAIN PLAN optimize = 0 contacts no worker and is refused on the initiator'
+${CLICKHOUSE_CLIENT} --user "${USER_NAME}" --readonly 2 -q \
+    "EXPLAIN PLAN optimize = 0 SELECT * FROM
+     fileCluster('test_shard_localhost', '${FILES_DIR}/cluster_explain_readonly_2.csv', 'CSV', 'x UInt8')
+     SETTINGS ${RENAME}" 2>&1 |
+    grep -o -m1 '(READONLY)'
+file_state cluster_explain_readonly_2
 
 echo '--- DESCRIBE builds no reader and is allowed'
 ${CLICKHOUSE_CLIENT} --user "${USER_NAME}" --readonly 2 -q \
