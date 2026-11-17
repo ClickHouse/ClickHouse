@@ -72,4 +72,12 @@ struct SeccompFilterStatus
 /// immediately and there is no way to widen it afterwards.
 SeccompFilterStatus installSeccompFilter(SeccompMode mode);
 
+/// Whether `installSupervisorSeccompFilter` is implemented here: on Linux on x86-64 and AArch64.
+bool isSupervisorSeccompFilterSupported();
+
+/// Sets `PR_SET_NO_NEW_PRIVS` and installs a filter on the calling thread that allows only the system calls of the
+/// supervisor outside of the filesystem isolation (see `isolateFilesystem`) and kills the process on any other one.
+/// Throws if it cannot.
+void installSupervisorSeccompFilter();
+
 }

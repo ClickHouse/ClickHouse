@@ -1954,14 +1954,13 @@ try
         {
             if (filesystem_isolation->created_pid_namespace)
             {
-                const auto host_pid = getFilesystemIsolationHostPid();
                 LOG_INFO(
                     log,
                     "Isolated the filesystem of this process in new PID and mount namespaces. This process has the PID {} in its "
                     "PID namespace and {} outside of it, and the supervisor outside, which owns the pid file, has the PID {}. "
                     "Only these paths are visible: {}",
                     getpid(),
-                    host_pid ? std::to_string(*host_pid) : "unknown",
+                    filesystem_isolation->serving_host_pid,
                     filesystem_isolation->supervisor_pid,
                     fmt::join(filesystem_isolation->visible_paths, ", "));
             }

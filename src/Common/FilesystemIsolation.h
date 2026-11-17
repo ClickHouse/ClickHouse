@@ -57,6 +57,8 @@ struct FilesystemIsolationStatus
     /// The PID of the supervisor outside of the PID namespace of the isolation. It is the original process of the
     /// server: its PID is in the pid file and is the main PID for systemd. 0 without a PID namespace.
     int supervisor_pid = 0;
+    /// The PID of the process that serves outside of the PID namespace, once it has registered with the supervisor.
+    int serving_host_pid = 0;
     /// Why the filesystem is not isolated although the mode asked for it. Empty if it is isolated or if the mode
     /// is `Disabled`.
     std::string not_isolated_reason;
@@ -111,17 +113,16 @@ std::optional<FilesystemIsolationMode> getAppliedFilesystemIsolationMode();
 std::optional<FilesystemIsolationStatus> getFilesystemIsolationStatus();
 
 /// Sends a notification for the service manager (such as `READY=1\n`) to the supervisor outside of the isolation,
-/// which relays only `READY=1`, `STOPPING=1` and `STATUS=...` to the `NOTIFY_SOCKET` it was started with, from its own
-/// PID, which systemd knows as the main one, and drops `MAINPID=`. Waits for its answer, and throws if it could not be
+/// which relays only `READY=1` to the `NOTIFY_SOCKET` it was started with, from its own PID, which systemd knows as the
+/// main one, and drops `MAINPID=`. Waits for its answer, and throws if it could not be
 /// relayed. Returns false if the filesystem is not isolated, and the notification should be sent directly.
 bool notifyFilesystemIsolationSupervisor(std::string_view message);
 
-/// Asks the supervisor for the PID of the current process outside of the PID namespace of the isolation, which only
-/// it can see. Nothing if the filesystem is not isolated or the supervisor does not answer.
-std::optional<int> getFilesystemIsolationHostPid();
 
 /// Makes the current process the one that the supervisor sends the signals to, which are sent to the PID in the pid
-/// file. Called where the pid file used to be created: in the process that serves, after the fork of the watchdog.
+/// file, and saves its PID outside of the namespace, which only the supervisor sees, in the status. Called where the
+/// pid file used to be created: in the process that serves, after the fork of the watchdog. Nothing without a
+/// supervisor.
 void registerFilesystemIsolationServingProcess();
 
 }
