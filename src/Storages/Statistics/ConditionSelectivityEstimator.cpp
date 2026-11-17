@@ -286,13 +286,8 @@ static std::optional<String> tryGetNullMapParentColumn(const String & column_nam
 
 bool ConditionSelectivityEstimator::hasStatisticsForAllRows(const StorageMetadataPtr & metadata, const String & column_name) const
 {
-    String name = column_name;
-    if (metadata)
-        if (auto parent_name = tryGetNullMapParentColumn(column_name, *metadata))
-            name = std::move(*parent_name);
-
-    auto it = column_estimators.find(name);
-    return it != column_estimators.end() && isCompatibleStatistics(metadata, it->second.stats, name)
+    auto it = column_estimators.find(column_name);
+    return it != column_estimators.end() && isCompatibleStatistics(metadata, it->second.stats, column_name)
         && it->second.stats->getNumRows() == total_rows;
 }
 

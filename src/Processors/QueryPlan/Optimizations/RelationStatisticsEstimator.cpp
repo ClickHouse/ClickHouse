@@ -272,14 +272,16 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         const auto & metadata = reading->getStorageMetadata();
         const Names key_column_names = metadata->getColumnsRequiredForPrimaryKey();
         const NameSet key_columns(key_column_names.begin(), key_column_names.end());
-        /// Index analysis composes all filters of the read; without it (`query_plan_optimize_primary_key = 0`) a filter counts as unestimated.
+        /// Only the filters index analysis composed for the read count (none without it), and a subcolumn counts as its column.
         auto has_unestimated_filter = [&](const ConditionSelectivityEstimator * estimator)
         {
             const auto & composed_filter = reading->getFilterActionsDAG();
             if (!composed_filter)
-                return has_filter || reading->getRowLevelFilter() != nullptr;
-            auto is_estimated = [&](const String & column_name)
+                return false;
+            auto is_estimated = [&](const String & input_name)
             {
+                auto column = metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, input_name);
+                const String column_name = column ? column->getNameInStorage() : input_name;
                 return key_columns.contains(column_name) || (estimator && estimator->hasStatisticsForAllRows(metadata, column_name));
             };
             return std::ranges::any_of(

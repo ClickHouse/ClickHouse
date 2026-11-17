@@ -23,8 +23,14 @@ Join: orders ⋈ customer
 aggregation without keys
 Join: customer ⋈ m ⋈ orders
 Join: customer ⋈ m
-no primary key analysis
-Join: orders ⋈ (customer ⋈ nation)
-Join: customer ⋈ nation
+filter above an aggregation
+Join: customer ⋈ h ⋈ orders
+Join: customer ⋈ h
+subcolumn of a column with statistics
+Join: orders ⋈ customer ⋈ nation_stats
+Join: orders ⋈ customer
+subcolumn of a column without statistics
+Join: orders ⋈ customer ⋈ nation
+Join: orders ⋈ customer
 build_rows_empty	0
 build_rows_one_nation	10001

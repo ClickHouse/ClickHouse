@@ -4,7 +4,7 @@
 SET use_hash_table_stats_for_join_reordering = 0, enable_join_runtime_filters = 0, query_plan_optimize_join_order_randomize = 0,
     max_bytes_ratio_before_external_join = 0, query_plan_optimize_join_order_limit = 10, query_plan_join_swap_table = 'auto',
     enable_join_transitive_predicates = 0, use_statistics = 1, min_marks_per_part_to_load_statistics = 0,
-    explain_query_plan_default = 'legacy';
+    optimize_functions_to_subcolumns = 1, explain_query_plan_default = 'legacy';
 
 CREATE TABLE orders (o_orderkey Int32, o_custkey Int32, o_totalprice Decimal(15, 2))
 ENGINE = MergeTree ORDER BY o_orderkey SETTINGS auto_statistics_types = '', index_granularity = 8192;
@@ -25,6 +25,10 @@ ENGINE = MergeTree ORDER BY n_nationkey SETTINGS auto_statistics_types = 'basic'
 SYSTEM STOP MERGES nation_partial;
 INSERT INTO nation_partial SETTINGS materialize_statistics_on_insert = 0 VALUES (5, 'ETHIOPIA'), (6, 'FRANCE');
 INSERT INTO nation_partial SETTINGS materialize_statistics_on_insert = 1 VALUES (7, 'GERMANY'), (100, 'UNKNOWN');
+
+CREATE TABLE nation_stats (n_nationkey Int32, n_name String)
+ENGINE = MergeTree ORDER BY n_nationkey SETTINGS auto_statistics_types = 'basic', index_granularity = 8192;
+INSERT INTO nation_stats SETTINGS materialize_statistics_on_insert = 1 VALUES (5, 'ETHIOPIA'), (6, 'FRANCE'), (7, 'GERMANY'), (100, 'UNKNOWN');
 
 SELECT 'filter on a column without statistics';
 SELECT replaceRegexpAll(trimLeft(explain), '\\[[^]]*\\]', '') FROM (EXPLAIN keep_logical_steps = 1, actions = 1
@@ -71,10 +75,20 @@ SELECT replaceRegexpAll(trimLeft(explain), '\\[[^]]*\\]', '') FROM (EXPLAIN keep
     JOIN (SELECT max(n_nationkey) AS k FROM nation WHERE n_name = 'GERMANY') AS m ON c_nationkey = m.k)
 WHERE explain ILIKE '%Join: %';
 
-SELECT 'no primary key analysis';
+SELECT 'filter above an aggregation';
 SELECT replaceRegexpAll(trimLeft(explain), '\\[[^]]*\\]', '') FROM (EXPLAIN keep_logical_steps = 1, actions = 1
-    SELECT count() FROM orders JOIN (SELECT * FROM customer JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'WAKANDA') AS cn ON c_custkey = o_custkey
-    SETTINGS query_plan_optimize_primary_key = 0)
+    SELECT count() FROM orders JOIN customer ON c_custkey = o_custkey
+    JOIN (SELECT n_nationkey, count() AS c FROM nation GROUP BY n_nationkey HAVING c > 0) AS h ON c_nationkey = h.n_nationkey)
+WHERE explain ILIKE '%Join: %';
+
+SELECT 'subcolumn of a column with statistics';
+SELECT replaceRegexpAll(trimLeft(explain), '\\[[^]]*\\]', '') FROM (EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT count() FROM orders JOIN customer ON c_custkey = o_custkey JOIN nation_stats ON c_nationkey = n_nationkey WHERE n_name != '')
+WHERE explain ILIKE '%Join: %';
+
+SELECT 'subcolumn of a column without statistics';
+SELECT replaceRegexpAll(trimLeft(explain), '\\[[^]]*\\]', '') FROM (EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT count() FROM orders JOIN customer ON c_custkey = o_custkey JOIN nation ON c_nationkey = n_nationkey WHERE n_name != '')
 WHERE explain ILIKE '%Join: %';
 
 SYSTEM FLUSH LOGS query_log;
