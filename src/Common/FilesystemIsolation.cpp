@@ -604,12 +604,12 @@ std::vector<std::string> getMountPointsInside(const std::string & path)
 /// read through it that updates the access time, and new mounts are reachable from outside through `/proc/<pid>/root`.
 bool remountBind(const char * path, unsigned long flags) // NOLINT(google-runtime-int)
 {
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
     while (0 != ::mount(nullptr, path, nullptr, MS_REMOUNT | MS_BIND | flags, nullptr))
     {
         if (errno != EBUSY || std::chrono::steady_clock::now() >= deadline)
             return false;
-        sleepForMilliseconds(1);
+        sleepForMilliseconds(10);
     }
     return true;
 }
