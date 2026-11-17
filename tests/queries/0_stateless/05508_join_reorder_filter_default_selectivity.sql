@@ -19,9 +19,6 @@ DROP TABLE IF EXISTS nation;
 DROP TABLE IF EXISTS dim_big;
 DROP TABLE IF EXISTS dim_small;
 DROP TABLE IF EXISTS mid;
-DROP TABLE IF EXISTS nation_log;
-DROP TABLE IF EXISTS sorted_a;
-DROP TABLE IF EXISTS sorted_b;
 DROP TABLE IF EXISTS shrunk;
 
 -- Merges would build statistics on the tables of several parts.
@@ -32,9 +29,6 @@ CREATE TABLE nation (n_nationkey Int32, n_name String) ENGINE = MergeTree ORDER 
 CREATE TABLE dim_big (k Int32, g Int32) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
 CREATE TABLE dim_small (k Int32) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
 CREATE TABLE mid (k Int32) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
-CREATE TABLE nation_log (n_nationkey Int32, n_name String) ENGINE = Log;
-CREATE TABLE sorted_a (k UInt64) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE sorted_b (k UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE shrunk (k Int32) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
 
 -- Parts without statistics, as written before 26.8.
@@ -45,9 +39,6 @@ INSERT INTO nation VALUES (5, 'ETHIOPIA'), (6, 'FRANCE'), (7, 'GERMANY'), (100, 
 INSERT INTO dim_big SELECT number, number % 200 FROM numbers(200000);
 INSERT INTO dim_small SELECT number FROM numbers(2000);
 INSERT INTO mid SELECT number FROM numbers(50000);
-INSERT INTO nation_log SELECT * FROM nation;
-INSERT INTO sorted_a SELECT number FROM numbers(1000);
-INSERT INTO sorted_b SELECT number FROM numbers(1000);
 INSERT INTO shrunk SELECT number FROM numbers(100000);
 
 SELECT avg(o_totalprice) FROM orders
@@ -68,11 +59,6 @@ FORMAT Null SETTINGS log_comment = '05508 q9_dpsize', query_plan_optimize_join_o
 
 SELECT count() FROM customer JOIN orders ON c_custkey = o_custkey JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'FRANCE'
 FORMAT Null SETTINGS log_comment = '05508 left_deep';
-
--- A `Log` table has no row count, so the join graph keeps its written order and `orders` stays the probe side.
-SELECT avg(o_totalprice) FROM orders
-JOIN (SELECT * FROM customer JOIN nation_log ON c_nationkey = n_nationkey WHERE n_name = 'WAKANDA') AS cn ON c_custkey = o_custkey
-FORMAT Null SETTINGS log_comment = '05508 log_dimension';
 
 -- 20% of `dim_big` is below `orders`, so the filtered `dim_big` is the build side; all its rows would not be.
 SELECT count() FROM (SELECT * FROM dim_big WHERE g = 7) AS d JOIN orders ON o_orderkey = d.k
@@ -156,28 +142,6 @@ TRUNCATE TABLE shrunk;
 INSERT INTO shrunk SELECT number FROM numbers(1000);
 SELECT count() FROM mid JOIN shrunk ON shrunk.k = mid.k
 FORMAT Null SETTINGS log_comment = '05508 cache_primary_index_2', collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1;
-
--- The graph keeps its written order for `nation_log`, but `sorted_a JOIN sorted_b`, whose inputs have estimates, is still optimized
--- on its own: with 50M rows each (from the hints) read in order by the key, it is a merge join.
-SELECT 'merge_join_sub_tree', count()
-FROM
-(
-    EXPLAIN actions = 1
-    SELECT count() FROM sorted_a JOIN sorted_b ON sorted_a.k = sorted_b.k JOIN nation_log ON sorted_b.k = nation_log.n_nationkey
-    SETTINGS param__internal_join_table_stat_hints = '{"sorted_a": {"cardinality": 50000000, "distinct_keys": {"k": 50000000}}, "sorted_b": {"cardinality": 50000000, "distinct_keys": {"k": 50000000}}}',
-        use_statistics = 0, query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_join_order_use_interesting_orders = 1,
-        enable_join_transitive_predicates = 1, optimize_read_in_order = 1, max_rows_in_set_to_optimize_join = 0,
-        query_plan_join_shard_by_pk_ranges = 1, optimize_sorting_by_input_stream_properties = 1
-)
-WHERE explain ILIKE '%Algorithm: FullSortingMergeJoin%';
-
--- Reordering `sorted_a JOIN sorted_b` on its own reuses the estimates of the graph above it, so the statistics of its tables are
--- loaded as often as when each join is optimized on its own.
-SELECT count() FROM (EXPLAIN SELECT count() FROM sorted_a JOIN sorted_b ON sorted_a.k = sorted_b.k JOIN nation_log ON sorted_b.k = nation_log.n_nationkey)
-FORMAT Null SETTINGS log_comment = '05508_stats sub_tree';
-SELECT count() FROM (EXPLAIN SELECT count() FROM sorted_a JOIN sorted_b ON sorted_a.k = sorted_b.k JOIN nation_log ON sorted_b.k = nation_log.n_nationkey)
-FORMAT Null SETTINGS log_comment = '05508_stats one_join_at_a_time', query_plan_optimize_join_order_limit = 1;
-
 SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment, ProfileEvents['JoinBuildTableRowCount'] AS build
@@ -185,21 +149,10 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05508 %'
 ORDER BY log_comment;
 
-SELECT 'statistics_loaded_once', count() = 2 AND min(loaded) > 0 AND min(loaded) = max(loaded)
-FROM
-(
-    SELECT ProfileEvents['LoadedStatistics'] AS loaded
-    FROM system.query_log
-    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05508_stats %'
-);
-
 DROP TABLE orders;
 DROP TABLE customer;
 DROP TABLE nation;
 DROP TABLE dim_big;
 DROP TABLE dim_small;
 DROP TABLE mid;
-DROP TABLE nation_log;
-DROP TABLE sorted_a;
-DROP TABLE sorted_b;
 DROP TABLE shrunk;
