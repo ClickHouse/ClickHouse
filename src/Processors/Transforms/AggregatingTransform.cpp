@@ -341,9 +341,10 @@ public:
 
         /// How many of the claimed partitions of the single-level merge, or buckets of the adaptive merge (see
         /// `next_bucket_to_merge`), merged without a cancellation. Each takes the states out of the cells of the source
-        /// tables that belong to it, so once all of them merged, the source tables hold no states, and the last one stops
-        /// the tables owning states. Their destruction then frees their buffers without walking their cells, which one
-        /// thread would otherwise do for every table at the end of the query. The adaptive merge frees the tables right
+        /// tables that belong to it (a unit that the adaptive merge skips leaves those that need no destructor), so
+        /// once all of them merged, the source tables hold no states to destroy, and the last one stops the tables
+        /// owning states. Their destruction then frees their buffers without walking their cells, which one thread
+        /// would otherwise do for every table at the end of the query. The adaptive merge frees the tables right
         /// then, in parallel (see `Aggregator::releaseAdaptiveMergeSources`). A cancelled merge leaves the tables to
         /// destroy the states they keep.
         std::atomic<size_t> merged_claims = 0;
@@ -999,20 +1000,21 @@ private:
 
         /// A single partition would rebuild the whole result into a fresh table with no parallelism at all; the serial
         /// merge into the largest existing table is strictly cheaper, because that table's own cells do not move. The
-        /// count of a scanning merge decides it for indexed tables too: it tells whether the merge is large enough to
-        /// share.
+        /// count of a scanning merge decides it for the merge by cell index too: it tells whether the merge is large
+        /// enough to share.
         const size_t scanning_partitions = singleLevelMergePartitionCount(max_source_table_size, source_cells, source_memory);
         if (scanning_partitions <= 1)
             return {};
 
         /// The producers of an adaptive aggregation index the cells of their tables (see
-        /// `AggregatedDataVariants::indexCells`), so that a partition reads only its own cells instead of walking all
-        /// source tables. The partitions are those of the indexes then, and the workers claim them one by one, so a
-        /// worker beyond the partitions would claim none. The layout of more than 256 producers can have fewer
-        /// partitions than producers when an external-aggregation threshold reduces it. A single worker would only
-        /// rebuild the result into a fresh table, like a single partition.
+        /// `AggregatedDataVariants::indexCells`), so that a partition reads only its own cells instead of
+        /// scanning every cell of every table, unless `enable_parallel_single_level_merge_by_index` is off.
+        /// The partitions are those of the indexes then, and the workers claim them one by one, so a worker
+        /// beyond the partitions would claim none. The layout of more than 256 producers can have fewer
+        /// partitions than producers when an external-aggregation threshold reduces it. A single worker would
+        /// only rebuild the result into a fresh table, like a single partition.
         PartitionMergePlan plan;
-        if (Aggregator::mergesByCellIndex(*data))
+        if (params->aggregator.mergesByCellIndex(*data))
         {
             plan.partitions = data->at(0)->cellIndex().numPartitions();
             plan.workers = std::min(singleLevelMergeWorkerCount(source_cells, source_memory), plan.partitions);
@@ -1056,9 +1058,10 @@ private:
         return plan;
     }
 
-    /// The partitions of a merge of tables without a cell index, each of which scans the cells of all the tables for its
-    /// two-level buckets, so the count is a power of two up to the 256 buckets. It also tells whether a merge of any
-    /// tables is large enough to share: at one partition, the serial merge is cheaper (see `planPartitionMerge`). More
+    /// The partitions of a merge that scans the tables, which is every merge but the merge by cell index (see
+    /// `Aggregator::mergesByCellIndex`). Each partition scans the cells of all the tables for its two-level buckets, so
+    /// the count is a power of two up to the 256 buckets. It also tells whether a merge of any tables is large enough
+    /// to share: at one partition, the serial merge is cheaper (see `planPartitionMerge`). More
     /// partitions than workers, handed out dynamically, so that a worker that got a light partition does not stay idle:
     /// the keys take up to twice the workers. Heavy states (see `Aggregator::hasHeavyStates`) always take that many,
     /// because their merge work dwarfs the partitioning overhead at any key count. Cheap states take a partition per 512
@@ -1079,12 +1082,12 @@ private:
         return std::bit_floor(std::clamp<size_t>(std::max(for_keys, for_memory), 1, NUM_BUCKETS));
     }
 
-    /// The workers of a merge of tables whose cells are indexed (see `AggregatedDataVariants::indexCells`). The workers
-    /// claim the partitions of the indexes one by one, which balances them, so the count only follows the work, up to a
-    /// worker per thread. Heavy states (see `Aggregator::hasHeavyStates`) take that many, because their merge work dwarfs
-    /// the fixed costs of a worker, its table and its chunks, at any key count. Cheap states take a worker per 2048 cells
-    /// of the tables, and the memory of the tables a worker per 4 MiB, whether the states are heavy or hold their memory
-    /// in the arena, as the arrays of `-ForEach` do.
+    /// The workers of a merge by cell index (see `Aggregator::mergesByCellIndex`). The workers claim the partitions of
+    /// the indexes one by one, which balances them, so the count only follows the work, up to a worker per thread.
+    /// Heavy states (see `Aggregator::hasHeavyStates`) take that many, because their merge work dwarfs the fixed costs
+    /// of a worker, its table and its chunks, at any key count. Cheap states take a worker per 2048 cells of the
+    /// tables, and the memory of the tables a worker per 4 MiB, whether the states are heavy or hold their memory in
+    /// the arena, as the arrays of `-ForEach` do.
     size_t singleLevelMergeWorkerCount(size_t source_cells, size_t source_memory) const
     {
         static constexpr size_t MIN_CELLS_PER_WORKER = 2048;
