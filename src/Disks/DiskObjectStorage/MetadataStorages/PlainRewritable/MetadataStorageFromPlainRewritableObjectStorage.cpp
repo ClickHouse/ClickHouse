@@ -1824,8 +1824,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::materializeVirtualDirectory(const NormalizedPath & directory)
 {
     /// A file can be put only into a directory with its own `prefix.path`, not into one that exists only as an ancestor
-    /// of other directories. The operation is planned for the directory created here, so it must not be created by
-    /// another transaction before the commit, as for a write.
+    /// of other directories.
     if (directory.empty() || uncommitted_state.getDirectoryRemoteInfo(directory) || !uncommitted_state.getSnapshot().existsDirectory(directory))
         return;
 
