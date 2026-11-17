@@ -5766,7 +5766,8 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             if (auto * identifier_node = (*expression)->as<IdentifierNode>())
             {
                 auto column_name = getStructureHintColumnName(
-                    identifier_node->getIdentifier().getParts(), table_function_node->getAlias(), table_function_ptr->getName() == "input");
+                    identifier_node->getIdentifier().getParts(), table_function_node->getAlias(), table_function_ptr->getName() == "input",
+                    use_structure_from_insertion_table_in_table_functions == 1);
 
                 if (column_name.empty())
                 {

@@ -3648,7 +3648,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                 if (auto * identifier = (*expression)->as<ASTIdentifier>())
                 {
                     auto column_name = getStructureHintColumnName(
-                        identifier->name_parts, table_expression->tryGetAlias(), table_function_ptr->getName() == "input");
+                        identifier->name_parts, table_expression->tryGetAlias(), table_function_ptr->getName() == "input",
+                        use_structure_from_insertion_table_in_table_functions == 1);
 
                     if (column_name.empty())
                     {

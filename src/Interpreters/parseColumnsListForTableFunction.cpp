@@ -313,18 +313,30 @@ void removeMisboundDefaultsFromStructureHint(
         structure_hint.modify(name, [](ColumnDescription & column) { column.default_desc = {}; });
 }
 
-String getStructureHintColumnName(const Strings & identifier_parts, const String & table_function_alias, bool allow_dot_in_name)
+String getStructureHintColumnName(const Strings & identifier_parts, const String & table_function_alias, bool is_input, bool is_forced)
 {
-    String column_name;
-    if (identifier_parts.size() == 1)
-        column_name = identifier_parts.front();
-    else if (identifier_parts.size() == 2 && !table_function_alias.empty() && identifier_parts.front() == table_function_alias)
-        column_name = identifier_parts.back();
-
-    if (!allow_dot_in_name && column_name.find('.') != String::npos)
+    if (identifier_parts.empty())
         return {};
 
-    return column_name;
+    auto parts_begin = identifier_parts.begin();
+    if (identifier_parts.size() > 1 && !table_function_alias.empty() && identifier_parts.front() == table_function_alias)
+        ++parts_begin;
+
+    if (is_input)
+    {
+        String column_name = *parts_begin;
+        for (auto it = std::next(parts_begin); it != identifier_parts.end(); ++it)
+            column_name += "." + *it;
+        return column_name;
+    }
+
+    if (std::next(parts_begin) != identifier_parts.end())
+        return {};
+
+    if (!is_forced && parts_begin->contains('.'))
+        return {};
+
+    return *parts_begin;
 }
 
 String getStructureToSend(const ColumnsDescription & columns, const ColumnsDescription * insertion_columns)
