@@ -43,7 +43,7 @@ struct KeysAndPackedStringCell : public KeysAndPackedStringCellBase<Keys, TMappe
 
     static constexpr bool need_zero_value_storage = false;
 
-    bool isZero(const HashTableNoState & state) const { return isZero(this->getKey(), state); }
+    [[nodiscard]] bool isZero(const HashTableNoState & state) const { return isZero(this->getKey(), state); }
     static bool isZero(const Key & key_, const HashTableNoState &) { return key_.str.isEmpty(); }
 
     void setZero()
@@ -125,7 +125,7 @@ protected:
     }
 
     template <size_t key_class>
-    const auto & submapForClass() const
+    [[nodiscard]] const auto & submapForClass() const
     {
         if constexpr (key_class == 0)
             return m0;
@@ -282,14 +282,14 @@ public:
     }
 
     LookupResult ALWAYS_INLINE find(const Key & key) { return dispatch(*this, key, FindCallable{}); }
-    ConstLookupResult ALWAYS_INLINE find(const Key & key) const { return dispatch(*this, key, FindCallable{}); }
+    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const Key & key) const { return dispatch(*this, key, FindCallable{}); }
 
     LookupResult ALWAYS_INLINE find(const Key & key, size_t hash_value)
     {
         return dispatchWithHash(*this, key, hash_value, FindCallable{});
     }
 
-    ConstLookupResult ALWAYS_INLINE find(const Key & key, size_t hash_value) const
+    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const Key & key, size_t hash_value) const
     {
         return dispatchWithHash(*this, key, hash_value, FindCallable{});
     }
@@ -440,11 +440,11 @@ public:
         emplace(key, it, inserted, hash_value);
     }
 
-    size_t size() const { return m0.size() + m1.size(); }
+    [[nodiscard]] size_t size() const { return m0.size() + m1.size(); }
     /// The number of keys with an empty string.
-    size_t sizeWithEmptyString() const { return m0.size(); }
-    bool empty() const { return m0.empty() && m1.empty(); }
-    size_t getBufferSizeInBytes() const { return m0.getBufferSizeInBytes() + m1.getBufferSizeInBytes(); }
+    [[nodiscard]] size_t sizeWithEmptyString() const { return m0.size(); }
+    [[nodiscard]] bool empty() const { return m0.empty() && m1.empty(); }
+    [[nodiscard]] size_t getBufferSizeInBytes() const { return m0.getBufferSizeInBytes() + m1.getBufferSizeInBytes(); }
 
     /// Grows the sub-tables to hold `size_hint` keys, `size_hint_with_empty_string` of them with an empty
     /// string.
@@ -564,14 +564,17 @@ public:
     }
 
     LookupResult ALWAYS_INLINE find(const Key & key) { return dispatch(*this, key, typename Impl::FindCallable{}); }
-    ConstLookupResult ALWAYS_INLINE find(const Key & key) const { return dispatch(*this, key, typename Impl::FindCallable{}); }
+    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const Key & key) const
+    {
+        return dispatch(*this, key, typename Impl::FindCallable{});
+    }
 
     LookupResult ALWAYS_INLINE find(const Key & key, size_t hash_value)
     {
         return impls[getBucketFromHash(hash_value)].find(key, hash_value);
     }
 
-    ConstLookupResult ALWAYS_INLINE find(const Key & key, size_t hash_value) const
+    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const Key & key, size_t hash_value) const
     {
         return impls[getBucketFromHash(hash_value)].find(key, hash_value);
     }
@@ -591,7 +594,7 @@ public:
             impl.forEachMapped(func);
     }
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         size_t res = 0;
         for (const auto & impl : impls)
@@ -599,7 +602,7 @@ public:
         return res;
     }
 
-    size_t sizeWithEmptyString() const
+    [[nodiscard]] size_t sizeWithEmptyString() const
     {
         size_t res = 0;
         for (const auto & impl : impls)
@@ -607,7 +610,7 @@ public:
         return res;
     }
 
-    bool empty() const
+    [[nodiscard]] bool empty() const
     {
         for (const auto & impl : impls)
             if (!impl.empty())
@@ -615,7 +618,7 @@ public:
         return true;
     }
 
-    size_t getBufferSizeInBytes() const
+    [[nodiscard]] size_t getBufferSizeInBytes() const
     {
         size_t res = 0;
         for (const auto & impl : impls)

@@ -65,7 +65,7 @@ struct AggregationEntry
 
     /// The part of `median_size` with an empty string, by the share of such keys in `sum_of_sizes` (see
     /// `sum_of_sizes_with_empty_string`).
-    size_t medianSizeWithEmptyString() const
+    [[nodiscard]] size_t medianSizeWithEmptyString() const
     {
         chassert(sum_of_sizes_with_empty_string <= sum_of_sizes && sum_of_sizes != 0);
         return static_cast<size_t>(

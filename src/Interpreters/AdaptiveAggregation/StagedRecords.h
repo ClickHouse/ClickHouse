@@ -444,7 +444,7 @@ struct StagedKeysAndPackedStringKey
 
     /// The bytes of a record from its start to the end of its key, with `count` rows for a count record and 0 for
     /// the others.
-    size_t bytesUpToKeyEnd(size_t key_size, UInt32 count) const
+    [[nodiscard]] size_t bytesUpToKeyEnd(size_t key_size, UInt32 count) const
     {
         const size_t string_size = stringSize(key_size);
         size_t bytes = offset + stagedUIntBytes(lead(count, string_size)) + fixed_key.bytes + string_size;
@@ -453,7 +453,7 @@ struct StagedKeysAndPackedStringKey
         return bytes;
     }
 
-    size_t keyBytes(size_t key_size) const { return fixed_key.bytes + stringSize(key_size); }
+    [[nodiscard]] size_t keyBytes(size_t key_size) const { return fixed_key.bytes + stringSize(key_size); }
 
     /// Writes the fields before the stored key and returns where the key goes.
     char * writeHeader(char * record, UInt64 routing_hash, size_t key_size, UInt32 count) const
@@ -581,9 +581,9 @@ struct StagedKeysAndPackedStringRecord
     {
     }
 
-    size_t bytesForKey(size_t key_size, UInt32 count) const { return key_layout.bytesUpToKeyEnd(key_size, count); }
+    [[nodiscard]] size_t bytesForKey(size_t key_size, UInt32 count) const { return key_layout.bytesUpToKeyEnd(key_size, count); }
 
-    size_t keyBytes(size_t key_size) const { return key_layout.keyBytes(key_size); }
+    [[nodiscard]] size_t keyBytes(size_t key_size) const { return key_layout.keyBytes(key_size); }
 
     char * writeHeader(char * record, UInt64 routing_hash, size_t key_size, UInt32 count) const
     {
@@ -638,9 +638,12 @@ struct StagedKeysAndPackedStringArgumentRecord
     {
     }
 
-    size_t bytesFor(size_t key_size, size_t variable_bytes) const { return key_layout.bytesUpToKeyEnd(key_size, 0) + variable_bytes; }
+    [[nodiscard]] size_t bytesFor(size_t key_size, size_t variable_bytes) const
+    {
+        return key_layout.bytesUpToKeyEnd(key_size, 0) + variable_bytes;
+    }
 
-    size_t keyBytes(size_t key_size) const { return key_layout.keyBytes(key_size); }
+    [[nodiscard]] size_t keyBytes(size_t key_size) const { return key_layout.keyBytes(key_size); }
 
     char * writeHeader(char * record, UInt64 routing_hash, size_t key_size, size_t record_bytes) const
     {

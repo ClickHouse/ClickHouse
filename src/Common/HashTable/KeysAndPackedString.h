@@ -37,7 +37,7 @@ struct KeysAndPackedString
     static ALWAYS_INLINE KeysAndPackedString withEmptyString(Keys keys) { return {keys, {}}; }
 
     /// The hash that the key stores (see above): 0 for an empty string, whose key a table hashes by `keys`.
-    ALWAYS_INLINE UInt32 getHash() const { return str.getHash(); }
+    [[nodiscard]] ALWAYS_INLINE UInt32 getHash() const { return str.getHash(); }
 
     /// The string goes first: it starts with the stored hash, so one comparison rejects almost any other key.
     ALWAYS_INLINE bool operator==(const KeysAndPackedString & rhs) const { return str == rhs.str && keys == rhs.keys; }
@@ -67,7 +67,7 @@ struct KeysAndPackedString<UInt32>
 
     static ALWAYS_INLINE KeysAndPackedString withEmptyString(UInt32 keys) { return {keys, 0, {}}; }
 
-    ALWAYS_INLINE UInt32 getHash() const { return hash; }
+    [[nodiscard]] ALWAYS_INLINE UInt32 getHash() const { return hash; }
 
     /// The hash goes first, so one comparison rejects almost any other key.
     ALWAYS_INLINE bool operator==(const KeysAndPackedString & rhs) const

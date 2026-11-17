@@ -533,7 +533,7 @@ struct HashMethodKeysAndPackedString : public columns_hashing_impl::HashMethodBa
     /// Returns the packed fixed-width values of the row and its string, in the padded buffers of the `String`
     /// column or of the dictionary, without hashing or persisting the key. The view remains valid for this
     /// block and permits reads up to 15 bytes past its end.
-    ALWAYS_INLINE std::pair<Keys, std::string_view> getKeyParts(ssize_t row) const
+    [[nodiscard]] ALWAYS_INLINE std::pair<Keys, std::string_view> getKeyParts(ssize_t row) const
     {
         return {getFixedKeys(row), stringAt(stringPositionOf(row))};
     }
@@ -589,7 +589,7 @@ protected:
 private:
     /// The position of the string of the row in the buffers that `stringAt` reads: the row itself for a
     /// `String` key column, its dictionary entry for a `LowCardinality(String)` one.
-    ALWAYS_INLINE ssize_t stringPositionOf(ssize_t row) const
+    [[nodiscard]] ALWAYS_INLINE ssize_t stringPositionOf(ssize_t row) const
     {
         if (low_cardinality_strings)
             return static_cast<ssize_t>(low_cardinality_strings->getIndexAt(static_cast<size_t>(row)));
@@ -598,7 +598,7 @@ private:
 
     /// The string of row `i` of the `String` column, or of entry `i` of the dictionary, in its padded
     /// buffers.
-    ALWAYS_INLINE std::string_view stringAt(ssize_t i) const
+    [[nodiscard]] ALWAYS_INLINE std::string_view stringAt(ssize_t i) const
     {
         const char * data = reinterpret_cast<const char *>(string_chars + string_offsets[i - 1]);
         return {data, string_offsets[i] - string_offsets[i - 1]};
@@ -635,7 +635,7 @@ private:
     }
 
     /// The packed fixed-width values of the row.
-    ALWAYS_INLINE Keys getFixedKeys(ssize_t row) const
+    [[nodiscard]] ALWAYS_INLINE Keys getFixedKeys(ssize_t row) const
     {
         if (column_keys)
             return column_keys[row];
@@ -651,7 +651,7 @@ private:
 
     /// Packs the fixed-width values of a row of a short sub-range, which has no prepared values. Out of line,
     /// so the accessors stay small enough to inline into the per-row loops.
-    NO_INLINE Keys packFixedKeys(ssize_t row) const
+    [[nodiscard]] NO_INLINE Keys packFixedKeys(ssize_t row) const
     {
         return packFixedLongestFirst<Keys>(row, fixed_columns.size(), fixed_columns, fixed_sizes);
     }
