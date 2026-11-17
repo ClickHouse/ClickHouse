@@ -89,9 +89,11 @@ String getStoredName(const QueryTreeNodePtr & node, const PlannerContext & plann
 /// Gives the stored names to the outputs. The DAG keeps one node for each expression, so the names change after it is built.
 void renameOutputs(ActionsDAG & actions_dag, const Names & planner_names, const Names & stored_names)
 {
+    /// the query can have one expression two times
+    NameSet renamed;
     for (size_t i = 0; i < planner_names.size(); ++i)
-        if (planner_names[i] != stored_names[i])
-            const_cast<ActionsDAG::Node &>(actions_dag.findInOutputs(planner_names[i])).result_name = stored_names[i];
+        if (planner_names[i] != stored_names[i] && renamed.emplace(planner_names[i]).second)
+            actions_dag.renameOutput(planner_names[i], stored_names[i]);
 }
 
 /// a projection stores what a window function reads, not its result
