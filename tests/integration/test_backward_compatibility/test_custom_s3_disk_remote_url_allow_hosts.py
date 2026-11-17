@@ -7,7 +7,7 @@ from helpers.config_cluster import minio_secret_key
 
 cluster = ClickHouseCluster(__file__)
 
-# 26.8.26.12 does not check SQL disks against `remote_url_allow_hosts`. The objects are created there with a list
+# 26.9.18.11 does not check SQL disks against `remote_url_allow_hosts`. The objects are created there with a list
 # that does not name MinIO, then the server restarts on the current binary.
 # Two instances: a failed check on the database metadata disk would stop the server.
 node = cluster.add_instance(
@@ -17,7 +17,7 @@ node = cluster.add_instance(
         "configs/drop_table_delay.xml",
     ],
     image="clickhouse/clickhouse-server",
-    tag="26.8.26.12",
+    tag="26.9.18.11",
     with_installed_binary=True,
     with_minio=True,
     stay_alive=True,
@@ -29,7 +29,7 @@ node_db = cluster.add_instance(
         "configs/drop_table_delay.xml",
     ],
     image="clickhouse/clickhouse-server",
-    tag="26.8.26.12",
+    tag="26.9.18.11",
     with_installed_binary=True,
     with_minio=True,
     stay_alive=True,

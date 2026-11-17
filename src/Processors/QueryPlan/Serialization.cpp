@@ -8,13 +8,11 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/checkStackSize.h>
 
 #include <stack>
@@ -27,12 +25,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
-
-/// The serialized plan may come from an untrusted client connection, so every count read from the
-/// wire must be validated before it sizes an allocation.
-static constexpr size_t MAX_QUERY_PLAN_STEP_CHILDREN = 1'000'000;
 
 static void serializeHeader(const Block & header, WriteBuffer & out)
 {
@@ -61,11 +54,6 @@ static Block deserializeHeader(ReadBuffer & in, size_t max_type_complexity)
     UInt64 num_columns = 0;
     readVarUInt(num_columns, in);
 
-    if (num_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-            "Suspiciously many columns ({}) in the header of a serialized query plan step (maximum: {})",
-            num_columns, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS);
-
     ColumnsWithTypeAndName columns(num_columns);
 
     for (auto & column : columns)
@@ -81,23 +69,9 @@ static Block deserializeHeader(ReadBuffer & in, size_t max_type_complexity)
     return Block(std::move(columns));
 }
 
-namespace
-{
-
-void checkSupportedVersion(UInt64 version)
-{
-    if (version < DBMS_MIN_SUPPORTED_QUERY_PLAN_SERIALIZATION_VERSION)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Query plan serialization version {} is not supported. The oldest supported version is {}",
-            version, DBMS_MIN_SUPPORTED_QUERY_PLAN_SERIALIZATION_VERSION);
-}
-
-}
-
 void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
 {
     UInt64 version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    checkSupportedVersion(version);
 
     if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS && (max_threads || concurrency_control))
         throw Exception(
@@ -116,7 +90,6 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
 void QueryPlan::serializeForDistributedTask(WriteBuffer & out, size_t max_supported_version, const SizeLimits & sets_transfer_limits) const
 {
     UInt64 version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    checkSupportedVersion(version);
 
     if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS && (max_threads || concurrency_control))
         throw Exception(
@@ -203,7 +176,7 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         QueryPlanSerializationSettings settings;
         node->step->serializeSettings(settings, flags.version);
 
-        settings.write(out);
+        settings.writeChangedBinary(out);
 
         IQueryPlanStep::Serialization ctx{out, registry};
         ctx.version = flags.version;
@@ -247,7 +220,6 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Query plan serialization version {} is not supported. The last supported version is {}",
             version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    checkSupportedVersion(version);
 
     SerializationFlags flags{.version = version, .skip_data = skip_data};
     return deserialize(in, context, flags, max_type_complexity);
@@ -267,7 +239,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
     {
         NodePtr & to_fill;
         size_t next_child = 0;
-        VectorWithMemoryTracking<Node *> children = {};
+        std::vector<Node *> children = {};
     };
 
     std::stack<Frame> stack;
@@ -288,10 +260,6 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         {
             UInt64 num_children = 0;
             readVarUInt(num_children, in);
-            if (num_children > MAX_QUERY_PLAN_STEP_CHILDREN)
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                    "Suspiciously many children ({}) of a serialized query plan step (maximum: {})",
-                    num_children, MAX_QUERY_PLAN_STEP_CHILDREN);
             frame.children.resize(num_children);
         }
 
@@ -318,7 +286,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         auto output_header  = std::make_shared<const Block>(deserializeHeader(in, max_type_complexity));
 
         QueryPlanSerializationSettings settings;
-        settings.read(in);
+        settings.readBinary(in);
 
         SharedHeaders input_headers;
         input_headers.reserve(frame.children.size());
@@ -346,7 +314,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
                 "Deserialized step {} has no output stream, but deserialized header is not empty : {}",
                 step_name, output_header->dumpStructure());
 
-        auto & node = plan.nodes.emplace_back(std::move(step), std::vector<Node *>(frame.children.begin(), frame.children.end()));
+        auto & node = plan.nodes.emplace_back(std::move(step), std::move(frame.children));
         frame.to_fill = &node;
 
         for (const auto & storage : ctx.storage_holders)

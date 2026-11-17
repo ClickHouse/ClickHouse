@@ -20,7 +20,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
-    extern const int TABLE_ALREADY_EXISTS;
 }
 
 DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
@@ -42,12 +41,6 @@ void DatabaseMemory::createTable(
 {
     ensurePopulated();
     std::lock_guard lock{mutex};
-
-    /// A detached table keeps its definition and dependencies under its name, only a short `ATTACH` may reuse it.
-    const auto * create_query = query ? query->as<ASTCreateQuery>() : nullptr;
-    if (!create_query || !create_query->attach_short_syntax)
-        checkMetadataFilenameAvailabilityUnlocked(table_name);
-
     attachTableUnlocked(table_name, table);
 
     /// Clean the query from temporary flags.
@@ -133,20 +126,6 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, Contex
     return it->second->clone();
 }
 
-void DatabaseMemory::checkMetadataFilenameAvailability(const String & table_name) const
-{
-    ensurePopulated();
-    std::lock_guard lock{mutex};
-    checkMetadataFilenameAvailabilityUnlocked(table_name);
-}
-
-void DatabaseMemory::checkMetadataFilenameAvailabilityUnlocked(const String & table_name) const
-{
-    if (snapshot_detached_tables.contains(table_name))
-        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached)",
-                        backQuote(database_name), backQuote(table_name));
-}
-
 UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 {
     if (auto table = tryGetTable(table_name, getContext()))
@@ -199,7 +178,7 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
 
     /// The create query of the table has been just changed, we need to update dependencies too.
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
 
     {
@@ -271,7 +250,7 @@ void registerDatabaseMemory(DatabaseFactory & factory)
             args.database_name,
             args.context);
     };
-    factory.registerDatabase("Memory", create_fn, SecretArgumentsSpec{}, {}, Documentation{
+    factory.registerDatabase("Memory", create_fn, {}, Documentation{
         .description = R"DOCS_MD(
 The `Memory` database engine keeps its metadata and table definitions only in memory. It is intended for temporary databases: the database and its tables are lost when the server stops or restarts.
 

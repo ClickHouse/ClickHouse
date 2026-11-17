@@ -150,6 +150,7 @@ _RUNNER_SSM_PARAMETERS = [
     "clickhouse-dockerhub-registry",
     "clickhouse-test-stat-connection",
     "arn:aws:ssm:*:*:parameter/azure_connection_string",
+    "arn:aws:ssm:*:*:parameter/chcache_password",
     # CI logs cluster credentials (host/password/etc.).
     "arn:aws:ssm:*:*:parameter/clickhouse_ci_logs*",
 ]

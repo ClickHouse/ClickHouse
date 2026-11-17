@@ -26,7 +26,6 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeProgress.h>
-#include <Storages/MergeTree/StreamBaseManifest.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/PartitionActionBlocker.h>
@@ -91,9 +90,6 @@ public:
 
     /// Assembles the temporary directory name of a merge.
     static String buildTempPartBasename(const String & prefix, const String & part_name, const String & suffix);
-
-    /// Whether `part` has a calculated rows TTL that has expired at `time` for all its rows.
-    static bool isRowsTTLExpired(const IMergeTreeDataPart & part, time_t time);
 
     MergeTask(
         FutureMergedMutatedPartPtr future_part_,
@@ -247,8 +243,6 @@ private:
         NamesAndTypesList gathering_columns{};
         NameSet merge_required_columns{};
         NamesAndTypesList merging_columns{};
-        /// Subcolumns used by the merging algorithm, read in addition to `merging_columns`.
-        Names merging_subcolumns{};
         NamesAndTypesList merging_columns_expired_by_ttl{};
         NamesAndTypesList storage_columns{};
         NamesAndTypesList virtual_columns{};
@@ -294,9 +288,6 @@ private:
         std::promise<MergeTreeData::MutableDataPartPtr> promise{};
 
         WrittenOffsetSubstreams written_offset_substreams{};
-        /// One per merge, i.e. per part directory: shared by the horizontal writer, every vertical
-        /// per-column writer and MergeTextIndexesTask.
-        StreamBaseManifestPtr stream_base_manifest{std::make_shared<StreamBaseManifest>()};
         PlainMarksByName cached_marks;
         PlainMarksByName cached_index_marks;
 
@@ -352,7 +343,7 @@ private:
         size_t initial_reservation{0};
         bool read_with_direct_io{false};
 
-        std::function<bool()> merge_cancelled{};
+        std::function<bool()> is_cancelled{};
 
         /// Local variables for this stage
         size_t sum_input_rows_upper_bound{0};
@@ -633,15 +624,7 @@ private:
 /// FIXME
 [[ maybe_unused]] static MergeTreeData::MutableDataPartPtr executeHere(MergeTaskPtr task)
 {
-    try
-    {
-        while (task->execute()) {}
-    }
-    catch (...)
-    {
-        task->cancel();
-        throw;
-    }
+    while (task->execute()) {}
     return task->getFuture().get();
 }
 

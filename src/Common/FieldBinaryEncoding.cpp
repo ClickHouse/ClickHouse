@@ -1,5 +1,6 @@
 #include <Common/FieldBinaryEncoding.h>
 #include <Common/checkStackSize.h>
+#include <Core/DecimalFunctions.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
@@ -11,6 +12,7 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int INCORRECT_DATA;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -70,7 +72,6 @@ public:
     void operator() (const DecimalField<Decimal256> & x, WriteBuffer & buf) const;
     void operator() (const AggregateFunctionStateData & x, WriteBuffer & buf) const;
     [[noreturn]] void operator() (const CustomType & x, WriteBuffer & buf) const;
-    [[noreturn]] void operator() (const NumberLiteral & x, WriteBuffer & buf) const;
     void operator() (const bool & x, WriteBuffer & buf) const;
 };
 
@@ -250,12 +251,6 @@ void FieldVisitorEncodeBinary::operator()(const bool & x, WriteBuffer & buf) con
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Binary encoding of Field with custom type is not supported");
 }
 
-[[noreturn]] void FieldVisitorEncodeBinary::operator()(const NumberLiteral &, WriteBuffer &) const
-{
-    /// NumberLiteral should be resolved to a concrete type before binary encoding.
-    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Binary encoding of Field with NumberLiteral is not supported");
-}
-
 template <typename T>
 Field decodeBigInteger(ReadBuffer & buf)
 {
@@ -269,6 +264,13 @@ DecimalField<T> decodeDecimal(ReadBuffer & buf)
 {
     UInt32 scale = 0;
     readVarUInt(scale, buf);
+    /// The scale is attacker-controlled wire data (a `Dynamic` value or an `AggregateFunction` type
+    /// parameter carries its own binary-encoded Field); an out-of-range value later overruns a
+    /// fixed-size buffer in the decimal text writer, so reject it at the boundary, matching
+    /// `readDecimalFieldBinary` and `DataTypeDecimalBase`.
+    if (scale > DecimalUtils::max_precision<T>)
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})", scale, DecimalUtils::max_precision<T>);
+
     T value{};
     readBinaryLittleEndian(value, buf);
     return DecimalField<T>(value, scale);
@@ -347,7 +349,7 @@ Field decodeFieldImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexi
         case FieldBinaryTypeIndex::String:
         {
             String value;
-            readStringBinaryGrowing(value, buf);
+            readStringBinary(value, buf);
             return value;
         }
         case FieldBinaryTypeIndex::UUID:
@@ -392,7 +394,7 @@ Field decodeFieldImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexi
             for (size_t i = 0; i != size; ++i)
             {
                 String name;
-                readStringBinaryGrowing(name, buf);
+                readStringBinary(name, buf);
                 value[name] = decodeFieldImpl(buf, complexity, max_complexity);
             }
             return value;
@@ -400,9 +402,9 @@ Field decodeFieldImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexi
         case FieldBinaryTypeIndex::AggregateFunctionState:
         {
             String name;
-            readStringBinaryGrowing(name, buf);
+            readStringBinary(name, buf);
             String data;
-            readStringBinaryGrowing(data, buf);
+            readStringBinary(data, buf);
             return AggregateFunctionStateData{.name = name, .data = data};
         }
     }

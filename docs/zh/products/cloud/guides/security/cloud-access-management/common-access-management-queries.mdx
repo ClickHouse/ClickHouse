@@ -17,7 +17,9 @@ import CommonUserRolesContent from '/snippets/zh/_users-and-roles-common.mdx';
 
 本文介绍定义 SQL 用户和角色的基础知识，以及如何将这些特权和权限应用于数据库、表、行和列。
 
-## 管理员用户 {#admin-user}
+<div id="admin-user">
+  ## 管理员用户
+</div>
 
 ClickHouse Cloud 服务有一个管理员用户 `default`，会在服务创建时自动创建。密码会在创建服务时提供，并且拥有 **Admin** 角色的 ClickHouse Cloud 用户可以重置该密码。
 
@@ -38,16 +40,20 @@ GRANT default_role TO clickhouse_admin;
   这些自动生成的 SQL 控制台用户具有 `default` 角色。
 </Note>
 
-## 无密码身份验证 {#passwordless-authentication}
+<div id="passwordless-authentication">
+  ## 无密码身份验证
+</div>
 
 SQL 控制台提供两个角色：`sql_console_admin`，其 权限 与 `default_role` 完全一致；以及 `sql_console_read_only`，具有只读权限。
 
 Admin 用户默认会被分配 `sql_console_admin` 角色，因此对他们来说无需做任何更改。不过，`sql_console_read_only` 角色使非 Admin 用户也可以被授予任意 instance 的只读或完全访问权限。此类访问需要由 Admin 配置。可以使用 `GRANT` 或 `REVOKE` 命令调整这些角色，以更好地满足特定 instance 的需求，并且对这些角色所做的任何修改都会被保留。
 
-### 细粒度访问控制 {#granular-access-control}
+<div id="granular-access-control">
+  ### 细粒度访问控制
+</div>
 
 <Tip>
-  建议使用 [Cloud 托管数据库角色](/zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) 从控制台管理数据库访问权限。`sql-console-role:<email>` 角色与 SQL 控制台中的 JWT 会话不兼容。
+  建议使用 [Cloud 托管数据库角色](/zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (Beta) 从控制台管理数据库访问权限。`sql-console-role:<email>` 角色与 [JWT 身份验证](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) 不兼容。
 </Tip>
 
 此访问控制功能也支持手动配置到用户级粒度。为用户分配新的 `sql_console_*` 角色之前，应先创建与命名空间 `sql-console-role:<email>` 对应的 SQL 控制台用户专用数据库角色。例如：

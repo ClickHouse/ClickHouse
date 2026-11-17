@@ -1,0 +1,4 @@
+<clickhouse>
+    <jemalloc_enable_global_profiler>1</jemalloc_enable_global_profiler>
+    <jemalloc_profiler_sampling_rate>19</jemalloc_profiler_sampling_rate>
+</clickhouse>
