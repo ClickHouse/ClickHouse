@@ -269,6 +269,7 @@ IcebergRESTResponse IcebergRESTCatalogService::handleExternalRequest(const Icebe
     }
     catch (...)
     {
+        /// Ok. `convertCurrentExceptionToIcebergError` logs the exception.
         return convertCurrentExceptionToIcebergError();
     }
 }

@@ -38,12 +38,12 @@ public:
     IcebergRESTCatalogService(ContextPtr global_context_, IcebergRESTCatalogWarehouseRegistryPtr warehouses_);
 
     /// Runs one request of an external client. The catalog checks the user of `user_context`.
-    IcebergRESTResponse handleExternalRequest(const IcebergRESTRequest & request, const Context & user_context) const;
+    [[nodiscard]] IcebergRESTResponse handleExternalRequest(const IcebergRESTRequest & request, const Context & user_context) const;
 
     static IcebergRESTResponse makeIcebergError(Poco::Net::HTTPResponse::HTTPStatus status, const String & type, const String & message);
 
     /// Call it inside a `catch` block.
-    IcebergRESTResponse convertCurrentExceptionToIcebergError() const;
+    [[nodiscard]] IcebergRESTResponse convertCurrentExceptionToIcebergError() const;
 
 private:
     /// A request after routing. The path prefix selected `warehouse`.
@@ -56,37 +56,37 @@ private:
         const Context & user_context;
 
         /// Names from the URL path: `/v1/{prefix}/namespaces/{namespace}/tables/{table}`.
-        IcebergNamespaceName namespaceFromURL() const;
-        const String & tableFromURL() const;
+        [[nodiscard]] IcebergNamespaceName namespaceFromURL() const;
+        [[nodiscard]] const String & tableFromURL() const;
     };
 
-    IcebergRESTResponse handleExternalRequestImpl(const IcebergRESTRequest & request, const Context & user_context) const;
+    [[nodiscard]] IcebergRESTResponse handleExternalRequestImpl(const IcebergRESTRequest & request, const Context & user_context) const;
 
     /// Config.
-    IcebergRESTResponse handleGetConfig(const Poco::URI & uri) const;
+    [[nodiscard]] IcebergRESTResponse handleGetConfig(const Poco::URI & uri) const;
 
     /// Namespaces.
-    IcebergRESTResponse handleListNamespaces(const RoutedRequest & request) const;
-    IcebergRESTResponse handleCreateNamespace(const RoutedRequest & request) const;
-    IcebergRESTResponse handleLoadNamespace(const RoutedRequest & request) const;
-    IcebergRESTResponse handleNamespaceExists(const RoutedRequest & request) const;
-    IcebergRESTResponse handleUpdateNamespaceProperties(const RoutedRequest & request) const;
+    [[nodiscard]] IcebergRESTResponse handleListNamespaces(const RoutedRequest & request) const;
+    [[nodiscard]] IcebergRESTResponse handleCreateNamespace(const RoutedRequest & request) const;
+    [[nodiscard]] IcebergRESTResponse handleLoadNamespace(const RoutedRequest & request) const;
+    [[nodiscard]] IcebergRESTResponse handleNamespaceExists(const RoutedRequest & request) const;
+    [[nodiscard]] IcebergRESTResponse handleUpdateNamespaceProperties(const RoutedRequest & request) const;
 
     /// Tables.
-    IcebergRESTResponse handleListTables(const RoutedRequest & request) const;
-    IcebergRESTResponse handleCreateTable(const RoutedRequest & request) const;
-    IcebergRESTResponse handleLoadTable(const RoutedRequest & request) const;
-    IcebergRESTResponse handleTableExists(const RoutedRequest & request) const;
-    IcebergRESTResponse handleDropTable(const RoutedRequest & request) const;
-    IcebergRESTResponse handleUpdateTable(const RoutedRequest & request) const;
-    IcebergRESTResponse handleRenameTable(const RoutedRequest & request) const;
-    IcebergRESTResponse handleReportMetrics(const RoutedRequest & request) const;
+    [[nodiscard]] IcebergRESTResponse handleListTables(const RoutedRequest & request) const;
+    [[nodiscard]] IcebergRESTResponse handleCreateTable(const RoutedRequest & request) const;
+    [[nodiscard]] IcebergRESTResponse handleLoadTable(const RoutedRequest & request) const;
+    [[nodiscard]] IcebergRESTResponse handleTableExists(const RoutedRequest & request) const;
+    [[nodiscard]] IcebergRESTResponse handleDropTable(const RoutedRequest & request) const;
+    [[nodiscard]] IcebergRESTResponse handleUpdateTable(const RoutedRequest & request) const;
+    [[nodiscard]] IcebergRESTResponse handleRenameTable(const RoutedRequest & request) const;
+    [[nodiscard]] IcebergRESTResponse handleReportMetrics(const RoutedRequest & request) const;
 
     /// Reads the specified `metadata.json` file from object storage.
     [[nodiscard]] Poco::JSON::Object::Ptr readTableMetadata(const IcebergRESTCatalogWarehouse & warehouse, const IcebergTablePointer & pointer) const;
 
     /// Writes the next `metadata.json` file to object storage. Then points the table to it in Keeper, with a version check.
-    IcebergRESTResponse commitTableMetadata(
+    [[nodiscard]] IcebergRESTResponse commitTableMetadata(
         const IcebergRESTCatalogWarehouse & warehouse,
         const IcebergNamespaceName & ns,
         const String & table,
