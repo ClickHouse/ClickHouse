@@ -1,0 +1,7 @@
+  Filter (((Apply runtime join filter + Apply runtime join filter) + Change column names to column identifiers)): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_16218515527097711229, __table6.c_nationkey)
+  Filter ((WHERE + Change column names to column identifiers)): constant of type String cannot be encoded as fbin, in equals(__table9.r_name, 'AMERICA'_String)
+  Filter ((Apply runtime join filter + (WHERE + Change column names to column identifiers))): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_7692206028341319496, __table5.o_orderkey)
+  Filter (((Apply runtime join filter + Apply runtime join filter) + Change column names to column identifiers)): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_11125633619164622390, __table4.l_partkey)
+  BuildRuntimeFilter (Build runtime join filter on __table2.p_partkey): the step has no Substrait representation
+  Filter ((Apply runtime join filter + Change column names to column identifiers)): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_6001574295217663887, __table3.s_nationkey)
+  BuildRuntimeFilter (Build runtime join filter on __table8.n_nationkey): the step has no Substrait representation. (NOT_IMPLEMENTED)

@@ -1,0 +1,6 @@
+  Filter (((Apply runtime join filter + Apply runtime join filter) + (WHERE + Change column names to column identifiers))): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_5447527638236679983, __table3.l_suppkey)
+  Filter ((Apply runtime join filter + Change column names to column identifiers)): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_9631806744865301326, __table2.s_nationkey)
+  Filter (( + Change column names to column identifiers)): constant of type String cannot be encoded as fbin, in equals(__table6.n_name, 'FRANCE'_String)
+  Filter ((Apply runtime join filter + Change column names to column identifiers)): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_13110449366649266593, __table4.o_custkey)
+  Filter ((Apply runtime join filter + Change column names to column identifiers)): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_14862745015949900789, __table5.c_nationkey)
+  Filter (( + Change column names to column identifiers)): constant of type String cannot be encoded as fbin, in equals(__table7.n_name, 'GERMANY'_String). (NOT_IMPLEMENTED)

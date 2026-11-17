@@ -1,0 +1,2 @@
+  Filter ((Apply runtime join filter + (WHERE + Change column names to column identifiers))): function in is not mapped to Substrait, in in(__table1.s_suppkey, __set_947309258077040833_2741828731631665235)
+  Filter ((WHERE + Change column names to column identifiers)): constant of type String cannot be encoded as fbin, in equals(__table2.n_name, 'CANADA'_String). (NOT_IMPLEMENTED)

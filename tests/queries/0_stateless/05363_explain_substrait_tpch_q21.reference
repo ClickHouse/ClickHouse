@@ -1,0 +1,8 @@
+  Filter (((((Apply runtime join filter + Create result for always true EXISTS expression) + WHERE) + Apply runtime join filter) + (WHERE + Change column names to column identifiers))): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_14463812396424317610, __table10.l_orderkey)
+  ReadFromCommonBuffer: the step has no Substrait representation
+  Filter (((((Apply runtime join filter + Create result for always true EXISTS expression) + WHERE) + Apply runtime join filter) + Change column names to column identifiers)): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_7439556138153700882, __table7.l_orderkey)
+  ReadFromCommonBuffer: the step has no Substrait representation
+  Filter ((Apply runtime join filter + (WHERE + Change column names to column identifiers))): constant of type String cannot be encoded as fbin, in equals(__table3.o_orderstatus, 'F'_String)
+  Filter ((Apply runtime join filter + (WHERE + Change column names to column identifiers))): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_10966383646987468498, __table2.l_suppkey)
+  Filter ((Apply runtime join filter + Change column names to column identifiers)): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_11494211194852312517, __table1.s_nationkey)
+  Filter ((WHERE + Change column names to column identifiers)): constant of type String cannot be encoded as fbin, in equals(__table4.n_name, 'SAUDI ARABIA'_String). (NOT_IMPLEMENTED)

@@ -1,0 +1,2 @@
+  Filter (((Apply runtime join filter + Create result for always true EXISTS expression) + (WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_5516302253114644726, exists(__table2).__table1.o_orderkey)
+  BuildRuntimeFilter (Build runtime join filter on __table1.o_orderkey): the step has no Substrait representation. (NOT_IMPLEMENTED)

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Shared part of the tests of EXPLAIN SUBSTRAIT over the TPC-H queries.
+
+# shellcheck source=./04040_tpc_h.lib
+. "$CURDIR"/04040_tpc_h.lib
+
+# Prints the Substrait plan of TPC-H query $1, or the blocking steps if the plan cannot be serialized.
+function explain_substrait_tpch()
+{
+    { echo "USE tpch;"; sed 's/^SELECT/EXPLAIN SUBSTRAIT SELECT/' "$CURDIR/../../benchmarks/tpc-h/queries/query_$1.sql"; } \
+        | $CLICKHOUSE_CLIENT "${SETTINGS[@]}" --enable_substrait 1 --format TSVRaw --ignore-error --send_logs_level fatal 2>&1 \
+        | sed -n '/^(query:/,$d; /^[ {}]/p'
+}

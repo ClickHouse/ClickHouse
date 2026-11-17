@@ -1,0 +1,4 @@
+  Filter ((Apply runtime join filter + (WHERE + Change column names to column identifiers))): constant of type String cannot be encoded as fbin, in equals(__table3.l_returnflag, 'R'_String)
+  Filter (((Apply runtime join filter + Apply runtime join filter) + Change column names to column identifiers)): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_10764236346055892549, __table1.c_custkey)
+  BuildRuntimeFilter (Build runtime join filter on __table2.o_custkey): the step has no Substrait representation
+  BuildRuntimeFilter (Build runtime join filter on __table4.n_nationkey): the step has no Substrait representation. (NOT_IMPLEMENTED)

@@ -1,0 +1,6 @@
+  Filter (((Apply runtime join filter + Apply runtime join filter) + Change column names to column identifiers)): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_2483335616416417390, __table4.l_partkey)
+  Filter (((Apply runtime join filter + Apply runtime join filter) + Change column names to column identifiers)): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_15429707354741238078, __table5.ps_partkey)
+  BuildRuntimeFilter (Build runtime join filter on __table2.p_partkey): the step has no Substrait representation
+  Filter ((Apply runtime join filter + Change column names to column identifiers)): function __applyFilter is not mapped to Substrait, in __applyFilter(_runtime_filter_2982732942355729280, __table3.s_nationkey)
+  BuildRuntimeFilter (Build runtime join filter on __table7.n_nationkey): the step has no Substrait representation
+  BuildRuntimeFilter (Build runtime join filter on __table6.o_orderkey): the step has no Substrait representation. (NOT_IMPLEMENTED)
