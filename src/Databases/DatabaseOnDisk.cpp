@@ -891,6 +891,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
     {
         std::span batch{it, std::min(std::next(it, batch_size), metadata_files.end())};
         pool.scheduleOrThrow(
+            ThreadName::DATABASE_ON_DISK,
             [batch, &process_metadata_file, &process_tmp_drop_metadata_file]() mutable
             {
                 DB::setThreadName(ThreadName::DATABASE_ON_DISK);

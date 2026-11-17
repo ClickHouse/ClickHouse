@@ -149,7 +149,7 @@ ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(
 
         /// Note: calling method scheduleOrThrowOnError in intentional, because we don't want to throw exceptions
         /// in critical places where this callback runner is used (e.g. loading or deletion of parts)
-        my_pool->scheduleOrThrowOnError([my_task = std::move(task)]{ my_task->run(); }, priority);
+        my_pool->scheduleOrThrowOnError(thread_name, [my_task = std::move(task)]{ my_task->run(); }, priority);
 
         return future;
     };
@@ -325,9 +325,9 @@ public:
             /// Note: calling method scheduleOrThrowOnError in intentional, because we don't want to throw exceptions
             /// in critical places where this callback runner is used (e.g. loading or deletion of parts)
             if (wait_microseconds)
-                pool.scheduleOrThrow(std::move(task_func), priority, *wait_microseconds);
+                pool.scheduleOrThrow(thread_name, std::move(task_func), priority, *wait_microseconds);
             else
-                pool.scheduleOrThrowOnError(std::move(task_func), priority);
+                pool.scheduleOrThrowOnError(thread_name, std::move(task_func), priority);
         }
         catch (...)
         {

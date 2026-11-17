@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/OpenTelemetryTracingContext.h>
-#include <Common/setThreadName.h>
 #include <Common/tryOrFalse.h>
 #include <base/types.h>
 #include <IO/WriteHelpers.h>
@@ -170,16 +169,12 @@ struct TracingContextOnThread : TracingContext
     /// Use weak_ptr instead of shared_ptr to hold a reference to the underlying system.opentelemetry_span_log table
     /// Since this object is kept on threads and passed across threads, a weak_ptr is more safe to prevent potential leak
     std::weak_ptr<OpenTelemetrySpanLog> span_log;
-
-    /// The name a job gave to the thread
-    ThreadName job_thread_name = ThreadName::UNKNOWN;
 };
 
 /// Get tracing context on current thread
 const TracingContextOnThread& CurrentContext();
 
 void SetTraceFlagInCurrentContext(UInt8 flag, bool enable);
-void SetJobThreadNameInCurrentContext(ThreadName name);
 
 /// Holder of tracing context.
 /// It should be initialized at the beginning of each thread execution.

@@ -463,11 +463,6 @@ void SetTraceFlagInCurrentContext(UInt8 flag, bool enable)
         current_trace_context->trace_flags &= ~flag;
 }
 
-void SetJobThreadNameInCurrentContext(ThreadName name)
-{
-    current_trace_context->job_thread_name = name;
-}
-
 void TracingContextOnThread::reset() noexcept
 {
     this->trace_id = UUID();
@@ -475,7 +470,6 @@ void TracingContextOnThread::reset() noexcept
     this->trace_flags = TRACE_FLAG_NONE;
     this->tracestate = "";
     this->span_log.reset();
-    this->job_thread_name = ThreadName::UNKNOWN;
 }
 
 TracingContextHolder::TracingContextHolder(

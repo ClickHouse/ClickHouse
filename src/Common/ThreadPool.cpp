@@ -234,6 +234,8 @@ public:
 
     Job job;
     Priority priority;
+    /// The operation name of the job's span, if given.
+    DB::ThreadName name;
     CurrentMetrics::Increment metric_increment;
     ScopedDecrement available_threads_decrement;
 
@@ -256,10 +258,10 @@ public:
     JobWithPriority& operator=(JobWithPriority&&) noexcept = default;
 
     JobWithPriority(
-        Job job_, Priority priority_, CurrentMetrics::Metric metric,
+        Job job_, Priority priority_, DB::ThreadName name_, CurrentMetrics::Metric metric,
         const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_, bool query_cancellation_blocked_,
         bool capture_frame_pointers, ScopedDecrement available_threads_decrement_)
-        : job(std::move(job_)), priority(priority_), metric_increment(metric),
+        : job(std::move(job_)), priority(priority_), name(name_), metric_increment(metric),
         available_threads_decrement(std::move(available_threads_decrement_)),
         thread_trace_context(thread_trace_context_), query_cancellation_blocked(query_cancellation_blocked_),
         enable_job_stack_trace(capture_frame_pointers)
@@ -409,7 +411,7 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 
 template <typename Thread>
 template <typename ReturnType>
-ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std::optional<Int64> wait_microseconds, bool propagate_opentelemetry_tracing_context)
+ReturnType ThreadPoolImpl<Thread>::scheduleImpl(DB::ThreadName name, Job job, Priority priority, std::optional<Int64> wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
     auto on_error = [&](const std::string & reason)
     {
@@ -559,6 +561,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         {
             jobs.emplace(std::move(job),
                     priority,
+                    name,
                     metric_scheduled_jobs,
                     /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
                     propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
@@ -662,19 +665,37 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
 template <typename Thread>
 void ThreadPoolImpl<Thread>::scheduleOrThrowOnError(Job job, Priority priority)
 {
-    scheduleImpl<void>(std::move(job), priority, std::nullopt);
+    scheduleOrThrowOnError(DB::ThreadName::UNKNOWN, std::move(job), priority);
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::scheduleOrThrowOnError(DB::ThreadName name, Job job, Priority priority)
+{
+    scheduleImpl<void>(name, std::move(job), priority, std::nullopt);
 }
 
 template <typename Thread>
 bool ThreadPoolImpl<Thread>::trySchedule(Job job, Priority priority, Int64 wait_microseconds) noexcept
 {
-    return scheduleImpl<bool>(std::move(job), priority, wait_microseconds);
+    return trySchedule(DB::ThreadName::UNKNOWN, std::move(job), priority, wait_microseconds);
+}
+
+template <typename Thread>
+bool ThreadPoolImpl<Thread>::trySchedule(DB::ThreadName name, Job job, Priority priority, Int64 wait_microseconds) noexcept
+{
+    return scheduleImpl<bool>(name, std::move(job), priority, wait_microseconds);
 }
 
 template <typename Thread>
 void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, Priority priority, Int64 wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
-    scheduleImpl<void>(std::move(job), priority, wait_microseconds, propagate_opentelemetry_tracing_context);
+    scheduleOrThrow(DB::ThreadName::UNKNOWN, std::move(job), priority, wait_microseconds, propagate_opentelemetry_tracing_context);
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::scheduleOrThrow(DB::ThreadName name, Job job, Priority priority, Int64 wait_microseconds, bool propagate_opentelemetry_tracing_context)
+{
+    scheduleImpl<void>(name, std::move(job), priority, wait_microseconds, propagate_opentelemetry_tracing_context);
 }
 
 template <typename Thread>
@@ -1016,7 +1037,6 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
     {
         /// This is inside the loop to also reset previous thread names set inside the jobs.
         setThreadName(DB::ThreadName::DEFAULT_THREAD_POOL);
-        DB::OpenTelemetry::SetJobThreadNameInCurrentContext(DB::ThreadName::UNKNOWN);
 
         /// Get a job from the queue.
         std::optional<JobWithPriority> job_data;
@@ -1135,7 +1155,8 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
         ALLOW_ALLOCATIONS_IN_SCOPE;
 
         /// Set up tracing context for this thread by its parent context.
-        DB::OpenTelemetry::TracingContextHolder thread_trace_context("ThreadPool::worker()", job_data->thread_trace_context);
+        DB::OpenTelemetry::TracingContextHolder thread_trace_context(
+            job_data->name != DB::ThreadName::UNKNOWN ? DB::toString(job_data->name) : "ThreadPool::worker()", job_data->thread_trace_context);
 
         /// The job may attach to the thread group of the scheduling thread and inherit its cancellation predicates.
         std::optional<DB::ThreadStatus::QueryCancellationBlocker> cancellation_blocker;
@@ -1179,21 +1200,9 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Thread pool job changed current ThreadStatus pointer ({} -> {}) or ThreadGroup ({} -> {}).", initial_thread ? "non-nullptr" : "nullptr", final_thread ? "non-nullptr" : "nullptr", initial_thread_group ? "master_thread_id " + std::to_string(initial_thread_group->master_thread_id) : "nullptr", final_thread_group ? "master_thread_id " + std::to_string(final_thread_group->master_thread_id) : "nullptr");
 #endif
 
-            if (thread_trace_context.root_span.isTraceEnabled())
-            {
-                /// Use the thread name set by the job as operation name so that the tracing log will be more clear.
-                /// It is known only after the job finishes.
-                auto job_thread_name = DB::OpenTelemetry::CurrentContext().job_thread_name;
-                if (job_thread_name != DB::ThreadName::UNKNOWN)
-                {
-                    thread_trace_context.root_span.operation_name = DB::toString(job_thread_name);
-                }
-                else
-                {
-                    /// If the thread name is not set, use the type name of the job instead
-                    thread_trace_context.root_span.operation_name = demangle(job_data->job.target_type().name());
-                }
-            }
+            /// A job without a name: name its span after its type.
+            if (job_data->name == DB::ThreadName::UNKNOWN && thread_trace_context.root_span.isTraceEnabled())
+                thread_trace_context.root_span.operation_name = demangle(job_data->job.target_type().name());
 
             /// job should be reset before decrementing scheduled_jobs to
             /// ensure that the Job destroyed before wait() returns.
