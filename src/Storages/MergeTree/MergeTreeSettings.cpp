@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/MergeTreeSettingsDisks.h>
 
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
@@ -10,14 +9,21 @@
 #include <Core/MergeTreeSerializationEnums.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsChangesHistory.h>
+#include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/FieldFromAST.h>
+#include <Parsers/isDiskFunction.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/NamePrompter.h>
+#include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Interpreters/Context.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
 #include <cmath>
 #include <boost/program_options.hpp>
@@ -255,20 +261,6 @@ bytes) with some gap to avoid filesystem errors.
     DECLARE(UInt64, min_rows_for_full_part_storage, 0, R"(
     Minimal number of rows to use full type of storage for data part instead of packed
     )", 0) \
-    DECLARE(UInt64, max_bytes_to_buffer_for_packed_part, 0, R"(
-    Maximum amount of memory taken by the buffered data of a packed data part while it is written
-    by an insert, a merge or a mutation. A packed part keeps the data of all its files in memory until
-    the part is finalized. Once the buffered data exceeds this limit, the data of the largest files is
-    moved to temporary files in the server temporary storage (`tmp_path`, `tmp_policy` or
-    `temporary_data_in_cache`) and read back on finalization. The temporary files are accounted by
-    `max_temporary_data_on_disk_size_for_query` and `max_temporary_data_on_disk_size_for_user`.
-    The last block (up to 64 KiB) of each file that is still being written cannot be moved, so a part
-    with many files written at once, such as a wide part with many columns, can take more memory.
-    The data of a part is moved to one temporary file, whose write buffers (about 2 MiB with the default
-    `temporary_files_buffer_size`) stay in memory until the part is finalized.
-    The limit applies separately to the part and to each of its projections. 0 means unlimited.
-    )", 0, \
-        {"26.11", 0, 0, "New setting. Bounds the memory taken by the buffered data of a packed part being written by moving it to temporary data. 0 keeps all the data in memory, as before."}) \
     DECLARE(UInt64, compact_parts_max_bytes_to_buffer, 128 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal number of bytes to write in a
 single stripe in compact parts
@@ -279,11 +271,7 @@ single stripe in compact parts
 )", 0) \
     DECLARE(UInt64, compact_parts_merge_max_bytes_to_prefetch_part, 16 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal size of compact part to read it
-in a whole to memory during merge. A merge also reads a bigger part in a whole
-if the part is not bigger than the worst-case memory of a read buffer for each
-column (the configured buffer size, twice with prefetch). For a part with small
-stripes this can take more memory than reading each column separately, but it
-sends one request instead of one per column per stripe. 0 disables it.
+in a whole to memory during merge.
 )", 0) \
     DECLARE(UInt64, merge_max_bytes_to_prewarm_cache, 1ULL * 1024 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal size of part (compact or packed)
@@ -430,7 +418,7 @@ Serialization version of the typed shared data inside JSON data type: the struct
 Possible values:
 - `v1` - for each granule the data of every `SHARED` path in path order, with the start of every path's data recorded in a marks stream, so that a read of some paths decodes only them.
 )", 0, \
-        {"26.11", "v1", "v1", "New setting"}) \
+        {"26.10", "v1", "v1", "New setting"}) \
     DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v3", R"(
 Serialization version for Dynamic data type. Required for compatibility.
 
@@ -773,26 +761,9 @@ Default: 300 (force fetch after 5 minutes).
 )", 0, \
         {"26.4", 300, 300, "New setting"}) \
     DECLARE(Bool, fsync_after_insert, false, R"(
-Do fsync for every inserted part, so the data is durable when the `INSERT` query
-is acknowledged. Decreases performance of inserts, especially with wide parts.
-See also `group_fsync_before_insert_finish`.
+Do fsync for every inserted part. Significantly decreases performance of
+inserts, not recommended to use with wide parts.
 )", 0) \
-    DECLARE(BoolAuto, group_fsync_before_insert_finish, Field("auto"), R"(
-Takes effect with `fsync_after_insert`, if the table is stored on local disks.
-An `INSERT` writing many parts does not wait for the fsync after every part: the parts
-are committed right after they are written, and the files of all the parts are fsynced
-together before the `INSERT` finishes (the parts committed more than 30 seconds ago are
-fsynced earlier). In the meantime, the OS writes the data back in the background.
-The parts can become visible to queries before they are durable, but the `INSERT`
-is acknowledged only after that.
-
-If disabled, every part is fsynced right after it is written, before it is committed.
-
-The default value `auto` enables it only for non-replicated tables. For replicated tables,
-another replica can deduplicate an `INSERT` against a part that is committed but not yet
-fsynced on this replica, and acknowledge it before the data is durable.
-)", 0, \
-        {"26.11", false, "auto", "New setting"}) \
     DECLARE(Bool, fsync_part_directory, false, R"(
 Do fsync for part directory after all part operations (writes, renames, etc.).
 )", 0) \
@@ -882,11 +853,10 @@ Maximum number of processed tokens accumulated by a text index builder before fl
 Maximum estimated memory retained by a text index builder before flushing a temporary segment.
 )", 0, \
         {"26.8", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"}) \
-    DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::PFor, R"(
+    DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::None, R"(
 Default posting list codec for text indexes. One of `none`, `bitpacking`, `pfor`.
 Can be overridden by explicit `posting_list_codec` index argument.
 )", 0, \
-        {"26.11", "none", "pfor", "Use the `pfor` posting list codec for text indexes by default"}, \
         {"26.6", "none", "none", "New setting"}) \
     DECLARE(Bool, allow_experimental_text_index_phrase_search, false, R"(
 Allow creating text indexes with the experimental `support_phrase_search` argument
@@ -1416,7 +1386,7 @@ For testing. Do not change it.
 )", 0) \
     DECLARE(Bool, optimize_row_order, false, R"(
 Controls if the row order should be optimized during inserts to improve the
-compressibility of the newly inserted table part.
+compressability of the newly inserted table part.
 
 Only has an effect for ordinary MergeTree-engine tables. Does nothing for
 specialized MergeTree engine tables (e.g. CollapsingMergeTree).
@@ -1646,7 +1616,7 @@ default; this setting will be removed in a future release.
 )", 0) \
     DECLARE(NonZeroUInt64, max_replicated_logs_to_keep, 1000, R"(
 How many records may be in the ClickHouse Keeper log if there is inactive
-replica. An inactive replica becomes lost when this number exceed.
+replica. An inactive replica becomes lost when when this number exceed.
 
 Possible values:
 - Any positive integer.
@@ -2299,9 +2269,6 @@ Supported for object-storage disks whose metadata lives on the object storage it
 (s3_plain, s3_plain_rewritable, web, web_index) and their cached variants. Encrypted
 variants are supported only over the writable s3_plain / s3_plain_rewritable disks, not
 over the read-only web / web_index disks.
-A writable disk holds the data of only one table: the other tables over the same path,
-or over a path inside or above it, have to use a read-only disk.
-`ALTER` cannot change the disk of a table with this setting.
 The parts already present under the path are trusted to match the columns and the sorting
 key this table declares. Nothing records the sorting key a part was written with, so a
 table declaring a different one over the same parts returns wrong results or an error.
@@ -2319,13 +2286,6 @@ Allow usage of '_part_offset' column in projections select query.
 Remove empty parts after they were pruned by TTL, mutation, or collapsing
 merge algorithm.
 )", 0) \
-    DECLARE(Seconds, empty_parts_lifetime, 0, R"(
-Minimal age in seconds of an empty part before `remove_empty_parts` removes it. The age is counted from the part's
-`modification_time`, so a merge or a mutation that produces a new empty part starts it again. It does not delay
-other ways to replace the part: a merge that includes it, or a `TRUNCATE` or `DROP` that covers it, makes it outdated
-as for any other part. 0 removes empty parts without waiting.
-)", 0, \
-        {"26.11", 0, 0, "New setting"}) \
     DECLARE(Bool, remove_unused_patch_parts, true, R"(
 Remove in background patch parts which are applied for all active parts.
 )", 0, \
@@ -2397,8 +2357,8 @@ not be less than the value of the
 / 1024. Otherwise, ClickHouse throws an exception.
 )", 0) \
     DECLARE(Bool, check_sample_column_is_correct, true, R"(
-Enables the check at table creation, that the data type of a column for
-sampling or sampling expression is correct. The data type must be one of unsigned
+Enables the check at table creation, that the data type of a column for s
+ampling or sampling expression is correct. The data type must be one of unsigned
 [integer types](/reference/data-types/int-uint): `UInt8`, `UInt16`,
 `UInt32`, `UInt64`.
 
@@ -2701,30 +2661,18 @@ Requires `enable_block_number_column` and `enable_block_offset_column` to be ena
     DECLARE(Bool, enable_adaptive_codec_selection, false, R"(
 When enabled, merges and mutations choose a codec per block for columns that use the default codec (no `CODEC` clause, or `CODEC(Default)`).
 The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type, each on its own and, when the default codec is a general-purpose compression such as `LZ4` or `ZSTD`, followed by it.
-The smallest output wins and incompressible blocks are stored raw. The choice is made on one block in every `adaptive_codec_selection_period` blocks and reused for the blocks in between.
+The smallest output wins. Compression is therefore never worse than the default, and incompressible blocks are stored raw.
 A column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`) is never selected adaptively, so encryption is always applied.
 Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions) table function.
-)", BETA, \
-        {"26.11", false, false, "Adaptive codec selection was moved to Beta."}, \
+)", EXPERIMENTAL, \
         {"26.8", false, false, "New setting."}) \
-    DECLARE(NonZeroUInt64, adaptive_codec_selection_period, 8, R"(
-Pricing a block means compressing it with every candidate codec and keeping the smallest output. With `enable_adaptive_codec_selection`, a column stream is split into windows of this many blocks. One block per window is the sample, it is priced and the other blocks reuse its winner.
-A block reusing the winner is re-priced when the winner writes more per source byte than the runner-up did on the priced block. When nothing shrank the priced block there is no winner, so the next block is priced.
-A priced block is never larger than the default codec would make it, a block reusing the winner may be.
-`1` prices every block. Compact parts always price every block.
-The profile events `AdaptiveCodecBlocksPriced`, `AdaptiveCodecBlocksRepriced` and `AdaptiveCodecBlocksReused` count the blocks of each kind per merge or mutation in `system.part_log`.
-`AdaptiveCodecBytesDefault` and `AdaptiveCodecBytesWritten` sum the default codec's size and the written size of the sample blocks, so their ratio is the saving of adaptive selection, exact with period `1`.
-Streams whose only candidates are the default codec and `NONE` are not counted.
-)", BETA, \
-        {"26.11", 8, 8, "New setting"}) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
 Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
 )", EXPERIMENTAL, \
         {"25.1", false, false, "Cloud sync"}) \
-    DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 16, R"(
+    DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
 How many partition discoveries should be packed into batch
 )", 0, \
-        {"26.11", 1, 16, "Increase the default", CompatibilitySetting::Ignore}, \
         {"25.8", 1, 1, "New setting"}) \
     DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
 Enabled cleanup of Keeper entries of empty partition.
@@ -2786,7 +2734,7 @@ memory usage by not loading useless columns of the primary key.
     merges, fetches and on startup of server. Without it the statistics of a part
     are loaded into the cache by the first query that needs them.
 )", 0, \
-        {"26.11", false, false, "New setting to prewarm the statistics cache with the column statistics of new data parts and on startup. The statistics cache is now per data part and column instead of a snapshot of the whole table; the settings `refresh_statistics_interval` and `use_statistics_cache` are obsolete."}) \
+        {"26.10", false, false, "New setting to prewarm the statistics cache with the column statistics of new data parts and on startup. The statistics cache is now per data part and column instead of a snapshot of the whole table; the settings `refresh_statistics_interval` and `use_statistics_cache` are obsolete."}) \
     DECLARE(String, columns_to_prewarm_mark_cache, "", R"(
 List of columns to prewarm mark cache for (if enabled). Empty means all columns
 )", 0) \
@@ -2858,10 +2806,6 @@ Compression codec selecting order for a column:
     1. Compression codec defined for the column in the table declaration
     2. Compression codec defined in `default_compression_codec` (this setting)
     3. Default compression codec defined in `compression` settings
-
-The codec combinator `FirstApplicable` selects a codec for the data type of every column (and every stream of it),
-e.g. `FirstApplicable(PCO, ZSTD(3))` compresses numbers with `PCO` and other data with `ZSTD(3)`. At least one of its
-alternatives must be applicable to any data type, and lossy codecs are not allowed among them.
 Default value: an empty string (not defined).
 )", 0, \
         {"25.4", "", "", "New setting"}) \
@@ -3023,6 +2967,24 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 #undef IMPL_SUBSCRIPT_OP_
 };
 
+static void validateTableDisk(const DiskPtr & disk)
+{
+    if (!disk)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` requires `disk` setting.");
+
+    const auto description = disk->getDataSourceDescription();
+    if (description.type != DataSourceType::ObjectStorage)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` is not supported for non-ObjectStorage disks");
+
+    /// table_disk loads the table straight from the disk root (no database/UUID path), so its metadata must be
+    /// reconstructable from the object storage alone; random blob keys (Local, Keeper) keep the map elsewhere.
+    const auto metadata_storage = disk->getMetadataStorage();
+    if (metadata_storage->areBlobPathsRandom())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "MergeTree settings `table_disk` is not supported for {}: it requires metadata stored on the object storage.",
+            description.toString());
+}
 
 IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, MergeTreeSettings, MergeTreeSetting)
 
@@ -3033,11 +2995,41 @@ void MergeTreeSettingsImpl::loadFromQuery(
     {
         try
         {
+            bool found_disk_setting = false;
+            bool found_storage_policy_setting = false;
+            bool table_disk = false;
+            DiskPtr disk;
+
             auto changes = storage_def.settings->changes;
             MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata, for_system_database, stored_definition);
 
-            if (checkMergeTreeDiskSettings(changes, context, is_loading_from_existing_metadata) && has("storage_policy"))
-                resetToDefault("storage_policy");
+            for (const auto & [name, value, _] : changes)
+            {
+                if (name == "disk")
+                {
+                    disk = context->getDisk(value.safeGet<String>());
+
+                    if (has("storage_policy"))
+                        resetToDefault("storage_policy");
+
+                    found_disk_setting = true;
+                }
+                else if (name == "storage_policy")
+                    found_storage_policy_setting = true;
+                else if (name == "table_disk")
+                    table_disk = value.safeGet<bool>();
+
+                if (!is_loading_from_existing_metadata && found_disk_setting && found_storage_policy_setting)
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time");
+                }
+
+            }
+
+            if (table_disk)
+                validateTableDisk(disk);
 
             applyChanges(changes);
         }
@@ -3375,6 +3367,36 @@ void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr con
     impl->applyChange(resolved_change);
 }
 
+void MergeTreeSettings::resolveDiskSetting(
+    SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition)
+{
+    for (auto & change : changes)
+        resolveDiskSetting(change, context, is_loading_from_existing_metadata, for_system_database, stored_definition);
+}
+
+void MergeTreeSettings::resolveDiskSetting(
+    SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition)
+{
+    if (change.name != "disk")
+        return;
+
+    CustomType custom;
+    ASTPtr value_as_custom_ast = nullptr;
+    if (change.value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
+        value_as_custom_ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
+
+    if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
+    {
+        auto disk_name = DiskFromAST::createCustomDisk(
+            value_as_custom_ast, context, is_loading_from_existing_metadata, for_system_database, stored_definition);
+        LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
+        change.value = disk_name;
+    }
+    else if (!is_loading_from_existing_metadata)
+    {
+        DiskFromAST::ensureDiskIsNotCustom(change.value.safeGet<String>(), context);
+    }
+}
 
 const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
 {

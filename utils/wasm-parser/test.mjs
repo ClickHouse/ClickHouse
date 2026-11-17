@@ -158,8 +158,6 @@ function parsed(sql) {
     check('ch_parse reports an empty query', !r.ok && /Empty query/.test(r.doc?.error?.message ?? ''));
 }
 
-const dictionary = n => `CREATE DICTIONARY d (a UInt64) PRIMARY KEY a SOURCE(CLICKHOUSE(HOST ${'['.repeat(n)}1${']'.repeat(n)})) LAYOUT(FLAT()) LIFETIME(0)`;
-
 {
     /// The parser has no stack check of its own below `MAX_PARSER_DEPTH`, so the stack must hold
     /// whatever that depth admits. With a 64 KiB stack, 51 nested parentheses overflowed it, which
@@ -173,10 +171,6 @@ const dictionary = n => `CREATE DICTIONARY d (a UInt64) PRIMARY KEY a SOURCE(CLI
     check('ch_parse accepts 90 nested subqueries', parsed(subqueries(90)).ok);
     check('ch_parse rejects 10000 nested subqueries by depth',
         /Maximum parse depth/.test(parsed(subqueries(10000)).doc?.error?.message ?? ''));
-    check('ch_parse rejects a dictionary argument nested 4000 levels by depth',
-        /Maximum parse depth/.test(parsed(dictionary(4000)).doc?.error?.message ?? ''));
-    check('ch_parse rejects an array literal of parenthesized arrays nested 4000 levels by depth',
-        /Maximum parse depth/.test(parsed(`SELECT ${'[('.repeat(4000)}1${')]'.repeat(4000)}`).doc?.error?.message ?? ''));
     check('ch_parse works after the deep queries', parsed('SELECT 1 + 2').ok);
 }
 
@@ -345,7 +339,7 @@ function inWorker(entry, text) {
 console.log(`\n--- with a ${WORKER_STACK_MB} MB engine stack ---`);
 {
     /// The deepest SQL each of these shapes admits, from `MAX_PARSER_DEPTH` and the AST depth
-    /// limit, and inputs past them.
+    /// limit, and one level past it.
     const deep = [
         ['197 nested parentheses', `SELECT ${'('.repeat(197)}1${')'.repeat(197)}`],
         ['109 nested IN subqueries', `SELECT * FROM t WHERE ${'x IN (SELECT y FROM u WHERE '.repeat(109)}1${')'.repeat(109)}`],
@@ -353,7 +347,6 @@ console.log(`\n--- with a ${WORKER_STACK_MB} MB engine stack ---`);
         ['an array literal nested 983 levels', `SELECT ${'['.repeat(983)}1${']'.repeat(983)}`],
         ['a chain of 498 terms', `SELECT ${Array(498).fill('1').join(' + ')}`],
         ['a chain of 499 terms', `SELECT ${Array(499).fill('1').join(' + ')}`],
-        ['a dictionary argument nested 4000 levels', dictionary(4000)],
     ];
     for (const [name, sql] of deep) {
         const r = await inWorker('ch_parse', sql);

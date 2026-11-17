@@ -15,7 +15,6 @@ void Partition::beginAt(const SlidingBlocks & blocks, RowNumber first_row)
         .end = RowPoint{.location = blocks.next(first_row), .row_index_in_partition = 1, .peer_group_index_in_partition = 1},
         .fully_visible = false,
     };
-    advance(blocks);
 }
 
 void Partition::advance(const SlidingBlocks & blocks)
