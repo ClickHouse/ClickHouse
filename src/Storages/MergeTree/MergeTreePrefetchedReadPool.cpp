@@ -13,8 +13,6 @@
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
-#include <Common/Scheduler/CurrentCPULease.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 
 namespace ProfileEvents
@@ -98,9 +96,8 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
     /// the prefetch thread pool. Ranges dropped by the refiner are never prefetched.
     /// Both the task and the pool outlive this job: the task owns this object through
     /// readers_future and waits for the job in its destructor.
-    prefetch_runner.enqueueAndKeepTrack([this, &task, &read_prefetch, current_component = Coordination::getCurrentComponent()]
+    prefetch_runner.enqueueAndKeepTrack([this, &task, &read_prefetch]
     {
-        auto component_guard = Coordination::setCurrentComponent(current_component);
         task.ranges = read_prefetch.refineReadRanges(*task.read_info, std::move(task.ranges));
         if (task.ranges.empty())
         {
@@ -111,10 +108,7 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
         task.patches_ranges = read_prefetch.ranges_in_patch_parts.getRanges(
             task.read_info->data_part_info->getDataPart(), task.read_info->patch_parts, task.ranges);
 
-        const auto map = read_prefetch.getActualReadRequestMap(*task.read_info, nullptr);
-        readers = MergeTreeReadTask::createReaders(
-            task.read_info, read_prefetch.getExtras(), task.ranges, task.patches_ranges,
-            map, read_prefetch.getActualPatchReadRequestMaps(*task.read_info, map));
+        readers = MergeTreeReadTask::createReaders(task.read_info, read_prefetch.getExtras(), task.ranges, task.patches_ranges);
 
         /// This is already a prefetch thread, so initiate the prefetches inline.
         read_prefetch.createPrefetchedTask(readers.main.get(), task.priority)();
@@ -302,11 +296,7 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, Merge
         /// readers are potentially long, and refinement of a non-prefetched task may block.
         if (thread_task->isValidReadersFuture())
         {
-            {
-                /// Park the CPU lease while waiting for the prefetch (outside the pool mutex)
-                CPULeaseParkGuard cpu_park;
-                thread_task->readers_future->wait();
-            }
+            thread_task->readers_future->wait();
             if (thread_task->pruned_by_refiner)
                 continue;
         }
@@ -525,13 +515,13 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
 
         LOG_TRACE(
             log,
-            "Part: {}, sum_marks: {}, approx mark size: {}, prefetch_step_bytes: {}, prefetch_step_marks: {}, ranges: {}",
+            "Part: {}, sum_marks: {}, approx mark size: {}, prefetch_step_bytes: {}, prefetch_step_marks: {}, (ranges: {})",
             getPartNameForLogging(parts_ranges[i].data_part),
             part_stat.sum_marks,
             part_stat.approx_size_of_mark,
             settings[Setting::filesystem_prefetch_step_bytes].value,
             part_stat.prefetch_step_marks,
-            parts_ranges[i].ranges.size());
+            toString(parts_ranges[i].ranges));
     }
 
     const size_t min_marks_per_thread = (sum_marks - 1) / threads + 1;

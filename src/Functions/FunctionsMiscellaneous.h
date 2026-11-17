@@ -49,19 +49,19 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return "FunctionExpression"; }
+    String getName() const override { return "FunctionExpression"; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return executeImpl(arguments, result_type, input_rows_count, /*dry_run=*/false);
     }
 
-    [[nodiscard]] ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return executeImpl(arguments, result_type, input_rows_count, /*dry_run=*/true);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
     {
         if (input_rows_count == 0)
             return result_type->createColumn();
@@ -85,15 +85,15 @@ public:
         return expr_columns.getByName(signature->return_name).column;
     }
 
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     /// It's possible if expression_actions contains function that don't use
     /// default implementation for Nothing.
     /// Example: arrayMap(x -> CAST(x, 'UInt8'), []);
-    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
     /// Example: SELECT arrayMap(x -> (x + (arrayMap(y -> ((x + y) + toLowCardinality(1)), [])[1])), [])
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     /// The mix of full and replicated columns falls back to full materialization.
-    [[nodiscard]] bool useDefaultImplementationForReplicatedColumns() const override { return false; }
+    bool useDefaultImplementationForReplicatedColumns() const override { return false; }
 
 private:
     ExpressionActionsPtr expression_actions;
@@ -172,14 +172,6 @@ inline bool isLambdaBodyStateful(const ExpressionActions & expression_actions)
 inline bool isLambdaBodyExpensive(const ExpressionActions & expression_actions)
 {
     return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.isExpensive(); });
-}
-
-/// A lambda has observable side effects if any function in its body has them. Without this, a higher-order
-/// function like `arrayExists(x -> sleepEachRow(0.001) = 0, arr)` looks free of side effects, and the
-/// reordering of short-circuit arguments evaluates `sleepEachRow` on fewer rows than in the written order.
-inline bool isLambdaBodyWithObservableSideEffects(const ExpressionActions & expression_actions)
-{
-    return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.hasObservableSideEffects(); });
 }
 
 /// Whether the body of a lambda can be evaluated once and its value reused for every row of the query.
@@ -264,24 +256,12 @@ public:
 
     String getName() const override { return "FunctionExpression"; }
 
-    /// ExecutableFunctionCapture builds a new FunctionExpression per chunk; identity is the shared
-    /// LambdaCapture + ExpressionActions, not the FunctionExpression object itself.
-    bool isEqual(const IFunctionBase & rhs) const override
-    {
-        const auto * other = typeid_cast<const FunctionExpression *>(&rhs);
-        if (!other)
-            return false;
-        return capture.get() == other->capture.get()
-            && expression_actions.get() == other->expression_actions.get();
-    }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool isDeterministic() const override { return isLambdaBodyDeterministic(*expression_actions); }
     bool isDeterministicInScopeOfQuery() const override { return isLambdaBodyDeterministicInScopeOfQuery(*expression_actions); }
     bool isStateful() const override { return isLambdaBodyStateful(*expression_actions); }
     bool isExpensive() const override { return isLambdaBodyExpensive(*expression_actions); }
-    bool hasObservableSideEffects() const override { return isLambdaBodyWithObservableSideEffects(*expression_actions); }
     bool isSuitableForConstantFolding() const override { return isLambdaBodySuitableForConstantFolding(*expression_actions); }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
@@ -316,20 +296,20 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return "FunctionCapture"; }
+    String getName() const override { return "FunctionCapture"; }
 
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     /// It's possible if expression_actions contains function that don't use
     /// default implementation for Nothing and one of captured columns can be Nothing
     /// Example: SELECT arrayMap(x -> [x, arrayElement(y, 0)], []), [] as y
-    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     /// Keep replicated captured columns (e.g. produced by lazy ARRAY JOIN) lazy:
     /// they are stored in ColumnFunction and handled when the lambda is executed.
-    [[nodiscard]] bool useDefaultImplementationForReplicatedColumns() const override { return false; }
+    bool useDefaultImplementationForReplicatedColumns() const override { return false; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         Names names;
         DataTypes types;
@@ -377,8 +357,8 @@ public:
         }
     }
 
-    [[nodiscard]] const ExpressionActionsPtr & getActions() const { return expression_actions; }
-    [[nodiscard]] const LambdaCapturePtr & getCapture() const { return capture; }
+    const ExpressionActionsPtr & getActions() const { return expression_actions; }
+    const LambdaCapturePtr & getCapture() const { return capture; }
 
 private:
     ExpressionActionsPtr expression_actions;
@@ -413,7 +393,6 @@ public:
     bool isDeterministic() const override { return isLambdaBodyDeterministic(*expression_actions); }
     bool isDeterministicInScopeOfQuery() const override { return isLambdaBodyDeterministicInScopeOfQuery(*expression_actions); }
     bool isStateful() const override { return isLambdaBodyStateful(*expression_actions); }
-    bool hasObservableSideEffects() const override { return isLambdaBodyWithObservableSideEffects(*expression_actions); }
 
     bool isExpensive() const override { return isLambdaBodyExpensive(*expression_actions); }
 

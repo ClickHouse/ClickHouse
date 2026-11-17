@@ -11,7 +11,7 @@ namespace DB
 class ParserShowIndexesQuery : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "SHOW INDEXES query"; }
+    const char * getName() const override { return "SHOW INDEXES query"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

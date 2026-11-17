@@ -15,6 +15,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -46,31 +47,33 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// getMacro may return different values on different shards/replicas, so it's not constant for distributed query
-    [[nodiscard]] bool isSuitableForConstantFolding() const override { return !is_distributed; }
+    bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
-    [[nodiscard]] bool isServerConstant() const override { return true; }
+    bool isServerConstant() const override { return true; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(String) -> String";
+        if (!isString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must have String type", getName());
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IColumn * arg_column = arguments[0].column.get();
         const ColumnString * arg_string = checkAndGetColumnConstData<ColumnString>(arg_column);

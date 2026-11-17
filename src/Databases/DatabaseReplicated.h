@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <optional>
-#include <span>
 
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseReplicatedSettings.h>
@@ -45,15 +44,6 @@ struct ReplicasInfo
 {
     std::vector<ReplicaInfo> replicas;
     bool replicas_belong_to_shared_catalog = false;
-};
-
-class DatabaseReplicated;
-
-/// A cluster of a `Replicated` database whose replica state is requested by `DatabaseReplicated::tryGetReplicasInfoBatch`.
-struct ReplicasInfoTarget
-{
-    const DatabaseReplicated * database;
-    ClusterPtr cluster;
 };
 
 class DatabaseReplicated : public DatabaseAtomic
@@ -165,11 +155,7 @@ public:
 
     void restoreDatabaseInKeeper(ContextPtr ctx);
 
-    /// The replica state of one cluster of this database. A failed request yields an empty `ReplicasInfo` and is logged.
     ReplicasInfo tryGetReplicasInfo(const ClusterPtr & cluster_) const;
-    /// `result[i]` is what `targets[i].database->tryGetReplicasInfo(targets[i].cluster)` returns, but the requests
-    /// of several targets are in flight at once instead of one round trip per target.
-    static std::vector<ReplicasInfo> tryGetReplicasInfoBatch(std::span<const ReplicasInfoTarget> targets);
 
     void renameDatabase(ContextPtr query_context, const String & new_name) override;
 
@@ -182,7 +168,7 @@ public:
 protected:
     void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                            const String & table_metadata_tmp_path, const String & table_metadata_path,
-                           const String & statement, ContextPtr query_context) override;
+                           ContextPtr query_context) override;
     void commitAlterTable(const StorageID & table_id,
                           const String & table_metadata_tmp_path, const String & table_metadata_path,
                           const String & statement, ContextPtr query_context) override;
@@ -241,8 +227,6 @@ private:
         ContextPtr context_, const String & database_name_, const String & table_name, const String & query, const String & description);
     ASTPtr parseQueryFromMetadataOnDisk(const String & table_name) const;
     String readMetadataFile(const String & table_name) const;
-
-    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
 
     Shards fetchClusterTopology(bool all_groups) const TSA_REQUIRES(cluster_update_mutex);
     ClusterPtr updateCluster(bool all_groups, bool force_overwrite) const;
@@ -303,13 +287,6 @@ private:
     DatabaseReplicatedSettings db_settings;
 
     ZooKeeperPtr getZooKeeper() const;
-
-    /// Keeper paths of the replica state of one cluster of this database: `max_log_ptr`, then `active` and `log_ptr` of every replica.
-    Strings getReplicasInfoPaths(const Cluster & cluster_) const;
-    /// Parses the responses to `getReplicasInfoPaths`, waiting for them if they are still in flight; throws when `max_log_ptr` is missing.
-    /// `MultiGetResponses` is `zkutil::ZooKeeper::MultiTryGetResponse`: a template only to keep `ZooKeeper.h` out of this header.
-    template <typename MultiGetResponses>
-    ReplicasInfo parseReplicasInfo(const Cluster & cluster_, MultiGetResponses & responses) const;
 
     std::atomic_bool is_readonly = true;
     std::atomic_bool is_probably_dropped = false;

@@ -31,32 +31,38 @@ public:
         return std::make_shared<FunctionDemangle>();
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return true;
     }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(String) -> String";
+        FunctionArgumentDescriptors mandatory_args{
+            {"symbol", &isString, nullptr, "String"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args);
+
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override
+    bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & column = arguments[0].column;
         const ColumnString * column_concrete = checkAndGetColumn<ColumnString>(column.get());

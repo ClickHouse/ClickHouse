@@ -29,29 +29,11 @@ public:
         return std::make_shared<FunctionAiGenerate>(context_);
     }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    String getName() const override { return name; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    [[nodiscard]] String getSignatureString() const override
-    {
-        /// Nullable(String) prompt -> Nullable(String) return; otherwise String.
-        ///
-        /// `temperature` is only valid once `system_prompt` is present, so the
-        /// optional positions are spelled as explicit prefix alternatives rather
-        /// than two independent optionals — otherwise `aiGenerate(c, p, 0.5)` would
-        /// type-check as a temperature-only call while execution treats argument 3
-        /// as `system_prompt`.
-        return
-            "(const String, Nullable(String)) -> Nullable(String)"
-            " OR (const String, Nullable(String), const String) -> Nullable(String)"
-            " OR (const String, Nullable(String), const String, const Number) -> Nullable(String)"
-            " OR (const String, String) -> String"
-            " OR (const String, String, const String) -> String"
-            " OR (const String, String, const String, const Number) -> String";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"prompt", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
@@ -60,13 +42,14 @@ public:
             {"params", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringToStringMap), &isColumnConst, "const Map(String, String)"},
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
         return wrapReturnTypeForNullablePrompt(arguments, 0, std::make_shared<DataTypeString>());
     }
 
 private:
     static constexpr float default_temp = 0.7f;
 
-    [[nodiscard]] AIParamSpecs functionParams() const override
+    AIParamSpecs functionParams() const override
     {
         return {
             {"temperature", AIParamKind::Float, Field(static_cast<Float64>(default_temp))},
@@ -74,12 +57,12 @@ private:
         };
     }
 
-    [[nodiscard]] String buildSystemPrompt(const ColumnsWithTypeAndName &, const AIParams & params) const override
+    String buildSystemPrompt(const ColumnsWithTypeAndName &, const AIParams & params) const override
     {
         return params.getString("system_prompt");
     }
 
-    [[nodiscard]] String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
+    String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
     {
         return String(arguments[0].column->getDataAt(row));
     }

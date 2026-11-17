@@ -24,7 +24,7 @@ public:
     FileChecker(DiskPtr disk_, const String & file_info_path_);
 
     void setPath(const String & file_info_path_);
-    [[nodiscard]] String getPath() const;
+    String getPath() const;
 
     void update(const String & full_file_path);
     void update(const String & filename, size_t size);
@@ -39,7 +39,7 @@ public:
     void save(WriteBuffer & buffer) const;
     /// Serializes the given file sizes in the same format without binding them to a path: no file is opened.
     static void save(WriteBuffer & buffer, const std::map<String, size_t> & file_sizes);
-    [[nodiscard]] bool empty() const { return map.empty(); }
+    bool empty() const { return map.empty(); }
 
     /// Check the files whose parameters are specified in sizes.json
     /// See comment in IStorage::checkDataNext
@@ -54,10 +54,10 @@ public:
     void repair();
 
     /// Returns stored file size.
-    [[nodiscard]] size_t getFileSize(const String & full_file_path) const;
+    size_t getFileSize(const String & full_file_path) const;
 
     /// Returns total size of all files.
-    [[nodiscard]] size_t getTotalSize() const;
+    size_t getTotalSize() const;
 
     struct DataValidationTasks
     {
@@ -96,8 +96,8 @@ private:
 
     void save(const Map & map_to_save) const;
 
-    [[nodiscard]] bool fileReallyExists(const String & path_) const;
-    [[nodiscard]] size_t getRealFileSize(const String & path_) const;
+    bool fileReallyExists(const String & path_) const;
+    size_t getRealFileSize(const String & path_) const;
 
     const DiskPtr disk;
     const LoggerPtr log;
