@@ -517,8 +517,7 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     if (context->canUseOffsetParallelReplicas())
         new_settings[Setting::serialize_query_plan] = false;
 
-    /// A shard reads an external database table of a serialized plan without the filter of the query,
-    /// so `external_table_strict_query` can be enforced only when the shard gets the query text.
+    /// A shard reading a serialized plan sends no WHERE to an external database, so strict mode needs the query text.
     if (settings[Setting::external_table_strict_query])
         new_settings[Setting::serialize_query_plan] = false;
 
