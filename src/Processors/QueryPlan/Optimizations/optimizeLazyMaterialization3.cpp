@@ -770,7 +770,7 @@ private:
     /// The nodes between `chain_top` and the sources, the ones the walk building the merged DAG entered, top-down, the
     /// sources included, with the right subtree of a node before the left one, so that in reverse they come bottom-up,
     /// left to right.
-    VectorWithMemoryTracking<QueryPlan::Node *> collectNodes() const
+    [[nodiscard]] VectorWithMemoryTracking<QueryPlan::Node *> collectNodes() const
     {
         VectorWithMemoryTracking<QueryPlan::Node *> top_down_nodes;
         VectorWithMemoryTracking<QueryPlan::Node *> stack{chain_top};
@@ -898,7 +898,7 @@ private:
         }
     }
 
-    bool isAddedColumn(const String & name) const { return added_names.contains(name); }
+    [[nodiscard]] bool isAddedColumn(const String & name) const { return added_names.contains(name); }
 
     /// A rebuilt node: its plan, and the positions of its former header it no longer has. Its header is the former one
     /// without those positions, in the same order, then what its step appended, then the columns this rebuild added.
@@ -913,7 +913,7 @@ private:
 
     /// A rebuilt child as the step above it sees it: everything but the columns this rebuild added, which the step passes
     /// through once it is pruned. Those come last, and have names of their own.
-    IQueryPlanStep::PrunedInput prunedInputOf(const Assembled & child, size_t former_columns) const
+    [[nodiscard]] IQueryPlanStep::PrunedInput prunedInputOf(const Assembled & child, size_t former_columns) const
     {
         const auto & header = *child.plan.getCurrentHeader();
         size_t columns = header.columns();
@@ -940,7 +940,7 @@ private:
     /// What each node between `chain_top` and the sources, `top_down_nodes`, need not output, top-down, as `assemble`
     /// prunes them: what the step above does not need of it, less the columns values are carried from. The chain hands
     /// over the sort keys and the copies of the values crossing the `LIMIT`; its header is the outputs of the merged DAG.
-    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, VectorWithMemoryTracking<size_t>> findUnneededColumns(const VectorWithMemoryTracking<QueryPlan::Node *> & top_down_nodes) const
+    [[nodiscard]] UnorderedMapWithMemoryTracking<const QueryPlan::Node *, VectorWithMemoryTracking<size_t>> findUnneededColumns(const VectorWithMemoryTracking<QueryPlan::Node *> & top_down_nodes) const
     {
         VectorWithMemoryTracking<size_t> chain_top_unneeded;
         auto next_sort_key = sort_key_positions.begin();
