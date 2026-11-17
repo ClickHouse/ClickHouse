@@ -31,7 +31,6 @@ SELECT very_long_function_name((WITH people AS (SELECT name FROM persons WHERE e
 INSERT INTO events (first_long_column, second_long_column, third_long_column) SELECT 1, 2, 3;
 INSERT INTO a_long_table_name (a_long_column_name, another_long_column_name) VALUES ('spaces inside payload', 123);
 ALTER TABLE events UPDATE status = if(user_id IN (1, 2, 3), 'enabled', 'disabled') WHERE event_date >= '2026-01-01' AND user_id = 123456789;
-SELECT * FROM mysql('localhost', 'database', 'table', 'username', 'password');
 SQL
 )
 

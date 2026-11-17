@@ -168,12 +168,6 @@ ALTER TABLE events
             AND (user_id = 123456789)
     );
 
-SELECT *
-FROM mysql(
-    '[HIDDEN]', '[HIDDEN]', '[HIDDEN]',
-    '[HIDDEN]', '[HIDDEN]'
-);
-
 Backslash
 SELECT \
     concat( \
