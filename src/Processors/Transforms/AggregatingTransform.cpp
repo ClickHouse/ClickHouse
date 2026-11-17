@@ -234,7 +234,10 @@ namespace
             }
 
             if (chunks.empty())
+            {
+                params->aggregator.releaseAdaptiveMergeTable(*destination, task);
                 return {};
+            }
 
             auto agg_chunk = std::move(chunks.front());
             chunks.pop_front();
@@ -340,7 +343,8 @@ public:
         /// `next_bucket_to_merge`), merged without a cancellation. Each takes the states out of the cells of the source
         /// tables that belong to it, so once all of them merged, the source tables hold no states, and the last one stops
         /// the tables owning states. Their destruction then frees their buffers without walking their cells, which one
-        /// thread would otherwise do for every table at the end of the query. A cancelled merge leaves the tables to
+        /// thread would otherwise do for every table at the end of the query. The adaptive merge frees the tables right
+        /// then, in parallel (see `Aggregator::releaseAdaptiveMergeSources`). A cancelled merge leaves the tables to
         /// destroy the states they keep.
         std::atomic<size_t> merged_claims = 0;
 
@@ -422,7 +426,8 @@ private:
 };
 
 /// Worker of the adaptive bucket merge: claims the buckets in the order of the session, which takes the heaviest first
-/// under the top-K pruning, and converts each into one chunk per merge unit (see
+/// under the top-K pruning, and converts each into chunks of at least `max_block_size` rows and a last one of the rows
+/// left, or into one chunk per merge unit when the result holds aggregate states (see
 /// `Aggregator::mergeAndConvertAdaptiveBucket`). The chunks are handed out one per call, and the next bucket is claimed
 /// once the previous one's chunks are gone; the downstream transform forwards them as they come, since the adaptive
 /// output order is free. The task keeps the table of the bucket merged last, which the next bucket takes over.
@@ -470,6 +475,7 @@ protected:
             const UInt32 claim = shared_data->next_bucket_to_merge.fetch_add(1);
             if (claim >= ConvertingAggregatedToChunksWithMergingSource::NUM_BUCKETS)
             {
+                params->aggregator.releaseAdaptiveMergeTable(*data, task);
                 data.reset();
                 return {};
             }
@@ -483,9 +489,8 @@ protected:
 
             params->aggregator.checkMergedGroupLimit(shared_data->two_level_merged_groups, merged_group_count);
             shared_data->is_bucket_processed[bucket_num] = true;
-            /// The first variants are the destination, which keeps its states.
             if (shared_data->merged_claims.fetch_add(1) + 1 == ConvertingAggregatedToChunksWithMergingSource::NUM_BUCKETS)
-                params->aggregator.resetAggregatorExceptFirst(*data);
+                params->aggregator.releaseAdaptiveMergeSources(*data, *session);
 
             for (auto & agg_chunk : agg_chunks)
                 chunks.push_back(convertToChunk(std::move(agg_chunk)));
