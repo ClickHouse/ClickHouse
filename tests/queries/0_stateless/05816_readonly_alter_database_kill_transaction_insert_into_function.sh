@@ -35,6 +35,7 @@ for setting in "--readonly 1" "--readonly 2" "--allow_ddl 0"; do
     [ "$setting" = "--allow_ddl 0" ] && continue
     echo "kill transaction: $(outcome $CLICKHOUSE_CLIENT $setting -q "KILL TRANSACTION WHERE tid_hash = 0")"
     echo "insert into function: $(outcome $CLICKHOUSE_CLIENT $setting -q "INSERT INTO FUNCTION file('$file', 'CSV', 'x Int32') SELECT 2 SETTINGS engine_file_truncate_on_insert = 1")"
+    echo "insert into function cluster: $(outcome $CLICKHOUSE_CLIENT $setting -q "INSERT INTO FUNCTION cluster('05816_no_such_cluster', system.one) SELECT 1")"
 done
 
 echo "HTTP GET"

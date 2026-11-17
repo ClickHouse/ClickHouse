@@ -177,9 +177,6 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
 
     if (query.table_function)
     {
-        const auto & factory = TableFunctionFactory::instance();
-        TableFunctionPtr table_function_ptr = factory.get(query.table_function, current_context);
-
         /// An insert into a table function writes to its source, not to a temporary table,
         /// so unlike temporary tables it is not allowed at `readonly = 2` either.
         if (current_context->getSettingsRef()[Setting::readonly])
@@ -187,11 +184,14 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
             const auto & client_info = current_context->getClientInfo();
             if (client_info.interface == ClientInfo::Interface::HTTP && client_info.http_method == ClientInfo::HTTPMethod::GET)
                 throw Exception(ErrorCodes::READONLY,
-                    "Cannot execute query in readonly mode. "
+                    "{}: Cannot execute query in readonly mode. "
                     "For queries over HTTP, method GET implies readonly. "
-                    "You should use method POST for modifying queries");
-            throw Exception(ErrorCodes::READONLY, "Cannot execute query in readonly mode");
+                    "You should use method POST for modifying queries", current_context->getUserName());
+            throw Exception(ErrorCodes::READONLY, "{}: Cannot execute query in readonly mode", current_context->getUserName());
         }
+
+        const auto & factory = TableFunctionFactory::instance();
+        TableFunctionPtr table_function_ptr = factory.get(query.table_function, current_context);
 
         /// If table function needs structure hint from select query
         /// we can create a temporary pipeline and get the header.

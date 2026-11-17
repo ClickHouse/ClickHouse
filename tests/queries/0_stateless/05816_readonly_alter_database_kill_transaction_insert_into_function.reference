@@ -7,12 +7,14 @@ alter database comment: READONLY
 alter database setting: READONLY
 kill transaction: READONLY
 insert into function: READONLY
+insert into function cluster: READONLY
 --readonly 2
 select: accepted
 alter database comment: READONLY
 alter database setting: READONLY
 kill transaction: READONLY
 insert into function: READONLY
+insert into function cluster: READONLY
 --allow_ddl 0
 select: accepted
 alter database comment: QUERY_IS_PROHIBITED
