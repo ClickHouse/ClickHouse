@@ -465,6 +465,12 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::max_entries_for_hash_table_stats],
         ctx.settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation]);
 
+    /// The planners never enable the memory-efficient merge with grouping sets, and it does not support them.
+    const bool memory_efficient_aggregation = ctx.settings[QueryPlanSerializationSetting::distributed_aggregation_memory_efficient];
+    if (memory_efficient_aggregation && !grouping_sets_params.empty())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The memory-efficient merging of aggregated results with grouping sets in a serialized query plan");
+
     const auto & settings = ctx.context->getSettingsRef();
 
     Aggregator::Params params(
@@ -482,7 +488,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
         std::move(params),
         std::move(grouping_sets_params),
         final,
-        ctx.settings[QueryPlanSerializationSetting::distributed_aggregation_memory_efficient],
+        memory_efficient_aggregation,
         settings[Setting::aggregation_memory_efficient_merge_threads],
         should_produce_results_in_order_of_bucket_number,
         ctx.settings[QueryPlanSerializationSetting::max_block_size],

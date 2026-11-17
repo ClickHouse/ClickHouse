@@ -61,12 +61,24 @@ def skip_hello(f):
 def header(columns):
     return vu(len(columns)) + b"".join(sb(n) + t for n, t in columns)
 
-def forge(label, payload, children=(), version=VERSION, out_columns=(), step="Aggregating"):
-    plan = vu(version) + vu(0) + NUL + vu(len(children))   # version, max_threads, concurrency
-    for columns in children:   # one `ReadNothing` child per header, read before its parent
-        plan += vu(0) + sb("ReadNothing") + vu(0) + sb("") + header(columns) + vu(0)
-    plan += sb(step) + (vu(0) if version >= 19 else b"")   # step name, per-step version
-    plan += sb("") + header(out_columns) + vu(0) + payload   # description, header, settings
+def node(step, payload, out_columns, children=(), version=VERSION, settings=()):
+    # The children are read before their parent: the number of children, the children, then the step.
+    out = vu(len(children)) + b"".join(children)
+    out += sb(step) + (vu(0) if version >= 19 else b"")   # step name, per-step version
+    out += sb("") + header(out_columns)   # description, header
+    for name, value in settings:   # name, flags, value; an empty name terminates
+        out += sb(name) + vu(0) + sb(value)
+    return out + vu(0) + payload
+
+def read_nothing(columns):
+    return node("ReadNothing", b"", columns)
+
+def forge(label, payload, children=(), version=VERSION, out_columns=(), step="Aggregating", settings=()):
+    # One `ReadNothing` child per header of `children`.
+    forge_tree(label, node(step, payload, out_columns, [read_nothing(columns) for columns in children], version, settings), version)
+
+def forge_tree(label, root, version=VERSION):
+    plan = vu(version) + vu(0) + NUL + root   # version, max_threads, concurrency
     qid = os.urandom(16).hex()
     info = (b"\x01" + sb(USER) + sb(qid) + sb("127.0.0.1:9000") + bytes(8) + b"\x01"
             + sb("os_user") + sb("host") + sb(CLIENT) + vu(24) + vu(9) + vu(REVISION) + sb("")
@@ -81,12 +93,32 @@ def forge(label, payload, children=(), version=VERSION, out_columns=(), step="Ag
         s.sendall(sb("") + sb("notchunked") + sb("notchunked") + vu(0)   # addendum
                   + vu(1) + sb(qid) + info + sb("") + sb("") + sb("")
                   + vu(7) + NUL + sb("SELECT 1") + sb("")   # 7 == QueryProcessingStage::QueryPlan
-                  + vu(13) + plan)
-        if rv(f) != 2:   # 2 == Protocol::Server::Exception
-            print(label, "accepted")
-            return
-        code = int.from_bytes(f.read(4), "little")
-        print(label, {117: "INCORRECT_DATA", 48: "NOT_IMPLEMENTED"}.get(code, code))
+                  + vu(13) + plan
+                  # an empty `Data` block ends the external tables: no table name, the block info, no columns and rows
+                  + vu(2) + sb("") + vu(1) + NUL + vu(2) + struct.pack("<i", -1) + vu(0) + vu(0) + vu(0))
+        code = None
+        if rv(f) == 2:   # 2 == Protocol::Server::Exception, thrown while building the plan
+            code = int.from_bytes(f.read(4), "little")
+        else:
+            # The plan is built, the header is sent, and the execution may still throw. The packets are not parsed:
+            # an exception packet is found by the name of the exception after its code, and the query ends with
+            # `EndOfStream` (5) when nothing comes after it.
+            data = b""
+            while True:
+                try:
+                    chunk = f.read1(65536)
+                except socket.timeout:
+                    break
+                if not chunk:
+                    break
+                data += chunk
+                position = data.find(b"\x0dDB::Exception")
+                if position >= 4:
+                    code = int.from_bytes(data[position - 4:position], "little")
+                    break
+                s.settimeout(1 if data.endswith(b"\x05") else 60)
+        names = {117: "INCORRECT_DATA", 48: "NOT_IMPLEMENTED", 44: "ILLEGAL_COLUMN"}
+        print(label, "accepted" if code is None else names.get(code, code))
 
 FINAL, ONLY_MERGE = 1, 128
 AF = b"\x25"   # BinaryTypeIndex::AggregateFunction
@@ -138,8 +170,11 @@ forge("grouping set column is a String", GS, [[("__grouping_set", STR)] + K_STAT
       [("__grouping_set", STR)] + K_A, "MergingAggregated")
 forge("grouping set column is duplicated", GS, [[("__grouping_set", U64)] * 2 + K_STATE], VERSION,
       [("__grouping_set", U64)] + K_A, "MergingAggregated")
-forge("well-formed grouping sets merge", GS, [[("__grouping_set", U64)] + K_STATE], VERSION,
+# The memory-efficient merge (on by default in the settings of the step) does not support grouping sets.
+forge("memory-efficient grouping sets merge", GS, [[("__grouping_set", U64)] + K_STATE], VERSION,
       [("__grouping_set", U64)] + K_A, "MergingAggregated")
+forge("well-formed grouping sets merge", GS, [[("__grouping_set", U64)] + K_STATE], VERSION,
+      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", "false")])
 
 # Without grouping sets, the merge does not produce `__grouping_set`, so the input must not have it.
 MERGING = bytes([FINAL]) + vu(1) + sb("k") + aggregating(FINAL, aggregates=ANY_SUM[:1])[2:-1] + vu(0) + vu(0)
@@ -207,6 +242,30 @@ forge("in-order merged state is finalized to another type",
       [("k", U64), ("a", b"\x1e" + b"\x0e")])   # Array(Float64)
 forge("well-formed in-order merge",
       in_order(FINAL | ONLY_MERGE, ["k"], ["k"], ["k"], ANY_SUM[:1]), [K_STATE], VERSION, K_A)
+
+# `DataTypeAggregateFunction::equals` considers the states of `quantile` and `quantiles` equal, so a `Union`
+# passes a column of `quantile` states under a header of `quantiles` states. They are finalized with the function
+# of the column, to `Float64` instead of `Array(Float64)`. The aggregation without keys of an empty input gives one row.
+HALF = F64 + struct.pack("<d", 0.5)
+HALF_IN_TYPE = b"\x07" + struct.pack("<d", 0.5)   # the parameters of a type are encoded with `FieldBinaryTypeIndex`
+def state_of(function, parameters, argument_type):
+    return AF + vu(0) + sb(function) + vu(len(parameters)) + b"".join(parameters) + vu(1) + argument_type
+
+ARRAY_F64 = b"\x1e" + b"\x0e"
+def union_of_states(branch_function):
+    branch = node("Aggregating", aggregating(0, aggregates=[("a", "x", U64, branch_function, HALF)])[:-1],
+                  [("a", state_of(branch_function, [HALF_IN_TYPE], U64))], [read_nothing(X)])
+    quantiles_state = [("a", state_of("quantiles", [HALF_IN_TYPE], U64))]
+    return node("Union", NUL, quantiles_state, [read_nothing(quantiles_state), branch])
+
+for function in ("quantile", "quantiles"):
+    forge_tree(f"TotalsHaving of a union with {function} states",
+               node("TotalsHaving", totals_having([("a", "x", U64, "quantiles", HALF)]), [("a", ARRAY_F64)],
+                    [union_of_states(function)]))
+    for step in ("Rollup", "Cube"):
+        forge_tree(f"{step} of a union with {function} states",
+                   node(step, group_by_modifier(FINAL, [("a", "quantiles", U64, [HALF])], keys=()),
+                        [("__grouping_set", U64), ("a", ARRAY_F64)], [union_of_states(function)]))
 PYEOF
 
 # The server has to be serving after each refusal.

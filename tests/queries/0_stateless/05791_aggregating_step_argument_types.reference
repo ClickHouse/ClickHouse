@@ -9,6 +9,7 @@ merged state is repeated after the states INCORRECT_DATA
 well-formed merge accepted
 grouping set column is a String INCORRECT_DATA
 grouping set column is duplicated INCORRECT_DATA
+memory-efficient grouping sets merge INCORRECT_DATA
 well-formed grouping sets merge accepted
 grouping set column without grouping sets INCORRECT_DATA
 well-formed merge without grouping sets accepted
@@ -32,4 +33,10 @@ in-order sort description refers to an aggregate INCORRECT_DATA
 well-formed in-order accepted
 in-order merged state is finalized to another type INCORRECT_DATA
 well-formed in-order merge accepted
+TotalsHaving of a union with quantile states ILLEGAL_COLUMN
+Rollup of a union with quantile states ILLEGAL_COLUMN
+Cube of a union with quantile states ILLEGAL_COLUMN
+TotalsHaving of a union with quantiles states accepted
+Rollup of a union with quantiles states accepted
+Cube of a union with quantiles states accepted
 3
