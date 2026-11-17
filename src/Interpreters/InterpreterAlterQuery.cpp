@@ -250,25 +250,58 @@ bool hasCommands(const CommandSegments & segments)
     return std::ranges::any_of(segments, [](const auto & segment) { return std::holds_alternative<CommandsType>(segment); });
 }
 
-/// A partition value has no columns, so a name there is a function called without parentheses.
-void bindCurrentDatabaseWithoutParentheses(IAST & ast, const String & database)
+bool isLambda(const ASTPtr & ast)
 {
-    for (auto & child : ast.children)
+    const auto * function = ast->as<ASTFunction>();
+    return function && function->name == "lambda" && function->arguments && function->arguments->children.size() == 2;
+}
+
+/// The aliases of a scope: a lambda and a subquery have their own.
+void collectAliases(const IAST & ast, NameSet & aliases)
+{
+    for (const auto & child : ast.children)
     {
+        if (!child->tryGetAlias().empty())
+            aliases.insert(child->tryGetAlias());
+        if (!child->as<ASTSubquery>() && !isLambda(child))
+            collectAliases(*child, aliases);
+    }
+}
+
+/// A partition value has no columns, so a name there that is not an alias or a lambda parameter is a function called
+/// without parentheses.
+void bindCurrentDatabaseWithoutParentheses(IAST & ast, const String & database, const NameSet & bound_names, size_t first_child = 0)
+{
+    for (size_t i = first_child; i < ast.children.size(); ++i)
+    {
+        auto & child = ast.children[i];
         const auto * identifier = child->as<ASTIdentifier>();
-        if (identifier && FunctionFactory::instance().getCanonicalNameIfAny(identifier->name()) == "currentDatabase")
+        if (identifier && !bound_names.contains(identifier->name())
+            && FunctionFactory::instance().getCanonicalNameIfAny(identifier->name()) == "currentDatabase")
         {
             ASTPtr old_child = child;
             child = make_intrusive<ASTLiteral>(database);
+            child->setAlias(identifier->alias);
             ast.updatePointerToChild(old_child.get(), child);
         }
+        else if (isLambda(child))
+        {
+            auto & arguments = *child->as<ASTFunction &>().arguments;
+            NameSet lambda_names = bound_names;
+            if (const auto * parameters = arguments.children[0]->as<ASTFunction>(); parameters && parameters->arguments)
+                for (const auto & parameter : parameters->arguments->children)
+                    lambda_names.insert(parameter->getColumnName());
+            collectAliases(arguments, lambda_names);
+            bindCurrentDatabaseWithoutParentheses(arguments, database, lambda_names, 1);
+        }
         else if (!child->as<ASTSubquery>())
-            bindCurrentDatabaseWithoutParentheses(*child, database);
+            bindCurrentDatabaseWithoutParentheses(*child, database, bound_names);
     }
 }
 
 /// In a mutation the current database is the database of the table, as for table names: it is the only one the
-/// background tasks know. It is bound when the mutation is submitted, before the query is stored for other hosts.
+/// background tasks know, and every context that evaluates the commands uses it. It is bound when the mutation is
+/// submitted only where other contexts evaluate them: in partition values, and before `ON CLUSTER` binds the session's.
 void bindCurrentDatabase(const ASTAlterQuery & alter, const StorageID & table_id, const StoragePtr & table, const ContextPtr & context)
 {
     if (!table_id)
@@ -280,10 +313,20 @@ void bindCurrentDatabase(const ASTAlterQuery & alter, const StorageID & table_id
     for (auto & child : alter.command_list->children)
     {
         const auto & command = child->as<const ASTAlterCommand &>();
-        if (command.type == ASTAlterCommand::UPDATE || command.type == ASTAlterCommand::DELETE || command.partition)
+        if (!alter.cluster.empty() && (command.type == ASTAlterCommand::UPDATE || command.type == ASTAlterCommand::DELETE))
             visitor.visitDDL(child);
-        if (command.partition)
-            bindCurrentDatabaseWithoutParentheses(*command.partition, database);
+        for (auto & node : child->children)
+        {
+            if (node.get() != command.partition && node.get() != command.partitions)
+                continue;
+            visitor.visitDDL(node);
+            for (const auto & partition : node.get() == command.partitions ? node->children : ASTs{node})
+            {
+                NameSet aliases;
+                collectAliases(*partition, aliases);
+                bindCurrentDatabaseWithoutParentheses(*partition, database, aliases);
+            }
+        }
     }
 }
 
