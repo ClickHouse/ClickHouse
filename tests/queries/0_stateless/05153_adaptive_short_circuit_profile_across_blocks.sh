@@ -14,7 +14,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # for every block. `AdaptiveShortCircuitEagerExecutions` counts the actions which the static short-circuit
 # schedule would have executed lazily and the heuristic decided to execute eagerly instead, so it can only
 # be non-zero if the profile of the earlier blocks was preserved. Parallel replicas are disabled: they split
-# the rows between the replicas, so every adaptive instance would see only a few rounds of rows.
+# the rows between the replicas, so every adaptive instance would see only a few rounds of rows. The index
+# granularity is pinned: a tiny randomized granularity (e.g. 111 rows) splits the tables into thousands of
+# granules, which makes every insert and scan take tens of seconds in sanitizer builds.
 
 SETTINGS="SETTINGS short_circuit_function_evaluation = 'force_enable', enable_adaptive_short_circuit_lazy_execution = 1, max_block_size = 8192, max_threads = 1, enable_parallel_replicas = 0"
 
@@ -50,7 +52,7 @@ function check_profile_is_preserved()
 }
 
 ${CLICKHOUSE_CLIENT} --query "
-    CREATE TABLE probe (b0 UInt8, b1 UInt8, b2 UInt8) ENGINE = MergeTree ORDER BY tuple();
+    CREATE TABLE probe (b0 UInt8, b1 UInt8, b2 UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
     INSERT INTO probe SELECT number % 2, number % 3 != 0, number % 5 != 0 FROM numbers(500000);"
 
 # A filter of the query pipeline: the lazily executed `and` is so cheap that filtering the rows out and
@@ -59,8 +61,8 @@ check_profile_is_preserved "pipeline_filter" "SELECT count() FROM probe WHERE if
 
 # The residual `JOIN ON` expression of a mixed hash join is executed once per probe block.
 ${CLICKHOUSE_CLIENT} --query "
-    CREATE TABLE probe_left (k UInt64, b0 UInt8, b1 UInt8) ENGINE = MergeTree ORDER BY tuple();
-    CREATE TABLE probe_right (k UInt64, c0 UInt8) ENGINE = MergeTree ORDER BY tuple();
+    CREATE TABLE probe_left (k UInt64, b0 UInt8, b1 UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+    CREATE TABLE probe_right (k UInt64, c0 UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
     INSERT INTO probe_left SELECT number % 500, number % 2, number % 3 != 0 FROM numbers(500000);
     INSERT INTO probe_right SELECT number, number % 7 != 0 FROM numbers(500);"
 
