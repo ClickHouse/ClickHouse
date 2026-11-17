@@ -270,7 +270,12 @@ StorageMergeTree::StorageMergeTree(
                         "You must either clear directory by hand or use ATTACH TABLE instead "
                         "of CREATE TABLE if you need to use those parts");
 
-    increment.set(getMaxBlockNumber());
+    /// `ATTACH PARTITION` resolves covering among the parts in `detached/` by name, so their block numbers must not be issued again.
+    Int64 max_block_number = getMaxBlockNumber();
+    for (const auto & part : getDetachedParts(/*include_read_only_disks=*/ true))
+        if (part.valid_name)
+            max_block_number = std::max({max_block_number, part.max_block, part.mutation});
+    increment.set(max_block_number);
 
     loadMutations();
     loadDeduplicationLog();
