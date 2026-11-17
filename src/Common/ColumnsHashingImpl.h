@@ -257,13 +257,7 @@ public:
             if (!block_has_no_nulls && null_map_data[row]) [[unlikely]]
             {
                 if constexpr (consecutive_keys_optimization)
-                {
-                    if (!cache.is_null)
-                    {
-                        cache.onNewValue(true);
-                        cache.is_null = true;
-                    }
-                }
+                    cacheNullKey();
 
                 bool has_null_key = data.hasNullKeyData();
                 data.hasNullKeyData() = true;
@@ -362,6 +356,49 @@ public:
             auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
             return findKeyImpl(keyHolderGetKey(key_holder), data);
         }
+    }
+
+    /// Like `emplaceKey` for a key in the table; a new key is reported as not found and leaves the state unchanged.
+    template <typename Data>
+    ALWAYS_INLINE FindResult findKnownKey(Data & data, size_t row, Arena & pool)
+    {
+        static_assert(!FindResult::has_offset && !Derived::has_pre_computed_hashes);
+
+        if constexpr (nullable)
+        {
+            if (!block_has_no_nulls && null_map_data[row]) [[unlikely]]
+            {
+                if (!data.hasNullKeyData())
+                    return notFound();
+                if constexpr (consecutive_keys_optimization)
+                    cacheNullKey();
+                if constexpr (has_mapped)
+                    return FindResult(&data.getNullKeyData(), true, 0);
+                else
+                    return FindResult(true, 0);
+            }
+        }
+
+        auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
+        if constexpr (consecutive_keys_optimization)
+        {
+            if (cache.found && cache.check(keyHolderGetKey(key_holder)))
+            {
+                keyHolderDiscardKey(key_holder);
+                return getCachedFindResult();
+            }
+        }
+
+        auto it = data.find(keyHolderGetKey(key_holder));
+        keyHolderDiscardKey(key_holder);
+        if (!it)
+            return notFound();
+        if constexpr (consecutive_keys_optimization)
+            cacheFoundCell(it);
+        if constexpr (has_mapped)
+            return FindResult(&it->getMapped(), true, 0);
+        else
+            return FindResult(true, 0);
     }
 
     template <typename Data>
@@ -473,6 +510,40 @@ protected:
             return FindResult(cache.found, 0);
     }
 
+    ALWAYS_INLINE void cacheNullKey()
+    {
+        if (!cache.is_null)
+        {
+            cache.onNewValue(true);
+            cache.is_null = true;
+        }
+    }
+
+    template <typename LookupResult>
+    ALWAYS_INLINE void cacheFoundCell(LookupResult it)
+    {
+        cache.onNewValue(true);
+        if constexpr (nullable)
+            cache.is_null = false;
+        if constexpr (has_mapped)
+        {
+            /// The cache stores the internal key type; the parameterless `getKey` may return
+            /// a converted external representation (e.g. `std::string_view` for `PackedStringRef`).
+            cache.value.first = it->getKey(it->getValue());
+            cache.value.second = it->getMapped();
+        }
+        else
+            cache.value = it->getValue();
+    }
+
+    static ALWAYS_INLINE FindResult notFound()
+    {
+        if constexpr (has_mapped)
+            return FindResult(nullptr, false, 0);
+        else
+            return FindResult(false, 0);
+    }
+
     template <bool compute_hash, typename Data, typename KeyHolder>
     ALWAYS_INLINE EmplaceResult emplaceImpl(KeyHolder & key_holder, Data & data, [[maybe_unused]] size_t hash_value)
     {
@@ -505,23 +576,9 @@ protected:
 
         if constexpr (consecutive_keys_optimization)
         {
-            cache.onNewValue(true);
-
-            if constexpr (nullable)
-                cache.is_null = false;
-
+            cacheFoundCell(it);
             if constexpr (has_mapped)
-            {
-                /// The cache stores the internal key type; the parameterless `getKey` may return
-                /// a converted external representation (e.g. `std::string_view` for `PackedStringRef`).
-                cache.value.first = it->getKey(it->getValue());
-                cache.value.second = it->getMapped();
                 cached = &cache.value.second;
-            }
-            else
-            {
-                cache.value = it->getValue();
-            }
         }
 
         if constexpr (has_mapped)
