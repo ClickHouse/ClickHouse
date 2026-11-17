@@ -4,7 +4,7 @@
       "pages": [
         "pt-BR/index"
       ],
-      "tab": "Início"
+      "tab": "Home"
     },
     {
       "menu": [
@@ -29,14 +29,14 @@
           "$ref": "./products/managed-postgres/navigation.json"
         }
       ],
-      "tab": "Bancos de dados"
+      "tab": "Databases"
     },
     {
       "menu": [
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Implantações"
+          "item": "Deployments"
         },
         {
           "$ref": "./products/cloud/navigation.json"
@@ -50,7 +50,7 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Aplicações"
+          "item": "Applications"
         },
         {
           "$ref": "./clickstack/navigation.json"
@@ -61,17 +61,17 @@
         {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
-          "item": "Engenharia de IA"
+          "item": "AI Engineering"
         },
         {
           "href": "https://docs.runreveal.com/",
           "icon": "/images/integrations/logos/runreveal.webp",
-          "item": "Segurança"
+          "item": "Security"
         },
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Código aberto"
+          "item": "Open source"
         },
         {
           "item": "ClickStack",
@@ -90,12 +90,12 @@
           "item": "LibreChat"
         }
       ],
-      "tab": "Produtos"
+      "tab": "Products"
     },
     {
       "menu": [
         {
-          "item": "Ecossistema",
+          "item": "Ecosystem",
           "pages": [
             "pt-BR/integrations/home",
             "pt-BR/integrations/data-catalogs"
@@ -111,7 +111,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "Integrações"
+      "tab": "Integrations"
     },
     {
       "menu": [
@@ -128,7 +128,7 @@
           "$ref": "./resources/about/navigation.json"
         }
       ],
-      "tab": "Recursos"
+      "tab": "Resources"
     }
   ]
 }

@@ -1,5 +1,5 @@
 {
-  "group": "Configuración de las tablas MergeTree",
+  "group": "MergeTree tables settings",
   "root": "es/reference/settings/merge-tree-settings",
   "directory": "none",
   "pages": [

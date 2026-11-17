@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "بدء الاستخدام",
+      "group": "Get started",
       "pages": [
         "ar/products/managed-postgres/overview",
         "ar/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "الميزات",
+      "group": "Features",
       "pages": [
         "ar/products/managed-postgres/connection",
         "ar/products/managed-postgres/settings",
@@ -43,7 +43,7 @@
       ]
     },
     {
-      "group": "أدلة إرشادية",
+      "group": "Guides",
       "pages": [
         "ar/products/managed-postgres/guides/bun",
         "ar/products/managed-postgres/guides/cloudflare-workers",
@@ -63,20 +63,20 @@
       ]
     },
     {
-      "group": "التسعير",
+      "group": "Pricing",
       "pages": [
         "ar/products/managed-postgres/pricing"
       ]
     },
     {
-      "group": "تكامل ClickHouse",
+      "group": "ClickHouse Integration",
       "pages": [
         "ar/products/managed-postgres/sync-to-clickhouse/clickpipes",
         "ar/products/managed-postgres/sync-to-clickhouse/walshadow"
       ]
     },
     {
-      "group": "عمليات الترحيل",
+      "group": "Migrations",
       "pages": [
         "ar/products/managed-postgres/migrations/overview",
         "ar/products/managed-postgres/migrations/clickpipes",
@@ -89,7 +89,7 @@
       ]
     },
     {
-      "group": "المراقبة",
+      "group": "Monitoring",
       "pages": [
         "ar/products/managed-postgres/monitoring/overview",
         "ar/products/managed-postgres/monitoring/dashboard",
@@ -100,7 +100,7 @@
       ]
     },
     {
-      "group": "الأسئلة الشائعة",
+      "group": "FAQ",
       "pages": [
         "ar/products/managed-postgres/faq"
       ]

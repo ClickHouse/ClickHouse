@@ -4,7 +4,7 @@
       "pages": [
         "ru/index"
       ],
-      "tab": "Главная"
+      "tab": "Home"
     },
     {
       "menu": [
@@ -29,14 +29,14 @@
           "$ref": "./products/managed-postgres/navigation.json"
         }
       ],
-      "tab": "Базы данных"
+      "tab": "Databases"
     },
     {
       "menu": [
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Развертывания"
+          "item": "Deployments"
         },
         {
           "$ref": "./products/cloud/navigation.json"
@@ -50,7 +50,7 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Приложения"
+          "item": "Applications"
         },
         {
           "$ref": "./clickstack/navigation.json"
@@ -61,17 +61,17 @@
         {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
-          "item": "Разработка ИИ"
+          "item": "AI Engineering"
         },
         {
           "href": "https://docs.runreveal.com/",
           "icon": "/images/integrations/logos/runreveal.webp",
-          "item": "Безопасность"
+          "item": "Security"
         },
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Открытый исходный код"
+          "item": "Open source"
         },
         {
           "item": "ClickStack",
@@ -90,12 +90,12 @@
           "item": "LibreChat"
         }
       ],
-      "tab": "Продукты"
+      "tab": "Products"
     },
     {
       "menu": [
         {
-          "item": "Экосистема",
+          "item": "Ecosystem",
           "pages": [
             "ru/integrations/home",
             "ru/integrations/data-catalogs"
@@ -111,7 +111,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "Интеграции"
+      "tab": "Integrations"
     },
     {
       "menu": [
@@ -128,7 +128,7 @@
           "$ref": "./resources/about/navigation.json"
         }
       ],
-      "tab": "Ресурсы"
+      "tab": "Resources"
     }
   ]
 }
