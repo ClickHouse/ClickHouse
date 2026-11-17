@@ -1678,11 +1678,15 @@ ASTPtr getViewQueryWithPrewhere(
 {
     const auto & prewhere = select_query_info.query_tree->as<QueryNode &>().getPrewhere();
     const auto prewhere_columns = view.getPrewhereColumns(storage_snapshot, query_context);
+    const auto & view_columns = storage_snapshot->metadata->getColumns();
+
+    /// A subcolumn is read from its column with `getSubcolumn`, because the query of the view knows only the names of the columns.
+    std::unordered_map<String, QueryTreeNodePtr> subcolumns;
 
     /// The condition is analyzed again in the query of the view, by the names of the columns. A subquery would see
-    /// the names of that query, and an argument of a lambda would take the place of a column of the same name.
+    /// the names of that query, and inside a lambda the name of a column could mean an argument of the lambda.
     /// A stateful function would see the rows of the table instead of the rows of the view.
-    std::function<bool(const QueryTreeNodePtr &)> can_be_moved = [&](const QueryTreeNodePtr & node)
+    std::function<bool(const QueryTreeNodePtr &, bool)> can_be_moved = [&](const QueryTreeNodePtr & node, bool inside_lambda)
     {
         if (!node)
             return true;
@@ -1690,22 +1694,41 @@ ASTPtr getViewQueryWithPrewhere(
             return false;
         if (const auto * function = node->as<FunctionNode>(); function && function->isOrdinaryFunction() && function->getFunctionOrThrow()->isStateful())
             return false;
-        if (const auto * lambda = node->as<LambdaNode>();
-            lambda && std::ranges::any_of(lambda->getArguments().getNames(), [&](const auto & name) { return prewhere_columns.contains(name); }))
-            return false;
         if (const auto * column = node->as<ColumnNode>())
         {
             /// Besides the columns of the view only the arguments of lambdas are known in its query.
             const auto source = column->getColumnSourceOrNull();
-            if (source.get() == table_expression.get())
-                return prewhere_columns.contains(column->getColumnName());
-            return source && source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS;
+            if (source.get() != table_expression.get())
+                return source && source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS;
+
+            const auto & name = column->getColumnName();
+            if (inside_lambda)
+                return false;
+            if (view_columns.has(name))
+                return prewhere_columns.contains(name);
+
+            /// The name of a subcolumn has one meaning when only one column of the view has such a subcolumn.
+            auto has_subcolumn = [&](const auto & view_column)
+            {
+                const auto prefix = view_column.name + ".";
+                return name.starts_with(prefix) && view_column.type->hasSubcolumn(std::string_view(name).substr(prefix.size()));
+            };
+            if (std::ranges::count_if(view_columns, has_subcolumn) != 1)
+                return false;
+            const auto & origin = *std::ranges::find_if(view_columns, has_subcolumn);
+            if (!prewhere_columns.contains(origin.name))
+                return false;
+            subcolumns[name] = createResolvedFunction(query_context, "getSubcolumn",
+                {std::make_shared<ColumnNode>(NameAndTypePair(origin.name, origin.type), source),
+                 std::make_shared<ConstantNode>(Field(name.substr(origin.name.size() + 1)))});
+            return true;
         }
-        return std::ranges::all_of(node->getChildren(), can_be_moved);
+        inside_lambda = inside_lambda || node->getNodeType() == QueryTreeNodeType::LAMBDA;
+        return std::ranges::all_of(node->getChildren(), [&](const auto & child) { return can_be_moved(child, inside_lambda); });
     };
 
     /// `FINAL` and `SAMPLE` of the outer query apply to the rows of the view, after its query.
-    if (table_expression->as<TableNode &>().getTableExpressionModifiers() || !can_be_moved(prewhere))
+    if (table_expression->as<TableNode &>().getTableExpressionModifiers() || !can_be_moved(prewhere, false))
         throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
             "PREWHERE {} cannot be moved into the query of the view {}",
             prewhere->formatASTForErrorMessage(),
@@ -1713,7 +1736,9 @@ ASTPtr getViewQueryWithPrewhere(
 
     auto view_query = storage_snapshot->metadata->getSelectQuery().inner_query->clone();
     auto & select = view_query->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front()->as<ASTSelectQuery &>();
-    select.setExpression(ASTSelectQuery::Expression::PREWHERE, prewhere->toAST({.fully_qualified_identifiers = false}));
+    auto condition = prewhere->clone();
+    replaceColumns(condition, table_expression, subcolumns);
+    select.setExpression(ASTSelectQuery::Expression::PREWHERE, condition->toAST({.fully_qualified_identifiers = false}));
     return view_query;
 }
 

@@ -9,10 +9,15 @@ the same rows as with WHERE
 1
 5
 100
-2
 10
 10
 100
 the table executes it as its own PREWHERE
+1
+subcolumns
+10
+9
+50
+1
 1
 10

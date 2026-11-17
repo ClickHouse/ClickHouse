@@ -850,12 +850,10 @@ NameSet StorageView::getPrewhereColumns(const StorageSnapshotPtr & snapshot, con
     countAliases(select.select(), aliases);
     countAliases(select.where(), aliases);
 
-    /// The condition would change the rows that such functions of the view see, also behind an `ALIAS` column of the table.
+    /// The condition would change the rows that such functions of the view see, also in the default expression of a column
+    /// of the table, which is calculated at the read of an `ALIAS` column and of a part without the column.
     if (dependsOnOtherRows(select.select(), view_context) || dependsOnOtherRows(select.where(), view_context)
-        || std::ranges::any_of(table_columns, [&](const auto & column)
-           {
-               return column.default_desc.kind == ColumnDefaultKind::Alias && dependsOnOtherRows(column.default_desc.expression, view_context);
-           }))
+        || std::ranges::any_of(table_columns, [&](const auto & column) { return dependsOnOtherRows(column.default_desc.expression, view_context); }))
         return {};
     const auto table_prewhere_columns = table->supportedPrewhereColumns();
 

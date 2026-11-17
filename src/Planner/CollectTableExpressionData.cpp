@@ -350,7 +350,8 @@ public:
             table_expression = std::move(column_source);
             if (!view)
                 table_supported_prewhere_columns = storage->supportedPrewhereColumns();
-            table_supported_prewhere_columns_include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
+            /// The table of a view checks the subcolumns itself, when the condition is moved into the query of the view.
+            table_supported_prewhere_columns_include_subcolumns = view || storage->supportedPrewhereColumnsIncludeSubcolumns();
         }
 
         /// The contract lists top-level names; a subcolumn is admitted through its origin column.
