@@ -1668,13 +1668,15 @@ Possible values:
 The setting affects:
 
 - `toStartOfWeek`, `toLastDayOfWeek`, `toWeek` and `toYearWeek`: the first day of the week.
-- `toDayOfWeek`: the day number counts from 1 on the first day of the week. For example, with `'saturday'`, Saturday is 1 and Friday is 7.
+- `toDayOfWeek` and its aliases `DAYOFWEEK` and `DAY_OF_WEEK`: the day number counts from 1 on the first day of the week. For example, with `'saturday'`, Saturday is 1 and Friday is 7.
 - `toStartOfInterval` with a `WEEK` interval and `date_trunc('week', ...)`: the buckets start on this day. For intervals of more than one week, the buckets are aligned to the first such day on or after 1970-01-01.
 - `toRelativeWeekNum` and `dateDiff` with the `week` unit (`week`, `weeks`, `wk`, `ww`): the weeks are counted from this day.
 - `dateName('week', ...)`: the week number, computed like `toWeek` with mode 3 with this day as the first day of the week.
-- `formatDateTime` and `fromUnixTimestamp` with a format, `%w`: the day number counts from 0 on the first day of the week.
+- `formatDateTime` (and its alias `DATE_FORMAT`) and `fromUnixTimestamp` with a format, `%w`: the day number counts from 0 on the first day of the week.
 
-It doesn't affect `toISOWeek`, `toISOYear`, `toMonday`, `age`, `dateName('weekday', ...)`, the other `formatDateTime` specifiers, `formatDateTimeInJodaSyntax`, `parseDateTime` and `parseDateTimeInJodaSyntax`, nor `EXTRACT(ISODOW FROM ...)`, `EXTRACT(DOW FROM ...)` and the `day_of_week` function of the Trino dialect and the `dayofweek` function of the Kusto dialect, which call `toDayOfWeek` with an explicit `mode`.
+The functions of other dialects that call these functions without `mode` follow it too: `date_format` of the Trino dialect with `%w`, and `datetime_diff('week', ...)` of the Kusto dialect.
+
+It doesn't affect `toISOWeek`, `toISOYear`, `toMonday`, `age`, `dateName('weekday', ...)`, the other `formatDateTime` specifiers, `formatDateTimeInJodaSyntax`, `parseDateTime` and `parseDateTimeInJodaSyntax`. Nor does it affect the translations that keep the week of their own query language: `EXTRACT(ISODOW FROM ...)` and `EXTRACT(DOW FROM ...)`, `day_of_week`, `dow` and `date_trunc('week', ...)` of the Trino dialect, which start the week on Monday, `dayofweek` of the Kusto dialect, the `week_range` filter and the `week` buckets of `stats` of the LogsQL dialect, which start the week on Monday as in VictoriaLogs, and the `day_of_week` function of PromQL.
 
 An explicit `mode` argument (or `origin` for `toStartOfInterval`) always takes precedence: [week_functions_starting_day](#week_functions_starting_day), [week_functions_range](#week_functions_range) and [week_functions_first_week_of_year](#week_functions_first_week_of_year) are then ignored. Otherwise, each of these settings that is not `'auto'` replaces its part of the function's default mode, and the parts left at `'auto'` keep the values of that mode. For example, with only `week_functions_starting_day = 'monday'`, `toWeek(d)` behaves like `toWeek(d, 5)` (Monday, `0-53`, first full week), not like `toWeek(d, 1)`.
 
