@@ -1,0 +1,6 @@
+before	auto_minmax_index__block_number
+live after disabling	0
+merged after disabling	2	3
+live after enabling	auto_minmax_index__block_number
+merged part has the index	1
+after reattach	auto_minmax_index__block_number

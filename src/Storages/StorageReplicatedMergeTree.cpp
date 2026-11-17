@@ -7384,9 +7384,31 @@ void StorageReplicatedMergeTree::alter(
             StorageInMemoryMetadata metadata_copy = *current_metadata;
 
             if (settings_are_changed)
-                metadata_copy.settings_changes = future_metadata.settings_changes;
+            {
+                /// Apply only the settings part of the batch to the current metadata, so that the implicit-index
+                /// policy is recomputed together with `settings_changes`: the setting is local and is not part of
+                /// the replicated entry, and replaying that entry (`ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata`)
+                /// regenerates the implicit indices from the policy of the in-memory metadata. Carrying the old policy
+                /// there would e.g. recreate `auto_minmax_index__block_number` after `enable_block_number_column = 0`,
+                /// so a merge would build an index over a column it no longer reads.
+                AlterCommands settings_commands;
+                for (const auto & command : commands)
+                    if (command.isSettingsAlter())
+                        settings_commands.push_back(command);
+                settings_commands.prepare(*current_metadata, (*old_settings)[MergeTreeSetting::share_nested_offsets]);
+                settings_commands.apply(metadata_copy, query_context, (*old_settings)[MergeTreeSetting::share_nested_offsets], default_storage_settings.get());
+            }
             if (comment_is_changed)
                 metadata_copy.setComment(future_metadata.comment);
+
+            const bool implicit_index_policy_changed
+                = metadata_copy.add_minmax_index_for_numeric_columns != current_metadata->add_minmax_index_for_numeric_columns
+                || metadata_copy.add_minmax_index_for_string_columns != current_metadata->add_minmax_index_for_string_columns
+                || metadata_copy.add_minmax_index_for_temporal_columns != current_metadata->add_minmax_index_for_temporal_columns
+                || metadata_copy.add_minmax_index_for_block_number_column != current_metadata->add_minmax_index_for_block_number_column
+                || metadata_copy.add_minmax_index_for_block_offset_column != current_metadata->add_minmax_index_for_block_offset_column
+                || implicitIndicesChanged(*current_metadata, metadata_copy);
+            const bool metadata_copy_installed = comment_is_changed || implicit_index_policy_changed;
 
             /// metadata_copy keeps the current columns and only applies the local setting/comment change,
             /// so it can be larger than future_metadata (e.g. a mixed DROP COLUMN + MODIFY COMMENT shrinks
@@ -7398,8 +7420,19 @@ void StorageReplicatedMergeTree::alter(
                 changeSettings(metadata_copy.settings_changes, table_lock_holder);
 
             /// The comment is not replicated as of today, but we can implement it later.
-            if (comment_is_changed)
+            /// The recomputed implicit indices are installed now as well, before the replicated entry is replayed.
+            if (metadata_copy_installed)
             {
+                if (settings_are_changed)
+                {
+                    /// `changeSettings` is the sole writer of the setting-derived escape fields; carry them
+                    /// into `metadata_copy` so that installing it does not revert the index filename policy.
+                    auto committed_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);
+                    metadata_copy.escape_index_filenames = committed_metadata->escape_index_filenames;
+                    for (auto & index : metadata_copy.secondary_indices)
+                        index.escape_filenames = committed_metadata->escape_index_filenames;
+                }
+
                 /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
                 ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
                 setInMemoryMetadata(metadata_copy);
@@ -7414,7 +7447,7 @@ void StorageReplicatedMergeTree::alter(
                 /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
                 if (settings_are_changed)
                     changeSettings(current_metadata->settings_changes, table_lock_holder);
-                if (comment_is_changed)
+                if (metadata_copy_installed)
                     setInMemoryMetadata(*current_metadata);
                 throw;
             }
