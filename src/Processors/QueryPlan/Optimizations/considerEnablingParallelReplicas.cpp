@@ -820,7 +820,7 @@ static bool decideAtBoundary(
     const CoordinatedReads * reads,
     const QueryPlanPtr & plan_with_parallel_replicas,
     const QueryPlan::Node * replicas_plan_boundary,
-    UInt64 undecided_key);
+    UInt64 undecided_query_key);
 
 void considerEnablingParallelReplicas(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan & query_plan)
@@ -1027,7 +1027,7 @@ void considerEnablingParallelReplicas(
     const bool remember_boundary = optimization_settings.automatic_parallel_replicas_remember_boundary;
     /// Where an outcome that leaves no decision is remembered, under the same key as the boundary; zero when it is
     /// not. Mode 2 builds the replicas plan on every execution, as it recollects.
-    const UInt64 undecided_key = optimization_settings.automatic_parallel_replicas_undecided_retry_after_executions
+    const UInt64 undecided_query_key = optimization_settings.automatic_parallel_replicas_undecided_retry_after_executions
             && optimization_settings.automatic_parallel_replicas_mode != 2
         ? root_key
         : 0;
@@ -1057,7 +1057,7 @@ void considerEnablingParallelReplicas(
             /*reads=*/nullptr,
             /*plan_with_parallel_replicas=*/nullptr,
             /*replicas_plan_boundary=*/nullptr,
-            undecided_key))
+            undecided_query_key))
     {
         /// Counted here rather than at each decline in `decideAtBoundary`, so that none of them is missed.
         ProfileEvents::increment(ProfileEvents::AutomaticParallelReplicasDecidedWithoutBuildingPlan);
@@ -1068,14 +1068,14 @@ void considerEnablingParallelReplicas(
     /// the same way. Nothing makes that certain - the data, the replicas and the statistics the joins are ordered
     /// by all change under the same key - so skip a number of executions rather than for good. Everything above,
     /// which is cheap, is checked every time.
-    if (undecided_key)
+    if (undecided_query_key)
     {
-        if (const auto undecided = stats_cache.getUndecided(undecided_key))
+        if (const auto undecided = stats_cache.getUndecided(undecided_query_key))
         {
             /// Take turns rather than wait for the outcome of the retry: however many executions run at once, one in
             /// `retry_after + 1` builds the plan, and the rest skip it until a new outcome replaces the entry. After
             /// the first outcome for this plan the first execution builds it, whatever the setting (see
-            /// `Undecided::first`), and the turns count from the one after it.
+            /// `UndecidedQuery::first`), and the turns count from the one after it.
             const UInt64 retry_after = optimization_settings.automatic_parallel_replicas_undecided_retry_after_executions;
             /// The largest value cannot have one added; it is far beyond any count of executions anyway.
             const UInt64 period = retry_after == std::numeric_limits<UInt64>::max() ? retry_after : retry_after + 1;
@@ -1131,9 +1131,10 @@ void considerEnablingParallelReplicas(
     /// Counts an outcome that leaves no decision, and remembers it for the skip above.
     auto end_undecided = [&](ProfileEvents::Event outcome_event)
     {
+        chassert(plan_with_parallel_replicas);
         ProfileEvents::increment(outcome_event);
-        if (undecided_key)
-            stats_cache.setUndecided(undecided_key, outcome_event);
+        if (undecided_query_key)
+            stats_cache.setUndecided(undecided_query_key, outcome_event);
     };
 
     auto * const replicas_plan_boundary = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
@@ -1214,7 +1215,7 @@ void considerEnablingParallelReplicas(
         &reads,
         plan_with_parallel_replicas,
         replicas_plan_boundary,
-        undecided_key);
+        undecided_query_key);
     chassert(!needs_replicas_plan);
 }
 
@@ -1223,7 +1224,7 @@ void considerEnablingParallelReplicas(
 /// it stands in this plan. Returns true only when the verdict is to parallelize or to collect but there is no
 /// replicas plan yet - the boundary came from the cache - so the caller is to build the replicas plan and call
 /// again with the boundary it matches. `reads` comes with the replicas plan, and is null when that is. With a
-/// non-zero `undecided_key`, an outcome that leaves no decision is remembered under it, and a decision forgets it.
+/// non-zero `undecided_query_key`, an outcome that leaves no decision is remembered under it, and a decision forgets it.
 static bool decideAtBoundary(
     const QueryPlanOptimizationSettings & optimization_settings,
     QueryPlan & query_plan,
@@ -1233,15 +1234,15 @@ static bool decideAtBoundary(
     const CoordinatedReads * const reads,
     const QueryPlanPtr & plan_with_parallel_replicas,
     const QueryPlan::Node * const replicas_plan_boundary,
-    const UInt64 undecided_key)
+    const UInt64 undecided_query_key)
 {
     /// Remembered only when the replicas plan was built for this execution: from a remembered boundary the same
     /// outcome is reached without building it.
     auto end_undecided = [&]
     {
         ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
-        if (undecided_key && plan_with_parallel_replicas)
-            getRuntimeDataflowStatisticsCache().setUndecided(undecided_key, ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        if (undecided_query_key && plan_with_parallel_replicas)
+            getRuntimeDataflowStatisticsCache().setUndecided(undecided_query_key, ProfileEvents::AutoParallelReplicasPlansNotComparable);
     };
 
     /// If the matched node is the reading step itself (e.g. a window function over a bare table scan:
@@ -1373,8 +1374,8 @@ static bool decideAtBoundary(
             /// A decline is a decision, so whatever ended without one before is resolved. Adopting the replicas plan
             /// can still fail below, and forgets only once it succeeds.
             const bool declined = !replicas_plan_is_cheaper || rejected_by_duplicated_reads || rejected_by_threshold;
-            if (undecided_key && declined)
-                stats_cache.forgetUndecided(undecided_key);
+            if (undecided_query_key && declined)
+                stats_cache.forgetUndecided(undecided_query_key);
             /// Unconditionally, before the decision. Recording it only when the threshold turns a
             /// query away would show only which queries a lower threshold would let through, never
             /// what a higher one would cost - and the queries it would start turning away are exactly
@@ -1488,8 +1489,8 @@ static bool decideAtBoundary(
                 /// after the swap, not before: the swap can throw, and a query that failed on the way there
                 /// did not get the optimization applied to it.
                 ProfileEvents::increment(ProfileEvents::AutoParallelReplicasApplied);
-                if (undecided_key)
-                    stats_cache.forgetUndecided(undecided_key);
+                if (undecided_query_key)
+                    stats_cache.forgetUndecided(undecided_query_key);
                 return false;
             }
             else if (!plan_with_parallel_replicas)
@@ -1530,7 +1531,7 @@ static bool decideAtBoundary(
             return true;
 
         auto statistics_block
-            = std::make_shared<RuntimeDataflowStatisticsBlock>(single_replica_plan_boundary_hash, rows_to_read, undecided_key);
+            = std::make_shared<RuntimeDataflowStatisticsBlock>(single_replica_plan_boundary_hash, rows_to_read, undecided_query_key);
         auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(statistics_block);
 
         /// A replica whose partial aggregation uses memory-bound merging sorts its output by the group

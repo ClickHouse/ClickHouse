@@ -40,21 +40,21 @@ void measureSomething(RuntimeDataflowStatisticsBlock & block)
 /// collection that succeeds later forgets it. Both are recorded from the destructor of the block.
 TEST(RuntimeDataflowStatisticsUndecided, FailedCollectionIsRememberedUntilOneSucceeds)
 {
-    const UInt64 undecided_key = freshKey();
+    const UInt64 undecided_query_key = freshKey();
     const UInt64 statistics_key = freshKey();
     auto & cache = getRuntimeDataflowStatisticsCache();
     {
-        RuntimeDataflowStatisticsBlock failed(statistics_key, /*total_rows_to_read_=*/100, undecided_key);
+        RuntimeDataflowStatisticsBlock failed(statistics_key, /*total_rows_to_read_=*/100, undecided_query_key);
         failed.unsupported_case = true;
     }
-    const auto undecided = cache.getUndecided(undecided_key);
+    const auto undecided = cache.getUndecided(undecided_query_key);
     ASSERT_NE(undecided, nullptr);
     EXPECT_EQ(undecided->outcome_event, ProfileEvents::AutoParallelReplicasNoStatistics);
 
     {
-        RuntimeDataflowStatisticsBlock succeeded(statistics_key, /*total_rows_to_read_=*/100, undecided_key);
+        RuntimeDataflowStatisticsBlock succeeded(statistics_key, /*total_rows_to_read_=*/100, undecided_query_key);
         measureSomething(succeeded);
     }
     EXPECT_TRUE(cache.getStats(statistics_key));
-    EXPECT_EQ(cache.getUndecided(undecided_key), nullptr);
+    EXPECT_EQ(cache.getUndecided(undecided_query_key), nullptr);
 }

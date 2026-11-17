@@ -67,7 +67,7 @@ public:
     RuntimeDataflowStatisticsCache()
         : stats_cache(std::make_shared<Cache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
         , boundary_cache(std::make_shared<BoundaryCache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
-        , undecided_cache(std::make_shared<UndecidedCache>(CurrentMetrics::end(), CurrentMetrics::end(), 64_MiB, 100'000))
+        , undecided_query_cache(std::make_shared<UndecidedQueryCache>(CurrentMetrics::end(), CurrentMetrics::end(), 64_MiB, 100'000))
     {
     }
 
@@ -93,7 +93,7 @@ public:
     /// The last build of the plan with parallel replicas for a plan ended without a decision, so that the next
     /// executions can skip building it. It is not a verdict: nothing proves the outcome permanent, so a number of
     /// executions skip, and the one after them builds again.
-    struct Undecided
+    struct UndecidedQuery
     {
         /// The event the outcome was counted in, which a skipped execution counts again: the plans could not be
         /// compared, the planner used no parallel replicas in the plan built with them, or a step could not collect
@@ -110,7 +110,7 @@ public:
     };
 
     /// Under the same key as the boundary.
-    std::shared_ptr<const Undecided> getUndecided(UInt64 root_key) const;
+    std::shared_ptr<const UndecidedQuery> getUndecided(UInt64 root_key) const;
 
     void setUndecided(UInt64 root_key, ProfileEvents::Event outcome_event);
 
@@ -119,11 +119,11 @@ public:
 private:
     using BoundaryCache = DB::CacheBase<UInt64, Boundary>;
 
-    using UndecidedCache = DB::CacheBase<UInt64, Undecided>;
+    using UndecidedQueryCache = DB::CacheBase<UInt64, UndecidedQuery>;
 
     CachePtr stats_cache;
     std::shared_ptr<BoundaryCache> boundary_cache;
-    std::shared_ptr<UndecidedCache> undecided_cache;
+    std::shared_ptr<UndecidedQueryCache> undecided_query_cache;
 };
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();
@@ -182,12 +182,12 @@ struct RuntimeDataflowStatisticsBlock
         MaxOutputType = 3,
     };
 
-    /// `undecided_key`, when not zero, is the key `RuntimeDataflowStatisticsCache::setUndecided` records under when a
+    /// `undecided_query_key`, when not zero, is the key `RuntimeDataflowStatisticsCache::setUndecided` records under when a
     /// step cannot collect, or when the collection measures nothing.
-    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_, UInt64 undecided_key_ = 0)
+    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_, UInt64 undecided_query_key_ = 0)
         : cache_key(cache_key_)
         , total_rows_to_read(total_rows_to_read_)
-        , undecided_key(undecided_key_)
+        , undecided_query_key(undecided_query_key_)
     {
         if (cache_key == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cache key for RuntimeDataflowStatisticsBlock cannot be zero");
@@ -200,7 +200,7 @@ struct RuntimeDataflowStatisticsBlock
 
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;
-    const UInt64 undecided_key = 0;
+    const UInt64 undecided_query_key = 0;
 
     std::atomic_bool unsupported_case{false};
 
