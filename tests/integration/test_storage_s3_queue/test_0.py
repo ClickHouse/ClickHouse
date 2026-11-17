@@ -963,6 +963,7 @@ PAUSE_AFTER_MOVE_SOURCE_LOOKUP_FAILPOINT = (
 )
 PAUSE_AFTER_COMMIT_FAILPOINT = "object_storage_queue_pause_after_commit"
 PAUSE_AFTER_LISTING_FAILPOINT = "object_storage_queue_pause_after_listing"
+PAUSE_BEFORE_TAGS_FETCH_FAILPOINT = "object_storage_queue_pause_before_tags_fetch"
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
@@ -2205,6 +2206,71 @@ def test_delete_takes_the_version_a_random_access_read_saw(started_cluster):
     wait_until(lambda: source_versions() == {reuploaded})
     assert client.head_object(Bucket=bucket, Key=source_key)["VersionId"] == reuploaded
     assert int(node.query(f"SELECT count() FROM {table_name}_dst")) == 200000
+
+
+def test_tags_of_the_version_the_one_format_consumed(started_cluster):
+    """`_tags` of an ordinary queue (no `versionId` in the URL) are the tags of the version that was consumed,
+    even when a new version is uploaded between the claim of the consumed version and the tag lookup."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = f"versioned-{token}"
+    table_name = f"tags_one_format_{token}"
+    files_path = f"{table_name}_data"
+    source_key = f"{files_path}/part.csv"
+    minio = started_cluster.minio_client
+    minio.make_bucket(bucket)
+    minio.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+    ingested = client.put_object(
+        Bucket=bucket, Key=source_key, Body=b"1,2,3\n", Tagging="generation=old"
+    )["VersionId"]
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        format="column1 UInt8",
+        file_format="One",
+        after_processing="delete",
+        bucket=bucket,
+    )
+    node.query(
+        f"CREATE TABLE {table_name}_dst (generation String) ENGINE = MergeTree ORDER BY tuple()"
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_BEFORE_TAGS_FETCH_FAILPOINT}")
+    try:
+        node.query(
+            f"CREATE MATERIALIZED VIEW {table_name}_mv TO {table_name}_dst "
+            f"AS SELECT _tags['generation'] AS generation FROM {table_name}"
+        )
+        wait_failpoint_paused(node, PAUSE_BEFORE_TAGS_FETCH_FAILPOINT)
+        # The version is claimed; a new one is uploaded before the tags are fetched.
+        replaced = client.put_object(
+            Bucket=bucket, Key=source_key, Body=b"4,5,6,7\n", Tagging="generation=new"
+        )["VersionId"]
+        assert replaced != ingested
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_TAGS_FETCH_FAILPOINT}")
+
+    # The consumed version is deleted, and its own tags are emitted.
+    wait_until(
+        lambda: {
+            version["VersionId"]
+            for version in client.list_object_versions(Bucket=bucket, Prefix=source_key).get(
+                "Versions", []
+            )
+        }
+        == {replaced}
+    )
+    assert node.query(f"SELECT generation FROM {table_name}_dst") == "old\n"
 
 
 def test_delete_takes_the_version_the_one_format_consumed(started_cluster):

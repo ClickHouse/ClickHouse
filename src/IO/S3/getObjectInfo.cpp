@@ -13,6 +13,11 @@ namespace ProfileEvents
 }
 
 
+namespace DB::ErrorCodes
+{
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
+}
+
 namespace DB::S3
 {
 
@@ -91,8 +96,20 @@ namespace
 
         /// `HeadObject` reports the tag count, so untagged objects cost no `GetObjectTagging` call; callers that
         /// need tags hidden from a restricted `HeadObject` ask via `getObjectTags`.
+        /// Without a `versionId` the tags are of the version that is the latest at the time of `GetObjectTagging`. If it
+        /// is not the version described by `HeadObject`, the object was rewritten in between, and the tags would not
+        /// belong to the reported size, `ETag` and version.
         if (with_tags && result.GetTagCount() > 0)
-            object_info.tags = getObjectTags(client, bucket, key, version_id);
+        {
+            String tags_version_id;
+            object_info.tags = getObjectTags(client, bucket, key, version_id, &tags_version_id);
+            if (version_id.empty() && !object_info.version_id.empty() && !tags_version_id.empty()
+                && tags_version_id != object_info.version_id)
+                throw Exception(
+                    ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                    "The object {} in bucket {} was rewritten while its tags were read (version {} by `HeadObject`, {} by `GetObjectTagging`)",
+                    key, bucket, object_info.version_id, tags_version_id);
+        }
 
         return {object_info, {}};
     }
@@ -122,7 +139,8 @@ ObjectAttributes getObjectTags(
     const S3::Client & client,
     const String & bucket,
     const String & key,
-    const String & version_id)
+    const String & version_id,
+    String * tags_version_id)
 {
     ObjectAttributes tags;
     auto tag_outcome = getObjectTagging(client, bucket, key, version_id);
@@ -142,6 +160,9 @@ ObjectAttributes getObjectTags(
 
     for (const auto & tag : tag_outcome.GetResult().GetTagSet())
         tags[tag.GetKey()] = tag.GetValue();
+
+    if (tags_version_id)
+        *tags_version_id = pinnableVersionId(tag_outcome.GetResult().GetVersionId());
 
     return tags;
 }

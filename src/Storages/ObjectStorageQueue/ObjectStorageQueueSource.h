@@ -346,6 +346,15 @@ private:
     std::vector<ProcessedFile> processed_files;
     Source::ReaderHolder reader;
 
+    /// The generation whose tags were attached as `_tags` to the rows of the file being read. The tags of a read that
+    /// does not know its version in advance are fetched before the read reports it, so they are checked afterwards.
+    struct TagsGeneration
+    {
+        String etag;
+        String version_id;
+    };
+    std::optional<TagsGeneration> tags_generation;
+
     /// The file is reset without charging a retry, so its new generation is read again from the start.
     static bool isRereadAfterRewrite(const ProcessedFile & file);
 };

@@ -83,6 +83,7 @@ namespace FailPoints
     extern const char object_storage_queue_sleep_in_generate[];
     extern const char object_storage_queue_pause_after_listing[];
     extern const char object_storage_queue_fail_tags_fetch[];
+    extern const char object_storage_queue_pause_before_tags_fetch[];
     extern const char object_storage_queue_fail_selected_version_lookup[];
 }
 
@@ -1291,9 +1292,12 @@ void ObjectStorageQueueSource::onFinish() { parser_shared_resources->finishStrea
 
 Chunk ObjectStorageQueueSource::generateImpl()
 {
-    /// The tags of the version that the metadata of the file describes: a version selected by the URL has its own tags,
-    /// which S3 returns only when the `versionId` is passed, while the key alone gives the tags of the latest version.
-    /// A key without the selected version keeps the listed metadata of its latest version (only `One` consumes it).
+    /// The tags of the version that is consumed. A version selected by the URL has its own tags, which S3 returns only
+    /// when the `versionId` is passed, while the key alone gives the tags of the latest version. A key without the
+    /// selected version keeps the listed metadata of its latest version (only `One` consumes it). A version already
+    /// claimed (by `One`) is consumed whatever is uploaded later, so its tags are requested by its `versionId` as well.
+    /// Otherwise the tags are of the generation reported by `HeadObject`, which is checked against the read afterwards.
+    /// Other object storages report no generation that the read could be checked against.
     auto fetch_tags_of_consumed_version = [&](const String & path, [[maybe_unused]] const ObjectMetadata & object_metadata) -> ObjectAttributes
     {
 #if USE_AWS_S3
@@ -1301,18 +1305,47 @@ Chunk ObjectStorageQueueSource::generateImpl()
         {
             const auto & s3_storage = assert_cast<const S3ObjectStorage &>(*object_storage);
             const auto & selected_version_id = s3_storage.getURI().version_id;
+            String consumed_version_id;
             if (!selected_version_id.empty() && object_metadata.version_id == selected_version_id)
+                consumed_version_id = selected_version_id;
+            else if (selected_version_id.empty())
+                consumed_version_id = processed_files.back().version_id;
+
+            if (!consumed_version_id.empty())
             {
-                auto selected = s3_storage.tryGetObjectVersionMetadata(path, selected_version_id, /*with_tags=*/true);
-                if (!selected)
+                auto consumed = s3_storage.tryGetObjectVersionMetadata(path, consumed_version_id, /*with_tags=*/true);
+                if (!consumed)
                     throw Exception(
                         ErrorCodes::FILE_DOESNT_EXIST,
-                        "The version {} of the object {} does not exist, cannot get its tags", selected_version_id, path);
-                return std::move(selected->tags);
+                        "The version {} of the object {} does not exist, cannot get its tags", consumed_version_id, path);
+                tags_generation = TagsGeneration{.etag = consumed->etag, .version_id = consumed->version_id};
+                return std::move(consumed->tags);
             }
+
+            auto current = s3_storage.getObjectMetadata(path, /*with_tags=*/true);
+            tags_generation = TagsGeneration{.etag = current.etag, .version_id = current.version_id};
+            return std::move(current.tags);
         }
 #endif
         return object_storage->getObjectMetadata(path, /*with_tags=*/true).tags;
+    };
+
+    /// Returns an error if the `_tags` attached to the rows of the file describe another generation than the one consumed.
+    auto check_tags_generation = [&]() -> std::optional<String>
+    {
+        if (!tags_generation)
+            return std::nullopt;
+        const auto & consumed = processed_files.back();
+        const bool both_versions_known = !tags_generation->version_id.empty() && !consumed.version_id.empty();
+        const bool mismatch = both_versions_known
+            ? tags_generation->version_id != consumed.version_id
+            : !tags_generation->etag.empty() && !consumed.etag.empty() && tags_generation->etag != consumed.etag;
+        if (!mismatch)
+            return std::nullopt;
+        return fmt::format(
+            "The object {} was rewritten while it was read: its tags are of the generation with `ETag` {} and version '{}', "
+            "but the generation with `ETag` {} and version '{}' was consumed",
+            consumed.metadata->getPath(), tags_generation->etag, tags_generation->version_id, consumed.etag, consumed.version_id);
     };
 
 #if USE_AWS_S3
@@ -1504,6 +1537,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             LOG_TEST(log, "Will process file: {}", file_metadata->getPath());
 
             processed_files.emplace_back(file_metadata);
+            tags_generation.reset();
 
             if (auto object_metadata = reader.getObjectInfo()->getObjectMetadata(); object_metadata)
             {
@@ -1608,6 +1642,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
                                     ErrorCodes::UNKNOWN_EXCEPTION,
                                     "Failpoint-triggered tag fetch failure for file: {}", file_metadata->getPath());
                             });
+
+                            FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_before_tags_fetch);
 
                             metadata_with_tags->tags = fetch_tags_of_consumed_version(object_info_for_tags->getPath(), *metadata_with_tags);
                             object_info_for_tags->setObjectMetadata(*metadata_with_tags);
@@ -1822,6 +1858,27 @@ Chunk ObjectStorageQueueSource::generateImpl()
             }
         }
 #endif
+
+        /// The tags were fetched before the read reported its generation: a rewrite in between attaches the tags of
+        /// another generation than the one whose rows were read.
+        if (auto message = check_tags_generation())
+        {
+            processed_files.back().state = FileState::ErrorOnRead;
+            processed_files.back().exception_during_read = *message;
+            processed_files.back().exception_during_read_code = ErrorCodes::S3_OBJECT_CHANGED_DURING_READ;
+
+            /// The rows of the file are already in the insert, so fail the whole insert.
+            if (file_status->processed_rows > 0)
+                throw Exception(ErrorCodes::S3_OBJECT_CHANGED_DURING_READ, "{}", *message);
+
+            LOG_DEBUG(log, "{}. Will reset the file", *message);
+            if (mode == ObjectStorageQueueMode::ORDERED)
+                return {};
+
+            reader = {};
+            progress->processed_files -= 1;
+            continue;
+        }
 
         processed_files.back().state = FileState::Processed;
         file_status->setProcessingEndTime();

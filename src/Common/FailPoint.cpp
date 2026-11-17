@@ -197,6 +197,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(object_storage_queue_pause_after_move_source_lookup) \
     PAUSEABLE_ONCE(object_storage_queue_pause_before_post_process) \
     PAUSEABLE_ONCE(object_storage_queue_pause_after_listing) \
+    PAUSEABLE_ONCE(object_storage_queue_pause_before_tags_fetch) \
     PAUSEABLE_ONCE(object_storage_queue_pause_in_direct_select) \
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
     PAUSEABLE_ONCE(columns_cache_reader_pause_before_later_range) \
