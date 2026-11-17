@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <ranges>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -510,6 +511,45 @@ public:
         return hash.get128();
     }
 
+    /// The Azure object storage resolves a key inside the container and the endpoint prefix of the table. The table's
+    /// checks (the credentials, the source grant) cover the table's location only.
+    std::string resolveDataFilePath(const std::string & path, const DB::ContextPtr & context) const override
+    {
+        auto qualified = DB::trySplitFullyQualifiedObjectPath(path);
+        if (!qualified)
+            return IKernelHelper::resolveDataFilePath(path, context);
+
+        /// `<container>@<account>.<host>`, as Hadoop writes `abfss://` and `wasbs://` URIs.
+        const std::string_view authority = qualified->object_namespace;
+        const size_t at = authority.find('@');
+        const std::string_view container = authority.substr(0, at);
+        const std::string_view account
+            = at == std::string_view::npos ? "" : authority.substr(at + 1, authority.find('.', at) - at - 1);
+
+        const auto connection_params = object_storage->getAzureBlobStorageConnectionParams();
+        std::string prefix = connection_params->endpoint.prefix;
+        if (!prefix.empty() && !prefix.ends_with('/'))
+            prefix += '/';
+        const std::string key = DB::unescapeForFileName(std::string(qualified->key));
+        /// Azure may resolve dot and empty segments on access.
+        const bool has_unsafe_segment = std::ranges::any_of(std::views::split(std::string_view(key), '/'), [](const auto & segment)
+        {
+            const std::string_view name(segment.begin(), segment.end());
+            return name.empty() || name == "." || name == "..";
+        });
+
+        const std::string_view scheme = qualified->scheme;
+        const bool is_own_scheme = scheme == "abfss" || scheme == "abfs" || scheme == "wasbs" || scheme == "wasb";
+        if (!is_own_scheme || container != connection_params->endpoint.container_name || account.empty()
+            || account != getAccountName() || !key.starts_with(prefix) || has_unsafe_segment)
+            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
+                "Data file `{}` of the Delta Lake table is not in the container `{}` of the table",
+                path, connection_params->endpoint.container_name);
+        context->getAccess()->checkAccessWithFilter(
+            DB::AccessType::READ, DB::AccessTypeObjects::toStringSource(DB::AccessTypeObjects::Source::AZURE), /* filter */ "");
+        return key.substr(prefix.size());
+    }
+
     [[nodiscard]] ffi::EngineBuilder * createBuilder() const override
     {
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
@@ -537,6 +577,21 @@ private:
     const std::string table_location;
     const std::string data_path;
     const LoggerPtr log = getLogger("AzureKernelHelper");
+
+    mutable std::once_flag account_name_once;
+    mutable std::string account_name;
+
+    /// The account the kernel reads the table from, empty when the configuration names none.
+    const std::string & getAccountName() const
+    {
+        std::call_once(account_name_once, [this]
+        {
+            for (const auto & [name, value] : getAzureBuilderOptions(*object_storage->getAzureBlobStorageConnectionParams()))
+                if (name == "azure_storage_account_name")
+                    account_name = value;
+        });
+        return account_name;
+    }
 
     /// `blob_path` may carry a leading slash (e.g. from a disk-based configuration),
     /// which Azure would keep as a part of the blob name. Strip it so that the data

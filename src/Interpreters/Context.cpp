@@ -390,6 +390,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsUInt64 prefetch_buffer_size;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
+    extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_cache_temporarily;
     extern const SettingsBool read_from_page_cache_if_exists_otherwise_bypass_cache;
     extern const SettingsUInt64 page_cache_block_size;
     extern const SettingsUInt64 page_cache_lookahead_blocks;
@@ -10211,8 +10212,12 @@ ReadSettings Context::getReadSettings() const
     res.remote_fs_settings.max_backoff_ms = settings_ref[Setting::remote_fs_read_max_backoff_ms];
     res.remote_fs_settings.max_retries = settings_ref[Setting::remote_fs_read_backoff_max_tries];
     res.enable_filesystem_cache = settings_ref[Setting::enable_filesystem_cache];
+    const bool bypass_filesystem_cache = settings_ref[Setting::read_from_filesystem_cache_if_exists_otherwise_bypass_cache];
+    /// A variant of the bypass: readers without the temporary mode bypass the cache. The plain bypass wins.
+    res.filesystem_cache_settings.cache_temporarily
+        = !bypass_filesystem_cache && settings_ref[Setting::read_from_filesystem_cache_if_exists_otherwise_cache_temporarily];
     res.filesystem_cache_settings.read_if_exists_otherwise_bypass
-        = settings_ref[Setting::read_from_filesystem_cache_if_exists_otherwise_bypass_cache];
+        = bypass_filesystem_cache || res.filesystem_cache_settings.cache_temporarily;
     res.filesystem_cache_settings.enable_log = settings_ref[Setting::enable_filesystem_cache_log];
     res.filesystem_cache_settings.verbose_logging = settings_ref[Setting::filesystem_cache_verbose_logging];
     res.filesystem_cache_settings.segments_batch_size = settings_ref[Setting::filesystem_cache_segments_batch_size];
@@ -10299,6 +10304,9 @@ ReadSettings Context::getReadSettings() const
     res.http_settings.retry_max_backoff_ms = settings_ref[Setting::http_retry_max_backoff_ms];
     res.http_settings.skip_not_found_url_for_globs = settings_ref[Setting::http_skip_not_found_url_for_globs];
     res.http_settings.make_head_request = settings_ref[Setting::http_make_head_request];
+    res.http_settings.max_fields = settings_ref[Setting::http_max_fields];
+    res.http_settings.max_field_name_size = settings_ref[Setting::http_max_field_name_size];
+    res.http_settings.max_field_value_size = settings_ref[Setting::http_max_field_value_size];
 
     res.remote_fs_settings.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
     res.remote_fs_settings.enable_blob_storage_log = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
