@@ -6,7 +6,6 @@
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTRefreshStrategy.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -115,15 +114,19 @@ public:
         visit(refresh, unused);
     }
 
-    /// `visit` leaves an operand of `IN` unqualified in a select query with a parametrised alias, which it can name.
-    /// Qualify such operands of a parameterized view when it is called, before its parameters are substituted.
-    /// They name tables of the database of the view, not the temporary tables of the caller.
-    void visitParameterizedView(ASTPtr & ast, const NameToNameMap & values)
+    /// `visit` leaves an operand of `IN` unqualified in the scope of a parametrised alias, which it can name.
+    /// Qualify such operands of a called parameterized view after `substitute` replaced its parameters, unless they
+    /// name an alias then. They name tables of the database of the view, not the temporary tables of the caller.
+    template <typename Substitute>
+    void visitParameterizedView(ASTPtr & ast, Substitute && substitute)
     {
-        external_tables.clear();
-        parameter_values = &values;
+        view_pass = ViewPass::CollectDeferred;
         visit(ast);
-        parameter_values = nullptr;
+        substitute(ast);
+        external_tables.clear();
+        view_pass = ViewPass::QualifyDeferred;
+        visit(ast);
+        view_pass = ViewPass::None;
     }
 
     /// Substitute the database only into table functions that use the current database implicitly,
@@ -158,10 +161,18 @@ private:
     mutable std::unordered_map<String, std::vector<WithDeclaration>> with_aliases;
     /// The aliases of the expressions of the current select query.
     mutable std::unordered_set<String> expression_aliases;
-    /// Whether an expression of the current select query has a parametrised alias.
+    /// Whether an expression of the current or an enclosing select query has a parametrised alias.
     mutable bool has_parametrised_alias = false;
-    /// The parameters of the called parameterized view, see `visitParameterizedView`.
-    mutable const NameToNameMap * parameter_values = nullptr;
+
+    /// The passes of `visitParameterizedView`, which qualify only the operands of `IN` that `visit` left unqualified.
+    enum class ViewPass : uint8_t
+    {
+        None,
+        CollectDeferred,
+        QualifyDeferred,
+    };
+    ViewPass view_pass = ViewPass::None;
+    mutable std::unordered_set<const IAST *> deferred_in_operands;
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
@@ -197,13 +208,15 @@ private:
         /// Collect the aliases before descending into the children.
         /// Like in `MarkTableIdentifiersVisitor`, only the aliases of the current select query
         /// are considered: an alias is not visible inside a nested select query and vice versa.
-        auto enclosing_query_aliases = std::move(expression_aliases);
-        const bool enclosing_has_parametrised_alias = std::exchange(has_parametrised_alias, false);
-        expression_aliases.clear();
+        /// A called view keeps the aliases of the enclosing select queries, which name resolution sees.
+        auto enclosing_query_aliases = expression_aliases;
+        const bool enclosing_has_parametrised_alias = has_parametrised_alias;
+        if (view_pass == ViewPass::None)
+            expression_aliases.clear();
         for (const auto & child : select.children)
             collectAliases(child);
 
-        if (select.tables() && !parameter_values)
+        if (select.tables() && view_pass == ViewPass::None)
             tryVisit<ASTTablesInSelectQuery>(select.refTables());
 
         for (auto & child : select.children)
@@ -333,14 +346,7 @@ private:
 
         /// A parametrised alias replaces the plain one, which a rewrite can set beside it.
         if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(ast.get()); with_alias && with_alias->parametrised_alias)
-        {
             has_parametrised_alias = true;
-            if (parameter_values)
-            {
-                if (auto it = parameter_values->find(with_alias->parametrised_alias->name); it != parameter_values->end())
-                    expression_aliases.insert(it->second);
-            }
-        }
         else if (String alias = ast->tryGetAlias(); !alias.empty())
             expression_aliases.insert(alias);
 
@@ -484,7 +490,7 @@ private:
             {
                 for (size_t i = 0; i < child->children.size(); ++i)
                 {
-                    if (is_dict_get && i == 0 && !parameter_values)
+                    if (is_dict_get && i == 0 && view_pass == ViewPass::None)
                     {
                         if (auto * identifier = child->children[i]->as<ASTIdentifier>())
                         {
@@ -512,10 +518,6 @@ private:
                             literal_value = qualified_dictionary_name.getFullName();
                         }
                     }
-                    else if (is_operator_in && i == 1 && parameter_values)
-                    {
-                        visitInOperandOfParameterizedView(child->children[i]);
-                    }
                     else if (is_operator_in && i == 1)
                     {
                         if (auto * identifier = child->children[i]->as<ASTIdentifier>())
@@ -529,6 +531,13 @@ private:
 
                             /// The operand can name a parametrised alias, whose name is known only when the view is called.
                             if (has_parametrised_alias && !identifier->compound())
+                            {
+                                if (view_pass == ViewPass::CollectDeferred && !identifier->isParam())
+                                    deferred_in_operands.insert(identifier);
+                                continue;
+                            }
+
+                            if (view_pass != ViewPass::None && !deferred_in_operands.contains(identifier))
                                 continue;
 
                             /// If identifier is broken then we can do nothing and get an exception
@@ -552,23 +561,6 @@ private:
             {
                 visit(child);
             }
-        }
-    }
-
-    /// Qualify an operand of `IN` that `visit` left unqualified, unless it names a parametrised alias.
-    void visitInOperandOfParameterizedView(ASTPtr & operand) const
-    {
-        const auto * identifier = operand->as<ASTIdentifier>();
-        if (!identifier || !has_parametrised_alias || identifier->compound() || expression_aliases.contains(identifier->name()))
-        {
-            visit(operand);
-            return;
-        }
-
-        if (auto table_identifier = identifier->createTable())
-        {
-            operand = table_identifier;
-            tryVisit<ASTTableIdentifier>(operand);
         }
     }
 
