@@ -992,6 +992,8 @@ Every part adds its own block headers and, for `LowCardinality`, its own diction
 
 `Dynamic` and `JSON` are not supported as target types, nor as arguments with `target_type`, and neither is an argument with `LowCardinality` inside a `Variant`: convert them in the query first.
 
+With or without `target_type`, in a window with a growing frame (for example `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`), the new rows of every step are compressed on their own, as a separate part, so the result is far lower than for the same rows without the window (0.14 instead of 8.8 for 1000 short strings).
+
 <Note>
 For the examples below, the result will differ based on the default compression codec of the server.
 See [Column Compression Codecs](/reference/statements/create/table#column_compression_codec).
