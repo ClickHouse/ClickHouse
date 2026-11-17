@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/split.hpp>
 #include <cmath>
 #include <functional>
 #include <iterator>
@@ -25,6 +27,8 @@
 #include <Columns/getLeastSuperColumn.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
+#include <Core/Streaming/CursorTree.h>
+#include <Core/Streaming/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -146,6 +150,7 @@ extern const int PARAMETER_OUT_OF_BOUND;
 extern const int UNSUPPORTED_METHOD;
 extern const int INCOMPATIBLE_COLUMNS;
 extern const int ILLEGAL_PREWHERE;
+extern const int ILLEGAL_STREAM;
 }
 
 namespace
@@ -1063,7 +1068,9 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         && context->getSettingsRef()[Setting::distributed_aggregation_memory_efficient]
         && common_processed_stage == QueryProcessingStage::Enum::WithMergeableState;
 
+    /// Narrowing concatenates the streams of the children, while a streaming read of a child never finishes.
     const bool should_not_narrow = query_info.input_order_info
+        || query_info.isStream()
         || children_produce_sorted_streams
         || memory_efficient_aggregation;
     if (!should_not_narrow)
@@ -1338,7 +1345,9 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             /// The cache key includes the database name because getModifiedQueryInfo injects
             /// a _database constant into the query tree (analyzer path), so tables in
             /// different databases must not share cached entries.
+            /// A streaming read gives every child its own part of the cursor, so the children cannot share the query info.
             bool can_cache = query_info.table_expression
+                && !query_info.isStream()
                 && !row_policy_data_opt
                 && common_processed_stage == QueryProcessingStage::FetchColumns
                 && !std::dynamic_pointer_cast<StorageMerge>(storage)
@@ -1404,6 +1413,9 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     query_info_cache[structure_key] = {std::move(cached_query_info), column_names_as_aliases, is_smallest_column_requested, aliases};
                 }
             }
+
+            if (query_info.isStream())
+                setStreamForChild(modified_query_info, modified_context, table);
 
             /// Filter DAGs can be modified by optimizations, so each child must own its own copy:
             /// otherwise optimizing one child's plan invalidates the sibling headers that were
@@ -1700,6 +1712,58 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     return modified_query;
 }
 
+}
+
+void ReadFromMerge::setStreamForChild(
+    SelectQueryInfo & modified_query_info,
+    const ContextMutablePtr & modified_context,
+    const StorageWithLockAndName & storage_with_lock_and_name) const
+{
+    const auto & [database_name, storage, _, table_name, metadata_snapshot] = storage_with_lock_and_name;
+
+    if (!storage->supportsStreaming())
+        throw Exception(ErrorCodes::ILLEGAL_STREAM,
+            "Table {} of {} doesn't support STREAM (engine {})",
+            storage->getStorageID().getNameForLogs(), storage_merge->getStorageID().getNameForLogs(), storage->getName());
+
+    const auto & modifiers = *query_info.table_expression_modifiers;
+    StreamSettings stream_settings = *modifiers.getStreamSettings();
+    if (stream_settings.watermark)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WATERMARK is not supported for STREAM from a table with engine Merge");
+
+    /// The cursor of a `Merge` table is a map: database -> table -> the cursor of the table.
+    /// A table without an entry is read from the beginning. The keys of the cursor tree of a query are split by dots,
+    /// so the subtree of a name with dots is found by its parts.
+    Strings path;
+    for (const auto & part_name : {database_name, table_name})
+    {
+        Strings parts;
+        boost::split(parts, part_name, boost::is_any_of("."));
+        path.insert(path.end(), parts.begin(), parts.end());
+    }
+
+    CursorTreeNodePtr table_cursor = stream_settings.cursor;
+    for (const auto & key : path)
+        table_cursor = table_cursor && table_cursor->hasSubtree(key) ? table_cursor->getSubtree(key) : nullptr;
+    stream_settings.cursor = std::move(table_cursor);
+
+    TableExpressionModifiers child_modifiers(
+        modifiers.hasFinal(), modifiers.getSampleSizeRatio(), modifiers.getSampleOffsetRatio(), std::move(stream_settings));
+    modified_query_info.table_expression_modifiers = child_modifiers;
+
+    if (auto * table_node = modified_query_info.table_expression ? modified_query_info.table_expression->as<TableNode>() : nullptr)
+        table_node->setTableExpressionModifiers(child_modifiers);
+
+    /// An incremental refresh of a materialized view: the bounded read of every table reports its cursor under the
+    /// database and the table. The tables matching the `Merge` table may change, so they are checked on every refresh.
+    if (auto streaming_cursor = modified_context->getStreamingCursor())
+    {
+        if (!storage->reportsStreamingCursor())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Table {} of {} has engine {}, which does not report the cursor of a streaming read for an incremental refresh",
+                storage->getStorageID().getNameForLogs(), storage_merge->getStorageID().getNameForLogs(), storage->getName());
+        modified_context->setStreamingCursor(StreamingCursor::createChild(std::move(streaming_cursor), path));
+    }
 }
 
 SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & modified_context,
@@ -3116,6 +3180,7 @@ bool ReadFromMerge::mayBeExpandedForParallelReplicas(const std::function<bool(co
     return settings[Setting::parallel_replicas_plan_based]
         && settings[Setting::parallel_replicas_allow_merge_tables]
         && !InterpreterSelectQuery::isQueryWithFinal(query_info)
+        && !query_info.isStream()
         && !computeExpandableReads(can_ship_read).empty();
 }
 
@@ -3442,6 +3507,17 @@ SELECT * FROM WatchLog;
 │ 2018-01-02 │      2 │ hit       │   3 │
 └────────────┴────────┴───────────┴─────┘
 ```
+
+## Streaming queries {#streaming-queries}
+
+A streaming query (`SELECT ... FROM merge_table STREAM`, an experimental feature enabled by `enable_streaming_queries`) reads every underlying table with `STREAM`, so all of them must support it. The cursor of a `Merge` table is a map from the database name to a map from the table name to the cursor of the table, and can be reconstructed from the `_database` and `_table` virtual columns and the cursor virtual columns of the tables:
+
+```sql
+SELECT _table, _block_number, _block_offset, * FROM merge_table
+STREAM CURSOR {'db': {'t1': {'all': {'block_number': 5, 'block_offset': 99}}}}
+```
+
+A table without an entry in the cursor is read from the beginning. The set of tables is determined at the start of the query. If all the tables support it, a `Merge` table can be the source of an incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`); a table that starts matching later is read from the beginning by the next refresh. `WATERMARK` is not supported.
 
 ## Virtual columns {#virtual-columns}
 
