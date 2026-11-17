@@ -645,8 +645,17 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         /// Loading a lazily loaded table constructs and starts it, so a user without the rights to alter it
         /// must not be able to trigger that. Without the storage the requirement is the one checked for
         /// a table that is not on this host, which the precise check below can only make stricter.
+        /// The exception is `_row_exists = 0`: for an unknown kind it requires both `ALTER DELETE` and
+        /// `ALTER UPDATE`, while the loaded storage may recognize its lightweight-delete marker and require
+        /// only `ALTER DELETE`. The stand-in knows its physical columns, and a physical `_row_exists` is always
+        /// an ordinary column, so otherwise the precheck assumes the marker, which requires the least.
         if (table && !skip_access_check && !isStorageLoaded(table))
-            getContext()->checkAccess(getRequiredAccess(nullptr));
+        {
+            const auto stand_in_metadata = table->getInMemoryMetadataPtr(getContext(), false);
+            const bool has_physical_row_exists = stand_in_metadata->getColumns().has(RowExistsColumn::name);
+            getContext()->checkAccess(getRequiredAccess(
+                nullptr, has_physical_row_exists ? RowExistsColumnKind::Regular : RowExistsColumnKind::LightweightDeleteMarker));
+        }
         table = resolveStorageProxyLoading(table);
     }
 
@@ -950,11 +959,12 @@ void InterpreterAlterQuery::addRequiredAccessForModifyQuerySQLSecurity(
         required_access.emplace_back(AccessType::SET_DEFINER, definer_name);
 }
 
-AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr & storage) const
+AccessRightsElements InterpreterAlterQuery::getRequiredAccess(
+    const StoragePtr & storage, std::optional<RowExistsColumnKind> row_exists_column_kind_override) const
 {
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
-    const auto row_exists_column_kind = getRowExistsColumnKind(storage, getContext());
+    const auto row_exists_column_kind = row_exists_column_kind_override.value_or(getRowExistsColumnKind(storage, getContext()));
     /// Session temporary tables are not visible on the hosts of `ON CLUSTER`, so the source of
     /// `REPLACE PARTITION ... FROM` is resolved only for a local query. For `ON CLUSTER` its database
     /// must stay empty: `executeDDLQueryOnCluster` then substitutes the default database both into

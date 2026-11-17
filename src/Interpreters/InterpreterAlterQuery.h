@@ -4,6 +4,8 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 
+#include <optional>
+
 
 namespace DB
 {
@@ -57,7 +59,9 @@ public:
     void setSkipAccessCheck(bool skip) { skip_access_check = skip; }
 
 private:
-    [[nodiscard]] AccessRightsElements getRequiredAccess(const StoragePtr & storage) const;
+    /// `row_exists_column_kind` overrides the kind derived from `storage`.
+    [[nodiscard]] AccessRightsElements getRequiredAccess(
+        const StoragePtr & storage, std::optional<RowExistsColumnKind> row_exists_column_kind = {}) const;
 
     /// Adds the grants `processSQLSecurityOption` demands for the view's stored SQL security, so replacing the
     /// body of a `DEFINER` or `NONE` view takes the same authority as declaring that security in the first place.

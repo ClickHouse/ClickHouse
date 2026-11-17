@@ -2789,14 +2789,16 @@ namespace
 /// Whether the user holds `access` on the table, or on at least one of its columns for a right that can be
 /// granted per column (the user then sees those columns). A grant on the exact name of a subcolumn (e.g.
 /// ``GRANT SELECT(`p.s`)``) is enough to read that subcolumn, so it counts as well. The stand-in of a lazily
-/// loaded table knows its columns without being loaded.
-bool isAnyAccessGranted(const IStorage & table, const StorageID & table_id, const ContextPtr & context, const AccessFlags & access)
+/// loaded table knows its columns without being loaded, but not the virtual columns of its engine, and a grant on
+/// a virtual column (e.g. ``GRANT SELECT(_part)``) is enough to read it. So a grant on the exact name of any column
+/// that is not a physical one counts too: it may be a virtual column, and the precise check after loading decides.
+bool isAnyAccessGranted(const IStorage & table, const StorageID & table_id, const ContextPtr & context, AccessType access)
 {
     const auto access_rights = context->getAccess();
     if (access_rights->isGranted(access, table_id.database_name, table_id.table_name))
         return true;
 
-    if (!AccessFlags::allFlagsGrantableOnColumnLevel().contains(access))
+    if (!AccessFlags::allFlagsGrantableOnColumnLevel().contains(AccessFlags(access)))
         return false;
 
     const auto metadata = table.getInMemoryMetadataPtr(context, false);
@@ -2811,7 +2813,19 @@ bool isAnyAccessGranted(const IStorage & table, const StorageID & table_id, cons
         if (!columns.getSubcolumnsWithExplicitGrant(
                 *rights_with_implicit, access, table_id.database_name, table_id.table_name, column.name).empty())
             return true;
+
+    for (const auto & name : rights_with_implicit->getColumnsWithExplicitGrantAndPrefix(
+             access, table_id.database_name, table_id.table_name, /*prefix=*/ ""))
+        if (!columns.has(name))
+            return true;
+
     return false;
+}
+
+bool isAnyAccessGranted(
+    const IStorage & table, const StorageID & table_id, const ContextPtr & context, std::initializer_list<AccessType> accesses)
+{
+    return std::ranges::any_of(accesses, [&](AccessType access) { return isAnyAccessGranted(table, table_id, context, access); });
 }
 
 }
@@ -2826,20 +2840,22 @@ void loadTableIfLazy(const StorageID & table_id, ContextPtr context, AccessType 
     if (!table)
         return;
 
-    if (!isAnyAccessGranted(*table, table_id, context, AccessFlags(access)))
+    if (!isAnyAccessGranted(*table, table_id, context, access))
         return;
 
     resolveStorageProxyLoading(table);
 }
 
-void checkAccessBeforeLoadingLazyTable(const StoragePtr & table, const StorageID & table_id, const ContextPtr & context, AccessType access)
+void checkAccessBeforeLoadingLazyTable(
+    const StoragePtr & table, const StorageID & table_id, const ContextPtr & context, std::initializer_list<AccessType> accesses)
 {
+    chassert(accesses.size() != 0);
     const auto * proxy = dynamic_cast<const StorageProxy *>(table.get());
     if (!proxy || !proxy->isLazyStandIn() || proxy->tryGetNested())
         return;
 
-    if (!isAnyAccessGranted(*table, table_id, context, AccessFlags(access)))
-        context->checkAccess(access, table_id.database_name, table_id.table_name);
+    if (!isAnyAccessGranted(*table, table_id, context, accesses))
+        context->checkAccess(*accesses.begin(), table_id.database_name, table_id.table_name);
 }
 
 }

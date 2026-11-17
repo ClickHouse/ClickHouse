@@ -213,7 +213,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
     /// The precise check for the inserted columns follows in `execute`.
     auto table = DatabaseCatalog::instance().getTable(query.table_id, current_context);
     if (!skip_target_insert_access_check)
-        checkAccessBeforeLoadingLazyTable(table, query.table_id, current_context, AccessType::INSERT);
+        checkAccessBeforeLoadingLazyTable(table, query.table_id, current_context, {AccessType::INSERT});
     return resolveStorageProxyLoading(table);
 }
 

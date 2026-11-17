@@ -3244,7 +3244,7 @@ static BlockIO executeQueryImpl(
                 if (insert_table)
                 {
                     /// `areAsynchronousInsertsEnabled` loads a lazily loaded table, see `checkAccessBeforeLoadingLazyTable`.
-                    checkAccessBeforeLoadingLazyTable(insert_table, insert_query->table_id, context, AccessType::INSERT);
+                    checkAccessBeforeLoadingLazyTable(insert_table, insert_query->table_id, context, {AccessType::INSERT});
                     async_insert_enabled |= insert_table->areAsynchronousInsertsEnabled();
                 }
             }
