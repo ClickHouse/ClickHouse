@@ -1,0 +1,18 @@
+-- update all rows
+55
+(UPDATE v = test_function(v, 1) WHERE 1)	10
+-- delete all rows
+0
+(DELETE WHERE test_function(id, 1) > 0)	10
+-- delete all rows together
+0
+(DELETE WHERE id < 3)	3
+(DELETE WHERE test_function(id, 1) > 0)	7
+(DELETE WHERE 0)	0
+-- update some rows
+48
+(UPDATE v = test_function(v, 1) WHERE id < 3)	3
+-- replicated rejected
+-- replicated allowed
+55
+(UPDATE v = test_function(v, 1) WHERE 1)	10

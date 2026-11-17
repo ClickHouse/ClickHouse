@@ -5289,7 +5289,7 @@ bool MutateTask::prepare()
         /// condition (e.g. `rand()` or a subquery) may delete other rows in each evaluation, so the counts could disagree, e.g. a
         /// prefix of the commands could delete fewer rows than a shorter prefix. In this case the part is mutated as usual, and the
         /// rows are counted in the one evaluation that deletes them.
-        const bool has_nondeterministic_condition = count_affected_rows
+        const bool has_nondeterministic_condition = has_only_delete_commands && count_affected_rows
             && std::ranges::any_of(ctx->commands_for_part, [&](const auto & command)
             {
                 const auto nondeterministic = findFirstNonDeterministicFunction(command, ctx->context);
