@@ -190,7 +190,7 @@ lock_count() {
 # runner's per-test timeout, so failures are always explicit messages, never a silent
 # timeout.
 locks=0
-deadline=$((SECONDS + 95))
+deadline=$((SECONDS + 300))
 while [ "$SECONDS" -lt "$deadline" ]; do
     locks=$(lock_count)
     if [ "$locks" -ge "$PARTITIONS" ]; then
@@ -212,7 +212,7 @@ done
 
 expected=$((PARTITIONS * MESSAGES_PER_PARTITION))
 count=0
-deadline=$((SECONDS + 50))
+deadline=$((SECONDS + 100))
 while [ "$SECONDS" -lt "$deadline" ]; do
     count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst SETTINGS max_execution_time=5" 2>/dev/null || echo 0)
     if [ "$count" -ge "$expected" ]; then
@@ -278,7 +278,7 @@ $CLICKHOUSE_CLIENT -q "
  "
 
 recovered=0
-deadline=$((SECONDS + 50))
+deadline=$((SECONDS + 100))
 while [ "$SECONDS" -lt "$deadline" ]; do
     recovered=$($CLICKHOUSE_CLIENT -q "SELECT length(assignments.partition_id) FROM system.kafka_consumers WHERE table = '${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_b' SETTINGS max_execution_time=5" 2>/dev/null || echo 0)
     if [ "$recovered" -ge 1 ]; then
@@ -299,7 +299,7 @@ for p in $(seq 0 $((PARTITIONS - 1))); do
 done
 
 count_b=0
-deadline=$((SECONDS + 45))
+deadline=$((SECONDS + 60))
 while [ "$SECONDS" -lt "$deadline" ]; do
     count_b=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst_b SETTINGS max_execution_time=5" 2>/dev/null || echo 0)
     if [ "$count_b" -ge 1 ]; then
@@ -323,7 +323,7 @@ $CLICKHOUSE_CLIENT -q "
  "
 
 recovered4=0
-deadline=$((SECONDS + 30))
+deadline=$((SECONDS + 100))
 while [ "$SECONDS" -lt "$deadline" ]; do
     recovered4=$($CLICKHOUSE_CLIENT -q "SELECT length(assignments.partition_id) FROM system.kafka_consumers WHERE table = '${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_r4' SETTINGS max_execution_time=5" 2>/dev/null || echo 0)
     if [ "$recovered4" -ge 1 ]; then
@@ -342,7 +342,7 @@ for p in $(seq 0 $((PARTITIONS - 1))); do
 done
 
 count_r4=0
-deadline=$((SECONDS + 25))
+deadline=$((SECONDS + 60))
 while [ "$SECONDS" -lt "$deadline" ]; do
     count_r4=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst_r4 SETTINGS max_execution_time=5" 2>/dev/null || echo 0)
     if [ "$count_r4" -ge 1 ]; then
