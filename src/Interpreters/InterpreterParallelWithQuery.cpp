@@ -183,6 +183,7 @@ void InterpreterParallelWithQuery::executeCombinedPipeline()
 
     try
     {
+        combined_pipeline.setProcessListElement(getContext()->getProcessListElement());
         CompletedPipelineExecutor executor(combined_pipeline);
         if (auto cancel_callback = getContext()->getInteractiveCancelCallback())
             executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), getContext()->getSettingsRef()[Setting::interactive_delay] / 1000));

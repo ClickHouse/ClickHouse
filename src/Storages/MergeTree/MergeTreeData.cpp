@@ -14203,8 +14203,8 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
     for (const auto & part : data_parts)
     {
-        if (local_context->isCurrentQueryKilled())
-            return result;
+        if (auto query_status = local_context->getProcessListElementSafe())
+            query_status->throwIfKilled();
         if (!matcher(part->info.getPartitionId()))
             continue;
 

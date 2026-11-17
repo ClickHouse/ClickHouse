@@ -1,0 +1,8 @@
+-- KILL QUERY
+OK
+0
+-- max_execution_time
+OK
+0
+-- PARALLEL WITH in clickhouse-local
+QUERY_WAS_CANCELLED
