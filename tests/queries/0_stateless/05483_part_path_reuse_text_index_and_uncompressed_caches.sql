@@ -8,6 +8,8 @@
 SET use_query_condition_cache = 0, use_skip_indexes = 1, min_bytes_to_use_mmap_io = 0, use_page_cache_for_local_disks = 0, use_uncompressed_cache = 0;
 SET use_text_index_tokens_cache = 1, use_text_index_header_cache = 1, use_text_index_postings_cache = 1;
 SET merge_tree_max_rows_to_use_cache = 1000000000, merge_tree_max_bytes_to_use_cache = 1000000000000;
+-- The sums must read the column files, not the per-part statistics.
+SET use_statistics_for_sum_avg_aggregation = 0;
 
 -- Text index caches: wide and compact parts.
 
