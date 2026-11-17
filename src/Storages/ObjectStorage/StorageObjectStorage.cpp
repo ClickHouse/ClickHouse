@@ -1151,6 +1151,19 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     /// the cleanup below does not change it.
     auto reservations = std::make_shared<WrittenPathReservations>(configuration);
 
+    /// The truncating inserts are coordinated on the raw key of the table, whatever key they start writing: a truncating
+    /// insert that is not split starts from the last key that is not a part of a split tail, while one that is split
+    /// starts from the raw key. If they reserved only their starting keys, both could run at the same time - the split one
+    /// would step over the key the other one is writing in its cleanup, and the table would end up with the objects of
+    /// both rewrites rather than of one of them. The starting key is reserved as well, in `checkAndGetNewFileOnInsertIfNeeded`.
+    const String & raw_key = paths.front().path;
+    if (settings.truncate_on_insert && first_key != raw_key && !reservations->tryReserveStartingPath(raw_key))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Object in bucket {} with key {} is being written by a concurrent insert into the table, "
+            "and the table cannot be overwritten with {}_truncate_on_insert until that insert is over",
+            configuration->getNamespace(), raw_key, configuration->getTypeName());
+
     /// The written key can differ from the typed URI that the source access check covered, e.g. after `{_schema_hash}`
     /// is expanded, so it is checked before it is probed or written.
     if (write_access_check)
@@ -1196,7 +1209,7 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     /// does not tell the next insert that it is taken. Once its object is committed, it is kept as committed in the
     /// configuration instead, before the reservation is released, so that the next insert with
     /// `*_create_new_file_on_insert` steps aside from it even if the object storage does not report it yet.
-    publish_path = [config = configuration, reservations, raw_key = paths.front().path,
+    publish_path = [config = configuration, reservations, raw_key,
                     written_by_split = settings.split_on_write_by_size_bytes != 0](const String & new_key)
     {
         if (new_key == raw_key)
