@@ -7,6 +7,8 @@
 #include <cudf/concatenate.hpp>
 #include <cudf/copying.hpp>
 #include <cudf/groupby.hpp>
+#include <cudf/null_mask.hpp>
+#include <cudf/stream_compaction.hpp>
 #include <cudf/table/table.hpp>
 #include <cudf/table/table_view.hpp>
 #include <cudf/unary.hpp>
@@ -34,6 +36,11 @@ constexpr size_t max_slice_rows = 64UL << 20;
 /// pay for a table of a million, and one of many pays a few merges.
 constexpr size_t min_capacity = 1UL << 16;
 
+/// A batch of which a `WHERE` leaves out at least this share of the rows is compacted to the rows it keeps before they
+/// are grouped. `streaming_groupby` still goes over a row left out as a null of the first key, while compacting reads
+/// every row once and writes those kept.
+constexpr double min_left_out_share_to_compact = 0.25;
+
 /// The batches are reduced over their runs of equal keys before they are grouped where the first batch has at most this
 /// many runs per row, see `StreamingGroupBy::reduce_runs`.
 constexpr double max_runs_per_row_to_reduce = 0.5;
@@ -42,6 +49,12 @@ constexpr double max_runs_per_row_to_reduce = 0.5;
 /// after they were combined last, whichever is more, or once they reach this many rows, below what cuDF concatenates.
 constexpr size_t min_bytes_to_combine_runs = 4UL << 30;
 constexpr size_t max_rows_to_combine_runs = 1UL << 30;
+
+__host__ cudf::column_view withNullMask(const cudf::column_view & column, const cudf::bitmask_type * mask, cudf::size_type null_count)
+{
+    std::vector<cudf::column_view> children(column.child_begin(), column.child_end());
+    return cudf::column_view(column.type(), column.size(), column.head(), mask, null_count, column.offset(), children);
+}
 
 __host__ std::unique_ptr<cudf::groupby_aggregation> groupByAggregationFor(GPUAggregationKind aggregation)
 {
@@ -71,6 +84,7 @@ public:
         , stream(stream_)
         , keyless(keys_.empty())
         , keyless_key(0, stream_)
+        , all_true(0, stream_)
     {
         if (stream.get() == cudaStreamLegacy || stream.get() == nullptr)
             throwGPUError("a `GROUP BY` through cuDF on the device's default stream, where cuco cannot copy its counts back");
@@ -136,7 +150,7 @@ public:
             throwGPUError("a `GROUP BY` with an `avg` and a `min` or a `max` of values of varying width, which combine from partial results that an `avg`'s do not");
     }
 
-    __host__ void addBatch(GPUSpan<DeviceColumnView> batch_keys, GPUSpan<DeviceColumnView> batch_values) override
+    __host__ void addBatch(GPUSpan<DeviceColumnView> batch_keys, GPUSpan<DeviceColumnView> batch_values, const uint32_t * kept) override
     {
         if (finalized)
             throwGPUError("a batch after the groups were closed");
@@ -146,7 +160,7 @@ public:
                 ("a batch of " + std::to_string(batch_keys.size()) + " keys and " + std::to_string(batch_values.size()) + " values, expected "
                 + std::to_string(keys.size()) + " and " + std::to_string(values.size())).c_str());
 
-        const size_t rows = batch_keys.empty() ? batch_values[0].rows() : batch_keys[0].rows();
+        size_t rows = batch_keys.empty() ? batch_values[0].rows() : batch_keys[0].rows();
         if (rows == 0)
             return;
 
@@ -170,7 +184,31 @@ public:
             columns.push_back(columnViewOf(batch_values[i], values[i]));
         }
 
-        if (!reduce_runs.has_value() && runs_combine)
+        /// Lives until the groups are made of its rows.
+        std::unique_ptr<cudf::table> compacted;
+        if (kept)
+        {
+            const auto * mask = reinterpret_cast<const cudf::bitmask_type *>(kept);
+            const cudf::size_type left_out = leftOut(mask, rows);
+            if (static_cast<size_t>(left_out) == rows)
+                return;
+
+            /// Runs are reduced over batches without nulls only, as cuDF sorts keys with nulls whatever it is told.
+            if (left_out != 0
+                && (reduce_runs.value_or(runs_combine) || static_cast<double>(left_out) >= min_left_out_share_to_compact * static_cast<double>(rows)))
+            {
+                compacted = compact(columns, mask, rows, left_out);
+                rows = static_cast<size_t>(compacted->num_rows());
+                const cudf::table_view kept_rows = compacted->view();
+                columns.assign(kept_rows.begin(), kept_rows.end());
+            }
+            else if (left_out != 0)
+            {
+                columns[0] = withNullMask(columns[0], mask, left_out);
+            }
+        }
+
+        if (!reduce_runs.has_value() && runs_combine && !columns[0].has_nulls())
         {
             std::unique_ptr<cudf::table> runs = reduceRuns(columns);
             reduce_runs = static_cast<double>(runs->num_rows()) <= max_runs_per_row_to_reduce * static_cast<double>(rows);
@@ -226,6 +264,23 @@ public:
 
         variable_offsets.resize(keys.size());
         value_offsets.resize(aggregates.size());
+        return static_cast<size_t>(groups->num_rows());
+    }
+
+    __host__ size_t keepGroups(const uint32_t * kept) override
+    {
+        if (!finalized)
+            throwGPUError("the groups were filtered before they were closed");
+
+        if (!groups || groups->num_rows() == 0)
+            return 0;
+
+        const cudf::table_view all = groups->view();
+        const auto rows = static_cast<size_t>(all.num_rows());
+        const auto * mask = reinterpret_cast<const cudf::bitmask_type *>(kept);
+        const cudf::size_type left_out = leftOut(mask, rows);
+        if (left_out != 0)
+            groups = compact(std::vector<cudf::column_view>(all.begin(), all.end()), mask, rows, left_out);
         return static_cast<size_t>(groups->num_rows());
     }
 
@@ -340,6 +395,10 @@ private:
     /// As many zero bytes as the largest batch had rows: the values of that key.
     rmm::device_buffer keyless_key;
 
+    /// As many `true` bytes as the most rows compacted: the values of the `BOOL8` column whose nulls are what a mask
+    /// leaves out.
+    rmm::device_buffer all_true;
+
     /// Of the keys and of the values of varying width: their offsets widened for a view of the device's.
     mutable std::vector<std::unique_ptr<cudf::column>> variable_offsets;
     mutable std::vector<std::unique_ptr<cudf::column>> value_offsets;
@@ -358,6 +417,32 @@ private:
             checkCuda(cudaMemsetAsync(keyless_key.data(), 0, rows, stream.get()), "Cannot fill the key of a `GROUP BY` without keys");
         }
         return cudf::column_view(cudf::data_type{cudf::type_id::INT8}, static_cast<cudf::size_type>(rows), keyless_key.data(), nullptr, 0);
+    }
+
+    /// The rows of the first `rows` that `mask` leaves out.
+    __host__ cudf::size_type leftOut(const cudf::bitmask_type * mask, size_t rows) const
+    {
+        return guarded("counting the rows a filter leaves out", [&]
+        {
+            return cudf::null_count(mask, 0, static_cast<cudf::size_type>(rows), stream);
+        });
+    }
+
+    /// The rows of `columns` that `mask` keeps.
+    __host__ std::unique_ptr<cudf::table> compact(
+        const std::vector<cudf::column_view> & columns, const cudf::bitmask_type * mask, size_t rows, cudf::size_type left_out)
+    {
+        if (all_true.size() < rows)
+        {
+            all_true.resize(rows, stream);
+            checkCuda(cudaMemsetAsync(all_true.data(), 1, rows, stream.get()), "Cannot fill a mask of the device");
+        }
+
+        const cudf::column_view kept(cudf::data_type{cudf::type_id::BOOL8}, static_cast<cudf::size_type>(rows), all_true.data(), mask, left_out);
+        return guarded("compacting " + std::to_string(rows) + " rows to those a filter keeps", [&]
+        {
+            return cudf::apply_retention_mask(cudf::table_view(columns), kept, stream);
+        });
     }
 
     /// The groups of `table`, the keys and then the values, without the key of a `GROUP BY` without keys.

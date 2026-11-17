@@ -6,6 +6,7 @@
 
 #include <GPU/CudfGroupBy.cuh>
 #include <GPU/CudfReduction.cuh>
+#include <GPU/GPUExpressionCompiler.h>
 #include <GPU/GPUMemory.h>
 #include <GPU/GPUTypeMapping.h>
 #include <GPU/GPUTypes.cuh>
@@ -119,6 +120,9 @@ private:
 
 /// A `GROUP BY` on the device: the `CudfGroupBy` groups each batch of the keys and the values into the groups so far.
 /// Without keys, the aggregates are of every row, as one group, which there is none of where no row is grouped.
+///
+/// With `where`, a predicate the device evaluates over the columns of `where.columns`, which come with each batch, only
+/// the rows it holds for are grouped.
 class GroupByGPUAccumulator
 {
 public:
@@ -126,12 +130,19 @@ public:
         const DataTypes & key_types,
         const DataTypes & value_types,
         std::vector<GPUGroupByAggregate> aggregates_,
-        size_t batch_bytes);
+        size_t batch_bytes,
+        std::optional<CompiledGPUExpression> where_ = {});
 
-    void add(const Columns & key_columns, const Columns & value_columns);
+    /// `where_columns`: of each of `where.columns`, in its order.
+    void add(const Columns & key_columns, const Columns & value_columns, const Columns & where_columns = {});
 
     /// Returns the number of groups.
     size_t finalize();
+
+    /// After `finalize`: keeps the groups for which `having`, a predicate of the device, holds, as a `HAVING` does.
+    /// `columns` are of each of `having.columns`, in its order: the index of a key, or of an aggregate after the keys.
+    /// Returns the number of groups kept.
+    size_t filterGroups(const CompiledGPUExpression & having, const std::vector<size_t> & columns);
 
     /// After `finalize`: into a column of the keys each, and a column of the result of each aggregate.
     void copyGroupsTo(MutableColumns & key_columns, MutableColumns & aggregate_columns);
@@ -143,8 +154,13 @@ private:
     const std::vector<GPUGroupByAggregate> aggregates;
     const size_t batch_rows;
 
+    /// Holds the kernel of the predicate until the pipeline, which waits for the device, is gone.
+    const std::optional<CompiledGPUExpression> where;
+
     StreamPtr group_stream;
     std::unique_ptr<CudfGroupBy> group_by;
+    /// The bits of the rows of a batch, or of the groups, that a predicate keeps.
+    DeviceBuffer kept;
 
     std::optional<size_t> num_groups;
 

@@ -45,6 +45,8 @@ GPUElementType uploadTypeOrThrow(const IDataType & type)
         return GPUElementType::String;
     if (const auto element_type = keyElementTypeOf(type))
         return *element_type;
+    if (const auto element_type = filterElementTypeOf(type))
+        return *element_type;
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Columns of {} are not supported on the GPU yet", type.getName());
 }

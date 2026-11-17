@@ -24,11 +24,16 @@ public:
     __host__ virtual ~CudfGroupBy();
 
     /// The columns must be there in the order of the stream of the `CudfGroupBy`, and must stay until it has grouped
-    /// them, in its order as well.
-    virtual void addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values) = 0;
+    /// them, in its order as well. With `kept`, a mask on the device of a bit per row, set for the rows of the `WHERE`,
+    /// in 32-bit words as `cudf::bitmask_type`, the other rows are left out; it stays as the columns do.
+    virtual void addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values, const uint32_t * kept = nullptr) = 0;
 
     /// Returns the number of groups.
     virtual size_t finalize() = 0;
+
+    /// After `finalize`: keeps the groups whose bit of `kept`, a mask as of `addBatch`, is set, as a `HAVING` does.
+    /// Returns the number of groups kept. The views `key` and `value` gave before are no longer valid.
+    virtual size_t keepGroups(const uint32_t * kept) = 0;
 
     virtual DeviceColumnView key(size_t index) const = 0;
     /// The result of aggregate `index`.

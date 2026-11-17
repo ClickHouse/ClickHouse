@@ -19,8 +19,8 @@ std::optional<GPUElementType> columnTypeOf(const IDataType & type);
 
 GPUElementType columnTypeOrThrow(const IDataType & type);
 
-/// What a column is sent to the device as: of `columnTypeOf`, and a `FixedString` key as an integer as wide, see
-/// `keyElementTypeOf`.
+/// What a column is sent to the device as: of `columnTypeOf`, a `FixedString` key as an integer as wide, see
+/// `keyElementTypeOf`, and a `Date`, a `Date32` or a `DateTime` as the integer it is stored as, see `filterElementTypeOf`.
 GPUElementType uploadTypeOrThrow(const IDataType & type);
 
 const DeviceFixedColumn & fixedOrThrow(const DeviceColumnView & view);

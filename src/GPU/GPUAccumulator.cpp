@@ -12,6 +12,7 @@
 #include <Common/ThreadGroupSwitcher.h>
 
 #include <algorithm>
+#include <span>
 
 namespace ProfileEvents
 {
@@ -362,42 +363,103 @@ DataTypes concatenated(const DataTypes & first, const DataTypes & second)
     return types;
 }
 
+DataTypes typesOf(const std::optional<CompiledGPUExpression> & expression)
+{
+    DataTypes types;
+    if (expression)
+    {
+        for (const auto & column : expression->columns)
+            types.push_back(column.type);
+    }
+    return types;
+}
+
+/// The bytes of a mask of a bit per row of `rows`, in 32-bit words.
+size_t maskBytes(size_t rows)
+{
+    return (rows + 31) / 32 * sizeof(uint32_t);
+}
+
+std::vector<GPUExpressionInput> inputsOf(const GPUExpression & expression, std::span<const DeviceColumnView> columns, size_t rows)
+{
+    if (columns.size() != expression.num_columns)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU predicate of {} columns over {}", expression.num_columns, columns.size());
+
+    std::vector<GPUExpressionInput> inputs;
+    inputs.reserve(columns.size());
+    for (const auto & column : columns)
+    {
+        const DeviceFixedColumn & fixed = fixedOrThrow(column);
+        if (fixed.rows != rows)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A column of a GPU predicate of {} rows among {}", fixed.rows, rows);
+        inputs.push_back({.data = fixed.data, .type = fixed.element_type});
+    }
+    return inputs;
+}
+
 }
 
 GroupByGPUAccumulator::GroupByGPUAccumulator(
     const DataTypes & key_types,
     const DataTypes & value_types,
     std::vector<GPUGroupByAggregate> aggregates_,
-    size_t batch_bytes)
+    size_t batch_bytes,
+    std::optional<CompiledGPUExpression> where_)
     : group_keys(groupByKeysOrThrow(key_types))
     , values(valueTypesOrThrow(value_types))
     , aggregates(aggregatesOrThrow(values.size(), std::move(aggregates_)))
-    , batch_rows(batchRowsFor(batch_bytes, concatenated(key_types, value_types)))
+    , batch_rows(batchRowsFor(batch_bytes, concatenated(concatenated(key_types, value_types), typesOf(where_))))
+    , where(std::move(where_))
     , group_stream(createStream())
     , group_by(createCudfGroupBy(group_keys, values, aggregates, cuda::stream_ref{group_stream.get()}))
+    , kept(cuda::stream_ref{group_stream.get()})
     , pipeline(
-          concatenated(key_types, value_types),
+          concatenated(concatenated(key_types, value_types), typesOf(where)),
           batch_rows,
           [this](const std::vector<DeviceColumnView> & columns)
           {
-              const std::vector<DeviceColumnView> keys(columns.begin(), columns.begin() + group_keys.size());
-              const std::vector<DeviceColumnView> batch_values(columns.begin() + group_keys.size(), columns.end());
-              group_by->addBatch(keys, batch_values);
+              const size_t num_keys = group_keys.size();
+              const size_t num_values = values.size();
+              const std::vector<DeviceColumnView> keys(columns.begin(), columns.begin() + num_keys);
+              const std::vector<DeviceColumnView> batch_values(columns.begin() + num_keys, columns.begin() + num_keys + num_values);
+              if (!where)
+              {
+                  group_by->addBatch(keys, batch_values);
+                  return;
+              }
+
+              const size_t rows = batch_values.front().rows();
+              const std::vector<GPUExpressionInput> inputs
+                  = inputsOf(where->expression, std::span(columns).subspan(num_keys + num_values), rows);
+              kept.clear();
+              char * const mask = kept.grow(maskBytes(rows));
+              evaluateGPUExpression(
+                  where->expression,
+                  {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())},
+                  rows,
+                  mask,
+                  cuda::stream_ref{group_stream.get()});
+              group_by->addBatch(keys, batch_values, reinterpret_cast<const uint32_t *>(mask));
           },
           cuda::stream_ref{group_stream.get()})
 {
+    if (where && where->expression.result != GPUExpressionResult::Bitmask)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A `WHERE` of a GPU aggregation that is not a predicate");
 }
 
-void GroupByGPUAccumulator::add(const Columns & key_columns, const Columns & value_columns)
+void GroupByGPUAccumulator::add(const Columns & key_columns, const Columns & value_columns, const Columns & where_columns)
 {
-    if (key_columns.size() != group_keys.size() || value_columns.size() != values.size())
+    const size_t num_where_columns = where ? where->columns.size() : 0;
+    if (key_columns.size() != group_keys.size() || value_columns.size() != values.size() || where_columns.size() != num_where_columns)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "A block of {} key and {} value columns for a GPU aggregation over {} and {}",
+            "A block of {} key, {} value and {} filter columns for a GPU aggregation over {}, {} and {}",
             key_columns.size(),
             value_columns.size(),
+            where_columns.size(),
             group_keys.size(),
-            values.size());
+            values.size(),
+            num_where_columns);
 
     const size_t num_rows = value_columns.front()->size();
     if (num_rows == 0)
@@ -408,6 +470,7 @@ void GroupByGPUAccumulator::add(const Columns & key_columns, const Columns & val
 
     Columns columns = key_columns;
     columns.insert(columns.end(), value_columns.begin(), value_columns.end());
+    columns.insert(columns.end(), where_columns.begin(), where_columns.end());
     pipeline.add(columns);
 
     if (pipeline.stagedRows() >= batch_rows || pipeline.stagedVariableBytes() >= GPUAccumulator::max_stage_bytes)
@@ -420,6 +483,43 @@ size_t GroupByGPUAccumulator::finalize()
 
     Stopwatch watch;
     num_groups = group_by->finalize();
+    ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
+    return *num_groups;
+}
+
+size_t GroupByGPUAccumulator::filterGroups(const CompiledGPUExpression & having, const std::vector<size_t> & columns)
+{
+    if (!num_groups)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The groups of a GPU aggregation were filtered before it was finalized");
+    if (having.expression.result != GPUExpressionResult::Bitmask)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A `HAVING` of a GPU aggregation that is not a predicate");
+    if (*num_groups == 0)
+        return 0;
+
+    Stopwatch watch;
+
+    std::vector<DeviceColumnView> group_columns;
+    group_columns.reserve(columns.size());
+    for (const size_t column : columns)
+    {
+        if (column < group_keys.size())
+            group_columns.push_back(group_by->key(column));
+        else if (column - group_keys.size() < aggregates.size())
+            group_columns.push_back(group_by->value(column - group_keys.size()));
+        else
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "A `HAVING` over column {} of {} keys and {} aggregates", column, group_keys.size(), aggregates.size());
+    }
+
+    const cuda::stream_ref stream{group_stream.get()};
+    const std::vector<GPUExpressionInput> inputs = inputsOf(having.expression, group_columns, *num_groups);
+    kept.clear();
+    char * const mask = kept.grow(maskBytes(*num_groups));
+    evaluateGPUExpression(having.expression, {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, *num_groups, mask, stream);
+    num_groups = group_by->keepGroups(reinterpret_cast<const uint32_t *>(mask));
+    /// The caller holds the kernel only for this call.
+    synchronizeStream(stream);
+
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
     return *num_groups;
 }

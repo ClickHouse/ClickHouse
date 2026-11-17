@@ -6,6 +6,7 @@
 #include <GPU/GPUDevice.h>
 #include <GPU/GPUTypeMapping.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -13,9 +14,12 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_global_register.h>
 
 #include <cuda_runtime_api.h>
 
@@ -23,6 +27,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <cstring>
 #include <limits>
 #include <map>
@@ -481,6 +486,223 @@ TEST_F(GPUAggregation, DestroyedWithoutFinalize)
     {
         accumulator.add({columnOf(slice(keys, begin, end))}, {columnOf(slice(values, begin, end))});
     });
+}
+
+namespace
+{
+
+const ActionsDAG::Node & addFunction(ActionsDAG & dag, const String & function, ActionsDAG::NodeRawConstPtrs children, const String & name)
+{
+    return dag.addFunction(FunctionFactory::instance().get(function, getContext().context), std::move(children), name);
+}
+
+const ActionsDAG::Node & addConstant(ActionsDAG & dag, const DataTypePtr & type, const Field & value, const String & name)
+{
+    auto column = type->createColumn();
+    column->insert(value);
+    return dag.addColumn(ColumnConst::create(std::move(column), 1), type, name);
+}
+
+CompiledGPUExpression compilePredicate(ActionsDAG & dag, const ActionsDAG::Node & predicate)
+{
+    dag.getOutputs() = {&predicate};
+    String refusal;
+    std::optional<CompiledGPUExpression> compiled = compileGPUFilter(dag, predicate.result_name, refusal);
+    if (!compiled)
+        throw std::runtime_error("The device refuses the predicate: " + refusal);
+    return std::move(*compiled);
+}
+
+/// `k < max_key AND v > min_value` over the columns `k`, a `UInt64`, and `v`, an `Int32`.
+CompiledGPUExpression keyAndValueBounds(UInt64 max_key, Int32 min_value)
+{
+    tryRegisterFunctions();
+    const DataTypePtr key_type = std::make_shared<DataTypeUInt64>();
+    const DataTypePtr value_type = std::make_shared<DataTypeInt32>();
+
+    ActionsDAG dag;
+    const auto & k = dag.addInput("k", key_type);
+    const auto & v = dag.addInput("v", value_type);
+    const auto & key_bound = addFunction(dag, "less", {&k, &addConstant(dag, key_type, max_key, "max_key")}, "key_bound");
+    const auto & value_bound = addFunction(dag, "greater", {&v, &addConstant(dag, value_type, min_value, "min_value")}, "value_bound");
+    return compilePredicate(dag, addFunction(dag, "and", {&key_bound, &value_bound}, "where"));
+}
+
+/// Groups `values` by `keys` by `sum` and `count`, with the `WHERE` of `keyAndValueBounds`, and checks every group.
+void checkGroupByWhere(const std::vector<UInt64> & keys, const std::vector<Int32> & values, UInt64 max_key, Int32 min_value, bool keyed = true)
+{
+    std::map<UInt64, std::pair<Int64, UInt64>> expected;
+    for (size_t i = 0; i < keys.size(); ++i)
+    {
+        if (keys[i] < max_key && values[i] > min_value)
+        {
+            auto & [sum, count] = expected[keyed ? keys[i] : 0];
+            sum += values[i];
+            ++count;
+        }
+    }
+
+    const DataTypePtr key_type = std::make_shared<DataTypeUInt64>();
+    const DataTypePtr value_type = std::make_shared<DataTypeInt32>();
+    CompiledGPUExpression where = keyAndValueBounds(max_key, min_value);
+    ASSERT_EQ(where.columns.size(), 2);
+
+    std::vector<GPUGroupByAggregate> aggregates = {
+        {.aggregation = GPUAggregationKind::Sum, .column = 0, .result_type = GPUElementType::Int64},
+        {.aggregation = GPUAggregationKind::Count, .column = GPUGroupByAggregate::no_column, .result_type = GPUElementType::UInt64},
+    };
+    const DataTypes key_types = keyed ? DataTypes{key_type} : DataTypes{};
+    GroupByGPUAccumulator accumulator(key_types, {value_type}, std::move(aggregates), small_batch_bytes, std::move(where));
+
+    inBlocks(keys.size(), 65'536, [&](size_t begin, size_t end)
+    {
+        const ColumnPtr k = columnOf(slice(keys, begin, end));
+        const ColumnPtr v = columnOf(slice(values, begin, end));
+        accumulator.add(keyed ? Columns{k} : Columns{}, {v}, {k, v});
+    });
+
+    const Groups groups = groupsOf(accumulator, key_types, {std::make_shared<DataTypeInt64>(), std::make_shared<DataTypeUInt64>()});
+    ASSERT_EQ(groups.rows, expected.size());
+
+    const auto & sums = assert_cast<const ColumnInt64 &>(*groups.aggregates[0]).getData();
+    const auto & counts = assert_cast<const ColumnUInt64 &>(*groups.aggregates[1]).getData();
+    for (size_t row = 0; row < groups.rows; ++row)
+    {
+        const UInt64 key = keyed ? assert_cast<const ColumnUInt64 &>(*groups.keys[0]).getData()[row] : 0;
+        const auto it = expected.find(key);
+        ASSERT_NE(it, expected.end()) << "an unexpected key " << key;
+        EXPECT_EQ(sums[row], it->second.first) << "key " << key;
+        EXPECT_EQ(counts[row], it->second.second) << "key " << key;
+        expected.erase(it);
+    }
+}
+
+void randomKeysAndValues(size_t rows, UInt64 num_keys, std::vector<UInt64> & keys, std::vector<Int32> & values, UInt64 seed)
+{
+    std::mt19937_64 random(seed);
+    keys.resize(rows);
+    values.resize(rows);
+    for (size_t i = 0; i < rows; ++i)
+    {
+        keys[i] = random() % num_keys;
+        values[i] = static_cast<Int32>(random() % 2'000'001) - 1'000'000;
+    }
+}
+
+}
+
+/// The `WHERE` leaves out few rows, which are grouped as nulls of the first key.
+TEST_F(GPUAggregation, GroupByWhereOfFewRows)
+{
+    std::vector<UInt64> keys;
+    std::vector<Int32> values;
+    randomKeysAndValues(1'000'000, 1000, keys, values, 11);
+    checkGroupByWhere(keys, values, 990, -950'000);
+}
+
+/// The `WHERE` leaves out most rows, which are compacted away before they are grouped.
+TEST_F(GPUAggregation, GroupByWhereOfManyRows)
+{
+    std::vector<UInt64> keys;
+    std::vector<Int32> values;
+    randomKeysAndValues(1'000'000, 1000, keys, values, 12);
+    checkGroupByWhere(keys, values, 500, 600'000);
+}
+
+/// Keys in runs with a `WHERE`: the batches reduced over their runs are compacted, as the runs are of keys without nulls.
+TEST_F(GPUAggregation, GroupByWhereOfSortedKeys)
+{
+    std::vector<UInt64> keys(1'000'000);
+    std::vector<Int32> values(keys.size());
+    std::mt19937_64 random(13);
+    for (size_t i = 0; i < keys.size(); ++i)
+    {
+        keys[i] = i / 41;
+        values[i] = static_cast<Int32>(random() % 2'000'001) - 1'000'000;
+    }
+    checkGroupByWhere(keys, values, 20'000, -900'000);
+}
+
+TEST_F(GPUAggregation, GroupByWhereOfNoRows)
+{
+    std::vector<UInt64> keys;
+    std::vector<Int32> values;
+    randomKeysAndValues(300'000, 100, keys, values, 14);
+    checkGroupByWhere(keys, values, 100, 2'000'000);
+}
+
+/// Without keys, the `WHERE` masks the key of every row that the device groups by.
+TEST_F(GPUAggregation, GroupByWhereWithoutKeys)
+{
+    std::vector<UInt64> keys;
+    std::vector<Int32> values;
+    randomKeysAndValues(700'000, 100, keys, values, 15);
+    checkGroupByWhere(keys, values, 60, 0, /*keyed=*/ false);
+    checkGroupByWhere(keys, values, 100, 2'000'000, /*keyed=*/ false);
+}
+
+/// `HAVING sum > threshold AND k < max_key`, over an aggregate and a key of the groups.
+TEST_F(GPUAggregation, GroupByHaving)
+{
+    tryRegisterFunctions();
+    std::vector<UInt64> keys;
+    std::vector<Int32> values;
+    randomKeysAndValues(1'000'000, 5000, keys, values, 16);
+
+    std::map<UInt64, Int64> sums;
+    for (size_t i = 0; i < keys.size(); ++i)
+        sums[keys[i]] += values[i];
+    const Int64 threshold = 0;
+    const UInt64 max_key = 2500;
+
+    const DataTypePtr key_type = std::make_shared<DataTypeUInt64>();
+    const DataTypePtr value_type = std::make_shared<DataTypeInt32>();
+    const DataTypePtr sum_type = std::make_shared<DataTypeInt64>();
+
+    ActionsDAG dag;
+    const auto & sum = dag.addInput("sum", sum_type);
+    const auto & k = dag.addInput("k", key_type);
+    const auto & large = addFunction(dag, "greater", {&sum, &addConstant(dag, sum_type, threshold, "threshold")}, "large");
+    const auto & small_key = addFunction(dag, "less", {&k, &addConstant(dag, key_type, max_key, "max_key")}, "small_key");
+    const CompiledGPUExpression having = compilePredicate(dag, addFunction(dag, "and", {&large, &small_key}, "having"));
+
+    std::vector<size_t> having_columns;
+    for (const auto & column : having.columns)
+        having_columns.push_back(column.name == "k" ? 0 : 1);
+
+    GroupByGPUAccumulator accumulator(
+        {key_type}, {value_type}, {{.aggregation = GPUAggregationKind::Sum, .column = 0, .result_type = GPUElementType::Int64}}, small_batch_bytes);
+    inBlocks(keys.size(), 65'536, [&](size_t begin, size_t end)
+    {
+        accumulator.add({columnOf(slice(keys, begin, end))}, {columnOf(slice(values, begin, end))});
+    });
+
+    ASSERT_EQ(accumulator.finalize(), sums.size());
+    const size_t kept = accumulator.filterGroups(having, having_columns);
+
+    std::map<UInt64, Int64> expected;
+    for (const auto & [key, value] : sums)
+    {
+        if (value > threshold && key < max_key)
+            expected.emplace(key, value);
+    }
+    ASSERT_EQ(kept, expected.size());
+
+    MutableColumns key_columns;
+    key_columns.push_back(key_type->createColumn());
+    MutableColumns aggregate_columns;
+    aggregate_columns.push_back(sum_type->createColumn());
+    accumulator.copyGroupsTo(key_columns, aggregate_columns);
+
+    const auto & got_keys = assert_cast<const ColumnUInt64 &>(*key_columns[0]).getData();
+    const auto & got_sums = assert_cast<const ColumnInt64 &>(*aggregate_columns[0]).getData();
+    ASSERT_EQ(got_keys.size(), expected.size());
+    for (size_t row = 0; row < got_keys.size(); ++row)
+    {
+        const auto it = expected.find(got_keys[row]);
+        ASSERT_NE(it, expected.end()) << "an unexpected key " << got_keys[row];
+        EXPECT_EQ(got_sums[row], it->second) << "key " << got_keys[row];
+    }
 }
 
 #endif
