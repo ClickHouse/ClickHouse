@@ -25,40 +25,23 @@ extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_COLUMN;
 }
 
-namespace
-{
-
-bool isStringOrFixedStringOrNativeNumber(const IDataType & arg)
-{
-    return isStringOrFixedString(arg) || isNativeNumber(arg);
-}
-
-}
-
 class FunctionConv final : public IFunction
 {
 public:
     static constexpr auto name = "conv";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConv>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 3; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"number", &isStringOrFixedStringOrNativeNumber, nullptr, "String, FixedString or Number"},
-            {"from_base", &isNativeInteger, nullptr, "Integer"},
-            {"to_base", &isNativeInteger, nullptr, "Integer"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-        return std::make_shared<DataTypeString>();
+        return "(String | FixedString | NativeNumber, NativeInteger, NativeInteger) -> String";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr number_column = arguments[0].column;
         if (!isString(arguments[0].type))

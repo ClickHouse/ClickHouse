@@ -1,5 +1,4 @@
 {
-  "icon": "/images/icons/icon-clickpipes.svg",
   "item": "ClickPipes",
   "pages": [
     "fr/integrations/clickpipes/home",
@@ -189,7 +188,8 @@
           "icon": "/images/logo-bigquery.svg",
           "pages": [
             "fr/integrations/clickpipes/bigquery/overview",
-            "fr/integrations/clickpipes/bigquery/get-started"
+            "fr/integrations/clickpipes/bigquery/get-started",
+            "fr/integrations/clickpipes/bigquery/faq"
           ]
         }
       ]

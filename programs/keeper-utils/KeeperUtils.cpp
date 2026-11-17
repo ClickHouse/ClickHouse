@@ -31,6 +31,8 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
 
+#include <SnapshotAnalyzer.h>
+
 using namespace Coordination;
 using namespace DB;
 
@@ -39,7 +41,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_SNAPSHOT;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
@@ -54,183 +55,6 @@ namespace CoordinationSetting
 
 namespace
 {
-
-void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool with_node_stats, size_t subtrees_limit)
-{
-    try
-    {
-        auto keeper_context = std::make_shared<KeeperContext>(true, std::make_shared<CoordinationSettings>());
-        std::vector<std::string> snapshot_paths;
-        bool specific_snapshot_defined = false;
-        if (snapshot_path.ends_with(".bin") || snapshot_path.ends_with(".bin.zstd"))
-        {
-            specific_snapshot_defined = true;
-            snapshot_paths.push_back(snapshot_path);
-            std::filesystem::path normalized_path = std::filesystem::weakly_canonical(snapshot_path).parent_path();
-            auto disk = std::make_shared<DiskLocal>("SnapshotDisk", normalized_path.string());
-            keeper_context->setSnapshotDisk(disk);
-        }
-        else
-        {
-            auto disk = std::make_shared<DiskLocal>("SnapshotDisk", snapshot_path);
-            keeper_context->setSnapshotDisk(disk);
-
-            // Get list of all files in the snapshot directory
-            std::vector<std::string> snapshot_files;
-            disk->listFiles(snapshot_path, snapshot_files);
-
-            // Filter for snapshot files (snapshot_*.bin or snapshot_*.bin.zstd);
-            for (const auto & file : snapshot_files)
-            {
-                if (file.starts_with("snapshot_") && (file.ends_with(".bin") || file.ends_with(".bin.zstd")))
-                    snapshot_paths.push_back(file);
-            }
-
-            if (snapshot_paths.empty())
-                throw DB::Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "No snapshot files found in {}", snapshot_path);
-
-            // Sort snapshots by their index (newest first)
-            std::sort(snapshot_paths.begin(), snapshot_paths.end(), std::greater<>());
-
-            std::cout << "Found " << snapshot_paths.size() << " snapshots in " << snapshot_path << ":\n\n";
-        }
-
-
-        for (const auto & snapshot_file : snapshot_paths)
-        {
-            try
-            {
-                std::string full_path = specific_snapshot_defined ? snapshot_path : (std::filesystem::path(snapshot_path) / snapshot_file).generic_string();
-                std::cout << "=== Snapshot: " << snapshot_file << " ===\n";
-
-                // Create a snapshot manager for each snapshot
-                auto snapshot_manager = KeeperSnapshotManager(
-                    std::numeric_limits<size_t>::max(), // snapshots_to_keep
-                    keeper_context,
-                    true // compress_snapshots_zstd
-                );
-
-                // Deserialize the exact named file, not by parsed index: with retained
-                // same-index duplicates, an index lookup could read a different sibling.
-                SnapshotFileInfo selected_snapshot{std::filesystem::path(full_path).filename().string(), keeper_context->getSnapshotDisk()};
-                auto buffer = snapshot_manager.deserializeSnapshotBufferFromDisk(selected_snapshot);
-
-                if (full_storage)
-                {
-                    auto storage = KeeperStorage::create(
-                        /* tick_time_ms */ 500, /* superdigest */ "", keeper_context, /* initialize_system_nodes */ false);
-                    auto result = snapshot_manager.deserializeSnapshotFromBuffer(buffer, *storage);
-                    const auto & snapshot_meta = result.snapshot_meta;
-
-                    std::cout << fmt::format(
-                        "  Last committed log index: {}\n"
-                        "  Last committed log term: {}\n"
-                        "  Number of nodes: {}\n"
-                        "  Digest: {}\n",
-                        snapshot_meta->get_last_log_idx(),
-                        snapshot_meta->get_last_log_term(),
-                        storage->getStorageStats().nodes_count,
-                        storage->getNodesDigest(/*committed=*/true, /*lock_transaction_mutex=*/false).value)
-                        << std::endl;
-                }
-                else
-                {
-                    /// We don't need the full storage, so read only the node paths directly via the reader.
-                    auto reader = snapshot_manager.makeSnapshotReader(buffer);
-                    reader->readMetadata();
-                    reader->readACLMapAndNodeCount();
-
-                    std::vector<std::string> paths;
-                    paths.reserve(reader->node_count);
-
-                    auto streams = reader->createStreams(1);
-                    auto & stream = *streams[0];
-                    std::string path_buf;
-                    std::string data_buf;
-                    KeeperNodeStats stats;
-                    size_t path_size = 0;
-                    while (stream.readNodePathSize(path_size))
-                    {
-                        path_buf.resize(path_size);
-                        size_t data_size = 0;
-                        stream.readNodePathAndDataSize(path_buf.data(), path_size, data_size);
-                        /// Read (and discard) the node's data and stats to advance to the next node.
-                        data_buf.resize(data_size);
-                        stream.readNodeDataAndStats(path_buf, data_buf.data(), data_size, stats);
-                        paths.push_back(path_buf);
-                    }
-                    reader->finishStreams(std::move(streams));
-
-                    const auto & snapshot_meta = reader->snapshot_meta;
-
-                    std::cout << fmt::format(
-                        "  Last committed log index: {}\n"
-                        "  Last committed log term: {}\n"
-                        "  Number of paths: {}\n",
-                        snapshot_meta->get_last_log_idx(),
-                        snapshot_meta->get_last_log_term(),
-                        paths.size())
-                        << std::endl;
-
-                    if (with_node_stats)
-                    {
-                        std::cout << "Finding biggest subtrees... " << std::endl;
-                        std::unordered_map<std::string_view, size_t> subtree_sizes;
-                        for (const auto & path : paths)
-                        {
-                            if (path == "/")
-                                continue;
-
-                            std::string_view current_path = path;
-                            while (true)
-                            {
-                                auto parent = parentNodePath(current_path);
-                                if (parent == "/") // We are at the root
-                                    break;
-
-                                subtree_sizes[parent]++;
-                                current_path = parent;
-                            }
-                        }
-
-                        using NodeCount = std::pair<size_t, std::string_view>;
-                        auto cmp = [](const NodeCount & a, const NodeCount & b) { return a.first > b.first; };
-                        std::priority_queue<NodeCount, std::vector<NodeCount>, decltype(cmp)> pq(cmp);
-
-                        for (const auto & [node_path, count] : subtree_sizes)
-                        {
-                            pq.emplace(count, node_path);
-                            if (pq.size() > subtrees_limit)
-                                pq.pop();
-                        }
-
-                        std::vector<NodeCount> top_nodes;
-                        while (!pq.empty())
-                        {
-                            top_nodes.push_back(pq.top());
-                            pq.pop();
-                        }
-                        std::reverse(top_nodes.begin(), top_nodes.end());
-
-                        std::cout << fmt::format("  Top {} biggest subtrees:\n", subtrees_limit);
-                        for (const auto & node : top_nodes)
-                        {
-                            std::cout << fmt::format("    {}: {} descendants\n", node.second, node.first);
-                        }
-                    }
-                }
-            }
-            catch (const DB::Exception & e)
-            {
-                std::cerr << "  Error analyzing snapshot " << snapshot_file << ": " << e.message() << "\n\n";
-            }
-        }
-    }
-    catch (const DB::Exception & e)
-    {
-        throw DB::Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Failed to analyze snapshots in {}: {}", snapshot_path, e.message());
-    }
-}
 
 void analyzeChangelogs(const std::string & log_path, const std::string & specific_changelog = "")
 {
@@ -704,15 +528,19 @@ int dumpStateMachine(
                 if (debug_mode)
                 {
                     LOG_INFO(logger, "Current digest of state machine: {}", state_machine->getNodesDigest().value);
-                    auto req = state_machine->parseRequest(entry.get_buf(), true);
-                    LOG_INFO(
-                        logger,
-                        "Applying log entry {}: term={}, zxid={}, session_id={}\nrequest:\n{}",
-                        i,
-                        entry.get_term(),
-                        req->zxid,
-                        req->session_id,
-                        req->request->toString());
+                    auto batch = state_machine->parseRequestBatch(entry.get_buf(), true);
+                    for (size_t request_idx = 0; request_idx < batch->requests.size(); ++request_idx)
+                    {
+                        const auto & req = batch->requests[request_idx];
+                        LOG_INFO(
+                            logger,
+                            "Applying log entry {}: term={}, zxid={}, session_id={}\nrequest:\n{}",
+                            i,
+                            entry.get_term(),
+                            batch->getZxid(request_idx),
+                            req.session_id,
+                            req.request->toString());
+                    }
                 }
                 state_machine->pre_commit(i, entry.get_buf());
                 state_machine->commit(i, entry.get_buf());
@@ -861,71 +689,82 @@ int deserializeChangelog(
                         continue;
                     }
 
-                    auto req = state_machine->parseRequest(entry->get_buf(), true);
-                    auto digest = req->digest.value_or(KeeperDigest{KeeperDigestVersion::NO_DIGEST, 0});
+                    auto batch = state_machine->parseRequestBatch(entry->get_buf(), true);
+                    /// The digest is per batch (of the state after the whole batch); show it on every row of the batch.
+                    const auto & digest = batch->digest;
 
-                    const auto add_request_general_info = [&]()
+                    for (size_t batch_request_idx = 0; batch_request_idx < batch->requests.size(); ++batch_request_idx)
                     {
-                        res_columns[col_idx++]->insert(req->session_id);
-                        res_columns[col_idx++]->insert(req->zxid);
-                        res_columns[col_idx++]->insert(static_cast<Decimal64>(req->time));
-                        res_columns[col_idx++]->insert(digest.value);
-                        res_columns[col_idx++]->insert(digest.version);
-                    };
+                        const auto & req = batch->requests[batch_request_idx];
 
-                    add_request_general_info();
-
-                    const auto xid = req->request->xid;
-                    const auto add_request_info = [&](const ZooKeeperRequestPtr & request, size_t request_idx)
-                    {
-                        res_columns[col_idx++]->insert(request->getOpNum());
-                        res_columns[col_idx++]->insert(xid);
-                        res_columns[col_idx++]->insert(request_idx);
-                        res_columns[col_idx++]->insert(request->getPath());
-                        res_columns[col_idx++]->insert(request->has_watch);
-
-                        /// add version
-                        if (const auto * remove_request = dynamic_cast<ZooKeeperRemoveRequest *>(request.get()))
-                            res_columns[col_idx++]->insert(remove_request->version);
-                        else if (const auto * set_request = dynamic_cast<ZooKeeperSetRequest *>(request.get()))
-                            res_columns[col_idx++]->insert(set_request->version);
-                        else if (const auto * check_request = dynamic_cast<ZooKeeperCheckRequest *>(request.get()))
-                            res_columns[col_idx++]->insert(check_request->version);
-                        else
-                            res_columns[col_idx++]->insert(0);
-
-                        /// add create info
-                        if (const auto * create_request = dynamic_cast<ZooKeeperCreateRequest *>(request.get()))
+                        const auto add_request_general_info = [&]()
                         {
-                            res_columns[col_idx++]->insert(create_request->is_ephemeral);
-                            res_columns[col_idx++]->insert(create_request->is_sequential);
-                        }
-                        else
-                        {
-                            res_columns[col_idx++]->insert(0);
-                            res_columns[col_idx++]->insert(0);
-                        }
+                            res_columns[col_idx++]->insert(req.session_id);
+                            res_columns[col_idx++]->insert(batch->getZxid(batch_request_idx));
+                            res_columns[col_idx++]->insert(static_cast<Decimal64>(req.time));
+                            res_columns[col_idx++]->insert(digest.value);
+                            res_columns[col_idx++]->insert(digest.version);
+                        };
 
-                        /// add data
-                        if (const auto * create_request = dynamic_cast<ZooKeeperCreateRequest *>(request.get()))
-                            res_columns[col_idx++]->insert(create_request->data);
-                        else if (const auto * set_request = dynamic_cast<ZooKeeperSetRequest *>(request.get()))
-                            res_columns[col_idx++]->insert(set_request->data);
-                        else
-                            res_columns[col_idx++]->insert("");
-                    };
-
-                    add_request_info(req->request, 0);
-
-                    if (const auto * multi_request = dynamic_cast<ZooKeeperMultiRequest *>(req->request.get()))
-                    {
-                        for (size_t sub_request_idx = 0; sub_request_idx < multi_request->requests.size(); ++sub_request_idx)
+                        if (batch_request_idx != 0)
                         {
                             col_idx = 0;
                             add_log_entry_info();
-                            add_request_general_info();
-                            add_request_info(multi_request->requests[sub_request_idx], sub_request_idx + 1);
                         }
+                        add_request_general_info();
+
+                        const auto xid = req.request->xid;
+                        const auto add_request_info = [&](const ZooKeeperRequestPtr & request, size_t request_idx)
+                        {
+                            res_columns[col_idx++]->insert(request->getOpNum());
+                            res_columns[col_idx++]->insert(xid);
+                            res_columns[col_idx++]->insert(request_idx);
+                            res_columns[col_idx++]->insert(request->getPath());
+                            res_columns[col_idx++]->insert(request->has_watch);
+
+                            /// add version
+                            if (const auto * remove_request = dynamic_cast<ZooKeeperRemoveRequest *>(request.get()))
+                                res_columns[col_idx++]->insert(remove_request->version);
+                            else if (const auto * set_request = dynamic_cast<ZooKeeperSetRequest *>(request.get()))
+                                res_columns[col_idx++]->insert(set_request->version);
+                            else if (const auto * check_request = dynamic_cast<ZooKeeperCheckRequest *>(request.get()))
+                                res_columns[col_idx++]->insert(check_request->version);
+                            else
+                                res_columns[col_idx++]->insert(0);
+
+                            /// add create info
+                            if (const auto * create_request = dynamic_cast<ZooKeeperCreateRequest *>(request.get()))
+                            {
+                                res_columns[col_idx++]->insert(create_request->is_ephemeral);
+                                res_columns[col_idx++]->insert(create_request->is_sequential);
+                            }
+                            else
+                            {
+                                res_columns[col_idx++]->insert(0);
+                                res_columns[col_idx++]->insert(0);
+                            }
+
+                            /// add data
+                            if (const auto * create_request = dynamic_cast<ZooKeeperCreateRequest *>(request.get()))
+                                res_columns[col_idx++]->insert(create_request->data);
+                            else if (const auto * set_request = dynamic_cast<ZooKeeperSetRequest *>(request.get()))
+                                res_columns[col_idx++]->insert(set_request->data);
+                            else
+                                res_columns[col_idx++]->insert("");
+                        };
+
+                        add_request_info(req.request, 0);
+
+                        if (const auto * multi_request = dynamic_cast<ZooKeeperMultiRequest *>(req.request.get()))
+                        {
+                            for (size_t sub_request_idx = 0; sub_request_idx < multi_request->requests.size(); ++sub_request_idx)
+                            {
+                                col_idx = 0;
+                                add_log_entry_info();
+                                add_request_general_info();
+                                add_request_info(multi_request->requests[sub_request_idx], sub_request_idx + 1);
+                            }
+                    }
                     }
                 }
             }
@@ -954,14 +793,22 @@ int deserializeChangelog(
                 {
                     if (auto buffer = entry->get_buf_ptr(); buffer)
                     {
-                        auto request = state_machine->parseRequest(*buffer, true);
-                        std::cout << "Session ID: " << request->session_id << "\n"
-                                  << "ZXID: " << request->zxid << "\n"
-                                  << "Request timestamp: " << request->time << "\n";
-                        if (request->digest)
-                            std::cout << fmt::format("Digest: {} ({})\n", request->digest->value, request->digest->version);
-                        std::cout << "Uses XID64: " << request->use_xid_64 << "\n"
-                                  << "Request: " << request->request->toString() << "\n";
+                        auto batch = state_machine->parseRequestBatch(*buffer, true);
+                        if (batch->digest.version != KeeperDigestVersion::NO_DIGEST)
+                            std::cout << fmt::format("Digest: {} ({})\n", batch->digest.value, batch->digest.version);
+                        if (batch->dispatcher_server_id != -1)
+                            std::cout << "Dispatcher server ID: " << batch->dispatcher_server_id << "\n";
+                        if (batch->committed_log_idx != 0)
+                            std::cout << "Committed log index: " << batch->committed_log_idx << "\n";
+                        for (size_t request_idx = 0; request_idx < batch->requests.size(); ++request_idx)
+                        {
+                            const auto & request = batch->requests[request_idx];
+                            std::cout << "Session ID: " << request.session_id << "\n"
+                                      << "ZXID: " << batch->getZxid(request_idx) << "\n"
+                                      << "Request timestamp: " << request.time << "\n"
+                                      << "Uses XID64: " << request.use_xid_64 << "\n"
+                                      << "Request: " << request.request->toString() << "\n";
+                        }
                     }
                 }
                 catch (const std::exception & e)
@@ -1117,9 +964,10 @@ int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
             analyzer_options.add_options()
                 ("help,h", "Show help message")
                 ("snapshot-path", po::value<std::string>()->required(), "Path to snapshots directory")
-                ("full-storage", po::bool_switch()->default_value(false), "Load full storage from snapshot")
                 ("with-node-stats", po::bool_switch()->default_value(false), "Calculate and show subtree statistics")
-                ("subtrees-limit", po::value<std::size_t>()->default_value(10), "Show top N subtrees")
+                ("subtrees-limit", po::value<std::size_t>()->default_value(10), "Show top N biggest subtrees, requires --with-node-stats")
+                ("sample-size", po::value<std::size_t>()->default_value(20), "Show N randomly chosen nodes")
+                ("top-children", po::value<std::size_t>()->default_value(5), "Show top N nodes by children count")
             ;
 
             try
@@ -1139,7 +987,6 @@ int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
                               << analyzer_options << "\n"
                               << "Example:\n"
                               << "  clickhouse-keeper-utils snapshot-analyzer --snapshot-path /path/to/snapshots\n"
-                              << "  clickhouse-keeper-utils snapshot-analyzer --snapshot-path /path/to/snapshots --full-storage\n"
                               << "  clickhouse-keeper-utils snapshot-analyzer --snapshot-path /path/to/snapshots --with-node-stats\n";
                     return 0;
                 }
@@ -1151,9 +998,10 @@ int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
 
                 analyzeSnapshot(
                     analyzer_vm["snapshot-path"].as<std::string>(),
-                    analyzer_vm["full-storage"].as<bool>(),
                     analyzer_vm["with-node-stats"].as<bool>(),
-                    analyzer_vm["subtrees-limit"].as<size_t>());
+                    analyzer_vm["subtrees-limit"].as<size_t>(),
+                    analyzer_vm["sample-size"].as<size_t>(),
+                    analyzer_vm["top-children"].as<size_t>());
                 return 0;
             }
             catch (const std::exception & e)

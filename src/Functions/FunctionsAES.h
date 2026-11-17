@@ -17,6 +17,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 
 #include <fmt/format.h>
 
@@ -73,7 +74,7 @@ inline UInt8 constantTimeEQ(UInt8 a, UInt8 b)
 /// cipher setup and key schedule expansion that dominate the per-row cost in OpenSSL 3.x.
 struct CachedKeyState
 {
-    bool matches(std::string_view key_value) const
+    [[nodiscard]] bool matches(std::string_view key_value) const
     {
         return initialized && key_value.size() == key_size
             && memcmp(key_value.data(), key.data(), key_size) == 0;
@@ -91,7 +92,7 @@ struct CachedKeyState
     /// that, a key change only needs the new key (with a null cipher), which replaces
     /// the key schedule but keeps the provider context and its parameters; re-passing
     /// the cipher would repeat the full context setup.
-    bool hasContext() const { return initialized; }
+    [[nodiscard]] bool hasContext() const { return initialized; }
 
     void reset() { initialized = false; }
 
@@ -158,7 +159,7 @@ enum class CipherMode : uint8_t
 template <CipherMode mode>
 struct KeyHolder
 {
-    std::string_view setKey(size_t cipher_key_size, std::string_view key) const
+    [[nodiscard]] std::string_view setKey(size_t cipher_key_size, std::string_view key) const
     {
         if (key.size() != cipher_key_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key size: {} expected {}", key.size(), cipher_key_size);
@@ -178,7 +179,7 @@ struct KeyHolder<CipherMode::MySQLCompatibility>
         // MySQL does something fancy with the keys that are too long,
         // ruining compatibility with OpenSSL and not improving security.
         // But we have to do the same to be compatitable with MySQL.
-        // see https://github.com/mysql/mysql-server/blob/8.0/router/src/harness/src/my_aes_openssl.cc#L71
+        // see https://github.com/mysql/mysql-server/blob/mysql-8.0.20/router/src/harness/src/my_aes_openssl.cc#L71
         // (my_aes_create_key function)
         return foldEncryptionKeyInMySQLCompatitableMode(cipher_key_size, key, folded_key);
     }
@@ -244,46 +245,29 @@ public:
 private:
     using CipherMode = OpenSSLDetails::CipherMode;
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        auto optional_args = FunctionArgumentDescriptors
-            {
-            {"IV", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Initialization vector binary string"},
-        };
-
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
-        {
-            optional_args.emplace_back(FunctionArgumentDescriptor{
-                "AAD", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Additional authenticated data binary string for GCM mode"
-            });
-        }
-
-        validateFunctionArguments(*this, arguments,
-            FunctionArgumentDescriptors
-            {
-                {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "encryption mode string"},
-                {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "plaintext"},
-                {"key", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "encryption key binary string"},
-            },
-            optional_args
-        );
-
-        return std::make_shared<DataTypeString>();
+            return "(const mode StringOrFixedString, input StringOrFixedString, key StringOrFixedString,"
+                   " [IV StringOrFixedString], [AAD StringOrFixedString]) -> String";
+        else
+            return "(const mode StringOrFixedString, input StringOrFixedString, key StringOrFixedString,"
+                   " [IV StringOrFixedString]) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         using namespace OpenSSLDetails;
 
@@ -667,16 +651,29 @@ private:
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                 {
                     // 1.a.1: Init CTX with custom IV length and optionally with AAD
-                    if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
+                    if (!ctx_key_state.hasContext() && EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
                         onError("EVP_EncryptInit_ex");
 
                     if (EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_SET_IVLEN, safe_cast<int>(iv_value.size()), nullptr) != 1)
                         onError("EVP_CIPHER_CTX_ctrl");
 
-                    if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr,
-                            reinterpret_cast<const unsigned char*>(key_value.data()),
-                            reinterpret_cast<const unsigned char*>(iv_value.data())) != 1)
-                        onError("EVP_EncryptInit_ex");
+                    if (ctx_key_state.matches(key_value))
+                    {
+                        /// The context already holds the expanded key schedule for this
+                        /// key: reset only the IV, skipping the cipher setup and key
+                        /// schedule expansion that dominate the per-row cost in OpenSSL 3.x.
+                        if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr, nullptr,
+                                reinterpret_cast<const unsigned char*>(iv_value.data())) != 1)
+                            onError("EVP_EncryptInit_ex");
+                    }
+                    else
+                    {
+                        if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr,
+                                reinterpret_cast<const unsigned char*>(key_value.data()),
+                                reinterpret_cast<const unsigned char*>(iv_value.data())) != 1)
+                            onError("EVP_EncryptInit_ex");
+                        ctx_key_state.remember(key_value);
+                    }
 
                     // 1.a.2 Set AAD
                     if (aad_column)
@@ -770,47 +767,30 @@ public:
 private:
     using CipherMode = OpenSSLDetails::CipherMode;
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        auto optional_args = FunctionArgumentDescriptors{
-            {"IV", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Initialization vector binary string"},
-        };
-
+        const String ret = use_null_when_decrypt_fail ? "Nullable(String)" : "String";
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
-        {
-            optional_args.emplace_back(FunctionArgumentDescriptor{
-                "AAD", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Additional authenticated data binary string for GCM mode"
-            });
-        }
-
-        validateFunctionArguments(*this, arguments,
-            FunctionArgumentDescriptors{
-                {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "decryption mode string"},
-                {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "ciphertext"},
-                {"key", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "decryption key binary string"},
-            },
-            optional_args
-        );
-
-        if constexpr (use_null_when_decrypt_fail)
-            return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
-
-        return std::make_shared<DataTypeString>();
+            return "(const mode StringOrFixedString, input StringOrFixedString, key StringOrFixedString,"
+                   " [IV StringOrFixedString], [AAD StringOrFixedString]) -> " + ret;
+        else
+            return "(const mode StringOrFixedString, input StringOrFixedString, key StringOrFixedString,"
+                   " [IV StringOrFixedString]) -> " + ret;
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         using namespace OpenSSLDetails;
 
@@ -1115,7 +1095,7 @@ private:
         auto * decrypted = decrypted_result_column_data.data();
 
         KeyHolder<mode> key_holder{};
-        [[maybe_unused]] CachedKeyState ctx_key_state;
+        CachedKeyState ctx_key_state;
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
@@ -1168,7 +1148,7 @@ private:
                 // 1: Init CTX
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                 {
-                    if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
+                    if (!ctx_key_state.hasContext() && EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
                         onError("EVP_DecryptInit_ex");
 
                     // 1.a.1 : Set custom IV length
@@ -1176,10 +1156,23 @@ private:
                         onError("EVP_CIPHER_CTX_ctrl");
 
                     // 1.a.1 : Init CTX with key and IV
-                    if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr,
-                            reinterpret_cast<const unsigned char*>(key_value.data()),
-                            reinterpret_cast<const unsigned char*>(iv_value.data())) != 1)
-                        onError("EVP_DecryptInit_ex");
+                    if (ctx_key_state.matches(key_value))
+                    {
+                        /// The context already holds the expanded key schedule for this
+                        /// key: reset only the IV, skipping the cipher setup and key
+                        /// schedule expansion that dominate the per-row cost in OpenSSL 3.x.
+                        if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr, nullptr,
+                                reinterpret_cast<const unsigned char*>(iv_value.data())) != 1)
+                            onError("EVP_DecryptInit_ex");
+                    }
+                    else
+                    {
+                        if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr,
+                                reinterpret_cast<const unsigned char*>(key_value.data()),
+                                reinterpret_cast<const unsigned char*>(iv_value.data())) != 1)
+                            onError("EVP_DecryptInit_ex");
+                        ctx_key_state.remember(key_value);
+                    }
 
                     // 1.a.2: Set AAD if present
                     if (aad_column)
@@ -1286,6 +1279,23 @@ private:
             return decrypted_result_column;
     }
 };
+
+/// The `SecretArgumentsSpec` of `encrypt`, `decrypt`, `aes_encrypt_mysql`, `aes_decrypt_mysql` and `tryDecrypt`.
+/// Their arguments are expressions, where `=` is a comparison rather than a named argument.
+inline SecretArgumentsSpec encryptionFunctionSecretArguments()
+{
+    /// encrypt('mode', 'plaintext', 'key' [, iv, aad])
+    return {.custom = [](FunctionSecretArgumentsFinder & finder)
+    {
+        if (finder.function->arguments->size() == 0)
+            return;
+
+        /// We replace all arguments after 'mode' with '[HIDDEN]':
+        /// encrypt('mode', 'plaintext', 'key' [, iv, aad]) -> encrypt('mode', '[HIDDEN]')
+        finder.result.start = 1;
+        finder.result.count = finder.function->arguments->size() - 1;
+    }};
+}
 
 }
 

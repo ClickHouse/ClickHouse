@@ -1,0 +1,103 @@
+===== PUT table upload =====
+-- CSV format from the path
+-- JSONEachRow format from the path
+-- dotted table name with a separate format suffix
+dotted-table-upload: OK
+-- inserted rows
+1	one
+2	two
+3	three
+-- input_format overrides the path format
+-- format overrides the path format
+-- database-prefixed upload works with table-as-file disabled
+-- path filters are rejected for uploads
+HTTP PUT table uploads do not support filters in the URL path
+-- filtered row was not inserted
+0
+-- unqualified upload still requires table-as-file
+HTTP PUT table uploads require a table path with a known format
+-- unqualified upload works with table-as-file enabled
+-- database-prefixed upload requires the database-path setting
+HTTP PUT table uploads require a table path with a known format
+-- inserted rows after setting matrix
+1	one
+2	two
+3	three
+4	four
+5	five
+9	nine
+10	ten
+-- gzip compression suffix decompresses the request body
+-- matching Content-Encoding and path compression are accepted
+-- compression aliases are accepted
+-- conflicting Content-Encoding is rejected
+Conflicting compression: 'gz' in URL path vs 'deflate' in `Content-Encoding`
+-- chunked PUT upload
+-- Expect: 100-continue PUT upload
+-- deferred Expect: 100-continue PUT upload
+-- inserted rows after compressed and framed uploads
+1	one
+2	two
+3	three
+4	four
+5	five
+6	six
+7	seven
+8	eight
+9	nine
+10	ten
+12	expect
+13	chunked
+16	deferred-expect
+-- native-compressed PUT respects disabled checksum verification
+-- percent-encoded format suffixes are recognized
+-- malformed percent encoding in an intermediate path component returns 400
+malformed-path-status: 400
+-- a compressed body that decodes to empty is rejected
+HTTP PUT table uploads require a non-empty request body
+-- mixed-case multipart PUT is not claimed
+HTTP 501
+-- a PUT whose Content-Type only starts with multipart/form-data is not claimed
+HTTP 501
+-- a PUT path without a format suffix is not claimed
+HTTP 501
+-- a missing table is rejected
+UNKNOWN_TABLE
+-- an unknown path format is rejected
+HTTP PUT table uploads require a known format
+-- compression without a format is rejected
+Compression extension 'gz' specified without a format
+-- an empty body is rejected
+HTTP PUT table uploads require a non-empty request body
+-- an unframed PUT upload is rejected with 411
+unframed-status: 411
+-- PUT with an explicit INSERT query is rejected
+HTTP PUT table uploads do not support the 'query' parameter
+HTTP 400
+-- PUT with an explicit SELECT query is rejected
+HTTP PUT table uploads do not support the 'query' parameter
+HTTP 400
+-- PUT with an empty query parameter is rejected
+HTTP PUT table uploads do not support the 'query' parameter
+HTTP 400
+-- query-bearing PUT inserted no rows
+0
+-- an explicit readonly setting remains enforced
+Cannot execute query in readonly mode
+-- PUT still requires the INSERT privilege
+Not enough privileges
+-- PUT to a missing table without the INSERT privilege fails exactly like a plain INSERT
+same error: Code: 60
+-- failed requests drain bodies and keep connections reusable
+first-status: 400
+first-connection-close: False
+second-status: 200
+parser-first-status: 400
+parser-first-connection-close: False
+parser-second-status: 200
+compressed-parser-first-status: 400
+compressed-parser-first-connection-close: False
+compressed-parser-second-status: 200
+get-error-reuse: OK
+post-error-reuse: OK
+chunked-empty-status: 400

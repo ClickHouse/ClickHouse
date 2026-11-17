@@ -1,0 +1,291 @@
+---
+slug: /cloud/managed-postgres/guides/dotnet
+sidebarTitle: '.NET (EF Core)'
+title: 'Utiliser .NET et Entity Framework Core avec ClickHouse Managed Postgres'
+description: 'Connectez une API minimale ASP.NET Core à ClickHouse Managed Postgres avec Entity Framework Core et Npgsql, exécutez des migrations EF Core et lancez des requêtes via une connexion TLS vérifiée'
+keywords: ['managed postgres', '.net', 'dotnet', 'c#', 'asp.net core', 'entity framework core', 'ef core', 'npgsql', 'migrations', 'pgbouncer', 'tls']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-dotnet-beta" />
+
+[Entity Framework Core](https://learn.microsoft.com/ef/core/) (EF Core) est l&#39;ORM de .NET, et [Npgsql](https://www.npgsql.org/efcore/) est son fournisseur PostgreSQL. Dans ce guide, vous allez développer une API minimale ASP.NET Core, créer sa table au moyen d&#39;une migration EF Core et exposer des endpoints de création, de lecture, de mise à jour et de suppression. Toutes les connexions utilisent TLS avec une vérification complète des certificats.
+
+## Prérequis {#prerequisites}
+
+* Le [SDK .NET](https://dotnet.microsoft.com/download) 10. Ce guide a été testé avec le SDK .NET 10.0.401, EF Core 10.0.12 et `Npgsql.EntityFrameworkCore.PostgreSQL` 10.0.3 (Npgsql 10.0.3).
+* Un compte ClickHouse Cloud
+* [`psql`](https://www.postgresql.org/download/), pour créer la base de données. Vous pouvez également exécuter le statement `CREATE DATABASE` dans la [console SQL](/fr/integrations/connectors/sql-clients/sql-console).
+
+## Créer un service ClickHouse Managed Postgres {#create-service}
+
+Dans la console ClickHouse Cloud, cliquez sur **New service** et sélectionnez **Postgres**. L&#39;instance est prête en quelques minutes. Pour une présentation pas à pas, consultez le [guide de démarrage rapide](/fr/products/managed-postgres/quickstart).
+
+## Obtenir vos informations de connexion {#connection-details}
+
+Cliquez sur **Connect** dans la barre latérale gauche de votre service. Laissez **Directly** sélectionné, activez **Use SSL**, puis copiez le mot de passe et le nom d’hôte du serveur. Cliquez ensuite sur **Download CA certificate**. Vous pouvez également télécharger le certificat plus tard depuis **Settings → CA Certificate**. Ce certificat est propre à votre instance : il permet à Npgsql de vérifier qu’il communique bien avec votre serveur.
+
+Dans ce guide, l’application comme les migrations EF Core se connectent **directement** à Postgres sur le port `5432`. Une application ASP.NET Core est un processus de longue durée, et Npgsql y gère déjà un pool de connexions (jusqu’à 100 par chaîne de connexion par défaut) ; un second pooler est donc inutile. Si vous exécutez de nombreuses instances de l’application, consultez [Utiliser PgBouncer](#pgbouncer).
+
+La fenêtre modale Connect ne propose pas d’onglet .NET, et Npgsql n’accepte pas l’URL `postgresql://` de l’onglet **url** : il utilise des chaînes de connexion au format `Keyword=Value`. Reprenez les valeurs de l’URL et faites-les correspondre aux mots-clés Npgsql :
+
+| Fenêtre modale Connect (onglet **url**)                    | Mot-clé Npgsql                           |
+| ---------------------------------------------------------- | ---------------------------------------- |
+| Hôte, par exemple `your-instance.pg.clickhouse.cloud`      | `Host=your-instance.pg.clickhouse.cloud` |
+| Port : `5432` (**Directly**) ou `6432` (**via PgBouncer**) | `Port=5432`                              |
+| Path, par exemple `/postgres`                              | `Database=postgres`                      |
+| Utilisateur et mot de passe                                | `Username=postgres;Password=<PASSWORD>`  |
+| `sslmode=verify-full`                                      | `SSL Mode=VerifyFull`                    |
+| `sslrootcert=<service-name>-ca-certificate.pem`            | `Root Certificate=ca-certificate.pem`    |
+
+## Configurer le projet {#project-setup}
+
+Créez un projet ASP.NET Core, ajoutez le fournisseur Npgsql pour EF Core ainsi que le paquet EF Core Design (outils de conception), puis installez l&#39;outil en ligne de commande `dotnet ef` :
+
+```bash
+dotnet new web -o TodoApi
+cd TodoApi
+dotnet add package Npgsql.EntityFrameworkCore.PostgreSQL
+dotnet add package Microsoft.EntityFrameworkCore.Design
+dotnet tool install --global dotnet-ef
+```
+
+<Tip>
+  **Vous partez d&#39;une application existante ?**
+
+  Ignorez `dotnet new web`. Si votre application utilise EF Core avec SQLite ou un autre fournisseur :
+
+  * Exécutez `dotnet remove package Microsoft.EntityFrameworkCore.Sqlite` et `dotnet add package Npgsql.EntityFrameworkCore.PostgreSQL`. Installez également `Microsoft.EntityFrameworkCore.Design` et l&#39;outil `dotnet-ef` si vous ne les avez pas déjà.
+  * Dans `Program.cs`, remplacez `UseSqlite` par `UseNpgsql`, puis supprimez la chaîne de connexion SQLite de `appsettings.json`.
+  * Les migrations étant propres à chaque fournisseur, supprimez le dossier `Migrations`. Vous créerez une nouvelle migration initiale à l&#39;étape [Créer le schéma](#migrations).
+
+  Poursuivez ensuite avec [Configurer la connexion](#configure-connection) en remplaçant `TodoDb` par le nom de la chaîne de connexion de votre application, puis ignorez [Définir le modèle](#model).
+</Tip>
+
+<Warning>
+  **Sous macOS, activez TLS 1.3**
+
+  ClickHouse Managed Postgres n&#39;accepte que TLS 1.3. Par défaut, .NET sous macOS ne prend pas en charge TLS 1.3 : toutes les connexions échouent alors avec `Exception while performing SSL handshake` et l&#39;erreur interne `bad protocol version`. .NET 10 peut s&#39;appuyer à la place sur Network.framework d&#39;Apple, qui prend en charge TLS 1.3. Ajoutez ceci à l&#39;élément `<Project>` de `TodoApi.csproj` :
+
+  ```xml
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.Net.Security.UseNetworkFramework" Value="true" />
+  </ItemGroup>
+  ```
+
+  Ce paramètre s&#39;applique à l&#39;application comme à `dotnet ef`, et n&#39;a aucun effet sous Linux ou Windows. Vous pouvez aussi définir plutôt la variable d&#39;environnement `DOTNET_SYSTEM_NET_SECURITY_USENETWORKFRAMEWORK=1`.
+</Warning>
+
+## Configurer la connexion {#configure-connection}
+
+Déplacez le certificat de CA téléchargé dans le répertoire du projet et renommez-le en `ca-certificate.pem`.
+
+Créez une base de données pour l&#39;application. Remplacez `<PASSWORD>` et l&#39;hôte par les valeurs affichées dans la fenêtre modale **Connect** :
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_dotnet;"
+```
+
+```text
+CREATE DATABASE
+```
+
+Stockez la chaîne de connexion à l&#39;aide du [Secret Manager](https://learn.microsoft.com/aspnet/core/security/app-secrets) afin que le mot de passe n&#39;apparaisse ni dans `appsettings.json` ni dans le gestionnaire de versions :
+
+```bash
+dotnet user-secrets init
+dotnet user-secrets set "ConnectionStrings:TodoDb" "Host=your-instance.pg.clickhouse.cloud;Port=5432;Database=guide_dotnet;Username=postgres;Password=<PASSWORD>;SSL Mode=VerifyFull;Root Certificate=ca-certificate.pem"
+```
+
+ASP.NET Core lit les secrets utilisateur dans l’environnement `Development`, que `dotnet run` et `dotnet ef` utilisent par défaut. En production, définissez plutôt la variable d’environnement `ConnectionStrings__TodoDb`.
+
+Avec `SSL Mode=VerifyFull`, Npgsql vérifie que le certificat du serveur est signé par la CA indiquée dans `Root Certificate` et qu’il correspond au nom d’hôte. Npgsql résout un path `Root Certificate` relatif par rapport au répertoire de travail courant, c’est-à-dire le répertoire du projet lorsque vous utilisez `dotnet run` et `dotnet ef`. Utilisez un path absolu si vous lancez l’application depuis un autre emplacement.
+
+<Note>
+  Si la CA est incorrecte ou absente, ou si l’hôte ne correspond pas au certificat (par exemple, lorsque vous vous connectez via une adresse IP), la connexion échoue avec `Exception while performing SSL handshake` et l’erreur interne `The remote certificate was rejected by the provided RemoteCertificateValidationCallback`. Si le fichier `Root Certificate` n’existe pas, l’erreur interne est `Could not find file`. Notez également que :
+
+  * Par défaut, Npgsql utilise `SSL Mode=Prefer`, et `SSL Mode=Require` ne vérifie pas non plus le certificat, même si vous définissez `Root Certificate`. Définissez toujours `SSL Mode=VerifyFull`.
+  * Npgsql lit les variables d’environnement `PGSSLROOTCERT` et `PGPASSWORD`, mais pas `PGHOST` ni `PGSSLMODE`. Les variables de l’onglet **env** de la fenêtre modale Connect ne suffisent donc pas à elles seules.
+</Note>
+
+## Définir le modèle {#model}
+
+Créez le fichier `Todo.cs` contenant la classe d&#39;entité :
+
+```csharp title="Todo.cs"
+public class Todo
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = "";
+    public bool IsDone { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+```
+
+Créez le fichier `TodoDb.cs` contenant le `DbContext` :
+
+```csharp title="TodoDb.cs"
+using Microsoft.EntityFrameworkCore;
+
+public class TodoDb(DbContextOptions<TodoDb> options) : DbContext(options)
+{
+    public DbSet<Todo> Todos => Set<Todo>();
+}
+```
+
+Remplacez le contenu de `Program.cs`. Ce code enregistre `TodoDb` auprès du fournisseur Npgsql et associe un endpoint à chaque opération. Dans une application existante, seul l&#39;appel à `AddDbContext` avec `UseNpgsql` est nécessaire :
+
+```csharp title="Program.cs"
+using Microsoft.EntityFrameworkCore;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddDbContext<TodoDb>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("TodoDb")));
+
+var app = builder.Build();
+
+app.MapGet("/todos", async (TodoDb db) =>
+    await db.Todos.OrderBy(t => t.Id).ToListAsync());
+
+app.MapGet("/todos/{id}", async (int id, TodoDb db) =>
+    await db.Todos.FindAsync(id) is Todo todo ? Results.Ok(todo) : Results.NotFound());
+
+app.MapPost("/todos", async (Todo todo, TodoDb db) =>
+{
+    db.Todos.Add(todo);
+    await db.SaveChangesAsync();
+    return Results.Created($"/todos/{todo.Id}", todo);
+});
+
+app.MapPut("/todos/{id}", async (int id, Todo input, TodoDb db) =>
+{
+    var todo = await db.Todos.FindAsync(id);
+    if (todo is null) return Results.NotFound();
+
+    todo.Title = input.Title;
+    todo.IsDone = input.IsDone;
+    await db.SaveChangesAsync();
+    return Results.Ok(todo);
+});
+
+app.MapDelete("/todos/{id}", async (int id, TodoDb db) =>
+    await db.Todos.Where(t => t.Id == id).ExecuteDeleteAsync() == 1
+        ? Results.NoContent()
+        : Results.NotFound());
+
+// Reports the TLS version of the app's own database session
+app.MapGet("/db/tls", async (TodoDb db) =>
+    await db.Database
+        .SqlQuery<string>($"SELECT coalesce(version, 'none') AS \"Value\" FROM pg_stat_ssl WHERE pid = pg_backend_pid()")
+        .SingleAsync());
+
+app.Run();
+```
+
+L&#39;endpoint `/db/tls` lit `pg_stat_ssl` pour la session de base de données de l&#39;application elle-même, ce qui vous permet de vérifier que la connexion est bien chiffrée.
+
+## Créer le schéma {#migrations}
+
+Générez une migration à partir du modèle, puis appliquez-la :
+
+```bash
+dotnet ef migrations add InitialCreate
+dotnet ef database update
+```
+
+```text
+Build started...
+Build succeeded.
+Done. To undo this action, use 'ef migrations remove'
+Build started...
+Build succeeded.
+Failed executing DbCommand (53ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "MigrationId", "ProductVersion"
+FROM "__EFMigrationsHistory"
+ORDER BY "MigrationId";
+Acquiring an exclusive lock for migration application. See https://aka.ms/efcore-docs-migrations-lock for more information if this takes too long.
+Applying migration '20261001144437_InitialCreate'.
+Done.
+```
+
+`dotnet ef migrations add` écrit la migration dans le dossier `Migrations`, et `dotnet ef database update` l&#39;applique puis l&#39;enregistre dans la table `__EFMigrationsHistory`. Lors de la première exécution, EF Core journalise l&#39;échec d&#39;un `SELECT` sur `__EFMigrationsHistory` avant de créer la table ; vous pouvez ignorer ce message.
+
+Avant d&#39;appliquer les migrations, EF Core acquiert un verrou afin que deux déploiements ne puissent pas migrer la même base de données simultanément. Avec Npgsql, ce verrou est un `LOCK TABLE` sur `__EFMigrationsHistory` au sein de la transaction de migration, et non un verrou consultatif (advisory lock) au niveau de la session ; il est donc libéré à la fin de la transaction.
+
+## Exécuter et vérifier {#verify}
+
+Démarrez l&#39;application sur le port `3115` :
+
+```bash
+dotnet run --urls http://localhost:3115
+```
+
+```text
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:3115
+```
+
+Dans un second terminal, créez deux tâches, marquez la première comme terminée, puis supprimez la seconde :
+
+```bash
+curl -w "\n" -X POST localhost:3115/todos -H "Content-Type: application/json" -d '{"title": "Try EF Core"}'
+curl -w "\n" -X POST localhost:3115/todos -H "Content-Type: application/json" -d '{"title": "Write a migration"}'
+curl -w "\n" -X PUT localhost:3115/todos/1 -H "Content-Type: application/json" -d '{"title": "Try EF Core", "isDone": true}'
+curl -w "\n" -X DELETE localhost:3115/todos/2
+```
+
+```text
+{"id":1,"title":"Try EF Core","isDone":false,"createdAt":"2026-10-01T14:44:52.0478356Z"}
+{"id":2,"title":"Write a migration","isDone":false,"createdAt":"2026-10-01T14:44:52.8462161Z"}
+{"id":1,"title":"Try EF Core","isDone":true,"createdAt":"2026-10-01T14:44:52.047835Z"}
+
+```
+
+La requête `DELETE` renvoie `204 No Content` : sa ligne est donc vide.
+
+Vérifiez que la session de base de données de l&#39;application utilise TLS :
+
+```bash
+curl localhost:3115/db/tls
+```
+
+```text
+TLSv1.3
+```
+
+Ouvrez [http://localhost:3115/todos](http://localhost:3115/todos) dans votre navigateur pour afficher la liste des tâches restantes :
+
+```json
+[{"id":1,"title":"Try EF Core","isDone":true,"createdAt":"2026-10-01T14:44:52.047835Z"}]
+```
+
+Pour afficher les données dans la console, ouvrez la **console SQL** depuis la barre latérale gauche de votre service, développez `guide_dotnet` puis `public`, et cliquez sur la table `Todos`. EF Core utilise les noms de classes et de propriétés comme identifiants entre guillemets : la table s&#39;appelle donc `"Todos"` et les colonnes `"Id"`, `"Title"`, etc. La table contient la ligne restante :
+
+| Id | Title       | IsDone | CreatedAt                     |
+| -- | ----------- | ------ | ----------------------------- |
+| 1  | Try EF Core | true   | 2026-10-01 14:44:52.047835+00 |
+
+## Utiliser PgBouncer {#pgbouncer}
+
+Npgsql ouvre jusqu&#39;à 100 connexions par instance d&#39;application (`Maximum Pool Size`). Si, cumulées, de nombreuses instances approchent la limite de connexions de Postgres, connectez plutôt l&#39;application via le [PgBouncer](/fr/products/managed-postgres/connection#pgbouncer) intégré. Sélectionnez **via PgBouncer** dans la fenêtre modale **Connect**, puis remplacez le port de la chaîne de connexion par `6432` :
+
+```bash
+dotnet user-secrets set "ConnectionStrings:TodoDb" "Host=your-instance.pg.clickhouse.cloud;Port=6432;Database=guide_dotnet;Username=postgres;Password=<PASSWORD>;SSL Mode=VerifyFull;Root Certificate=ca-certificate.pem"
+```
+
+Le même certificat de CA fonctionne. PgBouncer s&#39;exécute en mode de pool de connexions par transaction : chaque transaction peut donc s&#39;exécuter sur une connexion Postgres différente. Avec les paramètres par défaut d&#39;EF Core et de Npgsql, vous n&#39;avez rien d&#39;autre à modifier :
+
+* **Requêtes préparées :** EF Core ne prépare pas les statements, et la préparation automatique de Npgsql est désactivée par défaut (`Max Auto Prepare=0`) ; les requêtes utilisent donc des statements non nommés, qui fonctionnent via PgBouncer. Conservez cette configuration. Via PgBouncer, les requêtes préparées issues de `Max Auto Prepare` ou de `NpgsqlCommand.Prepare` échouent de manière intermittente avec `08P01: prepared statement did not exist` (`No Reset On Close=true` évite ce problème), et après une migration qui modifie le type d&#39;une colonne, elles continuent d&#39;échouer avec `cached plan must not change result type`, même sur de nouvelles connexions. Si vous avez besoin de requêtes préparées, connectez-vous directement.
+* **État de session :** les paramètres définis avec `SET`, y compris `search_path`, ne sont pas conservés d&#39;une transaction à l&#39;autre. Utilisez plutôt `SET LOCAL` au sein d&#39;une transaction. PgBouncer rejette les mots-clés de chaîne de connexion `Search Path` et `Options` avec l&#39;erreur `unsupported startup parameter` ; `Timezone` et `Application Name` fonctionnent.
+* **Migrations :** `dotnet ef database update` fonctionne également via PgBouncer, car le verrou de migration est un verrou de table qui est libéré à la fin de sa transaction.
+* **Vérification TLS :** `pg_stat_ssl` décrit la connexion entre PgBouncer et Postgres ; `/db/tls` renvoie donc `none`. La connexion de votre application à PgBouncer reste néanmoins vérifiée : un certificat de CA incorrect provoque le même échec.
+
+## Étapes suivantes {#next-steps}
+
+* [Connexion](/fr/products/managed-postgres/connection) : chaînes de connexion, PgBouncer et TLS
+* [Paramètres](/fr/products/managed-postgres/settings) : paramètres Postgres et PgBouncer, comme `max_connections`
+* [Répliques en lecture](/fr/products/managed-postgres/read-replicas) : envoyer des requêtes en lecture seule vers une réplique
+* [Sécurité](/fr/products/managed-postgres/security) : listes d&#39;accès IP et réseau privé
