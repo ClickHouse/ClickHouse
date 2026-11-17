@@ -443,7 +443,7 @@ void checkDeserializedGroupByModifierInput(
         throw Exception(ErrorCodes::INCORRECT_DATA, "A deserialized `Rollup` or `Cube` step must finalize the aggregate states");
 
     /// The transforms address the whole input with a mask built for the keys and the states only.
-    const auto layout = header.getColumnsWithTypeAndName();
+    const auto & layout = header.getColumnsWithTypeAndName();
     checkDeserializedMergedAggregatesLayout(keys, aggregates, layout, /*exact=*/ true);
 
     /// A single chunk of the input is finalized as is, with the functions of its columns rather than those of the plan,
