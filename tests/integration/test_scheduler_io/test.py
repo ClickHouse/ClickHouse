@@ -981,6 +981,42 @@ def test_resource_any_disk():
     )
 
 
+def test_replaced_resource_releases_disk_operations():
+    node.query(
+        """
+        drop table if exists data;
+        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource';
+        insert into data select * from numbers(1e5);
+    """
+    )
+
+    node.query(
+        """
+        create resource io (read disk s3_no_resource);
+        create workload all settings max_bytes_inflight = 1000000;
+    """
+    )
+
+    def dequeued():
+        return int(
+            node.query(
+                "select sum(dequeued_requests) from system.scheduler where resource='io' and type='request_queue'"
+            )
+        )
+
+    node.query("select sum(key*key) from data settings workload='all'")
+    assert dequeued() > 0
+
+    # After the replacement `io` serves writes only, so reads are not scheduled through it any longer
+    node.query("create or replace resource io (write disk s3_no_resource)")
+    before = dequeued()
+    node.query("select sum(key*key) from data settings workload='all'")
+    assert dequeued() == before
+
+    node.query("insert into data select * from numbers(1e5) settings workload='all'")
+    assert dequeued() > before
+
+
 def test_workload_entity_keeper_storage():
     node.query("create resource io_write (write disk s3_no_resource);")
     node.query("create resource io_read (read disk s3_no_resource);")
