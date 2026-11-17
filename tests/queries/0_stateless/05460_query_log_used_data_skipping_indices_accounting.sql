@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel, no-parallel-replicas
+-- no-parallel: a concurrent test can clear the query condition cache between the first two queries
 -- no-parallel-replicas: index analysis runs on the replicas, the initiator does not see it
 
 SET use_skip_indexes = 1;
