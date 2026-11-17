@@ -220,7 +220,9 @@ private:
         UInt8 lhs_relation = 0;
         UInt8 rhs_relation = 0;
         bool raw = false;         /// the two columns have one type, so the join hashes their values as they are
-        bool hashable = false;    /// the two types have a common type to hash at
+        bool hashable = false;    /// the two types have a common type to hash at, as `extractRoutingEquiKeys` requires
+        UInt32 lhs_relations = 0; /// the relations of the two sides of the equality
+        UInt32 rhs_relations = 0;
     };
     [[nodiscard]] const ShuffleKey & shuffleKey(const JoinActionRef * edge) const
     {
@@ -1081,6 +1083,12 @@ void DPSubJoinOrderOptimizer::initShuffleKeys(
         auto [op, lhs, rhs] = edge.asBinaryPredicate();
         if (op != JoinConditionOperator::Equals)
             continue;
+        auto & key = dpsub_data.shuffle_keys[i];
+        key.raw = lhs.getType()->equals(*rhs.getType());
+        key.hashable = key.raw || tryGetLeastSupertype(DataTypes{lhs.getType(), rhs.getType()});
+        key.lhs_relations = toMask(lhs.getSourceRelations());
+        key.rhs_relations = toMask(rhs.getSourceRelations());
+
         const auto lhs_class = query_graph.column_equivalences.getClass(lhs.resolveAliases());
         if (!lhs_class || lhs_class != query_graph.column_equivalences.getClass(rhs.resolveAliases()))
             continue;
@@ -1089,12 +1097,9 @@ void DPSubJoinOrderOptimizer::initShuffleKeys(
         const auto rhs_relation = rhs.getSourceRelations().getSingleBit();
         if (it == class_index.end() || !lhs_relation || !rhs_relation)
             continue;
-        auto & key = dpsub_data.shuffle_keys[i];
         key.key_class = static_cast<Int32>(it->second);
         key.lhs_relation = static_cast<UInt8>(*lhs_relation);
         key.rhs_relation = static_cast<UInt8>(*rhs_relation);
-        key.raw = lhs.getType()->equals(*rhs.getType());
-        key.hashable = key.raw || tryGetLeastSupertype(DataTypes{lhs.getType(), rhs.getType()});
     }
 }
 

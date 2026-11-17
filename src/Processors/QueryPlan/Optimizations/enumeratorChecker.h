@@ -310,6 +310,19 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
                 : any_partitioning});
     }
 
+    /// An equality of two columns of different types, or of expressions, is in no class: Cascades shuffles by it with the
+    /// keys cast to a common type, and no later join reuses the result. The cost is the same for each such edge.
+    const bool has_direct_shuffle_key = std::ranges::any_of(edges, [&](const JoinActionRef * edge)
+    {
+        const auto & key = optimizer.shuffleKey(edge);
+        auto within = [](UInt32 relations, UInt32 mask) { return relations && (relations & ~mask) == 0; };
+        return key.key_class < 0 && key.hashable
+            && ((within(key.lhs_relations, left_mask) && within(key.rhs_relations, right_mask))
+                || (within(key.lhs_relations, right_mask) && within(key.rhs_relations, left_mask)));
+    });
+    if (has_direct_shuffle_key)
+        split_shuffles.push_back({.state = any_partitioning});
+
     /// The fields of the plans of the split that do not depend on the plans of its sides: the edges are copied once.
     Plan plan;
     plan.left = lhs_subset;
