@@ -555,9 +555,11 @@ public:
             addRows(data_ref, *rhs_ref.pending, 0, rhs_ref.pending->size(), rhs_ref.conversion);
     }
 
+    /// A state that has not opened a part keeps its rows, so that writing it out (a `-State` column, `hex`, an output format)
+    /// does not change how it merges afterwards.
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
     {
-        auto [source_bytes, compressed_bytes] = read(place);
+        auto [source_bytes, compressed_bytes] = read(place, /*keep_pending_rows=*/true);
         writeVarUInt(source_bytes, buf);
         writeVarUInt(compressed_bytes, buf);
     }
@@ -833,10 +835,23 @@ private:
         data_ref.broken = false;
     }
 
-    std::pair<UInt64, UInt64> read(ConstAggregateDataPtr __restrict place) const
+    /// The totals of the state, after its part is finished. With `keep_pending_rows`, a state that has not opened a part is
+    /// left as it is, and its pending rows are finished in a copy.
+    std::pair<UInt64, UInt64> read(ConstAggregateDataPtr __restrict place, bool keep_pending_rows = false) const
     {
         auto & data_ref = data(const_cast<AggregateDataPtr>(place));
         std::lock_guard lock(data_ref.mutex);
+        if (keep_pending_rows && !data_ref.part && data_ref.pending && !data_ref.pending->empty())
+        {
+            throwIfBroken(data_ref);
+            Data copy;
+            copy.source_bytes = data_ref.source_bytes;
+            copy.compressed_bytes = data_ref.compressed_bytes;
+            copy.pending = data_ref.pending->cloneResized(data_ref.pending->size());
+            copy.conversion = data_ref.conversion;
+            finish(copy);
+            return {copy.source_bytes, copy.compressed_bytes};
+        }
         finish(data_ref);
         return {data_ref.source_bytes, data_ref.compressed_bytes};
     }

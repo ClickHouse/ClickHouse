@@ -93,9 +93,24 @@ SETTINGS allow_suspicious_low_cardinality_types = 1; -- { serverError SUSPICIOUS
 SELECT estimateCompressionRatioMerge('LowCardinality(UInt8)')(st) FROM lc_states WHERE n IN (100, 1)
 SETTINGS allow_suspicious_low_cardinality_types = 1; -- { serverError SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY }
 
+-- Writing small states out (here with `hex`) does not change how they merge afterwards: they keep their rows, which the
+-- merge passes on into one part.
+DROP TABLE IF EXISTS small_states;
+DROP TABLE IF EXISTS small_results;
+CREATE TABLE small_states ENGINE = Memory AS
+SELECT number % 2 AS k, estimateCompressionRatioState('LZ4', 'LowCardinality(String)')(concat('value_', toString(number % 50))) AS st
+FROM numbers(1000) GROUP BY k ORDER BY k;
+CREATE TABLE small_results (kind String, r Float64) ENGINE = Memory;
+INSERT INTO small_results SELECT 'before', estimateCompressionRatioMerge('LZ4', 'LowCardinality(String)')(st) FROM small_states;
+SELECT hex(st) FROM small_states FORMAT Null;
+INSERT INTO small_results SELECT 'after', estimateCompressionRatioMerge('LZ4', 'LowCardinality(String)')(st) FROM small_states;
+SELECT uniqExact(r), count() FROM small_results;
+
 DROP TABLE states;
 DROP TABLE results;
 DROP TABLE mixed;
 DROP TABLE tz_states;
 DROP TABLE tz_results;
 DROP TABLE lc_states;
+DROP TABLE small_states;
+DROP TABLE small_results;
