@@ -313,7 +313,7 @@ void removeMisboundDefaultsFromStructureHint(
         structure_hint.modify(name, [](ColumnDescription & column) { column.default_desc = {}; });
 }
 
-String getStructureHintColumnName(const Strings & identifier_parts, const String & table_function_alias)
+String getStructureHintColumnName(const Strings & identifier_parts, const String & table_function_alias, bool allow_dot_in_name)
 {
     String column_name;
     if (identifier_parts.size() == 1)
@@ -321,7 +321,7 @@ String getStructureHintColumnName(const Strings & identifier_parts, const String
     else if (identifier_parts.size() == 2 && !table_function_alias.empty() && identifier_parts.front() == table_function_alias)
         column_name = identifier_parts.back();
 
-    if (column_name.find('.') != String::npos)
+    if (!allow_dot_in_name && column_name.find('.') != String::npos)
         return {};
 
     return column_name;
