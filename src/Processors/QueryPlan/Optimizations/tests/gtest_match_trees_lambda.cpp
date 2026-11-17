@@ -8,10 +8,12 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -200,6 +202,40 @@ TEST(MatchTreesLambda, FoldedLambdasWithRenamedArgumentMatch)
     ASSERT_NE(foldedExpression(*outer->lambda), nullptr);
 
     EXPECT_EQ(matchOf(*inner, *outer), inner->mapped);
+}
+
+TEST(MatchTreesLambda, FoldedLambdasWithRenamedArgumentFormattedInNestedLambdaDoNotMatch)
+{
+    tryRegisterFunctions();
+    tryRegisterFormats();
+
+    /// `<arg> -> arrayMap(z -> formatRowNoNewline('JSONEachRow', <arg>), [<arg>])`.
+    auto build = [](const String & arg_name)
+    {
+        auto format_captured = [](ActionsDAG & dag, const ActionsDAG::Node &, const ActionsDAG::Node & captured) -> const ActionsDAG::Node &
+        {
+            auto format = ColumnString::create();
+            format->insert(Field("JSONEachRow"));
+            const auto & format_node = dag.addColumn(ColumnConst::create(std::move(format), 1), std::make_shared<DataTypeString>(), "format");
+            return addCall(dag, "formatRowNoNewline", {&format_node, &captured}, "body");
+        };
+        auto map_nested = [arg_name, format_captured](ActionsDAG & dag, const ActionsDAG::Node & arg, const ActionsDAG::Node &) -> const ActionsDAG::Node &
+        {
+            const auto & nested = dag.addFunction(makeLambda(arg_name, u64, "z", u64, format_captured), {&arg}, "nested");
+            return addCall(dag, "arrayMap", {&nested, &addCall(dag, "array", {&arg}, "array")}, "body");
+        };
+        return mapWithFoldedLambda(makeLambda("c", u64, arg_name, u64, map_nested));
+    };
+
+    auto inner = build("x");
+    auto same = build("x");
+    auto renamed = build("y");
+
+    ASSERT_NE(foldedExpression(*inner->lambda), nullptr);
+    ASSERT_NE(foldedExpression(*renamed->lambda), nullptr);
+
+    EXPECT_EQ(matchOf(*inner, *same), inner->mapped);
+    EXPECT_EQ(matchOf(*inner, *renamed), nullptr);
 }
 
 TEST(MatchTreesLambda, FoldedLambdaCapturingDifferentLambdasDoNotMatch)

@@ -49,6 +49,25 @@ static MatchedTrees::Matches matchTreesImpl(
 static bool constantsMatch(
     const IColumn & inner, const IDataType & inner_type, const IColumn & outer, const IDataType & outer_type, size_t max_set_size);
 
+/// `formatRow` and `formatRowNoNewline` write the names of their arguments into the result.
+static bool readsArgumentNames(const ActionsDAG & lambda_dag)
+{
+    for (const auto & node : lambda_dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+
+        const auto name = node.function_base->getName();
+        if (name == "formatRow" || name == "formatRowNoNewline")
+            return true;
+
+        const auto * capture = typeid_cast<const FunctionCapture *>(node.function_base.get());
+        if (capture && readsArgumentNames(capture->getActionsDAGForSemanticAnalysis()))
+            return true;
+    }
+    return false;
+}
+
 /// A lambda's name is only its signature; its body is in its own DAG.
 static bool lambdaBodiesMatch(
     const LambdaCapture & inner,
@@ -69,10 +88,11 @@ static bool lambdaBodiesMatch(
         outer_to_inner_input_names.emplace(outer.captured_names[i], inner.captured_names[i]);
     }
 
+    const bool compare_argument_names = readsArgumentNames(outer_dag);
     for (auto inner_it = inner.lambda_arguments.begin(), outer_it = outer.lambda_arguments.begin(); inner_it != inner.lambda_arguments.end();
          ++inner_it, ++outer_it)
     {
-        if (!inner_it->type->equals(*outer_it->type))
+        if (!inner_it->type->equals(*outer_it->type) || (compare_argument_names && inner_it->name != outer_it->name))
             return false;
         outer_to_inner_input_names.emplace(outer_it->name, inner_it->name);
     }

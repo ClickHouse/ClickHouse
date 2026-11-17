@@ -27,6 +27,19 @@ WHERE explain ILIKE '%Read type: InOrder%';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT a FROM s ORDER BY arrayMap((u, v) -> (u - v) * b, a, c) LIMIT 5 SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0)
 WHERE explain ILIKE '%Read type: InOrder%';
 
+-- Case 3b: a renamed argument is visible to formatRowNoNewline.
+DROP TABLE IF EXISTS p_fmt;
+CREATE TABLE p_fmt
+(
+    a Array(UInt64),
+    b UInt64,
+    PROJECTION pr (SELECT arrayMap(x -> concat(formatRowNoNewline('JSONEachRow', x), toString(b)), a), count() GROUP BY arrayMap(x -> concat(formatRowNoNewline('JSONEachRow', x), toString(b)), a))
+)
+ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO p_fmt SELECT [number], 10 FROM numbers(3);
+SELECT arrayMap(y -> concat(formatRowNoNewline('JSONEachRow', y), toString(b)), a) AS k, count() FROM p_fmt GROUP BY k ORDER BY k SETTINGS optimize_use_projections = 1;
+SELECT arrayMap(x -> concat(formatRowNoNewline('JSONEachRow', x), toString(b)), a) AS k, count() FROM p_fmt GROUP BY k ORDER BY k SETTINGS optimize_use_projections = 1, force_optimize_projection = 1, enable_parallel_replicas = 0;
+
 -- Case 4: a nested lambda.
 DROP TABLE IF EXISTS n;
 CREATE TABLE n (a Array(UInt64)) ENGINE = MergeTree ORDER BY arrayMap(x -> arrayCount(y -> y > x, a), a);
