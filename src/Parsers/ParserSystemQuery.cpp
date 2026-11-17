@@ -2362,12 +2362,13 @@ Keep an eye on [`system.view_refreshes`](/reference/system-tables/view_refreshes
 
 ### SYSTEM STOP [REPLICATED] VIEW, STOP VIEWS {#stop-view-stop-views}
 
-Disable periodic refreshing of the given view or all refreshable views. If a refresh is in progress, cancel it too.
+Disable periodic refreshing of the given view or all refreshable views. `STOP VIEW` and `STOP VIEWS` also cancel a refresh that is in progress on the current replica. `STOP REPLICATED VIEW` does not cancel a refresh that is already running; it only prevents new refreshes from starting. To cancel a running refresh, run `SYSTEM CANCEL VIEW` on the replica shown in `system.view_refreshes.last_refresh_replica`.
 
 If the view is in a Replicated or Shared database, `STOP VIEW` only affects the current replica, while `STOP REPLICATED VIEW` affects all replicas.
 
 <Note>
-The stopped state does not persist across server restarts. After a restart, views will resume their configured refresh schedules.
+The state set by `STOP VIEW` and `STOP VIEWS` is held in memory on that replica and does not persist across server restarts. After a restart, views resume their configured refresh schedules.
+The state set by `STOP REPLICATED VIEW` is stored in Keeper and persists across restarts, upgrades, and replicas being replaced or added. It applies to all replicas (in ClickHouse Cloud, to every service in the warehouse) until `SYSTEM START REPLICATED VIEW` is run on any replica. Recreating the view (`CREATE OR REPLACE`, or `DROP` and `CREATE`) clears the stopped state, and a view restored from a backup starts unstopped, even if it was stopped when the backup was taken. `STOP REPLICATED VIEW` is not supported for views created with `APPEND` and `SETTINGS all_replicas = 1`.
 In Replicated or Shared databases, `SYSTEM STOP VIEW` only affects the current replica. Use `SYSTEM STOP REPLICATED VIEW` to stop refreshes on all replicas.
 </Note>
 
