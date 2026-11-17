@@ -11,6 +11,7 @@
 namespace DB
 {
 struct KafkaSettings;
+class NamedCollection;
 class VirtualColumnsDescription;
 
 struct KafkaConfigLoader
@@ -53,5 +54,10 @@ struct KafkaConfigLoader
 
     template <typename TKafkaStorage>
     static cppkafka::Configuration getProducerConfiguration(TKafkaStorage & storage, const ProducerConfigParams & params);
+
+    /// Throws if a named collection that is not defined in the server configuration sets a librdkafka property
+    /// that refers to the filesystem of the server, for example `ssl.key.location`.
+    /// The same check is done when the configuration of a consumer or a producer is loaded.
+    static void checkNamedCollection(const NamedCollection & collection);
 };
 }
