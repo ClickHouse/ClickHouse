@@ -16,4 +16,14 @@ finalized column is not a state INCORRECT_DATA
 finalized state is not in the input INCORRECT_DATA
 finalized state is of another function INCORRECT_DATA
 well-formed totals accepted
+aggregate is duplicated INCORRECT_DATA
+merged input has another column INCORRECT_DATA
+Rollup input has another column INCORRECT_DATA
+Rollup state is finalized to another type INCORRECT_DATA
+Rollup without final INCORRECT_DATA
+well-formed Rollup accepted
+Cube input has another column INCORRECT_DATA
+Cube state is finalized to another type INCORRECT_DATA
+Cube without final INCORRECT_DATA
+well-formed Cube accepted
 3

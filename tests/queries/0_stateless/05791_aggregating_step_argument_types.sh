@@ -14,6 +14,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 python3 - <<'PYEOF'
 import os
 import socket
+import struct
 E = os.environ.get
 HOST, PORT = E("CLICKHOUSE_HOST", "127.0.0.1"), int(E("CLICKHOUSE_PORT_TCP", "9000"))
 USER, PASSWORD = E("CLICKHOUSE_USER", "default"), E("CLICKHOUSE_PASSWORD", "")
@@ -154,6 +155,33 @@ forge("finalized column is not a state", totals_having(ANY_SUM[:1]), [A], VERSIO
 forge("finalized state is not in the input", totals_having(ANY_SUM[:1]), [[("b", state("any", U64))]], VERSION, [("b", U64)], "TotalsHaving")
 forge("finalized state is of another function", totals_having(ANY_SUM[:1]), [[("a", state("sum", U64))]], VERSION, A, "TotalsHaving")
 forge("well-formed totals", totals_having(ANY_SUM), [STATES], VERSION, AB, "TotalsHaving")
+
+# The output of an ordinary aggregation has a column for every key and aggregate, finalized by name.
+forge("aggregate is duplicated", aggregating(FINAL, aggregates=[("a", "x", U64, "groupArray")] * 2), [X], VERSION, A * 2)
+# The in-order merge addresses the whole input with a mask for the keys and the states only.
+forge("merged input has another column", aggregating(FINAL | ONLY_MERGE, aggregates=ANY_SUM[:1]),
+      [STATES[:1] + [("extra", U64)]], VERSION, A)
+
+# `Rollup` and `Cube` always finalize, address the whole input with a mask for the keys and the states,
+# and finalize a single chunk with the functions of its columns.
+F64 = b"\x03"   # Field::Types::Float64
+def group_by_modifier(flags, aggregates, keys=("k",)):   # aggregates: name, function, argument type, parameters
+    out = bytes([flags]) + vu(len(keys)) + b"".join(sb(k) for k in keys) + vu(len(aggregates))
+    for name, function, a_type, parameters in aggregates:
+        out += sb(name) + sb(function) + vu(1) + a_type + vu(len(parameters)) + b"".join(parameters)
+    return out + vu(0)   # the number of sets of the plan
+
+SUM = group_by_modifier(FINAL, [("a", "sum", U64, [])])
+K_SUM = [("k", U64), ("a", state("sum", U64))]
+OUT = [("__grouping_set", U64), ("k", U64), ("a", U64)]
+QUANTILES = group_by_modifier(FINAL, [("a", "quantiles", U64, [F64 + struct.pack("<d", 0.5)])])
+for step in ("Rollup", "Cube"):
+    forge(f"{step} input has another column", SUM, [K_SUM + [("extra", U64)]], VERSION, OUT, step)
+    forge(f"{step} state is finalized to another type", QUANTILES, [[("k", U64), ("a", state("quantile", U64))]], VERSION,
+          [("__grouping_set", U64), ("k", U64), ("a", b"\x1e" + b"\x0e")], step)   # Array(Float64)
+    forge(f"{step} without final", group_by_modifier(0, [("a", "sum", U64, [])]), [K_SUM], VERSION,
+          [("__grouping_set", U64), ("k", U64), ("a", state("sum", U64))], step)
+    forge(f"well-formed {step}", SUM, [K_SUM], VERSION, OUT, step)
 PYEOF
 
 # The server has to be serving after each refusal.

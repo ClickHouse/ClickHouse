@@ -57,7 +57,15 @@ void checkDeserializedFinalizedAggregates(const AggregateDescriptions & aggregat
 
 /// The steps merging the states read the keys and then the states by position: `layout` (the input as it reaches
 /// the `Aggregator`) must start with `keys` and then the states of `aggregates` (named by `column_name`), in order.
+/// With `exact`, there must be no other columns.
 void checkDeserializedMergedAggregatesLayout(
-    const Names & keys, const AggregateDescriptions & aggregates, const ColumnsWithTypeAndName & layout);
+    const Names & keys, const AggregateDescriptions & aggregates, const ColumnsWithTypeAndName & layout, bool exact = false);
+
+/// The names of the keys and the aggregates (the columns of the output) must be distinct.
+void checkDeserializedAggregateOutputNames(const Names & keys, const AggregateDescriptions & aggregates);
+
+/// The input of `Rollup` and `Cube`: `final`, exactly the keys and then the states, finalized to the types of the plan.
+void checkDeserializedGroupByModifierInput(
+    const Names & keys, const AggregateDescriptions & aggregates, bool final, const Block & header);
 
 }

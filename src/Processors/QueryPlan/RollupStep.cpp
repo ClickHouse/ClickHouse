@@ -154,7 +154,7 @@ QueryPlanStepPtr RollupStep::deserialize(Deserialization & ctx)
 
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptionsWithoutArguments(aggregates, ctx.in, ctx.max_type_complexity);
-    checkDeserializedMergedAggregatesLayout(keys, aggregates, ctx.input_headers.front()->getColumnsWithTypeAndName());
+    checkDeserializedGroupByModifierInput(keys, aggregates, final, *ctx.input_headers.front());
 
     const auto & query_settings = ctx.context->getSettingsRef();
 

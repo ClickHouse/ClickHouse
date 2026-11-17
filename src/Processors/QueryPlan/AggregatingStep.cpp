@@ -1591,10 +1591,12 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         /// (see `canUseProjection`), and the per-set aggregation would not see the layout checked below.
         if (has_grouping_sets)
             throw Exception(ErrorCodes::INCORRECT_DATA, "The merge-only aggregation with grouping sets in a serialized query plan");
-        checkDeserializedMergedAggregatesLayout(keys, aggregates, input_header.getColumnsWithTypeAndName());
+        /// `AggregatingInOrderTransform` addresses the whole input with a mask built for the keys and the states only.
+        checkDeserializedMergedAggregatesLayout(keys, aggregates, input_header.getColumnsWithTypeAndName(), /*exact=*/ true);
     }
     else
     {
+        checkDeserializedAggregateOutputNames(keys, aggregates);
         checkDeserializedAggregateArguments(aggregates, input_header);
     }
 
