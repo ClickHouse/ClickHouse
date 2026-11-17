@@ -42,6 +42,8 @@
 #include <Common/typeid_cast.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/SettingsEnums.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -70,6 +72,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool optimize_group_by_constant_keys;
     extern const QueryPlanSerializationSettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const QueryPlanSerializationSettingsBool enable_parallel_single_level_merge;
+    extern const QueryPlanSerializationSettingsBool enable_parallel_single_level_merge_by_index;
     extern const QueryPlanSerializationSettingsBool enable_adaptive_aggregator;
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
@@ -272,7 +275,7 @@ void AggregatingStep::setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_
     params.top_k->threshold_tracker = std::move(threshold_tracker);
 }
 
-std::vector<size_t> AggregatingStep::getStepGroups() const
+VectorWithMemoryTracking<size_t> AggregatingStep::getStepGroups() const
 {
     return {
         static_cast<size_t>(AggregatingStage::PartialAggregation),
@@ -293,7 +296,7 @@ String AggregatingStep::getStepGroupName(size_t group) const
 static StepAnalysisReport aggregationAnalysisReport(StepProcessors step_processors)
 {
     /// The transforms of one aggregation share an aggregator; grouping sets have one per set.
-    std::unordered_set<const Aggregator *> aggregators;
+    UnorderedSetWithMemoryTracking<const Aggregator *> aggregators;
     UInt64 peak_memory = 0;
     bool tracked = false;
     for (const auto * processor : step_processors)
@@ -1192,7 +1195,7 @@ AggregatingProjectionStep::AggregatingProjectionStep(
     updateInputHeaders(std::move(input_headers_));
 }
 
-std::vector<size_t> AggregatingProjectionStep::getStepGroups() const
+VectorWithMemoryTracking<size_t> AggregatingProjectionStep::getStepGroups() const
 {
     return {
         static_cast<size_t>(AggregatingStep::AggregatingStage::PartialAggregation),
@@ -1357,6 +1360,12 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     /// only the speed and the memory of the aggregation, not its result.
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR_DISABLE_THAW)
         settings[QueryPlanSerializationSetting::adaptive_aggregator_disable_thaw] = params.adaptive_aggregator_disable_thaw;
+
+    /// The same for a name of a later version. A peer that predates it merges as it always did, and the
+    /// choice changes only the speed and the memory of the merge, not its result.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_SINGLE_LEVEL_MERGE_BY_INDEX)
+        settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge_by_index]
+            = params.enable_parallel_single_level_merge_by_index;
 
     /// A peer predating the name keeps its own two-level decision: writing an unknown name would make it throw
     /// while reading the step settings (before version 21 the reader threw on an unknown name), which would break every distributed `GROUP BY` of a query that
@@ -1664,6 +1673,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation],
         ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte],
         ctx.settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge],
+        ctx.settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge_by_index],
         ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation],
         ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold],

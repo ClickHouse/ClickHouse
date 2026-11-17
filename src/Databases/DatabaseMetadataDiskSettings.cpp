@@ -26,7 +26,8 @@ struct DatabaseMetadataDiskSettingsImpl : public BaseSettings<DatabaseMetadataDi
 
 IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(DatabaseMetadataDiskSettingsTraits, LIST_OF_DATABASE_METADATA_DISK_SETTINGS, DatabaseMetadataDiskSettings, DatabaseMetadataDiskSetting)
 
-void DatabaseMetadataDiskSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool stored_definition)
+void DatabaseMetadataDiskSettingsImpl::loadFromQuery(
+    ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool stored_definition)
 {
     if (!storage_def.settings)
         return;
@@ -75,7 +76,8 @@ DatabaseMetadataDiskSettings::~DatabaseMetadataDiskSettings() = default;
 
 DATABASE_METADATA_SETTINGS_SUPPORTED_TYPES(DatabaseMetadataDiskSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
-void DatabaseMetadataDiskSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool stored_definition)
+void DatabaseMetadataDiskSettings::loadFromQuery(
+    ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool stored_definition)
 {
     impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata, stored_definition);
 }

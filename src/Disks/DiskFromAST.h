@@ -7,6 +7,7 @@
 namespace DB
 {
 
+class Field;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 
@@ -14,6 +15,8 @@ namespace DiskFromAST
 
 {
     void ensureDiskIsNotCustom(const std::string & name, ContextPtr context);
+    /// Rejects an inline `disk(...)` definition, for the settings that take only a disk name.
+    void ensureDiskIsNotInline(const Field & value);
     /// Refuse, for a session without `s3_allow_server_credentials_in_user_queries`, a custom disk that uses the server's own
     /// credentials, or a storage policy with one. With `check_remote_hosts`, also refuse a custom disk with an endpoint that
     /// `remote_url_allow_hosts` does not allow. For a table definition selecting a disk or a policy by name.
