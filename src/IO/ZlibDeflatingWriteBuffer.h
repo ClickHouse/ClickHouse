@@ -48,10 +48,6 @@ public:
 
         int rc = deflateInit2(&zstr, compression_level, Z_DEFLATED, window_bits, 8, Z_DEFAULT_STRATEGY);
 
-        if (rc == Z_STREAM_ERROR)
-            throw Exception(ErrorCodes::ZLIB_DEFLATE_FAILED, "Compression level {} is out of range for {}",
-                compression_level, toContentEncodingName(compression_method));
-
         if (rc != Z_OK)
             throw Exception(ErrorCodes::ZLIB_DEFLATE_FAILED, "deflateInit2 failed: {}; zlib version: {}", zError(rc), ZLIB_VERSION);
     }

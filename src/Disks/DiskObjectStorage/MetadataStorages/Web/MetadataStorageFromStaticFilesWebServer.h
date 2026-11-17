@@ -48,7 +48,7 @@ private:
 
     struct Files : public std::map<String, FileDataPtr>
     {
-        [[nodiscard]] auto find(const String & path, bool is_file) const
+        auto find(const String & path, bool is_file) const
         {
             if (is_file)
                 return std::map<String, FileDataPtr>::find(path);
@@ -113,11 +113,7 @@ public:
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
     bool isReadOnly() const override { return true; }
-    bool isRemote() const override { return true; }
     bool areBlobPathsRandom() const override { return false; }
-    /// Nothing is ever written, hence nothing is ever removed or replicated.
-    bool hasDeadBlobsQueue() const override { return false; }
-    bool hasMissingBlobsQueue() const override { return false; }
 };
 
 }

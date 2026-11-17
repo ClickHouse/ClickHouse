@@ -1,7 +1,7 @@
 #include <Storages/StorageMergeTreeCodecBlockCounts.h>
 
 #include <Access/Common/AccessFlags.h>
-#include <Storages/getEffectiveRowPolicyFilter.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
@@ -99,7 +99,7 @@ protected:
         auto component_guard = Coordination::setCurrentComponent("MergeTreeCodecBlockCountsSource::generate");
 
         /// One part per call. generate is called repeatedly until it returns an empty chunk.
-        /// Thus we skip parts with empty ColumnsSubstreams (e.g. written by an older version) and parts
+        /// Thus we skip parts with empty ColumnsSubstreams (e.g. Compact without substream marks) and parts
         /// where keys_filter drops every row, instead of returning an empty chunk for them.
         while (part_index < data_parts.size())
         {
@@ -213,7 +213,7 @@ private:
             UInt32 size_compressed = 0;
             UInt32 size_decompressed = 0;
             auto codec = getCompressionCodecForFile(*read_buffer, size_compressed, size_decompressed, true);
-            ++counts[codec->getCodecDescription()->formatForLogging()];
+            ++counts[codec->getCodecDesc()->formatForLogging()];
         }
         return codecCountsToField(counts);
     }
@@ -253,7 +253,7 @@ public:
     {
     }
 
-    [[nodiscard]] std::string getName() const override { return "ReadFromMergeTreeCodecBlockCounts"; }
+    std::string getName() const override { return "ReadFromMergeTreeCodecBlockCounts"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
@@ -361,7 +361,9 @@ void StorageMergeTreeCodecBlockCounts::read(
     /// The other columns are metadata that `system.parts_columns` reports regardless of row policies.
     if (sample_block->has(CODEC_BLOCK_COUNTS_COLUMN))
     {
-        if (getEffectiveRowPolicyFilter(*merge_tree, context))
+        auto row_policy_filter = context->getRowPolicyFilter(
+            source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,
                 "Cannot read column `{}` from `mergeTreeCodecBlockCounts` because a row policy is applied on table {}. "
