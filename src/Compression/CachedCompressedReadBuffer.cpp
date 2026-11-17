@@ -31,6 +31,10 @@ void CachedCompressedReadBuffer::initInput()
 
 void CachedCompressedReadBuffer::prefetch(Priority priority)
 {
+    /// The next block is served from the cache without touching the file, see `nextImpl`.
+    if (!(read_until_position && file_pos >= *read_until_position) && cache->contains(UncompressedCache::hash(path, file_pos)))
+        return;
+
     initInput();
     file_in->prefetch(priority);
 }
@@ -100,8 +104,7 @@ void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t o
 {
     /// Nothing to do if we already at required position
     if (!owned_cell && file_pos == offset_in_compressed_file
-        && ((!buffer().empty() && offset() == offset_in_decompressed_block) ||
-            nextimpl_working_buffer_offset == offset_in_decompressed_block))
+        && nextimpl_working_buffer_offset == offset_in_decompressed_block)
         return;
 
     if (owned_cell &&
