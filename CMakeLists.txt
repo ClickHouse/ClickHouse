@@ -655,6 +655,12 @@ if (ENABLE_CFI_DIAGNOSTICS AND ENABLE_XRAY)
     message (FATAL_ERROR "ENABLE_CFI_DIAGNOSTICS is incompatible with ENABLE_XRAY.")
 endif ()
 
+# Rust std calls glibc's `__pthread_get_minstack` through a pointer from `dlsym`, which CFI rejects; the replacement
+# that keeps the call inside the program is in base/glibc-compatibility.
+if (ENABLE_CFI AND OS_LINUX AND NOT USE_MUSL AND NOT GLIBC_COMPATIBILITY)
+    message (FATAL_ERROR "ENABLE_CFI requires GLIBC_COMPATIBILITY or USE_MUSL on Linux.")
+endif ()
+
 if (ENABLE_CFI AND ENABLE_TESTS)
     message (FATAL_ERROR "ENABLE_CFI is incompatible with ENABLE_TESTS. "
         "ThinLTO (required by CFI) is disabled when building tests. "
@@ -877,6 +883,12 @@ enable_testing() # Enable for tests without binary
 
 set(ENABLE_OPENSSL_DYNAMIC_DEFAULT OFF)
 option(ENABLE_OPENSSL_DYNAMIC "This option removes SSL from ClickHouse and will link to the OpenSSL version supplied by OS." ${ENABLE_OPENSSL_DYNAMIC_DEFAULT})
+
+# A shared libcrypto calls back into ClickHouse (e.g. certificate verification callbacks), and Clang CFI rejects every
+# call that crosses into or out of a library that is not part of the same link.
+if (ENABLE_CFI AND ENABLE_OPENSSL_DYNAMIC)
+    message (FATAL_ERROR "ENABLE_CFI is incompatible with ENABLE_OPENSSL_DYNAMIC.")
+endif ()
 
 # when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
 if (CMAKE_INSTALL_PREFIX STREQUAL "/usr")
