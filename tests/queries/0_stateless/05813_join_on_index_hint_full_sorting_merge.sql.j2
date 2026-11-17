@@ -42,8 +42,9 @@ SELECT '{{ algorithm }}', '{{ kind }}', 'like', arraySort(groupArray((l.s, r.v))
 {% endfor %}
 DROP DICTIONARY IF EXISTS d_or_like_join;
 CREATE DICTIONARY d_or_like_join (n UInt64, v String) PRIMARY KEY n SOURCE(CLICKHOUSE(TABLE 't_or_like_join_r')) LAYOUT(FLAT()) LIFETIME(0);
+-- `direct` cannot run under parallel replicas, with or without the hint
 {% for kind in ['INNER', 'LEFT'] -%}
-SELECT 'direct', '{{ kind }}', 'indexHint', arraySort(groupArray((l.s, r.v))) FROM t_or_like_join_l AS l {{ kind }} JOIN d_or_like_join AS r ON l.n = r.n AND indexHint(r.v = 'x') SETTINGS join_algorithm = 'direct';
+SELECT 'direct', '{{ kind }}', 'indexHint', arraySort(groupArray((l.s, r.v))) FROM t_or_like_join_l AS l {{ kind }} JOIN d_or_like_join AS r ON l.n = r.n AND indexHint(r.v = 'x') SETTINGS join_algorithm = 'direct', enable_parallel_replicas = 0;
 {% endfor %}
 DROP DICTIONARY d_or_like_join;
 DROP TABLE t_or_like_join_l;
