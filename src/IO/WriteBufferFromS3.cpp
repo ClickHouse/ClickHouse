@@ -89,11 +89,10 @@ struct WriteBufferFromS3::PartData
     }
 };
 
-/// Throws the error of a failed write, with the mark of the client when it could not prove whether the write was applied.
+/// Throws the error of a failed write, with what the client proved about it.
 [[noreturn]] static void throwWriteError(S3Exception exception, const S3::RequestWithIdempotencyId & request)
 {
-    if (request.isOutcomeUnknown())
-        exception.setOutcomeUnknown();
+    exception.setConditionalWriteVerdict(request.getVerdict());
     throw exception; /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
 }
 

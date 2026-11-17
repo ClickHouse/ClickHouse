@@ -421,22 +421,33 @@ static bool isKnownAbsent(const DB::ObjectStoragePtr & object_storage, const std
     }
 }
 
-/// The S3 client decides a failed conditional upload from the answers to all its attempts and from its idempotency id.
-/// It marks the error when the outcome stays unknown, so an unmarked error proves that nothing was applied.
-enum class S3UploadVerdict : uint8_t
+/// The S3 client decides a failed conditional upload from the answers to all its attempts and from its idempotency id,
+/// and puts its verdict on the error. An error without a verdict proves nothing: it can come from another request,
+/// e.g. from the check after the upload.
+enum class UploadVerdict : uint8_t
 {
-    NotS3,
+    NotProven,
     NotApplied,
     Unknown,
 };
 
-static S3UploadVerdict getS3UploadVerdict(const Exception & e)
+static UploadVerdict getUploadVerdict(const Exception & e)
 {
 #if USE_AWS_S3
     if (const auto * s3_exception = dynamic_cast<const S3Exception *>(&e))
-        return s3_exception->isOutcomeUnknown() ? S3UploadVerdict::Unknown : S3UploadVerdict::NotApplied;
+    {
+        switch (s3_exception->getConditionalWriteVerdict())
+        {
+            case S3::ConditionalWriteVerdict::NotApplied:
+                return UploadVerdict::NotApplied;
+            case S3::ConditionalWriteVerdict::Unknown:
+                return UploadVerdict::Unknown;
+            case S3::ConditionalWriteVerdict::None:
+                break;
+        }
+    }
 #endif
-    return S3UploadVerdict::NotS3;
+    return UploadVerdict::NotProven;
 }
 
 /// The upload was sent and failed without proof either way, so it may have published the new version.
@@ -485,8 +496,8 @@ bool writeMetadataFile(
     }
     catch (const Exception & e)
     {
-        const auto s3_verdict = write_attempted ? getS3UploadVerdict(e) : S3UploadVerdict::NotS3;
-        if (s3_verdict == S3UploadVerdict::Unknown)
+        const auto upload_verdict = write_attempted ? getUploadVerdict(e) : UploadVerdict::NotProven;
+        if (upload_verdict == UploadVerdict::Unknown)
             throwCommitOutcomeUnknown(storage_metadata_path);
         if (isConditionalWriteConflict(e))
         {
@@ -495,7 +506,7 @@ bool writeMetadataFile(
             return false;
         }
         /// Nothing of the upload was applied, so the commit fails, and the caller rolls it back.
-        if (s3_verdict == S3UploadVerdict::NotApplied)
+        if (upload_verdict == UploadVerdict::NotApplied)
             throw;
         /// A refused write is not a lost race, and retrying the commit cannot get past it. Once the write was sent,
         /// a refusal (e.g. of the check after an upload) proves nothing was written only while the file is absent.

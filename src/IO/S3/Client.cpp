@@ -688,12 +688,23 @@ Client::ObjectWriter Client::findObjectWriter(
 template <typename RequestType, typename OutcomeType>
 bool Client::resolveFailedConditionalWrite(RequestType & request, const OutcomeType & outcome, bool warn_if_unproven) const
 {
+    /// The attempts are recorded only for a conditional write, so only its failure can be proven.
+    const bool conditional = isConditionalWrite(request);
+    const auto set_verdict = [&](ConditionalWriteVerdict verdict)
+    {
+        if (conditional)
+            request.setVerdict(verdict);
+    };
+
     const auto & error = outcome.GetError();
     /// A replay of a landed write fails its own precondition, and a replayed completion finds its upload id consumed.
     const bool may_be_replay
         = error.GetExceptionName() == "PreconditionFailed" || error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD;
     if (!may_be_replay && !request.mayHaveBeenApplied())
+    {
+        set_verdict(ConditionalWriteVerdict::NotApplied);
         return false;
+    }
 
     switch (findObjectWriter(request.GetBucket(), request.GetKey(), request.getIdempotencyId(), warn_if_unproven))
     {
@@ -703,20 +714,23 @@ bool Client::resolveFailedConditionalWrite(RequestType & request, const OutcomeT
             /// Only one write can create a key with `If-None-Match: *`, so this one was not applied and cannot be
             /// applied later. With `If-Match` a later write can replace the object of this one.
             if (request.IfNoneMatchHasBeenSet())
+            {
+                set_verdict(ConditionalWriteVerdict::NotApplied);
                 return false;
+            }
             break;
         case ObjectWriter::Unproven:
             break;
     }
 
     /// Without an attempt that may have been applied, nothing of this write can be at the key.
-    request.setOutcomeUnknown(request.mayHaveBeenApplied());
+    set_verdict(request.mayHaveBeenApplied() ? ConditionalWriteVerdict::Unknown : ConditionalWriteVerdict::NotApplied);
     return false;
 }
 
 Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const
 {
-    request.setOutcomeUnknown(false);
+    request.setVerdict(ConditionalWriteVerdict::None);
     auto outcome = [&]
     {
         std::optional<ConditionalWriteAttempts> attempts;
@@ -780,7 +794,7 @@ Model::CopyObjectOutcome Client::CopyObject(CopyObjectRequest & request) const
 
 Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
 {
-    request.setOutcomeUnknown(false);
+    request.setVerdict(ConditionalWriteVerdict::None);
     auto outcome = [&]
     {
         std::optional<ConditionalWriteAttempts> attempts;

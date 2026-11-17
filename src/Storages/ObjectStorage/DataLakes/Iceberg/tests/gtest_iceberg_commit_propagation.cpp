@@ -305,7 +305,7 @@ TEST(IcebergCommitPropagation, S3WriteWithUnknownOutcomeIsNotRetried)
     expectUnknownOutcome([](const std::string &)
     {
         S3Exception exception("Connection reset by peer", Aws::S3::S3Errors::NETWORK_CONNECTION);
-        exception.setOutcomeUnknown();
+        exception.setConditionalWriteVerdict(S3::ConditionalWriteVerdict::Unknown);
         throw exception; /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
     });
 
@@ -315,7 +315,7 @@ TEST(IcebergCommitPropagation, S3WriteWithUnknownOutcomeIsNotRetried)
         S3Exception exception(
             "Unable to parse ExceptionName: PreconditionFailed Message: At least one of the pre-conditions you specified did not hold",
             Aws::S3::S3Errors::UNKNOWN);
-        exception.setOutcomeUnknown();
+        exception.setConditionalWriteVerdict(S3::ConditionalWriteVerdict::Unknown);
         throw exception; /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
     });
 }
@@ -326,13 +326,27 @@ TEST(IcebergCommitPropagation, S3WriteThatWasNotAppliedPropagates)
     /// error of S3, and its caller rolls back.
     try
     {
-        bool committed = commitWithFailingWrite([](const std::string &) { throw S3Exception("Slow Down.", Aws::S3::S3Errors::SLOW_DOWN); });
+        bool committed = commitWithFailingWrite([](const std::string &)
+        {
+            S3Exception exception("Slow Down.", Aws::S3::S3Errors::SLOW_DOWN);
+            exception.setConditionalWriteVerdict(S3::ConditionalWriteVerdict::NotApplied);
+            throw exception; /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
+        });
         FAIL() << "Expected the S3 error to propagate, got " << committed;
     }
     catch (const S3Exception & e)
     {
         EXPECT_EQ(e.getS3ErrorCode(), Aws::S3::S3Errors::SLOW_DOWN) << e.message();
     }
+}
+
+TEST(IcebergCommitPropagation, S3ErrorWithoutVerdictLeavesTheOutcomeUnknown)
+{
+    /// An error that the client did not decide, e.g. of the check after the upload, proves nothing about the upload.
+    expectUnknownOutcome([](const std::string & path)
+    {
+        throw S3Exception(Aws::S3::S3Errors::NO_SUCH_KEY, "Object {} suddenly disappeared", path);
+    });
 }
 
 TEST(IcebergCommitPropagation, RefusedExistenceCheckIsNotReportedAsALostRace)
