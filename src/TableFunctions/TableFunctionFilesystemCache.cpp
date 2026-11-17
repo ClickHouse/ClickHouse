@@ -128,7 +128,7 @@ With 'random', the whole queue is walked to take a uniform sample of at most `ma
 
 A cache with the SLRU policy has two queues: the probationary one is colder than the protected one. A cache with `use_split_cache` has a data and a system queue, and the data queue always comes first, in every order.
 
-The result is a best-effort snapshot: a segment whose cache key is locked by another query at the moment it is visited (e.g. while it is being downloaded or read) is skipped, and the next returned segment takes its rank. So the segments in use at that moment, which are often the hottest ones, can be missing from the result.
+The result is not an atomic snapshot: the cache keeps changing during the walk, and a segment which is removed from the cache before the walk reaches it is skipped, and the next returned segment takes its rank. When a segment's cache key is locked by another query (e.g. while the segment is being downloaded), the walk waits for it.
 
 Unlike `system.filesystem_cache`, which walks all keys of all caches, it walks the eviction queue of one cache, and with 'hottest' and 'coldest' only as far as needed, so it can return the hottest segments (e.g. to prewarm another replica), the next eviction candidates, or a uniform sample of the cache.
 

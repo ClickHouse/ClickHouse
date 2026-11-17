@@ -144,8 +144,8 @@ DROP USER IF EXISTS $user;
 CREATE USER $user IDENTIFIED WITH no_password;
 "
 $CLICKHOUSE_CLIENT --user "$user" --query "SELECT count() FROM filesystemCache('$lru', 100, 1000000)" 2>&1 | grep -o -m1 'ACCESS_DENIED'
-# A grant on some columns only is not enough.
-$CLICKHOUSE_CLIENT --query "GRANT SELECT(path) ON system.filesystem_cache TO $user"
+# A grant on some columns only (here the real column `cache_path`) is not enough: the table function needs `SELECT` on the whole table.
+$CLICKHOUSE_CLIENT --query "GRANT SELECT(cache_path) ON system.filesystem_cache TO $user"
 $CLICKHOUSE_CLIENT --user "$user" --query "SELECT count() FROM filesystemCache('$lru', 100, 1000000)" 2>&1 | grep -o -m1 'ACCESS_DENIED'
 $CLICKHOUSE_CLIENT --query "GRANT SELECT ON system.filesystem_cache TO $user"
 $CLICKHOUSE_CLIENT --user "$user" --query "SELECT count() > 0 FROM filesystemCache('$lru', 100, 1000000)"

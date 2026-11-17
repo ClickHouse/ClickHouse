@@ -88,7 +88,7 @@ namespace DB
         /// 1-based position of the segment. For 'hottest' and 'coldest': its position in the output, i.e. the priority order.
         /// For 'random': its position among the returnable segments of the queues walked coldest first
         /// (SLRU: probationary, then protected; split cache: data, then system), the same rank it would get with 'coldest'.
-        /// Segments skipped by the walk (gone, empty, or with a busy key lock) are not counted.
+        /// Segments skipped by the walk (removed from the cache, or empty) are not counted.
         UInt64 priority_rank{0};
         /// Real on-disk file, including the _<size> suffix of downloaded segments
         String path;

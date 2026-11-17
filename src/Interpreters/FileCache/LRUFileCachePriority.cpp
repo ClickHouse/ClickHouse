@@ -296,8 +296,9 @@ void LRUFileCachePriority::iterate(IterateFunc func, FileCacheReserveStat & stat
 namespace
 {
 
-/// The summary of the file segment of `entry`, or `nullopt` if the segment is gone or empty, or if its key lock is busy:
-/// the key is only `tryLock`-ed, so segments in use by other queries can be missing from the result.
+/// The summary of the file segment of `entry`, or `nullopt` if the key is being removed, or the segment is gone or empty.
+/// Despite its name, `KeyMetadata::tryLock` waits for the key lock and fails only if the key is no longer `ACTIVE`,
+/// so a key held by another query makes the walk wait while it holds the priority read lock.
 /// The key lock is held only to find the file segment, to make sure it is still in the cache,
 /// and, for a `Moving` or `Evicting` entry, to check that it is still the current queue entry of the segment.
 /// Everything else comes from the queue entry, the key metadata, or atomics of the file segment.
@@ -395,7 +396,7 @@ void LRUFileCachePriority::iterate(
             return true;
 
         /// For `RANDOM`, the segment must be materialized before the random draw, and a segment that cannot be
-        /// materialized (the key was removed, the key lock is busy, the segment is gone or empty) must be
+        /// materialized (the key was removed, the segment is gone or empty) must be
         /// skipped entirely, without counting it in `result.seen`.
         /// Otherwise whether it counts depends on the draw: a draw outside the reservoir would count it
         /// without checking it, and a draw inside would drop it, which biases the sample towards the
