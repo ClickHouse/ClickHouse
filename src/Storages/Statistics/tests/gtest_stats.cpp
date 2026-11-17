@@ -1100,13 +1100,12 @@ TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
     EXPECT_FALSE(restored->hasNullCount());
 }
 
-/// `minmax` of `V1` stored `Float64` bounds for any column type. They are converted to the type of the column,
-/// so that the statistics can be written again, e.g. by a merge, with both `V4` and `V5`.
-TEST(Statistics, DeserializeV1MinMaxConvertsBounds)
+/// `minmax` of `V1` stored inexact `Float64` bounds for any column type: `9007199254740995` and `9007199254740997`
+/// both become `9007199254740996`, and fractional bounds of a `Float64` column could not be distinguished from
+/// rounded ones. The statistics are dropped when read, and the file can still be written again.
+TEST(Statistics, DeserializeV1MinMaxDropsBounds)
 {
     tryRegisterAggregateFunctions();
-
-    auto data_type = std::make_shared<DataTypeUInt64>();
 
     auto make_v1_file = [](Float64 min, Float64 max)
     {
@@ -1122,40 +1121,34 @@ TEST(Statistics, DeserializeV1MinMaxConvertsBounds)
         return file;
     };
 
-    auto load = [&](const String & file)
+    for (const auto * type_name : {"UInt64", "Float64", "Decimal64(2)"})
     {
-        ReadBufferFromString rb(file);
-        return ColumnStatistics::deserialize(rb, data_type);
-    };
+        auto data_type = DataTypeFactory::instance().get(type_name);
+        auto load = [&](const String & file)
+        {
+            ReadBufferFromString rb(file);
+            return ColumnStatistics::deserialize(rb, data_type);
+        };
 
-    for (auto version : {StatisticsFileVersion::V4, StatisticsFileVersion::V5})
-    {
-        /// The bounds are widened to the nearest integers.
-        auto loaded = load(make_v1_file(1.5, 2.5));
-        ASSERT_TRUE(loaded != nullptr);
-        ASSERT_TRUE(loaded->getStats().contains(StatisticsType::MinMax));
+        for (auto [min, max] : {std::pair{1.25, 2.75}, std::pair{9007199254740996.0, 9007199254740996.0},
+                                std::pair{-1.0, std::numeric_limits<Float64>::infinity()}})
+        {
+            auto loaded = load(make_v1_file(min, max));
+            ASSERT_TRUE(loaded != nullptr);
+            EXPECT_FALSE(loaded->getStats().contains(StatisticsType::MinMax)) << type_name;
+            auto estimate = loaded->getEstimate();
+            EXPECT_FALSE(estimate.estimated_min.has_value()) << type_name;
+            EXPECT_FALSE(estimate.estimated_max.has_value()) << type_name;
 
-        WriteBufferFromOwnString rewritten;
-        loaded->serialize(rewritten, version);
-        auto restored = load(rewritten.str());
-        ASSERT_TRUE(restored != nullptr);
-        auto estimate = restored->getEstimate();
-        ASSERT_TRUE(estimate.estimated_min.has_value());
-        ASSERT_TRUE(estimate.estimated_max.has_value());
-        EXPECT_EQ(*estimate.estimated_min, Field(UInt64(1)));
-        EXPECT_EQ(*estimate.estimated_max, Field(UInt64(3)));
-    }
-
-    /// The bounds that do not fit the type are dropped together with the statistics.
-    for (auto [min, max] : {std::pair{-1.0, 2.0}, std::pair{1.0, std::numeric_limits<Float64>::infinity()}})
-    {
-        auto loaded = load(make_v1_file(min, max));
-        ASSERT_TRUE(loaded != nullptr);
-        EXPECT_FALSE(loaded->getStats().contains(StatisticsType::MinMax));
-
-        WriteBufferFromOwnString rewritten;
-        loaded->serialize(rewritten, LATEST_STATISTICS_FILE_VERSION);
-        EXPECT_TRUE(load(rewritten.str()) != nullptr);
+            for (auto version : {StatisticsFileVersion::V4, StatisticsFileVersion::V5})
+            {
+                WriteBufferFromOwnString rewritten;
+                loaded->serialize(rewritten, version);
+                auto restored = load(rewritten.str());
+                ASSERT_TRUE(restored != nullptr);
+                EXPECT_FALSE(restored->getStats().contains(StatisticsType::MinMax)) << type_name;
+            }
+        }
     }
 }
 

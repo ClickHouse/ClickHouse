@@ -838,10 +838,10 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     for (const auto & [_, desc] : result->stats)
         desc->deserialize(buf, version);
 
-    /// `minmax` of `V1` has `Float64` bounds, which are converted to the type of the column, so that they can be
-    /// written again. If they cannot be converted, drop the statistics: a merge then builds them from the rows.
+    /// `minmax` of `V1` has inexact `Float64` bounds, which may not contain all values of the column, and which cannot
+    /// be written again with the serialization of the column type. Drop the statistics: a merge builds them from the rows.
     if (auto it = result->stats.find(StatisticsType::MinMax); it != result->stats.end()
-        && assert_cast<const StatisticsMinMax &>(*it->second).hasUnconvertibleLegacyBounds())
+        && assert_cast<const StatisticsMinMax &>(*it->second).hasLegacyBounds())
     {
         result->stats.erase(it);
         result->stats_desc.types_to_desc.erase(StatisticsType::MinMax);
