@@ -272,12 +272,17 @@ ThreadGroupPtr ThreadGroup::create(ContextPtr context, Int32 os_threads_nice_val
     return group;
 }
 
-ThreadGroupPtr ThreadGroup::createForMergeMutate(ContextPtr storage_context)
+ThreadGroupPtr ThreadGroup::createForMergeMutate(ContextPtr storage_context, ThreadGroupPtr query_thread_group)
 {
     const Int32 os_threads_nice_value = storage_context->getServerSettings()[ServerSetting::os_threads_nice_value_merge_mutate];
     auto group = create(storage_context, os_threads_nice_value);
     group->memory_tracker.setDescription("Background process (mutate/merge)");
     group->memory_tracker.setParent(&background_memory_tracker);
+    if (query_thread_group)
+    {
+        group->performance_counters.setParent(&query_thread_group->performance_counters);
+        group->parent = std::move(query_thread_group);
+    }
     return group;
 }
 

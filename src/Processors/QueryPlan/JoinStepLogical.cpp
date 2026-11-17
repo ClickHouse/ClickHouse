@@ -766,9 +766,14 @@ void JoinStepLogical::updateOutputHeader()
     output_header = std::make_shared<const Block>(std::move(header));
 }
 
+bool JoinStepLogical::isDummyResultColumn(const ActionsDAG::Node & node)
+{
+    return node.result_name == join_dummy_result_name;
+}
+
 bool JoinStepLogical::isDummyColumnOfThisStep(const ActionsDAG::Node * node) const
 {
-    return node->result_name == join_dummy_result_name && JoinActionRef(node, expression_actions).fromNone();
+    return isDummyResultColumn(*node) && JoinActionRef(node, expression_actions).fromNone();
 }
 
 JoinStepLogicalLookup::JoinStepLogicalLookup(QueryPlan child_plan_, PreparedJoinStorage prepared_join_storage_, bool use_nulls_)
@@ -787,6 +792,12 @@ void JoinStepLogicalLookup::initializePipeline(QueryPipelineBuilder & pipeline_b
 
 QueryPlanRawPtrs JoinStepLogicalLookup::getChildPlans(bool /*for_explain*/)
 {
+    return {&child_plan};
+}
+
+QueryPlanRawPtrs JoinStepLogicalLookup::getBuiltChildPlans()
+{
+    /// The plan is held, not built on demand, so observing it costs nothing.
     return {&child_plan};
 }
 
