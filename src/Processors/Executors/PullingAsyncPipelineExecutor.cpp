@@ -134,7 +134,7 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
             threadFunction(*data, thread_group, pipeline.getNumThreads(), pipeline.getConcurrencyControl());
         };
 
-        data->thread = ThreadFromGlobalPool(std::move(func));
+        data->thread = ThreadFromGlobalPool(ThreadName::PULLING_ASYNC_EXECUTOR, std::move(func));
 
         /// Simulates a consumer that is slow to pull the first chunks, so that the time limit is exceeded while
         /// the result is already sitting in the lazy format. Only a query whose id starts with the prefix is

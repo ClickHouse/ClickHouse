@@ -1811,7 +1811,7 @@ HashJoin::RightTableData::~RightTableData()
 
         auto schedule = [&pool, thread_group = CurrentThread::getGroup()](auto job)
         {
-            pool.scheduleOrThrowOnError(
+            pool.scheduleOrThrowOnError(ThreadName::HASH_JOIN_DTOR,
                 [job, thread_group]
                 {
                     ThreadGroupSwitcher switcher(thread_group, ThreadName::HASH_JOIN_DTOR);

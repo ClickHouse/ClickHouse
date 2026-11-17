@@ -526,7 +526,7 @@ private:
         {
             ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisScheduledReplicas);
             auto exception_ptr = result.exception;
-            result.thread = ThreadFromGlobalPool([this, thread_group = CurrentThread::getGroup(), &local_parts, local_marks, local_rows, &local_result, exception_ptr]()
+            result.thread = ThreadFromGlobalPool(ThreadName::DISTRIBUTED_INDEX_ANALYSIS, [this, thread_group = CurrentThread::getGroup(), &local_parts, local_marks, local_rows, &local_result, exception_ptr]()
             {
                 ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_INDEX_ANALYSIS);
                 try

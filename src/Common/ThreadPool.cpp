@@ -1324,6 +1324,7 @@ void GlobalThreadPool::shutdown()
 }
 
 void startThreadFromGlobalPool(
+    DB::ThreadName name,
     std::shared_ptr<ThreadFromGlobalPoolState> state,
     std::function<void()> func,
     UInt64 global_profiler_real_time_period_ns,
@@ -1335,6 +1336,7 @@ void startThreadFromGlobalPool(
     /// - If scheduleOrThrow throws, the ThreadFromGlobalPoolImpl destructor won't be called.
     /// - `this` cannot be passed in the lambda since after detach() it is no longer valid.
     GlobalThreadPool::instance().scheduleOrThrow(
+        name,
         [my_state = std::move(state),
          my_func = std::move(func),
          global_profiler_real_time_period_ns,

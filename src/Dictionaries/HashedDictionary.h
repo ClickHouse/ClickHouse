@@ -361,7 +361,7 @@ HashedDictionary<dictionary_key_type, sparse>::~HashedDictionary()
         if (container.empty())
             return;
 
-        if (!pool.trySchedule([&container, thread_group = getCurrentThreadGroup()]
+        if (!pool.trySchedule(ThreadName::HASHED_DICT_DTOR, [&container, thread_group = getCurrentThreadGroup()]
             {
                 ThreadGroupSwitcher switcher(thread_group, ThreadName::HASHED_DICT_DTOR);
 

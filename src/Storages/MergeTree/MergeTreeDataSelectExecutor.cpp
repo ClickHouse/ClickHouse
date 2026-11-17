@@ -1702,7 +1702,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             const size_t num_jobs = std::min(num_threads, parts_with_ranges.size());
             for (size_t job = 0; job < num_jobs; ++job)
             {
-                pool.scheduleOrThrowOnError(
+                pool.scheduleOrThrowOnError(ThreadName::MERGETREE_INDEX,
                     [&, thread_group = CurrentThread::getGroup(), component_name = Coordination::getCurrentComponent()]
                     {
                         ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX);

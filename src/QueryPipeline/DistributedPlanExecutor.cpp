@@ -832,7 +832,7 @@ public:
         branches.push_back(branch);
         try
         {
-            branch->thread = ThreadFromGlobalPool(
+            branch->thread = ThreadFromGlobalPool(ThreadName::DISTRIBUTED_QUERY_TASK,
                 [branch, filter_name, thread_group = CurrentThread::getGroup(), log = logger]
                 {
                     ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);

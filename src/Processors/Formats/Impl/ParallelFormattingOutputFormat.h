@@ -103,7 +103,7 @@ public:
         /// Because otherwise the destructor of this class won't be called and this thread won't be joined.
         /// Also some race condition is possible, because collector_thread runs in parallel with
         /// the destruction of the objects already created in this scope.
-        collector_thread = ThreadFromGlobalPool([thread_group = getCurrentThreadGroup(), this]
+        collector_thread = ThreadFromGlobalPool(ThreadName::PARALLEL_FORMATER_COLLECTOR, [thread_group = getCurrentThreadGroup(), this]
         {
             collectorThreadFunction(thread_group);
         });
@@ -292,7 +292,7 @@ private:
 
     void scheduleFormatterThreadForUnitWithNumber(size_t ticket_number, size_t first_row_num)
     {
-        pool.scheduleOrThrowOnError([this, thread_group = getCurrentThreadGroup(), ticket_number, first_row_num]
+        pool.scheduleOrThrowOnError(ThreadName::PARALLEL_FORMATER, [this, thread_group = getCurrentThreadGroup(), ticket_number, first_row_num]
         {
             formatterThreadFunction(ticket_number, first_row_num, thread_group);
         });

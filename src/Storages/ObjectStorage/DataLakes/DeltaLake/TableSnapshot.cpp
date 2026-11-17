@@ -178,7 +178,7 @@ public:
                 name = getPhysicalName(appendToLogicalPath({}, name), physical_names_map_);
         }
 
-        thread = ThreadFromGlobalPool(
+        thread = ThreadFromGlobalPool(DB::ThreadName::DATALAKE_TABLE_SNAPSHOT,
             [&, thread_group = DB::CurrentThread::getGroup()]
             {
                 /// Attach to current query thread group, to be able to

@@ -672,7 +672,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
             };
 
             auto task = std::make_shared<DeserializationTask>(std::move(deserialize));
-            static_cast<void>(settings.prefixes_deserialization_thread_pool->trySchedule([task_ptr = task, thread_group = CurrentThread::getGroup()]()
+            static_cast<void>(settings.prefixes_deserialization_thread_pool->trySchedule(ThreadName::PREFIX_READER, [task_ptr = task, thread_group = CurrentThread::getGroup()]()
             {
                 ThreadGroupSwitcher switcher(thread_group, ThreadName::PREFIX_READER);
 

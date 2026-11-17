@@ -353,6 +353,7 @@ struct ThreadFromGlobalPoolState
 /// Worker entry point implementing ThreadFromGlobalPoolImpl's constructor body.
 /// Lives in the .cpp so that ThreadStatus, scope_guard and friends do not leak via this header.
 void startThreadFromGlobalPool(
+    DB::ThreadName name,
     std::shared_ptr<ThreadFromGlobalPoolState> state,
     std::function<void()> func,
     UInt64 global_profiler_real_time_period_ns,
@@ -375,9 +376,17 @@ public:
 
     template <typename Function, typename... Args>
     explicit ThreadFromGlobalPoolImpl(Function && func, Args &&... args)
+        : ThreadFromGlobalPoolImpl(DB::ThreadName::UNKNOWN, std::forward<Function>(func), std::forward<Args>(args)...)
+    {
+    }
+
+    /// `name` names the thread in the trace, see ThreadPool::scheduleOrThrow.
+    template <typename Function, typename... Args>
+    explicit ThreadFromGlobalPoolImpl(DB::ThreadName name, Function && func, Args &&... args)
         : state(std::make_shared<ThreadFromGlobalPoolState>())
     {
         startThreadFromGlobalPool(
+            name,
             state,
             [my_func = std::forward<Function>(func),
              my_args = std::make_tuple(std::forward<Args>(args)...)]() mutable

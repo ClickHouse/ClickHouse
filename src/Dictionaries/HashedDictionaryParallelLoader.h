@@ -66,7 +66,7 @@ public:
 
             try
             {
-                pool.scheduleOrThrowOnError([this, shard, thread_group = getCurrentThreadGroup()]
+                pool.scheduleOrThrowOnError(ThreadName::HASHED_DICT_LOAD, [this, shard, thread_group = getCurrentThreadGroup()]
                 {
                     ThreadGroupSwitcher switcher(thread_group, ThreadName::HASHED_DICT_LOAD);
 
