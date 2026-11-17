@@ -642,9 +642,20 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 
     query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
+    /// The plan is logged without the data the query read, and a subquery replaced by its result
+    /// puts that result into the plan as a constant. Only now is that known: the analyzer and the
+    /// planners of views have run them. Such a query keeps running, it just stores no plan, and is
+    /// not profiled for one. `attachQueryPlan` checks again, for a subquery run later than this.
+    QueryPlanLogCapture * log_capture = plan_log_capture.get();
+    if (log_capture && QueryPlanLogCapture::hasSubqueryResults(context))
+    {
+        QueryPlanLogCapture::declineCapture(context, "a subquery was replaced by its result, which the plan would show");
+        log_capture = nullptr;
+    }
+
     /// Cutting the descriptions to length makes every step resize its own, so it is done only when
     /// something is going to read them.
-    if (plan_log_capture)
+    if (log_capture)
         optimization_settings.max_step_description_length = context->getSettingsRef()[Setting::query_plan_max_step_description_length];
 
     /// Optimize the plan up front so its cost is attributed to QueryPlanOptimizeMicroseconds.
@@ -654,7 +665,7 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 
     ProfileEventTimeIncrement<Microseconds> pipeline_build_time_watch(ProfileEvents::QueryPipelineBuildMicroseconds);
     return std::move(*query_plan.buildQueryPipeline(
-        optimization_settings, build_pipeline_settings, /*do_optimize=*/false, plan_log_capture.get()));
+        optimization_settings, build_pipeline_settings, /*do_optimize=*/false, log_capture));
 }
 
 void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & storage_limits)

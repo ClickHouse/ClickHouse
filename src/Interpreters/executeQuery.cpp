@@ -918,8 +918,13 @@ static void excludeFromOuterQueryQuota(const ASTPtr & query_ast, const QueryStat
 static constexpr size_t PLAN_RENDER_INITIAL_CHUNK_SIZE = 4096;
 
 /// A row whose plan could not be written says why, in place of the plan.
-static void writeQueryPlanError(String & query_plan, const String & reason)
+static void writeQueryPlanError(String & query_plan, String reason)
 {
+    /// The reason can be the message of any exception thrown while rendering the plan, which may
+    /// quote what it was rendering.
+    if (auto masker = SensitiveDataMasker::getInstance())
+        masker->wipeSensitiveData(reason);
+
     query_plan.clear();
     try
     {
@@ -944,6 +949,14 @@ static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
     const auto & captured = plan_log_capture->getCapturedPlan();
     if (!captured)
         return;
+
+    /// Checked when the pipeline was built too, but a subquery can still run after that, like one
+    /// in a child plan built while the pipeline is.
+    if (QueryPlanLogCapture::hasSubqueryResults(context))
+    {
+        QueryPlanLogCapture::declineCapture(context, "a subquery was replaced by its result, which the plan would show");
+        return;
+    }
 
     /// Runs on the logging path of a query that has already returned its result, so failing to
     /// write the plan must not fail the query. Producing the document is also the one part of
@@ -3617,7 +3630,7 @@ static BlockIO executeQueryImpl(
                     context->setQueryMetadataCache(query_metadata_cache);
                 }
 
-                if (QueryPlanLogCapture::canCapturePlan(context, out_ast, internal))
+                if (QueryPlanLogCapture::canCapturePlan(context, out_ast, query, internal))
                     context->enablePlanLogCapture();
 
                 if (out_ast)

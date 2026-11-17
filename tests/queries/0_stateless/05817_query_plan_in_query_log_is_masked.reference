@@ -1,0 +1,13 @@
+mask_declined_exists	1	0	0	0
+mask_declined_folded	1	0	0	0
+mask_declined_literal	1	0	0	0
+mask_declined_parameter	1	0	0	0
+mask_declined_scalar_subquery	1	0	0	0
+mask_declined_session_parameter	1	0	0	0
+mask_declined_view	1	0	0	0
+mask_kept_subquery	1	1	0	0
+mask_masked_filter	1	1	1	0
+mask_masked_in	1	1	1	0
+mask_masked_index	1	1	1	0
+mask_masked_join	1	1	1	0
+mask_masked_output	1	1	1	0
