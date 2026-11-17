@@ -17,16 +17,16 @@ INSERT INTO t3 SELECT number, number % 10 = 0, number % 10 = 0 FROM numbers(1000
 
 SELECT if(explain ILIKE '%.t1)%', 't1', 't2') FROM (EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.k = t2.k WHERE t2.j.f = false) WHERE explain ILIKE '%ReadFromMergeTree%';
 SELECT if(explain ILIKE '%.t1)%', 't1', 't2') FROM (EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.k = t2.k WHERE t2.j.f = true) WHERE explain ILIKE '%ReadFromMergeTree%';
-SELECT extract(explain, 't2\\[(\\d+)\\]') FROM (EXPLAIN PLAN keep_logical_steps = 1 SELECT count() FROM t1 INNER JOIN t2 ON t1.k = t2.k WHERE t2.j.f = false) WHERE explain LIKE '%Join:%' LIMIT 1;
-SELECT extract(explain, 't2\\[(\\d+)\\]') FROM (EXPLAIN PLAN keep_logical_steps = 1 SELECT count() FROM t1 INNER JOIN t2 ON t1.k = t2.k WHERE t2.j.f != false) WHERE explain LIKE '%Join:%' LIMIT 1;
+SELECT extract(explain, 't2\\[(?:no_stats~)?(\\d+)\\]') FROM (EXPLAIN PLAN keep_logical_steps = 1 SELECT count() FROM t1 INNER JOIN t2 ON t1.k = t2.k WHERE t2.j.f = false) WHERE explain LIKE '%Join:%' LIMIT 1;
+SELECT extract(explain, 't2\\[(?:no_stats~)?(\\d+)\\]') FROM (EXPLAIN PLAN keep_logical_steps = 1 SELECT count() FROM t1 INNER JOIN t2 ON t1.k = t2.k WHERE t2.j.f != false) WHERE explain LIKE '%Join:%' LIMIT 1;
 
 -- The same for a `Bool` column without statistics, a `Bool` column whose statistics cannot estimate an equality,
 -- and a `Bool` expression in a set, each also above the set size limit.
-SELECT extract(explain, 't3\\[(\\d+)\\]') FROM (EXPLAIN PLAN keep_logical_steps = 1 SELECT count() FROM t1 INNER JOIN t3 ON t1.k = t3.k WHERE t3.a = true) WHERE explain LIKE '%Join:%' LIMIT 1;
-SELECT extract(explain, 't3\\[(\\d+)\\]') FROM (EXPLAIN PLAN keep_logical_steps = 1 SELECT count() FROM t1 INNER JOIN t3 ON t1.k = t3.k WHERE t3.b = true) WHERE explain LIKE '%Join:%' LIMIT 1;
-SELECT extract(explain, 't3\\[(\\d+)\\]') FROM (EXPLAIN PLAN keep_logical_steps = 1 SELECT count() FROM t1 INNER JOIN t3 ON t1.k = t3.k WHERE t3.a IN (false, true) SETTINGS statistics_max_set_size_for_exact_selectivity_estimation = 1) WHERE explain LIKE '%Join:%' LIMIT 1;
-SELECT extract(explain, 't3\\[(\\d+)\\]') FROM (EXPLAIN PLAN keep_logical_steps = 1 SELECT count() FROM t1 INNER JOIN t3 ON t1.k = t3.k WHERE toBool(t3.k % 2) IN (false, true)) WHERE explain LIKE '%Join:%' LIMIT 1;
-SELECT extract(explain, 't3\\[(\\d+)\\]') FROM (EXPLAIN PLAN keep_logical_steps = 1 SELECT count() FROM t1 INNER JOIN t3 ON t1.k = t3.k WHERE toBool(t3.k % 2) IN (false, true) SETTINGS statistics_max_set_size_for_exact_selectivity_estimation = 1) WHERE explain LIKE '%Join:%' LIMIT 1;
+SELECT extract(explain, 't3\\[(?:no_stats~)?(\\d+)\\]') FROM (EXPLAIN PLAN keep_logical_steps = 1 SELECT count() FROM t1 INNER JOIN t3 ON t1.k = t3.k WHERE t3.a = true) WHERE explain LIKE '%Join:%' LIMIT 1;
+SELECT extract(explain, 't3\\[(?:no_stats~)?(\\d+)\\]') FROM (EXPLAIN PLAN keep_logical_steps = 1 SELECT count() FROM t1 INNER JOIN t3 ON t1.k = t3.k WHERE t3.b = true) WHERE explain LIKE '%Join:%' LIMIT 1;
+SELECT extract(explain, 't3\\[(?:no_stats~)?(\\d+)\\]') FROM (EXPLAIN PLAN keep_logical_steps = 1 SELECT count() FROM t1 INNER JOIN t3 ON t1.k = t3.k WHERE t3.a IN (false, true) SETTINGS statistics_max_set_size_for_exact_selectivity_estimation = 1) WHERE explain LIKE '%Join:%' LIMIT 1;
+SELECT extract(explain, 't3\\[(?:no_stats~)?(\\d+)\\]') FROM (EXPLAIN PLAN keep_logical_steps = 1 SELECT count() FROM t1 INNER JOIN t3 ON t1.k = t3.k WHERE toBool(t3.k % 2) IN (false, true)) WHERE explain LIKE '%Join:%' LIMIT 1;
+SELECT extract(explain, 't3\\[(?:no_stats~)?(\\d+)\\]') FROM (EXPLAIN PLAN keep_logical_steps = 1 SELECT count() FROM t1 INNER JOIN t3 ON t1.k = t3.k WHERE toBool(t3.k % 2) IN (false, true) SETTINGS statistics_max_set_size_for_exact_selectivity_estimation = 1) WHERE explain LIKE '%Join:%' LIMIT 1;
 
 SELECT count() FROM t1 LEFT JOIN t2 ON t1.k = t2.k WHERE t2.j.f = false;
 SELECT count() FROM t1 LEFT JOIN t2 ON t1.k = t2.k WHERE t2.j.f = true;
