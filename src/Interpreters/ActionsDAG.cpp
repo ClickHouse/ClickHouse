@@ -954,7 +954,15 @@ const ActionsDAG::Node * ActionsDAG::tryFindInOutputs(const std::string & name) 
 
 void ActionsDAG::renameOutput(const std::string & name, std::string new_name)
 {
-    const_cast<Node &>(findInOutputs(name)).result_name = std::move(new_name);
+    const auto * output = &findInOutputs(name);
+    for (auto & node : nodes)
+    {
+        if (&node == output)
+        {
+            node.result_name = std::move(new_name);
+            return;
+        }
+    }
 }
 
 ActionsDAG::NodeRawConstPtrs ActionsDAG::findInOutputs(const Names & names) const

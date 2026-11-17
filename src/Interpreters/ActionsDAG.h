@@ -252,7 +252,7 @@ public:
     /// Same, but for the list of names.
     [[nodiscard]] NodeRawConstPtrs findInOutputs(const Names & names) const;
 
-    /// Change the name of the output node. Unlike addAlias, it does not add a node.
+    /// Change the name of the output node. Unlike addAlias, it does not add a node. This search is linear.
     void renameOutput(const std::string & name, std::string new_name);
 
     /// Find first node with the same name in output nodes and replace it.
