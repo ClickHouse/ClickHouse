@@ -46,6 +46,30 @@ JOIN t_mixed_c ON (t_mixed_b.k = t_mixed_c.k AND t_mixed_b.y = t_mixed_c.z)
 ORDER BY ALL
 SETTINGS query_plan_join_order_use_interesting_orders = 0;
 
+-- A written key of columns of different types still costs sorting the inputs ordered only by `k` within its groups:
+-- the join chooses the same algorithm as on columns of one type.
+DROP TABLE IF EXISTS t_cost_a;
+DROP TABLE IF EXISTS t_cost_mixed;
+DROP TABLE IF EXISTS t_cost_same;
+CREATE TABLE t_cost_a (k UInt64, x Date) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE t_cost_mixed (k UInt64, y DateTime('UTC')) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE t_cost_same (k UInt64, y Date) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_cost_a VALUES (1, '2024-01-01');
+INSERT INTO t_cost_mixed VALUES (1, toDateTime('2024-01-01 00:00:00', 'UTC'));
+INSERT INTO t_cost_same VALUES (1, '2024-01-01');
+
+SET param__internal_join_table_stat_hints = '{"t_cost_a": {"cardinality": 100000000, "distinct_keys": {"k": 1000, "x": 30000}}, "t_cost_mixed": {"cardinality": 100000000, "distinct_keys": {"k": 1000, "y": 30000}}, "t_cost_same": {"cardinality": 100000000, "distinct_keys": {"k": 1000, "y": 30000}}}';
+
+SELECT 'mixed types', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join')
+FROM (EXPLAIN PLAN SELECT count() FROM t_cost_a JOIN t_cost_mixed ON t_cost_a.k = t_cost_mixed.k AND t_cost_a.x = t_cost_mixed.y)
+WHERE explain LIKE '%Algorithm:%';
+SELECT 'one type', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join')
+FROM (EXPLAIN PLAN SELECT count() FROM t_cost_a JOIN t_cost_same ON t_cost_a.k = t_cost_same.k AND t_cost_a.x = t_cost_same.y)
+WHERE explain LIKE '%Algorithm:%';
+
 DROP TABLE t_mixed_a;
 DROP TABLE t_mixed_b;
 DROP TABLE t_mixed_c;
+DROP TABLE t_cost_a;
+DROP TABLE t_cost_mixed;
+DROP TABLE t_cost_same;
