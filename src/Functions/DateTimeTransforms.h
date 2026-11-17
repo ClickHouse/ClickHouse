@@ -2323,7 +2323,9 @@ struct ToDaysSinceYearZeroImpl
     }
     static UInt32 execute(UInt32 d, const DateLUTImpl & time_zone)
     {
-        return DAYS_BETWEEN_YEARS_0_AND_1970 + static_cast<UInt32>(time_zone.toDayNum(d));
+        /// The local day of the first hours after the epoch is still before it in a time zone west of UTC, so go through
+        /// the signed overload: `toDayNum` of an unsigned value saturates a negative day to zero.
+        return execute(static_cast<Int64>(d), time_zone);
     }
     static UInt32 execute(Int32 d, const DateLUTImpl &)
     {
