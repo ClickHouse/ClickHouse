@@ -462,6 +462,32 @@ export const CloudRegionsMap = () => {
     "hoverOnly": false
   },
   {
+    "code": "canadacentral",
+    "name": "Canada Central",
+    "provider": "Azure",
+    "tags": [
+      "Private",
+      "BYOC"
+    ],
+    "x": 27.3,
+    "y": 37.8,
+    "position": "top-right",
+    "hoverOnly": true
+  },
+  {
+    "code": "centralindia",
+    "name": "Central India",
+    "provider": "Azure",
+    "tags": [
+      "Private",
+      "BYOC"
+    ],
+    "x": 68.5,
+    "y": 54.0,
+    "position": "bottom-right",
+    "hoverOnly": true
+  },
+  {
     "code": "eastus2",
     "name": "East US 2",
     "provider": "Azure",
@@ -472,6 +498,19 @@ export const CloudRegionsMap = () => {
     "x": 27.6,
     "y": 43.5,
     "position": "bottom-right",
+    "hoverOnly": true
+  },
+  {
+    "code": "francecentral",
+    "name": "France Central",
+    "provider": "Azure",
+    "tags": [
+      "Private",
+      "BYOC"
+    ],
+    "x": 48.8,
+    "y": 35.0,
+    "position": "bottom-left",
     "hoverOnly": true
   },
   {
