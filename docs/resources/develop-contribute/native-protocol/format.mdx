@@ -1211,7 +1211,7 @@ Reconstructed: `dict[2]` = `"a"`, `dict[0]` = `NULL`, `dict[1]` = `""`, `dict[3]
 
 #### JSON (Tier 1: String fallback) {#json-tier-1-string-fallback}
 
-ClickHouse's `JSON` type has several wire encodings (see [the serialization version reference](#serialization-version-reference)). Tier 1 is the simplest: when the per-query setting `output_format_native_write_json_as_string = 1` is set, the server flattens every JSON value to its serialized text and emits the column as a `String` with a state-prefix marker.
+ClickHouse's `JSON` type has several wire encodings (see [the serialization version reference](#serialization-version-reference)). Tier 1 is the simplest: when the per-query setting `output_format_native_write_json_as_string = 1` is set, the server flattens every JSON value to its serialized text and emits the column as a `String` with a state-prefix marker. The setting also covers a `JSON` inside a non-flat [`Dynamic`](#dynamic): a value whose type contains `JSON` is written as one of the `Dynamic`'s own types, also beyond `max_types`, instead of in its shared variant, unless the block holds more than 254 types.
 
 Type string: `JSON`.
 

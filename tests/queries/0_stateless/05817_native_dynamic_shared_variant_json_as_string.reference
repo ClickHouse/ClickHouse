@@ -1,0 +1,6 @@
+2	2
+{"a":1}	JSON	false	['{"a":1}']	['{"b":1}']	Array(JSON(max_dynamic_types=0, max_dynamic_paths=256))
+42	Int64	true	[42]	['{"b":1}']	Array(JSON(max_dynamic_types=0, max_dynamic_paths=256))
+0
+{"a":1}	JSON	true
+42	Int64	true
