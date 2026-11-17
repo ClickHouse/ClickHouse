@@ -556,7 +556,7 @@ uintptr_t EngineIterator::visitComparisonOverDateConversion(
 }
 
 /// A NULL read into a column that is not `Nullable` becomes a value the kernel does not see (the type default,
-/// the column's `DEFAULT`, or an error), so such rows stay Unknown: (col IS NOT NULL AND predicate) OR (col IS NULL AND Unknown).
+/// the column's `DEFAULT`, or an error), so such rows must stay Unknown.
 uintptr_t EngineIterator::unknownWhereNull(
     EngineIteratorData & iterator_data, const DB::ActionsDAG::Node * column, uintptr_t predicate)
 {
