@@ -42,6 +42,7 @@ from pyspark.sql.window import Window
 
 from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 from helpers.config_cluster import minio_access_key, minio_secret_key
+from helpers.mock_servers import start_mock_servers
 from helpers.network import PartitionManager
 from helpers.s3_tools import (
     AzureUploader,
@@ -6898,3 +6899,31 @@ def test_writes_timestamp_ntz_annotation_partition_column(started_cluster):
     assert str(rows[0]["p"]["ts"]) == "2024-06-01 12:00:00", rows
 
     instance.query(f"DROP TABLE {table_name}")
+
+
+def test_kernel_does_not_follow_redirects(started_cluster):
+    instance = started_cluster.instances["node1"]
+    start_mock_servers(
+        started_cluster,
+        os.path.join(os.path.dirname(os.path.realpath(__file__)), "mock_servers"),
+        [("redirect.py", "resolver", 8080)],
+    )
+    resolver = started_cluster.get_container_id("resolver")
+
+    def target_hits():
+        return int(
+            started_cluster.exec_in_container(
+                resolver, ["curl", "-s", "http://localhost:8080/hits"]
+            )
+        )
+
+    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+    for table_function in [
+        "deltaLake('http://resolver:8080/bucket/table/', NOSIGN)",
+        f"deltaLakeAzure('http://resolver:8080/devstoreaccount1', 'container', 'table/', 'devstoreaccount1', '{account_key}')",
+    ]:
+        hits_before = target_hits()
+        instance.query_and_get_error(
+            f"SELECT * FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs = 1"
+        )
+        assert target_hits() == hits_before, table_function
