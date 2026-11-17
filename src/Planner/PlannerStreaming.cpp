@@ -12,6 +12,9 @@
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/traverseQueryTree.h>
 
+#include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/SelectQueryOptions.h>
 
@@ -20,6 +23,7 @@
 #include <Core/Settings.h>
 
 #include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -105,7 +109,10 @@ void buildStreamingPlan(
     addExpressionStep(planner_context, query_plan, projection.projection_actions, projection.correlated_subtrees, select_query_options, "Projection", useful_sets);
 
     if (query_node.isDistinct())
+    {
         addDistinctStep(query_plan, query_analysis_result, planner_context, projection.projection_column_names, query_node, false, false);
+        typeid_cast<DistinctStep &>(*query_plan.getRootNode()->step).disableExternalDistinct();
+    }
 
     if (expression_analysis_result.hasLimitBy())
     {
