@@ -59,13 +59,14 @@ public:
     /// are applied (the existing PREWHERE and the row policy): no string value filter can be applied
     /// during the scan to them (see `extractStringValueFilters`).
     /// `top_k_filter_column` is the column of the `__topKFilter` that will be prepended to PREWHERE, empty if none.
+    /// `existing_prewhere_actions` is the PREWHERE that the moved conditions are appended to, nullptr if none.
     FilterActionsOptimizeResult optimize(const ActionsDAG & filter_dag,
         const std::string & filter_column_name,
         const ContextPtr & context,
         bool is_final,
         const NameSet & columns_read_before_filter = {},
         const String & top_k_filter_column = {},
-        bool has_existing_prewhere = false);
+        const ActionsDAG * existing_prewhere_actions = nullptr);
 
 private:
     struct Condition

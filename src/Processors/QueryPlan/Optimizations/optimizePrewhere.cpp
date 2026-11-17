@@ -365,7 +365,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         is_final,
         columns_read_before_filter,
         top_k_filter_column,
-        existing_prewhere_info != nullptr);
+        existing_prewhere_info ? &existing_prewhere_info->prewhere_actions : nullptr);
 
     if (optimize_result.prewhere_nodes.empty())
         return;

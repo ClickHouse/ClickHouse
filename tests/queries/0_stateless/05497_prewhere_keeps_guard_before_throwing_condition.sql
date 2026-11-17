@@ -43,6 +43,9 @@ CREATE TABLE t_force (a String, s String) ENGINE = MergeTree ORDER BY a
 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 INSERT INTO t_force VALUES ('one', '2025-05-16 07:20:20'), ('two', 'invaliddatetime');
 SELECT a FROM t_force WHERE a = 'one' AND timestamp(s) > '2020-01-01' SETTINGS short_circuit_function_evaluation = 'force_enable';
+-- A condition on the guard's column gets its own read step, so the conversion it passes on is computed only for the rows the guard keeps.
+SELECT a, timestamp(s) FROM t_force WHERE s != 'invaliddatetime' AND timestamp(s) > '2020-01-01'
+SETTINGS short_circuit_function_evaluation = 'force_enable', move_all_conditions_to_prewhere = 1;
 -- Then the step with the guard filters its rows also when most of them pass.
 INSERT INTO t_force SELECT 'one', '2025-05-16 07:20:20' FROM numbers(8);
 OPTIMIZE TABLE t_force FINAL;
@@ -53,6 +56,9 @@ SETTINGS short_circuit_function_evaluation = 'force_enable', query_plan_merge_fi
 CREATE TABLE t_memory (a String, s String, x UInt64) ENGINE = Memory;
 INSERT INTO t_memory VALUES ('one', '2025-05-16 07:20:20', 1), ('two', 'invaliddatetime', 2);
 SELECT toDateTime64(s, 3), x FROM t_memory WHERE a = 'one' AND toDateTime64(s, 3) > '2020-01-01' AND rand(x) >= 0;
+-- Also when only the existing PREWHERE has one.
+SELECT toDateTime64(s, 3), x FROM t_memory PREWHERE rand(x) >= 0 WHERE a = 'one' AND toDateTime64(s, 3) > '2020-01-01'
+SETTINGS optimize_prewhere_after_pushdown = 1, move_all_conditions_to_prewhere = 1;
 
 -- A condition that cannot throw is still moved in front of the primary key guard.
 SELECT count() FROM (EXPLAIN actions = 1 SELECT b FROM tbl WHERE a = 'one' AND usage_timestamp != '')

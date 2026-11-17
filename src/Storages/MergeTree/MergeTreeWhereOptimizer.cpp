@@ -221,7 +221,7 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     bool is_final,
     const NameSet & columns_read_before_filter,
     const String & top_k_filter_column,
-    bool has_existing_prewhere)
+    const ActionsDAG * existing_prewhere_actions)
 {
     const auto & settings = context->getSettingsRef();
     WhereOptimizerContext where_optimizer_context;
@@ -234,7 +234,7 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     where_optimizer_context.is_final = is_final;
     where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
     where_optimizer_context.short_circuit_function_evaluation = settings[Setting::short_circuit_function_evaluation];
-    where_optimizer_context.has_existing_prewhere = has_existing_prewhere;
+    where_optimizer_context.has_existing_prewhere = existing_prewhere_actions != nullptr;
     /// The decision does not depend on the columns cache: whether a column is served from the cache, written to it
     /// or read as usual is known only to the reader. The reader does not apply the string filter to a column it writes
     /// to the cache (the cache must not keep the substituted values), but the condition is still worth moving to PREWHERE:
@@ -256,9 +256,10 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
 
     const auto & filter_node = filter_dag.findInOutputs(filter_column_name);
     /// PREWHERE evaluated in one step computes the nodes it passes on for all rows. Besides the setting,
-    /// Memory evaluates it in one step when it has non-deterministic or stateful functions.
+    /// Memory evaluates it in one step when it, including the existing PREWHERE, has non-deterministic or stateful functions.
     std::unordered_set<const ActionsDAG::Node *> shared_nodes;
-    if (!settings[Setting::enable_multiple_prewhere_read_steps] || filter_dag.hasNonDeterministicOrStatefulFunctions())
+    if (!settings[Setting::enable_multiple_prewhere_read_steps] || filter_dag.hasNonDeterministicOrStatefulFunctions()
+        || (existing_prewhere_actions && existing_prewhere_actions->hasNonDeterministicOrStatefulFunctions()))
         shared_nodes = findSharedNodes(filter_dag, filter_node);
     where_optimizer_context.shared_nodes = &shared_nodes;
 
