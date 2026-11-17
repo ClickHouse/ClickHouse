@@ -304,6 +304,7 @@ void FillingRow::checkFillingTowardsConstraintFitsColumnType(size_t i)
 
 bool FillingRow::resetKeysAfter(size_t pos, const FillingRow & next_original_row)
 {
+    bool is_less = false;
     for (size_t i = pos + 1; i < size(); ++i)
     {
         const auto & descr = getFillDescription(i);
@@ -311,15 +312,20 @@ bool FillingRow::resetKeysAfter(size_t pos, const FillingRow & next_original_row
             row[i] = descr.fill_from;
         else
             row[i] = next_original_row[i];
+
+        is_less |= (
+            (next_original_row[i].isNull() || less(row[i], next_original_row[i], getDirection(i))) &&
+            (constraints[i].isNull() || less(row[i], constraints[i], getDirection(i)))
+        );
     }
 
+    /// A row that does not sort before `next_original_row` is not inserted before it: the first differing key decides.
     for (size_t i = pos + 1; i < size(); ++i)
     {
         if (equals(row[i], next_original_row[i]))
             continue;
 
-        return (next_original_row[i].isNull() || less(row[i], next_original_row[i], getDirection(i)))
-            && (constraints[i].isNull() || less(row[i], constraints[i], getDirection(i)));
+        return is_less && (next_original_row[i].isNull() || less(row[i], next_original_row[i], getDirection(i)));
     }
 
     return false;
