@@ -342,3 +342,18 @@ def test_directory_named_session_failed_creation(started_cluster: ClickHouseClus
     params = {"query": "SELECT 1", "session_id": "s_failed", "session_check": "1"}
     response = node_dir1.http_request("", method="POST", params=params, auth=("constrained", GOOD_PASSWORD))
     assert response.status_code != 200 and "SESSION_NOT_FOUND" in response.text
+
+
+def wait_for_query_finish(query_id):
+    query = f"SYSTEM FLUSH LOGS query_log; SELECT count() FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+    wait_condition(lambda: node_dir1.query(query), lambda result: result == "1\n", max_attempts=100, delay=0.2)
+
+
+def test_directory_background_query(started_cluster: ClickHouseCluster):
+    # The current roles of a background query include the external roles of the session, which are not granted.
+    params = {"query": "SELECT count() FROM t", "run_query_in_background": "1", "query_id": "bg_http"}
+    assert node_dir1.http_request("", method="POST", params=params, auth=("alice", GOOD_PASSWORD)).status_code == 200
+    wait_for_query_finish("bg_http")
+    settings = {"run_query_in_background": 1}
+    node_dir1.query("SELECT count() FROM t", user="alice", password=GOOD_PASSWORD, settings=settings, query_id="bg_native")
+    wait_for_query_finish("bg_native")

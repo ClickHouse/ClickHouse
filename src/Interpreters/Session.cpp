@@ -847,7 +847,8 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     if (detached && session_context)
     {
-        query_context->setCurrentRoles(session_context->getCurrentRoles());
+        /// Without the grant check: the current roles include the external ones, which are not granted but set by `setUser` above.
+        query_context->setCurrentRoles(session_context->getCurrentRoles(), /* check_grants= */ false);
         query_context->setSettingsConstraintsAndCurrentProfiles(session_context->getSettingsConstraintsAndCurrentProfiles());
         query_context->setSettings(session_context->getSettingsRef());
         if (const String database = session_context->getCurrentDatabase(); !database.empty())
