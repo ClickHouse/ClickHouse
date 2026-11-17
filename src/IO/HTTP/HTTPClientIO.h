@@ -33,11 +33,12 @@ using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 class HTTPRequestBodyWriteBuffer : public WriteBuffer
 {
 public:
-    /// On a plain TCP socket, the body is sent while the connection is watched for a response
-    /// (RFC 9112, 9.5). The response is given to the parser of the session as it arrives, and
-    /// `receiveHTTPResponse` finishes it: an error status stops the body, and the rest of it is
-    /// dropped; a success is finished after the body. A response that breaks the syntax or the
-    /// limits makes the write throw. A TLS or a Silk fiber socket sends the body with blocking writes.
+    /// The body is sent while the connection is watched for a response (RFC 9112, 9.5), on every
+    /// socket type: plain TCP, TLS and Silk fiber sockets. The response is given to the parser of
+    /// the session as it arrives, and `receiveHTTPResponse` finishes it: an error status stops the
+    /// body, and the rest of it is dropped; a success is finished after the body. A failed send does
+    /// not hide an error response that arrived before it. A response that breaks the syntax or the
+    /// limits makes the write throw.
     HTTPRequestBodyWriteBuffer(
         Poco::Net::HTTPClientSession & session_, Poco::Net::HTTPClientSession::BodyInfo body_info_, size_t buf_size);
 
@@ -55,6 +56,8 @@ private:
     void writeBody(const char * data, size_t size);
     /// Gives the response bytes that have arrived to the parser. Returns true for an error status.
     bool checkResponse();
+    /// After a send error, reads what has arrived. Returns true for an error status.
+    bool checkResponseAfterSendError();
 
     Poco::Net::HTTPClientSession & session;
     const Poco::Net::HTTPClientSession::BodyEncoding encoding;

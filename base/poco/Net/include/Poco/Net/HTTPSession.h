@@ -189,13 +189,14 @@ namespace Net
         /// Same as `writeRaw`, but loops until all `length` bytes are written.
         /// Throws `MessageException` if the socket stops accepting data.
 
-        int writeRawNonBlocking(const char * buffer, std::streamsize length, const std::function<bool()> & ready_to_send = {});
-        /// Sends up to `length` bytes on a socket that the caller has set to non-blocking mode.
-        /// Returns the number of bytes sent, or 0 when the socket would block.
-        ///
-        /// The send throttler and the send data hooks wait before the send, as for a blocking send.
-        /// What the caller checked before the call can change during these waits, so `ready_to_send`
-        /// is called after them: when it returns false, nothing is sent, and the result is 0.
+        int sendNow(const char * buffer, std::streamsize length);
+        /// Sends what the socket accepts now, with `SocketImpl::sendNow`, and calls the send data
+        /// hooks as `write` does. Returns the number of bytes sent, 0 when the socket accepts nothing
+        /// now, or -1 when the socket holds a send error.
+
+        void throwHeldSendError();
+        /// Throws the send error that the socket holds, and stores it in the session, as a failed
+        /// write does.
 
         int buffered() const;
         /// Returns the number of bytes in the buffer.
@@ -205,6 +206,10 @@ namespace Net
         /// beginning. On a socket that the caller has set to non-blocking mode, takes only what has
         /// already arrived. Returns the number of bytes added, 0 when nothing is available or the
         /// buffer is full, and -1 when the peer has closed the connection.
+
+        int fillBufferNow();
+        /// Same as `fillBuffer`, but takes only what has already arrived, with
+        /// `SocketImpl::receiveNow`, on a socket in any mode.
 
         const char * bufferedData() const { return _pCurrent; }
         /// Returns the unread bytes of the read buffer; `buffered` is their number.
@@ -285,6 +290,9 @@ namespace Net
 
         HTTPSession(const HTTPSession &);
         HTTPSession & operator=(const HTTPSession &);
+
+        int prepareBufferSpace();
+        /// Creates the read buffer, or moves its unread bytes to its beginning. Returns its free space.
 
         StreamSocket _socket;
         std::unique_ptr<char[]> _pBuffer;

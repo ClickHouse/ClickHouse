@@ -1,27 +1,15 @@
 #include <IO/HTTP/HTTPClientIO.h>
-#include <IO/ScopedNonBlocking.h>
-
-#include "config.h"
 
 #include <Common/Exception.h>
 #include <Common/Hex.h>
-#include <Common/Stopwatch.h>
 
+#include <Poco/Exception.h>
 #include <Poco/Net/HTTPResponseParser.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/SocketImpl.h>
 #include <Poco/NumberParser.h>
 
-#include <cerrno>
 #include <cstring>
-#include <limits>
-#include <poll.h>
-
-#if USE_SILK
-#include <Common/Silk/FiberStreamSocketImpl.h>
-#if USE_SSL
-#include <Common/Silk/SecureFiberStreamSocketImpl.h>
-#endif
-#endif
 
 
 namespace DB
@@ -45,20 +33,6 @@ constexpr size_t max_transfer_at_once = 1UL << 30;
 /// The chunk header is `<size in hex>\r\n`, at most 16 hex digits for a 64 bit size.
 constexpr size_t chunk_header_reserve = 18;
 constexpr size_t chunk_footer_size = 2;
-
-/// A Silk fiber socket waits by suspending its fiber, and it has no non-blocking mode.
-bool isFiberSocket([[maybe_unused]] Poco::Net::SocketImpl & socket_impl)
-{
-#if USE_SILK
-    if (dynamic_cast<Silk::FiberStreamSocketImpl *>(&socket_impl))
-        return true;
-#if USE_SSL
-    if (dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(&socket_impl))
-        return true;
-#endif
-#endif
-    return false;
-}
 
 /// The scratch buffer a response is read into when the caller provided no memory: in the
 /// external buffer mode the memory arrives with `set()` before every read, but the body of an
@@ -146,91 +120,56 @@ bool HTTPRequestBodyWriteBuffer::checkResponse()
     return false;
 }
 
+bool HTTPRequestBodyWriteBuffer::checkResponseAfterSendError()
+{
+    /// A success that is complete cannot stand for a body that did not arrive.
+    if (response_header_complete)
+        return false;
+    while (true)
+    {
+        const int received = session.fillBufferNow();
+        if (checkResponse())
+            return true;
+        if (received <= 0 || response_header_complete)
+            return false;
+    }
+}
+
 void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
 {
     /// The server has answered with an error: drop the rest of the body.
     if (stopped)
         return;
 
-    auto & socket = session.socket();
-
-    /// The watching needs a non-blocking socket and a `poll` of its descriptor. A fiber socket has
-    /// no non-blocking mode, and a `poll` would block the thread of the fiber scheduler, not the
-    /// fiber. A TLS socket is not watched yet. Such a body is sent with blocking writes, and a
-    /// response is read only after the body.
-    if (session.secure() || isFiberSocket(*socket.impl()))
-    {
-        session.writeAllRaw(data, static_cast<std::streamsize>(size));
-        return;
-    }
+    constexpr int select_read = Poco::Net::SocketImpl::SELECT_READ;
+    constexpr int select_write = Poco::Net::SocketImpl::SELECT_WRITE;
+    auto & socket = *session.socket().impl();
 
     /// The send timeout bounds the time spent waiting for the socket without sending anything, as
-    /// for a blocking send, also when signals interrupt `poll`. The waits of the send throttler and
-    /// of the data hooks are not part of it.
-    const Int64 send_timeout_us = session.getSendTimeout().totalMicroseconds();
-    Int64 waited_us = 0;
+    /// for a blocking send. The waits of the send throttler and of the data hooks are not part of
+    /// it. A zero send timeout means no limit, as for a blocking send.
+    const Poco::Timespan send_timeout = session.getSendTimeout();
+    const Poco::Timespan no_limit(-1);
+    Poco::Timespan wait_left = send_timeout.totalMicroseconds() > 0 ? send_timeout : no_limit;
 
-    /// Set when the server closed the connection without a response.
+    /// Set when the server closed the connection without a response. The next send reports how the
+    /// connection ended.
     bool peer_closed = false;
-
-    /// The send throttler and the data hooks can wait before the send. A response that arrives
-    /// meanwhile is read first: the write after it can fail on a connection that the server resets.
-    const auto ready_to_send = [&]
-    {
-        if (peer_closed || response_header_complete)
-            return true;
-        pollfd check{.fd = socket.impl()->sockfd(), .events = POLLIN, .revents = 0};
-        return ::poll(&check, 1, 0) <= 0;
-    };
 
     while (size > 0)
     {
         /// Wait for the socket to accept data and watch for a response at the same time. A server
-        /// that rejects the request answers and then resets the connection: a write after the reset
-        /// fails, and the response is never read. The response is parsed as it arrives: an error
-        /// stops the body, a success is finished after the body.
+        /// that rejects the request answers and then resets the connection. The response is parsed
+        /// as it arrives: an error stops the body, a success is finished after the body.
         const bool watch_response = !peer_closed && !response_header_complete;
-        const Int16 events = watch_response ? (POLLIN | POLLOUT) : POLLOUT;
-        pollfd fd{.fd = socket.impl()->sockfd(), .events = events, .revents = 0};
-
-        int res = 0;
-        while (true)
-        {
-            int timeout_ms = -1;
-            if (send_timeout_us > 0)
-            {
-                const Int64 remaining_us = send_timeout_us - waited_us;
-                if (remaining_us <= 0)
-                {
-                    res = 0;
-                    break;
-                }
-                timeout_ms = static_cast<int>(std::min<Int64>((remaining_us + 999) / 1000, std::numeric_limits<int>::max()));
-            }
-            const Stopwatch watch;
-            res = ::poll(&fd, 1, timeout_ms);
-            waited_us += static_cast<Int64>(watch.elapsedMicroseconds());
-            if (res >= 0 || errno != EINTR)
-                break;
-        }
-
-        if (res < 0)
-            throw Poco::Net::NetException("Failed to poll the socket while sending the HTTP request body", errno);
-        if (res == 0)
+        const int ready = socket.waitForSendOrReceive(wait_left, select_write | (watch_response ? select_read : 0));
+        if (ready == 0)
             throw Poco::TimeoutException("Timeout while sending the HTTP request body");
 
-        if (watch_response && (fd.revents & (POLLIN | POLLHUP | POLLERR)))
+        if (watch_response && (ready & select_read))
         {
-            int received = 0;
-            {
-                ScopedNonBlocking non_blocking(*socket.impl());
-                received = session.fillBuffer();
-            }
-
-            /// The next write reports how the connection ended, as without the watching.
-            if (received < 0)
+            if (session.fillBufferNow() < 0)
                 peer_closed = true;
-
             if (checkResponse())
             {
                 stopped = true;
@@ -238,21 +177,26 @@ void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
             }
         }
 
-        /// A send on a closed or failed connection reports how it ended.
-        if ((fd.revents & (POLLOUT | POLLHUP | POLLERR)) || peer_closed)
+        if (!(ready & select_write))
+            continue;
+
+        const int sent = session.sendNow(data, static_cast<std::streamsize>(size));
+        if (sent < 0)
         {
-            /// Only the send is non-blocking: a response header is read with the timeouts of the session.
-            int sent = 0;
+            /// The socket holds the error of the send. The server can have answered before it reset
+            /// the connection: the answer is the result of the request, and the error is not.
+            if (checkResponseAfterSendError())
             {
-                ScopedNonBlocking non_blocking(*socket.impl());
-                sent = session.writeRawNonBlocking(data, static_cast<std::streamsize>(size), ready_to_send);
+                stopped = true;
+                return;
             }
-            if (sent > 0)
-            {
-                data += sent;
-                size -= static_cast<size_t>(sent);
-                waited_us = 0;
-            }
+            session.throwHeldSendError();
+        }
+        if (sent > 0)
+        {
+            data += sent;
+            size -= static_cast<size_t>(sent);
+            wait_left = send_timeout.totalMicroseconds() > 0 ? send_timeout : no_limit;
         }
     }
 }
