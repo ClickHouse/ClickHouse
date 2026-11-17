@@ -1520,9 +1520,9 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     }
 
     /// jemalloc reports per-arena `pactive`/`pdirty` as a count of jemalloc pages. The
-    /// `*_bytes` variants below multiply by jemalloc's compiled-in page size (read once from
+    /// `*_bytes` variants below multiply by jemalloc's page size (read once from
     /// `arenas.page`), not the OS page size: the two differ on platforms where jemalloc is
-    /// built with `LG_PAGE=16` (64 KiB pages — aarch64, ppc64le, riscv64) but the kernel uses
+    /// built with `LG_PAGE=16` (64 KiB pages — ppc64le, riscv64) but the kernel uses
     /// 4 KiB pages. Using `getPageSize()` would under-report by 16× there.
     static const Jemalloc::MibCache<size_t> jemalloc_page_size_mib{"arenas.page"};
 
