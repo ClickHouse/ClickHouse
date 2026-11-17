@@ -21,6 +21,13 @@ INSERT INTO t_structure_hint_alias SELECT f.t.a, f.v FROM file(currentDatabase()
 INSERT INTO t_structure_hint_alias SELECT t.a, v FROM file(currentDatabase() || '_structure_hint_alias_tuple.jsonl');
 SELECT * FROM t_structure_hint_alias ORDER BY ALL;
 
+-- A quoted name with a dot can be a subcolumn too.
+TRUNCATE TABLE t_structure_hint_alias;
+INSERT INTO t_structure_hint_alias SELECT f.`t.a`, f.v FROM file(currentDatabase() || '_structure_hint_alias_tuple.jsonl') AS f;
+INSERT INTO t_structure_hint_alias SELECT `t.a`, v FROM file(currentDatabase() || '_structure_hint_alias_tuple.jsonl');
+INSERT INTO t_structure_hint_alias SELECT f.`t.a`, f.v FROM file(currentDatabase() || '_structure_hint_alias_tuple.jsonl') AS f SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+SELECT * FROM t_structure_hint_alias ORDER BY ALL;
+
 TRUNCATE TABLE t_structure_hint_alias;
 INSERT INTO t_structure_hint_alias SELECT id, g.v FROM file(currentDatabase() || '_structure_hint_alias.jsonl') AS f JOIN (SELECT 1 AS id2, 99 AS v) AS g ON id = g.id2 SETTINGS use_structure_from_insertion_table_in_table_functions = 1;
 SELECT * FROM t_structure_hint_alias ORDER BY ALL;

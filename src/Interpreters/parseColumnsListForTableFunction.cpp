@@ -315,13 +315,16 @@ void removeMisboundDefaultsFromStructureHint(
 
 String getStructureHintColumnName(const Strings & identifier_parts, const String & table_function_alias)
 {
+    String column_name;
     if (identifier_parts.size() == 1)
-        return identifier_parts.front();
+        column_name = identifier_parts.front();
+    else if (identifier_parts.size() == 2 && !table_function_alias.empty() && identifier_parts.front() == table_function_alias)
+        column_name = identifier_parts.back();
 
-    if (identifier_parts.size() == 2 && !table_function_alias.empty() && identifier_parts.front() == table_function_alias)
-        return identifier_parts.back();
+    if (column_name.find('.') != String::npos)
+        return {};
 
-    return {};
+    return column_name;
 }
 
 String getStructureToSend(const ColumnsDescription & columns, const ColumnsDescription * insertion_columns)
