@@ -1616,75 +1616,75 @@
     "source": "/cloud/features/ai-ml"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents",
+    "destination": "/agents",
     "source": "/cloud/features/ai-ml/agents"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/builder",
+    "destination": "/agents/builder",
     "source": "/cloud/features/ai-ml/agents/builder"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/builder/code-interpreter",
+    "destination": "/agents/builder/code-interpreter",
     "source": "/cloud/features/ai-ml/agents/builder/code-interpreter"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/builder/image-generation",
+    "destination": "/agents/builder/image-generation",
     "source": "/cloud/features/ai-ml/agents/builder/image-generation"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/builder/mcp-servers",
+    "destination": "/agents/builder/mcp-servers",
     "source": "/cloud/features/ai-ml/agents/builder/mcp-servers"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/builder/model-parameters",
+    "destination": "/agents/builder/model-parameters",
     "source": "/cloud/features/ai-ml/agents/builder/model-parameters"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/builder/skills",
+    "destination": "/agents/builder/skills",
     "source": "/cloud/features/ai-ml/agents/builder/skills"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/builder/subagents",
+    "destination": "/agents/builder/subagents",
     "source": "/cloud/features/ai-ml/agents/builder/subagents"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/builder/vision",
+    "destination": "/agents/builder/vision",
     "source": "/cloud/features/ai-ml/agents/builder/vision"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/builder/web-search",
+    "destination": "/agents/builder/web-search",
     "source": "/cloud/features/ai-ml/agents/builder/web-search"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/chat",
+    "destination": "/agents/chat",
     "source": "/cloud/features/ai-ml/agents/chat"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/marketplace",
+    "destination": "/agents/marketplace",
     "source": "/cloud/features/ai-ml/agents/marketplace"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/memory",
+    "destination": "/agents/memory",
     "source": "/cloud/features/ai-ml/agents/memory"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/prompts",
+    "destination": "/agents/prompts",
     "source": "/cloud/features/ai-ml/agents/prompts"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/quickstart",
+    "destination": "/agents/quickstart",
     "source": "/cloud/features/ai-ml/agents/quickstart"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/sharing-and-access",
+    "destination": "/agents/sharing-and-access",
     "source": "/cloud/features/ai-ml/agents/sharing-and-access"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/agents/assistant/using-ai-chat",
     "source": "/cloud/features/ai-ml/ask-ai"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/agents/assistant/using-ai-chat",
     "source": "/products/cloud/features/ai-ml/ask-ai"
   },
   {
@@ -1756,19 +1756,19 @@
     "source": "/cloud/get-started/cloud/resource-tour"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents",
+    "destination": "/agents",
     "source": "/cloud/get-started/cloud/use-cases/ai_ml"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents",
+    "destination": "/agents",
     "source": "/cloud/get-started/cloud/use-cases/ai_ml/agent_facing_analytics"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents",
+    "destination": "/agents",
     "source": "/cloud/get-started/cloud/use-cases/AI_ML"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents",
+    "destination": "/agents",
     "source": "/cloud/get-started/cloud/use-cases/AI_ML/agent_facing_analytics"
   },
   {
@@ -1946,6 +1946,10 @@
   {
     "destination": "/products/cloud/features/sql-console-features/dashboards",
     "source": "/cloud/manage/dashboards"
+  },
+  {
+    "destination": "/products/cloud/guides/deletion-protection",
+    "source": "/cloud/manage/deletion-protection"
   },
   {
     "destination": "/products/cloud/features/sql-console-features/clickstack",
@@ -6572,67 +6576,67 @@
     "source": "/jp/cloud/features/ai-ml"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents",
+    "destination": "/ja/agents",
     "source": "/jp/cloud/features/ai-ml/agents"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents/builder",
+    "destination": "/ja/agents/builder",
     "source": "/jp/cloud/features/ai-ml/agents/builder"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents/builder/code-interpreter",
+    "destination": "/ja/agents/builder/code-interpreter",
     "source": "/jp/cloud/features/ai-ml/agents/builder/code-interpreter"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents/builder/image-generation",
+    "destination": "/ja/agents/builder/image-generation",
     "source": "/jp/cloud/features/ai-ml/agents/builder/image-generation"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents/builder/mcp-servers",
+    "destination": "/ja/agents/builder/mcp-servers",
     "source": "/jp/cloud/features/ai-ml/agents/builder/mcp-servers"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents/builder/model-parameters",
+    "destination": "/ja/agents/builder/model-parameters",
     "source": "/jp/cloud/features/ai-ml/agents/builder/model-parameters"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents/builder/skills",
+    "destination": "/ja/agents/builder/skills",
     "source": "/jp/cloud/features/ai-ml/agents/builder/skills"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents/builder/subagents",
+    "destination": "/ja/agents/builder/subagents",
     "source": "/jp/cloud/features/ai-ml/agents/builder/subagents"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents/builder/vision",
+    "destination": "/ja/agents/builder/vision",
     "source": "/jp/cloud/features/ai-ml/agents/builder/vision"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents/builder/web-search",
+    "destination": "/ja/agents/builder/web-search",
     "source": "/jp/cloud/features/ai-ml/agents/builder/web-search"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents/chat",
+    "destination": "/ja/agents/chat",
     "source": "/jp/cloud/features/ai-ml/agents/chat"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents/marketplace",
+    "destination": "/ja/agents/marketplace",
     "source": "/jp/cloud/features/ai-ml/agents/marketplace"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents/memory",
+    "destination": "/ja/agents/memory",
     "source": "/jp/cloud/features/ai-ml/agents/memory"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents/prompts",
+    "destination": "/ja/agents/prompts",
     "source": "/jp/cloud/features/ai-ml/agents/prompts"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents/quickstart",
+    "destination": "/ja/agents/quickstart",
     "source": "/jp/cloud/features/ai-ml/agents/quickstart"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents/sharing-and-access",
+    "destination": "/ja/agents/sharing-and-access",
     "source": "/jp/cloud/features/ai-ml/agents/sharing-and-access"
   },
   {
@@ -15576,11 +15580,11 @@
     "source": "/jp/use-cases/AI/qbit-vector-search"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/ja/agents/assistant/using-ai-chat",
     "source": "/jp/use-cases/AI_ML/AIChat"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "destination": "/ja/agents/assistant/customizing-semantic-layer",
     "source": "/jp/use-cases/AI_ML/AIChat/semantic-layer"
   },
   {
@@ -17336,67 +17340,67 @@
     "source": "/ko/cloud/features/ai-ml"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents",
+    "destination": "/ko/agents",
     "source": "/ko/cloud/features/ai-ml/agents"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents/builder",
+    "destination": "/ko/agents/builder",
     "source": "/ko/cloud/features/ai-ml/agents/builder"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents/builder/code-interpreter",
+    "destination": "/ko/agents/builder/code-interpreter",
     "source": "/ko/cloud/features/ai-ml/agents/builder/code-interpreter"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents/builder/image-generation",
+    "destination": "/ko/agents/builder/image-generation",
     "source": "/ko/cloud/features/ai-ml/agents/builder/image-generation"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents/builder/mcp-servers",
+    "destination": "/ko/agents/builder/mcp-servers",
     "source": "/ko/cloud/features/ai-ml/agents/builder/mcp-servers"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents/builder/model-parameters",
+    "destination": "/ko/agents/builder/model-parameters",
     "source": "/ko/cloud/features/ai-ml/agents/builder/model-parameters"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents/builder/skills",
+    "destination": "/ko/agents/builder/skills",
     "source": "/ko/cloud/features/ai-ml/agents/builder/skills"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents/builder/subagents",
+    "destination": "/ko/agents/builder/subagents",
     "source": "/ko/cloud/features/ai-ml/agents/builder/subagents"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents/builder/vision",
+    "destination": "/ko/agents/builder/vision",
     "source": "/ko/cloud/features/ai-ml/agents/builder/vision"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents/builder/web-search",
+    "destination": "/ko/agents/builder/web-search",
     "source": "/ko/cloud/features/ai-ml/agents/builder/web-search"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents/chat",
+    "destination": "/ko/agents/chat",
     "source": "/ko/cloud/features/ai-ml/agents/chat"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents/marketplace",
+    "destination": "/ko/agents/marketplace",
     "source": "/ko/cloud/features/ai-ml/agents/marketplace"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents/memory",
+    "destination": "/ko/agents/memory",
     "source": "/ko/cloud/features/ai-ml/agents/memory"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents/prompts",
+    "destination": "/ko/agents/prompts",
     "source": "/ko/cloud/features/ai-ml/agents/prompts"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents/quickstart",
+    "destination": "/ko/agents/quickstart",
     "source": "/ko/cloud/features/ai-ml/agents/quickstart"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents/sharing-and-access",
+    "destination": "/ko/agents/sharing-and-access",
     "source": "/ko/cloud/features/ai-ml/agents/sharing-and-access"
   },
   {
@@ -26336,11 +26340,11 @@
     "source": "/ko/use-cases/AI/qbit-vector-search"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/ko/agents/assistant/using-ai-chat",
     "source": "/ko/use-cases/AI_ML/AIChat"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "destination": "/ko/agents/assistant/customizing-semantic-layer",
     "source": "/ko/use-cases/AI_ML/AIChat/semantic-layer"
   },
   {
@@ -29452,67 +29456,67 @@
     "source": "/ru/cloud/features/ai-ml"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents",
+    "destination": "/ru/agents",
     "source": "/ru/cloud/features/ai-ml/agents"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents/builder",
+    "destination": "/ru/agents/builder",
     "source": "/ru/cloud/features/ai-ml/agents/builder"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents/builder/code-interpreter",
+    "destination": "/ru/agents/builder/code-interpreter",
     "source": "/ru/cloud/features/ai-ml/agents/builder/code-interpreter"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents/builder/image-generation",
+    "destination": "/ru/agents/builder/image-generation",
     "source": "/ru/cloud/features/ai-ml/agents/builder/image-generation"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents/builder/mcp-servers",
+    "destination": "/ru/agents/builder/mcp-servers",
     "source": "/ru/cloud/features/ai-ml/agents/builder/mcp-servers"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents/builder/model-parameters",
+    "destination": "/ru/agents/builder/model-parameters",
     "source": "/ru/cloud/features/ai-ml/agents/builder/model-parameters"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents/builder/skills",
+    "destination": "/ru/agents/builder/skills",
     "source": "/ru/cloud/features/ai-ml/agents/builder/skills"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents/builder/subagents",
+    "destination": "/ru/agents/builder/subagents",
     "source": "/ru/cloud/features/ai-ml/agents/builder/subagents"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents/builder/vision",
+    "destination": "/ru/agents/builder/vision",
     "source": "/ru/cloud/features/ai-ml/agents/builder/vision"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents/builder/web-search",
+    "destination": "/ru/agents/builder/web-search",
     "source": "/ru/cloud/features/ai-ml/agents/builder/web-search"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents/chat",
+    "destination": "/ru/agents/chat",
     "source": "/ru/cloud/features/ai-ml/agents/chat"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents/marketplace",
+    "destination": "/ru/agents/marketplace",
     "source": "/ru/cloud/features/ai-ml/agents/marketplace"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents/memory",
+    "destination": "/ru/agents/memory",
     "source": "/ru/cloud/features/ai-ml/agents/memory"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents/prompts",
+    "destination": "/ru/agents/prompts",
     "source": "/ru/cloud/features/ai-ml/agents/prompts"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents/quickstart",
+    "destination": "/ru/agents/quickstart",
     "source": "/ru/cloud/features/ai-ml/agents/quickstart"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents/sharing-and-access",
+    "destination": "/ru/agents/sharing-and-access",
     "source": "/ru/cloud/features/ai-ml/agents/sharing-and-access"
   },
   {
@@ -38452,11 +38456,11 @@
     "source": "/ru/use-cases/AI/qbit-vector-search"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/ru/agents/assistant/using-ai-chat",
     "source": "/ru/use-cases/AI_ML/AIChat"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "destination": "/ru/agents/assistant/customizing-semantic-layer",
     "source": "/ru/use-cases/AI_ML/AIChat/semantic-layer"
   },
   {
@@ -41760,11 +41764,11 @@
     "source": "/use-cases/AI/qbit-vector-search"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/agents/assistant/using-ai-chat",
     "source": "/use-cases/AI_ML/AIChat"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "destination": "/agents/assistant/customizing-semantic-layer",
     "source": "/use-cases/AI_ML/AIChat/semantic-layer"
   },
   {
@@ -43032,67 +43036,67 @@
     "source": "/zh/cloud/features/ai-ml"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents",
+    "destination": "/zh/agents",
     "source": "/zh/cloud/features/ai-ml/agents"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents/builder",
+    "destination": "/zh/agents/builder",
     "source": "/zh/cloud/features/ai-ml/agents/builder"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents/builder/code-interpreter",
+    "destination": "/zh/agents/builder/code-interpreter",
     "source": "/zh/cloud/features/ai-ml/agents/builder/code-interpreter"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents/builder/image-generation",
+    "destination": "/zh/agents/builder/image-generation",
     "source": "/zh/cloud/features/ai-ml/agents/builder/image-generation"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents/builder/mcp-servers",
+    "destination": "/zh/agents/builder/mcp-servers",
     "source": "/zh/cloud/features/ai-ml/agents/builder/mcp-servers"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents/builder/model-parameters",
+    "destination": "/zh/agents/builder/model-parameters",
     "source": "/zh/cloud/features/ai-ml/agents/builder/model-parameters"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents/builder/skills",
+    "destination": "/zh/agents/builder/skills",
     "source": "/zh/cloud/features/ai-ml/agents/builder/skills"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents/builder/subagents",
+    "destination": "/zh/agents/builder/subagents",
     "source": "/zh/cloud/features/ai-ml/agents/builder/subagents"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents/builder/vision",
+    "destination": "/zh/agents/builder/vision",
     "source": "/zh/cloud/features/ai-ml/agents/builder/vision"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents/builder/web-search",
+    "destination": "/zh/agents/builder/web-search",
     "source": "/zh/cloud/features/ai-ml/agents/builder/web-search"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents/chat",
+    "destination": "/zh/agents/chat",
     "source": "/zh/cloud/features/ai-ml/agents/chat"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents/marketplace",
+    "destination": "/zh/agents/marketplace",
     "source": "/zh/cloud/features/ai-ml/agents/marketplace"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents/memory",
+    "destination": "/zh/agents/memory",
     "source": "/zh/cloud/features/ai-ml/agents/memory"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents/prompts",
+    "destination": "/zh/agents/prompts",
     "source": "/zh/cloud/features/ai-ml/agents/prompts"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents/quickstart",
+    "destination": "/zh/agents/quickstart",
     "source": "/zh/cloud/features/ai-ml/agents/quickstart"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents/sharing-and-access",
+    "destination": "/zh/agents/sharing-and-access",
     "source": "/zh/cloud/features/ai-ml/agents/sharing-and-access"
   },
   {
@@ -52032,11 +52036,11 @@
     "source": "/zh/use-cases/AI/qbit-vector-search"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/zh/agents/assistant/using-ai-chat",
     "source": "/zh/use-cases/AI_ML/AIChat"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "destination": "/zh/agents/assistant/customizing-semantic-layer",
     "source": "/zh/use-cases/AI_ML/AIChat/semantic-layer"
   },
   {
@@ -55688,7 +55692,7 @@
     "source": "/zh/resources/develop-contribute/native-protocol/columns"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents",
+    "destination": "/agents",
     "source": "/get-started/use-cases/agentic-analytics"
   },
   {
@@ -55716,15 +55720,15 @@
     "source": "/products/agentic-data-stack/components/langfuse"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/agents/assistant/using-ai-chat",
     "source": "/products/cloud/features/ai-ml/aichat/using-ai-chat"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/agents/assistant/using-ai-chat",
     "source": "/products/cloud/features/ai-ml/aichat"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "destination": "/agents/assistant/customizing-semantic-layer",
     "source": "/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
   },
   {
@@ -55752,15 +55756,15 @@
     "source": "/ar/products/agentic-data-stack/components/langfuse"
   },
   {
-    "destination": "/ar/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/ar/agents/assistant/using-ai-chat",
     "source": "/ar/products/cloud/features/ai-ml/aichat/using-ai-chat"
   },
   {
-    "destination": "/ar/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/ar/agents/assistant/using-ai-chat",
     "source": "/ar/products/cloud/features/ai-ml/aichat"
   },
   {
-    "destination": "/ar/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "destination": "/ar/agents/assistant/customizing-semantic-layer",
     "source": "/ar/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
   },
   {
@@ -55788,15 +55792,15 @@
     "source": "/es/products/agentic-data-stack/components/langfuse"
   },
   {
-    "destination": "/es/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/es/agents/assistant/using-ai-chat",
     "source": "/es/products/cloud/features/ai-ml/aichat/using-ai-chat"
   },
   {
-    "destination": "/es/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/es/agents/assistant/using-ai-chat",
     "source": "/es/products/cloud/features/ai-ml/aichat"
   },
   {
-    "destination": "/es/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "destination": "/es/agents/assistant/customizing-semantic-layer",
     "source": "/es/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
   },
   {
@@ -55824,15 +55828,15 @@
     "source": "/fr/products/agentic-data-stack/components/langfuse"
   },
   {
-    "destination": "/fr/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/fr/agents/assistant/using-ai-chat",
     "source": "/fr/products/cloud/features/ai-ml/aichat/using-ai-chat"
   },
   {
-    "destination": "/fr/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/fr/agents/assistant/using-ai-chat",
     "source": "/fr/products/cloud/features/ai-ml/aichat"
   },
   {
-    "destination": "/fr/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "destination": "/fr/agents/assistant/customizing-semantic-layer",
     "source": "/fr/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
   },
   {
@@ -55860,15 +55864,15 @@
     "source": "/ja/products/agentic-data-stack/components/langfuse"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/ja/agents/assistant/using-ai-chat",
     "source": "/ja/products/cloud/features/ai-ml/aichat/using-ai-chat"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/ja/agents/assistant/using-ai-chat",
     "source": "/ja/products/cloud/features/ai-ml/aichat"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "destination": "/ja/agents/assistant/customizing-semantic-layer",
     "source": "/ja/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
   },
   {
@@ -55896,15 +55900,15 @@
     "source": "/ko/products/agentic-data-stack/components/langfuse"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/ko/agents/assistant/using-ai-chat",
     "source": "/ko/products/cloud/features/ai-ml/aichat/using-ai-chat"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/ko/agents/assistant/using-ai-chat",
     "source": "/ko/products/cloud/features/ai-ml/aichat"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "destination": "/ko/agents/assistant/customizing-semantic-layer",
     "source": "/ko/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
   },
   {
@@ -55932,15 +55936,15 @@
     "source": "/pt-BR/products/agentic-data-stack/components/langfuse"
   },
   {
-    "destination": "/pt-BR/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/pt-BR/agents/assistant/using-ai-chat",
     "source": "/pt-BR/products/cloud/features/ai-ml/aichat/using-ai-chat"
   },
   {
-    "destination": "/pt-BR/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/pt-BR/agents/assistant/using-ai-chat",
     "source": "/pt-BR/products/cloud/features/ai-ml/aichat"
   },
   {
-    "destination": "/pt-BR/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "destination": "/pt-BR/agents/assistant/customizing-semantic-layer",
     "source": "/pt-BR/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
   },
   {
@@ -55968,15 +55972,15 @@
     "source": "/ru/products/agentic-data-stack/components/langfuse"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/ru/agents/assistant/using-ai-chat",
     "source": "/ru/products/cloud/features/ai-ml/aichat/using-ai-chat"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/ru/agents/assistant/using-ai-chat",
     "source": "/ru/products/cloud/features/ai-ml/aichat"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "destination": "/ru/agents/assistant/customizing-semantic-layer",
     "source": "/ru/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
   },
   {
@@ -56004,15 +56008,15 @@
     "source": "/zh/products/agentic-data-stack/components/langfuse"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/zh/agents/assistant/using-ai-chat",
     "source": "/zh/products/cloud/features/ai-ml/aichat/using-ai-chat"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+    "destination": "/zh/agents/assistant/using-ai-chat",
     "source": "/zh/products/cloud/features/ai-ml/aichat"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer",
+    "destination": "/zh/agents/assistant/customizing-semantic-layer",
     "source": "/zh/products/cloud/features/ai-ml/aichat/customizing-semantic-layer"
   },
   {
@@ -57262,5 +57266,77 @@
   {
     "source": "/use-cases/observability/clickstack/anomaly-detection",
     "destination": "/clickstack/observability/features/anomaly-detection"
+  },
+  {
+    "destination": "/agents",
+    "source": "/products/cloud/features/ai-ml/agents"
+  },
+  {
+    "destination": "/agents/:path*",
+    "source": "/products/cloud/features/ai-ml/agents/:path*"
+  },
+  {
+    "destination": "/ar/agents",
+    "source": "/ar/products/cloud/features/ai-ml/agents"
+  },
+  {
+    "destination": "/ar/agents/:path*",
+    "source": "/ar/products/cloud/features/ai-ml/agents/:path*"
+  },
+  {
+    "destination": "/es/agents",
+    "source": "/es/products/cloud/features/ai-ml/agents"
+  },
+  {
+    "destination": "/es/agents/:path*",
+    "source": "/es/products/cloud/features/ai-ml/agents/:path*"
+  },
+  {
+    "destination": "/fr/agents",
+    "source": "/fr/products/cloud/features/ai-ml/agents"
+  },
+  {
+    "destination": "/fr/agents/:path*",
+    "source": "/fr/products/cloud/features/ai-ml/agents/:path*"
+  },
+  {
+    "destination": "/ja/agents",
+    "source": "/ja/products/cloud/features/ai-ml/agents"
+  },
+  {
+    "destination": "/ja/agents/:path*",
+    "source": "/ja/products/cloud/features/ai-ml/agents/:path*"
+  },
+  {
+    "destination": "/ko/agents",
+    "source": "/ko/products/cloud/features/ai-ml/agents"
+  },
+  {
+    "destination": "/ko/agents/:path*",
+    "source": "/ko/products/cloud/features/ai-ml/agents/:path*"
+  },
+  {
+    "destination": "/pt-BR/agents",
+    "source": "/pt-BR/products/cloud/features/ai-ml/agents"
+  },
+  {
+    "destination": "/pt-BR/agents/:path*",
+    "source": "/pt-BR/products/cloud/features/ai-ml/agents/:path*"
+  },
+  {
+    "destination": "/ru/agents",
+    "source": "/ru/products/cloud/features/ai-ml/agents"
+  },
+  {
+    "destination": "/ru/agents/:path*",
+    "source": "/ru/products/cloud/features/ai-ml/agents/:path*"
+  },
+  {
+    "destination": "/zh/agents",
+    "source": "/zh/products/cloud/features/ai-ml/agents"
+  },
+  {
+    "destination": "/zh/agents/:path*",
+    "source": "/zh/products/cloud/features/ai-ml/agents/:path*"
   }
 ]
