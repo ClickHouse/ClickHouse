@@ -33,7 +33,7 @@ CREATE VIEW v_prewhere_columns AS SELECT b AS x, s, flag, d, a + b AS total FROM
 CREATE VIEW v_prewhere_definer DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT * FROM t_prewhere_view WHERE b > 10;
 CREATE VIEW v_prewhere_qualified AS SELECT t.a, t.b AS y, arr FROM t_prewhere_view AS t;
 CREATE TABLE t_prewhere_view_other (a UInt64) ENGINE = Memory;
-INSERT INTO t_prewhere_view_other VALUES (200);
+INSERT INTO t_prewhere_view_other VALUES (200), (7);
 
 SELECT 'the same rows as with WHERE';
 SELECT count(), sum(a) FROM v_prewhere_all PREWHERE a < 10;
@@ -56,6 +56,9 @@ SELECT count() FROM v_prewhere_all AS l LEFT JOIN v_prewhere_all AS r ON l.a = r
 SELECT 'the table executes it as its own PREWHERE';
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT s FROM v_prewhere_columns PREWHERE x >= 50 SETTINGS optimize_move_to_prewhere = 0)
 WHERE explain LIKE '%Prewhere filter column%';
+-- The set of the condition is built once, by the query of the view.
+SELECT count() FROM v_prewhere_all PREWHERE a IN t_prewhere_view_other;
+SELECT count() FROM (EXPLAIN SELECT count() FROM v_prewhere_all PREWHERE a IN t_prewhere_view_other) WHERE explain LIKE '%CreatingSets%';
 
 -- A subcolumn is read from its column, also when the view selects the column under another name.
 CREATE TABLE t_prewhere_view_subcolumns (k UInt64, x Tuple(a UInt64, b String), n Nullable(UInt64), j JSON, w Tuple(a Tuple(b UInt64)), z Tuple(b UInt64))

@@ -2246,7 +2246,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 {
                     auto view_query = getViewQueryWithPrewhere(*prewhere_view, storage_snapshot, select_query_info, table_expression, query_context);
                     if (!select_query_options.build_logical_plan)
+                    {
                         table_expression_query_info.view_query = std::move(view_query);
+                        /// The query of the view builds the sets of the condition, so the sets of these actions would be built for nothing.
+                        table_expression_data.resetPrewhereFilterActions();
+                    }
                 }
 
                 if (prewhere_actions && select_query_options.build_logical_plan)
