@@ -32,10 +32,8 @@ SELECT estimateCompressionRatio('LZ4', 65536, 'String', 1)(n) FROM src; -- { ser
 -- A string that starts with the name of a type is a type, with the error of that type.
 SELECT estimateCompressionRatio('Decimal(100, 2)')(n) FROM src; -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT estimateCompressionRatio('LowCardinality(Strin)')(n) FROM src; -- { serverError UNKNOWN_TYPE }
--- A conversion the types do not allow fails without rows; a value the target cannot hold fails when it comes.
+-- A conversion the types do not allow fails without rows; a value `CAST` cannot convert fails when it comes.
 SELECT estimateCompressionRatio('Array(UInt8)')(n) FROM src WHERE n > 1000000; -- { serverError TYPE_MISMATCH }
-SELECT estimateCompressionRatio('UInt8')(n) FROM src; -- { serverError CANNOT_CONVERT_TYPE }
-SELECT estimateCompressionRatio('UInt8')(n) FROM src WHERE n < 256 FORMAT Null;
 SELECT estimateCompressionRatio('String')(nullIf(s, 'region_5')) FROM src; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 SELECT estimateCompressionRatio('Nullable(String)')(nullIf(s, 'region_5')) > 0 FROM src;
 -- NULL rows of `if` are measured too: the optimizer does not turn `f(if(c, NULL, x))` into `fIf(x, not c)`.
@@ -44,19 +42,33 @@ SELECT estimateCompressionRatio('Nullable(String)')(if(n % 10 = 0, NULL, s))
     = (SELECT estimateCompressionRatio('Nullable(String)')(if(n % 10 = 0, NULL, s)) FROM src SETTINGS optimize_rewrite_aggregate_function_with_if = 0)
 FROM src;
 SELECT estimateCompressionRatio('UInt32')(s) FROM src; -- { serverError CANNOT_PARSE_TEXT }
--- The conversion follows the settings of the query, as `accurateCast`.
+-- The values are converted as `CAST` converts them, as `ALTER TABLE ... MODIFY COLUMN` does: a `Float64` that a `Float32` holds
+-- only approximately, an integer out of the range of the target (it wraps), a date out of the range of `DateTime`. The
+-- compressed size (the second number of the state) is that of the values `CAST` gives.
+SELECT estimateCompressionRatio('ZSTD', 'Float32')(number / 3) > 0 FROM numbers(10000);
+WITH '^(?:[89A-F][0-9A-F])*[0-7][0-9A-F]((?:[89A-F][0-9A-F])*[0-7][0-9A-F])$' AS second_number
+SELECT
+    extract(hex(estimateCompressionRatioState('ZSTD', 'Float32')(number / 3)), second_number)
+        = extract(hex(estimateCompressionRatioState('ZSTD', 'Float32')(CAST(number / 3, 'Float32'))), second_number),
+    extract(hex(estimateCompressionRatioState('LZ4', 'UInt8')(number * 7)), second_number)
+        = extract(hex(estimateCompressionRatioState('LZ4', 'UInt8')(CAST(number * 7, 'UInt8'))), second_number)
+FROM numbers(10000);
+WITH '^(?:[89A-F][0-9A-F])*[0-7][0-9A-F]((?:[89A-F][0-9A-F])*[0-7][0-9A-F])$' AS second_number
+SELECT
+    extract(hex(estimateCompressionRatioState('LZ4', 'DateTime(\'UTC\')')(x)), second_number)
+    = extract(hex(estimateCompressionRatioState('LZ4', 'DateTime(\'UTC\')')(CAST(x, 'DateTime(\'UTC\')'))), second_number)
+FROM (SELECT toDateTime64('1960-01-01 00:00:00', 3, 'UTC') + toIntervalSecond(number) AS x FROM numbers(20))
+SETTINGS date_time_overflow_behavior = 'ignore';
+-- With the settings of the query.
 SELECT estimateCompressionRatio('Enum8(\'only\' = 1)')(toUInt8(2)); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT estimateCompressionRatio('DateTime')('01/02/2020') > 0 SETTINGS cast_string_to_date_time_mode = 'best_effort';
 SELECT estimateCompressionRatio('DateTime')('01/02/2020') SETTINGS cast_string_to_date_time_mode = 'basic'; -- { serverError CANNOT_PARSE_DATETIME }
 SELECT estimateCompressionRatio('DateTime(\'UTC\')')(toDateTime64('1960-01-01 00:00:00', 3, 'UTC') + toIntervalSecond(number))
 FROM numbers(20) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
--- The compressed size (the second number of the state) is that of the values `accurateCast` gives.
-WITH '^(?:[89A-F][0-9A-F])*[0-7][0-9A-F]((?:[89A-F][0-9A-F])*[0-7][0-9A-F])$' AS second_number
-SELECT
-    extract(hex(estimateCompressionRatioState('LZ4', 'DateTime(\'UTC\')')(x)), second_number)
-    = extract(hex(estimateCompressionRatioState('LZ4', 'DateTime(\'UTC\')')(accurateCast(x, 'DateTime(\'UTC\')'))), second_number)
-FROM (SELECT toDateTime64('1960-01-01 00:00:00', 3, 'UTC') + toIntervalSecond(number) AS x FROM numbers(20))
-SETTINGS date_time_overflow_behavior = 'ignore';
+-- `cast_keep_nullable` does not change the type the values are converted to.
+SELECT estimateCompressionRatio('LZ4', 'String')(toNullable(s))
+    = (SELECT estimateCompressionRatio('LZ4', 'String')(toNullable(s)) FROM src SETTINGS cast_keep_nullable = 0)
+FROM src SETTINGS cast_keep_nullable = 1;
 -- Suspicious and experimental types need their settings, as in `CAST`.
 SELECT estimateCompressionRatio('LowCardinality(UInt8)')(toUInt8(n)) FROM src; -- { serverError SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY }
 SELECT estimateCompressionRatio('LowCardinality(UInt8)')(toUInt8(n)) > 0 FROM src SETTINGS allow_suspicious_low_cardinality_types = 1;

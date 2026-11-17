@@ -23,7 +23,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/TypeTree.h>
-#include <Functions/CastOverloadResolver.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/ReadBuffer.h>
@@ -47,23 +47,6 @@
 namespace DB
 {
 struct Settings;
-
-namespace Setting
-{
-extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
-}
-
-/// Defined with the conversion functions, declared here as in `CastOverloadResolver.cpp`.
-struct FunctionConvertSettings;
-using FunctionConvertSettingsPtr = std::shared_ptr<const FunctionConvertSettings>;
-FunctionConvertSettingsPtr createFunctionConvertSettings(const ContextPtr & context, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
-FunctionBasePtr createFunctionBaseCast(
-    const FunctionConvertSettingsPtr & settings,
-    const char * name,
-    const ColumnsWithTypeAndName & arguments,
-    const DataTypePtr & return_type,
-    std::optional<CastDiagnostic> diagnostic,
-    CastType cast_type);
 
 namespace ErrorCodes
 {
@@ -333,7 +316,7 @@ struct TargetPart
 /// `Memory` table) converts them as the query that added them would have.
 struct Conversion
 {
-    /// Null when the target type is the source type, or when the function was created without any context.
+    /// Null when the target type is the source type.
     FunctionBasePtr cast;
     std::optional<DataTypeValidationSettings> validation_settings;
 };
@@ -405,23 +388,21 @@ public:
             codec_description = CompressionCodecFactory::instance().getDefaultCodec()->getFullCodecDescription();
         }
 
-        /// Built as `accurateCast` builds it, with the settings of the query (enum values, date and time parsing and overflow;
-        /// the cast copies them), and prepared here, so that a conversion the types do not allow is reported here and not at the
-        /// first granule. `createInternalCast` would saturate dates and times that overflow whatever the settings say.
-        /// A function created without a query (when a table is loaded: a state type, or an aggregate of a TTL `GROUP BY`, which
-        /// background merges run on rows) converts with the settings of the server, never with none. A process without even
-        /// those cannot aggregate rows; there the function gets no cast and converting is an error (`writePending`).
+        /// The values are converted as `ALTER TABLE ... MODIFY COLUMN` converts them: with `_CAST`, which returns exactly the
+        /// target type. It copies the conversion settings of the query, or of the server when there is no query (a table being
+        /// loaded, a TTL `GROUP BY` in a background merge). Prepared here, so that a conversion the types do not allow is an
+        /// error before any row comes.
         auto own_conversion = std::make_shared<Conversion>();
         own_conversion->validation_settings = std::move(validation_settings_);
-        ContextPtr settings_context = CurrentThread::tryGetQueryContext();
-        if (!settings_context)
-            settings_context = Context::getGlobalContextInstance();
-        if (converts && settings_context)
+        if (converts)
         {
-            ColumnsWithTypeAndName cast_arguments{{source_type->createColumn(), source_type, ""}, {nullptr, std::make_shared<DataTypeString>(), ""}};
-            own_conversion->cast = createFunctionBaseCast(
-                createFunctionConvertSettings(settings_context, settings_context->getSettingsRef()[Setting::date_time_overflow_behavior]),
-                "accurateCast", cast_arguments, target_type, {}, CastType::accurate);
+            ContextPtr context = CurrentThread::tryGetQueryContext();
+            if (!context)
+                context = Context::getGlobalContextInstance();
+            ColumnsWithTypeAndName cast_arguments{
+                {source_type->createColumn(), source_type, ""},
+                {DataTypeString().createColumnConst(1, target_type->getName()), std::make_shared<DataTypeString>(), ""}};
+            own_conversion->cast = FunctionFactory::instance().get("_CAST", context)->build(cast_arguments);
             own_conversion->cast->prepare({});
         }
         conversion = std::move(own_conversion);
@@ -614,9 +595,6 @@ private:
         ColumnPtr converted = rows;
         if (converts)
         {
-            if (!rows_conversion.cast)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Aggregate function {} has rows to convert but was created without settings", getName());
             /// With the types the cast was built for, not this function's: a `DateTime` without a time zone takes the session's
             /// when the type is created, and a function created by another query that reads the state may have another.
             ColumnsWithTypeAndName arguments{
@@ -884,7 +862,7 @@ With `target_type`, the estimate follows how a `MergeTree` table with the defaul
 compressed stream per substream (for example, the sizes and the characters of a `String`, the dictionary and the indexes of
 a `LowCardinality` column), granules of 8192 rows or 10 MiB in `target_type`, sparse serialization for columns of mostly default values (decided from
 the first rows of a state, 8192 or the rows of 1 MiB, where a part decides from all its rows). It does not read the settings of any table. The values are
-converted as `accurateCast` converts them, so a value that `target_type` cannot hold is an error. The numerator of a
+converted as `CAST` converts them, as `ALTER TABLE ... MODIFY COLUMN` does. The numerator of a
 `LowCardinality` column is the size of its values, not of its dictionary. Every thread of a query estimates its rows as a
 separate part, so use `max_threads = 1` for a stable result. `Dynamic` and `JSON` are not supported as target types, nor as
 arguments with `target_type`, and neither is an argument with `LowCardinality` inside a `Variant` (convert them in the query
