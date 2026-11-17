@@ -35,7 +35,7 @@ struct NodeInfo
     bool may_throw = false;
 
     /// True if both nodes read the same columns and indexes, so their conditions may share a step.
-    bool readsSameColumns(const NodeInfo & other) const
+    [[nodiscard]] bool readsSameColumns(const NodeInfo & other) const
     {
         return required_table_columns == other.required_table_columns && required_indexes == other.required_indexes;
     }
@@ -51,11 +51,6 @@ DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawCo
     for (const auto & child : nodes)
         types.push_back({child->result_type, child->column != nullptr});
     return types;
-}
-
-bool isTopKFilter(const ActionsDAG::Node * node)
-{
-    return node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->getName() == "__topKFilter";
 }
 
 /// Fills the info of an input column. A virtual column of an index is resolved to the name of the index whose reader fills it.
@@ -150,7 +145,6 @@ void appendGroups(
     std::vector<ConditionGroup> & groups,
     const ActionsDAG::NodeRawConstPtrs & nodes,
     const NodesInfo & info,
-    bool read_ahead_columns,
     size_t cache_prefix = 0)
 {
     for (size_t i = 0; i < nodes.size(); ++i)
@@ -158,12 +152,13 @@ void appendGroups(
         const auto * node = nodes[i];
         const auto & current = info.at(node);
         const bool same_columns = i != 0 && current.readsSameColumns(info.at(groups.back().nodes.front()));
-        /// `__topKFilter` is the first condition (see `buildTopKDynamicFilterPrewhere`). In its own step the condition runs only
-        /// on the rows the threshold passes once it is selective, because the `__topKFilter` step's filter stays optional.
-        const bool follows_top_k_filter = same_columns && read_ahead_columns && isTopKFilter(groups.back().nodes.front())
-            && canBeMovedToTheFrontOfAndChain(node);
+        /// Dynamic runtime filters and user predicates must stay in separate steps so their
+        /// rejections can be attributed independently. Column reads can still be shared through
+        /// `group_read_step`, and a leading `__topKFilter` retains its optional filter.
+        const bool crosses_dynamic_filter_boundary = i != 0
+            && isDynamicRuntimePrewhereFilter(node) != isDynamicRuntimePrewhereFilter(groups.back().nodes.front());
 
-        if (same_columns && i != cache_prefix && !current.may_throw && !follows_top_k_filter)
+        if (same_columns && i != cache_prefix && !current.may_throw && !crosses_dynamic_filter_boundary)
             groups.back().nodes.push_back(node);
         else
             groups.push_back({{node}, current.may_throw});
@@ -235,7 +230,7 @@ public:
     /// Refine the original schedule within its existing filter and cache boundaries.
     /// A group with an unguarded, possibly throwing expression may see rows from before
     /// the accumulated filter is applied. Keep all steps up to that group as they were.
-    void splitAliases(std::vector<ConditionGroup> & groups, const NodesInfo & nodes_info, bool read_ahead_columns)
+    void splitAliases(std::vector<ConditionGroup> & groups, const NodesInfo & nodes_info)
     {
         auto can_expand = [&](const ConditionGroup & group)
         {
@@ -272,7 +267,7 @@ public:
             for (const auto * node : group.nodes)
                 flatten(node, atoms, true);
             const size_t first = refined.size();
-            appendGroups(refined, atoms, nodes_info, read_ahead_columns);
+            appendGroups(refined, atoms, nodes_info);
             refined[first].needs_filtered_input |= group.needs_filtered_input;
             refined.back().ends_cache_prefix = group.ends_cache_prefix;
         }
@@ -607,8 +602,8 @@ bool tryBuildPrewhereSteps(
     /// a throwing predicate over the same column adjacent, so the may_throw check below is what keeps
     /// the guard effective.
     std::vector<ConditionGroup> condition_groups;
-    appendGroups(condition_groups, condition_nodes, nodes_info, read_ahead_columns, num_attributed_conditions);
-    splitter.splitAliases(condition_groups, nodes_info, read_ahead_columns);
+    appendGroups(condition_groups, condition_nodes, nodes_info, num_attributed_conditions);
+    splitter.splitAliases(condition_groups, nodes_info);
 
     /// For every group, the index of the group whose step reads its columns. A group that was split
     /// from the previous one only because it may throw reads the same columns, so with
