@@ -30,6 +30,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/StorageProxy.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Session.h>
@@ -1961,9 +1962,11 @@ void TCPHandler::processTablesStatusRequest()
             continue;
 
         TableStatus status;
-        /// Only a replicated table has a delay to report, and the proxy of a table that is not loaded
-        /// yet answers that from the engine name, so a probe materializes nothing else.
-        if (auto * replicated_table = table->supportsReplication()
+        /// Only a replicated MergeTree engine has a delay to report, so only such a table is loaded if it is deferred.
+        /// `supportsReplication` is also true for the data lake engines, which have no delay, so the engine
+        /// registration is checked instead, without loading the table, like in `ReplicasStatusHandler`.
+        const auto * features = StorageFactory::instance().tryGetStorageFeatures(table->getName());
+        if (auto * replicated_table = features && features->supports_replication
                 ? castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load).get()
                 : nullptr)
         {
