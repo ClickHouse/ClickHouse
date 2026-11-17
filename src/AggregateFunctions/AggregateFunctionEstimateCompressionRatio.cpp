@@ -947,7 +947,7 @@ With `target_type`, the estimate follows how a new `MergeTree` table with the de
 - one compressed stream per substream, for example the sizes and the characters of a `String`, or the dictionary and the indexes of a `LowCardinality` column;
 - granules of 8192 rows, or of fewer rows when they take 10 MiB in `target_type`;
 - sparse serialization for a column of mostly default values, decided from the first 8192 rows (or 1 MiB of rows), where a table decides from all the rows of a part;
-- values converted as `CAST` converts them, as `ALTER TABLE ... MODIFY COLUMN` does.
+- values converted as `CAST` converts them, as `ALTER TABLE ... MODIFY COLUMN` does, with the settings of the query (a `SETTINGS` clause in a subquery doesn't apply).
 
 The estimate is approximate, and it does not read the settings of any table.
 A table sizes its granules from its insert blocks and from all its columns together, while the function sees one column and no insert blocks, so the granules of wide rows can differ.
