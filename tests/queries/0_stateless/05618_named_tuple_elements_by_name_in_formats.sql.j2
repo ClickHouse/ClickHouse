@@ -78,5 +78,9 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05618_union.ORC', 'ORC') SELECT
 FROM numbers(2);
 SELECT * FROM file(currentDatabase() || '_05618_union.ORC', 'ORC', 'id UInt64, v1 Variant(Tuple(a Int8), String), v2 Variant(Array(Int8), String)') ORDER BY id SETTINGS input_format_null_as_default = 1;
 SELECT * FROM file(currentDatabase() || '_05618_union.ORC', 'ORC', 'id UInt64, v3 Variant(Tuple(A String, a Int64), UInt64), v4 Variant(Tuple(Ab Int64, aB String), UInt64)') ORDER BY id SETTINGS input_format_orc_case_insensitive_column_matching = 1;
+SELECT id, c3, c4 FROM file(currentDatabase() || '_05618_ci.ORC', 'ORC', 'id UInt32, c3 Tuple(aB Int32, AB Int32), c4 Tuple(aB Int32, ab Int32)') WHERE c3.aB = 22 AND c4.ab = 22 ORDER BY id SETTINGS input_format_orc_case_insensitive_column_matching = 1, input_format_orc_filter_push_down = 1, optimize_functions_to_subcolumns = 1;
+SELECT count() FROM file(currentDatabase() || '_05618_ci.ORC', 'ORC', 'id UInt32, c3 Tuple(aB Int32, AB Int32), c4 Tuple(aB Int32, ab Int32)') WHERE c3.aB = 11 OR c4.ab = 11 SETTINGS input_format_orc_case_insensitive_column_matching = 1, input_format_orc_filter_push_down = 1, optimize_functions_to_subcolumns = 1, log_comment = '05618_orc_push_down';
+SYSTEM FLUSH LOGS query_log;
+SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = '05618_orc_push_down' AND type = 'QueryFinish';
 
 SELECT CAST(CAST(tuple(1), 'Tuple(a Int32)'), 'Tuple(b Int32)');

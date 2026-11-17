@@ -174,16 +174,18 @@ std::unique_ptr<ORC::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
     return std::make_unique<ORCInputStreamFromString>(std::move(file_data), file_size);
 }
 
-/// Defined below, next to the read path that also uses it. The sargs path resolves predicate column
-/// names through the same recursive walk, so pruning and reading always agree on the column.
-static const ORC::Type *
-traverseDownORCTypeByName(const std::string & target, const ORC::Type * orc_type, DataTypePtr & type, bool ignore_case);
-
 struct ORCPredicateColumnTypes
 {
     DataTypePtr result_type;
     DataTypePtr declared_type;
+    /// The header column that is the predicate column, or has it as the tuple element at `path`.
+    const ColumnWithTypeAndName * header_column = nullptr;
+    ISerialization::SubstreamPath path;
 };
+
+/// Defined below, next to the read path whose binding of columns and tuple elements to the file schema it repeats,
+/// so pruning and reading always agree on the column.
+static const ORC::Type * findORCTypeOfPredicateColumn(const ORCPredicateColumnTypes & column, const ORC::Type & schema, bool ignore_case);
 
 /// True when `path` is a named tuple element at every level, so it is a file leaf with its own
 /// statistics. Nullable, LowCardinality and Array are transparent; anything else is refused,
@@ -240,7 +242,7 @@ static std::optional<ORCPredicateColumnTypes> findTupleElementKeyTypes(
             /// A dotted field name can also resolve to a virtual subcolumn of another element.
             if (path.back().type != ISerialization::Substream::TupleElement)
                 continue;
-            return ORCPredicateColumnTypes{subcolumn->data.type, path.back().data.type};
+            return ORCPredicateColumnTypes{subcolumn->data.type, path.back().data.type, column, path};
         }
     }
     return {};
@@ -251,7 +253,7 @@ static std::optional<ORCPredicateColumnTypes> findHeaderTypesByPath(
     const Block & header, const String & name, bool ignore_case)
 {
     if (const auto * column = header.findByName(name, ignore_case))
-        return ORCPredicateColumnTypes{column->type, column->type};
+        return ORCPredicateColumnTypes{column->type, column->type, column, {}};
     return findTupleElementKeyTypes(header, name, ignore_case);
 }
 
@@ -779,12 +781,8 @@ static void buildORCSearchArgumentImpl(
                 break;
             }
 
-            /// The resolver rewrites the type it is given when it descends a LIST (a flattened
-            /// Nested column), so give it a scratch copy: the guards below must judge the key's
-            /// own type, which is what KeyCondition's RPN holds.
             const auto & column_type = column_types->result_type;
-            auto resolved_type = column_type;
-            const auto * orc_type = traverseDownORCTypeByName(column_name, &schema, resolved_type, ignore_case);
+            const auto * orc_type = findORCTypeOfPredicateColumn(*column_types, schema, ignore_case);
             if (!orc_type)
             {
                 builder.literal(ORC::TruthValue::YES_NO_NULL);
@@ -1163,6 +1161,36 @@ static VectorWithMemoryTracking<std::optional<size_t>> matchORCStructFieldsByNam
     for (size_t i = 0; i < field_names.size(); ++i)
         field_names[i] = orc_type->getFieldName(i);
     return DataTypeTuple::matchElementsByName(field_names, tuple_type.getElementNames(), ignore_case);
+}
+
+static const ORC::Type * findORCTypeOfPredicateColumn(const ORCPredicateColumnTypes & column, const ORC::Type & schema, bool ignore_case)
+{
+    auto type = column.header_column->type;
+    const auto * orc_type = traverseDownORCTypeByName(column.header_column->name, &schema, type, ignore_case);
+    for (const auto & substream : column.path)
+    {
+        if (!orc_type)
+            return nullptr;
+
+        if (substream.type == ISerialization::Substream::NullableElements)
+        {
+            type = removeNullable(type);
+            continue;
+        }
+
+        /// An element under an Array is an array column, whose predicates are not pushed down.
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+        if (substream.type != ISerialization::Substream::TupleElement || !tuple_type || !tuple_type->hasExplicitNames()
+            || orc_type->getKind() != ORC::STRUCT)
+            return nullptr;
+        const auto element = tuple_type->tryGetPositionByName(substream.name_of_substream);
+        if (!element)
+            return nullptr;
+        const auto field = matchORCStructFieldsByName(orc_type, *tuple_type, ignore_case)[*element];
+        type = tuple_type->getElement(*element);
+        orc_type = field ? orc_type->getSubtype(*field) : nullptr;
+    }
+    return orc_type;
 }
 
 /// Also collects the ORC structs that are requested as a `Tuple`.
