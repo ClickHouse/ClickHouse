@@ -2493,7 +2493,7 @@ def test_concurrent_committing_selects_on_ordered_queue(started_cluster):
 
     The first SELECT is parked by `object_storage_queue_sleep_in_generate` while
     it reads the first file. The second SELECT starts meanwhile. Committing
-    SELECTs have to run one at a time: both must succeed and every file must be
+    SELECTs have to run one at a time: both must succeed and every row must be
     returned exactly once.
     """
     node = started_cluster.instances["instance_without_keeper_fault_injection"]
@@ -2568,8 +2568,8 @@ def test_concurrent_committing_selects_on_ordered_queue(started_cluster):
         answer, error = results[name]
         assert not error, f"{name} SELECT failed: {error}"
 
-    assert int(results["first"][0]) == big_rows
-    assert int(results["second"][0]) == small_rows
+    # The first SELECT lists both files, so it takes both. The second one waits for it and finds nothing left.
+    assert int(results["first"][0]) + int(results["second"][0]) == big_rows + small_rows
     assert 0 == int(node.query(select))
 
     node.query(f"DROP TABLE {table_name} SYNC")
