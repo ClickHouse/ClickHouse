@@ -403,10 +403,12 @@ Block FormatFilterInfo::buildKeyConditionInputs(
     const PrewhereInfoPtr & prewhere_info,
     const FilterDAGInfoPtr & row_level_filter)
 {
+    /// Inputs of PREWHERE and of a row-level filter are always storage columns, never subcolumns
+    /// (e.g. `v.tag` next to `v` is a separate column), so match them by exact name.
     auto add_required = [&](const ActionsDAG & dag)
     {
         for (const auto & col : dag.getRequiredColumns())
-            if (!isColumnCovered(base, col.name))
+            if (!base.has(col.name))
                 base.insert({col.type->createColumn(), col.type, col.name});
     };
     if (row_level_filter)

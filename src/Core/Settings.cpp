@@ -424,7 +424,7 @@ See the settings tab in the Cloud console for a list of all service sizes.
     DECLARE(UInt64, max_threads_min_free_memory_per_thread, 1_GiB, R"(
 Lowers `max_threads` when the server is under memory pressure, to avoid starting highly-parallel queries that are likely to hit the memory limit.
 
-Free memory is computed as the server's `max_server_memory_usage` minus the memory currently tracked by the global memory tracker. If that free memory is less than `max_threads` multiplied by this value, `max_threads` is reduced to the largest N such that `N * value <= free_memory`, with a minimum of `1`.
+Free memory is computed as the server's `max_server_memory_usage` minus the memory currently tracked by the global memory tracker. If that free memory is less than `max_threads` multiplied by this value, `max_threads` is reduced to the largest N such that `N * value <= free_memory`, with a minimum of `1`. Free memory is taken once per query, when its plan is built, so that all parts of the query are planned with the same number of threads.
 
 Set to `0` to disable this limit.
 
@@ -449,6 +449,8 @@ Respect the server's concurrency control (see the `concurrent_threads_soft_limit
 Choose the parallelism of a query (the number of streams and threads it is planned with) from the fair share of CPU slots of the server's concurrency control, instead of the number of CPU cores. The fair share is the slot limit (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings) divided evenly between the currently running pipelines and the new query.
 
 This way, when many queries run concurrently, each of them is planned with fewer streams: it uses less memory and spends less CPU on merging the partial results of its threads (e.g. aggregation states), which increases the total throughput. A query that is planned while the server is idle uses all CPU cores as before.
+
+The fair share is taken once per query, when its plan is built, so that all parts of the query (subqueries, sets, joined tables) are planned with the same number of streams.
 
 It only applies if `max_threads` is `auto` (not set explicitly) and `use_concurrency_control` is enabled.
 )", 0, \
@@ -1023,6 +1025,12 @@ Expired time for HSTS. 0 means disable HSTS.
 Whether to count extreme values (the minimums and maximums in columns of a query result). Accepts 0 or 1. By default, 0 (disabled).
 For more information, see the section "Extreme values".
 )", IMPORTANT) \
+    DECLARE(Bool, use_lz4_library_decompression, false, R"(
+Use the upstream `LZ4` library to decompress native ClickHouse blocks, including data compressed with `LZ4HC` or a codec chain containing `LZ4`.
+Disabled by default: ClickHouse's adaptive `LZ4` decoder is used. Both decoders read the same stored data; changing this setting does not require rewriting data parts.
+The setting applies to decompression performed in the query's context. Outside a query, the global context's setting is used, or ClickHouse's decoder if no context exists.
+)", 0, \
+        {"26.11", false, false, "New setting: optionally use the upstream `LZ4` library decoder instead of ClickHouse's adaptive decoder."}) \
     DECLARE(Bool, use_uncompressed_cache, false, R"(
 Whether to use a cache of uncompressed blocks. Accepts 0 or 1. By default, 0 (disabled).
 Using the uncompressed cache (only for tables in the MergeTree family) can significantly reduce latency and increase throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed_cache_size](/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
@@ -5670,6 +5678,11 @@ For `BACKUP`/`RESTORE ... ON CLUSTER` the initiator's value of this setting is p
 
 Durability for persistent `S3` and `S3Queue` tables: enabling this only per session or profile is not durable across a restart. When the server reloads such a table from its stored definition (startup or `RESTORE`) it rebuilds the S3 client and re-applies the restriction with the startup context, so a table that relied on server-managed credentials and was created only under a session/profile `s3_allow_server_credentials_in_user_queries = 1` is created successfully but becomes inaccessible after a restart (the table is left in place; queries against it fail until its credentials resolve to a permitted source again). The server itself still starts. Give such tables explicit credentials for durable access; alternatively, enabling the setting server-wide keeps them loading across restarts, at the cost of relaxing the restriction for all reloads.
 
+Sessions with different values of this setting do not share a table's access. A persistent `S3`, `S3Queue`, `AzureBlobStorage` or `AzureQueue` table keeps the value it was created with (or the value of the startup context after a restart), and no session changes it:
+- A session where this setting is disabled cannot use an `S3` or `S3Queue` table created with it enabled, even if the table has explicit credentials or `NOSIGN`, and cannot use an Azure table that authenticates with the server's identity. To share a table with such sessions, create it in one of them.
+- A session where this setting is enabled does not give the server's credentials back to a table that lost them on a restart. Detach the table and attach it again in such a session instead.
+- An `S3` table created with this setting disabled keeps the authentication settings it was created with: later changes of the server `<s3>` configuration, such as rotated keys, reach it only when it is attached again.
+
 Azure Blob Storage is covered by this setting as well. When it is disabled, the `azureBlobStorage`/`azureBlobStorageCluster` table functions, the `AzureBlobStorage`/`AzureQueue` engines, Azure named collections, dynamic `disk(type = azure_blob_storage, ...)` definitions, `BACKUP`/`RESTORE TO AzureBlobStorage`, and DataLake table-data reads over Azure may not authenticate with the identity the server itself runs under: the AKS workload identity (a projected service-account token from `AZURE_FEDERATED_TOKEN_FILE`) or the Azure managed identity of the machine. Such a request is rejected with `ACCESS_DENIED`. Credentials supplied explicitly are unaffected: an `account_name`/`account_key` pair, a connection string, a SAS token, and static credentials in a named collection or in the server `<storage_configuration>` all keep working. Azure binds a storage bearer token to the account it was minted for and not to the host it is sent to, so a request to a URL taken from the query would both hand a usable token to whoever controls that URL and read containers the user has no rights to.
 
 For Azure, a named collection that relies on workload or managed identity is restricted too, including one defined in the server configuration, and so is `extra_credentials(client_id = '...', tenant_id = '...')`, which exchanges the server's own federated token for the named client. Disks defined in the server configuration keep using workload or managed identity. A dynamic Azure disk is restricted like a table, except for a table in the `system` database with the server setting `s3_allow_server_credentials_for_system_table_disks`; a dynamic Azure disk created while this setting is enabled records that in its stored definition, so after a restart it keeps using the server's identity. The record is written only by the server and is ignored in a `CREATE` or `ATTACH` query. The destination of `after_processing = 'move'` in `AzureQueue` must carry its own credentials, a connection string or a SAS token, even with this setting enabled, the same way an `S3Queue` move destination needs its own keys. A persistent `AzureBlobStorage` or `AzureQueue` table, or a table on a dynamic Azure disk, that relied on the server's identity is loaded at startup with a client that has no credentials, per `s3_load_table_anonymously_if_credentials_restricted`; `RESTORE` creates Azure tables like `CREATE`, so such a table is refused there instead.
@@ -9937,6 +9950,16 @@ keeps running on one node, however the time comparison turns out.
 Set to 1 to accept any amount of duplicated reading, which restores the behaviour of only comparing times.
 )", 0, \
         {"26.10", 1.0, 0.5, "Automatic parallel replicas now declines a query that would repeat more than half of its reading on every replica. Previously there was no limit, which is what 1 still asks for."}) \
+    DECLARE(Float, automatic_parallel_replicas_statistics_drift_ratio, 1.5, R"(
+How much the rows a read selects may differ from the rows it selected when automatic parallel replicas collected its
+statistics, as the ratio of the larger to the smaller, before the statistics are considered stale and collected again
+instead of being decided on.
+
+The rows are the ones the initiator's index analysis selects, so pruning that only the replicas do while reading (for
+example by their own query condition caches) is not seen. A lower ratio recollects the statistics sooner as the table
+changes. Should be greater than 1.
+)", 0, \
+        {"26.11", 2.0, 1.5, "New setting. The ratio was 2 and could not be changed; statistics are now recollected sooner as the data changes."}) \
     DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 1_MiB, R"(
 Threshold of bytes to read per replica to enable parallel replicas automatically (applies only when `automatic_parallel_replicas_mode`=1). 0 means no threshold.
 The total number of bytes to read is estimated based on the collected statistics.
@@ -11001,7 +11024,8 @@ Enables the `GDeflate` compression codec.
         {"26.11", false, false, "New setting to enable the experimental `GDeflate` compression codec."}) \
     DECLARE(Bool, enable_zxc_codec, false, R"(
 Enables the `ZXC` compression codec.
-)", EXPERIMENTAL, \
+)", BETA, \
+        {"26.11", false, false, "The `ZXC` compression codec was moved to Beta."}, \
         {"26.8", false, false, "New setting to enable the experimental `ZXC` compression codec individually, without the `allow_experimental_codecs`."}) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
@@ -12008,17 +12032,17 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     void dumpToMapColumn(IColumn * column, bool changed_only, bool show_secrets);
 
     /// The changed settings as an owning name -> value-string map (same values as dumpToMapColumn).
-    FlatStringMap changedToFlatMap(bool show_secrets) const;
+    [[nodiscard]] FlatStringMap changedToFlatMap(bool show_secrets) const;
 
     /// Check that there is no user-level settings at the top level in config.
     /// This is a common source of mistake (user don't know where to write user-level setting).
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     void set(std::string_view name, const Field & value) override;
 
-    bool hasSettingsChangedByCompatibility() const { return num_settings_changed_by_compatibility_setting != 0; }
+    [[nodiscard]] bool hasSettingsChangedByCompatibility() const { return num_settings_changed_by_compatibility_setting != 0; }
     void resetSettingsChangedByCompatibility();
     void resetSettingsChangedByCompatibility(const std::function<bool(std::string_view, const Field &)> & is_allowed);
     void markSettingsChangedByCompatibilityAsUnchanged();
@@ -12036,7 +12060,7 @@ private:
     std::array<UInt64, num_setting_bitmap_words> settings_changed_by_compatibility_setting = {};
     size_t num_settings_changed_by_compatibility_setting = 0;
 
-    bool isChangedByCompatibility(size_t index) const
+    [[nodiscard]] bool isChangedByCompatibility(size_t index) const
     {
         return (settings_changed_by_compatibility_setting[index / 64] & (1ULL << (index % 64))) != 0;
     }
@@ -12779,14 +12803,14 @@ NameToNameMap readQueryParameters(ReadBuffer & in)
     return parameters;
 }
 
-void Settings::write(WriteBuffer & out, SettingsWriteFormat format) const
+void Settings::write(WriteBuffer & out) const
 {
-    impl->write(out, format);
+    impl->write(out);
 }
 
-void Settings::read(ReadBuffer & in, SettingsWriteFormat format)
+void Settings::read(ReadBuffer & in, bool skip_invalid_values)
 {
-    impl->read(in, format);
+    impl->read(in, skip_invalid_values);
 }
 
 void Settings::writeEmpty(WriteBuffer & out)
