@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int READONLY;
 }
 
 namespace
@@ -486,6 +487,12 @@ BlockIO InterpreterGrantQuery::execute()
     elements_to_grant.replaceEmptyDatabase(current_database);
     elements_to_revoke.replaceEmptyDatabase(current_database);
     query.access_rights_elements.replaceEmptyDatabase(current_database);
+
+    /// Under readonly, roles follow the rule for privileges: granting is refused, revoking only ON CLUSTER.
+    const auto & access_params = current_user_access->getParams();
+    if (access_params.readonly && !access_params.full_access
+        && (!roles_to_grant.empty() || (!query.cluster.empty() && !roles_to_revoke.empty())))
+        throw Exception(ErrorCodes::READONLY, "{}: Cannot change grants in readonly mode.", current_user_access->getUserName());
 
     /// Executing on cluster.
     if (!query.cluster.empty())
