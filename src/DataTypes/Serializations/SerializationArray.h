@@ -9,13 +9,16 @@ class SerializationArray final : public SimpleTextSerialization
 {
 private:
     SerializationPtr nested;
+    /// Cached `nested->supportsPooling`, so that the check is O(1) instead of a walk over the whole nested
+    /// chain: `create` asks it of every level, which is quadratic in the depth for a deeply nested `Array`.
+    bool nested_supports_pooling;
 
-    explicit SerializationArray(const SerializationPtr & nested_) : nested(nested_) {}
+    explicit SerializationArray(const SerializationPtr & nested_) : nested(nested_), nested_supports_pooling(nested->supportsPooling()) {}
 
 public:
     static UInt128 getHash(const SerializationPtr & nested_);
     static SerializationPtr create(const SerializationPtr & nested_);
-    bool supportsPooling() const override { return nested->supportsPooling(); }
+    bool supportsPooling() const override { return nested_supports_pooling; }
 
     /// Whether a resolved subcolumn is really the array sizes, which its name alone cannot tell.
     /// `Map` sizes are the same substream, so this covers them too.
