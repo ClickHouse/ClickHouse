@@ -245,6 +245,8 @@ def test_directory_fall_through(started_cluster: ClickHouseCluster):
     try:
         count = directory_count("alice")
         assert node.query("SELECT currentUser()", user="alice", password="local_pw") == "alice\n"
+        # The materialized user is dropped, so that the name resolves to the later directory (e.g. in `GRANT ... TO`).
+        assert node.query("SELECT storage FROM system.users WHERE name = 'alice'") == "users_xml\n"
         assert "Authentication failed" in node.query_and_get_error("SELECT 1", user="alice", password=GOOD_PASSWORD)
         assert directory_count("alice") == count
     finally:

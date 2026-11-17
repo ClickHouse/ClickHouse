@@ -178,9 +178,18 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
 
     /// A user with this name belongs to another storage: neither shadow it nor send its password to the server.
     /// The other storages are checked directly: once materialized here, the user hides a later one from `AccessControl::find`.
+    /// A user materialized here earlier is dropped, so that the name resolves to the other storage (e.g. in `GRANT ... TO`).
     for (const auto & storage : *access_control.getStoragesPtr())
+    {
         if (storage.get() != this && storage->find<User>(user_name))
+        {
+            if (auto id = memory_storage.find<User>(user_name); id && memory_storage.remove(*id, /* throw_if_not_exists = */ false))
+                access_control.getChangesNotifier().sendNotifications();
+            std::lock_guard lock(cache_mutex);
+            cache.erase(user_name);
             return not_found();
+        }
+    }
 
     if (typeid_cast<const AlwaysAllowCredentials *>(&credentials))
         return make_result(materializeUser(user_name), {}, {});

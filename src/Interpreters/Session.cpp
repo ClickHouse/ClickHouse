@@ -697,15 +697,6 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         /// expiry of the method used by this connection, not the one that originally created the session.
         new_session_context->setAuthenticationValidUntil(getAuthenticationValidUntil());
 
-        /// `EXECUTE AS` may have switched the session context to another user: the client info replaced above
-        /// must keep naming that user, as `InterpreterExecuteAsQuery` set it, so that `currentUser` and the
-        /// initial user sent to other servers match the access rights of the session context.
-        if (access->getUserID() != user_id)
-        {
-            new_session_context->setCurrentUserName(access->getUserName());
-            new_session_context->setInitialUserName(access->getUserName());
-        }
-
         // Always get setting from profile
         // profile can be changed by ALTER PROFILE during single session
         auto settings = access->getDefaultSettings();
@@ -794,6 +785,12 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         query_context->setCurrentUserName(prepared_client_info->current_user);
         query_context->setCurrentAddress(*prepared_client_info->current_address);
     }
+
+    /// `EXECUTE AS` may have switched the session context to another user, but the client info names the login user
+    /// (e.g. a reattached named session, or gRPC). Name the user of the session context, so that `currentUser`
+    /// and the initial user sent to other servers (set below for an initial query) match its access rights.
+    if (session_context && session_context->getUserID() != user_id)
+        query_context->setCurrentUserName(session_context->getUserName());
 
     /// Set parameters of initial query.
     if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::NO_QUERY)
