@@ -5471,7 +5471,7 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_
             quorum_entry.replicas.size(),
             quorum_entry.required_number_of_replicas);
         /// We update the node, registering there one more replica.
-        Coordination::Error code;
+        Coordination::Error code{};
         if (is_parallel)
             code = zookeeper->trySet(quorum_status_path, quorum_entry.toString(), stat.version);
         else
