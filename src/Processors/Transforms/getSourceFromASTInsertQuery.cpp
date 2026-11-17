@@ -57,7 +57,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     }
 
     std::unique_ptr<ReadBuffer> input_buffer = with_buffers
-        ? getReadBufferFromASTInsertQuery(ast)
+        ? getReadBufferFromASTInsertQuery(ast, context)
         : std::make_unique<EmptyReadBuffer>();
 
     const Settings & settings = context->getSettingsRef();
@@ -109,7 +109,7 @@ Pipe getSourceFromASTInsertQuery(
     return getSourceFromInputFormat(ast, std::move(format), std::move(context), input_function);
 }
 
-std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
+std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast, const ContextPtr & context)
 {
     const auto * insert_query = ast->as<ASTInsertQuery>();
     if (!insert_query)
@@ -117,6 +117,10 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
 
     if (insert_query->infile)
     {
+        /// Checked here, before the file is opened: the asynchronous insert queue reads the data without the format check above.
+        if (context->getApplicationType() == Context::ApplicationType::SERVER)
+            throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has infile and was send directly to server");
+
         /// Data can be from infile
         const auto & in_file_node = insert_query->infile->as<ASTLiteral &>();
         const auto in_file = in_file_node.value.safeGet<std::string>();
