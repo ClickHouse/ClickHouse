@@ -2026,6 +2026,14 @@ void runFibersAndReleaseWhenReady(
 {
     std::vector<silk::FiberFuture> futures(fiber_count);
     size_t spawned = 0;
+    /// The started fibers use `task` and `futures`, so they are released and finish before the function returns,
+    /// also when a spawn throws.
+    SCOPE_EXIT({
+        release.set();
+        for (size_t i = 0; i < spawned; ++i)
+            EXPECT_EQ(futures[i].wait(), 0);
+    });
+
     while (spawned < fiber_count && Silk::spawn([&task, i = spawned]
         {
             task(i);
@@ -2036,10 +2044,6 @@ void runFibersAndReleaseWhenReady(
 
     /// Reported before the release: fibers that block their threads may never finish.
     EXPECT_TRUE(spawned == fiber_count && ready.tryWait(60'000)) << "The fibers did not get ready within 60 seconds";
-    /// The started fibers use `task`, so they are released and finish before the function returns.
-    release.set();
-    for (size_t i = 0; i < spawned; ++i)
-        EXPECT_EQ(futures[i].wait(), 0);
 }
 
 }
