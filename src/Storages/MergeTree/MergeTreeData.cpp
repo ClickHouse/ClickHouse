@@ -6621,6 +6621,39 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                         backQuoteIfNeed(old_other_column->name));
                 }
             }
+
+            /// And a pair that existed before may not disappear while the prefix column stays, if the prefix column can
+            /// resolve names under the name of the column with the dotted name. The name of that column and the names of
+            /// its subcolumns (`a.x.y` of a column `a.x` of type `Tuple(y Dynamic)` next to a `JSON` column `a`) were
+            /// resolved through the column itself, and would be resolved through the prefix column after the column is
+            /// dropped or renamed, while the projections, skip indices and statistics that use these names keep the values
+            /// computed from the old column. Dropping the marker column `a.size0` next to an `Array` column `a` is allowed,
+            /// as no names are resolved under it.
+            for (const auto & old_column : old_metadata.columns.getAllPhysical())
+            {
+                if (was_stored_as_is(old_column.name) && new_columns.hasPhysical(old_column.name))
+                    continue;
+
+                for (const auto & [prefix, subcolumn_view] : Nested::getAllColumnAndSubcolumnPairs(old_column.name))
+                {
+                    String subcolumn(subcolumn_view);
+                    auto old_other_column = old_metadata.columns.tryGetPhysical(String(prefix));
+                    if (!old_other_column || get_shadowing_subcolumns(old_other_column->type, subcolumn).empty())
+                        continue;
+
+                    auto other_column = was_stored_as_is(old_other_column->name) ? new_columns.tryGetPhysical(old_other_column->name) : std::nullopt;
+                    if (!other_column || get_shadowing_subcolumns(other_column->type, subcolumn).empty()
+                        || !resolves_deeper_names(other_column->type, subcolumn))
+                        continue;
+
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Cannot alter the table: column {} would no longer exist, so its name and the names of its subcolumns "
+                        "would be read from column {}. Drop both columns in one ALTER",
+                        backQuoteIfNeed(old_column.name),
+                        backQuoteIfNeed(old_other_column->name));
+                }
+            }
         }
 
         bool changes_order_by = false;

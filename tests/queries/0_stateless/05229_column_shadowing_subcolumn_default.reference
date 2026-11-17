@@ -67,3 +67,8 @@ Compact
 1	[1,2]	['a','b']	[0,0]	5	2
 2	[3]	['c']	[0]	5	1
 3	[4]	['d']	[6]	9	1
+ALTER that drops the column with the dotted name next to the prefix column is refused
+99
+99
+1
+2

@@ -237,3 +237,25 @@ SELECT id, n.x, n.y, n.z, z, length(n.x) FROM t_nested_compact ORDER BY id;
 
 DROP TABLE t_nested_wide;
 DROP TABLE t_nested_compact;
+
+-- Nor may such a pair disappear while the prefix column stays: `a.x.y` is a subcolumn of the column `a.x`, and
+-- would become a path of the `JSON` column `a` after `a.x` is dropped or renamed, while the projection keeps the
+-- aggregate states computed from the old one.
+SELECT 'ALTER that drops the column with the dotted name next to the prefix column is refused';
+DROP TABLE IF EXISTS t_shadow_dropped;
+CREATE TABLE t_shadow_dropped (id UInt64, a JSON, `a.x` Tuple(y Dynamic))
+ENGINE = MergeTree ORDER BY id SETTINGS share_nested_offsets = 0;
+INSERT INTO t_shadow_dropped VALUES
+    (1, '{"x":{"y":11}}', tuple(CAST(toUInt64(55), 'Dynamic'))),
+    (2, '{"x":{"y":22}}', tuple(CAST(toUInt64(44), 'Dynamic')));
+ALTER TABLE t_shadow_dropped ADD PROJECTION p (SELECT sum(toUInt64(`a.x.y`)));
+ALTER TABLE t_shadow_dropped MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+ALTER TABLE t_shadow_dropped DROP COLUMN `a.x` SETTINGS mutations_sync = 2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_dropped RENAME COLUMN `a.x` TO `b` SETTINGS mutations_sync = 2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+OPTIMIZE TABLE t_shadow_dropped FINAL;
+SELECT sum(toUInt64(`a.x.y`)) FROM t_shadow_dropped SETTINGS optimize_use_projections = 0;
+SELECT sum(toUInt64(`a.x.y`)) FROM t_shadow_dropped SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+ALTER TABLE t_shadow_dropped DROP PROJECTION p, DROP COLUMN `a.x`, DROP COLUMN a SETTINGS mutations_sync = 2;
+SELECT id FROM t_shadow_dropped ORDER BY id;
+
+DROP TABLE t_shadow_dropped;
