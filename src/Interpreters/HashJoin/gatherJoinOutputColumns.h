@@ -38,7 +38,7 @@ void resolveGatherNode(
     bool default_from_type = true);
 
 /// Resolve block `block_no`'s planes of `node` from the row store field `access` of `row_store`.
-/// Only a fixed-width value is kept in the row store, so the node's shape stops at `Fixed`.
+/// The row store keeps a fixed-width value or an `UnhashedPackedStringRef`, so the node's shape stops at `Fixed` or `String`.
 void resolveRowStoreGatherNode(
     GatherNode & node,
     const DataTypePtr & type,

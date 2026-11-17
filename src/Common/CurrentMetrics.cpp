@@ -387,8 +387,8 @@
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(IcebergMetadataFilesCacheBytes, "Size of the Iceberg metadata cache in bytes") \
     M(IcebergMetadataFilesCacheFiles, "Number of cached files in the Iceberg metadata cache") \
-    M(GlueCatalogSchemaCacheBytes, "Size of the cache of current Iceberg schema field types in Glue catalogs in bytes") \
-    M(GlueCatalogSchemaCacheEntries, "Number of entries in the cache of current Iceberg schema field types in Glue catalogs") \
+    M(IcebergRESTCatalogWarehouseCacheSize, "Size of the warehouse cache of the Iceberg REST catalog server. Each warehouse counts as 1") \
+    M(IcebergRESTCatalogWarehouseCacheEntries, "Number of warehouses in the warehouse cache of the Iceberg REST catalog server") \
     M(PaimonMetadataFilesCacheBytes, "Size of the Paimon metadata cache in bytes") \
     M(PaimonMetadataFilesCacheFiles, "Number of cached files in the Paimon metadata cache") \
     M(ParquetMetadataCacheBytes, "Size of the Parquet metadata cache in bytes") \
@@ -453,6 +453,8 @@
     M(TimeSeriesTagsDeduplicationCacheBytes, "Approximate size in bytes of the deduplication caches of the tags tables of TimeSeries tables") \
     M(CompiledExpressionCacheBytes, "Reserved page-block capacity (rounded up to whole pages with a 2x over-provisioning factor) held by `JITModuleMemoryManager` for executable/data sections of cached JIT-compiled functions. NOT the actual bytes of machine code in use (that's smaller). Allocated via `posix_memalign`, which is intercepted into jemalloc, so this is accounted within the dedicated JIT arena and is a subset of `jemalloc.jit_arena.active_bytes`.") \
     M(CompiledExpressionCacheCount, "Total entries in the cache of JIT-compiled machine code.") \
+    M(GPUExpressionKernelCacheBytes, "Bytes of the PTX of the kernels that the GPU engine compiled for expressions and keeps loaded on the device.") \
+    M(GPUExpressionKernelCacheCount, "Kernels that the GPU engine compiled for expressions and keeps loaded on the device.") \
     M(SerializationCacheBytesInMemoryAllocated, "Total size of the serialization cache in bytes including keys and overhead from empty slots") \
     M(SerializationCacheBytesInMemory, "Total size of the serialization cache in bytes including only the values") \
     M(SerializationCacheCount, "Total number of entries in the serialization cache") \
@@ -507,6 +509,7 @@
     M(DistrCacheUsedConnections, "Number of currently used connections to Distributed Cache") \
     M(DistrCacheAllocatedConnections, "Number of currently allocated connections to Distributed Cache connection pool") \
     M(DistrCacheBorrowedConnections, "Number of currently borrowed connections to Distributed Cache connection pool") \
+    M(DistrCacheTemporaryDataConnectionsBypassingPool, "Distributed Cache client metric. Number of connections opened by temporary data bypassing the connection pool") \
     M(DistrCacheReadRequests, "Number of executed Read requests to Distributed Cache") \
     M(DistrCacheWriteRequests, "Number of executed Write requests to Distributed Cache") \
     M(DistrCacheWriteBuffers, "Number of distributed cache write buffers") \
@@ -516,6 +519,10 @@
     M(DistrCacheRegisteredServersCurrentAZ, "Number of distributed cache registered servers in current az") \
     M(DistrCacheServerS3CachedClients, "Number of distributed cache S3 cached clients") \
     M(DistrCacheServerRegistryConnections, "Number of active connections to ClickHouse server from Distributed Cache (not marked as cancelled because of limit)") \
+    M(DistrCacheServerCommittedTemporaryFiles, "Number of committed temporary files owned by this distributed cache server process") \
+    M(DistrCacheServerCommittedTemporaryFilesBytes, "Total size in bytes of committed temporary files owned by this distributed cache server process") \
+    M(DistrCacheTemporaryDataServers, "Number of servers with committed temporary data") \
+    M(DistrCacheTemporaryDataActiveIds, "Number of active committed temporary-data IDs") \
     \
     M(SchedulerIOReadScheduled, "Number of IO reads are being scheduled currently") \
     M(SchedulerIOWriteScheduled, "Number of IO writes are being scheduled currently") \
@@ -525,6 +532,9 @@
     \
     M(DiskConnectionsStored, "Total count of sessions stored in the session pool for disks") \
     M(DiskConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for disks") \
+    \
+    M(AmberConnectionsStored, "Total count of sessions stored in the session pool for Amber") \
+    M(AmberConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for Amber") \
     \
     M(BlobKillerThreads, "Number of threads in the thread pool of the object storage disk background removal process") \
     M(BlobKillerThreadsActive, "Number of threads in the thread pool of the object storage disk background removal process running a task") \

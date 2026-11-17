@@ -42,6 +42,7 @@ public:
 
     void consume(Chunk & chunk) override;
     void onFinish() override;
+    void onPipelineFinished() override;
 
 private:
     /// A persistent pipeline for inserting blocks into one target table.

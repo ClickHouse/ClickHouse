@@ -7,8 +7,6 @@ title: 'Vertical autoscaling'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import { ScalePlanFeatureBadge } from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="Automatic vertical scaling"/>
@@ -23,7 +21,15 @@ Organization members with the **Admin** role can configure vertical autoscaling 
 Single-replica Scale services and Enterprise services with standard `1:4` profiles support vertical autoscaling. Enterprise services with custom profiles require support-assisted vertical resizing. Basic tier services remain fixed in size and can't be scaled.
 </Note>
 
-<Image img="/images/cloud/manage/AutoScaling.webp" size="lg" alt="Scaling settings page" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Scaling settings page](/images/cloud/manage/AutoScaling.webp)
+
+</Frame>
+
+</div>
 
 Set the **Maximum memory** for your replicas at a higher value than the **Minimum memory**. The service will then scale as needed within those bounds. These settings are also available during the initial service creation flow. Each replica in your service will be allocated the same memory and CPU resources.
 
