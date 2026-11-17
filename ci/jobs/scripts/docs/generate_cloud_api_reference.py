@@ -714,10 +714,23 @@ def main() -> int:
         isinstance(item, dict) for item in redirects
     ):
         raise SystemExit(f"Redirects file must contain a list of objects: {redirects_path}")
-    redirects_by_source = {item.get("source"): item for item in redirects}
-    redirects_changed = False
     url_changes = operation_url_changes(previous_spec, spec)
     generated_url_prefix = f"/{API_REF_DIR}/"
+    canonical_urls = set(op_urls.values())
+    # A former alias can become canonical again when an operation regains a
+    # badge or restores an earlier summary. Remove it rather than publishing a
+    # self-redirect or a redirect cycle.
+    redirects_without_canonical_sources = [
+        redirect
+        for redirect in redirects
+        if not (
+            str(redirect.get("source", "")).startswith(generated_url_prefix)
+            and redirect.get("source") in canonical_urls
+        )
+    ]
+    redirects_changed = len(redirects_without_canonical_sources) != len(redirects)
+    redirects = redirects_without_canonical_sources
+    redirects_by_source = {item.get("source"): item for item in redirects}
     for redirect in redirects:
         if not str(redirect.get("source", "")).startswith(generated_url_prefix):
             continue
@@ -730,6 +743,7 @@ def main() -> int:
     new_redirects.extend(
         {"source": source, "destination": destination}
         for source, destination in sorted(url_changes.items())
+        if source not in canonical_urls
     )
     for redirect in new_redirects:
         existing = redirects_by_source.get(redirect["source"])
