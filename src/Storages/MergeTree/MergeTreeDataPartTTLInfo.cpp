@@ -14,6 +14,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 void MergeTreeDataPartTTLInfo::update(time_t time)
 {
     if (time && (!min || time < min))
@@ -154,11 +159,20 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
         fill_ttl_info_map(rows_where, rows_where_ttl, true);
     }
 
-    /// The versions that do not know these keys skip them, as any other key they do not look up.
-    if (json.has("last_delete_ttl_merge"))
-        last_delete_ttl_merge_time = json["last_delete_ttl_merge"].getUInt();
-    if (json.has("last_recompression_ttl_merge"))
-        last_recompression_ttl_merge_time = json["last_recompression_ttl_merge"].getUInt();
+    /// The versions that do not know these keys skip them; a time out of the `DateTime` range is malformed metadata.
+    auto read_merge_time = [&json](const char * key) -> time_t
+    {
+        if (!json.has(key))
+            return 0;
+
+        const UInt64 time = json[key].getUInt();
+        if (time > std::numeric_limits<UInt32>::max())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid value {} of `{}` in ttl.txt", time, key);
+        return static_cast<time_t>(time);
+    };
+
+    last_delete_ttl_merge_time = read_merge_time("last_delete_ttl_merge");
+    last_recompression_ttl_merge_time = read_merge_time("last_recompression_ttl_merge");
 }
 
 

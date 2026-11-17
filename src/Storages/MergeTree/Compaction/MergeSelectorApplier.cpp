@@ -78,31 +78,47 @@ MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, Merg
     return choices;
 }
 
-/// Delete and recompression due times: the in-memory ones, postponed by the timeouts from the TTL merge times in the parts.
+/// Delete and recompression due times of the partitions of `ctx.ranges`: the in-memory ones, postponed by the stored times.
 std::pair<PartitionIdToTTLs, PartitionIdToTTLs> getTTLMergeDueTimes(const ChooseContext & ctx)
 {
     const Int64 delete_timeout = ctx.merge_tree_settings[MergeTreeSetting::merge_with_ttl_timeout];
     const Int64 recompress_timeout = ctx.merge_tree_settings[MergeTreeSetting::merge_with_recompression_ttl_timeout];
 
-    PartitionIdToTTLs delete_times = ctx.next_delete_times;
-    PartitionIdToTTLs recompress_times = ctx.next_recompress_times;
+    std::pair<PartitionIdToTTLs, PartitionIdToTTLs> due_times;
 
-    auto postpone = [](PartitionIdToTTLs & due_times, const String & partition_id, time_t last_merge_time, Int64 timeout)
+    auto postpone = [](PartitionIdToTTLs & result, const PartitionIdToTTLs & in_memory, const String & partition_id,
+                       time_t last_merge_time, Int64 timeout)
     {
-        if (!last_merge_time)
-            return;
+        time_t due_time = 0;
+        if (auto it = in_memory.find(partition_id); it != in_memory.end())
+            due_time = it->second;
 
-        time_t & due_time = due_times[partition_id];
-        due_time = std::max(due_time, last_merge_time + timeout);
+        if (last_merge_time)
+            due_time = std::max(due_time, static_cast<time_t>(last_merge_time + timeout));
+
+        if (due_time)
+            result[partition_id] = due_time;
     };
 
-    for (const auto & [partition_id, stats] : ctx.partitions_stats)
+    /// Only the partitions of the ranges: `getPartitionsThatMayBeMerged` calls this once per partition.
+    for (const auto & range : ctx.ranges)
     {
-        postpone(delete_times, partition_id, stats.last_delete_ttl_merge_time, delete_timeout);
-        postpone(recompress_times, partition_id, stats.last_recompression_ttl_merge_time, recompress_timeout);
+        chassert(!range.empty());
+        const String & partition_id = range.front().info.getPartitionId();
+
+        time_t last_delete_merge_time = 0;
+        time_t last_recompression_merge_time = 0;
+        if (auto it = ctx.partitions_stats.find(partition_id); it != ctx.partitions_stats.end())
+        {
+            last_delete_merge_time = it->second.last_delete_ttl_merge_time;
+            last_recompression_merge_time = it->second.last_recompression_ttl_merge_time;
+        }
+
+        postpone(due_times.first, ctx.next_delete_times, partition_id, last_delete_merge_time, delete_timeout);
+        postpone(due_times.second, ctx.next_recompress_times, partition_id, last_recompression_merge_time, recompress_timeout);
     }
 
-    return {std::move(delete_times), std::move(recompress_times)};
+    return due_times;
 }
 
 MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
