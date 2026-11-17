@@ -193,22 +193,21 @@ void ExternalDictionariesLoader::unloadAllDictionaries() const
 
 void ExternalDictionariesLoader::shutdownDictionaries()
 {
-    /// Until no new dictionary appears: a stopped update may have left a load running that publishes one.
-    Loadables stopped;
-    std::unordered_set<const IExternalLoadable *> stopped_set;
-    bool found_new = true;
-    while (found_new)
+    /// Until a pass after a join finds no new dictionary: a running load may publish one with an update in flight.
+    std::unordered_set<LoadablePtr> stopped;
+    while (true)
     {
-        found_new = false;
+        joinLoadingThreads();
+        bool found_new = false;
         for (const auto & object : getLoadedObjects())
         {
-            if (!stopped_set.insert(object.get()).second)
+            if (!stopped.insert(object).second)
                 continue;
             found_new = true;
-            stopped.push_back(object);
             std::static_pointer_cast<const IDictionary>(object)->shutdown();
         }
-        joinLoadingThreads();
+        if (!found_new)
+            break;
     }
 }
 
