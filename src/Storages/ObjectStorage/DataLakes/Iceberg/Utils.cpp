@@ -421,9 +421,32 @@ static bool isKnownAbsent(const DB::ObjectStoragePtr & object_storage, const std
     }
 }
 
+/// The S3 client decides a failed conditional upload from the answers to all its attempts and from its idempotency id.
+/// It marks the error when the outcome stays unknown, so an unmarked error proves that nothing was applied.
+enum class S3UploadVerdict : uint8_t
+{
+    NotS3,
+    NotApplied,
+    Unknown,
+};
+
+static S3UploadVerdict getS3UploadVerdict(const Exception & e)
+{
+#if USE_AWS_S3
+    if (const auto * s3_exception = dynamic_cast<const S3Exception *>(&e))
+        return s3_exception->isOutcomeUnknown() ? S3UploadVerdict::Unknown : S3UploadVerdict::NotApplied;
+#endif
+    return S3UploadVerdict::NotS3;
+}
+
 /// The upload was sent and failed without proof either way, so it may have published the new version.
 [[noreturn]] static void throwCommitOutcomeUnknown(const String & storage_metadata_path)
 {
+    /// The new error tells the caller to keep the files, and the log keeps the original one with its stack trace.
+    tryLogCurrentException(
+        getLogger("IcebergWrites"),
+        fmt::format("The outcome of writing metadata file {} is unknown", storage_metadata_path),
+        LogsLevel::warning);
     throw Exception(
         ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
         "The outcome of writing metadata file {} is unknown, so the files of the new version are kept: {}",
@@ -462,16 +485,22 @@ bool writeMetadataFile(
     }
     catch (const Exception & e)
     {
-        /// A refused write is not a lost race, and retrying the commit cannot get past it. Once the write was sent,
-        /// a refusal (e.g. of the check after an upload) proves nothing was written only while the file is absent.
-        if (isRefusedWrite(e) && (!write_attempted || isKnownAbsent(object_storage, storage_metadata_path)))
-            throw;
+        const auto s3_verdict = write_attempted ? getS3UploadVerdict(e) : S3UploadVerdict::NotS3;
+        if (s3_verdict == S3UploadVerdict::Unknown)
+            throwCommitOutcomeUnknown(storage_metadata_path);
         if (isConditionalWriteConflict(e))
         {
             LOG_DEBUG(
                 getLogger("IcebergWrites"), "Metadata file {} was written by a concurrent commit: {}", storage_metadata_path, e.message());
             return false;
         }
+        /// Nothing of the upload was applied, so the commit fails, and the caller rolls it back.
+        if (s3_verdict == S3UploadVerdict::NotApplied)
+            throw;
+        /// A refused write is not a lost race, and retrying the commit cannot get past it. Once the write was sent,
+        /// a refusal (e.g. of the check after an upload) proves nothing was written only while the file is absent.
+        if (isRefusedWrite(e) && (!write_attempted || isKnownAbsent(object_storage, storage_metadata_path)))
+            throw;
         if (write_attempted)
             throwCommitOutcomeUnknown(storage_metadata_path);
         tryLogCurrentException(__PRETTY_FUNCTION__);

@@ -299,6 +299,42 @@ TEST(IcebergCommitPropagation, S3AccessDeniedIsNotReportedAsALostRace)
     }
 }
 
+TEST(IcebergCommitPropagation, S3WriteWithUnknownOutcomeIsNotRetried)
+{
+    /// The S3 client could not prove whether an attempt of the upload was applied, and it marked the error.
+    expectUnknownOutcome([](const std::string &)
+    {
+        S3Exception exception("Connection reset by peer", Aws::S3::S3Errors::NETWORK_CONNECTION);
+        exception.setOutcomeUnknown();
+        throw exception; /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
+    });
+
+    /// The mark wins over a lost race: the 412 may be the answer to a replay of this write.
+    expectUnknownOutcome([](const std::string &)
+    {
+        S3Exception exception(
+            "Unable to parse ExceptionName: PreconditionFailed Message: At least one of the pre-conditions you specified did not hold",
+            Aws::S3::S3Errors::UNKNOWN);
+        exception.setOutcomeUnknown();
+        throw exception; /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
+    });
+}
+
+TEST(IcebergCommitPropagation, S3WriteThatWasNotAppliedPropagates)
+{
+    /// Every attempt of the upload got an answer that refuses it, so nothing was published: the commit fails with the
+    /// error of S3, and its caller rolls back.
+    try
+    {
+        bool committed = commitWithFailingWrite([](const std::string &) { throw S3Exception("Slow Down.", Aws::S3::S3Errors::SLOW_DOWN); });
+        FAIL() << "Expected the S3 error to propagate, got " << committed;
+    }
+    catch (const S3Exception & e)
+    {
+        EXPECT_EQ(e.getS3ErrorCode(), Aws::S3::S3Errors::SLOW_DOWN) << e.message();
+    }
+}
+
 TEST(IcebergCommitPropagation, RefusedExistenceCheckIsNotReportedAsALostRace)
 {
     /// S3 answers 403 to a HEAD of an absent key without `s3:ListBucket`. Nothing was written yet, and every retry is

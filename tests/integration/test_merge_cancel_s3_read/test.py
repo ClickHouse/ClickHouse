@@ -1186,6 +1186,7 @@ def test_killed_iceberg_commit_still_advances_the_version_hint(cluster, broken_s
         pytest.param("reset", "passes", id="exhausted-proven"),
         pytest.param("reset", "fails", id="exhausted-unproven"),
         pytest.param("passes", "passes", id="precondition-proven"),
+        pytest.param("passes", "fails", id="precondition-unproven"),
     ],
 )
 def test_iceberg_commit_after_a_lost_upload_response(cluster, broken_s3, retry, head):
@@ -1246,6 +1247,48 @@ def test_iceberg_commit_after_a_lost_upload_response(cluster, broken_s3, retry, 
             assert not insert_error, insert_error[:2000]
         else:
             assert "UNKNOWN_STATUS_OF_TRANSACTION" in insert_error, insert_error[:2000]
+    finally:
+        broken_s3.reset()
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def test_iceberg_commit_rolls_back_when_no_upload_was_applied(cluster, broken_s3):
+    """A commit whose metadata upload was refused on every attempt must fail and remove its files.
+
+    Every attempt gets `SlowDown`, an answer that refuses the request, so nothing was published.
+    """
+    node = cluster.instances["node"]
+    table = "t_iceberg_refused_upload"
+    # The prefix gets two attempts per request from `configs/storage_conf.xml`.
+    prefix = f"iceberg_unknown_{uuid.uuid4().hex}/"
+    url = f"http://resolver:8087/root/{prefix}"
+
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"CREATE TABLE {table} (id Int64, s String) ENGINE = IcebergS3("
+        f"'{url}', 'minio', '{minio_secret_key}')",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    try:
+        broken_s3.setup_at_object_upload(
+            key="metadata/v2.metadata.json", count=1000000, action="slow_down"
+        )
+        insert_error = node.query_and_get_error(
+            f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(20) "
+            f"SETTINGS allow_insert_into_iceberg = 1, async_insert = 0"
+        )
+        broken_s3.reset()
+
+        assert "Slow Down" in insert_error, insert_error[:2000]
+        assert "UNKNOWN_STATUS_OF_TRANSACTION" not in insert_error, insert_error[:2000]
+        assert int(node.query(f"SELECT count() FROM {table}")) == 0
+        data_files = list(
+            cluster.minio_client.list_objects(
+                cluster.minio_bucket, prefix=f"{prefix}data/", recursive=True
+            )
+        )
+        assert not data_files, [obj.object_name for obj in data_files]
     finally:
         broken_s3.reset()
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
