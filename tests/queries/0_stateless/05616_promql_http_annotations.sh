@@ -151,11 +151,40 @@ CREATE QUOTA ${TEST_USER} FOR INTERVAL 1 hour MAX queries = 1 TO ${TEST_USER};
 "
 CURL_AUTH="-u ${TEST_USER}:"
 instant $T 'rate(foo[5m])'
+
+# The quota of the user is exhausted now, so the request is rejected before an annotation probe reads data.
+probe_count()
+{
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log; SELECT count() FROM system.query_log
+        WHERE user = '${TEST_USER}' AND type = 'QueryFinish' AND query LIKE '%arrayExists%'"
+}
+probes_before=$(probe_count)
+instant $T 'rate(foo[5m])'
+echo "probes run by the rejected request: $(( $(probe_count) - probes_before ))"
 CURL_AUTH=
 $CLICKHOUSE_CLIENT -q "
 DROP QUOTA ${TEST_USER};
 DROP USER ${TEST_USER};
 "
+
+echo "--- the settings shaping the public result do not apply to the annotation probe"
+instant $T 'rate(foo[5m])' --data-urlencode 'filter=value > 0'
+instant $T 'rate(foo[5m])' --data-urlencode 'order=value'
+instant $T 'rate(foo[5m])' --data-urlencode 'sort=-value' --data-urlencode 'limit=1' --data-urlencode 'offset=1'
+
+echo "--- the annotation probes run within what is left of the execution time of the request"
+instant $T 'rate(foo[5m]) + rate(foo[10m])' --data-urlencode 'max_execution_time=1234' --data-urlencode "log_comment=${CLICKHOUSE_DATABASE}_time_limit"
+# The query log entries are written after the HTTP response is sent, so retry until they appear.
+for _ in {1..60}; do
+    result=$($CLICKHOUSE_CLIENT -q "
+SYSTEM FLUSH LOGS query_log;
+SELECT countIf(query LIKE '%arrayExists%') > 0, countIf(query LIKE '%arrayExists%' AND toFloat64(Settings['max_execution_time']) < 1234),
+    countIf(query NOT LIKE '%arrayExists%' AND Settings['max_execution_time'] = '1234')
+FROM system.query_log WHERE type = 'QueryFinish' AND log_comment = '${CLICKHOUSE_DATABASE}_time_limit'")
+    [[ $result == 1* ]] && break
+    sleep 0.5
+done
+echo "$result"
 
 echo "--- the annotation probe's query result cache write is finalized"
 # The probe's SELECT is eligible for the query result cache. If its write is not finalized, the

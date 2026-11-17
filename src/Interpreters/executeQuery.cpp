@@ -3392,7 +3392,8 @@ static BlockIO executeQueryImpl(
         }
 
         QueryResultCachePtr query_result_cache = context->getQueryResultCache();
-        const bool can_use_query_result_cache = query_result_cache != nullptr && settings[Setting::use_query_cache] && !internal
+        /// A helper of a user query (see `QueryFlags::ignore_quota`) runs as an internal query, but still uses the cache like the user query does.
+        const bool can_use_query_result_cache = query_result_cache != nullptr && settings[Setting::use_query_cache] && (!internal || flags.ignore_quota)
             && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
             && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());
         context->setCanUseQueryResultCache(can_use_query_result_cache);

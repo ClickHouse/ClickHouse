@@ -113,6 +113,20 @@ query: count(rate({__name__=~"foo|baz"}[5m]))
 success 1 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:12)"]
 query: rate(foo[5m])
 success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+query: rate(foo[5m])
+error - 
+probes run by the rejected request: 0
+--- the settings shaping the public result do not apply to the annotation probe
+query: rate(foo[5m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+query: rate(foo[5m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+query: rate(foo[5m])
+success 1 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+--- the annotation probes run within what is left of the execution time of the request
+query: rate(foo[5m]) + rate(foo[10m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:22)"]
+1	2	0
 --- the annotation probe's query result cache write is finalized
 query: rate(foo[5m])
 success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]

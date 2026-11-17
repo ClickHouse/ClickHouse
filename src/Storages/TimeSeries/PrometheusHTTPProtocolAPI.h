@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Logger_fwd.h>
+#include <Common/Stopwatch.h>
 #include <Core/Names.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
@@ -130,11 +131,16 @@ private:
         const Strings & infos);
 
     /// Runs the probes of the annotations and formats them like Annotations.AsStrings() in Prometheus.
+    /// The probes share the execution time limit of the request with the query: `execution_watch` is started with the request.
     void evaluateAnnotations(
-        const PrometheusQueryToSQL::Annotations & annotations, const String & promql_query, Strings & warnings, Strings & infos);
+        const PrometheusQueryToSQL::Annotations & annotations,
+        const String & promql_query,
+        const Stopwatch & execution_watch,
+        Strings & warnings,
+        Strings & infos);
 
     /// Returns the column `name` of an annotation probe.
-    Strings executeAnnotationProbe(const ASTPtr & probe);
+    Strings executeAnnotationProbe(const ASTPtr & probe, const Stopwatch & execution_watch);
 
     /// Helper methods.
     void writeQueryResponseHeader(WriteBuffer & response, PrometheusQueryResultType result_type);

@@ -66,6 +66,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsSeconds max_execution_time;
     extern const SettingsUInt64 promql_max_points_per_series;
     extern const SettingsBool promql_push_down_label_matchers;
 }
@@ -293,6 +294,9 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     const Params & params,
     QueryFinishCallback query_finish_callback)
 {
+    /// The annotation probes and the query of the request share one execution time limit.
+    Stopwatch execution_watch;
+
     PrometheusQueryEvaluationSettings evaluation_settings;
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
     evaluation_settings.time_series_version = time_series_storage->getVersion();
@@ -339,11 +343,6 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     PrometheusQueryToSQL::Annotations annotations;
     auto sql_query = converter.getSQL(&annotations);
 
-    /// The probes run before the query, so the query keeps its slot only while it runs and the annotations are ready for the footer.
-    Strings warnings;
-    Strings infos;
-    evaluateAnnotations(annotations, params.promql_query, warnings, infos);
-
     chassert(sql_query);
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
@@ -351,10 +350,16 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     auto query_context = Context::createCopy(getContext());
     StoragePrometheusQuery::applySettingsForPrometheusQuery(*query_context);
 
+    /// The query is admitted before its annotations are evaluated, so a request over a quota is rejected before any probe reads data,
+    /// and the probes, which are internal queries, don't take a slot of their own next to the query.
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
 
     try
     {
+        Strings warnings;
+        Strings infos;
+        evaluateAnnotations(annotations, params.promql_query, execution_watch, warnings, infos);
+
         PullingAsyncPipelineExecutor executor(io.pipeline);
 
         /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
@@ -376,7 +381,11 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 }
 
 void PrometheusHTTPProtocolAPI::evaluateAnnotations(
-    const PrometheusQueryToSQL::Annotations & annotations, const String & promql_query, Strings & warnings, Strings & infos)
+    const PrometheusQueryToSQL::Annotations & annotations,
+    const String & promql_query,
+    const Stopwatch & execution_watch,
+    Strings & warnings,
+    Strings & infos)
 {
     /// Like annotations.Annotations in Prometheus: one entry per message, the position of the last one wins.
     struct Entry
@@ -408,7 +417,7 @@ void PrometheusHTTPProtocolAPI::evaluateAnnotations(
 
         auto it = probe_results.find(annotation.probe.get());
         if (it == probe_results.end())
-            it = probe_results.emplace(annotation.probe.get(), executeAnnotationProbe(annotation.probe)).first;
+            it = probe_results.emplace(annotation.probe.get(), executeAnnotationProbe(annotation.probe, execution_watch)).first;
 
         for (const auto & name : it->second)
         {
@@ -435,12 +444,26 @@ void PrometheusHTTPProtocolAPI::evaluateAnnotations(
         infos.push_back(fmt::format("{} more info annotations omitted", omitted_infos));
 }
 
-Strings PrometheusHTTPProtocolAPI::executeAnnotationProbe(const ASTPtr & probe)
+Strings PrometheusHTTPProtocolAPI::executeAnnotationProbe(const ASTPtr & probe, const Stopwatch & execution_watch)
 {
     LOG_TRACE(log, "SQL query to evaluate an annotation:\n{}", probe->formatForLogging());
 
     auto query_context = Context::createCopy(getContext());
     StoragePrometheusQuery::applySettingsForPrometheusQuery(*query_context);
+
+    /// The query of the request is running while the probes run, so a probe can't take the id of the request.
+    query_context->setCurrentQueryId({});
+
+    /// The settings shaping the public result don't apply to the probe, whose only column is `name`.
+    query_context->resetSettingsToDefaultValue({"filter", "select", "order", "sort", "limit", "offset", "page"});
+    query_context->setHTTPCombinedFilter({});
+
+    /// The probe runs within what is left of the execution time of the request.
+    if (const Int64 max_execution_time_us = query_context->getSettingsRef()[Setting::max_execution_time].totalMicroseconds())
+    {
+        const Int64 left_us = std::max<Int64>(max_execution_time_us - static_cast<Int64>(execution_watch.elapsedMicroseconds()), 1);
+        query_context->setSetting("max_execution_time", Field(static_cast<Float64>(left_us) / 1e6));
+    }
 
     /// The probe rows only build the annotation text: they must not hit the request's public result-size limits,
     /// while the helper work keeps running under the request's resource limits.
@@ -451,6 +474,7 @@ Strings PrometheusHTTPProtocolAPI::executeAnnotationProbe(const ASTPtr & probe)
     /// request stays a single external query, but it keeps the server-owned query parsing of the generated SQL and
     /// the query result cache, so that a repeated probe is served from the cache.
     QueryFlags probe_flags = serverGeneratedQueryFlags();
+    probe_flags.internal = true;
     probe_flags.ignore_quota = true;
     auto [ast, io] = executeQuery(probe->formatWithSecretsOneLine(), query_context, probe_flags, QueryProcessingStage::Complete);
 
