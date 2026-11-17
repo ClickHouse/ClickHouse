@@ -25,7 +25,8 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
     SELECT replaceOne(query_id, '${CLICKHOUSE_TEST_UNIQUE_NAME}_', '') AS disk, countIf(position(exception, '${ENDPOINT_CONFIG}') > 0)
     FROM system.query_log
-    WHERE event_date >= yesterday() AND startsWith(query_id, '${CLICKHOUSE_TEST_UNIQUE_NAME}_') AND type != 'QueryStart'
+    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+        AND startsWith(query_id, '${CLICKHOUSE_TEST_UNIQUE_NAME}_') AND type != 'QueryStart'
     GROUP BY disk
     ORDER BY disk
 "
