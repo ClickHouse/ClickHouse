@@ -1183,7 +1183,7 @@ You should not rely on automatic batch splitting, since this may hurt performanc
 )", 0, distributed_directory_monitor_split_batch_on_failure) \
     \
     DECLARE(Bool, optimize_trivial_view_pushdown_to_distributed, true, R"(
-When enabled, for views over [Distributed](../../engines/table-engines/special/distributed.md) tables whose `SELECT` list contains only column references, `*`,
+When enabled, for views over [Distributed](/reference/engines/table-engines/special/distributed) tables whose `SELECT` list contains only column references, `*`,
 or expressions (but no window functions or scalar subqueries), and that have no aggregation, grouping, ordering, or joins, the full outer query is pushed to
 each shard. This allows the shard to apply the view's filters and expressions locally, reducing the amount of data transferred over the network.
 
@@ -1776,9 +1776,9 @@ Since v25.4, `INSERT ... SELECT` from a `ReplicatedMergeTree` or `SharedMergeTre
 - `parallel_distributed_insert_select = 2`
 - `enable_parallel_replicas = 1`
 
-:::note
+<Note>
 The rewritten query, including every expression of the `SELECT` (subqueries, UDFs, and so on), is executed on the shards under the credentials of the cluster configuration — the same trust model as other shard-side processing, such as the subqueries of a non-`GLOBAL` `IN`. Configure an interserver secret (the `secret` element of the cluster configuration) if shard-side reads must be authorized as the calling user.
-:::
+</Note>
 )", 0, \
         {"25.7", 0, 2, "Enable parallel distributed insert select by default"}) \
     DECLARE(UInt64, distributed_group_by_no_merge, 0, R"(
@@ -2766,7 +2766,7 @@ Possible values:
 - 1 — All queries are logged in the system tables.
 )", 0) \
     DECLARE(UInt64, session_query_ids_history_size, 1000, R"(
-The maximum number of query ids kept in the session-local history exposed through the [`system.session_query_ids`](/operations/system-tables/session_query_ids) system table.
+The maximum number of query ids kept in the session-local history exposed through the [`system.session_query_ids`](/reference/system-tables/session_query_ids) system table.
 The query id of every non-internal query executed in the session is recorded there at query start; when the history exceeds this size, the oldest entries are evicted first.
 
 The value is read at query start, before the query is parsed, so a `SETTINGS` clause of the query itself does not affect whether that query is recorded; use `SET`, an HTTP URL parameter, or a settings profile instead.
@@ -4010,7 +4010,7 @@ this threshold.
 `0` disables this threshold. If `max_bytes_ratio_before_external_distinct` also provides a threshold,
 the smaller is used. Set both settings to `0` to disable spilling.
 
-See [DISTINCT in external memory](/sql-reference/statements/select/distinct#distinct-in-external-memory).
+See [DISTINCT in external memory](/reference/statements/select/distinct#distinct-in-external-memory).
 )", 0, \
         {"26.9", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."}) \
     DECLARE(Double, max_bytes_ratio_before_external_distinct, 0.5, R"(
@@ -5268,7 +5268,7 @@ Possible values:
 - [ORDER BY Clause](/reference/statements/select/order-by#optimization-of-data-reading)
 )", 0) \
     DECLARE(Bool, optimize_read_in_reverse_order_final, true, R"(
-Enables reading data in reverse order of the sorting key in `SELECT` queries with the `FINAL` modifier from [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables, and from [Merge](../../engines/table-engines/special/merge.md) tables when every underlying table supports it. Takes effect only when [optimize_read_in_order](#optimize_read_in_order) is also enabled.
+Enables reading data in reverse order of the sorting key in `SELECT` queries with the `FINAL` modifier from [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) tables, and from [Merge](/reference/engines/table-engines/special/merge) tables when every underlying table supports it. Takes effect only when [optimize_read_in_order](#optimize_read_in_order) is also enabled.
 
 Possible values:
 
@@ -5677,6 +5677,11 @@ A trusted administrative client may need server-managed credentials for legitima
 For `BACKUP`/`RESTORE ... ON CLUSTER` the initiator's value of this setting is propagated to the other hosts and used there as-is. Those hosts run the per-host continuation of the operation through the distributed DDL queue, by default without the initiator's user, so they would otherwise evaluate the restriction against their own default profile; the initiator's value is preserved instead, because it has already opened the same backup destination under its own, constrained, settings. A `readonly` constraint on the initiator still applies (an untrusted initiator cannot enable the setting for its own on-cluster backup), so this does not weaken the restriction.
 
 Durability for persistent `S3` and `S3Queue` tables: enabling this only per session or profile is not durable across a restart. When the server reloads such a table from its stored definition (startup or `RESTORE`) it rebuilds the S3 client and re-applies the restriction with the startup context, so a table that relied on server-managed credentials and was created only under a session/profile `s3_allow_server_credentials_in_user_queries = 1` is created successfully but becomes inaccessible after a restart (the table is left in place; queries against it fail until its credentials resolve to a permitted source again). The server itself still starts. Give such tables explicit credentials for durable access; alternatively, enabling the setting server-wide keeps them loading across restarts, at the cost of relaxing the restriction for all reloads.
+
+Sessions with different values of this setting do not share a table's access. A persistent `S3`, `S3Queue`, `AzureBlobStorage` or `AzureQueue` table keeps the value it was created with (or the value of the startup context after a restart), and no session changes it:
+- A session where this setting is disabled cannot use an `S3` or `S3Queue` table created with it enabled, even if the table has explicit credentials or `NOSIGN`, and cannot use an Azure table that authenticates with the server's identity. To share a table with such sessions, create it in one of them.
+- A session where this setting is enabled does not give the server's credentials back to a table that lost them on a restart. Detach the table and attach it again in such a session instead.
+- An `S3` table created with this setting disabled keeps the authentication settings it was created with: later changes of the server `<s3>` configuration, such as rotated keys, reach it only when it is attached again.
 
 Azure Blob Storage is covered by this setting as well. When it is disabled, the `azureBlobStorage`/`azureBlobStorageCluster` table functions, the `AzureBlobStorage`/`AzureQueue` engines, Azure named collections, dynamic `disk(type = azure_blob_storage, ...)` definitions, `BACKUP`/`RESTORE TO AzureBlobStorage`, and DataLake table-data reads over Azure may not authenticate with the identity the server itself runs under: the AKS workload identity (a projected service-account token from `AZURE_FEDERATED_TOKEN_FILE`) or the Azure managed identity of the machine. Such a request is rejected with `ACCESS_DENIED`. Credentials supplied explicitly are unaffected: an `account_name`/`account_key` pair, a connection string, a SAS token, and static credentials in a named collection or in the server `<storage_configuration>` all keep working. Azure binds a storage bearer token to the account it was minted for and not to the host it is sent to, so a request to a URL taken from the query would both hand a usable token to whoever controls that URL and read containers the user has no rights to.
 
@@ -7746,7 +7751,7 @@ When the relative URL comes from a [named collection](/concepts/features/configu
 )", 0, \
         {"26.5", "", "", "New setting to specify the base URL for resolving relative URLs in the url table function and URL table engine."}) \
     DECLARE(String, s3_base, "", R"(
-The base URL used to resolve relative URLs in the [s3](../../sql-reference/table-functions/s3.md) table function and the [S3](../../engines/table-engines/integrations/s3.md) table engine, as well as in the table functions that share their configuration (`s3Cluster`, `gcs`, `oss`).
+The base URL used to resolve relative URLs in the [s3](/reference/functions/table-functions/s3) table function and the [S3](/reference/engines/table-engines/integrations/s3) table engine, as well as in the table functions that share their configuration (`s3Cluster`, `gcs`, `oss`).
 
 When set, a URL without a scheme is resolved against `s3_base` per RFC 3986, using the same rules as [url_base](#url_base). URLs that already contain a scheme are used as-is.
 
@@ -8113,9 +8118,9 @@ This is an expert-level setting which should only be used for debugging by devel
     DECLARE(Bool, query_plan_lower_array_join_function, true, R"(
 Runs the `arrayJoin` function in the same way as the `ARRAY JOIN` clause: as a separate `ARRAY JOIN` step of the query plan. When disabled, the function is calculated inside the expression that contains it, as in older versions.
 
-:::note
+<Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
+</Note>
 )", 0, \
         {"26.10", false, true, "Enable query_plan_lower_array_join_function by default."}, \
         {"26.9", false, false, "New optimization to lower an arrayJoin function into a real ARRAY JOIN step; disabled by default."}) \
@@ -8547,7 +8552,7 @@ This is a query-construction setting applied by the engine on the parsed query (
 It shapes result-producing `SELECT` / `UNION` queries. For a write query (`INSERT … SELECT`, `CREATE … AS SELECT`) it takes effect only when the source `SELECT` carries it in its own `SETTINGS` clause; a value inherited from a profile or session, or set on the `INSERT` / `CREATE` statement itself, does not propagate into the source `SELECT` — the same non-propagation rule that applies to any other setting.
 
 <Danger>
-`filter` is **not** an access-control mechanism and must not be used as a substitute for [row-level security policies](/operations/access-rights#row-policy-management) or the `additional_table_filters` setting. It only adds a `WHERE` over the wrapping subquery, so the underlying data is still read and processed before the filter is applied — a query can observe the filtered-out rows during processing (for example with `throwIf` to leak information through the error path). Use row-level security or `additional_table_filters` when the goal is to restrict which rows a user may access.
+`filter` is **not** an access-control mechanism and must not be used as a substitute for [row-level security policies](/concepts/features/security/access-rights#row-policy-management) or the `additional_table_filters` setting. It only adds a `WHERE` over the wrapping subquery, so the underlying data is still read and processed before the filter is applied — a query can observe the filtered-out rows during processing (for example with `throwIf` to leak information through the error path). Use row-level security or `additional_table_filters` when the goal is to restrict which rows a user may access.
 </Danger>
 )", 0, \
         {"26.8", "", "", "New setting to add a WHERE clause around a query."}) \
@@ -8816,6 +8821,10 @@ Allows to record the filesystem caching log for each query
 Emit `TEST`-level log messages for every filesystem cache buffer refill (state of the read, remaining size to read, bytes read). Only for debugging: the messages are formatted once per read, so enabling it on a query that does many small cached reads adds a large amount of logging overhead. The messages are only visible when the log level is `test` anyway (see `send_logs_level`).
 )", 0, \
         {"26.8", false, false, "New setting gating the per-buffer-refill TEST-level log messages of the filesystem cache read buffer, which were previously emitted unconditionally once the log level allowed them."}) \
+    DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_cache_temporarily, false, R"(
+Use the filesystem cache as a temporary buffer for data that is not in it: a miss is read into the cache and served from it, and the cache removes it when nobody holds it anymore, unless a reader or writer outside this mode used it. Only the experimental `ReaderExecutor` supports it; other readers bypass the cache. `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` takes precedence.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New experimental setting."}) \
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(
 Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.
 )", 0) \
@@ -10673,7 +10682,7 @@ Possible values:
 )", 0, \
         {"25.12", false, true, "New setting. Add optimization to remove unused columns in query plan."}) \
     DECLARE(Bool, kill_throw_if_noop, true, R"(
-Controls whether [`KILL QUERY`](/sql-reference/statements/kill#kill-query) and [`KILL MUTATION`](/sql-reference/statements/kill#kill-mutation) throw an exception when their `WHERE` clauses match no rows.
+Controls whether [`KILL QUERY`](/reference/statements/kill#kill-query) and [`KILL MUTATION`](/reference/statements/kill#kill-mutation) throw an exception when their `WHERE` clauses match no rows.
 
 Enabled by default. `KILL QUERY` throws when there are no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throws when no rows match in `system.mutations`. Set to `false` to allow empty matches without an exception. `TEST` dry runs return an empty preview without throwing. `ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
 
@@ -12803,9 +12812,9 @@ void Settings::write(WriteBuffer & out) const
     impl->write(out);
 }
 
-void Settings::read(ReadBuffer & in)
+void Settings::read(ReadBuffer & in, bool skip_invalid_values)
 {
-    impl->read(in);
+    impl->read(in, skip_invalid_values);
 }
 
 void Settings::writeEmpty(WriteBuffer & out)
