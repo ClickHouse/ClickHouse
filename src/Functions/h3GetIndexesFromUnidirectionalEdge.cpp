@@ -17,6 +17,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -38,15 +39,20 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
-    /// fail on entirely valid data.
-    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(UInt64) -> Tuple(origin UInt64, destination UInt64)";
+        const auto * arg = arguments[0].get();
+        if (!WhichDataType(arg).isUInt64())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arg->getName(), 1, getName());
+
+        return std::make_shared<DataTypeTuple>(
+                DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUInt64>()},
+                Strings{"origin", "destination"});
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -119,9 +125,8 @@ Returns the origin and destination hexagon indexes from the given unidirectional
             "SELECT h3GetIndexesFromUnidirectionalEdge(1248204388774707199) AS indexes",
             R"(
 ┌─indexes─────────────────────────────────┐
-├─────────────origin─┬────────destination─┤
-│ 599686042433355775 │ 599686043507097599 │
-└────────────────────┴────────────────────┘
+│ (599686042433355775,599686043507097599) │
+└─────────────────────────────────────────┘
             )"
         }
     };

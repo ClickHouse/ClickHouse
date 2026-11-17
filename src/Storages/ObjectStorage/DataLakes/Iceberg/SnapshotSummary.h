@@ -134,10 +134,7 @@ public:
     Map toMap() const;
 
     using Expected = std::expected<SnapshotSummary, std::string>;
-    static Expected fromJSON(
-        const Poco::JSON::Object & obj,
-        bool with_extra_fields = false,
-        bool require_totals = false);
+    static Expected fromJSON(const Poco::JSON::Object & obj, bool with_extra_fields = false);
 
 private:
     SnapshotSummary() = default;

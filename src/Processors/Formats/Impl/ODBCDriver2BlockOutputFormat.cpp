@@ -4,7 +4,6 @@
 #include <Processors/Port.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 

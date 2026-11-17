@@ -1,5 +1,4 @@
 #include <IO/Operators.h>
-#include <Formats/FormatSettings.h>
 #include <Processors/NegativeOffsetTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
@@ -54,11 +53,6 @@ void NegativeOffsetStep::describeActions(FormatSettings & settings) const
 void NegativeOffsetStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     map.add("Negative Offset", offset);
-}
-
-QueryPlanStepPtr NegativeOffsetStep::clone() const
-{
-    return std::make_unique<NegativeOffsetStep>(*this);
 }
 
 void NegativeOffsetStep::serialize(Serialization & ctx) const

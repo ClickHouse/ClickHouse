@@ -16,9 +16,6 @@ namespace DB
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 
-/// The metadata storage below the `encrypted` and `cache` layers of `disk`, or nullptr if `disk` is not over an object storage disk.
-MetadataStoragePtr unwrapEncryptedAndCacheLayers(DiskPtr disk);
-
 /// Parse .xml configuration and store information about disks
 /// Mostly used for introspection.
 class DiskSelector

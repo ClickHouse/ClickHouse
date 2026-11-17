@@ -1,8 +1,0 @@
-inner
-FillingRightJoinSide
-left
-FillingRightJoinSide
-full
-FillingRightJoinSide
-inner, parallel_hash_join_threshold = 0
-FillingRightJoinSide × 4

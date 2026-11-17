@@ -6,7 +6,7 @@
 #include <string_view>
 
 /// The embedded time zone files, see `DateLUTImpl.cpp`.
-std::string_view getTimeZone(std::string_view name);  /// NOLINT(misc-use-internal-linkage)
+std::string_view getTimeZone(const char * name);  /// NOLINT(misc-use-internal-linkage)
 
 namespace DB
 {
@@ -22,8 +22,8 @@ namespace DB::ORC
 TimezoneOffset::TimezoneOffset(const DateLUTImpl & lut_)
     : lut(lut_)
 {
-    const std::string_view name = lut.getTimeZone();
-    const std::string_view file = getTimeZone(name);
+    const std::string & name = lut.getTimeZone();
+    const std::string_view file = getTimeZone(name.c_str());
     /// `Fixed/UTC±HH:MM:SS` zones are synthesized without a file and have no transitions.
     if (file.empty())
     {
