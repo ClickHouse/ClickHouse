@@ -101,10 +101,6 @@ bool isS3ExpressEndpoint(const std::string & endpoint);
 /// applied proves that it was not. Any other answer, or no answer, proves nothing.
 bool attemptMayHaveBeenApplied(Aws::Http::HttpResponseCode code, const Aws::String & exception_name);
 
-/// Whether the current thread records the attempts of a conditional write. `PocoHTTPClient` checks it before it sends
-/// an attempt of a conditional write, so that no attempt can be sent where its answer is not recorded.
-bool isRecordingConditionalWriteAttempts();
-
 struct ClientSettings
 {
     bool use_virtual_addressing = false;
@@ -334,10 +330,10 @@ private:
         const Aws::String & bucket, const Aws::String & key, const Aws::String & idempotency_id,
         bool warn_if_unproven) const;
 
-    /// Decides a failed conditional write from the history of its attempts and from the id. Returns true when an
-    /// attempt of this write is proven to have been applied. Otherwise marks the request when its outcome is unknown.
+    /// Decides a failed write from the answers to its attempts and from the id. Returns true when an attempt of this
+    /// write is proven to have been applied. Otherwise sets the outcome of a tracked write.
     template <typename RequestType, typename OutcomeType>
-    bool resolveFailedConditionalWrite(RequestType & request, const OutcomeType & outcome, bool warn_if_unproven) const;
+    bool resolveFailedWrite(RequestType & request, const OutcomeType & outcome, bool warn_if_unproven) const;
 
     std::optional<S3::URI> getURIForBucket(const std::string & bucket) const;
 

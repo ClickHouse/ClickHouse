@@ -12,6 +12,7 @@
 #include <IO/S3/tests/TestPocoHTTPServer.h>
 
 #include <Common/ProxyConfiguration.h>
+#include <Common/WriteOutcomeTracker.h>
 #include <Common/RemoteHostFilter.h>
 
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
@@ -344,6 +345,7 @@ DB::S3::PutObjectRequest makeCreateIfAbsentRequest(const std::string & idempoten
     request.SetKey("table(1)/metadata/v2.metadata.json");
     request.SetMetadata({{"owner", "analytics"}, {DB::S3::IDEMPOTENCY_ID_METADATA_KEY, idempotency_id}});
     request.setIdempotencyId(idempotency_id);
+    request.setOutcomeTracker(std::make_shared<DB::WriteOutcomeTracker>());
     request.SetIfNoneMatch("*");
     request.SetContentType("binary/octet-stream");
     request.SetBody(std::make_shared<Aws::StringStream>("content"));

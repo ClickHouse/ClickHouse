@@ -6,7 +6,6 @@
 
 #if USE_AWS_S3
 
-#include <IO/S3/Client.h>
 #include <IO/S3/PocoHTTPClient.h>
 #include <IO/S3/Requests.h>
 
@@ -18,6 +17,7 @@
 #include <Common/HTTPConnectionInfo.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
+#include <Common/WriteOutcomeTracker.h>
 #include <Common/re2.h>
 #include <Common/Silk/FiberScheduler.h>
 #include <base/sleep.h>
@@ -484,16 +484,27 @@ void PocoHTTPClient::makeRequestInternal(
     Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
-    /// The client decides a failed conditional write from the answers to all its attempts, which it records on the
-    /// thread of the call. An attempt sent elsewhere would lose its answer, and the write could be taken for not applied.
+    /// The client decides a failed conditional write from the answers to all its attempts, which reach the tracker of
+    /// the current thread. An attempt sent elsewhere would lose its answer, and the write could be taken for not applied.
+    auto * tracker = WriteOutcomeTracker::currentRaw();
     const bool is_write = request.GetMethod() == Aws::Http::HttpMethod::HTTP_PUT || request.GetMethod() == Aws::Http::HttpMethod::HTTP_POST;
-    if (is_write && (request.HasHeader("if-none-match") || request.HasHeader("if-match")) && !S3::isRecordingConditionalWriteAttempts())
+    if (is_write && (request.HasHeader("if-none-match") || request.HasHeader("if-match")) && !tracker)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "An attempt of a conditional write to {} is sent without the record of its attempts",
+            "An attempt of a conditional write to {} is sent without the tracker of its outcome",
             request.GetUri().GetURIString());
 
-    makeRequestInternalImpl(request, response, readLimiter, writeLimiter);
+    try
+    {
+        makeRequestInternalImpl(request, response, readLimiter, writeLimiter);
+    }
+    catch (...)
+    {
+        /// The body may have been sent before the exception, so the attempt may have been applied.
+        if (tracker)
+            tracker->markMayHaveBeenApplied();
+        throw;
+    }
 }
 
 static String getMethod(const Aws::Http::HttpRequest & request)

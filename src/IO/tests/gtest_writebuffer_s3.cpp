@@ -42,6 +42,7 @@
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 
 #include <Common/filesystemHelpers.h>
+#include <Common/WriteOutcomeTracker.h>
 #include <Common/Crypto/OpenSSLInitializer.h>
 #include <Core/Settings.h>
 
@@ -1014,6 +1015,7 @@ public:
     {
         WriteSettings write_settings;
         write_settings.object_storage_write_if_none_match = "*";
+        write_settings.write_outcome_tracker = std::make_shared<WriteOutcomeTracker>();
         return write_settings;
     }
 
@@ -1022,6 +1024,7 @@ public:
     {
         WriteSettings write_settings;
         write_settings.object_storage_write_if_match = "some-etag";
+        write_settings.write_outcome_tracker = std::make_shared<WriteOutcomeTracker>();
         return write_settings;
     }
 

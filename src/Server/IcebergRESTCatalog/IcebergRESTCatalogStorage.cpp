@@ -10,6 +10,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteSettings.h>
+#include <Common/WriteOutcomeTracker.h>
 
 #include <fmt/format.h>
 
@@ -64,6 +65,7 @@ void writeNewObject(
 
     /// Every metadata file has a fresh uuid in its name, so an existing object means a bug or a foreign writer.
     write_settings.object_storage_write_if_none_match = "*";
+    write_settings.write_outcome_tracker = std::make_shared<WriteOutcomeTracker>();
     auto buffer = object_storage.writeObject(StoredObject(key), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     auto compressed_buffer = wrapWriteBufferWithCompressionMethod(std::move(buffer), compression_method, compression_level);
     compressed_buffer->write(content.data(), content.size());

@@ -4,6 +4,7 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Common/WriteOutcomeTracker.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/Throttler.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -769,6 +770,7 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFileIfNotExists(const String &
 {
     WriteSettings conditional_write_settings = write_settings;
     conditional_write_settings.object_storage_write_if_none_match = "*";
+    conditional_write_settings.write_outcome_tracker = std::make_shared<WriteOutcomeTracker>();
     return std::make_unique<WriteBufferFromS3>(
         client,
         s3_uri.bucket,

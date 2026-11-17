@@ -8,6 +8,7 @@
 #include <IO/S3/URI.h>
 #include <IO/S3/ProviderType.h>
 #include <IO/S3/ChecksumAlgorithm.h>
+#include <Common/WriteOutcomeTracker.h>
 
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/core/http/HttpRequest.h>
@@ -262,26 +263,20 @@ enum class ConditionalWriteVerdict : uint8_t
 /// The id the writer stamped in the object's metadata. Set it and the client accepts a failure whose
 /// object carries it. Left empty, the client asks nothing.
 ///
-/// A conditional write also keeps what its attempts told. The retry loops of the writer send the request
-/// again, so the history covers all calls with it.
+/// A write that tracks its outcome also carries the tracker. The retry loops of the writer send the request
+/// again, so the tracker covers all calls with it.
 class RequestWithIdempotencyId
 {
 public:
     void setIdempotencyId(Aws::String value) { idempotency_id = std::move(value); }
     [[nodiscard]] const Aws::String & getIdempotencyId() const { return idempotency_id; }
 
-    /// An attempt got no answer that proves it was not applied.
-    void markMayHaveBeenApplied() { may_have_been_applied = true; }
-    [[nodiscard]] bool mayHaveBeenApplied() const { return may_have_been_applied; }
-
-    /// What the client proved about the last call, when it failed.
-    void setVerdict(ConditionalWriteVerdict value) { verdict = value; }
-    [[nodiscard]] ConditionalWriteVerdict getVerdict() const { return verdict; }
+    void setOutcomeTracker(std::shared_ptr<WriteOutcomeTracker> value) { outcome_tracker = std::move(value); }
+    [[nodiscard]] const std::shared_ptr<WriteOutcomeTracker> & getOutcomeTracker() const { return outcome_tracker; }
 
 private:
     Aws::String idempotency_id;
-    bool may_have_been_applied = false;
-    ConditionalWriteVerdict verdict = ConditionalWriteVerdict::None;
+    std::shared_ptr<WriteOutcomeTracker> outcome_tracker;
 };
 
 class PutObjectRequest : public ExtendedRequest<Model::PutObjectRequest>, public RequestWithIdempotencyId

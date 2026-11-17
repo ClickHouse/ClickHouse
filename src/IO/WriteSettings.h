@@ -11,6 +11,8 @@ namespace DB
 {
 
 /// Settings to be passed to IDisk::writeFile()
+class WriteOutcomeTracker;
+
 struct WriteSettings
 {
     /// Bandwidth throttler to use during writing
@@ -48,6 +50,8 @@ struct WriteSettings
     std::string object_storage_write_if_match;
     /// `object_storage_write_if_none_match` may be dropped where the storage cannot express it (a multipart upload to GCS).
     bool object_storage_write_if_none_match_best_effort = false;
+    /// Tracks the outcome of the write, also when it fails. S3 needs it for a write with a precondition. One per write.
+    std::shared_ptr<WriteOutcomeTracker> write_outcome_tracker;
 
     /// A reader must never see a partially written object: it has to see either the previous version or the new one.
     /// Object storages like S3 and Azure always publish an object at once; a local object storage writes to a

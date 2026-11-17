@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/defines.h>
+#include <Common/WriteOutcomeTracker.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -77,6 +78,7 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     {
         write_settings.object_storage_write_if_none_match = "*";
         write_settings.object_storage_write_if_none_match_best_effort = true;
+        write_settings.write_outcome_tracker = std::make_shared<WriteOutcomeTracker>();
     }
 
     auto buffer = object_storage->writeObject(

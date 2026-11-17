@@ -21,6 +21,7 @@
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/HTTPConnectionInfo.h>
+#include <Common/WriteOutcomeTracker.h>
 
 #include <utility>
 
@@ -92,7 +93,13 @@ struct WriteBufferFromS3::PartData
 /// Throws the error of a failed write, with what the client proved about it.
 [[noreturn]] static void throwWriteError(S3Exception exception, const S3::RequestWithIdempotencyId & request)
 {
-    exception.setConditionalWriteVerdict(request.getVerdict());
+    if (const auto & tracker = request.getOutcomeTracker())
+    {
+        if (const auto outcome = tracker->getOutcome(); outcome == WriteOutcome::NotApplied)
+            exception.setConditionalWriteVerdict(S3::ConditionalWriteVerdict::NotApplied);
+        else if (outcome == WriteOutcome::Unknown)
+            exception.setConditionalWriteVerdict(S3::ConditionalWriteVerdict::Unknown);
+    }
     throw exception; /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
 }
 
@@ -137,6 +144,10 @@ WriteBufferFromS3::WriteBufferFromS3(
     , blob_log(std::move(blob_log_))
 {
     LOG_TRACE(limited_log, "Create WriteBufferFromS3, {}", getShortLogDetails());
+
+    /// The requests that publish the object track its outcome.
+    if (write_settings.write_outcome_tracker)
+        write_settings.write_outcome_tracker->attach();
 
     allocateBuffer();
 }
@@ -686,6 +697,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
     req.SetKey(key);
     req.SetUploadId(multipart_upload_id);
     req.setIdempotencyId(idempotency_id);
+    req.setOutcomeTracker(write_settings.write_outcome_tracker);
 
     /// GCS evaluates no precondition on a multipart upload: it ignores `If-None-Match`
     /// and rejects its `x-goog-if-generation-match` translation.
@@ -777,6 +789,7 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     req.SetBody(data.createAwsBuffer());
     req.SetMetadata(metadataWithIdempotencyId());
     req.setIdempotencyId(idempotency_id);
+    req.setOutcomeTracker(write_settings.write_outcome_tracker);
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(S3::getStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 

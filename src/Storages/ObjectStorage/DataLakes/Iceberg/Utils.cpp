@@ -41,6 +41,7 @@
 #include <Common/ErrnoException.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadStatus.h>
+#include <Common/WriteOutcomeTracker.h>
 #include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -353,6 +354,8 @@ void writeMessageToFile(
     auto write_settings = context->getWriteSettings();
     write_settings.object_storage_write_if_none_match = write_if_none_match;
     write_settings.object_storage_write_if_match = write_if_match;
+    if (!write_if_none_match.empty() || !write_if_match.empty())
+        write_settings.write_outcome_tracker = std::make_shared<WriteOutcomeTracker>();
     auto buffer_metadata = object_storage->writeObject(
         StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     if (compression_method != CompressionMethod::None)
