@@ -86,6 +86,8 @@ ORC NULL rows
 1	42	\N
 0	7
 1	\N
+0	[('k',0)]	{'k':0}	{'k':0}
+1	[('k',0)]	{'k':0}	{'k':0}
 Arrow NULL rows
 0	7	b	b	(9)
 1	0	a	a	(0)
@@ -93,6 +95,8 @@ Arrow NULL rows
 1	42	\N
 0	7
 1	\N
+0	[('k',0)]	{'k':0}	{'k':0}
+1	[('k',0)]	{'k':0}	{'k':0}
 Native NULL rows
 0	7	b	b	(9)
 1	0	a	a	(0)
@@ -100,6 +104,8 @@ Native NULL rows
 1	42	\N
 0	7
 1	\N
+0	[('k',0)]	{'k':0}	{'k':0}
+1	[('k',0)]	{'k':0}	{'k':0}
 Vortex NULL rows
 0	7	b	b	(9)
 1	0	a	a	(0)
@@ -107,6 +113,8 @@ Vortex NULL rows
 1	42	\N
 0	7
 1	\N
+0	[('k',0)]	{'k':0}	{'k':0}
+1	[('k',0)]	{'k':0}	{'k':0}
 1
 1
 (1,0)

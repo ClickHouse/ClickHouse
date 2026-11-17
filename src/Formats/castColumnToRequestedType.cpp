@@ -131,6 +131,9 @@ ColumnWithTypeAndName prepareForCast(
 
     if (const auto * to_arr = typeid_cast<const DataTypeArray *>(to.get()))
     {
+        /// `CAST` converts a map as the array of its unnamed (key, value) tuples.
+        if (const auto * from_map = typeid_cast<const DataTypeMap *>(from.type.get()))
+            from = {assert_cast<const ColumnMap &>(*from.column).getNestedColumnPtr(), from_map->getNestedTypeWithUnnamedTuple(), from.name};
         const auto * from_arr = typeid_cast<const DataTypeArray *>(from.type.get());
         if (!from_arr)
             return from;
@@ -143,19 +146,16 @@ ColumnWithTypeAndName prepareForCast(
     }
     if (const auto * to_map = typeid_cast<const DataTypeMap *>(to.get()))
     {
-        const auto * from_map = typeid_cast<const DataTypeMap *>(from.type.get());
-        if (!from_map)
-            return from;
-        const auto & from_map_column = assert_cast<const ColumnMap &>(*from.column);
-        const auto & from_entries = from_map_column.getNestedData();
-        auto prepared_key = prepareForCast(
-            {from_entries.getColumnPtr(0), from_map->getKeyType(), from.name}, to_map->getKeyType(), settings);
-        auto prepared_value = prepareForCast(
-            {from_entries.getColumnPtr(1), from_map->getValueType(), from.name}, to_map->getValueType(), settings);
-        from.column = ColumnMap::create(ColumnArray::create(
-            ColumnTuple::create(Columns{prepared_key.column, prepared_value.column}), from_map_column.getNestedColumn().getOffsetsPtr()));
-        from.type = std::make_shared<DataTypeMap>(prepared_key.type, prepared_value.type);
-        return from;
+        /// `CAST` builds a map from the (key, value) tuples of a map or an array, or from a tuple of a key array and a value array.
+        const DataTypes key_value_types = to_map->getKeyValueTypes();
+        if (isTuple(from.type))
+            return prepareForCast(from, std::make_shared<DataTypeTuple>(DataTypes{
+                std::make_shared<DataTypeArray>(key_value_types[0]), std::make_shared<DataTypeArray>(key_value_types[1])}), settings);
+        auto entries = prepareForCast(from, std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(key_value_types)), settings);
+        if (!isMap(from.type))
+            return entries;
+        const auto & entry_type = assert_cast<const DataTypeArray &>(*entries.type).getNestedType();
+        return {ColumnMap::create(entries.column), std::make_shared<DataTypeMap>(assert_cast<const DataTypeTuple &>(*entry_type).getElements()), from.name};
     }
     if (const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get()))
     {

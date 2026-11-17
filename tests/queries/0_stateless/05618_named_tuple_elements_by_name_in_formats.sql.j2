@@ -52,11 +52,17 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05618_null.{{ format }}', '{{ f
     [CAST('7', 'Nullable(String)'), NULL][number + 1] AS e1,
     [CAST(2, 'Nullable(Int8)'), NULL][number + 1] AS e2,
     [CAST('b', 'Nullable(Enum8(\'a\' = 1, \'b\' = 2))'), NULL][number + 1] AS e3,
-    [CAST(tuple('9'), 'Nullable(Tuple(s String))'), NULL][number + 1] AS e4
+    [CAST(tuple('9'), 'Nullable(Tuple(s String))'), NULL][number + 1] AS e4,
+    map('k', CAST(NULL, 'Nullable(Int8)')) AS e5,
+    [('k', CAST(NULL, 'Nullable(Int8)'))]::Array(Tuple(String, Nullable(Int8))) AS e6,
+    (['k'], [CAST(NULL, 'Nullable(Int8)')])::Tuple(Array(String), Array(Nullable(Int8))) AS e7
 FROM numbers(2);
 SELECT * FROM file(currentDatabase() || '_05618_null.{{ format }}', '{{ format }}', 'id UInt64, e1 Int32, e2 Enum8(\'a\' = 1, \'b\' = 2), e3 Enum8(\'a\' = 1, \'b\' = 2), e4 Tuple(s Int32)') ORDER BY id;
 SELECT * FROM file(currentDatabase() || '_05618_null.{{ format }}', '{{ format }}', 'id UInt64, e1 Int32 DEFAULT 42, e4 Nullable(Tuple(s Int32))') ORDER BY id;
 SELECT * FROM file(currentDatabase() || '_05618_null.{{ format }}', '{{ format }}', 'id UInt64, e1 Nullable(Int32)') ORDER BY id;
+{% if format != 'Parquet' -%}
+SELECT * FROM file(currentDatabase() || '_05618_null.{{ format }}', '{{ format }}', 'id UInt64, e5 Array(Tuple(String, Int8)), e6 Map(String, Int8), e7 Map(String, Int8)') ORDER BY id SETTINGS input_format_null_as_default = 1;
+{% endif -%}
 {% endfor -%}
 SELECT count() FROM file(currentDatabase() || '_05618_null.Parquet', 'Parquet', 'e2 Enum8(\'a\' = 1, \'b\' = 2)') WHERE e2 = 'a' SETTINGS input_format_parquet_dictionary_filter_push_down = 0;
 SELECT count() FROM file(currentDatabase() || '_05618_null.Parquet', 'Parquet', 'e2 Enum8(\'a\' = 1, \'b\' = 2)') WHERE e2 = 'a' SETTINGS input_format_parquet_dictionary_filter_push_down = 1048576;
