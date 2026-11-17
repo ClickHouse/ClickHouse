@@ -129,6 +129,9 @@ public:
         /// Do not compare the cte name or check the is_cte flag for the query node.
         /// Calculate a hash as if is_cte is false and cte_name is empty.
         bool ignore_cte = false;
+        /// Whether a double-quoted alias differs from the same unquoted alias. The quote pins the name
+        /// only under `standard` matching; under `sensitive` matching the two aliases are the same name.
+        bool compare_alias_quotes = true;
     };
 
     /** Is tree equal to other tree with node root.
@@ -136,7 +139,7 @@ public:
       * With default compare options aliases of query tree nodes are compared during isEqual call.
       * Original ASTs of query tree nodes are not compared during isEqual call.
       */
-    [[nodiscard]] bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
+    [[nodiscard]] bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false, .compare_alias_quotes = true }) const;
 
     using Hash = CityHash_v1_0_2::uint128;
     using HashState = SipHash;
@@ -156,7 +159,7 @@ public:
       * the lookup explicitly for the empty case (see `QueryAnalyzer::resolveExpressionNode`
       * and `PlannerActionsVisitorImpl::visitColumn`).
       */
-    [[nodiscard]] Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
+    [[nodiscard]] Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false, .compare_alias_quotes = true }) const;
 
     /// Get a deep copy of the query tree
     [[nodiscard]] QueryTreeNodePtr clone() const;

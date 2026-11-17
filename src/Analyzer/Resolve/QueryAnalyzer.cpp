@@ -8615,6 +8615,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// see the renaming of colliding projection columns below.
     bool has_unused_duplicated_aliases = false;
 
+    /// Under `sensitive` matching `x` and `"x"` are the same alias, so their definitions are compared without the quote.
+    const IQueryTreeNode::CompareOptions duplicated_alias_compare_options
+        = {.compare_aliases = true, .ignore_cte = false, .compare_alias_quotes = name_match_mode == NameMatchMode::Standard};
+
     for (const auto & node_with_duplicated_alias : scope.aliases.nodes_with_duplicated_aliases)
     {
         auto node = node_with_duplicated_alias;
@@ -8656,14 +8660,14 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             auto original_node = it->second;
             resolveExpressionNode(original_node, scope, true /*allow_lambda_expression*/, true /*allow_table_expression*/);
 
-            bool matched = original_node->isEqual(*node);
+            bool matched = original_node->isEqual(*node, duplicated_alias_compare_options);
             if (!matched)
                 /// Table expression could be resolved as scalar subquery,
                 /// but for duplicating alias we allow table expression to be returned.
                 /// So, check constant node source expression as well.
                 if (const auto * constant_node = original_node->as<ConstantNode>())
                     if (const auto & source_expression = constant_node->getSourceExpression())
-                        matched = source_expression->isEqual(*node);
+                        matched = source_expression->isEqual(*node, duplicated_alias_compare_options);
 
             if (!matched)
                 throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
@@ -8682,7 +8686,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             auto original_node = it->second;
             resolveExpressionNode(original_node, scope, true /*allow_lambda_expression*/, true /*allow_table_expression*/);
 
-            if (!original_node->isEqual(*node))
+            if (!original_node->isEqual(*node, duplicated_alias_compare_options))
                 throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                     "Multiple expressions {} and {} for alias {}. In scope {}",
                     node->formatASTForErrorMessage(),
