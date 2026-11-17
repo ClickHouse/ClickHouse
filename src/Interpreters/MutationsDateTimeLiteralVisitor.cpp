@@ -11,6 +11,8 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTExpressionList.h>
@@ -37,7 +39,10 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsBool prefer_column_name_to_alias;
+    extern const SettingsSetOperationMode union_default_mode;
 }
 
 namespace
@@ -173,7 +178,8 @@ public:
             {
                 const auto & name = function->getFunctionName();
                 if ((comparison_functions.contains(name) && collectComparison(*function))
-                    || (in_functions.contains(name) && collectIn(*function)) || (name == "CAST" && collectInElementCast(*function)))
+                    || (in_functions.contains(name) && collectIn(*function)) || (name == "has" && collectInAsHas(*function))
+                    || (name == "CAST" && collectInElementCast(*function)))
                     return;
             }
             collectFunction(*function);
@@ -265,9 +271,24 @@ private:
         return true;
     }
 
-    /// The analyzer rewrites `event IN tuple('...', x)` with an element that is not a constant into `has([...], event)` and casts
-    /// each element to the type of `event`, without an AST of the cast or of `has`. The literal is read with that type there, but
-    /// as with a comparison, only if `event` is an identifier, which only the AST shows.
+    /// The analyzer rewrites `event IN tuple('...', x)` with an element that is not a constant into `has([...], event)`, without an
+    /// AST of `has`. The type of `event` there is kept for the casts of the elements, see `collectInElementCast`.
+    bool collectInAsHas(const FunctionNode & function)
+    {
+        const auto & arguments = function.getArguments().getNodes();
+        if (function.hasOriginalAST() || arguments.size() != 2)
+            return false;
+        const auto outer_type = std::exchange(in_as_has_operand_type, arguments[1]->getResultType());
+        collect(arguments[0]);
+        in_as_has_operand_type = outer_type;
+        collect(arguments[1]);
+        return true;
+    }
+
+    /// The analyzer casts each element of the tuple of such an `IN` to a common type of the elements and `event`, without an AST
+    /// of the cast. The literal is read with that type there, but as with a comparison, only if `event` is an identifier, which
+    /// only the AST shows, so the identifier is found in the AST later (see `collectLiteralUses`), and its type is that of the
+    /// enclosing `has`.
     bool collectInElementCast(const FunctionNode & function)
     {
         const auto & arguments = function.getArguments().getNodes();
@@ -276,10 +297,14 @@ private:
         const auto * literal = tryGetStringLiteral(arguments[0]);
         if (!literal)
             return false;
-        uses[literal].push_back({getZonelessDateTimeType(function.getResultType()), nullptr, nullptr, /*is_in_element_cast=*/true});
+        uses[literal].push_back(
+            {getZonelessDateTimeType(function.getResultType()), nullptr, in_as_has_operand_type, /*is_in_element_cast=*/true});
         collect(arguments[1]);
         return true;
     }
+
+    /// The type of the left argument of the `IN` that the analyzer rewrote into the `has` being collected, or nullptr.
+    DataTypePtr in_as_has_operand_type = nullptr;
 };
 
 /// An expression whose string literals are rewritten, with the type of the column that it is assigned to, if it is.
@@ -328,17 +353,20 @@ const ASTFunction * tryGetFunctionOfArgument(const IAST * node, const std::unord
     return function_ast;
 }
 
-/// Whether `literal` is an element of the tuple of `IN` whose left argument is an identifier, such as in
-/// `event IN tuple('...', x)`, according to `parents`.
-bool isElementOfInWithIdentifier(const IAST * literal, const std::unordered_map<const IAST *, const IAST *> & parents)
+/// The identifier that is the left argument of the `IN` whose tuple has the element `literal`, such as `event` in
+/// `event IN tuple('...', x)`, according to `parents`, or nullptr.
+const IAST * tryGetIdentifierOfInWithElement(const IAST * literal, const std::unordered_map<const IAST *, const IAST *> & parents)
 {
     const auto * tuple = tryGetFunctionOfArgument(literal, parents);
     if (!tuple || tuple->name != "tuple")
-        return false;
+        return nullptr;
     const auto * in = tryGetFunctionOfArgument(tuple, parents);
     if (!in || !in_functions.contains(in->name) || in->arguments->children.size() != 2)
-        return false;
-    return in->arguments->children[0]->as<ASTIdentifier>() && in->arguments->children[1].get() == tuple;
+        return nullptr;
+    const auto & left = in->arguments->children[0];
+    if (!left->as<ASTIdentifier>() || in->arguments->children[1].get() != tuple)
+        return nullptr;
+    return left.get();
 }
 
 /// Analyzes `expressions` against `table_node` with the settings of `context`, as `MutationsInterpreter` resolves the expressions
@@ -393,14 +421,40 @@ LiteralUses collectLiteralUses(
             continue;
         for (auto & use : literal_uses)
         {
-            if (use.is_in_element_cast && !isElementOfInWithIdentifier(literal, parents))
-                use.type = nullptr;
+            if (use.is_in_element_cast)
+            {
+                use.operand = tryGetIdentifierOfInWithElement(literal, parents);
+                if (!use.operand)
+                    use.type = nullptr;
+            }
             const auto original_operand = use.operand ? originals.find(use.operand) : originals.end();
             use.operand = original_operand != originals.end() ? original_operand->second : nullptr;
         }
         uses.emplace(original->second, std::move(literal_uses));
     }
     return uses;
+}
+
+/// The evaluations of the literals of `expressions`, as `collectLiteralUses` collects them, or std::nullopt if the expressions
+/// cannot be analyzed alone. Where they are used, they are analyzed otherwise: the value of an `UPDATE` as a branch of `if`
+/// with the predicate, which the analyzer may not resolve, such as with `WHERE NULL`, and a `TTL` after its own validation,
+/// which reports an invalid one. Then no literal is converted, as before the conversion, and the statement is accepted or
+/// rejected there.
+std::optional<LiteralUses> tryCollectLiteralUses(
+    const std::vector<Expression> & expressions, const TableExpressionNodePtr & table_node, const ContextPtr & context)
+{
+    try
+    {
+        return collectLiteralUses(expressions, table_node, context);
+    }
+    catch (const Exception & e)
+    {
+        /// Only a failure to analyze the expressions tells that they cannot be analyzed.
+        if (e.code() == ErrorCodes::LOGICAL_ERROR || e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+            || e.code() == ErrorCodes::QUERY_WAS_CANCELLED || e.code() == ErrorCodes::TIMEOUT_EXCEEDED)
+            throw;
+        return std::nullopt;
+    }
 }
 
 /// How all the evaluations of a literal read it: the type, and the identifier it is compared with and its type, if they are the
@@ -571,6 +625,16 @@ ASTPtr rewriteDateTimeLiteralsWithTimezone(
         return nullptr;
 
     auto query = alter_command.clone();
+    /// `MutationCommand::ast` parses the stored text of the command again, which leaves the set operations of its subqueries
+    /// not normalized, and `buildQueryTree` refuses them, so they are normalized as `MutationsInterpreter` normalizes them.
+    {
+        const auto & settings = context->getSettingsRef();
+        SelectIntersectExceptQueryVisitor::Data intersect_except_data{
+            settings[Setting::intersect_default_mode], settings[Setting::except_default_mode]};
+        SelectIntersectExceptQueryVisitor{intersect_except_data}.visit(query);
+        NormalizeSelectWithUnionQueryVisitor::Data union_data{settings[Setting::union_default_mode]};
+        NormalizeSelectWithUnionQueryVisitor{union_data}.visit(query);
+    }
     auto & new_command = *query->as<ASTAlterCommand>();
     const ColumnsDescription & columns = storage_snapshot->metadata->getColumns();
 
@@ -587,7 +651,9 @@ ASTPtr rewriteDateTimeLiteralsWithTimezone(
 
     /// The expressions are only analyzed and nothing is read, so the table is not locked.
     const auto table_node = std::make_shared<TableNode>(table, TableLockHolder{}, storage_snapshot);
-    const auto uses = collectLiteralUses(expressions, table_node, Context::createCopy(context));
+    const auto uses = tryCollectLiteralUses(expressions, table_node, Context::createCopy(context));
+    if (!uses)
+        return nullptr;
 
     /// The mutation runs with the settings of the server or of the session, depending on the engine, which may differ from those
     /// of this query. With `prefer_column_name_to_alias` there, an identifier with the name of an alias names the column with
@@ -600,21 +666,11 @@ ASTPtr rewriteDateTimeLiteralsWithTimezone(
         auto alternative_context = Context::createCopy(context);
         alternative_context->setSetting(
             "prefer_column_name_to_alias", Field(!context->getSettingsRef()[Setting::prefer_column_name_to_alias]));
-        try
-        {
-            alternative_uses = collectLiteralUses(expressions, table_node, alternative_context);
-        }
-        catch (const Exception & e)
-        {
-            /// Only a failure to analyze the expressions tells that they do not resolve with the other value of the setting.
-            if (e.code() == ErrorCodes::LOGICAL_ERROR || e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED
-                || e.code() == ErrorCodes::QUERY_WAS_CANCELLED || e.code() == ErrorCodes::TIMEOUT_EXCEEDED)
-                throw;
-        }
+        alternative_uses = tryCollectLiteralUses(expressions, table_node, alternative_context);
     }
 
     /// The root of the predicate is not a literal that is compared or assigned, so it stays the same.
-    const auto conversions = getConversions(uses, alternative_uses);
+    const auto conversions = getConversions(*uses, alternative_uses);
     bool converted = false;
     if (new_command.predicate)
         converted |= convertLiterals(new_command.predicate->ptr(), conversions, session_timezone);
@@ -643,7 +699,10 @@ bool rewriteDateTimeLiteralsWithTimezone(
     auto execution_context = Context::createCopy(getTTLExpressionContext(context));
     const auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, columns);
     const auto table_node = std::make_shared<TableNode>(storage, execution_context);
-    const auto conversions = getConversions(collectLiteralUses(expressions, table_node, execution_context), std::nullopt);
+    const auto uses = tryCollectLiteralUses(expressions, table_node, execution_context);
+    if (!uses)
+        return false;
+    const auto conversions = getConversions(*uses, std::nullopt);
 
     /// The visitor replaces only the arguments of the functions and the values of the assignments, so the root of the
     /// expression stays the same.
