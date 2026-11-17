@@ -24,20 +24,20 @@ struct User : public IAccessEntity
     RolesOrUsersSet grantees = RolesOrUsersSet::AllTag{};
     String default_database;
 
-    [[nodiscard]] bool equal(const IAccessEntity & other) const override;
-    [[nodiscard]] std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<User>(); }
+    bool equal(const IAccessEntity & other) const override;
+    std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<User>(); }
     static constexpr const auto TYPE = AccessEntityType::USER;
-    [[nodiscard]] AccessEntityType getType() const override { return TYPE; }
+    AccessEntityType getType() const override { return TYPE; }
     void setName(const String & name_) override;
 
-    [[nodiscard]] std::vector<UUID> findDependencies() const override;
-    [[nodiscard]] bool hasDependencies(const std::unordered_set<UUID> & ids) const override;
+    std::vector<UUID> findDependencies() const override;
+    bool hasDependencies(const std::unordered_set<UUID> & ids) const override;
     void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids) override;
     void copyDependenciesFrom(const IAccessEntity & src, const std::unordered_set<UUID> & ids) override;
     void removeDependencies(const std::unordered_set<UUID> & ids) override;
     void clearAllExceptDependencies() override;
 
-    [[nodiscard]] bool isBackupAllowed() const override { return settings.isBackupAllowed(); }
+    bool isBackupAllowed() const override { return settings.isBackupAllowed(); }
 };
 
 using UserPtr = std::shared_ptr<const User>;

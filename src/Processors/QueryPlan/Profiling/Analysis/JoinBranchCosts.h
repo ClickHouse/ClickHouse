@@ -1,27 +1,28 @@
 #pragma once
 
 #include <optional>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <unordered_map>
-#include <Processors/QueryPlan/Profiling/Analysis/PlanAnalysisSnapshot.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <base/types.h>
 
 namespace DB
 {
 
-using CardinalityByJoinStep = UnorderedMapWithMemoryTracking<String, std::optional<UInt64>>;
+class JoinStep;
 
-/// The cost of a join is its own cardinality plus the cardinality of every join of the same cluster
-/// below it. A cost is absent as soon as any contributor's is.
+using CardinalityByJoinStep = std::unordered_map<const JoinStep *, std::optional<UInt64>>;
+
 class JoinBranchCosts
 {
 public:
-    JoinBranchCosts(const PlanAnalysisSnapshot & plan_snapshot, const CardinalityByJoinStep & cardinality_by_join_step);
+    JoinBranchCosts(const QueryPlan & plan, const CardinalityByJoinStep & cardinality_by_join_step);
 
-    [[nodiscard]] std::optional<UInt64> getBranchCost(const String & step_id) const;
+    std::optional<UInt64> getBranchCost(const JoinStep * join_step) const;
 
 private:
-    UnorderedMapWithMemoryTracking<String, std::optional<UInt64>> cost_by_join_step;
+    void accumulate(const QueryPlan::Node * root, const CardinalityByJoinStep & cardinality_by_join_step);
+
+    std::unordered_map<const JoinStep *, std::optional<UInt64>> cost_by_join_step;
 };
 
 }

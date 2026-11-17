@@ -55,29 +55,32 @@ public:
 
     StorageWebConfiguration() = default;
 
-    [[nodiscard]] ObjectStorageType getType() const override { return type; }
-    [[nodiscard]] std::string getTypeName() const override { return type_name; }
-    [[nodiscard]] std::string getEngineName() const override { return engine_name; }
-    [[nodiscard]] std::string getNamespaceType() const override { return "host"; }
+    ObjectStorageType getType() const override { return type; }
+    std::string getTypeName() const override { return type_name; }
+    std::string getEngineName() const override { return engine_name; }
+    std::string getNamespaceType() const override { return "host"; }
 
-    [[nodiscard]] Path getRawPath() const override { return path; }
+    Path getRawPath() const override { return path; }
     void setRawPath(const Path & path_) override
     {
         path = path_;
-        setPaths({path});
+        paths = {path};
         setPathForRead(path);
     }
-    [[nodiscard]] const String & getRawURI() const override { return raw_url; }
+    const String & getRawURI() const override { return raw_url; }
 
-    [[nodiscard]] bool supportsPartialPathPrefix() const override { return false; }
+    bool supportsPartialPathPrefix() const override { return false; }
 
-    [[nodiscard]] String getNamespace() const override { return namespace_prefix; }
-    [[nodiscard]] String getDataSourceDescription() const override { return raw_url; }
+    const Paths & getPaths() const override { return paths; }
+    void setPaths(const Paths & paths_) override { paths = paths_; }
 
-    [[nodiscard]] StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr & context) const override;
+    String getNamespace() const override { return namespace_prefix; }
+    String getDataSourceDescription() const override { return raw_url; }
 
-    [[nodiscard]] bool isArchive() const override { return archive_pattern.has_value(); }
-    [[nodiscard]] std::string getPathInArchive() const override;
+    StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr & context) const override;
+
+    bool isArchive() const override { return archive_pattern.has_value(); }
+    std::string getPathInArchive() const override;
 
     void check(ContextPtr context) override;
 
@@ -91,9 +94,6 @@ public:
         bool with_structure) override;
 
 protected:
-    const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return paths; }
-    void setPathsImpl(const Paths & paths_) override TSA_REQUIRES(paths_mutex) { paths = paths_; }
-
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
@@ -106,7 +106,7 @@ private:
     WebObjectStorage::URLShards url_shards;
     String namespace_prefix;
     Path path;
-    Paths paths TSA_GUARDED_BY(paths_mutex);
+    Paths paths;
     std::optional<String> archive_pattern;
     HTTPHeaderEntries headers_from_ast;
 };

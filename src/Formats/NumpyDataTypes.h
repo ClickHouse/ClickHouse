@@ -46,12 +46,12 @@ public:
     explicit NumpyDataType(Endianness endianness_) : endianness(endianness_) {}
     virtual ~NumpyDataType() = default;
 
-    [[nodiscard]] Endianness getEndianness() const { return endianness; }
+    Endianness getEndianness() const { return endianness; }
 
-    [[nodiscard]] virtual NumpyDataTypeIndex getTypeIndex() const = 0;
-    [[nodiscard]] virtual size_t getSize() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function getSize is not implemented"); }
+    virtual NumpyDataTypeIndex getTypeIndex() const = 0;
+    virtual size_t getSize() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function getSize is not implemented"); }
     virtual void setSize(size_t) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function setSize is not implemented"); }
-    [[nodiscard]] virtual String str() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function str is not implemented"); }
+    virtual String str() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function str is not implemented"); }
 
 protected:
     Endianness endianness;
@@ -73,13 +73,13 @@ public:
         }
     }
 
-    [[nodiscard]] NumpyDataTypeIndex getTypeIndex() const override
+    NumpyDataTypeIndex getTypeIndex() const override
     {
         return type_index;
     }
-    [[nodiscard]] size_t getSize() const override { return size; }
-    [[nodiscard]] bool isSigned() const { return is_signed; }
-    [[nodiscard]] String str() const override
+    size_t getSize() const override { return size; }
+    bool isSigned() const { return is_signed; }
+    String str() const override
     {
         WriteBufferFromOwnString buf;
         writeChar(static_cast<char>(endianness), buf);
@@ -108,12 +108,12 @@ public:
         }
     }
 
-    [[nodiscard]] NumpyDataTypeIndex getTypeIndex() const override
+    NumpyDataTypeIndex getTypeIndex() const override
     {
         return type_index;
     }
-    [[nodiscard]] size_t getSize() const override { return size; }
-    [[nodiscard]] String str() const override
+    size_t getSize() const override { return size; }
+    String str() const override
     {
         WriteBufferFromOwnString buf;
         writeChar(static_cast<char>(endianness), buf);
@@ -133,10 +133,10 @@ public:
         type_index = NumpyDataTypeIndex::String;
     }
 
-    [[nodiscard]] NumpyDataTypeIndex getTypeIndex() const override { return type_index; }
-    [[nodiscard]] size_t getSize() const override { return size; }
+    NumpyDataTypeIndex getTypeIndex() const override { return type_index; }
+    size_t getSize() const override { return size; }
     void setSize(size_t size_) override { size = size_; }
-    [[nodiscard]] String str() const override
+    String str() const override
     {
         WriteBufferFromOwnString buf;
         writeChar(static_cast<char>(endianness), buf);
@@ -158,8 +158,8 @@ public:
         type_index = NumpyDataTypeIndex::Unicode;
     }
 
-    [[nodiscard]] NumpyDataTypeIndex getTypeIndex() const override { return type_index; }
-    [[nodiscard]] size_t getSize() const override { return size * 4; }
+    NumpyDataTypeIndex getTypeIndex() const override { return type_index; }
+    size_t getSize() const override { return size * 4; }
 private:
     size_t size;
 };

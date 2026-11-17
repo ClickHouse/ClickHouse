@@ -230,7 +230,7 @@ std::string ExternalDictionariesLoader::getDictionaryLayoutType(const std::strin
 
 void ExternalDictionariesLoader::assertDictionaryStructureExists(const std::string & dictionary_name, ContextPtr query_context) const
 {
-    (void)getDictionaryStructure(dictionary_name, query_context);
+    getDictionaryStructure(dictionary_name, query_context);
 }
 
 QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr query_context) const
