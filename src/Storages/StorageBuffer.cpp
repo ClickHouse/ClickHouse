@@ -2252,6 +2252,8 @@ If the set of columns in the Buffer table does not match the set of columns in a
 If the types do not match for one of the columns in the Buffer table and a subordinate table, an error message is entered in the server log, and the buffer is cleared.
 The same happens if the subordinate table does not exist when the buffer is flushed.
 
+Buffered data is flushed on behalf of the user who inserted it. An `INSERT` into a Buffer table therefore requires the `INSERT` privilege on the destination table and on every table the data is forwarded to, such as the destination of a nested Buffer table, the target of an `Alias` table, or the table of a local shard of a `Distributed` table. The definers of the materialized views that write the data further need the privilege on their target tables, as for a direct `INSERT`. Otherwise the `INSERT` fails. If the user loses the privilege before the data is flushed, the data is not written: it is dropped, and an error message is entered in the server log.
+
 If the server is restarted abnormally, the data in the buffer is lost.
 
 `FINAL` and `SAMPLE` do not work correctly for Buffer tables. These conditions are passed to the destination table but are not used for processing data in the buffer. If these features are required, we recommend only using the Buffer table for writing while reading from the destination table.
