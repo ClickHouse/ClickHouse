@@ -31,6 +31,7 @@
 #include <Columns/IColumn.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime.h>
@@ -1036,16 +1037,28 @@ public:
                     break;
                 }
 
-                // Fallback to original conversion if string parsing fails
-                // This ensures backward compatibility and robustness
-                value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DecimalType>>(element.getDouble(), scale);
+                /// Use the non-throwing conversion so that an out-of-range number degrades to the default value,
+                /// matching the `STRING` case below and the best-effort contract of `JSONExtract`.
+                if (!tryConvertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DecimalType>>(element.getDouble(), scale, value))
+                {
+                    error = fmt::format("cannot convert double value {} to Decimal", element.getDouble());
+                    return false;
+                }
                 break;
             }
             case ElementType::UINT64:
-                value = convertToDecimal<DataTypeNumber<UInt64>, DataTypeDecimal<DecimalType>>(element.getUInt64(), scale);
+                if (!tryConvertToDecimal<DataTypeNumber<UInt64>, DataTypeDecimal<DecimalType>>(element.getUInt64(), scale, value))
+                {
+                    error = fmt::format("cannot convert UInt64 value {} to Decimal", element.getUInt64());
+                    return false;
+                }
                 break;
             case ElementType::INT64:
-                value = convertToDecimal<DataTypeNumber<Int64>, DataTypeDecimal<DecimalType>>(element.getInt64(), scale);
+                if (!tryConvertToDecimal<DataTypeNumber<Int64>, DataTypeDecimal<DecimalType>>(element.getInt64(), scale, value))
+                {
+                    error = fmt::format("cannot convert Int64 value {} to Decimal", element.getInt64());
+                    return false;
+                }
                 break;
             case ElementType::STRING:
             {
@@ -1245,9 +1258,20 @@ public:
             switch (element.type())
             {
                 case ElementType::DOUBLE:
-                    value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<Time64>>(element.getDouble(), scale);
+                    /// Use the non-throwing conversion so that an out-of-range number degrades to the default value.
+                    if (!tryConvertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<Time64>>(element.getDouble(), scale, value))
+                    {
+                        error = fmt::format("cannot convert double value {} to Time64", element.getDouble());
+                        return false;
+                    }
                     break;
                 case ElementType::UINT64:
+                    /// Ticks above the `Int64` range would wrap into a negative time.
+                    if (element.getUInt64() > static_cast<UInt64>(std::numeric_limits<Time64::NativeType>::max()))
+                    {
+                        error = fmt::format("cannot convert UInt64 value {} to Time64", element.getUInt64());
+                        return false;
+                    }
                     value.value = element.getUInt64();
                     break;
                 case ElementType::INT64:
@@ -3035,7 +3059,7 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
     switch (type->getTypeId())
     {
         case TypeIndex::UInt8:
-            return std::make_unique<NumericNode<JSONParser, UInt8>>(isBool(type));
+            return std::make_unique<NumericNode<JSONParser, UInt8>>(isBool(type) || isSimpleAggregateFunctionOfBool(*type));
         case TypeIndex::UInt16:
             return std::make_unique<NumericNode<JSONParser, UInt16>>();
         case TypeIndex::UInt32:
@@ -3112,7 +3136,8 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             switch (dictionary_type->getTypeId())
             {
                 case TypeIndex::UInt8:
-                    return std::make_unique<LowCardinalityNumericNode<JSONParser, UInt8>>(is_nullable, isBool(type));
+                    return std::make_unique<LowCardinalityNumericNode<JSONParser, UInt8>>(
+                        is_nullable, isBool(dictionary_type) || isSimpleAggregateFunctionOfBool(*dictionary_type));
                 case TypeIndex::UInt16:
                     return std::make_unique<LowCardinalityNumericNode<JSONParser, UInt16>>(is_nullable);
                 case TypeIndex::UInt32:
