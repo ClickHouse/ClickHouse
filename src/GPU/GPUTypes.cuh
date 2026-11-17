@@ -27,6 +27,35 @@ __host__ inline void checkCuda(cudaError_t status, const char * message)
 
 __host__ bool isClickHouseException(const std::exception & exception);
 
+/// A view of an array of the host that the code of both standard libraries reads: `std::span` of one is not of the other.
+template <typename T>
+struct GPUSpan
+{
+    const T * values = nullptr;
+    size_t count = 0;
+
+    __host__ GPUSpan() = default;
+
+    __host__ GPUSpan(const T * values_, size_t count_)
+        : values(values_), count(count_)
+    {
+    }
+
+    template <typename Container, typename = typename Container::value_type>
+    __host__ GPUSpan(const Container & container) /// NOLINT
+        : values(container.data()), count(container.size())
+    {
+    }
+
+    __host__ const T & operator[](size_t index) const { return values[index]; }
+
+    __host__ size_t size() const { return count; }
+    __host__ bool empty() const { return count == 0; }
+
+    __host__ const T * begin() const { return values; }
+    __host__ const T * end() const { return values + count; }
+};
+
 enum class GPUElementType : int
 {
     UInt8 = 0,
@@ -40,6 +69,28 @@ enum class GPUElementType : int
     Float32 = 8,
     Float64 = 9,
     String = 10,
+};
+
+enum class GPUAggregationKind : int
+{
+    Sum = 0,
+    Min = 1,
+    Max = 2,
+    /// Of the rows, of no column. Only in a `GROUP BY`.
+    Count = 3,
+    /// `avg`, into a `Float64`. Only in a `GROUP BY`.
+    Mean = 4,
+};
+
+/// One aggregate of a `GROUP BY`: of the value column `column`, or of no column for `GPUAggregationKind::Count`, into a
+/// column of `result_type`.
+struct GPUGroupByAggregate
+{
+    static constexpr uint32_t no_column = ~uint32_t{0};
+
+    GPUAggregationKind aggregation;
+    uint32_t column;
+    GPUElementType result_type;
 };
 
 enum class GPUCodec : int

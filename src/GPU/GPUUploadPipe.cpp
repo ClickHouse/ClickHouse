@@ -202,7 +202,7 @@ ColumnUploadPipe::ColumnUploadPipe(const IDataType & type, size_t stage_bytes_)
 }
 
 ColumnUploadPipe::ColumnUploadPipe(const IDataType & type, size_t stage_bytes_, cuda::stream_ref stream_)
-    : column_type(columnTypeOrThrow(type))
+    : column_type(uploadTypeOrThrow(type))
     , stage_bytes(stage_bytes_)
     , stream(stream_)
     , device(deviceColumnFor(column_type, stream))
