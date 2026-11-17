@@ -598,7 +598,7 @@ static ColumnPtr arrayWithSiblingOffsets(const ColumnWithTypeAndName & sibling, 
     auto elements = array_type->getNestedType()
         ->createColumnConstWithDefaultValue(offset_data.empty() ? 0 : offset_data.back())
         ->convertToFullColumnIfConst();
-    return ColumnArray::create(std::move(elements), offsets);
+    return ColumnArray::create(elements, offsets);
 }
 
 /// Columns this statement materializes, parents before a default that reads them or their subcolumns.
@@ -635,7 +635,7 @@ static NamesAndTypesList materializationOrder(const NamesAndTypesList & material
                 continue;
 
             const auto parent_column = columns.tryGetColumn(GetColumnsOptions::All, parent);
-            if (parent_column && parent_column->type->tryGetSubcolumnType(String(subcolumn_name)))
+            if (parent_column && parent_column->type->tryGetSubcolumnType(subcolumn_name))
                 return parent;
         }
 
@@ -839,7 +839,7 @@ static Block logicalDefaultInputs(
                 filled = physical->type->createColumnConstWithDefaultValue(rows)->convertToFullColumnIfConst();
             }
 
-            logical.insert({std::move(filled), physical->type, name});
+            logical.insert({filled, physical->type, name});
         }
     }
 
