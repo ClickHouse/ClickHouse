@@ -387,12 +387,9 @@ VectorWithMemoryTracking<PuffinBlob> parseFooterJSON(const String & footer_json,
         }
         else
         {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Puffin blob {}: unsupported blob type '{}', only '{}' is supported",
-                i,
-                blob.type,
-                PUFFIN_DELETION_VECTOR_BLOB_TYPE);
+            parseBlobProperties(blob_obj, blob, i, /*required=*/false);
+            if (blob_obj->has("compression-codec") && !blob_obj->isNull("compression-codec"))
+                blob.compression_codec = requireBlobMetadataString(blob_obj, "compression-codec", i);
         }
 
         requireBlobMetadataField(blob_obj, "fields", i);
@@ -908,6 +905,16 @@ Chunk PuffinInputFormat::read()
     {
         blob_index = 0;
         footer = readPuffinFooter(*in, seekable_read);
+        for (size_t i = 0; i < footer.blobs.size(); ++i)
+        {
+            if (footer.blobs[i].type != PUFFIN_DELETION_VECTOR_BLOB_TYPE)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Puffin blob {}: unsupported blob type '{}', only '{}' is supported",
+                    i,
+                    footer.blobs[i].type,
+                    PUFFIN_DELETION_VECTOR_BLOB_TYPE);
+        }
         if (!need_deleted_rows)
         {
             footer.data.clear();
@@ -920,14 +927,6 @@ Chunk PuffinInputFormat::read()
     {
         const size_t current_blob_index = blob_index;
         const auto & blob = footer.blobs[blob_index++];
-
-        if (blob.type != PUFFIN_DELETION_VECTOR_BLOB_TYPE)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Puffin blob {}: unexpected blob type '{}', only '{}' is supported",
-                current_blob_index,
-                blob.type,
-                PUFFIN_DELETION_VECTOR_BLOB_TYPE);
 
         const auto & referenced_data_file = blob.properties.at("referenced-data-file");
 
@@ -1021,7 +1020,7 @@ void registerInputFormatPuffin(FormatFactory & factory)
 Special input format for reading [Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/) file footer metadata.
 It outputs one row per blob entry from the footer `BlobMetadata` list.
 
-`deletion-vector-v1` is the only supported blob type: a file containing any other blob type (for example `apache-datasketches-theta-v1`) is rejected.
+Blobs of every type are listed (for example the `apache-datasketches-theta-v1` blobs of Iceberg statistics files). A `deletion-vector-v1` blob must also follow the rules of that blob type: it has the `referenced-data-file` and `cardinality` properties and no `compression-codec`.
 
 Fixed output columns:
 - `blob_type` (`String`) - blob type, for example `deletion-vector-v1`
