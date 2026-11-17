@@ -273,6 +273,8 @@ StoragePtr TableFunctionURL::executeImpl(
         ContextMutablePtr delegate_context = Context::createCopy(context);
         delegate_context->setSetting("parallel_replicas_for_cluster_engines", false);
 
+        /// The delegate creates the storage, so it needs the `PARTITION BY` expression to write partitions.
+        delegate->setPartitionBy(partition_by);
         return delegate->execute(
             ast_function,
             delegate_context,
@@ -327,12 +329,6 @@ bool TableFunctionURL::hasUnreplicatedTableDataOnDisk() const
     if (is_relative_url)
         return true;
     return delegate ? delegate->hasUnreplicatedTableDataOnDisk() : ITableFunctionFileLike::hasUnreplicatedTableDataOnDisk();
-}
-
-void TableFunctionURL::setPartitionBy(const ASTPtr & partition_by_)
-{
-    if (delegate)
-        delegate->setPartitionBy(partition_by_);
 }
 
 StoragePtr TableFunctionURL::getStorage(
@@ -500,9 +496,6 @@ std::optional<String> TableFunctionURL::tryGetFormatFromFirstArgument()
 void registerTableFunctionURL(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionURL>({.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 `url` function creates a table from the `URL` with given `format` and `structure`.
 
 `url` function may be used in `SELECT` and `INSERT` queries on data in [URL](/reference/engines/table-engines/special/url) tables.
