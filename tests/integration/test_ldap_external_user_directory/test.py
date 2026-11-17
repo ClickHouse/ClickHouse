@@ -320,3 +320,51 @@ def test_mapped_role_with_legacy_escaped_name(ldap_cluster):
         )
         instance1.query("SYSTEM RELOAD USERS", user="common_user", password="qwerty")
         delete_ldap_group(ldap_cluster, group_cn=group_cn.replace("\\", "\\\\"))
+
+
+def test_mapped_role_with_legacy_escaped_name_defined_after_login(ldap_cluster):
+    # The user logs in while the role `ldap.late.role` is not defined yet, so the legacy escaped name
+    # `ldap\.late\.role` mapped from LDAP cannot be resolved. When the role is added to `users.xml`
+    # later, the notification about it carries the real name of the role, and the role must be granted.
+    group_cn = "clickhouse-ldap\\.late\\.role"
+    ldif = [
+        "dn: cn=" + group_cn.replace("\\", "\\\\") + ",dc=example,dc=org",
+        "objectClass: top",
+        "objectClass: groupOfNames",
+        "member: cn=johndoe,ou=users,dc=example,dc=org",
+    ]
+    code, (stdout, stderr) = ldap_cluster.ldap_container.exec_run(
+        [
+            "sh",
+            "-c",
+            'printf "%s\\n" "$@" | ldapadd -H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}'.format(
+                host=ldap_cluster.ldap_host,
+                port=ldap_cluster.ldap_port,
+                admin_bind_dn=LDAP_ADMIN_BIND_DN,
+                admin_password=LDAP_ADMIN_PASSWORD,
+            ),
+            "sh",
+        ]
+        + ldif,
+        demux=True,
+    )
+    logging.debug(f"ldapadd code:{code} stdout:{stdout}, stderr:{stderr}")
+    assert code == 0
+
+    users_xml = "/etc/clickhouse-server/users.d/users.xml"
+    late_role = "<ldap.late.role><grants><query>GRANT SELECT ON system.one</query></grants></ldap.late.role>"
+    try:
+        assert instance1.query(
+            "SELECT role_name FROM system.current_roles", user="johndoe", password="qwertz"
+        ) == ""
+
+        instance1.replace_in_config(users_xml, "<ldap.mapped.role/>", "<ldap.mapped.role/>" + late_role)
+        instance1.query("SYSTEM RELOAD USERS", user="common_user", password="qwerty")
+
+        assert instance1.query(
+            "SELECT role_name FROM system.current_roles", user="johndoe", password="qwertz"
+        ) == TSV([["ldap.late.role"]])
+    finally:
+        instance1.replace_in_config(users_xml, "<ldap.mapped.role/>" + late_role, "<ldap.mapped.role/>")
+        instance1.query("SYSTEM RELOAD USERS", user="common_user", password="qwerty")
+        delete_ldap_group(ldap_cluster, group_cn=group_cn.replace("\\", "\\\\"))

@@ -53,6 +53,7 @@ private: // IAccessStorage implementations.
     void setConfiguration(const Poco::Util::AbstractConfiguration & config, const String & prefix);
     void processRoleChange(const UUID & id, const AccessEntityPtr & entity);
 
+    void resolvePendingRoleAliasesNoLock(const UUID & role_id, const String & role_name);
     void applyRoleChangeNoLock(bool grant, const UUID & role_id, const String & role_name);
     void assignRolesNoLock(User & user, const LDAPClient::SearchResultsList & external_roles) const;
     void updateAssignedRolesNoLock(const UUID & id, const String & user_name, const LDAPClient::SearchResultsList & external_roles) const;

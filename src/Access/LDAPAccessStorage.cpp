@@ -120,6 +120,7 @@ void LDAPAccessStorage::processRoleChange(const UUID & id, const AccessEntityPtr
         }
         else // Added a role.
         {
+            resolvePendingRoleAliasesNoLock(id, new_role_name);
             applyRoleChangeNoLock(true /* grant */, id, new_role_name);
         }
     }
@@ -129,6 +130,41 @@ void LDAPAccessStorage::processRoleChange(const UUID & id, const AccessEntityPtr
         {
             const auto & old_role_name = it->second;
             applyRoleChangeNoLock(false /* revoke */, id, old_role_name);
+        }
+    }
+}
+
+
+void LDAPAccessStorage::resolvePendingRoleAliasesNoLock(const UUID & role_id, const String & role_name)
+{
+    // A mapped role name which could not be resolved when the user logged in (because the role did not exist yet)
+    // is kept as is in `users_per_roles` and `roles_per_users`. It can be an alternative spelling of the real name
+    // of the role being added now, e.g. `UsersConfigAccessStorage` resolves the legacy escaped name `my\.role` to
+    // the role `my.role` defined in `users.xml`. Re-key such names by the real name of the role, so that the role
+    // is granted to the users below. A name which resolves to another role (e.g. a SQL role literally named
+    // `my\.role`) is kept as is.
+    std::vector<String> aliases;
+    for (const auto & [mapped_role_name, user_names] : users_per_roles)
+    {
+        if (mapped_role_name == role_name || granted_role_ids.contains(mapped_role_name))
+            continue;
+
+        if (access_control.find<Role>(mapped_role_name) == role_id)
+            aliases.push_back(mapped_role_name);
+    }
+
+    for (const auto & alias : aliases)
+    {
+        auto node = users_per_roles.extract(alias);
+        auto & real_name_users = users_per_roles[role_name];
+        for (const auto & user_name : node.mapped())
+        {
+            real_name_users.insert(user_name);
+            if (auto it = roles_per_users.find(user_name); it != roles_per_users.end())
+            {
+                it->second.erase(alias);
+                it->second.insert(role_name);
+            }
         }
     }
 }
