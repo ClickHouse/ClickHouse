@@ -3650,11 +3650,11 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             {
                 for (const auto * other_table_expression : getTableExpressions(*select_query_hint))
                 {
-                    DatabaseAndTableWithAlias table(*other_table_expression, "");
-                    if (!table.alias.empty())
-                        table_names.insert(table.alias);
-                    if (!table.table.empty())
-                        table_names.insert(table.table);
+                    DatabaseAndTableWithAlias other_table(*other_table_expression, "");
+                    if (!other_table.alias.empty())
+                        table_names.insert(other_table.alias);
+                    if (!other_table.table.empty())
+                        table_names.insert(other_table.table);
                 }
             }
 
