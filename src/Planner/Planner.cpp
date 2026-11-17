@@ -680,6 +680,8 @@ void Planner::buildPlanForUnionNode()
     bool has_unbounded_arm = std::ranges::any_of(query_plans, [](const auto & plan) { return hasUnboundedSource(*plan); });
     if (has_unbounded_arm && union_mode != SelectUnionMode::UNION_ALL && union_mode != SelectUnionMode::UNION_DISTINCT)
         throw Exception(ErrorCodes::ILLEGAL_STREAM, "INTERSECT and EXCEPT are not supported over an unbounded STREAM");
+    if (has_unbounded_arm && settings[Setting::use_query_cache])
+        throw Exception(ErrorCodes::ILLEGAL_STREAM, "The setting use_query_cache is not supported over an unbounded STREAM");
 
     Block union_common_header = buildCommonHeaderForUnion(
         query_plans_headers, union_mode, union_node.getContext()->getSettingsRef()[Setting::use_variant_as_common_type]);
@@ -763,7 +765,7 @@ void Planner::buildPlanForUnionNode()
         addBuildSubqueriesForMaterializedCTEsIfNeeded(query_plan, select_query_options, materialized_ctes);
     }
 
-    if (should_cache && !has_unbounded_arm)
+    if (should_cache)
         addStreamInQueryResultCacheStepIfNeeded(
             query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk,
             /* skip_context_check = */ !can_use_query_result_cache);
