@@ -246,6 +246,7 @@ public:
                         size_t limit, int nan_direction_hint, Permutation & res) const override;
     void updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const override;
+    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const override;
 
     size_t byteSize() const override
     {

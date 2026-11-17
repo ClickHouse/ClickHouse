@@ -176,6 +176,11 @@ void ColumnConst::updatePermutation(PermutationSortDirection /*direction*/, Perm
 {
 }
 
+size_t ColumnConst::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int /*nan_direction_hint*/) const
+{
+    return begin < end ? end : begin;
+}
+
 void ColumnConst::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
     UInt32 value = 0;
