@@ -393,6 +393,7 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
 
         row[i] = next_value;
         initUsingFrom(i + 1);
+        from_key.reset();
 
         value_changed = true;
         return true;
@@ -427,26 +428,21 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     row[pos] = next_value;
     if (equals(row[pos], next_original_row[pos]))
     {
+        setKeysAfter(pos, next_original_row);
+
         bool is_less = false;
         for (size_t i = pos + 1; i < row_size; ++i)
-        {
-            const auto & descr = getFillDescription(i);
-            if (!descr.fill_from.isNull())
-                row[i] = descr.fill_from;
-            else
-                row[i] = next_original_row[i];
-
             is_less |= (
                 (next_original_row[i].isNull() || less(row[i], next_original_row[i], getDirection(i))) &&
                 (constraints[i].isNull() || less(row[i], constraints[i], getDirection(i)))
             );
-        }
 
         value_changed = true;
         return is_less;
     }
 
     initUsingFrom(pos + 1);
+    from_key.reset();
 
     value_changed = true;
     return true;
@@ -470,20 +466,14 @@ bool FillingRow::shift(const FillingRow & next_original_row, bool& value_changed
 
         if (equals(row[pos], next_original_row[pos]))
         {
+            setKeysAfter(pos, next_original_row);
+
             bool is_less = false;
             for (size_t i = pos + 1; i < size(); ++i)
-            {
-                const auto & descr = getFillDescription(i);
-                if (!descr.fill_from.isNull())
-                    row[i] = descr.fill_from;
-                else
-                    row[i] = next_original_row[i];
-
                 is_less |= (
                     (next_original_row[i].isNull() || less(row[i], next_original_row[i], getDirection(i))) &&
                     (constraints[i].isNull() || less(row[i], constraints[i], getDirection(i)))
                 );
-            }
 
             logDebug("is less: {}", is_less);
 
@@ -493,6 +483,7 @@ bool FillingRow::shift(const FillingRow & next_original_row, bool& value_changed
         else
         {
             initUsingTo(/*from_pos=*/pos + 1);
+            from_key.reset();
 
             value_changed = false;
             return false;
@@ -534,6 +525,23 @@ void FillingRow::initUsingTo(size_t from_pos)
 {
     for (size_t i = from_pos; i < sort_description.size(); ++i)
         row[i] = getFillDescription(i).fill_to;
+}
+
+void FillingRow::setKeysAfter(size_t pos, const FillingRow & original_row)
+{
+    from_key.reset();
+    for (size_t i = pos + 1; i < size(); ++i)
+    {
+        const Field & fill_from = getFillDescription(i).fill_from;
+        if (!fill_from.isNull())
+        {
+            row[i] = fill_from;
+            if (!from_key && !equals(fill_from, original_row[i]))
+                from_key = i;
+        }
+        else
+            row[i] = from_key ? Field() : original_row[i];
+    }
 }
 
 /// The exact sum of a value and a numeric step, in a type wide enough to hold it, or Null for the types without a

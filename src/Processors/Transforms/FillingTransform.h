@@ -6,8 +6,6 @@
 #include <Interpreters/FillingRow.h>
 #include <Processors/ISimpleTransform.h>
 
-#include <optional>
-
 
 namespace DB
 {
@@ -103,9 +101,6 @@ private:
     FillingRow filling_row; /// Current row, which is used to fill gaps.
     FillingRow next_row; /// Row to which we need to generate filling rows.
     bool filling_row_inserted = false;
-    /// While `filling_row` is the row the preamble of the range set to the `FROM` values from this key on, not inserted
-    /// or changed since: its later keys without `FROM` have no value yet.
-    std::optional<size_t> filling_row_from_key;
 
     using Positions = VectorWithMemoryTracking<size_t>;
     Positions fill_column_positions;

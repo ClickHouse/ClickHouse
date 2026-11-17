@@ -60,3 +60,39 @@ ORDER BY a WITH FILL FROM 1, b WITH FILL;
 
 SELECT * FROM values('a Int64, b Int64, c Int64, d Int64', (1, -3, 7, 1), (1, 10, -2, 2))
 ORDER BY a WITH FILL, b WITH FILL FROM 10, c WITH FILL, d WITH FILL FROM 0;
+
+-- After a later FROM that differs from the original row, a key without FROM takes the values of its own group's first row.
+SELECT * FROM values('a Int64, b Int64, c Int64, d Int64', (0, 10, 5, 5), (1, -3, 7, 1), (1, 10, 3, 8))
+ORDER BY a WITH FILL, b WITH FILL FROM 10, c WITH FILL, d WITH FILL FROM 5;
+
+SELECT * FROM values('a Int64, b Int64, c Int64, d Int64', (0, 10, 5, 5), (1, -3, 7, 1), (1, 10, 9, 8))
+ORDER BY a WITH FILL, b WITH FILL FROM 10, c WITH FILL, d WITH FILL FROM 5;
+
+SELECT * FROM values('a Int64, b Int64, c Int64, d Int64', (0, 10, 5, 5), (1, -3, 7, 1), (1, 10, 3, 8))
+ORDER BY a WITH FILL TO 3, b WITH FILL FROM 10, c WITH FILL, d WITH FILL FROM 5;
+
+SELECT * FROM values('a Int64, b Int64, c Int64, d Int64', (0, 10, 5, 5), (1, -3, 7, 1), (1, 10, 3, 8))
+ORDER BY a WITH FILL STALENESS 2, b WITH FILL FROM 10, c WITH FILL, d WITH FILL FROM 5;
+
+SELECT * FROM values('a Int64, b Int64, c Int64, d Int64', (0, -10, 5, 5), (1, 3, 7, 1), (1, -10, 3, 8))
+ORDER BY a WITH FILL, b DESC WITH FILL FROM -10, c WITH FILL, d WITH FILL FROM 5;
+
+SELECT * FROM values('a Int64, b Int64, c Int64, d Int64, e Int64', (0, 0, 10, 0, 5), (1, 2, -3, 7, 1), (1, 2, 10, 3, 8))
+ORDER BY a WITH FILL FROM 1, b WITH FILL, c WITH FILL FROM 10, d WITH FILL, e WITH FILL FROM 5;
+
+SELECT * FROM values('a Int64, b Int64, c Int64, d Int64', (0, -5, 5, 5), (1, -3, 7, 1))
+ORDER BY a WITH FILL, b WITH FILL FROM -5, c WITH FILL, d WITH FILL FROM 5;
+
+SELECT * FROM values('a Int64, b Int64, c Int64, d Int64', (0, 10, 5, 5), (5, -3, 7, 1), (5, 10, 3, 8))
+ORDER BY a WITH FILL STALENESS 1, b WITH FILL FROM 10, c WITH FILL, d WITH FILL FROM 5;
+
+SELECT a, b, c, d FROM
+(
+    SELECT [0, 1, 1][number + 1] AS a, [10, -3, 10][number + 1] AS b, [5, 7, 3][number + 1] AS c, [5, 1, 8][number + 1] AS d FROM numbers(3)
+)
+ORDER BY a WITH FILL, b WITH FILL FROM 10, c WITH FILL, d WITH FILL FROM 5
+SETTINGS max_block_size = 1;
+
+SELECT * FROM values('p Int64, a Int64, b Int64, c Int64, d Int64', (8, 0, 10, 5, 5), (8, 1, -3, 7, 1), (8, 1, 10, 3, 8), (9, 0, 10, 5, 5), (9, 1, -3, 7, 1), (9, 1, 10, 4, 7))
+ORDER BY p, a WITH FILL, b WITH FILL FROM 10, c WITH FILL, d WITH FILL FROM 5
+SETTINGS use_with_fill_by_sorting_prefix = 1;

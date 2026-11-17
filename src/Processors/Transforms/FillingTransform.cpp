@@ -1001,7 +1001,7 @@ void FillingTransform::insertFromFillingRow(
         other_column->insertDefault();
 
     filling_row_inserted = true;
-    filling_row_from_key.reset();
+    filling_row.setFromKey({});
 }
 
 static void copyRowFromColumns(const MutableColumnRawPtrs & dest, const Columns & source, size_t row_num)
@@ -1238,7 +1238,7 @@ void FillingTransform::transformRange(
     Block interpolate_block;
     if (new_sorting_prefix)
     {
-        filling_row_from_key.reset();
+        filling_row.setFromKey({});
         logDebug("--- new range ---", range_end);
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
         {
@@ -1249,7 +1249,7 @@ void FillingTransform::transformRange(
             {
                 filling_row.initUsingFrom(i);
                 filling_row_inserted = false;
-                filling_row_from_key = i;
+                filling_row.setFromKey(i);
                 if (less(fill_from, current_value, filling_row.getDirection(i)))
                 {
                     interpolate(result_columns, interpolate_block);
@@ -1291,24 +1291,20 @@ void FillingTransform::transformRange(
 
         logDebug("next_row updated", next_row);
 
-        /// The first original row equal to the filling row up to `filling_row_from_key` is in the group the row was set
-        /// up for: its keys without `FROM` take that row's values, as when `FillingRow::next` reaches a row.
+        /// The first original row equal to the filling row up to `getFromKey` is in the group the row was set up for:
+        /// its keys without `FROM` take that row's values, as when `FillingRow::next` reaches a row.
         /// A copied key equals the original row, so, as in `FillingRow::next`, its TO or STALENESS does not stop the row.
         std::optional<bool> constraints_satisfied_before_copy;
-        if (filling_row_from_key)
+        if (const auto from_key = filling_row.getFromKey())
         {
-            const size_t from_key = *filling_row_from_key;
             bool same_group = true;
-            for (size_t i = 0; i <= from_key && same_group; ++i)
+            for (size_t i = 0; i <= *from_key && same_group; ++i)
                 same_group = equals(filling_row[i], next_row[i]);
 
             if (same_group)
             {
                 constraints_satisfied_before_copy = filling_row.isConstraintsSatisfied();
-                for (size_t i = from_key + 1, size = filling_row.size(); i < size; ++i)
-                    if (filling_row.getFillDescription(i).fill_from.isNull())
-                        filling_row[i] = next_row[i];
-                filling_row_from_key.reset();
+                filling_row.setKeysAfter(*from_key, next_row);
             }
         }
 
@@ -1378,10 +1374,7 @@ void FillingTransform::transformRange(
 
         /// new valid filling row was generated but not inserted, will use it during suffix generation
         if (filling_row_changed)
-        {
             filling_row_inserted = false;
-            filling_row_from_key.reset();
-        }
 
         logDebug("filling_row after", filling_row);
 
