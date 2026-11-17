@@ -215,21 +215,9 @@ namespace Net
         int sendNow(const void * buffer, int length);
         int receiveNow(void * buffer, int length);
         void throwHeldSendError();
-        /// The non-blocking calls of `SocketImpl` for the TLS connection, after its handshake.
-        /// The first call installs a `NonBlockingFilterBIO`; until then, nothing changes.
-        ///
-        /// `sendNow` returns the number of plaintext bytes that OpenSSL accepted. It gives `SSL_write`
-        /// at most one record, and only when no encrypted bytes are queued, so the queue holds at
-        /// most one record and a few control records. The transport socket holds a send error, and
-        /// throttles the encrypted bytes.
-        ///
-        /// `waitForSendOrReceive` reports data that OpenSSL has already decrypted (`SSL_pending`),
-        /// which a `poll` of the descriptor does not see. When the last `SSL_write` wants to read
-        /// (a renegotiation), it waits for data from the peer for the send direction.
-        ///
-        /// A blocking call after them sends the queued bytes first. A shutdown with queued bytes or
-        /// with a held send error closes only the transport: the connection is broken, and its
-        /// `close_notify` would wait for the send timeout.
+        /// The non-blocking calls of `SocketImpl` after the handshake; the first call installs a
+        /// `NonBlockingFilterBIO`. `sendNow` writes one record at a time, only into an empty queue.
+        /// The wait also reports data that OpenSSL has decrypted (`SSL_pending`).
 
 
         void setBioMethod(const BIO_METHOD * method);
@@ -352,19 +340,15 @@ namespace Net
         //// Return max(send, receive) if non zero, otherwise maximum timeout
 
         NonBlockingFilterBIO & nonBlockingFilter();
-        /// Returns the filter of the connection, and installs it on the first call.
+        /// Installs the filter on the first call.
 
         bool holdsSendError() const;
-        /// Returns true when the transport socket holds a send error.
 
         NonBlockingFilterBIO * _nonBlockingFilter = nullptr;
-        /// The filter of the connection, owned by its BIO; null until the first non-blocking call,
-        /// and reset with `_pSSL`.
+        /// Owned by the BIO of `_pSSL`.
         int _nowWriteLength = 0;
-        /// The length of the last `SSL_write` of `sendNow` when it wants to read, or 0. OpenSSL needs
-        /// such a write repeated with the same length.
+        /// The length of an `SSL_write` that wants to read: OpenSSL needs it repeated.
         bool _nowReceiveEnded = false;
-        /// Set when `receiveNow` has reached the end of the stream.
     };
 
 

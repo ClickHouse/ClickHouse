@@ -688,8 +688,7 @@ int SocketImpl::sendNow(const void* buffer, int length)
 	if (_heldSendError != 0) return -1;
 	if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
 
-	/// Waits as for a blocking send: a non-blocking throttle only books the budget, so a send
-	/// that never waits for the throttler would not be slowed down at all.
+	/// A non-blocking throttle only books the budget, and would never slow the send down.
 	throttleSend(length, true);
 
 	int flags = MSG_DONTWAIT;
@@ -754,7 +753,6 @@ void SocketImpl::throwHeldSendError()
 {
 	if (_heldSendError == 0)
 		throw IllegalStateException("No send error is held");
-	/// The same mapping as in `sendBytes`.
 	if (_heldSendError == POCO_ETIMEDOUT)
 		throw TimeoutException();
 	error(_heldSendError);

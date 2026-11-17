@@ -16,27 +16,16 @@ namespace Net
     class SocketImpl;
 
     class NonBlockingFilterBIO
-    /// A filter BIO on top of the transport BIO of a TLS connection. `SecureSocketImpl` uses it for
-    /// `sendNow`, `receiveNow` and `waitForSendOrReceive`.
-    ///
-    /// After `SSL_ERROR_WANT_WRITE`, or after a failed write, OpenSSL allows no other I/O on the
-    /// connection (`SSL_get_error(3)`), so a response that the peer sent before it stopped reading
-    /// could not be read. In the non-blocking mode, the filter sends and receives the encrypted bytes
-    /// with `sendNow` and `receiveNow` of the transport socket. It queues what the socket does not
-    /// accept, and it drops the bytes after a send error, which the socket holds. So OpenSSL never has
-    /// a pending or a failed write, and `SSL_read` stays allowed.
-    ///
-    /// In the blocking mode, the filter passes everything to the next BIO, after the queued bytes, so
-    /// that the stream keeps its order. A read sends the queued bytes too: a peer can wait for them
-    /// before it answers.
-    ///
-    /// The BIO owns the object, and OpenSSL deletes it with the BIO. It is used under the mutex of the
-    /// TLS socket.
+    /// A filter BIO between OpenSSL and the transport socket, for the non-blocking calls of
+    /// `SecureSocketImpl`. OpenSSL allows no I/O after `SSL_ERROR_WANT_WRITE` or a failed write
+    /// (`SSL_get_error(3)`). In the non-blocking mode, the filter sends with `sendNow`, queues what
+    /// does not fit, and drops the bytes after a send error, which the socket holds: OpenSSL never
+    /// sees a pending or a failed write. In the blocking mode, it passes everything to the next BIO,
+    /// after the queued bytes. Owned by its BIO; used under the mutex of the TLS socket.
     {
     public:
         static NonBlockingFilterBIO & install(SSL * ssl, SocketImpl & socket);
-        /// Pushes a filter on top of the BIO of `ssl`, whose handshake is complete.
-        /// `socket` is the transport socket of the connection.
+        /// Pushes a filter on top of the BIO of `ssl` after its handshake.
 
         class NonBlockingScope
         /// Switches the filter to the non-blocking mode for the lifetime of the object.
@@ -53,15 +42,12 @@ namespace Net
         };
 
         bool sendQueued();
-        /// Sends the queued bytes without waiting, in the non-blocking mode.
-        /// Returns true when no bytes are queued any more.
+        /// Sends the queued bytes without waiting. Returns true when the queue is empty.
 
         bool hasQueued() const;
-        /// Returns true when bytes are queued.
 
         void rethrowCaught();
-        /// Throws the exception that a callback caught, if any. A callback must not let an exception
-        /// unwind through OpenSSL, so it stores the exception and fails the operation.
+        /// Throws the exception that a callback stored: it must not unwind through OpenSSL.
 
     private:
         explicit NonBlockingFilterBIO(SocketImpl & socket_);
@@ -76,16 +62,12 @@ namespace Net
         int readNonBlocking(BIO * bio, char * data, int length);
 
         int writeQueuedToNext(BIO * bio);
-        /// Writes the queued bytes to the next BIO. Returns 1 when no bytes are queued any more,
-        /// or -1 when a write fails, with the retry flags of the next BIO.
+        /// Returns 1 when the queue is empty, or -1 with the retry flags of the next BIO.
 
         static constexpr size_t maxQueued = 64 * 1024;
-        /// The callers keep the queue within one record and a few control records. The limit does
-        /// not depend on that: a write over it fails the connection.
+        /// A write over the limit fails the connection.
 
         void queueBytes(const char * data, size_t length);
-        /// Queues the bytes. Throws `SSLException` when the queue would go over `maxQueued`.
-
         void dropQueue();
 
         SocketImpl & socket;

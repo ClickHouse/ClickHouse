@@ -36,17 +36,14 @@ NonBlockingFilterBIO& NonBlockingFilterBIO::install(SSL* ssl, SocketImpl& socket
 	BIO_set_init(filter, 1);
 	BIO_push(filter, transport);
 
-	/// `SSL_set0_rbio` and `SSL_set0_wbio` each take one reference of the filter. They also free
-	/// each reference to the transport BIO that the connection and its record layers hold, so the
-	/// chain takes one more: the transport BIO stays alive as the next BIO of the filter, and the
-	/// last `BIO_free_all` of the filter frees both.
+	/// Each `SSL_set0_*` takes a reference of the filter and frees one of the transport BIO, which
+	/// the extra reference keeps alive as the next BIO of the chain.
 	BIO_up_ref(filter);
 	BIO_up_ref(transport);
 	SSL_set0_rbio(ssl, filter);
 	SSL_set0_wbio(ssl, filter);
 
-	/// `SecureSocketImpl::sendNow` repeats an `SSL_write` that wants to read with the same data,
-	/// which the caller can pass at another address.
+	/// An `SSL_write` that wants to read is repeated with the same data at another address.
 	SSL_set_mode(ssl, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 	return result;
 }
@@ -104,7 +101,6 @@ void NonBlockingFilterBIO::rethrowCaught()
 
 BIO_METHOD* NonBlockingFilterBIO::method()
 {
-	/// Created once and never freed, like the methods of OpenSSL.
 	static BIO_METHOD* const created = []
 	{
 		const int index = BIO_get_new_index();
@@ -146,8 +142,7 @@ int NonBlockingFilterBIO::read(BIO* bio, char* data, int length)
 	if (filter.nonBlocking)
 		return filter.readNonBlocking(bio, data, length);
 
-	/// A failed write of the queued bytes keeps its retry flags: `SSL_read` then reports
-	/// `SSL_ERROR_WANT_WRITE`, and the blocking caller waits until the socket can send.
+	/// With the retry flags of a failed write, `SSL_read` reports `SSL_ERROR_WANT_WRITE`.
 	const int queued = filter.writeQueuedToNext(bio);
 	if (queued <= 0)
 		return queued;
@@ -169,7 +164,7 @@ long NonBlockingFilterBIO::ctrl(BIO* bio, int cmd, long num, void* ptr) // NOLIN
 		BIO_clear_retry_flags(bio);
 		if (filter.nonBlocking)
 		{
-			/// Never waits: what is left goes out with the next operation.
+			/// What is left goes out with the next operation.
 			try
 			{
 				filter.sendQueued();
@@ -191,7 +186,7 @@ long NonBlockingFilterBIO::ctrl(BIO* bio, int cmd, long num, void* ptr) // NOLIN
 #if defined(BIO_CTRL_GET_KTLS_SEND)
 	case BIO_CTRL_GET_KTLS_SEND:
 	case BIO_CTRL_GET_KTLS_RECV:
-		/// The kernel must not encrypt the records: the queued bytes are already encrypted.
+		/// The queued bytes are already encrypted.
 		return 0;
 #endif
 	default:
@@ -218,7 +213,6 @@ int NonBlockingFilterBIO::writeNonBlocking(const char* data, int length)
 		if (sendQueued())
 		{
 			const int sent = socket.sendNow(data, length);
-			/// The socket holds the error: the connection cannot send any more, and the bytes are dropped.
 			if (sent < 0)
 				return length;
 			data += sent;
@@ -250,7 +244,6 @@ int NonBlockingFilterBIO::readNonBlocking(BIO* bio, char* data, int length)
 			BIO_set_retry_read(bio);
 			return -1;
 		}
-		/// The end of the stream.
 		return 0;
 	}
 	catch (...)
@@ -281,8 +274,7 @@ int NonBlockingFilterBIO::writeQueuedToNext(BIO* bio)
 
 void NonBlockingFilterBIO::queueBytes(const char* data, size_t length)
 {
-	/// Fails closed: a "retry write" result would leave OpenSSL with a pending write, after which
-	/// `SSL_read` is not allowed.
+	/// Not a "retry write": it would leave OpenSSL with a pending write.
 	if (queue.size() - queueOffset + length > maxQueued)
 		throw SSLException(Poco::format("The TLS connection has more than %z encrypted bytes that the peer does not read", maxQueued));
 	if (queueOffset > 0)

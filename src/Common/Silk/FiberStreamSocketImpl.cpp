@@ -128,8 +128,7 @@ int FiberStreamSocketImpl::waitForSendOrReceive(Poco::Timespan & timeout, int mo
     const Poco::Timestamp::TimeDiff timeout_us = timeout.totalMicroseconds();
     if (timeout_us == 0)
     {
-        /// Only a check. A `poll` without a timeout does not block the thread, and a fiber poll
-        /// can complete after a zero timeout even when the socket is ready.
+        /// A fiber poll can complete after a zero timeout even when the socket is ready.
         pollfd fd{.fd = sockfd(), .events = static_cast<Int16>(events), .revents = 0};
         int r = 0;
         do
@@ -176,7 +175,6 @@ int FiberStreamSocketImpl::waitForSendOrReceive(Poco::Timespan & timeout, int mo
     if (triggered & POLLNVAL)
         throw Poco::Net::InvalidSocketException();
     int ready = 0;
-    /// A closed or failed connection is ready for both directions, as for `SocketImpl`.
     if (triggered & (POLLERR | POLLHUP))
         ready = mode & (SELECT_READ | SELECT_WRITE);
     if (triggered & POLLIN)

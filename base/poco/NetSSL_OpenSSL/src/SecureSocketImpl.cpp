@@ -366,8 +366,7 @@ void SecureSocketImpl::shutdown()
 	ScopedLock lock(*_mutex);
 	if (_pSSL)
 	{
-		/// After a non-blocking send, the connection is broken when encrypted bytes are still queued
-		/// or the transport holds a send error: a `close_notify` would wait for the send timeout.
+		/// A `close_notify` behind queued bytes or a send error would wait for the send timeout.
 		const bool brokenByNonBlockingSend = _nonBlockingFilter && (_nonBlockingFilter->hasQueued() || holdsSendError());
 		if (_fatalError || brokenByNonBlockingSend)
 		{
@@ -565,8 +564,7 @@ int SecureSocketImpl::waitForSendOrReceive(Poco::Timespan& timeout, int mode)
 	/// A write that wants to read can go on only when data from the peer arrives.
 	const bool sendWaitsForData = wantSend && _nowWriteLength != 0;
 
-	/// `SSL_has_pending` is not used: it is also true for a part of a record, which cannot be
-	/// read before the rest arrives, and the caller would not wait at all.
+	/// Not `SSL_has_pending`: it is true for a part of a record too, and the caller would spin.
 	if (wantReceive && SSL_pending(_pSSL) > 0)
 	{
 		int ready = SocketImpl::SELECT_READ;
@@ -607,7 +605,6 @@ int SecureSocketImpl::sendNow(const void* buffer, int length)
 		return -1;
 
 	NonBlockingFilterBIO::NonBlockingScope scope(filter);
-	/// New data waits until the queue is empty, so that the queue holds at most one record.
 	if (!filter.sendQueued())
 		return 0;
 	if (holdsSendError())
@@ -634,7 +631,7 @@ int SecureSocketImpl::sendNow(const void* buffer, int length)
 	if (result.rc > 0)
 	{
 		_nowWriteLength = 0;
-		/// The filter dropped the bytes after a send error of the transport.
+		/// The filter dropped the bytes after a transport error.
 		return holdsSendError() ? -1 : result.rc;
 	}
 	if (result.sslError == SSL_ERROR_WANT_READ)
