@@ -9,7 +9,6 @@ keywords: ['AWS', 'CloudWatch', 'OTEL', 'ClickHouse Observability', 'logs']
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 Collect AWS CloudWatch logs with an OpenTelemetry collector and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without configuring AWS access.
@@ -30,7 +29,15 @@ Collect AWS CloudWatch logs with an OpenTelemetry collector and send them to Cli
 
 Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry connection details](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 For the OTLP exporter examples below, set these variables in the terminal where you will run the collector:
 
@@ -318,7 +325,15 @@ Keep the terminal open while the collector reads and exports the file. Check its
 
 Open **Search**, select your **Logs** source, filter for `ServiceName:cloudwatch-demo`, and select **Last 2 days**. Expand a log to inspect its body, severity, log group, and stream. Stop the demo collector with **Ctrl+C** after verifying the data.
 
-<Image img="/images/clickstack/observability-cloudwatch-demo-logs.png" alt="CloudWatch demo logs in ClickHouse Observability"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![CloudWatch demo logs in ClickHouse Observability](/images/clickstack/observability-cloudwatch-demo-logs.png)
+
+</Frame>
+
+</div>
 
 </Step>
 </Steps>
@@ -334,14 +349,30 @@ Open **Search**, select your **Logs** source, filter for `ServiceName:cloudwatch
 2. Upload `cloudwatch-logs-dashboard.json`.
 3. Map the charts to your **Logs** source and click **Finish Import**.
 
-<Image img="/images/clickstack/observability-import-dashboard.png" alt="Import dashboard button"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Import dashboard button](/images/clickstack/observability-import-dashboard.png)
+
+</Frame>
+
+</div>
 
 </Step>
 <Step title="View the dashboard" id="view-dashboard">
 
 Filter for `ServiceName:cloudwatch-demo` and select **Last 2 days** for the sample, or filter for `ServiceName:cloudwatch` and select a time range covering your own logs. The dashboard shows log volume, severity, and errors by log group. The demo includes severity values for all panels.
 
-<Image img="/images/clickstack/observability-cloudwatch-dashboard.png" alt="CloudWatch logs dashboard in ClickHouse Observability"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![CloudWatch logs dashboard in ClickHouse Observability](/images/clickstack/observability-cloudwatch-dashboard.png)
+
+</Frame>
+
+</div>
 
 </Step>
 </Steps>

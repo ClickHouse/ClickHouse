@@ -544,6 +544,8 @@ add_object_library(clickhouse_processors_queryplan_profiling_execution Processor
 add_object_library(clickhouse_processors_queryplan_profiling_metrics Processors/QueryPlan/Profiling/Metrics)
 add_object_library(clickhouse_processors_queryplan_profiling_time Processors/QueryPlan/Profiling/Time)
 add_object_library(clickhouse_processors_queryplan_profiling_analysis Processors/QueryPlan/Profiling/Analysis)
+add_object_library(clickhouse_processors_queryplan_profiling_render Processors/QueryPlan/Profiling/Render)
+add_object_library(clickhouse_processors_queryplan_profiling_capture Processors/QueryPlan/Profiling/Capture)
 add_object_library(clickhouse_processors_queryplan_streaming Processors/QueryPlan/Streaming)
 add_object_library(clickhouse_processors_queryplan_optimizations_cascades Processors/QueryPlan/Optimizations/Cascades)
 add_object_library(clickhouse_processors_queryplan_optimizations_cascades_rules Processors/QueryPlan/Optimizations/Cascades/Rules)
@@ -1147,10 +1149,6 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::parquet_format)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet_format)
-    endif()
-
-    if (TARGET ch_contrib::parquet)
-        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
     endif()
 
     if (TARGET ch_contrib::arrow_ipc_metadata)

@@ -16,7 +16,7 @@ namespace DB
 class ParserDropAccessEntityQuery final : public IParserBase
 {
 protected:
-    const char * getName() const override { return "DROP access entity query"; }
+    [[nodiscard]] const char * getName() const override { return "DROP access entity query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 }
