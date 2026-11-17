@@ -85,7 +85,6 @@
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageAlias.h>
-#include <Storages/StorageDistributed.h>
 #include <Storages/StorageFile.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMerge.h>

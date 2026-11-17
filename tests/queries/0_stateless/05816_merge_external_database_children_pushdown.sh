@@ -70,6 +70,12 @@ CREATE TABLE t_my (id Nullable(Int64), v Nullable(String))
     SETTINGS connect_timeout = 100, connection_wait_timeout = 100;
 CREATE TABLE m_my (id Nullable(Int64), v Nullable(String)) ENGINE = Merge(currentDatabase(), '^t_(l|my)\$');
 CREATE TABLE t_s (id Nullable(Int64), v Nullable(String)) ENGINE = SQLite('${DB_PATH}', 'src');
+DROP USER IF EXISTS pg_self_${CLICKHOUSE_DATABASE};
+CREATE USER pg_self_${CLICKHOUSE_DATABASE} IDENTIFIED WITH plaintext_password BY 'pgpass';
+GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO pg_self_${CLICKHOUSE_DATABASE};
+CREATE TABLE t_pg (id Nullable(Int64), v Nullable(String))
+    ENGINE = PostgreSQL('localhost:${CLICKHOUSE_PORT_POSTGRESQL}', '${CLICKHOUSE_DATABASE}', 't_l', 'pg_self_${CLICKHOUSE_DATABASE}', 'pgpass');
+CREATE TABLE m_pg (id Nullable(Int64), v Nullable(String)) ENGINE = Merge(currentDatabase(), '^t_(l|pg)\$');
 "
 
 echo 'MergeTree and MySQL:'
@@ -77,9 +83,22 @@ ${CLICKHOUSE_CLIENT} --send_logs_level=trace --query "
 SELECT id, v FROM m_my WHERE id = 5 FORMAT Null;
 " 2>&1 | grep -oE 'Query: SELECT .* FROM `[^`]+`\.`t_l`.*$'
 
+echo 'MergeTree and PostgreSQL:'
+${CLICKHOUSE_CLIENT} --send_logs_level=trace --query "
+SELECT id, v FROM m_pg WHERE id = 5 FORMAT Null;
+" 2>&1 | grep -oE 'Query: SELECT .* FROM "t_l".*$'
+
 # The receiving side of a serialized query plan has no query tree until it analyzes the read itself.
 echo 'Serialized query plan:'
 ${CLICKHOUSE_CLIENT} --query "
 SELECT id, v FROM remote('127.0.0.2', currentDatabase(), t_s) WHERE id = 5
 SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0;
 "
+
+echo 'Serialized query plan, strict mode:'
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "
+SELECT id, v FROM remote('127.0.0.2', currentDatabase(), t_s) WHERE v LIKE 's%'
+SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0, external_table_strict_query = 1;
+" 2>&1 | grep -c 'INCORRECT_QUERY'
+
+${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS pg_self_${CLICKHOUSE_DATABASE}"
