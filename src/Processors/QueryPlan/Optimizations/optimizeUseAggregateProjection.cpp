@@ -38,6 +38,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageDummy.h>
@@ -617,6 +618,10 @@ struct StatisticsAggregate
 
     const AggregateDescription * aggregate = nullptr;
 
+    /// The aggregates skip NULLs, so over a `Nullable` column a part is answered from the values of
+    /// its non-NULL rows, and needs the NULL count that `basic` statistics record.
+    bool is_nullable = false;
+
     [[nodiscard]] bool isSum() const { return kind == Kind::Sum || kind == Kind::SumAndCount; }
 };
 
@@ -715,7 +720,7 @@ static VectorWithMemoryTracking<StatisticsAggregate> getStatisticsAggregates(
             kind = StatisticsAggregate::Kind::Sum;
         else if (function_name == "avg" || function_name == "sumCount")
             kind = StatisticsAggregate::Kind::SumAndCount;
-        else if (!is_count)
+        else if (function_name != "count")
             return {};
 
         const bool is_min_max = kind == StatisticsAggregate::Kind::Min || kind == StatisticsAggregate::Kind::Max;
@@ -741,17 +746,21 @@ static VectorWithMemoryTracking<StatisticsAggregate> getStatisticsAggregates(
             || !column->type->equals(*aggregate.function->getArgumentTypes().front()))
             return {};
 
-        /// Statistics don't record whether a part contains NULL values, while min/max over
-        /// a Nullable column must skip them, so only plain columns are supported.
-        if (column->type->isNullable() || column->type->lowCardinality())
+        if (column->type->lowCardinality())
             return {};
 
-        /// Like the trivial count optimization, answer `count(column)` of a column that cannot be `NULL` with the number
-        /// of rows (`count(expr)` was declined above, because its argument has to be evaluated, and that can throw).
-        /// The column is kept to check that a part stores it: otherwise a read evaluates its `DEFAULT`, which can throw.
+        /// Only `basic` statistics record the NULL count that the aggregates over a `Nullable` column need.
+        const bool is_nullable = column->type->isNullable();
+        if (is_nullable && !column->statistics.types_to_desc.contains(StatisticsType::Basic))
+            return {};
+
+        /// Like the trivial count optimization, answer `count(column)` with the number of rows, minus the NULL count
+        /// of a `Nullable` column (`count(expr)` was declined above, because its argument has to be evaluated, and that
+        /// can throw). The column is kept to check that a part stores it: otherwise a read evaluates its `DEFAULT`,
+        /// which can throw.
         if (kind == StatisticsAggregate::Kind::Count)
         {
-            result.push_back({.kind = kind, .column_name = node->result_name, .aggregate = &aggregate});
+            result.push_back({.kind = kind, .column_name = node->result_name, .aggregate = &aggregate, .is_nullable = is_nullable});
             continue;
         }
 
@@ -760,7 +769,7 @@ static VectorWithMemoryTracking<StatisticsAggregate> getStatisticsAggregates(
             if (!column->statistics.types_to_desc.contains(StatisticsType::Basic) || !canStatisticsTrackSum(column->type))
                 return {};
 
-            result.push_back({.kind = kind, .column_name = node->result_name, .aggregate = &aggregate});
+            result.push_back({.kind = kind, .column_name = node->result_name, .aggregate = &aggregate, .is_nullable = is_nullable});
             continue;
         }
 
@@ -778,8 +787,9 @@ static VectorWithMemoryTracking<StatisticsAggregate> getStatisticsAggregates(
         result.push_back({
             .kind = kind,
             .column_name = node->result_name,
-            .expected_field_type = column->type->getDefault().getType(),
-            .aggregate = &aggregate});
+            .expected_field_type = removeNullable(column->type)->getDefault().getType(),
+            .aggregate = &aggregate,
+            .is_nullable = is_nullable});
     }
 
     return result;
@@ -1027,6 +1037,8 @@ static Block makeBlockFromStatistics(
     const LoggerPtr & logger)
 {
     VectorWithMemoryTracking<Field> folded_values(stats_aggregates.size());
+    /// The rows the aggregate is computed over: all the rows of the covered parts, less the NULLs of a `Nullable` column.
+    VectorWithMemoryTracking<UInt64> folded_non_null_rows(stats_aggregates.size());
     size_t covered_parts = 0;
     size_t covered_rows = 0;
     size_t covered_marks = 0;
@@ -1035,7 +1047,7 @@ static Block makeBlockFromStatistics(
     /// The columns whose estimates are needed, so that only their statistics are read.
     NameSet required_columns;
     for (const auto & stats_aggregate : stats_aggregates)
-        if (stats_aggregate.kind != StatisticsAggregate::Kind::Count)
+        if (stats_aggregate.kind != StatisticsAggregate::Kind::Count || stats_aggregate.is_nullable)
             required_columns.insert(stats_aggregate.column_name);
 
     auto & parts_with_ranges = remaining_select_result.parts_with_ranges;
@@ -1101,6 +1113,7 @@ static Block makeBlockFromStatistics(
         const auto & part = part_with_ranges.data_part;
 
         VectorWithMemoryTracking<const Field *> part_values(stats_aggregates.size(), nullptr);
+        VectorWithMemoryTracking<UInt64> part_non_null_rows(stats_aggregates.size(), part->rows_count);
         for (size_t i = 0; i < stats_aggregates.size(); ++i)
         {
             const auto & stats_aggregate = stats_aggregates[i];
@@ -1119,7 +1132,7 @@ static Block makeBlockFromStatistics(
                 || !isRepresentationPreservingConversion(part_column->type.get(), metadata_column->type.get()))
                 return false;
 
-            if (stats_aggregate.kind == StatisticsAggregate::Kind::Count)
+            if (stats_aggregate.kind == StatisticsAggregate::Kind::Count && !stats_aggregate.is_nullable)
                 continue;
 
             auto it = estimates.find(stats_aggregate.column_name);
@@ -1131,6 +1144,19 @@ static Block makeBlockFromStatistics(
             /// Statistics that describe a different number of rows than the part cannot be trusted.
             if (estimate.rows_count != part->rows_count)
                 return false;
+
+            if (stats_aggregate.is_nullable)
+            {
+                /// Statistics written before the NULL count was recorded have none.
+                if (!estimate.estimated_null_count || *estimate.estimated_null_count > part->rows_count)
+                    return false;
+
+                part_non_null_rows[i] = part->rows_count - *estimate.estimated_null_count;
+
+                /// A part of NULLs only contributes no value, and records no min/max.
+                if (part_non_null_rows[i] == 0 || stats_aggregate.kind == StatisticsAggregate::Kind::Count)
+                    continue;
+            }
 
             const auto & value = stats_aggregate.isSum() ? estimate.estimated_sum
                 : stats_aggregate.kind == StatisticsAggregate::Kind::Min ? estimate.estimated_min
@@ -1163,6 +1189,9 @@ static Block makeBlockFromStatistics(
             else if (!isNaNField(value) && (is_min ? value < folded : folded < value))
                 folded = value;
         }
+
+        for (size_t i = 0; i < stats_aggregates.size(); ++i)
+            folded_non_null_rows[i] += part_non_null_rows[i];
 
         ++covered_parts;
         covered_rows += part->rows_count;
@@ -1224,20 +1253,25 @@ static Block makeBlockFromStatistics(
         column->insertDefault();
         auto * place = column->getData().back();
 
+        /// Over a `Nullable` column with no non-NULL rows, the state stays as created, and the result is NULL.
         if (stats_aggregate.kind == StatisticsAggregate::Kind::Count)
         {
-            AggregateFunctionCount::set(place, covered_rows);
+            function->setSumAndCount(place, {}, folded_non_null_rows[i]);
         }
         else if (stats_aggregate.isSum())
         {
             /// Unlike for min/max, `add` cannot build the state from the value: the sum may not fit in the argument
             /// type (the sum of an `Int16` column is an `Int64`), and the state of `avg` and `sumCount` also holds the
             /// number of rows.
-            function->setSumAndCount(place, folded_values[i], covered_rows);
+            if (folded_non_null_rows[i] != 0)
+                function->setSumAndCount(place, folded_values[i], folded_non_null_rows[i]);
+        }
+        else if (folded_values[i].isNull())
+        {
+            chassert(stats_aggregate.is_nullable && folded_non_null_rows[i] == 0);
         }
         else
         {
-            chassert(!folded_values[i].isNull());
             auto value_column
                 = function->getArgumentTypes().front()->createColumnConst(1, folded_values[i])->convertToFullColumnIfConst();
             const auto * value_column_ptr = value_column.get();
