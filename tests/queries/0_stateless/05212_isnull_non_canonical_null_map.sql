@@ -1,32 +1,33 @@
 -- { echo }
--- A null map byte is a predicate, not a value: any non-zero byte means NULL. `if` forwards its raw
--- condition column as the null map, so `number % 3` fills it with the bytes 0, 1 and 2. Byte 0 marks
--- the 10 rows holding 'x'; the 1s and the 2s are the 20 rows that are equally NULL. `isNull` returns
--- 1 or 0, so each of those 20 rows must contribute exactly 1, on every evaluation path.
--- Only a plain `Nullable` carries that map: a constant branch lets the result be typed
--- `LowCardinality`, whose nullness is a dictionary index and therefore canonical, so the value
--- branches are materialized.
-SELECT sum(isNull(e)), max(isNull(e)) FROM (SELECT if(number % 3, NULL, materialize('x')) AS e FROM numbers(30));
--- The compiled path and the interpreted path must agree. A bare `isNull(e)` is a single node and is
+-- A null map byte is a predicate, not a value: any non-zero byte means NULL. Native input keeps the
+-- bytes a sender wrote, so the null maps of `t_src` hold `id % 3`, the bytes 0, 1 and 2. Byte 0 marks
+-- the 10 rows holding a value; the 1s and the 2s are the 20 rows that are equally NULL. `isNull`
+-- returns 1 or 0, so each of those 20 rows must contribute exactly 1, on every evaluation path.
+CREATE TABLE t_src (id UInt64, e Nullable(String), i Nullable(Int64)) ENGINE = Memory;
+INSERT INTO t_src SELECT r + 3 * k, e, i FROM format(Native, concat('\x03\x03', '\x01r\x05UInt8', '\x00\x01\x02',
+    '\x01e\x10Nullable(String)', '\x00\x01\x02', '\x01x\x01x\x01x',
+    '\x01i\x0fNullable(Int64)', '\x00\x01\x02', repeat('\x07\x00\x00\x00\x00\x00\x00\x00', 3))) ARRAY JOIN range(10) AS k;
+SELECT sum(isNull(e)), max(isNull(e)) FROM t_src;
+-- The compiled path and the interpreted path must agree. A bare `isNull(i)` is a single node and is
 -- not compiled, and `* 1` is folded away before compilation, so `+ 0` is what puts the function
 -- inside a compiled expression; the argument needs a native type for the same reason. Neither sum
 -- below moves if this map turns canonical, so byte 2 is asserted here directly.
-SELECT countIf(e.null = 2), sum(isNull(e)) FROM (SELECT if(number % 3, NULL, materialize(toInt64(7))) AS e FROM numbers(30));
-SELECT sum(isNull(e) + 0) FROM (SELECT if(number % 3, NULL, materialize(toInt64(7))) AS e FROM numbers(30)) SETTINGS compile_expressions = 0, min_count_to_compile_expression = 0;
-SELECT sum(isNull(e) + 0) FROM (SELECT if(number % 3, NULL, materialize(toInt64(7))) AS e FROM numbers(30)) SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0;
+SELECT countIf(i.null = 2), sum(isNull(i)) FROM t_src;
+SELECT sum(isNull(i) + 0) FROM t_src SETTINGS compile_expressions = 0, min_count_to_compile_expression = 0;
+SELECT sum(isNull(i) + 0) FROM t_src SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0;
 -- The pair above only compares the two paths while the compiled one is really compiled. The control
 -- shape holds no `isNull`, so it reports whether the embedded compiler runs at all; requiring the two
 -- to agree keeps this red if `isNull` stops being compiled, and green where the compiler is absent.
-SELECT sum(isNull(e) + 0) FROM (SELECT if(number % 3, NULL, materialize(toInt64(7))) AS e FROM numbers(30)) SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05212_shape_isnull' FORMAT Null;
+SELECT sum(isNull(i) + 0) FROM t_src SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05212_shape_isnull' FORMAT Null;
 SELECT sum((toInt64(number) + 1) * 2) FROM numbers(30) SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05212_shape_arith' FORMAT Null;
 SYSTEM FLUSH LOGS query_log;
 WITH shapes AS (SELECT log_comment, argMax(ProfileEvents['CompiledFunctionExecute'] > 0, event_time_microseconds) AS compiled FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05212_shape_isnull', '05212_shape_arith') GROUP BY log_comment) SELECT (SELECT compiled FROM shapes WHERE log_comment = '05212_shape_isnull') = (SELECT compiled FROM shapes WHERE log_comment = '05212_shape_arith');
 -- A comparison against the result must not see a value other than 0 or 1.
-SELECT arraySort(groupUniqArray(isNull(e) = 1)), sum(isNull(e) = 1) FROM (SELECT if(number % 3, NULL, materialize('x')) AS e FROM numbers(30));
+SELECT arraySort(groupUniqArray(isNull(e) = 1)), sum(isNull(e) = 1) FROM t_src;
 -- The `IS NULL` operator resolves to the same function.
-SELECT sum(e IS NULL) FROM (SELECT if(number % 3, NULL, materialize('x')) AS e FROM numbers(30));
+SELECT sum(e IS NULL) FROM t_src;
 -- An element of Array(Nullable(T)) is an ordinary Nullable by the time it reaches the function.
-SELECT sum(isNull(x)) FROM (SELECT arrayJoin(a) AS x FROM (SELECT [if(number % 3, NULL, materialize('x'))] AS a FROM numbers(30)));
+SELECT sum(isNull(x)) FROM (SELECT arrayJoin(a) AS x FROM (SELECT [e] AS a FROM t_src));
 -- A condition is a predicate too, and `if` turns it into the result's NULL map. Reading it as a
 -- value negates it arithmetically, so byte 2 becomes 3 and marks a row the condition leaves
 -- present. An ordinary stored UInt8 column holding 2 is enough to reach this.
@@ -38,8 +39,8 @@ SELECT sum(isNull(v)) FROM (SELECT if(toUInt8(number % 3 * 2), CAST(materialize(
 -- setting and both part types must answer alike.
 CREATE TABLE t_isnull_compact (e Nullable(String)) ENGINE = MergeTree ORDER BY tuple() SETTINGS ratio_of_defaults_for_sparse_serialization = 1.0, min_bytes_for_wide_part = 1000000000;
 CREATE TABLE t_isnull_wide (e Nullable(String)) ENGINE = MergeTree ORDER BY tuple() SETTINGS ratio_of_defaults_for_sparse_serialization = 1.0, min_bytes_for_wide_part = 0;
-INSERT INTO t_isnull_compact SELECT if(number % 3, NULL, materialize('x')) FROM numbers(30);
-INSERT INTO t_isnull_wide SELECT if(number % 3, NULL, materialize('x')) FROM numbers(30);
+INSERT INTO t_isnull_compact SELECT e FROM t_src;
+INSERT INTO t_isnull_wide SELECT e FROM t_src;
 SELECT table, part_type, serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table IN ('t_isnull_compact', 't_isnull_wide') AND active ORDER BY table;
 SELECT sum(isNull(e)), max(isNull(e)) FROM t_isnull_compact SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT sum(isNull(e)), max(isNull(e)) FROM t_isnull_compact SETTINGS optimize_functions_to_subcolumns = 1;
@@ -54,14 +55,14 @@ INSERT INTO t_isnull_canon SELECT if(number % 2, NULL, materialize('x')) FROM nu
 SELECT sum(isNull(e)), max(isNull(e)), sum(isNotNull(e)), count(e) FROM t_isnull_canon SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT sum(isNull(e)), max(isNull(e)), sum(isNotNull(e)), count(e) FROM t_isnull_canon SETTINGS optimize_functions_to_subcolumns = 1;
 -- A `LowCardinality` result makes nullness a dictionary index, so a map that reaches storage through
--- one arrives canonical. This is the control for the materialized value branches above.
+-- one arrives canonical.
 CREATE TABLE t_isnull_lc_result (e Nullable(String)) ENGINE = MergeTree ORDER BY tuple() SETTINGS ratio_of_defaults_for_sparse_serialization = 1.0;
-INSERT INTO t_isnull_lc_result SELECT toLowCardinality(if(number % 3, NULL, materialize('x'))) FROM numbers(30);
+INSERT INTO t_isnull_lc_result SELECT toLowCardinality(e) FROM t_src;
 SELECT count(), countIf(e.null = 1), sum(isNull(e)) FROM t_isnull_lc_result;
 -- The `null` subcolumn is a faithful view of the stored stream and keeps its bytes, so an index
 -- built over it is still used and still answers on those bytes.
 CREATE TABLE t_isnull_idx (e Nullable(String), INDEX idx e.null TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS ratio_of_defaults_for_sparse_serialization = 1.0, index_granularity = 4;
-INSERT INTO t_isnull_idx SELECT if(number % 3, NULL, materialize('x')) FROM numbers(30);
+INSERT INTO t_isnull_idx SELECT e FROM t_src;
 SELECT sum(isNull(e)), max(isNull(e)) FROM t_isnull_idx;
 SELECT count() FROM t_isnull_idx WHERE e.null != 0;
 SELECT count() FROM t_isnull_idx WHERE e.null = 1 SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'idx';
@@ -73,7 +74,7 @@ SELECT count() FROM t_isnull_idx WHERE isNull(e) SETTINGS optimize_functions_to_
 -- it under either value of the setting. The count is a truthiness count, so it also has to agree
 -- with a scan on this map.
 CREATE TABLE t_isnull_sparse (e Nullable(String)) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 512, ratio_of_defaults_for_sparse_serialization = 0.5, compute_exact_num_defaults_for_sparse_columns = 1, nullable_serialization_version = 'allow_sparse', serialization_info_version = 'with_types', min_bytes_for_wide_part = 0;
-INSERT INTO t_isnull_sparse SELECT if(number % 3, NULL, materialize('x')) FROM numbers(5000) SETTINGS optimize_on_insert = 0;
+INSERT INTO t_isnull_sparse SELECT e FROM t_src ARRAY JOIN range(167) AS k WHERE id + 30 * k < 5000 SETTINGS optimize_on_insert = 0;
 SELECT serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_isnull_sparse' AND active;
 SELECT countIf(explain LIKE '%Optimized trivial count with sparsity filter%') FROM (EXPLAIN SELECT count() FROM t_isnull_sparse WHERE e IS NULL SETTINGS optimize_trivial_count_query = 1, optimize_trivial_count_with_sparsity_filter = 1, optimize_functions_to_subcolumns = 0);
 SELECT countIf(explain LIKE '%Optimized trivial count with sparsity filter%') FROM (EXPLAIN SELECT count() FROM t_isnull_sparse WHERE e IS NULL SETTINGS optimize_trivial_count_query = 1, optimize_trivial_count_with_sparsity_filter = 1, optimize_functions_to_subcolumns = 1);
@@ -84,3 +85,4 @@ DROP TABLE t_isnull_canon;
 DROP TABLE t_isnull_lc_result;
 DROP TABLE t_isnull_idx;
 DROP TABLE t_isnull_sparse;
+DROP TABLE t_src;

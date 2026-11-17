@@ -285,7 +285,7 @@ void HashedJoinKey::buildRows(RowAt row_at, size_t num_rows, UInt128 * __restric
         {
             if (part.null_map)
             {
-                *pos++ = part.null_map[row];
+                *pos++ = part.null_map[row] != 0;
                 if (part.null_map[row])
                     continue;
             }
