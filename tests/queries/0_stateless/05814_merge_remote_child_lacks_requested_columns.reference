@@ -1,0 +1,47 @@
+-- { echoOn }
+
+SELECT count(t) FROM m ARRAY JOIN [1] AS x;
+5
+SELECT arraySort(groupArray(t)) FROM m ARRAY JOIN [1] AS x;
+['','','','a','b']
+SELECT t, count() FROM m ARRAY JOIN [1] AS x GROUP BY t ORDER BY t;
+	3
+a	1
+b	1
+SELECT count() FROM m ARRAY JOIN [1] AS x WHERE t = '';
+3
+SELECT countIf(t = '') FROM m ARRAY JOIN [1] AS x;
+3
+SELECT arraySort(groupArray(t)) FROM m AS a CROSS JOIN (SELECT 1 AS z) AS b;
+['','','','a','b']
+SELECT arraySort(groupArray(t)) FROM merge(currentDatabase(), '^(u|d)$') ARRAY JOIN [1] AS x;
+['','','','a','b']
+SELECT arraySort(groupArray(t)) FROM m ARRAY JOIN [1] AS x SETTINGS prefer_localhost_replica = 0;
+['','','','a','b']
+SELECT arraySort(groupArray(t)) FROM m ARRAY JOIN [1] AS x SETTINGS prefer_localhost_replica = 1;
+['','','','a','b']
+SELECT arraySort(groupArray(t)) FROM m ARRAY JOIN [1] AS x SETTINGS serialize_query_plan = 1;
+['','','','a','b']
+SELECT arraySort(groupArray(t)), count() FROM m_k ARRAY JOIN [1] AS x;
+['','','a','b']	4
+SELECT arraySort(groupArray(t)), count(t) FROM m_2 ARRAY JOIN [1] AS x;
+['','','','','','','a','b']	8
+SELECT arraySort(groupArray(t)), count(t) FROM m_alias ARRAY JOIN [1] AS x;
+['','','','a','b']	5
+SELECT arraySort(groupArray(t)), count(t) FROM m_a ARRAY JOIN [1] AS x;
+['','','a','b']	4
+SELECT arraySort(groupArray(t)), count(t) FROM m_out ARRAY JOIN [1] AS x;
+['','','','a','b']	5
+SELECT arraySort(groupArray(t)), count(t) FROM m_r ARRAY JOIN [1] AS x;
+['','','','a','b']	5
+SELECT count() FROM m_r ARRAY JOIN [1] AS x WHERE t = '';
+3
+SELECT arraySort(groupArray(t)), count(t) FROM m_c ARRAY JOIN [1] AS x;
+['a','b','z','z']	4
+SELECT count() FROM m_c ARRAY JOIN [1] AS x WHERE t = 'z';
+2
+-- The child reads a requested column.
+SELECT arraySort(groupArray(id)) FROM m ARRAY JOIN [1] AS x;
+[1,2,11,12,13]
+SELECT count() FROM m ARRAY JOIN [1] AS x;
+5

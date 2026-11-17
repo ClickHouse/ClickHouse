@@ -398,6 +398,7 @@ private:
         ContextPtr context,
         ChildPlan & child,
         bool is_smallest_column_requested,
+        bool read_at_fetch_columns,
         const Names & column_names_read);
 
     [[nodiscard]] StorageMerge::StorageListWithLocks getSelectedTables(

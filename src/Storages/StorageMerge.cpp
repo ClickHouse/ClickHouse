@@ -1485,6 +1485,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     context,
                     child,
                     is_smallest_column_requested,
+                    common_processed_stage == QueryProcessingStage::FetchColumns,
                     column_names_to_read);
 
                 for (const auto & filter_info : pushed_down_filters)
@@ -1727,7 +1728,6 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         if (query_info.table_expression_modifiers)
             replacement_table_expression->setTableExpressionModifiers(*query_info.table_expression_modifiers);
 
-        modified_query_info.query_tree = replaceTableExpressionAndRemoveJoin(modified_query_info.query_tree, modified_query_info.table_expression, replacement_table_expression, modified_context, required_column_names);
         modified_query_info.table_expression = replacement_table_expression;
         modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 
@@ -1881,6 +1881,31 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                 is_smallest_column_requested = true;
             }
         }
+
+        /// A remote child plans its query twice, over the `Merge` columns and over its own table, and both plans must
+        /// count rows by the same column when the child reads none of its own columns.
+        Names projection_column_names = required_column_names;
+        if (common_processed_stage == QueryProcessingStage::FetchColumns && storage->isRemote())
+        {
+            const auto child_columns = storage_snapshot_->getAllColumnsDescription();
+            const auto & merge_columns = merge_storage_snapshot->metadata->getColumns();
+            const auto child_reads_column = [&](const String & column_name)
+            { return getChildColumnToRead(column_name, child_columns, merge_columns).has_value(); };
+            const bool child_reads_no_column = with_aliases
+                ? is_smallest_column_requested
+                : std::ranges::none_of(required_column_names, child_reads_column);
+            if (child_reads_no_column)
+            {
+                NamesAndTypesList shared_columns;
+                for (const auto & column : storage_snapshot_->metadata->getColumns().getAllPhysical())
+                    if (merge_columns.hasPhysical(column.name))
+                        shared_columns.push_back(column);
+                if (!shared_columns.empty())
+                    projection_column_names.push_back(ExpressionActions::getSmallestColumn(shared_columns).name);
+            }
+        }
+
+        modified_query_info.query_tree = replaceTableExpressionAndRemoveJoin(modified_query_info.query_tree, query_info.table_expression, replacement_table_expression, modified_context, projection_column_names);
 
         if (!column_name_to_node.empty())
         {
@@ -2623,6 +2648,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     ContextPtr local_context,
     ChildPlan & child,
     bool is_smallest_column_requested,
+    bool read_at_fetch_columns,
     const Names & column_names_read)
 {
     auto before_block_header = child.plan.getCurrentHeader();
@@ -2819,9 +2845,10 @@ void ReadFromMerge::convertAndFilterSourceStream(
         {
             converted_columns.push_back(materializeIfSourceIsNotConst(header.getByName(source_elem.name), source_elem));
         }
-        else if (is_smallest_column_requested && smallest_column_name == source_elem.name)
+        else if (is_smallest_column_requested && (read_at_fetch_columns || smallest_column_name == source_elem.name))
         {
-            /// This column is unneeded in the result.
+            /// This column is unneeded in the result. At `FetchColumns` it is the column the child counts rows by,
+            /// which a remote child does not name `smallest_column_name`.
             converted_columns.push_back(source_elem);
         }
         else if (!has_columns_read_only_for_child && header.columns() == current_step_columns.size())
