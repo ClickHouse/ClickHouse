@@ -4360,7 +4360,25 @@ void Changelog::finalizeChangelogsAfterRead(
 
     /// Start new log if we don't initialize writer from previous log. All logs can be "complete".
     if (!current_writer->isFileSet())
-        current_writer->rotate(max_log_id.load(std::memory_order_relaxed) + 1);
+    {
+        const uint64_t new_start_index = max_log_id.load(std::memory_order_relaxed) + 1;
+        /// A changelog starting at the first index to write has no readable entries: for example, an
+        /// empty changelog. `rotate` would reuse its description and rewrite it in place, on a disk
+        /// that may be neither the latest log disk nor one where `sync` makes the entries durable.
+        /// Detach it so that the new changelog is created on the latest log disk. Its recovery copies
+        /// are retained until the writer appends.
+        if (auto colliding = existing_changelogs.find(new_start_index);
+            colliding != existing_changelogs.end() && colliding->second->disk != getLatestLogDisk())
+        {
+            LOG_INFO(
+                log,
+                "Changelog {} on disk {} has no entries to read and the writer starts at its first index, detaching it",
+                colliding->second->path,
+                colliding->second->disk->getName());
+            removeExistingLogs(colliding, std::next(colliding), /*remove_recovery_copies=*/false);
+        }
+        current_writer->rotate(new_start_index);
+    }
 
     /// Move files to correct disks
     auto latest_start_index = current_writer->getStartIndex();
@@ -4782,6 +4800,23 @@ void Changelog::writeThread()
 
                 std::lock_guard writer_lock(writer_mutex);
                 chassert(current_writer);
+
+                /// Startup keeps the recovery copies of the range of a new writer as long as nothing is
+                /// written. Once the writer appends, they are stale: a rotation can rename the active
+                /// changelog, and on restart a stale copy under the old name would win and lose entries.
+                if (!retained_duplicate_changelogs.empty())
+                {
+                    try
+                    {
+                        removeRetainedChangelogCopies(current_writer->getStartIndex(), *current_writer->getCurrentFileDescription());
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, "Failed to remove retained recovery copies of the active changelog, failing the append");
+                        batch_append_ok = false;
+                        continue;
+                    }
+                }
 
                 batch_append_ok = current_writer->appendRecord(buildRecord(append_log->index, append_log->log_entry));
                 ++pending_appends;

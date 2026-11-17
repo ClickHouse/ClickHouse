@@ -5182,6 +5182,61 @@ TYPED_TEST(CoordinationChangelogTest, StartupRecoveryPreservesMarkerlessCopyWhen
     EXPECT_FALSE(latest_disk->existsFile(String(path)));
 }
 
+TYPED_TEST(CoordinationChangelogTest, AppendRetiresMarkerlessCopyWhenSelectedCopyIsEmpty)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the recovery matrix is independent of compression";
+
+    /// Startup keeps the recovery copy while the selected copy of the range is empty. Once the new
+    /// writer appends, the copy is stale: a size rotation renames the appended changelog, and on
+    /// restart the stale copy under the old name could win and revert the appended entry.
+    ChangelogDirTest regular("./logs_append_empty_markerless_regular");
+    ChangelogDirTest latest("./logs_append_empty_markerless_latest");
+    DB::DiskPtr regular_disk = std::make_shared<DB::DiskLocal>("regular", regular.path);
+    DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("latest", latest.path);
+    DB::LogFileSettings settings{
+        .force_sync = false,
+        .compress_logs = false,
+        .rotate_interval = 10,
+        .startup_read_max_streams = 4,
+    };
+    constexpr std::string_view path = "changelog_1_10.bin";
+
+    this->keeper_context->setLogDisk(regular_disk);
+    {
+        DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(0, 0);
+        writer.appendEntry(1, getLogEntry("one", 1));
+        writer.flush();
+    }
+
+    {
+        auto empty = latest_disk->writeFile(String(path));
+        empty->finalize();
+    }
+
+    settings.max_size = 1;
+    this->keeper_context->setLatestLogDisk(latest_disk);
+    {
+        DB::Changelog recovered(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
+        EXPECT_TRUE(regular_disk->existsFile(String(path)));
+
+        recovered.appendEntry(1, getLogEntry("one", 2));
+        recovered.appendEntry(2, getLogEntry("two", 2));
+        recovered.flush();
+        recovered.shutdown();
+    }
+    EXPECT_FALSE(regular_disk->existsFile(String(path)));
+    EXPECT_TRUE(regular_disk->existsFile("changelog_1_1.bin"));
+
+    DB::Changelog restarted(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    ASSERT_NO_THROW(restarted.readChangelogAndInitWriter(0, 0));
+    EXPECT_EQ(restarted.getNextEntryIndex(), 3);
+    EXPECT_EQ(restarted.entryAt(1)->get_term(), 2);
+    EXPECT_EQ(restarted.entryAt(2)->get_term(), 2);
+}
+
 TYPED_TEST(CoordinationChangelogTest, StartupContinuesWritingOnSourceDiskWhenActiveLogMoveFails)
 {
     if (this->enable_compression)
@@ -5832,6 +5887,63 @@ TYPED_TEST(CoordinationChangelogTest, RewriteFromStartOfBrokenChangelogOnObjectS
     EXPECT_EQ(restarted.getNextEntryIndex(), 12);
     EXPECT_EQ(restarted.entryAt(10)->get_term(), 1);
     EXPECT_EQ(restarted.entryAt(11)->get_term(), 2);
+}
+
+TYPED_TEST(CoordinationChangelogTest, StartupAfterEmptyChangelogOnObjectStorageStartsNewLocalChangelog)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the disk placement of the writer is independent of compression";
+
+    /// The writer starts at the first index of an empty changelog on object storage. It must create
+    /// a new changelog on the local latest disk instead of rewriting the empty one in place, where
+    /// `sync` does not make the entries durable.
+    ChangelogDirTest regular_meta("./logs_startup_empty_regular_meta");
+    ChangelogDirTest regular_objects("./logs_startup_empty_regular_objects");
+    ChangelogDirTest latest("./logs_startup_empty_latest");
+    auto regular_disk = createLocalObjectStorageLogDisk(regular_meta.path, regular_objects.path + "/");
+    DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("latest", latest.path);
+    DB::LogFileSettings settings{
+        .force_sync = false,
+        .compress_logs = false,
+        .rotate_interval = 10,
+        .startup_read_max_streams = 4,
+    };
+    constexpr std::string_view empty_path = "changelog_11_20.bin";
+
+    this->keeper_context->setLogDisk(regular_disk);
+    this->keeper_context->setLatestLogDisk(regular_disk);
+    {
+        DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(0, 0);
+        for (uint64_t index = 1; index <= 10; ++index)
+            writer.appendEntry(index, getLogEntry("entry_" + std::to_string(index), 1));
+        writer.flush();
+    }
+    {
+        auto empty = regular_disk->writeFile(String(empty_path), DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, {});
+        empty->finalize();
+    }
+    ASSERT_TRUE(regular_disk->existsFile(String(empty_path)));
+
+    settings.force_sync = true;
+    this->keeper_context->setLatestLogDisk(latest_disk);
+    {
+        DB::Changelog recovered(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
+        EXPECT_EQ(recovered.getNextEntryIndex(), 11);
+        EXPECT_FALSE(regular_disk->existsFile(String(empty_path)));
+
+        recovered.appendEntry(11, getLogEntry("entry_11", 1));
+        recovered.flush();
+        EXPECT_TRUE(latest_disk->existsFile(String(empty_path)));
+        EXPECT_GT(latest_disk->getFileSize(String(empty_path)), 0);
+    }
+
+    DB::Changelog restarted(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    ASSERT_NO_THROW(restarted.readChangelogAndInitWriter(0, 0));
+    EXPECT_EQ(restarted.getNextEntryIndex(), 12);
+    EXPECT_EQ(restarted.entryAt(10)->get_term(), 1);
+    EXPECT_EQ(restarted.entryAt(11)->get_term(), 1);
 }
 
 #endif
