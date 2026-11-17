@@ -27,7 +27,7 @@ try
 }
 catch (...)
 {
-    if (!isRetryableException(std::current_exception()))
+    if (!isRetryableException(std::current_exception()) && !isQueryCancellation(std::current_exception()))
         data_part_info_for_read->reportBroken();
 
     /// Better diagnostics.
@@ -129,7 +129,7 @@ try
 }
 catch (...)
 {
-    if (!isRetryableException(std::current_exception()))
+    if (!isRetryableException(std::current_exception()) && !isQueryCancellation(std::current_exception()))
         data_part_info_for_read->reportBroken();
     throw;
 }
