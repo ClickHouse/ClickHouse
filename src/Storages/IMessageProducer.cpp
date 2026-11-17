@@ -31,14 +31,7 @@ void AsynchronousMessageProducer::start(const ContextPtr & context)
         scheduled.store(true);
         scheduled.notify_one();
 
-        try
-        {
-            startProducingTaskLoop();
-        }
-        catch (...)
-        {
-            producing_task_exception = std::current_exception();
-        }
+        startProducingTaskLoop();
     });
     producing_task->activateAndSchedule();
 }
@@ -62,9 +55,6 @@ void AsynchronousMessageProducer::finish()
     /// Wait for the producer task to finish.
     producing_task->deactivate();
     finishImpl();
-
-    if (producing_task_exception)
-        std::rethrow_exception(producing_task_exception);
 }
 
 
