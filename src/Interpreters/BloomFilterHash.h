@@ -65,68 +65,68 @@ struct BloomFilterHash
         return CityHash_v1_0_2::CityHash64(value.data(), value.size());
     }
 
-    static ColumnPtr hashWithField(const IDataType * data_type, const Field & field)
+    /// The hash the index holds for `field` as a value of `data_type`.
+    static UInt64 getFieldHash(const IDataType * data_type, const Field & field)
     {
-        const auto & build_hash_column = [&](const UInt64 & hash) -> ColumnPtr
-        {
-            return ColumnConst::create(ColumnUInt64::create(1, hash), 1);
-        };
-
-
         WhichDataType which(data_type);
 
         if (which.isUInt8())
-            return build_hash_column(getNumberTypeHash<UInt64, UInt8>(field));
+            return getNumberTypeHash<UInt64, UInt8>(field);
         if (which.isUInt16())
-            return build_hash_column(getNumberTypeHash<UInt64, UInt16>(field));
+            return getNumberTypeHash<UInt64, UInt16>(field);
         if (which.isUInt32())
-            return build_hash_column(getNumberTypeHash<UInt64, UInt32>(field));
+            return getNumberTypeHash<UInt64, UInt32>(field);
         if (which.isUInt64())
-            return build_hash_column(getNumberTypeHash<UInt64, UInt64>(field));
+            return getNumberTypeHash<UInt64, UInt64>(field);
         if (which.isUInt128())
-            return build_hash_column(getNumberTypeHash<UInt128, UInt256>(field));
+            return getNumberTypeHash<UInt128, UInt256>(field);
         if (which.isUInt256())
-            return build_hash_column(getNumberTypeHash<UInt256, UInt256>(field));
+            return getNumberTypeHash<UInt256, UInt256>(field);
         if (which.isInt8())
-            return build_hash_column(getNumberTypeHash<Int64, Int8>(field));
+            return getNumberTypeHash<Int64, Int8>(field);
         if (which.isInt16())
-            return build_hash_column(getNumberTypeHash<Int64, Int16>(field));
+            return getNumberTypeHash<Int64, Int16>(field);
         if (which.isInt32())
-            return build_hash_column(getNumberTypeHash<Int64, Int32>(field));
+            return getNumberTypeHash<Int64, Int32>(field);
         if (which.isInt64())
-            return build_hash_column(getNumberTypeHash<Int64, Int64>(field));
+            return getNumberTypeHash<Int64, Int64>(field);
         if (which.isInt128())
-            return build_hash_column(getNumberTypeHash<Int128, Int128>(field));
+            return getNumberTypeHash<Int128, Int128>(field);
         if (which.isInt256())
-            return build_hash_column(getNumberTypeHash<Int256, Int256>(field));
+            return getNumberTypeHash<Int256, Int256>(field);
         if (which.isEnum8())
-            return build_hash_column(getNumberTypeHash<Int64, Int8>(field));
+            return getNumberTypeHash<Int64, Int8>(field);
         if (which.isEnum16())
-            return build_hash_column(getNumberTypeHash<Int64, Int16>(field));
+            return getNumberTypeHash<Int64, Int16>(field);
         if (which.isDate())
-            return build_hash_column(getNumberTypeHash<UInt64, UInt16>(field));
+            return getNumberTypeHash<UInt64, UInt16>(field);
         if (which.isDate32())
-            return build_hash_column(getNumberTypeHash<UInt64, Int32>(field));
+            return getNumberTypeHash<UInt64, Int32>(field);
         if (which.isDateTime())
-            return build_hash_column(getNumberTypeHash<UInt64, UInt32>(field));
+            return getNumberTypeHash<UInt64, UInt32>(field);
         if (which.isDateTime64())
-            return build_hash_column(getNumberTypeHash<DateTime64, DateTime64>(field));
+            return getNumberTypeHash<DateTime64, DateTime64>(field);
         if (which.isFloat32())
-            return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
+            return getNumberTypeHash<Float64, Float64>(field);
         if (which.isFloat64())
-            return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
+            return getNumberTypeHash<Float64, Float64>(field);
         if (which.isUUID())
-            return build_hash_column(getNumberTypeHash<UUID, UUID>(field));
+            return getNumberTypeHash<UUID, UUID>(field);
         if (which.isIPv4())
-            return build_hash_column(getNumberTypeHash<IPv4, IPv4>(field));
+            return getNumberTypeHash<IPv4, IPv4>(field);
         if (which.isIPv6())
-            return build_hash_column(getNumberTypeHash<IPv6, IPv6>(field));
+            return getNumberTypeHash<IPv6, IPv6>(field);
         if (which.isString())
-            return build_hash_column(getStringTypeHash(field));
+            return getStringTypeHash(field);
         if (which.isFixedString())
-            return build_hash_column(getFixedStringTypeHash(field, data_type));
+            return getFixedStringTypeHash(field, data_type);
 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
+    }
+
+    static ColumnPtr hashWithField(const IDataType * data_type, const Field & field)
+    {
+        return ColumnConst::create(ColumnUInt64::create(1, getFieldHash(data_type, field)), 1);
     }
 
     /// Shared by [hashWithColumn] and [hashWithColumnDistinct] so they treat arrays
