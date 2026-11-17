@@ -137,7 +137,6 @@ bool HTTPRequestBodyWriteBuffer::checkResponseAfterSendError()
 
 void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
 {
-    /// The server has answered with an error: drop the rest of the body.
     if (stopped)
         return;
 
@@ -145,22 +144,16 @@ void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
     constexpr int select_write = Poco::Net::SocketImpl::SELECT_WRITE;
     auto & socket = *session.socket().impl();
 
-    /// The send timeout bounds the time spent waiting for the socket without sending anything, as
-    /// for a blocking send. The waits of the send throttler and of the data hooks are not part of
-    /// it. A zero send timeout means no limit, as for a blocking send.
+    /// The send timeout bounds the time without progress; zero means no limit.
     const Poco::Timespan send_timeout = session.getSendTimeout();
     const Poco::Timespan no_limit(-1);
     Poco::Timespan wait_left = send_timeout.totalMicroseconds() > 0 ? send_timeout : no_limit;
 
-    /// Set when the server closed the connection without a response. The next send reports how the
-    /// connection ended.
+    /// The server closed the connection without a response: the next send reports how it ended.
     bool peer_closed = false;
 
     while (size > 0)
     {
-        /// Wait for the socket to accept data and watch for a response at the same time. A server
-        /// that rejects the request answers and then resets the connection. The response is parsed
-        /// as it arrives: an error stops the body, a success is finished after the body.
         const bool watch_response = !peer_closed && !response_header_complete;
         const int ready = socket.waitForSendOrReceive(wait_left, select_write | (watch_response ? select_read : 0));
         if (ready == 0)
@@ -183,8 +176,7 @@ void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
         const int sent = session.sendNow(data, static_cast<std::streamsize>(size));
         if (sent < 0)
         {
-            /// The socket holds the error of the send. The server can have answered before it reset
-            /// the connection: the answer is the result of the request, and the error is not.
+            /// An answer that arrived before the reset is the result, not the send error.
             if (checkResponseAfterSendError())
             {
                 stopped = true;

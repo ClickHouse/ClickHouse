@@ -714,8 +714,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
                     LOG_TEST(log, "Written {} bytes to request body", size);
             }
 
-            /// When the server answers with an error while the body is sent, the rest of the body is
-            /// dropped, and the error is received here.
+            /// An error that arrived while the body was sent is received here.
             request_body->finalize();
 
             setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));

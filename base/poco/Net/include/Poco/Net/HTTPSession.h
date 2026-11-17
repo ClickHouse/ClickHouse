@@ -190,13 +190,10 @@ namespace Net
         /// Throws `MessageException` if the socket stops accepting data.
 
         int sendNow(const char * buffer, std::streamsize length);
-        /// Sends what the socket accepts now, with `SocketImpl::sendNow`, and calls the send data
-        /// hooks as `write` does. Returns the number of bytes sent, 0 when the socket accepts nothing
-        /// now, or -1 when the socket holds a send error.
+        /// `SocketImpl::sendNow` with the send data hooks.
 
         void throwHeldSendError();
-        /// Throws the send error that the socket holds, and stores it in the session, as a failed
-        /// write does.
+        /// Throws the held send error, and stores it in the session as a failed write does.
 
         int buffered() const;
         /// Returns the number of bytes in the buffer.
@@ -208,8 +205,7 @@ namespace Net
         /// buffer is full, and -1 when the peer has closed the connection.
 
         int fillBufferNow();
-        /// Same as `fillBuffer`, but takes only what has already arrived, with
-        /// `SocketImpl::receiveNow`, on a socket in any mode.
+        /// Same as `fillBuffer`, but takes only what has already arrived, in any socket mode.
 
         const char * bufferedData() const { return _pCurrent; }
         /// Returns the unread bytes of the read buffer; `buffered` is their number.

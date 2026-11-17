@@ -33,12 +33,9 @@ using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 class HTTPRequestBodyWriteBuffer : public WriteBuffer
 {
 public:
-    /// The body is sent while the connection is watched for a response (RFC 9112, 9.5), on every
-    /// socket type: plain TCP, TLS and Silk fiber sockets. The response is given to the parser of
-    /// the session as it arrives, and `receiveHTTPResponse` finishes it: an error status stops the
-    /// body, and the rest of it is dropped; a success is finished after the body. A failed send does
-    /// not hide an error response that arrived before it. A response that breaks the syntax or the
-    /// limits makes the write throw.
+    /// The body is sent while the connection is watched for a response (RFC 9112, 9.5). An error
+    /// status stops the body, also when it arrived before a failed send; a success is finished after
+    /// the body. `receiveHTTPResponse` finishes the parse of the response.
     HTTPRequestBodyWriteBuffer(
         Poco::Net::HTTPClientSession & session_, Poco::Net::HTTPClientSession::BodyInfo body_info_, size_t buf_size);
 
