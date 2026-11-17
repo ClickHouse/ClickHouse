@@ -110,7 +110,7 @@ public:
     };
 
     /// Under the same key as the boundary.
-    std::shared_ptr<const UndecidedQuery> getUndecided(UInt64 root_key) const;
+    [[nodiscard]] std::shared_ptr<const UndecidedQuery> getUndecided(UInt64 root_key) const;
 
     void setUndecided(UInt64 root_key, ProfileEvents::Event outcome_event);
 
