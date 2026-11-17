@@ -9,6 +9,9 @@
 
 #include <boost/noncopyable.hpp>
 
+#include <tuple>
+#include <type_traits>
+
 
 /// The hash of a key with a non-empty string: the hash that the key stores (see `KeysAndPackedString`).
 struct KeysAndPackedStringHash
@@ -330,20 +333,13 @@ public:
     template <typename Func>
     void ALWAYS_INLINE forEachValueWithHash(Func && func)
     {
-        for (auto it = m0.begin(), end = m0.end(); it != end; ++it)
+        forEachCellWithHash([&](auto key_class, auto & cell, size_t hash)
         {
             if constexpr (is_set)
-                func(Key::withEmptyString(it->getKey()), it.getHash());
+                func(iteratedKey<decltype(key_class)::value>(cell), hash);
             else
-                func(Key::withEmptyString(it->getKey()), it->getMapped(), it.getHash());
-        }
-        for (auto it = m1.begin(), end = m1.end(); it != end; ++it)
-        {
-            if constexpr (is_set)
-                func(it->getKey(), it.getHash());
-            else
-                func(it->getKey(), it->getMapped(), it.getHash());
-        }
+                func(iteratedKey<decltype(key_class)::value>(cell), cell.getMapped(), hash);
+        });
     }
 
     /// Calls `func(TMapped &)` for every element; a `func` returning `bool` stops the iteration by returning
@@ -402,6 +398,46 @@ public:
     {
         func(lhs.m0, rhs.m0);
         func(lhs.m1, rhs.m1);
+    }
+
+    /// The sub-tables are the key classes of the table, in the order in which `forEachCellWithHash` walks
+    /// them: `m0`, then `m1`. The cell index of the merges reads the cells of each class with the code of its
+    /// type of cell (see `SubmapCells`).
+    static constexpr size_t NUM_SUBMAPS = 2;
+
+    template <size_t key_class>
+    using SubmapCell = typename std::tuple_element_t<key_class, std::tuple<T0, T1>>::cell_type;
+
+    /// Calls `func(key_class, cell, hash)` for every cell, sub-table by sub-table: `key_class` is a
+    /// `std::integral_constant`, `cell` is a `SubmapCell<key_class>`, and `hash` is what `hash` computes
+    /// for the cell's key.
+    template <typename Func>
+    void ALWAYS_INLINE forEachCellWithHash(Func && func)
+    {
+        for (auto it = m0.begin(), end = m0.end(); it != end; ++it)
+            func(std::integral_constant<size_t, 0>{}, *it, it.getHash());
+        for (auto it = m1.begin(), end = m1.end(); it != end; ++it)
+            func(std::integral_constant<size_t, 1>{}, *it, it.getHash());
+    }
+
+    /// The key of a cell of the sub-table of `key_class` as the iterations of the table hand it out (see
+    /// `forEachValueWithHash`): the whole key, with an empty string for a cell of `m0`.
+    template <size_t key_class>
+    static Key ALWAYS_INLINE iteratedKey(const SubmapCell<key_class> & cell)
+    {
+        if constexpr (key_class == 0)
+            return Key::withEmptyString(SubmapCell<0>::getKey(cell.getValue()));
+        else
+            return SubmapCell<1>::getKey(cell.getValue());
+    }
+
+    /// Emplaces a key that an iteration of a table of this type handed out, with its hash (see
+    /// `iteratedKey`), as `HashTable::emplaceIteratedKey` does for the other tables. A string that is not
+    /// inline in the key is stored through its reference, so the memory that holds it for the table it came
+    /// from, usually an arena, must outlive this table.
+    void ALWAYS_INLINE emplaceIteratedKey(const Key & key, LookupResult & it, bool & inserted, size_t hash_value)
+    {
+        emplace(key, it, inserted, hash_value);
     }
 
     size_t size() const { return m0.size() + m1.size(); }
