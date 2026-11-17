@@ -3,6 +3,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Storages/ObjectStorage/Utils.h>
 
@@ -21,6 +22,10 @@ namespace ErrorCodes
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int BAD_ARGUMENTS;
 }
+
+static const std::unordered_set<std::string_view> required_configuration_keys = {"path"};
+static const std::unordered_set<std::string_view> optional_configuration_keys
+    = {"format", "compression_method", "compression", "structure"};
 
 void LocalStorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr)
 {
@@ -143,6 +148,10 @@ void StorageLocalConfiguration::fromDisk(const String & disk_name_, ASTs & args,
 
 void StorageLocalConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
+    /// A stored definition keeps loading with the keys it was created with.
+    if (!is_replayed_definition)
+        validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys, {}, /* only_query_overrides= */ true);
+
     LocalStorageParsedArguments parsed_arguments;
     parsed_arguments.fromNamedCollection(collection, context);
     initializeFromParsedArguments(parsed_arguments);
