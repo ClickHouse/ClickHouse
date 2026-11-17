@@ -10,7 +10,9 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/PortUtils.h>
 #include <Common/isLocalAddress.h>
+#include <IO/ReadHelpers.h>
 #include <Common/thread_local_rng.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
@@ -107,6 +109,15 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
 
     if (tcp_port.empty())
         throw KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "No tcp_port or tcp_port_secure in config file");
+
+    /// The embedded Keeper binds `keeper_server.tcp_port[_secure]` shifted by `port_offset` (see
+    /// `Server.cpp`), so the endpoints synthesized here for the server's own Keeper client must carry
+    /// the same offset - otherwise the client keeps dialing the unshifted port and replicated tables
+    /// and distributed DDL lose access to the embedded Keeper. All Raft members share the single
+    /// configured `tcp_port`, so, like every other place where a peer's port is derived from the local
+    /// configuration, this assumes a uniform `port_offset` across the cluster.
+    if (const Int32 port_offset = DB::getPortOffsetFromConfig(config); port_offset != 0)
+        tcp_port = std::to_string(DB::applyPortOffset(DB::parse<UInt16>(tcp_port), port_offset));
 
     if (auto coordination_key = std::string{config_name} + ".coordination_settings";
         config.has(coordination_key))

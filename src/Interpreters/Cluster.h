@@ -61,6 +61,11 @@ struct ClusterConnectionParameters
     Priority priority{1};
     String cluster_name;
     String cluster_secret;
+    /// The port this server listens on, used only to detect whether an address points to this server.
+    /// It differs from `clickhouse_port` when the latter is the default port to connect to *other*
+    /// servers (`remote`, `ENGINE = Remote`), which is not shifted by `port_offset`, while the local
+    /// listener is. `0` means that `clickhouse_port` is the local port as well.
+    UInt16 local_port = 0;
 };
 
 /// Cluster contains connection pools to each node

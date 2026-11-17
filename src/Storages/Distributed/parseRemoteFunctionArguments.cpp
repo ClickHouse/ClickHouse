@@ -382,7 +382,11 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
             /* bind_host= */ "",
             /* priority= */ Priority{1},
             /* cluster_name= */ "",
-            /* cluster_secret= */ ""
+            /* cluster_secret= */ "",
+            /// The default port above is the one of the destination server, so it is not shifted by
+            /// `port_offset`; whether an address points to this server is decided by the bound port.
+            /* local_port= */ static_cast<UInt16>(
+                secure ? context->getBoundTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : context->getBoundTCPPort())
         };
         cluster = std::make_shared<Cluster>(context->getSettingsRef(), names, params);
     }
