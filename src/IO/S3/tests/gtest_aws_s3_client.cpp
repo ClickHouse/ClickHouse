@@ -1946,7 +1946,7 @@ public:
         server->start();
     }
     ~FunctionHTTPServer() { server->stop(); }
-    std::string getUrl() const { return "http://" + server_socket->address().toString(); }
+    [[nodiscard]] std::string getUrl() const { return "http://" + server_socket->address().toString(); }
 
 private:
     static Poco::AutoPtr<Poco::Net::HTTPServerParams> makeServerParams(int max_threads)
