@@ -501,7 +501,12 @@ namespace
         if (requested_columns.contains(TimeSeriesColumnNames::Help))
             select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Help));
         if (requested_columns.contains(TimeSeriesColumnNames::Exemplars))
-            select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Exemplars));
+        {
+            /// The name is qualified because a column of the "tags" table can have it too.
+            auto exemplars = make_intrusive<ASTIdentifier>(std::vector<String>{exemplars_subquery_alias, TimeSeriesColumnNames::Exemplars});
+            exemplars->setAlias(TimeSeriesColumnNames::Exemplars);
+            select_list->children.push_back(std::move(exemplars));
+        }
         return select_list;
     }
 

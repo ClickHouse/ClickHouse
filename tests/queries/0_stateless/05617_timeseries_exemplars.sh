@@ -17,6 +17,9 @@ DROP TABLE IF EXISTS ts_normalized;
 DROP TABLE IF EXISTS ts_ns;
 DROP TABLE IF EXISTS ts_policy;
 DROP TABLE IF EXISTS ts_copy;
+DROP TABLE IF EXISTS ts_v11;
+DROP TABLE IF EXISTS ts_v11_copy;
+DROP TABLE IF EXISTS ts_inner_column;
 DROP TABLE IF EXISTS ts_tag_column;
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS store_exemplars = 1;
 CREATE TABLE ts_plain ENGINE = TimeSeries;
@@ -45,6 +48,11 @@ $CLIENT -q "CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS store_exemplars = 1
 $CLIENT -q "CREATE TABLE ts_tag_column ENGINE = TimeSeries SETTINGS tags_to_columns = {'job': 'exemplars'}"
 $CLIENT -q "SELECT count() FROM ts_tag_column"
 
+echo "-- a column of the tags table can have the name of the exemplars column"
+$CLIENT -q "CREATE TABLE ts_inner_column ENGINE = TimeSeries SETTINGS store_exemplars = 1 TAGS INNER COLUMNS (exemplars String)"
+$CLIENT -q "INSERT INTO ts_inner_column (metric_name, tags, samples) VALUES ('m', {'a': 'b'}, [(toDateTime64(100, 3), 1)])"
+$CLIENT -q "SELECT metric_name, tags, length(samples), length(exemplars) FROM ts_inner_column FORMAT TSV"
+
 echo "-- a copy made ON CLUSTER gets the UUID of its exemplars table from the initiator, also with the old entry format"
 $CLIENT --distributed_ddl_output_mode=none --distributed_ddl_entry_format_version=2 -q "CREATE TABLE ts_copy ON CLUSTER test_shard_localhost AS ts ENGINE = TimeSeries"
 $CLIENT -q "
@@ -52,6 +60,13 @@ $CLIENT -q "
     WHERE database = currentDatabase() AND name LIKE '.inner_id.exemplars.%'
         AND uuid IN (SELECT toUUIDOrZero(extract(query, 'EXEMPLARS INNER UUID \\'([^\\']+)\\''))
                      FROM system.distributed_ddl_queue WHERE query LIKE '%' || currentDatabase() || '%ts_copy%')"
+
+echo "-- a copy of a table of version 11 made ON CLUSTER gets no UUID of an exemplars table, as a server of an earlier version can't parse it"
+$CLIENT -q "CREATE TABLE ts_v11 ENGINE = TimeSeries SETTINGS version = 11"
+$CLIENT --distributed_ddl_output_mode=none --distributed_ddl_entry_format_version=2 -q "CREATE TABLE ts_v11_copy ON CLUSTER test_shard_localhost AS ts_v11 ENGINE = TimeSeries SETTINGS version = 11"
+$CLIENT -q "
+    SELECT count() FROM system.distributed_ddl_queue
+    WHERE query LIKE '%' || currentDatabase() || '%ts_v11_copy%' AND query NOT LIKE '%EXEMPLARS%'"
 
 USER_PREFIX="user_05617_${CLICKHOUSE_DATABASE}"
 $CLIENT -n -q "
@@ -232,6 +247,9 @@ DROP TABLE ts_normalized;
 DROP TABLE ts_ns;
 DROP TABLE ts_policy;
 DROP TABLE ts_copy;
+DROP TABLE ts_v11;
+DROP TABLE ts_v11_copy;
+DROP TABLE ts_inner_column;
 DROP TABLE ts_tag_column;
 DROP ROW POLICY policy_05617 ON ${CLICKHOUSE_DATABASE}.ts_policy;
 DROP USER ${USER_PREFIX}_granted, ${USER_PREFIX}_revoked, ${USER_PREFIX}_policy, ${USER_PREFIX}_none;

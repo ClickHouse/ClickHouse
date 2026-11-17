@@ -123,7 +123,9 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
                     generate_target_uuid(ViewTarget::TimeRanges);
 
                 /// A table created `AS <other_table>` can inherit the exemplars target, an unused UUID is dropped.
-                if (isTimeSeriesExemplarsTargetEnabled(query) || !query.as_table.empty())
+                /// A table of an earlier version can't have it, and a server without the target can't parse its UUID in a DDL entry.
+                if (isTimeSeriesExemplarsTargetEnabled(query)
+                    || (!query.as_table.empty() && (getTimeSeriesVersion(query) >= TimeSeriesVersion::MIN_WITH_EXEMPLARS_TARGET)))
                     generate_target_uuid(ViewTarget::Exemplars);
             }
         }
