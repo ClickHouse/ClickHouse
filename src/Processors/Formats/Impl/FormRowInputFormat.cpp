@@ -161,8 +161,11 @@ static NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & i
         /// The value is deserialized verbatim with `deserializeWholeText`, which does not skip leading
         /// or trailing whitespace for most types, while the type inference skips it. A value like
         /// "+42" (decoded to " 42") would be inferred as a number and then fail to be read, so keep
-        /// such values as strings.
-        if (!decoded_value.empty() && (isWhitespaceASCII(decoded_value.front()) || isWhitespaceASCII(decoded_value.back())))
+        /// such values as strings. Likewise, the type inference removes surrounding single quotes and
+        /// infers the type of the contents (e.g. "'2026-11-17'" is inferred as a date), while
+        /// `deserializeWholeText` does not accept them, so keep top-level quoted values as strings too.
+        if (!decoded_value.empty()
+            && (isWhitespaceASCII(decoded_value.front()) || isWhitespaceASCII(decoded_value.back()) || decoded_value.front() == '\''))
             type = std::make_shared<DataTypeString>();
         else
             type = tryInferDataTypeByEscapingRule(decoded_value, settings, FormatSettings::EscapingRule::Raw);
