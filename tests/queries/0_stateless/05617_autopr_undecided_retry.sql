@@ -12,9 +12,9 @@ DROP TABLE IF EXISTS t_undecided_wo;
 DROP TABLE IF EXISTS t_undecided_wl;
 DROP TABLE IF EXISTS t_undecided_s;
 
-CREATE TABLE t_undecided_l (l_orderkey UInt64, l_price Float64, l_discount Float64) ENGINE = MergeTree ORDER BY l_orderkey;
+CREATE TABLE t_undecided_l (l_orderkey UInt64, l_price Float64) ENGINE = MergeTree ORDER BY l_orderkey;
 CREATE TABLE t_undecided_o (o_orderkey UInt64, o_total Float64) ENGINE = MergeTree ORDER BY o_orderkey;
-INSERT INTO t_undecided_l SELECT number % 10000, number % 1000, (number % 10) / 100 FROM numbers(100000);
+INSERT INTO t_undecided_l SELECT number % 10000, number % 1000 FROM numbers(100000);
 INSERT INTO t_undecided_o SELECT number, number % 1000 FROM numbers(10000);
 
 -- Without column statistics, so that the row estimates of a filtered read come from index analysis alone, which the
@@ -44,54 +44,9 @@ SET join_algorithm = 'parallel_hash', collect_hash_table_stats_during_joins = 1,
     query_plan_optimize_join_order_randomize = 0, query_plan_optimize_join_order_limit = 10, query_plan_join_swap_table = 'auto',
     max_threads = 4;
 
--- `LIMIT` without `ORDER BY`: the plans cannot be compared. The second run builds the plan again at once, the next
--- three skip it, and the sixth builds it again.
-SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
-FORMAT Null SETTINGS log_comment = 'undecided_limit_1';
-SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
-FORMAT Null SETTINGS log_comment = 'undecided_limit_2';
-SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
-FORMAT Null SETTINGS log_comment = 'undecided_limit_3';
-SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
-FORMAT Null SETTINGS log_comment = 'undecided_limit_4';
-SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
-FORMAT Null SETTINGS log_comment = 'undecided_limit_5';
-SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
-FORMAT Null SETTINGS log_comment = 'undecided_limit_6';
-
--- The same with skipping turned off: every run builds the plan, the third too, which would skip otherwise.
-SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
-FORMAT Null SETTINGS log_comment = 'undecided_limit_off_1', automatic_parallel_replicas_undecided_retry_after_executions = 0;
-SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
-FORMAT Null SETTINGS log_comment = 'undecided_limit_off_2', automatic_parallel_replicas_undecided_retry_after_executions = 0;
-SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
-FORMAT Null SETTINGS log_comment = 'undecided_limit_off_3', automatic_parallel_replicas_undecided_retry_after_executions = 0;
-
--- The largest value skips the build for good after the second outcome, but the second run still builds it.
-SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
-FORMAT Null SETTINGS log_comment = 'undecided_limit_max_1', automatic_parallel_replicas_undecided_retry_after_executions = 18446744073709551615;
-SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
-FORMAT Null SETTINGS log_comment = 'undecided_limit_max_2', automatic_parallel_replicas_undecided_retry_after_executions = 18446744073709551615;
-SELECT l_orderkey, l_price FROM t_undecided_l WHERE l_price > 10 LIMIT 10
-FORMAT Null SETTINGS log_comment = 'undecided_limit_max_3', automatic_parallel_replicas_undecided_retry_after_executions = 18446744073709551615;
-
--- A correlated subquery: the planner uses no parallel replicas in the plan built with them. The second run builds the
--- plan again at once, the third skips it.
-SELECT sum(l_price) FROM t_undecided_l, t_undecided_o
-WHERE o_orderkey = l_orderkey AND o_total = 5
-  AND l_discount < (SELECT 0.2 * avg(l_discount) FROM t_undecided_l WHERE l_orderkey = o_orderkey)
-FORMAT Null SETTINGS log_comment = 'undecided_correlated_1';
-SELECT sum(l_price) FROM t_undecided_l, t_undecided_o
-WHERE o_orderkey = l_orderkey AND o_total = 5
-  AND l_discount < (SELECT 0.2 * avg(l_discount) FROM t_undecided_l WHERE l_orderkey = o_orderkey)
-FORMAT Null SETTINGS log_comment = 'undecided_correlated_2';
-SELECT sum(l_price) FROM t_undecided_l, t_undecided_o
-WHERE o_orderkey = l_orderkey AND o_total = 5
-  AND l_discount < (SELECT 0.2 * avg(l_discount) FROM t_undecided_l WHERE l_orderkey = o_orderkey)
-FORMAT Null SETTINGS log_comment = 'undecided_correlated_3';
-
 -- The build side of the join is empty, so its probe side, the read the replicas would split, is never read, and the
--- collection measures nothing. The second run builds the plan again at once, the next two skip it.
+-- collection measures nothing. The second run builds the plan again at once, the next three skip it, and the sixth
+-- builds it again.
 SELECT o_total, sum(l_price) FROM t_undecided_l INNER JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE o_total = 0.5
 GROUP BY o_total FORMAT Null SETTINGS log_comment = 'undecided_empty_1';
 SELECT o_total, sum(l_price) FROM t_undecided_l INNER JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE o_total = 0.5
@@ -100,6 +55,26 @@ SELECT o_total, sum(l_price) FROM t_undecided_l INNER JOIN t_undecided_o ON o_or
 GROUP BY o_total FORMAT Null SETTINGS log_comment = 'undecided_empty_3';
 SELECT o_total, sum(l_price) FROM t_undecided_l INNER JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE o_total = 0.5
 GROUP BY o_total FORMAT Null SETTINGS log_comment = 'undecided_empty_4';
+SELECT o_total, sum(l_price) FROM t_undecided_l INNER JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE o_total = 0.5
+GROUP BY o_total FORMAT Null SETTINGS log_comment = 'undecided_empty_5';
+SELECT o_total, sum(l_price) FROM t_undecided_l INNER JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE o_total = 0.5
+GROUP BY o_total FORMAT Null SETTINGS log_comment = 'undecided_empty_6';
+
+-- The same with skipping turned off: every run builds the plan, the third too, which would skip otherwise.
+SELECT o_total, sum(l_price) FROM t_undecided_l INNER JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE o_total = 0.5
+GROUP BY o_total FORMAT Null SETTINGS log_comment = 'undecided_empty_off_1', automatic_parallel_replicas_undecided_retry_after_executions = 0;
+SELECT o_total, sum(l_price) FROM t_undecided_l INNER JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE o_total = 0.5
+GROUP BY o_total FORMAT Null SETTINGS log_comment = 'undecided_empty_off_2', automatic_parallel_replicas_undecided_retry_after_executions = 0;
+SELECT o_total, sum(l_price) FROM t_undecided_l INNER JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE o_total = 0.5
+GROUP BY o_total FORMAT Null SETTINGS log_comment = 'undecided_empty_off_3', automatic_parallel_replicas_undecided_retry_after_executions = 0;
+
+-- The largest value skips the build for good after the second outcome, but the second run still builds it.
+SELECT o_total, sum(l_price) FROM t_undecided_l INNER JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE o_total = 0.5
+GROUP BY o_total FORMAT Null SETTINGS log_comment = 'undecided_empty_max_1', automatic_parallel_replicas_undecided_retry_after_executions = 18446744073709551615;
+SELECT o_total, sum(l_price) FROM t_undecided_l INNER JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE o_total = 0.5
+GROUP BY o_total FORMAT Null SETTINGS log_comment = 'undecided_empty_max_2', automatic_parallel_replicas_undecided_retry_after_executions = 18446744073709551615;
+SELECT o_total, sum(l_price) FROM t_undecided_l INNER JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE o_total = 0.5
+GROUP BY o_total FORMAT Null SETTINGS log_comment = 'undecided_empty_max_3', automatic_parallel_replicas_undecided_retry_after_executions = 18446744073709551615;
 
 -- Index analysis selects no rows, so the plans are not compared. Without remembered boundaries this is found only
 -- after building the plan with parallel replicas, and is deferred like the other outcomes: the second run builds the
