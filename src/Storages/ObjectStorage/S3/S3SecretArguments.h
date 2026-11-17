@@ -12,7 +12,8 @@ SecretArgumentsSpec s3TableFunctionSecretArguments(bool is_cluster_function);
 /// `S3`, `COSN`, `OSS`, `GCS`, `S3Queue` and the S3 data lake table engines.
 SecretArgumentsSpec s3TableEngineSecretArguments();
 /// The `S3` and `DataLakeCatalog` database engines.
-SecretArgumentsSpec s3DatabaseSecretArguments();
+/// `is_s3_database_engine`: the `S3` database engine, whose keys are known; `false` for `DataLakeCatalog`, which reads others.
+SecretArgumentsSpec s3DatabaseSecretArguments(bool is_s3_database_engine);
 /// `BACKUP ... TO S3(...)`.
 SecretArgumentsSpec s3BackupSecretArguments();
 

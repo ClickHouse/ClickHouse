@@ -83,6 +83,14 @@ else
     echo "OK"
 fi
 
+# The S3 database engine accepts fewer keys than the S3 table engine.
+format "S3 database engine" \
+    "CREATE DATABASE d ENGINE = S3(nc, url = 'http://127.0.0.1:1/x/', secret_access_key = '${SECRET}')"
+format "S3 database engine, misspelled key" \
+    "CREATE DATABASE d ENGINE = S3(nc, secret_acces_key = '${SECRET}')"
+format "S3 database engine, explicit url" \
+    "CREATE DATABASE d ENGINE = S3('http://127.0.0.1:1/x/', 'ak', '${SECRET}', use_environment_credentials = 1, secret_acces_key = '${SECRET}')"
+
 # The explicit-url S3 form ignores a key it does not read: an unknown key hides the whole argument, a valid
 # S3 key that this form does not read hides its value.
 format "s3 explicit url, unknown and unread keys" \
@@ -126,6 +134,8 @@ $CLICKHOUSE_CLIENT -m -q "
     SELECT * FROM postgresql(${NC_PG}, sslkey = '${SECRET}'); -- { serverError BAD_ARGUMENTS }
     SELECT * FROM mysql(${NC_MYSQL}, \`${SECRET}[\` = 'x'); -- { serverError BAD_ARGUMENTS }
     SELECT * FROM s3('http://127.0.0.1:1/bucket/data.csv', 'CSV', 'x Int32', extra_credentials(role_arn_${SECRET} = 'x')); -- { serverError BAD_ARGUMENTS }
+    CREATE DATABASE d_s3 ENGINE = S3(${NC_S3}, secret_acces_key = '${SECRET}'); -- { serverError BAD_ARGUMENTS }
+    CREATE DATABASE d_s3 ENGINE = S3(${NC_S3}, password_${SECRET} = 'x'); -- { serverError BAD_ARGUMENTS }
 "
 
 $CLICKHOUSE_CLIENT -m -q "

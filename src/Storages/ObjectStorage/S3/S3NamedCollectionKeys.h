@@ -59,4 +59,19 @@ inline bool isS3NamedCollectionKey(std::string_view key)
     return s3_named_collection_required_keys.contains(key) || s3_named_collection_optional_keys.contains(key);
 }
 
+/// The keys of a named collection, with its overrides, that the `S3` database engine accepts (`DatabaseS3::parseArguments`).
+inline const std::unordered_set<std::string_view> s3_database_named_collection_keys =
+{
+    "url",
+    "access_key_id",
+    "secret_access_key",
+    "no_sign_request",
+    "use_environment_credentials",
+};
+
+inline bool isS3DatabaseNamedCollectionKey(std::string_view key)
+{
+    return s3_database_named_collection_keys.contains(key);
+}
+
 }

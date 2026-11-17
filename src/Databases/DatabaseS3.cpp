@@ -22,6 +22,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
+#include <Storages/ObjectStorage/S3/S3NamedCollectionKeys.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <boost/algorithm/string.hpp>
@@ -36,14 +37,6 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
 }
-
-static const std::unordered_set<std::string_view> optional_configuration_keys = {
-    "url",
-    "access_key_id",
-    "secret_access_key",
-    "no_sign_request",
-    "use_environment_credentials"
-};
 
 namespace ErrorCodes
 {
@@ -215,7 +208,7 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
     {
         auto & collection = *named_collection;
 
-        validateNamedCollection(collection, {}, optional_configuration_keys);
+        validateNamedCollection(collection, {}, s3_database_named_collection_keys);
 
         result.url_prefix = collection.getOrDefault<String>("url", "");
         result.no_sign_request = collection.getOrDefault<bool>("no_sign_request", false);
@@ -344,7 +337,7 @@ void registerDatabaseS3(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseS3>(args.database_name, config, args.context);
     };
-    factory.registerDatabase("S3", create_fn, s3DatabaseSecretArguments(), {
+    factory.registerDatabase("S3", create_fn, s3DatabaseSecretArguments(/* is_s3_database_engine= */ true), {
         .supports_arguments = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::S3,

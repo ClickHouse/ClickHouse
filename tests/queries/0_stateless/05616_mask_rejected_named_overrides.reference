@@ -42,6 +42,12 @@ SELECT * FROM s3(nc, '[HIDDEN]', format = 'CSV')
 SELECT * FROM s3('http://127.0.0.1:1/x', 'CSV', '[HIDDEN]')
 --- extra_credentials in the query tree
 OK
+--- S3 database engine
+CREATE DATABASE d ENGINE = S3(nc, url = 'http://127.0.0.1:1/x/', secret_access_key = '[HIDDEN]')
+--- S3 database engine, misspelled key
+CREATE DATABASE d ENGINE = S3('[HIDDEN]', '[HIDDEN]')
+--- S3 database engine, explicit url
+CREATE DATABASE d ENGINE = S3('http://127.0.0.1:1/x/', 'ak', '[HIDDEN]', use_environment_credentials = 1, '[HIDDEN]')
 --- s3 explicit url, unknown and unread keys
 SELECT * FROM s3('http://127.0.0.1:1/x', 'CSV', '[HIDDEN]', filename = '[HIDDEN]', structure = 'x Int32')
 --- s3 explicit url, two extra_credentials
@@ -63,3 +69,5 @@ SELECT * FROM mysql(nc_mysql, \'[HIDDEN]\')	1	1
 SELECT * FROM postgresql(nc_pg, \'[HIDDEN]\')	1	1
 SELECT * FROM mysql(nc_mysql, \'[HIDDEN]\')	1	1
 SELECT * FROM s3(\'http://127.0.0.1:1/bucket/data.csv\', \'CSV\', \'x Int32\', \'[HIDDEN]\')	1	1
+CREATE DATABASE d_s3 ENGINE = S3(\'[HIDDEN]\', \'[HIDDEN]\')	1	1
+CREATE DATABASE d_s3 ENGINE = S3(\'[HIDDEN]\', \'[HIDDEN]\')	1	1

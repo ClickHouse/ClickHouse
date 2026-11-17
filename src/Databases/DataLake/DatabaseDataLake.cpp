@@ -2350,7 +2350,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
     /// datalake catalog should support different storage types,
     /// we need a function to check if the url is S3 or Azure.
     /// right now we assume it's a S3 url
-    auto secret_arguments = s3DatabaseSecretArguments();
+    auto secret_arguments = s3DatabaseSecretArguments(/* is_s3_database_engine= */ false);
     secret_arguments.secret_settings = DataLake::SETTINGS_TO_HIDE;
     factory.registerDatabase("DataLakeCatalog", create_fn, std::move(secret_arguments), {
         .supports_arguments = true,
