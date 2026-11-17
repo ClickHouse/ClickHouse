@@ -156,3 +156,41 @@ SELECT id, k FROM t_lw_proj_patch WHERE k < 500 ORDER BY k LIMIT 2;
 SELECT id, k FROM t_lw_proj_patch WHERE k < 500 ORDER BY k LIMIT 2 SETTINGS optimize_use_projections = 0;
 
 DROP TABLE t_lw_proj_patch;
+
+-- A projection on a MATERIALIZED column depends on the columns of its expression:
+-- updating `a` changes `m`, both in a patch part and in a mutation applied on the fly.
+CREATE TABLE t_lw_proj_patch
+(
+    id UInt64,
+    a UInt64,
+    b UInt64,
+    m UInt64 MATERIALIZED a * 2,
+    PROJECTION p_m INDEX m TYPE basic
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS
+    enable_block_number_column = 1,
+    enable_block_offset_column = 1,
+    index_granularity = 16;
+
+SYSTEM STOP MERGES t_lw_proj_patch;
+
+INSERT INTO t_lw_proj_patch (id, a, b) SELECT number, number, number FROM numbers(1000);
+INSERT INTO t_lw_proj_patch (id, a, b) SELECT number + 1000, number + 1000, number FROM numbers(1000);
+
+SELECT '-- lightweight update of the source of a MATERIALIZED projection column';
+UPDATE t_lw_proj_patch SET a = 1000000 WHERE id = 5;
+SELECT id, a, m FROM t_lw_proj_patch WHERE m = 2000000;
+SELECT id, a, m FROM t_lw_proj_patch WHERE m = 10;
+
+SELECT '-- lightweight update of an unrelated column';
+UPDATE t_lw_proj_patch SET b = 7 WHERE id = 1500;
+SELECT id, a, b, m FROM t_lw_proj_patch WHERE m = 3000;
+
+SELECT '-- mutation on the fly of the source of a MATERIALIZED projection column';
+ALTER TABLE t_lw_proj_patch UPDATE a = 3000000 WHERE id = 1600 SETTINGS mutations_sync = 0, apply_mutations_on_fly = 1;
+SELECT id, a, m FROM t_lw_proj_patch WHERE m = 6000000 SETTINGS apply_mutations_on_fly = 1;
+SELECT id, a, m FROM t_lw_proj_patch WHERE m = 6000000 SETTINGS apply_mutations_on_fly = 1, optimize_use_projections = 0;
+SELECT id, a, m FROM t_lw_proj_patch WHERE m = 3200 SETTINGS apply_mutations_on_fly = 1;
+
+DROP TABLE t_lw_proj_patch;

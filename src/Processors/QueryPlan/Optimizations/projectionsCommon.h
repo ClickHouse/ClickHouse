@@ -18,6 +18,7 @@ struct HypotheticalProjection;
 
 struct ProjectionDescription;
 class MergeTreeDataSelectExecutor;
+class MaterializedColumnDependencies;
 
 }
 
@@ -42,11 +43,14 @@ class ColumnsChangedOnFlyByPart
 {
 public:
     explicit ColumnsChangedOnFlyByPart(const ReadFromMergeTree & reading_);
+    ~ColumnsChangedOnFlyByPart();
 
     /// Whether a patch part or a data mutation applied on the fly to `part` changes a column that
     /// filtering by `projection` depends on: a column the projection is built from, a column it stores,
     /// or one of `filter_column_names`. A projection part keeps the values the parent part was written with,
     /// so filtering by such a column selects the rows by stale values and can drop rows that match now.
+    /// A MATERIALIZED column counts as changed when the read recalculates it because a column it reads
+    /// (directly or through another MATERIALIZED column) is updated: `UPDATE a` changes `m MATERIALIZED a * 2`.
     /// A delete only hides rows, so it is not reported: the projection selects a superset of the rows,
     /// which the parent read narrows down.
     bool changesProjectionColumns(
@@ -56,6 +60,8 @@ private:
     const ReadFromMergeTree & reading;
     const bool has_data_changes;
     std::unordered_map<const IMergeTreeDataPart *, NameSet> changed_columns_by_part;
+    /// Built on the first part with data changes.
+    std::unique_ptr<MaterializedColumnDependencies> materialized_column_dependencies;
 };
 
 /// Keeps only the projection named `preferred_name` when it is in the list, otherwise leaves the list as is.

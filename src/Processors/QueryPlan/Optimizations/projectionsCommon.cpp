@@ -20,6 +20,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #if CLICKHOUSE_CLOUD
 #include <Access/ContextAccess.h>
@@ -446,6 +447,8 @@ ColumnsChangedOnFlyByPart::ColumnsChangedOnFlyByPart(const ReadFromMergeTree & r
 {
 }
 
+ColumnsChangedOnFlyByPart::~ColumnsChangedOnFlyByPart() = default;
+
 bool ColumnsChangedOnFlyByPart::changesProjectionColumns(
     const MergeTreeData::DataPartPtr & part, const ProjectionDescription & projection, const Names & filter_column_names)
 {
@@ -465,8 +468,24 @@ bool ColumnsChangedOnFlyByPart::changesProjectionColumns(
         it = changed_columns_by_part.emplace(part.get(), alter_conversions->getAllUpdatedColumns()).first;
     }
 
+    const auto & updated_columns = it->second;
+    if (updated_columns.empty())
+        return false;
+
+    if (!materialized_column_dependencies)
+        materialized_column_dependencies
+            = std::make_unique<MaterializedColumnDependencies>(reading.getStorageMetadata()->getColumns(), reading.getContext());
+
     /// A delete adds no updated column but `_row_exists`, which no projection depends on.
-    return std::ranges::any_of(it->second, [&](const String & name) { return isProjectionColumn(projection, filter_column_names, name); });
+    auto is_changed = [&](const String & name)
+    {
+        return updated_columns.contains(name)
+            || !materialized_column_dependencies->findColumnsToRecalculate(name, updated_columns).empty();
+    };
+
+    return std::ranges::any_of(projection.required_columns, is_changed)
+        || std::ranges::any_of(projection.sample_block, [&](const auto & column) { return is_changed(column.name); })
+        || std::ranges::any_of(filter_column_names, is_changed);
 }
 
 /// Projection candidate analysis is an optional optimization: when the filter does not constrain

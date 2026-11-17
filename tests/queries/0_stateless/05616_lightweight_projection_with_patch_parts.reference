@@ -66,3 +66,10 @@ Description: Projection has been analyzed and will be applied during reading
 1001	101
 1000	100
 1001	101
+-- lightweight update of the source of a MATERIALIZED projection column
+5	1000000	2000000
+-- lightweight update of an unrelated column
+1500	1500	7	3000
+-- mutation on the fly of the source of a MATERIALIZED projection column
+1600	3000000	6000000
+1600	3000000	6000000
