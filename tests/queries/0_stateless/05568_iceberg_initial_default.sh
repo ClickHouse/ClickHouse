@@ -161,6 +161,8 @@ for table, mode in zip(sys.argv[1::2], sys.argv[2::2]):
                     {"id": child, "name": "y", "required": False, "type": "int"}]}},
                 {"id": sibling, "name": "y", "required": False, "initial-default": [9],
                     "type": {"type": "list", "element-id": sibling_element, "element-required": False, "element": "int"}}]}}})
+    elif mode == "unidentified_member":
+        next(f for f in fields if f["name"] == "n")["type"]["fields"][0]["initial-default"] = 6
     elif mode == "absent_parent":
         def struct_field(name, field, default):
             result = {"id": new_id(), "name": name, "required": False, "type": {"type": "struct", "fields": [field]}}
@@ -728,6 +730,27 @@ for format in Parquet ORC Avro; do
     bind_to_current_schema "${bind[@]}"
     ${LOCAL} -q "${after}"
 done
+
+# A field stored without a field id in an Avro file whose top-level fields have ids is not proven absent: it is read, not
+# replaced by its default. The field id is replaced by spaces in the schema, keeping the size of the file.
+${LOCAL} --allow_insert_into_iceberg=1 -q "
+    CREATE TABLE t_unidentified_member (k Int32, n Tuple(x Nullable(Int32))) ENGINE = IcebergLocal('unidentified_member/', 'Avro');
+    INSERT INTO t_unidentified_member VALUES (1, (100));"
+python3 - unidentified_member/data/*.avro <<'PY'
+import re, sys
+with open(sys.argv[1], "rb") as f:
+    data = f.read()
+data, count = re.subn(rb',"field-id":\d+(?=}\]},"field-id")', lambda m: b" " * len(m.group(0)), data)
+assert count == 1
+with open(sys.argv[1], "wb") as f:
+    f.write(data)
+PY
+add_fields unidentified_member unidentified_member
+bind_to_current_schema unidentified_member
+${LOCAL} -q "
+    SELECT 'unidentified member', n FROM icebergLocal('unidentified_member/');
+    SELECT 'unidentified member', n.x FROM icebergLocal('unidentified_member/');
+    SELECT 'unidentified member', count() FROM icebergLocal('unidentified_member/') WHERE n.x = 100;"
 
 # Malformed defaults.
 create=""

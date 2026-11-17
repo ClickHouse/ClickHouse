@@ -1375,10 +1375,103 @@ void collectIcebergFieldIds(const Poco::Dynamic::Var & schema, UnorderedSetWithM
     }
 }
 
-/// Iceberg reads a field whose id is not in a data file as NULL. Returns the columns of `header` whose
-/// field id is not in the file (of the field that has it, for a subcolumn), if the file identifies all its top-level fields by
-/// id. Those of them in a struct that is absent too and has no struct default are NULL whatever their `initial-default`: they
-/// are also added to `columns_without_default`.
+/// A record of an Avro schema written for Iceberg: whether all its fields have field ids, and their ids.
+struct IcebergAvroRecord
+{
+    bool all_fields_have_ids = true;
+    UnorderedSetWithMemoryTracking<Int64> field_ids;
+};
+
+/// The key of the top-level record in `IcebergAvroRecords`; Iceberg field ids are positive.
+constexpr Int64 ICEBERG_AVRO_ROOT_RECORD = std::numeric_limits<Int64>::min();
+
+/// The records of an Avro schema by the field id of the field, list element or map value that has them.
+using IcebergAvroRecords = UnorderedMapWithMemoryTracking<Int64, IcebergAvroRecord>;
+
+std::optional<Int64> getIcebergId(const Poco::JSON::Object::Ptr & object, const String & key)
+{
+    if (!object->has(key) || !object->get(key).isInteger())
+        return {};
+    return object->get(key).convert<Int64>();
+}
+
+void collectIcebergAvroRecords(const Poco::Dynamic::Var & type, std::optional<Int64> owner_id, IcebergAvroRecords & records)
+{
+    checkStackSize();
+
+    if (type.type() == typeid(Poco::JSON::Array::Ptr))
+    {
+        /// A union, like `["null", {"type": "record", ...}]`.
+        for (const auto & branch : *type.extract<Poco::JSON::Array::Ptr>())
+            collectIcebergAvroRecords(branch, owner_id, records);
+        return;
+    }
+    if (type.type() != typeid(Poco::JSON::Object::Ptr))
+        return;
+
+    const auto object = type.extract<Poco::JSON::Object::Ptr>();
+    const String kind = object->has("type") && object->get("type").isString() ? object->getValue<String>("type") : String{};
+    if (kind == "record")
+    {
+        auto fields = object->getArray("fields");
+        IcebergAvroRecord record;
+        for (size_t i = 0; fields && i < fields->size(); ++i)
+        {
+            auto field = fields->getObject(static_cast<unsigned>(i));
+            if (!field)
+            {
+                record.all_fields_have_ids = false;
+                continue;
+            }
+            auto field_id = getIcebergId(field, "field-id");
+            if (field_id)
+                record.field_ids.insert(*field_id);
+            else
+                record.all_fields_have_ids = false;
+            if (field->has("type"))
+                collectIcebergAvroRecords(field->get("type"), field_id, records);
+        }
+        if (owner_id)
+            records[*owner_id] = std::move(record);
+    }
+    else if (kind == "array" && object->has("items"))
+        collectIcebergAvroRecords(object->get("items"), getIcebergId(object, "element-id"), records);
+    else if (kind == "map" && object->has("values"))
+        collectIcebergAvroRecords(object->get("values"), getIcebergId(object, "value-id"), records);
+}
+
+/// Whether the field `path` of the storage encoding is proven absent from the file: the record that would have it identifies all
+/// its fields by id and none of them has its id, or the struct, list or map that would have it is absent itself.
+bool isAbsentFromIcebergAvroFile(
+    const String & path, const ColumnMapper & column_mapper, const IcebergAvroRecords & records,
+    const UnorderedSetWithMemoryTracking<Int64> & file_field_ids)
+{
+    const auto & storage_encoding = column_mapper.getStorageColumnEncoding();
+    auto field_id = storage_encoding.find(path);
+    if (field_id == storage_encoding.end())
+        return false;
+
+    const String parent = column_mapper.getIcebergParentPath(path);
+    Int64 container_id = ICEBERG_AVRO_ROOT_RECORD;
+    if (!parent.empty())
+    {
+        auto parent_id = storage_encoding.find(parent);
+        if (parent_id == storage_encoding.end())
+            return false;
+        container_id = parent_id->second;
+    }
+
+    if (auto record = records.find(container_id); record != records.end())
+        return record->second.all_fields_have_ids && !record->second.field_ids.contains(field_id->second);
+    /// A list element or a map key or value of a stored list or map, or a field of a record that is not found by its id.
+    if (parent.empty() || file_field_ids.contains(container_id))
+        return false;
+    return isAbsentFromIcebergAvroFile(parent, column_mapper, records, file_field_ids);
+}
+
+/// Iceberg reads a field whose id is not in a data file as NULL. Returns the columns of `header` whose field (the field that has
+/// it, for a subcolumn) is proven absent from the file by `isAbsentFromIcebergAvroFile`. Those of them in a struct that is absent
+/// too and has no struct default are NULL whatever their `initial-default`: they are also added to `columns_without_default`.
 NameSet getColumnsAbsentFromIcebergFile(
     const Block & header,
     const ColumnMapper & column_mapper,
@@ -1398,16 +1491,11 @@ NameSet getColumnsAbsentFromIcebergFile(
     if (root.type() != typeid(Poco::JSON::Object::Ptr))
         return {};
 
-    auto fields = root.extract<Poco::JSON::Object::Ptr>()->getArray("fields");
-    if (!fields || fields->size() == 0)
+    IcebergAvroRecords records;
+    collectIcebergAvroRecords(root, ICEBERG_AVRO_ROOT_RECORD, records);
+    auto root_record = records.find(ICEBERG_AVRO_ROOT_RECORD);
+    if (root_record == records.end() || root_record->second.field_ids.empty() || !root_record->second.all_fields_have_ids)
         return {};
-
-    for (size_t i = 0; i < fields->size(); ++i)
-    {
-        auto field = fields->getObject(static_cast<unsigned>(i));
-        if (!field || !field->has("field-id") || !field->get("field-id").isInteger())
-            return {};
-    }
 
     UnorderedSetWithMemoryTracking<Int64> file_field_ids;
     collectIcebergFieldIds(root, file_field_ids);
@@ -1417,8 +1505,7 @@ NameSet getColumnsAbsentFromIcebergFile(
     for (const auto & column : header)
     {
         const String field = column_mapper.getIcebergFieldPath(column.name);
-        auto field_id = storage_encoding.find(field);
-        if (field_id == storage_encoding.end() || file_field_ids.contains(field_id->second))
+        if (!isAbsentFromIcebergAvroFile(field, column_mapper, records, file_field_ids))
             continue;
         result.insert(column.name);
         for (String parent = column_mapper.getIcebergParentPath(field); !parent.empty(); parent = column_mapper.getIcebergParentPath(parent))
