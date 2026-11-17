@@ -248,6 +248,20 @@ static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag, std::uno
         if (!column_set)
             continue;
         const auto future_set = column_set->getData();
+
+        /// A `Set` table is shipped by name, and a replica refuses one of the temporary database with `DATABASE_ACCESS_DENIED`.
+        if (const auto * from_storage = typeid_cast<const FutureSetFromStorage *>(future_set.get()))
+        {
+            const auto & storage_id = from_storage->getStorageID();
+            if (storage_id && storage_id->database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+            {
+                LOG_DEBUG(
+                    getLogger("ApplyParallelReplicas"),
+                    "Keeping the plan fragment local: an IN set reads a temporary Set table");
+                return true;
+            }
+        }
+
         const auto * from_subquery = typeid_cast<const FutureSetFromSubquery *>(future_set.get());
         if (!from_subquery || !visited.insert(from_subquery).second)
             continue;

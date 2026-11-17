@@ -4,6 +4,8 @@
 -- initiator, so a shipped set plan fails on the replica (`DATABASE_ACCESS_DENIED`). The plan fragment stays local.
 -- Without the local plan every replica is a remote one, so a shipped set plan would always reach one.
 -- https://github.com/ClickHouse/ClickHouse/issues/129273
+-- A temporary `Set` table is shipped by name instead, and the replica refuses it the same way.
+-- https://github.com/ClickHouse/ClickHouse/issues/132348
 
 DROP TABLE IF EXISTS t_pr_in_tmp;
 
@@ -12,6 +14,9 @@ INSERT INTO t_pr_in_tmp SELECT number, number % 100 FROM numbers(100000);
 
 CREATE TEMPORARY TABLE tmp_pr_in (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO tmp_pr_in SELECT number * 7 FROM numbers(1000);
+
+CREATE TEMPORARY TABLE tmp_pr_in_set (k UInt64) ENGINE = Set;
+INSERT INTO tmp_pr_in_set SELECT number * 7 FROM numbers(1000);
 
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_plan_based = 1;
@@ -25,5 +30,9 @@ SELECT count(), sum(v) FROM t_pr_in_tmp WHERE k IN (SELECT k FROM tmp_pr_in);
 SELECT count() FROM t_pr_in_tmp WHERE k NOT IN (SELECT k FROM tmp_pr_in);
 -- The sets nested in the plan of a set are shipped with it.
 SELECT count() FROM t_pr_in_tmp WHERE k IN (SELECT k FROM t_pr_in_tmp WHERE k IN (SELECT k FROM tmp_pr_in));
+
+SELECT count(), sum(v) FROM t_pr_in_tmp WHERE k IN tmp_pr_in_set;
+SELECT count() FROM t_pr_in_tmp WHERE k NOT IN tmp_pr_in_set;
+SELECT count() FROM t_pr_in_tmp WHERE k IN (SELECT k FROM t_pr_in_tmp WHERE k IN tmp_pr_in_set);
 
 DROP TABLE t_pr_in_tmp;
