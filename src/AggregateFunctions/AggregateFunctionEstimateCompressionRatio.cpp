@@ -933,21 +933,24 @@ void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory 
     FunctionDocumentation::Description description = R"(
 Estimates the compression ratio of a given column without compressing it.
 
-With `target_type`, it estimates how the column would compress if it were stored as `target_type`, and returns the size of
-the column in its own type divided by the estimated compressed size in `target_type`. The numerator is the same for every
-target type and codec, so the results for several candidates of the same column can be compared: the larger the ratio, the
-smaller the column on disk. Include the type the column has now as one of the candidates: a call without `target_type` uses
-a simpler model, and its result is not comparable with these.
+With `target_type`, it estimates how the column would compress if it were stored as `target_type`.
+It returns the size of the column in its own type divided by its estimated compressed size in `target_type`.
+The numerator is the same for every target type and codec, so the results for several candidates of the same column can be compared: the larger the ratio, the smaller the column on disk.
+A call without `target_type` uses a simpler model, so pass the type the column has now as one of the candidates too.
 
-With `target_type`, the estimate follows how a `MergeTree` table with the default settings writes a column of a wide part: a
-compressed stream per substream (for example, the sizes and the characters of a `String`, the dictionary and the indexes of
-a `LowCardinality` column), granules of 8192 rows or 10 MiB in `target_type`, sparse serialization for columns of mostly default values (decided from
-the first rows of a state, 8192 or the rows of 1 MiB, where a part decides from all its rows). It does not read the settings of any table. The values are
-converted as `CAST` converts them, as `ALTER TABLE ... MODIFY COLUMN` does. The numerator of a
-`LowCardinality` column is the size of its values, not of its dictionary. The rows of a group that one thread of a query
-gathers beyond a granule are estimated as a separate part, and so are states that are serialized (in a distributed query, an external aggregation or an `AggregateFunction` column), so use `max_threads = 1` for a stable result of large groups. `Dynamic` and `JSON` are not supported as target types, nor as
-arguments with `target_type`, and neither is an argument with `LowCardinality` inside a `Variant` (convert them in the query
-first).
+With `target_type`, the estimate follows how a new `MergeTree` table with the default settings writes a column of a wide part:
+- one compressed stream per substream, for example the sizes and the characters of a `String`, or the dictionary and the indexes of a `LowCardinality` column;
+- granules of 8192 rows, or of fewer rows when they take 10 MiB in `target_type`;
+- sparse serialization for a column of mostly default values, decided from the first 8192 rows (or 1 MiB of rows), where a table decides from all the rows of a part;
+- values converted as `CAST` converts them, as `ALTER TABLE ... MODIFY COLUMN` does.
+
+The estimate is approximate, and it does not read the settings of any table.
+A table sizes its granules from its insert blocks and from all its columns together, while the function sees one column and no insert blocks, so the granules of wide rows can differ.
+The numerator of a `LowCardinality` column is the size of its values, not of its dictionary.
+When a query runs in several threads, the rows of a group that one thread gathers join the rows of the other threads unless they fill a granule or 1 MiB, and then they are estimated as a separate part.
+States that are serialized (in a distributed query, an external aggregation, or an `AggregateFunction` column) are separate parts too, so use `max_threads = 1` for a stable result of large groups.
+
+`Dynamic` and `JSON` are not supported as target types, nor as arguments with `target_type`, and neither is an argument with `LowCardinality` inside a `Variant`: convert them in the query first.
 
 <Note>
 For the examples below, the result will differ based on the default compression codec of the server.
