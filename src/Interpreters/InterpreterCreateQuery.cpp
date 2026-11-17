@@ -4393,15 +4393,6 @@ BlockIO InterpreterCreateQuery::execute()
         auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value;
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
         {
-            if (!is_create_database)
-            {
-                getContext()->checkAccess(AccessType::CLUSTER);
-                getContext()->checkAccess(getRequiredAccess());
-                String create_database_name = create.getDatabase().empty() ? getContext()->getCurrentDatabase() : create.getDatabase();
-                if (!create_database_name.empty())
-                    throwIfCaseSiblingTable(DatabaseCatalog::instance().tryGetDatabase(create_database_name), create, getContext());
-            }
-
             /// Authorize here: this is the last point that still runs as the real user, and worker legs
             /// run with no user by default.
             if (is_create_database && create.storage && create.storage->engine
@@ -4479,6 +4470,16 @@ BlockIO InterpreterCreateQuery::execute()
                         checkTextIndexPreAndPostProcessorPermissions(index, getContext());
                     }
                 }
+            }
+
+            /// After the checks of the `AS` source above, which `executeDDLQueryOnCluster` also precedes.
+            if (!is_create_database)
+            {
+                getContext()->checkAccess(AccessType::CLUSTER);
+                getContext()->checkAccess(getRequiredAccess());
+                String create_database_name = create.getDatabase().empty() ? getContext()->getCurrentDatabase() : create.getDatabase();
+                if (!create_database_name.empty())
+                    throwIfCaseSiblingTable(DatabaseCatalog::instance().tryGetDatabase(create_database_name), create, getContext());
             }
 
             /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,
