@@ -26,7 +26,7 @@ public:
     {
     }
 
-    UInt32 value() const { return position; }
+    [[nodiscard]] UInt32 value() const { return position; }
 
     bool advance()
     {
