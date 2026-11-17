@@ -115,8 +115,9 @@ InternalTextLogsQueuePtr StatelessTaskExecutor::LogsQueueSlot::get() const
     return logs_queue;
 }
 
-StatelessTaskExecutor::StatelessTaskExecutor()
-    : thread_pool(
+StatelessTaskExecutor::StatelessTaskExecutor(size_t max_queries_)
+    : max_queries(max_queries_)
+    , thread_pool(
         CurrentMetrics::StatelessWorkerThreads,
         CurrentMetrics::StatelessWorkerThreadsActive,
         CurrentMetrics::StatelessWorkerThreadsScheduled,
@@ -201,7 +202,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     return Result::Ok;
 }
 
-void StatelessTaskExecutor::startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors)
+bool StatelessTaskExecutor::startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors)
 {
     const OpenTelemetry::TracingContext & trace_context = OpenTelemetry::CurrentContext();
     size_t task_count = 0;
@@ -231,11 +232,17 @@ void StatelessTaskExecutor::startTasks(const String & unique_query_id, Distribut
 
             {
                 std::lock_guard lock(tasks_mutex);
+                auto controller = query_controllers.find(unique_query_id);
+                /// A query without a controller has no task registered here yet, so refusing it leaves nothing behind.
+                if (controller == query_controllers.end() && query_controllers.size() >= max_queries)
+                {
+                    LOG_INFO(getLogger("StatelessTaskExecutor"), "Refusing the tasks of {}: {} queries run already", unique_query_id, max_queries);
+                    return false;
+                }
                 if (!tryRegisterTaskLocked(unique_task_id, task_state))
                     continue;
                 try
                 {
-                    auto controller = query_controllers.find(unique_query_id);
                     if (controller == query_controllers.end())
                     {
                         controller = query_controllers.emplace(unique_query_id, std::make_shared<WorkerQueryController>(unique_query_id)).first;
@@ -258,6 +265,7 @@ void StatelessTaskExecutor::startTasks(const String & unique_query_id, Distribut
             scheduleTask(unique_task_id, std::move(task_state), std::move(task_promise), std::move(task_description), unique_temp_file_path, trace_context);
         }
     }
+    return true;
 }
 
 void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStatePtr task_state, TaskPromisePtr task_promise,

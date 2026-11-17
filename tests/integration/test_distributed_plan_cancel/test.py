@@ -11,6 +11,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -86,3 +87,43 @@ def test_worker_error_not_masked(started_cluster):
 
     for node in [node1, node2]:
         node.query("DROP TABLE IF EXISTS test_err_mask")
+
+
+def test_worker_refuses_queries_beyond_max_queries(started_cluster):
+    """A worker runs the tasks of at most `stateless_worker_server.max_queries` queries (2 here): the tasks of a third
+    query are refused as busy (HTTP 429) and that query fails, while the two running queries finish."""
+    for node in [node1, node2]:
+        node.query(
+            "CREATE TABLE IF NOT EXISTS test_max_queries (k UInt64) "
+            "ENGINE = MergeTree() ORDER BY k"
+        )
+        node.query("INSERT INTO test_max_queries SELECT number FROM numbers(100000)")
+
+    # Each query sleeps 10 s in all (5 s per reader); its tasks are on both workers.
+    slow_query = f"""
+        SELECT count() FROM test_max_queries WHERE sleepEachRow(0.0001) = 0
+        SETTINGS {DISTRIBUTED_SETTINGS}, max_block_size = 1000, function_sleep_max_microseconds_per_block = 0
+        """
+    running = [
+        node1.get_query_request(slow_query, query_id=f"test_max_queries_{i}", timeout=120)
+        for i in range(2)
+    ]
+    for node in [node1, node2]:
+        assert_eq_with_retry(
+            node,
+            "SELECT uniqExact(initial_query_id) FROM system.processes "
+            "WHERE initial_query_id LIKE 'test_max_queries_%' AND query_id != initial_query_id",
+            "2",
+        )
+
+    error = node1.query_and_get_error(
+        f"SELECT count() FROM test_max_queries WHERE k % 2 = 0 SETTINGS {DISTRIBUTED_SETTINGS}"
+    )
+    assert "RECEIVED_ERROR_TOO_MANY_REQUESTS" in error, error
+    assert "max_queries" in error, error
+
+    for request in running:
+        assert request.get_answer() == "100000\n"
+
+    for node in [node1, node2]:
+        node.query("DROP TABLE IF EXISTS test_max_queries")
