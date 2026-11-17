@@ -57,16 +57,7 @@ MessageQueueSink::MessageQueueSink(
 MessageQueueSink::~MessageQueueSink()
 {
     if (isCancelled())
-    {
-        if (format)
-            format->cancel();
-
-        if (buffer)
-            buffer->cancel();
-
-        if (producer)
-            producer->cancel();
-    }
+        cancelProducing();
 }
 
 void MessageQueueSink::onStart()
@@ -99,14 +90,17 @@ void MessageQueueSink::onFinish()
 
 void MessageQueueSink::onException(std::exception_ptr /* exception */)
 {
-    try
-    {
-        onFinish();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(getLogger("MessageQueueSink"), "Failed to finish the producer after an exception");
-    }
+    cancelProducing();
+}
+
+void MessageQueueSink::cancelProducing() noexcept
+{
+    if (format)
+        format->cancel();
+    if (buffer)
+        buffer->cancel();
+    if (producer)
+        producer->cancel();
 }
 
 Columns MessageQueueSink::extractFormatColumns(const Columns & columns) const
