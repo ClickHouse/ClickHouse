@@ -38,6 +38,8 @@ struct WriteOptions
     int compression_level = 3;
 
     size_t data_page_size = 1024 * 1024;
+    /// 0 = no limit.
+    size_t data_page_row_limit = 20000;
     size_t write_batch_size = 1024;
 
     bool use_dictionary_encoding = true;

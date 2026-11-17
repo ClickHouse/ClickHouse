@@ -51,6 +51,7 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     options.output_date_as_uint16 = format_settings.parquet.output_date_as_uint16;
     options.output_enum_as_byte_array = format_settings.parquet.output_enum_as_byte_array;
     options.data_page_size = format_settings.parquet.data_page_size;
+    options.data_page_row_limit = format_settings.parquet.data_page_row_limit;
     options.write_batch_size = format_settings.parquet.write_batch_size;
     options.write_page_index = format_settings.parquet.write_page_index;
     options.write_bloom_filter = format_settings.parquet.write_bloom_filter;

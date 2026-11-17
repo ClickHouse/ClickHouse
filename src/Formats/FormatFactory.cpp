@@ -275,6 +275,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
 
     format_settings.parquet.parallel_encoding = settings[Setting::output_format_parquet_parallel_encoding];
     format_settings.parquet.data_page_size = settings[Setting::output_format_parquet_data_page_size];
+    format_settings.parquet.data_page_row_limit = settings[Setting::output_format_parquet_data_page_row_limit];
     format_settings.parquet.write_batch_size = settings[Setting::output_format_parquet_batch_size];
     format_settings.parquet.write_page_index = settings[Setting::output_format_parquet_write_page_index];
     format_settings.parquet.write_bloom_filter = settings[Setting::output_format_parquet_write_bloom_filter];
