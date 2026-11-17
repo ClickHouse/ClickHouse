@@ -286,7 +286,6 @@ def _update_approval(info):
             payload={
                 "commit_id": info.sha,
                 "event": "APPROVE",
-                "body": "AI review approves this commit, see the `AI Review` comment.",
             },
             strict=True,
         )
