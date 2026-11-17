@@ -38,6 +38,12 @@ public:
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
+    /// `executeImpl` rejects an offset or length of 2^63 or more, so it must not run on the value
+    /// behind a NULL: with the default implementation for NULLs that value is left untouched (e.g.
+    /// `nullIf` keeps the original), and a `UInt64` of 2^63 or more there would throw for a row whose
+    /// result is NULL anyway. Returning false makes the framework drop the NULL rows before the call.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
+
     [[nodiscard]] String getSignatureString() const override
     {
         /// When arg 0 is only-null (Nullable(Nothing)), legacy returns the same Nullable(Nothing).

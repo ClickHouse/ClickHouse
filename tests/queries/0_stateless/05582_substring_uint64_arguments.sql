@@ -73,3 +73,18 @@ SELECT substring(s, n, m) FROM (SELECT 'abcdefghij' AS s, arrayJoin([toUInt64(3)
 -- Nullable arguments: NULL stays NULL, and an out-of-range value is still reported.
 SELECT left(s, n) FROM (SELECT 'abcdefghij' AS s, arrayJoin([toNullable(toUInt64(5)), NULL]) AS n);
 SELECT left(s, n) FROM (SELECT 'abcdefghij' AS s, arrayJoin([toNullable(toUInt64(5)), toNullable(toUInt64(9223372036854775809))]) AS n); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+
+--- A NULL argument stays NULL even when the value under the NULL does not fit Int64.
+-- `nullIf` leaves the original value in the slot behind the NULL, so an out-of-range 2^64-1 sits
+-- under a NULL row. That row's result is NULL, not VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, because the
+-- offset/length check must not run on the value behind a NULL.
+
+SELECT left('abcdefghij', nullIf(n, toUInt64(18446744073709551615))) FROM (SELECT arrayJoin([toUInt64(3), toUInt64(18446744073709551615)]) AS n);
+SELECT right('abcdefghij', nullIf(n, toUInt64(18446744073709551615))) FROM (SELECT arrayJoin([toUInt64(3), toUInt64(18446744073709551615)]) AS n);
+SELECT substring('abcdefghij', nullIf(n, toUInt64(18446744073709551615))) FROM (SELECT arrayJoin([toUInt64(3), toUInt64(18446744073709551615)]) AS n);
+SELECT substring('abcdefghij', 3, nullIf(m, toUInt64(18446744073709551615))) FROM (SELECT arrayJoin([toUInt64(2), toUInt64(18446744073709551615)]) AS m);
+SELECT leftUTF8('abcdefghij', nullIf(n, toUInt64(18446744073709551615))) FROM (SELECT arrayJoin([toUInt64(3), toUInt64(18446744073709551615)]) AS n);
+SELECT substringUTF8('abcdefghij', nullIf(n, toUInt64(18446744073709551615))) FROM (SELECT arrayJoin([toUInt64(3), toUInt64(18446744073709551615)]) AS n);
+SELECT byteSlice('hello', 2, nullIf(m, toUInt64(18446744073709551615))) FROM (SELECT arrayJoin([toUInt64(3), toUInt64(18446744073709551615)]) AS m);
+SELECT bitSlice('abcdefghij', nullIf(n, toUInt64(18446744073709551615))) FROM (SELECT arrayJoin([toUInt64(1), toUInt64(18446744073709551615)]) AS n);
+SELECT bitSlice('abcdefghij', 1, nullIf(m, toUInt64(18446744073709551615))) FROM (SELECT arrayJoin([toUInt64(8), toUInt64(18446744073709551615)]) AS m);
