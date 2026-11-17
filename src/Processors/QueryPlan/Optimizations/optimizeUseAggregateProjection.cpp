@@ -508,6 +508,9 @@ static std::optional<ActionsDAG> analyzeAggregateProjection(
 
     ActionsDAG::NodeRawConstPtrs query_key_nodes;
     UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> proj_key_nodes;
+    /// A key of the projection can be an alias of an expression. A query expression matches the expression,
+    /// and the name of the alias is the name of the column in the projection part.
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> proj_key_outputs;
 
     {
         /// Just, filling the set above.
@@ -519,7 +522,12 @@ static std::optional<ActionsDAG> analyzeAggregateProjection(
             if (it == proj_index.end())
                 return {};
 
-            proj_key_nodes.insert(it->second);
+            const auto * key_node = it->second;
+            while (key_node->type == ActionsDAG::ActionType::ALIAS)
+                key_node = key_node->children.front();
+
+            proj_key_nodes.insert(key_node);
+            proj_key_outputs.emplace(key_node, it->second);
         }
 
         query_key_nodes.reserve(keys.size() + 1);
@@ -551,6 +559,9 @@ static std::optional<ActionsDAG> analyzeAggregateProjection(
     auto new_inputs = resolveMatchedInputs(matches, proj_key_nodes, query_key_nodes);
     if (!new_inputs)
         return {};
+
+    for (auto & [_, proj_key_node] : *new_inputs)
+        proj_key_node = proj_key_outputs.at(proj_key_node);
 
     auto proj_dag = ActionsDAG::foldActionsByProjection(*new_inputs, query_key_nodes);
     appendAggregateFunctions(proj_dag, aggregates, *matched_aggregates);

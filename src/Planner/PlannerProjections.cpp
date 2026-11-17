@@ -86,15 +86,6 @@ String getStoredName(const QueryTreeNodePtr & node, const PlannerContext & plann
     return getPlannerName(node, planner_context);
 }
 
-/// Gives the stored names to the outputs. The DAG keeps one node for each expression, so the names change after it is built.
-void renameOutputs(ActionsDAG & actions_dag, const Names & planner_names, const Names & stored_names)
-{
-    /// the query can have one expression two times
-    NameSet renamed;
-    for (size_t i = 0; i < planner_names.size(); ++i)
-        if (planner_names[i] != stored_names[i] && renamed.emplace(planner_names[i]).second)
-            actions_dag.renameOutput(planner_names[i], stored_names[i]);
-}
 
 /// a projection stores what a window function reads, not its result
 void collectExpressionsBeforeWindow(const QueryTreeNodePtr & node, QueryTreeNodes & result)
@@ -186,15 +177,8 @@ ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDesc
     {
         auto aggregate = extractAggregateDescriptions({aggregate_function_node}, *planner_context, /*use_column_identifier_as_action_node_name=*/false).front();
         aggregate.column_name = getStoredName(aggregate_function_node, *planner_context);
-        if (!unique_aggregate_names.emplace(aggregate.column_name).second)
-            continue;
-
-        /// an argument that is a key has the name of the key
-        for (auto & argument_name : aggregate.argument_names)
-            if (auto it = std::find(planner_key_names.begin(), planner_key_names.end(), argument_name); it != planner_key_names.end())
-                argument_name = aggregation_keys[it - planner_key_names.begin()];
-
-        aggregates.push_back(std::move(aggregate));
+        if (unique_aggregate_names.emplace(aggregate.column_name).second)
+            aggregates.push_back(std::move(aggregate));
     }
 }
 
@@ -224,8 +208,14 @@ ActionsDAG ProjectionPlanner::buildBeforeAggregationActions()
         expressions.push_back(aggregate_function_node->as<FunctionNode &>().getArgumentsNode());
 
     auto actions_dag = buildActions(expressions);
-    /// the optimizer reads the keys from a projection part by the names of these nodes
-    renameOutputs(actions_dag, planner_key_names, aggregation_keys);
+
+    /// a key gets the name that the part stores as an alias, the DAG keeps one node for each expression
+    NamesWithAliases key_aliases;
+    for (size_t i = 0; i < aggregation_keys.size(); ++i)
+        if (planner_key_names[i] != aggregation_keys[i])
+            key_aliases.emplace_back(planner_key_names[i], aggregation_keys[i]);
+    actions_dag.addAliases(key_aliases);
+
     return actions_dag;
 }
 
@@ -264,14 +254,16 @@ QueryPlan ProjectionPlanner::buildPlanForNormalProjection(Block source)
     collectExpressionsBeforeWindow(query_tree->as<QueryNode &>().getProjectionNode(), stored_expressions);
     auto projection_dag = buildActions(stored_expressions);
 
-    Names planner_names;
-    Names stored_names;
+    /// the outputs are the expressions under the names that the part stores
+    NamesWithAliases stored_columns;
+    NameSet stored_names;
     for (const auto & expression : stored_expressions)
     {
-        planner_names.push_back(getPlannerName(expression, *planner_context));
-        stored_names.push_back(getStoredName(expression, *planner_context));
+        auto stored_name = getStoredName(expression, *planner_context);
+        if (stored_names.emplace(stored_name).second)
+            stored_columns.emplace_back(getPlannerName(expression, *planner_context), std::move(stored_name));
     }
-    renameOutputs(projection_dag, planner_names, stored_names);
+    projection_dag.project(stored_columns);
     /// the projection stores only the columns of its SELECT
     projection_dag.appendInputsForUnusedColumns(*plan.getCurrentHeader());
     plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(projection_dag)));
