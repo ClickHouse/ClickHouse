@@ -14,8 +14,7 @@
 namespace DB
 {
 
-bool insertNullAsDefaultIfNeeded(ColumnWithTypeAndName & input_column, const ColumnWithTypeAndName & header_column, size_t column_i,
-    BlockMissingValues * block_missing_values, TupleElementsMatching tuple_elements_matching)
+bool insertNullAsDefaultIfNeeded(ColumnWithTypeAndName & input_column, const ColumnWithTypeAndName & header_column, size_t column_i, BlockMissingValues * block_missing_values)
 {
     if (isArray(input_column.type) && isArray(header_column.type))
     {
@@ -28,7 +27,7 @@ bool insertNullAsDefaultIfNeeded(ColumnWithTypeAndName & input_column, const Col
         nested_header_column.column = checkAndGetColumn<ColumnArray>(*header_column.column).getDataPtr();
         nested_header_column.type = checkAndGetDataType<DataTypeArray>(header_column.type.get())->getNestedType();
 
-        if (!insertNullAsDefaultIfNeeded(nested_input_column, nested_header_column, 0, nullptr, tuple_elements_matching))
+        if (!insertNullAsDefaultIfNeeded(nested_input_column, nested_header_column, 0, nullptr))
             return false;
 
         input_column.column = ColumnArray::create(nested_input_column.column, array_input_column.getOffsetsPtr());
@@ -43,22 +42,8 @@ bool insertNullAsDefaultIfNeeded(ColumnWithTypeAndName & input_column, const Col
         const auto & tuple_header_column = checkAndGetColumn<ColumnTuple>(*header_column.column);
         const auto & tuple_header_type = checkAndGetDataType<DataTypeTuple>(*header_column.type);
 
-        const bool by_name = tuple_elements_matching != TupleElementsMatching::Default && tuple_input_type.hasExplicitNames()
-            && tuple_header_type.hasExplicitNames();
-        if (!by_name && tuple_input_type.getElements().size() != tuple_header_type.getElements().size())
+        if (tuple_input_type.getElements().size() != tuple_header_type.getElements().size())
             return false;
-
-        /// The header element that each input element is converted to.
-        VectorWithMemoryTracking<std::optional<size_t>> header_positions;
-        if (by_name)
-        {
-            header_positions.resize(tuple_input_type.getElements().size());
-            auto input_positions = tuple_input_type.matchElementsByName(
-                tuple_header_type, tuple_elements_matching == TupleElementsMatching::ByNameCaseInsensitive);
-            for (size_t header_i = 0; header_i < input_positions.size(); ++header_i)
-                if (input_positions[header_i])
-                    header_positions[*input_positions[header_i]] = header_i;
-        }
 
         bool has_explicit_names = tuple_input_type.hasExplicitNames();
         Names explicit_names = has_explicit_names ? tuple_input_type.getElementNames() : Names{};
@@ -73,14 +58,10 @@ bool insertNullAsDefaultIfNeeded(ColumnWithTypeAndName & input_column, const Col
             ColumnWithTypeAndName nested_input_column;
             nested_input_column.column = tuple_input_column.getColumnPtr(i);
             nested_input_column.type = tuple_input_type.getElement(i);
-            const auto header_i = by_name ? header_positions[i] : std::optional<size_t>(i);
-            if (header_i)
-            {
-                ColumnWithTypeAndName nested_header_column;
-                nested_header_column.column = tuple_header_column.getColumnPtr(*header_i);
-                nested_header_column.type = tuple_header_type.getElement(*header_i);
-                changed |= insertNullAsDefaultIfNeeded(nested_input_column, nested_header_column, 0, nullptr, tuple_elements_matching);
-            }
+            ColumnWithTypeAndName nested_header_column;
+            nested_header_column.column = tuple_header_column.getColumnPtr(i);
+            nested_header_column.type = tuple_header_type.getElement(i);
+            changed |= insertNullAsDefaultIfNeeded(nested_input_column, nested_header_column, 0, nullptr);
             nested_input_columns.push_back(std::move(nested_input_column.column));
             nested_input_types.push_back(std::move(nested_input_column.type));
         }
@@ -105,7 +86,7 @@ bool insertNullAsDefaultIfNeeded(ColumnWithTypeAndName & input_column, const Col
         nested_header_column.column = checkAndGetColumn<ColumnMap>(*header_column.column).getNestedColumnPtr();
         nested_header_column.type = checkAndGetDataType<DataTypeMap>(*header_column.type).getNestedType();
 
-        if (!insertNullAsDefaultIfNeeded(nested_input_column, nested_header_column, 0, nullptr, tuple_elements_matching))
+        if (!insertNullAsDefaultIfNeeded(nested_input_column, nested_header_column, 0, nullptr))
             return false;
 
         input_column.column = ColumnMap::create(std::move(nested_input_column.column));
@@ -125,7 +106,7 @@ bool insertNullAsDefaultIfNeeded(ColumnWithTypeAndName & input_column, const Col
         nested_header.column = assert_cast<const ColumnNullable *>(header_column.column.get())->getNestedColumnPtr();
         nested_header.type = removeNullable(header_column.type);
 
-        if (!insertNullAsDefaultIfNeeded(nested_input, nested_header, 0, nullptr, tuple_elements_matching))
+        if (!insertNullAsDefaultIfNeeded(nested_input, nested_header, 0, nullptr))
             return false;
 
         input_column.column = ColumnNullable::create(
@@ -161,7 +142,7 @@ bool insertNullAsDefaultIfNeeded(ColumnWithTypeAndName & input_column, const Col
     /// After stripping the outer Nullable, the inner type may also need processing.
     /// For example, Nullable(Tuple(Nullable(Int), String)) -> Tuple(Nullable(Int), String)
     /// still needs the Tuple elements compared against the header to strip inner Nullable.
-    insertNullAsDefaultIfNeeded(input_column, header_column, column_i, block_missing_values, tuple_elements_matching);
+    insertNullAsDefaultIfNeeded(input_column, header_column, column_i, block_missing_values);
 
     return true;
 }

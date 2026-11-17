@@ -32,6 +32,7 @@
 #include <Common/SipHash.h>
 #include <Common/findExtreme.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Formats/castColumnToRequestedType.h>
 #include <Functions/FunctionTopKFilter.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/castColumn.h>
@@ -542,7 +543,7 @@ void Reader::getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle &
             {
                 /// Single-point range containing either the default value or one of the infinities.
                 if (null_as_default)
-                    range.right = range.left = output_block_type.getDefault();
+                    range.right = range.left = (*createColumnWithDefaults(output_block_type, 1))[0];
                 else
                     range.right = range.left;
                 continue;
@@ -2860,7 +2861,7 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
             /// value, which is not in the dictionary; without accounting for it we'd wrongly skip a
             /// row group whose nulls match the queried default (e.g. `WHERE x = 0` over an optional
             /// column read as non-nullable `UInt64`). So add the default value's hash.
-            auto default_hash = parquetTryHashField(column_info.output_type->getDefault(), schema_element);
+            auto default_hash = parquetTryHashField((*createColumnWithDefaults(*column_info.output_type, 1))[0], schema_element);
             /// If the default value can't be hashed, we can't rule out a match.
             if (!default_hash.has_value())
                 return std::nullopt;
@@ -3073,7 +3074,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             {
                 /// Single-point range containing either the default value or one of the infinities.
                 if (null_as_default)
-                    range.right = range.left = output_block_type.getDefault();
+                    range.right = range.left = (*createColumnWithDefaults(output_block_type, 1))[0];
                 else
                     range.right = range.left;
             }
@@ -3177,7 +3178,7 @@ bool Reader::adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnIn
         {
             /// Note: the default of the output block type, not of output_type, because the range
             /// is in terms of the former - see cast_stats_to_output_type.
-            Field default_value = extended_sample_block_data_types.at(column_info.idx_in_output_block)->getDefault();
+            Field default_value = (*createColumnWithDefaults(*extended_sample_block_data_types.at(column_info.idx_in_output_block), 1))[0];
             /// Make sure the range contains the default value.
             if (!range.left.isNull() && accurateLess(default_value, range.left))
                 range.left = default_value;
@@ -4700,26 +4701,12 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         && *output_info.idx_in_output_block < row_subgroup.block_missing_values.getNumColumns())
         row_subgroup.block_missing_values.setBits(*output_info.idx_in_output_block, num_rows);
 
-    /// Physically-nullable struct read as Nullable(Tuple(...)). input_type is Nullable(Tuple), but
-    /// we assemble the inner ColumnTuple from the leaves and then wrap it in ColumnNullable using
-    /// the group null map. Every leaf shares the same def-level null map (the subtree is
-    /// all-REQUIRED), which decodePrimitiveColumn moved into `group_null_map` on each leaf before
-    /// any leaf-level Nullable wrapping could consume it. Take it from the first leaf. Dispatch on
-    /// the unwrapped type.
-    MutableColumnPtr nullable_group_null_map;
-    if (output_info.nullable_group)
-    {
-        ColumnSubchunk & first_leaf = row_subgroup.columns.at(output_info.primitive_start);
-        if (first_leaf.group_null_map)
-            nullable_group_null_map = IColumn::mutate(std::move(first_leaf.group_null_map));
-        else
-            /// No struct-level nulls (all rows defined): all-non-null map.
-            nullable_group_null_map = ColumnUInt8::create(num_rows, UInt8(0));
-    }
-
     /// Nullable wraps the type of a physically nullable tuple group and of a variant read as `Nullable(JSON)`.
     TypeIndex kind = removeNullable(output_info.input_type)->getColumnType();
 
+    /// The rows of a primitive column whose values are not data: NULLs filled with defaults, or the rows of a NULL
+    /// struct around the leaf.
+    ColumnPtr rows_without_values;
     if (output_info.is_primitive)
     {
         /// Primitive column.
@@ -4735,7 +4722,10 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
             const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map.get()).getData();
             row_subgroup.block_missing_values.setBitsFromNullMap(*output_info.idx_in_output_block, null_map);
         }
-        subchunk.null_map.reset();
+        if (subchunk.null_map)
+            rows_without_values = std::move(subchunk.null_map);
+        else if (subchunk.group_null_map)
+            rows_without_values = subchunk.group_null_map->getPtr();
     }
     else if (kind == TypeIndex::Array)
     {
@@ -4790,7 +4780,18 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
 
     if (output_info.nullable_group)
     {
-        /// Wrap the assembled ColumnTuple in ColumnNullable using the reconstructed group null map.
+        /// Physically-nullable struct read as Nullable(Tuple(...)). input_type is Nullable(Tuple), but
+        /// we assemble the inner ColumnTuple from the leaves and then wrap it in ColumnNullable using
+        /// the group null map. Every leaf shares the same def-level null map (the subtree is
+        /// all-REQUIRED), which decodePrimitiveColumn moved into `group_null_map` on each leaf before
+        /// any leaf-level Nullable wrapping could consume it. Take it from the first leaf.
+        ColumnSubchunk & first_leaf = row_subgroup.columns.at(output_info.primitive_start);
+        MutableColumnPtr nullable_group_null_map;
+        if (first_leaf.group_null_map)
+            nullable_group_null_map = IColumn::mutate(std::move(first_leaf.group_null_map));
+        else
+            /// No struct-level nulls (all rows defined): all-non-null map.
+            nullable_group_null_map = ColumnUInt8::create(num_rows, UInt8(0));
         chassert(nullable_group_null_map->size() == res->size());
         res = ColumnNullable::create(std::move(res), std::move(nullable_group_null_map));
     }
@@ -4799,10 +4800,14 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
 
     if (output_info.needs_cast)
     {
-        auto col = castColumn(
-            {std::move(res), output_info.input_type, output_info.name}, output_info.output_type);
-        chassert(col->use_count() == 1);
-        res = IColumn::mutate(std::move(col));
+        ColumnWithTypeAndName column{std::move(res), output_info.input_type, output_info.name};
+        const auto * null_map = rows_without_values ? &assert_cast<const ColumnUInt8 &>(*rows_without_values).getData() : nullptr;
+        if (null_map && !memoryIsZero(null_map->data(), 0, null_map->size()))
+            castColumnToRequestedType(column, output_info.output_type, *null_map);
+        else
+            column.column = castColumn(column, output_info.output_type);
+        chassert(column.column->use_count() == 1);
+        res = IColumn::mutate(std::move(column.column));
     }
 
     return res;

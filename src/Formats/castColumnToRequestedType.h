@@ -16,6 +16,8 @@ struct RequestedTypeCastSettings
     bool case_insensitive = false;
     /// A NULL tuple requested as a non-Nullable tuple is its default also without `null_as_default`.
     bool null_tuple_as_default = false;
+    /// Named tuples are matched by name even with no name in common; otherwise they are paired as `CAST` pairs them.
+    bool tuple_elements_by_name = true;
 };
 
 /// Convert a column produced by an input format to the type the caller requested in the header.
@@ -23,8 +25,8 @@ struct RequestedTypeCastSettings
 /// before it leaves the format. Otherwise it contradicts the type it is declared with, and every
 /// reader downstream interprets its memory as the wrong type.
 /// Named tuples are matched by name, as a file is read by its schema: an element the column does not have gets the
-/// default of its type, the others are dropped. The rows of a NULL tuple are not converted; they get the default of
-/// the requested type. With `block_missing_values`, a NULL replaced by a default at the top level is marked as missing.
+/// default of its type, the others are dropped. The value of a NULL row is never converted; the row gets the default
+/// of the requested type. With `block_missing_values`, a NULL replaced by a default at the top level is marked as missing.
 /// Does nothing when the types already match. On failure the column name and both types are added
 /// to the message.
 void castColumnToRequestedType(ColumnWithTypeAndName & column, const DataTypePtr & requested_type,

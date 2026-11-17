@@ -14,6 +14,7 @@
 
 #include <Formats/NativeReader.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/castColumnToRequestedType.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -298,9 +299,8 @@ Block NativeReader::read()
             if (header.has(column.name))
             {
                 auto & header_column = header.getByName(column.name);
-
-                if (format_settings && format_settings->null_as_default)
-                    insertNullAsDefaultIfNeeded(column, header_column, header.getPositionByName(column.name), block_missing_values);
+                const size_t column_i = header.getPositionByName(column.name);
+                const bool null_as_default = format_settings && format_settings->null_as_default;
 
                 if (!header_column.type->equals(*column.type))
                 {
@@ -315,22 +315,15 @@ Block NativeReader::read()
 
                     if ((format_settings && format_settings->native.allow_types_conversion) || convertible_agg_variant)
                     {
-                        try
-                        {
-                            column.column = castColumn(column, header_column.type);
-                        }
-                        catch (Exception & e)
-                        {
-                            e.addMessage(fmt::format(
-                                "while converting column \"{}\" from type {} to type {}",
-                                column.name,
-                                column.type->getName(),
-                                header_column.type->getName()));
-                            throw;
-                        }
+                        /// Named tuples keep the pairing of `CAST`: this is also the receiving side of every Native INSERT.
+                        castColumnToRequestedType(
+                            column, header_column.type, {.null_as_default = null_as_default, .tuple_elements_by_name = false},
+                            column_i, block_missing_values);
                     }
                     else
                     {
+                        if (null_as_default)
+                            insertNullAsDefaultIfNeeded(column, header_column, column_i, block_missing_values);
                         /// Support insert from old clients without low cardinality type.
                         column.column = recursiveLowCardinalityTypeConversion(column.column, column.type, header_column.type);
                     }
@@ -385,17 +378,8 @@ Block NativeReader::read()
             }
             else
             {
-                MutableColumnPtr column;
-                if (col.type->isDefaultInsertTrivial())
-                    column = col.type->createColumn()->cloneResized(rows);
-                else
-                {
-                    column = col.type->createColumn();
-                    col.type->insertManyDefaultsInto(*column, rows);
-                }
-                tmp_res.insert({std::move(column), col.type, col.name});
-                if (block_missing_values)
-                    block_missing_values->setBits(column_i, rows);
+                tmp_res.insert(
+                    {createMissingColumn(col, rows, /*allow_missing_columns=*/true, column_i, block_missing_values), col.type, col.name});
             }
         }
         tmp_res.info = res.info;

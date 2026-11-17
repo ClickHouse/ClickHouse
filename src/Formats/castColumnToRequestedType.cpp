@@ -1,17 +1,18 @@
 #include <Formats/castColumnToRequestedType.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/Utils.h>
-#include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <Interpreters/castColumn.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
@@ -59,25 +60,10 @@ ColumnPtr castRowsNotInNullMap(
     return converted->index(*indexes, 0);
 }
 
-/// Whether the tuples differ at most in `Nullable` elements of `from` that `to` requests without `Nullable`.
-bool differsOnlyInNullableElements(const IDataType & from, const IDataType & to)
-{
-    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(&from);
-    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(&to);
-    if (!from_tuple || !to_tuple || from_tuple->getElementNames() != to_tuple->getElementNames())
-        return false;
-    const auto & from_elements = from_tuple->getElements();
-    const auto & to_elements = to_tuple->getElements();
-    for (size_t i = 0; i < from_elements.size(); ++i)
-        if (!from_elements[i]->equals(*to_elements[i]) && !removeNullable(from_elements[i])->equals(*to_elements[i]))
-            return false;
-    return true;
-}
-
-/// Prepares the elements of named tuples that are requested, recursively; the cast that follows matches them by name.
-/// A Nullable tuple of another type is converted with its NULL rows excluded, before applying the requested
-/// nullability. Top-level NULL defaults also populate `block_missing_values` for column `DEFAULT` expressions.
-ColumnWithTypeAndName prepareNullableTuplesForCast(
+/// Prepares `from` for the cast to `to`: the value of a NULL row is never converted, the row gets the default of `to`.
+/// `Nullable` is removed where `to` has none, if the settings allow it, and tuples are walked as the cast pairs their
+/// elements. Top-level NULL defaults also populate `block_missing_values` for column `DEFAULT` expressions.
+ColumnWithTypeAndName prepareForCast(
     ColumnWithTypeAndName from,
     const DataTypePtr & to,
     const RequestedTypeCastSettings & settings,
@@ -87,46 +73,63 @@ ColumnWithTypeAndName prepareNullableTuplesForCast(
     if (from.type->equals(*to))
         return from;
 
+    const bool to_can_be_null = isNullableOrLowCardinalityNullable(to);
+    if (const auto * from_lc = typeid_cast<const DataTypeLowCardinality *>(from.type.get());
+        from_lc && from_lc->getDictionaryType()->isNullable() && !to_can_be_null && settings.null_as_default)
+    {
+        const auto & lc_column = assert_cast<const ColumnLowCardinality &>(*from.column);
+        DataTypePtr dictionary_type = removeNullable(from_lc->getDictionaryType());
+        if (dictionary_type->equals(*removeLowCardinality(to)))
+        {
+            if (block_missing_values)
+                for (size_t i = 0; i < lc_column.size(); ++i)
+                    if (lc_column.isNullAt(i))
+                        block_missing_values->setBit(column_i, i);
+            from.column = lc_column.cloneWithDefaultOnNull();
+            from.type = std::make_shared<DataTypeLowCardinality>(std::move(dictionary_type));
+            return from;
+        }
+        if (!lc_column.containsNull())
+            return from;
+        from.column = from.column->convertToFullColumnIfLowCardinality();
+        from.type = from_lc->getDictionaryType();
+    }
+
     if (const auto * from_null = typeid_cast<const DataTypeNullable *>(from.type.get()))
     {
         const auto & from_null_column = assert_cast<const ColumnNullable &>(*from.column);
         ColumnWithTypeAndName nested{from_null_column.getNestedColumnPtr(), from_null->getNestedType(), from.name};
         const DataTypePtr to_nested = removeNullable(to);
-        if (isTuple(nested.type) && isTuple(to_nested))
-        {
-            /// Null structs contain undefined child values. Convert only visible rows, then restore the
-            /// null rows in the destination type so text parsers never see substitute empty strings.
-            const auto & null_map = from_null_column.getNullMapData();
-            const bool has_nulls = !memoryIsZero(null_map.data(), 0, null_map.size());
-            const bool strip_nullable = !to->isNullable() && (settings.null_as_default || settings.null_tuple_as_default);
-            /// Removing the `Nullable` of elements for `null_as_default` converts no value of a NULL row.
-            const bool same_values = nested.type->equals(*to_nested)
-                || (settings.null_as_default && differsOnlyInNullableElements(*nested.type, *to_nested));
-            if (has_nulls && !same_values)
-            {
-                nested.column = castRowsNotInNullMap(nested, to_nested, null_map, settings);
-                nested.type = to_nested;
-            }
-            else if (has_nulls && strip_nullable)
-                nested.column = from_null_column.getNestedColumnWithDefaultOnNull();
-            else
-                nested = prepareNullableTuplesForCast(nested, to_nested, settings);
+        const auto & null_map = from_null_column.getNullMapData();
+        const bool has_nulls = !memoryIsZero(null_map.data(), 0, null_map.size());
+        const bool strip_nullable = !to_can_be_null
+            && (settings.null_as_default || (settings.null_tuple_as_default && isTuple(nested.type) && isTuple(to)));
+        if (has_nulls && strip_nullable && settings.null_as_default && block_missing_values)
+            block_missing_values->setBitsFromNullMap(column_i, null_map);
 
-            if (strip_nullable)
-            {
-                if (has_nulls && settings.null_as_default && block_missing_values)
-                    block_missing_values->setBitsFromNullMap(column_i, null_map);
-                return nested;
-            }
+        /// The column zero under a NULL row is the default of `to` only for an equal type with a trivial default.
+        /// `CAST` itself keeps the NULL rows of every type but a tuple.
+        const bool convert_visible_rows = has_nulls
+            && (strip_nullable ? !nested.type->equals(*to_nested) || !to_nested->isDefaultInsertTrivial()
+                               : to_can_be_null && isTuple(nested.type) && !nested.type->equals(*to_nested));
+        if (convert_visible_rows)
+            return {castRowsNotInNullMap(nested, to, null_map, settings), to, from.name};
+
+        if (strip_nullable)
+        {
+            if (has_nulls)
+                nested.column = from_null_column.getNestedColumnWithDefaultOnNull();
+            return prepareForCast(nested, to, settings);
         }
-        else
-            nested = prepareNullableTuplesForCast(nested, to_nested, settings);
+
+        nested = prepareForCast(nested, to_nested, settings);
         from.column = ColumnNullable::create(nested.column, from_null_column.getNullMapColumnPtr());
         from.type = std::make_shared<DataTypeNullable>(nested.type);
         return from;
     }
+    /// A `LowCardinality(Nullable)` column keeps its NULL rows for a Nullable `to`, as `CAST` does.
     if (const auto * to_null = typeid_cast<const DataTypeNullable *>(to.get()))
-        return prepareNullableTuplesForCast(from, to_null->getNestedType(), settings);
+        return from.type->lowCardinality() ? from : prepareForCast(from, to_null->getNestedType(), settings);
 
     if (const auto * to_arr = typeid_cast<const DataTypeArray *>(to.get()))
     {
@@ -134,7 +137,7 @@ ColumnWithTypeAndName prepareNullableTuplesForCast(
         if (!from_arr)
             return from;
         const auto & from_arr_column = assert_cast<const ColumnArray &>(*from.column);
-        auto prepared = prepareNullableTuplesForCast(
+        auto prepared = prepareForCast(
             {from_arr_column.getDataPtr(), from_arr->getNestedType(), from.name}, to_arr->getNestedType(), settings);
         from.column = ColumnArray::create(prepared.column, from_arr_column.getOffsetsPtr());
         from.type = std::make_shared<DataTypeArray>(prepared.type);
@@ -147,9 +150,9 @@ ColumnWithTypeAndName prepareNullableTuplesForCast(
             return from;
         const auto & from_map_column = assert_cast<const ColumnMap &>(*from.column);
         const auto & from_entries = from_map_column.getNestedData();
-        auto prepared_key = prepareNullableTuplesForCast(
+        auto prepared_key = prepareForCast(
             {from_entries.getColumnPtr(0), from_map->getKeyType(), from.name}, to_map->getKeyType(), settings);
-        auto prepared_value = prepareNullableTuplesForCast(
+        auto prepared_value = prepareForCast(
             {from_entries.getColumnPtr(1), from_map->getValueType(), from.name}, to_map->getValueType(), settings);
         from.column = ColumnMap::create(ColumnArray::create(
             ColumnTuple::create(Columns{prepared_key.column, prepared_value.column}), from_map_column.getNestedColumn().getOffsetsPtr()));
@@ -165,7 +168,12 @@ ColumnWithTypeAndName prepareNullableTuplesForCast(
         const auto & tuple_column = assert_cast<const ColumnTuple &>(*from.column);
         const auto & source_types = from_tuple->getElements();
         const auto & target_types = to_tuple->getElements();
-        const bool match_by_name = from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames();
+        VectorWithMemoryTracking<std::optional<size_t>> source_positions;
+        if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames())
+            source_positions = from_tuple->matchElementsByName(*to_tuple, settings.case_insensitive);
+        /// Without `tuple_elements_by_name`, named tuples with no name in common are paired by position, as `CAST` does.
+        const bool match_by_name = !source_positions.empty()
+            && (settings.tuple_elements_by_name || std::ranges::any_of(source_positions, [](const auto & pos) { return pos.has_value(); }));
         if (!match_by_name && source_types.size() != target_types.size())
             return from;
 
@@ -173,7 +181,6 @@ ColumnWithTypeAndName prepareNullableTuplesForCast(
         VectorWithMemoryTracking<std::optional<size_t>> target_positions(source_types.size());
         if (match_by_name)
         {
-            auto source_positions = from_tuple->matchElementsByName(*to_tuple, settings.case_insensitive);
             for (size_t target_i = 0; target_i < source_positions.size(); ++target_i)
                 if (source_positions[target_i])
                     target_positions[*source_positions[target_i]] = target_i;
@@ -196,7 +203,7 @@ ColumnWithTypeAndName prepareNullableTuplesForCast(
                 types.push_back(source_types[i]);
                 continue;
             }
-            auto prepared = prepareNullableTuplesForCast(
+            auto prepared = prepareForCast(
                 {tuple_column.getColumnPtr(i), source_types[i], from.name}, target_types[*target_positions[i]], settings);
             columns.push_back(std::move(prepared.column));
             types.push_back(std::move(prepared.type));
@@ -222,12 +229,11 @@ void castImpl(
     size_t column_i,
     BlockMissingValues * block_missing_values)
 {
-    column = prepareNullableTuplesForCast(column, requested_type, settings, column_i, block_missing_values);
-    const auto matching = settings.case_insensitive ? TupleElementsMatching::ByNameCaseInsensitive : TupleElementsMatching::ByName;
-    if (settings.null_as_default)
-        insertNullAsDefaultIfNeeded(
-            column, {requested_type->createColumn(), requested_type, column.name}, column_i, block_missing_values, matching);
-    column.column = castColumnMatchingTupleElementsByName(column, requested_type, settings.case_insensitive);
+    column = prepareForCast(column, requested_type, settings, column_i, block_missing_values);
+    if (settings.tuple_elements_by_name)
+        column.column = castColumnMatchingTupleElementsByName(column, requested_type, settings.case_insensitive);
+    else
+        column.column = castColumn(column, requested_type);
     column.type = requested_type;
 }
 
