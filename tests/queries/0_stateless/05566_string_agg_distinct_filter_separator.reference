@@ -1,0 +1,13 @@
+a, b
+a-b	a-b	a-b
+a, a, c
+a, c
+a, b
+a, b
+a, b
+aa/bb	1	5
+a | b
+SELECT STRING_AGGDistinctIf(\', \')(x, x != \'b\') FROM t
+SELECT STRING_AGG(x, \', \') FROM t
+AggregateFunction(groupConcatDistinct(\',\', 10), String)
+['0','1','2']
