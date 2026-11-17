@@ -5,6 +5,8 @@
 # https://github.com/ClickHouse/clickhouse-private/issues/87440
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# A write that skips a failing view with `materialized_views_ignore_errors` logs a warning for it; errors are still shown.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
@@ -62,6 +64,20 @@ echo -n "written by the view:        "; ${CLICKHOUSE_CLIENT} --query "SELECT gro
 echo -n "direct insert denied:       "; denied run_user --query "INSERT INTO ${db}.src_no SETTINGS async_insert = 0 VALUES ('mv')"
 echo -n "insert denied:              "; denied run_user --query "INSERT INTO ${db}.buf_no SETTINGS async_insert = 0 VALUES ('mv')"
 echo -n "nothing buffered:           "; ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${db}.buf_no"
+# With `materialized_views_ignore_errors` a direct insert skips the view its definer may not write, and so must the
+# insert into the buffer and its flush. The setting is in the profile of the user, so the flush has it too.
+ignore_user="u_05813_ignore_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} --multiquery <<EOF
+DROP USER IF EXISTS ${ignore_user};
+CREATE USER ${ignore_user} SETTINGS materialized_views_ignore_errors = 1;
+GRANT INSERT ON ${db}.* TO ${ignore_user};
+CREATE TABLE ${db}.buf_ignore (s String) ENGINE = Buffer(${db}, src_no, 1, 3600, 3600, 1000000, 1000000, 1000000000, 1000000000);
+EOF
+${CLICKHOUSE_CLIENT} --user "${ignore_user}" --query "INSERT INTO ${db}.src_no SETTINGS async_insert = 0 VALUES ('direct')"
+${CLICKHOUSE_CLIENT} --user "${ignore_user}" --query "INSERT INTO ${db}.buf_ignore SETTINGS async_insert = 0 VALUES ('buffered')"
+${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE ${db}.buf_ignore"
+echo -n "view skipped, rows written: "; ${CLICKHOUSE_CLIENT} --query "SELECT groupArray(s) FROM (SELECT s FROM ${db}.src_no ORDER BY s)"
+echo -n "view target untouched:      "; ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${protected_db}.mv_no_dst"
 
 echo "## A privilege lost before the flush"
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
@@ -97,7 +113,7 @@ echo -n "written once allowed:       "; ${CLICKHOUSE_CLIENT} --query "SELECT gro
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
 DROP TABLE ${db}.mv_ok;
 DROP TABLE ${db}.mv_no;
-DROP USER ${user}, ${definer_ok}, ${definer_no};
+DROP USER ${user}, ${definer_ok}, ${definer_no}, ${ignore_user};
 DROP NAMED COLLECTION ${nc};
 DROP DATABASE ${protected_db};
 EOF

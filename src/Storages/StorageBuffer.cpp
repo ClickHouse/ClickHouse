@@ -108,6 +108,7 @@ namespace Setting
 {
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool materialized_views_ignore_errors;
     extern const SettingsBool prefer_localhost_replica;
     extern const SettingsUInt64 readonly;
 }
@@ -352,11 +353,15 @@ void checkForwardedInsertAccess(const StoragePtr & table, const ContextPtr & con
     };
 
     auto & catalog = DatabaseCatalog::instance();
-    for (const auto & view_id : catalog.getDependentViews(table->getStorageID()))
+    /// With `materialized_views_ignore_errors` the write skips a dependent view that fails, a denial included.
+    if (!context->getSettingsRef()[Setting::materialized_views_ignore_errors])
     {
-        const auto view = catalog.tryGetTable(view_id, context);
-        if (const auto * materialized_view = view ? view->as<StorageMaterializedView>() : nullptr)
-            check_view_target(*materialized_view);
+        for (const auto & view_id : catalog.getDependentViews(table->getStorageID()))
+        {
+            const auto view = catalog.tryGetTable(view_id, context);
+            if (const auto * materialized_view = view ? view->as<StorageMaterializedView>() : nullptr)
+                check_view_target(*materialized_view);
+        }
     }
 
     StoragePtr next;
