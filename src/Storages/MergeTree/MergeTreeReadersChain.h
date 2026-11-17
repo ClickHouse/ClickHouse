@@ -63,13 +63,15 @@ public:
 
 private:
     /// Executes actions required before PREWHERE, such as alter conversions and filling defaults.
+    /// If `patch_ranges` is set, reads the patches for the rows of `read_columns` first, see `patches_reader_index`.
     void executeActionsBeforePrewhere(
         ReadResult & result,
         Columns & read_columns,
         MergeTreeRangeReader & range_reader,
         const Block & previous_header,
         const NameSet & previous_step_columns,
-        size_t num_read_rows) const;
+        size_t num_read_rows,
+        std::vector<MarkRanges> * patch_ranges);
 
     /// Evaluates default expressions for columns that are absent in part.
     void evaluateMissingDefaults(
@@ -85,11 +87,18 @@ private:
         bool is_last_reader,
         bool keep_additional_columns);
 
-    void readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result);
+    /// Reads the patches for the rows of `columns`, the columns read by `range_reader` (described by `result_header`).
+    void readPatches(
+        const Block & result_header,
+        Columns & columns,
+        MergeTreeRangeReader & range_reader,
+        std::vector<MarkRanges> & patch_ranges,
+        ReadResult & read_result);
 
     /// Materializes the sort-key result columns of MergeOnKey patches.
     /// Returns the main block used for key comparisons.
-    Block executeSortingKeyExpressions(const Block & result_header, ReadResult & read_result);
+    Block executeSortingKeyExpressions(
+        const Block & result_header, Columns & columns, MergeTreeRangeReader & range_reader, ReadResult & read_result);
 
     void addPatchVirtuals(Block & to, const Block & from) const;
     void addPatchVirtuals(ReadResult & result, const Block & header) const;
@@ -115,6 +124,11 @@ private:
     /// For every reader, the names of the columns produced by the previous steps of the chain.
     /// They don't change between blocks, so they are collected once.
     std::vector<NameSet> previous_steps_columns;
+
+    /// The reader after which the patches are read. The key and system columns required to read the patches are
+    /// read in the first step that reads columns (see `addPatchPartsColumns`), which is the first reader unless
+    /// it only produces a filter (`MergeTreeReaderIndex`, e.g. for the projection index), then it is the second one.
+    size_t patches_reader_index = 0;
 
     /// The last reader that may evaluate defaults of columns missing in the part, 0 if none.
     /// Only the steps before it keep the columns they project out.

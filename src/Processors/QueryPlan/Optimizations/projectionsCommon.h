@@ -24,6 +24,37 @@ namespace DB::QueryPlanOptimizations
 /// Common checks that projection can be used for this step.
 std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTree * reading);
 
+/// The same checks as `canUseProjectionForReadingStep`, except for the data changes applied on the fly
+/// (patch parts and data mutations, see `hasDataChangesOnFly`). Use it only for projections that are
+/// used to filter the parent read, not to supply data instead of it.
+std::expected<void, std::string> canUseProjectionForReadingStepIgnoringDataChangesOnFly(ReadFromMergeTree * reading);
+
+/// Whether reads of some parts apply patch parts (lightweight updates and deletes) or data mutations on the fly.
+/// They change the values the read of a parent part returns, but not its projection parts.
+bool hasDataChangesOnFly(const ReadFromMergeTree & reading);
+
+/// The columns that patch parts and data mutations change on the fly, per parent part.
+/// The alter conversions of a part are built once and shared by all projections of the query.
+class ColumnsChangedOnFlyByPart
+{
+public:
+    explicit ColumnsChangedOnFlyByPart(const ReadFromMergeTree & reading_);
+
+    /// Whether a patch part or a data mutation applied on the fly to `part` changes a column that
+    /// filtering by `projection` depends on: a column the projection is built from, a column it stores,
+    /// or one of `filter_column_names`. A projection part keeps the values the parent part was written with,
+    /// so filtering by such a column selects the rows by stale values and can drop rows that match now.
+    /// A delete only hides rows, so it is not reported: the projection selects a superset of the rows,
+    /// which the parent read narrows down.
+    bool changesProjectionColumns(
+        const MergeTreeData::DataPartPtr & part, const ProjectionDescription & projection, const Names & filter_column_names);
+
+private:
+    const ReadFromMergeTree & reading;
+    const bool has_data_changes;
+    std::unordered_map<const IMergeTreeDataPart *, NameSet> changed_columns_by_part;
+};
+
 /// Keeps only the projection named `preferred_name` when it is in the list, otherwise leaves the list as is.
 void filterProjectionCandidates(std::vector<const ProjectionDescription *> & projections, const String & preferred_name);
 
@@ -129,10 +160,13 @@ bool analyzeProjectionCandidate(
 
 /// Performs part-level filtering using projection to skip irrelevant data parts.
 /// Also collects projections to build filters that will be applied during MergeTree reading for fine-grained row-level filtering.
+/// A part whose patch parts or data mutations change a column the filter by the projection depends on
+/// (see `ColumnsChangedOnFlyByPart`) is read from the parent part without filtering by the projection.
 void filterPartsAndCollectProjectionCandidates(
     ReadFromMergeTree & reading,
     const ProjectionDescription & projection,
     const MergeTreeDataSelectExecutor & reader,
+    ColumnsChangedOnFlyByPart & columns_changed_on_fly,
     MergeTreeData::MutationsSnapshotPtr empty_mutations_snapshot,
     ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
     const SelectQueryInfo & projection_query_info,

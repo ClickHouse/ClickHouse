@@ -387,8 +387,13 @@ UseProjectionsResult optimizeUseNormalProjections(
     if (normal_projections.empty())
         return result;
 
-    if (auto can_use = canUseProjectionForReadingStep(reading); !can_use)
+    if (auto can_use = canUseProjectionForReadingStepIgnoringDataChangesOnFly(reading); !can_use)
         return reject_all(can_use.error());
+
+    /// Patch parts and data mutations are applied on the fly by the parent read only, so a projection
+    /// cannot supply the data instead of the parent read. It can still filter the parent read, because
+    /// they never move rows within a part, see `ColumnsChangedOnFlyByPart`.
+    const bool has_data_changes_on_fly = hasDataChangesOnFly(*reading);
 
     /// Test hook: make a parallel-replicas follower skip the projection short-circuit (see the same
     /// failpoint in optimizeUseAggregateProjections). Gated on the follower predicate so it never
@@ -590,6 +595,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     }
 
     auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
+    ColumnsChangedOnFlyByPart columns_changed_on_fly(*reading);
 
     auto ratio = static_cast<double>(context->getSettingsRef()[Setting::optimize_projection_skip_index_ratio]);
     if (ratio < 0 || ratio > 1)
@@ -617,9 +623,13 @@ UseProjectionsResult optimizeUseNormalProjections(
             }
         }
 
-        if (!has_all_required_columns(projection))
+        const bool can_read_projection = has_all_required_columns(projection);
+        if (!can_read_projection || has_data_changes_on_fly)
         {
-            result.projection_reject_reasons.try_emplace(projection->name, "the projection does not contain all columns required by the query");
+            if (!can_read_projection)
+                result.projection_reject_reasons.try_emplace(projection->name, "the projection does not contain all columns required by the query");
+            else
+                result.projection_reject_reasons.try_emplace(projection->name, "the table has unmaterialized mutations or patch parts");
 
             /// Check if projection can be used to filter parts or building projection index filters
             if (query.filter_node && optimize_use_projection_filtering)
@@ -629,6 +639,7 @@ UseProjectionsResult optimizeUseNormalProjections(
                     *reading,
                     *projection,
                     reader,
+                    columns_changed_on_fly,
                     empty_mutations_snapshot,
                     *parent_reading_select_result,
                     projection_query_info,

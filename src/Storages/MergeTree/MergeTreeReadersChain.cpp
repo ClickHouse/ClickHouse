@@ -46,6 +46,9 @@ MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeT
         for (const auto & column : range_readers[i - 1].getSampleBlock())
             previous_steps_columns[i].insert(column.name);
 
+    if (range_readers.size() > 1 && range_readers.front().getReader()->producesFilterOnly())
+        patches_reader_index = 1;
+
     for (size_t i = range_readers.size(); i > 1; --i)
     {
         if (range_readers[i - 1].getReader()->mayEvaluateMissingDefaults())
@@ -351,11 +354,13 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
                 read_result.num_bytes_read,
                 should_continue_sampling);
 
-        readPatches(first_reader.getReadSampleBlock(), patch_ranges, read_result);
-        executeActionsBeforePrewhere(read_result, read_result.columns, first_reader, {}, previous_steps_columns.front(), read_result.num_rows);
+        if (patches_reader_index == 0)
+            readPatches(first_reader.getReadSampleBlock(), read_result.columns, first_reader, patch_ranges, read_result);
+        executeActionsBeforePrewhere(read_result, read_result.columns, first_reader, {}, previous_steps_columns.front(), read_result.num_rows, nullptr);
 
         executePrewhereActions(first_reader, read_result, {}, range_readers.size() == 1, last_reader_evaluating_defaults > 0);
-        addPatchVirtuals(read_result, first_reader.getSampleBlock());
+        if (patches_reader_index == 0)
+            addPatchVirtuals(read_result, first_reader.getSampleBlock());
 
         if (num_attributed_readers != 0)
             read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
@@ -394,11 +399,20 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
                     should_continue_sampling);
             }
 
-            executeActionsBeforePrewhere(read_result, columns, range_readers[i], previous_header, previous_steps_columns[i], num_read_rows);
+            executeActionsBeforePrewhere(
+                read_result,
+                columns,
+                range_readers[i],
+                previous_header,
+                previous_steps_columns[i],
+                num_read_rows,
+                i == patches_reader_index ? &patch_ranges : nullptr);
             read_result.columns.insert(read_result.columns.end(), columns.begin(), columns.end());
         }
 
         executePrewhereActions(range_readers[i], read_result, previous_header, i + 1 == range_readers.size(), i < last_reader_evaluating_defaults);
+        if (i == patches_reader_index)
+            addPatchVirtuals(read_result, range_readers[i].getSampleBlock());
 
         if (i < num_attributed_readers)
             read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
@@ -414,7 +428,8 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     MergeTreeRangeReader & range_reader,
     const Block & previous_header,
     const NameSet & previous_step_columns,
-    size_t num_read_rows) const
+    size_t num_read_rows,
+    std::vector<MarkRanges> * patch_ranges)
 {
     auto * merge_tree_reader = range_reader.getReader();
     const auto * prewhere_info = range_reader.getPrewhereInfo();
@@ -451,6 +466,10 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
 
         MergeTreeRangeReader::filterColumns(read_columns, result.final_filter);
     }
+
+    /// The rows of `read_columns` are now the rows of `result`.
+    if (patch_ranges)
+        readPatches(range_reader.getReadSampleBlock(), read_columns, range_reader, *patch_ranges, result);
 
     auto patch_max_version = getMaxPatchVersionForStep(range_reader);
     const auto & result_header = range_reader.getReadSampleBlock();
@@ -631,11 +650,12 @@ void MergeTreeReadersChain::addPatchVirtuals(Block & to, const Block & from) con
     }
 }
 
-Block MergeTreeReadersChain::executeSortingKeyExpressions(const Block & result_header, ReadResult & read_result)
+Block MergeTreeReadersChain::executeSortingKeyExpressions(
+    const Block & result_header, Columns & columns, MergeTreeRangeReader & range_reader, ReadResult & read_result)
 {
     /// Sort-key columns of MergeOnKey patches are required for key comparisons but may be missing on disk.
     bool should_evaluate_missing_defaults = false;
-    range_readers.front().getReader()->fillMissingColumns(read_result.columns, should_evaluate_missing_defaults, read_result.num_rows);
+    range_reader.getReader()->fillMissingColumns(columns, should_evaluate_missing_defaults, read_result.num_rows);
 
     if (should_evaluate_missing_defaults)
     {
@@ -654,7 +674,7 @@ Block MergeTreeReadersChain::executeSortingKeyExpressions(const Block & result_h
         auto is_missing_key_column = [&](size_t pos)
         {
             const auto & column_name = result_header.getByPosition(pos).name;
-            return !read_result.columns[pos] && required_key_columns.contains(column_name);
+            return !columns[pos] && required_key_columns.contains(column_name);
         };
 
         size_t num_columns = result_header.columns();
@@ -671,18 +691,18 @@ Block MergeTreeReadersChain::executeSortingKeyExpressions(const Block & result_h
 
         if (has_missing_key_columns)
         {
-            auto columns_with_defaults = read_result.columns;
-            evaluateMissingDefaults(range_readers.front(), read_result, /*previous_header=*/ {}, columns_with_defaults);
+            auto columns_with_defaults = columns;
+            evaluateMissingDefaults(range_reader, read_result, /*previous_header=*/ {}, columns_with_defaults);
 
             for (size_t pos = 0; pos < num_columns; ++pos)
             {
                 if (is_missing_key_column(pos))
-                    read_result.columns[pos] = columns_with_defaults[pos];
+                    columns[pos] = columns_with_defaults[pos];
             }
         }
     }
 
-    auto main_block = result_header.cloneWithColumns(read_result.columns);
+    auto main_block = result_header.cloneWithColumns(columns);
 
     /// Materialize the sort-key result columns of MergeOnKey patches on `main_block` once per main block.
     for (const auto & patch_reader : patch_readers)
@@ -699,7 +719,7 @@ Block MergeTreeReadersChain::executeSortingKeyExpressions(const Block & result_h
 
         if (patch.sorting_key->expression && std::ranges::any_of(patch.sorting_key->column_names, is_missing))
         {
-            auto block_for_key = result_header.cloneWithColumns(read_result.columns);
+            auto block_for_key = result_header.cloneWithColumns(columns);
             patch.sorting_key->expression->execute(block_for_key);
 
             for (const auto & name : patch.sorting_key->column_names)
@@ -726,12 +746,17 @@ Block MergeTreeReadersChain::executeSortingKeyExpressions(const Block & result_h
     return main_block;
 }
 
-void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result)
+void MergeTreeReadersChain::readPatches(
+    const Block & result_header,
+    Columns & columns,
+    MergeTreeRangeReader & range_reader,
+    std::vector<MarkRanges> & patch_ranges,
+    ReadResult & read_result)
 {
     if (patch_readers.empty())
         return;
 
-    auto main_block = executeSortingKeyExpressions(result_header, read_result);
+    auto main_block = executeSortingKeyExpressions(result_header, columns, range_reader, read_result);
 
     for (size_t i = 0; i < patches_results.size(); ++i)
     {
