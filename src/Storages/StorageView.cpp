@@ -3,8 +3,11 @@
 #include <Access/User.h>
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/Serializations/SerializationMap.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
@@ -334,6 +337,218 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
     }
 
     return DatabaseCatalog::instance().tryGetTable(storage_id, context);
+}
+
+/// True if `node` contains an identifier that refers to `alias`, ignoring the subtree `excluded`.
+bool referencesAlias(const ASTPtr & node, const IAST * excluded, const String & alias)
+{
+    if (node.get() == excluded)
+        return false;
+
+    if (const auto * identifier = node->as<ASTIdentifier>())
+    {
+        const auto & name = identifier->name();
+        if (name == alias || name.starts_with(alias + "."))
+            return true;
+    }
+
+    for (const auto & child : node->children)
+        if (referencesAlias(child, excluded, alias))
+            return true;
+
+    return false;
+}
+
+bool definesAliasInQueryScope(const ASTPtr & node, const String & identifier_name, const IAST * excluded)
+{
+    if (node.get() == excluded)
+        return false;
+
+    const auto & alias = node->tryGetAlias();
+    if (!alias.empty() && (identifier_name == alias || identifier_name.starts_with(alias + ".")))
+        return true;
+
+    /// An alias on a subquery expression belongs to this scope, but aliases inside its body do not.
+    if (node->as<ASTSubquery>() || node->as<ASTSelectQuery>() || node->as<ASTSelectWithUnionQuery>())
+        return false;
+
+    for (const auto & child : node->children)
+        if (definesAliasInQueryScope(child, identifier_name, excluded))
+            return true;
+
+    return false;
+}
+
+bool referencesQueryScopeAlias(const ASTSelectQuery & select, const String & identifier_name, const IAST * excluded)
+{
+    for (const auto & child : select.children)
+        if (definesAliasInQueryScope(child, identifier_name, excluded))
+            return true;
+
+    return false;
+}
+
+struct DirectViewProjection
+{
+    const ASTIdentifier * identifier = nullptr;
+    const ASTSelectQuery * query_scope = nullptr;
+    String source_column_name;
+    StorageSnapshotPtr underlying_snapshot;
+};
+
+std::optional<DirectViewProjection> getDirectViewProjection(
+    const ASTPtr & inner_query, const StorageSnapshotPtr & storage_snapshot, const String & view_column_name, ContextPtr context)
+{
+    const auto * select_with_union = inner_query->as<ASTSelectWithUnionQuery>();
+    if (!select_with_union || select_with_union->list_of_selects->children.size() != 1)
+        return {};
+
+    const auto & select_ast = select_with_union->list_of_selects->children.front();
+    const auto * select = select_ast->as<ASTSelectQuery>();
+    if (!select || !select->select())
+        return {};
+
+    auto underlying_storage = tryGetTrivialViewUnderlyingStorage(inner_query, context);
+    if (!underlying_storage || !underlying_storage->supportsOptimizationToSubcolumns())
+        return {};
+
+    auto view_column = storage_snapshot->tryGetColumn(GetColumnsOptions::Ordinary, view_column_name);
+    if (!view_column || !typeid_cast<const DataTypeMap *>(view_column->type.get()))
+        return {};
+
+    const auto * table_expression = getTableExpression(*select, 0);
+    if (!table_expression || table_expression->column_aliases)
+        return {};
+    DatabaseAndTableWithAlias source_table(*table_expression, context->getCurrentDatabase());
+
+    auto metadata_handle = underlying_storage->getInMemoryMetadataPtr(context, false);
+    auto underlying_snapshot = underlying_storage->getStorageSnapshot(metadata_handle, context)->withStorageHolder(underlying_storage);
+
+    const ASTIdentifier * result = nullptr;
+    String source_column_name;
+    for (const auto & expression : select->select()->children)
+    {
+        if (expression->getAliasOrColumnName() != view_column_name)
+            continue;
+
+        const auto * identifier = expression->as<ASTIdentifier>();
+        if (!identifier || result)
+            return {};
+
+        /// A compound name may qualify a table rather than name the dotted column found in metadata.
+        /// Leave such bindings to the analyzer instead of assuming the full name is a stored column.
+        if (IdentifierSemantic::canReferColumnToTable(*identifier, source_table) != IdentifierSemantic::ColumnMatch::NoMatch)
+            return {};
+
+        auto source_column = underlying_snapshot->tryGetColumn(GetColumnsOptions::Ordinary, identifier->getColumnName());
+        if (!source_column || !source_column->type->equals(*view_column->type))
+            return {};
+
+        /// An input identifier may bind another alias in the query scope rather than the physical column,
+        /// e.g. `SELECT x AS m FROM t WHERE notEmpty(y AS x)`. Leave alias binding to the analyzer, including
+        /// `prefer_column_name_to_alias`, instead of assuming the identifier names the stored column.
+        if (referencesQueryScopeAlias(*select, identifier->name(), identifier))
+            return {};
+
+        /// The rewrite replaces the projection, and its alias with it, so other expressions
+        /// of the view body must not refer to that alias, e.g. `SELECT m AS a, a['b'] AS x FROM t`.
+        const auto & alias = identifier->tryGetAlias();
+        if (!alias.empty() && alias != identifier->name() && referencesAlias(select_ast, identifier, alias))
+            return {};
+
+        result = identifier;
+        source_column_name = source_column->getNameInStorage();
+    }
+
+    if (!result)
+        return {};
+
+    return DirectViewProjection{result, select, std::move(source_column_name), std::move(underlying_snapshot)};
+}
+
+/// True if `<source column>.<subcolumn_name>` in the underlying table is the key subcolumn of the Map
+/// projected by the view, and not, e.g., a physical column which the view body does not project.
+bool sourceHasMapKeySubcolumn(
+    const DirectViewProjection & projection, const String & subcolumn_name, const DataTypePtr & subcolumn_type)
+{
+    const auto & source_column_name = projection.source_column_name;
+    auto full_name = source_column_name + "." + subcolumn_name;
+    const auto & snapshot = *projection.underlying_snapshot;
+
+    /// The generated identifier is resolved again in the view's alias scope, where `x.key_k`
+    /// may itself be an alias rather than the validated storage subcolumn.
+    if (referencesQueryScopeAlias(*projection.query_scope, full_name, projection.identifier))
+        return false;
+
+    if (snapshot.tryGetColumn(GetColumnsOptions::All, full_name))
+        return false;
+
+    auto resolved = snapshot.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), full_name);
+    if (!resolved || !resolved->isSubcolumn() || resolved->getNameInStorage() != source_column_name
+        || !resolved->type->equals(*subcolumn_type))
+        return false;
+
+    auto info = resolved->getTypeInStorage()->tryGetSubcolumnInfo(resolved->getSubcolumnName());
+    return info && SerializationMap::isKeyValueSubcolumn(info->substreams_path);
+}
+
+bool rewriteViewProjectionToSubcolumn(
+    ASTSelectWithUnionQuery & query,
+    const String & view_column_name,
+    const String & subcolumn_name,
+    const String & source_column_name,
+    const ContextPtr & context)
+{
+    if (query.list_of_selects->children.size() != 1)
+        return false;
+
+    auto * select = query.list_of_selects->children.front()->as<ASTSelectQuery>();
+    if (!select || !select->select())
+        return false;
+
+    ASTPtr * projection = nullptr;
+    for (auto & expression : select->select()->children)
+    {
+        if (expression->getAliasOrColumnName() != view_column_name)
+            continue;
+
+        if (!expression->as<ASTIdentifier>() || projection)
+            return false;
+        projection = &expression;
+    }
+    if (!projection)
+        return false;
+
+    const auto * tables = select->tables().get();
+    if (!tables || tables->children.size() != 1)
+        return false;
+
+    auto * table_element = tables->children.front()->as<ASTTablesInSelectQueryElement>();
+    auto * table_expression = table_element && table_element->table_expression
+        ? table_element->table_expression->as<ASTTableExpression>()
+        : nullptr;
+    if (!table_element || table_element->table_join || table_element->array_join || !table_expression)
+        return false;
+
+    auto rewritten_expression = (*projection)->clone();
+    auto & rewritten_identifier = rewritten_expression->as<ASTIdentifier &>();
+    /// A wrapper reads its projected column, while the table-facing projection must use the
+    /// complete stored name that passed validation, including dots inside that name.
+    const auto & column_name = table_expression->subquery ? rewritten_identifier.shortName() : source_column_name;
+    rewritten_identifier.setShortName(column_name + "." + subcolumn_name);
+    rewritten_identifier.setAlias(view_column_name + "." + subcolumn_name);
+    *projection = std::move(rewritten_expression);
+
+    if (!table_expression->subquery)
+        return true;
+
+    for (auto & child : table_expression->subquery->children)
+    {
+        if (auto * nested_query = child->as<ASTSelectWithUnionQuery>())
+            return rewriteViewProjectionToSubcolumn(*nested_query, view_column_name, subcolumn_name, source_column_name, context);
+    }
+
+    return false;
 }
 
 
@@ -777,6 +992,48 @@ void StorageView::readImpl(
 
     const bool sealed = isSealed(*storage_snapshot->metadata, context) && !isReadByDefiner(*storage_snapshot->metadata, context);
     auto view_context = getViewContext(context, storage_snapshot, this);
+    if (!sealed)
+    {
+        std::unordered_map<String, NameAndTypePair> requested_subcolumns;
+        std::unordered_set<String> ambiguous_columns;
+        for (const auto & column_name : column_names)
+        {
+            auto column = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_name);
+            if (!column || !column->isSubcolumn())
+                continue;
+
+            const auto & base_column_name = column->getNameInStorage();
+            if (std::find(column_names.begin(), column_names.end(), base_column_name) != column_names.end())
+                continue;
+
+            if (!requested_subcolumns.emplace(base_column_name, NameAndTypePair{column->getSubcolumnName(), column->type}).second)
+                ambiguous_columns.insert(base_column_name);
+        }
+
+        for (const auto & base_column_name : ambiguous_columns)
+            requested_subcolumns.erase(base_column_name);
+
+        for (const auto & [base_column_name, subcolumn] : requested_subcolumns)
+        {
+            auto projection = getDirectViewProjection(
+                storage_snapshot->metadata->getSelectQuery().inner_query,
+                storage_snapshot,
+                base_column_name,
+                getViewSubqueryContext(context, storage_snapshot));
+            if (!projection || !sourceHasMapKeySubcolumn(*projection, subcolumn.name, subcolumn.type))
+                continue;
+
+            const auto & subcolumn_name = subcolumn.name;
+
+            auto rewritten_query = current_inner_query->clone();
+            auto * select_with_union = rewritten_query->as<ASTSelectWithUnionQuery>();
+            if (select_with_union
+                && rewriteViewProjectionToSubcolumn(
+                    *select_with_union, base_column_name, subcolumn_name, projection->source_column_name, context))
+                current_inner_query = std::move(rewritten_query);
+        }
+    }
+
     {
         /// The outer filter is used only to analyze the indexes of the inner tables,
         /// but for a sealed view it would skip data by the values of the rows the view hides.
@@ -995,6 +1252,30 @@ ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const Storage
     /// e.g. it must read the table itself, not the inserted block of a materialized view.
     view_context->setIsViewInnerQuery(true);
     return view_context;
+}
+
+bool StorageView::supportsOptimizationToSubcolumnsForColumn(
+    const StorageSnapshotPtr & storage_snapshot,
+    const String & column_name,
+    const ContextPtr & context,
+    const std::optional<NameAndTypePair> & map_key_subcolumn,
+    bool require_bucketed_map_serialization) const
+{
+    if (isSealed(*storage_snapshot->metadata, context))
+        return false;
+
+    auto projection = getDirectViewProjection(
+        storage_snapshot->metadata->getSelectQuery().inner_query,
+        storage_snapshot,
+        column_name,
+        getViewSubqueryContext(context, storage_snapshot));
+    if (!projection)
+        return false;
+
+    if (require_bucketed_map_serialization && !projection->underlying_snapshot->storage.hasBucketedMapSerialization())
+        return false;
+
+    return !map_key_subcolumn || sourceHasMapKeySubcolumn(*projection, map_key_subcolumn->name, map_key_subcolumn->type);
 }
 
 }
