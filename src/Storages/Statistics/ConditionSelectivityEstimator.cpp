@@ -142,7 +142,9 @@ static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStati
     result.max_value = std::move(estimate.estimated_max);
     if (result.min_value && result.max_value)
         result.range_provenance.origin = ColumnStatsOrigin::MeasuredStatistics;
-    if (estimate.estimated_null_count && estimate.rows_count)
+    /// A NULL count merged with a summary that has none (e.g. of a data lake file with bounds alone) misses the NULLs of
+    /// its rows, so the NULL fraction is unknown, while the bounds still cover the values.
+    if (estimate.estimated_null_count && estimate.null_count_covers_all_rows && estimate.rows_count)
         result.null_fraction = std::min(1.0, static_cast<Float64>(*estimate.estimated_null_count) / static_cast<Float64>(estimate.rows_count));
     if (auto avg_string_bytes = stats->getAvgStringBytes())
         result.avg_bytes = *avg_string_bytes;

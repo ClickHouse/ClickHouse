@@ -433,6 +433,83 @@ TEST(Statistics, SummaryWithoutBoundsMakesRangePartial)
     EXPECT_TRUE(built->getEstimate().min_max_covers_all_values);
 }
 
+TEST(Statistics, SummaryWithoutNullCountLeavesNullFractionUnknown)
+{
+    /// Data lake files summarized by their rows, bounds and NULL counts, as Iceberg manifests give them. A file with
+    /// bounds but without a NULL count (no `null_value_counts`) may hold any number of NULLs: the NULL fraction is
+    /// unknown, also when merged with files that have a NULL count, while the bounds still cover every value.
+    const auto nullable_int64 = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>());
+    const auto int64 = std::make_shared<DataTypeInt64>();
+
+    /// 100 rows with values in [10, 19], e.g. 90 of them NULL.
+    auto narrow = [](const DataTypePtr & type, std::optional<UInt64> nulls)
+    { return ColumnStatistics::createBasicFromSummary(type, 100, Field(Int64(10)), Field(Int64(19)), nulls); };
+    /// 100 rows with values in [0, 99], 50 of them NULL.
+    auto wide = [](const DataTypePtr & type)
+    { return ColumnStatistics::createBasicFromSummary(type, 100, Field(Int64(0)), Field(Int64(99)), 50); };
+
+    auto merge_files = [](const std::vector<ColumnStatisticsPtr> & files)
+    {
+        ConditionSelectivityEstimatorBuilder builder(getContext().context);
+        for (const auto & file : files)
+        {
+            builder.addStatistics("k", file);
+            builder.incrementRowCount(file->getNumRows());
+        }
+        return builder.getEstimator()->estimateRelationProfile(/*metadata=*/nullptr).column_stats.at("k");
+    };
+
+    /// The range keeps every guarantee, with an unknown NULL fraction.
+    auto expect_exact_range_without_null_fraction = [](const ColumnStats & k, Int64 min, Int64 max)
+    {
+        EXPECT_FALSE(k.null_fraction);
+        EXPECT_FALSE(k.range_provenance.has(PartialStatisticsCoverage));
+        EXPECT_FALSE(k.ndv_provenance.has(PartialStatisticsCoverage));
+        for (const auto guarantee : {ValueRangeGuarantee::Exact, ValueRangeGuarantee::Representative})
+        {
+            const auto range = k.valueRange(guarantee);
+            ASSERT_TRUE(range);
+            EXPECT_EQ(range->min.safeGet<Int64>(), min);
+            EXPECT_EQ(range->max.safeGet<Int64>(), max);
+            EXPECT_FALSE(range->null_fraction);
+        }
+    };
+
+    /// The summary keeps the structure of a NULL count, so that it merges with the files that have one, but marks it.
+    const auto estimate = narrow(nullable_int64, std::nullopt)->getEstimate();
+    EXPECT_TRUE(estimate.min_max_covers_all_values);
+    EXPECT_FALSE(estimate.null_count_covers_all_rows);
+
+    expect_exact_range_without_null_fraction(merge_files({narrow(nullable_int64, std::nullopt)}), 10, 19);
+    /// A file with a NULL count does not hide the NULLs that the other one does not count, in either order.
+    expect_exact_range_without_null_fraction(merge_files({narrow(nullable_int64, std::nullopt), wide(nullable_int64)}), 0, 99);
+    expect_exact_range_without_null_fraction(merge_files({wide(nullable_int64), narrow(nullable_int64, std::nullopt)}), 0, 99);
+
+    /// With every NULL counted, the fraction is known: (90 + 50) / 200.
+    const auto counted = merge_files({narrow(nullable_int64, 90), wide(nullable_int64)});
+    EXPECT_FALSE(counted.range_provenance.has(PartialStatisticsCoverage));
+    const auto counted_range = counted.valueRange(ValueRangeGuarantee::Exact);
+    ASSERT_TRUE(counted_range);
+    ASSERT_TRUE(counted_range->null_fraction);
+    EXPECT_DOUBLE_EQ(*counted_range->null_fraction, 0.7);
+
+    /// A non-Nullable column has no NULLs to count, so a missing NULL count misses none.
+    EXPECT_TRUE(narrow(int64, std::nullopt)->getEstimate().null_count_covers_all_rows);
+    EXPECT_TRUE(merge_files({narrow(int64, std::nullopt), wide(int64)}).valueRange(ValueRangeGuarantee::Exact));
+
+    /// Without bounds either, the rows may hold values outside the merged bounds: only a known count of all rows
+    /// being NULL rules them out.
+    const auto without_metrics = ColumnStatistics::createBasicFromSummary(nullable_int64, 100, Field{}, Field{}, std::nullopt);
+    EXPECT_FALSE(without_metrics->getEstimate().min_max_covers_all_values);
+    const auto with_file_without_metrics = merge_files({wide(nullable_int64), without_metrics});
+    EXPECT_TRUE(with_file_without_metrics.range_provenance.has(PartialStatisticsCoverage));
+    EXPECT_FALSE(with_file_without_metrics.null_fraction);
+
+    /// Statistics built from a column count every NULL.
+    const auto built = buildNullableInt32Stats({StatisticsType::Basic}, /*total=*/100, /*null_every=*/2);
+    EXPECT_TRUE(built->getEstimate().null_count_covers_all_rows);
+}
+
 TEST(Statistics, DeletedRowsDoNotHideFilesWithoutStatistics)
 {
     /// Deleted rows, e.g. of Iceberg position deletes, leave the rows of the relation, while the statistics still count

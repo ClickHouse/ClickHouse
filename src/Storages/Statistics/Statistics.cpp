@@ -561,7 +561,10 @@ Estimate ColumnStatistics::getEstimate() const
             info.min_max_covers_all_values = basic_stats.minMaxCoversAllValues();
         }
         if (basic_stats.hasNullCount())
+        {
             info.estimated_null_count = basic_stats.getNullCount();
+            info.null_count_covers_all_rows = basic_stats.nullCountCoversAllRows();
+        }
         if (basic_stats.hasDefaultCount())
             info.estimated_default_count = basic_stats.getDefaultCount();
         if (basic_stats.hasSum())
@@ -634,7 +637,7 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
 }
 
 std::shared_ptr<ColumnStatistics> ColumnStatistics::createBasicFromSummary(
-    const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count)
+    const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, std::optional<UInt64> null_count)
 {
     SingleStatisticsDescription basic_desc(StatisticsType::Basic, nullptr, /*is_implicit_=*/ true);
     ColumnStatisticsDescription stats_desc;
