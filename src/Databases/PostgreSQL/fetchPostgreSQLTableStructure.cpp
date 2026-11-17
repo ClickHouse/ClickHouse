@@ -30,6 +30,29 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
+}
+
+namespace
+{
+
+/// PostgreSQL itself does not allow more than 6 dimensions (MAXDIM). The number comes from the remote server,
+/// and each dimension is one more level of `Array`, so refuse absurd values instead of building a type
+/// so deep that working with it exhausts the stack.
+constexpr Int64 MAX_POSTGRESQL_ARRAY_DIMENSIONS = 100;
+
+DataTypePtr wrapInArrays(DataTypePtr type, Int64 dimensions)
+{
+    if (dimensions < 1 || dimensions > MAX_POSTGRESQL_ARRAY_DIMENSIONS)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "PostgreSQL array has unsupported number of dimensions: {} (must be from 1 to {})",
+            dimensions, MAX_POSTGRESQL_ARRAY_DIMENSIONS);
+
+    for (Int64 i = 0; i < dimensions; ++i)
+        type = std::make_shared<DataTypeArray>(type);
+    return type;
+}
+
 }
 
 
@@ -170,8 +193,7 @@ DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> reche
         }
         else
         {
-            while (dimensions--)
-                res = std::make_shared<DataTypeArray>(res);
+            res = wrapInArrays(res, dimensions);
         }
     }
 
@@ -290,9 +312,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             int dimensions = result[0][1].as<int>();
 
             /// It is always 1d array if it is in recheck.
-            DataTypePtr type = assert_cast<const DataTypeArray *>(name_and_type.type.get())->getNestedType();
-            while (dimensions--)
-                type = std::make_shared<DataTypeArray>(type);
+            DataTypePtr type = wrapInArrays(assert_cast<const DataTypeArray *>(name_and_type.type.get())->getNestedType(), dimensions);
 
             columns[i] = NameAndTypePair(name_and_type.name, type);
         }
