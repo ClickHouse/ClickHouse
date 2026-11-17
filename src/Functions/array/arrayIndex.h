@@ -1647,6 +1647,38 @@ private:
         return col_res;
     }
 
+    /// A `FixedString(N)` element cast to `String` keeps its NUL padding, so a shorter `String` needle
+    /// never byte-compares equal to it, while `equals` pads the shorter operand and matches. Trim the
+    /// trailing NULs the cast added, the way `equals` sees the pair (issue #132512). The needle needs no
+    /// trim: it is the shorter side, so its cast added none.
+    /// A `FixedString` whose stored value genuinely ends in NUL bytes becomes indistinguishable from
+    /// its trimmed form, which padded equality already treats as the same value.
+    static ColumnPtr stripPaddingAddedByCast(const ColumnPtr & elements, const DataTypePtr & elements_type, const DataTypePtr & common_type)
+    {
+        if (!isFixedString(elements_type) || !isString(common_type))
+            return elements;
+
+        const auto & chars = assert_cast<const ColumnString &>(*elements).getChars();
+        const auto & offsets = assert_cast<const ColumnString &>(*elements).getOffsets();
+        auto trimmed = ColumnString::create();
+        auto & out = trimmed->getChars();
+        out.reserve(chars.size());
+        size_t out_pos = 0;
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            const size_t start = offsets[i - 1];
+            size_t end = offsets[i] - 1; /// drop the terminating NUL first
+            while (end > start && chars[end - 1] == 0)
+                --end;
+            out.resize(out_pos + (end - start) + 1);
+            memcpy(&out[out_pos], &chars[start], end - start);
+            out[out_pos + (end - start)] = 0;
+            out_pos += (end - start) + 1;
+            trimmed->getOffsets().push_back(out_pos);
+        }
+        return std::move(trimmed);
+    }
+
     static ColumnPtr executeGeneric(const ColumnsWithTypeAndName & arguments)
     {
         const auto * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
@@ -1659,6 +1691,10 @@ private:
         DataTypePtr common_type = getLeastSupertype(DataTypes{array_elements_type, arguments[1].type});
         auto [null_map_data, null_map_item] = getNullMaps(arguments);
         ColumnPtr col_nested = castColumn({ getColumnWithDefaultsUnderNulls(col_array->getDataPtr(), null_map_data, array_elements_type), array_elements_type, "" }, common_type);
+        /// `equals` on a FixedString/String pair pads the shorter operand, so it compares the element
+        /// value, not its padding. The cast to the common String type keeps the padding on the element
+        /// side, so it is trimmed there; the needle is the shorter side and casts without padding.
+        col_nested = stripPaddingAddedByCast(col_nested, array_elements_type, common_type);
         ColumnPtr item_arg = castColumn({ getColumnWithDefaultsUnderNulls(arguments[1].column, null_map_item, index_type), removeLowCardinality(index_type), "" }, common_type);
 
         auto col_res = ResultColumnType::create();
