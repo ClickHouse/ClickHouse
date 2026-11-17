@@ -167,6 +167,10 @@ namespace
 /// Records the attempts of the conditional write that the current thread sends. The SDK reports every attempt to the
 /// retry strategy on the thread that sends it, but all requests of the client share the strategy, so the strategy
 /// finds the request through the thread.
+///
+/// This works only while every attempt runs on the thread that made the call, as with the synchronous calls of the
+/// SDK. An attempt on another thread, e.g. of an asynchronous call, would lose its answer, so `PocoHTTPClient` refuses
+/// to send an attempt of a conditional write on a thread without the record.
 class ConditionalWriteAttempts
 {
 public:
@@ -184,6 +188,8 @@ public:
 
     /// Another request of the same thread inside the scope, e.g. of a credentials provider, is recorded too. That can
     /// only make the decision more careful.
+    static bool isActive() { return current != nullptr; }
+
     template <typename ErrorType>
     static void recordFailedAttempt(const Aws::Client::AWSError<ErrorType> & error)
     {
@@ -199,6 +205,11 @@ private:
 
 thread_local ConditionalWriteAttempts * ConditionalWriteAttempts::current = nullptr;
 
+}
+
+bool isRecordingConditionalWriteAttempts()
+{
+    return ConditionalWriteAttempts::isActive();
 }
 
 Client::RetryStrategy::RetryStrategy(const PocoHTTPClientConfiguration::RetryStrategy & config_)

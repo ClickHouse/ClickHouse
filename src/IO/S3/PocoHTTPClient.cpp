@@ -6,6 +6,7 @@
 
 #if USE_AWS_S3
 
+#include <IO/S3/Client.h>
 #include <IO/S3/PocoHTTPClient.h>
 #include <IO/S3/Requests.h>
 
@@ -95,6 +96,7 @@ namespace DB::ErrorCodes
     extern const int DNS_ERROR;
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace DB::FailPoints
@@ -482,6 +484,15 @@ void PocoHTTPClient::makeRequestInternal(
     Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
+    /// The client decides a failed conditional write from the answers to all its attempts, which it records on the
+    /// thread of the call. An attempt sent elsewhere would lose its answer, and the write could be taken for not applied.
+    const bool is_write = request.GetMethod() == Aws::Http::HttpMethod::HTTP_PUT || request.GetMethod() == Aws::Http::HttpMethod::HTTP_POST;
+    if (is_write && (request.HasHeader("if-none-match") || request.HasHeader("if-match")) && !S3::isRecordingConditionalWriteAttempts())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "An attempt of a conditional write to {} is sent without the record of its attempts",
+            request.GetUri().GetURIString());
+
     makeRequestInternalImpl(request, response, readLimiter, writeLimiter);
 }
 
