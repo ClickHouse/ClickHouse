@@ -206,10 +206,15 @@ def operation_slug_map(spec: dict) -> dict:
     return slugs
 
 
-def operation_url(entry: dict) -> str:
-    """Return the public documentation URL for an OpenAPI operation."""
+def operation_url(entry: dict, locale: str | None = None) -> str:
+    """Return the public documentation URL for an OpenAPI operation.
+
+    GA operations are generated separately for each locale, while operations
+    with a badge use a single English MDX page referenced by every locale.
+    """
     leaf = file_slug(entry["operation_id"]) if needs_page(entry) else dir_slug(entry["summary"])
-    return f"/{API_REF_DIR}/{dir_slug(entry['tag'])}/{leaf}"
+    prefix = API_REF_DIR if needs_page(entry) or locale is None else f"{locale}/{API_REF_DIR}"
+    return f"/{prefix}/{dir_slug(entry['tag'])}/{leaf}"
 
 
 def operation_url_map(spec: dict) -> dict[str, str]:
@@ -217,6 +222,15 @@ def operation_url_map(spec: dict) -> dict[str, str]:
     return {
         f"{entry['method']} {entry['path']}": operation_url(entry)
         for entry in iter_operations(spec)
+    }
+
+
+def operation_urls(spec: dict) -> set[str]:
+    """Return all public endpoint URLs generated from the OpenAPI spec."""
+    return {
+        operation_url(entry, locale)
+        for entry in iter_operations(spec)
+        for locale in (None, *LOCALE_DIRS)
     }
 
 
@@ -239,6 +253,16 @@ def operation_url_changes(previous_spec: dict, spec: dict) -> dict[str, str]:
         current_url = operation_url(entry)
         if previous_url != current_url:
             changes[previous_url] = current_url
+        for locale in LOCALE_DIRS:
+            previous_localized_url = operation_url(previous_entry, locale)
+            # Badge pages are shared English pages, so a transition from a
+            # badge must retain its sole English alias rather than overwrite it
+            # with a redirect to every localized GA page.
+            if previous_localized_url == previous_url:
+                continue
+            current_localized_url = operation_url(entry, locale)
+            if previous_localized_url != current_localized_url:
+                changes[previous_localized_url] = current_localized_url
     return changes
 
 
@@ -715,8 +739,11 @@ def main() -> int:
     ):
         raise SystemExit(f"Redirects file must contain a list of objects: {redirects_path}")
     url_changes = operation_url_changes(previous_spec, spec)
-    generated_url_prefix = f"/{API_REF_DIR}/"
-    canonical_urls = set(op_urls.values())
+    generated_url_prefixes = (
+        f"/{API_REF_DIR}/",
+        *(f"/{locale}/{API_REF_DIR}/" for locale in LOCALE_DIRS),
+    )
+    canonical_urls = operation_urls(spec)
     # A former alias can become canonical again when an operation regains a
     # badge or restores an earlier summary. Remove it rather than publishing a
     # self-redirect or a redirect cycle.
@@ -724,7 +751,7 @@ def main() -> int:
         redirect
         for redirect in redirects
         if not (
-            str(redirect.get("source", "")).startswith(generated_url_prefix)
+            str(redirect.get("source", "")).startswith(generated_url_prefixes)
             and redirect.get("source") in canonical_urls
         )
     ]
@@ -732,7 +759,7 @@ def main() -> int:
     redirects = redirects_without_canonical_sources
     redirects_by_source = {item.get("source"): item for item in redirects}
     for redirect in redirects:
-        if not str(redirect.get("source", "")).startswith(generated_url_prefix):
+        if not str(redirect.get("source", "")).startswith(generated_url_prefixes):
             continue
         current_destination = url_changes.get(redirect.get("destination"))
         if current_destination is not None:
