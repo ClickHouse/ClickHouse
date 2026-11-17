@@ -95,7 +95,7 @@ VortexExpressionConverter::VortexExpressionConverter(
     const arrow::Schema & file_schema_,
     const FormatSettings & format_settings_,
     const FormatSettings & comparison_format_settings_,
-    const std::unordered_map<String, String> * file_column_names_)
+    const ColumnNameMap * file_column_names_)
     : header(header_)
     , file_schema(file_schema_)
     , format_settings(format_settings_)
@@ -104,11 +104,11 @@ VortexExpressionConverter::VortexExpressionConverter(
 {
 }
 
-const std::unordered_map<std::string_view, VortexExpressionConverter::Handler> & VortexExpressionConverter::handlers()
+const UnorderedMapWithMemoryTracking<std::string_view, VortexExpressionConverter::Handler> & VortexExpressionConverter::handlers()
 {
     /// `nullIn`/`globalNullIn` (`transform_null_in = 1`) are absent on purpose: they match NULL
     /// against NULL elements, while a Vortex comparison with NULL never matches.
-    static const std::unordered_map<std::string_view, Handler> map = {
+    static const UnorderedMapWithMemoryTracking<std::string_view, Handler> map = {
         {"and", &VortexExpressionConverter::convertAnd},
         {"or", &VortexExpressionConverter::convertOr},
         {"not", &VortexExpressionConverter::convertNot},

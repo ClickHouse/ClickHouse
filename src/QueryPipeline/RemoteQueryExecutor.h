@@ -31,6 +31,8 @@ using ProgressCallback = std::function<void(const Progress & progress)>;
 struct ProfileInfo;
 using ProfileInfoCallback = std::function<void(const ProfileInfo & info)>;
 
+using ProfileEventsCallback = std::function<void(const Block & block)>;
+
 struct ClusterFunctionReadTaskResponse;
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
 
@@ -174,7 +176,7 @@ public:
             chassert(type != Type::Data && type != Type::FileDescriptor);
         }
 
-        Type getType() const { return type; }
+        [[nodiscard]] Type getType() const { return type; }
 
         Block getBlock()
         {
@@ -182,7 +184,7 @@ public:
             return std::move(block);
         }
 
-        int getFileDescriptor() const
+        [[nodiscard]] int getFileDescriptor() const
         {
             chassert(type == Type::FileDescriptor);
             return fd;
@@ -218,6 +220,9 @@ public:
 
     /// Set callback for profile info. It will be called on ProfileInfo packet.
     void setProfileInfoCallback(ProfileInfoCallback callback);
+
+    /// Set callback for profile events. It will be called on ProfileEvents packet.
+    void setProfileEventsCallback(ProfileEventsCallback callback);
 
     /// Set the query_id. For now, used by performance test to later find the query
     /// in the server query_log. Must be called before sending the query to the server.
@@ -289,6 +294,7 @@ private:
 
     ProgressCallback progress_callback;
     ProfileInfoCallback profile_info_callback;
+    ProfileEventsCallback profile_events_callback;
 
     /// Scalars needed to be sent to remote servers
     Scalars scalars;

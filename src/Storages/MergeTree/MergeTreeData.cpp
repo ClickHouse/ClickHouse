@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <Disks/DiskFromAST.h>
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
@@ -62,7 +63,6 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
 #include <Disks/supportWritingWithAppend.h>
-#include <IO/Expect404ResponseScope.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -90,6 +90,8 @@
 #include <Planner/TableExpressionData.h>
 #include <Storages/StorageDummy.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Core/ConstantValue.h>
+#include <Interpreters/convertColumnToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/QueryMetadataCache.h>
@@ -322,6 +324,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_summing_columns_in_partition_or_order_key;
     extern const MergeTreeSettingsBool allow_coalescing_columns_in_partition_or_order_key;
     extern const MergeTreeSettingsBool allow_tuple_element_aggregation;
+    extern const MergeTreeSettingsBool allow_vector_similarity_index_in_specialized_merge_tree;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsBool async_insert;
     extern const MergeTreeSettingsBool check_sample_column_is_correct;
@@ -509,6 +512,8 @@ namespace FailPoints
     /// Throws a retryable error (`MEMORY_LIMIT_EXCEEDED`) while loading every outdated part in the
     /// background. Used to test that the loading is retried later instead of terminating the server.
     extern const char merge_tree_load_outdated_parts_retryable_error[];
+    /// Throws `CANNOT_SCHEDULE_TASK` instead of handing an outdated part to the loading thread pool.
+    extern const char merge_tree_load_outdated_parts_schedule_error[];
     /// Pauses every worker that loads an outdated part in the background until the failpoint is disabled.
     /// Used to cancel the loading (e.g. with `DETACH TABLE`) while the workers are in flight.
     extern const char merge_tree_load_outdated_parts_pause[];
@@ -517,6 +522,9 @@ namespace FailPoints
     extern const char restore_part_inject_no_space_error[];
     /// Throws an I/O error (EIO) once while loading the metadata of a part.
     extern const char merge_tree_load_part_io_error[];
+    /// Pauses `setPropertiesAndResetSerializationHints` between the metadata publish and the hints swap,
+    /// while `parts_lock` is held.
+    extern const char mt_alter_pause_after_metadata_publish[];
 }
 
 namespace ErrorCodes
@@ -619,6 +627,16 @@ void MergeTreeData::checkLossyCodecOnLowCardinality(const ColumnsDescription & c
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Column {} contains a LowCardinality type, so it cannot be compressed with a lossy codec", backQuoteIfNeed(column.name));
     }
+}
+
+void MergeTreeData::checkVectorSimilarityIndexIsAllowed(const MergingParams & merging_params, const MergeTreeSettings & settings)
+{
+    /// Vector similarity indexes must only be created on ordinary merge tree tables unless the user gives permission via a setting
+    if (merging_params.mode != MergingParams::Ordinary && !settings[MergeTreeSetting::allow_vector_similarity_index_in_specialized_merge_tree])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Vector similarity indexes are not supported for {}MergeTree, because SELECT ... FINAL may return wrong results with them. "
+            "Set MergeTree setting 'allow_vector_similarity_index_in_specialized_merge_tree' = 1 to create them anyway",
+            merging_params.getModeName());
 }
 
 namespace
@@ -1053,7 +1071,7 @@ MergeTreeData::MergeTreeData(
     {
         try
         {
-            checkPartitionKeyAndInitMinMax(metadata_.partition_key);
+            checkPartitionKeyAndInitMinMax(metadata_);
             setProperties(metadata_, metadata_, !sanity_checks);
             if (minmax_idx_date_column_pos == -1)
                 throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Could not find Date column");
@@ -1068,7 +1086,7 @@ MergeTreeData::MergeTreeData(
     else
     {
         is_custom_partitioned = true;
-        checkPartitionKeyAndInitMinMax(metadata_.partition_key);
+        checkPartitionKeyAndInitMinMax(metadata_);
     }
     setProperties(metadata_, metadata_, !sanity_checks);
 
@@ -1450,7 +1468,7 @@ static std::exception_ptr tryEvaluateIndexExpression(const IndexDescription & in
 
         /// The same dry run a merge performs: it rebuilds this expression's AST under the storage
         /// context and hands the result to `ExpressionTransform::transformHeader`, which is this call.
-        index.expression->getActionsDAG().updateHeader(header);
+        (void)index.expression->getActionsDAG().updateHeader(header);
     }
     catch (...)
     {
@@ -1956,6 +1974,13 @@ void MergeTreeData::setProperties(
         patch_parts_sorting_keys_cache.clear();
     }
 
+    updateCachesAfterMetadataPublish(new_metadata, old_metadata);
+}
+
+void MergeTreeData::updateCachesAfterMetadataPublish(
+    const StorageInMemoryMetadata & new_metadata,
+    const StorageInMemoryMetadata & old_metadata)
+{
     /// Invalidate the columns cache when column identity changes: cache keys identify
     /// columns by name, so any operation that makes a name refer to a different column
     /// (drop, rename, or single-statement `RENAME a TO b, ADD COLUMN a` where the old
@@ -2078,19 +2103,26 @@ ExpressionActionsPtr getCombinedIndicesExpression(
 }
 
 ExpressionActionsPtr MergeTreeData::getMinMaxExpr(
-    const KeyDescription & partition_key,
+    const StorageInMemoryMetadata & metadata,
     const MergeTreeSettingsPtr & data_settings,
     const ExpressionActionsSettings & expr_settings)
 {
-    return std::make_shared<ExpressionActions>(ActionsDAG(getMinMaxColumns(partition_key, data_settings)), expr_settings);
+    return std::make_shared<ExpressionActions>(ActionsDAG(getMinMaxColumns(metadata, data_settings)), expr_settings);
 }
 
-NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings, MergeTreePartMinMaxIndexColumns up_to)
+NamesAndTypesList MergeTreeData::getMinMaxColumns(const StorageInMemoryMetadata & metadata, const MergeTreeSettingsPtr & data_settings, MergeTreePartMinMaxIndexColumns up_to)
 {
     NamesAndTypesList columns;
+    const auto & partition_key = metadata.getPartitionKey();
 
     const MergeTreePartMinMaxIndexColumns setting_level = (*data_settings)[MergeTreeSetting::part_minmax_index_columns];
-    const auto level = std::min(setting_level, up_to);
+    auto level = std::min(setting_level, up_to);
+
+    /// A level applies only if the metadata has all its columns, and each level extends the previous one.
+    auto has_column = [&](const String & name) { return metadata.getColumns().has(name) || metadata.virtuals.has(name); };
+    if (level >= MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET
+        && !(has_column(BlockNumberColumn::name) && has_column(BlockOffsetColumn::name)))
+        level = MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY;
 
     if (level >= MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY)
         if (!partition_key.column_names.empty())
@@ -2110,9 +2142,9 @@ NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partiti
     return columns;
 }
 
-NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings)
+NamesAndTypesList MergeTreeData::getMinMaxColumns(const StorageInMemoryMetadata & metadata, const MergeTreeSettingsPtr & data_settings)
 {
-    return getMinMaxColumns(partition_key, data_settings, MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET);
+    return getMinMaxColumns(metadata, data_settings, MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET);
 }
 
 ExpressionActionsPtr
@@ -2140,15 +2172,16 @@ ExpressionActionsPtr MergeTreeData::getSkipIndicesExpression(
         nullptr, indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext(), use_index_expression);
 }
 
-void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key)
+void MergeTreeData::checkPartitionKeyAndInitMinMax(const StorageInMemoryMetadata & new_metadata)
 {
+    const auto & new_partition_key = new_metadata.getPartitionKey();
     if (new_partition_key.expression_list_ast->children.empty())
         return;
 
     checkKeyExpression(*new_partition_key.expression, new_partition_key.sample_block, "Partition", allow_nullable_key);
 
     /// Add all columns used in the partition key to the min-max index.
-    const auto minmax_columns = getMinMaxColumns(new_partition_key, getSettings());
+    const auto minmax_columns = getMinMaxColumns(new_metadata, getSettings());
 
     /// Try to find the date column in columns used by the partition key (a common case).
     /// If there are no - DateTime or DateTime64 would also suffice.
@@ -3566,6 +3599,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         }
     }
 
+    /// A read-only disk is written by another server, and the disk object outlives the tables that use it,
+    /// so its metadata may be as old as its last refresh: reload it before listing the parts.
+    for (const auto & disk_ptr : disks)
+        if (!disk_ptr->isBroken() && disk_ptr->isReadOnly())
+            disk_ptr->refresh(/*not_sooner_than_milliseconds=*/ 0);
+
     std::vector<PartLoadingTree::PartLoadingInfos> parts_to_load_by_disk(disks.size());
     std::vector<PartLoadingTree::PartLoadingInfos> unexpected_parts_to_load_by_disk(disks.size());
 
@@ -4306,8 +4345,8 @@ try
         }
 
         /// The captured locals will outlive runner, so capturing by reference is ok
-        runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, &failed_parts_mutex, &failed_parts,
-                                    &retryable_exception, &has_retryable_exception, replicated, is_async]()
+        auto load_part = [this, my_part = part, &num_loaded_parts, &failed_parts_mutex, &failed_parts,
+                          &retryable_exception, &has_retryable_exception, replicated, is_async]()
         {
             FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_loading_queued_outdated_part);
 
@@ -4363,7 +4402,31 @@ try
                 res.part->remove();
             else
                 preparePartForRemoval(res.part);
-        }, Priority{});
+        };
+
+        try
+        {
+            fiu_do_on(FailPoints::merge_tree_load_outdated_parts_schedule_error,
+            {
+                throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected scheduling error for outdated part {}", part->name);
+            });
+
+            runner.enqueueAndKeepTrack(std::move(load_part), Priority{});
+        }
+        catch (const Exception & e)
+        {
+            /// E.g. no thread can be started because queries exhausted the global thread pool.
+            /// The pool has not taken the load, so the part is retried later like a retryable load error.
+            if (e.code() != ErrorCodes::CANNOT_SCHEDULE_TASK)
+                throw;
+
+            std::lock_guard lock(failed_parts_mutex);
+            failed_parts.push_back(part);
+            if (!retryable_exception)
+                retryable_exception = std::current_exception();
+            has_retryable_exception = true;
+            break;
+        }
     }
 
     /// Wait for every queued load without holding `outdated_data_parts_mutex`: a load that found the
@@ -7239,6 +7302,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         : local_context->getStoragePolicy((*alter_effective_settings)[MergeTreeSetting::storage_policy]);
     if (new_storage_policy != getStoragePolicy())
     {
+        /// Only a changed policy is checked, so a table that already has it can still be altered otherwise.
+        DiskFromAST::ensureStoragePolicyIsAllowed(new_storage_policy->getName(), local_context);
+
         /// The roots of a `table_disk` table are taken when it is created, so its disks are fixed.
         if ((*settings_from_storage)[MergeTreeSetting::table_disk])
             throw Exception(
@@ -7296,6 +7362,12 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// Not in `checkProperties`, which also runs when a replica applies an already committed ALTER.
     if (!is_secondary_replay)
         checkLossyCodecOnLowCardinality(new_metadata.columns);
+    if (!is_secondary_replay)
+    {
+        for (const auto & index_name : commands.getAddedIndexNames(old_metadata.secondary_indices))
+            if (new_metadata.secondary_indices.getByName(index_name).type == "vector_similarity")
+                checkVectorSimilarityIndexIsAllowed(merging_params, *alter_effective_settings);
+    }
     checkTTLExpressions(new_metadata, old_metadata);
     if (!is_secondary_replay)
         checkColumnTTLsForKeyColumns(new_metadata, old_metadata);
@@ -7639,57 +7711,6 @@ MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
     const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_, PartDirIntent intent) const
 {
     return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_, intent);
-}
-
-std::pair<bool, MergeTreeData::MutableDataPartPtr> MergeTreeData::loadDataPartForRemovalIfExists(const String & name, bool ignore_no_such_key)
-{
-    const auto volume = std::make_shared<SingleDiskVolume>("volume_" + name, getDisks()[0]);
-
-    if (!volume->getDisk()->existsFileOrDirectory(fs::path(relative_data_path) / name))
-    {
-        LOG_DEBUG(log, "Part {} doesn't exist on disk, probably it was already removed", name);
-        return std::pair{false, nullptr};
-    }
-
-    try
-    {
-        std::optional<Expect404ResponseScope> scope;
-        if (ignore_no_such_key)
-            scope.emplace();
-
-        auto part = getDataPartBuilder(name, volume, name, getReadSettings(), PartDirIntent::OpenExisting)
-            .withPartFormatFromDisk()
-            .build();
-
-        part->loadChecksums(/*require=*/false);
-        if (!part->getParentPart())
-        {
-            [[maybe_unused]] bool has_broken_projections = false;
-            part->loadProjections(
-                /*require_columns_checksums=*/false,
-                /*check_consistency=*/false,
-                has_broken_projections,
-                /*if_not_loaded=*/false,
-                /*only_metadata=*/true);
-        }
-
-        return std::pair{true, part};
-    }
-#if USE_AWS_S3
-    catch (S3Exception & exc)
-    {
-        if (exc.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY && ignore_no_such_key)
-            return std::pair{false, nullptr};
-
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-#endif
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
-    return std::pair{true, nullptr};
 }
 
 void MergeTreeData::validateFormatVersion(const DiskPtr & disk) const
@@ -11318,9 +11339,12 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         }
         else
         {
-            /// E.g. a cast of an empty tuple, produced by a substituted query parameter of type `Tuple()`.
-            Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
-            if (partition_key_value.getType() != Field::Types::Tuple || !partition_key_value.safeGet<Tuple>().empty())
+            /// E.g. a cast of an empty tuple, produced by a substituted query parameter of type `Tuple()`. The value may be
+            /// carried by a `Variant`/`Dynamic` or a `Nullable`; `NULL` is not an empty tuple.
+            const auto partition_key_value = resolveActiveAlternative(evaluateConstantExpressionAsColumn(partition_value_ast, local_context));
+            const auto partition_key_type = removeNullable(partition_key_value.getType());
+            const auto * partition_key_tuple = typeid_cast<const DataTypeTuple *>(partition_key_type.get());
+            if (partition_key_value.isNull() || !partition_key_tuple || !partition_key_tuple->getElements().empty())
                 throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition key is empty, expected 'tuple()' as partition key");
         }
     }
@@ -12328,7 +12352,7 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
         /// While it is possible to have detached parts on readonly/write-once disks
         /// (if they were produced on another machine, where it wasn't readonly)
         /// to avoid wasting resources for slow disks, avoid trying to enumerate them.
-        if (disk->isReadOnly() || disk->isWriteOnce())
+        if (disk->isBroken() || disk->isReadOnly() || disk->isWriteOnce())
             continue;
 
         String detached_path = fs::path(relative_data_path) / DETACHED_DIR_NAME;
@@ -12535,7 +12559,7 @@ void MergeTreeData::optimizeDryRun(
         merge_task->cancel();
         throw;
     }
-    auto new_part = merge_task->getFuture().get();
+    auto new_part = merge_task->takeResultPart();
 
     /// This commits a transcation on disk, but doesn't commit the data part.
     if (new_part->getDataPartStorage().hasActiveTransaction())
@@ -13340,7 +13364,7 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(
         if (column_name == name)
             return true;
 
-    for (const auto & [name, _] : getMinMaxColumns(metadata_snapshot->getPartitionKey(), getSettings()))
+    for (const auto & [name, _] : getMinMaxColumns(*metadata_snapshot, getSettings()))
         if (column_name == name)
             return true;
 
@@ -13456,10 +13480,9 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     DataTypes minmax_columns_types;
     if (filter_dag)
     {
-        const auto & partition_key = metadata_snapshot->getPartitionKey();
         const auto data_settings = getSettings();
 
-        if (auto minmax_columns = getMinMaxColumns(partition_key, data_settings); !minmax_columns.empty())
+        if (auto minmax_columns = getMinMaxColumns(*metadata_snapshot, data_settings); !minmax_columns.empty())
         {
             minmax_columns_types = minmax_columns.getTypes();
 
@@ -13468,7 +13491,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
                 return KeyCondition{
                     wrapped, query_context, minmax_columns.getNames(),
-                    MergeTreeData::getMinMaxExpr(metadata_snapshot->getPartitionKey(), data_settings, ExpressionActionsSettings(query_context)),
+                    MergeTreeData::getMinMaxExpr(*metadata_snapshot, data_settings, ExpressionActionsSettings(query_context)),
                     /*single_point=*/false,
                     /*skip_analysis=*/!query_context->getSettingsRef()[Setting::use_partition_pruning]};
             };
@@ -14147,7 +14170,7 @@ DiskPtr MergeTreeData::tryGetDiskForDetachedPart(const String & part_name) const
     const auto disks = getStoragePolicy()->getDisks();
 
     for (const DiskPtr & disk : disks)
-        if (disk->existsDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME / part_name))
+        if (!disk->isBroken() && disk->existsDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME / part_name))
             return disk;
 
     return nullptr;
@@ -15489,7 +15512,7 @@ static void updateSerializationHintsForPart(const DataPartPtr & part, const Colu
     }
 }
 
-void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
+SerializationInfoByName MergeTreeData::buildSerializationHints(const ColumnsDescription & storage_columns, const DataPartsLock & /*lock*/) const
 {
     /// `serialization_hints` is a per-table aggregation of the active parts' `SerializationInfoByName`
     /// — same lifetime profile as the per-part metadata. Route into the parts arena.
@@ -15507,14 +15530,50 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
         (*getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
 
+    SerializationInfoByName hints(storage_columns.getAllPhysical(), settings);
+
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+        updateSerializationHintsForPart(part, storage_columns, hints, false);
+
+    return hints;
+}
+
+void MergeTreeData::resetSerializationHints(const DataPartsLock & lock)
+{
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    const auto & storage_columns = metadata_snapshot->getColumns();
+    serialization_hints = buildSerializationHints(metadata_snapshot->getColumns(), lock);
+}
 
-    serialization_hints = SerializationInfoByName(storage_columns.getAllPhysical(), settings);
-    auto range = getDataPartsStateRange(DataPartState::Active);
+void MergeTreeData::setPropertiesAndResetSerializationHints(
+    const StorageInMemoryMetadata & new_metadata,
+    const StorageInMemoryMetadata & old_metadata,
+    bool attach,
+    ContextPtr local_context)
+{
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
-    for (const auto & part : range)
-        updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);
+    checkProperties(new_metadata, old_metadata, attach, /*allow_empty_sorting_key=*/false, allow_nullable_key, local_context);
+
+    auto owned_metadata = std::make_unique<const StorageInMemoryMetadata>(new_metadata);
+    /// Materialised up front: nothing between the publish and the hints swap may allocate.
+    const String pause_after_publish = FailPoints::mt_alter_pause_after_metadata_publish;
+
+    {
+        auto parts_lock = lockParts();
+        /// Build before publishing so a throw here leaves metadata and hints both unchanged.
+        auto new_hints = buildSerializationHints(new_metadata.getColumns(), parts_lock);
+        {
+            /// Publish the new metadata and clear the cache of effective sorting keys atomically.
+            std::lock_guard sorting_keys_lock(patch_parts_sorting_keys_mutex);
+            setInMemoryMetadata(std::move(owned_metadata));
+            patch_parts_sorting_keys_cache.clear();
+        }
+        FailPointInjection::pauseFailPoint(pause_after_publish);
+        serialization_hints = std::move(new_hints);
+    }
+
+    /// Callers treat an exception as if nothing was published, so nothing may throw after the commit.
+    NOEXCEPT_SCOPE({ updateCachesAfterMetadataPublish(new_metadata, old_metadata); });
 }
 
 template <typename AddedParts, typename RemovedParts>
@@ -15783,7 +15842,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-    minmax_idx->update(block, getMinMaxColumns(metadata_snapshot->getPartitionKey(), getSettings()));
+    minmax_idx->update(block, getMinMaxColumns(*metadata_snapshot, getSettings()));
 
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
     VolumePtr volume = getStoragePolicy()->getVolume(0);
