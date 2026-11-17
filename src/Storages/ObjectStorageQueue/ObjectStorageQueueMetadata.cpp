@@ -75,6 +75,11 @@ namespace ObjectStorageQueueSetting
 
 namespace
 {
+    /// How long the registry thread waits before it reads the registry again when
+    /// nothing wakes it up, see updateRegistryFunc().
+    constexpr Int64 registry_refresh_fallback_ms = 60 * 1000;
+    constexpr Int64 registry_poll_without_watch_ms = 1000;
+
     UInt64 getCurrentTime()
     {
         return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -237,6 +242,8 @@ void ObjectStorageQueueMetadata::startup()
 void ObjectStorageQueueMetadata::shutdown()
 {
     shutdown_called = true;
+    /// The registry thread may be waiting for a change in the registry.
+    registry_updated_event->set();
     if (cleanup_task)
         cleanup_task->deactivate();
     if (update_registry_thread && update_registry_thread->joinable())
@@ -906,10 +913,7 @@ Strings ObjectStorageQueueMetadata::getRegistered(bool active)
     Strings registered;
     if (active)
     {
-        Coordination::Error code = {};
-        zk_retries.retryLoop([&] { code = getZooKeeper()->tryGetChildren(registry_path, registered); });
-        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-            throw zkutil::KeeperException(code);
+        getActiveRegistered(registered, /* watch */nullptr);
     }
     else
     {
@@ -919,6 +923,21 @@ Strings ObjectStorageQueueMetadata::getRegistered(bool active)
             splitInto<','>(registered, registry_str);
     }
     return registered;
+}
+
+bool ObjectStorageQueueMetadata::getActiveRegistered(Strings & registered, const Coordination::EventPtr & watch)
+{
+    const auto registry_path = zookeeper_path / "registry";
+    Coordination::Error code = {};
+    getKeeperRetriesControl(log).retryLoop([&]
+    {
+        code = getZooKeeper()->tryGetChildren(registry_path, registered, /* stat */nullptr, watch);
+    });
+    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+        throw zkutil::KeeperException(code);
+
+    /// Keeper leaves no watch on a node that does not exist.
+    return code == Coordination::Error::ZOK;
 }
 
 void ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id)
@@ -1210,12 +1229,14 @@ void ObjectStorageQueueMetadata::updateRegistryFunc()
 
     try
     {
-        Coordination::EventPtr wait_event = std::make_shared<Poco::Event>();
         while (!shutdown_called.load())
         {
+            bool watching = false;
             try
             {
-                updateRegistry(getRegistered(/* active */true));
+                Strings registered;
+                watching = getActiveRegistered(registered, registry_updated_event);
+                updateRegistry(registered);
             }
             catch (const Coordination::Exception & e)
             {
@@ -1243,7 +1264,11 @@ void ObjectStorageQueueMetadata::updateRegistryFunc()
             if (shutdown_called.load())
                 break;
 
-            wait_event->tryWait(1000);
+            /// The watch wakes us up as soon as a processor registers or unregisters,
+            /// and shutdown() does too, so there is no need to ask Keeper every second.
+            /// The timeout is only a safety net for a lost watch. Without a watch
+            /// (the registry node does not exist) poll like before.
+            registry_updated_event->tryWait(watching ? registry_refresh_fallback_ms : registry_poll_without_watch_ms);
         }
     }
     catch (...)

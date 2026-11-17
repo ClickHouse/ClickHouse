@@ -677,3 +677,68 @@ def test_s3_client_reused(started_cluster):
         s3_clients_after = get_created_s3_clients_count()
 
         assert s3_clients_before == s3_clients_after
+
+
+def test_registry_is_watched_not_polled(started_cluster):
+    """
+    Every queue has a thread that keeps the list of active processors up to
+    date. It used to list the registry node in Keeper once a second, forever.
+    Now it leaves a watch on the registry and wakes up only when a processor
+    registers or unregisters, so an idle queue must not keep listing.
+    """
+    # No keeper fault injection: retried requests would add lists of their own.
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    # Queues left on this node by other tests would add their own Keeper requests.
+    node.query("DROP DATABASE IF EXISTS default; CREATE DATABASE default;")
+
+    table_name = f"test_registry_watch_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    def registry_watches():
+        return int(
+            node.query(
+                f"""
+                SELECT count()
+                FROM system.zookeeper_watches
+                WHERE path = '{keeper_path}/registry' AND watch_type = 'Children'
+                """
+            )
+        )
+
+    for _ in range(30):
+        if registry_watches() > 0:
+            break
+        time.sleep(1)
+    assert registry_watches() > 0, "the queue left no watch on its registry"
+
+    def keeper_lists():
+        return int(
+            node.query("SELECT value FROM system.events WHERE event = 'ZooKeeperList'")
+            or 0
+        )
+
+    # The queue registers itself on its first poll, and that wakes the thread
+    # up once more. Let that pass before measuring.
+    time.sleep(3)
+
+    idle_seconds = 10
+    lists_before = keeper_lists()
+    time.sleep(idle_seconds)
+    lists = keeper_lists() - lists_before
+
+    # The old code listed the registry once a second.
+    assert lists < idle_seconds / 2, f"{lists} Keeper lists in {idle_seconds} idle seconds"
+
+    node.query(f"DROP TABLE {table_name} SYNC")
