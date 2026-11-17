@@ -17,6 +17,7 @@ DROP TABLE IF EXISTS t_format_row_alias;
 DROP TABLE IF EXISTS t_format_row_names;
 DROP TABLE IF EXISTS t_format_row_marker;
 DROP TABLE IF EXISTS t_legacy_time;
+DROP TABLE IF EXISTS t_legacy_time_expr;
 DROP TABLE IF EXISTS t_json_tuple;
 DROP TABLE IF EXISTS t_array;
 DROP TABLE IF EXISTS t_array_compact;
@@ -209,6 +210,13 @@ SELECT count() FROM t_legacy_time WHERE k = 1 AND toString(toTime(dt)) = '10:00:
 -- so the part is indexed for this condition and the index skips the granule of `k = 2`.
 SELECT count() FROM t_legacy_time WHERE k = 1 AND toString(toTime(dt)) = '10:00:00' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, force_data_skipping_indices = 'idx', max_rows_to_read = 1;
 
+SELECT 'use_legacy_to_time of the query that defines the index';
+SET use_legacy_to_time = 1;
+CREATE TABLE t_legacy_time_expr (k UInt64, dt DateTime('UTC'), INDEX idx toTime(dt) TYPE set(10) GRANULARITY 1 WHERE k = 1) ENGINE = MergeTree ORDER BY tuple();
+SET use_legacy_to_time = 0;
+INSERT INTO t_legacy_time_expr VALUES (1, '2020-01-01 10:00:00');
+SELECT count() FROM t_legacy_time_expr;
+
 SELECT 'update of the parent column of a subcolumn the condition reads';
 CREATE TABLE t_array (id UInt64, p Array(UInt8), INDEX i id TYPE minmax GRANULARITY 1 WHERE p.size0 > 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
 INSERT INTO t_array VALUES (1, [1]);
@@ -257,6 +265,9 @@ SELECT name FROM system.data_skipping_indices WHERE database = currentDatabase()
 -- `IF NOT EXISTS` of a partial index that is already there is not a new definition.
 SET allow_experimental_partial_skip_indexes = 0;
 ALTER TABLE t_gate ADD INDEX IF NOT EXISTS i x TYPE minmax;
+ALTER TABLE t_gate ADD INDEX IF NOT EXISTS i x TYPE minmax WHERE f = 1;
+ALTER TABLE t_gate ADD INDEX IF NOT EXISTS new_i x TYPE minmax WHERE f = 1; -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE t_gate DROP INDEX i, ADD INDEX IF NOT EXISTS i x TYPE minmax WHERE f = 1; -- { serverError SUPPORT_IS_DISABLED }
 SET allow_experimental_partial_skip_indexes = 1;
 SET allow_experimental_partial_skip_indexes = 1;
 CREATE TABLE t_src (x UInt64, f UInt8, INDEX i x TYPE minmax WHERE f = 1) ENGINE = MergeTree ORDER BY tuple();
@@ -282,6 +293,7 @@ DROP TABLE t_format_row_alias;
 DROP TABLE t_format_row_names;
 DROP TABLE t_format_row_marker;
 DROP TABLE t_legacy_time;
+DROP TABLE t_legacy_time_expr;
 DROP TABLE t_json_tuple;
 DROP TABLE t_array;
 DROP TABLE t_array_compact;

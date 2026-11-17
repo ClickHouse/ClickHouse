@@ -6727,9 +6727,18 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     if (!settings[Setting::allow_experimental_partial_skip_indexes])
     {
+        NameSet index_names;
+        for (const auto & index : old_metadata.secondary_indices)
+            index_names.insert(index.name);
+
         for (const auto & command : commands)
         {
+            if (command.type == AlterCommand::DROP_INDEX)
+                index_names.erase(command.index_name);
             if (command.type != AlterCommand::ADD_INDEX)
+                continue;
+            /// `ADD INDEX IF NOT EXISTS` of an existing index changes nothing, see `AlterCommand::apply`.
+            if (!index_names.insert(command.index_name).second && command.if_not_exists)
                 continue;
             /// The declaration of the command itself: with `IF NOT EXISTS` the index of that name in the new
             /// metadata can be an older one, and with `DROP INDEX` of the same name it can be absent.

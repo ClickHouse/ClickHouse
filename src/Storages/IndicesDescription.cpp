@@ -345,7 +345,10 @@ IndexDescription IndexDescription::getIndexFromAST(
     result.escape_filenames = escape_filenames;
 
     checkExpressionDoesntContainSubqueries(*index_definition->getExpression());
-    result.initExpressionInfo(index_definition->getExpression(), columns, context);
+    /// The part writer of a partial index runs the indexed expression analysed with the global context,
+    /// see `selected_rows_expression` below, so the types of the index are taken from the same analysis.
+    result.initExpressionInfo(
+        index_definition->getExpression(), columns, index_definition->getWhere() ? context->getGlobalContext() : context);
 
     for (auto & elem : result.sample_block)
     {

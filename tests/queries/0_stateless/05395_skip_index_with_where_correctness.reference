@@ -80,6 +80,8 @@ use_legacy_to_time of the query that writes the part
 1
 1
 1
+use_legacy_to_time of the query that defines the index
+1
 update of the parent column of a subcolumn the condition reads
 1
 1
