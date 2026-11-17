@@ -1,8 +1,11 @@
 #pragma once
 
 #include <Common/NaNUtils.h>
+#include <DataTypes/TimeSeries/TimeSeriesHistogramCounterResetRule.h>
 #include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 #include <base/types.h>
+
+#include <type_traits>
 
 
 namespace DB
@@ -18,13 +21,21 @@ namespace DB
 class TimeSeriesDuplicateTimestampRule
 {
 public:
-    /// Whether the float sample `candidate` replaces the float sample `kept`: the greatest value is kept, a NaN loses to any other
-    /// value, and on equal values the kept one stays. The rule of `timeseriesMaxValueForDuplicateTimestamp` in predicate form.
+    /// Whether the float sample `candidate` replaces the float sample `kept`: the greatest value is kept, a NaN loses to any number,
+    /// the stale marker to any other value, and on equal values the kept one stays. The rule of
+    /// `timeseriesMaxValueForDuplicateTimestamp` in predicate form.
     template <typename ValueType>
     static bool floatSampleWins(ValueType kept, ValueType candidate)
     {
         if (isNaN(candidate))
-            return false;
+        {
+            /// A `Float32` value can't hold the stale marker.
+            if constexpr (std::is_same_v<ValueType, Float64>)
+                return TimeSeriesHistogramCounterResetRule::isStaleMarker(kept)
+                    && !TimeSeriesHistogramCounterResetRule::isStaleMarker(candidate);
+            else
+                return false;
+        }
         return isNaN(kept) || (candidate > kept);
     }
 

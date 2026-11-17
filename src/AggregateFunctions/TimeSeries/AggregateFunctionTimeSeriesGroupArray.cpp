@@ -118,7 +118,7 @@ The samples can be passed in one of four forms:
 - as a single array of `(timestamp, value)` tuples, where each row holds a whole time series. This form has the same type as the result, which allows using the function in the `SimpleAggregateFunction` data type;
 - as a single array of native histogram samples sorted by timestamp, where each row holds a whole time series. The array has the type of the `histograms` column of the samples tables of the `TimeSeries` table engine (`Array(Tuple(timestamp, flags, counter_reset_hint, schema, zero_threshold, sum, count_int, zero_count_int, count_float, zero_count_float, positive_int, negative_int, positive_float, negative_float, custom_values))`, see the documentation of the engine), which is also the type of the result, so this form can be used in the `SimpleAggregateFunction` data type too.
 
-If several float samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
+If several float samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any number, so a NaN value is used only if all samples at this timestamp are NaN, and the Prometheus stale marker (the NaN with the bits `0x7FF0000000000002`) loses to any other NaN too.
 
 If several histogram samples have the same timestamp, only one of them is kept: a histogram whose `sum` is the Prometheus stale marker
 (the NaN with the bits `0x7FF0000000000002`) loses, whatever its other elements, to any histogram whose `sum` isn't; then the one with

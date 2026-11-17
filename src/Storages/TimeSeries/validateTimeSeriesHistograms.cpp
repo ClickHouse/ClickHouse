@@ -195,7 +195,7 @@ namespace
     }
 
     /// Prometheus's check of the total count of an integer histogram: the buckets and the zero bucket add up to `count_int`, or to
-    /// at most `count_int` for a stale marker (`sum` is NaN), whose count may be bigger than its buckets. There is no such check for
+    /// at most `count_int` when `sum` is NaN, because a NaN observation counts but goes into no bucket. There is no such check for
     /// a float histogram: Prometheus skips it too, because floating-point precision would give false positives.
     template <typename Fail>
     void checkIntegerCountMatchesBuckets(

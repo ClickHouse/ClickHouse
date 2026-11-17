@@ -30,7 +30,7 @@ namespace ErrorCodes
 
 /// Aggregate function sorting pairs (timestamp, values) by timestamp.
 /// If there are pairs with the same timestamp then the function keeps only a pair with the biggest value,
-/// where a NaN value loses to any other value (see `timeseriesMaxValueForDuplicateTimestamp`).
+/// where a NaN value loses to any number and the stale marker to any other value (see `timeseriesMaxValueForDuplicateTimestamp`).
 /// Samples can be passed in three ways: as two scalar arguments (timestamp, value),
 /// as two arrays (Array(timestamp), Array(value)), or as a single array of pairs Array(Tuple(timestamp, value)).
 template <typename TimestampType, typename ValueType>
