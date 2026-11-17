@@ -518,6 +518,30 @@ def test_postgres_ndim(started_cluster):
     cursor.execute("DROP SCHEMA ndim_schema CASCADE")
 
 
+def test_postgres_ndim_out_of_range(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+
+    cursor.execute("DROP TABLE IF EXISTS arr_bad_ndim")
+    cursor.execute("CREATE TABLE arr_bad_ndim (a integer[])")
+    cursor.execute("INSERT INTO arr_bad_ndim SELECT '{{1}, {2}}'")
+
+    def query_type():
+        return node1.query_and_get_error(
+            f"""SELECT toTypeName(a) FROM postgresql('postgres1:5432', 'postgres', 'arr_bad_ndim', 'postgres', '{pg_pass}')"""
+        )
+
+    # PostgreSQL never reports more than 6 dimensions by itself, so emulate a misbehaving server
+    # by editing the catalog directly (the connection is a superuser).
+    cursor.execute(
+        "UPDATE pg_attribute SET attndims = 30000 WHERE attrelid = 'arr_bad_ndim'::regclass AND attname = 'a'"
+    )
+    error = query_type()
+    assert "INCORRECT_DATA" in error, error
+    assert "unsupported number of dimensions" in error, error
+
+    cursor.execute("DROP TABLE arr_bad_ndim")
+
+
 def test_postgres_on_conflict(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
     table = "test_conflict"
