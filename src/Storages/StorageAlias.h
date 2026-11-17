@@ -246,13 +246,13 @@ public:
     }
 
     ColumnSizeByName getColumnSizes() const override { return getTargetTable()->getColumnSizes(); }
-    std::optional<ColumnSizeByName> tryGetColumnSizes() const override
+    std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & query_context) const override
     {
         auto target = tryGetTargetTable();
         if (!target)
             return std::nullopt;
 
-        return target->getColumnSizes();
+        return target->tryGetColumnSizes(query_context);
     }
 
     IndexSizeByName getSecondaryIndexSizes() const override { return getTargetTable()->getSecondaryIndexSizes(); }
