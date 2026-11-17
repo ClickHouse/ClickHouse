@@ -353,6 +353,7 @@ static struct InitFiu
     PAUSEABLE(backup_from_snapshot_pause_after_admin_lock_release) \
     PAUSEABLE(backup_from_snapshot_pause_before_holder_multi) \
     PAUSEABLE(backup_from_snapshot_pause_before_mount_parent_removal) \
+    PAUSEABLE(backup_from_snapshot_pause_before_collecting_snapshot_file) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_before_data_restore_tasks) \
