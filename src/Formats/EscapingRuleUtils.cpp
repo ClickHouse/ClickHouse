@@ -1,6 +1,7 @@
 #include <span>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/SchemaInferenceUtils.h>
+#include <Formats/JSONUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -73,6 +74,17 @@ String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
 static_assert(std::is_empty_v<NullOutput>);
 static NullOutput shared_null_output;
 
+/// The skipped field may be a column declared as `DateTime64` but pruned from the requested header
+/// (e.g. `SELECT id FROM file(...)`, `${:JSON}` in `Template`, or the optimized `count()`), so the
+/// MongoDB shell `ISODate("...")` wrapper is tolerated here, as in the JSON input formats
+/// (see `JSONUtils::getJSONSettingsForSkippingField`). Out of line, so that the local copy of the settings
+/// does not put a `-fstack-protector-strong` canary on `skipFieldByEscapingRule`.
+static NO_INLINE void skipJSONFieldOfSkippedColumn(ReadBuffer & buf, std::string_view field_name, const FormatSettings::JSON & settings)
+{
+    const auto skip_field_json_settings = JSONUtils::getJSONSettingsForSkippingField(settings);
+    skipJSONField(buf, field_name, skip_field_json_settings);
+}
+
 void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
 {
     NullOutput & out = shared_null_output;
@@ -93,7 +105,7 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
             readCSVStringInto(out, buf, format_settings.csv);
             break;
         case FormatSettings::EscapingRule::JSON:
-            skipJSONField(buf, std::string_view(field_name, field_name_len), format_settings.json);
+            skipJSONFieldOfSkippedColumn(buf, std::string_view(field_name, field_name_len), format_settings.json);
             break;
         case FormatSettings::EscapingRule::Raw:
             readStringInto(out, buf);
