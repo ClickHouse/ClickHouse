@@ -5,8 +5,12 @@ from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance("node1", main_configs=["configs/remote_servers.xml"])
-node2 = cluster.add_instance("node2", main_configs=["configs/remote_servers.xml"])
+node1 = cluster.add_instance(
+    "node1", main_configs=["configs/remote_servers.xml", "configs/secret_cluster.xml"]
+)
+node2 = cluster.add_instance(
+    "node2", main_configs=["configs/remote_servers.xml", "configs/secret_cluster.xml"]
+)
 node3 = cluster.add_instance("node3", main_configs=["configs/remote_servers.xml"])
 
 # Same cluster as configs/remote_servers.xml, but shard 2 points to node3
@@ -31,6 +35,21 @@ config_with_node3 = """<clickhouse>
     </remote_servers>
 </clickhouse>"""
 
+# configs/secret_cluster.xml with a different secret and the same addresses.
+config_with_secret_b = """<clickhouse>
+    <remote_servers>
+        <secret_cluster>
+            <secret>secret_b</secret>
+            <shard>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </secret_cluster>
+    </remote_servers>
+</clickhouse>"""
+
 PAUSE_FAILPOINT = "distributed_async_insert_pause_before_mark_as_sent"
 
 
@@ -45,6 +64,13 @@ def started_cluster():
         node1.query(
             "CREATE TABLE dist (key Int64, batch String) "
             "ENGINE = Distributed(test_cluster, currentDatabase(), local, key)"
+        )
+        node2.query(
+            "CREATE TABLE secret_local (key Int64) ENGINE = MergeTree ORDER BY key"
+        )
+        node1.query(
+            "CREATE TABLE secret_dist (key Int64) "
+            "ENGINE = Distributed(secret_cluster, currentDatabase(), secret_local)"
         )
         yield cluster
     finally:
@@ -119,4 +145,28 @@ def test_queue_survives_cluster_reload(started_cluster):
     )
     assert (
         node3.query("SELECT countDistinct(key) FROM local WHERE batch = 'C'") == "5\n"
+    )
+
+
+def test_queue_picks_up_secret_rotation(started_cluster):
+    """The queue's connection pool also depends on the cluster secret, which address
+    equality ignores: rotating only the secret must still give the existing queue a new
+    pool, or every send fails authentication on the receiver.
+    """
+    # The first INSERT creates the directory queue, with a pool for secret_a.
+    node1.query("INSERT INTO secret_dist SELECT number FROM numbers(5)")
+    node1.query("SYSTEM FLUSH DISTRIBUTED secret_dist")
+    assert node2.query("SELECT count() FROM secret_local") == "5\n"
+
+    for node in (node1, node2):
+        node.replace_config(
+            "/etc/clickhouse-server/config.d/secret_cluster.xml", config_with_secret_b
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+
+    node1.query("INSERT INTO secret_dist SELECT number + 5 FROM numbers(5)")
+    node1.query("SYSTEM FLUSH DISTRIBUTED secret_dist")
+    assert (
+        node2.query("SELECT count(), countDistinct(key) FROM secret_local")
+        == "10\t10\n"
     )

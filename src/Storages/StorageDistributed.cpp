@@ -2081,9 +2081,8 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
     {
         /// Published only once fully built: every queue in the map is dereferenced elsewhere.
         ClusterNodeData node_data;
-        node_data.addresses = parseAddresses(name);
         node_data.clusters_version = clusters_version;
-        node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(node_data.addresses, *this);
+        node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(parseAddresses(name), *this);
         node_data.directory_queue = std::make_shared<DistributedAsyncInsertDirectoryQueue>(
             *this, disk, relative_data_path + name,
             node_data.connection_pool,
@@ -2095,22 +2094,23 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
     auto & node_data = it->second;
     if (node_data.clusters_version < clusters_version)
     {
-        /// If the node changed (e.g. remote_servers was reloaded), update the connection
-        /// pool of the existing queue in place. Recreating the queue would let two queues
-        /// own the same directory for a while: the replaced queue is kept alive by an
-        /// in-flight send or by a DistributedSink, so a file it sends and removes leaves
-        /// the replacement queue retrying FILE_DOESNT_EXIST forever (such a file is not
-        /// "broken" and is never moved aside), and a file both queues pick up is sent twice.
-        auto new_addresses = parseAddresses(name);
-        if (node_data.addresses != new_addresses)
-        {
-            /// The cached addresses and version advance only after the queue uses the new
-            /// pool, so if anything here throws, the next call retries the update.
-            auto new_pool = DistributedAsyncInsertDirectoryQueue::createPool(new_addresses, *this);
-            node_data.directory_queue->updatePool(new_pool);
-            node_data.connection_pool = std::move(new_pool);
-            node_data.addresses = std::move(new_addresses);
-        }
+        /// remote_servers was reloaded: update the connection pool of the existing queue in
+        /// place. Recreating the queue would let two queues own the same directory for a while:
+        /// the replaced queue is kept alive by an in-flight send or by a DistributedSink, so a
+        /// file it sends and removes leaves the replacement queue retrying FILE_DOESNT_EXIST
+        /// forever (such a file is not "broken" and is never moved aside), and a file both
+        /// queues pick up is sent twice.
+        ///
+        /// The pool is rebuilt on every reload, not only when the addresses differ: it also
+        /// depends on settings that `Cluster::Address` equality ignores, such as the cluster
+        /// secret. If this table's cluster did not change, createPool() reuses its per-replica
+        /// pools, so the connections are kept.
+        ///
+        /// The version advances only after the queue uses the new pool, so if anything here
+        /// throws, the next call retries the update.
+        auto new_pool = DistributedAsyncInsertDirectoryQueue::createPool(parseAddresses(name), *this);
+        node_data.directory_queue->updatePool(new_pool);
+        node_data.connection_pool = std::move(new_pool);
         node_data.clusters_version = clusters_version;
     }
     return node_data.directory_queue;
