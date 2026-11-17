@@ -6,29 +6,23 @@
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Formats/Impl/Puffin/PuffinCommon.h>
 
 #include <functional>
 
 namespace DB
 {
 
-struct PuffinBlob
-{
-    String type;
-    Int64 snapshot_id = 0;
-    Int64 sequence_number = 0;
-    VectorWithMemoryTracking<Int32> fields;
-    Int64 offset = 0;
-    Int64 length = 0;
-    String compression_codec;
-    MapWithMemoryTracking<String, String> properties;
-};
-
 struct PuffinFooter
 {
     VectorWithMemoryTracking<PuffinBlob> blobs;
     VectorWithMemoryTracking<UInt8> data;
 };
+
+PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read);
+
+String readPuffinBlobBytes(
+    const PuffinBlob & blob, ReadBuffer & buf, const VectorWithMemoryTracking<UInt8> & data, bool seekable_read);
 
 class PuffinMetadataInputFormat : public IInputFormat
 {
