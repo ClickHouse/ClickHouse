@@ -10,7 +10,7 @@ doc_type: 'guide'
 Embora a [inferência de esquema](/pt-BR/guides/clickhouse/data-formats/json/inference) possa ser usada para definir um esquema inicial para dados JSON e consultar arquivos de dados JSON diretamente onde estão armazenados, por exemplo, no S3, você deve buscar definir um esquema versionado e otimizado para seus dados. A seguir, discutimos a abordagem recomendada para modelar estruturas JSON.
 
 <div id="static-vs-dynamic-json">
-  ## JSON estático vs. dinâmico
+  ## JSON estático vs. dinâmico {#static-vs-dynamic-json}
 </div>
 
 A principal tarefa ao definir um esquema para JSON é determinar o tipo adequado para o valor de cada chave. Recomendamos que os usuários apliquem recursivamente as regras a seguir a cada chave na hierarquia do JSON para determinar o tipo apropriado para cada uma delas.
@@ -86,7 +86,7 @@ Aplicando estas regras:
 </Note>
 
 <div id="handling-static-structures">
-  ## Lidando com estruturas estáticas
+  ## Lidando com estruturas estáticas {#handling-static-structures}
 </div>
 
 Recomendamos tratar estruturas estáticas usando tuplas nomeadas, ou seja, `Tuple`. Arrays de objetos podem ser armazenados usando arrays de tuplas, ou seja, `Array(Tuple)`. Dentro das próprias tuplas, as colunas e seus respectivos tipos devem ser definidos seguindo as mesmas regras. Isso pode resultar em `Tuple` aninhadas para representar objetos aninhados, como mostrado abaixo.
@@ -202,7 +202,7 @@ ORDER BY company.name
 ```
 
 <div id="handling-default-values">
-  ### Tratando valores padrão
+  ### Tratando valores padrão {#handling-default-values}
 </div>
 
 Embora os objetos JSON sejam estruturados, eles geralmente são esparsos, com apenas um subconjunto das chaves conhecidas presente. Felizmente, o tipo `Tuple` não exige todas as colunas no payload JSON. Se não forem fornecidas, serão usados valores padrão.
@@ -288,7 +288,7 @@ FORMAT PrettyJSONEachRow
 </Info>
 
 <div id="handling-new-columns">
-  ### Como lidar com novas colunas
+  ### Como lidar com novas colunas {#handling-new-columns}
 </div>
 
 Embora uma abordagem estruturada seja mais simples quando as chaves do JSON são estáticas, ela ainda pode ser usada se as alterações no esquema puderem ser planejadas, ou seja, se as novas chaves forem conhecidas com antecedência e o esquema puder ser modificado de acordo.
@@ -371,7 +371,7 @@ SELECT id, nickname FROM people
 ```
 
 <div id="handling-semi-structured-dynamic-structures">
-  ## Lidando com estruturas semiestruturadas/dinâmicas
+  ## Lidando com estruturas semiestruturadas/dinâmicas {#handling-semi-structured-dynamic-structures}
 </div>
 
 Se os dados JSON forem semiestruturados, com chaves que podem ser adicionadas dinamicamente e/ou ter vários tipos, o tipo [`JSON`](/pt-BR/reference/data-types/newjson) é recomendado.
@@ -503,7 +503,7 @@ Um esquema rígido tem vários benefícios:
 * **Introspecção mais simples de caminhos e tipos** - Embora o tipo JSON ofereça suporte a [funções de introspecção](/pt-BR/reference/data-types/newjson#introspection-functions) para determinar os tipos e caminhos inferidos, estruturas estáticas podem ser mais simples de explorar, por exemplo, com `DESCRIBE`.
 
 <div id="single-json-column">
-  ### Coluna JSON única
+  ### Coluna JSON única {#single-json-column}
 </div>
 
 Essa abordagem é útil para prototipagem e tarefas de engenharia de dados. Em produção, tente usar `JSON` apenas para subestruturas dinâmicas, quando necessário.
@@ -700,7 +700,7 @@ FROM people
 ```
 
 <div id="targeted-json-column">
-  ### Coluna JSON direcionada
+  ### Coluna JSON direcionada {#targeted-json-column}
 </div>
 
 Embora seja útil em prototipagem e em desafios de engenharia de dados, recomendamos o uso de um schema explícito em produção sempre que possível.
@@ -806,7 +806,7 @@ FORMAT PrettyJsonEachRow
 ```
 
 <div id="using-type-hints-and-skipping-paths">
-  ### Usando type hints e ignorando caminhos
+  ### Usando type hints e ignorando caminhos {#using-type-hints-and-skipping-paths}
 </div>
 
 Os type hints permitem especificar o tipo de um caminho e de sua subcoluna, evitando inferências de tipo desnecessárias. Considere o exemplo a seguir, em que especificamos os tipos para as chaves JSON `dissolved`, `employees` e `founded` dentro da coluna JSON `company.labels`
@@ -972,7 +972,7 @@ FORMAT PrettyJSONEachRow
 ```
 
 <div id="optimizing-performance-with-type-hints">
-  #### Otimizando o desempenho com type hints
+  #### Otimizando o desempenho com type hints {#optimizing-performance-with-type-hints}
 </div>
 
 Type hints oferecem mais do que apenas uma forma de evitar a inferência desnecessária de tipos — eles eliminam por completo a indireção de armazenamento e processamento, além de permitir a especificação de [tipos primitivos ideais](/pt-BR/guides/clickhouse/data-modelling/schema-design#optimizing-types). Caminhos JSON com type hints são sempre armazenados como colunas tradicionais, dispensando a necessidade de [**colunas discriminadoras**](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data) ou de resolução dinâmica em tempo de consulta.
@@ -981,20 +981,14 @@ Isso significa que, com type hints bem definidos, chaves JSON aninhadas alcança
 
 Como resultado, para conjuntos de dados que são em grande parte consistentes, mas ainda se beneficiam da flexibilidade do JSON, type hints oferecem uma maneira prática de preservar o desempenho sem a necessidade de reestruturar seu esquema ou pipeline de ingestão.
 
-<div id="configuring-dynamic-paths">
-  ### Configurando caminhos dinâmicos
-</div>
+### Configurando caminhos dinâmicos {#configuring-dynamic-paths}
 
 O ClickHouse armazena cada caminho JSON como uma subcoluna em um layout verdadeiramente colunar, o que oferece os mesmos benefícios de desempenho observados em colunas tradicionais, como compactação, processamento acelerado por SIMD e I/O mínimo de disco. Cada combinação única de caminho e tipo nos seus dados JSON pode se tornar seu próprio arquivo de coluna em disco.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Uma coluna por caminho JSON](/images/integrations/data-ingestion/data-formats/json_column_per_type.webp)
-
-</Frame>
-
+  <Frame>
+    ![Uma coluna por caminho JSON](/images/integrations/data-ingestion/data-formats/json_column_per_type.webp)
+  </Frame>
 </div>
 
 Por exemplo, quando dois caminhos JSON são inseridos com tipos diferentes, o ClickHouse armazena os valores de cada [tipo concreto em subcolunas distintas](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data). Essas subcolunas podem ser acessadas de forma independente, minimizando I/O desnecessário. Observe que, ao consultar uma coluna com vários tipos, os valores ainda são retornados como uma única resposta colunar.
@@ -1002,13 +996,9 @@ Por exemplo, quando dois caminhos JSON são inseridos com tipos diferentes, o Cl
 Além disso, ao usar offsets, o ClickHouse garante que essas subcolunas permaneçam densas, sem armazenar valores padrão para caminhos JSON ausentes. Essa abordagem maximiza a compactação e reduz ainda mais o I/O.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Offsets de JSON](/images/integrations/data-ingestion/data-formats/json_offsets.webp)
-
-</Frame>
-
+  <Frame>
+    ![Offsets de JSON](/images/integrations/data-ingestion/data-formats/json_offsets.webp)
+  </Frame>
 </div>
 
 No entanto, em cenários com estruturas JSON de alta cardinalidade ou muito variáveis, como pipelines de telemetria, logs ou feature stores de machine learning, esse comportamento pode levar a uma explosão no número de arquivos de coluna. Cada novo caminho JSON único resulta em um novo arquivo de coluna, e cada variante de tipo nesse caminho resulta em um arquivo de coluna adicional. Embora isso seja ideal para o desempenho de leitura, também introduz desafios operacionais: esgotamento de descritores de arquivo, aumento do uso de memória e merges mais lentos devido ao grande número de arquivos pequenos.
@@ -1016,13 +1006,9 @@ No entanto, em cenários com estruturas JSON de alta cardinalidade ou muito vari
 Para mitigar isso, o ClickHouse introduz o conceito de subcoluna de overflow: quando o número de caminhos JSON distintos ultrapassa um limite, os caminhos adicionais são armazenados em um único arquivo compartilhado usando um formato codificado compacto. Esse arquivo ainda pode ser consultado, mas não se beneficia das mesmas características de desempenho das subcolunas dedicadas.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Coluna JSON compartilhada](/images/integrations/data-ingestion/data-formats/json_shared_column.webp)
-
-</Frame>
-
+  <Frame>
+    ![Coluna JSON compartilhada](/images/integrations/data-ingestion/data-formats/json_shared_column.webp)
+  </Frame>
 </div>
 
 Esse limite é controlado pelo parâmetro [`max_dynamic_paths`](/pt-BR/reference/data-types/newjson#reaching-the-limit-of-dynamic-paths-inside-json) na declaração do tipo JSON.

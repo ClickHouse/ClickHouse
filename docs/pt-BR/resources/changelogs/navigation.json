@@ -60,8 +60,8 @@
       "pages": [
         "pt-BR/resources/changelogs/oss/2026",
         {
-          "expanded": false,
           "group": "Arquivo",
+          "expanded": false,
           "pages": [
             "pt-BR/resources/changelogs/oss/2025",
             "pt-BR/resources/changelogs/oss/2024",

@@ -32,9 +32,9 @@ Toutes les fonctions partagent une infrastructure commune qui fournit :
 
 ## Configuration {#configuration}
 
-Les fonctions d’IA s’appuient sur une **collection nommée** qui stocke les identifiants du fournisseur et la configuration. Différentes collections nommées peuvent être créées et utilisées pour différentes fonctions ou différents appels de fonction. Par exemple, vous pouvez définir une collection nommée distincte pour les fonctions de texte (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`), et une autre pour les fonctions d’embedding (`aiEmbed`, `aiSimilarity`), qui nécessitent des points de terminaison différents et utilisent généralement des modèles différents.
+Les fonctions d’IA nécessitent le grant `AI FUNCTIONS` (voir [Contrôle d’accès](#access-control)) et s’appuient sur une **collection nommée** qui stocke les identifiants du fournisseur et la configuration. Différentes collections nommées peuvent être créées et utilisées pour différentes fonctions ou différents appels de fonction. Par exemple, vous pouvez définir une collection nommée distincte pour les fonctions de texte (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`), et une autre pour les fonctions d’embedding (`aiEmbed`, `aiSimilarity`), qui nécessitent des endpoints différents et utilisent généralement des modèles différents.
 
-Exemple d’instruction pour créer une collection nommée avec les identifiants du fournisseur, l’une avec un point de terminaison de chat et l’autre avec un point de terminaison d’embedding :
+Exemple de statement pour créer une collection nommée avec les identifiants du fournisseur, l’une avec un endpoint de chat et l’autre avec un endpoint d’embedding :
 
 ```sql
 CREATE NAMED COLLECTION ai_text_credentials AS
@@ -50,6 +50,35 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/embeddings',
     api_key = 'sk-...';
+```
+
+### Contrôle d’accès {#access-control}
+
+L’appel d’une fonction d’IA nécessite deux privilèges :
+
+* le privilège de la fonction : soit le privilège propre à la fonction (par exemple `aiGenerate`), soit le groupe `AI FUNCTIONS` (voir [`GRANT`](/fr/reference/statements/grant#ai-functions)) ;
+* le privilège `NAMED COLLECTION` sur les identifiants sélectionnés.
+
+```sql
+GRANT AI FUNCTIONS ON *.* TO ai_user_role;
+GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
+GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
+```
+
+Les fonctions d’IA ne sont exécutées que dans les requêtes lancées par un utilisateur. Elles sont rejetées dans les mutations (`ALTER TABLE ... UPDATE`, `ALTER TABLE ... DELETE`) ainsi que dans les clés, le TTL, les index de saut et les projections d’une table, qui sont exécutés en arrière-plan ; de plus, les vidages de `Buffer` lèvent une exception lorsqu’ils évaluent une fonction d’IA. Les colonnes `DEFAULT` et `MATERIALIZED` sont évaluées lors de l’insertion ; lorsqu’une telle colonne est ajoutée avec `ALTER TABLE`, elle est calculée en arrière-plan pour les parts existantes, contexte dans lequel les fonctions d’IA ne sont pas exécutées.
+
+Pour remplir une colonne dans des lignes existantes, utilisez un [`UPDATE`](/fr/reference/statements/update) léger, qui est exécuté par la requête et n’écrit que la colonne mise à jour :
+
+```sql
+UPDATE t SET y = aiEmbed(x, 'model') WHERE empty(y) SETTINGS enable_lightweight_update = 1;
+```
+
+Pour une table qui ne remplit pas les [conditions requises pour la mise à jour légère](/fr/reference/statements/update#lightweight-update-requirements), utilisez `INSERT ... SELECT`, par exemple partition par partition :
+
+```sql
+CREATE TABLE t_tmp AS t;
+INSERT INTO t_tmp SELECT x, aiEmbed(x, 'model') AS y FROM t WHERE _partition_id = '202610';
+ALTER TABLE t REPLACE PARTITION ID '202610' FROM t_tmp;
 ```
 
 ### Paramètres de la collection nommée {#named-collection-parameters}
@@ -194,33 +223,58 @@ La valeur par défaut est `8`. Une valeur supérieure à `1` assouplit deux gara
 | OpenAI      | `'openai'`           | Oui               | Fournisseur par défaut.                |
 | Anthropic   | `'anthropic'`        | Oui               | Utilise le point de terminaison `/v1/messages`. |
 
-## Observabilité {#observability}
+## Observability {#observability}
 
-L’activité de la fonction d’IA est suivie via les [ProfileEvents](/fr/reference/system-tables/query_log) de ClickHouse :
+L’activité des fonctions d’IA est suivie via les [ProfileEvents](/fr/reference/system-tables/query_log) de ClickHouse :
 
-| ProfileEvent      | Description                                                                                |
-| ----------------- | ------------------------------------------------------------------------------------------ |
-| `AIAPICalls`      | Nombre de requêtes HTTP envoyées au fournisseur d’IA.                                      |
-| `AIInputTokens`   | Nombre total de tokens d’entrée consommés.                                                 |
-| `AIOutputTokens`  | Nombre total de tokens de sortie consommés.                                                |
-| `AIRowsProcessed` | Nombre de lignes ayant reçu un résultat.                                                   |
-| `AIRowsSkipped`   | Nombre de lignes ignorées (quota dépassé ou erreur avec `ai_function_throw_on_error = 0`). |
+| ProfileEvent                 | Description                                                                                                                                                                                            |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AIAPICalls`                 | Nombre de requêtes HTTP envoyées au fournisseur d’IA.                                                                                                                                                  |
+| `AIInputTokens`              | Nombre total de tokens d’entrée consommés, lectures et écritures en cache comprises.                                                                                                                   |
+| `AIOutputTokens`             | Nombre total de tokens de sortie consommés.                                                                                                                                                            |
+| `AICacheReadTokens`          | Tokens d’entrée lus depuis le cache de prompts du fournisseur.                                                                                                                                         |
+| `AICacheWriteTokens`         | Tokens d’entrée écrits dans le cache de prompts du fournisseur.                                                                                                                                        |
+| `AIRequestMicroseconds`      | Temps total passé dans les appels au fournisseur d’IA (sérialisation de la requête, aller-retour HTTP, analyse de la réponse), tentatives en échec comprises, hors temporisation entre les tentatives. |
+| `AIRetryBackoffMicroseconds` | Temps total passé à attendre avant les nouvelles tentatives d’appels en échec au fournisseur d’IA.                                                                                                     |
+| `AIRowsProcessed`            | Nombre de lignes ayant reçu un résultat.                                                                                                                                                               |
+| `AIRowsSkipped`              | Nombre de lignes ignorées (quota dépassé, ou erreur avec `ai_function_throw_on_error = 0`).                                                                                                            |
 
-Interrogez ces événements :
+Les durées sont additionnées sur l’ensemble des exécutions et des fils d’exécution ; elles peuvent donc dépasser le temps d’horloge de la requête.
+Divisez `AIRequestMicroseconds` par `AIAPICalls` pour obtenir la latence moyenne par requête, tentatives en échec comprises.
+Ces compteurs sont calculés par requête SQL ; ils ne fournissent aucune information de latence par requête HTTP.
+Si une requête appelle plusieurs fonctions d’IA, leurs compteurs sont additionnés.
+
+Les compteurs de cache sont des sous-ensembles de `AIInputTokens`, et non des tokens supplémentaires. Ils reflètent les lectures/écritures de cache signalées par le fournisseur, et non une quelconque mise en cache interne à ClickHouse. Un fournisseur qui n’indique pas l’utilisation du cache ne comptabilise
+aucun token de cache.
+
+Interrogez ces événements :
 
 ```sql
+SYSTEM FLUSH LOGS;
+
 SELECT
+    query_duration_ms,
     ProfileEvents['AIAPICalls'] AS api_calls,
+    ProfileEvents['AIRequestMicroseconds'] / 1000 AS request_ms,
+    request_ms / nullIf(api_calls, 0) AS mean_request_ms,
+    ProfileEvents['AIRetryBackoffMicroseconds'] / 1000 AS retry_backoff_ms,
+    ProfileEvents['AIRowsProcessed'] AS rows_processed,
+    ProfileEvents['AIRowsSkipped'] AS rows_skipped,
     ProfileEvents['AIInputTokens'] AS input_tokens,
-    ProfileEvents['AIOutputTokens'] AS output_tokens
+    ProfileEvents['AIOutputTokens'] AS output_tokens,
+    ProfileEvents['AICacheReadTokens'] AS cache_read_tokens,
+    ProfileEvents['AICacheWriteTokens'] AS cache_write_tokens
 FROM system.query_log
 WHERE query_id = 'query_id'
-AND type = 'QueryFinish'
+AND type IN ('QueryFinish', 'ExceptionWhileProcessing')
 ORDER BY event_time DESC;
 ```
 
+`log_queries` et `log_profile_events` sont activés par défaut afin d&#39;enregistrer ces événements dans `system.query_log`.
+Les totaux pour l&#39;ensemble du serveur sont également disponibles dans `system.events`.
+
 {/*
-  Le contenu interne des balises ci-dessous est remplacé, lors de la génération de la documentation, par
+  Le contenu des balises ci-dessous est remplacé lors de la construction du framework de documentation par
   la documentation générée à partir de system.functions. Veuillez ne pas modifier ni supprimer ces balises.
   Voir : https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
   */}

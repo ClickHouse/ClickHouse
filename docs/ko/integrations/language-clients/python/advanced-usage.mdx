@@ -35,15 +35,15 @@ ClickHouse 데이터와 네이티브 또는 서드파티 데이터 타입 및 �
 
 `Client.raw_insert` 메서드를 사용하면 클라이언트 연결을 통해 `bytes` 객체 또는 `bytes` 객체 생성기를 직접 삽입할 수 있습니다. 이 메서드는 삽입 payload를 별도로 처리하지 않으므로 성능이 매우 뛰어납니다. 또한 설정과 삽입 포맷을 지정하는 옵션을 제공합니다:
 
-| 매개변수                 | 유형                                   | 기본값      | 설명                                                                                     |
-| -------------------- | ------------------------------------ | -------- | -------------------------------------------------------------------------------------- |
-| `table`              | str                                  | Required | 단순 테이블 이름 또는 데이터베이스를 포함한 정규화된 대상 테이블입니다.                                               |
-| `column_names`       | Sequence[str]                        | `None`   | 삽입 block의 컬럼 이름입니다. `fmt`에 이름이 포함되지 않으면 필요합니다.                                         |
-| `insert_block`       | str, bytes, generator, or `BinaryIO` | Required | 삽입할 데이터입니다. 문자열은 클라이언트 인코딩을 사용해 인코딩됩니다.                                                |
-| `settings`           | dict                                 | `None`   | [설정 인수](/ko/integrations/language-clients/python/driver-api#settings-argument-1)를 참조하십시오. |
-| `fmt`                | str                                  | `None`   | `insert_block` payload의 ClickHouse 입력 형식입니다. 포맷을 지정하지 않으면 `네이티브`가 사용됩니다.               |
-| `compression`        | str                                  | `None`   | `"gzip"`, `"lz4"`, `"zstd"`와 같이 `insert_block`에 이미 적용된 압축 방식입니다.                       |
-| `transport_settings` | dict                                 | `None`   | 이 요청에 추가되는 HTTP headers입니다.                                                            |
+| 매개변수                 | 유형                                   | 기본값      | 설명                                                                                                                       |
+| -------------------- | ------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `table`              | str                                  | Required | 단순 테이블 이름 또는 데이터베이스를 포함한 정규화된 대상 테이블입니다.                                                                                 |
+| `column_names`       | Sequence[str]                        | `None`   | 삽입 block의 컬럼 이름입니다. `fmt`에 이름이 포함되지 않으면 필요합니다.                                                                           |
+| `insert_block`       | str, bytes, generator, or `BinaryIO` | Required | 삽입할 데이터입니다. 문자열은 클라이언트 인코딩을 사용해 인코딩됩니다. `AsyncClient.raw_insert`는 generator 대신 async generator와 같은 async iterable을 받습니다. |
+| `settings`           | dict                                 | `None`   | [설정 인수](/ko/integrations/language-clients/python/driver-api#settings-argument-1)를 참조하십시오.                                   |
+| `fmt`                | str                                  | `None`   | `insert_block` payload의 ClickHouse 입력 형식입니다. 포맷을 지정하지 않으면 `네이티브`가 사용됩니다.                                                 |
+| `compression`        | str                                  | `None`   | `"gzip"`, `"lz4"`, `"zstd"`와 같이 `insert_block`에 이미 적용된 압축 방식입니다.                                                         |
+| `transport_settings` | dict                                 | `None`   | 이 요청에 추가되는 HTTP headers입니다.                                                                                              |
 
 호출자는 `insert_block`이 지정한 포맷이며 지정한 compression method를 사용하도록 보장할 책임이 있습니다. ClickHouse Connect는 파일 업로드와 PyArrow Tables에 이러한 원시 삽입을 사용하며, 파싱은 ClickHouse 서버에 위임합니다.
 
@@ -173,6 +173,20 @@ ClickHouse Connect는 서버와의 기본 HTTP 연결을 처리하기 위해 `ur
 
 기본 소켓 옵션에서는 TCP keepalive와 `TCP_NODELAY`가 활성화되어 있습니다. 소켓 송수신 버퍼 크기는 운영 체제가 관리합니다.
 
+동기 클라이언트를 닫을 때 해당 클라이언트의 연결도 함께 해제하려면 `dedicated_pool=True`를 전달하십시오:
+
+```python
+import clickhouse_connect
+
+with clickhouse_connect.get_client(dedicated_pool=True) as client:
+    result = client.query("SELECT 13")
+    print(result.first_row)
+```
+
+이 클라이언트는 구성된 프록시 및 TLS 옵션을 사용하는 별도의 풀을 소유합니다. 전용 풀은 프록시가 구성된 경우에도 공유되지 않습니다. `client.close()`는 유휴 상태의 연결을 즉시 닫습니다. 활성 응답은 계속 완료될 수 있으며, 해당 연결은 풀로 반환될 때 닫힙니다. 클라이언트를 닫아도 실행 중인 쿼리는 취소되지 않습니다.
+
+전용 클라이언트는 작업 또는 애플리케이션 구성 요소의 수명 동안 유지하면서 여러 쿼리에 재사용하십시오. 각 전용 클라이언트는 자체 연결을 생성하며, HTTPS의 경우 TLS 설정도 개별적으로 수행합니다. 수명이 짧은 전용 클라이언트를 많이 생성하지 마십시오. 기본값인 `dedicated_pool=False`는 사용자 정의 TLS 옵션에 대한 별도 풀을 포함하여 기존 풀 선택 규칙을 그대로 유지합니다. `dedicated_pool=True`와 `pool_mgr`를 함께 사용하면 `ProgrammingError`가 발생합니다.
+
 대규모 멀티스레드 애플리케이션에서는 별도의 연결 풀이 더 적합할 수 있습니다. 사용자 지정 연결 풀은 기본 `clickhouse_connect.get_client` 함수에 `pool_mgr` 키워드 인수로 전달할 수 있습니다:
 
 ```python
@@ -189,6 +203,6 @@ client2 = clickhouse_connect.get_client(pool_mgr=big_pool_mgr)
 
 소켓 옵션을 설정하려면 `httputil.get_pool_manager` 또는 `httputil.get_pool_manager_options`에 `socket_options`를 전달하십시오. 이렇게 하면 keepalive 옵션과 `TCP_NODELAY`를 포함한 기본 목록 전체가 대체됩니다. 명시적인 소켓 옵션을 적용하지 않으려면 `[]` 또는 `None`을 전달하십시오.
 
-비동기 클라이언트는 `urllib3` 대신 aiohttp 풀을 사용합니다. `get_async_client`의 `connector_limit`, `connector_limit_per_host`, `keepalive_timeout`을 통해 이를 구성하십시오. `await async_client.close_connections()`를 호출하면 진행 중인 요청을 중단하지 않고 풀이 순환됩니다.
+비동기 클라이언트는 `urllib3` 대신 aiohttp 풀을 사용합니다. `dedicated_pool` 인수를 받기는 하지만 아무런 효과가 없습니다. 각 비동기 클라이언트는 플래그 값과 관계없이 자체 커넥터를 가지므로, `dedicated_pool=False`로 설정해도 공유가 활성화되지 않습니다. `get_async_client`의 `connector_limit`, `connector_limit_per_host`, `keepalive_timeout`을 통해 풀을 구성하십시오. `await async_client.close_connections()`를 호출하면 진행 중인 요청을 중단하지 않고 풀이 순환됩니다.
 
 비동기 쿼리와 삽입에서는 사용 가능한 풀 슬롯을 기다리는 데 타임아웃이 적용되지 않습니다. 스트리밍 응답은 끝까지 읽거나 닫아서 풀 슬롯을 반환하십시오. `connect_timeout`은 슬롯을 사용할 수 있게 된 시점부터 적용되며, DNS 해석, TCP 및 TLS 설정, 프록시 협상을 포함합니다. `send_receive_timeout`은 소켓 읽기 시간을 제한합니다. 풀 대기를 포함한 전체 작업에 기한을 설정하려면 `asyncio.wait_for`를 사용하십시오(예: `await asyncio.wait_for(client.query("SELECT 13"), timeout=30)`).

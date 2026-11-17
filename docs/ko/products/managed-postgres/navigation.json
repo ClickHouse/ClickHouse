@@ -76,7 +76,7 @@
       ]
     },
     {
-      "group": "마이그레이션",
+      "group": "마이그레이션(migration)",
       "pages": [
         "ko/products/managed-postgres/migrations/overview",
         "ko/products/managed-postgres/migrations/clickpipes",

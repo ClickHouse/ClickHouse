@@ -1,8 +1,8 @@
 {
-  "item": "Agents",
+  "item": "에이전트",
   "pages": [
     {
-      "group": "Get started",
+      "group": "시작하기",
       "pages": [
         "ko/agents/index",
         "ko/agents/quickstart",
@@ -10,7 +10,7 @@
       ]
     },
     {
-      "group": "Agent Builder",
+      "group": "에이전트 빌더",
       "pages": [
         "ko/agents/builder/index",
         "ko/agents/builder/model-parameters",
@@ -24,7 +24,7 @@
       ]
     },
     {
-      "group": "Manage agents",
+      "group": "에이전트 관리",
       "pages": [
         "ko/agents/prompts",
         "ko/agents/memory",

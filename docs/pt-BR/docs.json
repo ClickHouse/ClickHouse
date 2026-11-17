@@ -39,7 +39,7 @@
           "item": "Implantações"
         },
         {
-        "$ref": "./products/cloud/navigation.json"
+          "$ref": "./products/cloud/navigation.json"
         },
         {
           "item": "BYOC",
@@ -76,7 +76,7 @@
         {
           "item": "ClickStack",
           "pages": [
-            "pt-BR/clickstack/index"
+            "pt-BR/clickstack"
           ]
         },
         {

@@ -50,6 +50,8 @@ Uso da QUOTA por todos os usuários.
 * `max_failed_sequential_authentications` ([Nullable(UInt64)](/pt-BR/reference/data-types/nullable)) — Número máximo permitido de falhas consecutivas de autenticação no período especificado.
 * `queries_per_normalized_hash` ([Nullable(UInt64)](/pt-BR/reference/data-types/nullable)) — Número máximo atual de execuções de uma mesma consulta normalizada no período atual.
 * `max_queries_per_normalized_hash` ([Nullable(UInt64)](/pt-BR/reference/data-types/nullable)) — Número máximo permitido de execuções de uma mesma consulta normalizada no período especificado.
+* `profile_events` ([Map(String, UInt64)](/pt-BR/reference/data-types/map)) — Consumo atual de cada evento de criação de perfil para o qual a QUOTA define um limite.
+* `max_profile_events` ([Map(String, UInt64)](/pt-BR/reference/data-types/map)) — Consumo máximo permitido de cada evento de criação de perfil para o qual a QUOTA define um limite. O valor 0 significa que o evento é apenas monitorado, sem limite.
 
 ## Veja também {#see-also}
 

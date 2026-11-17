@@ -91,6 +91,19 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 0 — يُطلق `SELECT` استثناءً إذا كان الملف الفارغ غير متوافق مع التنسيق المطلوب.
 * 1 — أعاد `SELECT` نتيجة فارغ للملف الفارغ.
 
+## azure_skip_hidden_files {#azure_skip_hidden_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "إعداد جديد: تخطي blobs التي يتضمن مسارها مقطعًا يبدأ بـ `_` أو `.` أسفل البادئة الخالية من glob عند سرد الملفات باستخدام glob، على غرار القارئات الأخرى في منظومة Hive. أما الجداول التي تستخدم `partition_strategy = 'hive'` فتتخطى هذه المسارات دائمًا."}]}]} />
+
+يُفعّل أو يُعطّل تخطي المسارات المخفية عند سرد الملفات باستخدام glob في جداول المحرك [AzureBlobStorage](/ar/reference/engines/table-engines/integrations/azureBlobStorage)، أي blobs التي يتضمن مسارها مقطعًا يبدأ بـ `_` أو `.` أسفل البادئة الخالية من glob في المسار. ويُعدّ المقطع الذي يحتوي على `=` دليل تقسيم (مثل `_p=1` لعمود التقسيم `_p`)، فلا يُعتبر مخفيًا. إذ تضع أدوات الكتابة في منظومة Hive ‏(Hive وSpark وTrino) الإخراج الجاري إنشاؤه في التخزين المرحلي، وتكتب كائنات الوسم ضمن هذه المسارات (`_temporary/` و`.spark-staging-<id>/` و`_SUCCESS`)، ما يجعل قراءتها تدخل في حالة تسابق مع عملية التثبيت التي ينفذها المثيل الكاتب. ولا تُفحص المقاطع الواقعة ضمن البادئة الخالية من glob. أما الجداول التي تستخدم `partition_strategy = 'hive'` فتتخطى المسارات المخفية دائمًا بصرف النظر عن هذا الإعداد.
+
+القيم الممكنة:
+
+* 0 — يُقرأ كل blob يطابقه glob.
+* 1 — تُتخطى blobs التي يتضمن مسارها مقطعًا مخفيًا أسفل البادئة الخالية من glob.
+
 ## azure_strict_upload_part_size {#azure_strict_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

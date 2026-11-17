@@ -149,18 +149,6 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Если установлено значение true, пользователю разрешается выполнять DDL-запросы.
 
-## allow_delta_kernel_rs {#allow_delta_kernel_rs}
-
-<BetaBadge />
-
-**Псевдонимы**: `allow_experimental_delta_kernel_rs`
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Новое название `allow_experimental_delta_kernel_rs`, которая больше не является экспериментальной и сохранена в качестве псевдонима. Значение по умолчанию не изменилось."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "Новая настройка. Введена под именем `allow_experimental_delta_kernel_rs`, которое теперь является её псевдонимом; запись перенесена под каноническое имя, чтобы сохранить всю историю."}]}]} />
-
-Разрешает использовать реализацию `delta-kernel-rs` для чтения таблиц Delta Lake.
-
 ## allow_delta_lake_create_table {#allow_delta_lake_create_table}
 
 <ExperimentalBadge />
@@ -228,6 +216,18 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Разрешает выполнять функцию multiIf в столбцовом режиме
+
+## allow_expire_snapshots {#allow_expire_snapshots}
+
+<ExperimentalBadge />
+
+**Псевдонимы**: `allow_experimental_expire_snapshots`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Новая настройка."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "Добавлен псевдоним настройки `allow_experimental_expire_snapshots`."}]}]} />
+
+Разрешает выполнение команды Iceberg `ALTER TABLE ... EXECUTE expire_snapshots`.
 
 ## allow_fuzz_query_functions {#allow_fuzz_query_functions}
 
@@ -507,6 +507,14 @@ ClickHouse использует значение этой настройки, з
 По умолчанию это запрещено: `REPLACE PARTITION` из источника, в котором нет данных в запрошенной партиции, вызывает исключение, поскольку в таком случае операция фактически превращается в молчаливый `DROP PARTITION` для пункта назначения (данные в партиции пункта назначения удаляются, но взамен ничего не записывается), что нередко приводит к случайной потере данных (см. [#23727](https://github.com/ClickHouse/ClickHouse/issues/23727)).
 
 Включите эту настройку, чтобы вернуть прежнее поведение, например если вы намеренно используете пустую исходную партицию для очистки данных в пункте назначения. Если нужно просто удалить партицию без дополнительных условий, предпочтительнее использовать `ALTER TABLE ... DROP PARTITION ...`.
+
+## allow_reserved_column_names {#allow_reserved_column_names}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Отклонять столбцы, имя которых совпадает с именем виртуального столбца таблицы семейства MergeTree"}]}]} />
+
+Разрешает задавать столбцу таблицы семейства `MergeTree` имя одного из виртуальных столбцов этой таблицы (например, `_part`, `_part_offset` или `_table`) в запросах `CREATE TABLE`, `ATTACH TABLE` с полным определением, а также `ALTER TABLE ... ADD COLUMN` и `RENAME COLUMN`. Такой столбец скрывает соответствующий виртуальный столбец. Таблицы, в которых уже есть такой столбец, загружаются независимо от значения этой настройки. Имена сохраняемых виртуальных столбцов отклоняются всегда.
 
 ## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
 

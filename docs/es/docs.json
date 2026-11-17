@@ -39,7 +39,7 @@
           "item": "Implementaciones"
         },
         {
-        "$ref": "./products/cloud/navigation.json"
+          "$ref": "./products/cloud/navigation.json"
         },
         {
           "item": "BYOC",
@@ -71,12 +71,12 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Código abierto"
+          "item": "Open source"
         },
         {
           "item": "ClickStack",
           "pages": [
-            "es/clickstack/index"
+            "es/clickstack"
           ]
         },
         {

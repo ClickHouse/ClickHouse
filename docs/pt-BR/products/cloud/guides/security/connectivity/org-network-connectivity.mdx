@@ -1,0 +1,155 @@
+---
+title: 'Conectividade de rede segura na organização'
+sidebarTitle: 'Conectividade de rede na organização'
+hidden: true
+description: 'Consulte um serviço do ClickHouse Cloud a partir de outro na mesma organização e região usando remoteSecure() pela rede privada do ClickHouse Cloud, mesmo quando o serviço de origem usa PrivateLink ou uma lista de acesso por IP restritiva'
+keywords: ['remoteSecure', 'service to service', 'cross service', 'private networking', 'privatelink', 'ip access list', 'named collection', 'organization network connectivity']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
+A conectividade de rede segura da organização permite que um serviço do ClickHouse Cloud consulte outro serviço da mesma organização e região usando [`remoteSecure()`](/pt-BR/reference/functions/table-functions/remote). O tráfego permanece na rede privada do ClickHouse Cloud, sem passar pela internet pública, por isso funciona mesmo quando o serviço consultado está protegido por [PrivateLink](/pt-BR/products/cloud/guides/security/connectivity/private-networking/aws-privatelink) ou por uma [lista de acesso por IP](/pt-BR/products/cloud/guides/security/connectivity/setting-ip-filters).
+
+Use esse recurso quando:
+
+* Seus serviços estiverem restritos a PrivateLink ou a uma lista de acesso por IP rigorosa, o que impede o uso de `remoteSecure()` pelo endpoint público.
+* Seus requisitos de segurança não permitirem tráfego entre serviços pela internet pública.
+* Seus serviços não compartilharem dados por meio de [warehouses](/pt-BR/products/cloud/features/infrastructure/warehouses) (separação entre recursos de computação), mas você precisar executar consultas entre eles.
+
+<Note>
+  Esta funcionalidade está em prévia privada, e nossa equipe configura cada conexão para você. Para participar, entre em contato com o account team da ClickHouse ou com o [suporte do ClickHouse](https://clickhouse.com/support/program).
+</Note>
+
+## Como funciona {#how-it-works}
+
+Este guia usa dois termos:
+
+* **Produtor**: o serviço que contém a tabela que você deseja ler.
+* **Consumidor**: o serviço que executa `remoteSecure()` para ler dados do Produtor.
+
+O ClickHouse Cloud cria uma conexão unidirecional do Consumidor para o Produtor. O Consumidor se autentica com um certificado gerenciado pelo ClickHouse Cloud, e o Produtor controla, por meio de um `GRANT` padrão, quais tabelas o Consumidor pode ler. Não há senhas para criar nem rotacionar.
+
+Uma consulta precisa passar por três verificações:
+
+1. **Rede**: somente um Consumidor com uma conexão consegue acessar o Produtor pela rede privada.
+2. **Identidade**: o Consumidor se autentica com um certificado vinculado ao seu hostname.
+3. **Permissões de tabela**: o Produtor define, com `GRANT`, quais tabelas o Consumidor pode ler. Tudo o que não tiver sido concedido retorna um erro de acesso negado.
+
+## Pré-requisitos {#prerequisites}
+
+* Os dois serviços estão na mesma organização do ClickHouse Cloud, no mesmo provedor de nuvem e na mesma região. Por exemplo, um serviço na AWS `us-east-2` não pode se conectar a outro na AWS `us-west-2`. Nossa equipe confirmará se seus serviços são elegíveis antes de criar a conexão.
+* Nenhum dos serviços é regulamentado (HIPAA ou PCI).
+* Você tem o ID do serviço e o hostname dos dois serviços. Ambos estão disponíveis na página **Configurações** de cada serviço no console.
+* Você pode executar SQL como administrador nos dois serviços.
+
+<Tip>
+  Comece com serviços de teste para evitar impacto em produção. O Consumer passa por uma reinicialização gradual quando sua primeira conexão é criada.
+</Tip>
+
+## Configure uma conexão {#setup}
+
+### Envie-nos os detalhes do seu serviço {#send-service-details}
+
+Durante a prévia privada, não há UI no console para conexões. Envie ao seu contato na ClickHouse:
+
+* Os IDs de serviço do Producer e do Consumer. Indique qual é qual e se você precisa executar consultas nas duas direções.
+* Um horário em que uma reinicialização gradual do Consumer seja aceitável. Conexões posteriores não exigem nenhuma reinicialização.
+
+### A ClickHouse cria a conexão {#clickhouse-creates-connection}
+
+Confirmamos que ambos os serviços são elegíveis e criamos a conexão. Em seguida, criamos no Producer um usuário autenticado por certificado com o nome `rt_<Consumer service ID>` e informamos a você o nome exato.
+
+### Conceda ao Consumidor acesso às tabelas {#grant-access}
+
+Execute as consultas de teste abaixo ou conceda a permissão select em suas próprias tabelas no Produtor.
+
+```sql
+CREATE TABLE default.rs_demo_events (id UInt32, val String) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO default.rs_demo_events VALUES (1, 'hello'), (2, 'from the Producer');
+
+GRANT SELECT ON default.rs_demo_events TO `rt_<Consumer service ID>`;
+
+CREATE TABLE default.rs_demo_no_grant (id UInt32) ENGINE = MergeTree ORDER BY id;
+```
+
+### Consultar a partir do Consumer {#query-from-consumer}
+
+Execute o código a seguir no Consumer. Vamos habilitar para você a funcionalidade de coleções nomeadas (Named Collections), disponível em prévia privada. O SQL abaixo cria uma [coleção nomeada](/pt-BR/concepts/features/configuration/server-config/named-collections) que aponta para o Producer e, em seguida, executa consultas por meio dela. Use o hostname do Producer exibido no console, o mesmo que você usaria para se conectar diretamente a ele.
+
+```sql
+CREATE NAMED COLLECTION IF NOT EXISTS my_producer AS
+    host = '<Producer hostname>',
+    port = 9440,
+    user = 'rt_<Consumer service ID>',
+    database = 'default';
+
+SELECT * FROM remoteSecure(my_producer, table = 'rs_demo_events');
+
+SELECT * FROM remoteSecure(my_producer, table = 'rs_demo_no_grant');
+```
+
+Se você executou as consultas de teste, deve ter notado que a primeira consulta retorna resultados, enquanto a segunda gerou um erro de acesso negado por falta de permissões.
+
+## Limitações {#limitations}
+
+### Escopo {#scope}
+
+* As consultas são read-only. Um Consumer pode executar `SELECT` por meio de `remoteSecure()`, mas não pode executar `INSERT` no Producer.
+* Ambos os serviços devem estar na mesma organização, no mesmo provedor de nuvem e na mesma região. A conectividade cross-region e entre organizações está prevista.
+* Cada conexão abrange um único serviço. Se você usa [warehouses](/pt-BR/products/cloud/features/infrastructure/warehouses), uma conexão com um serviço não abrange os demais serviços que compartilham os dados dele. Cada um precisa da sua própria conexão.
+* As conexões são unidirecionais. Para executar consultas nas duas direções, são necessárias duas conexões.
+* É o Producer que executa a leitura, assim como já acontece hoje com a função de tabela [`remoteSecure()`](/pt-BR/reference/functions/table-functions/remote).
+
+### Entrada em estado ocioso {#idling}
+
+* Um Producer ocioso ou parado não é reativado por uma consulta `remoteSecure()`, que retorna um erro de conexão recusada. Se os Consumers precisarem consultar o Producer de forma confiável, desative a [entrada em estado ocioso](/pt-BR/products/cloud/features/autoscaling/idling) no Producer. Com isso, ele permanece em execução e gera cobrança contínua pela capacidade computacional.
+* Consultas `remoteSecure()` de longa duração podem falhar se o Consumer entrar em estado ocioso durante a execução.
+
+### Mensagens de erro {#error-messages}
+
+A maioria das falhas aparece como um erro de rede genérico, como conexão recusada, handshake rejeitado ou tempo limite esgotado, em vez de uma mensagem que indique a causa. Consulte a tabela de [solução de problemas](#troubleshooting) abaixo e compartilhe o texto do erro conosco para que possamos aprimorar essas mensagens.
+
+### Exclusão de um serviço {#deleting-a-service}
+
+Uma conexão não impede a exclusão de nenhum dos dois serviços. Durante a prévia privada, avise-nos caso exclua um deles para que possamos remover a conexão.
+
+## Solução de problemas {#troubleshooting}
+
+| O que você vê                                               | Causa provável                                                          | O que fazer                                                                                                      |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Acesso negado                                               | A tabela não tem concessão para o usuário do Consumer                   | Execute `GRANT SELECT` no Producer, conforme descrito em [Conceder ao Consumer acesso às tabelas](#grant-access) |
+| Authentication failed                                       | O usuário na sua coleção nomeada não corresponde ao usuário que criamos | Verifique o nome de usuário que enviamos para você                                                               |
+| Conexão recusada                                            | O Producer está ocioso ou parado, ou não há conexão nessa direção       | Inicie o Producer. Se ele já estiver em execução, confirme conosco a direção da conexão                          |
+| A consulta trava ou excede o tempo limite sem um erro claro | A conexão pode ainda não estar totalmente configurada                   | Entre em contato conosco informando os IDs dos dois serviços                                                     |
+
+## Perguntas frequentes {#faq}
+
+<AccordionGroup>
+  <Accordion title="Isso tem custo adicional?" id="cost">
+    Você paga apenas pela capacidade computacional que utilizar, incluindo o tempo em que o Producer não está em estado ocioso.
+  </Accordion>
+
+  <Accordion title="Preciso gerenciar senhas ou certificados?" id="credentials">
+    Não. O Consumer se autentica com um certificado que o ClickHouse Cloud gerencia para você.
+  </Accordion>
+
+  <Accordion title="O tráfego passa pela internet pública?" id="public-internet">
+    Não. O tráfego permanece na rede privada do ClickHouse Cloud. Por isso, funciona mesmo quando o Producer aceita apenas tráfego via PrivateLink ou quando sua Lista de Acesso por IP não permite nenhum endereço.
+  </Accordion>
+
+  <Accordion title="O Producer pode ler dados do Consumer?" id="reverse-reads">
+    Não, a menos que você solicite uma segunda conexão nesse sentido.
+  </Accordion>
+
+  <Accordion title="Habilitar esse recurso vai reiniciar meus serviços?" id="restarts">
+    A primeira conexão em um Consumer aciona uma única reinicialização gradual. O Producer não é reiniciado, e conexões ou revogações posteriores não reiniciam nada.
+  </Accordion>
+
+  <Accordion title="Como removo o acesso?" id="remove-access">
+    Para remover o acesso a uma tabela, execute `REVOKE` no Producer. Para remover a própria conexão durante a prévia privada, fale com seu contato na ClickHouse.
+  </Accordion>
+</AccordionGroup>

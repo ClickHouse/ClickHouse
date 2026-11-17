@@ -53,6 +53,18 @@ Use o tipo Arrow FIXED&#95;SIZE&#95;BINARY em vez de Binary para colunas do tipo
 
 Habilita a saída do tipo LowCardinality como o tipo Dictionary do Arrow
 
+## output_format_arrow_max_record_batch_size_bytes {#output_format_arrow_max_record_batch_size_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="2147483646" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "2147483646"},{"label": "Nova configuração que limita o tamanho de um lote de registros na saída `Arrow` e `ArrowStream`. O padrão é o próprio limite de endereçamento do Arrow, portanto não altera o comportamento."}]}]} />
+
+Limite superior para os buffers `Utf8`, `Binary` e `List` de um único lote de registros nos formatos de saída `Arrow` e `ArrowStream`, bem como nos lotes de registros Arrow a partir dos quais o formato de saída `Vortex` é gravado. Um bloco cujas strings, valores binários ou elementos de lista ultrapassem esse valor é gravado como vários lotes de registros.
+
+Diferentemente de [output&#95;format&#95;arrow&#95;record&#95;batch&#95;size&#95;bytes](/pt-BR/reference/settings/formats/output-format#output_format_arrow_record_batch_size_bytes), que é um valor-alvo que combina blocos pequenos, esta configuração é um limite que divide blocos grandes. O padrão é o maior valor que o Arrow consegue endereçar, já que ele usa inteiros de 32 bits como offsets desses buffers; um valor maior não tem efeito.
+
+Somente os buffers mencionados acima são limitados: uma coluna de tipo de largura fixa não tem offsets sujeitos a overflow e permanece em um único lote. Uma única linha também nunca é dividida; portanto, uma linha acima do limite ainda gera um lote que o excede.
+
 ## output_format_arrow_record_batch_size {#output_format_arrow_record_batch_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -141,9 +153,18 @@ Sempre usa inteiros de 64 bits para índices de dicionário no formato Arrow
 
 Use inteiros com sinal para os índices de dicionário no formato Arrow
 
+## output_format_arrow_uuid_as_fixed_byte_array {#output_format_arrow_uuid_as_fixed_byte_array}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração para gravar UUID como FixedSizeBinary(16) simples, sem o tipo de extensão `arrow.uuid`."}]}]} />
+
+Grava valores `UUID` como `FixedSizeBinary(16)` simples do Arrow, sem o tipo de extensão `arrow.uuid` nos metadados do campo.
+Use esta configuração com leitores Arrow que não oferecem suporte ao tipo de extensão `arrow.uuid`.
+
 ## output_format_avro_codec {#output_format_avro_codec}
 
-codec de compressão usado na saída. Valores possíveis: &#39;null&#39;, &#39;deflate&#39;, &#39;snappy&#39;, &#39;zstd&#39;.
+codec de compressão usado na saída. Valores possíveis: &#39;null&#39;, &#39;deflate&#39;, &#39;snappy&#39;, &#39;zstd&#39;, &#39;bzip2&#39;, &#39;xz&#39;.
 
 ## output_format_avro_confluent_subject {#output_format_avro_confluent_subject}
 
@@ -1202,6 +1223,14 @@ Se definido como true, o fim de linha no formato TSV será \r\n em vez de \n.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "Se true, escapa ' como ''; caso contrário, coloca entre aspas com \\'"}]}]} />
 
 Se true, escapa &#39; como &#39;&#39;; caso contrário, coloca entre aspas com \&#39;
+
+## output_format_vortex_string_as_string {#output_format_vortex_string_as_string}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nova configuração para gravar colunas `String` do formato `Vortex` como `Utf8`, que o Vortex comprime melhor do que `Binary`."}]}]} />
+
+Grava colunas `String` do formato `Vortex` como `Utf8` em vez de `Binary`. O Vortex comprime `Utf8` com mais eficiência. Um valor `Utf8` precisa ser UTF-8 válido, mas o gravador do Vortex não faz essa verificação; por isso, o ClickHouse verifica cada valor e lança uma exceção se algum deles não for UTF-8 válido. Para gravar esses dados como `Binary`, desative a configuração. Colunas `FixedString` são sempre gravadas como `Binary`. Na leitura, ambos os tipos são retornados como `String`.
 
 ## output_format_write_statistics {#output_format_write_statistics}
 

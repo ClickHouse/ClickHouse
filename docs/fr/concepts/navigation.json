@@ -4,7 +4,7 @@
     "fr/concepts/index",
     {
       "expanded": true,
-      "group": "Principes fondamentaux",
+      "group": "Notions fondamentales",
       "pages": [
         "fr/concepts/core-concepts/index",
         "fr/concepts/core-concepts/glossary",
@@ -61,7 +61,7 @@
               ]
             },
             {
-              "group": "Index de saut",
+              "group": "Index de saut de données",
               "pages": [
                 "fr/concepts/features/performance/skip-indexes/skipping-indexes",
                 "fr/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -69,7 +69,7 @@
             },
             "fr/concepts/features/performance/lazy-materialization",
             {
-              "group": "Résolution des problèmes",
+              "group": "Dépannage",
               "pages": [
                 "fr/concepts/features/performance/troubleshoot/debugging-memory-issues",
                 "fr/concepts/features/performance/troubleshoot/oom-canary",
@@ -98,7 +98,16 @@
             {
               "group": "Sélection",
               "pages": [
-                "fr/concepts/features/operations/select/joining-tables"
+                {
+                  "group": "Jointures",
+                  "pages": [
+                    "fr/concepts/features/operations/select/joining-tables",
+                    "fr/concepts/features/operations/select/join-execution",
+                    "fr/concepts/features/operations/select/join-algorithms",
+                    "fr/concepts/features/operations/select/join-memory-management",
+                    "fr/concepts/features/operations/select/join-settings"
+                  ]
+                }
               ]
             },
             {
@@ -200,6 +209,7 @@
           "pages": [
             "fr/concepts/features/backup-restore/overview",
             "fr/concepts/features/backup-restore/restore-settings",
+            "fr/concepts/features/backup-restore/named-collections",
             "fr/concepts/features/backup-restore/local-disk",
             "fr/concepts/features/backup-restore/s3-endpoint",
             "fr/concepts/features/backup-restore/azure-blob-storage",

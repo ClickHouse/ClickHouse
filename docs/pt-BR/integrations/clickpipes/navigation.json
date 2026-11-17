@@ -1,5 +1,6 @@
 {
   "item": "ClickPipes",
+  "root": "pt-BR/integrations/clickpipes/home",
   "pages": [
     "pt-BR/integrations/clickpipes/home",
     {
@@ -203,6 +204,14 @@
       ]
     },
     {
+      "group": "Segurança e acesso",
+      "icon": "shield-check",
+      "pages": [
+        "pt-BR/integrations/clickpipes/security/aws-iam-role",
+        "pt-BR/integrations/clickpipes/security/gcp-workload-identity"
+      ]
+    },
+    {
       "group": "Rede",
       "icon": "network-wired",
       "pages": [
@@ -215,6 +224,5 @@
     },
     "pt-BR/integrations/clickpipes/monitoring",
     "pt-BR/integrations/clickpipes/dynamodb"
-  ],
-  "root": "pt-BR/integrations/clickpipes/home"
+  ]
 }

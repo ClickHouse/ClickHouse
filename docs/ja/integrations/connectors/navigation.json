@@ -80,6 +80,7 @@
           "expanded": false,
           "group": "コミュニティによるインテグレーション",
           "pages": [
+            "ja/integrations/connectors/data-visualization/community-integrations/arcodash-and-clickhouse",
             "ja/integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse",
             "ja/integrations/connectors/data-visualization/community-integrations/chartbrew-and-clickhouse",
             "ja/integrations/connectors/data-visualization/community-integrations/databrain-and-clickhouse",
@@ -178,11 +179,20 @@
           ]
         },
         {
+          "group": "Striim",
+          "pages": [
+            "ja/integrations/connectors/data-ingestion/etl-tools/striim/index",
+            "ja/integrations/connectors/data-ingestion/etl-tools/striim/get-started",
+            "ja/integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline"
+          ]
+        },
+        {
           "expanded": false,
-          "group": "コミュニティによるインテグレーション",
+          "group": "コミュニティによる統合",
           "pages": [
             "ja/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
             "ja/integrations/connectors/data-ingestion/community-integrations/erathos",
+            "ja/integrations/connectors/data-ingestion/community-integrations/sqlflow",
             {
               "group": "Estuary",
               "pages": [
@@ -218,6 +228,7 @@
         "ja/integrations/connectors/sql-clients/dbeaver",
         "ja/integrations/connectors/sql-clients/dbvisualizer",
         "ja/integrations/connectors/sql-clients/jupysql",
+        "ja/integrations/connectors/sql-clients/libredb-studio",
         "ja/integrations/connectors/sql-clients/probedeck",
         "ja/integrations/connectors/sql-clients/qstudio",
         "ja/integrations/connectors/sql-clients/tablum",

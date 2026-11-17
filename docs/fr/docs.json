@@ -39,7 +39,7 @@
           "item": "Déploiements"
         },
         {
-        "$ref": "./products/cloud/navigation.json"
+          "$ref": "./products/cloud/navigation.json"
         },
         {
           "item": "BYOC",
@@ -61,7 +61,7 @@
         {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
-          "item": "Ingénierie IA"
+          "item": "Ingénierie de l’IA"
         },
         {
           "href": "https://docs.runreveal.com/",
@@ -76,7 +76,7 @@
         {
           "item": "ClickStack",
           "pages": [
-            "fr/clickstack/index"
+            "fr/clickstack"
           ]
         },
         {

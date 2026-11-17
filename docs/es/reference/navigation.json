@@ -25,6 +25,7 @@
                 "es/reference/statements/alter/comment",
                 "es/reference/statements/alter/constraint",
                 "es/reference/statements/alter/database-comment",
+                "es/reference/statements/alter/database-setting",
                 "es/reference/statements/alter/delete",
                 "es/reference/statements/alter/named-collection",
                 "es/reference/statements/alter/order-by",
@@ -65,7 +66,7 @@
                     "es/reference/statements/create/dictionary/lifetime",
                     {
                       "expanded": false,
-                      "group": "Diseños",
+                      "group": "Estructuras de almacenamiento",
                       "pages": [
                         "es/reference/statements/create/dictionary/layouts/overview",
                         "es/reference/statements/create/dictionary/layouts/flat",
@@ -77,6 +78,7 @@
                         "es/reference/statements/create/dictionary/layouts/range-hashed",
                         "es/reference/statements/create/dictionary/layouts/hierarchical",
                         "es/reference/statements/create/dictionary/layouts/naive-bayes",
+                        "es/reference/statements/create/dictionary/layouts/xgboost",
                         "es/reference/statements/create/dictionary/layouts/polygon",
                         "es/reference/statements/create/dictionary/layouts/ip-trie",
                         "es/reference/statements/create/dictionary/layouts/regexp-tree"
@@ -175,6 +177,7 @@
                 "es/reference/statements/select/qualify",
                 "es/reference/statements/select/replace_modifier",
                 "es/reference/statements/select/sample",
+                "es/reference/statements/select/shuffle",
                 "es/reference/statements/select/union",
                 "es/reference/statements/select/where",
                 "es/reference/statements/select/with"
@@ -184,6 +187,7 @@
             "es/reference/statements/set",
             "es/reference/statements/show",
             "es/reference/statements/system",
+            "es/reference/statements/transactions",
             "es/reference/statements/truncate",
             "es/reference/statements/undrop",
             "es/reference/statements/update",
@@ -317,7 +321,7 @@
         "es/reference/engines/engines",
         {
           "expanded": false,
-          "group": "Motores de tabla",
+          "group": "Motores de tablas",
           "pages": [
             "es/reference/engines/table-engines/index",
             {
@@ -330,6 +334,7 @@
                 "es/reference/engines/table-engines/integrations/azureBlobStorage",
                 "es/reference/engines/table-engines/integrations/bigquery",
                 "es/reference/engines/table-engines/integrations/deltalake",
+                "es/reference/engines/table-engines/integrations/elasticsearch",
                 "es/reference/engines/table-engines/integrations/embedded-rocksdb",
                 "es/reference/engines/table-engines/integrations/ExternalDistributed",
                 "es/reference/engines/table-engines/integrations/hdfs",
@@ -412,7 +417,7 @@
         },
         {
           "expanded": false,
-          "group": "Motores de base de datos",
+          "group": "Motores de bases de datos",
           "pages": [
             "es/reference/engines/database-engines/index",
             "es/reference/engines/database-engines/atomic",
@@ -446,7 +451,7 @@
         "es/reference/functions/index",
         {
           "expanded": false,
-          "group": "Funciones convencionales",
+          "group": "Funciones regulares",
           "pages": [
             "es/reference/functions/regular-functions/overview",
             "es/reference/functions/regular-functions/ai-functions",
@@ -468,7 +473,7 @@
             "es/reference/functions/regular-functions/functions-for-nulls",
             {
               "expanded": false,
-              "group": "Geoespacial",
+              "group": "Geo",
               "pages": [
                 "es/reference/functions/regular-functions/geo/index",
                 "es/reference/functions/regular-functions/geo/coordinates",
@@ -730,6 +735,7 @@
             "es/reference/functions/table-functions/deltalake",
             "es/reference/functions/table-functions/deltalakeCluster",
             "es/reference/functions/table-functions/dictionary",
+            "es/reference/functions/table-functions/elasticsearch",
             "es/reference/functions/table-functions/executable",
             "es/reference/functions/table-functions/eval",
             "es/reference/functions/table-functions/file",
@@ -776,6 +782,7 @@
             "es/reference/functions/table-functions/timeSeriesSamples",
             "es/reference/functions/table-functions/timeSeriesSelector",
             "es/reference/functions/table-functions/timeSeriesTags",
+            "es/reference/functions/table-functions/timeSeriesTimeRanges",
             "es/reference/functions/table-functions/url",
             "es/reference/functions/table-functions/urlCluster",
             "es/reference/functions/table-functions/values",
@@ -806,7 +813,7 @@
           ]
         },
         {
-          "group": "Funciones definidas por el usuario",
+          "group": "Funciones Definidas por el Usuario",
           "pages": [
             "es/reference/functions/regular-functions/udf",
             "es/reference/functions/regular-functions/wasm_udf"
@@ -999,6 +1006,7 @@
         },
         "es/reference/formats/Values",
         "es/reference/formats/Vertical",
+        "es/reference/formats/Vortex",
         "es/reference/formats/XML"
       ]
     },
@@ -1055,6 +1063,7 @@
         "es/reference/system-tables/completions",
         "es/reference/system-tables/constraints",
         "es/reference/system-tables/contributors",
+        "es/reference/system-tables/connections",
         "es/reference/system-tables/crash_log",
         "es/reference/system-tables/current_roles",
         "es/reference/system-tables/dashboards",
@@ -1102,6 +1111,7 @@
         "es/reference/system-tables/iceberg_files",
         "es/reference/system-tables/iceberg_history",
         "es/reference/system-tables/iceberg_metadata_log",
+        "es/reference/system-tables/iceberg_metadata_log_entries",
         "es/reference/system-tables/information_schema",
         "es/reference/system-tables/instrumentation",
         "es/reference/system-tables/jemalloc_arena_bins",

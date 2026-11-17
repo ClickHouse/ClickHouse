@@ -54,6 +54,7 @@
         {
           "group": "Режим коннектора",
           "hidden": true,
+          "tag": "Preview",
           "pages": [
             "ru/products/bring-your-own-cloud/connector/overview",
             "ru/products/bring-your-own-cloud/connector/onboarding",
@@ -68,8 +69,7 @@
             "ru/products/bring-your-own-cloud/connector/reference/configuration",
             "ru/products/bring-your-own-cloud/connector/reference/faq",
             "ru/products/bring-your-own-cloud/connector/reference/privilege-model"
-          ],
-          "tag": "Preview"
+          ]
         }
       ]
     }

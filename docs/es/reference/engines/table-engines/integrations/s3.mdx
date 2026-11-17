@@ -46,9 +46,11 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `format` — El [formato](/es/reference/formats/index#formats-overview) del archivo.
 * `aws_access_key_id`, `aws_secret_access_key` - Credenciales de larga duración para el usuario de la cuenta de [AWS](https://aws.amazon.com/). Puede usarlas para autenticar sus solicitudes. El parámetro es opcional. Si no se especifican credenciales, se usarán las del archivo de configuración. Para obtener más información, consulte [Using S3 for Data Storage](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
 * `compression` — Tipo de compresión. Valores admitidos: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. El parámetro es opcional. De forma predeterminada, la compresión se detecta automáticamente según la extensión del archivo. Para `snappy`, el formato de transmisión se selecciona mediante la configuración [snappy&#95;mode](/es/reference/settings/session-settings/other#snappy_mode) (`basic` de forma predeterminada).
-* `partition_strategy` – Opciones: `wildcard` o `hive`. `wildcard` requiere un `{_partition_id}` en la ruta, que se sustituye por la clave de partición. `hive` no permite comodines, asume que la ruta es la raíz de la tabla y genera directorios particionados al estilo de Hive con IDs de Snowflake como nombres de archivo y el formato de archivo como extensión. Sin una estrategia explícita, una ruta con `{_partition_id}` usa `wildcard`. Una ruta con otro glob no usa estrategia de partición e ignora `PARTITION BY`. Una ruta sin glob usa `hive` cuando `file_like_engine_default_partition_strategy` es `hive`; de lo contrario, no usa ninguna estrategia de partición.
-* `partition_columns_in_data_file` - Solo se usa con la estrategia de partición `hive`. Indica a ClickHouse si debe esperar que las columnas de partición se escriban en el archivo de datos. El valor predeterminado es `false`.
+* `partition_strategy` – Opciones: `wildcard` o `hive`. `wildcard` requiere un `{_partition_id}` en la ruta, que se sustituye por la clave de partición. `hive` no permite comodines, asume que la ruta es la raíz de la tabla y genera directorios particionados al estilo de Hive con IDs de Snowflake como nombres de archivo y el formato de archivo como extensión. Sin una estrategia explícita, una ruta con `{_partition_id}` usa `wildcard`. Una ruta con otro glob no usa estrategia de particionamiento e ignora `PARTITION BY`. Una ruta sin glob usa `hive` cuando `file_like_engine_default_partition_strategy` es `hive`; de lo contrario, no usa ninguna estrategia de particionamiento.
+* `partition_columns_in_data_file` - Solo se usa con la estrategia de particionamiento `hive`. Indica a ClickHouse si debe esperar que las columnas de partición se escriban en el archivo de datos. El valor predeterminado es `false`.
 * `storage_class_name` - Opciones: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Solo se admiten las storage classes de S3 que permiten la recuperación inmediata (las clases de archivado como `GLACIER` y `DEEP_ARCHIVE` no se admiten). Permite especificar [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
+* `upload_checksum_algorithm` - Opcional. Algoritmo de suma de comprobación para las cargas: `MD5` (enviado como `Content-MD5`), `CRC32` o `SHA256` (enviados como `x-amz-checksum-*`). Si se deja vacío, se usa `Content-MD5`, o `CRC32` en el caso de buckets de S3Express. Se ignora en GCS.
+* `delete_checksum_algorithm` - Opcional. Algoritmo de suma de comprobación para las solicitudes `DeleteObjects` por lotes: `MD5` (enviado como `Content-MD5`), `CRC32` o `SHA256`. Si se deja vacío, se usa `MD5`; `CRC32` en el caso de buckets de S3Express, o `SHA256` cuando `MD5` no está disponible (modo FIPS) o el servidor lo rechaza. Se ignora en GCS.
 * `extra_credentials` - Opcional. Se usa para pasar un `role_arn` para el acceso basado en roles en ClickHouse Cloud. Consulte [Secure S3](/es/products/cloud/guides/data-sources/accessing-s3-data-securely) para ver los pasos de configuración.
 
 ### Caché de datos {#data-cache}
@@ -84,22 +86,22 @@ Hay dos formas de definir la caché en el archivo de configuración.
 
 ### PARTITION BY {#partition-by}
 
-`PARTITION BY` — Opcional. En la mayoría de los casos no necesita una clave de partición y, si la necesita, por lo general no debe ser más granular que por mes. La partición no acelera las consultas (a diferencia de la expresión ORDER BY). Nunca debe usar una partición demasiado granular. No particione sus datos por identificadores o nombres de clientes (en su lugar, haga que el identificador o el nombre del cliente sea la primera columna de la expresión ORDER BY).
+`PARTITION BY` — Opcional. En la mayoría de los casos no necesita una clave de partición y, si la necesita, por lo general no debe ser más granular que por mes. La partición es principalmente una técnica de administración de datos: cada partición se escribe en archivos independientes. Con la estrategia de particionamiento `hive`, una consulta que filtra por una columna de partición solo lee los archivos de las particiones coincidentes. Nunca debe usar una partición demasiado granular. No particione sus datos por identificadores o nombres de clientes.
 
-Para particionar por mes, use la expresión `toYYYYMM(date_column)`, donde `date_column` es una columna con una fecha del tipo [Date](/es/reference/data-types/date). Aquí, los nombres de las particiones tienen el formato `"YYYYMM"`.
+Con la estrategia de particionamiento `hive`, que es la predeterminada establecida por `file_like_engine_default_partition_strategy`, la clave de partición debe estar formada por columnas de la tabla, por ejemplo, `PARTITION BY (year, month)`. Una expresión como `toYYYYMM(date_column)` requiere la estrategia `wildcard`, con `{_partition_id}` en la ruta. Las tablas que usan la estrategia `wildcard` admiten escritura, pero no lectura.
 
-#### Estrategia de partición {#partition-strategy}
+#### Estrategia de particionamiento {#partition-strategy}
 
 `wildcard`: Reemplaza el comodín `{_partition_id}` en la ruta del archivo por la clave de partición real. La lectura no es compatible. Se selecciona de forma predeterminada cuando la ruta contiene `{_partition_id}`.
 
-Cuando no se establece `partition_strategy`, una ruta con otro glob no usa ninguna estrategia de partición e ignora `PARTITION BY`. Una ruta sin glob usa `hive` cuando `file_like_engine_default_partition_strategy` es `hive`; de lo contrario, no usa ninguna estrategia de partición.
+Cuando no se establece `partition_strategy`, una ruta con otro glob no usa ninguna estrategia de particionamiento e ignora `PARTITION BY`. Una ruta sin glob usa `hive` cuando `file_like_engine_default_partition_strategy` es `hive`; de lo contrario, no usa ninguna estrategia de particionamiento.
 
-`hive` implementa el particionado de estilo Hive para lecturas y escrituras. La lectura se implementa mediante un patrón glob recursivo; es equivalente a `SELECT * FROM s3('table_root/**.parquet')`.
+`hive` implementa el particionado de estilo Hive para lecturas y escrituras. La lectura se implementa mediante un patrón glob recursivo; es equivalente a `SELECT * FROM s3('table_root/**.parquet')`, con la diferencia de que se omiten las rutas ocultas (segmentos por debajo de la raíz de la tabla que comienzan por `_` o `.`, p. ej., `_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), según la convención del ecosistema Hive. Para rutas glob simples sin estrategia de particionamiento, el mismo filtrado está disponible mediante los ajustes `s3_skip_hidden_files` / `azure_skip_hidden_files` / `hdfs_skip_hidden_files`.
 La escritura genera archivos con el siguiente formato: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
-Nota: Al usar la estrategia de partición `hive`, la configuración `use_hive_partitioning` no tiene efecto.
+Nota: Al usar la estrategia de particionamiento `hive`, la configuración `use_hive_partitioning` no tiene efecto.
 
-Ejemplo de estrategia de partición `hive`:
+Ejemplo de estrategia de particionamiento `hive`:
 
 ```sql
 CREATE TABLE t_03363_parquet (year UInt16, country String, counter UInt8)

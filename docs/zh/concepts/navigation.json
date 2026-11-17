@@ -18,7 +18,7 @@
     },
     {
       "expanded": true,
-      "group": "ClickHouse 基本概念",
+      "group": "ClickHouse 概念",
       "pages": [
         "zh/concepts/features/index",
         {
@@ -61,7 +61,7 @@
               ]
             },
             {
-              "group": "数据跳过索引",
+              "group": "跳数索引",
               "pages": [
                 "zh/concepts/features/performance/skip-indexes/skipping-indexes",
                 "zh/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -98,7 +98,16 @@
             {
               "group": "查询",
               "pages": [
-                "zh/concepts/features/operations/select/joining-tables"
+                {
+                  "group": "连接",
+                  "pages": [
+                    "zh/concepts/features/operations/select/joining-tables",
+                    "zh/concepts/features/operations/select/join-execution",
+                    "zh/concepts/features/operations/select/join-algorithms",
+                    "zh/concepts/features/operations/select/join-memory-management",
+                    "zh/concepts/features/operations/select/join-settings"
+                  ]
+                }
               ]
             },
             {
@@ -200,6 +209,7 @@
           "pages": [
             "zh/concepts/features/backup-restore/overview",
             "zh/concepts/features/backup-restore/restore-settings",
+            "zh/concepts/features/backup-restore/named-collections",
             "zh/concepts/features/backup-restore/local-disk",
             "zh/concepts/features/backup-restore/s3-endpoint",
             "zh/concepts/features/backup-restore/azure-blob-storage",

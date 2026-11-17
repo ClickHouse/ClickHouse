@@ -22,7 +22,7 @@
       "pages": [
         "ru/concepts/features/index",
         {
-          "group": "Материализованные представления",
+          "group": "Materialized view",
           "pages": [
             "ru/concepts/features/materialized-views/index",
             "ru/concepts/features/materialized-views/incremental-materialized-view",
@@ -98,7 +98,16 @@
             {
               "group": "Выборка",
               "pages": [
-                "ru/concepts/features/operations/select/joining-tables"
+                {
+                  "group": "Соединения JOIN",
+                  "pages": [
+                    "ru/concepts/features/operations/select/joining-tables",
+                    "ru/concepts/features/operations/select/join-execution",
+                    "ru/concepts/features/operations/select/join-algorithms",
+                    "ru/concepts/features/operations/select/join-memory-management",
+                    "ru/concepts/features/operations/select/join-settings"
+                  ]
+                }
               ]
             },
             {
@@ -123,7 +132,7 @@
           ]
         },
         {
-          "group": "Конфигурация",
+          "group": "Configuration",
           "pages": [
             {
               "group": "Настройки",
@@ -171,7 +180,7 @@
               ]
             },
             {
-              "group": "Внешние средства аутентификации",
+              "group": "Внешние аутентификаторы",
               "pages": [
                 "ru/concepts/features/security/external-authenticators/index",
                 {
@@ -200,6 +209,7 @@
           "pages": [
             "ru/concepts/features/backup-restore/overview",
             "ru/concepts/features/backup-restore/restore-settings",
+            "ru/concepts/features/backup-restore/named-collections",
             "ru/concepts/features/backup-restore/local-disk",
             "ru/concepts/features/backup-restore/s3-endpoint",
             "ru/concepts/features/backup-restore/azure-blob-storage",

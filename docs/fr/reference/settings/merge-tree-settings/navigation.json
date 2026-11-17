@@ -1,6 +1,7 @@
 {
-  "directory": "none",
   "group": "Paramètres des tables MergeTree",
+  "root": "fr/reference/settings/merge-tree-settings",
+  "directory": "none",
   "pages": [
     "fr/reference/settings/merge-tree-settings/add-minmax",
     "fr/reference/settings/merge-tree-settings/allow",
@@ -84,6 +85,5 @@
     "fr/reference/settings/merge-tree-settings/write-ahead",
     "fr/reference/settings/merge-tree-settings/zero-copy",
     "fr/reference/settings/merge-tree-settings/other"
-  ],
-  "root": "fr/reference/settings/merge-tree-settings"
+  ]
 }

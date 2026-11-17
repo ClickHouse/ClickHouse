@@ -50,6 +50,26 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 عدد المهام النشطة أو الموجودة في قائمة الانتظار في مجمّع خيوط التنفيذ Aggregator.
 
+### AIRequestThreads {#airequestthreads}
+
+عدد خيوط التنفيذ في مجمّع خيوط التنفيذ المخصّص لطلبات الذكاء الاصطناعي.
+
+### AIRequestThreadsActive {#airequestthreadsactive}
+
+عدد خيوط التنفيذ في مجمّع خيوط التنفيذ الخاص بطلبات الذكاء الاصطناعي التي تنفّذ مهمة.
+
+### AIRequestThreadsScheduled {#airequestthreadsscheduled}
+
+عدد المهام الموجودة في قائمة الانتظار أو النشطة في مجمّع خيوط التنفيذ الخاص بطلبات الذكاء الاصطناعي.
+
+### AmberConnectionsStored {#amberconnectionsstored}
+
+إجمالي عدد الجلسات المخزَّنة في مجمّع الاتصالات لجلسات Amber
+
+### AmberConnectionsTotal {#amberconnectionstotal}
+
+إجمالي عدد الجلسات الخاصة بـ Amber، سواء المخزَّنة في مجمّع الاتصالات أو المستخدمة حاليًا
+
 ### ASTFuzzerAccumulatedFragments {#astfuzzeraccumulatedfragments}
 
 عدد أجزاء AST التي راكمتها أداة اختبار AST العشوائية على جهة الخادم لاستخدامها في عمليات التعديل المستقبلية.
@@ -264,7 +284,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 ### BrokenDisks {#brokendisks}
 
-عدد الأقراص ضمن `disks` التي جرى تعليمها على أنها تالفة أثناء فحص الأقراص.
+عدد الأقراص التي جرى تعليمها على أنها تالفة أثناء فحص الأقراص.
 
 ### BrokenDistributedBytesToInsert {#brokendistributedbytestoinsert}
 
@@ -381,18 +401,6 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### ConcurrencyControlSoftLimit {#concurrencycontrolsoftlimit}
 
 قيمة الحدّ المرن لعدد خانات CPU
-
-### ConcurrentHashJoinPoolThreads {#concurrenthashjoinpoolthreads}
-
-عدد خيوط التنفيذ في مجمّع خيوط التنفيذ المخصّص للربط بالتجزئة المتزامن.
-
-### ConcurrentHashJoinPoolThreadsActive {#concurrenthashjoinpoolthreadsactive}
-
-عدد خيوط التنفيذ في مجمّع خيوط التنفيذ الخاص بعملية الربط بالتجزئة المتزامنة التي تنفّذ مهمة.
-
-### ConcurrentHashJoinPoolThreadsScheduled {#concurrenthashjoinpoolthreadsscheduled}
-
-عدد المهام الموجودة في قائمة الانتظار أو النشطة في مجمّع خيوط التنفيذ الخاص بربط التجزئة المتزامن.
 
 ### ConcurrentQueryAcquired {#concurrentqueryacquired}
 
@@ -606,6 +614,14 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 عدد خوادم distributed cache المسجَّلة في منطقة التوافر الحالية
 
+### DistrCacheServerCommittedTemporaryFiles {#distrcacheservercommittedtemporaryfiles}
+
+عدد الملفات المؤقتة المُثبَّتة التي تملكها عملية خادم distributed cache هذه
+
+### DistrCacheServerCommittedTemporaryFilesBytes {#distrcacheservercommittedtemporaryfilesbytes}
+
+إجمالي حجم الملفات المؤقتة المُثبَّتة، بالبايتات، التي تملكها عملية خادم distributed cache هذه
+
 ### DistrCacheServerConnections {#distrcacheserverconnections}
 
 عدد الاتصالات المفتوحة بخادم ClickHouse من Distributed Cache
@@ -621,6 +637,18 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### DistrCacheSharedLimitCount {#distrcachesharedlimitcount}
 
 عدد الاتصالات المفتوحة حسب DistributedCache::ConnectionPool::SharedLimit
+
+### DistrCacheTemporaryDataActiveIds {#distrcachetemporarydataactiveids}
+
+عدد معرّفات (ID) البيانات المؤقتة النشطة والمُثبَّتة
+
+### DistrCacheTemporaryDataConnectionsBypassingPool {#distrcachetemporarydataconnectionsbypassingpool}
+
+مقياس خاص بعميل Distributed Cache. عدد الاتصالات التي تفتحها البيانات المؤقتة دون المرور بتجمّع الاتصالات
+
+### DistrCacheTemporaryDataServers {#distrcachetemporarydataservers}
+
+عدد الخوادم التي لديها بيانات مؤقتة مُثبَّتة
 
 ### DistrCacheUsedConnections {#distrcacheusedconnections}
 
@@ -854,13 +882,13 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 عدد المهام الموجودة في قائمة الانتظار أو النشطة في مجمع سلاسل التنفيذ العام.
 
-### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+### GPUExpressionKernelCacheBytes {#gpuexpressionkernelcachebytes}
 
-حجم ذاكرة التخزين المؤقت لأنواع حقول مخطط Iceberg الحالي في كتالوجات Glue، بالبايتات
+حجم شيفرة PTX بالبايتات للنوى التي صرّفها محرك GPU للتعبيرات ويُبقيها محمّلة على الجهاز.
 
-### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+### GPUExpressionKernelCacheCount {#gpuexpressionkernelcachecount}
 
-عدد العناصر في ذاكرة التخزين المؤقت لأنواع حقول مخطط Iceberg الحالي في كتالوجات Glue
+النوى (kernels) التي صرّفها محرك GPU للتعبيرات ويُبقيها محمّلة على الجهاز.
 
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
@@ -873,6 +901,18 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### HashedDictionaryThreadsScheduled {#hasheddictionarythreadsscheduled}
 
 عدد المهام النشطة أو الموجودة في قائمة الانتظار في مجمع سلاسل التنفيذ الخاص بـ HashedDictionary.
+
+### HashJoinDestroyThreads {#hashjoindestroythreads}
+
+عدد خيوط التنفيذ في مجمّع خيوط المخصّص لإتلاف الجدول الأيمن في الربط بالتجزئة.
+
+### HashJoinDestroyThreadsActive {#hashjoindestroythreadsactive}
+
+عدد خيوط التنفيذ في مجمّع خيوط الخاص بإتلاف الجدول الأيمن لعملية الربط بالتجزئة التي تنفّذ مهمة.
+
+### HashJoinDestroyThreadsScheduled {#hashjoindestroythreadsscheduled}
+
+عدد المهام الموجودة في قائمة الانتظار أو النشطة في مجمّع خيوط الخاص بإتلاف الجدول الأيمن في الربط بالتجزئة.
 
 ### HiveFilesCacheBytes {#hivefilescachebytes}
 
@@ -942,18 +982,6 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 عدد الوظائف الموجودة في قائمة الانتظار أو النشطة في مجمع سلاسل التنفيذ IcebergCompaction.
 
-### IcebergManifestDecodeThreads {#icebergmanifestdecodethreads}
-
-عدد خيوط التنفيذ في مجمّع الخيوط المستخدم لفك ترميز ملفات بيان بيانات Iceberg.
-
-### IcebergManifestDecodeThreadsActive {#icebergmanifestdecodethreadsactive}
-
-عدد خيوط التنفيذ التي تنفّذ مهمة في مجمّع الخيوط المستخدم لفك ترميز ملفات بيان بيانات Iceberg.
-
-### IcebergManifestDecodeThreadsScheduled {#icebergmanifestdecodethreadsscheduled}
-
-عدد المهام المُدرجة في قائمة الانتظار أو النشطة في مجمّع خيوط التنفيذ المستخدم لفك ترميز ملفات بيان بيانات Iceberg.
-
 ### IcebergMetadataFilesCacheBytes {#icebergmetadatafilescachebytes}
 
 حجم ذاكرة التخزين المؤقت للبيانات الوصفية في Iceberg بالبايت
@@ -961,6 +989,14 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### IcebergMetadataFilesCacheFiles {#icebergmetadatafilescachefiles}
 
 عدد الملفات المخزنة مؤقتًا في ذاكرة التخزين المؤقت للبيانات الوصفية في Iceberg
+
+### IcebergRESTCatalogWarehouseCacheEntries {#icebergrestcatalogwarehousecacheentries}
+
+عدد المستودعات في ذاكرة التخزين المؤقت للمستودعات على خادم كتالوج REST الخاص بـ Iceberg
+
+### IcebergRESTCatalogWarehouseCacheSize {#icebergrestcatalogwarehousecachesize}
+
+حجم ذاكرة التخزين المؤقت للمستودعات في خادم كتالوج REST الخاص بـ Iceberg. يُحتسب كل مستودع بوصفه 1
 
 ### IcebergSchedulePoolSize {#icebergschedulepoolsize}
 
@@ -1325,6 +1361,18 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### MergeTreeSnapshotCommitThreadsScheduled {#mergetreesnapshotcommitthreadsscheduled}
 
 عدد سلاسل التنفيذ المجدولة المستخدمة لتثبيت اللقطة
+
+### MergeTreeStatisticsLoaderThreads {#mergetreestatisticsloaderthreads}
+
+عدد خيوط التنفيذ في مجمّع خيوط المخصّص لتحميل إحصاءات أجزاء البيانات.
+
+### MergeTreeStatisticsLoaderThreadsActive {#mergetreestatisticsloaderthreadsactive}
+
+عدد خيوط التنفيذ في مجمّع خيوط الخاص بتحميل إحصاءات أجزاء البيانات التي تنفّذ مهمة.
+
+### MergeTreeStatisticsLoaderThreadsScheduled {#mergetreestatisticsloaderthreadsscheduled}
+
+عدد المهام الموجودة في قائمة الانتظار أو النشطة في مجمّع خيوط الخاص بتحميل إحصاءات أجزاء البيانات.
 
 ### MergeTreeSubcolumnsReaderThreads {#mergetreesubcolumnsreaderthreads}
 
@@ -2269,6 +2317,18 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### إجمالي الملفات المؤقتة {#totaltemporaryfiles}
 
 عدد الملفات المؤقتة المُنشأة
+
+### TransactionLogEntries {#transactionlogentries}
+
+عدد العناصر في سجل المعاملات (`/log`) عند آخر عملية سرد له
+
+### TransactionsRunning {#transactionsrunning}
+
+عدد المعاملات الجارية التي بدأت على هذه النسخة المتماثلة
+
+### TransactionWatermarkLag {#transactionwatermarklag}
+
+أحدث لقطة للمعاملات مطروحًا منها العلامة المائية الزمنية العامة؛ أي أن المعاملات الجديدة تقرأ بتأخر يساوي هذا العدد من قيم CSN
 
 ### UDFDriverInvokerThreads {#udfdriverinvokerthreads}
 

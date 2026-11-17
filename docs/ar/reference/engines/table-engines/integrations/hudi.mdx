@@ -10,9 +10,7 @@ doc_type: 'مرجع'
 
 يوفّر هذا المحرك تكاملًا للقراءة فقط مع جداول [Hudi](https://hudi.apache.org/) الحالية في Amazon S3.
 
-<div id="create-table">
-  ## إنشاء جدول
-</div>
+## إنشاء جدول {#create-table}
 
 لاحظ أن جدول Hudi يجب أن يكون موجودًا مسبقًا في S3، فهذا الأمر لا يدعم معلمات DDL لإنشاء جدول جديد.
 
@@ -53,9 +51,11 @@ CREATE TABLE hudi_table ENGINE=Hudi('http://mars-doc-test.s3.amazonaws.com/click
 CREATE TABLE hudi_table ENGINE=Hudi(hudi_conf, filename = 'test_table')
 ```
 
-<div id="see-also">
-  ## انظر أيضًا
-</div>
+## القيود {#limitations}
+
+لم يُنفَّذ Merge-on-Read بعد، إذ لا تُقرأ ملفات السجل الخاصة بجداول Merge-on-Read. ولذلك فإن قراءة جدول تحتوي أحدث شرائح الملفات فيه على ملفات سجل، أي على تغييرات مكتوبة بعد آخر عملية دمج، تُطلق استثناءً `NOT_IMPLEMENTED` بدلًا من إرجاع القيم السابقة لتلك التغييرات. كذلك يُطلق استنتاج المخطط استثناءً لمثل هذا الجدول. أما جداول Copy-on-Write وجداول Merge-on-Read الخالية من ملفات السجل هذه، كما هو الحال مباشرةً بعد عملية دمج في Hudi، فتُقرأ كالمعتاد.
+
+## انظر أيضًا {#see-also}
 
 * [دالة الجدول Hudi](/ar/reference/functions/table-functions/hudi)
 

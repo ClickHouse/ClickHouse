@@ -13,6 +13,19 @@ export const localizeHref = (href) => {
     return `/${locale}${href}`;
 };
 
+export const withDocsBase = (href) => {
+    if (!href || !href.startsWith('/')) return href;
+    const base = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
+    return base + href;
+};
+
+export const navigateTo = (event, href) => {
+    if (event.defaultPrevented) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+    event.preventDefault();
+    window.location.href = href;
+};
+
 export const FullWidthDivider = ({ style }) => {
     const ref = useRef(null);
     useEffect(() => {
@@ -144,7 +157,7 @@ export const IntegrationsBanner = () => {
         >
             <div>
                 <h3 className="text-[#111827] dark:text-white text-lg font-semibold leading-[1.3] mt-0">集成</h3>
-                <span className="block text-[#6b7280] dark:text-[#a1a1aa] mt-1 text-sm font-normal leading-normal">通过 100 多种集成，将您喜爱的工具和服务连接到 ClickHouse。</span>
+                <span className="block text-[#6b7280] dark:text-[#a1a1aa] mt-1 text-sm font-normal leading-normal">通过 100+ 种集成，将您喜爱的工具和服务连接到 ClickHouse。</span>
             </div>
             <div className="ch-usecase-arrow shrink-0 flex items-center justify-center w-12 h-12 mr-2 rounded-full bg-gray-950/[0.05] dark:bg-white/[0.06]">
                 <span
@@ -178,7 +191,7 @@ export const HighlightedClickHouse = () => {
 
 export const McpLink = ({ children }) => {
     const assetBase = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const path = localizeHref('/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server');
+    const path = '/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server';
     return (
         <a
             href={path}
@@ -199,7 +212,7 @@ export const McpLink = ({ children }) => {
 };
 
 export const QuickstartPill = ({ children }) => {
-    const path = '/zh/get-started/setup/cloud';
+    const path = '/get-started/setup/cloud';
     return (
         <a
             className="inline-flex items-center gap-2 h-9 px-4 rounded-full text-sm text-gray-700 dark:text-zinc-200 bg-gray-950/[0.03] dark:bg-white/[0.04] border border-gray-950/15 dark:border-white/15 hover:border-gray-950/40 dark:hover:border-white/35 transition-colors no-underline"
@@ -299,15 +312,16 @@ export const PageWrapper = ({ children }) => {
         最快的数据平台文档
       </div>
 
-      <div className="flex items-center justify-center mx-auto mt-8 px-4">
-        <button type="button" id="home-search-entry" data-galaxy-event="docs.home.search" className="flex pointer-events-auto items-center text-sm leading-6 h-11 pl-3.5 pr-4 text-gray-500 dark:text-white/50 dark:brightness-[1.1] dark:hover:brightness-[1.25] gap-2 w-full max-w-[560px] bg-gray-950/[0.03] dark:bg-white/[0.03] hover:bg-gray-950/10 dark:hover:bg-white/10 shadow-none border border-gray-950/10 dark:border-white/10 ring-0 dark:ring-0 rounded-lg" aria-label="打开搜索">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-2 mx-auto mt-8 px-4 max-w-[480px]">
+        <button type="button" id="home-search-entry" data-galaxy-event="docs.home.search" className="flex w-full sm:flex-1 pointer-events-auto items-center text-sm leading-6 h-9 pl-3.5 pr-4 text-gray-500 dark:text-white/50 gap-2 min-w-0 bg-gray-950/[0.03] dark:bg-white/[0.03] hover:bg-gray-950/10 dark:hover:bg-white/10 shadow-none border border-gray-950/10 dark:border-white/10 ring-0 dark:ring-0 rounded" aria-label="打开搜索">
           <div className="flex items-center gap-2 min-w-0"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-search min-w-4 flex-none text-gray-700 hover:text-gray-800 dark:text-gray-400 hover:dark:text-gray-200"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg><div className="truncate min-w-0">搜索...</div></div>
         </button>
+
+        <AskAILink>咨询 AI</AskAILink>
       </div>
 
-      <div className="flex items-center justify-center gap-6 my-6">
+      <div className="flex items-center justify-center mt-4">
         <McpLink>设置文档 MCP 服务器</McpLink>
-        <AskAILink>咨询 AI</AskAILink>
       </div>
 
       <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4 mt-24">
@@ -404,7 +418,7 @@ export const PageWrapper = ({ children }) => {
 
         <HeroCard title="数据仓储" galaxyEvent="docs.home.data-warehousing" description="即时分析和探索数据，获取洞察并构建应用。通过卸载繁重工作负载，实现更快扩展。" href={localizeHref("/get-started/use-cases/data-warehousing")} showArrow />
 
-        <HeroCard title="智能体分析" galaxyEvent="docs.home.agentic-analytics" description="让 AI 智能体直接查询实时数据，提供即时的对话式洞察和可视化" href={localizeHref("/get-started/use-cases/agentic-analytics")} showArrow />
+        <HeroCard title="智能体" galaxyEvent="docs.home.agentic-analytics" description="让 AI 智能体直接查询实时数据，提供即时的对话式洞察和可视化" href={localizeHref("/agents")} showArrow />
       </div>
 
       <FullWidthDivider style={{ margin: '40px 0 40px' }} />

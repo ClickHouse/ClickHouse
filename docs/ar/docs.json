@@ -39,7 +39,7 @@
           "item": "عمليات النشر"
         },
         {
-        "$ref": "./products/cloud/navigation.json"
+          "$ref": "./products/cloud/navigation.json"
         },
         {
           "item": "BYOC",
@@ -76,7 +76,7 @@
         {
           "item": "ClickStack",
           "pages": [
-            "ar/clickstack/index"
+            "ar/clickstack"
           ]
         },
         {

@@ -67,8 +67,7 @@
             "pt-BR/get-started/use-cases/choosing-a-service",
             "pt-BR/get-started/use-cases/real-time-analytics",
             "pt-BR/get-started/use-cases/observability",
-            "pt-BR/get-started/use-cases/data-warehousing",
-            "pt-BR/get-started/use-cases/agentic-analytics"
+            "pt-BR/get-started/use-cases/data-warehousing"
           ]
         },
         "pt-BR/get-started/about/deployment-modes"
@@ -149,7 +148,7 @@
           ]
         },
         {
-          "group": "Geoespacial e localização",
+          "group": "Geo e localização",
           "pages": [
             "pt-BR/get-started/sample-datasets/cell-towers",
             "pt-BR/get-started/sample-datasets/foursquare-os-places",

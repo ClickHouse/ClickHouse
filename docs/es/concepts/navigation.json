@@ -98,7 +98,16 @@
             {
               "group": "Selección",
               "pages": [
-                "es/concepts/features/operations/select/joining-tables"
+                {
+                  "group": "JOINs",
+                  "pages": [
+                    "es/concepts/features/operations/select/joining-tables",
+                    "es/concepts/features/operations/select/join-execution",
+                    "es/concepts/features/operations/select/join-algorithms",
+                    "es/concepts/features/operations/select/join-memory-management",
+                    "es/concepts/features/operations/select/join-settings"
+                  ]
+                }
               ]
             },
             {
@@ -200,6 +209,7 @@
           "pages": [
             "es/concepts/features/backup-restore/overview",
             "es/concepts/features/backup-restore/restore-settings",
+            "es/concepts/features/backup-restore/named-collections",
             "es/concepts/features/backup-restore/local-disk",
             "es/concepts/features/backup-restore/s3-endpoint",
             "es/concepts/features/backup-restore/azure-blob-storage",
@@ -272,7 +282,7 @@
     },
     {
       "expanded": true,
-      "group": "Buenas prácticas",
+      "group": "Prácticas recomendadas",
       "pages": [
         "es/concepts/best-practices/index",
         "es/concepts/best-practices/choosing-a-primary-key",

@@ -34,7 +34,7 @@
             },
             {
               "expanded": false,
-              "group": "数据仓库",
+              "group": "数据仓储",
               "pages": [
                 "zh/get-started/quickstarts/connect-your-iceberg-catalog",
                 "zh/get-started/quickstarts/mutations"
@@ -67,8 +67,7 @@
             "zh/get-started/use-cases/choosing-a-service",
             "zh/get-started/use-cases/real-time-analytics",
             "zh/get-started/use-cases/observability",
-            "zh/get-started/use-cases/data-warehousing",
-            "zh/get-started/use-cases/agentic-analytics"
+            "zh/get-started/use-cases/data-warehousing"
           ]
         },
         "zh/get-started/about/deployment-modes"
@@ -83,7 +82,7 @@
         "zh/get-started/setup/cloud",
         {
           "expanded": true,
-          "group": "自托管",
+          "group": "自主管理",
           "pages": [
             "zh/get-started/setup/self-managed/overview",
             {
@@ -128,7 +127,7 @@
           ]
         },
         {
-          "group": "向量搜索与向量嵌入",
+          "group": "向量搜索与嵌入",
           "pages": [
             "zh/get-started/sample-datasets/dbpedia",
             "zh/get-started/sample-datasets/hacker-news-vector-search",
@@ -137,7 +136,7 @@
           ]
         },
         {
-          "group": "网站与社交媒体分析",
+          "group": "网站与社交数据分析",
           "pages": [
             "zh/get-started/sample-datasets/amazon-reviews",
             "zh/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -149,7 +148,7 @@
           ]
         },
         {
-          "group": "地理空间与位置",
+          "group": "Geo 与位置",
           "pages": [
             "zh/get-started/sample-datasets/cell-towers",
             "zh/get-started/sample-datasets/foursquare-os-places",
@@ -229,7 +228,7 @@
           ]
         },
         {
-          "group": "从开源版迁移到云服务",
+          "group": "从开源版迁移至云端",
           "pages": [
             "zh/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
             "zh/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"

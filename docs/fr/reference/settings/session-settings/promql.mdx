@@ -34,6 +34,16 @@ Indique le nom de la base de données utilisé par le dialecte &#39;promql&#39;.
 
 Définit l’instant d’évaluation à utiliser avec le dialecte promql, sous forme de timestamp Unix en secondes, avec une partie fractionnaire facultative. `auto` correspond à l’heure actuelle.
 
+## promql_max_points_per_series {#promql_max_points_per_series}
+
+<PrivatePreviewBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="11000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "11000"},{"label": "Nouveau paramètre permettant de limiter la résolution d'une requête de plage dans l'API HTTP de Prometheus, comme dans Prometheus."}]}]} />
+
+Résolution maximale d&#39;une requête de plage dans l&#39;API HTTP de Prometheus (`/api/v1/query_range`). Comme dans Prometheus, la requête est rejetée si `(end - start) / step` dépasse cette valeur. La valeur 0 signifie qu&#39;aucune limite n&#39;est appliquée. La fonction de table [prometheusQueryRange](/fr/reference/functions/table-functions/prometheusQueryRange) n&#39;est pas soumise à cette limite.
+
 ## promql_push_down_label_matchers {#promql_push_down_label_matchers}
 
 <PrivatePreviewBadge />

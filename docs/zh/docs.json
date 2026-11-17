@@ -39,7 +39,7 @@
           "item": "部署"
         },
         {
-        "$ref": "./products/cloud/navigation.json"
+          "$ref": "./products/cloud/navigation.json"
         },
         {
           "item": "BYOC",
@@ -50,7 +50,7 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "应用"
+          "item": "应用程序"
         },
         {
           "$ref": "./clickstack/navigation.json"
@@ -76,7 +76,7 @@
         {
           "item": "ClickStack",
           "pages": [
-            "zh/clickstack/index"
+            "zh/clickstack"
           ]
         },
         {

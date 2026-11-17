@@ -54,6 +54,7 @@
         {
           "group": "コネクターモード",
           "hidden": true,
+          "tag": "Preview",
           "pages": [
             "ja/products/bring-your-own-cloud/connector/overview",
             "ja/products/bring-your-own-cloud/connector/onboarding",
@@ -68,8 +69,7 @@
             "ja/products/bring-your-own-cloud/connector/reference/configuration",
             "ja/products/bring-your-own-cloud/connector/reference/faq",
             "ja/products/bring-your-own-cloud/connector/reference/privilege-model"
-          ],
-          "tag": "Preview"
+          ]
         }
       ]
     }

@@ -25,6 +25,7 @@
                 "ar/reference/statements/alter/comment",
                 "ar/reference/statements/alter/constraint",
                 "ar/reference/statements/alter/database-comment",
+                "ar/reference/statements/alter/database-setting",
                 "ar/reference/statements/alter/delete",
                 "ar/reference/statements/alter/named-collection",
                 "ar/reference/statements/alter/order-by",
@@ -77,6 +78,7 @@
                         "ar/reference/statements/create/dictionary/layouts/range-hashed",
                         "ar/reference/statements/create/dictionary/layouts/hierarchical",
                         "ar/reference/statements/create/dictionary/layouts/naive-bayes",
+                        "ar/reference/statements/create/dictionary/layouts/xgboost",
                         "ar/reference/statements/create/dictionary/layouts/polygon",
                         "ar/reference/statements/create/dictionary/layouts/ip-trie",
                         "ar/reference/statements/create/dictionary/layouts/regexp-tree"
@@ -175,6 +177,7 @@
                 "ar/reference/statements/select/qualify",
                 "ar/reference/statements/select/replace_modifier",
                 "ar/reference/statements/select/sample",
+                "ar/reference/statements/select/shuffle",
                 "ar/reference/statements/select/union",
                 "ar/reference/statements/select/where",
                 "ar/reference/statements/select/with"
@@ -184,6 +187,7 @@
             "ar/reference/statements/set",
             "ar/reference/statements/show",
             "ar/reference/statements/system",
+            "ar/reference/statements/transactions",
             "ar/reference/statements/truncate",
             "ar/reference/statements/undrop",
             "ar/reference/statements/update",
@@ -218,7 +222,7 @@
         },
         {
           "expanded": false,
-          "group": "الأنواع النصية",
+          "group": "أنواع السلاسل النصية",
           "pages": [
             "ar/reference/data-types/string",
             "ar/reference/data-types/fixedstring"
@@ -238,7 +242,7 @@
         },
         {
           "expanded": false,
-          "group": "أنواع الشبكات",
+          "group": "أنواع بيانات الشبكات",
           "pages": [
             "ar/reference/data-types/ipv4",
             "ar/reference/data-types/ipv6"
@@ -246,7 +250,7 @@
         },
         {
           "expanded": false,
-          "group": "الأنواع المركّبة",
+          "group": "الأنواع المركبة",
           "pages": [
             "ar/reference/data-types/array",
             "ar/reference/data-types/tuple",
@@ -330,6 +334,7 @@
                 "ar/reference/engines/table-engines/integrations/azureBlobStorage",
                 "ar/reference/engines/table-engines/integrations/bigquery",
                 "ar/reference/engines/table-engines/integrations/deltalake",
+                "ar/reference/engines/table-engines/integrations/elasticsearch",
                 "ar/reference/engines/table-engines/integrations/embedded-rocksdb",
                 "ar/reference/engines/table-engines/integrations/ExternalDistributed",
                 "ar/reference/engines/table-engines/integrations/hdfs",
@@ -385,7 +390,7 @@
             },
             {
               "expanded": false,
-              "group": "أنواع خاصة",
+              "group": "خاصة",
               "pages": [
                 "ar/reference/engines/table-engines/special/index",
                 "ar/reference/engines/table-engines/special/alias",
@@ -468,7 +473,7 @@
             "ar/reference/functions/regular-functions/functions-for-nulls",
             {
               "expanded": false,
-              "group": "البيانات الجغرافية",
+              "group": "جغرافي مكاني",
               "pages": [
                 "ar/reference/functions/regular-functions/geo/index",
                 "ar/reference/functions/regular-functions/geo/coordinates",
@@ -719,7 +724,7 @@
         },
         {
           "expanded": false,
-          "group": "دالات الجداول",
+          "group": "دوال الجداول",
           "pages": [
             "ar/reference/functions/table-functions/index",
             "ar/reference/functions/table-functions/arrowflight",
@@ -730,6 +735,7 @@
             "ar/reference/functions/table-functions/deltalake",
             "ar/reference/functions/table-functions/deltalakeCluster",
             "ar/reference/functions/table-functions/dictionary",
+            "ar/reference/functions/table-functions/elasticsearch",
             "ar/reference/functions/table-functions/executable",
             "ar/reference/functions/table-functions/eval",
             "ar/reference/functions/table-functions/file",
@@ -776,6 +782,7 @@
             "ar/reference/functions/table-functions/timeSeriesSamples",
             "ar/reference/functions/table-functions/timeSeriesSelector",
             "ar/reference/functions/table-functions/timeSeriesTags",
+            "ar/reference/functions/table-functions/timeSeriesTimeRanges",
             "ar/reference/functions/table-functions/url",
             "ar/reference/functions/table-functions/urlCluster",
             "ar/reference/functions/table-functions/values",
@@ -999,6 +1006,7 @@
         },
         "ar/reference/formats/Values",
         "ar/reference/formats/Vertical",
+        "ar/reference/formats/Vortex",
         "ar/reference/formats/XML"
       ]
     },
@@ -1055,6 +1063,7 @@
         "ar/reference/system-tables/completions",
         "ar/reference/system-tables/constraints",
         "ar/reference/system-tables/contributors",
+        "ar/reference/system-tables/connections",
         "ar/reference/system-tables/crash_log",
         "ar/reference/system-tables/current_roles",
         "ar/reference/system-tables/dashboards",
@@ -1102,6 +1111,7 @@
         "ar/reference/system-tables/iceberg_files",
         "ar/reference/system-tables/iceberg_history",
         "ar/reference/system-tables/iceberg_metadata_log",
+        "ar/reference/system-tables/iceberg_metadata_log_entries",
         "ar/reference/system-tables/information_schema",
         "ar/reference/system-tables/instrumentation",
         "ar/reference/system-tables/jemalloc_arena_bins",

@@ -89,7 +89,7 @@
       ]
     },
     {
-      "group": "Supervision",
+      "group": "Surveillance",
       "pages": [
         "fr/products/managed-postgres/monitoring/overview",
         "fr/products/managed-postgres/monitoring/dashboard",

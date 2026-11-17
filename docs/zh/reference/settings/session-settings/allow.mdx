@@ -149,18 +149,6 @@ Cloud 默认值: `1`。
 
 如果设置为 true，则用户可以执行 DDL 查询。
 
-## allow_delta_kernel_rs {#allow_delta_kernel_rs}
-
-<BetaBadge />
-
-**别名**：`allow_experimental_delta_kernel_rs`
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`allow_experimental_delta_kernel_rs` 的新名称；该设置不再处于实验阶段，原名称保留为别名。默认值保持不变。"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "新设置。最初以 `allow_experimental_delta_kernel_rs` 之名引入，现为该设置的别名；为保留完整历史记录，此条目以规范名称延续。"}]}]} />
-
-允许使用 `delta-kernel-rs` 实现读取 Delta Lake 表。
-
 ## allow_delta_lake_create_table {#allow_delta_lake_create_table}
 
 <ExperimentalBadge />
@@ -228,6 +216,18 @@ Cloud 默认值: `1`。
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 允许以列式方式执行 multiIf 函数
+
+## allow_expire_snapshots {#allow_expire_snapshots}
+
+<ExperimentalBadge />
+
+**别名**：`allow_experimental_expire_snapshots`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "新增设置。"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置别名 `allow_experimental_expire_snapshots`。"}]}]} />
+
+允许执行 Iceberg 命令 `ALTER TABLE ... EXECUTE expire_snapshots`。
 
 ## allow_fuzz_query_functions {#allow_fuzz_query_functions}
 
@@ -507,6 +507,14 @@ ClickHouse 使用服务器启动时加载的此设置值。
 默认情况下不允许这样做：如果源表在请求的分区中没有数据，那么从该源执行 `REPLACE PARTITION` 会抛出异常，因为这种情况下，该操作实际上等同于对目标端静默执行 `DROP PARTITION` (目标端数据会被删除，但不会有任何内容替换它) ，这也是意外数据丢失的常见原因 (参见 [#23727](https://github.com/ClickHouse/ClickHouse/issues/23727)) 。
 
 启用此设置可恢复之前的行为，例如当你有意使用空源分区来清空目标端数据时。若要无条件删除，建议直接改用 `ALTER TABLE ... DROP PARTITION ...`。
+
+## allow_reserved_column_names {#allow_reserved_column_names}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "拒绝与 MergeTree 表虚拟列同名的列"}]}]} />
+
+允许在 `CREATE TABLE`、带完整定义的 `ATTACH TABLE`，以及 `ALTER TABLE ... ADD COLUMN` 和 `RENAME COLUMN` 中，为 `MergeTree` 家族表的列使用该表某个虚拟列的名称 (例如 `_part`、`_part_offset` 或 `_table`) 。此类列会遮蔽同名的虚拟列。已包含此类列的表无论此设置取值如何都会被正常加载。持久化虚拟列的名称始终会被拒绝。
 
 ## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
 

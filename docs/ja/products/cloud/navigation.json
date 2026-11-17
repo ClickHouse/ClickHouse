@@ -21,6 +21,8 @@
             "ja/products/cloud/reference/supported-regions",
             "ja/products/cloud/features/infrastructure/deployment-options",
             "ja/products/cloud/guides/cloud-compatibility",
+            "ja/products/cloud/features/public-preview-features",
+            "ja/products/cloud/features/self-service-previews",
             "ja/products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
             "ja/products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
           ]
@@ -37,7 +39,8 @@
             "ja/products/cloud/features/autoscaling/make-before-break",
             "ja/products/cloud/features/autoscaling/idling",
             "ja/products/cloud/features/autoscaling/scaling-recommendations",
-            "ja/products/cloud/features/autoscaling/scheduled-scaling"
+            "ja/products/cloud/features/autoscaling/scheduled-scaling",
+            "ja/products/cloud/features/scaling/preparing-for-traffic-spikes"
           ]
         },
         {
@@ -59,6 +62,7 @@
           "pages": [
             "ja/products/cloud/reference/service-uptime",
             "ja/products/cloud/reference/data-resiliency",
+            "ja/products/cloud/guides/deletion-protection",
             "ja/products/cloud/features/admin-features/upgrades"
           ]
         },
@@ -67,6 +71,7 @@
           "group": "本番環境の計画",
           "pages": [
             "ja/products/cloud/guides/best-practices/index",
+            "ja/products/cloud/guides/best-practices/performance-optimization-playbook",
             "ja/products/cloud/guides/production-readiness",
             "ja/products/cloud/guides/best-practices/multitenancy",
             "ja/products/cloud/guides/best-practices/usagelimits"
@@ -126,6 +131,7 @@
           "pages": [
             "ja/products/cloud/guides/security/cloud-access-management/manage-my-account",
             "ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+            "ja/products/cloud/guides/security/cloud-access-management/approved-domains",
             "ja/products/cloud/reference/security/console-roles",
             "ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles"
           ]
@@ -147,7 +153,8 @@
             "ja/products/cloud/guides/security/saml-sso-removal",
             "ja/products/cloud/guides/security/cloud-access-management/scim-setup",
             "ja/products/cloud/guides/security/cloud-access-management/scim-setup-entra",
-            "ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup"
+            "ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup",
+            "ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id"
           ]
         }
       ]
@@ -169,6 +176,13 @@
                 "ja/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
                 "ja/products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect",
                 "ja/products/cloud/guides/security/connectivity/private-networking/azure-privatelink"
+              ]
+            },
+            {
+              "group": "組織のネットワーク接続",
+              "hidden": true,
+              "pages": [
+                "ja/products/cloud/guides/security/connectivity/org-network-connectivity"
               ]
             }
           ]
@@ -261,6 +275,7 @@
             "ja/products/cloud/features/ai-ml/mcp/remote-mcp"
           ]
         },
+        "ja/products/cloud/features/ai-ml/linked-billing-claude-platform",
         "ja/products/cloud/features/ai-ml/model-developer-terms"
       ]
     },
@@ -273,8 +288,8 @@
         {
           "group": "API リファレンス",
           "openapi": {
-            "directory": "ja/products/cloud/api-reference",
-            "source": "_specs/cloud-openapi.json"
+            "source": "_specs/cloud-openapi.json",
+            "directory": "ja/products/cloud/api-reference"
           },
           "pages": {
             "$ref": "./api-reference/navigation.json"

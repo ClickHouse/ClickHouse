@@ -19,9 +19,7 @@ Por lo tanto, `ReplacingMergeTree` es adecuado para eliminar datos duplicados en
   Hay una guía detallada sobre ReplacingMergeTree, incluidas las buenas prácticas y cómo optimizar el rendimiento, disponible [aquí](/es/concepts/features/operations/update/replacing-merge-tree).
 </Note>
 
-<div id="creating-a-table">
-  ## Crear una tabla
-</div>
+## Crear una tabla {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -43,15 +41,11 @@ Para ver una descripción de los parámetros de la solicitud, consulte la [descr
   La unicidad de las filas viene determinada por la cláusula `ORDER BY` de la tabla, no por `PRIMARY KEY`.
 </Note>
 
-<div id="replacingmergetree-parameters">
-  ## Parámetros de ReplacingMergeTree
-</div>
+## Parámetros de ReplacingMergeTree {#replacingmergetree-parameters}
 
-<div id="ver">
-  ### `ver`
-</div>
+### `ver` {#ver}
 
-`ver` — columna con el número de versión. Tipo `UInt*`, `Date`, `DateTime` o `DateTime64`. Parámetro opcional.
+`ver` — columna con el número de versión. Tipo `UInt*`, `Date`, `DateTime` o `DateTime64`. Parámetro opcional. También puede ser una subcolumna de otra columna, por ejemplo, un elemento de un `Tuple` o una ruta tipada de `JSON`: `ReplacingMergeTree(meta.ver)`.
 
 Al realizar la fusión, `ReplacingMergeTree` deja solo una de todas las filas con la misma clave de ordenación:
 
@@ -61,7 +55,7 @@ Al realizar la fusión, `ReplacingMergeTree` deja solo una de todas las filas co
 Ejemplo:
 
 ```sql
--- sin ver: gana la última fila insertada
+-- without ver - the last inserted 'wins'
 CREATE TABLE myFirstReplacingMT
 (
     `key` Int64,
@@ -80,7 +74,7 @@ SELECT * FROM myFirstReplacingMT FINAL;
 │   1 │ second  │ 2020-01-01 00:00:00 │
 └─────┴─────────┴─────────────────────┘
 
--- con ver: gana la fila con el valor de ver más alto
+-- with ver - the row with the biggest ver 'wins'
 CREATE TABLE mySecondReplacingMT
 (
     `key` Int64,
@@ -100,13 +94,11 @@ SELECT * FROM mySecondReplacingMT FINAL;
 └─────┴─────────┴─────────────────────┘
 ```
 
-<div id="is_deleted">
-  ### `is_deleted`
-</div>
+### `is_deleted` {#is_deleted}
 
 `is_deleted` — Nombre de una columna utilizada durante una fusión para determinar si los datos de esta fila representan el estado o si deben eliminarse; `1` es una fila &quot;eliminada&quot; y `0` es una fila de &quot;estado&quot;.
 
-Tipo de datos de la columna — `UInt8`.
+Tipo de datos de la columna — `UInt8`. Al igual que `ver`, puede ser una subcolumna de otra columna.
 
 <Note>
   `is_deleted` solo puede habilitarse cuando se usa `ver`.
@@ -127,7 +119,7 @@ Tipo de datos de la columna — `UInt8`.
 Ejemplo:
 
 ```sql
--- con ver e is_deleted
+-- with ver and is_deleted
 CREATE OR REPLACE TABLE myThirdReplacingMT
 (
     `key` Int64,
@@ -146,7 +138,7 @@ select * from myThirdReplacingMT final;
 
 0 rows in set. Elapsed: 0.003 sec.
 
--- eliminar filas con is_deleted
+-- delete rows with is_deleted
 OPTIMIZE TABLE myThirdReplacingMT FINAL CLEANUP;
 
 INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 00:00:00', 0);
@@ -158,9 +150,7 @@ select * from myThirdReplacingMT final;
 └─────┴─────────┴─────────────────────┴────────────┘
 ```
 
-<div id="query-clauses">
-  ## Cláusulas de consulta
-</div>
+## Cláusulas de consulta {#query-clauses}
 
 Al crear una tabla `ReplacingMergeTree`, se requieren las mismas [cláusulas](/es/reference/engines/table-engines/mergetree-family/mergetree) que al crear una tabla `MergeTree`.
 
@@ -185,9 +175,7 @@ Al crear una tabla `ReplacingMergeTree`, se requieren las mismas [cláusulas](/e
   * `ver` - columna con la versión. Parámetro opcional. Para ver una descripción, consulte el texto anterior.
 </details>
 
-<div id="query-time-de-duplication--final">
-  ## Deduplicación en tiempo de consulta &amp; FINAL
-</div>
+## Deduplicación en tiempo de consulta &amp; FINAL {#query-time-de-duplication--final}
 
 Durante las fusiones, ReplacingMergeTree identifica las filas duplicadas usando los valores de las columnas `ORDER BY` (utilizadas para crear la tabla) como identificador único, y conserva solo la versión más reciente. Sin embargo, esto solo ofrece corrección eventual: no garantiza que las filas se dedupliquen, y no debe depender de ello. Por lo tanto, las consultas pueden producir respuestas incorrectas porque tienen en cuenta filas de actualización y filas eliminadas.
 

@@ -11,9 +11,7 @@ doc_type: 'referência'
 
 Este motor oferece integração somente leitura com tabelas Apache [Hudi](https://hudi.apache.org/) existentes no Amazon S3.
 
-<div id="create-table">
-  ## Criar tabela
-</div>
+## Criar tabela {#create-table}
 
 Observe que a tabela Hudi já deve existir no S3; este comando não aceita parâmetros DDL para criar uma nova tabela.
 
@@ -54,9 +52,11 @@ Usando coleções nomeadas:
 CREATE TABLE hudi_table ENGINE=Hudi(hudi_conf, filename = 'test_table')
 ```
 
-<div id="see-also">
-  ## Veja também
-</div>
+## Limitações {#limitations}
+
+O Merge-on-Read não está implementado: os arquivos de log de uma tabela Merge-on-Read não são lidos. Por isso, ao ler uma tabela cujas file slices mais recentes têm arquivos de log, ou seja, alterações gravadas após a última compactação, é lançado o erro `NOT_IMPLEMENTED` em vez de serem retornados os valores anteriores a essas alterações. A inferência de esquema também lança um erro para esse tipo de tabela. Tabelas Copy-on-Write e tabelas Merge-on-Read sem esses arquivos de log, por exemplo, logo após uma compactação no Hudi, são lidas normalmente.
+
+## Veja também {#see-also}
 
 * [função de tabela do Hudi](/pt-BR/reference/functions/table-functions/hudi)
 

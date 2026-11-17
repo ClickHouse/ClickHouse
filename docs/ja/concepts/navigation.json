@@ -18,7 +18,7 @@
     },
     {
       "expanded": true,
-      "group": "ClickHouseの基本概念",
+      "group": "ClickHouse の概念",
       "pages": [
         "ja/concepts/features/index",
         {
@@ -61,7 +61,7 @@
               ]
             },
             {
-              "group": "スキップインデックス",
+              "group": "データスキッピングインデックス",
               "pages": [
                 "ja/concepts/features/performance/skip-indexes/skipping-indexes",
                 "ja/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -80,7 +80,7 @@
           ]
         },
         {
-          "group": "データ操作",
+          "group": "操作",
           "pages": [
             "ja/concepts/features/operations/background-queries",
             {
@@ -96,9 +96,18 @@
               ]
             },
             {
-              "group": "データの取得",
+              "group": "選択する",
               "pages": [
-                "ja/concepts/features/operations/select/joining-tables"
+                {
+                  "group": "JOIN",
+                  "pages": [
+                    "ja/concepts/features/operations/select/joining-tables",
+                    "ja/concepts/features/operations/select/join-execution",
+                    "ja/concepts/features/operations/select/join-algorithms",
+                    "ja/concepts/features/operations/select/join-memory-management",
+                    "ja/concepts/features/operations/select/join-settings"
+                  ]
+                }
               ]
             },
             {
@@ -200,6 +209,7 @@
           "pages": [
             "ja/concepts/features/backup-restore/overview",
             "ja/concepts/features/backup-restore/restore-settings",
+            "ja/concepts/features/backup-restore/named-collections",
             "ja/concepts/features/backup-restore/local-disk",
             "ja/concepts/features/backup-restore/s3-endpoint",
             "ja/concepts/features/backup-restore/azure-blob-storage",
@@ -208,7 +218,7 @@
           ]
         },
         {
-          "group": "インターフェイス",
+          "group": "インターフェース",
           "pages": [
             "ja/concepts/features/interfaces/native-clients-interfaces-index",
             "ja/concepts/features/interfaces/cli",

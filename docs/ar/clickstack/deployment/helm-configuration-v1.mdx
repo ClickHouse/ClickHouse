@@ -14,19 +14,15 @@ keywords: ['تهيئة ClickStack', 'كائنات Secret في Helm', 'إعداد
 
 يستعرض هذا الدليل خيارات التهيئة لعمليات نشر ClickStack عبر Helm. وللتثبيت الأساسي، راجع [دليل النشر الرئيسي باستخدام Helm](/ar/clickstack/deployment/helm-v1).
 
-<div id="api-key-setup">
-  ## إعداد مفتاح API
-</div>
+## إعداد مفتاح API {#api-key-setup}
 
 بعد نشر ClickStack بنجاح، قم بتهيئة مفتاح API لتمكين جمع بيانات القياس عن بُعد:
 
-1. **الوصول إلى مثيل HyperDX الخاص بك** عبر مورد الدخول المُعَدّ أو نقطة نهاية الخدمة
-2. **سجّل الدخول إلى لوحة معلومات HyperDX** وانتقل إلى إعدادات الفريق لإنشاء مفتاح API أو استعادته
-3. **حدّث الـ Deployment الخاص بك** باستخدام مفتاح API بإحدى الطرق التالية:
+1. **الوصول إلى مثيل واجهة مستخدم ClickStack الخاص بك** عبر مورد الدخول المُعَدّ أو نقطة نهاية الخدمة
+2. **سجّل الدخول إلى لوحة معلومات واجهة مستخدم ClickStack** وانتقل إلى إعدادات الفريق لإنشاء مفتاح API أو استعادته
+3. **حدّث النشر الخاص بك** باستخدام مفتاح API بإحدى الطرق التالية:
 
-<div id="api-key-values-file">
-  ### الطريقة 1: التحديث باستخدام Helm upgrade مع ملف values
-</div>
+### الطريقة 1: التحديث باستخدام Helm upgrade مع ملف values {#api-key-values-file}
 
 أضف مفتاح API إلى ملف `values.yaml`:
 
@@ -41,17 +37,13 @@ hyperdx:
 helm upgrade my-clickstack clickstack/clickstack -f values.yaml
 ```
 
-<div id="api-key-set-flag">
-  ### الطريقة 2: التحديث باستخدام Helm upgrade مع الخيار --set
-</div>
+### الطريقة 2: التحديث باستخدام Helm upgrade مع العلامة `--set` {#api-key-set-flag}
 
 ```shell
 helm upgrade my-clickstack clickstack/clickstack --set hyperdx.apiKey="your-api-key-here"
 ```
 
-<div id="restart-pods">
-  ### أعد تشغيل الكبسولات لتطبيق التغييرات
-</div>
+### أعد تشغيل الكبسولات لتطبيق التغييرات {#restart-pods}
 
 بعد تحديث مفتاح الـAPI، أعد تشغيل الكبسولات لتحميل التهيئة الجديدة:
 
@@ -63,15 +55,11 @@ kubectl rollout restart deployment my-clickstack-clickstack-app my-clickstack-cl
   ينشئ المخطط تلقائيًا Kubernetes secret (`<release-name>-app-secrets`) يتضمّن مفتاح API الخاص بك. ولا يلزم أي إعداد إضافي لهذا الـ secret إلا إذا كنت تريد استخدام secret خارجي.
 </Note>
 
-<div id="secret-management">
-  ## إدارة الأسرار
-</div>
+## إدارة الأسرار {#secret-management}
 
 للتعامل مع بيانات حساسة مثل مفاتيح API أو بيانات اعتماد قاعدة البيانات، استخدم كائنات secrets في Kubernetes.
 
-<div id="using-pre-configured-secrets">
-  ### استخدام الأسرار المُهيّأة مسبقًا
-</div>
+### استخدام الأسرار المُهيّأة مسبقًا {#using-pre-configured-secrets}
 
 يتضمّن مخطط Helm قالب Secret افتراضيًا موجودًا في [`charts/clickstack/templates/secrets.yaml`](https://github.com/hyperdxio/helm-charts/blob/main/charts/clickstack/templates/secrets.yaml). يوفّر هذا الملف بنية أساسية لإدارة الأسرار.
 
@@ -95,9 +83,7 @@ data:
 kubectl apply -f secrets.yaml
 ```
 
-<div id="creating-a-custom-secret">
-  ### إنشاء سرّ Kubernetes مخصّص
-</div>
+### إنشاء سرّ Kubernetes مخصّص {#creating-a-custom-secret}
 
 أنشئ سرّ Kubernetes مخصّصًا يدويًا:
 
@@ -106,9 +92,7 @@ kubectl create secret generic hyperdx-secret \
   --from-literal=API_KEY=my-secret-api-key
 ```
 
-<div id="referencing-a-secret">
-  ### الإشارة إلى secret في ملف values.yaml
-</div>
+### الإشارة إلى secret في ملف values.yaml {#referencing-a-secret}
 
 ```yaml
 hyperdx:
@@ -119,15 +103,11 @@ hyperdx:
         key: API_KEY
 ```
 
-<div id="ingress-setup">
-  ## إعداد الدخول الوارد
-</div>
+## إعداد الدخول {#ingress-setup}
 
-لإتاحة واجهة HyperDX وواجهة برمجة التطبيقات عبر اسم نطاق، فعِّل الدخول الوارد في ملف `values.yaml`.
+لإتاحة واجهة مستخدم ClickStack وواجهة برمجة التطبيقات عبر اسم نطاق، فعِّل الدخول في ملف `values.yaml`.
 
-<div id="general-ingress-configuration">
-  ### التهيئة العامة للوصول
-</div>
+### التهيئة العامة للوصول {#general-ingress-configuration}
 
 ```yaml
 hyperdx:
@@ -143,9 +123,7 @@ hyperdx:
   يجب أن يتطابق `hyperdx.frontendUrl` مع مضيف مورد الدخول وأن يتضمن البروتوكول (على سبيل المثال: `https://hyperdx.yourdomain.com`). وهذا يضمن عمل جميع الروابط وملفات تعريف الارتباط وعمليات إعادة التوجيه المُنشأة بشكل صحيح.
 </Info>
 
-<div id="enabling-tls">
-  ### تمكين TLS (HTTPS)
-</div>
+### تمكين TLS (HTTPS) {#enabling-tls}
 
 لتأمين عملية النشر باستخدام HTTPS:
 
@@ -169,9 +147,7 @@ hyperdx:
       tlsSecretName: "hyperdx-tls"
 ```
 
-<div id="example-ingress-configuration">
-  ### مثال على تهيئة مورد الإدخال
-</div>
+### مثال على تهيئة مورد الإدخال {#example-ingress-configuration}
 
 للمرجع، إليك كيف يبدو مورد الإدخال الذي تم إنشاؤه:
 
@@ -202,9 +178,7 @@ spec:
       secretName: hyperdx-tls
 ```
 
-<div id="common-ingress-pitfalls">
-  ### المشكلات الشائعة في مورد الدخول
-</div>
+### المشكلات الشائعة في مورد الدخول {#common-ingress-pitfalls}
 
 **إعدادات المسار وإعادة الكتابة:**
 
@@ -229,9 +203,7 @@ spec:
 kubectl -n ingress-nginx get pods -l app.kubernetes.io/name=ingress-nginx -o jsonpath="{.items[0].spec.containers[0].image}"
 ```
 
-<div id="otel-collector-ingress">
-  ## ولوج OTEL collector
-</div>
+## ولوج OTEL collector {#otel-collector-ingress}
 
 إذا كنت بحاجة إلى إتاحة endpoints الخاصة بـ OTEL collector (للـ traces والـ metrics والـ logs) عبر الولوج، فاستخدم إعداد `additionalIngresses`. ويكون ذلك مفيدًا لإرسال telemetry data من خارج الـ cluster أو لاستخدام domain مخصص لـ collector.
 
@@ -267,9 +239,7 @@ hyperdx:
   إذا لم تكن بحاجة إلى إتاحة OTel collector خارجيًا، فيمكنك تخطي هذا الإعداد. وبالنسبة إلى معظم المستخدمين، يكون إعداد الإدخال العام كافيًا.
 </Note>
 
-<div id="troubleshooting-ingress">
-  ## استكشاف أخطاء الإدخال وإصلاحها
-</div>
+## استكشاف أخطاء الإدخال وإصلاحها {#troubleshooting-ingress}
 
 **تحقق من مورد الإدخال:**
 
@@ -306,9 +276,7 @@ curl -I https://hyperdx.yourdomain.com/_next/static/chunks/main-xxxx.js
 
 * بعد إجراء التغييرات، امسح ذاكرة التخزين المؤقت للمتصفح وأي ذاكرة تخزين مؤقت لـ CDN/الوكيل لتجنّب استخدام أصول قديمة
 
-<div id="customizing-values">
-  ## تخصيص القيم
-</div>
+## تخصيص القيم {#customizing-values}
 
 يمكنك تخصيص الإعدادات باستخدام وسيطات `--set`:
 
@@ -347,9 +315,7 @@ hyperdx:
 helm install my-clickstack clickstack/clickstack -f values.yaml
 ```
 
-<div id="next-steps">
-  ## الخطوات التالية
-</div>
+## الخطوات التالية {#next-steps}
 
 * [خيارات النشر (v1.x)](/ar/clickstack/deployment/helm-deployment-options-v1) - الأنظمة الخارجية وعمليات النشر الدنيا
 * [عمليات النشر على Cloud (v1.x)](/ar/clickstack/deployment/helm-cloud-v1) - تهيئات GKE وEKS وAKS

@@ -3,8 +3,8 @@
   "pages": [
     "ar/products/kubernetes-operator/overview",
     {
-      "expanded": true,
       "group": "التثبيت",
+      "expanded": true,
       "pages": [
         "ar/products/kubernetes-operator/install/kubectl",
         "ar/products/kubernetes-operator/install/helm",
@@ -12,8 +12,8 @@
       ]
     },
     {
-      "expanded": true,
       "group": "أدلة إرشادية",
+      "expanded": true,
       "pages": [
         "ar/products/kubernetes-operator/guides/introduction",
         "ar/products/kubernetes-operator/guides/configuration",
@@ -26,8 +26,8 @@
       ]
     },
     {
-      "expanded": true,
       "group": "المرجع",
+      "expanded": true,
       "pages": [
         "ar/products/kubernetes-operator/reference/api-reference"
       ]

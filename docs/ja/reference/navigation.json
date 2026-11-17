@@ -5,7 +5,7 @@
     {
       "expandable": true,
       "expanded": true,
-      "group": "SQLリファレンス",
+      "group": "SQL リファレンス",
       "pages": [
         "ja/reference/syntax",
         {
@@ -25,6 +25,7 @@
                 "ja/reference/statements/alter/comment",
                 "ja/reference/statements/alter/constraint",
                 "ja/reference/statements/alter/database-comment",
+                "ja/reference/statements/alter/database-setting",
                 "ja/reference/statements/alter/delete",
                 "ja/reference/statements/alter/named-collection",
                 "ja/reference/statements/alter/order-by",
@@ -77,6 +78,7 @@
                         "ja/reference/statements/create/dictionary/layouts/range-hashed",
                         "ja/reference/statements/create/dictionary/layouts/hierarchical",
                         "ja/reference/statements/create/dictionary/layouts/naive-bayes",
+                        "ja/reference/statements/create/dictionary/layouts/xgboost",
                         "ja/reference/statements/create/dictionary/layouts/polygon",
                         "ja/reference/statements/create/dictionary/layouts/ip-trie",
                         "ja/reference/statements/create/dictionary/layouts/regexp-tree"
@@ -175,6 +177,7 @@
                 "ja/reference/statements/select/qualify",
                 "ja/reference/statements/select/replace_modifier",
                 "ja/reference/statements/select/sample",
+                "ja/reference/statements/select/shuffle",
                 "ja/reference/statements/select/union",
                 "ja/reference/statements/select/where",
                 "ja/reference/statements/select/with"
@@ -184,6 +187,7 @@
             "ja/reference/statements/set",
             "ja/reference/statements/show",
             "ja/reference/statements/system",
+            "ja/reference/statements/transactions",
             "ja/reference/statements/truncate",
             "ja/reference/statements/undrop",
             "ja/reference/statements/update",
@@ -265,7 +269,7 @@
         },
         {
           "expanded": false,
-          "group": "Nullable型とOptional型",
+          "group": "Nullable 型とオプショナル型",
           "pages": [
             "ja/reference/data-types/nullable",
             "ja/reference/data-types/lowcardinality"
@@ -273,7 +277,7 @@
         },
         {
           "expanded": false,
-          "group": "特殊な型",
+          "group": "特定用途向けの型",
           "pages": [
             "ja/reference/data-types/uuid",
             "ja/reference/data-types/enum",
@@ -322,7 +326,7 @@
             "ja/reference/engines/table-engines/index",
             {
               "expanded": false,
-              "group": "連携",
+              "group": "インテグレーション",
               "pages": [
                 "ja/reference/engines/table-engines/integrations/index",
                 "ja/reference/engines/table-engines/integrations/arrowflight",
@@ -330,6 +334,7 @@
                 "ja/reference/engines/table-engines/integrations/azureBlobStorage",
                 "ja/reference/engines/table-engines/integrations/bigquery",
                 "ja/reference/engines/table-engines/integrations/deltalake",
+                "ja/reference/engines/table-engines/integrations/elasticsearch",
                 "ja/reference/engines/table-engines/integrations/embedded-rocksdb",
                 "ja/reference/engines/table-engines/integrations/ExternalDistributed",
                 "ja/reference/engines/table-engines/integrations/hdfs",
@@ -356,7 +361,7 @@
             },
             {
               "expanded": false,
-              "group": "Logファミリー",
+              "group": "Log ファミリー",
               "pages": [
                 "ja/reference/engines/table-engines/log-family/index",
                 "ja/reference/engines/table-engines/log-family/log",
@@ -385,7 +390,7 @@
             },
             {
               "expanded": false,
-              "group": "特殊",
+              "group": "特殊なエンジン",
               "pages": [
                 "ja/reference/engines/table-engines/special/index",
                 "ja/reference/engines/table-engines/special/alias",
@@ -730,6 +735,7 @@
             "ja/reference/functions/table-functions/deltalake",
             "ja/reference/functions/table-functions/deltalakeCluster",
             "ja/reference/functions/table-functions/dictionary",
+            "ja/reference/functions/table-functions/elasticsearch",
             "ja/reference/functions/table-functions/executable",
             "ja/reference/functions/table-functions/eval",
             "ja/reference/functions/table-functions/file",
@@ -776,6 +782,7 @@
             "ja/reference/functions/table-functions/timeSeriesSamples",
             "ja/reference/functions/table-functions/timeSeriesSelector",
             "ja/reference/functions/table-functions/timeSeriesTags",
+            "ja/reference/functions/table-functions/timeSeriesTimeRanges",
             "ja/reference/functions/table-functions/url",
             "ja/reference/functions/table-functions/urlCluster",
             "ja/reference/functions/table-functions/values",
@@ -999,6 +1006,7 @@
         },
         "ja/reference/formats/Values",
         "ja/reference/formats/Vertical",
+        "ja/reference/formats/Vortex",
         "ja/reference/formats/XML"
       ]
     },
@@ -1055,6 +1063,7 @@
         "ja/reference/system-tables/completions",
         "ja/reference/system-tables/constraints",
         "ja/reference/system-tables/contributors",
+        "ja/reference/system-tables/connections",
         "ja/reference/system-tables/crash_log",
         "ja/reference/system-tables/current_roles",
         "ja/reference/system-tables/dashboards",
@@ -1102,6 +1111,7 @@
         "ja/reference/system-tables/iceberg_files",
         "ja/reference/system-tables/iceberg_history",
         "ja/reference/system-tables/iceberg_metadata_log",
+        "ja/reference/system-tables/iceberg_metadata_log_entries",
         "ja/reference/system-tables/information_schema",
         "ja/reference/system-tables/instrumentation",
         "ja/reference/system-tables/jemalloc_arena_bins",

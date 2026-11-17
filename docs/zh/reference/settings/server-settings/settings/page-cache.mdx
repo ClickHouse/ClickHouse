@@ -30,7 +30,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 ## page_cache_policy {#page_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />用户态页缓存淘汰策略名称。可选值：`LRU`、`SLRU`、`SIEVE`。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />用户态页缓存的缓存淘汰策略。可选值：`LRU`、`SLRU`、`SIEVE`。缓存容量请参见 [`page_cache_max_size`](/zh/reference/settings/server-settings/settings/page-cache#page_cache_max_size)；SLRU 策略下受保护队列的大小请参见 [`page_cache_size_ratio`](/zh/reference/settings/server-settings/settings/page-cache#page_cache_size_ratio)。
 
 ## page_cache_shards {#page_cache_shards}
 

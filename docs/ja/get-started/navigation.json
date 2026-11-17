@@ -67,8 +67,7 @@
             "ja/get-started/use-cases/choosing-a-service",
             "ja/get-started/use-cases/real-time-analytics",
             "ja/get-started/use-cases/observability",
-            "ja/get-started/use-cases/data-warehousing",
-            "ja/get-started/use-cases/agentic-analytics"
+            "ja/get-started/use-cases/data-warehousing"
           ]
         },
         "ja/get-started/about/deployment-modes"
@@ -96,7 +95,7 @@
               ]
             },
             {
-              "group": "本番サーバー",
+              "group": "本番環境のサーバー",
               "pages": [
                 "ja/get-started/setup/self-managed/debian-ubuntu",
                 "ja/get-started/setup/self-managed/redhat",
@@ -137,7 +136,7 @@
           ]
         },
         {
-          "group": "Web・ソーシャル分析",
+          "group": "ウェブとソーシャルメディアの分析",
           "pages": [
             "ja/get-started/sample-datasets/amazon-reviews",
             "ja/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -149,7 +148,7 @@
           ]
         },
         {
-          "group": "Geo・位置情報",
+          "group": "Geo と位置情報",
           "pages": [
             "ja/get-started/sample-datasets/cell-towers",
             "ja/get-started/sample-datasets/foursquare-os-places",
@@ -157,7 +156,7 @@
           ]
         },
         {
-          "group": "時系列・センサー",
+          "group": "時系列とセンサー",
           "pages": [
             "ja/get-started/sample-datasets/environmental-sensors",
             "ja/get-started/sample-datasets/noaa",
@@ -166,7 +165,7 @@
           ]
         },
         {
-          "group": "公的記録・オープンデータ",
+          "group": "公的記録とオープンデータ",
           "pages": [
             "ja/get-started/sample-datasets/covid19",
             "ja/get-started/sample-datasets/menus",
@@ -229,7 +228,7 @@
           ]
         },
         {
-          "group": "OSSからCloudへの移行",
+          "group": "OSS から Cloud への移行",
           "pages": [
             "ja/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
             "ja/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"

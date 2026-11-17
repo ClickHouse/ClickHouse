@@ -313,7 +313,7 @@ if err := rows.Err(); err != nil {
 
 ## الإدراج غير المتزامن {#async-insert}
 
-يمكن تنفيذ عمليات الإدراج غير المتزامنة من خلال تنفيذ عملية إدراج باستخدام الأسلوب `ExecContext`. ويجب تمرير سياق إليه مع تمكين الوضع غير المتزامن، كما هو موضح أدناه. يتيح ذلك للمستخدم تحديد ما إذا كان ينبغي للعميل انتظار الخادم حتى يُكمل عملية الإدراج، أو الاستجابة بمجرد استلام البيانات. ويتحكم هذا فعليًا في المعلمة [wait&#95;for&#95;async&#95;insert](/ar/reference/settings/session-settings#wait_for_async_insert).
+يمكن تنفيذ عمليات الإدراج غير المتزامنة من خلال تنفيذ عملية إدراج باستخدام الطريقة `ExecContext`. ويجب تمرير سياق إليه مع تمكين الوضع غير المتزامن، كما هو موضح أدناه. يتيح ذلك للمستخدم تحديد ما إذا كان ينبغي للعميل انتظار الخادم حتى يُكمل عملية الإدراج، أو الاستجابة بمجرد استلام البيانات. ويتحكم هذا فعليًا في المعلمة [wait&#95;for&#95;async&#95;insert](/ar/reference/settings/session-settings#wait_for_async_insert).
 
 ```go
 const ddl = `
@@ -340,7 +340,29 @@ ctx := clickhouse.Context(context.Background(), clickhouse.WithStdAsync(false))
 }
 ```
 
-[المثال الكامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/async.go)
+[المثال الكامل](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/async_native.go)
+
+### الإدراج غير المتزامن باستخدام دفعة {#async-insert-batch}
+
+ينطبق `WithAsync` أيضًا على الإدراج على دفعات. فالدفعة لا تستخدم إلا السياق الذي تمرّره إلى `PrepareContext`، لذا مرِّر السياق غير المتزامن إلى `PrepareContext`. أما السياق الذي تمرّره إلى `Stmt.ExecContext` فلا تأثير له على الدفعة. ويُرسل `Commit` الدفعة بالإعدادات المأخوذة من سياق `PrepareContext`.
+
+```go
+ctx := clickhouse.Context(context.Background(), clickhouse.WithAsync(true))
+tx, err := conn.Begin()
+if err != nil {
+    return err
+}
+stmt, err := tx.PrepareContext(ctx, "INSERT INTO example") // WithAsync must be on this context
+if err != nil {
+    return err
+}
+for i := 0; i < 100; i++ {
+    if _, err := stmt.Exec(i, "Golang SQL database driver", []uint8{1, 2, 3, 4, 5, 6, 7, 8, 9}, time.Now()); err != nil {
+        return err
+    }
+}
+return tx.Commit()
+```
 
 ## معلمات الاستعلام من جانب الخادم {#server-side-query-parameters}
 

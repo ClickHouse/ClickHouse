@@ -3,8 +3,8 @@
   "pages": [
     "ko/products/kubernetes-operator/overview",
     {
-      "expanded": true,
       "group": "설치",
+      "expanded": true,
       "pages": [
         "ko/products/kubernetes-operator/install/kubectl",
         "ko/products/kubernetes-operator/install/helm",
@@ -12,8 +12,8 @@
       ]
     },
     {
-      "expanded": true,
       "group": "가이드",
+      "expanded": true,
       "pages": [
         "ko/products/kubernetes-operator/guides/introduction",
         "ko/products/kubernetes-operator/guides/configuration",
@@ -26,8 +26,8 @@
       ]
     },
     {
-      "expanded": true,
       "group": "참고",
+      "expanded": true,
       "pages": [
         "ko/products/kubernetes-operator/reference/api-reference"
       ]

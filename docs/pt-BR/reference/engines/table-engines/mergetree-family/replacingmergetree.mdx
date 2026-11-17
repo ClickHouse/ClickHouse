@@ -19,9 +19,7 @@ Assim, `ReplacingMergeTree` é adequado para remover dados duplicados em segundo
   Um guia detalhado sobre ReplacingMergeTree, incluindo melhores práticas e como otimizar o desempenho, está disponível [aqui](/pt-BR/concepts/features/operations/update/replacing-merge-tree).
 </Note>
 
-<div id="creating-a-table">
-  ## Criar uma tabela
-</div>
+## Criar uma tabela {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -43,15 +41,11 @@ Para ver uma descrição dos parâmetros da solicitação, consulte a [descriç�
   A unicidade das linhas é determinada pela cláusula `ORDER BY` da tabela, não pela `PRIMARY KEY`.
 </Note>
 
-<div id="replacingmergetree-parameters">
-  ## Parâmetros do ReplacingMergeTree
-</div>
+## Parâmetros do ReplacingMergeTree {#replacingmergetree-parameters}
 
-<div id="ver">
-  ### `ver`
-</div>
+### `ver` {#ver}
 
-`ver` — coluna com o número da versão. Tipo `UInt*`, `Date`, `DateTime` ou `DateTime64`. Parâmetro opcional.
+`ver` — coluna com o número da versão. Tipo `UInt*`, `Date`, `DateTime` ou `DateTime64`. Parâmetro opcional. Também pode ser uma subcoluna de outra coluna, por exemplo, um elemento de uma `Tuple` ou um caminho tipado de `JSON`: `ReplacingMergeTree(meta.ver)`.
 
 Durante a mesclagem, o `ReplacingMergeTree` mantém apenas uma entre todas as linhas com a mesma chave de ordenação:
 
@@ -61,7 +55,7 @@ Durante a mesclagem, o `ReplacingMergeTree` mantém apenas uma entre todas as li
 Exemplo:
 
 ```sql
--- sem ver - o último inserido 'vence'
+-- without ver - the last inserted 'wins'
 CREATE TABLE myFirstReplacingMT
 (
     `key` Int64,
@@ -80,7 +74,7 @@ SELECT * FROM myFirstReplacingMT FINAL;
 │   1 │ second  │ 2020-01-01 00:00:00 │
 └─────┴─────────┴─────────────────────┘
 
--- com ver - a linha com o maior ver 'vence'
+-- with ver - the row with the biggest ver 'wins'
 CREATE TABLE mySecondReplacingMT
 (
     `key` Int64,
@@ -100,13 +94,11 @@ SELECT * FROM mySecondReplacingMT FINAL;
 └─────┴─────────┴─────────────────────┘
 ```
 
-<div id="is_deleted">
-  ### `is_deleted`
-</div>
+### `is_deleted` {#is_deleted}
 
 `is_deleted` — Nome de uma coluna usada durante uma mesclagem para determinar se os dados nesta linha representam o estado ou devem ser excluídos; `1` é uma linha &quot;excluída&quot;, `0` é uma linha de &quot;estado&quot;.
 
-Tipo de dados da coluna — `UInt8`.
+Tipo de dados da coluna — `UInt8`. Assim como `ver`, pode ser uma subcoluna de outra coluna.
 
 <Note>
   `is_deleted` só pode ser habilitado quando `ver` é usado.
@@ -127,7 +119,7 @@ Tipo de dados da coluna — `UInt8`.
 Exemplo:
 
 ```sql
--- com ver e is_deleted
+-- with ver and is_deleted
 CREATE OR REPLACE TABLE myThirdReplacingMT
 (
     `key` Int64,
@@ -146,7 +138,7 @@ select * from myThirdReplacingMT final;
 
 0 rows in set. Elapsed: 0.003 sec.
 
--- excluir linhas com is_deleted
+-- delete rows with is_deleted
 OPTIMIZE TABLE myThirdReplacingMT FINAL CLEANUP;
 
 INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 00:00:00', 0);
@@ -158,9 +150,7 @@ select * from myThirdReplacingMT final;
 └─────┴─────────┴─────────────────────┴────────────┘
 ```
 
-<div id="query-clauses">
-  ## Cláusulas da consulta
-</div>
+## Cláusulas da consulta {#query-clauses}
 
 Ao criar uma tabela `ReplacingMergeTree`, são necessárias as mesmas [cláusulas](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) exigidas na criação de uma tabela `MergeTree`.
 
@@ -185,9 +175,7 @@ Ao criar uma tabela `ReplacingMergeTree`, são necessárias as mesmas [cláusula
   * `ver` - coluna com a versão. Parâmetro opcional. Para mais detalhes, consulte o texto acima.
 </details>
 
-<div id="query-time-de-duplication--final">
-  ## Desduplicação em tempo de consulta &amp; FINAL
-</div>
+## Desduplicação em tempo de consulta &amp; FINAL {#query-time-de-duplication--final}
 
 Durante a mesclagem, o ReplacingMergeTree identifica linhas duplicadas usando os valores das colunas de `ORDER BY` (usadas para criar a tabela) como identificador único e mantém apenas a versão mais alta. No entanto, isso oferece apenas correção eventual — não garante que as linhas serão desduplicadas, e você não deve depender disso. Portanto, as consultas podem produzir respostas incorretas porque linhas de atualização e exclusão são consideradas nas consultas.
 

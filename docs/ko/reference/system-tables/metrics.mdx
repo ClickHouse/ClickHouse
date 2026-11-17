@@ -50,6 +50,26 @@ Aggregator 스레드 풀에 있는 스레드 수입니다.
 
 Aggregator 스레드 풀에서 큐에 있거나 실행 중인 작업 수입니다.
 
+### AIRequestThreads {#airequestthreads}
+
+AI 요청 스레드 풀의 스레드 수입니다.
+
+### AIRequestThreadsActive {#airequestthreadsactive}
+
+AI 요청 스레드 풀에서 작업을 실행 중인 스레드 수입니다.
+
+### AIRequestThreadsScheduled {#airequestthreadsscheduled}
+
+AI 요청 스레드 풀에서 큐에 대기 중이거나 실행 중인 작업 수입니다.
+
+### AmberConnectionsStored {#amberconnectionsstored}
+
+Amber의 세션 풀에 저장된 세션의 총 개수
+
+### AmberConnectionsTotal {#amberconnectionstotal}
+
+Amber의 전체 세션 수입니다. 풀에 저장된 세션과 현재 활성 상태로 사용 중인 세션을 모두 포함합니다.
+
 ### ASTFuzzerAccumulatedFragments {#astfuzzeraccumulatedfragments}
 
 향후 뮤테이션에 사용할 수 있도록 서버 측 AST 퍼저에 누적된 AST 조각 수입니다.
@@ -382,18 +402,6 @@ CPU 슬롯을 기다리며 대기 중인 선점된 스레드의 총수
 
 CPU 슬롯 수의 소프트 리밋 값
 
-### ConcurrentHashJoinPoolThreads {#concurrenthashjoinpoolthreads}
-
-concurrent hash join용 스레드 풀의 스레드 수입니다.
-
-### ConcurrentHashJoinPoolThreadsActive {#concurrenthashjoinpoolthreadsactive}
-
-concurrent hash join용 스레드 풀에서 작업을 실행 중인 스레드 수입니다.
-
-### ConcurrentHashJoinPoolThreadsScheduled {#concurrenthashjoinpoolthreadsscheduled}
-
-concurrent hash join용 스레드 풀의 큐에 대기 중이거나 현재 실행 중인 작업 수입니다.
-
 ### ConcurrentQueryAcquired {#concurrentqueryacquired}
 
 확보된 쿼리 슬롯의 총수
@@ -606,6 +614,14 @@ Distributed Cache에 대해 수행된 Read 요청 수
 
 현재 AZ에 등록된 Distributed Cache 서버 수
 
+### DistrCacheServerCommittedTemporaryFiles {#distrcacheservercommittedtemporaryfiles}
+
+이 Distributed Cache 서버 프로세스가 소유한 커밋된 임시 파일 수
+
+### DistrCacheServerCommittedTemporaryFilesBytes {#distrcacheservercommittedtemporaryfilesbytes}
+
+이 Distributed Cache 서버 프로세스가 소유한 커밋된 임시 파일의 총 크기(바이트)
+
 ### DistrCacheServerConnections {#distrcacheserverconnections}
 
 Distributed Cache에서 ClickHouse 서버로 연결된 열린 연결 수
@@ -621,6 +637,18 @@ Distributed Cache의 S3 캐시 클라이언트 수
 ### DistrCacheSharedLimitCount {#distrcachesharedlimitcount}
 
 DistributedCache::ConnectionPool::SharedLimit에 따른 열려 있는 연결 수
+
+### DistrCacheTemporaryDataActiveIds {#distrcachetemporarydataactiveids}
+
+커밋된 활성 임시 데이터 ID 수
+
+### DistrCacheTemporaryDataConnectionsBypassingPool {#distrcachetemporarydataconnectionsbypassingpool}
+
+Distributed Cache 클라이언트 메트릭입니다. 임시 데이터용으로 연결 풀을 거치지 않고 열린 연결 수입니다.
+
+### DistrCacheTemporaryDataServers {#distrcachetemporarydataservers}
+
+임시 데이터가 커밋된 서버 수
 
 ### DistrCacheUsedConnections {#distrcacheusedconnections}
 
@@ -854,13 +882,13 @@ Global Thread 풀 내 스레드 수.
 
 Global Thread 풀의 큐에 있거나 현재 활성 상태인 작업 수입니다.
 
-### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+### GPUExpressionKernelCacheBytes {#gpuexpressionkernelcachebytes}
 
-Glue 카탈로그의 현재 Iceberg 스키마(schema) 필드 타입 캐시 크기(바이트 단위)
+GPU 엔진이 표현식(Expressions)용으로 컴파일하여 디바이스에 로드해 둔 커널의 PTX 크기(바이트)입니다.
 
-### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+### GPUExpressionKernelCacheCount {#gpuexpressionkernelcachecount}
 
-Glue 카탈로그의 현재 Iceberg 스키마 필드 타입을 저장하는 캐시의 엔트리 수
+GPU 엔진이 표현식(Expressions)용으로 컴파일한 후 디바이스에 로드해 두고 있는 커널 수입니다.
 
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
@@ -873,6 +901,18 @@ HashedDictionary 스레드 풀에 있는 스레드 수입니다.
 ### HashedDictionaryThreadsScheduled {#hasheddictionarythreadsscheduled}
 
 HashedDictionary 스레드 풀에서 큐에 대기 중이거나 실행 중인 작업 수입니다.
+
+### HashJoinDestroyThreads {#hashjoindestroythreads}
+
+해시 조인의 오른쪽 테이블(right table)을 제거하는 데 사용되는 스레드 풀의 스레드 수입니다.
+
+### HashJoinDestroyThreadsActive {#hashjoindestroythreadsactive}
+
+해시 조인의 오른쪽 테이블(right table)을 제거하는 스레드 풀에서 작업을 실행 중인 스레드 수입니다.
+
+### HashJoinDestroyThreadsScheduled {#hashjoindestroythreadsscheduled}
+
+해시 조인의 오른쪽 테이블(right table)을 제거하기 위한 스레드 풀의 큐에 대기 중이거나 현재 실행 중인 작업 수입니다.
 
 ### HiveFilesCacheBytes {#hivefilescachebytes}
 
@@ -942,18 +982,6 @@ IcebergCompaction 스레드 풀에 있는 스레드 수입니다.
 
 IcebergCompaction 스레드 풀에서 큐에 대기 중이거나 실행 중인 작업 수입니다.
 
-### IcebergManifestDecodeThreads {#icebergmanifestdecodethreads}
-
-Iceberg 데이터 매니페스트 파일을 디코딩하는 데 사용되는 스레드 풀의 스레드 수입니다.
-
-### IcebergManifestDecodeThreadsActive {#icebergmanifestdecodethreadsactive}
-
-Iceberg 데이터 매니페스트 파일 디코딩에 사용되는 스레드 풀에서 작업을 실행 중인 스레드 수입니다.
-
-### IcebergManifestDecodeThreadsScheduled {#icebergmanifestdecodethreadsscheduled}
-
-Iceberg 데이터 매니페스트 파일 디코딩에 사용되는 스레드 풀에서 큐에 대기 중이거나 실행 중인 작업 수입니다.
-
 ### IcebergMetadataFilesCacheBytes {#icebergmetadatafilescachebytes}
 
 Iceberg 메타데이터 캐시의 크기(바이트)
@@ -961,6 +989,14 @@ Iceberg 메타데이터 캐시의 크기(바이트)
 ### IcebergMetadataFilesCacheFiles {#icebergmetadatafilescachefiles}
 
 Iceberg 메타데이터 캐시에 캐시된 파일 수
+
+### IcebergRESTCatalogWarehouseCacheEntries {#icebergrestcatalogwarehousecacheentries}
+
+Iceberg REST 카탈로그(REST catalog) 서버의 웨어하우스 캐시에 저장된 웨어하우스 수
+
+### IcebergRESTCatalogWarehouseCacheSize {#icebergrestcatalogwarehousecachesize}
+
+Iceberg REST 카탈로그(REST catalog) 서버의 웨어하우스(warehouse) 캐시 크기입니다. 웨어하우스 하나당 1로 계산됩니다.
 
 ### IcebergSchedulePoolSize {#icebergschedulepoolsize}
 
@@ -1325,6 +1361,18 @@ MergeTree 파트 로더 스레드 풀의 큐에서 대기 중이거나 실행 �
 ### MergeTreeSnapshotCommitThreadsScheduled {#mergetreesnapshotcommitthreadsscheduled}
 
 스냅샷 커밋에 사용되도록 예약된 스레드 수
+
+### MergeTreeStatisticsLoaderThreads {#mergetreestatisticsloaderthreads}
+
+데이터 파트 통계 로딩용 스레드 풀의 스레드 수입니다.
+
+### MergeTreeStatisticsLoaderThreadsActive {#mergetreestatisticsloaderthreadsactive}
+
+데이터 파트 통계 로딩용 스레드 풀에서 작업을 실행 중인 스레드 수입니다.
+
+### MergeTreeStatisticsLoaderThreadsScheduled {#mergetreestatisticsloaderthreadsscheduled}
+
+데이터 파트의 통계 로딩용 스레드 풀의 큐에 대기 중이거나 현재 실행 중인 작업 수입니다.
 
 ### MergeTreeSubcolumnsReaderThreads {#mergetreesubcolumnsreaderthreads}
 
@@ -2269,6 +2317,18 @@ TimeSeries 테이블의 Tags 테이블에서 사용하는 중복 제거 캐시�
 ### TotalTemporaryFiles {#totaltemporaryfiles}
 
 생성된 temporary files 수
+
+### TransactionLogEntries {#transactionlogentries}
+
+마지막 목록 조회 시점의 트랜잭션(transaction) 로그(`/log`)에 있는 엔트리 수
+
+### TransactionsRunning {#transactionsrunning}
+
+이 레플리카에서 시작되어 현재 실행 중인 트랜잭션(transaction) 수
+
+### TransactionWatermarkLag {#transactionwatermarklag}
+
+최신 트랜잭션 스냅샷에서 전역 워터마크(watermark)를 뺀 값입니다. 새 트랜잭션은 이 값만큼 이전의 CSN을 기준으로 데이터를 읽습니다.
 
 ### UDFDriverInvokerThreads {#udfdriverinvokerthreads}
 

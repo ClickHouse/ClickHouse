@@ -30,9 +30,9 @@ AI 関数は ClickHouse の組み込み関数で、AI の呼び出しや埋め�
 * **バックオフ付き再試行**: 一時的な障害は、指数バックオフ ([`ai_function_retry_initial_delay_ms`](/ja/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)) を使用して再試行 ([`ai_function_max_retries`](/ja/reference/settings/session-settings/ai-function#ai_function_max_retries)) されます。
 * **同時実行リクエスト**: リクエストはサーバー全体で共有されるスレッドプールから、複数同時に発行されます ([`ai_function_max_concurrent_requests_per_thread`](/ja/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) で制御) 。
 
-## Configuration {#configuration}
+## 設定 {#configuration}
 
-AI 関数は、プロバイダーの認証情報と設定を格納した **名前付きコレクション** を参照します。関数ごと、または関数呼び出しごとに、異なる 名前付きコレクション を作成して使い分けることができます。たとえば、テキスト関数 (`aiGenerate`、`aiClassify`、`aiFilter`、`aiExtract`、`aiTranslate`、`aiRedact`) で使用する 名前付きコレクション と、異なるエンドポイントが必要で通常は異なるモデルを使用する埋め込み関数 (`aiEmbed`、`aiSimilarity`) で使用する 名前付きコレクション を、別々に定義したい場合があります。
+AI 関数を使用するには `AI FUNCTIONS` 権限が必要です ([アクセス制御](#access-control) を参照)。また、AI 関数は、プロバイダーの認証情報と設定を格納した **名前付きコレクション** を参照します。関数ごと、または関数呼び出しごとに、異なる 名前付きコレクション を作成して使い分けることができます。たとえば、テキスト関数 (`aiGenerate`、`aiClassify`、`aiFilter`、`aiExtract`、`aiTranslate`、`aiRedact`) で使用する 名前付きコレクション と、異なるエンドポイントが必要で通常は異なるモデルを使用する埋め込み関数 (`aiEmbed`、`aiSimilarity`) で使用する 名前付きコレクション を、別々に定義したい場合があります。
 
 プロバイダーの認証情報を含む 名前付きコレクション を作成するための例のステートメントを以下に示します。1 つはチャット用エンドポイント、もう 1 つは埋め込み用エンドポイントです。
 
@@ -50,6 +50,35 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/embeddings',
     api_key = 'sk-...';
+```
+
+### アクセス制御 {#access-control}
+
+AI 関数を呼び出すには、次の 2 つの権限が必要です。
+
+* 関数の権限: 関数ごとの権限 (例: `aiGenerate`) または `AI FUNCTIONS` グループのいずれか ([`GRANT`](/ja/reference/statements/grant#ai-functions) を参照)。
+* 選択した認証情報に対する `NAMED COLLECTION` 権限。
+
+```sql
+GRANT AI FUNCTIONS ON *.* TO ai_user_role;
+GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
+GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
+```
+
+AI関数は、ユーザーが実行するクエリ内でのみ実行されます。ミューテーション (`ALTER TABLE ... UPDATE`、`ALTER TABLE ... DELETE`) や、テーブルのキー、有効期限 (TTL)、スキップ索引、プロジェクションはバックグラウンドで実行されるため、これらの中で AI関数を使用すると拒否されます。また、`Buffer` の flush では、AI関数を評価すると例外がスローされます。`DEFAULT` および `MATERIALIZED` カラムは挿入時に評価されます。このようなカラムを `ALTER TABLE` で追加した場合、既存のパーツではその値がバックグラウンドで計算されますが、バックグラウンドでは AI関数は実行されません。
+
+既存の行のカラムを補完するには、軽量な [`UPDATE`](/ja/reference/statements/update) を使用してください。これはクエリとして実行され、更新対象のカラムのみを書き込みます。
+
+```sql
+UPDATE t SET y = aiEmbed(x, 'model') WHERE empty(y) SETTINGS enable_lightweight_update = 1;
+```
+
+[論理更新の要件](/ja/reference/statements/update#lightweight-update-requirements)を満たさないテーブルでは、`INSERT ... SELECT` を使用してください。たとえば、次のように 1 パーティションずつ処理します。
+
+```sql
+CREATE TABLE t_tmp AS t;
+INSERT INTO t_tmp SELECT x, aiEmbed(x, 'model') AS y FROM t WHERE _partition_id = '202610';
+ALTER TABLE t REPLACE PARTITION ID '202610' FROM t_tmp;
 ```
 
 ### 名前付きコレクションのパラメータ {#named-collection-parameters}
@@ -196,32 +225,57 @@ AI関数は、そのスループットがローカルの CPU や I/O ではな�
 
 ## オブザーバビリティ {#observability}
 
-AI 関数のアクティビティは、ClickHouse の [ProfileEvents](/ja/reference/system-tables/query_log) で追跡できます。
+AI 関数のアクティビティは、ClickHouse の [ProfileEvents](/ja/reference/system-tables/query_log) で追跡されます。
 
-| ProfileEvent      | Description                                                       |
-| ----------------- | ----------------------------------------------------------------- |
-| `AIAPICalls`      | AI provider に送信された HTTP リクエスト数。                                   |
-| `AIInputTokens`   | 消費された入力トークンの合計数。                                                  |
-| `AIOutputTokens`  | 消費された出力トークンの合計数。                                                  |
-| `AIRowsProcessed` | 結果が返された行数。                                                        |
-| `AIRowsSkipped`   | スキップされた行数 (クォータ超過、または `ai_function_throw_on_error = 0` の場合のエラー) 。 |
+| ProfileEvent                 | 説明                                                                                            |
+| ---------------------------- | --------------------------------------------------------------------------------------------- |
+| `AIAPICalls`                 | AIプロバイダーに送信されたHTTPリクエストの数。                                                                    |
+| `AIInputTokens`              | 消費された入力トークンの合計 (キャッシュの読み取りおよび書き込みを含む)。                                                        |
+| `AIOutputTokens`             | 消費された出力トークンの合計。                                                                               |
+| `AICacheReadTokens`          | プロバイダーのプロンプトキャッシュから読み取られた入力トークン。                                                              |
+| `AICacheWriteTokens`         | プロバイダーのプロンプトキャッシュに書き込まれた入力トークン。                                                               |
+| `AIRequestMicroseconds`      | AIプロバイダーの呼び出しに費やされた合計時間 (リクエストのシリアライゼーション、HTTP の往復、応答のパースを含む)。失敗した試行の時間を含み、再試行のバックオフ時間は含みません。 |
+| `AIRetryBackoffMicroseconds` | 失敗したAIプロバイダー呼び出しを再試行するまでの待機に費やされた合計時間。                                                        |
+| `AIRowsProcessed`            | 結果を受け取った行の数。                                                                                  |
+| `AIRowsSkipped`              | スキップされた行の数 (クォータ超過時、または `ai_function_throw_on_error = 0` でエラーが発生した場合)。                        |
 
-これらのイベントをクエリします。
+時間は実行およびスレッドをまたいで合算されるため、クエリの実経過時間を超えることがあります。
+`AIRequestMicroseconds` を `AIAPICalls` で割ると、失敗した試行を含む平均リクエストレイテンシを求められます。
+これらのカウンターはクエリ単位の値であり、リクエストごとのレイテンシ情報は得られません。
+1 つのクエリで複数のAI関数を呼び出した場合、それぞれの値は合算されます。
+
+キャッシュ関連のカウンターは `AIInputTokens` の部分集合であり、別途加算されるトークンではありません。これらはプロバイダーが報告したキャッシュの読み取り/書き込みを示すもので、ClickHouse 内部のキャッシュとは無関係です。キャッシュ使用量を報告しないプロバイダーの場合、キャッシュトークンは
+0 として計上されます。
+
+これらのイベントは、次のようにクエリできます。
 
 ```sql
+SYSTEM FLUSH LOGS;
+
 SELECT
+    query_duration_ms,
     ProfileEvents['AIAPICalls'] AS api_calls,
+    ProfileEvents['AIRequestMicroseconds'] / 1000 AS request_ms,
+    request_ms / nullIf(api_calls, 0) AS mean_request_ms,
+    ProfileEvents['AIRetryBackoffMicroseconds'] / 1000 AS retry_backoff_ms,
+    ProfileEvents['AIRowsProcessed'] AS rows_processed,
+    ProfileEvents['AIRowsSkipped'] AS rows_skipped,
     ProfileEvents['AIInputTokens'] AS input_tokens,
-    ProfileEvents['AIOutputTokens'] AS output_tokens
+    ProfileEvents['AIOutputTokens'] AS output_tokens,
+    ProfileEvents['AICacheReadTokens'] AS cache_read_tokens,
+    ProfileEvents['AICacheWriteTokens'] AS cache_write_tokens
 FROM system.query_log
 WHERE query_id = 'query_id'
-AND type = 'QueryFinish'
+AND type IN ('QueryFinish', 'ExceptionWhileProcessing')
 ORDER BY event_time DESC;
 ```
 
+`log_queries` と `log_profile_events` はデフォルトで有効になっており、これらのイベントは `system.query_log` に記録されます。
+サーバー全体の累計値は `system.events` でも確認できます。
+
 {/*
   以下のタグ内の内容は、ドキュメントフレームワークのビルド時に
-  system.functions から生成されたドキュメントに差し替えられます。タグは変更したり削除したりしないでください。
+  system.functions から生成されたドキュメントに置き換えられます。タグを変更または削除しないでください。
   参照: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
   */}
 

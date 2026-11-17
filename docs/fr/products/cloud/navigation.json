@@ -21,6 +21,8 @@
             "fr/products/cloud/reference/supported-regions",
             "fr/products/cloud/features/infrastructure/deployment-options",
             "fr/products/cloud/guides/cloud-compatibility",
+            "fr/products/cloud/features/public-preview-features",
+            "fr/products/cloud/features/self-service-previews",
             "fr/products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
             "fr/products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
           ]
@@ -37,7 +39,8 @@
             "fr/products/cloud/features/autoscaling/make-before-break",
             "fr/products/cloud/features/autoscaling/idling",
             "fr/products/cloud/features/autoscaling/scaling-recommendations",
-            "fr/products/cloud/features/autoscaling/scheduled-scaling"
+            "fr/products/cloud/features/autoscaling/scheduled-scaling",
+            "fr/products/cloud/features/scaling/preparing-for-traffic-spikes"
           ]
         },
         {
@@ -59,6 +62,7 @@
           "pages": [
             "fr/products/cloud/reference/service-uptime",
             "fr/products/cloud/reference/data-resiliency",
+            "fr/products/cloud/guides/deletion-protection",
             "fr/products/cloud/features/admin-features/upgrades"
           ]
         },
@@ -67,6 +71,7 @@
           "group": "Préparation à la mise en production",
           "pages": [
             "fr/products/cloud/guides/best-practices/index",
+            "fr/products/cloud/guides/best-practices/performance-optimization-playbook",
             "fr/products/cloud/guides/production-readiness",
             "fr/products/cloud/guides/best-practices/multitenancy",
             "fr/products/cloud/guides/best-practices/usagelimits"
@@ -126,6 +131,7 @@
           "pages": [
             "fr/products/cloud/guides/security/cloud-access-management/manage-my-account",
             "fr/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+            "fr/products/cloud/guides/security/cloud-access-management/approved-domains",
             "fr/products/cloud/reference/security/console-roles",
             "fr/products/cloud/guides/security/cloud-access-management/manage-custom-roles"
           ]
@@ -147,7 +153,8 @@
             "fr/products/cloud/guides/security/saml-sso-removal",
             "fr/products/cloud/guides/security/cloud-access-management/scim-setup",
             "fr/products/cloud/guides/security/cloud-access-management/scim-setup-entra",
-            "fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup"
+            "fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup",
+            "fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id"
           ]
         }
       ]
@@ -169,6 +176,13 @@
                 "fr/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
                 "fr/products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect",
                 "fr/products/cloud/guides/security/connectivity/private-networking/azure-privatelink"
+              ]
+            },
+            {
+              "group": "Connectivité réseau de l’organisation",
+              "hidden": true,
+              "pages": [
+                "fr/products/cloud/guides/security/connectivity/org-network-connectivity"
               ]
             }
           ]
@@ -261,6 +275,7 @@
             "fr/products/cloud/features/ai-ml/mcp/remote-mcp"
           ]
         },
+        "fr/products/cloud/features/ai-ml/linked-billing-claude-platform",
         "fr/products/cloud/features/ai-ml/model-developer-terms"
       ]
     },
@@ -273,8 +288,8 @@
         {
           "group": "Référence de l’API",
           "openapi": {
-            "directory": "fr/products/cloud/api-reference",
-            "source": "_specs/cloud-openapi.json"
+            "source": "_specs/cloud-openapi.json",
+            "directory": "fr/products/cloud/api-reference"
           },
           "pages": {
             "$ref": "./api-reference/navigation.json"

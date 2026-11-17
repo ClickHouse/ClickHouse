@@ -32,9 +32,9 @@ AI 함수는 ClickHouse에 내장된 함수로, AI를 호출하거나 임베딩�
 
 ## 구성 {#configuration}
 
-AI 함수는 프로바이더 자격 증명과 구성을 저장하는 **명명된 컬렉션**을 참조합니다. 서로 다른 함수 또는 함수 호출마다 서로 다른 명명된 컬렉션을 생성해 사용할 수 있습니다. 예를 들어 텍스트 함수(`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`)에 사용할 명명된 컬렉션과 임베딩 함수(`aiEmbed`, `aiSimilarity`)에 사용할 명명된 컬렉션을 별도로 정의할 수 있습니다. 각 함수는 서로 다른 엔드포인트가 필요하며, 일반적으로 사용하는 모델도 다릅니다.
+AI 함수를 사용하려면 `AI FUNCTIONS` 권한이 필요하며([액세스 제어](#access-control) 참조), AI 함수는 프로바이더 자격 증명과 구성을 저장하는 **명명된 컬렉션**을 참조합니다. 서로 다른 함수 또는 함수 호출마다 서로 다른 명명된 컬렉션을 생성해 사용할 수 있습니다. 예를 들어 텍스트 함수(`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`)에 사용할 명명된 컬렉션과 임베딩 함수(`aiEmbed`, `aiSimilarity`)에 사용할 명명된 컬렉션을 별도로 정의할 수 있습니다. 각 함수는 서로 다른 엔드포인트가 필요하며, 일반적으로 사용하는 모델도 다릅니다.
 
-프로바이더 자격 증명을 포함하는 명명된 컬렉션을 생성하는 예시 구문은 다음과 같습니다. 하나는 채팅 엔드포인트용이고, 다른 하나는 임베딩 엔드포인트용입니다:
+프로바이더 자격 증명을 포함하는 명명된 컬렉션을 생성하는 예시 SQL 문은 다음과 같습니다. 하나는 채팅 엔드포인트용이고, 다른 하나는 임베딩 엔드포인트용입니다:
 
 ```sql
 CREATE NAMED COLLECTION ai_text_credentials AS
@@ -50,6 +50,35 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/embeddings',
     api_key = 'sk-...';
+```
+
+### 액세스 제어 {#access-control}
+
+AI 함수를 호출하려면 다음 두 가지 권한이 필요합니다.
+
+* 함수 권한: per-function 권한(예: `aiGenerate`) 또는 `AI FUNCTIONS` 그룹 권한 중 하나. 자세한 내용은 [`GRANT`](/ko/reference/statements/grant#ai-functions)를 참고하십시오.
+* 선택한 자격 증명에 대한 `NAMED COLLECTION` 권한
+
+```sql
+GRANT AI FUNCTIONS ON *.* TO ai_user_role;
+GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
+GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
+```
+
+AI 함수는 사용자가 실행한 쿼리에서만 실행됩니다. 백그라운드에서 실행되는 뮤테이션(`ALTER TABLE ... UPDATE`, `ALTER TABLE ... DELETE`)과 테이블의 키, TTL, 스킵 인덱스, 프로젝션에서는 AI 함수가 거부되며, `Buffer` 플러시(flushes)에서 AI 함수를 평가하면 예외가 발생합니다. `DEFAULT` 및 `MATERIALIZED` 컬럼은 삽입 시 평가됩니다. 이러한 컬럼을 `ALTER TABLE`로 추가하면 기존 파트에서는 해당 컬럼을 백그라운드에서 계산하며, 백그라운드에서는 AI 함수가 실행되지 않습니다.
+
+기존 행(rows)의 컬럼 값을 채우려면 경량 [`UPDATE`](/ko/reference/statements/update)를 사용하십시오. 경량 `UPDATE`는 쿼리에서 실행되며 업데이트된 컬럼만 기록합니다.
+
+```sql
+UPDATE t SET y = aiEmbed(x, 'model') WHERE empty(y) SETTINGS enable_lightweight_update = 1;
+```
+
+[경량 업데이트 요구 사항](/ko/reference/statements/update#lightweight-update-requirements)을 충족하지 않는 테이블에서는 `INSERT ... SELECT`를 사용하십시오. 예를 들어 다음과 같이 파티션 단위로 하나씩 처리할 수 있습니다:
+
+```sql
+CREATE TABLE t_tmp AS t;
+INSERT INTO t_tmp SELECT x, aiEmbed(x, 'model') AS y FROM t WHERE _partition_id = '202610';
+ALTER TABLE t REPLACE PARTITION ID '202610' FROM t_tmp;
 ```
 
 ### 명명된 컬렉션 매개변수 {#named-collection-parameters}
@@ -196,32 +225,57 @@ AI 함수는 처리량이 로컬 CPU나 I/O가 아니라 요청을 보내는 원
 
 ## 관측성 {#observability}
 
-AI 함수 활동은 ClickHouse [ProfileEvents](/ko/reference/system-tables/query_log)를 통해 추적됩니다.
+AI 함수 활동은 ClickHouse [ProfileEvents](/ko/reference/system-tables/query_log)로 추적합니다.
 
-| ProfileEvent      | Description                                                              |
-| ----------------- | ------------------------------------------------------------------------ |
-| `AIAPICalls`      | AI 프로바이더로 전송된 HTTP 요청 수입니다.                                              |
-| `AIInputTokens`   | 사용된 총 입력 토큰 수입니다.                                                        |
-| `AIOutputTokens`  | 사용된 총 출력 토큰 수입니다.                                                        |
-| `AIRowsProcessed` | 결과를 받은 행 수입니다.                                                           |
-| `AIRowsSkipped`   | 건너뛴 행 수입니다(QUOTA를 초과했거나 `ai_function_throw_on_error = 0`일 때 오류가 발생한 경우). |
+| ProfileEvent                 | 설명                                                                             |
+| ---------------------------- | ------------------------------------------------------------------------------ |
+| `AIAPICalls`                 | AI 프로바이더로 전송된 HTTP 요청 수입니다.                                                    |
+| `AIInputTokens`              | 캐시 읽기 및 쓰기를 포함하여 소비된 전체 입력 토큰 수입니다.                                            |
+| `AIOutputTokens`             | 소비된 전체 출력 토큰 수입니다.                                                             |
+| `AICacheReadTokens`          | 프로바이더의 프롬프트 캐시에서 읽은 입력 토큰 수입니다.                                                |
+| `AICacheWriteTokens`         | 프로바이더의 프롬프트 캐시에 기록된 입력 토큰 수입니다.                                                |
+| `AIRequestMicroseconds`      | AI 프로바이더 호출(요청 직렬화, HTTP 왕복, 응답 파싱)에 소요된 총 시간입니다. 실패한 시도는 포함하고 재시도 백오프는 제외합니다. |
+| `AIRetryBackoffMicroseconds` | 실패한 AI 프로바이더 호출을 재시도하기 전에 대기한 총 시간입니다.                                         |
+| `AIRowsProcessed`            | 결과를 받은 행 수입니다.                                                                 |
+| `AIRowsSkipped`              | 건너뛴 행 수입니다(QUOTA 초과 또는 `ai_function_throw_on_error = 0` 설정 시 발생한 오류로 인한 경우).     |
 
-다음과 같이 이 이벤트를 조회합니다.
+시간은 모든 실행과 스레드에 걸쳐 합산되므로 쿼리의 실제 경과 시간보다 클 수 있습니다.
+`AIRequestMicroseconds`를 `AIAPICalls`로 나누면 실패한 시도를 포함한 평균 요청 지연 시간을 구할 수 있습니다.
+이 카운터는 쿼리 단위로 집계되므로 요청별 지연 시간 정보는 제공하지 않습니다.
+쿼리에서 여러 AI 함수를 호출하면 각 함수의 발생 횟수가 합산됩니다.
+
+캐시 카운터는 `AIInputTokens`의 부분 집합이며, 별도로 추가되는 토큰이 아닙니다. 이 카운터는 프로바이더가 보고한 캐시 읽기/쓰기를 나타내며, ClickHouse 내부 캐싱과는 무관합니다. 캐시 사용량을 보고하지 않는 프로바이더는
+캐시 토큰이 0으로 집계됩니다.
+
+다음과 같이 이벤트를 쿼리하십시오.
 
 ```sql
+SYSTEM FLUSH LOGS;
+
 SELECT
+    query_duration_ms,
     ProfileEvents['AIAPICalls'] AS api_calls,
+    ProfileEvents['AIRequestMicroseconds'] / 1000 AS request_ms,
+    request_ms / nullIf(api_calls, 0) AS mean_request_ms,
+    ProfileEvents['AIRetryBackoffMicroseconds'] / 1000 AS retry_backoff_ms,
+    ProfileEvents['AIRowsProcessed'] AS rows_processed,
+    ProfileEvents['AIRowsSkipped'] AS rows_skipped,
     ProfileEvents['AIInputTokens'] AS input_tokens,
-    ProfileEvents['AIOutputTokens'] AS output_tokens
+    ProfileEvents['AIOutputTokens'] AS output_tokens,
+    ProfileEvents['AICacheReadTokens'] AS cache_read_tokens,
+    ProfileEvents['AICacheWriteTokens'] AS cache_write_tokens
 FROM system.query_log
 WHERE query_id = 'query_id'
-AND type = 'QueryFinish'
+AND type IN ('QueryFinish', 'ExceptionWhileProcessing')
 ORDER BY event_time DESC;
 ```
 
+`log_queries`와 `log_profile_events`는 기본적으로 활성화되어 있어 이러한 이벤트가 `system.query_log`에 기록됩니다.
+서버 전체 합계는 `system.events`에서도 확인할 수 있습니다.
+
 {/*
-  아래 태그의 내부 내용은 문서 프레임워크 빌드 시
-  system.functions에서 생성된 문서로 대체됩니다. 태그를 수정하거나 제거하지 마십시오.
+  아래 태그 안의 내용은 문서 프레임워크 빌드 시
+  system.functions에서 생성된 문서로 대체됩니다. 태그를 수정하거나 삭제하지 마십시오.
   참고: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
   */}
 

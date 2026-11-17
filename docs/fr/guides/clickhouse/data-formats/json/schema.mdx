@@ -10,7 +10,7 @@ doc_type: 'guide'
 Bien que l’[inférence de schéma](/fr/guides/clickhouse/data-formats/json/inference) puisse être utilisée pour définir un schéma initial pour des données JSON et interroger directement des fichiers de données JSON, par exemple dans S3, vous devriez viser à définir pour vos données un schéma versionné optimisé. Nous présentons ci-dessous l’approche recommandée pour modéliser les structures JSON.
 
 <div id="static-vs-dynamic-json">
-  ## JSON statique ou dynamique
+  ## JSON statique ou dynamique {#static-vs-dynamic-json}
 </div>
 
 Lors de la définition d’un schéma pour du JSON, la tâche principale consiste à déterminer le type approprié pour la valeur de chaque clé. Nous recommandons d’appliquer récursivement les règles suivantes à chaque clé de la hiérarchie JSON afin de déterminer le type approprié pour chacune d’elles.
@@ -86,7 +86,7 @@ En appliquant ces règles :
 </Note>
 
 <div id="handling-static-structures">
-  ## Gestion des structures statiques
+  ## Gestion des structures statiques {#handling-static-structures}
 </div>
 
 Nous recommandons de gérer les structures statiques à l’aide de tuples nommés, c’est-à-dire `Tuple`. Les tableaux d’objets peuvent être stockés sous forme de tableaux de tuples, c’est-à-dire `Array(Tuple)`. Au sein même des tuples, les colonnes et leurs types respectifs doivent être définis selon les mêmes règles. Cela peut conduire à des Tuples imbriqués pour représenter des objets imbriqués, comme illustré ci-dessous.
@@ -202,7 +202,7 @@ ORDER BY company.name
 ```
 
 <div id="handling-default-values">
-  ### Gestion des valeurs par défaut
+  ### Gestion des valeurs par défaut {#handling-default-values}
 </div>
 
 Même si les objets JSON sont structurés, ils sont souvent peu renseignés et seul un sous-ensemble des clés connues est fourni. Heureusement, le type `Tuple` n’exige pas que toutes les colonnes soient présentes dans la charge utile JSON. Si elles ne sont pas fournies, des valeurs par défaut seront utilisées.
@@ -288,7 +288,7 @@ FORMAT PrettyJSONEachRow
 </Info>
 
 <div id="handling-new-columns">
-  ### Gestion des nouvelles colonnes
+  ### Gestion des nouvelles colonnes {#handling-new-columns}
 </div>
 
 Bien qu’une approche structurée soit la plus simple lorsque les clés JSON sont statiques, elle peut également être utilisée si les modifications du schéma peuvent être planifiées, c’est-à-dire si les nouvelles clés sont connues à l’avance et que le schéma peut être modifié en conséquence.
@@ -371,7 +371,7 @@ SELECT id, nickname FROM people
 ```
 
 <div id="handling-semi-structured-dynamic-structures">
-  ## Gestion des structures semi-structurées/dynamiques
+  ## Gestion des structures semi-structurées/dynamiques {#handling-semi-structured-dynamic-structures}
 </div>
 
 Si les données JSON sont semi-structurées, avec des clés qui peuvent être ajoutées dynamiquement et/ou avoir plusieurs types, le type [`JSON`](/fr/reference/data-types/newjson) est recommandé.
@@ -503,7 +503,7 @@ Un schéma strict présente plusieurs avantages :
 * **Introspection plus simple des chemins et des types** - Bien que le type JSON prenne en charge des [fonctions d’introspection](/fr/reference/data-types/newjson#introspection-functions) pour déterminer les types et les chemins qui ont été inférés, les structures statiques peuvent être plus simples à explorer, par exemple avec `DESCRIBE`.
 
 <div id="single-json-column">
-  ### Colonne JSON unique
+  ### Colonne JSON unique {#single-json-column}
 </div>
 
 Cette approche est utile pour le prototypage et les tâches d’ingénierie des données. En production, n’utilisez `JSON` que pour les sous-structures dynamiques, lorsque c’est nécessaire.
@@ -700,7 +700,7 @@ FROM people
 ```
 
 <div id="targeted-json-column">
-  ### Colonne JSON ciblée
+  ### Colonne JSON ciblée {#targeted-json-column}
 </div>
 
 Bien qu&#39;utile pour le prototypage et les tâches d&#39;ingénierie des données, nous recommandons d&#39;utiliser un schéma explicite en production dans la mesure du possible.
@@ -806,7 +806,7 @@ FORMAT PrettyJsonEachRow
 ```
 
 <div id="using-type-hints-and-skipping-paths">
-  ### Utilisation des indications de type et des chemins à ignorer
+  ### Utilisation des indications de type et des chemins à ignorer {#using-type-hints-and-skipping-paths}
 </div>
 
 Les indications de type permettent de spécifier le type d’un chemin et de sa sous-colonne, ce qui évite une inférence de type inutile. Prenons l’exemple suivant, dans lequel nous définissons les types des clés JSON `dissolved`, `employees` et `founded` dans la colonne JSON `company.labels`
@@ -972,7 +972,7 @@ FORMAT PrettyJSONEachRow
 ```
 
 <div id="optimizing-performance-with-type-hints">
-  #### Optimiser les performances avec des indications de type
+  #### Optimiser les performances avec des indications de type {#optimizing-performance-with-type-hints}
 </div>
 
 Les indications de type ne servent pas seulement à éviter une inférence de type inutile : elles suppriment entièrement l’indirection liée au stockage et au traitement, tout en permettant de spécifier des [types primitifs optimaux](/fr/guides/clickhouse/data-modelling/schema-design#optimizing-types). Les chemins JSON dotés d’indications de type sont toujours stockés comme des colonnes traditionnelles, ce qui évite d’avoir recours à des [**colonnes discriminantes**](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data) ou à une résolution dynamique au moment de l’exécution des requêtes.
@@ -981,20 +981,14 @@ Cela signifie qu’avec des indications de type bien définies, les clés JSON i
 
 Ainsi, pour les jeux de données globalement cohérents qui bénéficient malgré tout de la flexibilité de JSON, les indications de type constituent un moyen pratique de préserver les performances sans avoir à restructurer votre schéma ni votre pipeline d’ingestion.
 
-<div id="configuring-dynamic-paths">
-  ### Configuration des chemins dynamiques
-</div>
+### Configuration des chemins dynamiques {#configuring-dynamic-paths}
 
 ClickHouse stocke chaque chemin JSON sous forme de sous-colonne dans une véritable structure columnar, ce qui permet de bénéficier des mêmes gains de performance qu’avec des colonnes traditionnelles — notamment la compression, le traitement accéléré par SIMD et des E/S disque minimales. Chaque combinaison unique de chemin et de type dans vos données JSON peut devenir son propre fichier de colonne sur disque.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Une colonne par chemin JSON](/images/integrations/data-ingestion/data-formats/json_column_per_type.webp)
-
-</Frame>
-
+  <Frame>
+    ![Une colonne par chemin JSON](/images/integrations/data-ingestion/data-formats/json_column_per_type.webp)
+  </Frame>
 </div>
 
 Par exemple, lorsque deux chemins JSON sont insérés avec des types différents, ClickHouse stocke les valeurs de chaque [type concret dans des sous-colonnes distinctes](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data). Ces sous-colonnes peuvent être consultées indépendamment, ce qui limite les E/S inutiles. Notez toutefois que lors de l’interrogation d’une colonne contenant plusieurs types, les valeurs sont toujours renvoyées sous la forme d’une seule réponse columnar.
@@ -1002,13 +996,9 @@ Par exemple, lorsque deux chemins JSON sont insérés avec des types différents
 En outre, grâce aux offsets, ClickHouse garantit que ces sous-colonnes restent denses, sans stocker de valeurs par défaut pour les chemins JSON absents. Cette approche maximise la compression et réduit encore les E/S.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Offsets JSON](/images/integrations/data-ingestion/data-formats/json_offsets.webp)
-
-</Frame>
-
+  <Frame>
+    ![Offsets JSON](/images/integrations/data-ingestion/data-formats/json_offsets.webp)
+  </Frame>
 </div>
 
 Cependant, dans les scénarios avec des structures JSON à forte cardinalité ou très variables — comme les pipelines de télémétrie, les logs ou les feature stores de machine learning — ce comportement peut entraîner une explosion du nombre de fichiers de colonnes. Chaque nouveau chemin JSON unique crée un nouveau fichier de colonne, et chaque variante de type sous ce chemin crée un fichier de colonne supplémentaire. Bien que cela soit optimal pour les performances de lecture, cela pose des difficultés opérationnelles : épuisement des descripteurs de fichiers, augmentation de l’utilisation mémoire et merges plus lents en raison d’un grand nombre de petits fichiers.
@@ -1016,13 +1006,9 @@ Cependant, dans les scénarios avec des structures JSON à forte cardinalité ou
 Pour atténuer ce problème, ClickHouse introduit le concept de sous-colonne de débordement : une fois que le nombre de chemins JSON distincts dépasse un seuil, les chemins supplémentaires sont stockés dans un seul fichier partagé à l’aide d’un format compact encodé. Ce fichier reste interrogeable, mais ne bénéficie pas des mêmes caractéristiques de performance que les sous-colonnes dédiées.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Colonne JSON partagée](/images/integrations/data-ingestion/data-formats/json_shared_column.webp)
-
-</Frame>
-
+  <Frame>
+    ![Colonne JSON partagée](/images/integrations/data-ingestion/data-formats/json_shared_column.webp)
+  </Frame>
 </div>
 
 Ce seuil est contrôlé par le paramètre [`max_dynamic_paths`](/fr/reference/data-types/newjson#reaching-the-limit-of-dynamic-paths-inside-json) dans la déclaration du type JSON.
@@ -1036,6 +1022,6 @@ ENGINE = MergeTree
 ORDER BY tuple();
 ```
 
-**Évitez de définir ce paramètre sur une valeur trop élevée** - des valeurs élevées augmentent la consommation de ressources et réduisent l’efficacité. En règle générale, gardez-le en dessous de 10 000. Pour les charges de travail aux structures très dynamiques, utilisez des indications de type et des paramètres `SKIP` pour limiter ce qui est stocké.
+**Évitez de définir ce paramètre sur une valeur trop élevée** - des valeurs élevées augmentent la consommation de ressources et réduisent l’efficacité. En règle générale, gardez-le en dessous de 10 000. Pour les charges de travail aux structures très dynamiques, utilisez des indications de type et des paramètres `SKIP` pour limiter ce qui est stocké.
 
 Pour les utilisateurs qui souhaitent en savoir plus sur l’implémentation de ce nouveau type de colonne, nous recommandons la lecture de notre article de blog détaillé [&quot;A New Powerful JSON Data Type for ClickHouse&quot;](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse).

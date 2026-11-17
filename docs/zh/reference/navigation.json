@@ -25,6 +25,7 @@
                 "zh/reference/statements/alter/comment",
                 "zh/reference/statements/alter/constraint",
                 "zh/reference/statements/alter/database-comment",
+                "zh/reference/statements/alter/database-setting",
                 "zh/reference/statements/alter/delete",
                 "zh/reference/statements/alter/named-collection",
                 "zh/reference/statements/alter/order-by",
@@ -77,6 +78,7 @@
                         "zh/reference/statements/create/dictionary/layouts/range-hashed",
                         "zh/reference/statements/create/dictionary/layouts/hierarchical",
                         "zh/reference/statements/create/dictionary/layouts/naive-bayes",
+                        "zh/reference/statements/create/dictionary/layouts/xgboost",
                         "zh/reference/statements/create/dictionary/layouts/polygon",
                         "zh/reference/statements/create/dictionary/layouts/ip-trie",
                         "zh/reference/statements/create/dictionary/layouts/regexp-tree"
@@ -175,6 +177,7 @@
                 "zh/reference/statements/select/qualify",
                 "zh/reference/statements/select/replace_modifier",
                 "zh/reference/statements/select/sample",
+                "zh/reference/statements/select/shuffle",
                 "zh/reference/statements/select/union",
                 "zh/reference/statements/select/where",
                 "zh/reference/statements/select/with"
@@ -184,6 +187,7 @@
             "zh/reference/statements/set",
             "zh/reference/statements/show",
             "zh/reference/statements/system",
+            "zh/reference/statements/transactions",
             "zh/reference/statements/truncate",
             "zh/reference/statements/undrop",
             "zh/reference/statements/update",
@@ -226,7 +230,7 @@
         },
         {
           "expanded": false,
-          "group": "日期和时间类型",
+          "group": "日期与时间类型",
           "pages": [
             "zh/reference/data-types/date",
             "zh/reference/data-types/date32",
@@ -265,7 +269,7 @@
         },
         {
           "expanded": false,
-          "group": "可空类型和可选类型",
+          "group": "可空与可选类型",
           "pages": [
             "zh/reference/data-types/nullable",
             "zh/reference/data-types/lowcardinality"
@@ -330,6 +334,7 @@
                 "zh/reference/engines/table-engines/integrations/azureBlobStorage",
                 "zh/reference/engines/table-engines/integrations/bigquery",
                 "zh/reference/engines/table-engines/integrations/deltalake",
+                "zh/reference/engines/table-engines/integrations/elasticsearch",
                 "zh/reference/engines/table-engines/integrations/embedded-rocksdb",
                 "zh/reference/engines/table-engines/integrations/ExternalDistributed",
                 "zh/reference/engines/table-engines/integrations/hdfs",
@@ -446,7 +451,7 @@
         "zh/reference/functions/index",
         {
           "expanded": false,
-          "group": "常规函数",
+          "group": "普通函数",
           "pages": [
             "zh/reference/functions/regular-functions/overview",
             "zh/reference/functions/regular-functions/ai-functions",
@@ -468,7 +473,7 @@
             "zh/reference/functions/regular-functions/functions-for-nulls",
             {
               "expanded": false,
-              "group": "地理空间",
+              "group": "Geo",
               "pages": [
                 "zh/reference/functions/regular-functions/geo/index",
                 "zh/reference/functions/regular-functions/geo/coordinates",
@@ -730,6 +735,7 @@
             "zh/reference/functions/table-functions/deltalake",
             "zh/reference/functions/table-functions/deltalakeCluster",
             "zh/reference/functions/table-functions/dictionary",
+            "zh/reference/functions/table-functions/elasticsearch",
             "zh/reference/functions/table-functions/executable",
             "zh/reference/functions/table-functions/eval",
             "zh/reference/functions/table-functions/file",
@@ -776,6 +782,7 @@
             "zh/reference/functions/table-functions/timeSeriesSamples",
             "zh/reference/functions/table-functions/timeSeriesSelector",
             "zh/reference/functions/table-functions/timeSeriesTags",
+            "zh/reference/functions/table-functions/timeSeriesTimeRanges",
             "zh/reference/functions/table-functions/url",
             "zh/reference/functions/table-functions/urlCluster",
             "zh/reference/functions/table-functions/values",
@@ -806,7 +813,7 @@
           ]
         },
         {
-          "group": "用户自定义函数",
+          "group": "用户定义函数",
           "pages": [
             "zh/reference/functions/regular-functions/udf",
             "zh/reference/functions/regular-functions/wasm_udf"
@@ -999,6 +1006,7 @@
         },
         "zh/reference/formats/Values",
         "zh/reference/formats/Vertical",
+        "zh/reference/formats/Vortex",
         "zh/reference/formats/XML"
       ]
     },
@@ -1055,6 +1063,7 @@
         "zh/reference/system-tables/completions",
         "zh/reference/system-tables/constraints",
         "zh/reference/system-tables/contributors",
+        "zh/reference/system-tables/connections",
         "zh/reference/system-tables/crash_log",
         "zh/reference/system-tables/current_roles",
         "zh/reference/system-tables/dashboards",
@@ -1102,6 +1111,7 @@
         "zh/reference/system-tables/iceberg_files",
         "zh/reference/system-tables/iceberg_history",
         "zh/reference/system-tables/iceberg_metadata_log",
+        "zh/reference/system-tables/iceberg_metadata_log_entries",
         "zh/reference/system-tables/information_schema",
         "zh/reference/system-tables/instrumentation",
         "zh/reference/system-tables/jemalloc_arena_bins",

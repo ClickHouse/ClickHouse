@@ -8,7 +8,7 @@
       ]
     },
     {
-      "group": "Recursos",
+      "group": "Características",
       "pages": [
         "pt-BR/products/managed-postgres/connection",
         "pt-BR/products/managed-postgres/settings",
@@ -69,7 +69,7 @@
       ]
     },
     {
-      "group": "Integração com ClickHouse",
+      "group": "Integração com o ClickHouse",
       "pages": [
         "pt-BR/products/managed-postgres/sync-to-clickhouse/clickpipes",
         "pt-BR/products/managed-postgres/sync-to-clickhouse/walshadow"

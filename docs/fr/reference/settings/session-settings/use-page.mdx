@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_page_cache_for_disks_without_file_cache">
-  ## use_page_cache_for_disks_without_file_cache
-</div>
+## use_page_cache_for_disks_without_file_cache {#use_page_cache_for_disks_without_file_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,9 +21,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 Utiliser le cache de pages en espace utilisateur pour les disques distants dont le cache du système de fichiers n’est pas activé.
 
-<div id="use_page_cache_for_local_disks">
-  ## use_page_cache_for_local_disks
-</div>
+## use_page_cache_for_local_disks {#use_page_cache_for_local_disks}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,9 +29,7 @@ Utiliser le cache de pages en espace utilisateur pour les disques distants dont 
 
 Utilise le cache de pages en espace utilisateur lors de la lecture depuis des disques locaux. Utilisé pour les tests, il est peu probable qu&#39;il améliore les performances en pratique. Nécessite `local_filesystem_read_method = 'pread'` ou `'read'`. Cela ne désactive pas l&#39;OS page cache ; `min_bytes_to_use_direct_io` peut être utilisé à cette fin. N&#39;affecte que les tables ordinaires, pas la fonction de table `file()` ni le moteur de table `File()`.
 
-<div id="use_page_cache_for_object_storage">
-  ## use_page_cache_for_object_storage
-</div>
+## use_page_cache_for_object_storage {#use_page_cache_for_object_storage}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -43,9 +37,15 @@ Utilise le cache de pages en espace utilisateur lors de la lecture depuis des di
 
 Utilisez le cache de pages en espace utilisateur lors de la lecture depuis les fonctions de table de stockage objet (s3, azure, hdfs) et les moteurs de table (S3, Azure, HDFS).
 
-<div id="use_page_cache_with_distributed_cache">
-  ## use_page_cache_with_distributed_cache
-</div>
+## use_page_cache_lookahead_for_text_index {#use_page_cache_lookahead_for_text_index}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
+
+Par défaut, les fichiers d’index de texte qui ne sont pas lus dans l’ordre du fichier (dictionnaire, listes d’occurrences, positions) sont lus via le cache de pages en espace utilisateur avec une lecture anticipée d’un seul bloc, afin de pouvoir réutiliser la connexion distante après chaque lecture. Activez ce paramètre pour que ces fichiers utilisent plutôt `page_cache_lookahead_blocks`, comme les autres fichiers.
+
+## use_page_cache_with_distributed_cache {#use_page_cache_with_distributed_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

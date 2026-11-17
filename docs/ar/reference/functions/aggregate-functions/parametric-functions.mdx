@@ -584,9 +584,9 @@ HAVING uniqUpTo(4)(UserID) >= 5
 
 ## sumMapFiltered {#summapfiltered}
 
-تعمل هذه الدالة بالطريقة نفسها التي تعمل بها [sumMap](/ar/reference/functions/aggregate-functions/sumMap)، إلا أنها تقبل أيضًا [Array](/ar/reference/data-types/array) من المفاتيح لاستخدامه في التصفية كمعامل. ويكون هذا مفيدًا بشكل خاص عند العمل مع مفاتيح عالي الكاردينالية.
+تعمل هذه الدالة بالطريقة نفسها التي تعمل بها [sumMap](/ar/reference/functions/aggregate-functions/sumMap)، إلا أنها تقبل أيضًا [Array](/ar/reference/data-types/array) من المفاتيح لاستخدامه في التصفية كمعلمة. ويكون هذا مفيدًا بشكل خاص عند العمل مع مفاتيح عالي الكاردينالية.
 
-**البنية**
+**الصيغة**
 
 `sumMapFiltered(keys_to_keep)(keys, values)`
 
@@ -598,7 +598,7 @@ HAVING uniqUpTo(4)(UserID) >= 5
 
 **القيمة المُعادة**
 
-* يعيد Tuple مكوّنًا من مصفوفتين: المفاتيح بترتيب مرتب، والقيم المجمّعة للمفاتيح المقابلة.
+* يعيد Tuple مكوّنًا من مصفوفتين: المفاتيح بترتيب مفروز، والقيم المجمّعة للمفاتيح المقابلة.
 
 **مثال**
 
@@ -609,7 +609,7 @@ CREATE TABLE sum_map
     `timeslot` DateTime,
     `statusMap` Nested(status UInt16, requests UInt64)
 )
-ENGINE = Log
+ENGINE = Log;
 
 INSERT INTO sum_map VALUES
     ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),
@@ -630,13 +630,13 @@ SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) FROM sum_
 
 ## sumMapFilteredWithOverflow {#summapfilteredwithoverflow}
 
-تعمل هذه الدالة بالطريقة نفسها التي تعمل بها [sumMap](/ar/reference/functions/aggregate-functions/sumMap)، باستثناء أنها تقبل أيضًا Array من المفاتيح لاستخدامها في التصفية كمعامل. وقد يكون ذلك مفيدًا بشكل خاص عند العمل مع مفاتيح عالي الكاردينالية. وهي تختلف عن الدالة [sumMapFiltered](#summapfiltered) في أنها تُجري الجمع مع حدوث overflow، أي إنها تُرجع لعملية الجمع نوع البيانات نفسه الخاص بنوع بيانات المعامل.
+تعمل هذه الدالة بالطريقة نفسها التي تعمل بها [sumMap](/ar/reference/functions/aggregate-functions/sumMap)، باستثناء أنها تقبل أيضًا Array من المفاتيح لاستخدامها في التصفية كمعلمة. وقد يكون ذلك مفيدًا بشكل خاص عند العمل مع مفاتيح عالي الكاردينالية. وهي تختلف عن الدالة [sumMapFiltered](#summapfiltered) في أنها تُجري الجمع مع حدوث overflow، أي إنها تُرجع لعملية الجمع نوع البيانات نفسه الخاص بنوع بيانات الوسيطة.
 
-**البنية**
+**الصيغة**
 
 `sumMapFilteredWithOverflow(keys_to_keep)(keys, values)`
 
-**المعاملات**
+**المعلمات**
 
 * `keys_to_keep`: ‏[Array](/ar/reference/data-types/array) من المفاتيح لاستخدامها في التصفية.
 * `keys`: ‏[Array](/ar/reference/data-types/array) من المفاتيح.
@@ -644,7 +644,7 @@ SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) FROM sum_
 
 **القيمة المعادة**
 
-* تُرجع Tuple من مصفوفتين: المفاتيح بترتيب فرز، والقيم المجمّعة للمفاتيح المقابلة.
+* تُرجع Tuple من مصفوفتين: المفاتيح بترتيب مفروز، والقيم المجمّعة للمفاتيح المقابلة.
 
 **مثال**
 
@@ -657,7 +657,7 @@ CREATE TABLE sum_map
     `timeslot` DateTime,
     `statusMap` Nested(status UInt8, requests UInt8)
 )
-ENGINE = Log
+ENGINE = Log;
 
 INSERT INTO sum_map VALUES
     ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),

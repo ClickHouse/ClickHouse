@@ -3,8 +3,8 @@
   "pages": [
     "ru/products/kubernetes-operator/overview",
     {
-      "expanded": true,
       "group": "Установка",
+      "expanded": true,
       "pages": [
         "ru/products/kubernetes-operator/install/kubectl",
         "ru/products/kubernetes-operator/install/helm",
@@ -12,8 +12,8 @@
       ]
     },
     {
-      "expanded": true,
       "group": "Руководства",
+      "expanded": true,
       "pages": [
         "ru/products/kubernetes-operator/guides/introduction",
         "ru/products/kubernetes-operator/guides/configuration",
@@ -26,8 +26,8 @@
       ]
     },
     {
-      "expanded": true,
       "group": "Справочник",
+      "expanded": true,
       "pages": [
         "ru/products/kubernetes-operator/reference/api-reference"
       ]

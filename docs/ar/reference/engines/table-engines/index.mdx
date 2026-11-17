@@ -18,13 +18,9 @@ doc_type: 'مرجع'
 * ما إذا كان تنفيذ الطلبات على عدة خيوط ممكنًا.
 * معلمات النسخ المتماثل.
 
-<div id="engine-families">
-  ## عائلات المحرّكات
-</div>
+## عائلات المحرّكات {#engine-families}
 
-<div id="mergetree">
-  ### MergeTree
-</div>
+### MergeTree {#mergetree}
 
 أكثر محركات الجداول شمولًا ومرونةً للمهام ذات الأحمال المرتفعة. والسمة المشتركة بين هذه المحركات هي سرعة إدخال البيانات، ثم معالجتها لاحقًا في الخلفية. تدعم محركات عائلة `MergeTree` نسخ البيانات المتماثل (من خلال إصدارات [Replicated*](/ar/reference/engines/table-engines/mergetree-family/replication) من المحركات)، والتقسيم، والفهارس الثانوية لتخطّي البيانات، وميزات أخرى لا تدعمها المحركات الأخرى.
 
@@ -46,9 +42,7 @@ doc_type: 'مرجع'
 | [محركات الجداول Replicated*](/ar/reference/engines/table-engines/mergetree-family/replication)                    |
 | [البحث النصي الكامل باستخدام فهارس النص](/ar/reference/engines/table-engines/mergetree-family/textindexes)        |
 
-<div id="log">
-  ### Log
-</div>
+### Log {#log}
 
 [محركات](/ar/reference/engines/table-engines/log-family/index) خفيفة بحدٍّ أدنى من الوظائف. تكون أكثر فعالية عندما تحتاج إلى كتابة عدد كبير من الجداول الصغيرة بسرعة (حتى نحو مليون صف) ثم قراءتها لاحقًا بالكامل.
 
@@ -61,9 +55,7 @@ doc_type: 'مرجع'
 | [StripeLog](/ar/reference/engines/table-engines/log-family/stripelog)    |
 | [Log](/ar/reference/engines/table-engines/log-family/log)                |
 
-<div id="integration-engines">
-  ### محركات التكامل
-</div>
+### محركات التكامل {#integration-engines}
 
 محركات للتواصل مع أنظمة أخرى لتخزين البيانات ومعالجتها.
 
@@ -99,9 +91,7 @@ doc_type: 'مرجع'
 | [SQLite](/ar/reference/engines/table-engines/integrations/sqlite)                                  |
 | [YTsaurus](/ar/reference/engines/table-engines/integrations/ytsaurus)                              |
 
-<div id="special-engines">
-  ### المحركات الخاصة
-</div>
+### المحركات الخاصة {#special-engines}
 
 المحركات في هذه العائلة:
 
@@ -126,22 +116,20 @@ doc_type: 'مرجع'
 | [KeeperMap](/ar/reference/engines/table-engines/special/keepermap)         |
 | [FileLog](/ar/reference/engines/table-engines/special/filelog)             |
 
-<div id="table_engines-virtual_columns">
-  ## الأعمدة الافتراضية
-</div>
+## الأعمدة الافتراضية {#table_engines-virtual_columns}
 
-العمود الافتراضي هو سمة أساسية في محرك الجدول، وتكون معرَّفة في الشيفرة المصدرية للمحرك.
+العمود الافتراضي هو سمة أساسية في محرك الجدول، وتكون معرَّفة في الشيفرة المصدرية للمحرك.
 
 يجب ألا تحدد الأعمدة الافتراضية في استعلام `CREATE TABLE`، ولا يمكنك رؤيتها في نتائج استعلامَي `SHOW CREATE TABLE` و`DESCRIBE TABLE`. كما أن الأعمدة الافتراضية للقراءة فقط، لذا لا يمكنك إدراج البيانات فيها.
 
 لاختيار البيانات من عمود افتراضي، يجب تحديد اسمه في استعلام `SELECT`. ولا يعيد `SELECT *` قيماً من الأعمدة الافتراضية.
 
-إذا أنشأت جدولاً يحتوي على عمود له الاسم نفسه لأحد الأعمدة الافتراضية في الجدول، يصبح العمود الافتراضي غير متاح. لا نوصي بذلك. وللمساعدة في تجنب التعارضات، تبدأ أسماء الأعمدة الافتراضية عادةً بشرطة سفلية.
+إذا أنشأت جدولاً يحتوي على عمود له الاسم نفسه لأحد الأعمدة الافتراضية في الجدول، يصبح العمود الافتراضي غير متاح. لا نوصي بذلك. وللمساعدة في تجنب التعارضات، تبدأ أسماء الأعمدة الافتراضية عادةً بشرطة سفلية. أما في جداول عائلة `MergeTree`، فيُرفض مثل هذا العمود ما لم يكن الإعداد `allow_reserved_column_names` مفعّلًا.
 
 * `_table` — يحتوي على اسم الجدول الذي قُرئت منه البيانات. النوع: [String](/ar/reference/data-types/string).
 
   بغض النظر عن محرك الجدول المستخدم، يتضمن كل جدول عمودًا افتراضيًا عامًا باسم `_table`.
 
-  عند الاستعلام عن جدول يستخدم محرك Merge table، يمكنك تعيين شروط ثابتة على `_table` في عبارة `WHERE/PREWHERE` (على سبيل المثال، `WHERE _table='xyz'`). في هذه الحالة، تُنفَّذ عملية القراءة فقط على الجداول التي يتحقق فيها الشرط على `_table`، ولذلك يعمل العمود `_table` بوصفه فهرسًا.
+  عند الاستعلام عن جدول يستخدم محرك Merge table، يمكنك تعيين شروط ثابتة على `_table` في عبارة `WHERE/PREWHERE` (على سبيل المثال، `WHERE _table='xyz'`). في هذه الحالة، تُنفَّذ عملية القراءة فقط على الجداول التي يتحقق فيها الشرط على `_table`، ولذلك يعمل العمود `_table` بوصفه فهرسًا.
 
   عند استخدام استعلامات منسقة مثل `SELECT ... FROM (... UNION ALL ...)`، يمكننا تحديد الجدول الفعلي الذي تنشأ منه الصفوف المُعادة من خلال تحديد العمود `_table`.

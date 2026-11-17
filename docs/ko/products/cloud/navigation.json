@@ -21,6 +21,8 @@
             "ko/products/cloud/reference/supported-regions",
             "ko/products/cloud/features/infrastructure/deployment-options",
             "ko/products/cloud/guides/cloud-compatibility",
+            "ko/products/cloud/features/public-preview-features",
+            "ko/products/cloud/features/self-service-previews",
             "ko/products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
             "ko/products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
           ]
@@ -37,7 +39,8 @@
             "ko/products/cloud/features/autoscaling/make-before-break",
             "ko/products/cloud/features/autoscaling/idling",
             "ko/products/cloud/features/autoscaling/scaling-recommendations",
-            "ko/products/cloud/features/autoscaling/scheduled-scaling"
+            "ko/products/cloud/features/autoscaling/scheduled-scaling",
+            "ko/products/cloud/features/scaling/preparing-for-traffic-spikes"
           ]
         },
         {
@@ -59,6 +62,7 @@
           "pages": [
             "ko/products/cloud/reference/service-uptime",
             "ko/products/cloud/reference/data-resiliency",
+            "ko/products/cloud/guides/deletion-protection",
             "ko/products/cloud/features/admin-features/upgrades"
           ]
         },
@@ -67,6 +71,7 @@
           "group": "프로덕션 환경 계획",
           "pages": [
             "ko/products/cloud/guides/best-practices/index",
+            "ko/products/cloud/guides/best-practices/performance-optimization-playbook",
             "ko/products/cloud/guides/production-readiness",
             "ko/products/cloud/guides/best-practices/multitenancy",
             "ko/products/cloud/guides/best-practices/usagelimits"
@@ -126,6 +131,7 @@
           "pages": [
             "ko/products/cloud/guides/security/cloud-access-management/manage-my-account",
             "ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+            "ko/products/cloud/guides/security/cloud-access-management/approved-domains",
             "ko/products/cloud/reference/security/console-roles",
             "ko/products/cloud/guides/security/cloud-access-management/manage-custom-roles"
           ]
@@ -147,7 +153,8 @@
             "ko/products/cloud/guides/security/saml-sso-removal",
             "ko/products/cloud/guides/security/cloud-access-management/scim-setup",
             "ko/products/cloud/guides/security/cloud-access-management/scim-setup-entra",
-            "ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup"
+            "ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup",
+            "ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id"
           ]
         }
       ]
@@ -169,6 +176,13 @@
                 "ko/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
                 "ko/products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect",
                 "ko/products/cloud/guides/security/connectivity/private-networking/azure-privatelink"
+              ]
+            },
+            {
+              "group": "조직 네트워크 연결",
+              "hidden": true,
+              "pages": [
+                "ko/products/cloud/guides/security/connectivity/org-network-connectivity"
               ]
             }
           ]
@@ -261,6 +275,7 @@
             "ko/products/cloud/features/ai-ml/mcp/remote-mcp"
           ]
         },
+        "ko/products/cloud/features/ai-ml/linked-billing-claude-platform",
         "ko/products/cloud/features/ai-ml/model-developer-terms"
       ]
     },
@@ -273,8 +288,8 @@
         {
           "group": "API 참조",
           "openapi": {
-            "directory": "ko/products/cloud/api-reference",
-            "source": "_specs/cloud-openapi.json"
+            "source": "_specs/cloud-openapi.json",
+            "directory": "ko/products/cloud/api-reference"
           },
           "pages": {
             "$ref": "./api-reference/navigation.json"

@@ -36,7 +36,7 @@
       ]
     },
     {
-      "group": "Конфигурация",
+      "group": "Configuration",
       "pages": [
         "ru/chdb/configuration/index",
         "ru/chdb/configuration/execution-engine",

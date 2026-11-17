@@ -39,7 +39,7 @@
           "item": "Развертывания"
         },
         {
-        "$ref": "./products/cloud/navigation.json"
+          "$ref": "./products/cloud/navigation.json"
         },
         {
           "item": "BYOC",
@@ -61,7 +61,7 @@
         {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
-          "item": "Инженерия ИИ"
+          "item": "Разработка ИИ"
         },
         {
           "href": "https://docs.runreveal.com/",
@@ -71,12 +71,12 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "С открытым исходным кодом"
+          "item": "Открытый исходный код"
         },
         {
           "item": "ClickStack",
           "pages": [
-            "ru/clickstack/index"
+            "ru/clickstack"
           ]
         },
         {
