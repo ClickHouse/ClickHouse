@@ -1830,7 +1830,8 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     return mut_first;
 }
 
-void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool keep_additional_columns) const
+void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(
+    ReadResult & result, const Block & previous_header, bool keep_additional_columns, bool & actions_failed) const
 {
     result.checkInternalConsistency();
 
@@ -1901,7 +1902,9 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
             LOG_TEST(log, "Executing prewhere actions on block: {}", block.dumpStructure());
 
+            actions_failed = true;
             prewhere_info->actions->execute(block);
+            actions_failed = false;
 
             if (!dummy_column.empty())
                 block.erase(dummy_column);

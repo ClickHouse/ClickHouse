@@ -539,7 +539,9 @@ public:
     const Block & getSampleBlock() const { return result_sample_block; }
     const Block & getReadSampleBlock() const { return read_sample_block; }
 
-    void executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool keep_additional_columns) const;
+    /// `actions_failed` is set while the step's actions run, so it stays set if they throw.
+    void executePrewhereActionsAndFilterColumns(
+        ReadResult & result, const Block & previous_header, bool keep_additional_columns, bool & actions_failed) const;
 
     IMergeTreeReader * getReader() const { return merge_tree_reader; }
     const PrewhereExprStep * getPrewhereInfo() const { return prewhere_info; }
