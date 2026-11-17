@@ -33,9 +33,8 @@ if (Git_FOUND)
 
   message(STATUS "Git HEAD commit hash: ${GIT_HASH}")
 
-  # Do not scan the work trees of the submodules (seconds per run); a submodule at another commit is still shown.
   execute_process(
-    COMMAND ${GIT_EXECUTABLE} status --ignore-submodules=dirty
+    COMMAND ${GIT_EXECUTABLE} status
     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR} OUTPUT_STRIP_TRAILING_WHITESPACE)
 else()
   message(STATUS "Git could not be found.")

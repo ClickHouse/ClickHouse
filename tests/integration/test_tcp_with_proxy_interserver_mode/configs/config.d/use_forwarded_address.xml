@@ -1,3 +1,0 @@
-<clickhouse>
-    <auth_use_forwarded_address>true</auth_use_forwarded_address>
-</clickhouse>

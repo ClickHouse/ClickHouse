@@ -232,26 +232,6 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// Both array element types must be identical after stripping Nullable;
-    /// the DSL doesn't model that "equal up to Nullable" relation, so the
-    /// runtime enforces it. The result is the source array's type.
-    String getSignatureString() const override
-    {
-        return "(A : Array, Array) -> A";
-    }
-
-    /// The signature above is documentation-only, so the types-only entry point must not
-    /// apply it directly: route it through the authoritative resolver below, which only
-    /// looks at the argument types.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-        return getReturnTypeImpl(columns);
-    }
-
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto mandatory_args = FunctionArgumentDescriptors{

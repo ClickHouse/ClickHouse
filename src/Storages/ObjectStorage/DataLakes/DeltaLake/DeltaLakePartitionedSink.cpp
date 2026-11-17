@@ -5,11 +5,10 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
-#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ArenaUtils.h>
 #include <Common/Arena.h>
 #include <Common/PODArray.h>
-#include <Common/Hex.h>
+#include <base/hex.h>
 #include <Core/UUID.h>
 #include <Core/Settings.h>
 
@@ -145,8 +144,7 @@ namespace
             header,
             context,
             "parquet",
-            /* partition_columns_in_data_file */false,
-            /* compression_method */"auto");
+            /* partition_columns_in_data_file */false);
     }
 }
 
@@ -157,7 +155,6 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
     ContextPtr context_,
     SharedHeader sample_block_,
     const std::optional<FormatSettings> & format_settings_,
-    FormatFilterInfoPtr format_filter_info_,
     const String & write_format_,
     const String & write_compression_method_)
     : SinkToStorage(sample_block_)
@@ -166,7 +163,6 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
     , partition_columns(partition_columns_)
     , object_storage(object_storage_)
     , format_settings(format_settings_)
-    , format_filter_info(std::move(format_filter_info_))
     , data_file_max_rows(context_->getSettingsRef()[Setting::delta_lake_insert_max_rows_in_data_file])
     , data_file_max_bytes(context_->getSettingsRef()[Setting::delta_lake_insert_max_bytes_in_data_file])
     , accurate_write_cast(context_->getSettingsRef()[Setting::delta_lake_accurate_write_cast])
@@ -397,8 +393,7 @@ DeltaLakePartitionedSink::createSinkForPartition(std::string_view partition_key)
         write_format_header,
         getContext(),
         write_format,
-        write_compression_method,
-        format_filter_info);
+        write_compression_method);
 }
 
 void DeltaLakePartitionedSink::onFinish()
@@ -455,19 +450,7 @@ void DeltaLakePartitionedSink::onFinish()
         for (auto & [_, partition_info] : partitions_data)
         {
             for (const auto & [sink, written_bytes, written_rows] : partition_info->data_files)
-            {
-                const auto & path = sink->getPath();
-                try
-                {
-                    object_storage->removeObjectIfExists(StoredObject(path));
-                }
-                catch (...)
-                {
-                    /// Building the message allocates, and the memory tracker can throw inside an active handler.
-                    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-                    tryLogCurrentException(log, "Failed to remove uncommitted data file after a failed commit: " + path);
-                }
-            }
+                object_storage->removeObjectIfExists(StoredObject(sink->getPath()));
         }
         throw;
     }

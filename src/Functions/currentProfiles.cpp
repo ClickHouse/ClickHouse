@@ -74,9 +74,9 @@ namespace
         size_t getNumberOfArguments() const override { return 0; }
         bool isDeterministic() const override { return false; }
 
-        String getSignatureString() const override
+        DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
         {
-            return "() -> Array(String)";
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override

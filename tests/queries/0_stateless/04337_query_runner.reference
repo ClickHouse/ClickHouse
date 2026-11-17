@@ -1,2 +1,1 @@
 CREATE TABLE default.runner2\n(\n    `query` String\n)\nENGINE = QueryRunner\nSETTINGS mode = \'synchronous\', threads = 2, max_queue_size = 100\nSQL SECURITY INVOKER
-CREATE TABLE default.runner_all\n(\n    `query` String\n)\nENGINE = QueryRunner\nSETTINGS cluster = \'test_shard_localhost\', shard = \'all\'\nCOMMENT \'updated\'

@@ -1,0 +1,21 @@
+<clickhouse>
+    <!--
+        Negative case: a section shaped like a `GraphiteMergeTree` rollup whose `<default>` rule sets
+        `<rule_type>plain</rule_type>`. Every child name is recognized and the rule has a `<function>`,
+        but `appendGraphitePattern` rejects a `<default>` whose `rule_type` is not `all` with
+        `BAD_ARGUMENTS` ("Default must have rule_type all for rollup patterns in GraphiteMergeTree"), so
+        the section would never load. The unknown-key validator must mirror that semantic check and
+        reject the whole section as an unknown top-level key (a typo). The node must fail to start with
+        `UNKNOWN_ELEMENT_IN_CONFIG`.
+    -->
+    <graphite_default_rule_type_not_all>
+        <default>
+            <rule_type>plain</rule_type>
+            <function>max</function>
+            <retention>
+                <age>0</age>
+                <precision>60</precision>
+            </retention>
+        </default>
+    </graphite_default_rule_type_not_all>
+</clickhouse>

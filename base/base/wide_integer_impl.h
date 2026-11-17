@@ -81,7 +81,6 @@ using FromDoubleIntermediateType = boost::multiprecision::cpp_bin_float_double_e
 #endif
 
 namespace CityHash_v1_0_2 { struct uint128; }
-class BFloat16;
 
 namespace wide
 {
@@ -383,50 +382,9 @@ constexpr uint64_t divide_128_by_64(uint64_t high, uint64_t low, const invariant
 /// remainder carried in from the previous step is below the divisor.
 constexpr uint64_t divide_by_single_limb(const uint64_t * numerator, unsigned m, uint64_t denominator, uint64_t * quotient)
 {
-#if defined(__x86_64__)
-    /// Keep the `divq` loop: a native first division adds operand-width selection branches.
-    if (!std::is_constant_evaluated())
-    {
-        uint64_t remainder = 0;
-        for (unsigned i = m; i > 0; --i)
-            quotient[i - 1] = divide_128_by_64(remainder, numerator[i - 1], denominator, remainder);
-        return remainder;
-    }
-#endif
-    if (m == 0)
-        return 0;
-
-    if (std::has_single_bit(denominator))
-    {
-        const unsigned shift = static_cast<unsigned>(std::countr_zero(denominator));
-        if (shift == 0)
-        {
-            for (unsigned i = 0; i < m; ++i)
-                quotient[i] = numerator[i];
-            return 0;
-        }
-
-        const uint64_t remainder = numerator[0] & (denominator - 1);
-        uint64_t carry = 0;
-        for (unsigned i = m; i > 0; --i)
-        {
-            const uint64_t limb = numerator[i - 1];
-            quotient[i - 1] = (limb >> shift) | carry;
-            carry = limb << (64 - shift);
-        }
-        return remainder;
-    }
-
-    /// The first step has no carried remainder, so a native 64-bit division suffices.
-    uint64_t remainder = numerator[m - 1] % denominator;
-    quotient[m - 1] = numerator[m - 1] / denominator;
-    if (m == 1)
-        return remainder;
-
-    /// Amortize reciprocal preparation over the remaining limbs on targets without `divq`.
-    const auto prepared = prepare_divisor(denominator);
-    for (unsigned i = m - 1; i > 0; --i)
-        quotient[i - 1] = divide_128_by_64(remainder, numerator[i - 1], prepared, remainder);
+    uint64_t remainder = 0;
+    for (unsigned i = m; i > 0; --i)
+        quotient[i - 1] = divide_128_by_64(remainder, numerator[i - 1], denominator, remainder);
     return remainder;
 }
 
@@ -636,33 +594,16 @@ struct integer<Bits, Signed>::_impl
     {
         static_assert(sizeof(Integral) <= sizeof(base_type));
 
-        if constexpr (std::is_same_v<Integral, float> || std::is_same_v<Integral, BFloat16>)
-        {
-            const float value = static_cast<float>(rhs);
-            /// |value| < 2^63, false for NaN and infinities.
-            if ((std::bit_cast<uint32_t>(value) & 0x7fffffffu) < std::bit_cast<uint32_t>(0x1p63f))
-                wide_integer_from_builtin(self, static_cast<int64_t>(value));
-            else
-                wide_integer_from_builtin(self, static_cast<double>(value));
-        }
-        else if constexpr (std::is_floating_point_v<Integral>)
-        {
-            /// An 8-byte `long double` (arm64 macOS).
-            wide_integer_from_builtin(self, static_cast<double>(rhs));
-        }
-        else
-        {
-            self.items[little(0)] = _impl::to_Integral(rhs);
+        self.items[little(0)] = _impl::to_Integral(rhs);
 
-            /// Sign-extend with a value select instead of a branch: a data-dependent branch here
-            /// mispredicts on mixed-sign data and prevents vectorization of columnar conversion loops.
-            base_type extension = 0;
-            if constexpr (std::is_signed_v<Integral>)
-                extension = rhs < 0 ? base_type(-1) : base_type(0);
+        /// Sign-extend with a value select instead of a branch: a data-dependent branch here
+        /// mispredicts on mixed-sign data and prevents vectorization of columnar conversion loops.
+        base_type extension = 0;
+        if constexpr (std::is_signed_v<Integral>)
+            extension = rhs < 0 ? base_type(-1) : base_type(0);
 
-            for (unsigned i = 1; i < item_count; ++i)
-                self.items[little(i)] = extension;
-        }
+        for (unsigned i = 1; i < item_count; ++i)
+            self.items[little(i)] = extension;
     }
 
     template <typename TupleLike, size_t i = 0>
@@ -983,36 +924,6 @@ private:
         return res;
     }
 
-    /// 128-bit and 256-bit addition and subtraction use add_sub instead of the generic two-pass loops (plus / minus),
-    /// which branch on the sign of the right-hand side and propagate the carry in a second pass. The right-hand side is
-    /// a wide integer of at most `Bits` bits or a native integer of up to 64 bits, which is sign- or zero-extended first.
-    template <typename T>
-    static constexpr bool use_add_sub = (Bits == 128 || Bits == 256)
-        && (IsWideInteger<T>::value || (std::is_integral_v<T> && sizeof(T) <= sizeof(base_type)));
-
-    /// Two's-complement addition and subtraction are the same for signed and unsigned values, so add_sub needs no
-    /// branch on the sign. It makes one pass over the 64-bit pieces, with the carry (or borrow) running from each
-    /// piece to the next and no branches. This portable method uses the compiler's add/subtract-with-carry builtins,
-    /// which compile to a scalar carry chain, and for 256 bits it is as fast as `_BitInt(256)`.
-    template <bool subtract, typename T>
-    constexpr static integer<Bits, Signed> add_sub(const integer<Bits, Signed> & lhs, const T & rhs) noexcept
-    {
-        static_assert(sizeof(unsigned long long) == sizeof(base_type));
-        const integer<Bits, Signed> r = rhs;
-        integer<Bits, Signed> res;
-        unsigned long long carry = 0;
-        for (unsigned i = 0; i < item_count; ++i)
-        {
-            const unsigned long long a = lhs.items[little(i)];
-            const unsigned long long b = r.items[little(i)];
-            if constexpr (subtract)
-                res.items[little(i)] = static_cast<base_type>(__builtin_subcll(a, b, carry, &carry));
-            else
-                res.items[little(i)] = static_cast<base_type>(__builtin_addcll(a, b, carry, &carry));
-        }
-        return res;
-    }
-
     template <typename T>
     constexpr static integer<Bits, Signed> multiply(const integer<Bits, Signed> & lhs, const T & rhs)
     {
@@ -1135,9 +1046,15 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if constexpr (use_add_sub<T>)
+            if constexpr (use_BitInt256)
             {
-                return add_sub<false>(lhs, rhs);
+                if constexpr (!std::same_as<T, integer<Bits, Signed>>)
+                {
+                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
+                    return fromBitInt256(toBitInt256(lhs) + toBitInt256(new_rhs));
+                }
+                else
+                    return fromBitInt256(toBitInt256(lhs) + toBitInt256(rhs));
             }
             else
             {
@@ -1160,9 +1077,15 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if constexpr (use_add_sub<T>)
+            if constexpr (use_BitInt256)
             {
-                return add_sub<true>(lhs, rhs);
+                if constexpr (!std::same_as<T, integer<Bits, Signed>>)
+                {
+                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
+                    return fromBitInt256(toBitInt256(lhs) - toBitInt256(new_rhs));
+                }
+                else
+                    return fromBitInt256(toBitInt256(lhs) - toBitInt256(rhs));
             }
             else
             {
@@ -1522,17 +1445,12 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            /// Not routed through _BitInt(256), unlike multiplication: for division
+            /// Not routed through _BitInt(256), unlike addition and multiplication: for division
             /// the compiler emits a generic bignum sequence that is an order of magnitude slower
             /// than `divide` below.
             integer<Bits, unsigned> numerator = make_positive(lhs);
             integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
-            integer<Bits, unsigned> quotient;
-            /// The signed operators are out of line, so `divide` is inlined into them: a narrow division then stays in registers.
-            if constexpr (std::is_same_v<Signed, signed>)
-                [[clang::always_inline]] quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
-            else
-                quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
+            integer<Bits, unsigned> quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
 
             if (std::is_same_v<Signed, signed> && is_negative(rhs) != is_negative(lhs))
                 quotient = operator_unary_minus(quotient);
@@ -1553,10 +1471,7 @@ public:
             /// See the note in operator_slash about _BitInt(256).
             integer<Bits, unsigned> remainder = make_positive(lhs);
             integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
-            if constexpr (std::is_same_v<Signed, signed>)
-                [[clang::always_inline]] integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
-            else
-                integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
+            integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
 
             if (std::is_same_v<Signed, signed> && is_negative(lhs))
                 remainder = operator_unary_minus(remainder);

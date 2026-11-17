@@ -391,11 +391,12 @@ public:
         auto & to_list = to_it->second;
         auto & from_list = from_it->second;
 
-        /// `read_schema` is empty when every column of the table is a partition column.
         if (to_list.empty())
         {
             for (const auto & elem : read_schema)
                 addIdentifier(to_list_id, elem.name);
+
+            chassert(!to_list.empty());
         }
 
         if (after_field_name)
