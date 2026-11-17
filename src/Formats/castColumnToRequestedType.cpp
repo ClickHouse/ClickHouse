@@ -61,8 +61,6 @@ ColumnPtr castRowsNotInNullMap(
 }
 
 /// Prepares `from` for the cast to `to`: the value of a NULL row is never converted, the row gets the default of `to`.
-/// `Nullable` is removed where `to` has none, if the settings allow it, and tuples are walked as the cast pairs their
-/// elements. Top-level NULL defaults also populate `block_missing_values` for column `DEFAULT` expressions.
 ColumnWithTypeAndName prepareForCast(
     ColumnWithTypeAndName from,
     const DataTypePtr & to,
@@ -171,13 +169,11 @@ ColumnWithTypeAndName prepareForCast(
         VectorWithMemoryTracking<std::optional<size_t>> source_positions;
         if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames())
             source_positions = from_tuple->matchElementsByName(*to_tuple, settings.case_insensitive);
-        /// Without `tuple_elements_by_name`, named tuples with no name in common are paired by position, as `CAST` does.
         const bool match_by_name = !source_positions.empty()
             && (settings.tuple_elements_by_name || std::ranges::any_of(source_positions, [](const auto & pos) { return pos.has_value(); }));
         if (!match_by_name && source_types.size() != target_types.size())
             return from;
 
-        /// The target element that each source element is converted to.
         VectorWithMemoryTracking<std::optional<size_t>> target_positions(source_types.size());
         if (match_by_name)
         {

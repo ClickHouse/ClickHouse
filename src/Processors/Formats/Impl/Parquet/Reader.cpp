@@ -4706,8 +4706,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
     /// Nullable wraps the type of a physically nullable tuple group and of a variant read as `Nullable(JSON)`.
     TypeIndex kind = removeNullable(output_info.input_type)->getColumnType();
 
-    /// The rows of a primitive column whose values are not data: NULLs filled with defaults, or the rows of a NULL
-    /// struct around the leaf.
+    /// Rows of a primitive column whose values are not data: NULLs filled with defaults, or rows of a NULL struct around the leaf.
     ColumnPtr rows_without_values;
     if (output_info.is_primitive)
     {

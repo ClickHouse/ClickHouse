@@ -22,8 +22,7 @@ enum class CastType : uint8_t
     accurateOrNull
 };
 
-/// Internal, set only by `castColumnToRequestedType` for the input format readers: named tuples are matched by name
-/// even when they have no element name in common.
+/// Internal, for the input format readers: named tuples are matched by name even when they have no element name in common.
 enum class TupleElementsMatching : uint8_t
 {
     Default,

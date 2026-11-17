@@ -134,9 +134,8 @@ DataTypePtr stripHint(const DataTypePtr & type);
 /// The requested type hint for the element of an Array-like field, or null when the hint is not an Array.
 DataTypePtr arrayElementHint(const DataTypePtr & hint);
 
-/// The requested type hints for the fields of a struct, null where there is none: paired with the elements of a named
-/// Tuple hint as the later CAST pairs them (`DataTypeTuple::matchElementsByName`), else by position (an unnamed Tuple
-/// hint such as the synthetic Map-entries one, or `by_position` for a struct with `ArrowType::positional_fields`).
+/// The requested type hints for the fields of a struct, null where there is none: matched by name as the later CAST matches them
+/// (`DataTypeTuple::matchElementsByName`), else by position: an unnamed Tuple hint (Map entries) or `by_position` (`positional_fields`).
 DataTypes tupleElementHints(const DataTypePtr & hint, const Strings & field_names, bool by_position, bool case_insensitive);
 
 /// A synthetic Tuple(key, value) hint for a Map's entries struct, or null when the hint is not a Map.

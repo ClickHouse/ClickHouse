@@ -2890,7 +2890,6 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             const auto * tuple_type_hint = type_hint ? typeid_cast<const DataTypeTuple *>(type_hint.get()) : nullptr;
             const auto * orc_struct_column = dynamic_cast<const ORC::StructVectorBatch *>(orc_column);
 
-            /// The hint element that each field takes, if any.
             VectorWithMemoryTracking<std::optional<size_t>> hint_positions(orc_type->getSubtypeCount());
             if (tuple_type_hint && tuple_type_hint->hasExplicitNames())
             {
