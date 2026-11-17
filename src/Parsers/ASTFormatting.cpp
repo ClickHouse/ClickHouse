@@ -83,7 +83,7 @@ struct FlatWidth
         append(width);
     }
 
-    bool fits(size_t column, size_t limit) const
+    [[nodiscard]] bool fits(size_t column, size_t limit) const
     {
         return column <= limit && columns[column % columns.size()] <= limit - column;
     }

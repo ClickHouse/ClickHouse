@@ -362,9 +362,8 @@ void ASTFunction::finishFormatWithWindow(WriteBuffer & ostr, const FormatSetting
     {
         ASTFormattingGroup window_group(ostr, state, frame);
         ostr << "(";
-        auto nested_frame = frame;
-        writeASTFormattingBreak(ostr, state, nested_frame, 1, '\0');
-        window_definition->format(ostr, settings, state, nested_frame);
+        writeASTFormattingBreak(ostr, state, frame, 1, '\0');
+        window_definition->format(ostr, settings, state, frame);
         writeASTFormattingBreak(ostr, state, frame, 0, '\0');
         ostr << ")";
     }
@@ -1291,24 +1290,23 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 {
                     /// headers('foo' = '[HIDDEN]', 'bar' = '[HIDDEN]')
                     ASTFormattingGroup secret_map_group(ostr, state, nested_dont_need_parens);
-                    auto secret_map_frame = nested_dont_need_parens;
                     ostr << function->name << "(";
                     if (!function->arguments->children.empty())
-                        writeASTFormattingBreak(ostr, state, secret_map_frame, 1, '\0');
+                        writeASTFormattingBreak(ostr, state, nested_dont_need_parens, 1, '\0');
                     for (size_t j = 0; j < function->arguments->children.size(); ++j)
                     {
                         if (j != 0)
                         {
                             ostr << ',';
-                            writeASTFormattingBreak(ostr, state, secret_map_frame);
+                            writeASTFormattingBreak(ostr, state, nested_dont_need_parens);
                         }
                         auto inner_arg = function->arguments->children[j];
                         /// Known non-secret identifiers keep their values; a child that is not
                         /// `key = value` cannot be split into a visible key and a hidden value and may
                         /// be the secret itself, so it fails closed and is hidden whole.
                         if (isNonSecretMapChild(nested_map->second, inner_arg.get()))
-                            inner_arg->format(ostr, settings, state, secret_map_frame);
-                        else if (!formatNamedArgWithHiddenValue(inner_arg.get(), ostr, settings, state, secret_map_frame))
+                            inner_arg->format(ostr, settings, state, nested_dont_need_parens);
+                        else if (!formatNamedArgWithHiddenValue(inner_arg.get(), ostr, settings, state, nested_dont_need_parens))
                             ostr << HIDDEN_SECRET_LITERAL;
                     }
                     if (!function->arguments->children.empty())
