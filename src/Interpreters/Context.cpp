@@ -974,7 +974,7 @@ struct ContextSharedPart : boost::noncopyable
     /// (the `getServerPort` SQL function); writes happen during server startup
     /// and at runtime via `SYSTEM START LISTEN` in `clickhouse-local`.
     mutable std::mutex server_ports_mutex;
-    std::map<String, UInt16> server_ports TSA_GUARDED_BY(server_ports_mutex);
+    std::map<String, Context::ServerPort> server_ports TSA_GUARDED_BY(server_ports_mutex);
 
     std::atomic<bool> shutdown_called = false;
 
@@ -7840,22 +7840,28 @@ std::optional<UInt16> Context::getTCPPortSecure() const
     return {};
 }
 
-void Context::registerServerPort(String port_name, UInt16 port)
+void Context::registerServerPort(String port_name, ServerPort server_port)
 {
     /// Use `insert_or_assign` so re-registration after stop/start refreshes the
     /// stored port. With `--tcp_port 0` / `--http_port 0` in `clickhouse-local`,
     /// each restart binds a new ephemeral port and the registry must reflect it.
     std::lock_guard lock(shared->server_ports_mutex);
-    shared->server_ports.insert_or_assign(std::move(port_name), port);
+    shared->server_ports.insert_or_assign(std::move(port_name), server_port);
 }
 
-UInt16 Context::getServerPort(const String & port_name) const
+Context::ServerPort Context::getServerPort(const String & port_name) const
 {
     std::lock_guard lock(shared->server_ports_mutex);
     auto it = shared->server_ports.find(port_name);
     if (it == shared->server_ports.end())
         throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "There is no port named {}", port_name);
     return it->second;
+}
+
+std::map<String, Context::ServerPort> Context::getServerPorts() const
+{
+    std::lock_guard lock(shared->server_ports_mutex);
+    return shared->server_ports;
 }
 
 size_t Context::getMaxPendingMutationsToWarn() const

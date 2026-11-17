@@ -833,7 +833,11 @@ void Server::createServer(
         /// configured port is non-zero it equals the bound port anyway, so this preserves the previous
         /// behavior in all cases. (`clickhouse-local` registers the actual bound port because it needs
         /// the OS-assigned value, but it rejects the ambiguous `port=0` + multiple `listen_host` combo.)
-        global_context->registerServerPort(port_name, static_cast<UInt16>(config.getInt(port_name)));
+        global_context->registerServerPort(
+            port_name,
+            Context::ServerPort{
+                .port = static_cast<UInt16>(config.getInt(port_name)),
+                .protocol_type = servers.back().getProtocolType()});
     }
 }
 
@@ -3464,7 +3468,11 @@ try
         for (const auto & server : servers_to_start_before_tables)
         {
             if (server.bindsOnStart())
-                global_context->registerServerPort(server.getPortName(), static_cast<UInt16>(config().getInt(server.getPortName())));
+                global_context->registerServerPort(
+                    server.getPortName(),
+                    Context::ServerPort{
+                        .port = static_cast<UInt16>(config().getInt(server.getPortName())),
+                        .protocol_type = server.getProtocolType()});
         }
     }
 
@@ -4139,7 +4147,11 @@ try
             for (const auto & server : servers)
             {
                 if (server.bindsOnStart())
-                    global_context->registerServerPort(server.getPortName(), static_cast<UInt16>(config().getInt(server.getPortName())));
+                    global_context->registerServerPort(
+                        server.getPortName(),
+                        Context::ServerPort{
+                            .port = static_cast<UInt16>(config().getInt(server.getPortName())),
+                            .protocol_type = server.getProtocolType()});
             }
             if (servers.empty())
                 throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,

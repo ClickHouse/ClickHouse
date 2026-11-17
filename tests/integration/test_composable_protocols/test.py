@@ -361,3 +361,36 @@ def test_protocol_metrics_sum_listeners_of_one_protocol():
         server.query("KILL QUERY WHERE query LIKE 'SELECT sleepEachRow(1)%' SYNC")
         for request in requests:
             request.get_answer_and_error()
+
+
+def test_remote_through_protocols_endpoint_checks_caller_grants():
+    """`remote` to a native endpoint of this server declared only under `<protocols>` must check the caller's
+    own grants, like the same call to `tcp_port`: the query is answered by this server under the account given to
+    `remote`, whose `127.0.0.1`-only network restriction the loopback connection satisfies.
+    """
+    server.query(
+        "CREATE TABLE default.remote_secret (id UInt32, s String) ENGINE = MergeTree ORDER BY id"
+    )
+    try:
+        server.query("INSERT INTO default.remote_secret VALUES (1, 'secret')")
+
+        # The endpoints are reachable through `remote`, so a denial below comes from the access check.
+        assert (
+            server.query("SELECT s FROM remote('127.0.0.1:9001', default.remote_secret)")
+            == "secret\n"
+        )
+
+        for query in [
+            # `tcp_endpoint`: a plain native endpoint.
+            "SELECT s FROM remote('127.0.0.1:9001', default.remote_secret, 'svc', '')",
+            "INSERT INTO FUNCTION remote('127.0.0.1:9001', default.remote_secret, 'svc', '') VALUES (2, 'forged')",
+            "DESC remote('127.0.0.1:9001', default.remote_secret, 'svc', '')",
+            # `tcp_secure`: a TLS endpoint, while `tcp_port_secure` is not set.
+            "SELECT s FROM remoteSecure('127.0.0.1:9440', default.remote_secret, 'svc', '')",
+        ]:
+            error = server.query_and_get_error(query, user="bob", password="bob")
+            assert "ACCESS_DENIED" in error, f"{query}: {error}"
+
+        assert server.query("SELECT id, s FROM default.remote_secret") == "1\tsecret\n"
+    finally:
+        server.query("DROP TABLE default.remote_secret SYNC")

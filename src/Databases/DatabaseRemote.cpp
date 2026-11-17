@@ -19,7 +19,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/getStructureOfRemoteTable.h>
@@ -53,7 +52,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int CLUSTER_DOESNT_EXIST;
     extern const int INFINITE_LOOP;
@@ -302,21 +300,17 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
             fail_messages);
     };
 
-    /// The metadata (the list of the tables and, in `fetchTableStructure`, their structure) is resolved
-    /// from an arbitrary shard, exactly like `getStructureOfRemoteTable` does: the shards of one cluster
-    /// normally serve the same set of tables, and asking every one of them would multiply the cost of
-    /// every `SHOW TABLES` / `EXISTS TABLE` by the number of shards. A shard that points to this server
-    /// is preferred, because it needs no round trip at all; another shard is consulted only when the
-    /// current one is unavailable.
+    /// Take the metadata from any one shard: shards normally serve the same
+    /// tables, and asking all of them would multiply the cost of every `SHOW TABLES` by the number of shards.
+    /// If any shard is this server (a local one, or e.g. `127.0.0.2`, see `Cluster::hasShardOnThisServer`),
+    /// answer locally under the caller's grants instead of the stored engine credentials.
+    const bool has_shard_on_this_server = clusters.cluster->hasShardOnThisServer(local_context);
     const Cluster * remote_cluster = clusters.cluster.get();
     for (const auto & shard_info : clusters.cluster->getShardsInfo())
     {
-        /// A shard that points to this server is a local shard (see `buildClusters`). Enumerate the
-        /// local database under `local_context` instead of opening a self-connection with the stored
-        /// engine credentials, mirroring the local-shard special case of `getStructureOfRemoteTable`.
-        /// Otherwise `SHOW TABLES` / `system.tables` would list local table names according to the
-        /// configured remote user rather than the caller's privileges.
-        if (!shard_info.isLocal())
+        /// Enumerate the local database under `local_context`. A self-connection would list the local tables
+        /// visible to the stored engine user rather than to the caller.
+        if (!shard_info.isLocal() && !has_shard_on_this_server)
             continue;
 
         if (auto local_database = tryGetLocalDatabase())
@@ -576,18 +570,7 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(
                         /// is touched, so a caller without any grants on the local objects must not be
                         /// rejected there.
                         if (!local_database_is_remote)
-                        {
-                            local_context->checkAccess(AccessType::SHOW_COLUMNS, remote_database, table_name);
-
-                            /// An `Alias` reports its target's columns, so reading them needs the
-                            /// privilege on the target that describing the target requires.
-                            if (const auto * alias = storage->as<StorageAlias>();
-                                alias && !alias->isTargetTableGranted(local_context, AccessType::SHOW_COLUMNS, {}))
-                                throw Exception(
-                                    ErrorCodes::ACCESS_DENIED,
-                                    "Not enough privileges to describe metadata exposed by {}",
-                                    StorageID{remote_database, table_name}.getNameForLogs());
-                        }
+                            checkDescribeTableAccess(storage, StorageID{remote_database, table_name}, local_context);
                         auto metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, /* bypass_metadata_cache = */ false);
                         auto columns = metadata_snapshot->getColumns();
 

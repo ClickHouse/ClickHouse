@@ -41,27 +41,36 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
 
 StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
-    /// StorageDistributed supports mismatching structure of remote table, so we can use outdated structure for CREATE ... AS remote(...)
-    /// without additional conversion in StorageTableFunctionProxy
-    if (cached_columns.empty())
-        cached_columns = getActualTableStructure(context, is_insert_query);
-
     chassert(cluster);
 
-    bool has_local_shard = false;
-    for (const auto & shard_info : cluster->getShardsInfo())
-    {
-        if (shard_info.isLocal())
-        {
-            has_local_shard = true;
-            break;
-        }
-    }
+    /// A shard served by this server must be guarded like a local one, even if it is reached over a connection:
+    /// `127.0.0.{2..255}` is not classified local (tests use it to emulate a cluster on one machine), yet a query
+    /// sent there is executed by this server under the credentials passed to the table function, and its
+    /// peer address `127.0.0.1` satisfies `HOST LOCAL` restrictions of the account.
+    const bool has_shard_on_this_server = cluster->hasShardOnThisServer(context);
 
-    if (has_local_shard && !is_insert_query)
-        context->checkAccess(AccessType::SELECT, remote_table_id);
-    else if (has_local_shard)
-        context->checkAccess(AccessType::INSERT, remote_table_id);
+    /// StorageDistributed supports mismatching structure of remote table, so we can use outdated structure for CREATE ... AS remote(...)
+    /// without additional conversion in StorageTableFunctionProxy
+    const bool infer_structure = cached_columns.empty();
+    if (infer_structure)
+        cached_columns = getActualTableStructure(context, is_insert_query);
+
+    if (has_shard_on_this_server)
+    {
+        if (remote_table_function_ptr)
+        {
+            /// `remote_table_id` is a meaningless default for a table function target. Analyze the function under the
+            /// caller's context instead, which checks access to its underlying tables. The structure inference above
+            /// already did that.
+            if (!infer_structure)
+                TableFunctionFactory::instance().get(remote_table_function_ptr, context)
+                    ->getActualTableStructureWithAccess(context, /*is_insert_query*/ true);
+        }
+        else if (is_insert_query)
+            context->checkAccess(AccessType::INSERT, remote_table_id);
+        else
+            context->checkAccess(AccessType::SELECT, remote_table_id);
+    }
 
     DistributedSettings distributed_settings;
     distributed_settings.applyChanges(settings_changes);

@@ -28,6 +28,7 @@
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
+#include <Server/ServerType.h>
 #include <Storages/IStorage_fwd.h>
 #include <Backups/BackupsInMemoryHolder.h>
 #include <Server/StatelessWorker/StatelessWorkerAllocation_fwd.h>
@@ -227,7 +228,6 @@ using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
-class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 class AsyncLoader;
@@ -1596,13 +1596,24 @@ public:
 
     std::optional<UInt16> getTCPPortSecure() const;
 
+    /// A registered server listener: its port and the protocol it speaks (`ProtocolServerAdapter::getProtocolType`).
+    struct ServerPort
+    {
+        UInt16 port;
+        ServerType::Type protocol_type;
+    };
+
     /// Register a server listener port. May be called concurrently from
     /// `SYSTEM START LISTEN` at runtime (in `clickhouse-local`); re-registering
     /// the same `port_name` overwrites the previous value, e.g. when an
     /// ephemeral port-0 listener is stopped and started again on a new port.
-    void registerServerPort(String port_name, UInt16 port);
+    void registerServerPort(String port_name, ServerPort server_port);
 
-    UInt16 getServerPort(const String & port_name) const;
+    ServerPort getServerPort(const String & port_name) const;
+
+    /// A snapshot of all registered listeners by port name, including composable `protocols` endpoints.
+    /// Listeners removed by a config reload are still included.
+    std::map<String, ServerPort> getServerPorts() const;
 
     /// For methods below you may need to acquire the context lock by yourself.
 

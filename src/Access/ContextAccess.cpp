@@ -235,7 +235,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         };
 
         for (const std::string_view table_name : always_accessible_tables)
-            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, table_name);
+            res.grant(AccessType::SELECT | AccessType::SHOW_COLUMNS, DatabaseCatalog::SYSTEM_DATABASE, table_name);
 
         /// `system.user_query_log` shows each user only their own query log records, so SELECT on it is
         /// granted implicitly to everyone - but only while the feature is enabled and the name is actually

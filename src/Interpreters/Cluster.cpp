@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
@@ -6,6 +7,7 @@
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
 #include <base/range.h>
 #include <base/sort.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -91,6 +93,41 @@ bool Cluster::Address::isLocal(UInt16 clickhouse_port) const
 {
     if (auto resolved = getResolvedAddress())
         return isLocalImpl(*this, *resolved, clickhouse_port);
+    return false;
+}
+
+
+bool Cluster::Address::routesToThisServer(const std::vector<UInt16> & native_ports) const
+{
+    if (std::find(native_ports.begin(), native_ports.end(), port) == native_ports.end())
+        return false;
+
+    std::vector<Poco::Net::SocketAddress> resolved;
+    try
+    {
+        resolved = DNSResolver::instance().resolveAddressList(host_name, port);
+    }
+    catch (...)
+    {
+        /// It's Ok to ignore the error: the connection resolves the name the same way (`Connection::connect`)
+        /// and reports the DNS error to the user.
+        return false;
+    }
+
+    for (const auto & socket_address : resolved)
+    {
+        Poco::Net::IPAddress address = socket_address.host();
+
+        /// `::ffff:a.b.c.d` connects to `a.b.c.d`, which the interface scan of `isLocalAddress` matches only in the IPv4 form.
+        if (address.family() == Poco::Net::AddressFamily::IPv6 && address.isIPv4Mapped())
+            address = Poco::Net::IPAddress(static_cast<const char *>(address.addr()) + 12, 4);
+
+        /// `isLocalAddress` treats `127.0.0.{2..255}` as remote (tests use them to emulate a cluster), and the
+        /// unspecified address (`0.0.0.0`, `::`) connects to localhost on Linux, but this server answers both.
+        if (address.isLoopback() || address.isWildcard() || isLocalAddress(address))
+            return true;
+    }
+
     return false;
 }
 
@@ -1040,6 +1077,25 @@ std::vector<Strings> Cluster::getHostIDs() const
             host_ids[i][j] = addresses[j].toString();
     }
     return host_ids;
+}
+
+bool Cluster::hasShardOnThisServer(const ContextPtr & context) const
+{
+    for (const auto & shard_info : shards_info)
+        if (shard_info.isLocal())
+            return true;
+
+    std::vector<UInt16> native_ports;
+    for (const auto & [_, server_port] : context->getServerPorts())
+        if (ServerType::isNativeProtocol(server_port.protocol_type))
+            native_ports.push_back(server_port.port);
+
+    for (const auto & replicas : addresses_with_failover)
+        for (const auto & replica : replicas)
+            if (replica.routesToThisServer(native_ports))
+                return true;
+
+    return false;
 }
 
 std::vector<const Cluster::Address *> Cluster::filterAddressesByShardOrReplica(size_t only_shard_num, size_t only_replica_num) const

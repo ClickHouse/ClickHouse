@@ -4,6 +4,7 @@
 #include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
+#include <Databases/DatabaseRemote.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Cluster.h>
@@ -39,6 +40,16 @@ namespace ErrorCodes
 }
 
 
+void checkDescribeTableAccess(const StoragePtr & storage, const StorageID & table_id, const ContextPtr & context)
+{
+    context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
+
+    if (const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
+        alias && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {}))
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}", table_id.getNameForLogs());
+}
+
 static ColumnsDescription getStructureOfRemoteTableInShard(
     const Cluster & cluster,
     const Cluster::ShardInfo & shard_info,
@@ -64,15 +75,12 @@ static ColumnsDescription getStructureOfRemoteTableInShard(
     {
         if (shard_info.isLocal())
         {
-            context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
-            auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, context);
+            auto storage_ptr = DatabaseCatalog::instance().tryGetTable(table_id, context);
+            checkDescribeTableAccess(storage_ptr, table_id, context);
 
-            /// An `Alias` reports its target's columns, so a structure inferred from one needs the
-            /// privilege on the target that describing the target requires.
-            if (const auto * alias = storage_ptr->as<StorageAlias>();
-                alias && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {}))
-                throw Exception(
-                    ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}", table_id.getNameForLogs());
+            /// Only after the access check, to report a missing database or table with the usual error.
+            if (!storage_ptr)
+                storage_ptr = DatabaseCatalog::instance().getTable(table_id, context);
 
             auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(context, false);
             return metadata_snapshot->getColumns();
@@ -178,6 +186,26 @@ ColumnsDescription getStructureOfRemoteTable(
                 break;
 
             return res;
+        }
+    }
+
+    /// The structure was not obtained in-process (`isLocal`), but a shard reached over the network may still be this
+    /// server (e.g. `127.0.0.2`, or `prefer_localhost_replica = 0`). Its `DESC` runs under the connection's credentials,
+    /// bypassing the caller's own `SHOW_COLUMNS` (or table function) access check, so do that check here.
+    if (cluster.hasShardOnThisServer(context))
+    {
+        if (table_func_ptr)
+            TableFunctionFactory::instance().get(table_func_ptr, context)->getActualTableStructureWithAccess(context, /*is_insert_query*/ true);
+        else
+        {
+            /// The grant first: a caller without it is rejected before anything is looked up.
+            context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
+            StoragePtr storage;
+            if (auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.getDatabaseName());
+                database && !dynamic_cast<const DatabaseRemote *>(database.get()))
+                storage = database->tryGetTable(table_id.getTableName(), context);
+
+            checkDescribeTableAccess(storage, table_id, context);
         }
     }
 

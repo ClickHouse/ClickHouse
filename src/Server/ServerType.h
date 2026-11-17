@@ -57,6 +57,12 @@ public:
     [[nodiscard]] bool shouldStart(Type server_type, const std::string & server_custom_name = "") const;
     [[nodiscard]] bool shouldStop(const std::string & port_name) const;
 
+    /// Whether a server of this protocol type speaks the native TCP protocol (possibly over TLS or PROXYv1).
+    [[nodiscard]] static bool isNativeProtocol(Type protocol_type)
+    {
+        return protocol_type == Type::TCP || protocol_type == Type::TCP_SECURE || protocol_type == Type::TCP_WITH_PROXY;
+    }
+
     Type type{};
     std::string custom_name;
 
