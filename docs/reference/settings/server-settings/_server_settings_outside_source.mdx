@@ -1852,6 +1852,7 @@ Settings for optional improvements in the access control system.
 
 | Setting                                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Default |
 |-------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| `allow_execute_as_settings` | Sets whether `EXECUTE AS target_user SETTINGS name = value` is allowed. It sets a custom setting that a settings profile of the target user declares `CONST` without a value. See [EXECUTE AS](/reference/statements/execute_as). | `false` |
 | `enable_read_write_grants` | Enables separation of `READ` and `WRITE` privileges for external data sources such as `S3`, `HDFS`, `Kafka`, and others. Available starting with version 25.7. When set to `true`, you can grant `READ` and `WRITE` separately for sources instead of a single grant covering both. | `false` |
 | `on_cluster_queries_require_cluster_grant` | Sets whether `ON CLUSTER` queries require the `CLUSTER` grant.                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `true`  |
 | `readonly_restricts_set_role` | Sets whether the `SET ROLE` statement is refused when the session or the query is readonly. When `false`, `readonly` does not restrict `SET ROLE`. The `role` HTTP query parameter is not affected. | `false` |
@@ -1875,6 +1876,7 @@ Example:
     <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
     <table_engines_require_grant>false</table_engines_require_grant>
     <readonly_restricts_set_role>false</readonly_restricts_set_role>
+    <allow_execute_as_settings>false</allow_execute_as_settings>
     <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
     <enable_read_write_grants>false</enable_read_write_grants>
 </access_control_improvements>
