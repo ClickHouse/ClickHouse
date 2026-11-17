@@ -4,7 +4,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
@@ -345,17 +344,8 @@ VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::ma
         /// untouched — they keep their safety-nets for their own
         /// `buildSetInplace` / `buildOrderedSetInplace` consumers.
         removeAllDelayedMaterializingCTEsStep(*plan);
-        /// Same for the sets the source reads but an outer plan owns: the outer gate builds them.
-        QueryPlanOptimizations::removeSingleChildStepsIf(*plan, [](IQueryPlanStep & plan_step)
-        {
-            const auto * creating_sets = typeid_cast<const DelayedCreatingSetsStep *>(&plan_step);
-            return creating_sets && creating_sets->isInplaceBuildOnly();
-        });
 
-        auto subquery_optimization_settings = optimization_settings;
-        if (auto optimize_plan = future_set->getOptimizePlanOnBuild())
-            subquery_optimization_settings.optimize_plan = *optimize_plan;
-        plan->optimize(subquery_optimization_settings);
+        plan->optimize(optimization_settings);
         plans.emplace_back(std::move(plan));
     }
 

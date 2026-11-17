@@ -11,9 +11,10 @@ INSERT INTO mutation_cte_keys VALUES (0), (1), (2);
 CREATE TABLE mutation_cte_target (k UInt64, v UInt8) ENGINE = Memory;
 INSERT INTO mutation_cte_target VALUES (0, 0), (1, 0), (2, 0);
 
--- Converting this join creates a set whose source reads `c`. Primary-key analysis
--- must not build it before the outer mutation plan materializes the CTE. Referencing
--- `c` twice keeps it materialized; duplicate keys do not affect the enclosing `IN`.
+-- The set subqueries of a mutation are optimized as ordinary reads, but without `JOIN` -> `IN`:
+-- the new set source would read `c`, and primary-key analysis could build it before the mutation
+-- plan materializes the CTE. Referencing `c` twice keeps it materialized; duplicate keys do not
+-- affect the enclosing `IN`.
 ALTER TABLE mutation_cte_target UPDATE v = k IN
 (
     WITH c AS MATERIALIZED (SELECT number AS k FROM numbers(2))
@@ -55,7 +56,7 @@ ALTER TABLE mutation_cte_target UPDATE v = k IN
 WHERE 1;
 SELECT k, v FROM mutation_cte_target ORDER BY k;
 
--- Keep the conversion available for an ordinary `Memory` table with no CTE dependency.
+-- The same with an ordinary `Memory` table and no CTE.
 SET query_plan_convert_join_to_in = 1;
 CREATE TABLE mutation_cte_ready (k UInt64) ENGINE = Memory;
 INSERT INTO mutation_cte_ready VALUES (0), (1);
@@ -67,25 +68,44 @@ ALTER TABLE mutation_cte_target UPDATE v = k IN
 WHERE 1;
 SELECT k, v FROM mutation_cte_target ORDER BY k;
 
-SET explain_query_plan_default = 'legacy';
-SELECT countIf(trimLeft(explain) LIKE 'Join%') = 0, countIf(explain LIKE '%CreatingSets%') > 0
-FROM
+-- A CTE that reads another CTE.
+ALTER TABLE mutation_cte_target UPDATE v = k IN
 (
-    EXPLAIN description = 0
-    SELECT l.k FROM mutation_cte_keys AS l
-    ANY INNER JOIN mutation_cte_ready AS r ON l.k = r.k
-);
+    SELECT l.k FROM mutation_cte_keys AS l ALL INNER JOIN
+    (
+        WITH c1 AS MATERIALIZED (SELECT number AS k FROM numbers(3)),
+             c2 AS MATERIALIZED (SELECT k FROM c1 WHERE k < 2 UNION ALL SELECT k FROM c1 WHERE k < 2)
+        SELECT k FROM c2 UNION ALL SELECT k FROM c2
+    ) AS r ON l.k = r.k
+)
+WHERE 1;
+SELECT k, v FROM mutation_cte_target ORDER BY k;
 
--- The join whose right side reads the CTE converts as well: its new set source materializes the CTE.
-SET query_plan_convert_join_to_in = 1;
-SELECT countIf(trimLeft(explain) LIKE 'Join%')
-FROM
+-- An `IN` subquery in the `ON` key, also one that reads a CTE, and an `IN` filter in `ON`.
+ALTER TABLE mutation_cte_target UPDATE v = k IN
 (
-    EXPLAIN description = 0
+    SELECT l.k FROM mutation_cte_keys AS l ANY INNER JOIN mutation_cte_rhs AS r
+    ON l.k = r.k + toUInt64(r.k IN (SELECT number FROM numbers(2)))
+)
+WHERE 1;
+SELECT k, v FROM mutation_cte_target ORDER BY k;
+
+ALTER TABLE mutation_cte_target UPDATE v = k IN
+(
     WITH c AS MATERIALIZED (SELECT number AS k FROM numbers(2))
-    SELECT l.k FROM mutation_cte_keys AS l
-    ALL INNER JOIN (SELECT k FROM c UNION ALL SELECT k FROM c) AS r ON l.k = r.k
-);
+    SELECT l.k FROM mutation_cte_keys AS l ALL INNER JOIN mutation_cte_rhs AS r
+    ON l.k = r.k + toUInt64(r.k IN (SELECT k FROM c UNION ALL SELECT k FROM c))
+)
+WHERE 1;
+SELECT k, v FROM mutation_cte_target ORDER BY k;
+
+ALTER TABLE mutation_cte_target UPDATE v = k IN
+(
+    SELECT l.k FROM mutation_cte_keys AS l ALL INNER JOIN mutation_cte_rhs AS r
+    ON l.k = r.k AND r.k IN (SELECT number FROM numbers(1, 2))
+)
+WHERE 1;
+SELECT k, v FROM mutation_cte_target ORDER BY k;
 
 DROP TABLE mutation_cte_target;
 DROP TABLE mutation_cte_keys;

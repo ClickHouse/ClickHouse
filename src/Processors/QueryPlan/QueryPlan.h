@@ -179,6 +179,11 @@ public:
     /// expansion is then left to `convertToDistributed`; a plan that skipped the decision keeps its
     /// `Delayed*` placeholder steps and fails with a logical error when the pipeline is built.
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
+    /// The same, but optimizes the source plans of the sets and the materialized CTEs, which this plan
+    /// builds, with `subplans_optimization_settings`: e.g. a plan that must keep its shape still lets them
+    /// be optimized as ordinary reads.
+    void optimize(
+        const QueryPlanOptimizationSettings & optimization_settings, const QueryPlanOptimizationSettings & subplans_optimization_settings);
 
     /// Converts the original plan to distributed plan and replaces the original plan with a plan that
     /// contains a step that executes the distributed plan and a step that receives the result.

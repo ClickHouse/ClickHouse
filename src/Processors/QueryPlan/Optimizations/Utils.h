@@ -6,7 +6,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
-#include <functional>
 #include <type_traits>
 #include <unordered_map>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -82,10 +81,6 @@ enum class FilterResult
 [[nodiscard]] bool canProduceTotals(QueryPlan::Node & root);
 
 [[nodiscard]] bool dagContainsNonReadySet(const ActionsDAG & dag);
-
-/// Splice every node whose step matches `predicate` out of `plan`, at any depth, putting its only child
-/// in its place. `predicate` may change the step. The source plans of nested sets are not visited.
-void removeSingleChildStepsIf(QueryPlan & plan, const std::function<bool(IQueryPlanStep &)> & predicate);
 
 [[nodiscard]] bool dagContainsNonDeterministicFunction(const ActionsDAG & dag);
 

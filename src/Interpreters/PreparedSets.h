@@ -247,11 +247,6 @@ public:
     const QueryPlan * getQueryPlan() const { return source.get(); }
     QueryPlan * getQueryPlan() { return source.get(); }
 
-    /// `optimize_plan` for `source` when the set is built, whatever the plan that builds it uses:
-    /// `MutationsInterpreter` keeps the shape of its own plan, but a set subquery is an ordinary read.
-    void setOptimizePlanOnBuild(bool value) { optimize_plan_on_build = value; }
-    std::optional<bool> getOptimizePlanOnBuild() const { return optimize_plan_on_build; }
-
     /// The set is backed by a `GLOBAL IN` / `GLOBAL JOIN` external table, either through the
     /// set that fills that table or through the table stored next to the set itself.
     bool hasExternalTable() const;
@@ -265,7 +260,6 @@ private:
     std::shared_ptr<FutureSetFromSubquery> external_table_set;
 
     std::unique_ptr<QueryPlan> source;
-    std::optional<bool> optimize_plan_on_build;
     QueryTreeNodePtr query_tree;
 
     /// Why the destructive in-place build in `buildOrderedSetInplace` failed after it consumed `source`.

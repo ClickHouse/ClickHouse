@@ -56,7 +56,6 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Resolve/IdentifierResolver.h>
 #include <Analyzer/TableNode.h>
-#include <Interpreters/MaterializedCTE.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
@@ -663,6 +662,9 @@ MutationsInterpreter::MutationsInterpreter(
     /// Mutation source reads build a synthetic `SELECT` without a table expression,
     /// so parallel replicas must not be used for them.
     new_context->setSetting("enable_parallel_replicas", Field(0));
+    /// A mutation runs locally. Its set subqueries are optimized separately from the plan
+    /// (see `addStreamsForLaterStages`), which the distributed-plan decision does not allow.
+    new_context->setSetting("make_distributed_plan", Field(0));
 
     context = std::move(new_context);
 }
@@ -2388,16 +2390,6 @@ static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const Prepar
         /// The set source is kept aside, so its contexts must follow this plan's distributed-plan decision.
         query_plan.takeContextsFrom(subquery_plan);
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
-        /// The mutation plan keeps the shape of its stages with `optimize_plan = false`. A set subquery is an
-        /// ordinary read and needs the full optimization, e.g. to move its filter to `PREWHERE`. So do the
-        /// materialized CTEs it reads, which the mutation plan materializes.
-        const bool optimize_plan = QueryPlanOptimizationSettings(context_).optimize_plan;
-        subquery->setOptimizePlanOnBuild(optimize_plan);
-        for (const auto & level : materialized_ctes_per_subquery.back())
-            for (const auto & node : level)
-                if (const auto * table_node = node->as<TableNode>())
-                    if (auto cte = table_node->getMaterializedCTE())
-                        cte->optimize_plan_on_build = optimize_plan;
     }
 
     const auto & settings = context_->getSettingsRef();
@@ -2590,10 +2582,20 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
         buildSubqueryPlansForSetsAndAdd(plan, stage.new_prepared_sets, context);
     }
 
+    /// The stages of the mutation plan must keep their shape, so the plan itself is not optimized.
+    /// The set subqueries and the materialized CTEs that they read are ordinary reads: optimize them
+    /// fully, e.g. to move their filters to `PREWHERE`.
+    QueryPlanOptimizationSettings subplans_optimization_settings(context);
+    /// The right side of a join would become the source of a new set, which index analysis can build
+    /// before this plan materializes the CTEs and builds the sets that the source reads.
+    subplans_optimization_settings.convert_join_to_in = false;
+
     QueryPlanOptimizationSettings do_not_optimize_plan_settings(context);
     do_not_optimize_plan_settings.optimize_plan = false;
+    plan.optimize(do_not_optimize_plan_settings, subplans_optimization_settings);
 
-    auto pipeline = std::move(*plan.buildQueryPipeline(do_not_optimize_plan_settings, BuildQueryPipelineSettings(context)));
+    auto pipeline = std::move(*plan.buildQueryPipeline(
+        do_not_optimize_plan_settings, BuildQueryPipelineSettings(context), /*do_optimize=*/false));
 
     pipeline.addSimpleTransform([&](const SharedHeader & header)
     {
