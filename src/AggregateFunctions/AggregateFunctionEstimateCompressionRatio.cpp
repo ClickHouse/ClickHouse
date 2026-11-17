@@ -277,13 +277,10 @@ public:
 };
 
 
-/// With a `target_type`, the function divides the bytes of the rows in their own type by the bytes they would take compressed
-/// as a column of `target_type` in a `MergeTree` table with the default settings. The numerator depends only on the rows, so
-/// the ratios of several targets for the same rows rank the targets.
-
-/// A state holds at most this many bytes of rows. A wider granule is written in pieces; a piece writes what a serialization
-/// writes per call, which the writer writes once per granule: the header of a `LowCardinality` column (16 bytes), the end of a
-/// granule of a sparse column, the format of compact `Variant` discriminators.
+/// Not a `MergeTree` setting: the most bytes of rows a state keeps before it writes them, which bounds the memory per group. A
+/// granule wider than this is written in pieces. What a serialization writes once per call is then written once per piece,
+/// where the writer writes it once per granule: the header of a `LowCardinality` column (16 bytes), the end of a granule of a
+/// sparse column, the mode of compact `Variant` discriminators.
 constexpr size_t PENDING_BYTES = DBMS_DEFAULT_BUFFER_SIZE;
 
 /// How a new `MergeTree` table without `SETTINGS` writes a column, as far as the estimate follows it: the defaults of
@@ -334,9 +331,27 @@ const MergeTreeDefaults & mergeTreeDefaults()
     return defaults;
 }
 
+/// The name of the file a part would write the stream to. Substreams that share a file share a stream. `c` stands for the
+/// column, whose name does not matter here.
 String streamName(const ISerialization::SubstreamPath & path)
 {
     return ISerialization::getFileNameForStream("c", path, ISerialization::StreamFileNameSettings{});
+}
+
+/// Calls `callback(name, path)` for each substream that `serialization` writes, as the writer enumerates them. Ephemeral
+/// substreams are not written. Several substreams can have the same name, and then share one stream.
+template <typename Callback>
+void forEachStream(const ISerialization & serialization, const ISerialization::SubstreamData & data, Callback && callback)
+{
+    ISerialization::EnumerateStreamsSettings settings;
+    serialization.enumerateStreams(
+        settings,
+        [&](const ISerialization::SubstreamPath & path)
+        {
+            if (!ISerialization::isEphemeralSubcolumn(path, path.size()))
+                callback(streamName(path), path);
+        },
+        data);
 }
 
 /// The column of one part as the target type: a compressed stream per substream and one serialization state for all of its
@@ -357,23 +372,33 @@ struct TargetPart
 
 struct EstimateCompressionRatioWithTargetData
 {
-    /// The bytes of the rows in the source type: the granules written and the merged states.
+    /// The bytes of the rows in their own type, of the rows written and of the merged states.
     UInt64 source_bytes = 0;
-    /// The compressed bytes in the target type: the finished parts and the merged states.
+    /// The compressed bytes in the target type, of the finished parts and of the merged states.
     UInt64 compressed_bytes = 0;
-    /// Rows of the source type waiting to be written.
+    /// The rows not written yet, in their own type.
     MutableColumnPtr pending;
-    /// The rows and bytes of the open granule written so far, when it is written in pieces.
+    /// The rows and bytes (in the target type) of the open granule written so far, when it is written in pieces.
     size_t granule_rows = 0;
     size_t granule_bytes = 0;
-    /// The part the granules go to, until the state is read.
+    /// The part the rows are written to, until the state is read.
     std::unique_ptr<TargetPart> part;
-    /// Set while the part changes. It stays set if that fails, and the state cannot be read then.
+    /// A state kept in a `Memory` table outlives its query and is read by later queries: maybe several at once (`mutex`: a
+    /// read changes the state, as it finishes the part), maybe after a read that failed half-way (`broken`: set while the
+    /// part changes, it stays set if that fails, and the state cannot be read then).
     bool broken = false;
-    /// A read changes the state (it finishes the part), and a state behind a const pointer can be read by several threads.
     std::mutex mutex;
 };
 
+/// `estimateCompressionRatio` with a `target_type`: the bytes of the rows in their own type, divided by the bytes they would
+/// take compressed as a column of `target_type` in a wide part of a new `MergeTree` table. The numerator depends only on the
+/// rows, so the ratios of several targets for the same rows rank the targets.
+///
+/// A state keeps the rows it gets as pending rows, in their own type. When they fill a granule (`index_granularity` rows) or
+/// `PENDING_BYTES`, they are converted to the target type and written to the part of the state: a `CompressedSizeCalculator`
+/// per stream and one serialization state, as the writer has them. A granule wider than `PENDING_BYTES` is written in
+/// pieces. Reading the state (its result, its serialization, a merge of a state that has opened a part) finishes the part,
+/// and the next rows start a new one.
 class AggregateFunctionEstimateCompressionRatioWithTarget final
     : public IAggregateFunctionDataHelper<EstimateCompressionRatioWithTargetData, AggregateFunctionEstimateCompressionRatioWithTarget>
 {
@@ -393,15 +418,15 @@ public:
         , min_compress_block_size(block_size_bytes.value_or(merge_tree.min_compress_block_size))
         , validation_settings(std::move(validation_settings_))
     {
-        /// `Dynamic` and `JSON`, also nested. As a target, their substreams depend on the data and the writer has more rules for
-        /// them. As a source, the rows waiting for a granule take the dynamic structure of the blocks they came in, which their
-        /// serialization (the numerator) includes, so the result would depend on the blocks.
+        /// `Dynamic` and `JSON`, also nested, are not supported. As a target, their streams depend on the data, and the writer
+        /// has more rules for them. As a source, pending rows keep the dynamic structure of the blocks they came in, and the
+        /// numerator would depend on the blocks.
         const auto has_dynamic_structure = [](const IDataType & type) { return isDynamic(type) || isObject(type); };
         if (anyInTypeTree(*target_type, has_dynamic_structure))
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED, "Aggregate function {} does not support target type {}", getName(), target_type->getName());
-        /// Also a source with `LowCardinality`, which the factory removes from the arguments except inside a `Variant`: it writes
-        /// a dictionary with each serialization, so the numerator would depend on where the target's granules end.
+        /// Nor is a source with `LowCardinality`, which reaches the function only inside a `Variant` (the factory removes it
+        /// elsewhere): it writes a dictionary with each serialization, so the numerator would depend on where granules end.
         if (anyInTypeTree(*source_type, [&](const IDataType & type) { return has_dynamic_structure(type) || type.lowCardinality(); }))
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
@@ -426,31 +451,28 @@ public:
             cast->prepare({});
         }
 
-        /// The codecs of the substreams are resolved here, so that a codec the target type cannot take is reported here too.
-        ISerialization::EnumerateStreamsSettings enumerate_settings;
+        /// The codec and block size of each stream, resolved once for the parts of all states, and here, so that a codec the
+        /// target type cannot take is an error before any row comes.
         auto serialization = target_type->getSerialization(merge_tree.info_settings);
-        serialization->enumerateStreams(
-            enumerate_settings,
-            [this](const ISerialization::SubstreamPath & path)
+        forEachStream(
+            *serialization,
+            ISerialization::SubstreamData(serialization).withType(target_type),
+            [&](String name, const ISerialization::SubstreamPath & path)
             {
-                if (ISerialization::isEphemeralSubcolumn(path, path.size()))
-                    return;
-                String name = streamName(path);
                 if (!stream_layouts.contains(name))
                     stream_layouts.emplace(std::move(name), resolveStream(path));
-            },
-            ISerialization::SubstreamData(serialization).withType(target_type));
+            });
     }
 
     String getName() const override { return "estimateCompressionRatio"; }
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    /// NULL rows are measured (a null map, or an error for a type that cannot hold NULL), so the optimizer must not rewrite
-    /// `f(if(c, NULL, x))` to `fIf(x, not c)`, which drops them. `RewriteAggregateFunctionWithIfPass` asks this.
-    /// Returning the function itself as its `Null` adapter is safe only because the function is registered as a window
-    /// function, so the factory never wraps it in the `Null` combinator. The registration is checked, not the properties
-    /// argument: the rewrite pass passes default ones.
+    /// The function is registered as a window function, so the factory never wraps it in the `Null` combinator, and its rows
+    /// keep their NULLs (measured as a null map, or an error for a type that cannot hold NULL). Returning itself as its own
+    /// `Null` adapter tells `RewriteAggregateFunctionWithIfPass` not to turn `f(if(c, NULL, x))` into `fIf(x, not c)`, which
+    /// would drop them. The `chassert` checks the registration, not the properties argument: the rewrite pass passes default
+    /// ones.
     AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function, const DataTypes &, const Array &, const AggregateFunctionProperties &) const override
     {
@@ -572,13 +594,16 @@ private:
         return *data_ref.pending;
     }
 
-    /// The pending rows complete the granule by rows, or take `PENDING_BYTES`. Checked for every row added one at a time. Where a
-    /// granule ends by bytes depends on the converted rows, and `writePending` finds it.
+    /// Whether the pending rows complete the open granule by rows, or reach `PENDING_BYTES`. Where a granule ends by bytes
+    /// depends on the converted rows, and `writePending` finds it.
     bool isPendingFull(const Data & data_ref) const
     {
         return data_ref.granule_rows + data_ref.pending->size() >= merge_tree.granule_rows || data_ref.pending->byteSize() >= PENDING_BYTES;
     }
 
+    /// Adds the rows as `add` adds them one by one: the pending rows are written right after the row that fills them, so the
+    /// result does not depend on the blocks the rows come in. The rows go in as ranges that fit the room left, guessed from
+    /// their average size; a range that overfills the pending rows by bytes is taken back and added row by row.
     void addRows(Data & data_ref, const IColumn & column, size_t row_begin, size_t row_end) const
     {
         if (row_begin == row_end)
@@ -593,12 +618,9 @@ private:
             const size_t room_bytes = PENDING_BYTES - std::min(PENDING_BYTES, pending_bytes);
             const size_t rows = std::max<size_t>(1, std::min({row_end - row_begin, room_rows, room_bytes / bytes_per_row}));
             pending.insertRangeFrom(column, row_begin, rows);
-            /// The pending rows are written after the first row that fills them, as in `add`, whatever the blocks. The bytes
-            /// only grow with the rows, so only a range that filled them by bytes is added again row by row to find that row.
             if (rows > 1 && pending.byteSize() >= PENDING_BYTES)
             {
-                /// As `add`: a row goes in, then the rows are checked. At least one row goes in, also when a column keeps some
-                /// bytes of the rows it gives back.
+                /// At least one row goes in, so the loop progresses even if `popBack` does not give all bytes back.
                 pending.popBack(rows);
                 do
                     pending.insertFrom(column, row_begin++);
@@ -613,54 +635,36 @@ private:
         }
     }
 
-    /// Writes the pending rows to the part, up to the end of the granule: a granule, or a piece of one.
+    /// Writes the pending rows to the part, up to the end of the open granule; the rows after it stay pending. The pending rows
+    /// are a granule, or a piece of one.
     void writePending(Data & data_ref) const
     {
         throwIfBroken(data_ref);
+        chassert(data_ref.granule_rows + data_ref.pending->size() <= merge_tree.granule_rows);
 
-        /// As `CAST`, which rejects suspicious and experimental types the settings do not allow. Here and not when the function is
-        /// created, so that a state type that names such a type can still be read and merged (`ATTACH`, `-Merge`).
+        /// `CAST` validates the target type with the settings of the query (suspicious and experimental types). Here and not in
+        /// the constructor, so that a stored state type that names such a type can still be attached, read and merged.
         if (!data_ref.part && validation_settings)
             validateDataType(target_type, *validation_settings);
 
         ColumnPtr rows = data_ref.pending->getPtr();
-        /// A value the target type cannot hold is an error here, before the state changes.
-        ColumnPtr converted = rows;
-        if (cast)
-        {
-            ColumnsWithTypeAndName arguments{
-                {rows, source_type, ""},
-                {DataTypeString().createColumnConst(rows->size(), target_type->getName()), std::make_shared<DataTypeString>(), ""}};
-            converted = cast->execute(arguments, cast->getResultType(), rows->size(), /*dry_run=*/false);
-        }
-
-        /// The writer sizes granules on the rows it writes, which are in the target type: a granule ends after `index_granularity`
-        /// rows, or at the row where its rows reach `index_granularity_bytes`. The rows after that end stay pending, in their own type.
-        size_t write_rows = converted->size();
-        size_t write_bytes = converted->byteSize();
-        if (data_ref.granule_bytes + write_bytes >= merge_tree.granule_bytes)
-        {
-            write_rows = 0;
-            write_bytes = 0;
-            while (write_rows < converted->size() && data_ref.granule_bytes + write_bytes < merge_tree.granule_bytes)
-                write_bytes += converted->byteSizeAt(write_rows++);
-        }
-        const bool ends_granule = data_ref.granule_rows + write_rows >= merge_tree.granule_rows || data_ref.granule_bytes + write_bytes >= merge_tree.granule_bytes;
+        ColumnPtr converted = convert(rows);
+        const auto [write_rows, write_bytes] = rowsToGranuleEnd(data_ref, *converted);
+        chassert(write_rows > 0);
+        const bool ends_granule = data_ref.granule_rows + write_rows >= merge_tree.granule_rows
+            || data_ref.granule_bytes + write_bytes >= merge_tree.granule_bytes;
 
         MutableColumnPtr rest;
         if (write_rows < rows->size())
-        {
-            rest = source_type->createColumn();
-            rest->insertRangeFrom(*rows, write_rows, rows->size() - write_rows);
-        }
+            rest = IColumn::mutate(rows->cut(write_rows, rows->size() - write_rows));
         const UInt64 rows_bytes = sourceBytes(*rows, write_rows, /*first_in_part=*/!data_ref.part);
 
         data_ref.broken = true;
         if (!data_ref.part)
             data_ref.part = openPart(*converted);
 
-        /// As `MergeTreeDataPartWriterWide::getCurrentMarksForColumn` before a granule: a stream that holds
-        /// `min_compress_block_size` ends its compressed block.
+        /// Before a granule, a stream that holds `min_compress_block_size` bytes ends its compressed block, as in
+        /// `MergeTreeDataPartWriterWide::getCurrentMarksForColumn`.
         auto & part = *data_ref.part;
         if (data_ref.granule_rows == 0)
             for (auto & [_, stream] : part.streams)
@@ -671,16 +675,44 @@ private:
         data_ref.granule_rows = ends_granule ? 0 : data_ref.granule_rows + write_rows;
         data_ref.granule_bytes = ends_granule ? 0 : data_ref.granule_bytes + write_bytes;
         data_ref.source_bytes += rows_bytes;
-        converted.reset();
-        rows.reset();
         data_ref.pending = std::move(rest);
         data_ref.broken = false;
     }
 
-    /// The first `limit` rows serialized in their own type, as the function measures them without a target type. The prefix and
-    /// the suffix (the mode of `Variant` discriminators) are counted once per part, as one stream has them, so that the numerator
-    /// does not depend on where the granules of the target end. The rows themselves write nothing per call: the types that do
-    /// (`LowCardinality`, sparse, `Dynamic`) are removed or rejected before.
+    /// The rows in the target type. A value that `CAST` cannot convert is an error here, before the state changes.
+    ColumnPtr convert(const ColumnPtr & rows) const
+    {
+        if (!cast)
+            return rows;
+        /// The cast does not read its second argument, but it must be a constant.
+        ColumnsWithTypeAndName arguments{
+            {rows, source_type, ""},
+            {DataTypeString().createColumnConst(rows->size(), target_type->getName()), std::make_shared<DataTypeString>(), ""}};
+        return cast->execute(arguments, cast->getResultType(), rows->size(), /*dry_run=*/false);
+    }
+
+    /// How many of the converted rows the open granule takes, and their bytes. A granule ends after `index_granularity` rows,
+    /// or at the row where its converted rows reach `index_granularity_bytes`. That approximates the writer, which picks one
+    /// granule size per insert block, from the bytes of all the columns of the block (`computeIndexGranularity`); neither is
+    /// known here.
+    std::pair<size_t, size_t> rowsToGranuleEnd(const Data & data_ref, const IColumn & converted) const
+    {
+        const size_t bytes = converted.byteSize();
+        if (data_ref.granule_bytes + bytes < merge_tree.granule_bytes)
+            return {converted.size(), bytes};
+
+        size_t rows = 0;
+        size_t rows_bytes = 0;
+        while (rows < converted.size() && data_ref.granule_bytes + rows_bytes < merge_tree.granule_bytes)
+            rows_bytes += converted.byteSizeAt(rows++);
+        return {rows, rows_bytes};
+    }
+
+    /// The numerator of the first `limit` rows: their bytes serialized in their own type, as the function without a target type
+    /// counts them. The prefix and suffix of the serialization (for example, the mode of `Variant` discriminators) are counted
+    /// once per part, with its first rows, so that the numerator does not depend on where the granules of the target end. The
+    /// rows themselves write nothing per call: the source types that would (`LowCardinality`, sparse, `Dynamic`) are removed by
+    /// the factory, made dense in `addBatchSparseSinglePlace`, or rejected in the constructor.
     UInt64 sourceBytes(const IColumn & rows, size_t limit, bool first_in_part) const
     {
         NullWriteBufferWithMemory out(16384);
@@ -696,23 +728,22 @@ private:
         return first_in_part ? out.count() : rows_end - prefix_end;
     }
 
-    std::unique_ptr<TargetPart> openPart(const IColumn & first_granule) const
+    /// Opens a part with the first rows it gets, in the target type. They decide whether the column is sparse, as the rows of
+    /// an insert decide it for a new part.
+    std::unique_ptr<TargetPart> openPart(const IColumn & first_rows) const
     {
         auto part = std::make_unique<TargetPart>();
 
-        /// Sparse or not by the default values of the first rows, as a part by those of the rows inserted.
         auto info = target_type->createSerializationInfo(merge_tree.info_settings);
-        info->add(first_granule);
+        info->add(first_rows);
         part->serialization = target_type->getSerialization(*info);
 
-        ISerialization::EnumerateStreamsSettings enumerate_settings;
-        part->serialization->enumerateStreams(
-            enumerate_settings,
-            [&](const ISerialization::SubstreamPath & path)
+        /// A sparse serialization has a stream the dense one has not (the offsets of the values), resolved here.
+        forEachStream(
+            *part->serialization,
+            ISerialization::SubstreamData(part->serialization).withType(target_type).withColumn(first_rows.getPtr()),
+            [&](String name, const ISerialization::SubstreamPath & path)
             {
-                if (ISerialization::isEphemeralSubcolumn(path, path.size()))
-                    return;
-                String name = streamName(path);
                 if (part->streams.contains(name))
                     return;
                 auto it = stream_layouts.find(name);
@@ -720,8 +751,7 @@ private:
                 part->streams.emplace(
                     std::move(name),
                     std::make_unique<CompressedSizeCalculator>(layout.codec, layout.block_size, DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE));
-            },
-            ISerialization::SubstreamData(part->serialization).withType(target_type).withColumn(first_granule.getPtr()));
+            });
 
         part->settings = merge_tree.bulk_settings;
         part->settings.getter = [streams = &part->streams](const ISerialization::SubstreamPath & path) -> WriteBuffer *
@@ -733,16 +763,15 @@ private:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "No stream {} in the estimate of a part", streamName(path));
             return it->second.get();
         };
-        part->serialization->serializeBinaryBulkStatePrefix(first_granule, part->settings, part->state);
+        part->serialization->serializeBinaryBulkStatePrefix(first_rows, part->settings, part->state);
         return part;
     }
 
-    /// Writes the last rows and the suffix, and adds the compressed bytes of the part. A finished state has no part and no
-    /// pending rows, so reading it again gives the same totals.
+    /// Writes the pending rows and the suffix of the part, and adds the compressed bytes of the part. The state then has no part
+    /// and no pending rows, so reading it again gives the same totals.
     void finish(Data & data_ref) const
     {
         throwIfBroken(data_ref);
-        /// Every call writes at least one row.
         while (data_ref.pending && !data_ref.pending->empty())
             writePending(data_ref);
         data_ref.granule_rows = 0;
@@ -779,6 +808,7 @@ private:
                 ErrorCodes::INCORRECT_DATA, "The state of aggregate function {} is incomplete after an earlier error", getName());
     }
 
+    /// What the estimate follows of how a new table writes a column.
     const MergeTreeDefaults & merge_tree = mergeTreeDefaults();
     const DataTypePtr source_type;
     const SerializationPtr source_serialization;
