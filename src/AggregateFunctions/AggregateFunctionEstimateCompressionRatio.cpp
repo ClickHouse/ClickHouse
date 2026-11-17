@@ -666,11 +666,11 @@ private:
         chassert(data_ref.granule_rows + data_ref.pending->size() <= merge_tree.granule_rows);
 
         /// `CAST` validates the target type with the settings of the query (suspicious and experimental types), here those of
-        /// the query that added the rows. Here and not in the constructor, so that a stored state type that names such a type
-        /// can still be attached, read and merged.
+        /// the query that added the rows, at every write, since rows of several queries can go into one part. Here and not in
+        /// the constructor, so that a stored state type that names such a type can still be attached, read and merged.
         chassert(data_ref.conversion);
         const Conversion & rows_conversion = *data_ref.conversion;
-        if (!data_ref.part && rows_conversion.validation_settings)
+        if (rows_conversion.validation_settings)
             validateDataType(target_type, *rows_conversion.validation_settings);
 
         ColumnPtr rows = data_ref.pending->getPtr();

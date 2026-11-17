@@ -84,6 +84,14 @@ INSERT INTO lc_states SELECT 10000, estimateCompressionRatioState('LowCardinalit
 SETTINGS allow_suspicious_low_cardinality_types = 1;
 SELECT n, estimateCompressionRatioMerge('LowCardinality(UInt8)')(st) > 0 FROM lc_states GROUP BY n ORDER BY n
 SETTINGS allow_suspicious_low_cardinality_types = 0;
+-- And a small state added without the setting is rejected when its rows are written, alone or after the rows of a state added
+-- with it have opened the part.
+INSERT INTO lc_states SELECT 1, estimateCompressionRatioState('LowCardinality(UInt8)')(toUInt8(number % 10)) FROM numbers(100)
+SETTINGS allow_suspicious_low_cardinality_types = 0;
+SELECT estimateCompressionRatioMerge('LowCardinality(UInt8)')(st) FROM lc_states WHERE n = 1
+SETTINGS allow_suspicious_low_cardinality_types = 1; -- { serverError SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY }
+SELECT estimateCompressionRatioMerge('LowCardinality(UInt8)')(st) FROM lc_states WHERE n IN (100, 1)
+SETTINGS allow_suspicious_low_cardinality_types = 1; -- { serverError SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY }
 
 DROP TABLE states;
 DROP TABLE results;
