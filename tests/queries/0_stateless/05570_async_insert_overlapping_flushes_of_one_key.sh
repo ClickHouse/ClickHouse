@@ -20,20 +20,28 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE MATERIALIZED VIEW t_overlap_mv TO t_overlap_sink AS SELECT sleepEachRow(3) AS x FROM t_overlap WHERE n = 1;"
 
 # A large maximum busy timeout, so that an insert is never flushed at once because the previous one was longer than it ago.
+# Other tests leave busy timeouts of up to 600000 ms in the queue shards. The huge decrease rate drops such a timeout to
+# the minimum at the first insert.
 function insert()
 {
     ${CLICKHOUSE_CLIENT} --async_insert 1 --wait_for_async_insert 1 --async_insert_use_adaptive_busy_timeout 1 \
         --async_insert_busy_timeout_min_ms 500 --async_insert_busy_timeout_max_ms 100000 \
+        --async_insert_busy_timeout_decrease_rate 1000000000 \
         --query_id "${CLICKHOUSE_DATABASE}_$1" --query "INSERT INTO t_overlap VALUES ($2)"
 }
 
-function wait_for_queued()
+# Waits until the insert was pushed to the queue and has left it again, so its flush has started. It can leave the queue
+# before a poll sees it there, so the push is detected by its `AsyncInsertQuery` profile event instead.
+function wait_for_flush_start()
 {
-    local expected=$2
-    for _ in {1..200}; do
-        [[ $(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.asynchronous_inserts WHERE has(entries.query_id, '${CLICKHOUSE_DATABASE}_$1')") == "$expected" ]] && return
+    local query_id="${CLICKHOUSE_DATABASE}_$1"
+    for _ in {1..600}; do
+        [[ $(${CLICKHOUSE_CLIENT} --query "
+            SELECT (SELECT count() FROM system.processes WHERE query_id = '${query_id}' AND ProfileEvents['AsyncInsertQuery'] = 1)
+                AND (SELECT count() = 0 FROM system.asynchronous_inserts WHERE has(entries.query_id, '${query_id}'))") == 1 ]] && return
         sleep 0.05
     done
+    echo "The flush of $1 did not start"
 }
 
 # The first insert can be flushed at once when the queue shard was idle for long. The second one comes right after it,
@@ -50,8 +58,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM WAIT FAILPOINT ${FAILPOINT} PAUSE"
 
 # A flush of the key is in progress, so this insert waits for its deadline, and is then held as well. Its flush sleeps.
 insert b 1 &
-wait_for_queued b 1
-wait_for_queued b 0
+wait_for_flush_start b
 
 # Both flushes run now; the first one finishes at once, the second one sleeps.
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FAILPOINT}"
