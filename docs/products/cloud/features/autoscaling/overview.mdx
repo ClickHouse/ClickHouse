@@ -44,8 +44,8 @@ For Enterprise tier services scaling works as follows:
 
 For [BYOC (Bring Your Own Cloud)](/products/cloud/guides/infrastructure/deployment-options/byoc/overview) services scaling works as follows:
 
-- **Horizontal scaling**: Horizontal scaling supports manual scaling and automatic scaling.
-- **Vertical scaling**: Vertical scaling uses discrete sizes that match the node sizes of your BYOC infrastructure.
+- **Horizontal scaling**: Horizontal scaling supports manual scaling. Automatic horizontal scaling is available only for BYOC deployments with autoscaling enabled. It adjusts replica count within configured limits while keeping each replica's size fixed. Contact support to confirm availability for your deployment.
+- **Vertical scaling**: Vertical autoscaling is available only when enabled for your organization. Contact support to confirm availability. Vertical scaling uses discrete sizes that match the node sizes of your BYOC infrastructure.
   - In BYOC, each server runs on its own node. ClickHouse sizes each server to use the full node, so that no node capacity is wasted.
   - In ClickHouse Cloud, multiple servers share one node, so servers scale in continuous increments.
   - When you set the minimum and maximum sizes for a BYOC service, you select from a list of discrete sizes. You do not select from a continuous range.
