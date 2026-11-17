@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 import threading
+import time
 import uuid
 
 import pytest
@@ -1685,6 +1686,74 @@ def test_named_storage_collision_is_checked_before_batch_insert(start_cluster):
         )
         assert output == ""
         assert "already exists" in error, error
+
+
+def test_concurrent_creates_in_different_storages_cannot_both_take_a_name(start_cluster):
+    """An implicit `CREATE` paused after its checks must not let a `CREATE ... IN <storage>` take the same name."""
+    instance.query("CREATE TABLE IF NOT EXISTS tier_concurrent_create_table (x UInt8) ENGINE = Memory")
+    cases = [
+        (
+            "CREATE QUOTA tier_concurrent_quota",
+            "CREATE QUOTA tier_concurrent_quota IN memory",
+            "DROP QUOTA IF EXISTS tier_concurrent_quota",
+            "SELECT count() FROM system.quotas WHERE name = 'tier_concurrent_quota'",
+        ),
+        (
+            "CREATE ROW POLICY tier_concurrent_policy ON default.tier_concurrent_create_table",
+            "CREATE ROW POLICY tier_concurrent_policy ON default.tier_concurrent_create_table IN memory",
+            "DROP ROW POLICY IF EXISTS tier_concurrent_policy ON default.tier_concurrent_create_table",
+            "SELECT count() FROM system.row_policies WHERE short_name = 'tier_concurrent_policy'",
+        ),
+    ]
+    for implicit_create, named_create, drop, count in cases:
+        # `DROP` without `FROM` removes the entity of only one storage, so run it for every storage.
+        for _ in range(2):
+            instance.query(drop)
+        results = {}
+        implicit_thread = None
+        named_thread = None
+        named_query_id = str(uuid.uuid4())
+        try:
+            with feature_tier(instance, "1"):
+                instance.query(f"SYSTEM ENABLE FAILPOINT {ACCESS_CONTROL_FEATURE_TIER_FAILPOINT}")
+                implicit_thread = threading.Thread(
+                    target=lambda: results.update(implicit=instance.query_and_get_answer_with_error(implicit_create))
+                )
+                implicit_thread.start()
+                instance.query(f"SYSTEM WAIT FAILPOINT {ACCESS_CONTROL_FEATURE_TIER_FAILPOINT} PAUSE", timeout=60)
+
+                named_thread = threading.Thread(
+                    target=lambda: results.update(
+                        named=instance.query_and_get_answer_with_error(named_create, query_id=named_query_id)
+                    )
+                )
+                named_thread.start()
+                # Resume the paused statement only when the named `CREATE` has either finished or is running.
+                for _ in range(600):
+                    if not named_thread.is_alive():
+                        break
+                    if instance.query(f"SELECT count() FROM system.processes WHERE query_id = '{named_query_id}'").strip() == "1":
+                        break
+                    time.sleep(0.1)
+                instance.query(f"SYSTEM NOTIFY FAILPOINT {ACCESS_CONTROL_FEATURE_TIER_FAILPOINT}")
+
+                implicit_thread.join(timeout=60)
+                named_thread.join(timeout=60)
+                assert not implicit_thread.is_alive()
+                assert not named_thread.is_alive()
+                assert results["implicit"] == ("", "")
+                assert results["named"][0] == ""
+                assert "already exists" in results["named"][1], results["named"][1]
+                assert instance.query(count).strip() == "1"
+        finally:
+            instance.query(f"SYSTEM DISABLE FAILPOINT {ACCESS_CONTROL_FEATURE_TIER_FAILPOINT}")
+            if implicit_thread is not None:
+                implicit_thread.join(timeout=60)
+            if named_thread is not None:
+                named_thread.join(timeout=60)
+            for _ in range(2):
+                instance.query(drop)
+    instance.query("DROP TABLE tier_concurrent_create_table")
 
 
 def test_const_constraint_is_sticky_when_previous_constraints_are_kept(start_cluster):
