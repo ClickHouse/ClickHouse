@@ -11,12 +11,14 @@
 
 #if USE_AVRO
 
+#include <Columns/ColumnTuple.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Processors/Formats/Impl/JSONObjectEachRowRowOutputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <base/find_symbols.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 
 namespace DB::ErrorCodes
 {
@@ -231,7 +233,8 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
 
     std::unordered_map<Int32, ColumnInfo> columns_infos;
 
-    for (const auto & path : {c_data_file_value_counts, c_data_file_column_sizes, c_data_file_null_value_counts})
+    for (const auto & path :
+         {c_data_file_value_counts, c_data_file_column_sizes, c_data_file_null_value_counts, c_data_file_nan_value_counts})
     {
         if (hasPath(path))
         {
@@ -245,8 +248,10 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                     columns_infos[number].rows_count = count;
                 else if (path == c_data_file_column_sizes)
                     columns_infos[number].bytes_size = count;
-                else
+                else if (path == c_data_file_null_value_counts)
                     columns_infos[number].nulls_count = count;
+                else
+                    columns_infos[number].nans_count = count;
             }
         }
     }
@@ -292,6 +297,42 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
     const auto record_count = getValueFromRowByName(row_index, c_data_file_record_count, TypeIndex::Int64).safeGet<Int64>();
     const auto file_size_in_bytes = getValueFromRowByName(row_index, c_data_file_file_size_in_bytes, TypeIndex::Int64).safeGet<Int64>();
 
+    std::optional<Iceberg::IcebergPathFromMetadata> referenced_data_file_path;
+    if (hasPath(c_data_file_referenced_data_file))
+    {
+        Field referenced_data_file_field = getValueFromRowByName(row_index, c_data_file_referenced_data_file);
+        if (!referenced_data_file_field.isNull())
+            referenced_data_file_path.emplace(Iceberg::IcebergPathFromMetadata::deserialize(referenced_data_file_field.safeGet<String>()));
+    }
+
+    std::optional<Int64> content_offset;
+    if (hasPath(c_data_file_content_offset))
+    {
+        Field content_offset_field = getValueFromRowByName(row_index, c_data_file_content_offset);
+        if (!content_offset_field.isNull())
+            content_offset = content_offset_field.safeGet<Int64>();
+    }
+
+    std::optional<Int64> content_size_in_bytes;
+    if (hasPath(c_data_file_content_size_in_bytes))
+    {
+        Field content_size_field = getValueFromRowByName(row_index, c_data_file_content_size_in_bytes);
+        if (!content_size_field.isNull())
+            content_size_in_bytes = content_size_field.safeGet<Int64>();
+    }
+
+    std::optional<std::vector<Int64>> split_offsets;
+    if (hasPath(c_data_file_split_offsets))
+    {
+        Field split_offsets_field = getValueFromRowByName(row_index, c_data_file_split_offsets);
+        if (!split_offsets_field.isNull())
+        {
+            split_offsets.emplace();
+            for (const Field & offset : split_offsets_field.safeGet<Array>())
+                split_offsets->push_back(offset.safeGet<Int64>());
+        }
+    }
+
     switch (content_type)
     {
         case FileContentType::DATA: {
@@ -310,27 +351,25 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 file_format,
                 /*lower_reference_data_file_path_ = */ std::nullopt,
                 /*upper_reference_data_file_path_ = */ std::nullopt,
+                /*referenced_data_file_path_ = */ std::nullopt,
+                /*content_offset_ = */ std::nullopt,
+                /*content_size_in_bytes_ = */ std::nullopt,
                 /*equality_ids*/ std::nullopt,
                 sort_order_id,
                 record_count,
-                file_size_in_bytes);
+                file_size_in_bytes,
+                split_offsets);
         }
         case FileContentType::POSITION_DELETE: {
             /// reference_file_path can be absent in schema for some reason, though it is present in specification: https://iceberg.apache.org/spec/#manifests
             std::optional<Iceberg::IcebergPathFromMetadata> lower_reference_data_file_path;
             std::optional<Iceberg::IcebergPathFromMetadata> upper_reference_data_file_path;
             bool bounds_set_by_referenced_data_file = false;
-            if (hasPath(c_data_file_referenced_data_file))
+            if (referenced_data_file_path.has_value())
             {
-                Field reference_file_path_field = getValueFromRowByName(row_index, c_data_file_referenced_data_file);
-                if (!reference_file_path_field.isNull())
-                {
-                    lower_reference_data_file_path.emplace(
-                        Iceberg::IcebergPathFromMetadata::deserialize(reference_file_path_field.safeGet<String>()));
-                    upper_reference_data_file_path.emplace(
-                        Iceberg::IcebergPathFromMetadata::deserialize(reference_file_path_field.safeGet<String>()));
-                    bounds_set_by_referenced_data_file = true;
-                }
+                lower_reference_data_file_path = referenced_data_file_path;
+                upper_reference_data_file_path = referenced_data_file_path;
+                bounds_set_by_referenced_data_file = true;
             }
             if (!bounds_set_by_referenced_data_file)
             {
@@ -377,6 +416,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 file_format,
                 lower_reference_data_file_path,
                 upper_reference_data_file_path,
+                referenced_data_file_path,
+                content_offset,
+                content_size_in_bytes,
                 /*equality_ids*/ std::nullopt,
                 /*sort_order_id = */ std::nullopt,
                 record_count,
@@ -415,6 +457,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 file_format,
                 /*lower_reference_data_file_path_ = */ std::nullopt,
                 /*upper_reference_data_file_path_ = */ std::nullopt,
+                /*referenced_data_file_path_ = */ std::nullopt,
+                /*content_offset_ = */ std::nullopt,
+                /*content_size_in_bytes_ = */ std::nullopt,
                 equality_ids,
                 /*sort_order_id = */ std::nullopt,
                 record_count,
@@ -444,6 +489,31 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::getParsedManifestFileEntr
     return parsed_manifest_file_entries[row_index];
 }
 
+namespace
+{
+
+/// Resolves a path made only of named Tuple elements, giving the same column and type as `IDataType::getSubcolumn`.
+std::optional<std::pair<ColumnPtr, DataTypePtr>> tryGetTupleElement(ColumnPtr column, DataTypePtr type, std::string_view path)
+{
+    while (true)
+    {
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+        if (!tuple_type)
+            return {};
+        const size_t dot = path.find('.');
+        const auto position = tuple_type->tryGetPositionByName(path.substr(0, dot));
+        if (!position)
+            return {};
+        column = assert_cast<const ColumnTuple &>(*column).getColumnPtr(*position);
+        type = tuple_type->getElement(*position);
+        if (dot == std::string_view::npos)
+            return std::make_pair(std::move(column), std::move(type));
+        path.remove_prefix(dot + 1);
+    }
+}
+
+}
+
 std::optional<std::pair<ColumnPtr, DataTypePtr>> & AvroForIcebergDeserializer::extractSubcolumnWithType(const std::string & path) const
 {
     // First, try to read from cache with shared lock (for concurrent reads)
@@ -463,7 +533,11 @@ std::optional<std::pair<ColumnPtr, DataTypePtr>> & AvroForIcebergDeserializer::e
         return it->second;
 
     // Populate cache
-    if (parsed_column_data_type->hasSubcolumn(path))
+    if (auto element = tryGetTupleElement(parsed_column, parsed_column_data_type, path))
+    {
+        cache_extracted_subcolumns_with_types[path] = std::move(element);
+    }
+    else if (parsed_column_data_type->hasSubcolumn(path))
     {
         auto column = parsed_column_data_type->getSubcolumn(path, parsed_column);
         auto data_type = parsed_column_data_type->getSubcolumnType(path);

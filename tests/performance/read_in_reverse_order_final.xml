@@ -5,8 +5,13 @@
         ORDER BY x
     </create_query>
 
+    <!-- A merged part plus one newer part of the second insert, with merges stopped, so that both servers
+         read the same two parts. -->
     <fill_query>INSERT INTO read_in_reverse_order_final SELECT number, number FROM numbers_mt(50000000)</fill_query>
-    <fill_query>INSERT INTO read_in_reverse_order_final SELECT number * 2, number FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE read_in_reverse_order_final FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+    <fill_query>SYSTEM STOP MERGES read_in_reverse_order_final</fill_query>
+    <fill_query>INSERT INTO read_in_reverse_order_final SETTINGS min_insert_block_size_rows = 16777216, min_insert_block_size_bytes = 0 SELECT number * 2, number FROM numbers_mt(10000000)</fill_query>
+    <fill_query>SELECT throwIf(count() != 2, 'read_in_reverse_order_final: expected 2 active parts') FROM system.parts WHERE database = currentDatabase() AND table = 'read_in_reverse_order_final' AND active</fill_query>
 
     <query>SELECT x, y FROM read_in_reverse_order_final FINAL ORDER BY x DESC LIMIT 10 FORMAT Null</query>
     <query>SELECT x, y FROM read_in_reverse_order_final FINAL ORDER BY x DESC LIMIT 100000 FORMAT Null</query>

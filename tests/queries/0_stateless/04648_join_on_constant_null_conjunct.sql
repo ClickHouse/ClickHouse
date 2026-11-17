@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 -- A constant conjunct of the ON expression belongs to neither side, so it is grouped with the left
 -- one when conditions are pushed out of the join. No filter can be built from a constant predicate,
 -- and the conjunct used to be dropped instead of staying in the ON expression.

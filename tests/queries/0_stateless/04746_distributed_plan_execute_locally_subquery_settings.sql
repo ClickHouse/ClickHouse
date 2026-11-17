@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 DROP TABLE IF EXISTS t1_04746;
 DROP TABLE IF EXISTS t2_04746;
 CREATE TABLE t1_04746 (key UInt64, val Nullable(String)) ENGINE = MergeTree ORDER BY key;

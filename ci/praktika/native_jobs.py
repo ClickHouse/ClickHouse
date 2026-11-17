@@ -3,7 +3,9 @@ import hashlib
 import json
 import os
 import platform
+import re
 import sys
+import time
 import traceback
 from pathlib import Path
 
@@ -72,6 +74,43 @@ _final_job = Job.Config(
 )
 
 
+# This marker is intentionally part of the aggregate merge-status description.
+# The review-thread reconciliation workflow can clear this exact failure after
+# the dedicated override label is added, while leaving every other post-hook
+# and job failure untouched.
+_REVIEW_THREADS_POST_HOOK = (
+    "ci/jobs/scripts/workflow_hooks/can_be_merged.py --review-threads"
+)
+_REVIEW_THREADS_ONLY_POST_HOOK_FAILURE = "Failed: review threads only"
+
+# Printed by `check_review_threads` in
+# `ci/jobs/scripts/workflow_hooks/can_be_merged.py` on the policy-block path
+# only - keep the two in sync. The hook fails for infrastructure reasons too
+# (the thread/label queries and the commit-status write all raise), and such a
+# failure must not be rewritten into the marker below: the reconciliation
+# workflow clears that marker once the threads are resolved, which would hide
+# a hook failure that had nothing to do with review threads.
+_REVIEW_THREADS_POLICY_FAILURE_MARKER = (
+    "REVIEW_THREADS_GATE: blocked by unresolved review threads"
+)
+
+
+def _is_review_threads_policy_failure(result):
+    """Whether this result is the review-thread hook concluding "blocked"."""
+    return (
+        _REVIEW_THREADS_POST_HOOK in result.name
+        and _REVIEW_THREADS_POLICY_FAILURE_MARKER in (result.info or "")
+    )
+
+
+def _review_threads_were_the_only_failed_post_hook(results):
+    """Whether the review-thread policy verdict was the sole failed post-hook."""
+    failed = [result for result in results if not result.is_ok()]
+    return bool(failed) and all(
+        _is_review_threads_policy_failure(result) for result in failed
+    )
+
+
 def _is_praktika_job(job_name):
     if job_name in (
         Settings.CI_CONFIG_JOB_NAME,
@@ -82,6 +121,19 @@ def _is_praktika_job(job_name):
     ):
         return True
     return False
+
+
+def _publish_latest_docker_manifest(workflow, branch):
+    """`latest` is a mutable alias shared by every consumer of the images, so only
+    a run on the workflow's own branch may move it. A workflow that declares no
+    branches cannot name that branch, and moving a public mutable tag is exactly
+    the kind of consequential action a fallback path must not take, so that case
+    refuses to publish rather than falling back to the unguarded behaviour."""
+    if not workflow.set_latest_for_docker_merged_manifest:
+        return False
+    if not workflow.branches:
+        return False
+    return branch in workflow.branches
 
 
 def _build_dockers(workflow, job_name):
@@ -180,13 +232,14 @@ def _build_dockers(workflow, job_name):
         and job_name == Settings.DOCKER_BUILD_MANIFEST_JOB_NAME
     ):
         print("Start docker manifest merge")
+        add_latest = _publish_latest_docker_manifest(workflow, Info().git_branch)
         for docker in dockers:
             results.append(
                 Docker.merge_manifest(
                     config=docker,
                     digests=docker_digests,
                     with_log=True,
-                    add_latest=workflow.set_latest_for_docker_merged_manifest,
+                    add_latest=add_latest,
                 )
             )
 
@@ -223,11 +276,19 @@ def _submodule_auth_env(workflow) -> dict:
 def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
     """Compute a content-addressed hash of submodule SHAs and ensure a cache
     archive exists in S3.  Stores the hash in workflow_config so that downstream
-    jobs with needs_submodules=True can restore it."""
+    jobs with needs_submodules=True can restore it.
+
+    The hash covers only the submodules affecting these jobs, so that a bump of a
+    submodule that none of them uses (e.g. test data excluded from their digests)
+    does not invalidate the cache. Such a submodule is still archived at whatever
+    commit it had when the archive was created; a job checking out another commit
+    of it fetches that commit from the remote."""
     stop_watch = Utils.Stopwatch()
     info = ""
     try:
-        submodule_shas = Digest.get_submodule_shas()
+        submodule_shas = Digest.get_submodule_shas_for_jobs(
+            [job for job in workflow.jobs if job.needs_submodules]
+        )
         if not submodule_shas:
             print("WARNING: No submodules found, skipping submodule cache")
             return Result.create_from(
@@ -253,8 +314,13 @@ def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
             Shell.check("rm -rf .git/modules", verbose=True)
             Shell.check("git submodule sync", verbose=True, strict=True)
             Shell.check("git submodule init", verbose=True, strict=True)
+            # `--jobs` parallelizes only the clones; the fetch of each pinned commit
+            # and its checkout run one submodule at a time, so fan out per submodule.
+            paths = [path for _, path in Digest._get_submodules()]
             Shell.check(
-                "git submodule update --depth=1 --single-branch --jobs 8",
+                "xargs --max-procs=8 --null --max-args=1 "
+                "git submodule update --depth=1 --single-branch --",
+                stdin_str="\0".join(paths) + "\0",
                 verbose=True,
                 strict=True,
                 retries=3,
@@ -303,6 +369,356 @@ def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
         stopwatch=stop_watch,
         info=info,
     )
+
+
+# Short-lived local tag used only to advertise the snapshot commit to the shallow
+# local fetch that builds the archive; created and deleted within
+# _prepare_repo_snapshot.
+_REPO_SNAPSHOT_TAG = "_praktika_repo_snapshot"
+
+# A git commit id (sha1 = 40 hex, sha256 = 64 hex). Used to validate the untrusted,
+# cross-PR-writable sticky-base pin before it is interpolated into any git command.
+_COMMIT_SHA_RE = re.compile(r"[0-9a-fA-F]{40,64}")
+
+
+def _sha256_file(path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _resolve_sticky_base(pr_number, base_branch, live_base_sha, sticky_hours) -> str:
+    """Sticky merge base (per PR). Reuse the previously pinned target-branch commit
+    when the new run starts within ``sticky_hours`` of this PR's previous run;
+    otherwise reset the pin to the live tip. Keeps the digest cache warm across
+    rapid iterations without re-merging a moving base. Best-effort — any failure
+    falls back to the live tip.
+
+    Pin record (per PR, so a fork can only affect its own runs):
+    ``{S3_ARTIFACT_BUCKET}/pr/<pr>/merge-base-pin.json`` =
+    ``{base_sha, pinned_ts, base_branch}``. The pin is untrusted (cross-PR
+    writable), so base_sha is accepted only if it passes two gates: (1) it matches
+    a plain commit id — it is interpolated into shell git commands, so this guards
+    against injection and must come first; and (2) it is an ancestor of the live
+    target tip, i.e. an actual commit on the target branch (a hex sha that is not,
+    e.g. a fork commit, is rejected). Either failure falls back to the live tip.
+    """
+    pin_s3 = f"{Settings.S3_ARTIFACT_BUCKET}/pr/{pr_number}/merge-base-pin.json"
+    local = f"{Settings.TEMP_DIR}/merge-base-pin.json"
+    now = time.time()
+    base_sha = live_base_sha
+    reason = "reset to live tip (no prior pin)"
+    try:
+        pinned = None
+        if S3.copy_file_from_s3(s3_path=pin_s3, local_path=local, no_strict=True):
+            with open(local, "r", encoding="utf-8") as f:
+                pinned = json.load(f)
+        if isinstance(pinned, dict):
+            p_base = str(pinned.get("base_sha") or "")
+            p_ts = float(pinned.get("pinned_ts") or 0)
+            p_branch = str(pinned.get("base_branch") or "")
+            age_h = (now - p_ts) / 3600
+            if not p_base or p_branch != base_branch:
+                reason = "reset to live tip (no usable pin)"
+            elif not _COMMIT_SHA_RE.fullmatch(p_base):
+                # The pin is untrusted, cross-PR-writable input and p_base is
+                # interpolated into shell git commands below. Never accept anything
+                # but a plain commit id — reject and fall back to the live tip.
+                reason = "reset to live tip (pinned base_sha is not a commit id)"
+            elif age_h > sticky_hours:
+                reason = f"reset to live tip (previous run {age_h:.1f}h ago > {sticky_hours}h)"
+            else:
+                # Reuse only if the pinned base is still an ancestor of the live
+                # tip. Fetch it first — it may not be in the partial clone.
+                Shell.check(
+                    f"git fetch --no-tags --filter=tree:0 origin {p_base}",
+                    verbose=True,
+                )
+                if Shell.check(
+                    f"git merge-base --is-ancestor {p_base} {live_base_sha}",
+                    verbose=True,
+                ):
+                    base_sha = p_base
+                    reason = f"reused (pinned {age_h:.1f}h ago, window {sticky_hours}h)"
+                else:
+                    reason = "reset (pinned base not an ancestor of live tip)"
+    except Exception as e:
+        print(f"WARNING: sticky base lookup failed, using live tip: {e}")
+        base_sha = live_base_sha
+    # Refresh the pin: keep the chosen base_sha, stamp the current run time so the
+    # window is measured from this (the previous) run next time.
+    try:
+        with open(local, "w", encoding="utf-8") as f:
+            json.dump(
+                {"base_sha": base_sha, "pinned_ts": now, "base_branch": base_branch},
+                f,
+            )
+        S3.copy_file_to_s3(s3_path=pin_s3, local_path=local, text=True)
+    except Exception as e:
+        print(f"WARNING: could not persist sticky base pin: {e}")
+    print(f"Sticky merge base: {reason} -> {base_sha[:12]}")
+    return base_sha
+
+
+def _prepare_repo_snapshot(workflow, workflow_config: RunConfig) -> Result:
+    """S3 repo snapshot (Settings.ENABLE_S3_REPO_SNAPSHOT).
+
+    Build a minimal, history-free snapshot of the repo state once, in the Config
+    Workflow, and publish it to S3 so every downstream job restores it instead of
+    cloning. Mirrors _prepare_submodule_cache: a content-addressed, write-once
+    archive.
+
+    For a pull_request with Settings.ENABLE_PR_EPHEMERAL_MERGE_COMMIT the snapshot
+    is the ephemeral merge of the PR head into the target-branch tip (GitHub
+    Actions style), computed in-place so the remaining Config Workflow steps
+    (docker digests, changed-file filtering, cache lookup) reflect the merged tree.
+    Otherwise (or on push) it is the head as-is — a plain snapshot, no merge.
+
+    Objects live under repo-snapshots/v1/PRs/ (pull_request) or
+    repo-snapshots/v1/REFs/ (push and other trusted events). The PRs/ tier is the
+    former "untrusted" path and REFs/ the "trusted" one; IAM scopes them so a
+    pr-* pool cannot write REFs/ and a trusted pool cannot read/write PRs/.
+    """
+    stop_watch = Utils.Stopwatch()
+    env = _Environment.get()
+    is_pr = bool(env.PR_NUMBER) and env.EVENT_TYPE == Workflow.Event.PULL_REQUEST
+    do_merge = is_pr and bool(
+        getattr(Settings, "ENABLE_PR_EPHEMERAL_MERGE_COMMIT", False)
+    )
+    try:
+        head_sha = env.SHA
+        base_sha = ""
+        # The commit every downstream job restores to: the ephemeral merge for a
+        # PR in merge mode, otherwise the head as-is.
+        snapshot_sha = head_sha
+
+        if do_merge:
+            base_branch = env.BASE_BRANCH
+            if not base_branch:
+                return Result.create_from(
+                    name="Repo Snapshot",
+                    status=Result.Status.FAIL,
+                    stopwatch=stop_watch,
+                    info="Ephemeral merge requested but no base branch on the event",
+                )
+            live_base_sha = Shell.get_output(
+                f"git rev-parse origin/{base_branch}", verbose=True
+            ).strip()
+            if not live_base_sha:
+                return Result.create_from(
+                    name="Repo Snapshot",
+                    status=Result.Status.FAIL,
+                    stopwatch=stop_watch,
+                    info=f"Failed to resolve tip of base branch [{base_branch}]",
+                )
+            # Sticky merge base: within a window after this PR's previous run,
+            # reuse the same target-branch commit even if the branch advanced, so
+            # the digest cache stays warm across rapid iterations. Off unless
+            # Settings.STICKY_MERGE_BASE_HOURS > 0; always falls back to live tip.
+            base_sha = live_base_sha
+            sticky_hours = float(getattr(Settings, "STICKY_MERGE_BASE_HOURS", 0) or 0)
+            if sticky_hours > 0:
+                base_sha = _resolve_sticky_base(
+                    env.PR_NUMBER, base_branch, live_base_sha, sticky_hours
+                )
+            print(
+                f"Ephemeral merge: base [{base_branch}] {base_sha[:12]} "
+                f"(live tip {live_base_sha[:12]}) + head {head_sha[:12]}"
+            )
+
+            # When the pinned base differs from the live tip (sticky), still verify
+            # the PR merges cleanly with the CURRENT target HEAD so a green never
+            # hides a real conflict with live main. Non-destructive (git merge-tree,
+            # >= 2.38).
+            if base_sha != live_base_sha:
+                rc_, out_, _err_ = Shell.get_res_stdout_stderr(
+                    f"git merge-tree --write-tree --name-only {live_base_sha} {head_sha}",
+                    verbose=True,
+                )
+                if rc_ == 1:
+                    conflicts = "\n".join(out_.splitlines()[1:])
+                    info = (
+                        f"PR head {head_sha[:12]} conflicts with the current "
+                        f"{base_branch} HEAD ({live_base_sha[:12]}) and needs a "
+                        f"rebase/merge. (CI ran against the pinned base "
+                        f"{base_sha[:12]}.)\n{conflicts}"
+                    )
+                    print(f"ERROR: {info}")
+                    return Result.create_from(
+                        name="Repo Snapshot",
+                        status=Result.Status.FAIL,
+                        stopwatch=stop_watch,
+                        info=info,
+                    )
+                if rc_ != 0:
+                    # Fail closed: this check is the only guard that the sticky
+                    # (older) pinned base does not hide a conflict with the current
+                    # tip. If it cannot run (unfetchable object, git < 2.38 without
+                    # --write-tree, etc.) we must not build and test — let alone
+                    # mark merge-ready — an unverified stale-base merge.
+                    info = (
+                        f"Could not verify PR head {head_sha[:12]} merges into the "
+                        f"current {base_branch} HEAD ({live_base_sha[:12]}): git "
+                        f"merge-tree exited {rc_}.\n{out_}\n{_err_}"
+                    )
+                    print(f"ERROR: {info}")
+                    return Result.create_from(
+                        name="Repo Snapshot",
+                        status=Result.Status.FAIL,
+                        stopwatch=stop_watch,
+                        info=info,
+                    )
+
+            # Deterministic identity/dates so the merge sha depends only on the two
+            # parents and the resulting tree, not on wall-clock or runner identity.
+            merge_env = {
+                **os.environ,
+                "GIT_AUTHOR_NAME": "praktika",
+                "GIT_AUTHOR_EMAIL": "praktika@localhost",
+                "GIT_COMMITTER_NAME": "praktika",
+                "GIT_COMMITTER_EMAIL": "praktika@localhost",
+                "GIT_AUTHOR_DATE": "2000-01-01T00:00:00 +0000",
+                "GIT_COMMITTER_DATE": "2000-01-01T00:00:00 +0000",
+            }
+            # base_sha is the first parent (matches GitHub's refs/pull/N/merge).
+            Shell.check(
+                f"git checkout --quiet --force {base_sha}", verbose=True, strict=True
+            )
+            merged = Shell.check(
+                f"git merge --no-ff --no-edit "
+                f"-m 'Merge {head_sha} into {base_branch} ({base_sha})' {head_sha}",
+                verbose=True,
+                env=merge_env,
+            )
+            if not merged:
+                conflicts = Shell.get_output(
+                    "git diff --name-only --diff-filter=U", verbose=True
+                ).strip()
+                Shell.check("git merge --abort", verbose=True)
+                info = (
+                    f"PR head {head_sha[:12]} does not cleanly merge into "
+                    f"{base_branch} ({base_sha[:12]}). Conflicting files:\n{conflicts}"
+                )
+                print(f"ERROR: {info}")
+                return Result.create_from(
+                    name="Repo Snapshot",
+                    status=Result.Status.FAIL,
+                    stopwatch=stop_watch,
+                    info=info,
+                )
+            snapshot_sha = Shell.get_output("git rev-parse HEAD", verbose=True).strip()
+            print(f"Ephemeral merge commit created: {snapshot_sha}")
+        else:
+            print(f"Repo snapshot: head {head_sha[:12]} (no merge)")
+
+        # Build a minimal, history-free snapshot: a fresh depth-1 repo whose single
+        # commit is snapshot_sha (keeps .git for tooling, drops all ancestry). A
+        # shallow fetch of the tip brings that commit's complete tree + blobs (all
+        # materialized locally by the clone/merge above), so the archive is
+        # self-contained.
+        snap_dir = f"{Settings.TEMP_DIR}/repo_snapshot"
+        archive_path = f"{Settings.TEMP_DIR}/repo_snapshot.tar.zst"
+        Shell.check(f"rm -rf {snap_dir} {archive_path}", verbose=True)
+        Shell.check(f"git init -q {snap_dir}", verbose=True, strict=True)
+        # Tag the commit first so it is advertised to the fetch (an unadvertised
+        # sha would require uploadpack.allowAnySHA1InWant on the source).
+        Shell.check(
+            f"git tag -f {_REPO_SNAPSHOT_TAG} {snapshot_sha}", verbose=True, strict=True
+        )
+        try:
+            Shell.check(
+                f"git -C {snap_dir} fetch --depth=1 -q "
+                f"file://{os.path.abspath('.')} refs/tags/{_REPO_SNAPSHOT_TAG}",
+                verbose=True,
+                strict=True,
+            )
+        finally:
+            Shell.check(f"git tag -d {_REPO_SNAPSHOT_TAG}", verbose=True)
+        Shell.check(
+            f"git -C {snap_dir} checkout -q --detach FETCH_HEAD",
+            verbose=True,
+            strict=True,
+        )
+        snap_sha = Shell.get_output(
+            f"git -C {snap_dir} rev-parse HEAD", verbose=True
+        ).strip()
+        assert (
+            snap_sha == snapshot_sha
+        ), f"snapshot HEAD {snap_sha} != expected {snapshot_sha}"
+
+        Shell.check(
+            f"tar -C {snap_dir} -cf - . | zstd -c -T0 -q > {archive_path}",
+            verbose=True,
+            strict=True,
+        )
+
+        # Key = content hash of the archive (tamper-evident: a downstream job
+        # re-hashes the downloaded bytes and rejects any mismatch). No PR/branch in
+        # the key — the sha256 is globally unique and self-verifying.
+        content_hash = _sha256_file(archive_path)
+        # Trust tier: PRs/ (pull_request, fork-reachable) vs REFs/ (push/trusted).
+        # IAM scopes these so a pr-* pool can read but not write REFs/, and a
+        # trusted pool can neither read nor write PRs/.
+        tier = "PRs" if is_pr else "REFs"
+        s3_path = (
+            f"{Settings.S3_ARTIFACT_BUCKET}/repo-snapshots/v1/"
+            f"{tier}/{content_hash}.tar.zst"
+        )
+
+        if S3.head_object(s3_path):
+            print(f"Repo snapshot already present: {s3_path}")
+        else:
+            created = S3.put(
+                s3_path=s3_path,
+                local_path=archive_path,
+                if_none_matched=True,
+                no_strict=True,
+            )
+            if created:
+                print(f"Repo snapshot uploaded: {s3_path}")
+            elif S3.head_object(s3_path):
+                # Lost a write-once race with a concurrent writer — the object
+                # exists, so this is a success, not an error.
+                print(f"Repo snapshot created concurrently: {s3_path}")
+            else:
+                # no_strict makes S3.put return False for AccessDenied / network /
+                # service errors too, not only precondition conflicts. The object
+                # is genuinely absent, so fail here rather than record a key that
+                # every downstream restore would 404 on.
+                raise RuntimeError(
+                    f"Failed to upload repo snapshot; object absent from S3: {s3_path}"
+                )
+        Shell.check(f"rm -rf {snap_dir} {archive_path}")
+
+        workflow_config.base_sha = base_sha
+        workflow_config.snapshot_sha = snapshot_sha
+        workflow_config.repo_snapshot_key = s3_path
+        workflow_config.dump()
+
+        if do_merge:
+            info = (
+                f"merge {snapshot_sha[:12]} = base {base_sha[:12]} + head "
+                f"{head_sha[:12]}"
+            )
+        else:
+            info = f"head snapshot {snapshot_sha[:12]}"
+        return Result.create_from(
+            name="Repo Snapshot",
+            status=Result.Status.OK,
+            stopwatch=stop_watch,
+            info=info,
+        )
+    except Exception as e:
+        print(f"ERROR: Repo snapshot preparation failed: {e}")
+        traceback.print_exc()
+        return Result.create_from(
+            name="Repo Snapshot",
+            status=Result.Status.FAIL,
+            stopwatch=stop_watch,
+            info=f"{e}\n{traceback.format_exc()}",
+        )
 
 
 def _filter_unaffected_jobs(jobs, workflow_config, changed_files, affected_dockers=()):
@@ -385,6 +801,13 @@ def _filter_unaffected_jobs(jobs, workflow_config, changed_files, affected_docke
                 job_name,
                 "Not affected by the changed files and not required",
             )
+
+
+def _resolve_workflow_start_time(env):
+    if env.WORKFLOW_START_TIME:
+        return env.WORKFLOW_START_TIME
+
+    return Utils.timestamp()
 
 
 def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
@@ -486,19 +909,20 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             info=message,
         )
 
-    if env.RUN_ID:
+    workflow_start_time = _resolve_workflow_start_time(env)
+    if workflow_start_time != env.WORKFLOW_START_TIME:
         # Resolved here, in the first job of the run, so that every job
-        # inherits one value with this environment. A rerun runs this job
-        # again and reads back the same `created_at`.
-        env.WORKFLOW_START_TIME = GH.get_workflow_run_created_at()
+        # inherits one value with this environment.
+        env.WORKFLOW_START_TIME = workflow_start_time
         print(f"NOTE: Workflow run started at [{env.WORKFLOW_START_TIME}]")
         env.dump()
 
     # refresh PR data
     if env.PR_NUMBER > 0:
-        title, body, labels = GH.get_pr_title_body_labels()
+        title, body, labels, is_draft = GH.get_pr_title_body_labels()
         print(f"NOTE: PR title: {title}")
         print(f"NOTE: PR labels: {labels}")
+        print(f"NOTE: PR draft: {is_draft}")
         if title:
             if title != env.PR_TITLE:
                 print("PR title has been changed")
@@ -509,6 +933,9 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             if env.PR_LABELS != labels:
                 print("PR labels have been changed")
                 env.PR_LABELS = labels
+            if env.PR_IS_DRAFT != is_draft:
+                print("PR draft state has been changed")
+                env.PR_IS_DRAFT = is_draft
             env.dump()
 
     if workflow.enable_report:
@@ -603,11 +1030,21 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         result_ = _check_db(workflow)
         results.append(result_)
 
-    if workflow.enable_merge_commit:
-        assert False, "NOT implemented"
-
     # read object from fs after .pre_hooks as some users's custom data may be added there
     workflow_config = RunConfig.from_fs(workflow.name)
+
+    # S3 repo snapshot: build the repo state once (the ephemeral PR merge when
+    # Settings.ENABLE_PR_EPHEMERAL_MERGE_COMMIT, otherwise the plain head) and
+    # publish it so downstream jobs restore instead of cloning. Done in-place so
+    # the steps below (docker digests, changed-file filtering, cache lookup) see
+    # the merged tree. On conflict this appends a FAIL result, which short-circuits
+    # the remaining steps via the results[-1].is_ok() guards and fails early.
+    if (
+        getattr(Settings, "ENABLE_S3_REPO_SNAPSHOT", False)
+        and workflow.engine == Workflow.Engine.PRAKTIKA
+        and results[-1].is_ok()
+    ):
+        results.append(_prepare_repo_snapshot(workflow, workflow_config))
 
     if results[-1].is_ok() and workflow.dockers:
         sw_ = Utils.Stopwatch()
@@ -630,8 +1067,19 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     if results[-1].is_ok() and workflow.workflow_filter_hooks:
         sw_ = Utils.Stopwatch()
         try:
-            pr_labels = Info().pr_labels
-            if Settings.CI_FORCE_ALL_LABEL in pr_labels:
+            force_all_kv = Info().get_kv_data("unresolved_review_threads_force_all")
+            # The kv data is the live label state recorded by the
+            # `ci/jobs/scripts/workflow_hooks/review_threads.py` pre-hook,
+            # which fails the config run when it cannot be fetched; the
+            # `Info().pr_labels` fallback (stale on re-runs) is only for
+            # workflows without that pre-hook.
+            force_all = (
+                Settings.CI_FORCE_ALL_LABEL in Info().pr_labels
+                if force_all_kv is None
+                else force_all_kv is True
+            )
+            review_threads_pipeline_limited = False
+            if force_all:
                 print(
                     f"NOTE: Workflow filter hooks bypassed (label '{Settings.CI_FORCE_ALL_LABEL}')"
                 )
@@ -646,7 +1094,22 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                                 f"Job [{job.name}] set to skipped by custom hook [{hook.__name__}], reason [{reason}]"
                             )
                             workflow_config.set_job_as_filtered(job.name, reason)
+                            # The pre-hook only records that the gate could
+                            # apply. Persist whether it actually filtered a
+                            # job: missing changed-files data deliberately
+                            # bypasses all filters and therefore runs the full
+                            # pipeline.
+                            if "unresolved review thread" in reason:
+                                review_threads_pipeline_limited = True
                             continue
+            # Record the decision made by this filtering pass, rather than
+            # reconstructing it later from review-thread state. In particular,
+            # `ci-force-all` does not execute filter hooks and therefore runs
+            # the full pipeline even with unresolved review threads.
+            Info().store_kv_data(
+                "unresolved_review_threads_pipeline_limited",
+                review_threads_pipeline_limited,
+            )
             status = Result.Status.OK
             workflow_config.dump()
             info = ""
@@ -668,8 +1131,15 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         print("Filter not affected jobs")
 
         def check_affected_jobs():
-            pr_labels = Info().pr_labels
-            if Settings.CI_FORCE_ALL_LABEL in pr_labels:
+            force_all_kv = Info().get_kv_data("unresolved_review_threads_force_all")
+            # Live label state from the review_threads.py pre-hook (see the
+            # workflow filter hooks pass above).
+            force_all = (
+                Settings.CI_FORCE_ALL_LABEL in Info().pr_labels
+                if force_all_kv is None
+                else force_all_kv is True
+            )
+            if force_all:
                 print(
                     f"NOTE: Job filtering by changed files is bypassed (label '{Settings.CI_FORCE_ALL_LABEL}')"
                 )
@@ -705,8 +1175,15 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         stop_watch = Utils.Stopwatch()
         info = ""
         try:
-            pr_labels = Info().pr_labels
-            skip_lookup = Settings.CI_FORCE_ALL_LABEL in pr_labels
+            force_all_kv = Info().get_kv_data("unresolved_review_threads_force_all")
+            # Live label state from the review_threads.py pre-hook (see the
+            # workflow filter hooks pass above).
+            force_all = (
+                Settings.CI_FORCE_ALL_LABEL in Info().pr_labels
+                if force_all_kv is None
+                else force_all_kv is True
+            )
+            skip_lookup = force_all
             workflow_config = CacheRunnerHooks.configure(workflow, skip_lookup=skip_lookup)
             files.append(RunConfig.file_name_static(workflow.name))
             res = True
@@ -912,6 +1389,7 @@ def _finish_workflow(workflow, job_name):
 
     update_final_report = False
     results = []
+    review_threads_only_post_hook_failure = False
     if workflow.post_hooks:
         sw_ = Utils.Stopwatch()
         update_final_report = True
@@ -922,6 +1400,10 @@ def _finish_workflow(workflow, job_name):
             else:
                 name = str(check)
             results_.append(Result.from_commands_run(name=name, command=check))
+
+        review_threads_only_post_hook_failure = (
+            _review_threads_were_the_only_failed_post_hook(results_)
+        )
 
         results.append(
             Result.create_from(
@@ -1026,13 +1508,32 @@ def _finish_workflow(workflow, job_name):
         if dropped_results:
             ready_for_merge_description += f", Dropped: {len(dropped_results)}"
 
+        # `Finish Workflow` aggregates all post hooks into one result. Retain
+        # a precise, run-scoped marker only when this hook is the *only*
+        # failure in the entire workflow, so the review-thread override can
+        # later clear the aggregate status without masking another failure.
+        if (
+            failed_results == ["Workflow Post Hook"]
+            and not dropped_results
+            and review_threads_only_post_hook_failure
+        ):
+            ready_for_merge_description = _REVIEW_THREADS_ONLY_POST_HOOK_FAILURE
+
     if workflow.enable_merge_ready_status:
         if not GH.post_commit_status(
             name=Settings.READY_FOR_MERGE_CUSTOM_STATUS_NAME
             or f"Ready For Merge [{workflow.name}]",
             status=ready_for_merge_status,
             description=ready_for_merge_description,
-            url="",
+            # The review-thread marker carries the report URL of the run, which
+            # names the PR: another PR can share the commit, and the
+            # reconciliation and retry workflows must only act on their own.
+            url=(
+                Info().get_report_url()
+                if ready_for_merge_description
+                == _REVIEW_THREADS_ONLY_POST_HOOK_FAILURE
+                else ""
+            ),
         ):
             print("ERROR: failed to set ReadyForMerge status")
             env.add_workflow_error(ResultInfo.GH_STATUS_ERROR)

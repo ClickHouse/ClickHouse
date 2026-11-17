@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataTypes/IDataType.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLQueryPiece.h>
 
 
@@ -10,7 +9,7 @@ namespace DB::PrometheusQueryToSQL
 struct ConverterContext;
 
 /// Builds the aggregate expression of a one-argument aggregation operator over the `values` column of a vector grid.
-using OneArgumentAggregationTransform = ASTPtr (*)(ASTPtr && values, const DataTypePtr & scalar_data_type);
+using OneArgumentAggregationTransform = ASTPtr (*)(ASTPtr && values);
 
 /// Returns whether a specified string is the name of a one-argument aggregation operator,
 /// i.e. one of these: "sum", "min", "max", "avg", "count", "stddev", "stdvar", "group".

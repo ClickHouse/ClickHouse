@@ -3,8 +3,6 @@
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
-#include <Poco/Net/NetException.h>
-#include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -17,9 +15,12 @@
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Poco/String.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Functions/FunctionFactory.h>
+#include <Common/DNSResolver.h>
+#include <Common/NetException.h>
 #include <Common/isLocalAddress.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -851,16 +852,39 @@ getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, Context
 
     try
     {
-        if (isLocalAddress({host, port}, default_port))
-            info.is_local = true;
+        info.is_local = isLocalAddress(DNSResolver::instance().resolveAddress(host, port), default_port);
     }
-    catch (const Poco::Net::DNSException &)
+    catch (const NetException &)
     {
-        /// Server may fail to start if we cannot resolve some hostname. It's ok to ignore exception and leave is_local false.
+        /// Server may fail to start if we cannot resolve some hostname.
+        info.host_unresolved = true;
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     return info;
+}
+
+bool mayBeLocalClickHouseDictionarySource(const ASTCreateQuery & query, ContextPtr context, const std::string & database_)
+{
+    if (!query.is_dictionary || !query.dictionary || !query.dictionary->source)
+        return false;
+    if (Poco::toLower(query.dictionary->source->name) != "clickhouse")
+        return false;
+
+    auto config = getDictionaryConfigurationFromAST(query, context, database_);
+
+    /// A named collection keeps the host out of the definition and is not expanded here, so locality
+    /// is undecidable: count it as local.
+    const String prefix = "dictionary.source.clickhouse";
+    if (!config->getString(prefix + ".name", "").empty())
+        return true;
+
+    auto info = getInfoIfClickHouseDictionarySource(config, context->getGlobalContext());
+    if (!info)
+        return false;
+
+    /// An unresolvable host is not a remote one: the loader resolves it again and may go local.
+    return info->is_local || info->host_unresolved;
 }
 
 }

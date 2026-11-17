@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <mutex>
 #include <base/bit_cast.h>
 
@@ -8,14 +9,17 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/SipHash.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Common/HashTable/HashMap.h>
@@ -33,6 +37,12 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace Setting
+{
+    extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
+    extern const SettingsBool optimize_if_transform_strings_to_enum;
 }
 
 namespace
@@ -98,70 +108,52 @@ namespace
         bool useDefaultImplementationForNothing() const override { return false; }
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
+        /// Documentation-only — looks up `value` in `array_from` and returns
+        /// the parallel element from `array_to`; otherwise returns `default`
+        /// (or `value` itself if no default is provided). The result type is
+        /// the least common supertype of `array_to`'s element type and
+        /// (optionally) `default`'s type — too dynamic to model in the DSL.
+        /// transform(x, array_from, array_to[, default]) returns the least supertype of the
+        /// `array_to` element type and either `x` (3-arg form) or `default` (4-arg form). The
+        /// declarative path computes that; `getReturnTypeImpl` below is authoritative-but-examined:
+        /// it defers the type to the signature and only applies `checkAllowedType`.
+        String getSignatureString() const override
+        {
+            return "(T : Any, Array(Any), Array(U : Any)) -> leastSupertype(U, T)"
+                   " OR (T : Any, Array(Any), Array(U : Any), D : Any) -> leastSupertype(U, D)";
+        }
+
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        {
+            DataTypes data_types(arguments.size());
+            for (size_t i = 0; i < arguments.size(); ++i)
+                data_types[i] = arguments[i].type;
+            return getReturnTypeImpl(data_types);
+        }
+
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
-            const auto args_size = arguments.size();
-            if (args_size != 3 && args_size != 4)
-                throw Exception(
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Number of arguments for function {} doesn't match: "
-                    "passed {}, should be 3 or 4",
-                    getName(),
-                    args_size);
-
-            const DataTypePtr & type_x = arguments[0];
-
-            const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(arguments[1].get());
-
-            if (!type_arr_from)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Second argument of function {}, must be array of source values to transform from",
-                    getName());
-
-            const auto type_arr_from_nested = type_arr_from->getNestedType();
-
-            const DataTypeArray * type_arr_to = checkAndGetDataType<DataTypeArray>(arguments[2].get());
-
-            if (!type_arr_to)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Third argument of function {}, must be array of destination values to transform to",
-                    getName());
-
-            const DataTypePtr & type_arr_to_nested = type_arr_to->getNestedType();
-
-            if (args_size == 3)
+            /// The 3-argument form additionally requires that `x` and the `array_to` element are
+            /// both numeric or both strings — a constraint the declarative `leastSupertype` does not
+            /// express (e.g. it would happily unify Enum and String). Keep enforcing it here.
+            if (arguments.size() == 3)
             {
-                if ((type_x->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
-                    || (isString(type_x) != isString(type_arr_to_nested)))
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Function {} has signature: "
-                        "transform(T, Array(T), Array(U), U) -> U; "
-                        "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
-                        getName());
-
-                auto ret = tryGetLeastSupertype(DataTypes{type_arr_to_nested, type_x});
-                if (!ret)
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Function {} has signature: "
-                        "transform(T, Array(T), Array(U), U) -> U; "
-                        "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
-                        getName());
-                checkAllowedType(ret);
-                return ret;
+                const DataTypePtr & type_x = arguments[0];
+                if (const auto * type_arr_to = checkAndGetDataType<DataTypeArray>(arguments[2].get()))
+                {
+                    const DataTypePtr & type_arr_to_nested = type_arr_to->getNestedType();
+                    if ((type_x->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
+                        || (isString(type_x) != isString(type_arr_to_nested)))
+                        throw Exception(
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Function {} has signature: "
+                            "transform(T, Array(T), Array(U), U) -> U; "
+                            "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
+                            getName());
+                }
             }
 
-            auto ret = tryGetLeastSupertype(DataTypes{type_arr_to_nested, arguments[3]});
-            if (!ret)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Function {} has signature: "
-                    "transform(T, Array(T), Array(U), U) -> U; "
-                    "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
-                    getName());
+            auto ret = IFunction::getReturnTypeImpl(arguments);
             checkAllowedType(ret);
             return ret;
         }
@@ -694,6 +686,9 @@ namespace
             if (isStringOrFixedString(type))
                 return;
 
+            if (type->lowCardinality())
+                return;
+
             if (type->haveMaximumSizeOfValue())
             {
                 auto data_type_size = type->getMaximumSizeOfValueInMemory();
@@ -728,11 +723,13 @@ namespace
                 ErrorCodes::ILLEGAL_COLUMN, "Second and third arguments of function {} must be constant arrays", "transform");
 
         const ColumnPtr & from_column_uncast = array_from->getDataPtr();
+        const DataTypePtr & from_array_nested_type
+            = typeid_cast<const DataTypeArray &>(*arguments[1].type).getNestedType();
 
         cache->from_column = castColumn(
             {
                 from_column_uncast,
-                typeid_cast<const DataTypeArray &>(*arguments[1].type).getNestedType(),
+                from_array_nested_type,
                 arguments[1].name
             },
             from_type);
@@ -787,6 +784,12 @@ namespace
 
         WhichDataType which(from_type);
 
+        /// A `String`/`FixedString` entry that is not an `Enum` member is already rejected by the cast
+        /// above, and comparing it below would put the member's numeric value against its name.
+        /// A numeric entry is cast without a membership check, so it still needs the comparison.
+        const bool cast_checked_enum_membership = isEnum(removeNullable(from_type))
+            && isStringOrFixedString(removeNullable(from_array_nested_type));
+
         /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
         if (isNativeNumber(which) || which.isDecimal32() || which.isDecimal64() || which.isEnum())
         {
@@ -794,8 +797,7 @@ namespace
             auto & table = *cache->table_num_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (which.isEnum() /// The correctness of strings are already checked by casting them to the Enum type.
-                    || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (cast_checked_enum_membership || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
                 {
                     UInt64 key = 0;
                     auto * dst = reinterpret_cast<char *>(&key);
@@ -818,7 +820,7 @@ namespace
             auto & table = *cache->table_string_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (cast_checked_enum_membership || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
                 {
                     std::string_view ref = cache->from_column->getDataAt(i);
                     table.insertIfNotPresent(ref, i);
@@ -831,7 +833,7 @@ namespace
             auto & table = *cache->table_anything_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (cast_checked_enum_membership || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
                 {
                     SipHash hash;
                     cache->from_column->updateHashWithValue(i, hash);
@@ -848,7 +850,19 @@ namespace
     {
     public:
         static constexpr auto name = "transform";
-        static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<FunctionTransformOverloadResolver>(); }
+        static FunctionOverloadResolverPtr create(ContextPtr context)
+        {
+            const auto & settings = context->getSettingsRef();
+            const bool use_low_cardinality_optimisation
+                = settings[Setting::optimize_if_transform_const_strings_to_lowcardinality]
+                && !settings[Setting::optimize_if_transform_strings_to_enum];
+            return std::make_unique<FunctionTransformOverloadResolver>(use_low_cardinality_optimisation);
+        }
+
+        explicit FunctionTransformOverloadResolver(bool use_low_cardinality_optimisation_ = false)
+            : use_low_cardinality_optimisation(use_low_cardinality_optimisation_)
+        {
+        }
 
         String getName() const override { return name; }
         bool isVariadic() const override { return true; }
@@ -857,7 +871,25 @@ namespace
         bool useDefaultImplementationForNothing() const override { return false; }
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
+        /// Documentation-only — see `FunctionTransform`. The result type is
+        /// the least common supertype of `array_to`'s element type and
+        /// (optionally) `default`'s type, which isn't expressible in the DSL.
+        String getSignatureString() const override
+        {
+            return "(Any, Array(Any), Array(Any), [Any]) -> Any";
+        }
+
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        {
+            ColumnsWithTypeAndName columns;
+            columns.reserve(arguments.size());
+            for (const auto & type : arguments)
+                columns.emplace_back(nullptr, type, String{});
+            return getReturnTypeImpl(columns);
+        }
+
+        /// The `LowCardinality` result for a constant string default depends on the constness of the arguments.
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             const auto args_size = arguments.size();
             if (args_size != 3 && args_size != 4)
@@ -868,9 +900,10 @@ namespace
                     getName(),
                     args_size);
 
-            const DataTypePtr & type_x = arguments[0];
+            const DataTypePtr & type_x = arguments[0].type;
+            const bool is_x_constant = arguments[0].column && isColumnConst(*arguments[0].column);
 
-            const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(arguments[1].get());
+            const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(arguments[1].type.get());
 
             if (!type_arr_from)
                 throw Exception(
@@ -878,7 +911,7 @@ namespace
                     "Second argument of function {}, must be array of source values to transform from",
                     getName());
 
-            const DataTypeArray * type_arr_to = checkAndGetDataType<DataTypeArray>(arguments[2].get());
+            const DataTypeArray * type_arr_to = checkAndGetDataType<DataTypeArray>(arguments[2].type.get());
 
             if (!type_arr_to)
                 throw Exception(
@@ -887,6 +920,30 @@ namespace
                     getName());
 
             const DataTypePtr & type_arr_to_nested = type_arr_to->getNestedType();
+
+            auto wrap_in_low_cardinality = [&](DataTypePtr ret)
+            {
+                if (isString(ret))
+                    return std::make_shared<DataTypeLowCardinality>(ret)->getPtr();
+                if (isString(removeNullable(ret)))
+                {
+                    /// Require at least one non-NULL string among the constant mapped values and the
+                    /// default: a typed all-NULL case like
+                    /// `transform(x, [1], [CAST(NULL AS Nullable(String))], CAST(NULL AS Nullable(String)))`
+                    /// must keep plain `Nullable(String)` - there is no dictionary-compression benefit
+                    /// when no actual string value exists.
+                    bool has_string_value = !arguments[3].column->isNullAt(0);
+                    if (!has_string_value && arguments[2].column && isColumnConst(*arguments[2].column))
+                    {
+                        const auto & array_to_values = (*arguments[2].column)[0].safeGet<Array>();
+                        has_string_value = std::any_of(
+                            array_to_values.begin(), array_to_values.end(), [](const Field & value) { return !value.isNull(); });
+                    }
+                    if (has_string_value)
+                        return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()))->getPtr();
+                }
+                return ret;
+            };
 
             if (args_size == 3)
             {
@@ -907,11 +964,16 @@ namespace
                         "transform(T, Array(T), Array(U), U) -> U; "
                         "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
                         getName());
+                /// No `LowCardinality` here: without a default, unmatched non-constant values pass through
+                /// unchanged (potentially high cardinality), and with a constant input the whole expression
+                /// is constant and gets folded, where `LowCardinality` gives no benefit while breaking
+                /// functions that expect their constant string arguments as `Const(String)`
+                /// (e.g. `arrayReduce`, `joinGet`, `tupleElement`).
                 FunctionTransform::checkAllowedType(ret);
                 return ret;
             }
 
-            auto ret = tryGetLeastSupertype(DataTypes{type_arr_to_nested, arguments[3]});
+            auto ret = tryGetLeastSupertype(DataTypes{type_arr_to_nested, arguments[3].type});
             if (!ret)
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -919,6 +981,13 @@ namespace
                     "transform(T, Array(T), Array(U), U) -> U; "
                     "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
                     getName());
+            /// If the input is constant too, the whole expression is constant and gets folded into a single
+            /// `Const(LowCardinality(String))` value. `LowCardinality` gives no benefit for a constant, and
+            /// functions that opt out of the default LowCardinality implementation (e.g. `arrayReduce`,
+            /// `joinGet`, `tupleElement`) expect their constant string arguments as `Const(String)`,
+            /// so keep plain `String` then.
+            if (use_low_cardinality_optimisation && !is_x_constant && arguments[3].column && isColumnConst(*arguments[3].column))
+                ret = wrap_in_low_cardinality(ret);
             FunctionTransform::checkAllowedType(ret);
             return ret;
         }
@@ -956,6 +1025,9 @@ namespace
 
             return std::make_unique<FunctionToFunctionBaseAdaptor>(function, data_types, return_type);
         }
+
+    private:
+        bool use_low_cardinality_optimisation = false;
     };
 
 }

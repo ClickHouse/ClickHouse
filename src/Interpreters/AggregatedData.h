@@ -4,6 +4,7 @@
 
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/HashTableTraits.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
 #include <Common/HashTable/TwoLevelStringHashMap.h>
@@ -68,6 +69,10 @@ using AggregatedDataWithUInt64KeyTwoLevel = TwoLevelHashMap<UInt64, AggregateDat
 using AggregatedDataWithUInt32KeyVoidTwoLevel = TwoLevelHashSet<UInt32, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64KeyVoidTwoLevel = TwoLevelHashSet<UInt64, HashCRC32<UInt64>>;
 
+/// `AggregatedDataVariants::init` passes a size hint to a type when `HasConstructorOfNumberOfElements` accepts it.
+static_assert(HasConstructorOfNumberOfElements<AggregatedDataWithUInt64KeyTwoLevel>::value);
+static_assert(HasConstructorOfNumberOfElements<AggregatedDataWithUInt64KeyVoidTwoLevel>::value);
+
 using AggregatedDataWithShortStringKeyTwoLevel = TwoLevelStringHashMap<AggregateDataPtr>;
 using AggregatedDataWithPackedStringKeyTwoLevel = TwoLevelHashMap<PackedStringRef, AggregateDataPtr>;
 
@@ -108,10 +113,10 @@ struct AggregationDataWithNullKey : public Base
 
     bool & hasNullKeyData() { return has_null_key_data; }
     AggregateDataPtr & getNullKeyData() { return null_key_data; }
-    bool hasNullKeyData() const { return has_null_key_data; }
-    const AggregateDataPtr & getNullKeyData() const { return null_key_data; }
-    size_t size() const { return Base::size() + (has_null_key_data ? 1 : 0); }
-    bool empty() const { return Base::empty() && !has_null_key_data; }
+    [[nodiscard]] bool hasNullKeyData() const { return has_null_key_data; }
+    [[nodiscard]] const AggregateDataPtr & getNullKeyData() const { return null_key_data; }
+    [[nodiscard]] size_t size() const { return Base::size() + (has_null_key_data ? 1 : 0); }
+    [[nodiscard]] bool empty() const { return Base::empty() && !has_null_key_data; }
     void clear()
     {
         Base::clear();
@@ -136,7 +141,12 @@ struct AggregationDataWithNullKeyTwoLevel : public Base
 
     AggregationDataWithNullKeyTwoLevel() = default;
 
+    /// Constrained like the converting constructor of `TwoLevelHashTable`.
+    /// Overload resolution prefers the more constrained candidate.
+    /// Without this the inherited constructor would win.
+    /// Then `convertToTwoLevel` would copy the cells but drop the NULL key group.
     template <typename Other>
+    requires(!std::is_arithmetic_v<Other>)
     explicit AggregationDataWithNullKeyTwoLevel(const Other & other) : Base(other)
     {
         impls[0].hasNullKeyData() = other.hasNullKeyData();
@@ -145,8 +155,8 @@ struct AggregationDataWithNullKeyTwoLevel : public Base
 
     bool & hasNullKeyData() { return impls[0].hasNullKeyData(); }
     AggregateDataPtr & getNullKeyData() { return impls[0].getNullKeyData(); }
-    bool hasNullKeyData() const { return impls[0].hasNullKeyData(); }
-    const AggregateDataPtr & getNullKeyData() const { return impls[0].getNullKeyData(); }
+    [[nodiscard]] bool hasNullKeyData() const { return impls[0].hasNullKeyData(); }
+    [[nodiscard]] const AggregateDataPtr & getNullKeyData() const { return impls[0].getNullKeyData(); }
 };
 
 template <typename ... Types>

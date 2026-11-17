@@ -50,7 +50,7 @@ public:
 
     ~FileSegmentRangeWriter();
 
-    const FileSegmentsHolder * getFileSegments() const { return file_segments.get(); }
+    [[nodiscard]] const FileSegmentsHolder * getFileSegments() const { return file_segments.get(); }
 
     void jumpToPosition(size_t position);
 
@@ -82,14 +82,16 @@ private:
 
     size_t expected_write_offset = 0;
 
+    FileCacheReserveAhead reserve_ahead;
+
     bool finalized = false;
 };
 
 class IFilesystemCacheWriteBuffer
 {
 public:
-    virtual bool cachingStopped() const = 0;
-    virtual const FileSegmentsHolder * getFileSegments() const  = 0;
+    [[nodiscard]] virtual bool cachingStopped() const = 0;
+    [[nodiscard]] virtual const FileSegmentsHolder * getFileSegments() const  = 0;
     virtual void jumpToPosition(size_t position) = 0;
     virtual void setFileFinishedForDistributedCache() = 0;
 

@@ -14,7 +14,7 @@
 -- each (direction × base) cell to a distinct, non-NULL result so that a regression
 -- in any branch of getBaseIndex / getNextNodeIndex would surface as a diff.
 
-SET allow_experimental_funnel_functions = 1;
+SET enable_funnel_functions = 1;
 
 DROP TABLE IF EXISTS seq_events;
 CREATE TABLE seq_events (ts DateTime, e String) ENGINE = Memory;

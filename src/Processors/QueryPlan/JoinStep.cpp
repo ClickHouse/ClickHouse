@@ -1,7 +1,10 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatSettings.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FullSortingMergeJoin.h>
@@ -19,7 +22,8 @@
 #include <Core/BlockNameMap.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Analysis/JoinStatsAnalyzer.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <fmt/format.h>
 #include <unordered_set>
 
@@ -34,9 +38,22 @@ namespace ErrorCodes
 namespace
 {
 
-std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join, const ExplainFormatSettings & settings)
+/// The algorithm to report in `system.query_log.used_join_algorithms`.
+std::string getExecutedJoinAlgorithm(const IJoin & join, bool use_sharding)
 {
-    std::vector<std::pair<String, String>> description;
+    if (!use_sharding)
+        return join.getAlgorithm();
+
+    const auto * full_sorting_merge_join = typeid_cast<const FullSortingMergeJoin *>(&join);
+    if (full_sorting_merge_join && full_sorting_merge_join->isParallel())
+        return toString(JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
+
+    return join.getAlgorithm();
+}
+
+VectorWithMemoryTracking<std::pair<String, String>> describeJoinActions(const JoinPtr & join, const ExplainFormatSettings & settings)
+{
+    VectorWithMemoryTracking<std::pair<String, String>> description;
     const auto & table_join = join->getTableJoin();
 
     auto to_lower = [](String & s)
@@ -78,13 +95,13 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join,
     return description;
 }
 
-std::vector<size_t> getPermutationForBlock(
+VectorWithMemoryTracking<size_t> getPermutationForBlock(
     const Block & block,
     const Block & lhs_block,
     const Block & rhs_block,
     const NameSet & name_filter)
 {
-    std::vector<size_t> permutation;
+    VectorWithMemoryTracking<size_t> permutation;
     permutation.reserve(block.columns());
     BlockNameMap name_map = getNamesToIndexesMap(block);
 
@@ -120,7 +137,6 @@ JoinStep::JoinStep(
     size_t min_block_size_bytes_,
     size_t max_streams_,
     NameSet required_output_,
-    bool keep_left_read_in_order_,
     bool use_new_analyzer_,
     bool use_join_disjunctions_push_down_)
     : join(std::move(join_))
@@ -129,13 +145,10 @@ JoinStep::JoinStep(
     , min_block_size_bytes(min_block_size_bytes_)
     , max_streams(max_streams_)
     , required_output(std::move(required_output_))
-    , keep_left_read_in_order(keep_left_read_in_order_)
     , use_new_analyzer(use_new_analyzer_)
     , use_join_disjunctions_push_down(use_join_disjunctions_push_down_)
     , disjunctions_optimization_applied(false)
 {
-    if (keep_left_read_in_order)
-        join->keepLeftPipelineInOrder();
     updateInputHeaders({left_header_, right_header_});
 }
 
@@ -156,6 +169,9 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     /// shard, so the counts diverge only if the plan is inconsistent: for a `YShaped` join the regular
     /// pipeline below is not a usable fallback, it accepts a single port per side and throws otherwise.
     bool use_sharding = !primary_key_sharding.empty() && pipelines[0]->getNumStreams() == pipelines[1]->getNumStreams();
+
+    QueryExecutionCounters::addExecutedJoin(*join, getExecutedJoinAlgorithm(*join, use_sharding));
+
     if (!use_sharding)
     {
         if (join->pipelineType() == JoinPipelineType::YShaped)
@@ -176,7 +192,8 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 min_block_size_bytes,
                 max_streams,
                 this,
-                keep_left_read_in_order,
+                left_pipeline_order != LeftPipelineOrder::None,
+                seal_gate,
                 &processors);
         }
     }
@@ -221,9 +238,15 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
     if (join->supportParallelJoin() && (min_block_size_rows > 0 || min_block_size_bytes > 0))
     {
+        const auto & table_join = join->getTableJoin();
+        const size_t max_rows = table_join.maxJoinedBlockRows();
+        const size_t max_bytes = table_join.maxJoinedBlockBytes();
         joined_pipeline->addSimpleTransform(
             [&](const SharedHeader & header)
-            { return tag_tail(std::make_shared<SimpleSquashingChunksTransform>(header, min_block_size_rows, min_block_size_bytes)); });
+            {
+                return tag_tail(std::make_shared<SimpleSquashingChunksTransform>(
+                    header, min_block_size_rows, min_block_size_bytes, max_rows, max_bytes));
+            });
     }
 
     const auto & pipeline_output_header = joined_pipeline->getHeader();
@@ -246,16 +269,16 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 namespace
 {
 
-std::unordered_set<const IJoin *> collectExecutedJoins(StepProcessors step_processors)
+UnorderedSetWithMemoryTracking<const IJoin *> collectExecutedJoins(StepProcessors step_processors)
 {
-    std::unordered_set<const IJoin *> joins;
+    UnorderedSetWithMemoryTracking<const IJoin *> joins;
     for (const auto * processor : step_processors)
         if (const auto * joining = typeid_cast<const JoiningTransform *>(processor))
             joins.insert(joining->getJoin().get());
     return joins;
 }
 
-StepAnalysisReport buildShardedHashJoinReport(const std::unordered_set<const IJoin *> & shard_joins)
+StepAnalysisReport buildShardedHashJoinReport(const UnorderedSetWithMemoryTracking<const IJoin *> & shard_joins)
 {
     JoinAnalysisCounters counters;
     MatchedRowsAccumulator matched_left;
@@ -295,7 +318,8 @@ StepAnalysisReport buildShardedHashJoinReport(const std::unordered_set<const IJo
 
 }
 
-JoinAnalysisCounters JoinStep::collectMergeJoinCounters(StepProcessors step_processors) const
+/// Reads only the processors, so the reporter can call it without holding the step.
+static JoinAnalysisCounters collectMergeJoinCounters(StepProcessors step_processors)
 {
     JoinAnalysisCounters counters;
     MatchedRowsAccumulator matched_left;
@@ -318,29 +342,60 @@ JoinAnalysisCounters JoinStep::collectMergeJoinCounters(StepProcessors step_proc
     return counters;
 }
 
-StepAnalysisReport JoinStep::getAnalysisReport(StepProcessors step_processors) const
+StepAnalyzer JoinStep::makeAnalyzer() const
 {
-    /// Only EXPLAIN ANALYZE asks for a report, and it turns the analyze mode on for the whole query,
-    /// so every join it reaches must have been told to collect statistics
-    chassert(join->getTableJoin().collectAnalyzeStats(), "JoinStep analyzed without the analyze mode");
+    StepAnalyzer analyzer = IQueryPlanStep::makeAnalyzer();
 
-    /// Case of Y-shaped join
-    if (typeid_cast<const FullSortingMergeJoin *>(join.get()))
-        return buildMatchedRowsReport(collectMergeJoinCounters(step_processors));
+    analyzer.cluster_id = getClusterId();
 
-    if (typeid_cast<const PasteJoin *>(join.get()))
-        return join->getAnalysisReport();
+    JoinAnalysisInputs join_inputs;
+    join_inputs.join = join;
+    join_inputs.swapped = swap_streams;
+    join_inputs.has_estimation = true;
+    join_inputs.estimation = getEstimation();
+    join_inputs.input_columns = QueryPlanFormat::collectJoinInputColumns(*this);
 
-    /// Case for sharded join
-    auto executed_joins = collectExecutedJoins(step_processors);
-    const bool executed_by_shard_clones = !executed_joins.empty() && !executed_joins.contains(join.get());
-    if (executed_by_shard_clones)
-        return buildShardedHashJoinReport(executed_joins);
+    analyzer.finish = [inputs = std::move(join_inputs)](const StepStatsContext & context, StepAnalysisReport report)
+    {
+        return analyzeJoinStep(context, std::move(report), inputs);
+    };
 
-    chassert(executed_joins.size() == 1);
+    analyzer.join_cardinality = [join_ptr = join](const StepAnalysisReport & report, UInt64 output_rows)
+    {
+        const auto & table_join = join_ptr->getTableJoin();
+        return joinMatchedOutputRows(report, output_rows, table_join.kind(), table_join.strictness());
+    };
 
-    /// Case for one join, stored in the JoinStep directly
-    return join->getAnalysisReport();
+    /// A join counts nothing unless the query runs with the analyze mode on, so with it off there
+    /// is no report to build -- zeros here would be indistinguishable from measured ones. The
+    /// estimation and input columns that `finish` adds do not depend on the mode.
+    if (!join->getTableJoin().collectAnalyzeStats())
+        return analyzer;
+
+    /// The `IJoin` is shared with the processors that run it, so holding it keeps the report
+    /// available after the step is gone. Nothing else of the step is captured.
+    analyzer.reporter = [join_ptr = join](StepProcessors step_processors) -> StepAnalysisReport
+    {
+        /// Case of Y-shaped join
+        if (typeid_cast<const FullSortingMergeJoin *>(join_ptr.get()))
+            return buildMatchedRowsReport(collectMergeJoinCounters(step_processors));
+
+        if (typeid_cast<const PasteJoin *>(join_ptr.get()))
+            return join_ptr->getAnalysisReport();
+
+        /// Case for sharded join
+        auto executed_joins = collectExecutedJoins(step_processors);
+        const bool executed_by_shard_clones = !executed_joins.empty() && !executed_joins.contains(join_ptr.get());
+        if (executed_by_shard_clones)
+            return buildShardedHashJoinReport(executed_joins);
+
+        chassert(executed_joins.size() == 1);
+
+        /// Case for one join, stored in the JoinStep directly
+        return join_ptr->getAnalysisReport();
+    };
+
+    return analyzer;
 }
 
 bool JoinStep::allowPushDownToRight() const
@@ -350,16 +405,33 @@ bool JoinStep::allowPushDownToRight() const
 
 void JoinStep::keepLeftPipelineInOrder(bool disable_squashing)
 {
+    /// The order requirement must not be ignored silently: a join that cannot honor it would
+    /// produce a misordered stream the plan believes is sorted. The read-in-order-through-join
+    /// optimization checks `canPreserveLeftBlockOrder` before it commits, so reaching this throw
+    /// means a bug in the caller.
+    if (!join->canPreserveLeftBlockOrder())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "The query plan requires the left block order from a join that cannot preserve it ({})",
+            join->getName());
+
+    join->keepLeftPipelineInOrder();
+
     if (disable_squashing)
     {
         min_block_size_rows = 0;
         min_block_size_bytes = 0;
     }
-    keep_left_read_in_order = true;
-    join->keepLeftPipelineInOrder();
+    left_pipeline_order = LeftPipelineOrder::KeepOrder;
 }
 
-std::vector<size_t> JoinStep::getStepGroups() const
+void JoinStep::keepLeftPipelineLayout()
+{
+    if (left_pipeline_order == LeftPipelineOrder::None)
+        left_pipeline_order = LeftPipelineOrder::KeepLayout;
+}
+
+VectorWithMemoryTracking<size_t> JoinStep::getStepGroups() const
 {
     return {
         static_cast<size_t>(JoinStage::Default),
@@ -465,11 +537,20 @@ void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)
 {
+    if (left_pipeline_order == LeftPipelineOrder::KeepOrder)
+    {
+        if (!join_->canPreserveLeftBlockOrder())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "The query plan requires the left block order from a join that cannot preserve it ({})",
+                join_->getName());
+
+        join_->keepLeftPipelineInOrder();
+    }
+
     join_algorithm_header.reset();
     swap_streams = swap_streams_;
     join = std::move(join_);
-    if (keep_left_read_in_order)
-        join->keepLeftPipelineInOrder();
     updateOutputHeader();
 }
 
@@ -534,6 +615,8 @@ FilledJoinStep::FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_
 
 void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    QueryExecutionCounters::addExecutedJoin(*join);
+
     bool default_totals = false;
     if (!pipeline.hasTotals() && !join->getTotals().empty())
     {
@@ -557,11 +640,25 @@ void FilledJoinStep::updateOutputHeader()
     output_header = std::make_shared<const Block>(JoiningTransform::transformHeader(*input_headers.front(), join));
 }
 
-StepAnalysisReport FilledJoinStep::getAnalysisReport(StepProcessors /*step_processors*/) const
+StepAnalyzer FilledJoinStep::makeAnalyzer() const
 {
-    chassert(join->getTableJoin().collectAnalyzeStats(), "FilledJoinStep analyzed without the analyze mode");
+    StepAnalyzer analyzer = IQueryPlanStep::makeAnalyzer();
 
-    return join->getAnalysisReport();
+    /// A filled join always keeps the storage on the right and never carries an estimation.
+    JoinAnalysisInputs join_inputs;
+    join_inputs.join = join;
+
+    analyzer.finish = [inputs = std::move(join_inputs)](const StepStatsContext & context, StepAnalysisReport report)
+    {
+        return analyzeJoinStep(context, std::move(report), inputs);
+    };
+
+    if (!join->getTableJoin().collectAnalyzeStats())
+        return analyzer;
+
+    analyzer.reporter = [join_ptr = join](StepProcessors) { return join_ptr->getAnalysisReport(); };
+
+    return analyzer;
 }
 
 void FilledJoinStep::describeActions(FormatSettings & settings) const

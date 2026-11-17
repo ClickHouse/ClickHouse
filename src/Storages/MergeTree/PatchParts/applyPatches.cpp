@@ -313,11 +313,14 @@ ColumnRawPtrs extractRawColumns(const Block & block, const Names & column_names)
     return out;
 }
 
-Block getBlockWithSortingKey(const Block & block, const KeyDescription & sorting_key)
+Block getBlockWithSortingKey(const Block & block, const Block & key_columns, const KeyDescription & sorting_key)
 {
     Block result;
+    /// `key_columns` holds the key materialized once per main block, before any patch was applied,
+    /// which is the identity the patch part is sorted by. The result block's own copy of a key column
+    /// may instead hold a default computed from already patched inputs, which is a different value.
     for (const auto & name : sorting_key.column_names)
-        result.insert(block.getByName(name));
+        result.insert(key_columns.getByName(name));
 
     result.insert(block.getByName(BlockNumberColumn::name));
     result.insert(block.getByName(BlockOffsetColumn::name));
@@ -372,12 +375,12 @@ struct BlockCursor
     {
     }
 
-    ALWAYS_INLINE size_t blockNumber() const { return (*block_number)[row]; }
-    ALWAYS_INLINE size_t blockOffset() const { return (*block_offset)[row]; }
-    ALWAYS_INLINE size_t runLength() const { return run_end - row; }
-    ALWAYS_INLINE bool isFinished() const { return row >= num_rows; }
+    [[nodiscard]] ALWAYS_INLINE size_t blockNumber() const { return (*block_number)[row]; }
+    [[nodiscard]] ALWAYS_INLINE size_t blockOffset() const { return (*block_offset)[row]; }
+    [[nodiscard]] ALWAYS_INLINE size_t runLength() const { return run_end - row; }
+    [[nodiscard]] ALWAYS_INLINE bool isFinished() const { return row >= num_rows; }
 
-    ALWAYS_INLINE int compare(const BlockCursor & other, const std::vector<bool> & reverse_flags) const
+    [[nodiscard]] ALWAYS_INLINE int compare(const BlockCursor & other, const std::vector<bool> & reverse_flags) const
     {
         return compareSortKeyRows(sorting_key_columns, row, other.sorting_key_columns, other.row, reverse_flags);
     }
@@ -697,7 +700,7 @@ void updateHashWithColumn(SipHash & hash, const ColumnWithTypeAndName & column)
     hash.update(type_name.data(), type_name.size());
 }
 
-std::vector<PatchIndicesPtr> applyPatchesMergeOnKey(const Block & result_block, const MergeOnKeyGroup & group)
+std::vector<PatchIndicesPtr> applyPatchesMergeOnKey(const Block & result_block, const Block & key_columns, const MergeOnKeyGroup & group)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ApplyPatchMergeOnKeyMicroseconds);
     size_t main_rows = result_block.rows();
@@ -707,7 +710,7 @@ std::vector<PatchIndicesPtr> applyPatchesMergeOnKey(const Block & result_block, 
 
     const auto & sorting_key = *group.sorting_key;
     const auto & reverse_flags = sorting_key.reverse_flags;
-    auto sorting_key_block = getBlockWithSortingKey(result_block, sorting_key);
+    auto sorting_key_block = getBlockWithSortingKey(result_block, key_columns, sorting_key);
     BlockCursor result_cursor(sorting_key_block, sorting_key);
 
     PatchIndicesGroups indices_groups;
@@ -784,6 +787,7 @@ std::vector<PatchIndicesPtr> applyPatchesMergeOnKey(const Block & result_block, 
 void applyPatchesToBlock(
     Block & result_block,
     Block & versions_block,
+    const Block & key_columns,
     const std::vector<PatchReadResultToApply> & patch_read_results,
     UInt64 source_data_version)
 {
@@ -817,7 +821,7 @@ void applyPatchesToBlock(
     /// and is applied directly, without combining with other patches.
     for (const auto & group : merge_on_key_groups)
     {
-        auto merge_on_key_patches = applyPatchesMergeOnKey(result_block, group);
+        auto merge_on_key_patches = applyPatchesMergeOnKey(result_block, key_columns, group);
 
         for (auto & patch_indices : merge_on_key_patches)
         {

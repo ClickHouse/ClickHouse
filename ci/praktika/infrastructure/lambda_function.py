@@ -192,7 +192,7 @@ class Lambda:
                 "Statement": [
                     {
                         "Effect": "Allow",
-                        "Action": ["s3:GetObject", "s3:HeadObject"],
+                        "Action": ["s3:GetObject"],
                         "Resource": "arn:aws:s3:::clickhouse-test-reports-private/*",
                     }
                 ],
@@ -229,7 +229,7 @@ class Lambda:
                 "Statement": [
                     {
                         "Effect": "Allow",
-                        "Action": ["s3:GetObject", "s3:HeadObject", "s3:PutObject"],
+                        "Action": ["s3:GetObject", "s3:PutObject"],
                         "Resource": "arn:aws:s3:::clickhouse-test-reports-private/*",
                     },
                     {

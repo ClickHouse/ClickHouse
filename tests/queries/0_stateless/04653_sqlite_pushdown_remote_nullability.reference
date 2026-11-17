@@ -1,0 +1,4 @@
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
+Query: SELECT `x` FROM `nullable_t`
+Query: SELECT `x` FROM `not_null_t` WHERE `x` = 1
+Query: SELECT `x` FROM `primary_key_t` WHERE `x` = 1

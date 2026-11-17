@@ -1,5 +1,10 @@
 #include <gtest/gtest.h>
 #include <Columns/ColumnVector.h>
+#include <Common/randomSeed.h>
+
+#include <pcg_random.hpp>
+
+#include <random>
 
 // I know that inclusion of .cpp is not good at all
 #include <Storages/MergeTree/MergeTreeRangeReader.cpp> // NOLINT
@@ -138,6 +143,31 @@ static bool testCombineColumns(size_t size)
     return true;
 }
 
+/* Compares DB::combineFilters with its scalar definition on random filters with arbitrary non-zero bytes,
+ * covering every 8-bit block mask and every tail length.
+ */
+static bool testCombineFiltersRandom(size_t size, double density, pcg64 & rng)
+{
+    auto first = ColumnUInt8::create(size, static_cast<UInt8>(0));
+    auto second = ColumnUInt8::create();
+    PaddedPODArray<UInt8> expected(size, 0);
+
+    std::bernoulli_distribution is_non_zero(density);
+    std::uniform_int_distribution<int> non_zero(1, 255);
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (is_non_zero(rng))
+        {
+            first->getData()[i] = static_cast<UInt8>(non_zero(rng));
+            second->getData().push_back(static_cast<UInt8>(rng()));
+            expected[i] = second->getData().back();
+        }
+    }
+
+    ColumnPtr result = combineFilters(std::move(first), std::move(second));
+    return typeid_cast<const ColumnUInt8 &>(*result).getData() == expected;
+}
+
 /* To ensure the vectorized DB::andFilters works as its scalar implementation, this test validates the AND (&&)
  * of any combinations of the UInt8 values.
  */
@@ -209,6 +239,13 @@ TEST(MergeTree, CombineFilters)
     EXPECT_TRUE(testCombineColumns(201));
     EXPECT_TRUE(testCombineColumns(2000));
     EXPECT_TRUE(testCombineColumns(200000));
+
+    const auto seed = randomSeed();
+    SCOPED_TRACE(seed);
+    pcg64 rng(seed);
+    for (size_t size = 0; size <= 300; ++size)
+        for (double density : {0.03, 0.5, 0.97})
+            EXPECT_TRUE(testCombineFiltersRandom(size, density, rng)) << "size " << size << ", density " << density;
 }
 
 TEST(MergeTree, AndFilters)

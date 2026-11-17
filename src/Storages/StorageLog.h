@@ -120,6 +120,10 @@ private:
     /// Recalculates the number of rows stored in this table.
     void updateTotalRows(const WriteLock &);
 
+    /// Whether this table holds nothing on disk: no recorded bytes, and no rows according to the
+    /// engine's row signal. Must be called under the rwlock, after loadMarks().
+    bool hasNothingToBackUp() const;
+
     /// Restores the data of this table from backup.
     void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, std::chrono::seconds lock_timeout);
 
@@ -172,7 +176,7 @@ private:
             : file_checker_tasks(std::move(file_checker_tasks_)), lock(std::move(lock_))
         {}
 
-        size_t size() const override { return file_checker_tasks->size(); }
+        [[nodiscard]] size_t size() const override { return file_checker_tasks->size(); }
 
         FileChecker::DataValidationTasksPtr file_checker_tasks;
         /// Lock to prevent table modification while checking
@@ -201,9 +205,9 @@ public:
     ReadFromStorageLogStep(const ReadFromStorageLogStep &) = default;
     ReadFromStorageLogStep(ReadFromStorageLogStep &&) = default;
 
-    String getName() const override { return "ReadFromStorageLog"; }
+    [[nodiscard]] String getName() const override { return "ReadFromStorageLog"; }
 
-    QueryPlanStepPtr clone() const override
+    [[nodiscard]] QueryPlanStepPtr clone() const override
     {
         return std::make_unique<ReadFromStorageLogStep>(*this);
     }

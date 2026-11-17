@@ -18,11 +18,15 @@
 
 #include <Core/Settings.h>
 #include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Access/EnabledQuota.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Storages/IStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -96,6 +100,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     if (is_correlated_subquery)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot evaluate correlated scalar subquery");
 
+    /// The subquery is executed now, so decide here whether its replaced tables read with parallel replicas.
+    restoreReplacedTableStoragesIfNeeded(node);
+
     auto & context = scope.context;
 
     /// Scalar subqueries in table function or parameterized view arguments are executed even in
@@ -143,7 +150,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
         scalar_block = scalars_cache.at(node_with_hash);
     }
-    else if (context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasScalar(str_hash))
+    else if (context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasComputedScalar(str_hash))
     {
         scalar_block = context->getQueryContext()->getScalar(str_hash);
         scalar_subquery_to_scalar_value_global.emplace(node_with_hash, scalar_block);
@@ -203,6 +210,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
         options.only_analyze = only_analyze_subquery;
+        options.view_source_in_subqueries = view_source_in_subqueries;
 
         /// Scalar subqueries may reference materialized CTEs that haven't been populated yet.
         /// Force CTE materialization in the sub-plan so that the pipeline execution
@@ -215,7 +223,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         addQueryTreePasses(query_tree_pass_manager, options.only_analyze);
         query_tree_pass_manager.run(query_tree);
 
-        if (auto storage = subquery_context->getViewSource())
+        /// The inner query of an ordinary view referenced by the view query reads the table itself,
+        /// not the inserted block.
+        if (auto storage = getViewSourceIfRead(subquery_context, view_source_in_subqueries))
             replaceStorageInQueryTree(query_tree, subquery_context, storage);
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_tree, subquery_context, options);
 
@@ -257,7 +267,13 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 if (column.column->empty())
                 {
                     auto mut_col = column.column->cloneEmpty();
-                    mut_col->insertDefault();
+                    /// Not `NULL`: the placeholder is still evaluated in the enclosing expression, and
+                    /// e.g. a cast to a non-Nullable type would throw. `Nothing` has no other value.
+                    auto nested_type = removeNullable(removeLowCardinality(column.type));
+                    if (isNothing(nested_type))
+                        mut_col->insertDefault();
+                    else
+                        mut_col->insert(nested_type->getDefault());
                     column.column = std::move(mut_col);
                 }
             }
@@ -269,6 +285,19 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             BlockIO io;
             auto & query_plan = interpreter->getQueryPlan();
             bool skip_execution_for_exists = false;
+
+            /// A scalar subquery is executed during the analysis of the query, before the quotas of the query are checked,
+            /// so an exhausted quota over profile events is checked here, before the subquery consumes any resources.
+            /// The query plan has been built above, so `ignoreQuota` is known (e.g. for exempt tables in `system`).
+            /// The query is then charged with what the subquery consumes even if it is exempt itself (see
+            /// `QueryStatus::executed_non_exempt_scalar_subquery`).
+            if (!interpreter->ignoreQuota())
+            {
+                if (auto quota = subquery_context->getQuota())
+                    quota->checkExceededProfileEvents(subquery_context->getNormalizedQueryHash());
+                if (auto process_list_elem = subquery_context->getProcessListElement())
+                    process_list_elem->markNonExemptScalarSubqueryExecuted();
+            }
 
             if (execute_for_exists)
             {

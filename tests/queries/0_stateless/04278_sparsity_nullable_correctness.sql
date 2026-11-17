@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: Not supported
-
 -- Trivial-count correctness on Nullable sparse columns. The per-column
 -- `num_defaults` counts NULL rows, so classification of predicates on Nullable
 -- columns must match that convention (NULL is the default, zero/empty is not).

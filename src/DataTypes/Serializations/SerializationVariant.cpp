@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
@@ -32,6 +33,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 /// Validate that a discriminator value is within bounds (< num_variants) or is NULL_DISCRIMINATOR.
@@ -70,14 +72,16 @@ struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBin
 {
     ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> variant_states;
+    std::vector<bool> variants_absent_in_storage;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateVariant>();
-        new_state->discriminators_state = discriminators_state ? discriminators_state->clone() : nullptr;
+        new_state->discriminators_state = discriminators_state ? discriminators_state->clone(context) : nullptr;
         new_state->variant_states.reserve(variant_states.size());
         for (const auto & variant_state : variant_states)
-            new_state->variant_states.push_back(variant_state ? variant_state->clone() : nullptr);
+            new_state->variant_states.push_back(variant_state ? variant_state->clone(context) : nullptr);
+        new_state->variants_absent_in_storage = variants_absent_in_storage;
         return new_state;
     }
 };
@@ -140,12 +144,21 @@ void SerializationVariant::enumerateStreams(
     callback(settings.path);
     settings.path.pop_back();
 
+    const auto variants_absent_in_storage = variant_deserialize_state
+        ? variant_deserialize_state->variants_absent_in_storage
+        : getVariantsAbsentInStorage(
+              settings.check_stream_exists_callback, settings.path, data.serialization_info,
+              settings.use_specialized_prefixes_and_suffixes_substreams);
+
     settings.path.push_back(Substream::VariantElements);
     settings.path.back().data = data;
 
     chassert(variant_serializations.size() <= std::numeric_limits<ColumnVariant::Discriminator>::max());
     for (ColumnVariant::Discriminator i = 0; i < static_cast<ColumnVariant::Discriminator>(variant_serializations.size()); ++i)
     {
+        if (variants_absent_in_storage[i])
+            continue;
+
         DataTypePtr type = type_variant ? type_variant->getVariant(i) : nullptr;
         const bool make_subcolumn_nullable = !type || canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(type);
         settings.path.back().creator = std::make_shared<SerializationVariantElement::VariantSubcolumnCreator>(
@@ -257,10 +270,15 @@ void SerializationVariant::deserializeBinaryBulkStatePrefix(
     auto variant_state = std::make_shared<DeserializeBinaryBulkStateVariant>();
     variant_state->discriminators_state = discriminators_state;
     variant_state->variant_states.resize(variant_serializations.size());
+    variant_state->variants_absent_in_storage = getVariantsAbsentInStorage(
+        settings.check_stream_exists_callback, settings.path, nullptr, settings.use_specialized_prefixes_and_suffixes_substreams);
 
     settings.path.push_back(Substream::VariantElements);
     for (size_t i = 0; i < variant_serializations.size(); ++i)
     {
+        if (variant_state->variants_absent_in_storage[i])
+            continue;
+
         addVariantElementToPath(settings.path, i);
         variant_serializations[i]->deserializeBinaryBulkStatePrefix(settings, variant_state->variant_states[i], cache);
         settings.path.pop_back();
@@ -632,9 +650,10 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     for (size_t i = 0; i != variant_serializations.size(); ++i)
     {
         addVariantElementToPath(settings.path, i);
-        variant_serializations[i]->deserializeBinaryBulkWithMultipleStreams(
-            col.getVariantByLocalDiscriminator(i), variant_limits[i],
-            settings, variant_state->variant_states[i], cache);
+        if (!variant_state->variants_absent_in_storage[i])
+            variant_serializations[i]->deserializeBinaryBulkWithMultipleStreams(
+                col.getVariantByLocalDiscriminator(i), variant_limits[i],
+                settings, variant_state->variant_states[i], cache);
         settings.path.pop_back();
 
         /// Verify that we deserialized the expected number of rows for this variant.
@@ -690,8 +709,7 @@ std::vector<size_t> SerializationVariant::deserializeCompactDiscriminators(
     DeserializeBinaryBulkStateVariantDiscriminators & state,
     const DeserializeBinaryBulkSettings & settings) const
 {
-    auto & discriminators = assert_cast<ColumnVariant::ColumnDiscriminators &>(discriminators_column);
-    auto & discriminators_data = discriminators.getData();
+    auto & discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators &>(discriminators_column).getData();
 
     /// Reset state if we are reading from the start of the granule and not from the previous position in the file.
     if (!continuous_reading)
@@ -714,16 +732,19 @@ std::vector<size_t> SerializationVariant::deserializeCompactDiscriminators(
         size_t limit_in_granule = std::min(limit, state.remaining_rows_in_granule);
         if (state.granule_format == CompactDiscriminatorsGranuleFormat::COMPACT)
         {
-            auto & data = discriminators.getData();
-            data.resize_fill(data.size() + limit_in_granule, state.compact_discr);
+            discriminators_data.resize_fill(discriminators_data.size() + limit_in_granule, state.compact_discr);
 
             if (state.compact_discr != ColumnVariant::NULL_DISCRIMINATOR)
                 variant_limits[state.compact_discr] += limit_in_granule;
         }
         else
         {
-            SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(discriminators, *stream, limit_in_granule, 0);
-            size_t start = discriminators_data.size() - limit_in_granule;
+            size_t start = discriminators_data.size();
+            SerializationNumber<ColumnVariant::Discriminator>::deserializeBinaryBulk(discriminators_data, *stream, limit_in_granule);
+            size_t num_read = discriminators_data.size() - start;
+            if (num_read != limit_in_granule)
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                    "Cannot read all discriminators in Variant granule. Expected: {}, got: {}", limit_in_granule, num_read);
 
             for (size_t i = start; i != discriminators_data.size(); ++i)
             {
@@ -769,6 +790,87 @@ void SerializationVariant::addVariantElementToPath(DB::ISerialization::Substream
 {
     path.push_back(Substream::VariantElement);
     path.back().variant_element_name = variant_names[i];
+}
+
+/// `settings.path` is `path` followed by the variant element, `has_discriminators` is shared by the variants of one Variant.
+static bool isVariantAbsentInStorageImpl(
+    const std::function<bool(const ISerialization::SubstreamPath &)> & check_stream_exists,
+    const ISerialization::SubstreamPath & path,
+    const ISerialization::SubstreamData & variant_data,
+    ISerialization::EnumerateStreamsSettings & settings,
+    std::optional<bool> & has_discriminators)
+{
+    bool has_streams = false;
+    bool has_stream_in_storage = false;
+    auto callback = [&](const ISerialization::SubstreamPath & substream_path)
+    {
+        if (has_stream_in_storage || ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+            return;
+
+        has_streams = true;
+        has_stream_in_storage = check_stream_exists(substream_path);
+    };
+    settings.path.back().data = variant_data;
+    variant_data.serialization->enumerateStreams(settings, callback, variant_data);
+    if (!has_streams || has_stream_in_storage)
+        return false;
+
+    /// Compact parts without substream marks report every stream as missing, the discriminators included.
+    if (!has_discriminators)
+    {
+        ISerialization::SubstreamPath discriminators_path = path;
+        discriminators_path.push_back(ISerialization::Substream::VariantDiscriminators);
+        has_discriminators = check_stream_exists(discriminators_path);
+    }
+    return *has_discriminators;
+}
+
+static ISerialization::EnumerateStreamsSettings getVariantElementEnumerateSettings(
+    const ISerialization::SubstreamPath & path, bool use_specialized_prefixes_and_suffixes_substreams)
+{
+    ISerialization::EnumerateStreamsSettings settings;
+    settings.path = path;
+    settings.path.push_back(ISerialization::Substream::VariantElements);
+    settings.path.push_back(ISerialization::Substream::VariantElement);
+    settings.use_specialized_prefixes_and_suffixes_substreams = use_specialized_prefixes_and_suffixes_substreams;
+    return settings;
+}
+
+std::vector<bool> SerializationVariant::getVariantsAbsentInStorage(
+    const std::function<bool(const SubstreamPath &)> & check_stream_exists,
+    const SubstreamPath & path,
+    const SerializationInfoPtr & serialization_info,
+    bool use_specialized_prefixes_and_suffixes_substreams) const
+{
+    std::vector<bool> variants_absent_in_storage(variant_serializations.size());
+    if (!check_stream_exists)
+        return variants_absent_in_storage;
+
+    auto settings = getVariantElementEnumerateSettings(path, use_specialized_prefixes_and_suffixes_substreams);
+    std::optional<bool> has_discriminators;
+    for (size_t i = 0; i != variant_serializations.size(); ++i)
+    {
+        settings.path.back().variant_element_name = variant_names[i];
+        auto variant_data = SubstreamData(variant_serializations[i]).withType(variant_types[i]).withSerializationInfo(serialization_info);
+        variants_absent_in_storage[i] = isVariantAbsentInStorageImpl(check_stream_exists, path, variant_data, settings, has_discriminators);
+    }
+    return variants_absent_in_storage;
+}
+
+bool SerializationVariant::isVariantAbsentInStorage(
+    const std::function<bool(const SubstreamPath &)> & check_stream_exists,
+    const SubstreamPath & path,
+    const String & variant_element_name,
+    const SubstreamData & variant_data,
+    bool use_specialized_prefixes_and_suffixes_substreams)
+{
+    if (!check_stream_exists)
+        return false;
+
+    auto settings = getVariantElementEnumerateSettings(path, use_specialized_prefixes_and_suffixes_substreams);
+    settings.path.back().variant_element_name = variant_element_name;
+    std::optional<bool> has_discriminators;
+    return isVariantAbsentInStorageImpl(check_stream_exists, path, variant_data, settings, has_discriminators);
 }
 
 void SerializationVariant::serializeBinary(const Field & /*field*/, WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/) const
@@ -1083,7 +1185,7 @@ bool SerializationVariant::tryDeserializeTextEscapedOrRawImpl(
     /// We don't have enough data in buffer to check if it's a null.
     /// Use PeekableReadBuffer to make a checkpoint before checking null
     /// representation and rollback if check was failed.
-    PeekableReadBuffer peekable_buf(istr, true);
+    PeekableReadBuffer peekable_buf(istr);
     peekable_buf.setCheckpoint();
     if (checkString(null_representation, peekable_buf)
         && (peekable_buf.eof() || *peekable_buf.position() == '\t' || *peekable_buf.position() == '\n'

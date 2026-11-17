@@ -9,6 +9,7 @@ from ci.jobs.scripts.docs.mintlify_docs_check import (
     DEFAULT_CHECKS,
     LOCALE_CHECKS,
     QUICKSTARTS_CHECK,
+    SDK_DOCS_CHECK,
 )
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -35,6 +36,7 @@ LOCALE_CHECK_TRIGGERS = tuple(f"docs/{d}/" for d in LOCALE_DIRS) + (
     #    runtime and validated by locale_components_check.py.
     "docs/snippets/",
     "docs/docs.json",
+    "docs/gt.config.json",
     "docs/_site/redirects.json",
     "docs/_site/customizations/",
 )
@@ -60,9 +62,22 @@ QUICKSTARTS_CHECK_TRIGGERS = (
     + tuple(f"docs/{d}/get-started/navigation.json" for d in LOCALE_DIRS)
     + (
         "docs/_site/redirects.json",
+        "docs/gt.config.json",
         "docs/_site/scripts/update_quickstarts.py",
         "ci/jobs/scripts/docs/quickstarts_check.py",
     )
+)
+
+# The SDK docs check covers only the ClickStack SDK guides, its own checker, and
+# the ClickStackIntegrates component the guides render, so it runs only when one
+# of those changes -- ordinary docs edits don't pay for it. In-app onboarding
+# mirrors these pages, so the checker guards the conventions it parses (the
+# ClickStackIntegrates signals, env-var placeholders, exact deployment tab
+# titles).
+SDK_DOCS_CHECK_TRIGGERS = (
+    "docs/clickstack/ingesting-data/sdks/",
+    "ci/jobs/scripts/docs/sdk_docs_check.py",
+    "docs/snippets/components/ClickStackIntegrates/",
 )
 
 CLICKHOUSE_CONNECT_SYNC_BRANCH = "robot/docs-sync-clickhouse-connect"
@@ -95,6 +110,15 @@ def _quickstarts_check_should_run():
     if changed_files is None:
         return True
     return any(f.startswith(QUICKSTARTS_CHECK_TRIGGERS) for f in changed_files)
+
+
+def _sdk_docs_check_should_run():
+    # Same gating idea: run only when the PR touches an SDK page or the checker;
+    # fail open toward coverage when the changed-file list is unavailable.
+    changed_files = Info().get_changed_files()
+    if changed_files is None:
+        return True
+    return any(f.startswith(SDK_DOCS_CHECK_TRIGGERS) for f in changed_files)
 
 
 def _is_trusted_clickhouse_connect_sync(info):
@@ -197,6 +221,18 @@ if __name__ == "__main__":
             results.append(
                 Result.from_commands_run(
                     name=qs_name, command=qs_command, workdir=docs_dir
+                )
+            )
+
+    # ClickStack SDK docs check: blocking, but only when the PR touches an SDK
+    # page or the checker. Enforces the conventions in-app onboarding mirrors
+    # from these pages.
+    if _sdk_docs_check_should_run():
+        sdk_name, sdk_command = SDK_DOCS_CHECK
+        if selected(sdk_name):
+            results.append(
+                Result.from_commands_run(
+                    name=sdk_name, command=sdk_command, workdir=docs_dir
                 )
             )
 

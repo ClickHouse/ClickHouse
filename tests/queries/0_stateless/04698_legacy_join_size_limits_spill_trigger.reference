@@ -1,5 +1,6 @@
 compatibility restores the legacy behavior
 1
+1
 0
 legacy: max_bytes_in_join spills instead of failing
 2000000

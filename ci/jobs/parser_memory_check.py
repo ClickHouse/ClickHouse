@@ -50,6 +50,8 @@ NOISE_FRAME_PREFIXES = (
     "isalloc",
     "sdallocx",
     "rallocx",
+    "do_rallocx",
+    "irallocx",
     "mallocx",
     "main",
     "(anonymous namespace)::dumpProfile",
@@ -59,6 +61,11 @@ NOISE_FRAME_PREFIXES = (
 EXCLUDED_STACK_FRAME_PREFIXES = (
     "(anonymous namespace)::dumpProfile",
     "dumpProfile",
+    # Per-thread accounting state lives until the pool thread exits, so it is
+    # not attributable to the scenario that first touched it.
+    "DB::ThreadStatus::attachToGroup",
+    "DB::ThreadStatus::detachFromGroup",
+    "DB::ThreadStatus::ThreadStatus",
 )
 
 
@@ -237,7 +244,7 @@ def format_stack(frames: list) -> str:
 
 
 def contains_excluded_stack_frame(frames: list) -> bool:
-    """Return whether a stack belongs to profiler bookkeeping."""
+    """Return whether a stack belongs to profiler or per-thread bookkeeping."""
     return any(
         part.startswith(prefix)
         for frame in frames
@@ -272,15 +279,40 @@ def is_boost_container_allocation_frame(frame: str) -> bool:
     )
 
 
+def is_allocation_implementation_frame(frame: str) -> bool:
+    """Return whether a leaf frame describes allocation plumbing.
+
+    The release binaries compared by this check are separate ThinLTO links.
+    Inlining and identical-code folding can therefore attribute the same
+    allocation to different container specializations even when the stable
+    ClickHouse caller and the number of live bytes are identical.
+    """
+    signature = frame.split("(", 1)[0]
+    if "std::__1::" in signature or is_boost_container_allocation_frame(frame):
+        return True
+    if signature.startswith("Allocator<"):
+        return True
+    return (
+        ("DB::Column" in signature and signature.endswith("::shrinkToFit"))
+        or ("DB::PODArray" in signature and "::shrink_to_fit" in signature)
+    )
+
+
+def is_clickhouse_call_frame(frame: str) -> bool:
+    """Return whether the demangled function itself is in namespace `DB`."""
+    signature = frame.split("(", 1)[0]
+    return signature.startswith("DB::") or " DB::" in signature
+
+
 def canonicalize_stack_frames(frames: list) -> list:
     """Build a cross-binary stack key from one primary symbol per address.
 
     Master binaries contain DWARF inline frames separated by `--`, while PR
     release binaries are built without debug information. Keeping only the
     primary symbol makes the same physical backtrace comparable on both sides.
-    Ignore a leading sequence of Boost.Container allocation implementation
-    frames when it leads to a ClickHouse frame because their template
-    specialization and inlining can differ between otherwise equivalent builds.
+    Ignore a leading sequence of allocation implementation frames when it leads
+    to a ClickHouse frame because container specialization, inlining, and
+    identical-code folding can differ between otherwise equivalent builds.
     """
     canonical = []
     for frame in filter_stack_frames(frames):
@@ -291,14 +323,14 @@ def canonicalize_stack_frames(frames: list) -> list:
 
     allocation_prefix_size = 0
     for frame in canonical:
-        if not is_boost_container_allocation_frame(frame):
+        if not is_allocation_implementation_frame(frame):
             break
         allocation_prefix_size += 1
 
     if (
         allocation_prefix_size
         and allocation_prefix_size < len(canonical)
-        and canonical[allocation_prefix_size].startswith("DB::")
+        and is_clickhouse_call_frame(canonical[allocation_prefix_size])
     ):
         return canonical[allocation_prefix_size:]
 
@@ -710,6 +742,8 @@ def generate_html_report(
     report_title="Parser AST Memory Check Report",
     report_subtitle="Measuring AST allocated memory during SQL parsing (not query execution).",
     item_label="Query",
+    change_threshold_bytes=CHANGE_THRESHOLD_BYTES,
+    change_threshold_pct=CHANGE_THRESHOLD_PCT,
 ):
     """Generate a standalone HTML report viewable in browser.
     Detail panels live OUTSIDE the table to avoid table-layout issues with SVG/nested tables."""
@@ -725,10 +759,18 @@ def generate_html_report(
         qid = r["num"]
 
         master_b = r["master_bytes"]
+        # The verdict of a row may be based on other measurements than its
+        # deltas; the change columns then show those, labeled.
+        compared_label = r.get("compared_label")
+        if compared_label:
+            master_b = r["compared_master"]
+            change = r["compared_pr"] - master_b
         abs_ch = abs(change)
         base_b = abs(master_b)
         pct_ch = (abs_ch / base_b * 100) if base_b > 0 else (100.0 if abs_ch > 0 else 0)
-        sig = abs_ch > CHANGE_THRESHOLD_BYTES and pct_ch > CHANGE_THRESHOLD_PCT
+        sig = (
+            abs_ch > change_threshold_bytes and pct_ch > change_threshold_pct
+        )
 
         if status == Result.Status.FAIL:
             row_class = "regression"
@@ -747,6 +789,16 @@ def generate_html_report(
         pct_str = f"{pct_ch:+.1f}%" if change != 0 else "0.0%"
         if change < 0:
             pct_str = f"-{pct_ch:.1f}%"
+        change_summary = f"<span>Change: <strong>{change_str}</strong> B ({pct_str})</span>"
+        if compared_label:
+            change_summary = (
+                f"<span>Change: <strong>{r['pr_bytes'] - r['master_bytes']:+,}</strong> B</span>"
+                f"<span>{html_escape(compared_label)}: master <strong>{r['compared_master']:+,}</strong> B, "
+                f"PR <strong>{r['compared_pr']:+,}</strong> B, "
+                f"change <strong>{change_str}</strong> B ({pct_str})</span>"
+            )
+            change_str += " (live)"
+            pct_str += " (live)"
         query_escaped = html_escape(r["query"])
 
         master_profile = format_profile_html(
@@ -792,7 +844,7 @@ def generate_html_report(
             f'<div class="detail-summary">'
             f'<span>Master: <strong>{r["master_bytes"]:,}</strong> B</span>'
             f'<span>PR: <strong>{r["pr_bytes"]:,}</strong> B</span>'
-            f'<span>Change: <strong>{change_str}</strong> B ({pct_str})</span>'
+            f"{change_summary}"
             f"</div>"
             f'<div class="section-label">Cross-version diff (PR &minus; Master)</div>'
             f"{cross_diff_html}"
@@ -917,7 +969,7 @@ def generate_html_report(
   </div>
   <div class="summary-item">
     <span class="summary-label">Threshold</span>
-    <span class="summary-value">&gt;{CHANGE_THRESHOLD_BYTES} B and &gt;{CHANGE_THRESHOLD_PCT}%</span>
+    <span class="summary-value">&gt;{change_threshold_bytes} B and &gt;{change_threshold_pct}%</span>
   </div>
 </div>
 
@@ -1050,7 +1102,11 @@ def run_profiler_collect_heap(
     }
 
 
-def batch_symbolize(binary_path: str, heap_files: list) -> bool:
+def batch_symbolize(
+    binary_path: str,
+    heap_files: list,
+    timeout: int = 600,
+) -> bool:
     """
     Run batch symbolization: invokes --symbolize-batch on all heap files.
     The tool's global LRU cache deduplicates addresses across files.
@@ -1067,7 +1123,7 @@ def batch_symbolize(binary_path: str, heap_files: list) -> bool:
             args,
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
         print("ERROR: batch symbolization timed out")

@@ -58,6 +58,10 @@ DirectJoinMergeTreeEntity::DirectJoinMergeTreeEntity(
 {
     if (filter_dag.getOutputs().size() != 1)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Direct join with merge tree supports only single-column key");
+
+    /// The per-key-batch lookup read is stamped `disableQueryConditionCache` at plan time because its
+    /// hand-built filter has one identity for every batch, and that stamp is not part of a serialized read.
+    plan_optimization_settings.enable_parallel_replicas = false;
 }
 
 Names DirectJoinMergeTreeEntity::getPrimaryKey() const
@@ -108,8 +112,8 @@ static std::unique_ptr<FilterStep> buildFilterStepWithIn(const ColumnWithTypeAnd
 
 Chunk DirectJoinMergeTreeEntity::executePlan(QueryPlan & plan) const
 {
-    plan.optimize(plan_optimization_settings);
-
+    /// `buildQueryPipeline` optimizes internally, which also lets it decide the
+    /// distributed-to-local fallback before the optimization passes.
     auto pipeline_builder = plan.buildQueryPipeline(plan_optimization_settings, pipeline_build_settings);
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
 
