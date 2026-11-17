@@ -5133,6 +5133,30 @@ TEST_P(CoordinationTest, StartupInventoryKeepsRetainedRecoveryCopies)
     EXPECT_EQ(DB::getLogIdxFromSnapshotPath("snapshot_100.bin.zstd"), 100);
 }
 
+TEST_P(CoordinationTest, StartupInventoryKeepsLatestRecoveryCopiesWithZeroSnapshotsToKeep)
+{
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest rocks("./rocksdb");
+
+    auto ctx = makeContextForSnapshotApply(use_lsmt_storage, "./snapshots", "./rocksdb");
+    auto buf_55 = makeSingleNodeSnapshotBuffer(ctx, 55, "/kept55", "from_55");
+    auto buf_66 = makeSingleNodeSnapshotBuffer(ctx, 66, "/kept66", "from_66");
+
+    auto disk = ctx->getSnapshotDisk();
+    writeSnapshotBufferToFile(disk, "snapshot_55_aaaaaaaa.bin.zstd", buf_55);
+    writeSnapshotBufferToFile(disk, "snapshot_55_bbbbbbbb.bin.zstd", buf_55);
+    writeSnapshotBufferToFile(disk, "snapshot_66_aaaaaaaa.bin.zstd", buf_66);
+    writeSnapshotBufferToFile(disk, "snapshot_66_bbbbbbbb.bin.zstd", buf_66);
+
+    /// The selected copy of the latest snapshot is not yet proven readable at startup,
+    /// so its duplicates must survive even when `snapshots_to_keep` is zero.
+    DB::KeeperSnapshotManager manager(0, ctx, true);
+    EXPECT_EQ(manager.totalSnapshots(), 2);
+    EXPECT_EQ(manager.getLatestSnapshotIndex(), 66);
+    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 55).size(), 1);
+    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 66).size(), 2);
+}
+
 TEST_P(CoordinationTest, StartupScanKeepsLatestIndexDuplicatesForRecovery)
 {
     ChangelogDirTest snapshots("./snapshots");
