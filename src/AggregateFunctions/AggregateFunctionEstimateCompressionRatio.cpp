@@ -452,9 +452,11 @@ public:
         /// target type. It copies the conversion settings of the query, or of the server when there is no query (a table being
         /// loaded, a TTL `GROUP BY` in a background merge). Prepared here, so that a conversion the types do not allow is an
         /// error before any row comes.
+        /// Equal types can still convert values: `Bool` equals `UInt8`, but `CAST` turns every value that is not 0 into 1. So
+        /// the cast is left out only when the target is the same type, by name.
         auto own_conversion = std::make_shared<Conversion>();
         own_conversion->validation_settings = std::move(validation_settings_);
-        if (!source_type->equals(*target_type))
+        if (source_type->getName() != target_type->getName())
         {
             ContextPtr context = CurrentThread::tryGetQueryContext();
             if (!context)

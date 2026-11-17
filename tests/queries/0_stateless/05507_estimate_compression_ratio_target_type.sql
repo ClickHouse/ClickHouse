@@ -65,6 +65,14 @@ SELECT
     = extract(hex(estimateCompressionRatioState('LZ4', 'DateTime(\'UTC\')')(CAST(x, 'DateTime(\'UTC\')'))), second_number)
 FROM (SELECT toDateTime64('1960-01-01 00:00:00', 3, 'UTC') + toIntervalSecond(number) AS x FROM numbers(20))
 SETTINGS date_time_overflow_behavior = 'ignore';
+-- Also between equal types: `Bool` equals `UInt8`, but `CAST` turns every value that is not 0 into 1.
+WITH '^(?:[89A-F][0-9A-F])*[0-7][0-9A-F]((?:[89A-F][0-9A-F])*[0-7][0-9A-F])$' AS second_number
+SELECT
+    extract(hex(estimateCompressionRatioState('LZ4', 'Bool')(toUInt8(number % 256))), second_number)
+        = extract(hex(estimateCompressionRatioState('LZ4', 'Bool')(CAST(toUInt8(number % 256), 'Bool'))), second_number),
+    extract(hex(estimateCompressionRatioState('LZ4', 'Nullable(Bool)')(toNullable(toUInt8(number % 256)))), second_number)
+        = extract(hex(estimateCompressionRatioState('LZ4', 'Nullable(Bool)')(CAST(toNullable(toUInt8(number % 256)), 'Nullable(Bool)'))), second_number)
+FROM numbers(50000);
 -- With the settings of the query.
 SELECT estimateCompressionRatio('Enum8(\'only\' = 1)')(toUInt8(2)); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT estimateCompressionRatio('DateTime')('01/02/2020') > 0 SETTINGS cast_string_to_date_time_mode = 'best_effort';
