@@ -427,7 +427,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         if (change.name == "processing_threads_num")
         {
             const auto value = change.value.safeGet<UInt64>();
-            if (table_metadata.processing_threads_num == value)
+            if (new_table_metadata.processing_threads_num == value)
             {
                 LOG_TRACE(log, "Setting `processing_threads_num` already equals {}. "
                         "Will do nothing", value);
@@ -438,7 +438,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         else if (change.name == "loading_retries")
         {
             const auto value = change.value.safeGet<UInt64>();
-            if (table_metadata.loading_retries == value)
+            if (new_table_metadata.loading_retries == value)
             {
                 LOG_TRACE(log, "Setting `loading_retries` already equals {}. "
                         "Will do nothing", value);
@@ -449,7 +449,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         else if (change.name == "after_processing")
         {
             const auto value = ObjectStorageQueueTableMetadata::actionFromString(change.value.safeGet<String>());
-            if (table_metadata.after_processing == value)
+            if (new_table_metadata.after_processing == value)
             {
                 LOG_TRACE(log, "Setting `after_processing` already equals {}. "
                         "Will do nothing", value);
@@ -460,7 +460,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         else if (change.name == "tracked_files_limit")
         {
             const auto value = change.value.safeGet<UInt64>();
-            if (table_metadata.tracked_files_limit == value)
+            if (new_table_metadata.tracked_files_limit == value)
             {
                 LOG_TRACE(log, "Setting `tracked_files_limit` already equals {}. "
                         "Will do nothing", value);
@@ -471,7 +471,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         else if (change.name == "tracked_file_ttl_sec")
         {
             const auto value = change.value.safeGet<UInt64>();
-            if (table_metadata.tracked_files_ttl_sec == value)
+            if (new_table_metadata.tracked_files_ttl_sec == value)
             {
                 LOG_TRACE(log, "Setting `tracked_file_ttl_sec` already equals {}. "
                         "Will do nothing", value);
