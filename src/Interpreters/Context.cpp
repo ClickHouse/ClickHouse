@@ -21,6 +21,7 @@
 #include <Common/EventNotifier.h>
 #include <Common/FailPoint.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
 #include <base/getMemoryAmount.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
@@ -391,6 +392,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsUInt64 prefetch_buffer_size;
+    extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_cache_temporarily;
     extern const SettingsBool read_from_page_cache_if_exists_otherwise_bypass_cache;
@@ -8944,7 +8946,8 @@ const S3SettingsByEndpoint & Context::getStorageS3Settings() const
     if (!shared->storage_s3_settings)
     {
         const auto & config = shared->getConfigRefWithLock(lock);
-        shared->storage_s3_settings.emplace().loadFromConfig(config, "s3", getSettingsRef());
+        /// Shared by all queries, so built from the server settings, as on a config reload.
+        shared->storage_s3_settings.emplace().loadFromConfig(config, "s3", getGlobalContext()->getSettingsRef());
     }
 
     return *shared->storage_s3_settings;
@@ -10342,6 +10345,9 @@ ReadSettings Context::getReadSettings() const
     res.http_settings.retry_max_backoff_ms = settings_ref[Setting::http_retry_max_backoff_ms];
     res.http_settings.skip_not_found_url_for_globs = settings_ref[Setting::http_skip_not_found_url_for_globs];
     res.http_settings.make_head_request = settings_ref[Setting::http_make_head_request];
+    res.http_settings.max_fields = settings_ref[Setting::http_max_fields];
+    res.http_settings.max_field_name_size = settings_ref[Setting::http_max_field_name_size];
+    res.http_settings.max_field_value_size = settings_ref[Setting::http_max_field_value_size];
 
     res.remote_fs_settings.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
     res.remote_fs_settings.enable_blob_storage_log = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
@@ -10681,6 +10687,19 @@ StorageSnapshotPtr Context::getPinnedStorageSnapshot(const UUID & table_uuid) co
 const ServerSettings & Context::getServerSettings() const
 {
     return shared->server_settings;
+}
+
+void Context::enablePlanLogCapture()
+{
+    query_plan_log_capture = std::make_shared<QueryPlanLogCapture>();
+    setJoinAnalyzeMode(JoinAnalyzeMode::Derived);
+}
+
+QueryPlanLogCapturePtr Context::getPlanLogCapture() const
+{
+    if (!hasQueryContext())
+        return nullptr;
+    return getQueryContext()->query_plan_log_capture;
 }
 
 ServerSettings Context::getServerSettingsCopy() const

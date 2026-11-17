@@ -586,7 +586,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePt
             /// a single expression node too, not only for a list: otherwise an alias defined and later
             /// referenced within a standalone expression (such as a column DEFAULT expression checked
             /// during `ALTER TABLE ... DROP COLUMN`) is not found and resolution fails with UNKNOWN_IDENTIFIER.
-            QueryExpressionsAliasVisitor visitor(scope.aliases, scope.context->getSettingsRef()[Setting::column_and_query_name_matching]);
+            QueryExpressionsAliasVisitor visitor(scope.aliases, scope.context->getSettingsRef()[Setting::column_and_query_name_matching], scope.context);
             visitor.visit(node);
 
             if (node_type == QueryTreeNodeType::LIST)
@@ -598,7 +598,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePt
         }
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
-            QueryExpressionsAliasVisitor expressions_alias_visitor(scope.aliases, scope.context->getSettingsRef()[Setting::column_and_query_name_matching]);
+            QueryExpressionsAliasVisitor expressions_alias_visitor(scope.aliases, scope.context->getSettingsRef()[Setting::column_and_query_name_matching], scope.context);
             resolveTableFunction(node, scope, expressions_alias_visitor, false /*nested_table_function*/);
             break;
         }
@@ -651,7 +651,7 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Tab
     /// above and is needed for a single expression node too, not only for a list: otherwise an alias
     /// defined and later referenced within a standalone constant expression (such as a user predicate
     /// passed to `mergeTreeAnalyzeIndexes`) is not found and resolution fails with UNKNOWN_IDENTIFIER.
-    QueryExpressionsAliasVisitor visitor(scope.aliases, scope.context->getSettingsRef()[Setting::column_and_query_name_matching]);
+    QueryExpressionsAliasVisitor visitor(scope.aliases, scope.context->getSettingsRef()[Setting::column_and_query_name_matching], scope.context);
     visitor.visit(node);
 
     if (node_type == QueryTreeNodeType::LIST)
@@ -4159,7 +4159,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
             scope.scope_node->formatASTForErrorMessage());
 
     /// Initialize aliases in lambda scope
-    QueryExpressionsAliasVisitor visitor(scope.aliases, scope.context->getSettingsRef()[Setting::column_and_query_name_matching]);
+    QueryExpressionsAliasVisitor visitor(scope.aliases, scope.context->getSettingsRef()[Setting::column_and_query_name_matching], scope.context);
     visitor.visit(lambda_to_resolve.getExpression());
 
     /** Bind lambda arguments to the provided argument nodes.
@@ -5895,7 +5895,7 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
             alias_column_resolve_scope.context = scope.context;
 
             /// Initialize aliases in alias column scope
-            QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope.aliases, alias_column_resolve_scope.context->getSettingsRef()[Setting::column_and_query_name_matching]);
+            QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope.aliases, alias_column_resolve_scope.context->getSettingsRef()[Setting::column_and_query_name_matching], alias_column_resolve_scope.context);
             visitor.visit(alias_column_to_resolve->getExpression());
 
             resolveExpressionNode(alias_column_resolve_scope.scope_node,
@@ -7149,7 +7149,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             }
 
             auto & projection_node = left_subquery->getProjection().getNodes().front();
-            QueryExpressionsAliasVisitor alias_visitor(left_subquery_scope.aliases, left_subquery_scope.context->getSettingsRef()[Setting::column_and_query_name_matching]);
+            QueryExpressionsAliasVisitor alias_visitor(left_subquery_scope.aliases, left_subquery_scope.context->getSettingsRef()[Setting::column_and_query_name_matching], left_subquery_scope.context);
             alias_visitor.visit(projection_node);
             resolveExpressionNode(projection_node, left_subquery_scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -8164,7 +8164,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     /// Initialize aliases in query node scope
     NameMatchMode name_match_mode = scope.context->getSettingsRef()[Setting::column_and_query_name_matching];
-    QueryExpressionsAliasVisitor visitor(scope.aliases, name_match_mode);
+    QueryExpressionsAliasVisitor visitor(scope.aliases, name_match_mode, scope.context);
 
     if (scope.context->getSettingsRef()[Setting::enable_scopes_for_with_statement])
     {
@@ -8172,7 +8172,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
     else
     {
-        QueryExpressionsAliasVisitor alias_collector(scope.global_with_aliases, name_match_mode);
+        QueryExpressionsAliasVisitor alias_collector(scope.global_with_aliases, name_match_mode, scope.context);
         alias_collector.visit(query_node_typed.getWithNode());
 
         scope.aliases = scope.global_with_aliases;

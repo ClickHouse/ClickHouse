@@ -12235,7 +12235,7 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
         /// While it is possible to have detached parts on readonly/write-once disks
         /// (if they were produced on another machine, where it wasn't readonly)
         /// to avoid wasting resources for slow disks, avoid trying to enumerate them.
-        if (disk->isReadOnly() || disk->isWriteOnce())
+        if (disk->isBroken() || disk->isReadOnly() || disk->isWriteOnce())
             continue;
 
         String detached_path = fs::path(relative_data_path) / DETACHED_DIR_NAME;
@@ -14053,7 +14053,7 @@ DiskPtr MergeTreeData::tryGetDiskForDetachedPart(const String & part_name) const
     const auto disks = getStoragePolicy()->getDisks();
 
     for (const DiskPtr & disk : disks)
-        if (disk->existsDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME / part_name))
+        if (!disk->isBroken() && disk->existsDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME / part_name))
             return disk;
 
     return nullptr;
