@@ -49,7 +49,7 @@ struct TimeSeriesSettings
     void applyChanges(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
-    SettingDescriptions enumerateSettings(const SettingsChanges & changes) const;
+    [[nodiscard]] SettingDescriptions enumerateSettings(const SettingsChanges & changes) const;
 
     /// Whether the setting was explicitly set, even if to its default value.
     [[nodiscard]] bool isChanged(std::string_view name) const;

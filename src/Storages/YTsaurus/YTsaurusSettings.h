@@ -46,7 +46,7 @@ struct YTsaurusSettings
     /// Whether the setting applies only to YTsaurus dictionary sources: the table engine and the `ytsaurus` table function
     /// reject it.
     static bool isDictionaryOnlySetting(std::string_view name);
-    SettingDescriptions enumerateSettings(const SettingsChanges & changes) const;
+    [[nodiscard]] SettingDescriptions enumerateSettings(const SettingsChanges & changes) const;
 
 private:
     std::unique_ptr<YTsaurusSettingsImpl> impl;

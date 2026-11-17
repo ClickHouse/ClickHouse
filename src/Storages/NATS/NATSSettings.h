@@ -61,7 +61,7 @@ struct NATSSettings
     [[nodiscard]] SettingsChanges getFormatSettings() const;
 
     static bool hasBuiltin(std::string_view name);
-    SettingDescriptions enumerateSettings(const SettingsChanges & changes) const;
+    [[nodiscard]] SettingDescriptions enumerateSettings(const SettingsChanges & changes) const;
 
 private:
     std::unique_ptr<NATSSettingsImpl> impl;

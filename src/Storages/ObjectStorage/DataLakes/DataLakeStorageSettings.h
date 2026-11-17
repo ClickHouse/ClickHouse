@@ -221,7 +221,7 @@ struct DataLakeStorageSettings
     [[nodiscard]] bool isChanged(std::string_view name) const;
 
     static bool hasBuiltin(std::string_view name);
-    SettingDescriptions enumerateSettings(const SettingsChanges & changes) const;
+    [[nodiscard]] SettingDescriptions enumerateSettings(const SettingsChanges & changes) const;
     /// Returns the canonical name of a setting given under one of its aliases.
     static std::string_view resolveName(std::string_view name);
 
