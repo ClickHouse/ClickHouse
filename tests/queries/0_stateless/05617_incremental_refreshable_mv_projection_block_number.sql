@@ -127,6 +127,7 @@ DROP TABLE IF EXISTS proj_partial;
 CREATE TABLE proj_partial (id UInt64, v String, PROJECTION p (SELECT *, _block_number ORDER BY id))
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS
+    add_minmax_index_for_numeric_columns = 0,
     enable_block_number_column = 1,
     enable_block_offset_column = 1,
     allow_commit_order_projection = 1,
