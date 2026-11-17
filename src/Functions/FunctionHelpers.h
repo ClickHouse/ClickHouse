@@ -231,6 +231,7 @@ void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t
 /// would read as negative. Accepts a constant or an ordinary column.
 void checkIntegerArgumentFitsInt64(const IColumn & column, std::string_view function_name, std::string_view argument_name);
 
-/// Whether an argument is Nullable(UInt64): the value behind its NULL can fail `checkIntegerArgumentFitsInt64`.
-bool hasNullableUInt64Argument(const ColumnsWithTypeAndName & arguments);
+/// Whether an argument is UInt64 and an argument (the same or another one) is Nullable. Then a row whose result is
+/// NULL, because of a NULL in any argument, may hold a UInt64 value that fails `checkIntegerArgumentFitsInt64`.
+bool hasUInt64AndNullableArguments(const ColumnsWithTypeAndName & arguments);
 }

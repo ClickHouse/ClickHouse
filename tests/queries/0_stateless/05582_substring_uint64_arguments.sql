@@ -92,3 +92,14 @@ SELECT bitSlice('abcdefghij', 1, nullIf(m, toUInt64(18446744073709551615))) FROM
 SELECT substringIndex('a.b.c', '.', nullIf(n, toUInt64(18446744073709551615))) FROM (SELECT arrayJoin([toUInt64(2), toUInt64(18446744073709551615)]) AS n);
 SELECT substringIndex(materialize('a.b.c'), '.', nullIf(n, toUInt64(18446744073709551615))) FROM (SELECT arrayJoin([toUInt64(2), toUInt64(18446744073709551615)]) AS n);
 SELECT substringIndexUTF8('a。b。c', '。', nullIf(n, toUInt64(18446744073709551615))) FROM (SELECT arrayJoin([toUInt64(2), toUInt64(18446744073709551615)]) AS n);
+
+--- The result of a row is NULL when any argument is NULL there, so an out-of-range value of a non-Nullable UInt64
+-- argument in that row is not checked either: here the NULL comes from the string or from another numeric argument.
+SELECT left(nullIf(if(number = 0, '', 'abcdefghij'), ''), if(number = 0, toUInt64(18446744073709551615), toUInt64(3))) FROM numbers(2);
+SELECT right(nullIf(if(number = 0, '', 'abcdefghij'), ''), if(number = 0, toUInt64(18446744073709551615), toUInt64(3))) FROM numbers(2);
+SELECT leftUTF8(nullIf(if(number = 0, '', 'abcdefghij'), ''), if(number = 0, toUInt64(18446744073709551615), toUInt64(3))) FROM numbers(2);
+SELECT substring(nullIf(if(number = 0, '', 'abcdefghij'), ''), if(number = 0, toUInt64(18446744073709551615), toUInt64(3))) FROM numbers(2);
+SELECT substringIndex(nullIf(if(number = 0, '', 'a.b.c'), ''), '.', if(number = 0, toUInt64(18446744073709551615), toUInt64(2))) FROM numbers(2);
+SELECT substring('abcdefghij', if(number = 0, toUInt64(18446744073709551615), toUInt64(3)), nullIf(if(number = 0, -1, 2), -1)) FROM numbers(2);
+SELECT bitSlice('abcdefghij', if(number = 0, toUInt64(18446744073709551615), toUInt64(1)), nullIf(if(number = 0, -1, 8), -1)) FROM numbers(2);
+SELECT left(toLowCardinality(nullIf(if(number = 0, '', 'abcdefghij'), '')), if(number = 0, toUInt64(18446744073709551615), toUInt64(3))) FROM numbers(2);

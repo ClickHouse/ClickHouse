@@ -588,10 +588,15 @@ void checkIntegerArgumentFitsInt64(const IColumn & column, std::string_view func
             *max_value);
 }
 
-bool hasNullableUInt64Argument(const ColumnsWithTypeAndName & arguments)
+bool hasUInt64AndNullableArguments(const ColumnsWithTypeAndName & arguments)
 {
-    return std::ranges::any_of(
-        arguments,
-        [](const auto & argument) { return argument.type->isNullable() && WhichDataType(removeNullable(argument.type)).isUInt64(); });
+    bool has_uint64 = false;
+    bool has_nullable = false;
+    for (const auto & argument : arguments)
+    {
+        has_uint64 |= WhichDataType(removeNullable(removeLowCardinality(argument.type))).isUInt64();
+        has_nullable |= isNullableOrLowCardinalityNullable(argument.type);
+    }
+    return has_uint64 && has_nullable;
 }
 }
