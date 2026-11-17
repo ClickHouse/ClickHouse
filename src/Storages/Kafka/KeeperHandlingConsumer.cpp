@@ -41,7 +41,8 @@ size_t parseDemandRetentionMs(const String & value)
         return default_retention_ms;
     try
     {
-        return std::min(std::max<UInt64>(parse<UInt64>(value.substr(0, sep)), 1) * demand_retention_factor, max_retention_ms);
+        const UInt64 declared = std::max<UInt64>(parse<UInt64>(value.substr(0, sep)), 1) * demand_retention_factor;
+        return std::min(static_cast<size_t>(declared), max_retention_ms);
     }
     catch (...) /// Ok: a malformed declared interval falls back to the default retention
     {
