@@ -36,8 +36,8 @@ public:
 
     void unloadAllDictionaries() const;
 
-    /// Stops the background threads of the loaded dictionaries.
-    void shutdownDictionaries() const;
+    /// Stops the background threads of the loaded dictionaries and joins the loading threads.
+    void shutdownDictionaries();
 
     [[nodiscard]] QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr context) const;
 

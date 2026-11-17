@@ -13,6 +13,7 @@
 #include <Core/Settings.h>
 #include <Core/SettingsFields.h>
 #include <Core/UUID.h>
+#include <unordered_set>
 
 #include "config.h"
 
@@ -190,10 +191,25 @@ void ExternalDictionariesLoader::unloadAllDictionaries() const
     unloadAll();
 }
 
-void ExternalDictionariesLoader::shutdownDictionaries() const
+void ExternalDictionariesLoader::shutdownDictionaries()
 {
-    for (const auto & object : getLoadedObjects())
-        std::static_pointer_cast<const IDictionary>(object)->shutdown();
+    /// Until no new dictionary appears: a stopped update may have left a load running that publishes one.
+    Loadables stopped;
+    std::unordered_set<const IExternalLoadable *> stopped_set;
+    bool found_new = true;
+    while (found_new)
+    {
+        found_new = false;
+        for (const auto & object : getLoadedObjects())
+        {
+            if (!stopped_set.insert(object.get()).second)
+                continue;
+            found_new = true;
+            stopped.push_back(object);
+            std::static_pointer_cast<const IDictionary>(object)->shutdown();
+        }
+        joinLoadingThreads();
+    }
 }
 
 DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std::string & dictionary_name, ContextPtr query_context) const
