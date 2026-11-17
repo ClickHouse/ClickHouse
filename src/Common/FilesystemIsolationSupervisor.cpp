@@ -5,7 +5,10 @@
 #include <Common/ErrnoException.h>
 #include <Common/Exception.h>
 #include <Common/FilesystemIsolation.h>
+#include <Common/IO.h>
 #include <Common/SeccompFilter.h>
+#include <Common/waitForPid.h>
+#include <IO/ReadHelpers.h>
 #include <Common/hasLinuxCapability.h>
 #include <base/errnoToString.h>
 #include <base/getThreadId.h>
@@ -16,7 +19,6 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <chrono>
 #include <csignal>
 #include <cstring>
 #include <filesystem>
@@ -55,17 +57,6 @@ namespace
 std::atomic<int> supervisor_socket{-1};
 
 
-/// Newer than the kernel headers of the sysroot. The same numbers on every architecture.
-constexpr long syscall_pidfd_send_signal = 424; // NOLINT(google-runtime-int)
-constexpr long syscall_pidfd_open = 434; // NOLINT(google-runtime-int)
-
-
-void closeDescriptor(int fd)
-{
-    [[maybe_unused]] const int err = ::close(fd);
-    chassert(!err || errno == EINTR);
-}
-
 /// The signals that the server handles and that are sent to it through its pid file: the requests to terminate, to
 /// reopen the logs (`SIGHUP`), to print the stack traces (`SIGTSTP`), and `SIGABRT` for a crash report and a core dump.
 constexpr std::array relayed_signals = {SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGTSTP, SIGABRT};
@@ -82,35 +73,9 @@ sigset_t getHandledSignals()
     return signals;
 }
 
-bool isRelayedSignal(int sig)
-{
-    return std::find(relayed_signals.begin(), relayed_signals.end(), sig) != relayed_signals.end();
-}
-
-/// `CLICKHOUSE_WATCHDOG_NO_FORWARD=1`, as with systemd, which sends the signals to every process of the service.
-bool isForwardingDisabled()
-{
-    const char * value = std::getenv("CLICKHOUSE_WATCHDOG_NO_FORWARD"); // NOLINT(concurrency-mt-unsafe)
-    return value && std::string_view(value) == "1";
-}
-
-/// Writes a message to `stderr` without allocating, for the supervisor and the init.
 void writeToStderr(std::string_view message)
 {
-    while (!message.empty())
-    {
-        const ssize_t res = ::write(STDERR_FILENO, message.data(), message.size());
-        if (res < 0 && errno == EINTR)
-            continue;
-        if (res <= 0)
-            return;
-        message.remove_prefix(res);
-    }
-}
-
-void setProcessName(const char * name)
-{
-    [[maybe_unused]] const int res = ::prctl(PR_SET_NAME, name, 0, 0, 0);
+    writeRetry(STDERR_FILENO, message.data(), message.size());
 }
 
 /// The pid file that the supervisor owns: created and locked before the namespaces, so that a server already running
@@ -264,6 +229,7 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender)
 {
     iovec iov{.iov_base = buf, .iov_len = max_size};
     alignas(cmsghdr) char control[CMSG_SPACE(sizeof(ucred))];
+    sender = 0;
     msghdr msg{};
     msg.msg_iov = &iov;
     msg.msg_iovlen = 1;
@@ -272,8 +238,6 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender)
     const ssize_t size = ::recvmsg(fd, &msg, MSG_DONTWAIT | MSG_CMSG_CLOEXEC);
     if (size < 0)
         return (errno == EAGAIN || errno == EINTR) ? 0 : -1;
-
-    sender = 0;
     for (cmsghdr * cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg, cmsg))
     {
         if (cmsg->cmsg_level != SOL_SOCKET)
@@ -284,20 +248,9 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender)
             std::memcpy(&credentials, CMSG_DATA(cmsg), sizeof(credentials));
             sender = credentials.pid;
         }
-        else if (cmsg->cmsg_type == SCM_RIGHTS)
-        {
-            /// The space is only for the credentials, so the kernel does not pass descriptors, but if it did, they are
-            /// not accepted.
-            const size_t count = (cmsg->cmsg_len - CMSG_LEN(0)) / sizeof(int);
-            for (size_t i = 0; i < count; ++i)
-            {
-                int passed = -1;
-                std::memcpy(&passed, CMSG_DATA(cmsg) + i * sizeof(int), sizeof(int));
-                closeDescriptor(passed);
-            }
-        }
     }
-    if ((msg.msg_flags & (MSG_TRUNC | MSG_CTRUNC)) || static_cast<size_t>(size) > max_size)
+    /// The space is only for the credentials, so the kernel passes no descriptor: it would set `MSG_CTRUNC`.
+    if (msg.msg_flags & (MSG_TRUNC | MSG_CTRUNC))
         return 0;
     return size;
 }
@@ -327,10 +280,10 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender)
 
 /// The loop of the supervisor, the original process, which stays outside of the namespaces. `init_pid` is the init of
 /// the PID namespace, `server_socket` the end of the socket pair to the server, `exit_status_fd` the pipe on which the
-/// init writes the status of the server.
-[[noreturn]] void runSupervisor(pid_t init_pid, int server_socket, int exit_status_fd, const SupervisorPidFile & pid_file)
+/// init writes the status of the server, `signal_fd` the `signalfd` of `getHandledSignals`.
+[[noreturn]] void runSupervisor(pid_t init_pid, int server_socket, int exit_status_fd, int signal_fd, const SupervisorPidFile & pid_file)
 {
-    setProcessName("clickhouse-isol");
+    ::prctl(PR_SET_NAME, "clickhouse-isol", 0, 0, 0);
     /// A signal sent to the supervisor goes straight to the process that serves, as it went when the pid file had its
     /// PID. That process registers itself where the pid file used to be created, and a signal that arrives before is
     /// held until then. It is held by a pidfd, so a reused PID is never signalled, and its PID is the sender that the
@@ -338,20 +291,16 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender)
     /// the supervisor, such as `SIGINT` on Ctrl+C, reaches the server only from here, once: the server takes a second
     /// termination signal as an immediate termination. Not, with `CLICKHOUSE_WATCHDOG_NO_FORWARD=1`, a signal from the
     /// parent, the service manager, which sends the signals to every process of the service, as systemd does.
-    const bool forwarding_disabled = isForwardingDisabled();
+    const char * no_forward = std::getenv("CLICKHOUSE_WATCHDOG_NO_FORWARD"); // NOLINT(concurrency-mt-unsafe)
+    const bool forwarding_disabled = no_forward && std::string_view(no_forward) == "1";
     const pid_t parent_pid = ::getppid();
     int serving_pidfd = -1;
     uint64_t pending_signals = 0;
 
-    int signal_fd = -1;
     NotifySocket notify;
     try
     {
         notify = openNotifySocket();
-        const sigset_t handled = getHandledSignals();
-        signal_fd = ::signalfd(-1, &handled, SFD_CLOEXEC);
-        if (signal_fd < 0)
-            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot create a signalfd");
         closeOtherDescriptors({STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO, server_socket, exit_status_fd, pid_file.directory_fd, pid_file.fd, signal_fd, notify.fd});
         /// It has nothing to do that needs a capability.
         restrictCapabilities(0);
@@ -365,19 +314,18 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender)
         ::_exit(1);
     }
 
-    auto reply = [&](std::string_view prefix, long value) // NOLINT(google-runtime-int)
+    auto reply = [&](std::string_view prefix, int value)
     {
         char text[64];
-        const int length = std::snprintf(text, sizeof(text), "%.*s%ld", static_cast<int>(prefix.size()), prefix.data(), value);
-        if (length > 0)
-            ::send(server_socket, text, length, MSG_DONTWAIT | MSG_NOSIGNAL);
+        const auto end = fmt::format_to_n(text, sizeof(text), "{}{}", prefix, value).out;
+        ::send(server_socket, text, end - text, MSG_DONTWAIT | MSG_NOSIGNAL);
     };
 
     /// Held until the next registration if no process serves, as after the server exited and before the watchdog
     /// restarts it (`CLICKHOUSE_WATCHDOG_RESTART=1`).
     auto deliver = [&](int sig)
     {
-        if (serving_pidfd >= 0 && ::syscall(syscall_pidfd_send_signal, serving_pidfd, sig, nullptr, 0) == 0)
+        if (serving_pidfd >= 0 && syscall_pidfd_send_signal(serving_pidfd, sig) == 0)
             return;
         if (serving_pidfd < 0 || errno == ESRCH)
         {
@@ -388,9 +336,8 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender)
             return;
         }
         char text[128];
-        const int length = std::snprintf(text, sizeof(text), "Cannot send the signal %d to the server: errno %d\n", sig, errno);
-        if (length > 0)
-            writeToStderr(std::string_view(text, std::min<size_t>(length, sizeof(text) - 1)));
+        const auto end = fmt::format_to_n(text, sizeof(text), "Cannot send the signal {} to the server: errno {}\n", sig, errno).out;
+        writeToStderr(std::string_view(text, end - text));
     };
 
     char buf[512];
@@ -422,7 +369,7 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender)
             else if (message == serving_registration)
             {
                 reply(serving_reply_prefix, sender);
-                const int pidfd = static_cast<int>(::syscall(syscall_pidfd_open, sender, 0));
+                const int pidfd = syscall_pidfd_open(sender);
                 if (pidfd >= 0)
                 {
                     if (serving_pidfd >= 0)
@@ -471,7 +418,7 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender)
                 pid_file.remove();
                 exitWithStatus(status);
             }
-            if (!isRelayedSignal(sig) || (forwarding_disabled && static_cast<pid_t>(info.ssi_pid) == parent_pid))
+            if (forwarding_disabled && static_cast<pid_t>(info.ssi_pid) == parent_pid)
                 continue;
             deliver(sig);
         }
@@ -482,7 +429,7 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender)
 /// server; the signals for the server come to it from the supervisor directly. If the supervisor dies, so does the
 /// init, and with it every process of the namespace. Returns in the server, its only child; does not return in the
 /// init itself.
-void runInit(int server_socket, int exit_status_fd, const sigset_t & original_signal_mask)
+void runInit(int server_socket, int exit_status_fd, int signal_fd, const sigset_t & original_signal_mask)
 {
     pid_t server_pid = -1;
     try
@@ -508,6 +455,7 @@ void runInit(int server_socket, int exit_status_fd, const sigset_t & original_si
         if (server_pid == 0)
         {
             closeDescriptor(exit_status_fd);
+            closeDescriptor(signal_fd);
             updateCurrentThreadIdAfterFork();
             if (::sigprocmask(SIG_SETMASK, &original_signal_mask, nullptr) != 0)
                 throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot restore the signal mask");
@@ -517,7 +465,7 @@ void runInit(int server_socket, int exit_status_fd, const sigset_t & original_si
             return;
         }
 
-        setProcessName("clickhouse-init");
+        ::prctl(PR_SET_NAME, "clickhouse-init", 0, 0, 0);
         closeDescriptor(server_socket);
         /// The init only waits and signals the processes of its own user. It is not dumpable, so the server cannot
         /// ptrace it or reach anything through its `/proc/1` entries.
@@ -530,15 +478,6 @@ void runInit(int server_socket, int exit_status_fd, const sigset_t & original_si
         writeToStderr(fmt::format("Cannot isolate the filesystem: {}\n", getCurrentExceptionMessage(false)));
         if (server_pid > 0)
             ::kill(server_pid, SIGKILL);
-        ::_exit(1);
-    }
-
-    const sigset_t handled = getHandledSignals();
-    const int signal_fd = ::signalfd(-1, &handled, SFD_CLOEXEC);
-    if (signal_fd < 0)
-    {
-        writeToStderr("Cannot isolate the filesystem: cannot create a signalfd in the init\n");
-        ::kill(server_pid, SIGKILL);
         ::_exit(1);
     }
 
@@ -566,6 +505,12 @@ void runInit(int server_socket, int exit_status_fd, const sigset_t & original_si
 
 }
 
+void closeDescriptor(int fd)
+{
+    [[maybe_unused]] const int err = ::close(fd);
+    chassert(!err || errno == EINTR);
+}
+
 /// Leaves only the capabilities in `keep`, and sets `PR_SET_NO_NEW_PRIVS`. The bounding set matters only to a program
 /// the process executes, and no program can gain a capability anyway: every mount is `nosuid` as well.
 void restrictCapabilities(uint64_t keep)
@@ -591,10 +536,8 @@ pid_t cloneIntoPidAndMountNamespaces()
 
 std::string getSupervisorUnavailableReason()
 {
-    if (!isSupervisorSeccompFilterSupported())
-        return "the seccomp filter of the supervisor outside of the isolation is implemented only for x86_64 and AArch64";
     /// The supervisor holds the process that serves by a pidfd.
-    const int pidfd = static_cast<int>(::syscall(syscall_pidfd_open, ::getpid(), 0));
+    const int pidfd = syscall_pidfd_open(::getpid());
     if (pidfd < 0)
         return fmt::format("cannot create a pidfd, which needs Linux 5.3 or newer: {}", errnoToString(errno));
     closeDescriptor(pidfd);
@@ -605,55 +548,57 @@ std::string getSupervisorUnavailableReason()
 /// mount namespaces, which forks the server, and never returns. Returns in the server only.
 void startSupervisedServer(const std::string & pid_file)
 {
-    const pid_t supervisor_pid = ::getpid();
-    int server_sockets[2];
-    if (::socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, server_sockets) != 0)
-        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot create a socket pair");
-    const int pass_credentials = 1;
+    SupervisorPidFile supervisor_pid_file = pid_file.empty() ? SupervisorPidFile{} : createPidFile(pid_file, ::getpid());
+    int server_sockets[2] = {-1, -1};
     int exit_status_pipe[2] = {-1, -1};
-    SupervisorPidFile supervisor_pid_file;
+    int signal_fd = -1;
     sigset_t original_signal_mask;
+    bool signals_blocked = false;
+    pid_t init_pid = -1;
     try
     {
+        if (::socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, server_sockets) != 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot create a socket pair");
+        const int pass_credentials = 1;
         if (::setsockopt(server_sockets[0], SOL_SOCKET, SO_PASSCRED, &pass_credentials, sizeof(pass_credentials)) != 0)
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot set SO_PASSCRED");
+        /// How long the server waits for an answer of the supervisor.
+        const timeval timeout{.tv_sec = 10, .tv_usec = 0};
+        if (::setsockopt(server_sockets[1], SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) != 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot set SO_RCVTIMEO");
         if (::pipe2(exit_status_pipe, O_CLOEXEC) != 0)
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot create a pipe");
-        if (!pid_file.empty())
-            supervisor_pid_file = createPidFile(pid_file, supervisor_pid);
+        /// The supervisor and the init both read the signals from the same `signalfd`: each gets its own.
+        const sigset_t handled_signals = getHandledSignals();
+        if (::sigprocmask(SIG_BLOCK, &handled_signals, &original_signal_mask) != 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot block the signals");
+        signals_blocked = true;
+        signal_fd = ::signalfd(-1, &handled_signals, SFD_CLOEXEC);
+        if (signal_fd < 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot create a signalfd");
+        init_pid = cloneIntoPidAndMountNamespaces();
+        if (init_pid < 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot create a process in new namespaces");
     }
     catch (...)
     {
-        for (const int fd : {server_sockets[0], server_sockets[1], exit_status_pipe[0], exit_status_pipe[1]})
+        if (signals_blocked)
+            ::sigprocmask(SIG_SETMASK, &original_signal_mask, nullptr);
+        for (const int fd : {server_sockets[0], server_sockets[1], exit_status_pipe[0], exit_status_pipe[1], signal_fd})
         {
             if (fd >= 0)
                 closeDescriptor(fd);
         }
-        throw;
-    }
-
-    const sigset_t handled_signals = getHandledSignals();
-    if (::sigprocmask(SIG_BLOCK, &handled_signals, &original_signal_mask) != 0)
-        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot block the signals");
-
-    const pid_t init_pid = cloneIntoPidAndMountNamespaces();
-    if (init_pid < 0)
-    {
-        const int clone_error = errno;
-        ::sigprocmask(SIG_SETMASK, &original_signal_mask, nullptr);
-        for (const int fd : {server_sockets[0], server_sockets[1], exit_status_pipe[0], exit_status_pipe[1]})
-            closeDescriptor(fd);
         supervisor_pid_file.remove();
         supervisor_pid_file.close();
-        errno = clone_error;
-        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot create a process in new namespaces");
+        throw;
     }
 
     if (init_pid > 0)
     {
         closeDescriptor(server_sockets[1]);
         closeDescriptor(exit_status_pipe[1]);
-        runSupervisor(init_pid, server_sockets[0], exit_status_pipe[0], supervisor_pid_file);
+        runSupervisor(init_pid, server_sockets[0], exit_status_pipe[0], signal_fd, supervisor_pid_file);
     }
 
     closeDescriptor(server_sockets[0]);
@@ -661,8 +606,7 @@ void startSupervisedServer(const std::string & pid_file)
     /// In the init, which has a single thread and runs nothing else before: the directory of the pid file is a way
     /// out of the isolation.
     supervisor_pid_file.close();
-    runInit(server_sockets[1], exit_status_pipe[1], original_signal_mask);
-
+    runInit(server_sockets[1], exit_status_pipe[1], signal_fd, original_signal_mask);
 }
 
 namespace
@@ -670,49 +614,27 @@ namespace
 
 std::mutex supervisor_request_mutex;
 
-/// Sends `request` to the supervisor and returns the rest of its answer after `reply_prefix`, or nothing if the
-/// supervisor does not answer within 10 seconds. An answer to an earlier request that timed out is skipped.
-std::optional<std::string> requestFromSupervisor(int fd, std::string_view request, std::string_view reply_prefix)
+/// Sends `request` to the supervisor and returns the number in its answer after `reply_prefix`, or nothing if the
+/// supervisor does not answer within the timeout of the socket. An answer to an earlier request that timed out is
+/// skipped.
+std::optional<int> requestFromSupervisor(int fd, std::string_view request, std::string_view reply_prefix)
 {
     std::lock_guard lock(supervisor_request_mutex);
     if (::send(fd, request.data(), request.size(), MSG_NOSIGNAL) < 0)
         return std::nullopt;
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
     while (true)
     {
-        const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
-        if (left <= 0)
-            return std::nullopt;
-        pollfd poll_fd{.fd = fd, .events = POLLIN, .revents = 0};
-        const int res = ::poll(&poll_fd, 1, static_cast<int>(left));
-        if (res < 0 && errno == EINTR)
-            continue;
-        if (res <= 0)
-            return std::nullopt;
         char buf[64];
-        const ssize_t size = ::recv(fd, buf, sizeof(buf), MSG_DONTWAIT);
-        if (size < 0 && (errno == EAGAIN || errno == EINTR))
+        const ssize_t size = ::recv(fd, buf, sizeof(buf), 0);
+        if (size < 0 && errno == EINTR)
             continue;
         if (size <= 0)
             return std::nullopt;
         const std::string_view reply(buf, size);
-        if (reply.starts_with(reply_prefix))
-            return std::string(reply.substr(reply_prefix.size()));
+        int value = 0;
+        if (reply.starts_with(reply_prefix) && tryParse(value, reply.substr(reply_prefix.size())))
+            return value;
     }
-}
-
-std::optional<int> parseNumber(std::string_view text)
-{
-    if (text.empty() || text.size() > 9)
-        return std::nullopt;
-    int value = 0;
-    for (const char c : text)
-    {
-        if (c < '0' || c > '9')
-            return std::nullopt;
-        value = value * 10 + (c - '0');
-    }
-    return value;
 }
 
 }
@@ -722,12 +644,9 @@ bool notifyFilesystemIsolationSupervisor(std::string_view message)
     const int fd = supervisor_socket.load(std::memory_order_relaxed);
     if (fd < 0)
         return false;
-    const auto reply = requestFromSupervisor(fd, message, notify_reply_prefix);
-    if (!reply)
-        throw Exception(ErrorCodes::SYSTEM_ERROR, "Failed to notify systemd: the supervisor of the filesystem isolation did not answer");
-    const auto error = parseNumber(*reply);
+    const auto error = requestFromSupervisor(fd, message, notify_reply_prefix);
     if (!error)
-        throw Exception(ErrorCodes::SYSTEM_ERROR, "Failed to notify systemd: unexpected answer of the supervisor of the filesystem isolation");
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "Failed to notify systemd: the supervisor of the filesystem isolation did not answer");
     if (*error != 0)
     {
         errno = *error;
@@ -741,10 +660,10 @@ void registerFilesystemIsolationServingProcess()
     const int fd = supervisor_socket.load(std::memory_order_relaxed);
     if (fd < 0)
         return;
-    const auto reply = requestFromSupervisor(fd, serving_registration, serving_reply_prefix);
-    if (!reply)
+    const auto host_pid = requestFromSupervisor(fd, serving_registration, serving_reply_prefix);
+    if (!host_pid)
         throw Exception(ErrorCodes::SYSTEM_ERROR, "The supervisor of the filesystem isolation did not answer the registration");
-    setFilesystemIsolationServingHostPid(parseNumber(*reply).value_or(0));
+    setFilesystemIsolationServingHostPid(*host_pid);
 }
 
 }

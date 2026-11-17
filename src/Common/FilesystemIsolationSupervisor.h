@@ -26,6 +26,9 @@ pid_t cloneIntoPidAndMountNamespaces();
 /// namespaces, with nothing mounted yet.
 void startSupervisedServer(const std::string & pid_file);
 
+/// Closes `fd`, which must be open.
+void closeDescriptor(int fd);
+
 /// Leaves only the capabilities in `keep`, and sets `PR_SET_NO_NEW_PRIVS`.
 void restrictCapabilities(uint64_t keep);
 

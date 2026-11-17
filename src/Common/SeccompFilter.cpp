@@ -459,15 +459,15 @@ void emitSearch(Program & program, std::span<const Range> ranges)
 /// Where each of the blocks at the end of the program begins.
 struct Blocks
 {
-    size_t argument_checks;
-    size_t ioctl_check;
-    size_t clone_check;
-    size_t enosys;
-    size_t mknodat_check;
+    size_t argument_checks = 0;
+    size_t ioctl_check = 0;
+    size_t clone_check = 0;
+    size_t enosys = 0;
+    size_t mknodat_check = 0;
     /// Only on x86-64, which has the legacy `mknod`; nothing jumps here elsewhere.
-    size_t mknod_check;
-    size_t allow;
-    size_t deny;
+    size_t mknod_check = 0;
+    size_t allow = 0;
+    size_t deny = 0;
 };
 
 /// Replaces the placeholder distances with real ones.
@@ -1030,11 +1030,6 @@ constexpr int supervisor_allowed_syscalls[] = {
 #endif
 };
 
-bool isSupervisorSeccompFilterSupported()
-{
-    return true;
-}
-
 void installSupervisorSeccompFilter()
 {
     std::vector<int> numbers(std::begin(supervisor_allowed_syscalls), std::end(supervisor_allowed_syscalls));
@@ -1046,17 +1041,8 @@ void installSupervisorSeccompFilter()
     program.push_back(statement(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
     const size_t deny_index = program.size();
     program.push_back(statement(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS));
-    /// No argument is checked: every call outside the list is refused.
-    link(
-        program,
-        {.argument_checks = deny_index,
-         .ioctl_check = deny_index,
-         .clone_check = deny_index,
-         .enosys = deny_index,
-         .mknodat_check = deny_index,
-         .mknod_check = deny_index,
-         .allow = allow_index,
-         .deny = deny_index});
+    /// No argument is checked: every call outside the list is refused. The search jumps only to these two blocks.
+    link(program, {.argument_checks = deny_index, .allow = allow_index, .deny = deny_index});
 
     setNoNewPrivs();
     const struct sock_fprog prog{.len = static_cast<UInt16>(program.size()), .filter = program.data()};
@@ -1098,11 +1084,6 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
     return {.allowed_syscalls = 0, .not_installed_reason = "the seccomp policy is not implemented for this architecture"};
 }
 
-bool isSupervisorSeccompFilterSupported()
-{
-    return false;
-}
-
 void installSupervisorSeccompFilter()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The seccomp filter of the supervisor is implemented only for x86_64 and AArch64");
@@ -1127,11 +1108,6 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
         return {};
 
     return {.allowed_syscalls = 0, .not_installed_reason = "seccomp is available only on Linux"};
-}
-
-bool isSupervisorSeccompFilterSupported()
-{
-    return false;
 }
 
 void installSupervisorSeccompFilter()

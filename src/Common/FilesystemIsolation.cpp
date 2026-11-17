@@ -146,12 +146,6 @@ constexpr std::array dangerous_capabilities = {
     /// Newer than some kernel headers: `CAP_PERFMON`, `CAP_BPF`, `CAP_CHECKPOINT_RESTORE`.
     38, 39, 40};
 
-void closeDescriptor(int fd)
-{
-    [[maybe_unused]] const int err = ::close(fd);
-    chassert(!err || errno == EINTR);
-}
-
 std::string readFile(const std::string & path)
 {
     ReadBufferFromFile in(path);
@@ -1255,9 +1249,21 @@ std::vector<Mount> planMounts(const std::vector<FilesystemIsolationPath> & paths
     return mounts;
 }
 
-/// Where `path`, an existing path without symbolic links, is in its filesystem: the device of the filesystem and the
-/// path inside it, which are the same under every name that bind mounts give it. Nothing if it does not exist.
-std::optional<std::pair<std::string, std::string>> getFilesystemLocation(const std::string & path, const std::vector<MountInfo> & mount_info)
+/// Where a path is in its filesystem: its mount, and the path inside the filesystem, without a trailing slash. Both
+/// are the same under every name that bind mounts give the path.
+struct FilesystemLocation
+{
+    const MountInfo * mount = nullptr;
+    std::string path;
+
+    bool isSameOrInside(const FilesystemLocation & other) const
+    {
+        return mount->device == other.mount->device && DB::isSameOrInside(path, other.path);
+    }
+};
+
+/// The location of `path`, an existing path without symbolic links, or nothing if it does not exist.
+std::optional<FilesystemLocation> getFilesystemLocation(const std::string & path, const std::vector<MountInfo> & mount_info)
 {
     const auto id = getMountIdOfPath(path);
     if (!id)
@@ -1271,7 +1277,7 @@ std::optional<std::pair<std::string, std::string>> getFilesystemLocation(const s
         std::string location = (fs::path(mount.root) / fs::path(path).lexically_relative(mount.mount_point)).lexically_normal().string();
         while (location.size() > 1 && location.ends_with('/'))
             location.pop_back();
-        return std::make_pair(mount.device, std::move(location));
+        return FilesystemLocation{&mount, std::move(location)};
     }
     throw Exception(ErrorCodes::SYSTEM_ERROR, "There is no mount with the ID {} of {} in /proc/self/mountinfo", *id, path);
 }
@@ -1304,6 +1310,9 @@ std::optional<std::string> getOverlayUpperDirectory(const std::string & super_op
 /// then code inside can only move directories within what it can write anyway.
 std::string checkPidFile(const std::string & pid_file, const std::vector<Mount> & mounts)
 {
+    if (pid_file.empty())
+        return {};
+
     /// Component by component, as the kernel resolves it: `..` after a link would lead elsewhere than without the link.
     /// With no link allowed, `..` is the parent of the directory before it.
     std::vector<fs::path> on_the_way = {"/"};
@@ -1330,26 +1339,21 @@ std::string checkPidFile(const std::string & pid_file, const std::vector<Mount> 
     }
 
     const std::vector<MountInfo> mount_info = readMountInfo();
-    std::vector<std::pair<const Mount *, std::pair<std::string, std::string>>> writable_locations;
+    std::vector<std::pair<const Mount *, FilesystemLocation>> writable_locations;
     for (const auto & mount : mounts)
     {
         if (mount.access != FilesystemIsolationPath::Access::ReadWrite)
             continue;
-        if (auto location = getFilesystemLocation(mount.path, mount_info))
-            writable_locations.emplace_back(&mount, std::move(*location));
+        const auto location = getFilesystemLocation(mount.path, mount_info);
+        if (!location)
+            continue;
+        writable_locations.emplace_back(&mount, *location);
         /// What is written to an overlay goes to its upper directory.
-        const auto id = getMountIdOfPath(mount.path);
-        for (const auto & info : mount_info)
+        const auto upper = location->mount->filesystem_type == "overlay" ? getOverlayUpperDirectory(location->mount->super_options) : std::nullopt;
+        if (upper)
         {
-            if (!id || info.id != *id || info.filesystem_type != "overlay")
-                continue;
-            const auto upper = getOverlayUpperDirectory(info.super_options);
-            if (!upper)
-                continue;
-            const std::string in_overlay = (fs::path(info.root) / fs::path(mount.path).lexically_relative(info.mount_point)).lexically_normal().string();
-            const std::string upper_path = (fs::path(*upper) / fs::path(in_overlay).relative_path()).lexically_normal().string();
-            if (auto location = getFilesystemLocation(upper_path, mount_info))
-                writable_locations.emplace_back(&mount, std::move(*location));
+            if (auto upper_location = getFilesystemLocation((fs::path(*upper) / fs::path(location->path).relative_path()).string(), mount_info))
+                writable_locations.emplace_back(&mount, std::move(*upper_location));
         }
     }
 
@@ -1361,16 +1365,11 @@ std::string checkPidFile(const std::string & pid_file, const std::vector<Mount> 
             if (mount.access == FilesystemIsolationPath::Access::ReadWrite && isSameOrInside(entry.string(), mount.path))
                 writable = &mount;
         }
-        if (!writable)
+        const auto location = writable ? std::nullopt : getFilesystemLocation(entry.string(), mount_info);
+        for (const auto & [mount, writable_location] : writable_locations)
         {
-            if (const auto location = getFilesystemLocation(entry.string(), mount_info))
-            {
-                for (const auto & [mount, writable_location] : writable_locations)
-                {
-                    if (location->first == writable_location.first && isSameOrInside(location->second, writable_location.second))
-                        writable = mount;
-                }
-            }
+            if (location && location->isSameOrInside(writable_location))
+                writable = mount;
         }
         if (writable)
             return fmt::format(
@@ -1498,7 +1497,7 @@ FilesystemIsolationStatus isolateFilesystem(
     {
         if (std::string reason = findProcMountInside(mounts); !reason.empty())
             return cannotIsolate(mode, std::move(reason));
-        if (std::string reason = pid_file.empty() ? std::string{} : checkPidFile(pid_file, mounts); !reason.empty())
+        if (std::string reason = checkPidFile(pid_file, mounts); !reason.empty())
             return cannotIsolate(mode, std::move(reason));
     }
     for (auto & alias : getLibraryAliases(mapped_files))
