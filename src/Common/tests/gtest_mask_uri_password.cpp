@@ -71,6 +71,7 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
 
         /// Fails closed by default: a consumer like the MongoDB driver ends the userinfo at the first '/' only.
         {"mongodb://usr:999999?TOPSECRET@localhost:27017/db", "mongodb://usr:[HIDDEN]@localhost:27017/db"},
+        {"'mongodb://usr:999999?TOPSECRET@localhost:27017/db'", "'mongodb://usr:[HIDDEN]@localhost:27017/db'"},
         {"http://host#frag:x@y", "http://host#frag:[HIDDEN]@y"},
     };
 
@@ -99,6 +100,9 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
         {"http://s3cret@[", "http://[HIDDEN]@["},
         {" http://s3cret@[", " http://[HIDDEN]@["},
         {"'http://s3cret@['", "'http://[HIDDEN]@['"},
+        {"https://SEKRIT@PW@localhost:11111/x", "https://[HIDDEN]@localhost:11111/x"},
+        {"https://TOKEN@localhost:11111/x?next=http://u:p@other/x", "https://[HIDDEN]@localhost:11111/x?next=http://u:[HIDDEN]@other/x"},
+
     };
 
     for (const auto & [input, expected] : cases)
