@@ -5,12 +5,14 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/Silk/FiberScheduler.h>
+#include <Common/ThreadStatus.h>
 #include <Common/scope_guard_safe.h>
 #include <base/defines.h>
 #include <base/errnoToString.h>
 
 #include <algorithm>
 #include <cerrno>
+#include <optional>
 #include <utility>
 
 namespace DB
@@ -58,6 +60,9 @@ int FiberTaskTracker::runTask(Slot & slot) noexcept
 {
     try
     {
+        std::optional<DB::ThreadStatus::QueryCancellationBlocker> cancellation_blocker;
+        if (slot.query_cancellation_blocked)
+            cancellation_blocker.emplace();
         /// Fibers are not renamed, so the thread name is not used.
         DB::ThreadGroupSwitcher switcher(std::move(slot.thread_group), DB::ThreadName::UNKNOWN);
         /// Released under the group and before the waiter is signaled, as in `threadPoolCallbackRunner.h`.
@@ -85,6 +90,7 @@ void FiberTaskTracker::add(Callback && callback)
     Slot & slot = slots[index];
     slot.callback = std::move(callback);
     slot.thread_group = thread_group;
+    slot.query_cancellation_blocked = DB::ThreadStatus::QueryCancellationBlocker::isActive();
 
     int result = 0;
     try

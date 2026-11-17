@@ -240,4 +240,22 @@ TEST_F(SilkFiberTaskTrackerTest, FiberThatFinishedBeforeRunningTaskIsReportedAnd
     EXPECT_TRUE(captured_weak.expired());
 }
 
+TEST_F(SilkFiberTaskTrackerTest, TaskRunsUnderQueryCancellationBlockerOfCaller)
+{
+    std::optional<bool> blocked_in_task;
+    std::optional<bool> unblocked_in_task;
+
+    /// One task at a time, so that the second one starts after the first one has finished.
+    Silk::FiberTaskTracker tracker(/* max_tasks= */ 2, /* max_inflight= */ 1, nullptr);
+    {
+        DB::ThreadStatus::QueryCancellationBlocker blocker;
+        tracker.add([&] { blocked_in_task = DB::ThreadStatus::QueryCancellationBlocker::isActive(); });
+    }
+    tracker.add([&] { unblocked_in_task = DB::ThreadStatus::QueryCancellationBlocker::isActive(); });
+    tracker.waitAll();
+
+    EXPECT_EQ(blocked_in_task, true);
+    EXPECT_EQ(unblocked_in_task, false);
+}
+
 #endif

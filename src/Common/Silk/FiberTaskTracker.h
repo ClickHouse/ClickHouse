@@ -24,7 +24,8 @@ namespace Silk
 /// that has to be undone on failure. Only started tasks are tracked: when a task cannot start, `add` throws,
 /// and the started tasks are still waited for. The destructor waits for every started task.
 ///
-/// A task runs attached to `thread_group`. Silk signals the future before it destroys the fiber, so a task
+/// A task runs attached to `thread_group`, and under a `DB::ThreadStatus::QueryCancellationBlocker` if `add` was
+/// called under one, as a `ThreadPool` job does. Silk signals the future before it destroys the fiber, so a task
 /// releases its callback and the group reference itself before it finishes.
 class FiberTaskTracker
 {
@@ -54,6 +55,7 @@ private:
         Callback callback;
         DB::ThreadGroupPtr thread_group;
         std::exception_ptr exception;
+        bool query_cancellation_blocked = false;
         bool started = false;
     };
 
