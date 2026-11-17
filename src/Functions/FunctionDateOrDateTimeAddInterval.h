@@ -803,14 +803,13 @@ struct Processor
             ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
             ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
             ColumnFloat32, ColumnFloat64>(
-            &delta, [&](const auto & column){ vectorConstant<FromDataType>(col_from, col_to, column, time_zone, scale, input_rows_count); return true; });
+            &delta, [&](const auto & column){ vectorConstant<FromDataType>(col_from, col_to, checkOverflow(column.getData()[0]), time_zone, scale, input_rows_count); return true; });
     }
 
     template <typename FromDataType,
         typename FromColumnType = typename FromDataType::ColumnType,
-        typename ToColumnType,
-        typename DeltaColumnType>
-    void NO_INLINE vectorConstant(const FromColumnType & col_from, ToColumnType & col_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
+        typename ToColumnType>
+    void NO_INLINE vectorConstant(const FromColumnType & col_from, ToColumnType & col_to, Int64 delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
     {
         static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
 
@@ -823,7 +822,7 @@ struct Processor
             for (size_t i = 0 ; i < input_rows_count; ++i)
             {
                 std::string_view from = col_from.getDataAt(i);
-                vec_to[i] = executeTransform<FromDataType>(from, checkOverflow(delta.getData()[0]), time_zone, utc_time_zone, scale);
+                vec_to[i] = executeTransform<FromDataType>(from, checkOverflow(delta), time_zone, utc_time_zone, scale);
             }
         }
         else
@@ -836,13 +835,13 @@ struct Processor
             if constexpr (std::is_same_v<FromDataType, DataTypeTime>)
             {
                 for (size_t i = 0; i < input_rows_count; ++i)
-                    vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(transform.executeForTime(vec_from[i], checkOverflow(delta.getData()[0]), time_zone, utc_time_zone, scale));
+                    vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(transform.executeForTime(vec_from[i], checkOverflow(delta), time_zone, utc_time_zone, scale));
             }
             else
             {
                 for (size_t i = 0; i < input_rows_count; ++i)
                     vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(
-                        executeTransform<FromDataType>(vec_from[i], checkOverflow(delta.getData()[0]), time_zone, utc_time_zone, scale));
+                        executeTransform<FromDataType>(vec_from[i], checkOverflow(delta), time_zone, utc_time_zone, scale));
             }
         }
     }
