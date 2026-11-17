@@ -50,6 +50,7 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     options.output_datetime_as_uint32 = format_settings.parquet.output_datetime_as_uint32;
     options.output_date_as_uint16 = format_settings.parquet.output_date_as_uint16;
     options.output_enum_as_byte_array = format_settings.parquet.output_enum_as_byte_array;
+    options.variant_settings = Parquet::VariantSettings(format_settings);
     options.data_page_size = format_settings.parquet.data_page_size;
     options.write_batch_size = format_settings.parquet.write_batch_size;
     options.write_page_index = format_settings.parquet.write_page_index;
@@ -240,7 +241,7 @@ static size_t countSchemaLeaves(const SchemaElements & schema, size_t & index)
 
 void ParquetBlockOutputFormat::collectColumnSizesOnDisk(const Block & header)
 {
-    std::vector<size_t> leaves_per_column;
+    VectorWithMemoryTracking<size_t> leaves_per_column;
     leaves_per_column.reserve(header.columns());
     size_t schema_index = 1;
     size_t num_leaves = 0;
@@ -362,7 +363,7 @@ void ParquetBlockOutputFormat::writeRowGroupInParallel(Chunks chunks)
     r.column_chunks.resize(header.columns());
     r.tasks_in_flight = r.column_chunks.size();
 
-    std::vector<Columns> columnses;
+    VectorWithMemoryTracking<Columns> columnses;
     for (auto & chunk : chunks)
     {
         chassert(header.columns() == chunk.getNumColumns());
@@ -502,7 +503,7 @@ void ParquetBlockOutputFormat::threadFunction(ThreadGroupPtr & thread_group)
             }
             task.column_pieces.clear();
 
-            std::vector<ColumnChunkWriteState> subcolumns;
+            VectorWithMemoryTracking<ColumnChunkWriteState> subcolumns;
             prepareColumnForWrite(
                 std::move(concatenated), task.column_type, task.column_name, options, &subcolumns,
                 /*out_schema*/ nullptr, /*column_field_ids*/ std::nullopt, iceberg_optionality);
