@@ -1,5 +1,6 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, long
 -- no-fasttest: the S3 table engine is not available in the fast test build.
+-- long: many statements, each with an S3 request or a backup; repeated runs in the flaky check exceed the time limit.
 
 -- session_token, the Google ADC secrets (google_adc_client_secret, google_adc_refresh_token) and
 -- the extra_credentials assume-role material (external_id) passed to the explicit-url or

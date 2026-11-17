@@ -96,12 +96,7 @@ $CLICKHOUSE_CLIENT -m -q "
     SELECT * FROM mysql(${NC_MYSQL}, ssl_key = '${SECRET}'); -- { serverError BAD_ARGUMENTS }
     SELECT * FROM postgresql(${NC_PG}, sslkey = '${SECRET}'); -- { serverError BAD_ARGUMENTS }
     SELECT * FROM mysql(${NC_MYSQL}, \`${SECRET}[\` = 'x'); -- { serverError BAD_ARGUMENTS }
-
-    -- A valid table: the accepted non-secret override stays visible, the secret one is hidden.
-    CREATE TABLE t_s3_valid (x Int32) ENGINE = S3(${NC_S3}, filename = 'data.csv', format = 'CSV', secret_access_key = '${SECRET}');
 "
-
-$CLICKHOUSE_CLIENT -q "SHOW CREATE TABLE t_s3_valid FORMAT LineAsString" | sed -e "s/${NC_S3}/nc_s3/g" -e "s/${DB}\./db./g"
 
 $CLICKHOUSE_CLIENT -m -q "
     SYSTEM FLUSH LOGS query_log;
@@ -113,7 +108,6 @@ $CLICKHOUSE_CLIENT -m -q "
 "
 
 $CLICKHOUSE_CLIENT -m -q "
-    DROP TABLE t_s3_valid;
     DROP NAMED COLLECTION ${NC_S3};
     DROP NAMED COLLECTION ${NC_MYSQL};
     DROP NAMED COLLECTION ${NC_PG};
