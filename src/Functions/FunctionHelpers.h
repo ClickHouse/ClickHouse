@@ -227,10 +227,10 @@ bool convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args);
 
 void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t input_rows_count);
 
-/// Checks that every value of an integer argument column can be represented as Int64, and throws
-/// VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE otherwise. Functions that read their offset/length/count
-/// arguments with IColumn::getInt() need this: a UInt64 value of 2^63 or more is returned as a
-/// negative Int64, and would then be interpreted as "count from the other end" instead of being
-/// reported as out of range. A constant column and an ordinary column are both accepted.
+/// Throws VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE if a UInt64 argument holds 2^63 or more, which `IColumn::getInt`
+/// would read as negative. Accepts a constant or an ordinary column.
 void checkIntegerArgumentFitsInt64(const IColumn & column, std::string_view function_name, std::string_view argument_name);
+
+/// Whether an argument is Nullable(UInt64): the value behind its NULL can fail `checkIntegerArgumentFitsInt64`.
+bool hasNullableUInt64Argument(const ColumnsWithTypeAndName & arguments);
 }
