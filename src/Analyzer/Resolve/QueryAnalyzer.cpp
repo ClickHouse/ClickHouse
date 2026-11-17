@@ -3088,6 +3088,14 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
     auto * group_by_keys_scope = findNearestScopeWithNonEmpty(scope, &IdentifierResolveScope::nullable_group_by_keys);
 
+    auto is_alias_of_enclosing_scope = [&](const std::string & name, IdentifierLookupContext lookup_context)
+    {
+        for (const auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
+            if (current_scope->aliases.find({Identifier{name}, lookup_context}, ScopeAliases::FindOption::FIRST_NAME))
+                return true;
+        return false;
+    };
+
     /// A call `resolveFunction` resolves to an aggregate function: a scoped lambda, a user defined or an ordinary
     /// function of the same name takes precedence, and a window function is evaluated after aggregation.
     auto is_aggregate_function = [&](const FunctionNode & function)
@@ -3098,7 +3106,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             && !FunctionFactory::instance().hasNameOrAlias(name)
             && !UserDefinedSQLFunctionFactory::instance().has(name)
             && !UserDefinedExecutableFunctionFactory::has(name, scope.context)
-            && !tryResolveIdentifier({Identifier{name}, IdentifierLookupContext::FUNCTION}, scope).resolved_identifier;
+            && !is_alias_of_enclosing_scope(name, IdentifierLookupContext::FUNCTION);
     };
 
     enum class AggregateUse : uint8_t { NONE, INPUT_ONLY_IN_AGGREGATE_FUNCTIONS, OTHER };
@@ -3117,20 +3125,22 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         bool has_aggregate_function = false;
         bool is_used_in_aggregate_function = false;
         bool is_used_elsewhere = false;
+        bool uses_alias_or_sql_udf = false;
         std::vector<std::pair<const IQueryTreeNode *, Place>> nodes_to_process{{lambda.getExpression().get(), Place::OUTSIDE}};
         while (!nodes_to_process.empty())
         {
             auto [subtree_node, place] = nodes_to_process.back();
             nodes_to_process.pop_back();
 
-            /// The body's aliases are resolved in the lambda scope first: `(y -> y) AS sum` makes `sum(x)` a lambda call.
-            if (subtree_node->hasAlias())
-                return AggregateUse::OTHER;
+            uses_alias_or_sql_udf |= subtree_node->hasAlias();
 
             if (const auto * identifier = subtree_node->as<IdentifierNode>())
             {
-                if (identifier->getIdentifier().at(0) == argument_names[0])
+                const auto & name = identifier->getIdentifier().at(0);
+                if (name == argument_names[0])
                     (place == Place::IN_AGGREGATE_FUNCTION ? is_used_in_aggregate_function : is_used_elsewhere) = true;
+                else
+                    uses_alias_or_sql_udf |= is_alias_of_enclosing_scope(name, IdentifierLookupContext::EXPRESSION);
                 continue;
             }
 
@@ -3141,10 +3151,16 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             /// A subquery reads the argument after aggregation, and aggregates its own rows.
             if (isQueryOrUnionNode(subtree_node))
                 place = Place::IN_SUBQUERY;
-            else if (const auto * function = subtree_node->as<FunctionNode>(); function && place != Place::IN_SUBQUERY && is_aggregate_function(*function))
+            else if (const auto * function = subtree_node->as<FunctionNode>())
             {
-                has_aggregate_function = true;
-                place = Place::IN_AGGREGATE_FUNCTION;
+                const auto & function_name = function->getFunctionName();
+                uses_alias_or_sql_udf |= is_alias_of_enclosing_scope(function_name, IdentifierLookupContext::FUNCTION)
+                    || UserDefinedSQLFunctionFactory::instance().has(function_name);
+                if (place != Place::IN_SUBQUERY && is_aggregate_function(*function))
+                {
+                    has_aggregate_function = true;
+                    place = Place::IN_AGGREGATE_FUNCTION;
+                }
             }
 
             for (const auto & child : subtree_node->getChildren())
@@ -3154,6 +3170,10 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
         if (!has_aggregate_function)
             return AggregateUse::NONE;
+        /// Aliases and SQL user defined functions are resolved in the lambda scope: `(y -> y) AS sum` makes `sum(x)` a lambda
+        /// call, and the argument captures `x` of `WITH x AS a`, so `x -> (a, sum(x))` also uses `x` outside `sum`.
+        if (uses_alias_or_sql_udf)
+            return AggregateUse::OTHER;
         return is_used_in_aggregate_function && !is_used_elsewhere ? AggregateUse::INPUT_ONLY_IN_AGGREGATE_FUNCTIONS : AggregateUse::OTHER;
     };
 

@@ -16,6 +16,14 @@ SELECT * APPLY (x -> x) APPLY sum FROM numbers(3) GROUP BY number WITH ROLLUP OR
 SELECT sum(number) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
 SELECT * APPLY (x -> x + 1) APPLY sum FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
 SELECT sum(number + 1) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+SELECT * APPLY (x -> (abs(x) AS a)) APPLY sum FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+SELECT sum(abs(number) AS a) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+SELECT * APPLY (x -> (x AS a)) APPLY sum FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+SELECT sum(number AS a) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+SELECT * APPLY abs APPLY (x -> (x + 1 AS b)) APPLY sum FROM numbers(3) GROUP BY number WITH CUBE ORDER BY 1;
+SELECT sum(abs(number) + 1 AS b) FROM numbers(3) GROUP BY number WITH CUBE ORDER BY 1;
+SELECT * APPLY (x -> (abs(x) AS a)) APPLY (x -> any(toTypeName(x))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+SELECT any(toTypeName(abs(number) AS a)) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
 
 SELECT * APPLY abs APPLY (x -> sum(x)) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
 SELECT sum(abs(number)) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
@@ -64,6 +72,12 @@ WITH (x -> x) AS sum SELECT * APPLY abs APPLY sum FROM numbers(3) GROUP BY numbe
 SELECT number, * APPLY abs APPLY sum, * APPLY abs APPLY toString FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
 SELECT number, sum(abs(number)), toString(abs(number)) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
 SELECT * APPLY abs APPLY (x -> tuple(arrayMap((y -> y) AS sum, [1]), toTypeName(sum(x)))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+WITH x AS a SELECT * APPLY abs APPLY (x -> (isNull(a), any(isNull(x)))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+SELECT (isNull(abs(number)), any(isNull(abs(number)))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+WITH x AS b, b AS a SELECT * APPLY abs APPLY (x -> (isNull(a), any(isNull(x)))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+WITH (y -> x) AS f SELECT * APPLY abs APPLY (x -> (isNull(f(1)), any(isNull(x)))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+WITH (y -> x) AS f, f AS g SELECT * APPLY abs APPLY (x -> (isNull(g(1)), any(isNull(x)))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
+WITH (x -> x) AS sum, (x -> x + 1) AS sum SELECT * APPLY abs APPLY (x -> tuple(arrayMap((y -> y) AS sum, [1]), sum(x))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
 WITH (x -> x) AS sum SELECT * APPLY abs APPLY sum APPLY max FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
 WITH (x -> x) AS sum SELECT max(sum(abs(number))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
 SELECT * APPLY (x -> x + (SELECT count() FROM numbers(2))) APPLY sum FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
