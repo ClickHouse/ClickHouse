@@ -82,7 +82,7 @@ public:
         window_start_ns = clock_gettime_ns(CLOCK_MONOTONIC);
     }
 
-    Window carriedWindow() const { return state.window; }
+    [[nodiscard]] Window carriedWindow() const { return state.window; }
 
     /// Stores the state, including the unfinished `window`, for the next block.
     void finish(const Window & window)
@@ -96,11 +96,11 @@ public:
         }
     }
 
-    bool useCache() const { return state.cache.current; }
+    [[nodiscard]] bool useCache() const { return state.cache.current; }
 
     /// While the cache is probed, the existence check is held at its preferred option, so that each
     /// measured window differs from the compared ones in one choice only.
-    bool usePrecheck() const
+    [[nodiscard]] bool usePrecheck() const
     {
         return precheck_allowed && state.precheck_eligible
             && (state.cache.probing ? state.precheck.preferred : state.precheck.current);
