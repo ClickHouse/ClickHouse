@@ -1,8 +1,11 @@
 #include <algorithm>
+#include <deque>
+#include <unordered_map>
 
 #include <Common/CurrentThread.h>
 #include <Formats/FormatSettings.h>
 #include <Common/Exception.h>
+#include <Common/quoteString.h>
 #include <Common/FailPoint.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -21,8 +24,10 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeString.h>
@@ -549,10 +554,152 @@ static bool nameOrParentIn(const NameSet & names, const String & name)
     }
 }
 
+/// A sibling array of the same `Nested` still stored in `block`.
+/// A `Memory` read sizes a missing member from that sibling (`findSizesSource`).
+static const ColumnWithTypeAndName * findNestedSizesSource(const Block & block, const String & name)
+{
+    const auto [nested_name, member_name] = Nested::splitName(name);
+    if (member_name.empty())
+        return nullptr;
+
+    for (const auto & column : block)
+    {
+        if (column.name == name || !column.column || !column.type || !isArray(column.type))
+            continue;
+
+        if (Nested::splitName(std::string_view(column.name)).first != nested_name)
+            continue;
+
+        return &column;
+    }
+
+    return nullptr;
+}
+
+/// Default elements with the outer sizes of `sibling`.
+static ColumnPtr arrayWithSiblingOffsets(const ColumnWithTypeAndName & sibling, const IDataType & type)
+{
+    const auto * array_type = typeid_cast<const DataTypeArray *>(&type);
+    if (!array_type)
+        return nullptr;
+
+    ColumnPtr offsets = tryDecompressArrayOffsets(*sibling.type, *sibling.column);
+    if (!offsets)
+    {
+        auto decompressed = sibling.column->decompress();
+        if (const auto * source_array = typeid_cast<const ColumnArray *>(decompressed.get()))
+            offsets = source_array->getOffsetsPtr();
+    }
+
+    if (!offsets)
+        return nullptr;
+
+    const auto & offset_data = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets).getData();
+    auto elements = array_type->getNestedType()
+        ->createColumnConstWithDefaultValue(offset_data.empty() ? 0 : offset_data.back())
+        ->convertToFullColumnIfConst();
+    return ColumnArray::create(std::move(elements), offsets);
+}
+
+/// Columns this statement materializes, parents before a default that reads them or their subcolumns.
+static NamesAndTypesList materializationOrder(const NamesAndTypesList & materialized, const ColumnsDescription & columns)
+{
+    NameSet materialized_names;
+    for (const auto & column : materialized)
+        materialized_names.insert(column.name);
+
+    std::unordered_map<String, std::vector<String>> dependents;
+    std::unordered_map<String, size_t> pending;
+    for (const auto & column : materialized)
+        pending.emplace(column.name, 0);
+
+    auto parentInStatement = [&](const String & required) -> String
+    {
+        if (materialized_names.contains(required))
+            return required;
+
+        if (auto subcolumn = columns.tryGetSubcolumn(required))
+        {
+            const auto parent = subcolumn->getNameInStorage();
+            if (materialized_names.contains(parent))
+                return parent;
+        }
+
+        if (!required.contains('.'))
+            return {};
+
+        for (const auto & [parent_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(required))
+        {
+            const String parent(parent_name);
+            if (!materialized_names.contains(parent))
+                continue;
+
+            const auto parent_column = columns.tryGetColumn(GetColumnsOptions::All, parent);
+            if (parent_column && parent_column->type->tryGetSubcolumnType(String(subcolumn_name)))
+                return parent;
+        }
+
+        return {};
+    };
+
+    NameSet edges;
+    for (const auto & column : materialized)
+    {
+        const auto def = columns.getDefault(column.name);
+        if (!def || !def->expression)
+            continue;
+
+        RequiredSourceColumnsVisitor::Data data;
+        auto expression = def->expression->clone();
+        RequiredSourceColumnsVisitor(data).visit(expression);
+        for (const auto & required_name : data.requiredColumns())
+        {
+            const auto parent = parentInStatement(required_name);
+            if (parent.empty() || parent == column.name)
+                continue;
+
+            if (!edges.insert(parent + '\n' + column.name).second)
+                continue;
+
+            dependents[parent].push_back(column.name);
+            ++pending[column.name];
+        }
+    }
+
+    std::deque<String> ready;
+    for (const auto & column : materialized)
+    {
+        if (pending[column.name] == 0)
+            ready.push_back(column.name);
+    }
+
+    std::unordered_map<String, NameAndTypePair> by_name;
+    for (const auto & column : materialized)
+        by_name.emplace(column.name, column);
+
+    NamesAndTypesList ordered;
+    while (!ready.empty())
+    {
+        const auto name = ready.front();
+        ready.pop_front();
+        ordered.push_back(by_name.at(name));
+        for (const auto & dependent : dependents[name])
+        {
+            if (--pending[dependent] == 0)
+                ready.push_back(dependent);
+        }
+    }
+
+    if (ordered.size() != materialized.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cyclic defaults among columns materialized by one ALTER");
+
+    return ordered;
+}
+
 /// Inputs of the defaults this statement materializes.
-/// A physical column that the block does not store is filled with the type default: that is the value
-/// a read of `Memory` returns for a column added after the block was written. An `ALIAS` is expanded
-/// instead, so a replacement does not keep a value left from when the column was physical.
+/// A physical column that the block does not store is filled the way a read of `Memory` fills it:
+/// the type default, or, for a `Nested` member, the type default at a retained sibling's array sizes.
+/// An `ALIAS` is expanded, so a replacement does not keep a value left from when the column was physical.
 /// Only those inputs are converted. An unrelated column whose stored bytes no longer match its type
 /// stays untouched, and a read of the materialized column still succeeds.
 static Block logicalDefaultInputs(
@@ -626,7 +773,15 @@ static Block logicalDefaultInputs(
                 /// A column this statement itself materializes is computed from its default.
                 /// A column already stored, or one the read path would fill with the type default, is an input.
                 if (materialized_names.contains(name) && !stored.has(name))
+                {
                     expand(name);
+                    /// `CLEAR COLUMN n.a` has no default. The retained sibling still owns the array sizes.
+                    if (!columns.hasDefault(name))
+                    {
+                        if (const auto * sibling = findNestedSizesSource(stored, name))
+                            inputs.insert(sibling->name);
+                    }
+                }
                 else
                     inputs.insert(name);
                 return;
@@ -664,8 +819,27 @@ static Block logicalDefaultInputs(
         }
         else if (rows > 0)
         {
-            auto filled = physical->type->createColumnConstWithDefaultValue(rows)->convertToFullColumnIfConst();
-            logical.insert({filled, physical->type, name});
+            ColumnPtr filled;
+            const auto * sibling = findNestedSizesSource(stored, name);
+            if (!sibling)
+                sibling = findNestedSizesSource(logical, name);
+
+            if (sibling)
+            {
+                filled = arrayWithSiblingOffsets(*sibling, *physical->type);
+                if (!filled)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Cannot read nested offsets of column {} to fill {}",
+                        backQuote(sibling->name),
+                        backQuote(name));
+            }
+            else
+            {
+                filled = physical->type->createColumnConstWithDefaultValue(rows)->convertToFullColumnIfConst();
+            }
+
+            logical.insert({std::move(filled), physical->type, name});
         }
     }
 
@@ -692,15 +866,40 @@ static Block logicalDefaultInputs(
         alias_actions->execute(logical);
     }
 
-    /// Extraction runs before `addMissingDefaults`. A default such as `a.v + 1` is rejected
-    /// when `a.v` is still only a subcolumn of a tuple that the block already holds.
+    /// Extract a subcolumn only once its parent is already in the block. A parent this statement
+    /// is still materializing is extracted later, after that parent has a row for every stored row.
     if (!walker.subcolumns.empty() && rows > 0)
     {
-        Names subcolumn_names(walker.subcolumns.begin(), walker.subcolumns.end());
-        auto extracting = createSubcolumnsExtractionActions(logical, subcolumn_names, context);
-        auto extract_actions = std::make_shared<ExpressionActions>(
-            std::move(extracting), ExpressionActionsSettings(context->getSettingsRef()));
-        extract_actions->execute(logical);
+        Names present;
+        for (const auto & name : walker.subcolumns)
+        {
+            bool parent_present = false;
+            if (auto subcolumn = columns.tryGetSubcolumn(name))
+                parent_present = logical.has(subcolumn->getNameInStorage());
+
+            if (!parent_present)
+            {
+                for (const auto & [parent_name, _] : Nested::getAllColumnAndSubcolumnPairs(name))
+                {
+                    if (logical.has(String(parent_name)))
+                    {
+                        parent_present = true;
+                        break;
+                    }
+                }
+            }
+
+            if (parent_present)
+                present.push_back(name);
+        }
+
+        if (!present.empty())
+        {
+            auto extracting = createSubcolumnsExtractionActions(logical, present, context);
+            auto extract_actions = std::make_shared<ExpressionActions>(
+                std::move(extracting), ExpressionActionsSettings(context->getSettingsRef()));
+            extract_actions->execute(logical);
+        }
     }
 
     return logical;
@@ -812,22 +1011,34 @@ static void applyStoredColumnIdentity(
             placeholder});
     }
 
-    NamesAndTypesList required;
-    for (const auto & column : logical)
-        required.emplace_back(column.name, column.type);
-    for (const auto & column : materialized)
+    /// One column at a time, so a default can read a subcolumn of a column this same statement recreates.
+    /// A single actions DAG extracts that subcolumn before the parent exists and stores zero rows.
+    for (const auto & column : materializationOrder(materialized, metadata.columns))
     {
-        if (!logical.has(column.name))
-            required.emplace_back(column);
-    }
+        if (logical.has(column.name))
+            continue;
 
-    auto dag = addMissingDefaults(logical, required, metadata.columns, context);
-    /// `a.v` is an input of the default actions, not a stored column. Extract it from `a`.
-    auto extracting = createSubcolumnsExtractionActions(logical, dag.getRequiredColumnsNames(), context);
-    auto actions = std::make_shared<ExpressionActions>(
-        ActionsDAG::merge(std::move(extracting), std::move(dag)),
-        ExpressionActionsSettings(context->getSettingsRef()));
-    actions->execute(logical);
+        NamesAndTypesList required;
+        for (const auto & existing : logical)
+            required.emplace_back(existing.name, existing.type);
+        required.emplace_back(column.name, column.type);
+
+        auto dag = addMissingDefaults(logical, required, metadata.columns, context);
+        /// `a.v` is an input of the default actions, not a stored column. Extract it from `a`.
+        auto extracting = createSubcolumnsExtractionActions(logical, dag.getRequiredColumnsNames(), context);
+        auto actions = std::make_shared<ExpressionActions>(
+            ActionsDAG::merge(std::move(extracting), std::move(dag)),
+            ExpressionActionsSettings(context->getSettingsRef()));
+        actions->execute(logical);
+
+        if (!logical.has(column.name) || logical.getByName(column.name).column->size() != rows)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "ALTER of Memory materialized column {} with {} rows, expected {}",
+                backQuote(column.name),
+                logical.has(column.name) ? logical.getByName(column.name).column->size() : 0,
+                rows);
+    }
 
     for (const auto & column : materialized)
     {
