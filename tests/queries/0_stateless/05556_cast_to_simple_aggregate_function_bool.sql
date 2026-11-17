@@ -73,6 +73,16 @@ SELECT CAST(u, 'Bool') AS c, k FROM o ORDER BY c, k LIMIT 2 SETTINGS optimize_re
 SELECT DISTINCT CAST(u, 'Bool') AS c, k FROM o ORDER BY c, k SETTINGS optimize_distinct_in_order = 1;
 DROP TABLE o;
 
+SELECT 'skip index';
+DROP TABLE IF EXISTS mi;
+CREATE TABLE mi (u UInt8, INDEX iu u TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY u SETTINGS index_granularity = 1;
+INSERT INTO mi SELECT number FROM numbers(4);
+SELECT count() FROM mi WHERE CAST(u, 'Bool') = true SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, optimize_use_implicit_projections = 0, force_data_skipping_indices = 'iu';
+SELECT count() FROM mi WHERE CAST(u, 'SimpleAggregateFunction(any, Bool)') = true SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, optimize_use_implicit_projections = 0, force_data_skipping_indices = 'iu';
+SELECT count() FROM mi WHERE CAST(u, 'Bool') NOT IN (2) SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, optimize_use_implicit_projections = 1, force_data_skipping_indices = 'iu';
+SELECT count() FROM mi WHERE CAST(u, 'SimpleAggregateFunction(any, Bool)') NOT IN (2) SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, optimize_use_implicit_projections = 1, force_data_skipping_indices = 'iu';
+DROP TABLE mi;
+
 SELECT 'same as bool';
 SELECT groupArray(number) FROM numbers(4) WHERE number IN (SELECT true);
 SELECT groupArray(number) FROM numbers(4) WHERE number IN (SELECT anySimpleState(true));
