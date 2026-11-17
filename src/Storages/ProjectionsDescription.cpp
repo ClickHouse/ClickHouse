@@ -239,6 +239,17 @@ private:
     const size_t max_rows_allowed;
 };
 
+/// A projection part stores a persistent virtual column only when its query selects it, so only ephemeral ones are always available.
+VirtualColumnsDescription createProjectionVirtuals(const KeyDescription * partition_key)
+{
+    VirtualColumnsDescription virtuals;
+    for (const auto & virtual_column : MergeTreeData::createVirtuals(partition_key))
+        if (virtual_column.isEphemeral())
+            virtuals.add(virtual_column);
+
+    return virtuals;
+}
+
 }
 
 ProjectionDescription ProjectionDescription::getProjectionFromAST(
@@ -540,7 +551,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     }
 
     metadata.setColumns(std::move(metadata_columns));
-    metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key));
+    metadata.setVirtuals(createProjectionVirtuals(partition_key));
 
     /// Initialize implicit-minmax skip indices from the effective projection-level MergeTree settings
     /// (defaults from the projection index plus any user-supplied WITH SETTINGS overrides).
@@ -653,7 +664,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     result.type = ProjectionDescription::Type::Aggregate;
     StorageInMemoryMetadata metadata;
     metadata.setColumns(ColumnsDescription(result.sample_block.getNamesAndTypesList()));
-    metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key));
+    metadata.setVirtuals(createProjectionVirtuals(partition_key));
     metadata.partition_key = KeyDescription::buildEmptyKey();
     metadata.sorting_key = KeyDescription::buildEmptyKey();
     metadata.primary_key = KeyDescription::buildEmptyKey();
