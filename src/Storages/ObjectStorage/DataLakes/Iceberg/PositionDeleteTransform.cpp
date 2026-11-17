@@ -139,7 +139,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             format_settings,
             parser_shared_resources,
             delete_format_filter_info,
-            true /* is_remote_fs */,
+            object_storage->isRemote(),
             compression_method);
 
         position_delete_files.push_back(std::move(delete_format));

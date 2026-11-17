@@ -130,7 +130,7 @@ struct Plan
             return partition_value_to_index[row];
         }
 
-        const Row & getPartitionValue(size_t partition_index) const { return partition_values.at(partition_index); }
+        [[nodiscard]] const Row & getPartitionValue(size_t partition_index) const { return partition_values.at(partition_index); }
 
     private:
         struct PartitionValueHasher
@@ -420,7 +420,7 @@ static void writeDataFiles(
             format_settings,
             parser_shared_resources,
             input_format_filter_info,
-            true /* is_remote_fs */,
+            object_storage->isRemote(),
             chooseCompressionMethod(data_file->data_object_info->getPath(), toContentEncodingName(write_compression_method)),
             false);
 

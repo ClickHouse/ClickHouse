@@ -1282,6 +1282,22 @@ void SerializationObject::serializeBinary(const IColumn & col, size_t row_num, W
 
 void SerializationObject::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    if (settings.binary.read_json_as_string)
+    {
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_path_columns;
+        typed_path_columns.reserve(typed_paths_types.size());
+        for (const auto & [path, type] : typed_paths_types)
+            typed_path_columns[path] = type->createColumn();
+
+        auto column = ColumnObject::create(
+            std::move(typed_path_columns),
+            DataTypeObject::DEFAULT_MAX_DYNAMIC_PATHS,
+            assert_cast<const DataTypeDynamic &>(*dynamic_type).getMaxDynamicTypes());
+        deserializeBinary(*column, istr, settings);
+        field = (*column)[0];
+        return;
+    }
+
     Object object;
     size_t number_of_paths = 0;
     readVarUInt(number_of_paths, istr);
@@ -1478,24 +1494,24 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
             }
         }
         shared_data_offsets.push_back(shared_data_paths->size());
+
+        /// Insert default to all remaining typed and dynamic paths.
+        for (auto & [path, column] : typed_paths)
+        {
+            if (column->size() == prev_size)
+                typed_paths_types.at(path)->insertDefaultInto(*column);
+        }
+
+        for (auto & [_, column] : column_object.getDynamicPathsPtrs())
+        {
+            if (column->size() == prev_size)
+                column->insertDefault();
+        }
     }
     catch (...)
     {
         restoreColumnObject(column_object, prev_size);
         throw;
-    }
-
-    /// Insert default to all remaining typed and dynamic paths.
-    for (auto & [_, column] : typed_paths)
-    {
-        if (column->size() == prev_size)
-            column->insertDefault();
-    }
-
-    for (auto & [_, column] : column_object.getDynamicPathsPtrs())
-    {
-        if (column->size() == prev_size)
-            column->insertDefault();
     }
 }
 
