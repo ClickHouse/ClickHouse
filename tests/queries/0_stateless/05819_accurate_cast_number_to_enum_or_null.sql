@@ -4,6 +4,7 @@ SELECT accurateCastOrNull(toUInt8(1), 'Enum8(\'a\' = 1)'), accurateCastOrNull(to
 SELECT accurateCastOrNull(toInt16(300), 'Enum16(\'a\' = 1)'), accurateCastOrNull(toInt16(300), 'Enum8(\'a\' = 1)');
 SELECT accurateCastOrNull(toInt64(-1), 'Enum16(\'a\' = -1)'), accurateCastOrNull(toUInt64(65535), 'Enum16(\'a\' = -1)');
 SELECT accurateCastOrNull(toFloat64(1), 'Enum8(\'a\' = 1)'), accurateCastOrNull(toFloat64(2), 'Enum8(\'a\' = 1)');
+SELECT accurateCastOrNull(toFloat64(1.5), 'Enum8(\'a\' = 1)'), accurateCastOrNull(nan, 'Enum8(\'a\' = 0)'), accurateCastOrNull(toFloat32(inf), 'Enum16(\'a\' = 0)');
 SELECT accurateCastOrNull(tuple(materialize(toUInt8(2))), 'Tuple(Enum8(\'a\' = 1))');
 SELECT accurateCastOrNull(tuple(materialize(toUInt8(1))), 'Tuple(Enum8(\'a\' = 1))');
 
