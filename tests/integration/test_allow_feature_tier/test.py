@@ -1618,6 +1618,36 @@ def test_create_if_not_exists_does_not_shadow_config_user(start_cluster):
             assert "already exists" in error, error
 
 
+def test_move_is_refused_when_config_has_same_name_user(start_cluster):
+    # A same-name user can still appear in the config after the user was created in another storage.
+    # Moving the user must not keep the name used in two storages.
+    user = "tier_move_collision_user"
+    config_path = "/etc/clickhouse-server/users.d/tier_move_collision_user.xml"
+    with entities(instance, users=[user]):
+        instance.query(f"CREATE USER {user} IN local_directory IDENTIFIED WITH no_password")
+        try:
+            instance.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    f"echo '<clickhouse><users><{user}><no_password/></{user}></users></clickhouse>' > {config_path}",
+                ]
+            )
+            instance.query("SYSTEM RELOAD CONFIG")
+            assert instance.query(
+                f"SELECT storage FROM system.users WHERE name = '{user}' ORDER BY storage"
+            ).splitlines() == ["local_directory", "users_xml"]
+
+            error = instance.query_and_get_error(f"MOVE USER {user} TO memory")
+            assert "ACCESS_ENTITY_ALREADY_EXISTS" in error, error
+            assert instance.query(
+                f"SELECT storage FROM system.users WHERE name = '{user}' ORDER BY storage"
+            ).splitlines() == ["local_directory", "users_xml"]
+        finally:
+            instance.exec_in_container(["rm", "-f", config_path])
+            instance.query("SYSTEM RELOAD CONFIG")
+
+
 def test_named_storage_collision_is_checked_before_batch_insert(start_cluster):
     new_user = "tier_batch_new_user"
     drop_entities(instance, users=[new_user], storage="memory")
