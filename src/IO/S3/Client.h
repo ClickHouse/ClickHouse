@@ -97,6 +97,10 @@ private:
 
 bool isS3ExpressEndpoint(const std::string & endpoint);
 
+/// Whether a failed attempt of a write can have been applied. Only a known answer that refuses the request before it is
+/// applied proves that it was not. Any other answer, or no answer, proves nothing.
+bool attemptMayHaveBeenApplied(Aws::Http::HttpResponseCode code, const Aws::String & exception_name);
+
 struct ClientSettings
 {
     bool use_virtual_addressing = false;

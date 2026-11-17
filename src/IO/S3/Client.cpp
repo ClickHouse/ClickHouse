@@ -124,20 +124,45 @@ bool isConditionalWrite(const RequestType & request)
         return false;
 }
 
-/// Whether a failed attempt of a write can have been applied. Only an answer that refuses the request proves that it
-/// was not: a redirect, a client error, or a throttling `SlowDown`. A `NoSuchKey` to a write has no known cause (at
-/// least MinIO gives it), so it proves nothing. No answer, a broken answer, or a server error can follow an applied write.
-template <typename ErrorType>
-bool attemptMayHaveBeenApplied(const Aws::Client::AWSError<ErrorType> & error)
-{
-    const auto code = static_cast<int>(error.GetResponseCode());
-    const auto & name = error.GetExceptionName();
-    if (code >= 300 && code < 500)
-        return code == 404 && name != "NoSuchBucket" && name != "NoSuchUpload";
-    if (code == 503)
-        return name != "SlowDown";
-    return true;
 }
+
+bool attemptMayHaveBeenApplied(Aws::Http::HttpResponseCode code, const Aws::String & exception_name)
+{
+    using Aws::Http::HttpResponseCode;
+    switch (code)
+    {
+        /// A redirect: the server that answered did not process the request.
+        case HttpResponseCode::MOVED_PERMANENTLY:
+        case HttpResponseCode::FOUND:
+        case HttpResponseCode::SEE_OTHER:
+        case HttpResponseCode::TEMPORARY_REDIRECT:
+        case HttpResponseCode::PERMANENT_REDIRECT:
+        /// The checks that S3 makes before the commit: of the request and its body, of the credentials, of the method,
+        /// of a conflicting operation, of the length, of the precondition, of the size, and of the request rate.
+        case HttpResponseCode::BAD_REQUEST:
+        case HttpResponseCode::UNAUTHORIZED:
+        case HttpResponseCode::FORBIDDEN:
+        case HttpResponseCode::METHOD_NOT_ALLOWED:
+        case HttpResponseCode::CONFLICT:
+        case HttpResponseCode::LENGTH_REQUIRED:
+        case HttpResponseCode::PRECONDITION_FAILED:
+        case HttpResponseCode::REQUEST_ENTITY_TOO_LARGE:
+        case HttpResponseCode::TOO_MANY_REQUESTS:
+            return false;
+        /// The target does not exist. A `NoSuchKey` to a write has no known cause (at least MinIO gives it).
+        case HttpResponseCode::NOT_FOUND:
+            return exception_name != "NoSuchBucket" && exception_name != "NoSuchUpload";
+        case HttpResponseCode::SERVICE_UNAVAILABLE:
+            return exception_name != "SlowDown";
+        /// No answer, a code that stands for none (e.g. 408, 444 or 499 of some HTTP clients and proxies), another code,
+        /// a broken answer, or a server error.
+        default:
+            return true;
+    }
+}
+
+namespace
+{
 
 /// Records the attempts of the conditional write that the current thread sends. The SDK reports every attempt to the
 /// retry strategy on the thread that sends it, but all requests of the client share the strategy, so the strategy
@@ -162,7 +187,7 @@ public:
     template <typename ErrorType>
     static void recordFailedAttempt(const Aws::Client::AWSError<ErrorType> & error)
     {
-        if (current && attemptMayHaveBeenApplied(error))
+        if (current && attemptMayHaveBeenApplied(error.GetResponseCode(), error.GetExceptionName()))
             current->request.markMayHaveBeenApplied();
     }
 
