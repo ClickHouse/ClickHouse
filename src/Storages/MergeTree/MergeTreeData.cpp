@@ -322,6 +322,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_summing_columns_in_partition_or_order_key;
     extern const MergeTreeSettingsBool allow_coalescing_columns_in_partition_or_order_key;
     extern const MergeTreeSettingsBool allow_tuple_element_aggregation;
+    extern const MergeTreeSettingsBool allow_vector_similarity_index_in_specialized_merge_tree;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsBool async_insert;
     extern const MergeTreeSettingsBool check_sample_column_is_correct;
@@ -517,6 +518,9 @@ namespace FailPoints
     extern const char restore_part_inject_no_space_error[];
     /// Throws an I/O error (EIO) once while loading the metadata of a part.
     extern const char merge_tree_load_part_io_error[];
+    /// Pauses `setPropertiesAndResetSerializationHints` between the metadata publish and the hints swap,
+    /// while `parts_lock` is held.
+    extern const char mt_alter_pause_after_metadata_publish[];
 }
 
 namespace ErrorCodes
@@ -619,6 +623,16 @@ void MergeTreeData::checkLossyCodecOnLowCardinality(const ColumnsDescription & c
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Column {} contains a LowCardinality type, so it cannot be compressed with a lossy codec", backQuoteIfNeed(column.name));
     }
+}
+
+void MergeTreeData::checkVectorSimilarityIndexIsAllowed(const MergingParams & merging_params, const MergeTreeSettings & settings)
+{
+    /// Vector similarity indexes must only be created on ordinary merge tree tables unless the user gives permission via a setting
+    if (merging_params.mode != MergingParams::Ordinary && !settings[MergeTreeSetting::allow_vector_similarity_index_in_specialized_merge_tree])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Vector similarity indexes are not supported for {}MergeTree, because SELECT ... FINAL may return wrong results with them. "
+            "Set MergeTree setting 'allow_vector_similarity_index_in_specialized_merge_tree' = 1 to create them anyway",
+            merging_params.getModeName());
 }
 
 namespace
@@ -1450,7 +1464,7 @@ static std::exception_ptr tryEvaluateIndexExpression(const IndexDescription & in
 
         /// The same dry run a merge performs: it rebuilds this expression's AST under the storage
         /// context and hands the result to `ExpressionTransform::transformHeader`, which is this call.
-        index.expression->getActionsDAG().updateHeader(header);
+        (void)index.expression->getActionsDAG().updateHeader(header);
     }
     catch (...)
     {
@@ -1956,6 +1970,13 @@ void MergeTreeData::setProperties(
         patch_parts_sorting_keys_cache.clear();
     }
 
+    updateCachesAfterMetadataPublish(new_metadata, old_metadata);
+}
+
+void MergeTreeData::updateCachesAfterMetadataPublish(
+    const StorageInMemoryMetadata & new_metadata,
+    const StorageInMemoryMetadata & old_metadata)
+{
     /// Invalidate the columns cache when column identity changes: cache keys identify
     /// columns by name, so any operation that makes a name refer to a different column
     /// (drop, rename, or single-statement `RENAME a TO b, ADD COLUMN a` where the old
@@ -3565,6 +3586,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             }
         }
     }
+
+    /// A read-only disk is written by another server, and the disk object outlives the tables that use it,
+    /// so its metadata may be as old as its last refresh: reload it before listing the parts.
+    for (const auto & disk_ptr : disks)
+        if (!disk_ptr->isBroken() && disk_ptr->isReadOnly())
+            disk_ptr->refresh(/*not_sooner_than_milliseconds=*/ 0);
 
     std::vector<PartLoadingTree::PartLoadingInfos> parts_to_load_by_disk(disks.size());
     std::vector<PartLoadingTree::PartLoadingInfos> unexpected_parts_to_load_by_disk(disks.size());
@@ -7301,6 +7328,12 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// Not in `checkProperties`, which also runs when a replica applies an already committed ALTER.
     if (!is_secondary_replay)
         checkLossyCodecOnLowCardinality(new_metadata.columns);
+    if (!is_secondary_replay)
+    {
+        for (const auto & index_name : commands.getAddedIndexNames(old_metadata.secondary_indices))
+            if (new_metadata.secondary_indices.getByName(index_name).type == "vector_similarity")
+                checkVectorSimilarityIndexIsAllowed(merging_params, *alter_effective_settings);
+    }
     checkTTLExpressions(new_metadata, old_metadata);
     if (!is_secondary_replay)
         checkColumnTTLsForKeyColumns(new_metadata, old_metadata);
@@ -15348,7 +15381,7 @@ static void updateSerializationHintsForPart(const DataPartPtr & part, const Colu
     }
 }
 
-void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
+SerializationInfoByName MergeTreeData::buildSerializationHints(const ColumnsDescription & storage_columns, const DataPartsLock & /*lock*/) const
 {
     /// `serialization_hints` is a per-table aggregation of the active parts' `SerializationInfoByName`
     /// — same lifetime profile as the per-part metadata. Route into the parts arena.
@@ -15366,14 +15399,50 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
         (*getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
 
+    SerializationInfoByName hints(storage_columns.getAllPhysical(), settings);
+
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+        updateSerializationHintsForPart(part, storage_columns, hints, false);
+
+    return hints;
+}
+
+void MergeTreeData::resetSerializationHints(const DataPartsLock & lock)
+{
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    const auto & storage_columns = metadata_snapshot->getColumns();
+    serialization_hints = buildSerializationHints(metadata_snapshot->getColumns(), lock);
+}
 
-    serialization_hints = SerializationInfoByName(storage_columns.getAllPhysical(), settings);
-    auto range = getDataPartsStateRange(DataPartState::Active);
+void MergeTreeData::setPropertiesAndResetSerializationHints(
+    const StorageInMemoryMetadata & new_metadata,
+    const StorageInMemoryMetadata & old_metadata,
+    bool attach,
+    ContextPtr local_context)
+{
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
-    for (const auto & part : range)
-        updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);
+    checkProperties(new_metadata, old_metadata, attach, /*allow_empty_sorting_key=*/false, allow_nullable_key, local_context);
+
+    auto owned_metadata = std::make_unique<const StorageInMemoryMetadata>(new_metadata);
+    /// Materialised up front: nothing between the publish and the hints swap may allocate.
+    const String pause_after_publish = FailPoints::mt_alter_pause_after_metadata_publish;
+
+    {
+        auto parts_lock = lockParts();
+        /// Build before publishing so a throw here leaves metadata and hints both unchanged.
+        auto new_hints = buildSerializationHints(new_metadata.getColumns(), parts_lock);
+        {
+            /// Publish the new metadata and clear the cache of effective sorting keys atomically.
+            std::lock_guard sorting_keys_lock(patch_parts_sorting_keys_mutex);
+            setInMemoryMetadata(std::move(owned_metadata));
+            patch_parts_sorting_keys_cache.clear();
+        }
+        FailPointInjection::pauseFailPoint(pause_after_publish);
+        serialization_hints = std::move(new_hints);
+    }
+
+    /// Callers treat an exception as if nothing was published, so nothing may throw after the commit.
+    NOEXCEPT_SCOPE({ updateCachesAfterMetadataPublish(new_metadata, old_metadata); });
 }
 
 template <typename AddedParts, typename RemovedParts>

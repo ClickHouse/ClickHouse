@@ -72,6 +72,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
 #include <Storages/ColumnsDescription.h>
@@ -5999,6 +6000,21 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         execution_context = overridden_context;
     }
     auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr, execution_context);
+
+    /// `merge` with one argument or with a database that evaluates to '' reads the current database, which the servers this query
+    /// is sent to do not share, so the database it resolved replaces any database argument except a `REGEXP`, which is not analyzed.
+    /// A secondary query is left as sent: its `IN` set names are hashed from the query tree and must match the sender's.
+    if (const auto * merge_storage = typeid_cast<const StorageMerge *>(table_function_storage.get());
+        merge_storage && scope_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        auto & argument_nodes = table_function_node_typed.getArguments().getNodes();
+        auto database_node = std::make_shared<ConstantNode>(merge_storage->getSourceDatabaseNameOrRegexp());
+        if (argument_nodes.size() == 1)
+            argument_nodes.insert(argument_nodes.begin(), std::move(database_node));
+        else if (!std::ranges::contains(skip_analysis_arguments_indexes, 0))
+            argument_nodes[0] = std::move(database_node);
+    }
+
     table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
 }
 
