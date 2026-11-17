@@ -65,13 +65,15 @@ public:
 
         const IFunction::Monotonicity is_not_monotonic;
 
-        /// `toDayOfWeek` is monotonic inside a week that starts on its first day, but its factor transform
-        /// `ToMondayImpl` only knows the weeks that start on Monday. A week that starts on another day, from
-        /// `week_functions_starting_day`, is reported as not monotonic. This method cannot see whether the `mode`
-        /// argument is present, so an explicit Monday-first mode under such a setting is reported as not monotonic too.
+        /// `toDayOfWeek` is monotonic inside a week that starts on its first day. Its factor transform
+        /// `ToDayOfWeekFactorImpl` gives two days the same factor only if they lie in the same Monday week and in the
+        /// same Sunday week, so it covers the weeks that start on Monday or on Sunday, from `mode` or from
+        /// `week_functions_starting_day`. A week that starts on another day, from the setting, is reported as not
+        /// monotonic. This method cannot see whether the `mode` argument is present, so an explicit mode under such a
+        /// setting is reported as not monotonic too.
         if constexpr (std::is_same_v<ModeSpec, WeekDaySpec>)
         {
-            if (default_spec.first_weekday != 1)
+            if (default_spec.first_weekday != 1 && default_spec.first_weekday != 7)
                 return is_not_monotonic;
         }
 
