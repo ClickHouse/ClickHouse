@@ -1253,12 +1253,12 @@ std::vector<Mount> planMounts(const std::vector<FilesystemIsolationPath> & paths
 /// are the same under every name that bind mounts give the path.
 struct FilesystemLocation
 {
-    const MountInfo * mount = nullptr;
+    MountInfo mount;
     std::string path;
 
     [[nodiscard]] bool isSameOrInside(const FilesystemLocation & other) const
     {
-        return mount->device == other.mount->device && DB::isSameOrInside(path, other.path);
+        return mount.device == other.mount.device && DB::isSameOrInside(path, other.path);
     }
 };
 
@@ -1277,7 +1277,7 @@ std::optional<FilesystemLocation> getFilesystemLocation(const std::string & path
         std::string location = (fs::path(mount.root) / fs::path(path).lexically_relative(mount.mount_point)).lexically_normal().string();
         while (location.size() > 1 && location.ends_with('/'))
             location.pop_back();
-        return FilesystemLocation{&mount, std::move(location)};
+        return FilesystemLocation{mount, std::move(location)};
     }
     throw Exception(ErrorCodes::SYSTEM_ERROR, "There is no mount with the ID {} of {} in /proc/self/mountinfo", *id, path);
 }
@@ -1340,20 +1340,28 @@ std::string checkPidFile(const std::string & pid_file, const std::vector<Mount> 
 
     const std::vector<MountInfo> mount_info = readMountInfo();
     std::vector<std::pair<const Mount *, FilesystemLocation>> writable_locations;
+    auto add_writable_location = [&](const Mount & mount, FilesystemLocation location)
+    {
+        /// What is written to an overlay goes to its upper directory.
+        const auto upper = location.mount.filesystem_type == "overlay" ? getOverlayUpperDirectory(location.mount.super_options) : std::nullopt;
+        if (upper)
+        {
+            if (auto upper_location = getFilesystemLocation((fs::path(*upper) / fs::path(location.path).relative_path()).string(), mount_info))
+                writable_locations.emplace_back(&mount, std::move(*upper_location));
+        }
+        writable_locations.emplace_back(&mount, std::move(location));
+    };
     for (const auto & mount : mounts)
     {
         if (mount.access != FilesystemIsolationPath::Access::ReadWrite)
             continue;
-        const auto location = getFilesystemLocation(mount.path, mount_info);
-        if (!location)
-            continue;
-        writable_locations.emplace_back(&mount, *location);
-        /// What is written to an overlay goes to its upper directory.
-        const auto upper = location->mount->filesystem_type == "overlay" ? getOverlayUpperDirectory(location->mount->super_options) : std::nullopt;
-        if (upper)
+        if (auto location = getFilesystemLocation(mount.path, mount_info))
+            add_writable_location(mount, std::move(*location));
+        /// The recursive bind mount brings along the mounts inside, which are writable inside as well.
+        for (const auto & info : mount_info)
         {
-            if (auto upper_location = getFilesystemLocation((fs::path(*upper) / fs::path(location->path).relative_path()).string(), mount_info))
-                writable_locations.emplace_back(&mount, std::move(*upper_location));
+            if (info.mount_point != mount.path && isSameOrInside(info.mount_point, mount.path))
+                add_writable_location(mount, FilesystemLocation{info, fs::path(info.root).lexically_normal().string()});
         }
     }
 

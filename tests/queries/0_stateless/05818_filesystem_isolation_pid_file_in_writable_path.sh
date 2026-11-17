@@ -19,6 +19,7 @@ EXPECTED="enforce, in path: refused
 best_effort, in path: not isolated
 enforce, through a link in path: refused
 enforce, through a bind mount of path: refused
+enforce, in a mount inside path: refused
 enforce, pid file writable inside: refused
 enforce, through the upper directory of an overlay of path: refused
 enforce, through a link outside of path: refused
@@ -37,7 +38,7 @@ fi
 DIR="${CLICKHOUSE_TMP}/filesystem_isolation_pid_file_in_writable_path"
 rm -rf "$DIR"
 mkdir -p "$DIR/conf" "$DIR/data/run" "$DIR/log" "$DIR/outside" "$DIR/outside_first" "$DIR/alias" "$DIR/pid_files" \
-    "$DIR/overlay" "$DIR/merged" "$DIR/pid_directory"
+    "$DIR/overlay" "$DIR/merged" "$DIR/pid_directory" "$DIR/pid_bound" "$DIR/data/runtime"
 DIR=$(cd "$DIR" && pwd -P)
 ln -s "$DIR/pid_directory" "$DIR/pid_link"
 echo 0 > "$DIR/pid_files/server.pid"
@@ -49,7 +50,7 @@ function finish()
 {
     [ -n "$PID" ] && kill -9 "$PID" 2>/dev/null
     wait
-    for mount_point in "$DIR/alias" "$DIR/merged" "$DIR/overlay"; do
+    for mount_point in "$DIR/alias" "$DIR/data/runtime" "$DIR/merged" "$DIR/overlay"; do
         mountpoint -q "$mount_point" && umount "$mount_point"
     done
 }
@@ -125,6 +126,11 @@ RESULT=$(run enforce "$DIR/alias/run/server.pid" replace_directory)
 [ "$RESULT" = isolated ] && RESULT="$RESULT, then $(run enforce "$DIR/alias/run/server.pid" true)"
 echo "enforce, through a bind mount of path: $RESULT"
 umount "$DIR/alias"
+
+# A directory outside mounted inside `path` on the host: its files are writable inside through the recursive bind mount.
+mount --bind "$DIR/pid_bound" "$DIR/data/runtime"
+echo "enforce, in a mount inside path: $(run enforce "$DIR/pid_bound/server.pid" true)"
+umount "$DIR/data/runtime"
 
 echo "enforce, pid file writable inside: $(run enforce "$DIR/pid_files/server.pid" true \
     "<filesystem_isolation_paths><read_write>$DIR/pid_files/server.pid</read_write></filesystem_isolation_paths>")"

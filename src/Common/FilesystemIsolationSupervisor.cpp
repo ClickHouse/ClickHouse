@@ -223,13 +223,15 @@ NotifySocket openNotifySocket()
     return result;
 }
 
-/// Receives one message of the server, at most `max_size` bytes, with the PID of its sender outside of the namespace.
+/// Receives one message of the server, at most `max_size` bytes, with the PID of its sender outside of the namespace,
+/// and the descriptor passed with it, or -1.
 /// Returns the size, 0 for nothing or a message that is dropped, -1 when nothing can be received anymore.
-ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender)
+ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender, int & passed_fd)
 {
     iovec iov{.iov_base = buf, .iov_len = max_size};
-    alignas(cmsghdr) char control[CMSG_SPACE(sizeof(ucred))];
+    alignas(cmsghdr) char control[CMSG_SPACE(sizeof(ucred)) + CMSG_SPACE(sizeof(int))];
     sender = 0;
+    passed_fd = -1;
     msghdr msg{};
     msg.msg_iov = &iov;
     msg.msg_iovlen = 1;
@@ -248,10 +250,17 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender)
             std::memcpy(&credentials, CMSG_DATA(cmsg), sizeof(credentials));
             sender = credentials.pid;
         }
+        else if (cmsg->cmsg_type == SCM_RIGHTS && cmsg->cmsg_len == CMSG_LEN(sizeof(int)))
+            std::memcpy(&passed_fd, CMSG_DATA(cmsg), sizeof(int));
     }
-    /// The space is only for the credentials, so the kernel passes no descriptor: it would set `MSG_CTRUNC`.
+    /// The space is for one descriptor: with more, the kernel sets `MSG_CTRUNC` and closes the others.
     if (msg.msg_flags & (MSG_TRUNC | MSG_CTRUNC))
+    {
+        if (passed_fd >= 0)
+            closeDescriptor(passed_fd);
+        passed_fd = -1;
         return 0;
+    }
     return size;
 }
 
@@ -357,7 +366,14 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender)
         if (fds[1].revents)
         {
             pid_t sender = 0;
-            const ssize_t size = receiveFromServer(server_socket, buf, sizeof(buf), sender);
+            int passed_fd = -1;
+            const ssize_t size = receiveFromServer(server_socket, buf, sizeof(buf), sender, passed_fd);
+            /// Only the registration passes a descriptor.
+            if (passed_fd >= 0 && std::string_view(buf, size > 0 ? size : 0) != serving_registration)
+            {
+                closeDescriptor(passed_fd);
+                passed_fd = -1;
+            }
             /// Every process of the server has closed its end: stop polling it.
             if (size < 0 || (size == 0 && (fds[1].revents & (POLLHUP | POLLERR))))
                 fds[1].fd = -1;
@@ -370,13 +386,20 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender)
             }
             else if (message == serving_registration)
             {
-                reply(serving_reply_prefix, sender);
-                const int pidfd = syscall_pidfd_open(sender);
-                if (pidfd >= 0)
+                /// The process passes a pidfd of itself: a PID looked up afterwards could be of another process by then. A
+                /// process inside can only make a pidfd of a process inside, and a signal 0 checks that it is one.
+                if (passed_fd < 0 || syscall_pidfd_send_signal(passed_fd, 0) != 0)
                 {
+                    if (passed_fd >= 0)
+                        closeDescriptor(passed_fd);
+                    reply(serving_reply_prefix, -1);
+                }
+                else
+                {
+                    reply(serving_reply_prefix, sender);
                     if (serving_pidfd >= 0)
                         closeDescriptor(serving_pidfd);
-                    serving_pidfd = pidfd;
+                    serving_pidfd = passed_fd;
                     const uint64_t to_deliver = pending_signals;
                     pending_signals = 0;
                     for (const int sig : relayed_signals)
@@ -625,10 +648,25 @@ std::mutex supervisor_request_mutex;
 /// Sends `request` to the supervisor and returns the number in its answer after `reply_prefix`, or nothing if the
 /// supervisor does not answer within the timeout of the socket. An answer to an earlier request that timed out is
 /// skipped.
-std::optional<int> requestFromSupervisor(int fd, std::string_view request, std::string_view reply_prefix)
+std::optional<int> requestFromSupervisor(int fd, std::string_view request, std::string_view reply_prefix, int passed_fd = -1)
 {
     std::lock_guard lock(supervisor_request_mutex);
-    if (::send(fd, request.data(), request.size(), MSG_NOSIGNAL) < 0)
+    iovec iov{.iov_base = const_cast<char *>(request.data()), .iov_len = request.size()};
+    alignas(cmsghdr) char control[CMSG_SPACE(sizeof(int))]{};
+    msghdr msg{};
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    if (passed_fd >= 0)
+    {
+        msg.msg_control = control;
+        msg.msg_controllen = sizeof(control);
+        cmsghdr * cmsg = CMSG_FIRSTHDR(&msg);
+        cmsg->cmsg_level = SOL_SOCKET;
+        cmsg->cmsg_type = SCM_RIGHTS;
+        cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+        std::memcpy(CMSG_DATA(cmsg), &passed_fd, sizeof(int));
+    }
+    if (::sendmsg(fd, &msg, MSG_NOSIGNAL) < 0)
         return std::nullopt;
     while (true)
     {
@@ -669,9 +707,13 @@ void registerFilesystemIsolationServingProcess()
     const int fd = supervisor_socket.load(std::memory_order_relaxed);
     if (fd < 0)
         return;
-    const auto host_pid = requestFromSupervisor(fd, serving_registration, serving_reply_prefix);
-    if (!host_pid)
-        throw Exception(ErrorCodes::SYSTEM_ERROR, "The supervisor of the filesystem isolation did not answer the registration");
+    const int pidfd = syscall_pidfd_open(::getpid());
+    if (pidfd < 0)
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot create a pidfd to register with the supervisor of the filesystem isolation");
+    SCOPE_EXIT(closeDescriptor(pidfd));
+    const auto host_pid = requestFromSupervisor(fd, serving_registration, serving_reply_prefix, pidfd);
+    if (!host_pid || *host_pid <= 0)
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "The supervisor of the filesystem isolation did not accept the registration");
     setFilesystemIsolationServingHostPid(*host_pid);
 }
 
