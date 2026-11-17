@@ -7,13 +7,13 @@
 -- so the final assertion can prove none of them leaks. They used to leak in plaintext in SHOW CREATE
 -- and logged query text.
 
--- Engine form: SHOW CREATE hides every secret; the non-secret extra_credentials identifier
--- (role_arn) stays visible while external_id is hidden.
+-- Engine form: SHOW CREATE hides every secret, external_id included. No role_arn here: it makes the
+-- CREATE call STS AssumeRole on sts.amazonaws.com, and this test must not depend on network access.
 DROP TABLE IF EXISTS t_04510;
 CREATE TABLE t_04510 (x UInt8)
 ENGINE = S3('http://localhost:11111/test/04510', 'ak', 'SEKRIT_SAK',
             session_token = 'SEKRIT_ST',
-            extra_credentials(role_arn = 'visible_role_arn', external_id = 'SEKRIT_EID'),
+            extra_credentials(external_id = 'SEKRIT_EID'),
             format = 'TSV');
 SHOW CREATE TABLE t_04510 SETTINGS format_display_secrets_in_show_and_select = 0;
 DROP TABLE t_04510;
@@ -72,12 +72,13 @@ DROP TABLE t_04510_gcs;
 -- The forms below all fail at analysis (empty host / missing collection) before any network access,
 -- and are logged with secrets replaced. Each carries a unique marker checked by the final assertion.
 
--- Explicit-url function form.
+-- Explicit-url function form. The non-secret extra_credentials identifier (role_arn) stays visible
+-- while external_id is hidden.
 SELECT * FROM s3('url_basic', 'ak', 'SEKRIT_SAK',
                  session_token = 'SEKRIT_ST',
                  google_adc_client_secret = 'SEKRIT_ADCCS',
                  google_adc_refresh_token = 'SEKRIT_ADCRT',
-                 extra_credentials(external_id = 'SEKRIT_EID'),
+                 extra_credentials(role_arn = 'visible_role_arn', external_id = 'SEKRIT_EID'),
                  format = 'TSV', structure = 'x UInt8'); -- { serverError BAD_ARGUMENTS }
 
 -- extra_credentials placed between two named secret overrides must be masked as a nested map,
