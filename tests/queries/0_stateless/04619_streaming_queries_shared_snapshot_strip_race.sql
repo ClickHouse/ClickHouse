@@ -22,7 +22,7 @@ SET enable_shared_storage_snapshot_in_query = 1;
 -- before the fix, a sanitizer build reported a heap-use-after-free here instead.
 SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_snapshot_strip_race, (key IN (SELECT key FROM t_snapshot_strip_race ORDER BY key DESC NULLS LAST LIMIT 10)))
 UNION ALL
-SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_snapshot_strip_race, (key IN (SELECT key FROM t_snapshot_strip_race STREAM LIMIT 10)))
+SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_snapshot_strip_race, (key IN (SELECT key FROM t_snapshot_strip_race STREAM BOUNDED LIMIT 10)))
 GROUP BY ALL
 FORMAT Null;
 
