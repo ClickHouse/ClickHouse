@@ -393,7 +393,7 @@ def _run_codex_once(prompt, model):
         )
 
 
-def _run(prompt):
+def _run(prompt, flagged_sessions):
     """Run the Codex agent with retries, then post the review comment.
 
     Each attempt re-fetches secrets and re-runs the agent. The attempt counts
@@ -403,7 +403,6 @@ def _run(prompt):
     last_error = None
     model = MODEL
     review_model = model
-    flagged_sessions = []
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             review_model = model
@@ -451,7 +450,6 @@ def _run(prompt):
 
     # Post the summary from the job script so the job fails loudly if anything is broken.
     _post_review()
-    return bool(flagged_sessions)
 
 
 def review():
@@ -462,8 +460,15 @@ def review():
 
     os.makedirs("./ci/tmp", exist_ok=True)
     prompt = _pre_review_prompt(info)
-    cyber_risk_flagged = _run(prompt)
-    _update_approval(info, cyber_risk_flagged)
+    flagged_sessions = []
+    try:
+        _run(prompt, flagged_sessions)
+    except Exception:
+        # A stopped session must not leave an earlier approval behind when the retries then fail.
+        if flagged_sessions:
+            _update_approval(info, cyber_risk_flagged=True)
+        raise
+    _update_approval(info, bool(flagged_sessions))
 
 
 if __name__ == "__main__":
