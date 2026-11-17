@@ -60,7 +60,7 @@ struct CostConfig
     Float64 funnel_sequential_cost_per_row = 1.0; /// Gather/scatter push every row through one stream endpoint.
     Float64 merge_sequential_cost_per_row = 1.0;  /// N-way merge of sorted streams advances one cursor at a time.
 
-    String dump() const;
+    [[nodiscard]] String dump() const;
 };
 
 CostConfig parseCostConfig(const String & json_str);
@@ -71,7 +71,7 @@ struct Cost
     Float64 network = 0;    /// Bytes transferred over network.
     Float64 sequential = 0; /// Single-threaded phases (hash builds, merges).
 
-    Float64 total(const CostConfig & config) const
+    [[nodiscard]] Float64 total(const CostConfig & config) const
     {
         /// If any component is infinite the plan is impossible; return infinity directly. Multiplying
         /// first would let a zero weight turn `inf * 0` into NaN, and a NaN cost compares as neither
@@ -101,7 +101,7 @@ struct Cost
         return *this;
     }
 
-    String dump(const CostConfig & config) const;
+    [[nodiscard]] String dump(const CostConfig & config) const;
 };
 
 struct ExpressionCost
@@ -123,6 +123,8 @@ using GroupId = size_t;
 class IQueryPlanStep;
 struct IImplementationStrategy;
 
+struct ExpressionProperties;
+
 /// Everything the local (single-operator) cost functions may read. Deliberately holds no memo
 /// access, so operator costing stays a pure function of statistics and configuration.
 struct CostInputs
@@ -141,6 +143,10 @@ struct CostInputs
     /// to L rows per node, a preliminary `DISTINCT` a value once per node. Resolved by the caller from the
     /// selected input for an exchange, which moves these rows, and for a final `DISTINCT`, which inserts them.
     std::optional<Float64> input_physical_rows;
+    /// Properties of the first input's selected implementation, null when none is resolved.
+    /// A sorted gather reads the stream layout from it: a sender with several streams per
+    /// node merges them before shipping, which costs like a sort's final merge.
+    const ExpressionProperties * first_input_properties = nullptr;
     const CostConfig & config;
 };
 

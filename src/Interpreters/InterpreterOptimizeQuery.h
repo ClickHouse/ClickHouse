@@ -18,10 +18,10 @@ public:
 
     BlockIO execute() override;
 
-    bool supportsTransactions() const override { return true; }
+    [[nodiscard]] bool supportsTransactions() const override { return true; }
 
 private:
-    AccessRightsElements getRequiredAccess() const;
+    [[nodiscard]] AccessRightsElements getRequiredAccess() const;
 
     ASTPtr query_ptr;
 };
