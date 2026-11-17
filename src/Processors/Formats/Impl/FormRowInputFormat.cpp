@@ -2,6 +2,8 @@
 #include <Processors/Formats/Impl/FormRowInputFormat.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
+#include <DataTypes/DataTypeString.h>
+#include <Common/StringUtils.h>
 
 #include <Poco/URI.h>
 
@@ -155,7 +157,15 @@ static NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & i
         auto name = readFieldName(in);
         readStringUntilAmpersand(value,in);
         decodeFormValue(value, decoded_value);
-        auto type = tryInferDataTypeByEscapingRule(decoded_value, settings, FormatSettings::EscapingRule::Raw);
+        DataTypePtr type;
+        /// The value is deserialized verbatim with `deserializeWholeText`, which does not skip leading
+        /// or trailing whitespace for most types, while the type inference skips it. A value like
+        /// "+42" (decoded to " 42") would be inferred as a number and then fail to be read, so keep
+        /// such values as strings.
+        if (!decoded_value.empty() && (isWhitespaceASCII(decoded_value.front()) || isWhitespaceASCII(decoded_value.back())))
+            type = std::make_shared<DataTypeString>();
+        else
+            type = tryInferDataTypeByEscapingRule(decoded_value, settings, FormatSettings::EscapingRule::Raw);
         names_and_types.emplace_back(name, type);
     }
     while (checkChar('&',in));
