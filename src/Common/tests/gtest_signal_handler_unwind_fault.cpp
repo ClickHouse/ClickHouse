@@ -1,4 +1,7 @@
 #include <Common/SignalHandlers.h>
+#include <Common/StackTrace.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
 
 #include <base/defines.h>
 
@@ -25,6 +28,25 @@ void require(bool condition, const std::string & what)
         std::cerr << "failed: " << what << '\n';
         std::_Exit(1);
     }
+}
+
+/// Reads the record that `signalHandler` wrote for the last SIGTSTP, as `SignalListener::run` does.
+size_t readReportedTraceSize()
+{
+    char report[signal_pipe_buf_size];
+    const ssize_t reported = ::read(HandledSignals::instance().signal_pipe.fds_rw[0], report, sizeof(report));
+    require(reported > 0, "a fault record was reported");
+    DB::ReadBufferFromMemory in(report, static_cast<size_t>(reported));
+    int sig = 0;
+    siginfo_t info{};
+    const ucontext_t * context = nullptr;
+    StackTrace stack_trace(NoCapture{});
+    DB::readBinary(sig, in);
+    DB::readPODBinary(info, in);
+    DB::readPODBinary(context, in);
+    DB::readPODBinary(stack_trace, in);
+    require(sig == SIGTSTP, "the record is the SIGTSTP report");
+    return stack_trace.getSize();
 }
 
 /// While SIGTSTP is handled, the caller's saved frame pointer points at `unmapped`, so the handler's
@@ -56,11 +78,13 @@ void require(bool condition, const std::string & what)
     void * region = mmap(nullptr, region_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     require(region != MAP_FAILED, "mapping the inaccessible region");
 
+    /// An unfaulted capture is never empty, so an empty one below can only come from the recovery.
+    require(raise(SIGTSTP) == 0, "raising SIGTSTP");
+    require(readReportedTraceSize() > 0, "a clean capture has frames");
+
     callThroughFramePointerFrame(static_cast<char *>(region) + region_size / 2);
 
-    char report[signal_pipe_buf_size];
-    const ssize_t reported = ::read(HandledSignals::instance().signal_pipe.fds_rw[0], report, sizeof(report));
-    require(reported > static_cast<ssize_t>(sizeof(int) + sizeof(siginfo_t)), "a fault record was reported");
+    require(readReportedTraceSize() == 0, "the faulted capture was dropped");
 
     std::_Exit(0);
 }
