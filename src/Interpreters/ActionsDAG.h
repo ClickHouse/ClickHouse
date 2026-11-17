@@ -379,6 +379,8 @@ public:
     void compileExpressions(size_t min_count_to_compile_expression, const UnorderedSetWithMemoryTracking<const Node *> & lazy_executed_nodes = {});
     /// The functions `compileExpressions` compiled into `function`, or nullptr if it is not a compiled expression.
     static const std::vector<FunctionBasePtr> * getCompiledFunctions(const IFunctionBase & function);
+    /// For a node compiled from an `and` chain: its children that are conjuncts of that chain. Empty for any other node.
+    static NodeRawConstPtrs getCompiledConjuncts(const Node & node);
 #endif
 
     using NodeMapping = UnorderedMapWithMemoryTracking<const Node *, const Node *>;

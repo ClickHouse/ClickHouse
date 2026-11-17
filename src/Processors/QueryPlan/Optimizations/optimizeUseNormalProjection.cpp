@@ -1002,8 +1002,8 @@ UseProjectionsResult optimizeUseNormalProjections(
         [&](const auto & part) { return best_candidate->parent_parts.contains(part.data_part.get()); });
 
     /// Only the initiator should read the projection to avoid potential data duplication.
-    bool should_skip_projection_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !optimization_settings.is_parallel_replicas_initiator_with_projection_support
-        && has_parent_parts;
+    const bool is_local_plan_for_initiator = reading->isParallelReplicasLocalPlanForInitiator();
+    bool should_skip_projection_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !is_local_plan_for_initiator && has_parent_parts;
     /// True when the projection read is replaced by a prepared source that does not announce the
     /// base-table stream itself. See the announcement call below.
     bool projection_replaced_with_prepared_source = false;
@@ -1027,7 +1027,7 @@ UseProjectionsResult optimizeUseNormalProjections(
         projection_replaced_with_prepared_source = true;
     }
 
-    if (has_parent_parts && optimization_settings.is_parallel_replicas_initiator_with_projection_support)
+    if (has_parent_parts && is_local_plan_for_initiator)
         fallbackToLocalProjectionReading(projection_reading);
 
     /// `reading` is detached below without running initializePipeline(), so announce its empty read
