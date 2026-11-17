@@ -519,7 +519,8 @@ public:
 
     /// The other state is often another thread's share of the same group. If it has not opened a part, its rows are added to
     /// this state, so that they are written to the same part: the block headers and dictionaries of a part of its own would
-    /// outweigh a few hundred rows. A state that has opened a part is finished as a part. The other state is not changed
+    /// outweigh a few hundred rows. A state that has opened a part has compressed its rows already, so it is finished as a
+    /// separate part, and the result of a larger group still depends on the threads. The other state is not changed
     /// otherwise, so a state kept in a `Memory` table can be read again.
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
@@ -951,8 +952,11 @@ With `target_type`, the estimate follows how a new `MergeTree` table with the de
 The estimate is approximate, and it does not read the settings of any table.
 A table sizes its granules from its insert blocks and from all its columns together, while the function sees one column and no insert blocks, so the granules of wide rows can differ.
 The numerator of a `LowCardinality` column is the size of its values, not of its dictionary.
-When a query runs in several threads, the rows of a group that one thread gathers join the rows of the other threads unless they fill a granule or 1 MiB, and then they are estimated as a separate part.
-States that are serialized (in a distributed query, an external aggregation, or an `AggregateFunction` column) are separate parts too, so use `max_threads = 1` for a stable result of large groups.
+The result can depend on how a query splits the rows between threads.
+The rows of a group that one thread gathers join the rows of the other threads while they are fewer than a granule and less than 1 MiB; beyond that, they are estimated as a separate part.
+States that are serialized (in a distributed query, an external aggregation, or an `AggregateFunction` column) are separate parts too.
+Every part adds its own block headers and, for `LowCardinality`, its own dictionary, which matters when a group compresses to a few kilobytes: the ratio of such a group as `LowCardinality` can drop by half with several threads.
+`max_threads = 1` gives a more stable result, though still an estimate.
 
 `Dynamic` and `JSON` are not supported as target types, nor as arguments with `target_type`, and neither is an argument with `LowCardinality` inside a `Variant`: convert them in the query first.
 
