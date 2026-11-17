@@ -115,6 +115,9 @@ struct PageCacheSettings
 struct FilesystemCacheSettings
 {
     bool read_if_exists_otherwise_bypass = false;
+    /// A variant of the bypass above, set together with it: the `ReaderExecutor` caches a miss and drops the segment
+    /// once it passes it, unless another reader used it. Readers without this mode see only the bypass.
+    bool cache_temporarily = false;
     /// Cache-only mode for data with no backing storage (distributed-cache temporary data):
     /// a miss is an error, never a remote-FS bypass. Takes precedence over `read_if_exists_otherwise_bypass`.
     bool temp_cache_only = false;
@@ -192,7 +195,7 @@ struct ReadSettings
     DistributedCacheSettings distributed_cache_settings;
 #endif
 
-    ReadSettings adjustBufferSize(size_t file_size) const;
+    [[nodiscard]] ReadSettings adjustBufferSize(size_t file_size) const;
 
     /// Verification/metadata-read mode: disable every read-side cache (and the
     /// cache-stage logs that come with them). Used by `checkDataPart`,
