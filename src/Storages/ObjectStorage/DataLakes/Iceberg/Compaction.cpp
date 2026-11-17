@@ -98,6 +98,8 @@ struct Plan
     using PartitionPlan = std::vector<std::shared_ptr<DataFilePlan>>;
     std::vector<PartitionPlan> partitions;
     IcebergHistory history;
+    /// Snapshot id -> the parent that its children get in the rewritten history. -1 means no parent.
+    std::unordered_map<Int64, Int64> nearest_kept;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Int64> manifest_file_to_first_snapshot;
     /// Original manifest-list entry lineage per manifest path: `added_snapshot_id` of the
     /// snapshot that actually added the manifest. This is taken from the source manifest-list
@@ -217,6 +219,34 @@ static IcebergHistory sortParentsFirst(IcebergHistory history)
     return sorted;
 }
 
+/// Maps each snapshot to the parent that its children get in the rewritten history. -1 means no parent.
+/// The rewrite keeps only `append` snapshots. A dropped parent is replaced by its nearest kept ancestor.
+/// Expects every parent before its children.
+static std::unordered_map<Int64, Int64> getNearestKept(const IcebergHistory & history)
+{
+    std::unordered_map<Int64, Int64> nearest_kept;
+    for (const auto & history_record : history)
+    {
+        if (tryGetAppendUpdate(history_record))
+        {
+            nearest_kept[history_record.snapshot_id] = history_record.snapshot_id;
+            continue;
+        }
+
+        /// A `delete` snapshot that removes data files starts a new chain. Its ancestors hold rows that its children do not.
+        /// TODO: Keep `delete` snapshots in the rewritten history. Then their children keep the real parent.
+        const auto & summary = history_record.snapshot_summary;
+        const bool removes_files = summary->getOperation() == SnapshotSummaryOperation::DELETE
+            && summary->getUpdate<Iceberg::SnapshotSummaryUpdateDelete>().deleted_data_files > 0;
+
+        Int64 kept_parent_id = -1;
+        if (auto it = nearest_kept.find(history_record.parent_id); !removes_files && it != nearest_kept.end())
+            kept_parent_id = it->second;
+        nearest_kept[history_record.snapshot_id] = kept_parent_id;
+    }
+    return nearest_kept;
+}
+
 static Plan getPlan(
     IcebergHistory snapshots_info,
     const DataLakeStorageSettings & data_lake_settings,
@@ -269,6 +299,7 @@ static Plan getPlan(
     plan.initial_metadata_object = initial_metadata_object;
 
     snapshots_info = sortParentsFirst(std::move(snapshots_info));
+    plan.nearest_kept = getNearestKept(snapshots_info);
 
     /// A snapshot's manifest list also lists the manifests of the earlier snapshots.
     std::vector<ProcessedManifestFileEntryPtr> all_positional_delete_files;
@@ -1165,29 +1196,19 @@ static bool writeMetadataFiles(
     };
     std::unordered_map<Int64, LiveTotals> snapshot_id_to_live_totals;
 
-    /// Snapshot id -> the parent that its children get in the rewritten history. -1 means no parent.
-    std::unordered_map<Int64, Int64> nearest_kept;
-
     for (const auto & history_record : plan.history)
     {
-        /// A dropped parent is replaced by its nearest kept ancestor. -1 means no parent.
-        Int64 kept_parent_id = -1;
-        if (auto it = nearest_kept.find(history_record.parent_id); it != nearest_kept.end())
-            kept_parent_id = it->second;
-
         auto append = tryGetAppendUpdate(history_record);
         if (!append)
         {
-            /// A `delete` snapshot that removes data files starts a new chain. Its ancestors hold rows that its children do not.
-            /// TODO: Keep `delete` snapshots in the rewritten history. Then their children keep the real parent.
-            const auto & summary = history_record.snapshot_summary;
-            const bool removes_files = summary->getOperation() == SnapshotSummaryOperation::DELETE
-                && summary->getUpdate<Iceberg::SnapshotSummaryUpdateDelete>().deleted_data_files > 0;
-            nearest_kept[history_record.snapshot_id] = removes_files ? -1 : kept_parent_id;
             new_snapshots.push_back(MetadataGenerator::NextMetadataResult{});
             continue;
         }
-        nearest_kept[history_record.snapshot_id] = history_record.snapshot_id;
+
+        /// A dropped parent is replaced by its nearest kept ancestor. -1 means no parent.
+        Int64 kept_parent_id = -1;
+        if (auto it = plan.nearest_kept.find(history_record.parent_id); it != plan.nearest_kept.end())
+            kept_parent_id = it->second;
 
         LiveTotals live;
         for (const auto & data_file : plan.snapshot_id_to_data_files[history_record.snapshot_id])
@@ -1219,15 +1240,11 @@ static bool writeMetadataFiles(
         snapshot_id_to_snapshot[history_record.snapshot_id] = new_snapshot.snapshot;
     }
 
-    /// Restore the current snapshot of the source table.
+    /// Restore the current snapshot of the source table. `compactIcebergTable` checked that a kept snapshot holds its files.
     /// TODO: Map the source `snapshot-log` to the kept snapshots. Timestamp reads use the log and miss a rollback to a dropped snapshot.
-    Int64 source_current_snapshot_id = plan.initial_metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
-    if (auto it = nearest_kept.find(source_current_snapshot_id); it != nearest_kept.end() && it->second >= 0)
-    {
-        Int64 current_snapshot_id = it->second;
-        metadata_object->set(Iceberg::f_current_snapshot_id, current_snapshot_id);
-        metadata_object->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->set(Iceberg::f_metadata_snapshot_id, current_snapshot_id);
-    }
+    const Int64 current_snapshot_id = plan.nearest_kept.at(plan.initial_metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id));
+    metadata_object->set(Iceberg::f_current_snapshot_id, current_snapshot_id);
+    metadata_object->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->set(Iceberg::f_metadata_snapshot_id, current_snapshot_id);
 
     Poco::JSON::Object::Ptr initial_metadata_object = plan.initial_metadata_object;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Iceberg::IcebergPathFromMetadata> manifest_file_renamings;
@@ -1659,6 +1676,17 @@ void compactIcebergTable(
         persistent_table_components.metadata_compression_method);
     if (plan.need_optimize)
     {
+        /// The rewrite keeps only `append` snapshots, so one of them must hold the files of the current snapshot.
+        /// After a `delete` that removes data files, such as `DROP PARTITION`, none does: the kept ancestors still hold the removed files.
+        /// TODO: Keep `delete` snapshots in the rewritten history. https://github.com/ClickHouse/ClickHouse/issues/128264
+        const auto source_current_snapshot_id = plan.initial_metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
+        if (auto it = plan.nearest_kept.find(source_current_snapshot_id); it == plan.nearest_kept.end() || it->second < 0)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Iceberg compaction does not support this table history: no rewritten snapshot holds the files of the current "
+                "snapshot {} (e.g. after `DROP PARTITION`). The table is left unchanged.",
+                source_current_snapshot_id);
+
         /// Every data file is rewritten under the default partition spec, so its partition tuple must have that spec's arity.
         const auto default_spec_id = plan.initial_metadata_object->getValue<Int32>(Iceberg::f_default_spec_id);
         Poco::JSON::Array::Ptr default_spec_fields;

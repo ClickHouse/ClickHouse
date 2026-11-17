@@ -3,7 +3,8 @@
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 
 # `OPTIMIZE` must not bring back a dropped partition.
-# Here the `DROP PARTITION` snapshot is the current one, and `OPTIMIZE` drops it from the history.
+# Here the `DROP PARTITION` snapshot is the current one. The rewrite keeps only `append` snapshots,
+# and none of them holds the files of the current snapshot, so `OPTIMIZE` refuses and leaves the table unchanged.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,6 +14,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 IS_CLOUD=$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'")
 if [[ "${IS_CLOUD}" = "1" ]]; then
     echo "9"
+    echo "NOT_IMPLEMENTED"
     echo "9"
     exit 0
 fi
@@ -29,7 +31,7 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --mutations_sync=2 --query "A
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${TABLE} DROP PARTITION 1"
 
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE}"
-${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${TABLE}"
+${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${TABLE}" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE}"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE} SYNC"
