@@ -434,12 +434,12 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
     const auto key_value_args = parseKeyValueArguments(ASTs(engine_args.begin() + count, engine_args.end()), context);
     for (const auto & [key, _] : key_value_args)
     {
+        /// The key is not repeated in the message: a key given in a query can be a secret typed in the wrong place.
         if (key != "partition_strategy" && key != "partition_columns_in_data_file")
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Unexpected key-value argument `{}`: only `partition_strategy` and `partition_columns_in_data_file` "
-                "can be passed as key-value arguments",
-                key);
+                "Unexpected key-value argument: only `partition_strategy` and `partition_columns_in_data_file` "
+                "can be passed as key-value arguments");
     }
 
     if (!key_value_args.empty() && count < 3)

@@ -71,3 +71,6 @@ SELECT * FROM mysql(nc_mysql, \'[HIDDEN]\')	1	1
 SELECT * FROM s3(\'http://127.0.0.1:1/bucket/data.csv\', \'CSV\', \'x Int32\', \'[HIDDEN]\')	1	1
 CREATE DATABASE d_s3 ENGINE = S3(\'[HIDDEN]\', \'[HIDDEN]\')	1	1
 CREATE DATABASE d_s3 ENGINE = S3(\'[HIDDEN]\', \'[HIDDEN]\')	1	1
+SELECT * FROM s3(\'http://127.0.0.1:1/bucket/data.csv\', \'CSV\', \'x Int32\', \'[HIDDEN]\', \'[HIDDEN]\')	1	1
+CREATE TABLE t_s3_dup (`x` Int32) ENGINE = S3(\'http://127.0.0.1:1/bucket/data.csv\', \'CSV\', \'[HIDDEN]\', \'[HIDDEN]\')	1	1
+SELECT * FROM azureBlobStorage(\'http://127.0.0.1:1/devstoreaccount1\', \'cont\', \'path\', \'CSV\', \'[HIDDEN]\')	1	1

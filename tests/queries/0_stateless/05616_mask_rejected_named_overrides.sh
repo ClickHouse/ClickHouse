@@ -136,6 +136,9 @@ $CLICKHOUSE_CLIENT -m -q "
     SELECT * FROM s3('http://127.0.0.1:1/bucket/data.csv', 'CSV', 'x Int32', extra_credentials(role_arn_${SECRET} = 'x')); -- { serverError BAD_ARGUMENTS }
     CREATE DATABASE d_s3 ENGINE = S3(${NC_S3}, secret_acces_key = '${SECRET}'); -- { serverError BAD_ARGUMENTS }
     CREATE DATABASE d_s3 ENGINE = S3(${NC_S3}, password_${SECRET} = 'x'); -- { serverError BAD_ARGUMENTS }
+    SELECT * FROM s3('http://127.0.0.1:1/bucket/data.csv', 'CSV', 'x Int32', ${SECRET} = 'x', ${SECRET} = 'y'); -- { serverError BAD_ARGUMENTS }
+    CREATE TABLE t_s3_dup (x Int32) ENGINE = S3('http://127.0.0.1:1/bucket/data.csv', 'CSV', '${SECRET}' = 'x', '${SECRET}' = 'y'); -- { serverError BAD_ARGUMENTS }
+    SELECT * FROM azureBlobStorage('http://127.0.0.1:1/devstoreaccount1', 'cont', 'path', 'CSV', ${SECRET} = 'x'); -- { serverError BAD_ARGUMENTS }
 "
 
 $CLICKHOUSE_CLIENT -m -q "

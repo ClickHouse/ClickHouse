@@ -259,8 +259,9 @@ std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & funct
         auto arg_value = value_literal->as<ASTLiteral>()->value;
 
         auto inserted = key_value_args.emplace(arg_name, arg_value).second;
+        /// The key is not repeated in the message: a key given in a query can be a secret typed in the wrong place.
         if (!inserted)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate key value argument: {}", arg_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate key value argument: a key is given more than once");
     }
     return key_value_args;
 }
