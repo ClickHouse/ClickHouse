@@ -315,6 +315,44 @@ public:
         FromHead,   /// Start from the queue head; do not persist a position.
         Reserve,    /// Foreground reserve path (shared by concurrent reservers).
         Background, /// Background free-space keeping thread.
+        Promotion,  /// SLRU downgrade walk over the protected queue (shared by concurrent promoters).
+    };
+
+    /// A cursor shared by the threads which run the same kind of eviction walk. A lone thread
+    /// resets it and scans from the head in strict LRU order; overlapping threads resume where the
+    /// previous one stopped, a clock-like order that is cheaper than rescanning the head each time.
+    class SharedEvictionCursor : private boost::noncopyable
+    {
+    public:
+        explicit SharedEvictionCursor(EvictionCursor cursor_) : cursor(cursor_) {}
+
+        /// Counts the current thread as an evictor for as long as it may walk.
+        class ActiveEvictor : private boost::noncopyable
+        {
+        public:
+            explicit ActiveEvictor(SharedEvictionCursor & shared_) : shared(shared_)
+            {
+                shared.active_evictors.fetch_add(1, std::memory_order_relaxed);
+            }
+            ~ActiveEvictor() { shared.active_evictors.fetch_sub(1, std::memory_order_relaxed); }
+
+        private:
+            SharedEvictionCursor & shared;
+        };
+
+        /// Resets the cursor when this thread is the only active evictor. Called right before
+        /// the walk, so that it sees the evictors active at that moment.
+        EvictionCursor getCursor(IFileCachePriority & priority) const
+        {
+            if (active_evictors.load(std::memory_order_relaxed) > 1)
+                return cursor;
+            priority.resetEvictionPos(cursor);
+            return EvictionCursor::FromHead;
+        }
+
+    private:
+        const EvictionCursor cursor;
+        std::atomic<size_t> active_evictors = 0;
     };
 
     /// Collect eviction candidates sufficient to free `size` bytes
