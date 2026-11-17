@@ -1,5 +1,3 @@
-import time
-
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -92,18 +90,16 @@ def test_queue_survives_cluster_reload(started_cluster):
         )
 
         # Batch C's INSERT looks the queue up under the new cluster version while
-        # the old send is still in flight. Without the in-place pool update this
-        # recreates the queue and reproduces the race. The INSERT runs in the
-        # background: on broken code, replacing the queue destroys the old one,
-        # whose destructor waits for the paused send, so a synchronous INSERT
-        # would block until the failpoint is released.
-        insert_c = node1.get_query_request(
-            "INSERT INTO dist SELECT number * 2 + 1, 'C' FROM numbers(5)"
-        )
-        time.sleep(2)
+        # the old send is still in flight, and must finish before the send resumes:
+        # B is sent only after that, through the updated pool. On broken code,
+        # the lookup recreates the queue, and destroying the old one waits for
+        # the paused send, so the INSERT hits the client timeout instead.
+        node1.get_query_request(
+            "INSERT INTO dist SELECT number * 2 + 1, 'C' FROM numbers(5)",
+            timeout=60,
+        ).get_answer()
     finally:
         node1.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_FAILPOINT}")
-    insert_c.get_answer()
 
     # The queue drains without errors: batch A was already delivered to node2;
     # batches B and C go to the new destination.

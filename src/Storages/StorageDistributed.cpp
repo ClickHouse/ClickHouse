@@ -2074,10 +2074,13 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
 
     std::lock_guard lock(cluster_nodes_mutex);
     auto & node_data = cluster_nodes_data[key];
+    /// Captured before parsing: if a reload lands in between, the stored version stays
+    /// behind the current one and the next call re-parses the addresses.
+    const auto clusters_version = getContext()->getClustersVersion();
     if (!node_data.directory_queue)
     {
         node_data.addresses = parseAddresses(name);
-        node_data.clusters_version = getContext()->getClustersVersion();
+        node_data.clusters_version = clusters_version;
         node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(node_data.addresses, *this);
         node_data.directory_queue = std::make_shared<DistributedAsyncInsertDirectoryQueue>(
             *this, disk, relative_data_path + name,
@@ -2085,7 +2088,7 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
             async_insert_blocker,
             getContext()->getDistributedSchedulePool());
     }
-    else if (node_data.clusters_version < getContext()->getClustersVersion())
+    else if (node_data.clusters_version < clusters_version)
     {
         /// If the node changed (e.g. remote_servers was reloaded), update the connection
         /// pool of the existing queue in place. Recreating the queue would let two queues
@@ -2093,10 +2096,6 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
         /// in-flight send or by a DistributedSink, so a file it sends and removes leaves
         /// the replacement queue retrying FILE_DOESNT_EXIST forever (such a file is not
         /// "broken" and is never moved aside), and a file both queues pick up is sent twice.
-        ///
-        /// The version is captured before parsing: if another reload lands in between, the
-        /// stored version stays behind the current one and the next call re-checks.
-        const auto clusters_version = getContext()->getClustersVersion();
         auto new_addresses = parseAddresses(name);
         node_data.clusters_version = clusters_version;
         if (node_data.addresses != new_addresses)
