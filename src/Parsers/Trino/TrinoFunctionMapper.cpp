@@ -5,6 +5,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/Exception.h>
+#include <Common/IntervalKind.h>
 #include <Common/StringUtils.h>
 #include <base/defines.h>
 
@@ -289,7 +290,8 @@ ASTPtr makeThreeValuedMatch(ASTFunction & function, ASTs & arguments, UInt64 dec
 /// Simple renames: the argument order and semantics match.
 /// Names that already resolve in ClickHouse with the same semantics (through
 /// case-insensitive aliases, e.g. `concat`, `coalesce`, `cardinality`, `abs`,
-/// `date_trunc`, `max_by`) are not listed.
+/// `max_by`) are not listed. `date_trunc` resolves to `dateTrunc` too, except for
+/// the `week` unit, see its rewriter.
 const std::unordered_map<String, String> & getRenames()
 {
     static const std::unordered_map<String, String> renames =
@@ -713,6 +715,33 @@ const std::unordered_map<String, Rewriter> & getRewriters()
         }},
         {"day_of_week", day_of_week},
         {"dow", day_of_week},
+        {"date_trunc", [](ASTPtr & node, ASTFunction &, ASTs & arguments)
+        {
+            /// Trino `date_trunc('week', x)` starts weeks on Monday. `dateTrunc` starts them on the day of
+            /// `week_functions_starting_day` and has no `mode`, so the week is computed with `toMonday`, cast to the
+            /// type `dateTrunc` returns for `x`: the same for `month` as for `week`, and independent of the setting.
+            /// The time zone argument of the native `dateTrunc` is passed to both. The other units, and calls that
+            /// `dateTrunc` rejects, resolve to `dateTrunc` unchanged.
+            if (arguments.size() != 2 && arguments.size() != 3)
+                return;
+            const auto * unit = arguments[0]->as<ASTLiteral>();
+            if (!unit || unit->value.getType() != Field::Types::String)
+                return;
+            IntervalKind kind;
+            if (!IntervalKind::tryParseString(Poco::toLower(unit->value.safeGet<String>()), kind) || kind != IntervalKind::Kind::Week)
+                return;
+            ASTs to_monday_arguments{arguments[1]};
+            ASTs date_trunc_arguments{make_intrusive<ASTLiteral>(String("month")), arguments[1]->clone()};
+            if (arguments.size() == 3)
+            {
+                to_monday_arguments.push_back(arguments[2]);
+                date_trunc_arguments.push_back(arguments[2]->clone());
+            }
+            node = makeFunctionWithArguments(
+                "CAST",
+                {makeFunctionWithArguments("toMonday", std::move(to_monday_arguments)),
+                 makeFunctionWithArguments("toTypeName", {makeFunctionWithArguments("dateTrunc", std::move(date_trunc_arguments))})});
+        }},
         {"timezone", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
         {
             /// Trino timezone(x) returns the zone of the value. The zero-argument
