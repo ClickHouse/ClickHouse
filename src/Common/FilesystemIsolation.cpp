@@ -1256,7 +1256,7 @@ struct FilesystemLocation
     const MountInfo * mount = nullptr;
     std::string path;
 
-    bool isSameOrInside(const FilesystemLocation & other) const
+    [[nodiscard]] bool isSameOrInside(const FilesystemLocation & other) const
     {
         return mount->device == other.mount->device && DB::isSameOrInside(path, other.path);
     }

@@ -266,11 +266,13 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender)
         const int sig = WTERMSIG(status);
         rlimit no_core{0, 0};
         ::setrlimit(RLIMIT_CORE, &no_core);
-        ::signal(sig, SIG_DFL);
+        /// The action of `SIGKILL` is always the default one, and cannot be set.
+        if (sig != SIGKILL && ::signal(sig, SIG_DFL) == SIG_ERR)
+            ::_exit(128 + sig);
         sigset_t signals;
         sigemptyset(&signals);
         sigaddset(&signals, sig);
-        ::sigprocmask(SIG_UNBLOCK, &signals, nullptr);
+        ::pthread_sigmask(SIG_UNBLOCK, &signals, nullptr);
         ::kill(::getpid(), sig);
         /// A signal that does not terminate a process.
         ::_exit(128 + sig);
@@ -317,7 +319,7 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender)
     auto reply = [&](std::string_view prefix, int value)
     {
         char text[64];
-        const auto end = fmt::format_to_n(text, sizeof(text), "{}{}", prefix, value).out;
+        auto * const end = fmt::format_to_n(text, sizeof(text), "{}{}", prefix, value).out;
         ::send(server_socket, text, end - text, MSG_DONTWAIT | MSG_NOSIGNAL);
     };
 
@@ -336,7 +338,7 @@ ssize_t receiveFromServer(int fd, char * buf, size_t max_size, pid_t & sender)
             return;
         }
         char text[128];
-        const auto end = fmt::format_to_n(text, sizeof(text), "Cannot send the signal {} to the server: errno {}\n", sig, errno).out;
+        auto * const end = fmt::format_to_n(text, sizeof(text), "Cannot send the signal {} to the server: errno {}\n", sig, errno).out;
         writeToStderr(std::string_view(text, end - text));
     };
 
@@ -457,8 +459,11 @@ void runInit(int server_socket, int exit_status_fd, int signal_fd, const sigset_
             closeDescriptor(exit_status_fd);
             closeDescriptor(signal_fd);
             updateCurrentThreadIdAfterFork();
-            if (::sigprocmask(SIG_SETMASK, &original_signal_mask, nullptr) != 0)
+            if (const int error = ::pthread_sigmask(SIG_SETMASK, &original_signal_mask, nullptr); error != 0)
+            {
+                errno = error;
                 throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot restore the signal mask");
+            }
             /// The notifications go through the supervisor.
             ::unsetenv("NOTIFY_SOCKET"); // NOLINT(concurrency-mt-unsafe)
             supervisor_socket.store(server_socket, std::memory_order_relaxed);
@@ -490,7 +495,7 @@ void runInit(int server_socket, int exit_status_fd, int signal_fd, const sigset_
         {
             /// The init of a PID namespace reaps every orphan in it.
             int status = 0;
-            pid_t pid;
+            pid_t pid = 0;
             while ((pid = ::waitpid(-1, &status, WNOHANG)) > 0)
             {
                 if (pid == server_pid && (WIFEXITED(status) || WIFSIGNALED(status)))
@@ -570,8 +575,11 @@ void startSupervisedServer(const std::string & pid_file)
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot create a pipe");
         /// The supervisor and the init both read the signals from the same `signalfd`: each gets its own.
         const sigset_t handled_signals = getHandledSignals();
-        if (::sigprocmask(SIG_BLOCK, &handled_signals, &original_signal_mask) != 0)
+        if (const int error = ::pthread_sigmask(SIG_BLOCK, &handled_signals, &original_signal_mask); error != 0)
+        {
+            errno = error;
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot block the signals");
+        }
         signals_blocked = true;
         signal_fd = ::signalfd(-1, &handled_signals, SFD_CLOEXEC);
         if (signal_fd < 0)
@@ -583,7 +591,7 @@ void startSupervisedServer(const std::string & pid_file)
     catch (...)
     {
         if (signals_blocked)
-            ::sigprocmask(SIG_SETMASK, &original_signal_mask, nullptr);
+            ::pthread_sigmask(SIG_SETMASK, &original_signal_mask, nullptr);
         for (const int fd : {server_sockets[0], server_sockets[1], exit_status_pipe[0], exit_status_pipe[1], signal_fd})
         {
             if (fd >= 0)
@@ -625,7 +633,8 @@ std::optional<int> requestFromSupervisor(int fd, std::string_view request, std::
     while (true)
     {
         char buf[64];
-        const ssize_t size = ::recv(fd, buf, sizeof(buf), 0);
+        /// Bounded by `SO_RCVTIMEO`; the lock keeps the answers of concurrent requests apart.
+        const ssize_t size = ::recv(fd, buf, sizeof(buf), 0); // NOLINT(clang-analyzer-unix.BlockInCriticalSection)
         if (size < 0 && errno == EINTR)
             continue;
         if (size <= 0)
