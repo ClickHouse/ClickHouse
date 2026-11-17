@@ -54,8 +54,6 @@ natsStatus NATSJetStreamProducer::publishMessage(const String & message)
         result = publish();
     }
 
-    if (result == NATS_NO_RESPONDERS)
-        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot publish to NATS subject {}: there is no JetStream stream for this subject", getSubject());
     if (result != NATS_OK)
         return result;
 

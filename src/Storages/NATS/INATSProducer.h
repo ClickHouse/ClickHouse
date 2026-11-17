@@ -45,6 +45,9 @@ private:
      *      - payloads are pushed to queue in countRow and popped by another thread in writingFunc, each payload gets into queue only once
      */
     ConcurrentBoundedQueue<String> payloads;
+
+    /// Written by the producing task, read in `finishImpl` after `deactivate` waited for the task.
+    String publish_error;
 };
 
 }

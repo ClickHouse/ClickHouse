@@ -45,6 +45,9 @@ void INATSProducer::finishImpl()
     {
         tryLogCurrentException(log);
     }
+
+    if (!publish_error.empty())
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot publish to NATS subject {}: {}", subject, publish_error);
 }
 
 void INATSProducer::cancel() noexcept
@@ -63,7 +66,7 @@ void INATSProducer::produce(const String & message, size_t, const Columns &, siz
 {
     if (!payloads.push(message))
     {
-        /// The producing task has failed and closed the queue: rethrows its exception.
+        /// The producing task has stopped on a publish error and closed the queue: `finish` throws it.
         finish();
         throw Exception(ErrorCodes::INVALID_STATE, "Could not push to payloads queue");
     }
@@ -88,9 +91,10 @@ void INATSProducer::publish()
         {
             LOG_DEBUG(log, "Something went wrong during publishing to NATS subject. Nats status text: {}. Last error message: {}",
                       natsStatus_GetText(status), getNATSLastError());
-            if (!payloads.pushFront(payload))
-                throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot publish to NATS subject {}: {}. Last error message: {}",
-                                subject, natsStatus_GetText(status), getNATSLastError());
+            if (status == NATS_NO_RESPONDERS)
+                publish_error = "there is no JetStream stream for this subject";
+            else if (!payloads.pushFront(payload))
+                publish_error = fmt::format("{}. Last error message: {}", natsStatus_GetText(status), getNATSLastError());
             break;
         }
     }
@@ -107,12 +111,19 @@ void INATSProducer::startProducingTaskLoop()
 
     try
     {
-        while (!payloads.isFinishedAndEmpty())
+        while (publish_error.empty() && !payloads.isFinishedAndEmpty())
         {
             if (!connection->isConnected())
                 std::this_thread::sleep_for(std::chrono::milliseconds(connection->getReconnectWait()));
             else
                 publish();
+        }
+
+        if (!publish_error.empty())
+        {
+            /// Nothing pops `payloads` anymore, so `produce` must not wait for free space in it.
+            payloads.finish();
+            return;
         }
 
         while (!connection->isConnected() && !shutdown_called)
@@ -125,9 +136,7 @@ void INATSProducer::startProducingTaskLoop()
     }
     catch (...)
     {
-        /// Nothing pops `payloads` anymore, so `produce` must not wait for free space in it.
-        payloads.finish();
-        throw;
+        tryLogCurrentException(log);
     }
 
     LOG_DEBUG(log, "Producer on subject {} completed", subject);
