@@ -11,7 +11,7 @@
 #include <Common/Logger.h>
 
 #include <string>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace arrow
 {
@@ -37,7 +37,7 @@ struct VortexScanPlan
 {
     /// The top-level file fields to read, in header order. Empty means no column of the file is
     /// needed and only the row count matters.
-    std::vector<std::string> column_names;
+    VectorWithMemoryTracking<std::string> column_names;
 
     /// The translated part of the WHERE condition, or null. The scan drops the rows it rules out
     /// and skips the statistics zones it excludes; ClickHouse reapplies the full condition to the
