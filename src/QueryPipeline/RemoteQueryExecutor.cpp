@@ -17,6 +17,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/SelectQueryInfo.h>
@@ -25,6 +26,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/ProfileEventsExt.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Client/ConnectionEstablisher.h>
 #include <Client/MultiplexedConnections.h>
@@ -37,12 +39,16 @@
 #include <base/scope_guard.h>
 
 #include <Access/AccessControl.h>
+#include <Access/ContextAccess.h>
+#include <Common/quoteString.h>
 #include <Access/User.h>
 #include <Access/Role.h>
 
 namespace ProfileEvents
 {
     extern const Event SuspendSendingQueryToShard;
+    extern const Event SelectedRows;
+    extern const Event SelectedBytes;
     extern const Event ReadTaskRequestsReceived;
     extern const Event MergeTreeReadTaskRequestsReceived;
     extern const Event ParallelReplicasAvailableCount;
@@ -73,6 +79,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
     extern const int BAD_ARGUMENTS;
+    extern const int ACCESS_DENIED;
 }
 
 namespace FailPoints
@@ -658,9 +665,51 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     /// Forward this node's current roles so the remote scopes row policies the same way (gated by the setting).
     /// Reset first against stale/injected values, and skip when initial_user was rewritten (remote(user=>...)).
+    /// A node that runs a secondary query passes on the current roles of the initial user it received, so that the next
+    /// node takes the row policies of the initial user for these roles too. Without an interserver secret, the query
+    /// runs here as the cluster user, or as the initial user but with its default roles, so the current roles of this
+    /// node are not the ones of the initial query. The received roles are dropped where the initial user is changed
+    /// (`remote` with another user), so they always belong to `initial_user`.
+    std::optional<Strings> received_roles_of_initial_user;
+    if (modified_client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        received_roles_of_initial_user = modified_client_info.current_roles;
+
+    const bool push_roles = context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries];
     modified_client_info.current_roles.reset();
-    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries]
-        && modified_client_info.initial_user == modified_client_info.current_user)
+    if (push_roles && received_roles_of_initial_user)
+    {
+        /// The next node may be connected with an interserver secret, which is used only if the initial user is
+        /// the current user (see `Connection::sendQuery`), and then it enables the forwarded roles without checking
+        /// their grants. Roles received on a connection without a secret come from the client, so they must be granted
+        /// to the user here, as `SET ROLE` requires. Otherwise they are used only to find row policies.
+        if (modified_client_info.initial_user == modified_client_info.current_user
+            && context->getClientInfo().interface != ClientInfo::Interface::TCP_INTERSERVER)
+        {
+            /// A context may have no user (`SQL SECURITY NONE`, full access): the query does not run with the roles of
+            /// the initial user then, so they are not passed on.
+            const auto user = context->getAccess()->tryGetUser();
+            if (!user)
+            {
+                received_roles_of_initial_user.reset();
+            }
+            else
+            {
+                /// Fail closed: dropping a role could drop a restrictive row policy on the next node.
+                const auto & access_control = context->getAccessControl();
+                for (const auto & role_name : *received_roles_of_initial_user)
+                {
+                    auto role_id = access_control.find<Role>(role_name);
+                    if (!role_id || !user->granted_roles.isGranted(*role_id))
+                        throw Exception(ErrorCodes::ACCESS_DENIED,
+                            "The current role {} of the initial user is not granted to the user {} on this node",
+                            backQuote(role_name), backQuote(user->getName()));
+                }
+            }
+        }
+        modified_client_info.current_roles = std::move(received_roles_of_initial_user);
+    }
+    else if (push_roles && modified_client_info.initial_user == modified_client_info.current_user)
     {
         const auto & access_control = context->getAccessControl();
         Strings current_role_names;
@@ -995,10 +1044,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             break;
 
         case Protocol::Server::ProfileEvents:
-            /// Pass profile events from remote server to client
-            if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
-                if (!profile_queue->emplace(std::move(packet.block)))
-                    throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
+            processProfileEventsPacket(std::move(packet.block));
             break;
 
         case Protocol::Server::TimezoneUpdate:
@@ -1014,6 +1060,39 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
     }
 
     return ReadResult(ReadResult::Type::Nothing);
+}
+
+void RemoteQueryExecutor::processProfileEventsPacket(Block block)
+{
+    /// The local counters of the query do not include what the remote servers do for it, so their
+    /// reports are collected for the quotas over profile events, which are charged at the end of the
+    /// query with both. They are collected regardless of whether such limits govern the query now:
+    /// a limit installed by `ALTER QUOTA` while the query runs applies to the whole query at its end,
+    /// and the reports received before that could not be reconstructed.
+    if (auto process_list_elem = context->getProcessListElementSafe())
+        process_list_elem->addRemoteProfileEvents(block);
+
+    /// When this server executes a part of a query for another server, the read progress of the remote
+    /// server is already in the local `SelectedRows` / `SelectedBytes` (see `ReadProgressCallback`), which
+    /// are reported to the initiator together with the forwarded packet. The initiator of a distributed
+    /// `SELECT` skips these two in the reports anyway, but the initiator of a distributed `INSERT` takes
+    /// them from the reports (e.g. for a materialized view reading from `remote`), so it would count them
+    /// twice if they were forwarded.
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        UInt64 selected_rows = std::numeric_limits<UInt64>::max();
+        UInt64 selected_bytes = std::numeric_limits<UInt64>::max();
+        ProfileEvents::subtractIncrements(block, ProfileEvents::SelectedRows, selected_rows);
+        ProfileEvents::subtractIncrements(block, ProfileEvents::SelectedBytes, selected_bytes);
+    }
+
+    if (profile_events_callback)
+        profile_events_callback(block);
+
+    /// Pass profile events from remote server to client
+    if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
+        if (!profile_queue->emplace(std::move(block)))
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
 }
 
 void RemoteQueryExecutor::processReadTaskRequest()
@@ -1223,10 +1302,7 @@ void RemoteQueryExecutor::finishUnlocked()
                 break;
 
             case Protocol::Server::ProfileEvents:
-                /// Pass profile events from remote server to client
-                if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
-                    if (!profile_queue->emplace(std::move(packet.block)))
-                        throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
+                processProfileEventsPacket(std::move(packet.block));
                 break;
 
             case Protocol::Server::ProfileInfo:
@@ -1345,6 +1421,10 @@ void RemoteQueryExecutor::sendExternalTables()
 
                     auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context));
 
+                    /// The receiver accepts only the default serialization, while a table that is not filled
+                    /// through the insert chain (a materialized CTE) keeps `Sparse` columns.
+                    builder->addSimpleTransform([](const SharedHeader & table_header) { return std::make_shared<MaterializingTransform>(table_header); });
+
                     builder->resize(1);
                     builder->addTransform(std::make_shared<LimitsCheckingTransform>(builder->getSharedHeader(), limits));
 
@@ -1452,6 +1532,12 @@ void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
 {
     LockAndBlocker guard(was_cancelled_mutex);
     profile_info_callback = std::move(callback);
+}
+
+void RemoteQueryExecutor::setProfileEventsCallback(ProfileEventsCallback callback)
+{
+    LockAndBlocker guard(was_cancelled_mutex);
+    profile_events_callback = std::move(callback);
 }
 
 bool RemoteQueryExecutor::shouldSkipUnavailableShard() const

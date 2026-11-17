@@ -9,7 +9,9 @@ SELECT count() FROM numbers(1000) WHERE match('12345', '.*' || toString(number %
 
 SYSTEM FLUSH LOGS query_log;
 
+-- An exact list: the runner's own log_comment for this test also starts with '05292_'.
 SELECT log_comment, ProfileEvents['RegexpLocalCacheHit'], ProfileEvents['RegexpLocalCacheMiss']
 FROM system.query_log
-WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND startsWith(log_comment, '05292_')
+WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish'
+    AND log_comment IN ('05292_string', '05292_fixed_string', '05292_const_haystack')
 ORDER BY log_comment;
