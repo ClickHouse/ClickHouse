@@ -948,6 +948,55 @@ def test_config_reload_http_handlers_reference_switch():
     assert response == b"fixed_handler_user\n"
 
 
+def users_without_password(node):
+    warning = node.query(
+        "SELECT message FROM system.warnings WHERE message LIKE 'The server listens on %'"
+    ).strip()
+    marker = "these users can connect from any host without a password: "
+    if not warning:
+        return ""
+    assert marker in warning, warning
+    return warning.split(marker)[1].split(". ")[0]
+
+
+def test_users_without_password_warning():
+    # All nodes listen on a non-loopback address and have the shipped `default` user: no password, any host.
+    # node1 also reports its default session user. node2's does not exist, and node_reject prohibits
+    # connections without a user name, which does not hide `default`: it can still be named explicitly.
+    assert users_without_password(node1) == "'default', 'global_default_user'"
+    assert node1.contains_in_log("these users can connect from any host without a password")
+    assert users_without_password(node2) == "'default'"
+    assert users_without_password(node_reject) == "'default'"
+
+    # The warning follows the users: the default session user drops out once it gets a password
+    # (here through a users.d override picked up by the users config reload) and comes back when
+    # the password is removed again.
+    override_path = "/etc/clickhouse-server/users.d/z_global_default_user_password.xml"
+    try:
+        node1.replace_config(
+            override_path,
+            "<clickhouse><users><global_default_user><password>secret</password>"
+            "</global_default_user></users></clickhouse>",
+        )
+        node1.query("SYSTEM RELOAD CONFIG")
+        assert users_without_password(node1) == "'default'"
+
+        # The empty user name is only an alias for the user: the password is now required.
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            execute_query_http(8123, "SELECT currentUser()")
+        assert exc_info.value.code == 403
+        assert (
+            execute_query_http(8123, "SELECT currentUser()", headers={"X-ClickHouse-Key": "secret"})
+            == "global_default_user\n"
+        )
+    finally:
+        node1.exec_in_container(["rm", "-f", override_path])
+        node1.query("SYSTEM RELOAD CONFIG")
+
+    assert users_without_password(node1) == "'default', 'global_default_user'"
+    assert execute_query_http(8123, "SELECT currentUser()") == "global_default_user\n"
+
+
 def test_config_reload_prometheus_keeper_metrics_only_switch():
     # `prometheus.keeper_metrics_only` selects the handler factory baked into a composable
     # `type = prometheus` listener: `KeeperPrometheusHandler-factory` exposes the keeper

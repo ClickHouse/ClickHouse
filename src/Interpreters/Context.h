@@ -950,6 +950,7 @@ public:
         SETTING_ZERO_COPY_REPLICATION_ENABLED,
         SKIPPING_CONDITION_QUERY,
         THREAD_FUZZER_IS_ENABLED,
+        USERS_WITHOUT_PASSWORD,
     };
 
     std::unordered_map<WarningType, PreformattedMessage> getWarnings() const;

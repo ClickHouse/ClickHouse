@@ -1,10 +1,17 @@
 #include <Server/StartupWarnings.h>
 
+#include <Access/AccessControl.h>
+#include <Access/User.h>
+#include <Common/Exception.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/getMultipleKeysFromConfig.h>
+#include <Common/logger_useful.h>
+#include <Common/quoteString.h>
+#include <Core/ServerSettings.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
@@ -13,10 +20,14 @@
 
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
+#include <Poco/Net/IPAddress.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #include <fmt/ranges.h>
 
+#include <algorithm>
 #include <filesystem>
+#include <mutex>
 #include <optional>
 #include <unordered_set>
 
@@ -36,8 +47,62 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_session_user;
+}
+
 namespace
 {
+
+/// Besides `no_password`, this covers the shipped `users.xml`: its `<password></password>`
+/// is parsed as a plaintext password equal to the empty string.
+bool acceptsEmptyPassword(const AuthenticationData & method)
+{
+    /// A required one-time password is a secret on its own.
+    if (method.getOneTimePassword())
+        return false;
+
+    switch (method.getType())
+    {
+        case AuthenticationType::NO_PASSWORD:
+            return true;
+        case AuthenticationType::PLAINTEXT_PASSWORD:
+            return method.getPasswordHashBinary().empty();
+        case AuthenticationType::SHA256_PASSWORD:
+            /// SHA256(password + salt), see `checkPrimaryCredential` in Authentication.cpp.
+            return method.getPasswordHashBinary() == AuthenticationData::Util::encodeSHA256(method.getSalt());
+        case AuthenticationType::DOUBLE_SHA1_PASSWORD:
+            return method.getPasswordHashBinary() == AuthenticationData::Util::encodeDoubleSHA1(std::string_view{});
+        default:
+            /// SCRAM and bcrypt hashes of the empty password and external HTTP authentication are not detected;
+            /// LDAP rejects empty passwords, and the key- and certificate-based methods need a credential.
+            return false;
+    }
+}
+
+/// The first listen address that is not a loopback one: from `listen_host` (only loopback addresses
+/// by default) or from `host` of an endpoint in the `protocols` section.
+std::optional<String> findNonLoopbackListenHost(const Poco::Util::AbstractConfiguration & config)
+{
+    Strings hosts = getMultipleValuesFromConfig(config, "", "listen_host");
+
+    Poco::Util::AbstractConfiguration::Keys protocols;
+    config.keys("protocols", protocols);
+    for (const auto & protocol : protocols)
+        if (config.has("protocols." + protocol + ".host"))
+            hosts.push_back(config.getString("protocols." + protocol + ".host"));
+
+    for (const auto & host : hosts)
+    {
+        /// Host names other than `localhost` are not resolved, so they count as non-loopback.
+        Poco::Net::IPAddress address;
+        bool is_loopback = Poco::Net::IPAddress::tryParse(host, address) ? address.isLoopback() : host == "localhost";
+        if (!is_loopback)
+            return host;
+    }
+    return {};
+}
 
 #if defined(OS_LINUX)
 String readLine(const String & path)
@@ -373,6 +438,60 @@ void addEnvironmentWarnings(ContextPtr context, const Poco::Logger & logger, con
             Context::WarningType::SETTING_ZERO_COPY_REPLICATION_ENABLED,
             PreformattedMessage::create(message_format_string));
     }
+}
+
+void updateUsersWithoutPasswordWarning(ContextPtr context)
+{
+    /// Called on user changes and on config reloads: do not let an outdated result overwrite a newer one.
+    static std::mutex mutex;
+    std::lock_guard lock(mutex);
+
+    std::optional<PreformattedMessage> warning;
+    try
+    {
+        if (auto listen_host = findNonLoopbackListenHost(context->getConfigRef()))
+        {
+            /// `default` is the well-known name to try, and the default session user is what clients get
+            /// without a user name. `SYSTEM RELOAD CONFIG` does not refresh the global setting;
+            /// per-endpoint overrides in the `protocols` section are not checked.
+            Strings user_names{"default"};
+            const String & default_session_user = context->getServerSettings()[ServerSetting::default_session_user];
+            if (!default_session_user.empty() && default_session_user != "default")
+                user_names.push_back(default_session_user);
+
+            Strings users_without_password;
+            for (const auto & user_name : user_names)
+            {
+                /// A passwordless user restricted by `networks` (e.g. to localhost) is a common, deliberate setup.
+                auto user = context->getAccessControl().tryRead<User>(user_name);
+                if (user && user->allowed_client_hosts.containsAnyHost()
+                    && std::ranges::any_of(user->authentication_methods, acceptsEmptyPassword))
+                    users_without_password.push_back(quoteString(user_name));
+            }
+
+            if (!users_without_password.empty())
+                warning = PreformattedMessage::create(
+                    "The server listens on {}, and these users can connect from any host without a password: {}. "
+                    "Set a password or restrict <networks> for them.",
+                    quoteString(*listen_host), fmt::format("{}", fmt::join(users_without_password, ", ")));
+        }
+    }
+    catch (...)
+    {
+        /// Must not prevent the server from starting. Keep the previous state of the warning;
+        /// the check is repeated on the next user change or config reload.
+        tryLogCurrentException(getLogger("StartupWarnings"), "Cannot check for users without a password", LogsLevel::debug);
+        return;
+    }
+
+    /// `addOrUpdateWarningMessage` logs on every call, and users change often (e.g. on the first login of
+    /// each LDAP user): only touch the warning when its text changes.
+    const auto warnings = context->getWarnings();
+    const auto it = warnings.find(Context::WarningType::USERS_WITHOUT_PASSWORD);
+    const String * current = it == warnings.end() ? nullptr : &it->second.text;
+    const bool unchanged = warning ? (current && *current == warning->text) : !current;
+    if (!unchanged)
+        context->addOrUpdateWarningMessage(Context::WarningType::USERS_WITHOUT_PASSWORD, warning);
 }
 
 }

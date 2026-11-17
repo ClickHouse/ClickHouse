@@ -3129,6 +3129,9 @@ try
                     std::lock_guard lock(servers_lock);
                     updateServers(config(), new_server_settings, server_pool, *async_metrics, servers, servers_to_start_before_tables);
                 }
+
+                /// `listen_host` may have changed.
+                updateUsersWithoutPasswordWarning(global_context);
             }
 
             global_context->updateStorageConfiguration(config());
@@ -3524,6 +3527,18 @@ try
         tryLogCurrentException(log, "Caught exception while setting up access control.");
         throw;
     }
+
+    /// Unlike the other startup warnings, re-checked on every user change (users.xml reload, `ALTER USER`, ...)
+    /// and on every config reload (see the main config reloader above).
+    /// The handler uses the global context, so the subscription must be released before its shutdown.
+    scope_guard users_without_password_warning_subscription = access_control.subscribeForChanges<User>(
+        [this](const std::vector<AccessChangesNotifier::Change> & changes)
+        {
+            /// By-type handlers are also called with an empty batch; nothing to re-check then.
+            if (!changes.empty())
+                updateUsersWithoutPasswordWarning(global_context);
+        });
+    updateUsersWithoutPasswordWarning(global_context);
 
     auto disable_config_reload_callbacks = [&]
     {
