@@ -61,7 +61,7 @@ Alternatively, connect the AWS Glue catalog to ClickHouse via `DataLakeCatalog` 
 
 - OLake Go writes Iceberg tables; ClickHouse reads them. ClickHouse also supports modifications of Iceberg tables (starting from version 25.7), but that is a separate ClickHouse capability and is not provided by OLake Go.
 - Equality deletes are supported from ClickHouse version 25.8. Earlier versions may not read all delete formats that OLake Go can write. See the [ClickHouse Iceberg documentation](/reference/functions/table-functions/iceberg) for the current state of delete-format support.
-- Not all catalogs supported by OLake Go are available as `DataLakeCatalog` catalog types in ClickHouse. For example, JDBC catalogs and S3 Tables are listed on [OLake Go's compatibility matrix](https://olake.io/docs/understanding/compatibility-engines/) as unsupported by ClickHouse. Check both sides before choosing a catalog.
+- Not all catalogs supported by OLake Go are available as `DataLakeCatalog` catalog types in ClickHouse. Check both the [OLake Go catalog compatibility matrix](https://olake.io/docs/understanding/compatibility-catalogs/) and the [`DataLakeCatalog` documentation](/reference/engines/database-engines/datalake) before choosing a catalog.
 
 ## Troubleshooting {#troubleshooting}
 
