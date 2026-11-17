@@ -33,6 +33,11 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int QUERY_WAS_CANCELLED;
+}
+
 namespace FailPoints
 {
     extern const char distributed_plan_delay_root_cause_report[];
@@ -74,6 +79,26 @@ std::optional<StatelessTaskExecutor::TaskFailure> StatelessTaskExecutor::Failure
 {
     std::lock_guard lock(mutex);
     return failure;
+}
+
+void StatelessTaskExecutor::TaskCancellation::cancel()
+{
+    std::shared_ptr<QueryStatus> running_query;
+    {
+        std::lock_guard lock(mutex);
+        cancelled = true;
+        running_query = query.lock();
+    }
+    /// The way `KILL QUERY` cancels: it reaches the task's executors at once.
+    if (running_query)
+        running_query->cancelQuery(CancelReason::CANCELLED_BY_USER);
+}
+
+bool StatelessTaskExecutor::TaskCancellation::setQuery(std::weak_ptr<QueryStatus> query_)
+{
+    std::lock_guard lock(mutex);
+    query = std::move(query_);
+    return !cancelled;
 }
 
 void StatelessTaskExecutor::LogsQueueSlot::set(InternalTextLogsQueuePtr logs_queue_)
@@ -223,12 +248,6 @@ void StatelessTaskExecutor::startTasks(const String & unique_query_id, Distribut
 void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStatePtr task_state, TaskPromisePtr task_promise,
     DistributedQueryTaskDescription task_description_, const String & unique_temp_file_path, OpenTelemetry::TracingContext trace_context_)
 {
-    /// Callback for periodic cancellation check
-    auto is_task_cancelled = [cancelled = task_state->cancelled]() -> bool
-    {
-        return *cancelled;
-    };
-
     auto update_progress = [task_progress = task_state->progress](const Progress & progress)
     {
         task_progress->incrementPiecewiseAtomically(progress);
@@ -248,7 +267,7 @@ void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStat
 
     auto task_function = [unique_task_id, task_description = std::move(task_description_), distributed_query_id = unique_temp_file_path,
         collectors = task_state->collectors, trace_context = std::move(trace_context_), logs_queue_slot = task_state->logs_queue,
-        task_promise, is_task_cancelled, update_progress, report_failure] mutable
+        cancellation = task_state->cancellation, task_promise, update_progress, report_failure] mutable
     {
         /// The promise must be fulfilled strictly after the last log line of this task:
         /// `getStatus` treats a ready future as a terminal state
@@ -273,11 +292,13 @@ void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStat
                 /// Process-list insertion can throw (query limit); keep it inside the try.
                 auto process_list_entry = query_context->getProcessList().insert(task_description.task.task_id, query_plan_hash, &ast_stub, query_context, start_watch.getStart(), false);
                 query_context->setProcessListElement(process_list_entry->getQueryStatus());
+                if (!cancellation->setQuery(process_list_entry->getQueryStatus()))
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Task {} was cancelled before it started", task_description.task.task_id);
 
                 /// A dispatched task is by definition not the initiator's in-process execution, so its
                 /// exchanges use the streaming/persisted transports rather than in-memory queues.
                 doExecuteTask(task_description, object_storage, object_storage_path, distributed_query_id, query_context,
-                    /*execute_locally=*/false, is_task_cancelled, update_progress, report_failure);
+                    /*execute_locally=*/false, /*is_cancelled=*/ {}, update_progress, report_failure);
             }
             catch (...)
             {
@@ -411,7 +432,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::cancelTask(const String & t
         }
         return Result::UnknownTaskId;
     }
-    *it->second->cancelled = true;
+    it->second->cancellation->cancel();
 
     return Result::Ok;
 }
@@ -465,7 +486,7 @@ void StatelessTaskExecutor::shutdown()
 {
     std::lock_guard lock(tasks_mutex);
     for (auto & [task_id, task_state] : tasks)
-        *task_state->cancelled = true;
+        task_state->cancellation->cancel();
 
     for (auto & [task_id, task_state] : tasks)
         task_state->completion_future.wait();

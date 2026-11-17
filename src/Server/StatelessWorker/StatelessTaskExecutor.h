@@ -21,6 +21,7 @@
 namespace DB
 {
 
+class QueryStatus;
 
 class StatelessTaskExecutor
 {
@@ -98,6 +99,20 @@ private:
         std::optional<TaskFailure> failure TSA_GUARDED_BY(mutex);
     };
 
+    /// Cancels a task: the flag covers the time before the task's process-list entry exists, the entry's query the rest.
+    class TaskCancellation
+    {
+    public:
+        void cancel();
+        /// Publishes the running task's query; false when the task was cancelled before, so it must not run.
+        bool setQuery(std::weak_ptr<QueryStatus> query_);
+
+    private:
+        std::mutex mutex;
+        bool cancelled TSA_GUARDED_BY(mutex) = false;
+        std::weak_ptr<QueryStatus> query TSA_GUARDED_BY(mutex);
+    };
+
     /// Not guarded by `tasks_mutex`: the task sets it, and `shutdown` holds that mutex while it waits for the tasks.
     class LogsQueueSlot
     {
@@ -117,7 +132,7 @@ private:
         /// Fulfilled when the task ends: with nothing on success, with the failure otherwise.
         std::shared_future<std::optional<TaskFailure>> completion_future;
         std::shared_ptr<FailureSlot> failure = std::make_shared<FailureSlot>();
-        std::shared_ptr<std::atomic<bool>> cancelled = std::make_shared<std::atomic<bool>>(false);
+        std::shared_ptr<TaskCancellation> cancellation = std::make_shared<TaskCancellation>();
         std::shared_ptr<Progress> progress = std::make_shared<Progress>();
         /// What the coordinator asked to collect for this task; decides which payloads a status reply carries.
         TaskCollectors collectors;
