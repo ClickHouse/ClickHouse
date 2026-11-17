@@ -220,17 +220,17 @@ public:
             UInt32 replica_index_);
 
         /// Returns 'escaped_host_name:port'
-        String toString() const;
+        [[nodiscard]] String toString() const;
 
         /// Returns 'host_name:port'
-        String readableString() const;
+        [[nodiscard]] String readableString() const;
 
         static String toString(const String & host_name, UInt16 port);
 
         static std::pair<String, UInt16> fromString(const String & host_port_string);
 
         /// Returns shard{shard_index}_replica{replica_index}
-        String toFullString() const;
+        [[nodiscard]] String toFullString() const;
 
         /// Parses a queue directory name into a shard index and a replica index
         /// (replica_index == 0 means all the replicas of the shard), nullopt if it is not a name
@@ -238,13 +238,13 @@ public:
         static std::optional<Address> tryParseFullString(std::string_view full_string);
 
         /// Returns resolved address if it does resolve.
-        std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;
+        [[nodiscard]] std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;
 
-        auto tuple() const { return std::tie(host_name, port, secure, user, password, default_database, bind_host); }
+        [[nodiscard]] auto tuple() const { return std::tie(host_name, port, secure, user, password, default_database, bind_host); }
         bool operator==(const Address & other) const { return tuple() == other.tuple(); }
 
     private:
-        bool isLocal(UInt16 clickhouse_port) const;
+        [[nodiscard]] bool isLocal(UInt16 clickhouse_port) const;
     };
 
     using Addresses = std::vector<Address>;
@@ -253,14 +253,14 @@ public:
     struct ShardInfo
     {
     public:
-        bool isLocal() const { return !local_addresses.empty(); }
-        bool hasRemoteConnections() const { return local_addresses.size() != per_replica_pools.size(); }
-        size_t getLocalNodeCount() const { return local_addresses.size(); }
-        size_t getRemoteNodeCount() const { return per_replica_pools.size() - local_addresses.size(); }
-        size_t getAllNodeCount() const { return per_replica_pools.size(); }
-        bool hasInternalReplication() const { return has_internal_replication; }
+        [[nodiscard]] bool isLocal() const { return !local_addresses.empty(); }
+        [[nodiscard]] bool hasRemoteConnections() const { return local_addresses.size() != per_replica_pools.size(); }
+        [[nodiscard]] size_t getLocalNodeCount() const { return local_addresses.size(); }
+        [[nodiscard]] size_t getRemoteNodeCount() const { return per_replica_pools.size() - local_addresses.size(); }
+        [[nodiscard]] size_t getAllNodeCount() const { return per_replica_pools.size(); }
+        [[nodiscard]] bool hasInternalReplication() const { return has_internal_replication; }
         /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
-        const std::string & insertPathForInternalReplication() const;
+        [[nodiscard]] const std::string & insertPathForInternalReplication() const;
 
         std::string insert_path_for_internal_replication;
         /// Number of the shard, the indexation begins with 1
@@ -278,15 +278,15 @@ public:
 
     using ShardsInfo = std::vector<ShardInfo>;
 
-    const ShardsInfo & getShardsInfo() const { return shards_info; }
-    const AddressesWithFailover & getShardsAddresses() const { return addresses_with_failover; }
+    [[nodiscard]] const ShardsInfo & getShardsInfo() const { return shards_info; }
+    [[nodiscard]] const AddressesWithFailover & getShardsAddresses() const { return addresses_with_failover; }
 
     /// Returns addresses of some replicas according to specified `only_shard_num` and `only_replica_num`.
     /// `only_shard_num` is 1-based index of a shard, 0 means all shards.
     /// `only_replica_num` is 1-based index of a replica, 0 means all replicas.
-    std::vector<const Address *> filterAddressesByShardOrReplica(size_t only_shard_num, size_t only_replica_num) const;
+    [[nodiscard]] std::vector<const Address *> filterAddressesByShardOrReplica(size_t only_shard_num, size_t only_replica_num) const;
 
-    const ShardInfo & getAnyShardInfo() const
+    [[nodiscard]] const ShardInfo & getAnyShardInfo() const
     {
         if (shards_info.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster is empty");
@@ -294,28 +294,28 @@ public:
     }
 
     /// The number of remote shards.
-    size_t getRemoteShardCount() const { return remote_shard_count; }
+    [[nodiscard]] size_t getRemoteShardCount() const { return remote_shard_count; }
 
     /// The number of clickhouse nodes located locally
     /// we access the local nodes directly.
-    size_t getLocalShardCount() const { return local_shard_count; }
+    [[nodiscard]] size_t getLocalShardCount() const { return local_shard_count; }
 
     /// The number of all shards.
-    size_t getShardCount() const { return shards_info.size(); }
+    [[nodiscard]] size_t getShardCount() const { return shards_info.size(); }
 
     /// Returns an array of arrays of strings in the format 'escaped_host_name:port' for all replicas of all shards in the cluster.
-    std::vector<Strings> getHostIDs() const;
+    [[nodiscard]] std::vector<Strings> getHostIDs() const;
 
-    const String & getSecret() const { return secret; }
+    [[nodiscard]] const String & getSecret() const { return secret; }
 
     /// Get a subcluster consisting of one shard - index by count (from 0) of the shard of this cluster.
-    std::unique_ptr<Cluster> getClusterWithSingleShard(size_t index) const;
+    [[nodiscard]] std::unique_ptr<Cluster> getClusterWithSingleShard(size_t index) const;
 
     /// Get a subcluster consisting of one or multiple shards - indexes by count (from 0) of the shard of this cluster.
-    std::unique_ptr<Cluster> getClusterWithMultipleShards(const std::vector<size_t> & indices) const;
+    [[nodiscard]] std::unique_ptr<Cluster> getClusterWithMultipleShards(const std::vector<size_t> & indices) const;
 
     /// Get a new Cluster that contains all servers (all shards with all replicas) from existing cluster as independent shards.
-    std::unique_ptr<Cluster> getClusterWithReplicasAsShards(const Settings & settings, size_t max_replicas_from_shard = 0) const;
+    [[nodiscard]] std::unique_ptr<Cluster> getClusterWithReplicasAsShards(const Settings & settings, size_t max_replicas_from_shard = 0) const;
 
     /// Get a new Cluster with the replicas that point to this server stripped from their shards, while
     /// every other replica keeps its per-replica settings (credentials, secure connections, compression,
@@ -324,30 +324,30 @@ public:
     /// nullptr when the cluster has no local replicas (there is nothing to strip, so the fallback is
     /// never needed) or when some shard consists of local replicas only (there is nothing to fall back
     /// to for that shard, and dropping it would silently serve only a subset of the shards).
-    std::unique_ptr<Cluster> tryGetClusterWithoutLocalReplicas(const Settings & settings) const;
+    [[nodiscard]] std::unique_ptr<Cluster> tryGetClusterWithoutLocalReplicas(const Settings & settings) const;
 
     /// Returns false if cluster configuration doesn't allow to use it for cross-replication.
     /// NOTE: true does not mean, that it's actually a cross-replication cluster.
-    bool maybeCrossReplication() const;
+    [[nodiscard]] bool maybeCrossReplication() const;
 
     /// Are distributed DDL Queries (ON CLUSTER Clause) allowed for this cluster
-    bool areDistributedDDLQueriesAllowed() const { return allow_distributed_ddl_queries; }
+    [[nodiscard]] bool areDistributedDDLQueriesAllowed() const { return allow_distributed_ddl_queries; }
 
-    const String & getName() const { return name; }
+    [[nodiscard]] const String & getName() const { return name; }
 
     /// Identifies the shard NUMBERING rather than the cluster: two clusters share it only when a shard
     /// number denotes the same shard in both. Deriving a cluster keeps the name but may renumber the
     /// shards, so the name cannot serve this purpose. Empty identifies nothing and never compares equal.
-    const String & getShardScopeIdentity() const { return shard_scope_identity; }
+    [[nodiscard]] const String & getShardScopeIdentity() const { return shard_scope_identity; }
 
     /// Every replica of the original cluster became a shard of its own, as `clusterAllReplicas` does.
-    bool replicasAsShards() const { return replicas_as_shards; }
+    [[nodiscard]] bool replicasAsShards() const { return replicas_as_shards; }
 
 private:
     SlotToShard slot_to_shard;
 
 public:
-    const SlotToShard & getSlotToShard() const { return slot_to_shard; }
+    [[nodiscard]] const SlotToShard & getSlotToShard() const { return slot_to_shard; }
 
 private:
     void initMisc();

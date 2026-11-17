@@ -5,6 +5,8 @@
 5
 5
 -- an arm-local setting on a non-last arm plus SETTINGS on the last arm is ambiguous and rejected
+-- parenthesized arms keep their own settings (1 + 2 = 3)
+3
 -- nesting per-arm settings in subqueries applies them per arm unambiguously (1 + 2 = 3)
 3
 -- a trailing query-level SETTINGS limit still caps the whole union (3, not 5 + 3)

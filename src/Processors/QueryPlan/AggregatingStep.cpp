@@ -19,7 +19,9 @@
 #include <Interpreters/HashTablesStatistics.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/Transforms/UniqExactInOrderTransform.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -40,6 +42,8 @@
 #include <Common/typeid_cast.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/SettingsEnums.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -270,7 +274,7 @@ void AggregatingStep::setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_
     params.top_k->threshold_tracker = std::move(threshold_tracker);
 }
 
-std::vector<size_t> AggregatingStep::getStepGroups() const
+VectorWithMemoryTracking<size_t> AggregatingStep::getStepGroups() const
 {
     return {
         static_cast<size_t>(AggregatingStage::PartialAggregation),
@@ -291,7 +295,7 @@ String AggregatingStep::getStepGroupName(size_t group) const
 static StepAnalysisReport aggregationAnalysisReport(StepProcessors step_processors)
 {
     /// The transforms of one aggregation share an aggregator; grouping sets have one per set.
-    std::unordered_set<const Aggregator *> aggregators;
+    UnorderedSetWithMemoryTracking<const Aggregator *> aggregators;
     UInt64 peak_memory = 0;
     bool tracked = false;
     for (const auto * processor : step_processors)
@@ -465,11 +469,13 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     if (params.group_by_two_level_threshold == 0 && params.group_by_two_level_threshold_bytes == 0)
         return "two-level aggregation is disabled";
 
-    /// The staged streams of most threads of a prior run kept repeating the missed keys (see
-    /// `Aggregator::adaptiveStagingVerdict`): freezing cannot pay for this query, so do not engage it again. The verdict
-    /// lives in the hash-table statistics; a run without it takes the ordinary path with the statistics-driven
-    /// initialization, exactly as if the feature were off. A run that may not thaw does not ask: the verdict is the
-    /// thaw's, and a top-K run that shares the statistics of the query without its `LIMIT` gains by its frozen tables.
+    /// The verdict of a prior run found the staged streams repeat-dominated (see
+    /// `Aggregator::adaptiveStagingVerdict`): freezing cannot pay for this query, so do not engage it again.
+    /// The verdict lives in the hash-table statistics; a run without it takes the ordinary path with the
+    /// statistics-driven initialization, exactly as if the feature were off. A run that may not thaw does not
+    /// ask: the verdict is the thaw's. A run with the top-K pruning asks for the verdict of its own runs,
+    /// because it keeps its statistics apart from those of the query without its `LIMIT` (see
+    /// `setAggregationHashTableCacheKeys`).
     if (params.stats_collecting_params.isCollectionAndUseEnabled() && params.adaptiveMayThaw())
     {
         const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);
@@ -647,6 +653,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     if (params.shared_kept_keys_for_overflow_any)
         params.shared_kept_keys_control = std::make_shared<Aggregator::Params::SharedKeptKeysControl>();
 
+    /// A copy of the step can become partial after the plan optimization.
+    const bool use_uniq_exact_in_order = !uniq_exact_in_order.empty() && canUseRadixUniqExact();
     const bool use_radix_uniq_exact = settings.optimize_uniq_exact_radix_partitioning && canUseRadixUniqExact();
 
     /// Of the aggregations without keys, only the radix partitioned `uniqExact` uses the statistics.
@@ -659,6 +667,55 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// counts of the final conversion, so a partial aggregation with it would drop groups.
     chassert(final || !params.bucket_top_k);
     auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
+
+    if (use_uniq_exact_in_order)
+    {
+        const auto & aggregator_params = transform_params->params;
+        const size_t key_position = pipeline.getHeader().getPositionByName(aggregator_params.aggregates[0].argument_names[0]);
+        auto result_header = std::make_shared<const Block>(transform_params->getHeader());
+        if (uniq_exact_in_order_disjoint_streams)
+        {
+            /// Each stream is sorted, and no value is in two streams: count them in parallel and add up the counts.
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<UniqExactInOrderTransform>(
+                    header,
+                    result_header,
+                    key_position,
+                    uniq_exact_in_order[0].direction,
+                    uniq_exact_in_order[0].nulls_direction,
+                    aggregator_params.aggregates[0].function,
+                    /*empty_result_for_empty_set=*/true);
+            });
+            pipeline.resize(1);
+            pipeline.addTransform(
+                std::make_shared<UniqExactInOrderSumTransform>(result_header, aggregator_params.empty_result_for_aggregation_by_empty_set));
+            aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
+            return;
+        }
+
+        if (pipeline.getNumStreams() > 1)
+        {
+            pipeline.addTransform(std::make_shared<MergingSortedTransform>(
+                pipeline.getSharedHeader(),
+                pipeline.getNumStreams(),
+                uniq_exact_in_order,
+                max_block_size,
+                /*max_block_size_bytes=*/0,
+                /*max_dynamic_subcolumns*/ std::nullopt,
+                SortingQueueStrategy::Batch));
+        }
+        pipeline.addTransform(std::make_shared<UniqExactInOrderTransform>(
+            pipeline.getSharedHeader(),
+            result_header,
+            key_position,
+            uniq_exact_in_order[0].direction,
+            uniq_exact_in_order[0].nulls_direction,
+            aggregator_params.aggregates[0].function,
+            aggregator_params.empty_result_for_aggregation_by_empty_set));
+        aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
+        return;
+    }
 
     if (use_radix_uniq_exact)
     {
@@ -989,6 +1046,14 @@ void AggregatingStep::describeActions(FormatSettings & settings) const
         dumpSortDescription(sort_description_for_merging, settings);
         settings.out << '\n';
     }
+    if (!uniq_exact_in_order.empty())
+    {
+        settings.out << prefix << "Uniq exact in order: ";
+        dumpSortDescription(uniq_exact_in_order, settings);
+        if (uniq_exact_in_order_disjoint_streams)
+            settings.out << " (in layers)";
+        settings.out << '\n';
+    }
     settings.out << prefix << "Skip merging: " << skip_merging << '\n';
 
     if (params.bucket_top_k)
@@ -1005,6 +1070,11 @@ void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
     params.explain(map);
     if (!sort_description_for_merging.empty())
         map.add("Order", dumpSortDescription(sort_description_for_merging));
+    if (!uniq_exact_in_order.empty())
+    {
+        map.add("Uniq exact in order", dumpSortDescription(uniq_exact_in_order));
+        map.add("Uniq exact in layers", uniq_exact_in_order_disjoint_streams);
+    }
     if (params.bucket_top_k)
     {
         auto bucket_top_k_map = std::make_unique<JSONBuilder::JSONMap>();
@@ -1124,7 +1194,7 @@ AggregatingProjectionStep::AggregatingProjectionStep(
     updateInputHeaders(std::move(input_headers_));
 }
 
-std::vector<size_t> AggregatingProjectionStep::getStepGroups() const
+VectorWithMemoryTracking<size_t> AggregatingProjectionStep::getStepGroups() const
 {
     return {
         static_cast<size_t>(AggregatingStep::AggregatingStage::PartialAggregation),
@@ -1272,8 +1342,8 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation] = params.enable_producing_buckets_out_of_order_in_aggregation;
     settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge] = params.enable_parallel_single_level_merge;
 
-    /// `QueryPlanSerializationSettings` is a strict named schema, so these two names may go on the wire only
-    /// towards a peer whose version knows them; see the comment below on the packed-string-keys setting.
+    /// Before version 21 a reader of `QueryPlanSerializationSettings` threw on an unknown name, so these names
+    /// went on the wire only towards a peer whose version knows them; see the comment below on the packed-string-keys setting.
     /// A peer that predates them has no adaptive aggregator at all, so leaving them out is also the correct
     /// behaviour and not merely the safe one: the receiver then runs the ordinary aggregation, which is what
     /// it would do with the setting off. The result is identical either way - the adaptive path is exact.
@@ -1291,7 +1361,7 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
         settings[QueryPlanSerializationSetting::adaptive_aggregator_disable_thaw] = params.adaptive_aggregator_disable_thaw;
 
     /// A peer predating the name keeps its own two-level decision: writing an unknown name would make it throw
-    /// while reading the strict named schema, which would break every distributed `GROUP BY` of a query that
+    /// while reading the step settings (before version 21 the reader threw on an unknown name), which would break every distributed `GROUP BY` of a query that
     /// sets `use_aggregation_memory_tracker` or a `compatibility` below the release that fixes the regression.
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER)
         settings[QueryPlanSerializationSetting::use_aggregation_memory_tracker] = params.use_aggregation_memory_tracker;
@@ -1309,9 +1379,8 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     ///
     /// Towards an older peer the name is written only when the legacy method is requested *and* this step can
     /// actually choose the single-`String` method *and* the plan can go two-level.
-    /// `QueryPlanSerializationSettings` is a strict named schema: `writeChangedBinary` writes every touched
-    /// entry by name and `readBinary` throws on a name it does not know, so writing this one whenever the session
-    /// setting is off would make plans for `count()` or `GROUP BY UInt64` - where the setting cannot change anything -
+    /// Before version 21 the reader of `QueryPlanSerializationSettings` threw on a name it did not know, so
+    /// writing this one whenever the session setting is off would make plans for `count()` or `GROUP BY UInt64` - where the setting cannot change anything -
     /// unreadable by a peer that predates it. Leaving it out keeps the receiver at the default (the packed method),
     /// and a peer too old to know the name fails closed on an explicit `false` instead of silently aggregating with
     /// the other method.
@@ -1630,7 +1699,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
 
 QueryPlanStepPtr AggregatingStep::clone() const
 {
-    return std::make_unique<AggregatingStep>(
+    auto step = std::make_unique<AggregatingStep>(
         input_headers.front(),
         params,
         grouping_sets_params,
@@ -1647,6 +1716,11 @@ QueryPlanStepPtr AggregatingStep::clone() const
         memory_bound_merging_of_aggregation_results_enabled,
         explicit_sorting_required_for_aggregation_in_order
     );
+    step->uniq_exact_in_order = uniq_exact_in_order;
+    step->uniq_exact_in_order_layer_prefix = uniq_exact_in_order_layer_prefix;
+    step->uniq_exact_in_order_disjoint_streams = uniq_exact_in_order_disjoint_streams;
+    step->order_decided_before_projections = order_decided_before_projections;
+    return step;
 }
 
 void AggregatingStep::setFinal(bool new_value)
