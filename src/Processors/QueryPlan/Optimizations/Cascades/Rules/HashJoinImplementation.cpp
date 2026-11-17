@@ -245,6 +245,7 @@ void HashJoinImplementation::StrategyEnumerator::addBroadcastJoins(size_t node_c
 
     DistributionDescription keyed_left_dist;
     keyed_left_dist.node_count = node_count;
+    keyed_left_dist.without_enforcer = required_properties.distribution.without_enforcer;
     DistributionDescription keyed_output_dist;
     keyed_output_dist.node_count = node_count;
 

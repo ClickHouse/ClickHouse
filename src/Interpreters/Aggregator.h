@@ -244,6 +244,11 @@ public:
         /// instead of the serial merge.
         bool enable_parallel_single_level_merge = false;
 
+        /// Let the parallel single-level merge read the tables through their cell indexes when every table
+        /// has one (see `Aggregator::mergesByCellIndex`), instead of scanning every cell of every table for
+        /// each partition.
+        bool enable_parallel_single_level_merge_by_index = true;
+
         bool serialize_string_with_zero_byte = false;
 
         struct TopKParams
@@ -380,6 +385,7 @@ public:
             bool enable_producing_buckets_out_of_order_in_aggregation_,
             bool serialize_string_with_zero_byte_,
             bool enable_parallel_single_level_merge_,
+            bool enable_parallel_single_level_merge_by_index_,
             bool enable_packed_string_keys_,
             bool enable_adaptive_aggregator_,
             UInt64 adaptive_aggregator_freeze_threshold_,
@@ -533,11 +539,12 @@ public:
 
     /// Ends the sources of an adaptive in-memory merge of `data` once every bucket merged, and frees what the producers
     /// left: the source tables with their cell indexes and arenas, the staging buffers and the count bins of the top-K
-    /// pruning. Every bucket took the states out of its source cells, so the source tables stop owning states and
-    /// their destruction only frees memory. `data` is the result of `prepareVariantsToMerge`, which made it the only
-    /// owner of the source tables. The caller guarantees that no merge task reads the sources any more. With many
-    /// producers the work is spread over the thread pool: one thread would otherwise free everything at the end of
-    /// the query, which with 192 producers takes several milliseconds.
+    /// pruning. Every bucket took the states out of its source cells (a skipped unit leaves those that need no
+    /// destructor), so the source tables stop owning states and their destruction only frees memory. `data` is the
+    /// result of `prepareVariantsToMerge`, which made it the only owner of the source tables. The caller guarantees
+    /// that no merge task reads the sources any more. With many producers the work is spread over the thread pool:
+    /// one thread would otherwise free everything at the end of the query, which with 192 producers takes several
+    /// milliseconds.
     void releaseAdaptiveMergeSources(ManyAggregatedDataVariants & data, AdaptiveAggregationSession & session) const;
 
     /// The destination of the adaptive merge: an empty two-level variants of the aggregation's method with an arena slot
@@ -669,8 +676,9 @@ public:
     using ClaimMergePartition = std::function<std::optional<size_t>(size_t rows)>;
 
     /// Whether the merge by partitions of `tables` reads them through their cell indexes (see
-    /// `AggregatedDataVariants::indexCells`), which every one of them has then.
-    static bool mergesByCellIndex(const ManyAggregatedDataVariants & tables);
+    /// `AggregatedDataVariants::indexCells`): when every one of them has one, unless
+    /// `enable_parallel_single_level_merge_by_index` is off.
+    bool mergesByCellIndex(const ManyAggregatedDataVariants & tables) const;
 
     /// Merges partition `first_partition` of `num_partitions`, then the partitions that `claim` hands out, out of every
     /// table of `non_empty_data` into one fresh table, and converts it to one output chunk. The partitions hold disjoint
@@ -683,9 +691,9 @@ public:
     /// double-destroy. The NULL key of the single-key nullable methods belongs to partition 0. `destination_size_hint`
     /// pre-sizes the destination table; the caller derives it from the source tables before any partition starts, since
     /// once the workers run, the source tables are mutated concurrently and may not be read outside the partitions that
-    /// a worker claimed. `parallel_merge` tells when the states of one group of indexed tables merge together on the
-    /// pool. The tables walked source by source defer their large pairs of states to the pool (see
-    /// `mergeDeferredLargeStates`).
+    /// a worker claimed. In the merge by cell index (see `mergesByCellIndex`), `parallel_merge` tells when the states
+    /// of one group merge together on the pool. The tables walked source by source defer their large pairs of states
+    /// to the pool (see `mergeDeferredLargeStates`).
     AggregatedChunk mergeSingleLevelPartitionsAndConvertToChunk(
         ManyAggregatedDataVariants & non_empty_data,
         bool final,
@@ -1214,7 +1222,7 @@ private:
         const AdaptiveRecordRanges & ranges,
         const Filter & filter,
         PaddedPODArray<AggregateDataPtr> & places,
-        RowStorePointers & records) const;
+        RowPointers & records) const;
 
     /// Counts the groups of one partition's argument records into `counting_table`, only those whose routing hash
     /// `filter` takes: a record adds one row to the count its group keeps in the mapped value, as a lone `count()`
@@ -1231,6 +1239,10 @@ private:
         const AdaptiveRecordRanges & ranges,
         const Filter & filter,
         const UpdateCandidates & update_candidates) const;
+
+    /// Whether the states of a source cell have destructors to run. Where they have none, the cells of a unit that
+    /// goes unread need no visit.
+    bool adaptiveSourceStatesHaveDestructors() const { return !is_simple_count && !all_aggregates_has_trivial_destructor; }
 
     /// Destroys the states of a source cell whose group cannot reach the top, and clears the cell's slot.
     void discardAdaptiveSourceState(AggregateDataPtr & place) const;
@@ -1277,7 +1289,7 @@ private:
         const Record & format,
         Arena * arena,
         PaddedPODArray<AggregateDataPtr> & places,
-        const RowStorePointers & records,
+        const RowPointers & records,
         bool use_compiled_functions) const;
 
     /// Applies the argument columns rebuilt from drained records to the places of their groups, as the batch executor
@@ -1286,18 +1298,21 @@ private:
         Arena * arena, PaddedPODArray<AggregateDataPtr> & places, const Columns & arguments, bool use_compiled_functions) const;
 
     /// Estimates the work of the selected aggregate states and, when requested, adds rank counts to the
-    /// producer's top-K bins, or, with `max_count_per_bucket`, raises its largest rank count of each bucket.
-    /// The statistics visit the same cells before the producer hands its table to the merge.
+    /// producer's top-K bins, or, with `max_count_per_bucket`, raises its largest rank count of each bucket, or,
+    /// with `table_threshold`, offers it the rank count of every group. The statistics visit the same cells before
+    /// the producer hands its table to the merge.
     size_t collectAdaptiveTableStatistics(
         AggregatedDataVariants & variants,
         AdaptiveTopKCountBins * bins,
-        std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket) const;
+        std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket,
+        AdaptiveTopKThreshold * table_threshold) const;
     template <typename Method>
     size_t collectAdaptiveTableStatistics(
         Method & method,
         Arena * arena,
         AdaptiveTopKCountBins * bins,
-        std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket) const;
+        std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket,
+        AdaptiveTopKThreshold * table_threshold) const;
 
     /// The rank of the group with the aggregate states at `mapped`, which the top-K pruning bounds: its count, or the
     /// distinct count of its `uniqExact` or `uniqExactIf` rank, finalized into `scratch`.
@@ -1765,7 +1780,7 @@ private:
     void mergeSingleLevelPartitionsImpl(
         Method & dst_method,
         const std::vector<AggregatedDataVariants *> & sources,
-        bool indexed,
+        bool merge_by_cell_index,
         Arena * arena,
         size_t num_partitions,
         size_t first_partition,
