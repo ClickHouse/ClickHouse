@@ -2,7 +2,7 @@ missing topic: 1
 no broker: 1
 no broker, offsets in Keeper: 1
 queue full: 1
-select error: 1
+select error: 1, within 15 s: 1
 killed: 1
 cancelled: 1
 timeout: 1, within 15 s: 1

@@ -81,6 +81,8 @@ private:
 
     /// Given the full set of input columns, returns the columns used by the formatter.
     Columns extractFormatColumns(const Columns & columns) const;
+
+    void cancelProducing() noexcept;
 };
 
 }
