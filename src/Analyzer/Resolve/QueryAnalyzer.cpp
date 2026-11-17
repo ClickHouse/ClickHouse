@@ -72,6 +72,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
 #include <Storages/ColumnsDescription.h>
@@ -5616,14 +5617,12 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     resolveExpressionNode(nodes[1], scope, /* allow_lambda_expression */false, /* allow_table_function */false);
                     if (auto * constant = nodes[1]->as<ConstantNode>())
                     {
-                        /// Serialize the constant value using datatype specific
-                        /// interfaces to match the deserialization in ReplaceQueryParametersVistor.
+                        /// Serialize the constant with its own data type, straight from its column, to match the
+                        /// deserialization in `ReplaceQueryParameterVisitor`. Same as `analyzeFunctionParamValues`
+                        /// does for the other entrypoints of a parameterized view (`DESCRIBE`, `EXPLAIN SYNTAX`).
                         WriteBufferFromOwnString buf;
-                        const auto & value = constant->getValue();
-                        auto real_type = constant->getResultType();
-                        auto temporary_column  = real_type->createColumn();
-                        temporary_column->insert(value);
-                        real_type->getDefaultSerialization()->serializeTextEscaped(*temporary_column, 0, buf, {});
+                        constant->getResultType()->getDefaultSerialization()->serializeTextEscaped(
+                            constant->getColumn()->getDataColumn(), 0, buf, {});
                         view_params[identifier_node->getIdentifier().getFullName()] = buf.str();
                     }
                 }
@@ -5982,6 +5981,21 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         execution_context = overridden_context;
     }
     auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr, execution_context);
+
+    /// `merge` with one argument or with a database that evaluates to '' reads the current database, which the servers this query
+    /// is sent to do not share, so the database it resolved replaces any database argument except a `REGEXP`, which is not analyzed.
+    /// A secondary query is left as sent: its `IN` set names are hashed from the query tree and must match the sender's.
+    if (const auto * merge_storage = typeid_cast<const StorageMerge *>(table_function_storage.get());
+        merge_storage && scope_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        auto & argument_nodes = table_function_node_typed.getArguments().getNodes();
+        auto database_node = std::make_shared<ConstantNode>(merge_storage->getSourceDatabaseNameOrRegexp());
+        if (argument_nodes.size() == 1)
+            argument_nodes.insert(argument_nodes.begin(), std::move(database_node));
+        else if (!std::ranges::contains(skip_analysis_arguments_indexes, 0))
+            argument_nodes[0] = std::move(database_node);
+    }
+
     table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
 }
 

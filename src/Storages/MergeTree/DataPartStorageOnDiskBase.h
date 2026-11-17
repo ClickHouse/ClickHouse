@@ -177,6 +177,7 @@ public:
 
     SyncGuardPtr getDirectorySyncGuard() const override;
     bool hasActiveTransaction() const override;
+    bool hasSharedTransaction() const override { return has_shared_transaction; }
 
     bool isCaseInsensitive() const override;
 
