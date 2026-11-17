@@ -11556,12 +11556,16 @@ A heuristic for the rule-based distributed planner. When the cost-based optimize
 )", EXPERIMENTAL, \
         {"25.7", 20000, 20000, "New experimental setting."}) \
     DECLARE(UInt64, distributed_plan_task_dispatch_threads, 0, R"(
-Number of threads that send the tasks of a distributed query's stage to the stateless workers at the same time.
-
-`0` sends each task and waits for the worker's reply before sending the next task. A positive value sends the tasks of a
-stage from this many threads.
+Number of stateless workers the tasks of a distributed query are sent to at the same time, one sender per worker; the
+batches of one worker are sent one after another. `0` sends from the query's thread, one worker after another.
 )", EXPERIMENTAL, \
         {"26.11", 0, 0, "New experimental setting."}) \
+    DECLARE(Bool, distributed_plan_task_dispatch_batching, true, R"(
+Send the tasks of a distributed query to each stateless worker in batches (`start_tasks`): one request carries all the
+worker's tasks of the stages started together, with each stage's plan written once, up to 100 MiB of plans per request.
+`0` sends one task per request.
+)", EXPERIMENTAL, \
+        {"26.11", true, true, "New experimental setting."}) \
     DECLARE(Bool, distributed_plan_read_in_order, false, R"(
 Allow the read-in-order optimization for `ORDER BY` in a distributed query plan, so a sorted read of the
 table's sorting key can skip the sort and stop early instead of scanning and sorting.

@@ -6,7 +6,7 @@
 -- `tracestate` headers, so the worker's task span joins the initiator's trace:
 --
 --   query (initiator)
---   └── StatelessWorkerClient::sendTask [CLIENT]
+--   └── StatelessWorkerClient::sendTaskBatch [CLIENT]
 --       └── InterserverIOHTTPHandler [SERVER]
 --           └── (worker thread pool span)
 --               └── DistributedPlanTask::execute [SERVER]
@@ -101,12 +101,13 @@ SELECT 'traces found:', arraySort(groupUniqArray(label)) FROM spans;
 SELECT 'dispatch spans:';
 SELECT DISTINCT
     label, operation_name, kind,
-    'task_id: ' || if(attribute['clickhouse.distributed.task_id'] != '', 'set', 'MISSING'),
+    'query_id: ' || if(attribute['clickhouse.distributed.query_id'] != '', 'set', 'MISSING'),
+    'task_count: ' || if(toUInt64OrZero(attribute['clickhouse.distributed.task_count']) > 0, 'set', 'MISSING'),
     'initial_query_id: ' || if(has_initiator_query_id, 'initiator', attribute['clickhouse.initial_query_id']),
     'target_host: ' || if(attribute['clickhouse.target_host'] != '', 'set', 'MISSING'),
     'exception: ' || if(mapContains(attribute, 'clickhouse.exception'), attribute['clickhouse.exception'], 'none')
 FROM spans
-WHERE operation_name = 'StatelessWorkerClient::sendTask'
+WHERE operation_name = 'StatelessWorkerClient::sendTaskBatch'
 ORDER BY ALL;
 
 -- The parent of a dispatch request is the dispatch span; the failed request is a child of some span

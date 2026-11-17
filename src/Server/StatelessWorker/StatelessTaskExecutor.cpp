@@ -166,24 +166,58 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
 
     {
         std::lock_guard lock(tasks_mutex);
-        /// A start comes once, so its id is dropped here.
-        if (cancelled_before_start.erase(unique_task_id))
-        {
-            LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Ignoring the start of task {}: it was cancelled before the start arrived", unique_task_id);
+        if (!tryRegisterTaskLocked(unique_task_id, task_state))
             return Result::Ok;
-        }
-        /// `unique_task_id` is unique per task, so a repeated start (e.g. a coordinator retry) is the same
-        /// task. Running it twice would double-write exchanges and temp files and orphan the original from
-        /// cancel/forget, so treat a duplicate start as a no-op.
-        if (!tasks.try_emplace(unique_task_id, task_state).second)
-        {
-            LOG_WARNING(getLogger("StatelessTaskExecutor"), "Ignoring duplicate start for already running task {}", unique_task_id);
-            return Result::Ok;
-        }
     }
 
     scheduleTask(unique_task_id, std::move(task_state), std::move(task_promise), std::move(task_description), unique_temp_file_path, OpenTelemetry::CurrentContext());
     return Result::Ok;
+}
+
+void StatelessTaskExecutor::startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors)
+{
+    const OpenTelemetry::TracingContext trace_context = OpenTelemetry::CurrentContext();
+    size_t task_count = 0;
+    for (const auto & stage : batch.stages)
+        task_count += stage.tasks.size();
+    LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Starting a batch of {} tasks of {}", task_count, unique_query_id);
+
+    for (auto & stage : batch.stages)
+    {
+        for (auto & [task, stream_sources] : stage.tasks)
+        {
+            DistributedQueryTaskDescription task_description;
+            task_description.initial_query_id = batch.initial_query_id;
+            task_description.serialized_query_plan = stage.serialized_query_plan;
+            task_description.exchanges = batch.exchanges;
+            task_description.settings_changes = batch.settings_changes;
+            task_description.serialization_version = batch.serialization_version;
+            task_description.exchange_stream_sources = std::move(stream_sources);
+            task_description.task = std::move(task);
+            const String unique_task_id = makeUniqueTaskId(unique_query_id, task_description.task.task_id);
+
+            auto task_promise = std::make_shared<std::promise<std::optional<TaskFailure>>>();
+            auto task_state = std::make_shared<TaskState>();
+            task_state->completion_future = task_promise->get_future();
+            task_state->collectors = collectors;
+            task_state->unique_query_id = unique_query_id;
+
+            {
+                std::lock_guard lock(tasks_mutex);
+                if (!tryRegisterTaskLocked(unique_task_id, task_state))
+                    continue;
+                auto & controller = query_controllers[unique_query_id];
+                if (!controller)
+                {
+                    controller = std::make_shared<WorkerQueryController>(unique_query_id);
+                    LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Created the query controller of {}", unique_query_id);
+                }
+                controller->addTask(unique_task_id);
+            }
+
+            scheduleTask(unique_task_id, std::move(task_state), std::move(task_promise), std::move(task_description), unique_temp_file_path, trace_context);
+        }
+    }
 }
 
 void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStatePtr task_state, TaskPromisePtr task_promise,
@@ -235,7 +269,7 @@ void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStat
             {
                 Stopwatch start_watch(CLOCK_MONOTONIC);
                 ASTSelectQuery ast_stub; /// FIXME: this is only used to populate query_kind
-                auto query_plan_hash = sipHash64(task_description.serialized_query_plan);
+                auto query_plan_hash = sipHash64(*task_description.serialized_query_plan);
                 /// Process-list insertion can throw (query limit); keep it inside the try.
                 auto process_list_entry = query_context->getProcessList().insert(task_description.task.task_id, query_plan_hash, &ast_stub, query_context, start_watch.getStart(), false);
                 query_context->setProcessListElement(process_list_entry->getQueryStatus());
@@ -279,7 +313,7 @@ void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStat
         /// scheduling exception so future waiters fail fast.
         task_promise->set_value(currentTaskFailure());
         std::lock_guard lock(tasks_mutex);
-        tasks.erase(unique_task_id);
+        eraseTaskLocked(unique_task_id);
         throw;
     }
 }
@@ -385,12 +419,46 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::cancelTask(const String & t
 StatelessTaskExecutor::Result StatelessTaskExecutor::forgetTask(const String & task_id)
 {
     std::lock_guard lock(tasks_mutex);
-    auto it = tasks.find(task_id);
-    if (it == tasks.end())
-        return Result::UnknownTaskId;
+    return eraseTaskLocked(task_id) ? Result::Ok : Result::UnknownTaskId;
+}
 
+bool StatelessTaskExecutor::tryRegisterTaskLocked(const String & unique_task_id, const TaskStatePtr & task_state)
+{
+    /// A start comes once, so its id is dropped here.
+    if (cancelled_before_start.erase(unique_task_id))
+    {
+        LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Ignoring the start of task {}: it was cancelled before the start arrived", unique_task_id);
+        return false;
+    }
+    /// `unique_task_id` is unique per task, so a repeated start (e.g. a coordinator retry) is the same
+    /// task. Running it twice would double-write exchanges and temp files and orphan the original from
+    /// cancel/forget, so treat a duplicate start as a no-op.
+    if (!tasks.try_emplace(unique_task_id, task_state).second)
+    {
+        LOG_WARNING(getLogger("StatelessTaskExecutor"), "Ignoring duplicate start for already running task {}", unique_task_id);
+        return false;
+    }
+    return true;
+}
+
+bool StatelessTaskExecutor::eraseTaskLocked(const String & unique_task_id)
+{
+    auto it = tasks.find(unique_task_id);
+    if (it == tasks.end())
+        return false;
+
+    const String & unique_query_id = it->second->unique_query_id;
+    if (!unique_query_id.empty())
+    {
+        auto controller = query_controllers.find(unique_query_id);
+        if (controller != query_controllers.end() && controller->second->removeTask(unique_task_id))
+        {
+            LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Dropped the query controller of {}", unique_query_id);
+            query_controllers.erase(controller);
+        }
+    }
     tasks.erase(it);
-    return Result::Ok;
+    return true;
 }
 
 void StatelessTaskExecutor::shutdown()

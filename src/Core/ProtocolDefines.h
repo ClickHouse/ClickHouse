@@ -272,9 +272,12 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_S
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
 /// Version 4 added runtime filter receive descriptors to the task.
-static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 4;
+/// Version 5 added the batched start of a query's tasks on one worker (`start_tasks`).
+static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 5;
 /// First distributed-task serialization version that carries the runtime filter receive descriptors.
 static constexpr auto DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS = 4;
+/// First distributed-task serialization version of a `start_tasks` batch.
+static constexpr auto DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_TASK_BATCHES = 5;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET = 54441;
 

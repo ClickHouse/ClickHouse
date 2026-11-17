@@ -3,10 +3,10 @@
 # no-fasttest: the remote executor needs the stateless worker configuration.
 # no-parallel: the failpoint holds the task starts of every distributed query on the server.
 #
-# With `distributed_plan_task_dispatch_threads` > 0 the coordinator sends the starts of a stage from a pool, so a cancel can
-# overtake a start that is on the wire. The worker remembers the cancelled id and ignores the late start. The failpoint
-# holds the worker's start handlers after the body is read, the query is killed meanwhile, and the starts are released only
-# after the worker has remembered every task the query queued.
+# With `distributed_plan_task_dispatch_threads` > 0 the coordinator sends the `start_tasks` batches of several workers at once,
+# so a cancel can overtake a batch that is on the wire. The worker remembers the cancelled ids and ignores their late start.
+# The failpoint holds the worker's start handlers after the body is read, the query is killed meanwhile, and the batches are
+# released only after the worker has remembered every task the query queued.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -53,19 +53,20 @@ wait_for "SELECT count() > 0 FROM system.text_log WHERE event_date >= yesterday(
 UNIQUE_ID=$($CLICKHOUSE_CLIENT --query "SELECT extract(any(message), 'unique id: (\\\\S+)') FROM system.text_log
     WHERE event_date >= yesterday() AND query_id = '$QUERY_ID' AND message LIKE 'Starting distributed query, unique id: %'")
 TASK_LINES="SELECT countIf(message LIKE 'Queueing task %') AS queued, countIf(message LIKE 'Remembering cancelled unknown task %') AS remembered,
-    countIf(message LIKE 'Request URI: %operation=start%') AS starts, countIf(message LIKE 'Ignoring the start of task %') AS ignored
+    sumIf(toUInt64OrZero(extract(message, 'batch of (\\d+) tasks')), message LIKE 'Starting a batch of %') AS arrived,
+    countIf(message LIKE 'Ignoring the start of task %') AS ignored
     FROM system.text_log WHERE event_date >= yesterday() AND position(message, '$UNIQUE_ID') > 0"
 
-# Every queued task is cancelled while unknown to the worker: up to two starts are held there, the rest were not sent.
+# Every queued task is cancelled while unknown to the worker: up to two batches are held there, the rest were not sent.
 wait_for "SELECT queued > 0 AND remembered = queued FROM ($TASK_LINES)"
 
-# The held starts reach `startTask` now; the senders skip the other tasks as the query is cancelled.
+# The held batches reach `startTasks` now; the senders skip the other batches as the query is cancelled.
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP"
 wait $CLIENT_PID
-wait_for "SELECT starts > 0 AND ignored = starts FROM ($TASK_LINES)"
+wait_for "SELECT arrived > 0 AND ignored = arrived FROM ($TASK_LINES)"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
-$CLICKHOUSE_CLIENT --query "SELECT 'every queued task remembered', remembered = queued, 'every start that arrived ignored', starts > 0 AND ignored = starts
+$CLICKHOUSE_CLIENT --query "SELECT 'every queued task remembered', remembered = queued, 'every task that arrived ignored', arrived > 0 AND ignored = arrived
     FROM ($TASK_LINES)"
 RECENT="event_date >= yesterday() AND event_time >= now() - INTERVAL 300 SECOND"
 $CLICKHOUSE_CLIENT --query "SELECT 'initial query logged', count() > 0 FROM system.query_log

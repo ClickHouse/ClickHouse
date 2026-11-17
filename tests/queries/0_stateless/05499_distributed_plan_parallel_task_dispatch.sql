@@ -1,5 +1,5 @@
--- With `distributed_plan_task_dispatch_threads` > 0 the coordinator sends the `start` requests of a stage's tasks from a pool
--- of senders; the results must equal the serial dispatch (0) and local execution.
+-- With `distributed_plan_task_dispatch_threads` > 0 the coordinator sends the `start_tasks` batches of several workers at once;
+-- the results must equal the dispatch one worker after another (0) and local execution.
 
 SET enable_analyzer = 1;
 SET max_rows_to_group_by = 0;
@@ -51,12 +51,13 @@ SELECT count() FROM t_parallel_dispatch WHERE v IN (SELECT number * 2 FROM numbe
 SETTINGS make_distributed_plan = 1, distributed_plan_task_dispatch_threads = 8, distributed_plan_default_reader_bucket_count = 4,
     log_comment = '05499-set-8';
 
--- Every query ran remote tasks: sent one by one (0 threads), or queued for the senders (1, 8 threads).
+-- Every query ran remote tasks, queued and sent in batches whatever the number of threads.
 SYSTEM FLUSH LOGS query_log, text_log;
-SELECT q.log_comment, q.remote_tasks > 0, countIf(t.message LIKE 'Queueing task %') > 0, countIf(t.message LIKE 'Sending task %') > 0
+SELECT q.log_comment, q.remote_tasks > 0, q.batches > 0, countIf(t.message LIKE 'Queueing task %') > 0
 FROM
 (
-    SELECT query_id, log_comment, ProfileEvents['DistributedPlanRemoteTasks'] AS remote_tasks
+    SELECT query_id, log_comment, ProfileEvents['DistributedPlanRemoteTasks'] AS remote_tasks,
+        ProfileEvents['DistributedPlanTaskBatches'] AS batches
     FROM system.query_log
     WHERE event_date >= yesterday() AND type = 'QueryFinish' AND current_database = currentDatabase()
         AND query_id = initial_query_id AND log_comment LIKE '05499-%'
@@ -64,9 +65,9 @@ FROM
 LEFT JOIN
 (
     SELECT query_id, message FROM system.text_log
-    WHERE event_date >= yesterday() AND (message LIKE 'Queueing task %' OR message LIKE 'Sending task %')
+    WHERE event_date >= yesterday() AND message LIKE 'Queueing task %'
 ) AS t ON t.query_id = q.query_id
-GROUP BY q.log_comment, q.remote_tasks
+GROUP BY q.log_comment, q.remote_tasks, q.batches
 ORDER BY q.log_comment;
 
 DROP TABLE t_parallel_dispatch;
