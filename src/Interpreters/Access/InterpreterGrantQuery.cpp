@@ -496,8 +496,7 @@ BlockIO InterpreterGrantQuery::execute()
         auto required_access = getRequiredAccessForExecutingOnCluster(elements_to_grant, elements_to_revoke);
         checkAdminOptionForExecutingOnCluster(*current_user_access, roles_to_grant, roles_to_revoke);
         current_user_access->checkGranteesAreAllowed(grantees);
-        /// The DDL worker applies the query with full access, and the check of `access_to_check` passes
-        /// some elements (e.g. the temporary database) without reaching readonly.
+        /// executeDDLQueryOnCluster's access check grants some elements (e.g. the temporary database) before checking readonly.
         if (!elements_to_grant.empty() || !elements_to_revoke.empty())
             current_user_access->checkCanChangeGrants();
         DDLQueryOnClusterParams params;
@@ -519,8 +518,7 @@ BlockIO InterpreterGrantQuery::execute()
         checkGrantOption(access_control, *current_user_access, grantees, need_check_grantees_are_allowed, no_elements_to_grant, elements_to_revoke);
     }
 
-    /// A readonly session cannot change privileges. The REVOKE fallback in checkGrantOption and
-    /// GRANT CURRENT GRANTS authorize without ContextAccess, so they are refused here.
+    /// The REVOKE fallback in checkGrantOption and GRANT CURRENT GRANTS bypass the readonly check of ContextAccess.
     if (!elements_to_grant.empty() || !elements_to_revoke.empty())
         current_user_access->checkCanChangeGrants();
 
