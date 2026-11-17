@@ -5,6 +5,8 @@
 #include <Processors/ISimpleTransform.h>
 #include "config.h"
 
+#include <unordered_set>
+
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -31,26 +33,30 @@ public:
     explicit DataFileStatistics(Poco::JSON::Array::Ptr schema_);
 
     /// Every statistic is accumulated in written-block order, so `field_ids[i]` must be the id of
-    /// block column `i` rather than of schema field `i`. An empty `written_field_ids` keeps the schema's ids.
-    DataFileStatistics(Poco::JSON::Array::Ptr schema_, std::vector<Int64> written_field_ids);
+    /// block column `i` rather than of schema field `i`.
+    DataFileStatistics(std::vector<Int64> written_field_ids, std::unordered_set<Int64> required_field_ids_);
+
+    /// The ids of the top-level fields of `schema` that are `required`.
+    static std::unordered_set<Int64> getRequiredFieldIds(const Poco::JSON::Array::Ptr & schema);
 
     void update(const Chunk & chunk);
     void addColumnSizesOnDisk(const UnorderedMapWithMemoryTracking<String, size_t> & sizes_by_column_name, const Block & sample_block);
     void setSplitOffsets(VectorWithMemoryTracking<UInt64> split_offsets_) { split_offsets = std::move(split_offsets_); }
     void merge(const DataFileStatistics & other);
 
-    std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
-    std::vector<std::pair<size_t, size_t>> getNullCounts() const;
-    std::vector<std::pair<size_t, size_t>> getNanCounts() const;
-    std::vector<std::pair<size_t, Field>> getLowerBounds() const;
-    std::vector<std::pair<size_t, Field>> getUpperBounds() const;
+    [[nodiscard]] std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
+    [[nodiscard]] std::vector<std::pair<size_t, size_t>> getNullCounts() const;
+    [[nodiscard]] std::vector<std::pair<size_t, size_t>> getNanCounts() const;
+    [[nodiscard]] std::vector<std::pair<size_t, Field>> getLowerBounds() const;
+    [[nodiscard]] std::vector<std::pair<size_t, Field>> getUpperBounds() const;
 
-    const std::vector<Int64> & getFieldIds() const { return field_ids; }
-    const VectorWithMemoryTracking<UInt64> & getSplitOffsets() const { return split_offsets; }
+    [[nodiscard]] const std::vector<Int64> & getFieldIds() const { return field_ids; }
+    [[nodiscard]] const VectorWithMemoryTracking<UInt64> & getSplitOffsets() const { return split_offsets; }
 private:
     static Range uniteRanges(const Range & left, const Range & right);
 
     std::vector<Int64> field_ids;
+    std::unordered_set<Int64> required_field_ids;
     std::vector<Int64> column_sizes;
     std::vector<Int64> null_counts;
     std::vector<Int64> nan_counts;

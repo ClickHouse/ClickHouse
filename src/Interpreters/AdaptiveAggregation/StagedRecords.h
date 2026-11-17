@@ -700,9 +700,9 @@ struct StagedFixedKeyRecord
     {
     }
 
-    size_t bytesForKey(size_t, UInt32) const { return stride; }
+    [[nodiscard]] size_t bytesForKey(size_t, UInt32) const { return stride; }
 
-    size_t keyBytes(size_t) const { return fixed_key.bytes; }
+    [[nodiscard]] size_t keyBytes(size_t) const { return fixed_key.bytes; }
 
     static char * writeHeader(char * record, UInt64, size_t, UInt32 count)
     {
@@ -747,9 +747,9 @@ struct StagedFixedKeyFixedArgumentRecord
     {
     }
 
-    size_t bytesFor(size_t, size_t) const { return stride; }
+    [[nodiscard]] size_t bytesFor(size_t, size_t) const { return stride; }
 
-    size_t keyBytes(size_t) const { return fixed_key.bytes; }
+    [[nodiscard]] size_t keyBytes(size_t) const { return fixed_key.bytes; }
 
     char * writeHeader(char * record, UInt64, size_t, size_t) const { return record + key_offset; }
 
@@ -786,9 +786,9 @@ struct StagedFixedKeyStringArgumentRecord
     {
     }
 
-    size_t bytesFor(size_t, size_t variable_bytes) const { return key_offset + fixed_key.bytes + variable_bytes; }
+    [[nodiscard]] size_t bytesFor(size_t, size_t variable_bytes) const { return key_offset + fixed_key.bytes + variable_bytes; }
 
-    size_t keyBytes(size_t) const { return fixed_key.bytes; }
+    [[nodiscard]] size_t keyBytes(size_t) const { return fixed_key.bytes; }
 
     char * writeHeader(char * record, UInt64, size_t, size_t) const { return record + key_offset; }
 
@@ -831,9 +831,9 @@ struct StagedFixedKeyGeneralArgumentRecord
     {
     }
 
-    size_t bytesFor(size_t, size_t variable_bytes) const { return key_offset + fixed_key.bytes + variable_bytes; }
+    [[nodiscard]] size_t bytesFor(size_t, size_t variable_bytes) const { return key_offset + fixed_key.bytes + variable_bytes; }
 
-    size_t keyBytes(size_t) const { return fixed_key.bytes; }
+    [[nodiscard]] size_t keyBytes(size_t) const { return fixed_key.bytes; }
 
     char * writeHeader(char * record, UInt64, size_t, size_t record_bytes) const
     {
@@ -873,7 +873,7 @@ struct StagedByteKeyStringArgumentRecord
     {
     }
 
-    size_t bytesFor(size_t key_size, size_t variable_bytes) const
+    [[nodiscard]] size_t bytesFor(size_t key_size, size_t variable_bytes) const
     {
         return size_offset + stagedUIntBytes(key_size) + key_size + variable_bytes;
     }
@@ -943,7 +943,7 @@ struct StagedByteKeyGeneralArgumentRecord
     {
     }
 
-    size_t bytesFor(size_t key_size, size_t variable_bytes) const
+    [[nodiscard]] size_t bytesFor(size_t key_size, size_t variable_bytes) const
     {
         return size_offset + stagedUIntBytes(key_size) + key_size + variable_bytes;
     }
