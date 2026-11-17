@@ -87,6 +87,13 @@ bool isVariadic(const ASTPtr & arg)
 
 ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, UnorderedSetWithMemoryTracking<std::string> & udf_in_replace_process, ContextPtr context_)
 {
+    /// `UNIQUE(subquery)` is parsed into the operator `__unique`, which is a syntax construct rather than
+    /// a call of a function with this name. A user defined function named `__unique` must not replace it.
+    /// An ordinary call `__unique(...)` is expanded as usual. The check goes before the recursion check,
+    /// so that the predicate in the body of a user defined function named `__unique` is not mistaken for a recursive call.
+    if (function.name == "__unique" && function.isOperator())
+        return nullptr;
+
     if (udf_in_replace_process.contains(function.name))
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Recursive function call detected during function call {}",

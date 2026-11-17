@@ -5,6 +5,7 @@
 #include <base/defines.h>
 
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 
 
@@ -25,6 +26,8 @@ private:
     size_t max_pos = 0;
     Lexer lexer;
     bool skip_insignificant;
+    /// See `markUniquePredicateParseFailed`.
+    std::unordered_set<size_t> failed_unique_predicate_positions;
 
 public:
     Tokens(const char * begin, const char * end, size_t max_query_size = 0, bool skip_insignificant_ = true)
@@ -66,6 +69,13 @@ public:
     {
         max_pos = 0;
     }
+
+    /// The argument of `unique(...)` is first tried as the `UNIQUE` predicate over a subquery, and parsed as
+    /// an ordinary expression if that fails. The outcome depends only on the tokens, so a failure is remembered
+    /// by the index of the first token of the argument: when an enclosing expression is parsed again after
+    /// backtracking, the failed attempt is not repeated. Otherwise every nesting level would double the work.
+    void markUniquePredicateParseFailed(size_t index) { failed_unique_predicate_positions.insert(index); }
+    bool isUniquePredicateParseFailed(size_t index) const { return failed_unique_predicate_positions.contains(index); }
 };
 
 
@@ -103,6 +113,10 @@ public:
 
     /// Rightmost token we had looked.
     ALWAYS_INLINE const Token & max() { return tokens->max(); }
+
+    /// See `Tokens::markUniquePredicateParseFailed`.
+    void markUniquePredicateParseFailed() { tokens->markUniquePredicateParseFailed(index); }
+    bool isUniquePredicateParseFailed() const { return tokens->isUniquePredicateParseFailed(index); }
 };
 
 

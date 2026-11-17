@@ -1,0 +1,8 @@
+SELECT unique(1)
+SELECT unique(`select`)
+SELECT unique(`from`, 1)
+SELECT UNIQUE(SELECT 1)
+SELECT UNIQUE(SELECT 1)
+1	0
+3
+5

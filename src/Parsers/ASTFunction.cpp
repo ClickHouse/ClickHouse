@@ -396,7 +396,8 @@ void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) 
 
     /// The function composition operator `f | g` and an ordinary call to a function of the same
     /// name are different expressions, see the formatting of `__compose` below.
-    if (name == "__compose"sv)
+    /// The same holds for the `UNIQUE` predicate (the operator `__unique`) and an ordinary call `__unique(...)`.
+    if (name == "__compose"sv || name == "__unique"sv)
         hash_state.update(isOperator());
 
     if (isWindowFunction())
@@ -606,6 +607,31 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         ostr << nl_or_nothing << indent_str;
         ostr << ")";
         return;
+    }
+
+    /// The `UNIQUE` predicate is parsed (`UniqueLayer`) into the internal function `__unique` over a single
+    /// subquery. Print it back as the SQL keyword so that `SHOW CREATE`, `EXPLAIN SYNTAX`, `formatQuery`
+    /// and the persisted metadata of views never expose the internal spelling. The subquery's own
+    /// parentheses are dropped: `UNIQUE(SELECT ...)` is exactly what the parser accepts, and re-parsing
+    /// it yields the same AST. Shapes the parser can never produce (an ordinary call `__unique(...)`, extra arguments,
+    /// parameters, an alias or CTE name on the subquery, a NULLS modifier or a window) take the generic path below.
+    if (name == "__unique" && isOperator() && arguments && !parameters && arguments->children.size() == 1
+        && getNullsAction() == NullsAction::EMPTY && !isWindowFunction())
+    {
+        if (const auto * subquery = arguments->children[0]->as<ASTSubquery>();
+            subquery && subquery->cte_name.empty() && subquery->tryGetAlias().empty() && subquery->children.size() == 1)
+        {
+            std::string nl_or_nothing = settings.one_line ? "" : "\n";
+            std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
+            ostr << "UNIQUE(" << nl_or_nothing;
+            FormatStateStacked frame_nested = frame;
+            frame_nested.need_parens = false;
+            frame_nested.parent_has_trailing_settings = false;
+            ++frame_nested.indent;
+            subquery->children[0]->format(ostr, settings, state, frame_nested);
+            ostr << nl_or_nothing << indent_str << ")";
+            return;
+        }
     }
 
     /// The `ELSE` form exists only for the table function `viewIfPermitted(SELECT ... ELSE table_function(...))`,
