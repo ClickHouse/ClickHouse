@@ -345,6 +345,10 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     if (local_variants.isConvertibleToTwoLevel())
         local_variants.indexCells(shared.layout.numPartitions(), [&](UInt64 hash) { return shared.layout.partitionOf(hash); });
 
+    /// The producer stages nothing more, so it frees the arrays of its misses here, in its own thread. The transform
+    /// that owns the producer lives until the pipeline is destroyed, which one thread does for every transform.
+    adaptive.misses = {};
+
     std::lock_guard lock(shared.producer_buffers_mutex);
     shared.estimated_merge_work += estimated_merge_work;
     ++shared.finished_producers;

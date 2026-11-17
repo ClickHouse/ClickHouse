@@ -41,9 +41,9 @@ struct ColumnStats
     void addTransformation(ColumnStatsTransformation transformation);
 
     /// `num_distinct_values` if it gives `guarantee`.
-    std::optional<UInt64> distinctCount(DistinctCountGuarantee guarantee) const;
+    [[nodiscard]] std::optional<UInt64> distinctCount(DistinctCountGuarantee guarantee) const;
     /// The value range and NULL fraction if they give `guarantee`.
-    std::optional<ColumnValueRange> valueRange(ValueRangeGuarantee guarantee) const;
+    [[nodiscard]] std::optional<ColumnValueRange> valueRange(ValueRangeGuarantee guarantee) const;
 };
 
 struct RelationProfile

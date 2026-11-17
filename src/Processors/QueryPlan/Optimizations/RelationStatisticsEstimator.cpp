@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -34,9 +35,9 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapSnapshot.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -55,9 +56,11 @@ namespace
 /// The sizes of the arrays are unknown, so an array join is assumed to produce this many rows per input row.
 constexpr Float64 array_join_rows_multiplier = 100;
 
-RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
+/// The statistics of an aggregation with `aggregator_params` over `input_stats`: an `AggregatingStep`, or the
+/// `MergingAggregatedStep` that finishes an aggregation split into partial ones.
+RelationStats
+estimateAggregatingStepStats(const Aggregator::Params & aggregator_params, bool is_grouping_sets, const RelationStats & input_stats)
 {
-    const auto & aggregator_params = aggregating_step.getAggregatorParameters();
     std::optional<Float64> total_number_of_distinct_values = 1;
     RelationStats aggregation_stats;
     /// Carry imprecision and source from the input, or the annotation is lost for aggregation subqueries.
@@ -98,7 +101,7 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
 
     /// Grouping sets and the overflow row of `WITH TOTALS` under `max_rows_to_group_by` add rows with default key
     /// values, which need not occur in the input.
-    if (aggregating_step.isGroupingSets() || aggregator_params.overflow_row)
+    if (is_grouping_sets || aggregator_params.overflow_row)
         aggregation_stats.addTransformation(Unmodeled);
 
     /// `max_rows_to_group_by` with overflow mode ANY keeps the first keys seen and BREAK stops reading:
@@ -163,6 +166,8 @@ enum class UnaryStepStatsKind : UInt8
     ArrayJoin,
     Filter,
     Aggregating,
+    /// `MergingAggregatedStep`, which finishes an aggregation split into partial ones.
+    MergingAggregated,
     Sorting,
     LogicalExchange,
     /// Passes its input rows and values through unchanged.
@@ -186,6 +191,8 @@ UnaryStepStatsKind classifyUnaryStepStats(const IQueryPlanStep & step)
         return UnaryStepStatsKind::Filter;
     if (typeid_cast<const AggregatingStep *>(&step))
         return UnaryStepStatsKind::Aggregating;
+    if (typeid_cast<const MergingAggregatedStep *>(&step))
+        return UnaryStepStatsKind::MergingAggregated;
     if (typeid_cast<const SortingStep *>(&step))
         return UnaryStepStatsKind::Sorting;
     if (dynamic_cast<const LogicalExchangeStep *>(&step))
@@ -305,8 +312,16 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
             input_stats.rows_exact = false;
             return input_stats;
         }
-        case UnaryStepStatsKind::Aggregating:
-            return estimateAggregatingStepStats(static_cast<const AggregatingStep &>(step), input_stats);
+        case UnaryStepStatsKind::Aggregating: {
+            const auto & aggregating_step = static_cast<const AggregatingStep &>(step);
+            return estimateAggregatingStepStats(aggregating_step.getAggregatorParameters(), aggregating_step.isGroupingSets(), input_stats);
+        }
+        case UnaryStepStatsKind::MergingAggregated: {
+            /// It keeps the keys, the grouping sets and the limits of the aggregation it finishes (see
+            /// `makeMergeOfPartialStates`), so its output is estimated like that of the aggregation.
+            const auto & merging_aggregated_step = static_cast<const MergingAggregatedStep &>(step);
+            return estimateAggregatingStepStats(merging_aggregated_step.getParams(), merging_aggregated_step.isGroupingSets(), input_stats);
+        }
         case UnaryStepStatsKind::Sorting:
         {
             const auto & sorting_step = static_cast<const SortingStep &>(step);
@@ -387,7 +402,7 @@ struct ReadCoverage
     /// Whether the read may return fewer rows than it selects. A top-K read keeps every row of the final top `n`:
     /// range analysis drops only granules and parts that cannot hold one, and a running boundary drops rows once `n`
     /// have been seen. So if nothing else drops rows, it keeps all `selected_rows` if there are at most `n`.
-    bool mayDropRows(UInt64 selected_rows) const { return may_drop_rows || (top_k_limit && selected_rows > *top_k_limit); }
+    [[nodiscard]] bool mayDropRows(UInt64 selected_rows) const { return may_drop_rows || (top_k_limit && selected_rows > *top_k_limit); }
 
     /// Records in the column statistics of `stats` what the read may drop or rewrite.
     void recordIn(RelationStats & stats, UInt64 selected_rows) const

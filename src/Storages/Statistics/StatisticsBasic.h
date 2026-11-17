@@ -46,34 +46,34 @@ public:
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
-    std::optional<UInt64> getSerializedSize() const override;
+    [[nodiscard]] std::optional<UInt64> getSerializedSize() const override;
 
-    std::optional<Float64> estimateLess(const Field & val) const override;
-    std::optional<Float64> estimateEqual(const Field & val) const override;
-    String getNameForLogs() const override;
-    size_t allocatedBytes() const override;
+    [[nodiscard]] std::optional<Float64> estimateLess(const Field & val) const override;
+    [[nodiscard]] std::optional<Float64> estimateEqual(const Field & val) const override;
+    [[nodiscard]] String getNameForLogs() const override;
+    [[nodiscard]] size_t allocatedBytes() const override;
 
-    bool isCompatibleWith(const IStatistics & other) const override;
+    [[nodiscard]] bool isCompatibleWith(const IStatistics & other) const override;
     void copyStructureFrom(const IStatistics & other) override;
 
-    bool hasNumericMinMax() const { return tracks_numeric; }
-    bool hasStringLengthAvg() const { return tracks_string; }
-    bool hasNullCount() const { return is_nullable && has_default_count; }
-    bool hasDefaultCount() const { return has_default_count; }
+    [[nodiscard]] bool hasNumericMinMax() const { return tracks_numeric; }
+    [[nodiscard]] bool hasStringLengthAvg() const { return tracks_string; }
+    [[nodiscard]] bool hasNullCount() const { return is_nullable && has_default_count; }
+    [[nodiscard]] bool hasDefaultCount() const { return has_default_count; }
     /// Whether `min` and `max` bound every non-NULL value of the rows counted. Bounds built from a column always do: a
     /// NULL bound there means that no value was non-NULL. A summary without bounds for rows that may be non-NULL has
     /// values that the bounds merged with it miss.
-    bool minMaxCoversAllValues() const { return min_max_covers_all_values; }
-    bool hasSum() const { return sum != nullptr; }
+    [[nodiscard]] bool minMaxCoversAllValues() const { return min_max_covers_all_values; }
+    [[nodiscard]] bool hasSum() const { return sum != nullptr; }
 
-    const Field & getMin() const { return min; }
-    const Field & getMax() const { return max; }
-    UInt64 getStringTotalBytes() const { return string_total_bytes; }
-    Int64 getStringLengthAvg() const;
-    UInt64 getNullCount() const { return (is_nullable && has_default_count) ? default_count : 0; }
-    UInt64 getDefaultCount() const { return default_count; }
-    UInt64 getRowCount() const { return row_count; }
-    Field getSum() const;
+    [[nodiscard]] const Field & getMin() const { return min; }
+    [[nodiscard]] const Field & getMax() const { return max; }
+    [[nodiscard]] UInt64 getStringTotalBytes() const { return string_total_bytes; }
+    [[nodiscard]] Int64 getStringLengthAvg() const;
+    [[nodiscard]] UInt64 getNullCount() const { return (is_nullable && has_default_count) ? default_count : 0; }
+    [[nodiscard]] UInt64 getDefaultCount() const { return default_count; }
+    [[nodiscard]] UInt64 getRowCount() const { return row_count; }
+    [[nodiscard]] Field getSum() const;
 
 private:
     Field min; /// null Field means "not initialized" (e.g. all values seen so far were NULL)

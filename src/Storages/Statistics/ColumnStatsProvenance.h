@@ -74,11 +74,11 @@ struct ColumnStatsProvenance
     UInt16 transformations = 0;
 
     void add(ColumnStatsTransformation transformation) { transformations |= transformation; }
-    bool has(ColumnStatsTransformation transformation) const { return transformations & transformation; }
-    bool hasOnly(UInt16 allowed) const { return (transformations & ~allowed) == 0; }
+    [[nodiscard]] bool has(ColumnStatsTransformation transformation) const { return transformations & transformation; }
+    [[nodiscard]] bool hasOnly(UInt16 allowed) const { return (transformations & ~allowed) == 0; }
 
     /// Stable spelling used by optimizer trace diagnostics and tests.
-    String toString() const;
+    [[nodiscard]] String toString() const;
 };
 
 /// What a consumer requires of `ColumnStats::num_distinct_values`. Both guarantees refer to the rows the distinct count

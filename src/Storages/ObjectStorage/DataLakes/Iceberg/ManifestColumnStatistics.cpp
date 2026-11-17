@@ -96,7 +96,7 @@ ManifestColumnStatistics::ManifestColumnStatistics(
         auto nested_type = removeLowCardinalityAndNullable(column->type);
         if (const auto type_id = nested_type->getTypeId();
             type_id == TypeIndex::Tuple || type_id == TypeIndex::Map || type_id == TypeIndex::Array || type_id == TypeIndex::Variant
-            || type_id == TypeIndex::Nothing)
+            || type_id == TypeIndex::Nothing || type_id == TypeIndex::Dynamic)
             continue;
 
         /// Represents unchanged column id across all schemas

@@ -35,7 +35,7 @@ struct RelationStats
     RowEstimateSource source = RowEstimateSource::NoSource;
 
     /// The number of rows produced by this node, if it is known exactly.
-    std::optional<UInt64> exactRows() const { return rows_exact ? estimated_rows : std::nullopt; }
+    [[nodiscard]] std::optional<UInt64> exactRows() const { return rows_exact ? estimated_rows : std::nullopt; }
 
     /// Records `transformation` on the statistics of every column.
     void addTransformation(ColumnStatsTransformation transformation)

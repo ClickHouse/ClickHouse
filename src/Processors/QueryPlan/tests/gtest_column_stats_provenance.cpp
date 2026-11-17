@@ -20,6 +20,7 @@
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
@@ -162,6 +163,7 @@ std::unique_ptr<AggregatingStep> makeAggregationStepWithGroupLimit(
         /*enable_producing_buckets_out_of_order_in_aggregation_=*/true,
         /*serialize_string_with_zero_byte_=*/false,
         /*enable_parallel_single_level_merge_=*/false,
+        /*enable_parallel_single_level_merge_by_index_=*/true,
         /*enable_packed_string_keys_=*/true,
         /*enable_adaptive_aggregator_=*/false,
         /*adaptive_aggregator_freeze_threshold_=*/0,
@@ -170,6 +172,25 @@ std::unique_ptr<AggregatingStep> makeAggregationStepWithGroupLimit(
         /*use_aggregation_memory_tracker_=*/true);
 
     return makeAggregatingStep(header, std::move(params));
+}
+
+/// The step that merges the partial states of `aggregating_step`, built from its params and grouping sets like
+/// `makeMergeOfPartialStates` in `makeDistributed.cpp` builds it.
+std::unique_ptr<MergingAggregatedStep> makeMergeOfPartialStates(const AggregatingStep & aggregating_step)
+{
+    Aggregator::Params params = aggregating_step.getParams();
+    params.only_merge = true;
+    return std::make_unique<MergingAggregatedStep>(
+        aggregating_step.getOutputHeader(),
+        std::move(params),
+        aggregating_step.getGroupingSetsParamsList(),
+        /*final_=*/true,
+        /*memory_efficient_aggregation_=*/false,
+        /*memory_efficient_merge_threads_=*/1,
+        /*should_produce_results_in_order_of_bucket_number_=*/false,
+        /*max_block_size_=*/65536,
+        /*memory_bound_merging_max_block_bytes_=*/0,
+        /*memory_bound_merging_of_aggregation_results_enabled_=*/false);
 }
 
 JoinExpressionActions makeJoinExpressionActions(const Block & left_header, const Block & right_header)
@@ -214,8 +235,8 @@ public:
     {
     }
 
-    String getName() const override { return "ReadFromSystemOne"; }
-    QueryPlanStepPtr clone() const override { return std::make_unique<TestSystemOneStep>(getOutputHeader()); }
+    [[nodiscard]] String getName() const override { return "ReadFromSystemOne"; }
+    [[nodiscard]] QueryPlanStepPtr clone() const override { return std::make_unique<TestSystemOneStep>(getOutputHeader()); }
     void initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override { }
 };
 
@@ -230,12 +251,12 @@ public:
     {
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         ++visits;
         return "CountingSource";
     }
-    QueryPlanStepPtr clone() const override { return std::make_unique<CountingSourceStep>(getOutputHeader(), visits); }
+    [[nodiscard]] QueryPlanStepPtr clone() const override { return std::make_unique<CountingSourceStep>(getOutputHeader(), visits); }
     void initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override { }
 
 private:
@@ -255,8 +276,8 @@ public:
     {
     }
 
-    String getName() const override { return "PreservingTest"; }
-    QueryPlanStepPtr clone() const override { return std::make_unique<PreservingTestStep>(getOutputHeader()); }
+    [[nodiscard]] String getName() const override { return "PreservingTest"; }
+    [[nodiscard]] QueryPlanStepPtr clone() const override { return std::make_unique<PreservingTestStep>(getOutputHeader()); }
     void transformPipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override { }
 
 private:
@@ -719,7 +740,7 @@ TEST(ColumnStatsProvenance, JoinCardinalityClampInvalidatesDistinctCountUpperBou
     auto retained_stats = measuredColumnStats();
 
     auto left = std::make_shared<DPJoinEntry>(
-        0, 1000, std::unordered_map<String, ColumnStats>{{"clamped", clamped_stats}, {"retained", retained_stats}});
+        0, 1000, UnorderedMapWithMemoryTracking<String, ColumnStats>{{"clamped", clamped_stats}, {"retained", retained_stats}});
     auto right = std::make_shared<DPJoinEntry>(1, 1000);
     DPJoinEntry joined(left, right, 0, 1, 100, JoinOperator{});
 
@@ -1004,6 +1025,52 @@ TEST(ColumnStatsProvenance, AggregationWithGroupByLimitRecordsRowSubset)
     ASSERT_TRUE(unlimited.has_value());
     EXPECT_FALSE(unlimited->column_stats.at("k").ndv_provenance.has(RowSubset));
     EXPECT_FALSE(unlimited->column_stats.at("k").range_provenance.has(RowSubset));
+}
+
+/// A distributed plan splits an aggregation into partial ones and a `MergingAggregatedStep` that finishes them. The merge
+/// keeps the keys, the grouping sets and the limits of the aggregation, so it is estimated like the aggregation, and the
+/// partial aggregation followed by the merge gives the statistics of the aggregation alone.
+TEST(ColumnStatsProvenance, MergingAggregatedIsEstimatedLikeTheAggregationItFinishes)
+{
+    const auto header = makeHeader();
+
+    const auto aggregation = makeAggregationStep(header, false, false);
+    const auto merge = makeMergeOfPartialStates(*aggregation);
+    const auto partial = estimateUnaryStepStats(*aggregation, inputRelationStats());
+    ASSERT_TRUE(partial.has_value());
+    const auto merged = estimateUnaryStepStats(*merge, *partial);
+    ASSERT_TRUE(merged.has_value());
+    ASSERT_TRUE(merged->estimated_rows.has_value());
+    EXPECT_EQ(*merged->estimated_rows, 50);
+    EXPECT_FALSE(merged->rows_exact);
+    const auto & merged_key = merged->column_stats.at("k");
+    const auto & partial_key = partial->column_stats.at("k");
+    EXPECT_EQ(merged_key.num_distinct_values, partial_key.num_distinct_values);
+    EXPECT_EQ(merged_key.ndv_provenance.toString(), partial_key.ndv_provenance.toString());
+    EXPECT_EQ(merged_key.range_provenance.toString(), partial_key.range_provenance.toString());
+    const auto merged_range = merged_key.valueRange(ValueRangeGuarantee::Representative);
+    ASSERT_TRUE(merged_range.has_value());
+    EXPECT_EQ(merged_range->min, Field(UInt64{10}));
+    EXPECT_EQ(merged_range->max, Field(UInt64{59}));
+
+    /// The merge itself records the grouping sets and the overflow row of the aggregation it finishes.
+    for (const auto & [grouping_sets, overflow_row] : {std::pair{true, false}, std::pair{false, true}})
+    {
+        SCOPED_TRACE(fmt::format("grouping_sets = {}, overflow_row = {}", grouping_sets, overflow_row));
+        const auto unmodeled_merge = makeMergeOfPartialStates(*makeAggregationStep(header, grouping_sets, overflow_row));
+        const auto stats = estimateUnaryStepStats(*unmodeled_merge, inputRelationStats());
+        ASSERT_TRUE(stats.has_value());
+        EXPECT_TRUE(stats->column_stats.at("k").ndv_provenance.has(Unmodeled));
+        EXPECT_TRUE(stats->column_stats.at("k").range_provenance.has(Unmodeled));
+        EXPECT_FALSE(stats->column_stats.at("k").min_value.has_value());
+        EXPECT_FALSE(stats->column_stats.at("k").max_value.has_value());
+    }
+
+    const auto limited_merge = makeMergeOfPartialStates(*makeAggregationStepWithGroupLimit(header, 1, OverflowMode::ANY));
+    const auto limited = estimateUnaryStepStats(*limited_merge, inputRelationStats());
+    ASSERT_TRUE(limited.has_value());
+    EXPECT_TRUE(limited->column_stats.at("k").ndv_provenance.has(RowSubset));
+    EXPECT_TRUE(limited->column_stats.at("k").range_provenance.has(RowSubset));
 }
 
 TEST(ColumnStatsProvenance, JoinEstimatesArePropagated)
