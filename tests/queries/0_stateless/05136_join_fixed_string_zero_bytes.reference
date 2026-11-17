@@ -110,6 +110,10 @@ Tuple(\n    a String,\n    b UInt16)	8
 -- Nullable(Tuple) with <=>: the oracle and the join, where NULL matches NULL
 9
 9
+-- the same next to an empty tuple element, also without Nullable
+9	57
+9
+8	42
 -- arrays are compared after the cast to the common type, by the operator and by the join
 4	4
 4

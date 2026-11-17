@@ -100,6 +100,11 @@ SELECT '-- Nullable(Tuple) with <=>: the oracle and the join, where NULL matches
 SELECT countIf(l.t <=> r.t) FROM (SELECT CAST(tuple(x), 'Nullable(Tuple(FixedString(3)))') AS t FROM fs UNION ALL SELECT NULL) AS l, (SELECT CAST(tuple(y), 'Nullable(Tuple(String))') AS t FROM s UNION ALL SELECT NULL) AS r;
 SELECT count() FROM (SELECT CAST(tuple(x), 'Nullable(Tuple(FixedString(3)))') AS t FROM fs UNION ALL SELECT NULL) AS l JOIN (SELECT CAST(tuple(y), 'Nullable(Tuple(String))') AS t FROM s UNION ALL SELECT NULL) AS r ON l.t <=> r.t SETTINGS join_algorithm = 'hash';
 
+SELECT '-- the same next to an empty tuple element, also without Nullable';
+SELECT countIf(l.t <=> r.t), countIf(isDistinctFrom(l.t, r.t)) FROM (SELECT CAST((x, ()), 'Nullable(Tuple(FixedString(3), Tuple()))') AS t FROM fs UNION ALL SELECT NULL) AS l, (SELECT CAST((y, ()), 'Nullable(Tuple(String, Tuple()))') AS t FROM s UNION ALL SELECT NULL) AS r;
+SELECT count() FROM (SELECT CAST((x, ()), 'Nullable(Tuple(FixedString(3), Tuple()))') AS t FROM fs UNION ALL SELECT NULL) AS l JOIN (SELECT CAST((y, ()), 'Nullable(Tuple(String, Tuple()))') AS t FROM s UNION ALL SELECT NULL) AS r ON l.t <=> r.t SETTINGS join_algorithm = 'hash';
+SELECT countIf((x, ()) <=> (y, ())), countIf(isDistinctFrom((x, ()), (y, ()))) FROM fs, s;
+
 SELECT '-- arrays are compared after the cast to the common type, by the operator and by the join';
 SELECT countIf([x] = [y]), countIf(tuple([x]) = tuple([y])) FROM fs, s;
 SELECT count() FROM fs JOIN s ON [fs.x] = [s.y] SETTINGS join_algorithm = 'hash';

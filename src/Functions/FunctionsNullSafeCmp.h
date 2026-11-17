@@ -337,6 +337,16 @@ public:
             return executeNullableWithoutSupertype(arguments, input_rows_count);
         }
 
+        // To address: two empty tuples, also as elements of the tuples compared below. `FunctionComparison` does not
+        // compare them, while they are not distinct when wrapped in `Nullable` and compared as whole values above.
+        auto is_empty_tuple = [](const DataTypePtr & type)
+        {
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+            return tuple_type && tuple_type->getElements().empty();
+        };
+        if (is_empty_tuple(arguments[0].type) && is_empty_tuple(arguments[1].type))
+            return result_type->createColumnConst(input_rows_count, UInt8(is_equal_mode ? 1 : 0));
+
         // To address regular case (also covers types with no common supertype that are not Nullable,
         // e.g. `UInt64` vs `Int64` and `Array(UInt64)` vs `Array(Int64)`;
         ColumnPtr res;
