@@ -169,4 +169,17 @@ SELECT isNull(accurateCastOrNull(materialize(tuple(toFixedString('{{ valid }}', 
 SELECT isNull(toDateTime64OrNull(materialize(toFixedString('', 32)), 3)),
     isNull(accurateCastOrNull(materialize(toFixedString('', 32)), 'DateTime64(3)'));
 
+-- The elements of an array or a map cannot hold the NULLs by which a conversion reports a failure. So they
+-- convert strictly also under `accurateCastOrNull`, whatever converts them: valid elements convert, and a
+-- malformed one throws.
+{% for source, target in [
+    ("['1']", 'Array(UInt64)'), ("[toFixedString('1', 1)]", 'Array(UInt64)'), ("['a']", "Array(Enum8('a' = 1))"),
+    ("['1.5']", 'Array(Decimal32(2))'), ("['true']", 'Array(Bool)'), ("[toLowCardinality('1')]", 'Array(UInt64)'),
+    ("[toNullable('1')]", 'Array(UInt64)'), ("[CAST('1', 'Variant(String, UInt64)')]", 'Array(UInt64)'),
+    ("[tuple('1')]", 'Array(Tuple(UInt64))'), ("map('a', '1')", 'Map(String, UInt64)')
+] %}
+SELECT accurateCastOrNull(tuple(materialize({{ source }})), 'Nullable(Tuple({{ target | replace("'", "\\'") }}))');
+{% endfor %}
+SELECT accurateCastOrNull(tuple(materialize(['x'])), 'Nullable(Tuple(Array(UInt64)))'); -- { serverError CANNOT_PARSE_TEXT }
+
 DROP TABLE nullable_tuple_conversion_rows;

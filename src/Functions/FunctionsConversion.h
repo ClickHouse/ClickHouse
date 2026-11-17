@@ -6097,8 +6097,9 @@ private:
     template <typename ToDataType>
     WrapperType createWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const;
 
-    /// Parses text with the text serialization of the result type. With `accurateCastOrNull` malformed input
-    /// becomes NULL, otherwise it throws. `requested_result_is_nullable` parses into a `Nullable` result.
+    /// Parses text with the text serialization of the result type. `requested_result_is_nullable` parses into
+    /// a `Nullable` result, in which `accurateCastOrNull` turns malformed input into NULL; otherwise it
+    /// throws.
     WrapperType createStringParsingWrapper(bool requested_result_is_nullable) const;
 
     WrapperType createUInt8ToBoolWrapper(DataTypePtr from_type, DataTypePtr to_type) const;
@@ -6122,7 +6123,7 @@ private:
 
     ElementWrappers getElementWrappers(const DataTypes & from_element_types, const DataTypes & to_element_types) const;
 
-    WrapperType createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type) const;
+    WrapperType createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type, bool requested_result_is_nullable) const;
 
     WrapperType createQBitWrapper(const DataTypePtr & from_type_untyped, const DataTypeQBit & to_type) const;
 
@@ -6166,10 +6167,11 @@ private:
 
     WrapperType createVariantToVariantWrapper(const DataTypeVariant & from_variant, const DataTypeVariant & to_variant) const;
 
-    /// Create wrapper only if we support this conversion.
-    WrapperType createWrapperIfCanConvert(const DataTypePtr & from, const DataTypePtr & to) const;
+    /// Create wrapper only if we support this conversion. `report_failures_as_null` is as in
+    /// `prepareUnpackDictionaries`.
+    WrapperType createWrapperIfCanConvert(const DataTypePtr & from, const DataTypePtr & to, bool report_failures_as_null) const;
 
-    WrapperType createVariantToColumnWrapper(const DataTypeVariant & from_variant, const DataTypePtr & to_type) const;
+    WrapperType createVariantToColumnWrapper(const DataTypeVariant & from_variant, const DataTypePtr & to_type, bool report_failures_as_null) const;
 
     static ColumnPtr createVariantFromDescriptorsAndOneNonEmptyVariant(const DataTypes & variant_types, const ColumnPtr & discriminators, const ColumnPtr & variant, ColumnVariant::Discriminator variant_discr);
 
@@ -6177,10 +6179,11 @@ private:
 
     WrapperType createColumnToVariantWrapper(const DataTypePtr & from_type, const DataTypeVariant & to_variant) const;
 
-    /// Wrapper for conversion to/from Variant type
-    WrapperType createVariantWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type) const;
+    /// Wrapper for conversion to/from Variant type. `report_failures_as_null` is as in
+    /// `prepareUnpackDictionaries`.
+    WrapperType createVariantWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type, bool report_failures_as_null) const;
 
-    WrapperType createDynamicToColumnWrapper(const DataTypePtr &) const;
+    WrapperType createDynamicToColumnWrapper(const DataTypePtr &, bool report_failures_as_null) const;
 
     WrapperType createStringToDynamicThroughParsingWrapper() const;
 
@@ -6190,17 +6193,18 @@ private:
 
     WrapperType createDynamicToDynamicWrapper(const DataTypeDynamic & from_dynamic, const DataTypeDynamic & to_dynamic) const;
 
-    /// Wrapper for conversion to/from Dynamic type
-    WrapperType createDynamicWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type) const;
+    /// Wrapper for conversion to/from Dynamic type. `report_failures_as_null` is as in
+    /// `prepareUnpackDictionaries`.
+    WrapperType createDynamicWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type, bool report_failures_as_null) const;
 
     template <typename FieldType>
-    WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type) const;
+    WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type, bool requested_result_is_nullable) const;
 
     template <typename EnumTypeFrom, typename EnumTypeTo>
     void checkEnumToEnumConversion(const EnumTypeFrom * from_type, const EnumTypeTo * to_type) const;
 
     template <typename ColumnStringType, typename EnumType>
-    WrapperType createStringToEnumWrapper() const;
+    WrapperType createStringToEnumWrapper(bool requested_result_is_nullable) const;
 
     template <typename ColumnNumberType, typename EnumType>
     WrapperType createNumberToEnumWrapper() const;
@@ -6226,9 +6230,15 @@ private:
         };
     }
 
-    WrapperType prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const;
+    /// `report_failures_as_null` asks the conversion to report a value that it cannot convert as NULL in a
+    /// nullable result, even when `to_type` cannot hold NULL. Under `accurateCastOrNull`, a tuple asks this
+    /// of the conversions of its elements and takes the NULLs out into its own null map (see
+    /// `createTupleWrapper`). The elements of an array or a map could not keep such NULLs, so their
+    /// conversions are not asked and convert strictly.
+    WrapperType prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type, bool report_failures_as_null = false) const;
 
-    WrapperType prepareRemoveNullable(const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check) const;
+    WrapperType prepareRemoveNullable(
+        const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check, bool report_failures_as_null) const;
 
     /// `from_type` and `to_type` have their outer `Nullable` wrappers removed.
     /// `requested_result_is_nullable` includes declared nullable targets and intermediate
