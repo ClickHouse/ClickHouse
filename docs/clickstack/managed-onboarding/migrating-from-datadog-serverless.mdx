@@ -10,7 +10,6 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from '/snippets/components/Image.jsx';
 
 <Info>
 **TL;DR**
@@ -50,11 +49,27 @@ If your telemetry flows through OpenTelemetry Collectors, add one exporter inste
 <Step title="Copy your connection details" id="copy-connection-details">
 Open your ClickHouse Observability service. Until data arrives it shows the **Start sending telemetry** page.
 
-<Image img="/images/clickstack/getting-started/observability-start-sending-telemetry.png" alt="Start sending telemetry page showing the current service with no data yet and three options: Use an existing OpenTelemetry setup, Instrument with AI, and Follow setup guides" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Start sending telemetry page showing the current service with no data yet and three options: Use an existing OpenTelemetry setup, Instrument with AI, and Follow setup guides](/images/clickstack/getting-started/observability-start-sending-telemetry.png)
+
+</Frame>
+
+</div>
 
 Under **Use an existing OpenTelemetry setup**, select **View connection details**. The **URL** tab shows your OTLP endpoint, `https://YOUR_OTEL_HOST:4318`, and your API key. Select **Reveal key** to show the full key, then use the copy button.
 
-<Image img="/images/clickstack/getting-started/observability-connection-details.png" alt="Set up OpenTelemetry dialog with URL, Collector config, and Env vars options and masked connection details" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Set up OpenTelemetry dialog with URL, Collector config, and Env vars options and masked connection details](/images/clickstack/getting-started/observability-connection-details.png)
+
+</Frame>
+
+</div>
 
 The Datadog-compatible endpoint lives on the same host as the OTLP endpoint, on port `8126` instead of `4318`, and your service's API key doubles as the Datadog API key. The rest of this guide uses these placeholders:
 
@@ -67,7 +82,15 @@ The Datadog-compatible endpoint lives on the same host as the OTLP endpoint, on 
 
 You can find the same values at any time under **Team Settings → Managed Telemetry**.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry page in Team Settings showing the masked OTLP HTTP endpoint and API key" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry page in Team Settings showing the masked OTLP HTTP endpoint and API key](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 </Step>
 
 <Step title="Configure your Datadog Agents" id="configure-your-datadog-agents">
@@ -201,7 +224,15 @@ In the status output, the **Forwarder**, **APM Agent**, and **Logs Agent** secti
 
 Return to the **Start sending telemetry** page in your service and select **Check for data**. Once your telemetry has arrived, the service status changes to **Data received** and **Start exploring** becomes available.
 
-<Image img="/images/clickstack/getting-started/observability-data-received.png" alt="Start sending telemetry page showing the service status as Data received, a confirmation that you are ready to explore, and the Start exploring button enabled" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Start sending telemetry page showing the service status as Data received, a confirmation that you are ready to explore, and the Start exploring button enabled](/images/clickstack/getting-started/observability-data-received.png)
+
+</Frame>
+
+</div>
 
 Select **Start exploring** to open **Search**. Select the **Logs** source, set the time range to **Last 15 minutes**, and filter `ServiceName` to the `service` tag your Agent applies. Expand a record: the Agent's `host`, `env`, container, and Kubernetes tags appear as resource attributes, and Datadog's `status` is mapped to `SeverityText`, so `level:error` style filters work as they do for OpenTelemetry logs.
 

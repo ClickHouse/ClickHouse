@@ -64,7 +64,7 @@ struct FileCacheReserveStat
             return *this;
         }
 
-        std::string toString() const;
+        [[nodiscard]] std::string toString() const;
     };
 
     Stat total_stat;
@@ -73,7 +73,7 @@ struct FileCacheReserveStat
     bool not_enough_space = false;
 
     Stat & getStatByKind(FileSegmentKind kind) { return stat_by_kind[static_cast<uint8_t>(kind)]; }
-    const Stat & getStatByKind(FileSegmentKind kind) const { return stat_by_kind[static_cast<uint8_t>(kind)]; }
+    [[nodiscard]] const Stat & getStatByKind(FileSegmentKind kind) const { return stat_by_kind[static_cast<uint8_t>(kind)]; }
 
     enum class State
     {
