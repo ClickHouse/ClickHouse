@@ -2744,7 +2744,7 @@ struct DictionaryValueHashes
 /// which case the dictionary can't be used for filtering).
 static std::optional<DictionaryValueHashes> hashDictionaryValues(
     const parq::FileMetaData & file_metadata, const ReadOptions & options,
-    Reader::ColumnChunk & column, const Reader::PrimitiveColumnInfo & column_info,
+    Reader::ColumnChunk & column, const Reader::PrimitiveColumnInfo & column_info, const IDataType & output_block_type,
     const PruningMemoryReservation & reservation, size_t & held_pruning_bytes)
 {
     held_pruning_bytes = 0;
@@ -2857,11 +2857,11 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
     {
         if (options.format.null_as_default)
         {
-            /// Under `input_format_null_as_default`, null values are decoded as the type's default
+            /// Under `input_format_null_as_default`, null values are decoded as the requested type's default
             /// value, which is not in the dictionary; without accounting for it we'd wrongly skip a
             /// row group whose nulls match the queried default (e.g. `WHERE x = 0` over an optional
             /// column read as non-nullable `UInt64`). So add the default value's hash.
-            auto default_hash = parquetTryHashField((*createColumnWithDefaults(*column_info.output_type, 1))[0], schema_element);
+            auto default_hash = parquetTryHashField((*createColumnWithDefaults(output_block_type, 1))[0], schema_element);
             /// If the default value can't be hashed, we can't rule out a match.
             if (!default_hash.has_value())
                 return std::nullopt;
@@ -2948,7 +2948,9 @@ bool Reader::DictionaryLookup::findAnyHash(const VectorWithMemoryTracking<uint64
 {
     if (!computed)
     {
-        value_hashes = hashDictionaryValues(reader.file_metadata(), reader.options, column, column_info, reservation, reserved_bytes);
+        value_hashes = hashDictionaryValues(
+            reader.file_metadata(), reader.options, column, column_info,
+            *reader.extended_sample_block_data_types.at(column_info.idx_in_output_block), reservation, reserved_bytes);
         computed = true;
     }
     /// If the dictionary values couldn't be hashed (e.g. the value set didn't fit the pruning budget),
