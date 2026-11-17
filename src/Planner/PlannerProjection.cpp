@@ -1,4 +1,4 @@
-#include <Planner/PlannerProjections.h>
+#include <Planner/PlannerProjection.h>
 
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>

@@ -43,7 +43,7 @@
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Planner/PlannerExpressionAnalysis.h>
-#include <Planner/PlannerProjections.h>
+#include <Planner/PlannerProjection.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
