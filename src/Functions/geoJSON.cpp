@@ -47,27 +47,27 @@ public:
         format_settings.json.write_named_tuples_as_objects = true;
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
     /// The captured settings decide the result for the same value, see `IFunctionBase::updateHash`.
     void updateHash(SipHash & hash) const override { hash.update(format_settings_hash); }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     /// An empty string is not a geometry.
-    bool canBeExecutedOnDefaultArguments() const override { return false; }
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     /// A NULL row must give a NULL geometry, without parsing the default value of the nested column.
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
     /// A `geometry` field of a `JSON` column is `Dynamic` if it holds a string, and the adaptor gives NULL for NULL rows.
-    bool useDefaultImplementationForDynamic() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForDynamic() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto type = removeNullable(arguments[0]);
         /// Schema inference gives a named `Tuple` for a `geometry` object in JSON Lines.
@@ -79,12 +79,12 @@ public:
         return DataTypeFactory::instance().get("Geometry");
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return DataTypeFactory::instance().get("Geometry");
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (arguments[0].type->onlyNull())
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
@@ -162,32 +162,33 @@ public:
     {
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
     /// The captured settings decide the result for the same value, see `IFunctionBase::updateHash`.
     void updateHash(SipHash & hash) const override { hash.update(format_settings_hash); }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     /// An empty line or polygon is rejected by `format_geojson_validate_geometry`.
-    bool canBeExecutedOnDefaultArguments() const override { return false; }
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        getKind(arguments[0]);
+        /// Throws if the argument is not a geometry.
+        (void)getKind(arguments[0]);
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto kind = getKind(arguments[0].type);
 
@@ -208,7 +209,7 @@ public:
 
 private:
     /// An argument of the `Geometry` type gets here as its variants, because of the default implementation for `Variant`.
-    GeoJSONGeometryKind getKind(const DataTypePtr & type) const
+    [[nodiscard]] GeoJSONGeometryKind getKind(const DataTypePtr & type) const
     {
         auto kind = getGeoJSONGeometryKind(type->getName());
         /// As in `callOnGeometryDataType`, an array of points without a type name is a `Ring`.
