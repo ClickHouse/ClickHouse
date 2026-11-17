@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <algorithm>
 
@@ -14,15 +15,18 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -30,7 +34,6 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool use_statistics;
-extern const SettingsBool use_iceberg_manifest_statistics;
 }
 
 namespace QueryPlanOptimizations
@@ -42,9 +45,8 @@ namespace
 /// The sizes of the arrays are unknown, so an array join is assumed to produce this many rows per input row.
 constexpr Float64 array_join_rows_multiplier = 100;
 
-RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
+RelationStats estimateAggregatingStepStats(const Aggregator::Params & aggregator_params, const RelationStats & input_stats)
 {
-    const auto & aggregator_params = aggregating_step.getAggregatorParameters();
     std::optional<Float64> total_number_of_distinct_values = 1;
     RelationStats aggregation_stats;
     /// Carry imprecision and source from the input, or the annotation is lost for aggregation subqueries.
@@ -102,7 +104,7 @@ void floorReadWithRows(RelationProfile & profile)
 /// sorted range), so the child's value ranges and NULL fraction do not describe the output.
 /// Applied whenever a limit is present: the row estimate cannot prove the limit does not
 /// truncate (e.g. a TopN read is already scaled down by its `__topKFilter` prewhere).
-void clearColumnValueRanges(std::unordered_map<String, ColumnStats> & column_stats)
+void clearColumnValueRanges(UnorderedMapWithMemoryTracking<String, ColumnStats> & column_stats)
 {
     for (auto & [_, stats] : column_stats)
     {
@@ -145,9 +147,9 @@ bool prunesNothingAtPlanTime(const ActionsDAG::Node * node)
 }
 
 /// The conditions on the rows of a read: the filter above it and the `PREWHERE`, as MergeTree estimates them, and the row policy.
-std::vector<RPNBuilderTreeNode> getConditionsToEstimate(const SourceStepWithFilter & reading, const ActionsDAG::Node * filter)
+std::vector<RPNBuilderTreeNode> getConditionsToEstimate(const SourceStepWithFilter & reading, const ActionsDAG::Node * filter) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `ConditionSelectivityEstimator::estimateRelationProfile` takes std::vector
 {
-    std::vector<RPNBuilderTreeNode> conditions;
+    std::vector<RPNBuilderTreeNode> conditions; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- returned to `estimateRelationProfile`, which takes std::vector
     auto add_condition = [&](const ActionsDAG::Node * condition)
     {
         if (condition && !prunesNothingAtPlanTime(condition))
@@ -295,11 +297,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * reading = typeid_cast<const ReadFromObjectStorageStep *>(step))
     {
-        const auto & settings = reading->getContext()->getSettingsRef();
-        if (!settings[Setting::use_iceberg_manifest_statistics] || !settings[Setting::use_statistics])
-            return RelationStats{};
-
-        const auto estimate = reading->estimateReadFromDataLakeMetadata();
+        const auto estimate = reading->getOrCreateDataLakeReadEstimate();
         if (!estimate)
             return RelationStats{};
 
@@ -325,12 +323,13 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                     floorReadWithRows(profile);
                 stats.column_stats = std::move(profile.column_stats);
             }
-            /// Without conditions, the rows of the remaining files, imprecise with delete files.
-            stats.imprecise_estimate = rows != 0 && estimate->has_delete_files;
+            /// Without conditions, the rows of the remaining files, imprecise with delete files, also when they leave 0 rows.
+            stats.imprecise_estimate = estimate->has_delete_files;
             return stats;
         }
 
-        if (estimate->estimator)
+        /// With `for_runtime_filter_transport` the rows size a sent runtime filter, so they must be an upper bound, not a guess.
+        if (estimate->estimator && !for_runtime_filter_transport)
         {
             auto filtered = estimate->estimator->estimateRelationProfile(reading->getStorageMetadata(), conditions);
             floorReadWithRows(filtered);
@@ -363,6 +362,10 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         /// system.one always produces exactly one row — used to implement constant SELECTs like `SELECT 1`.
         return RelationStats{.estimated_rows = 1, .table_name = "system.one"};
     }
+
+    /// Reads no rows, e.g. a `MergeTree` table without parts.
+    if (typeid_cast<const ReadNothingStep *>(step))
+        return RelationStats{.estimated_rows = 0, .table_name = {}, .source = RowEstimateSource::Statistics};
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
     {
@@ -445,8 +448,13 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
     {
         auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
-        auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
-        return aggregation_stats;
+        return estimateAggregatingStepStats(aggregating_step->getAggregatorParameters(), stats);
+    }
+
+    if (const auto * merging_aggregated_step = typeid_cast<const MergingAggregatedStep *>(step))
+    {
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
+        return estimateAggregatingStepStats(merging_aggregated_step->getParams(), stats);
     }
 
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))

@@ -71,7 +71,7 @@ void JSONCompactEachRowRowOutputFormat::writeTotals(const Columns & columns, siz
     writeRowEndDelimiter();
 }
 
-void JSONCompactEachRowRowOutputFormat::writeLine(const std::vector<String> & values)
+void JSONCompactEachRowRowOutputFormat::writeLine(std::span<const String> values)
 {
     JSONUtils::makeNamesValidJSONStrings(values, settings, settings.json.validate_utf8);
     writeRowStartDelimiter();

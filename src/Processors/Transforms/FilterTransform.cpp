@@ -26,8 +26,9 @@
 #include <Functions/IFunction.h>
 #include <Common/CurrentThread.h>
 #include <Common/assert_cast.h>
-#include <stack>
-#include <unordered_set>
+#include <Common/StackWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace ProfileEvents
 {
@@ -213,7 +214,7 @@ bool canReplaceColumnWithConstantAfterFilter(
     return true;
 }
 
-std::vector<ConstantColumnPosition> getConstantColumnPositionsAfterFilter(
+VectorWithMemoryTracking<ConstantColumnPosition> getConstantColumnPositionsAfterFilter(
     const ActionsDAG::Node * column_node,
     const ActionsDAG::Node * constant_node,
     const ActionsDAG & dag,
@@ -226,7 +227,7 @@ std::vector<ConstantColumnPosition> getConstantColumnPositionsAfterFilter(
     if (!hasConstantColumn(constant_node))
         return {};
 
-    std::vector<ConstantColumnPosition> positions;
+    VectorWithMemoryTracking<ConstantColumnPosition> positions;
     const auto & outputs = dag.getOutputs();
     for (size_t output_position = 0; output_position < outputs.size(); ++output_position)
     {
@@ -244,16 +245,16 @@ std::vector<ConstantColumnPosition> getConstantColumnPositionsAfterFilter(
     return positions;
 }
 
-std::vector<ConstantColumnPosition> collectConstantColumnsAfterFilter(
+VectorWithMemoryTracking<ConstantColumnPosition> collectConstantColumnsAfterFilter(
     const ActionsDAG & dag,
     const String & filter_column_name,
     const Block & transformed_header)
 {
-    std::vector<ConstantColumnPosition> result;
-    std::unordered_set<size_t> added_positions;
+    VectorWithMemoryTracking<ConstantColumnPosition> result;
+    UnorderedSetWithMemoryTracking<size_t> added_positions;
 
     const auto * filter = &dag.findInOutputs(filter_column_name);
-    std::stack<const ActionsDAG::Node *> nodes;
+    StackWithMemoryTracking<const ActionsDAG::Node *> nodes;
     nodes.push(filter);
 
     while (!nodes.empty())
@@ -275,7 +276,7 @@ std::vector<ConstantColumnPosition> collectConstantColumnsAfterFilter(
         if (function_name != "equals" || node->children.size() != 2)
             continue;
 
-        std::vector<ConstantColumnPosition> constant_columns;
+        VectorWithMemoryTracking<ConstantColumnPosition> constant_columns;
         if (hasConstantColumn(node->children[1]))
             constant_columns = getConstantColumnPositionsAfterFilter(node->children[0], node->children[1], dag, transformed_header);
         if (constant_columns.empty() && hasConstantColumn(node->children[0]))
@@ -336,13 +337,21 @@ static bool isAlwaysFalseByEmptySet(const ActionsDAG::Node * node)
     if (node->type != ActionsDAG::ActionType::FUNCTION)
         return false;
 
+#if USE_EMBEDDED_COMPILER
+    if (node->is_function_compiled)
+    {
+        auto conjuncts = ActionsDAG::getCompiledConjuncts(*node);
+        return std::any_of(conjuncts.begin(), conjuncts.end(), isAlwaysFalseByEmptySet);
+    }
+#endif
+
     const auto & function_name = node->function_base->getName();
 
     if (function_name == "and")
         return std::any_of(node->children.begin(), node->children.end(), isAlwaysFalseByEmptySet);
 
-    /// notIn over an empty set is always true, and the -IgnoreSet variants must not fold
-    if (function_name != "in" && function_name != "globalIn")
+    /// The negative variants never make the filter always false, and the -IgnoreSet variants must not fold
+    if (function_name != "in" && function_name != "globalIn" && function_name != "nullIn" && function_name != "globalNullIn")
         return false;
 
     const IColumn * set_column = node->children[1]->column.get();
@@ -357,7 +366,8 @@ static bool isAlwaysFalseByEmptySet(const ActionsDAG::Node * node)
         return false;
 
     auto future_set = column_set->getData();
-    if (!future_set)
+    /// The set of an `ENGINE = Set` table can still grow while the query runs.
+    if (!future_set || future_set->isMutableDuringQuery())
         return false;
 
     auto set = future_set->get();

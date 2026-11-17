@@ -40,6 +40,11 @@ SET max_rows_to_group_by = 0;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET enable_group_by_top_k_optimization = 1;
 SET group_by_top_k_optimization_observation_rows = 1;
+-- CI randomizes `max_bytes_before_external_group_by`; a threshold below the size of an
+-- empty two-level hash table spills after every block, and each spill restarts the heap,
+-- so no heap reaches the second block the freeze assertion below needs. Pin the spill off.
+SET max_bytes_before_external_group_by = 0;
+SET max_bytes_ratio_before_external_group_by = 0;
 -- One stream and small blocks, so the heap freezes deterministically at the start of the second block.
 SET max_threads = 1;
 SET max_block_size = 8192;

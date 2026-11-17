@@ -1,0 +1,13 @@
+--- create and write through a relative path
+0	0
+1	1
+2	2
+3	3
+4	4
+created in user_files_path
+--- read through different spellings of the relative path
+5	10
+5	10
+5	10
+--- a relative path leading outside of user_files_path
+PATH_ACCESS_DENIED

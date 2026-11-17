@@ -15,8 +15,6 @@
 #include <Common/Jemalloc.h>
 #include <Common/filesystemHelpers.h>
 #include <Processors/Sources/JemallocProfileSource.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <base/scope_guard.h>
@@ -99,17 +97,9 @@ try
     auto raw_file = std::string(Jemalloc::flushProfile("/tmp/jemalloc_keeper"));
     SCOPE_EXIT({ FS::tryDelete(raw_file, getLogger("KeeperJemallocProfileHandler")); });
 
-    std::string output;
-
-    if (format == "collapsed")
-    {
-        output = symbolizeJemallocHeapProfileToString(raw_file, JemallocProfileFormat::Collapsed, /* symbolize_with_inline= */ false);
-    }
-    else
-    {
-        ReadBufferFromFile in(raw_file);
-        readStringUntilEOF(output, in);
-    }
+    /// The dump itself has runtime addresses and the memory map, so even `raw` goes through `JemallocProfileSource`.
+    const auto output_format = format == "collapsed" ? JemallocProfileFormat::Collapsed : JemallocProfileFormat::Raw;
+    std::string output = symbolizeJemallocHeapProfileToString(raw_file, output_format, /* symbolize_with_inline= */ false);
 
     setResponseDefaultHeaders(response);
     response.setContentType("text/plain; charset=UTF-8");

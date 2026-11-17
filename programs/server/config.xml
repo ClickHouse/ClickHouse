@@ -376,9 +376,6 @@
         <!-- Send/receive message size limits in bytes. -1 means unlimited -->
         <max_send_message_size>-1</max_send_message_size>
         <max_receive_message_size>-1</max_receive_message_size>
-
-        <!-- Enable if you want very detailed logs -->
-        <verbose_logs>false</verbose_logs>
     </grpc>
 
     <!-- Used with https_port and tcp_port_secure. Full ssl options list: https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71
@@ -1000,6 +997,29 @@
          PR_SET_NO_NEW_PRIVS, logs a warning and runs without a seccomp policy.
     -->
     <seccomp>trap</seccomp>
+
+    <!-- Isolate the server from the filesystem of the host at startup (Linux only): it moves into a new mount
+         namespace where only the paths it needs according to this configuration are visible - its data, logs,
+         configuration, certificates, a few system files - and nothing else, in particular no shell.
+         With "best_effort", if the kernel or a container runtime does not allow it, the server logs a warning and
+         runs without the isolation; with "enforce", it does not start then. "disabled" (the default without this
+         line) turns it off.
+         Executable user defined functions and dictionaries that run scripts need their interpreters and libraries:
+         list them in "filesystem_isolation_paths", or disable the isolation.
+         Without CAP_SYS_ADMIN the server has to create a user namespace as well, and loses its other capabilities,
+         such as CAP_NET_BIND_SERVICE (ports below 1024) and CAP_IPC_LOCK.
+    -->
+    <filesystem_isolation>best_effort</filesystem_isolation>
+    <!--
+    <filesystem_isolation_paths>
+        <read_only>/bin</read_only>
+        <read_only>/usr/bin</read_only>
+        <read_only>/lib</read_only>
+        <read_only>/lib64</read_only>
+        <read_only>/usr/lib</read_only>
+        <read_write>/mnt/exchange</read_write>
+    </filesystem_isolation_paths>
+    -->
 
     <![CDATA[
          Uncomment below in order to use JDBC table engine and function.
@@ -1974,7 +1994,7 @@
         </rule>
         <rule>
             <name>hide sensitive HTTP query-string parameters</name>
-            <regexp>([?&][^&=]*(?:secret|password|passwd|token|credential|signature|key)[^&=]*=)[^&\s]*</regexp>
+            <regexp>([?&amp;][^&amp;=]*(?:secret|password|passwd|token|credential|signature|key)[^&amp;=]*=)[^&amp;\s]*</regexp>
             <replace>\1[HIDDEN]</replace>
         </rule>
     </query_masking_rules> -->
