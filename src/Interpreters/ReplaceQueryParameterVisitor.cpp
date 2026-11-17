@@ -1,4 +1,5 @@
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -229,8 +230,9 @@ ASTPtr makeASTForQueryParameter(const Field & literal, const String & type_name,
             {
                 if (isDateTime64(type) || isTime64(type))
                     return std::make_shared<DataTypeDecimal<Decimal128>>(DecimalUtils::max_precision<Decimal128>, getDecimalScale(*type));
-                /// A custom name re-derived over the decimals may be invalid, e.g. `SimpleAggregateFunction(timeSeriesGroupArray, ...)`.
-                if (type->hasCustomName())
+                /// Parsing the name checks the aggregate function's argument types, which may reject the decimals,
+                /// e.g. `SimpleAggregateFunction(timeSeriesGroupArray, ...)`.
+                if (typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName()))
                     return type->cloneWithChildren(type->getChildren());
                 return type;
             },
