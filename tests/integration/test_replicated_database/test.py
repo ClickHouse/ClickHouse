@@ -1850,6 +1850,7 @@ def test_sync_database_replica_strict(started_cluster):
         # DEFAULT: needs the frozen snapshot fully processed -> times out.
         default_error = dummy_node.http_query_and_get_error(
             "system sync database replica strict_sync",
+            method="POST",
             params=sync_params,
             timeout=60,
         )
@@ -1862,6 +1863,7 @@ def test_sync_database_replica_strict(started_cluster):
         # the guard).
         dummy_node.http_query(
             "system sync database replica strict_sync strict",
+            method="POST",
             params=sync_params,
             timeout=60,
         )
