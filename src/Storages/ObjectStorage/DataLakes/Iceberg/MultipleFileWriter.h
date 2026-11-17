@@ -70,6 +70,7 @@ private:
     /// for the lifetime of the writer, so we compute the mapping once and reuse it across
     /// every rolled-over data file instead of recomputing it on each rollover.
     ColumnMapperPtr column_mapper;
+    std::unordered_set<Int64> required_field_ids;
     DataFileStatistics stats;
     DataFileStatisticsPtr current_file_stats;
     std::vector<DataFileStatisticsPtr> completed_file_stats;
