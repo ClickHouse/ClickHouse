@@ -325,6 +325,9 @@ private:
     static uintptr_t visitComparisonOverDateConversion(
         EngineIteratorData & iterator_data,
         const DateComparison & comparison);
+
+    static uintptr_t unknownWhereNull(
+        EngineIteratorData & iterator_data, const DB::ActionsDAG::Node * column, uintptr_t predicate);
 };
 
 uintptr_t EnginePredicate::visitPredicate(void * data, ffi::KernelExpressionVisitorState * state)
@@ -465,20 +468,21 @@ struct ColumnPredicateBuilder
 
     uintptr_t compare(ComparisonVisitor visitor, Int32 day) const
     {
-        /// Comparisons consume expression IDs, so register a fresh column and literal each time.
-        auto column_id = assertValid(
-            KernelUtils::unwrapResult(
-                ffi::visit_expression_column(
-                    visitor_state,
-                    KernelUtils::toDeltaString(column_node->result_name),
-                    &KernelUtils::allocateError),
-                "visit_expression_column"),
-            "column");
         auto literal_id = assertValid(
             visitLiteralValue(
                 DB::Field(Int64(day)), column_type->getTypeId(), column_type, visitor_state),
             "date literal");
-        return assertValid(visitor(visitor_state, column_id, literal_id), "date comparison");
+        return assertValid(visitor(visitor_state, column(), literal_id), "date comparison");
+    }
+
+    [[nodiscard]] uintptr_t isNull() const
+    {
+        return assertValid(ffi::visit_predicate_is_null(visitor_state, column()), "IS NULL");
+    }
+
+    [[nodiscard]] uintptr_t notOf(uintptr_t predicate) const
+    {
+        return assertValid(ffi::visit_predicate_not(visitor_state, assertValid(predicate, "NOT")), "NOT");
     }
 
     [[nodiscard]] uintptr_t andOf(uintptr_t left, uintptr_t right) const
@@ -492,6 +496,19 @@ struct ColumnPredicateBuilder
     }
 
 private:
+    /// Predicates consume expression IDs, so every use registers a fresh column.
+    [[nodiscard]] uintptr_t column() const
+    {
+        return assertValid(
+            KernelUtils::unwrapResult(
+                ffi::visit_expression_column(
+                    visitor_state,
+                    KernelUtils::toDeltaString(column_node->result_name),
+                    &KernelUtils::allocateError),
+                "visit_expression_column"),
+            "column");
+    }
+
     [[nodiscard]] uintptr_t junction(
         Junction kind, uintptr_t left, uintptr_t right, std::string_view description) const
     {
@@ -538,6 +555,20 @@ uintptr_t EngineIterator::visitComparisonOverDateConversion(
         predicates.andOf(is_date_range, compared), unknown_outside_range);
 }
 
+/// A NULL read into a column that is not `Nullable` becomes a value the kernel does not see (the type default,
+/// the column's `DEFAULT`, or an error), so such rows stay Unknown: (col IS NOT NULL AND predicate) OR (col IS NULL AND Unknown).
+uintptr_t EngineIterator::unknownWhereNull(
+    EngineIteratorData & iterator_data, const DB::ActionsDAG::Node * column, uintptr_t predicate)
+{
+    if (!predicate || predicate == VISITOR_FAILED_OR_UNSUPPORTED || DB::isNullableOrLowCardinalityNullable(column->result_type))
+        return predicate;
+
+    ColumnPredicateBuilder predicates{iterator_data.state, column, getTypeOrNestedType(column)};
+    auto not_null = predicates.andOf(predicates.notOf(predicates.isNull()), predicate);
+    auto null_unknown = predicates.andOf(predicates.isNull(), visitUntranslated(iterator_data));
+    return predicates.orOf(not_null, null_unknown);
+}
+
 uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const DB::ActionsDAG::Node * node)
 {
     if (iterator_data.hasException())
@@ -581,7 +612,7 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                         ffi::visit_expression_column(iterator_data.state,
                                                      column_name,
                                                      &KernelUtils::allocateError), "visit_expression_column");
-                    return ffi::visit_predicate_not(iterator_data.state, column);
+                    return unknownWhereNull(iterator_data, node->children[0], ffi::visit_predicate_not(iterator_data.state, column));
                 }
 
                 if (isFunctionNode(node->children[0]))
@@ -688,12 +719,12 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                     }
 
                     auto visitor = visitors->forOperands(isConstNode(node->children[0]));
-                    return visitor(iterator_data.state, column, constant);
+                    return unknownWhereNull(iterator_data, column_node, visitor(iterator_data.state, column, constant));
                 }
 
                 if (auto comparison = matchDateComparison(
                         node, *visitors, iterator_data.predicate.getFormatSettings()))
-                    return visitComparisonOverDateConversion(iterator_data, *comparison);
+                    return unknownWhereNull(iterator_data, comparison->column, visitComparisonOverDateConversion(iterator_data, *comparison));
             }
 
             break;
