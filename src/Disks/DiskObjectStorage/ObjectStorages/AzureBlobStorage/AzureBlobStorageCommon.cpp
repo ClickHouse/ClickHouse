@@ -489,10 +489,10 @@ AuthConfig readAuthConfig(const Poco::Util::AbstractConfiguration & config, cons
 
 String getETag(const Azure::ETag & etag, const String & blob_path)
 {
-    if (!etag.HasValue())
+    if (!etag.HasValue() || etag.ToString().empty())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Azure Blob Storage endpoint did not return an ETag for blob {}; a conforming endpoint always sends it", blob_path);
+            "Azure Blob Storage endpoint did not return a non-empty ETag for blob {}; a conforming endpoint always sends it", blob_path);
     return etag.ToString();
 }
 

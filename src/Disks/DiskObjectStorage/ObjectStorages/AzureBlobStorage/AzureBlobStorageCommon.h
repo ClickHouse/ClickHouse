@@ -227,9 +227,9 @@ AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const
 /// under `NDEBUG`. Never call it directly on a value that comes from a remote endpoint; use this
 /// function instead.
 ///
-/// Azure Blob Storage and every known compatible implementation send the header in every
-/// `GetProperties`, `ListBlobs` and `Download` answer, so its absence means the endpoint is  not
-/// behaving correctly.
+/// Azure Blob Storage and every known compatible implementation send a non-empty header in every
+/// `GetProperties`, `ListBlobs` and `Download` answer, so an absent or empty header means the endpoint
+/// is not behaving correctly.
 String getETag(const Azure::ETag & etag, const String & blob_path);
 
 #endif
