@@ -2676,6 +2676,17 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     size_t max_size = 50;
     size_t max_elements = 3;
 
+    /// In production every file segment in a cache has its `FileCache`. The test uses its own queue and metadata below,
+    /// so this cache only gives the file segments one.
+    FileCacheSettings file_cache_settings;
+    file_cache_settings[FileCacheSetting::max_size] = max_size;
+    file_cache_settings[FileCacheSetting::max_elements] = max_elements;
+    file_cache_settings[FileCacheSetting::path] = caches_dir / "test_eviction_pos_file_cache";
+    file_cache_settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    file_cache_settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    FileCache file_cache("test_eviction_pos", file_cache_settings);
+    file_cache.initialize();
+
     LRUFileCachePriority priority(IFileCachePriority::QueueType::Main, max_size, max_elements);
 
     std::string cache_path = std::filesystem::path(caches_dir) / "test_eviction_pos";
@@ -2707,7 +2718,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
         auto file_segment = std::make_shared<FileSegment>(
             key, offset, size, FileSegment::State::DOWNLOADED,
-            CreateFileSegmentSettings{}, false, nullptr, key_metadata, it);
+            CreateFileSegmentSettings{}, false, &file_cache, key_metadata, it);
 
         LockedKey(key_metadata).emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment)));
 
