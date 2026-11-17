@@ -241,6 +241,13 @@ public:
         getNested()->updateExternalDynamicMetadataIfExists(context);
     }
 
+    /// The schema at a pinned data lake state is built by the data lake from that state, so the proxy
+    /// cannot answer it from its own current metadata.
+    StorageMetadataPtr getInMemoryMetadataForDataLakeTableState(const DataLakeTableStateSnapshot & state, ContextPtr context) const override
+    {
+        return getNested()->getInMemoryMetadataForDataLakeTableState(state, context);
+    }
+
     /// The planner reads this to skip a join on a column that holds only defaults.
     std::optional<ColumnDefaultnessStats> getColumnDefaultnessStats(const String & column_name, ContextPtr context) const override
     {
