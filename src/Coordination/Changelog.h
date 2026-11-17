@@ -750,6 +750,13 @@ private:
     /// Queues removal of the registered changelog and all retained recovery copies for its range.
     std::vector<ChangelogFileOperationPtr> removeChangelogAndRecoveryCopiesAsync(
         uint64_t from_log_index, ChangelogFileDescriptionPtr changelog);
+    /// Moves `description` to the latest log disk before appending to it, and retires every other copy
+    /// of its range, including a move source that could not be removed. Throws if a copy cannot be
+    /// removed.
+    void prepareChangelogForAppend(const ChangelogFileDescriptionPtr & description);
+    /// Waits for removals of changelogs superseded by `writeAt` at `index`. Terminates if one failed:
+    /// appending the rewrite while a superseded changelog may remain would make the changelog inconsistent.
+    void waitSupersededChangelogRemovals(const std::vector<ChangelogFileOperationPtr> & removes, uint64_t index);
     /// Removes retained recovery copies synchronously: during startup cleanup, and before `writeAt`
     /// rewrites the registered changelog of the range. A rewritten changelog can be renamed by a later
     /// rotation, and a stale copy under the old name would compete with it on restart.

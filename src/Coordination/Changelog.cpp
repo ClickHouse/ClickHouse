@@ -156,22 +156,25 @@ KeeperMoveResult moveChangelogBetweenDisks(
 /// Throws if the source disk is not local: appending to it is supported only for `DiskLocal`. Then the
 /// destination is kept: nothing is appended to the source, so it cannot lose entries, and it may be a
 /// retained recovery copy.
-void moveChangelogBetweenDisksForAppend(
+/// Returns the source when the destination was published but the source could not be removed. The
+/// caller must retire it before appending: it is a stale copy of the range that would compete with
+/// the appended changelog on restart, and win once a rotation renames the appended one.
+std::optional<std::pair<DiskPtr, std::string>> moveChangelogBetweenDisksForAppend(
     DiskPtr disk_from,
     ChangelogFileDescriptionPtr description,
     DiskPtr disk_to,
     const KeeperContextPtr & keeper_context)
 {
     const auto path_to = description->path;
-    const auto move_result = moveChangelogBetweenDisks(std::move(disk_from), description, disk_to, path_to, keeper_context);
+    const auto move_result = moveChangelogBetweenDisks(disk_from, description, disk_to, path_to, keeper_context);
     if (move_result)
-        return;
+        return std::nullopt;
 
     switch (move_result.error())
     {
         case KeeperMoveError::DestinationPublishedSourceRemovalFailed:
-            /// The description already points to the destination, which wins on restart.
-            return;
+            /// The description already points to the destination.
+            return std::make_pair(std::move(disk_from), path_to);
         case KeeperMoveError::FailedBeforeMarkerPublication:
             /// Nothing was copied, but a preexisting destination may match a marker that was written
             /// before its synchronization failed.
@@ -209,6 +212,7 @@ void moveChangelogBetweenDisksForAppend(
     }
     /// A leftover move marker without its destination is an orphan that startup removes.
     removeKeeperFileIfExists(disk_to, path_to);
+    return std::nullopt;
 }
 
 constexpr auto DEFAULT_PREFIX = "changelog";
@@ -4493,12 +4497,41 @@ void Changelog::initWriter(ChangelogFileDescriptionPtr description)
 
     LOG_TRACE(log, "Continue to write into {}", description->path);
 
+    prepareChangelogForAppend(description);
+    current_writer->setFile(std::move(description), WriteMode::Append);
+}
+
+void Changelog::prepareChangelogForAppend(const ChangelogFileDescriptionPtr & description)
+{
     auto log_disk = description->disk;
     auto latest_log_disk = getLatestLogDisk();
     if (log_disk != latest_log_disk)
-        moveChangelogBetweenDisksForAppend(log_disk, description, latest_log_disk, keeper_context);
+    {
+        if (auto leftover_source = moveChangelogBetweenDisksForAppend(log_disk, description, latest_log_disk, keeper_context))
+        {
+            LOG_WARNING(
+                log,
+                "Changelog {} was moved to disk {}, but its source remained on disk {}; retiring it as a recovery copy",
+                description->path,
+                latest_log_disk->getName(),
+                leftover_source->first->getName());
+            auto copy = std::make_shared<ChangelogFileDescription>();
+            copy->prefix = description->prefix;
+            copy->from_log_index = description->from_log_index;
+            copy->to_log_index = description->to_log_index;
+            copy->extension = description->extension;
+            copy->is_compressed = description->is_compressed;
+            copy->disk = std::move(leftover_source->first);
+            copy->path = std::move(leftover_source->second);
+            retained_duplicate_changelogs[description->from_log_index].push_back(std::move(copy));
+        }
+    }
 
-    current_writer->setFile(std::move(description), WriteMode::Append);
+    /// The registered changelog is now at its final location, so a retained recovery copy that a move
+    /// landed on is recognized as the registered file itself. Every other copy of the range becomes
+    /// stale once entries are appended or rewritten: a rotation can rename the appended changelog, and
+    /// on restart a stale copy under the old name would then win and lose entries or leave a gap.
+    removeRetainedChangelogCopies(description->from_log_index, *description);
 }
 
 namespace
@@ -4779,6 +4812,25 @@ void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
         LOG_WARNING(log, "Changelog is shut down");
 }
 
+void Changelog::waitSupersededChangelogRemovals(const std::vector<ChangelogFileOperationPtr> & removes, uint64_t index)
+{
+    for (const auto & op : removes)
+    {
+        op->done.wait(false);
+        if (auto error = op->getError())
+        {
+            tryLogException(
+                std::move(error),
+                log,
+                fmt::format(
+                    "Failed to remove a superseded changelog while rewriting at index {}. Terminating to avoid an inconsistent changelog state",
+                    index),
+                LogsLevel::fatal);
+            std::terminate();
+        }
+    }
+}
+
 void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 {
     if (!initialized)
@@ -4822,22 +4874,30 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
             /// we create a new file starting with the required index
             if (description->broken_at_end)
             {
-                /// The new changelog starting at `index` supersedes the retained copies from `index` on,
-                /// and the selected changelog wins over them for the entries before it.
-                removeRetainedChangelogCopies(description->from_log_index, *description);
-                LOG_INFO(log, "Cannot write into {} because it has broken changelog at end, rotating", description->path);
+                if (description->from_log_index == index)
+                {
+                    /// The rewrite supersedes the whole broken changelog. Remove it with its recovery copies
+                    /// before starting the new changelog: otherwise the new changelog would collide with it
+                    /// in `existing_changelogs`, and the writer would rewrite the broken file in place, on
+                    /// a disk that may be neither the latest log disk nor one where `sync` is durable.
+                    /// Wait under `writer_mutex`: the new changelog can reuse the path of the removed one.
+                    LOG_INFO(log, "Removing changelog {} with broken end because it is rewritten from its start", description->path);
+                    auto removes = removeChangelogAndRecoveryCopiesAsync(index, description);
+                    existing_changelogs.erase(index);
+                    waitSupersededChangelogRemovals(removes, index);
+                }
+                else
+                {
+                    /// The new changelog starting at `index` supersedes the retained copies from `index`
+                    /// on, and the selected changelog wins over them for the entries before it.
+                    removeRetainedChangelogCopies(description->from_log_index, *description);
+                    LOG_INFO(log, "Cannot write into {} because it has broken changelog at end, rotating", description->path);
+                }
                 current_writer->rotate(index);
             }
             else
             {
-                auto log_disk = description->disk;
-                auto latest_log_disk = getLatestLogDisk();
-                if (log_disk != latest_log_disk)
-                    moveChangelogBetweenDisksForAppend(log_disk, description, latest_log_disk, keeper_context);
-
-                /// The registered changelog is now at its final location, so a retained recovery copy
-                /// that a move landed on is recognized as the registered file itself.
-                removeRetainedChangelogCopies(description->from_log_index, *description);
+                prepareChangelogForAppend(description);
 
                 LOG_INFO(log, "Writing into {}", description->path);
                 current_writer->setFile(std::move(description), WriteMode::Append);
@@ -4862,21 +4922,7 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
     }
 
     /// Append the rewrite only after superseded changelog files are gone.
-    for (const auto & op : pending_superseded_removes)
-    {
-        op->done.wait(false);
-        if (auto error = op->getError())
-        {
-            tryLogException(
-                std::move(error),
-                log,
-                fmt::format(
-                    "Failed to remove a superseded changelog while rewriting at index {}. Terminating to avoid an inconsistent changelog state",
-                    index),
-                LogsLevel::fatal);
-            std::terminate();
-        }
-    }
+    waitSupersededChangelogRemovals(pending_superseded_removes, index);
 
     /// Remove redundant logs from memory
     /// Everything >= index must be removed
@@ -5218,6 +5264,12 @@ void Changelog::backgroundChangelogOperationsThread()
                         }
                         if (changelog.recovery_marker_path)
                             changelog.disk->removeFileIfExists(*changelog.recovery_marker_path);
+                        /// `writeAt` waits for these removals before appending the rewrite, so they must
+                        /// be durable: otherwise a removed suffix or recovery copy on a disk other than
+                        /// the one the rewrite is synchronized on can reappear after a power loss, and
+                        /// restart would replay it after the rewritten range. A failure is reported
+                        /// as a failure of the removal.
+                        syncKeeperParentDirectory(changelog.disk, changelog.path);
                     }
                     catch (Exception & e)
                     {

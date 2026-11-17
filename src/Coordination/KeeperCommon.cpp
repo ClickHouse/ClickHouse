@@ -247,6 +247,11 @@ void removeKeeperFileIfExists(const DiskPtr & disk, const std::string & path)
     syncLocalParentDirectory(disk, path);
 }
 
+void syncKeeperParentDirectory(const DiskPtr & disk, const std::string & path)
+{
+    syncLocalParentDirectory(disk, path);
+}
+
 namespace
 {
 

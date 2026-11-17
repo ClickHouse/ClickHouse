@@ -177,6 +177,10 @@ KeeperFileDigest computeKeeperFileDigest(const DiskPtr & disk, const std::string
 /// Remove a Keeper file while holding a sync guard for its parent directory.
 void removeKeeperFileIfExists(const DiskPtr & disk, const std::string & path);
 
+/// Make a removal or creation of `path` durable by synchronizing its parent directory. Does nothing
+/// for disks that are not `DiskLocal`.
+void syncKeeperParentDirectory(const DiskPtr & disk, const std::string & path);
+
 enum class KeeperMoveError : uint8_t
 {
     FailedBeforeMarkerPublication,
