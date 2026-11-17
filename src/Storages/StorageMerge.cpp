@@ -1363,7 +1363,8 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             ///    path, corrupting the cache).
             /// The cache key includes the database name because getModifiedQueryInfo injects
             /// a _database constant into the query tree (analyzer path), so tables in
-            /// different databases must not share cached entries.
+            /// different databases must not share cached entries. It also includes `column_to_skip`,
+            /// which changes the ALIAS expansion.
             bool can_cache = query_info.table_expression
                 && !row_policy_data_opt
                 && common_processed_stage == QueryProcessingStage::FetchColumns
@@ -1371,7 +1372,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 && !std::dynamic_pointer_cast<StorageDistributed>(storage)
                 && !storage->isView();
             auto structure_key = can_cache
-                ? (std::get<0>(table) + "\n" + storage_metadata_snapshot->getColumns().toString(false))
+                ? ((column_to_skip ? "1" : "0") + std::get<0>(table) + "\n" + storage_metadata_snapshot->getColumns().toString(false))
                 : String{};
             auto cache_it = can_cache ? query_info_cache.find(structure_key) : query_info_cache.end();
 
