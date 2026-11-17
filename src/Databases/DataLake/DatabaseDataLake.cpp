@@ -2424,8 +2424,10 @@ The following settings are supported:
 Namespace-aware name resolution is an experimental feature, disabled by default. Enable it
 with `SET allow_experimental_table_namespaces = 1`. A dotted path such as
 `catalog_name.namespace.table` is shorthand for the quoted form
-`` catalog_name.`namespace.table` `` and needs the setting in a table expression; without it the path is
-rejected and the quoted form has to be used.
+`` catalog_name.`namespace.table` `` and needs the setting in a query that reads from it; without the
+setting such a query is rejected and the quoted form has to be used. Statements that name their target
+table (`INSERT`, `CREATE`, `DROP`, `ALTER`, `DESCRIBE` and similar) and stored definitions accept the
+path regardless of the setting.
 :::
 
 Data lake catalogs organize tables into namespaces, which can be nested to
@@ -2458,10 +2460,12 @@ You can also spell out every part with dots:
   server) always reads `a.b` as database `a`, table `b`; the query argument of
   table functions `view`, `viewIfPermitted`, `eval`, `obfuscate` and `explain`
   keeps the two-part rule. In a stored definition, reference a catalog table as
-  ``catalog_name.`ns.t` ``. The path form `catalog_name.ns.t` is stored as the quoted
-  name, except in a dictionary `QUERY`, which is kept as text, runs in the dictionary's
-  own context and needs the setting in the query's own `SETTINGS` clause. In view bodies and column expressions, `` `ns.t` `` also
-  works when the catalog is the current database at creation: it is qualified
+  ``catalog_name.`ns.t` ``. The path form `catalog_name.ns.t` in a table expression is stored as
+  the quoted name. As the right operand of `IN` (`x IN catalog_name.ns.t`) and as a column qualifier
+  (`catalog_name.ns.t.x`) it is stored as written and needs the setting whenever the definition is
+  used. A dictionary `QUERY` is kept as text, runs in the dictionary's own context and needs the
+  setting in the query's own `SETTINGS` clause. In view bodies and column expressions, `` `ns.t` ``
+  also works when the catalog is the current database at creation: it is qualified
   then and stored as ``catalog_name.`ns.t` ``.
 
 ```sql

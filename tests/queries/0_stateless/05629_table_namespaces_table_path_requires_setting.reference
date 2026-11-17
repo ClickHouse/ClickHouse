@@ -2,6 +2,11 @@
 A1: Code: 703
 A2: Code: 703
 A3: Code: 703
+-- T: statements that name their target and stored definitions accept the path
+T1: ok
+T2: 1
+T3: ok
+T4: 1
 -- S: SELECT scoping
 S1: 1
 S2: 1

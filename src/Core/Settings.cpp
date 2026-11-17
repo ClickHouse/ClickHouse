@@ -10126,9 +10126,13 @@ Cloud default value: `1`.
 Allow namespace-aware resolution of dotted table identifiers.
 
 When the setting is enabled, a dotted table path such as `db.ns.table` in a table expression names table `ns.table`
-of database `db`, the same as the quoted name ``db.`ns.table` ``. Without the setting such a table expression is
-rejected with `INVALID_IDENTIFIER` and the quoted name has to be used. Statements that name their target table
-directly (`INSERT`, `CREATE`, `DROP`, `ALTER`, `DESCRIBE` and similar) accept the path regardless of the setting.
+of database `db`, the same as the quoted name ``db.`ns.table` ``. Without the setting a query that reads from such
+a table expression is rejected with `INVALID_IDENTIFIER` and the quoted name has to be used. The check is made by
+the analyzer on the table expression as written. Statements that name their target table directly (`INSERT`,
+`CREATE`, `DROP`, `ALTER`, `DESCRIBE` and similar) accept the path regardless of the setting. So do definitions
+that are stored (queries of views and materialized views, column expressions, `ALTER` commands, SQL functions):
+they keep the quoted name. Statements that the server rewrites before analysis, such as `SHOW ... WHERE`, may
+accept the path as well.
 When the setting is enabled, the analyzer additionally:
 - resolves a two-part name `a.b` in a table expression as table `b` of database `a`, and also as table `a.b`
   of the current database if that database supports table namespaces (a data lake catalog) and `a` is not

@@ -34,6 +34,12 @@ run A1 "$OFF" "SELECT x FROM ${db}.ns.t"
 run A2 "$OFF" "SELECT count() FROM ${db}.\`ns.t\` AS a JOIN ${db}.ns.t AS b USING x"
 run A3 "$OFF" "SELECT x FROM ${db}.\`ns\`.t"
 
+echo '-- T: statements that name their target and stored definitions accept the path'
+run T1 "$OFF" "INSERT INTO ${db}.ns.u VALUES (3)"
+run T2 "$OFF" "EXISTS TABLE ${db}.ns.t"
+run T3 "$OFF" "CREATE VIEW ${db}.v0 AS SELECT x FROM ${db}.ns.t"
+run T4 "$OFF" "SELECT * FROM ${db}.v0"
+
 echo '-- S: SELECT scoping'
 run S1 "$OFF" "SELECT x FROM ${db}.\`ns.t\`"
 run S2 "$OFF" "SELECT x FROM ${db}.ns.t SETTINGS allow_experimental_table_namespaces = 1"
@@ -80,6 +86,7 @@ run F1c "$OFF" "SELECT formatQuerySingleLine('INSERT INTO a.b.c VALUES')"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.mv2"
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.mv"
+$CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.v0"
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.v"
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.\`ns.t\`"
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.\`ns.u\`"
