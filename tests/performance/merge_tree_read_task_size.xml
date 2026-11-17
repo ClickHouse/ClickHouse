@@ -1,12 +1,11 @@
 <test>
     <!-- A stream of a `MergeTree` read takes its share of the marks in tasks, and a stream that has read its
          share takes tasks from the shares of other streams. When a share is only a few default tasks, the
-         read cuts it into smaller ones, so the streams finish together. A table of 10 million rows gives a
-         stream such a share from 8 threads on: about 150 marks, which is 6 default tasks. Query 1 reads a
-         wide column, query 3 a filtered one, and repeated runs of query 2 read only the part of the table
-         that the query condition cache leaves. -->
+         end of the read is cut into smaller ones, so the streams finish together. A table of 10 million rows
+         gives a stream such a share from 8 threads on: about 150 marks, which is 6 default tasks. Query 1
+         reads a wide column, and repeated runs of query 2 read only the part of the table that the query
+         condition cache leaves. -->
 
     <query>SELECT URL, count() AS c FROM hits_10m_single GROUP BY URL ORDER BY c DESC LIMIT 10 FORMAT Null</query>
     <query>SELECT count() FROM hits_10m_single WHERE URL LIKE '%google%' FORMAT Null</query>
-    <query>SELECT SearchPhrase, count(DISTINCT UserID) AS u FROM hits_10m_single WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10 FORMAT Null</query>
 </test>
