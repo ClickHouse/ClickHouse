@@ -2,9 +2,11 @@
 #include <IO/Progress.h>
 #include <base/types.h>
 #include <Core/Block.h>
+#include <Core/Types_fwd.h>
 
 #include <optional>
 #include <string_view>
+#include <vector>
 
 namespace DB
 {
@@ -82,5 +84,23 @@ void writeTaskLogsPayload(const TaskLogsPayload & logs, WriteBuffer & out);
 
 /// Reads the counters by column name; unknown columns are ignored, missing ones default to 0.
 TaskLogsPayload readTaskLogsPayload(ReadBuffer & in);
+
+/// The body of a `get_statuses`, `cancel_tasks` or `forget_tasks` request: the count, then the tasks' unique ids.
+void writeTaskIds(const Strings & task_ids, WriteBuffer & out);
+Strings readTaskIds(ReadBuffer & in);
+
+/// One task of a `get_statuses` reply.
+struct DistributedQueryTaskStatusEntry
+{
+    String task_id;
+    DistributedQueryTaskStatus status;
+    /// What the task collects; decides the payloads written. Not sent.
+    TaskCollectors collectors;
+};
+
+/// A `get_statuses` reply: the count, then per task its id and its status as `get_status` writes it, length-prefixed,
+/// since that reply ends with the body.
+void writeTaskStatuses(const std::vector<DistributedQueryTaskStatusEntry> & entries, WriteBuffer & out);
+std::vector<DistributedQueryTaskStatusEntry> readTaskStatuses(ReadBuffer & in);
 
 }

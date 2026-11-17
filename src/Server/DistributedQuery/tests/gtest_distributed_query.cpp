@@ -63,6 +63,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Server/StatelessWorker/StatelessWorkerTaskSerialization.h>
+#include <Server/StatelessWorker/StatelessWorkerProtocol.h>
 #include <Common/Exception.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
@@ -1033,3 +1034,60 @@ TEST(DistributedTaskSerialization, InvalidTaskBatchesAreRejected)
         }
     }
 }
+
+TEST(DistributedTaskSerialization, TaskStatusesRoundTrip)
+{
+    const Strings task_ids = {"q::stage_0_0", "q::stage_0_1", "q::main"};
+    WriteBufferFromOwnString ids_out;
+    writeTaskIds(task_ids, ids_out);
+    ids_out.finalize();
+    ReadBufferFromString ids_in(ids_out.str());
+    EXPECT_EQ(readTaskIds(ids_in), task_ids);
+    EXPECT_TRUE(ids_in.eof());
+
+    std::vector<DistributedQueryTaskStatusEntry> entries(3);
+    entries[0].task_id = "q::stage_0_0";
+    entries[0].status.status = "Running";
+    entries[0].status.progress.read_rows = 42;
+    entries[1].task_id = "q::stage_0_1";
+    entries[1].status.status = "Failed";
+    entries[1].status.error_message = "boom";
+    entries[1].status.error_code = 241;
+    entries[2].task_id = "q::main";
+    entries[2].status.status = "Unknown task";
+
+    WriteBufferFromOwnString out;
+    writeTaskStatuses(entries, out);
+    out.finalize();
+    ReadBufferFromString in(out.str());
+    const auto restored = readTaskStatuses(in);
+    EXPECT_TRUE(in.eof());
+    ASSERT_EQ(restored.size(), entries.size());
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        EXPECT_EQ(restored[i].task_id, entries[i].task_id);
+        EXPECT_EQ(restored[i].status.status, entries[i].status.status);
+        EXPECT_EQ(restored[i].status.error_message, entries[i].status.error_message);
+        EXPECT_EQ(restored[i].status.error_code, entries[i].status.error_code);
+        EXPECT_EQ(restored[i].status.progress.read_rows.load(), entries[i].status.progress.read_rows.load());
+        EXPECT_FALSE(restored[i].status.logs.has_value());
+    }
+}
+
+TEST(DistributedTaskSerialization, TooManyTaskIdsAreRejected)
+{
+    WriteBufferFromOwnString out;
+    writeVarUInt(1000000, out);
+    out.finalize();
+    ReadBufferFromString in(out.str());
+    try
+    {
+        readTaskIds(in);
+        ADD_FAILURE() << "a million task ids were accepted";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
+    }
+}
+

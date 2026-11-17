@@ -101,6 +101,15 @@ bool StatelessTaskExecutor::TaskCancellation::setQuery(std::weak_ptr<QueryStatus
     return !cancelled;
 }
 
+void StatelessTaskExecutor::StatusChanges::notify()
+{
+    /// Taking the mutex orders the change before a waiter's check of it.
+    {
+        std::lock_guard lock(mutex);
+    }
+    changed.notify_all();
+}
+
 void StatelessTaskExecutor::LogsQueueSlot::set(InternalTextLogsQueuePtr logs_queue_)
 {
     std::lock_guard lock(mutex);
@@ -262,7 +271,7 @@ void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStat
     };
 
     /// The coordinator learns the cause without waiting until the task frees its resources.
-    auto report_failure = [failure_slot = task_state->failure]
+    auto report_failure = [failure_slot = task_state->failure, changes = status_changes]
     {
         auto failure = currentTaskFailure();
         fiu_do_on(FailPoints::distributed_plan_delay_root_cause_report,
@@ -271,11 +280,12 @@ void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStat
                 sleepForMilliseconds(1000);
         });
         failure_slot->set(std::move(failure));
+        changes->notify();
     };
 
     auto task_function = [unique_task_id, task_description = std::move(task_description_), distributed_query_id = unique_temp_file_path,
         collectors = task_state->collectors, trace_context = std::move(trace_context_), logs_queue_slot = task_state->logs_queue,
-        cancellation = task_state->cancellation, task_promise, update_progress, report_failure] mutable
+        cancellation = task_state->cancellation, changes = status_changes, task_promise, update_progress, report_failure] mutable
     {
         /// The promise must be fulfilled strictly after the last log line of this task:
         /// `getStatus` treats a ready future as a terminal state
@@ -328,6 +338,7 @@ void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStat
             task_failure = currentTaskFailure();
         }
         task_promise->set_value(task_failure);
+        changes->notify();
     };
 
     try
@@ -380,46 +391,96 @@ std::optional<TaskLogsPayload> drainLogs(const InternalTextLogsQueuePtr & logs_q
 
 }
 
+StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::currentStatus(
+    const TaskState & task_state, const std::shared_future<std::optional<TaskFailure>> & completion_future)
+{
+    /// The task sets its promise after its last log line, so a ready future seen first means every line is drained.
+    const bool ended = !completion_future.valid() || completion_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+    auto logs = drainLogs(task_state.logs_queue->get(), *task_state.forwarded_logs);
+    Progress progress_delta = task_state.progress->fetchAndResetPiecewiseAtomically();
+
+    if (!ended)
+    {
+        if (auto failure = task_state.failure->get())
+            return TaskStatus{Result::TaskFailing, failure->message, std::move(progress_delta), failure->code, std::move(logs), task_state.collectors};
+        return TaskStatus{Result::TaskRunnig, "", std::move(progress_delta), 0, std::move(logs), task_state.collectors};
+    }
+
+    const auto & failure = completion_future.get();
+    if (!failure)
+        return TaskStatus{Result::TaskFinished, "", std::move(progress_delta), 0, std::move(logs), task_state.collectors};
+    return TaskStatus{Result::TaskFailed, failure->message, std::move(progress_delta), failure->code, std::move(logs), task_state.collectors};
+}
+
 StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String & task_id, UInt64 wait_milliseconds)
 {
-    /// Make a copy of task completion future to wait for it outside of the lock
+    TaskStatePtr task_state;
     std::shared_future<std::optional<TaskFailure>> completion_future;
-    std::shared_ptr<Progress> progress;
-    std::shared_ptr<LogsQueueSlot> logs_queue;
-    std::shared_ptr<ForwardedLogsCounter> forwarded_logs;
-    std::shared_ptr<FailureSlot> failure_slot;
-    TaskCollectors collectors;
     {
         std::lock_guard lock(tasks_mutex);
         auto it = tasks.find(task_id);
         if (it == tasks.end())
             return TaskStatus{Result::UnknownTaskId, "", {}, 0, std::nullopt, {}};
-        completion_future = it->second->completion_future;
-        progress = it->second->progress;
-        logs_queue = it->second->logs_queue;
-        forwarded_logs = it->second->forwarded_logs;
-        failure_slot = it->second->failure;
-        collectors = it->second->collectors;
+        task_state = it->second;
+        completion_future = task_state->completion_future;
     }
 
-    if (completion_future.valid() && completion_future.wait_for(std::chrono::milliseconds(wait_milliseconds)) == std::future_status::timeout)
+    if (completion_future.valid())
+        completion_future.wait_for(std::chrono::milliseconds(wait_milliseconds));
+    return currentStatus(*task_state, completion_future);
+}
+
+std::vector<StatelessTaskExecutor::TaskStatus> StatelessTaskExecutor::getStatuses(const Strings & task_ids, UInt64 wait_milliseconds)
+{
+    struct Polled
     {
-        auto logs = drainLogs(logs_queue->get(), *forwarded_logs);
-        Progress progress_delta = progress->fetchAndResetPiecewiseAtomically();
-        if (auto failure = failure_slot->get())
-            return TaskStatus{Result::TaskFailing, failure->message, std::move(progress_delta), failure->code, std::move(logs), collectors};
-        return TaskStatus{Result::TaskRunnig, "", std::move(progress_delta), 0, std::move(logs), collectors};
+        TaskStatePtr state;
+        std::shared_future<std::optional<TaskFailure>> completion_future;
+        /// Its failure was reported before this request, so an earlier reply carried it.
+        bool failing_before = false;
+    };
+    std::vector<Polled> polled(task_ids.size());
+    {
+        std::lock_guard lock(tasks_mutex);
+        for (size_t i = 0; i < task_ids.size(); ++i)
+        {
+            if (auto it = tasks.find(task_ids[i]); it != tasks.end())
+            {
+                polled[i].state = it->second;
+                polled[i].completion_future = it->second->completion_future;
+            }
+        }
+    }
+    for (auto & task : polled)
+        task.failing_before = task.state && task.state->failure->get().has_value();
+
+    auto changed = [&polled]
+    {
+        for (const auto & task : polled)
+        {
+            if (!task.state || !task.completion_future.valid()
+                || task.completion_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+                return true;
+            if (!task.failing_before && task.state->failure->get())
+                return true;
+        }
+        return false;
+    };
+    {
+        std::unique_lock lock(status_changes->mutex);
+        status_changes->changed.wait_for(lock, std::chrono::milliseconds(wait_milliseconds), changed);
     }
 
-    /// Drain only after the future is ready
-    auto logs = drainLogs(logs_queue->get(), *forwarded_logs);
-    Progress progress_delta = progress->fetchAndResetPiecewiseAtomically();
-    const auto & failure = completion_future.get();
-
-    if (!failure)
-        return TaskStatus{Result::TaskFinished, "", std::move(progress_delta), 0, std::move(logs), collectors};
-    else
-        return TaskStatus{Result::TaskFailed, failure->message, std::move(progress_delta), failure->code, std::move(logs), collectors};
+    std::vector<TaskStatus> statuses;
+    statuses.reserve(polled.size());
+    for (const auto & task : polled)
+    {
+        if (task.state)
+            statuses.push_back(currentStatus(*task.state, task.completion_future));
+        else
+            statuses.push_back(TaskStatus{Result::UnknownTaskId, "", {}, 0, std::nullopt, {}});
+    }
+    return statuses;
 }
 
 StatelessTaskExecutor::Result StatelessTaskExecutor::cancelTask(const String & task_id)
@@ -445,10 +506,23 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::cancelTask(const String & t
     return Result::Ok;
 }
 
+void StatelessTaskExecutor::cancelTasks(const Strings & task_ids)
+{
+    for (const auto & task_id : task_ids)
+        cancelTask(task_id);
+}
+
 StatelessTaskExecutor::Result StatelessTaskExecutor::forgetTask(const String & task_id)
 {
     std::lock_guard lock(tasks_mutex);
     return eraseTaskLocked(task_id) ? Result::Ok : Result::UnknownTaskId;
+}
+
+void StatelessTaskExecutor::forgetTasks(const Strings & task_ids)
+{
+    std::lock_guard lock(tasks_mutex);
+    for (const auto & task_id : task_ids)
+        eraseTaskLocked(task_id);
 }
 
 bool StatelessTaskExecutor::tryRegisterTaskLocked(const String & unique_task_id, const TaskStatePtr & task_state)
