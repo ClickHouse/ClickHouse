@@ -298,7 +298,11 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
                 if (!settings)
                     throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Field 'settings' in the response of HTTP authentication server '{}' is not an object", server_name);
                 for (const auto & [key, value] : *settings)
+                {
+                    /// `settingStringToValueUtil` accepts an unknown name as a custom setting, so check the name first.
+                    access_control.checkSettingNameIsAllowed(key);
                     response->settings.emplace_back(key, settingStringToValueUtil(key, value));
+                }
             }
         }
 

@@ -26,6 +26,7 @@ DIRECTORY_USERS = {
     "colon": {},
     "ro_user": {"roles": ["r_ro"]},
     "prof_user": {"roles": ["r_prof"]},
+    "bad_setting": {"settings": {"nonexistent_setting": "UInt64_1"}, "roles": ["r_reader"]},
 }
 # Passwords other than `GOOD_PASSWORD`.
 DIRECTORY_PASSWORDS = {"colon": "tenant:secret"}

@@ -202,6 +202,11 @@ def test_directory_login_roles_settings(started_cluster: ClickHouseCluster):
 def test_directory_role_policy(started_cluster: ClickHouseCluster):
     for user in ["bad_role", "ghost_role"]:
         assert "Authentication failed" in node_dir1.query_and_get_error("SELECT 1", user=user, password=GOOD_PASSWORD)
+    # An unknown setting name with a valid field dump is rejected by the directory itself: nothing is materialized or cached.
+    for params in [{"query": "SELECT 1"}, {"query": "SELECT 1", "session_id": "bad_setting_session"}] * 2:
+        assert node_dir1.http_request("", method="POST", params=params, auth=("bad_setting", GOOD_PASSWORD)).status_code != 200
+    assert directory_count("bad_setting") == 4
+    assert node_dir1.query("SELECT count() FROM system.users WHERE name = 'bad_setting'") == "0\n"
 
 
 def test_directory_fall_through(started_cluster: ClickHouseCluster):
