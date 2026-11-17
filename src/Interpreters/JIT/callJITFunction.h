@@ -36,7 +36,15 @@ NO_SANITIZE_UNDEFINED __attribute__((no_sanitize("cfi-icall"))) inline decltype(
     UInt32 tag;
     memcpy(&tag, reinterpret_cast<const char *>(f) - sizeof(tag), sizeof(tag));
     if (tag != jitFunctionTag<std::decay_t<F>>())
+    {
+        /// The trap of a failed Clang CFI check, so that the fatal log names it (see `isCFICheckTrap` in StackTrace.cpp).
+#if defined(__x86_64__)
+        __asm__ volatile("ud1l 2(%%eax), %%eax" ::: "memory");
+#elif defined(__aarch64__)
+        __asm__ volatile("brk #0x5502" ::: "memory");
+#endif
         __builtin_trap();
+    }
     return f(std::forward<Args>(args)...);
 }
 
