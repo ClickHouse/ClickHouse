@@ -27,10 +27,10 @@ namespace DB
 class HashJoinImplementation : public IOptimizationRule
 {
 public:
-    String getName() const override { return "HashJoin"; }
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
-    Promise getPromise() const override { return 2000; }
-    bool isTransformation() const override { return false; }
+    [[nodiscard]] String getName() const override { return "HashJoin"; }
+    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
+    [[nodiscard]] Promise getPromise() const override { return 2000; }
+    [[nodiscard]] bool isTransformation() const override { return false; }
 
     class StrategyEnumerator;
 
@@ -54,9 +54,9 @@ public:
     void addShuffleJoin(size_t node_count);
     void addSingleKeyShuffleJoins(size_t node_count);
 
-    bool hasEquiKeys() const { return !equi_keys.empty(); }
-    bool hasMultipleEquiKeys() const { return equi_keys.size() >= 2; }
-    bool isBroadcastSafe() const { return left_preserved; }
+    [[nodiscard]] bool hasEquiKeys() const { return !equi_keys.empty(); }
+    [[nodiscard]] bool hasMultipleEquiKeys() const { return equi_keys.size() >= 2; }
+    [[nodiscard]] bool isBroadcastSafe() const { return left_preserved; }
 
 private:
     /// `hash_type_name` is the least supertype both sides are cast to before hashing when
@@ -245,6 +245,7 @@ void HashJoinImplementation::StrategyEnumerator::addBroadcastJoins(size_t node_c
 
     DistributionDescription keyed_left_dist;
     keyed_left_dist.node_count = node_count;
+    keyed_left_dist.without_enforcer = required_properties.distribution.without_enforcer;
     DistributionDescription keyed_output_dist;
     keyed_output_dist.node_count = node_count;
 
