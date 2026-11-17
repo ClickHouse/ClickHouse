@@ -6,24 +6,25 @@
 1000	Int16
 7	Int16
 x	String
---- v Variant(UInt32, UInt64)
-3	UInt64
-4294967296	UInt64
---- v Variant(DateTime64(3), DateTime64(5))
-2024-01-01 00:00:00.12345	DateTime64(5)
---- v Variant(Array(UInt32), Array(Int64))
-[-5]	Array(Int64)
-[4294967295]	Array(Int64)
 --- v Variant(String, FixedString(2))
 ab	String
 xyz	String
---- No member can hold the values of the others: v Variant(Array(Int64), Array(String))
-none of these members can hold the values of the others
---- No member can hold the values of the others: v Variant(Array(Bool), Array(UInt8))
-none of these members can hold the values of the others
---- No member can hold the values of the others: v Variant(Array(Date), Array(DateTime))
-none of these members can hold the values of the others
---- No member can hold the values of the others: v Variant(Array(Decimal32(0)), Array(Decimal32(9)))
-none of these members can hold the values of the others
---- No member can hold the values of the others: v Variant(Array(Enum8(''a'' = 1)), Array(Int8))
-none of these members can hold the values of the others
+--- v Variant(Date, Date32)
+1950-01-01	Date32
+2024-01-01	Date32
+--- No member is of the type that the members are read as: v Variant(UInt32, UInt64)
+none of these members is of this type
+--- No member is of the type that the members are read as: v Variant(DateTime64(3), DateTime64(5))
+none of these members is of this type
+--- No member is of the type that the members are read as: v Variant(Array(UInt32), Array(Int64))
+none of these members is of this type
+--- No member is of the type that the members are read as: v Variant(Array(Int64), Array(String))
+none of these members is of this type
+--- No member is of the type that the members are read as: v Variant(Array(Bool), Array(UInt8))
+none of these members is of this type
+--- No member is of the type that the members are read as: v Variant(Array(Date), Array(DateTime))
+none of these members is of this type
+--- No member is of the type that the members are read as: v Variant(Array(Decimal32(0)), Array(Decimal32(9)))
+none of these members is of this type
+--- No member is of the type that the members are read as: v Variant(Array(Enum8(''a'' = 1)), Array(Int8))
+none of these members is of this type

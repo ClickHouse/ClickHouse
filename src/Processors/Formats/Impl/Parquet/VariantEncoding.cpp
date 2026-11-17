@@ -1008,56 +1008,6 @@ String getWrittenTypeName(const IDataType & type)
     }
 }
 
-bool valuesFitInto(const DataTypePtr & from, const DataTypePtr & to)
-{
-    if (from->getName() == to->getName())
-        return true;
-    if (isNullableOrLowCardinalityNullable(from) && !isNullableOrLowCardinalityNullable(to))
-        return false;
-
-    const auto from_nested = removeNullable(removeLowCardinality(from));
-    const auto to_nested = removeNullable(removeLowCardinality(to));
-    if (from_nested->getName() == to_nested->getName())
-        return true;
-    if (isBool(from_nested) || isBool(to_nested))
-        return false;
-
-    const WhichDataType from_which(from_nested);
-    const WhichDataType to_which(to_nested);
-    if (from_which.isNativeInteger() && to_which.isNativeInteger())
-    {
-        const size_t from_size = from_nested->getSizeOfValueInMemory();
-        const size_t to_size = to_nested->getSizeOfValueInMemory();
-        if (from_which.isNativeUInt())
-            return to_which.isNativeUInt() ? to_size >= from_size : to_size > from_size;
-        return to_which.isNativeInt() && to_size >= from_size;
-    }
-    if (from_which.isDecimal() && to_which.isDecimal())
-    {
-        const UInt32 from_scale = getDecimalScale(*from_nested);
-        const UInt32 to_scale = getDecimalScale(*to_nested);
-        return to_scale >= from_scale && getDecimalPrecision(*to_nested) - to_scale >= getDecimalPrecision(*from_nested) - from_scale;
-    }
-    if (to_which.isString())
-        return from_which.isFixedString() || from_which.isEnum();
-    if (from_which.isDate() && to_which.isDate32())
-        return true;
-    if (from_which.isDateTime() && to_which.isDateTime())
-        return true;
-    if ((from_which.isDateTime() || from_which.isDateTime64()) && to_which.isDateTime64())
-    {
-        const UInt32 from_scale = from_which.isDateTime64() ? getDecimalScale(*from_nested) : 0;
-        const UInt32 to_scale = getDecimalScale(*to_nested);
-        return to_scale >= from_scale && to_scale <= 8;
-    }
-    if ((from_which.isTime() || from_which.isTime64()) && to_which.isTime64())
-        return (from_which.isTime64() ? getDecimalScale(*from_nested) : 0) <= getDecimalScale(*to_nested);
-    if (from_which.isArray() && to_which.isArray())
-        return valuesFitInto(
-            assert_cast<const DataTypeArray &>(*from_nested).getNestedType(), assert_cast<const DataTypeArray &>(*to_nested).getNestedType());
-    return false;
-}
-
 struct WrittenTypesOfVariantMembers
 {
     /// In the order of the members.
@@ -1067,8 +1017,7 @@ struct WrittenTypesOfVariantMembers
 
 /// The types that the values of the members of an ordinary `Variant` are read as into `Dynamic`, and the member
 /// that the values of each of these types are read into. When several members are written as the same type, it is
-/// the member that all their values fit into, preferring the member of exactly that type. Throws if a member cannot
-/// be restored.
+/// the member of exactly that type. Throws if a member cannot be restored.
 WrittenTypesOfVariantMembers getWrittenTypesOfVariantMembers(const DataTypeVariant & type, std::string_view column_name)
 {
     const auto & members = type.getVariants();
@@ -1090,15 +1039,9 @@ WrittenTypesOfVariantMembers getWrittenTypesOfVariantMembers(const DataTypeVaria
 
     for (const auto & [name, indices] : members_of_written_type)
     {
-        const DataTypePtr & written_type = res.types[indices.front()];
-        auto holds_all = [&](size_t candidate)
-        {
-            return std::all_of(indices.begin(), indices.end(), [&](size_t i) { return valuesFitInto(members[i], members[candidate]); });
-        };
-
-        auto it = std::find_if(indices.begin(), indices.end(), [&](size_t i) { return members[i]->equals(*written_type) && holds_all(i); });
-        if (it == indices.end())
-            it = std::find_if(indices.begin(), indices.end(), holds_all);
+        auto it = indices.size() == 1
+            ? indices.begin()
+            : std::find_if(indices.begin(), indices.end(), [&](size_t i) { return members[i]->getName() == name; });
         if (it == indices.end())
         {
             Strings group_names;
@@ -1107,7 +1050,7 @@ WrittenTypesOfVariantMembers getWrittenTypesOfVariantMembers(const DataTypeVaria
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The type {} cannot be stored in the Parquet variant column '{}': the values of its members {} are all read "
-                "as {}, and none of these members can hold the values of the others",
+                "as {}, and none of these members is of this type",
                 type.getName(), column_name, fmt::join(group_names, ", "),
                 name);
         }
