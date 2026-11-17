@@ -208,10 +208,11 @@ parser.add_argument(
     help="In seconds. Two ordered integers separated by comma (e.g., 3,5)",
 )
 parser.add_argument(
+    "--without-s3-server",
     "--without-minio",
     action="store_false",
     dest="with_minio",
-    help="Without MinIO integration",
+    help="Without the S3 server",
 )
 parser.add_argument(
     "--with-azurite", action="store_true", help="With Azure integration"
@@ -631,6 +632,7 @@ cluster = ClickHouseCluster(
     client_bin_path=args.client_binary,
     server_binaries=sorted_binaries,
     with_dolor=True,
+    s3_server="seaweedfs",
 )
 
 # Set environment variables such as locales and timezones
@@ -963,7 +965,7 @@ while all_running and (not reached_limit):
         choosen_instances = []
         available_options = {
             "zookeeper": list(ZOOKEEPER_CONTAINERS),
-            "minio": ["minio1"],
+            "minio": [cluster.minio_host],
             "nginx": ["nginx"],
             "azurite": ["azurite1"],
             "postgres": ["postgres1"],
