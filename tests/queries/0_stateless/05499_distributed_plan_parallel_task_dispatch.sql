@@ -1,5 +1,5 @@
--- With `distributed_plan_task_dispatch_threads` > 0 the coordinator sends the `start_tasks` batches of several workers at once;
--- the results must equal the dispatch one worker after another (0) and local execution.
+-- The coordinator sends the `start_tasks` batches of `distributed_plan_task_dispatch_threads` workers at once (0: all of them,
+-- 1: one worker after another); the results must equal local execution.
 
 SET enable_analyzer = 1;
 SET max_rows_to_group_by = 0;

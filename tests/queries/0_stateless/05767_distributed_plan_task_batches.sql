@@ -1,6 +1,6 @@
 -- With `distributed_plan_task_dispatch_batching = 1` the coordinator sends each worker's tasks in `start_tasks` batches, each
 -- stage's plan once per batch, and with 0 one task per batch; the results must equal local execution, with streaming and
--- persisted exchanges, whether the batches go to one worker after another (0 threads) or to several workers at once (8).
+-- persisted exchanges, whether the batches go to one worker after another (1 thread) or to several workers at once (8).
 
 SET enable_analyzer = 1;
 SET max_rows_to_group_by = 0;
@@ -21,10 +21,10 @@ SELECT count() FROM t_task_batches WHERE v IN (SELECT number * 2 FROM numbers(50
 SELECT 'aggregation Streaming';
 SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM t_task_batches GROUP BY k)
 SETTINGS make_distributed_plan = 1, distributed_plan_force_exchange_kind = 'Streaming', distributed_plan_task_dispatch_batching = 0,
-    distributed_plan_task_dispatch_threads = 0, distributed_plan_force_shuffle_aggregation = 1, log_comment = 'task-batches-aggregation-Streaming-0-0';
+    distributed_plan_task_dispatch_threads = 1, distributed_plan_force_shuffle_aggregation = 1, log_comment = 'task-batches-aggregation-Streaming-0-1';
 SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM t_task_batches GROUP BY k)
 SETTINGS make_distributed_plan = 1, distributed_plan_force_exchange_kind = 'Streaming', distributed_plan_task_dispatch_batching = 1,
-    distributed_plan_task_dispatch_threads = 0, distributed_plan_force_shuffle_aggregation = 1, log_comment = 'task-batches-aggregation-Streaming-1-0';
+    distributed_plan_task_dispatch_threads = 1, distributed_plan_force_shuffle_aggregation = 1, log_comment = 'task-batches-aggregation-Streaming-1-1';
 SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM t_task_batches GROUP BY k)
 SETTINGS make_distributed_plan = 1, distributed_plan_force_exchange_kind = 'Streaming', distributed_plan_task_dispatch_batching = 1,
     distributed_plan_task_dispatch_threads = 8, distributed_plan_force_shuffle_aggregation = 1, log_comment = 'task-batches-aggregation-Streaming-1-8';
@@ -32,10 +32,10 @@ SETTINGS make_distributed_plan = 1, distributed_plan_force_exchange_kind = 'Stre
 SELECT 'join Streaming';
 SELECT count(), sum(a.k) FROM t_task_batches AS a INNER JOIN t_task_batches AS b ON a.v = b.v
 SETTINGS make_distributed_plan = 1, distributed_plan_force_exchange_kind = 'Streaming', distributed_plan_task_dispatch_batching = 0,
-    distributed_plan_task_dispatch_threads = 0, distributed_plan_max_rows_to_broadcast = 0, log_comment = 'task-batches-join-Streaming-0-0';
+    distributed_plan_task_dispatch_threads = 1, distributed_plan_max_rows_to_broadcast = 0, log_comment = 'task-batches-join-Streaming-0-1';
 SELECT count(), sum(a.k) FROM t_task_batches AS a INNER JOIN t_task_batches AS b ON a.v = b.v
 SETTINGS make_distributed_plan = 1, distributed_plan_force_exchange_kind = 'Streaming', distributed_plan_task_dispatch_batching = 1,
-    distributed_plan_task_dispatch_threads = 0, distributed_plan_max_rows_to_broadcast = 0, log_comment = 'task-batches-join-Streaming-1-0';
+    distributed_plan_task_dispatch_threads = 1, distributed_plan_max_rows_to_broadcast = 0, log_comment = 'task-batches-join-Streaming-1-1';
 SELECT count(), sum(a.k) FROM t_task_batches AS a INNER JOIN t_task_batches AS b ON a.v = b.v
 SETTINGS make_distributed_plan = 1, distributed_plan_force_exchange_kind = 'Streaming', distributed_plan_task_dispatch_batching = 1,
     distributed_plan_task_dispatch_threads = 8, distributed_plan_max_rows_to_broadcast = 0, log_comment = 'task-batches-join-Streaming-1-8';
@@ -43,10 +43,10 @@ SETTINGS make_distributed_plan = 1, distributed_plan_force_exchange_kind = 'Stre
 SELECT 'set Streaming';
 SELECT count() FROM t_task_batches WHERE v IN (SELECT number * 2 FROM numbers(50000))
 SETTINGS make_distributed_plan = 1, distributed_plan_force_exchange_kind = 'Streaming', distributed_plan_task_dispatch_batching = 0,
-    distributed_plan_task_dispatch_threads = 0, log_comment = 'task-batches-set-Streaming-0-0';
+    distributed_plan_task_dispatch_threads = 1, log_comment = 'task-batches-set-Streaming-0-1';
 SELECT count() FROM t_task_batches WHERE v IN (SELECT number * 2 FROM numbers(50000))
 SETTINGS make_distributed_plan = 1, distributed_plan_force_exchange_kind = 'Streaming', distributed_plan_task_dispatch_batching = 1,
-    distributed_plan_task_dispatch_threads = 0, log_comment = 'task-batches-set-Streaming-1-0';
+    distributed_plan_task_dispatch_threads = 1, log_comment = 'task-batches-set-Streaming-1-1';
 SELECT count() FROM t_task_batches WHERE v IN (SELECT number * 2 FROM numbers(50000))
 SETTINGS make_distributed_plan = 1, distributed_plan_force_exchange_kind = 'Streaming', distributed_plan_task_dispatch_batching = 1,
     distributed_plan_task_dispatch_threads = 8, log_comment = 'task-batches-set-Streaming-1-8';
@@ -54,10 +54,10 @@ SETTINGS make_distributed_plan = 1, distributed_plan_force_exchange_kind = 'Stre
 SELECT 'aggregation Persisted';
 SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM t_task_batches GROUP BY k)
 SETTINGS make_distributed_plan = 1, distributed_plan_force_exchange_kind = 'Persisted', distributed_plan_task_dispatch_batching = 0,
-    distributed_plan_task_dispatch_threads = 0, distributed_plan_force_shuffle_aggregation = 1, log_comment = 'task-batches-aggregation-Persisted-0-0';
+    distributed_plan_task_dispatch_threads = 1, distributed_plan_force_shuffle_aggregation = 1, log_comment = 'task-batches-aggregation-Persisted-0-1';
 SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM t_task_batches GROUP BY k)
 SETTINGS make_distributed_plan = 1, distributed_plan_force_exchange_kind = 'Persisted', distributed_plan_task_dispatch_batching = 1,
-    distributed_plan_task_dispatch_threads = 0, distributed_plan_force_shuffle_aggregation = 1, log_comment = 'task-batches-aggregation-Persisted-1-0';
+    distributed_plan_task_dispatch_threads = 1, distributed_plan_force_shuffle_aggregation = 1, log_comment = 'task-batches-aggregation-Persisted-1-1';
 SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM t_task_batches GROUP BY k)
 SETTINGS make_distributed_plan = 1, distributed_plan_force_exchange_kind = 'Persisted', distributed_plan_task_dispatch_batching = 1,
     distributed_plan_task_dispatch_threads = 8, distributed_plan_force_shuffle_aggregation = 1, log_comment = 'task-batches-aggregation-Persisted-1-8';
@@ -65,10 +65,10 @@ SETTINGS make_distributed_plan = 1, distributed_plan_force_exchange_kind = 'Pers
 SELECT 'join Persisted';
 SELECT count(), sum(a.k) FROM t_task_batches AS a INNER JOIN t_task_batches AS b ON a.v = b.v
 SETTINGS make_distributed_plan = 1, distributed_plan_force_exchange_kind = 'Persisted', distributed_plan_task_dispatch_batching = 0,
-    distributed_plan_task_dispatch_threads = 0, distributed_plan_max_rows_to_broadcast = 0, log_comment = 'task-batches-join-Persisted-0-0';
+    distributed_plan_task_dispatch_threads = 1, distributed_plan_max_rows_to_broadcast = 0, log_comment = 'task-batches-join-Persisted-0-1';
 SELECT count(), sum(a.k) FROM t_task_batches AS a INNER JOIN t_task_batches AS b ON a.v = b.v
 SETTINGS make_distributed_plan = 1, distributed_plan_force_exchange_kind = 'Persisted', distributed_plan_task_dispatch_batching = 1,
-    distributed_plan_task_dispatch_threads = 0, distributed_plan_max_rows_to_broadcast = 0, log_comment = 'task-batches-join-Persisted-1-0';
+    distributed_plan_task_dispatch_threads = 1, distributed_plan_max_rows_to_broadcast = 0, log_comment = 'task-batches-join-Persisted-1-1';
 SELECT count(), sum(a.k) FROM t_task_batches AS a INNER JOIN t_task_batches AS b ON a.v = b.v
 SETTINGS make_distributed_plan = 1, distributed_plan_force_exchange_kind = 'Persisted', distributed_plan_task_dispatch_batching = 1,
     distributed_plan_task_dispatch_threads = 8, distributed_plan_max_rows_to_broadcast = 0, log_comment = 'task-batches-join-Persisted-1-8';
