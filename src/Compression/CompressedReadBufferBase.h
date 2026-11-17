@@ -94,6 +94,15 @@ public:
     static void validateChecksum(const char * data, size_t size, Checksum expected_checksum, bool external_data);
 
     CompressionCodecPtr codec;
+
+private:
+    /// Retain the other codec when alternating with `NONE`, including its adaptive decoder history.
+    CompressionCodecPtr cached_codec;
+
+    void setCodec(UInt8 method);
+    void readHeaderAndGetCodecAndSize(
+        const char * compressed_buffer_, UInt8 header_size, size_t & size_decompressed, size_t & size_compressed_without_checksum);
+    void readHeaderAndGetCodec(const char * compressed_buffer_, size_t size_decompressed);
 };
 
 }

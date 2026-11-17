@@ -8,6 +8,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 
+#include <Compression/CompressionCodecNone.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedWriteBuffer.h>
 
@@ -34,7 +35,15 @@ void CompressedWriteBuffer::nextImpl()
 
     chassert(offset() <= INT_MAX);
     UInt32 decompressed_size = static_cast<UInt32>(offset());
-    UInt32 compressed_reserve_size = codec->getCompressedReserveSize(decompressed_size);
+    const ICompressionCodec * frame_codec = codec.get();
+    CompressionState * frame_state = codec_state.get();
+    if (decompressed_size < min_bytes_to_compress)
+    {
+        static const CompressionCodecNone codec_none;
+        frame_codec = &codec_none;
+        frame_state = nullptr;
+    }
+    UInt32 compressed_reserve_size = frame_codec->getCompressedReserveSize(decompressed_size);
     if (uncompressed_codec)
         compressed_reserve_size = std::max(compressed_reserve_size, uncompressed_codec->getCompressedReserveSize(decompressed_size));
 
@@ -64,10 +73,11 @@ void CompressedWriteBuffer::nextImpl()
     UInt32 compressed_size = 0;
     {
         ProfileEventTimeIncrement<Time::Microseconds> watch(ProfileEvents::CompressedWriteBufferCompressMicroseconds);
-        compressed_size = codec->compress(working_buffer.begin(), decompressed_size, compressed_ptr, codec_state.get());
+        compressed_size = frame_codec->compress(working_buffer.begin(), decompressed_size, compressed_ptr, frame_state);
 
         /// The block is stored as is if compression saves less than 1/8 of its size.
-        if (uncompressed_codec && static_cast<UInt64>(compressed_size) * 8 > static_cast<UInt64>(decompressed_size) * 7)
+        if (uncompressed_codec && frame_codec == codec.get()
+            && static_cast<UInt64>(compressed_size) * 8 > static_cast<UInt64>(decompressed_size) * 7)
             compressed_size = uncompressed_codec->compress(working_buffer.begin(), decompressed_size, compressed_ptr);
     }
 
