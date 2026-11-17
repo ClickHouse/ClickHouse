@@ -1,5 +1,6 @@
--- Tags: no-object-storage
+-- Tags: no-object-storage, no-fasttest
 -- no-object-storage: object storage does not fsync files.
+-- no-fasttest: the run time is mostly the disk's fsync latency, which varies several times between runs.
 -- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None); merge_max_block_size=(100, None)
 
 -- Regression test for issue #111318: projection parts must be fsynced together with the part.
