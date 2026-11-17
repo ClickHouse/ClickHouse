@@ -27,6 +27,7 @@ cleanup()
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_idle" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_idle2" 2>/dev/null
     timeout 10 rpk topic delete $KAFKA_TOPIC --brokers $KAFKA_BROKER > /dev/null 2>&1
 
     exit $exit_code
@@ -201,3 +202,69 @@ if [ "$locks4" -lt "$PARTITIONS" ]; then
     exit 1
 fi
 echo "--- Stale demand stopped holding the reservation: full coverage returned ---"
+
+# A second isolated read after an idle gap must declare the configured interval again:
+# the gap between separate queries is not a retry cadence, so the declared interval (and
+# the holder's reservation derived from it) must not grow to the idle gap.
+$CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
+    CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_idle2 (id UInt64, data String)
+    ENGINE = Kafka
+    SETTINGS kafka_broker_list = '$KAFKA_BROKER',
+             kafka_topic_list = '$KAFKA_TOPIC',
+             kafka_group_name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_idle2',
+             kafka_format = 'JSONEachRow',
+             kafka_max_block_size = 100,
+             kafka_poll_timeout_ms = $POLL_TIMEOUT_MS,
+             kafka_consumer_reschedule_ms = 500,
+             kafka_keeper_path = '$KEEPER_PATH',
+             kafka_replica_name = 'idle2';
+ "
+
+demand_declared_ms() {
+    $CLICKHOUSE_CLIENT -q "SELECT splitByChar(':', value)[1] FROM system.zookeeper WHERE path = '$KEEPER_PATH/replicas/idle2' AND name = 'demand'" 2>/dev/null
+}
+
+is_small_declared() {
+    [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -gt 0 ] && [ "$1" -le 30000 ]
+}
+
+# Freeze the holder again so the viewless replica finds nothing and publishes demand.
+$CLICKHOUSE_CLIENT -q "SYSTEM PAUSE ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka"
+sleep 5
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_idle2 SETTINGS stream_like_engine_allow_direct_select = 1, max_execution_time = 30" > /dev/null
+
+declared=""
+deadline=$((SECONDS + 15))
+while [ "$SECONDS" -lt "$deadline" ]; do
+    declared=$(demand_declared_ms)
+    if is_small_declared "$declared"; then
+        break
+    fi
+    sleep 1
+done
+if ! is_small_declared "$declared"; then
+    echo "FAIL: the first isolated read declared '$declared' ms" >&2
+    exit 1
+fi
+echo "--- First isolated read declared its own retry cadence ---"
+
+# An idle gap far beyond any plausible retry cadence, then another isolated read.
+sleep 50
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_idle2 SETTINGS stream_like_engine_allow_direct_select = 1, max_execution_time = 30" > /dev/null
+
+declared2=""
+deadline=$((SECONDS + 15))
+while [ "$SECONDS" -lt "$deadline" ]; do
+    declared2=$(demand_declared_ms)
+    if is_small_declared "$declared2"; then
+        break
+    fi
+    sleep 1
+done
+if ! is_small_declared "$declared2"; then
+    echo "FAIL: the second isolated read declared '$declared2' ms after an idle gap (expected the current cadence, not the gap)" >&2
+    exit 1
+fi
+echo "--- Second isolated read after an idle gap declared its own retry cadence ---"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM START ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka"

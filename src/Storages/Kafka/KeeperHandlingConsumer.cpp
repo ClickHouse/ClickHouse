@@ -322,7 +322,11 @@ void KeeperHandlingConsumer::markDemandInKeeper(size_t retry_interval_ms)
     if (last_demand_time != std::chrono::steady_clock::time_point{})
     {
         const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_demand_time).count();
-        declared_interval_ms = std::max<size_t>(retry_interval_ms, elapsed_ms);
+        /// Only consecutive retries measure the cadence; a longer gap is a new consumption
+        /// episode (a finished query, a paused stream) and falls back to the setting.
+        const size_t max_measured_gap_ms = std::max<size_t>(10 * retry_interval_ms, 30'000);
+        if (elapsed_ms >= 0 && static_cast<size_t>(elapsed_ms) <= max_measured_gap_ms)
+            declared_interval_ms = std::max<size_t>(retry_interval_ms, elapsed_ms);
     }
     last_demand_time = now;
 
@@ -343,7 +347,11 @@ void KeeperHandlingConsumer::removeDemandInKeeper()
     const auto demand_path = fs::path(keeper_path) / "replicas" / replica_name / "demand";
     const auto code = keeper->tryRemove(demand_path);
     if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE)
+    {
         demand_published = false;
+        /// The next demand opens a new episode and must not measure across the acquisition.
+        last_demand_time = {};
+    }
 }
 
 KeeperHandlingConsumer::LockedTopicPartitionInfo &
