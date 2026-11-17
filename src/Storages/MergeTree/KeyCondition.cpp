@@ -5925,6 +5925,11 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
         }
     }
 
+    /// A `Tuple` compares a `Dynamic` or `Variant` element as its active member, with that member's own conversion,
+    /// which the cast of the constant into a key expression's input type in the sources below does not reproduce.
+    if (isTuple(const_type) && typeHasValueCarriers(*const_type))
+        return candidates;
+
     /// 2. The monotonic constant transform infers key constraints by transforming the
     /// constant with key functions. Such candidates are always relaxed, because the
     /// transformed range is a superset of the exact matches. A relaxed atom under a
