@@ -331,10 +331,7 @@ private:
         if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTTableExpression>())
             return;
 
-        String alias = ast->tryGetAlias();
-        if (!alias.empty())
-            expression_aliases.insert(alias);
-
+        /// A parametrised alias replaces the plain one, which a rewrite can set beside it.
         if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(ast.get()); with_alias && with_alias->parametrised_alias)
         {
             has_parametrised_alias = true;
@@ -344,6 +341,8 @@ private:
                     expression_aliases.insert(it->second);
             }
         }
+        else if (String alias = ast->tryGetAlias(); !alias.empty())
+            expression_aliases.insert(alias);
 
         for (const auto & child : ast->children)
             collectAliases(child);
