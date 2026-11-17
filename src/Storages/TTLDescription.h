@@ -94,7 +94,7 @@ struct TTLDescription
     NamesAndTypesList expression_source_columns;
 
     /// Expression actions evaluated from AST
-    [[nodiscard]] ExpressionAndSets buildExpression(const ContextPtr & context) const;
+    ExpressionAndSets buildExpression(const ContextPtr & context) const;
 
     /// Result column of this TTL expression
     String result_column;
@@ -108,7 +108,7 @@ struct TTLDescription
     NamesAndTypesList where_expression_columns;
     NamesAndTypesList where_expression_source_columns;
 
-    [[nodiscard]] ExpressionAndSets buildWhereExpression(const ContextPtr & context) const;
+    ExpressionAndSets buildWhereExpression(const ContextPtr & context) const;
 
     /// Name of result column from WHERE expression
     String where_result_column;

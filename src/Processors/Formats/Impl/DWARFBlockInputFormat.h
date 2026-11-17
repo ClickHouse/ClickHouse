@@ -2,8 +2,6 @@
 #include "config.h"
 #if USE_DWARF_PARSER && defined(__ELF__) && !defined(OS_FREEBSD)
 
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/DequeWithMemoryTracking.h>
 #include <llvm/DebugInfo/DWARF/DWARFDebugAbbrev.h>
 #include <llvm/DebugInfo/DWARF/DWARFDataExtractor.h>
 #include <llvm/DebugInfo/DWARF/DWARFContext.h>
@@ -27,6 +25,8 @@ public:
 
     String getName() const override { return "DWARFBlockInputFormat"; }
 
+    void resetParser() override;
+
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
 protected:
@@ -49,8 +49,6 @@ private:
         const llvm::DWARFUnit * dwarf_unit;
         const llvm::DWARFAbbreviationDeclarationSet * abbrevs;
         uint64_t end_offset;
-        /// `.debug_info` truncated at the end of this unit, so that parsing its entries never reads the next unit.
-        llvm::DWARFDataExtractor data;
 
         std::string unit_name;
         ColumnPtr filename_table; // from .debug_line
@@ -62,11 +60,11 @@ private:
         uint64_t base_address = UINT64_MAX;
 
         uint64_t offset = 0;
-        VectorWithMemoryTracking<StackEntry> stack;
+        std::vector<StackEntry> stack;
 
-        [[nodiscard]] bool eof() const { return offset == end_offset; }
+        bool eof() const { return offset == end_offset; }
 
-        UnitState(llvm::DWARFUnit * u, const llvm::DWARFDataExtractor & section_data);
+        explicit UnitState(llvm::DWARFUnit * u);
     };
 
     const FormatSettings format_settings;
@@ -85,8 +83,8 @@ private:
     std::mutex mutex;
     std::condition_variable deliver_chunk;
     std::condition_variable wake_up_threads;
-    DequeWithMemoryTracking<UnitState> units_queue;
-    DequeWithMemoryTracking<std::pair<Chunk, size_t>> delivery_queue;
+    std::deque<UnitState> units_queue;
+    std::deque<std::pair<Chunk, size_t>> delivery_queue;
     size_t units_in_progress = 0;
 
     std::optional<Elf> elf;
@@ -107,9 +105,6 @@ private:
     void parseFilenameTable(UnitState & unit, uint64_t offset);
     Chunk parseEntries(UnitState & unit);
 
-    void checkAttributeEnd(
-        const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t attr_offset, uint64_t offset,
-        const UnitState & unit) const;
     llvm::DWARFFormValue parseAttribute(
         const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t * offset,
         const UnitState & unit) const;
