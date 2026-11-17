@@ -1,0 +1,18 @@
+--- readonly = 2
+(READONLY)
+intact
+--- HTTP GET
+method GET implies readonly
+intact
+--- fileCluster, refused on the initiator
+(READONLY)
+intact
+--- DESCRIBE builds no reader and is allowed
+x	UInt8
+intact
+--- a read without the setting is allowed
+7
+intact
+--- without readonly the file is renamed
+7
+renamed
