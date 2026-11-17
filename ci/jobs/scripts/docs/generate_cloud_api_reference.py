@@ -220,6 +220,28 @@ def operation_url_map(spec: dict) -> dict[str, str]:
     }
 
 
+def operation_url_changes(previous_spec: dict, spec: dict) -> dict[str, str]:
+    """Map each changed public operation URL in the pinned and new specs.
+
+    OpenAPI operation IDs identify the same operation across spec refreshes,
+    while the public Mintlify URL incorporates its tag and, for GA operations,
+    its summary. Comparing the two specs preserves links when either changes.
+    """
+    previous_entries = {
+        entry["operation_id"]: entry for entry in iter_operations(previous_spec)
+    }
+    changes = {}
+    for entry in iter_operations(spec):
+        previous_entry = previous_entries.get(entry["operation_id"])
+        if previous_entry is None:
+            continue
+        previous_url = operation_url(previous_entry)
+        current_url = operation_url(entry)
+        if previous_url != current_url:
+            changes[previous_url] = current_url
+    return changes
+
+
 def rewrite_spec_links(text: str, slugs: dict) -> str:
     """Rewrite intra-spec Swagger anchors to the per-endpoint page paths.
 
@@ -588,6 +610,7 @@ def main() -> int:
     api_ref_dir = docs_dir / API_REF_DIR
 
     spec = load_spec(args.spec)
+    previous_spec = load_spec(str(docs_dir / SPEC_PIN))
     op_slugs = operation_slug_map(spec)
     op_urls = operation_url_map(spec)
 
@@ -680,9 +703,10 @@ def main() -> int:
             if path.relative_to(docs_dir) not in expected_files:
                 changes.append(("delete", path.relative_to(docs_dir)))
 
-    # Preserve the public URLs of pages which were previously generated only
-    # to display a maturity badge. When their operation becomes GA, Mintlify
-    # derives a different, summary-based URL from the navigation reference.
+    # Preserve public endpoint URLs when an operation changes maturity, tag or
+    # summary. Badge-page URLs are derived from an operation ID, while GA URLs
+    # are derived from the summary; compare the new spec with the pinned one to
+    # keep both prior canonical URLs and generated aliases current.
     redirects_path = docs_dir / REDIRECTS_REL
     redirects_text = redirects_path.read_text(encoding="utf-8")
     redirects = json.loads(redirects_text)
@@ -692,7 +716,22 @@ def main() -> int:
         raise SystemExit(f"Redirects file must contain a list of objects: {redirects_path}")
     redirects_by_source = {item.get("source"): item for item in redirects}
     redirects_changed = False
-    for redirect in stale_page_redirects(docs_dir, api_ref_dir, expected_files, op_urls):
+    url_changes = operation_url_changes(previous_spec, spec)
+    generated_url_prefix = f"/{API_REF_DIR}/"
+    for redirect in redirects:
+        if not str(redirect.get("source", "")).startswith(generated_url_prefix):
+            continue
+        current_destination = url_changes.get(redirect.get("destination"))
+        if current_destination is not None:
+            redirect["destination"] = current_destination
+            redirects_changed = True
+
+    new_redirects = stale_page_redirects(docs_dir, api_ref_dir, expected_files, op_urls)
+    new_redirects.extend(
+        {"source": source, "destination": destination}
+        for source, destination in sorted(url_changes.items())
+    )
+    for redirect in new_redirects:
         existing = redirects_by_source.get(redirect["source"])
         if existing is None:
             redirects.append(redirect)
