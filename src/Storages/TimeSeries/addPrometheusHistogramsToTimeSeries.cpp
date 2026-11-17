@@ -5,8 +5,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
-#include <Core/DecimalFunctions.h>
 #include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
+#include <Storages/TimeSeries/PrometheusTimestamps.h>
 
 #include <type_traits>
 
@@ -36,10 +36,13 @@ namespace
 
         void addBucket(Int64 count)
         {
+            /// A count stored bypassing the sink, e.g. by `INSERT INTO FUNCTION timeSeriesSamples`, can be negative, so the delta
+            /// can overflow `Int64`. The wrapped delta still decodes to `count`: Prometheus adds up integer deltas in wrapping `int64`.
+            const Int64 delta = static_cast<Int64>(static_cast<UInt64>(count) - static_cast<UInt64>(previous_count));
             if constexpr (positive)
-                histogram.add_positive_deltas(count - previous_count);
+                histogram.add_positive_deltas(delta);
             else
-                histogram.add_negative_deltas(count - previous_count);
+                histogram.add_negative_deltas(delta);
             previous_count = count;
         }
 
@@ -159,7 +162,7 @@ void addPrometheusHistogramsToTimeSeries(
     const size_t end = begin + histograms.getSize(row);
     for (size_t i = begin; i != end; ++i)
     {
-        const Int64 timestamp_ms = DecimalUtils::convertTo<Decimal64>(3, Decimal64{columns.timestamps.getInt(i)}, timestamp_scale).value;
+        const Int64 timestamp_ms = PrometheusTimestamps::fromStored(columns.timestamps.getInt(i), timestamp_scale);
 
         /// A float sample beats a histogram sample.
         while ((float_index < float_samples.size()) && (float_samples[float_index].timestamp() < timestamp_ms))

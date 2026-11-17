@@ -6,7 +6,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/logger_useful.h>
 #include <Core/Block.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -23,6 +22,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
 #include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/PrometheusTimestamps.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/addPrometheusHistogramsToTimeSeries.h>
 #include <optional>
@@ -235,7 +235,7 @@ namespace
             {
                 Int64 timestamp = timestamps.getInt(j);
                 Float64 value = values.getFloat64(j);
-                Int64 timestamp_ms = DecimalUtils::convertTo<Decimal64>(3, Decimal64{timestamp}, timestamp_scale).value;
+                const Int64 timestamp_ms = PrometheusTimestamps::fromStored(timestamp, timestamp_scale);
                 auto & new_sample = *new_time_series.add_samples();
                 new_sample.set_timestamp(timestamp_ms);
                 new_sample.set_value(value);

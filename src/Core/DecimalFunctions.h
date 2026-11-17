@@ -392,7 +392,7 @@ ReturnType convertToImpl(const DecimalType & decimal, UInt32 scale, To & result)
                 if constexpr (throw_exception)
                     throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Convert overflow");
                 else
-                    return ReturnType(true);
+                    return ReturnType(false);
             }
         }
 
@@ -412,7 +412,7 @@ ReturnType convertToImpl(const DecimalType & decimal, UInt32 scale, To & result)
             if constexpr (throw_exception)
                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Convert overflow");
             else
-                return ReturnType(true);
+                return ReturnType(false);
         }
 
         result = static_cast<CastTo>(whole);
@@ -434,18 +434,6 @@ template <typename To, typename DecimalType>
 bool tryConvertTo(const DecimalType & decimal, UInt32 scale, To & result)
 {
     return convertToImpl<To, DecimalType, bool>(decimal, scale, result);
-}
-
-/// Converts a decimal to another decimal.
-template <is_decimal To, typename DecimalType>
-To convertTo(UInt32 to_scale, const DecimalType & decimal, UInt32 scale)
-{
-    if (to_scale > scale)
-        return decimal.template convertTo<To>().value * scaleMultiplier<To>(to_scale - scale);
-    else if (to_scale < scale)
-        return decimal.template convertTo<To>().value / DecimalUtils::scaleMultiplier<To>(scale - to_scale);
-    else
-        return decimal.template convertTo<To>();
 }
 
 template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>

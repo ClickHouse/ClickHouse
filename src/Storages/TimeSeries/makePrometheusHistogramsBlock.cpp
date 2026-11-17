@@ -10,11 +10,10 @@
 #include <Common/logger_useful.h>
 #include <Core/AccurateComparison.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageTimeSeries.h>
-#include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
+#include <Storages/TimeSeries/PrometheusTimestamps.h>
 #include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
 #include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 
@@ -260,12 +259,12 @@ namespace
     /// Appends one histogram sample to the columns: the flavour's counts as sent, the other flavour's scalars 0 and arrays empty.
     /// A histogram is an integer or a float one by its `count` arm (Prometheus's `IsFloatHistogram`; an unset arm is an integer
     /// histogram with count 0), and only that flavour's fields are read, like Prometheus's receiver does.
-    void appendHistogram(const prometheus::Histogram & histogram, UInt32 timestamp_scale, SampleColumns & columns)
+    void appendHistogram(const prometheus::Histogram & histogram, SampleColumns & columns)
     {
         const bool is_float = histogram.count_case() == prometheus::Histogram::kCountFloat;
 
         const MutableView & view = columns.view;
-        insertPrometheusTimestamp(histogram.timestamp(), timestamp_scale, view.timestamps);
+        PrometheusTimestamps::insertInto(histogram.timestamp(), view.timestamps);
         view.flags.insertValue(is_float ? TimeSeriesHistogramFlags::IsFloat : 0);
         view.counter_reset_hint.insertValue(narrow<UInt8>(static_cast<Int32>(histogram.reset_hint()), histogram, "reset_hint"));
         view.schema.insertValue(narrow<Int8>(histogram.schema(), histogram, "schema"));
@@ -324,7 +323,6 @@ Block makePrometheusHistogramsBlock(
 
     const auto timestamp_type = getHistogramsTimestampType(metadata);
     const size_t num_rows = time_series.size() + num_metadata_rows;
-    const UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_type).value_or(0);
     SampleColumns columns{timestamp_type, sizes};
 
     /// The arrays of the group share one offsets column: element k of every array is histogram sample k of the row.
@@ -335,7 +333,7 @@ Block makePrometheusHistogramsBlock(
     for (const auto * element : time_series)
     {
         for (const auto & histogram : element->histograms())
-            appendHistogram(histogram, timestamp_scale, columns);
+            appendHistogram(histogram, columns);
         offsets_data.push_back(columns.view.size());
     }
     offsets_data.resize_fill(num_rows, columns.view.size()); /// The metadata rows have no histograms.

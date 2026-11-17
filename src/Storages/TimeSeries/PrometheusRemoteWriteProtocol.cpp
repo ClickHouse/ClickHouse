@@ -4,16 +4,13 @@
 #if USE_PROMETHEUS_PROTOBUFS
 
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <IO/Progress.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Context.h>
@@ -27,6 +24,7 @@
 #include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/PrometheusTimestamps.h>
 #include <Storages/TimeSeries/makePrometheusHistogramsBlock.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
@@ -103,7 +101,6 @@ Block makeTimeSeriesBlock(
     auto values = value_type->createColumn();
     auto time_series_offsets = ColumnArray::ColumnOffsets::create();
     time_series_offsets->reserve(num_rows);
-    const UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_type).value_or(0);
 
     for (const auto * element : time_series)
     {
@@ -132,7 +129,7 @@ Block makeTimeSeriesBlock(
 
         for (const auto & sample : element->samples())
         {
-            insertPrometheusTimestamp(sample.timestamp(), timestamp_scale, *timestamps);
+            PrometheusTimestamps::insertInto(sample.timestamp(), *timestamps);
             values->insert(sample.value());
         }
         time_series_offsets->insert(timestamps->size());
@@ -313,15 +310,6 @@ void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutableP
     finishExecutedQuery(io, {});
 }
 
-}
-
-
-void insertPrometheusTimestamp(Int64 timestamp_ms, UInt32 scale, IColumn & column)
-{
-    if (typeid_cast<ColumnDecimal<DateTime64> *>(&column))
-        column.insert(DecimalUtils::convertTo<DateTime64>(scale, DateTime64{timestamp_ms}, 3));
-    else
-        column.insert(DecimalUtils::convertTo<UInt32>(DateTime64{timestamp_ms}, 3));
 }
 
 
