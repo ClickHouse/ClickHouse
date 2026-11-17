@@ -518,8 +518,14 @@ def test_toast_restore_with_missing_source_row_skips_table(started_cluster):
         f"INSERT INTO {table} VALUES ('1', repeat('a', 30000), 'initial')"
     )
     pg_manager.execute(f"INSERT INTO {other_table} VALUES (1, 'initial')")
+    # On an idle PostgreSQL, logical decoding can hold a committed change back for ~25 s,
+    # until the WAL written after it is flushed.
     assert_eq_with_retry(
-        instance, f"SELECT other FROM test_database.{table}", "initial\n"
+        instance,
+        f"SELECT other FROM test_database.{table}",
+        "initial\n",
+        retry_count=50,
+        sleep_time=1,
     )
 
     # The replica identity is a PostgreSQL `text` column mapped to `UInt8`, so the
@@ -529,10 +535,20 @@ def test_toast_restore_with_missing_source_row_skips_table(started_cluster):
     # shape this branch has to survive.
     pg_manager.execute(f"INSERT INTO {table} VALUES ('01', 'shadow value', 'shadow')")
     assert_eq_with_retry(
-        instance, f"SELECT other FROM test_database.{table}", "shadow\n"
+        instance,
+        f"SELECT other FROM test_database.{table}",
+        "shadow\n",
+        retry_count=50,
+        sleep_time=1,
     )
     pg_manager.execute(f"DELETE FROM {table} WHERE id = '01'")
-    assert_eq_with_retry(instance, f"SELECT count() FROM test_database.{table}", "0\n")
+    assert_eq_with_retry(
+        instance,
+        f"SELECT count() FROM test_database.{table}",
+        "0\n",
+        retry_count=50,
+        sleep_time=1,
+    )
 
     # The row is gone from the nested table, so the unchanged `TOAST` value of
     # this update cannot be restored from anywhere. Only this table may be

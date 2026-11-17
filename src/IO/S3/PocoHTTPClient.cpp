@@ -337,13 +337,18 @@ std::shared_ptr<Aws::Http::HttpResponse> PocoHTTPClient::MakeRequest(
 
 namespace
 {
+    bool isServerSideCopyRequest(const Aws::Http::HttpRequest & request)
+    {
+        return request.HasHeader("x-amz-copy-source") || request.HasHeader("x-goog-copy-source");
+    }
+
     /// No comments:
     /// 1) https://aws.amazon.com/premiumsupport/knowledge-center/s3-resolve-200-internalerror/
     /// 2) https://github.com/aws/aws-sdk-cpp/issues/658
     bool checkRequestCanReturn2xxAndErrorInBody(Aws::Http::HttpRequest & request)
     {
         auto query_params = request.GetQueryStringParameters();
-        if (request.HasHeader("x-amz-copy-source") || request.HasHeader("x-goog-copy-source"))
+        if (isServerSideCopyRequest(request))
         {
             /// CopyObject https://docs.aws.amazon.com/AmazonS3/latest/API/API_CopyObject.html
             if (query_params.empty())
@@ -468,12 +473,16 @@ void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3La
     }
 }
 
-ConnectionTimeouts PocoHTTPClient::getTimeouts(const String & method, bool first_attempt, bool first_byte) const
+ConnectionTimeouts PocoHTTPClient::getTimeouts(const String & method, bool first_attempt, bool first_byte, bool server_side_copy) const
 {
     if (!s3_use_adaptive_timeouts)
         return timeouts;
 
-    return timeouts.getAdaptiveTimeouts(method, first_attempt, first_byte);
+    auto result = timeouts.getAdaptiveTimeouts(method, first_attempt, first_byte);
+    /// S3 answers a server-side copy only after copying the data, so the wait for its response grows with the copied size.
+    if (server_side_copy && !first_byte)
+        result.withReceiveTimeout(timeouts.receive_timeout);
+    return result;
 }
 
 void PocoHTTPClient::makeRequestInternal(
@@ -538,6 +547,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
     auto sdk_attempt = getSDKAttemptNumber(request);
     auto ch_attempt = getClickHouseAttemptNumber(request);
     bool first_attempt = ch_attempt == 1 && sdk_attempt == 1;
+    const bool server_side_copy = isServerSideCopyRequest(request);
 
     if (!first_attempt)
         LOG_DEBUG(
@@ -629,7 +639,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
             auto session = makeHTTPSession(
                 group,
                 target_uri,
-                getTimeouts(method, first_attempt, /*first_byte*/ true),
+                getTimeouts(method, first_attempt, /*first_byte*/ true, server_side_copy),
                 proxy_configuration,
                 &connect_time);
 
@@ -716,7 +726,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 request.GetContentBody()->clear();
                 request.GetContentBody()->seekg(0);
 
-                setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
+                setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false, server_side_copy));
                 try
                 {
                     auto size = copyFromIStreamToWriteBuffer(*request.GetContentBody(), *request_body);
@@ -742,7 +752,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
             {
                 request_body->finalize();
 
-                setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
+                setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false, server_side_copy));
 
                 /// Test-only slow-S3 simulation: delay each request after sending and before receiving its response.
                 fiu_do_on(FailPoints::s3_slow_response, { sleepForMilliseconds(simulated_network_latency_ms); });
