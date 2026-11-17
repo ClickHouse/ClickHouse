@@ -1,0 +1,6 @@
+policy on a table function which reads a hidden table
+check the engine
+policy on a table function which reads a hidden table which does not exist
+check the engine
+policy on a table function which reads a file
+ok

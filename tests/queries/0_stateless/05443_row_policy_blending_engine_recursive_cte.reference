@@ -1,0 +1,11 @@
+policy on a view of a recursive cte, by a user who can see only the view
+ok
+policy on a view of a recursive cte, with a blending table of the same name
+ok
+1
+2
+3
+policy on a view of a recursive cte which reads a blending table in the seed
+BAD_ARGUMENTS
+policy on a view of a recursive cte which reads a blending table in the recursive step
+BAD_ARGUMENTS

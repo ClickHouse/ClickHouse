@@ -61,9 +61,10 @@ DROP TABLE t_rp_const;
 DROP TABLE t_rp_const_keys;
 DROP TABLE t_rp_const_set;
 
--- GraphiteMergeTree rolls up rows with different times into one row: only a policy on the leading path column
--- is applied before FINAL.
+-- GraphiteMergeTree is a blending engine: every row policy on it is applied before FINAL,
+-- so the rolled-up row does not contain values of the hidden rows.
 SET optimize_on_insert = 0;
+SET allow_suspicious_row_policies_with_blending_engines = 1;
 DROP TABLE IF EXISTS t_rp_const_graphite;
 DROP TABLE IF EXISTS t_rp_const_graphite_time_first;
 
