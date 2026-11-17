@@ -1,9 +1,9 @@
 #include <Interpreters/DatabaseCatalog.h>
-#include <Storages/StorageProxy.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/StorageFromMergeTreeProjection.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/StorageProxy.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/quoteString.h>
 
@@ -22,20 +22,8 @@ public:
     static constexpr auto name = "mergeTreeProjection";
     std::string getName() const override { return name; }
 
-    /// The returned storage holds its source table's storage object, so a persisted table would keep the source undroppable.
-    bool canBeUsedToCreateTable() const override { return false; }
-
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
-
-    void checkSourceObjectAccess(const ContextPtr & context, bool for_structure) const override
-    {
-        checkSourceTableAccess(context, source_table_id, for_structure ? AccessType::SHOW_COLUMNS : AccessType::SHOW_TABLES);
-        /// The alias target is authorized here too: `executeImpl` can run lazily under the global
-        /// context, which has no user and therefore full access.
-        if (auto source_table = DatabaseCatalog::instance().tryGetTable(source_table_id, context))
-            checkSourceStorageAccess(context, source_table, source_table_id, AccessType::SHOW_COLUMNS);
-    }
 
 private:
     StoragePtr executeImpl(
@@ -79,8 +67,7 @@ void TableFunctionMergeTreeProjection::parseArguments(const ASTPtr & ast_functio
 ColumnsDescription TableFunctionMergeTreeProjection::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
-    checkSourceStorageAccess(context, source_table, source_table_id, AccessType::SHOW_COLUMNS);
-    auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = source_table->getInMemoryMetadataPtr();
 
     if (!metadata_snapshot->getProjections().has(projection_name))
         throw Exception(
@@ -100,89 +87,25 @@ StoragePtr TableFunctionMergeTreeProjection::executeImpl(
     bool /* is_insert_query */) const
 {
     auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
-    checkSourceStorageAccess(context, source_table, source_table_id, AccessType::SHOW_COLUMNS);
-    auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = source_table->getInMemoryMetadataPtr();
     ProjectionDescriptionRawPtr projection = &metadata_snapshot->getProjections().get(projection_name);
 
     StorageID storage_id(getDatabaseName(), table_name);
     auto res = std::make_shared<StorageFromMergeTreeProjection>(
-        std::move(storage_id), std::move(source_table), metadata_snapshot, projection);
+        std::move(storage_id), std::move(source_table), std::move(metadata_snapshot), projection);
 
     res->startup();
     return res;
 }
 
-void registerTableFunctionMergeTreeProjection(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeProjection(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMergeTreeProjection>(
-        {.description = R"DOCS_MD(
-Represents the contents of some projection in MergeTree tables. It can be used for introspection.
-
-## Syntax {#syntax}
-
-```sql
-mergeTreeProjection(database, table, projection)
-```
-
-## Arguments {#arguments}
-
-| Argument     | Description                                |
-|--------------|--------------------------------------------|
-| `database`   | The database name to read projection from. |
-| `table`      | The table name to read projection from.    |
-| `projection` | The projection to read from.               |
-
-Resolving the structure of the result, for example with `DESCRIBE`, requires the `SHOW COLUMNS` privilege on the source table, and reading from it requires `SELECT` on the source table.
-
-## Returned value {#returned-value}
-
-A table object with columns provided by given projection.
-
-## Usage Example {#usage-example}
-
-```sql
-CREATE TABLE test
-(
-    `user_id` UInt64,
-    `item_id` UInt64,
-    PROJECTION order_by_item_id
-    (
-        SELECT _part_offset
-        ORDER BY item_id
-    )
-)
-ENGINE = MergeTree
-ORDER BY user_id;
-
-INSERT INTO test SELECT number, 100 - number FROM numbers(5);
-```
-
-```sql
-SELECT *, _part_offset FROM mergeTreeProjection(currentDatabase(), test, order_by_item_id);
-```
-
-```text
-   ┌─item_id─┬─_parent_part_offset─┬─_part_offset─┐
-1. │      96 │                   4 │            0 │
-2. │      97 │                   3 │            1 │
-3. │      98 │                   2 │            2 │
-4. │      99 │                   1 │            3 │
-5. │     100 │                   0 │            4 │
-   └─────────┴─────────────────────┴──────────────┘
-```
-
-```sql
-DESCRIBE mergeTreeProjection(currentDatabase(), test, order_by_item_id) SETTINGS describe_compact_output = 1;
-```
-
-```text
-   ┌─name────────────────┬─type───┐
-1. │ item_id             │ UInt64 │
-2. │ _parent_part_offset │ UInt64 │
-   └─────────────────────┴────────┘
-```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
+        {
+            .description = "Reading directly from MergeTree projection",
+            .examples = {{"mergeTreeProjection", "SELECT * FROM mergeTreeProjection(currentDatabase(), mt_table, proj_name)", ""}},
+            .category = FunctionDocumentation::Category::TableFunction
+        },
         {.allow_readonly = true}
     );
 }

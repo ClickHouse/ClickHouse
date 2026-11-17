@@ -18,9 +18,9 @@ namespace
 class AggregateFunctionCombinatorDistinct final : public IAggregateFunctionCombinator
 {
 public:
-    [[nodiscard]] String getName() const override { return "Distinct"; }
+    String getName() const override { return "Distinct"; }
 
-    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
+    DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -29,7 +29,7 @@ public:
         return arguments;
     }
 
-    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
+    AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,
@@ -59,13 +59,9 @@ public:
 
 }
 
-void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorDistinct>(), Documentation{
-        .description = "Applied as a suffix to an aggregate function name (e.g. `sumDistinct`), it aggregates only distinct argument values.",
-        .syntax = "<aggregate_function>Distinct",
-        .related = {}});
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorDistinct>());
 }
 
 }

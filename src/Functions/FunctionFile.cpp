@@ -27,9 +27,18 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
 }
 
+namespace
+{
+
+bool isStringOrNull(const IDataType & type)
+{
+    return isString(type) || type.onlyNull();
+}
+
+}
 
 /// A function to read file as a string.
-class FunctionFile final : public IFunction
+class FunctionFile : public IFunction
 {
 public:
     static constexpr auto name = "file";
@@ -41,30 +50,42 @@ public:
         return std::make_shared<FunctionFile>();
     }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
+    bool isVariadic() const override { return true; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(String, NULL) -> Nullable(String) OR (String, [const String]) -> String";
+        FunctionArgumentDescriptors mandatory_args{
+            {"path", &isString, nullptr, "String"}
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"default", &isStringOrNull, nullptr, "String or Null"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        auto ret = std::make_shared<DataTypeString>();
+        if (arguments.size() == 2 && arguments[1].type->onlyNull())
+            return makeNullable(ret);
+        return ret;
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;
         const ColumnString * column_src = checkAndGetColumn<ColumnString>(column.get());
@@ -159,7 +180,7 @@ REGISTER_FUNCTION(File)
 Reads a file as a string and loads the data into the specified column.
 The file content is not interpreted.
 
-Also see the [`file`](/reference/functions/table-functions/file) table function.
+Also see the [`file`](../table-functions/file.md) table function.
         )";
     FunctionDocumentation::Syntax syntax = "file(path[, default])";
     FunctionDocumentation::Arguments arguments = {
@@ -171,18 +192,9 @@ Also see the [`file`](/reference/functions/table-functions/file) table function.
         {
             "Insert files into a table",
             R"(
-INSERT INTO FUNCTION file('a.txt', 'RawBLOB') SELECT 'Hello' SETTINGS engine_file_truncate_on_insert = 1;
-INSERT INTO FUNCTION file('b.txt', 'RawBLOB') SELECT 'World!' SETTINGS engine_file_truncate_on_insert = 1;
-
-CREATE TABLE data (a String, b String) ENGINE = Memory;
-INSERT INTO data SELECT file('a.txt'), file('b.txt');
-
-SELECT * FROM data;
+INSERT INTO table SELECT file('a.txt'), file('b.txt');
             )",
             R"(
-┌─a─────┬─b──────┐
-│ Hello │ World! │
-└───────┴────────┘
             )"
         }
     };

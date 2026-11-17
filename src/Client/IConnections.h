@@ -29,13 +29,8 @@ public:
 
     virtual void sendQueryPlan(const QueryPlan & query_plan) = 0;
 
-    /// All currently connected replicas must support this version before the caller sends a
-    /// query-plan packet serialized at it.
-    [[nodiscard]] virtual bool supportsQueryPlanSerializationVersion(UInt64 version) const = 0;
-
     virtual void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) = 0;
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
-    virtual void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) = 0;
 
     /// Get packet from any replica.
     virtual Packet receivePacket() = 0;
@@ -51,6 +46,9 @@ public:
     /// Send a request to replicas to cancel the request
     virtual void sendCancel() = 0;
 
+    /// Send parts' uuids to replicas to exclude them from query processing
+    virtual void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids) = 0;
+
     /** On each replica, read and skip all packets to EndOfStream or Exception.
       * Returns EndOfStream if no exception has been received. Otherwise
       * returns the last received packet of type Exception.
@@ -58,7 +56,7 @@ public:
     virtual Packet drain() = 0;
 
     /// Get the replica addresses as a string.
-    [[nodiscard]] virtual std::string dumpAddresses() const = 0;
+    virtual std::string dumpAddresses() const = 0;
 
     struct ReplicaInfo
     {
@@ -69,16 +67,11 @@ public:
     /// We create a RemoteQueryExecutor for each replica
     virtual void setReplicaInfo(ReplicaInfo value) = 0;
 
-    /// Set the total number of remote connections across all shards in a distributed query.
-    /// Used to scale `interactive_delay` by sqrt(fanout) to reduce progress/profile event traffic.
-    virtual void setDistributedFanout(size_t /*total_connections*/) {}
-
-
     /// Returns the number of replicas.
-    [[nodiscard]] virtual size_t size() const = 0;
+    virtual size_t size() const = 0;
 
     /// Check if there are any valid replicas.
-    [[nodiscard]] virtual bool hasActiveConnections() const = 0;
+    virtual bool hasActiveConnections() const = 0;
 
     virtual ~IConnections() = default;
 

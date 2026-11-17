@@ -404,7 +404,7 @@ public:
 
     void transformChildNode(Tuple & initial_node) override { initial_node.erase(initial_node.begin() + index_to_delete); }
 
-    [[nodiscard]] size_t getDeleteIndex() const { return index_to_delete; }
+    size_t getDeleteIndex() const { return index_to_delete; }
 
 private:
     IcebergDeletingOperation operation;
@@ -708,7 +708,7 @@ void ExecutableEvolutionFunction::pushNewNode(
     }
 }
 
-static std::shared_ptr<ReorderingTransform> makeReorderingTransform(
+std::shared_ptr<ReorderingTransform> makeReorderingTransform(
     const std::vector<IcebergChangeSchemaOperation::Edge> & current_path,
     const std::vector<size_t> & initial_permutation,
     DataTypePtr old_type)
@@ -718,7 +718,7 @@ static std::shared_ptr<ReorderingTransform> makeReorderingTransform(
     return transform;
 }
 
-static std::shared_ptr<DeletingTransform> makeDeletingTransform(
+std::shared_ptr<DeletingTransform> makeDeletingTransform(
     const std::vector<IcebergChangeSchemaOperation::Edge> & current_path,
     const std::vector<size_t> & initial_permutation,
     DataTypePtr old_type,
@@ -730,7 +730,7 @@ static std::shared_ptr<DeletingTransform> makeDeletingTransform(
 }
 
 
-static std::shared_ptr<AddingTransform> makeAddingTransform(
+std::shared_ptr<AddingTransform> makeAddingTransform(
     const std::vector<IcebergChangeSchemaOperation::Edge> & current_path,
     DataTypePtr type,
     DataTypePtr old_type,
