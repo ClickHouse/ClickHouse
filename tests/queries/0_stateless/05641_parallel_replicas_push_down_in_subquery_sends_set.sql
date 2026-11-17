@@ -23,8 +23,11 @@ SELECT count() FROM events_view WHERE v IN lookup;
 SELECT count() FROM (SELECT id FROM events ORDER BY id) WHERE id IN (SELECT id FROM lookup) SETTINGS parallel_replicas_allow_in_with_subquery = 0;
 -- The initiator reads in order only if the replicas do: they have to get `k = 1` without the `IN`.
 CREATE TABLE ordered (k UInt32, id UInt32) ENGINE = MergeTree ORDER BY (k, id) SETTINGS index_granularity = 10 AS SELECT number % 2, number FROM numbers(1000);
-SELECT count() FROM (SELECT * FROM ordered ORDER BY id) WHERE ((k = 1 AND id - 1 IN (SELECT id FROM lookup)) AS c) AND (c OR id > 3)
+-- Over a subquery, the replicas would get the whole query, because its sorting is redundant.
+CREATE VIEW ordered_view AS SELECT * FROM ordered ORDER BY id;
+SELECT count() FROM ordered_view WHERE ((k = 1 AND id - 1 IN (SELECT id FROM lookup)) AS c) AND (c OR id > 3)
     SETTINGS parallel_replicas_local_plan = 1, optimize_read_in_order = 1, max_rows_to_transfer = 2;
+DROP VIEW ordered_view;
 DROP TABLE ordered;
 
 SELECT 'distributed index analysis';
