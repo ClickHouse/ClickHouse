@@ -186,11 +186,12 @@ Configure the directory and create the roles on every node. The cluster must def
 
 ### Limitations {#http-user-directory-limitations}
 
-- Settings profiles attached to returned roles, including their constraints such as `readonly`, are not applied at login. Use the `settings` of the response instead.
+- Settings and settings profiles of returned roles, including their constraints such as `readonly`, are not applied at login, so a login that gets a role with settings or settings profiles (its own, of the roles granted to it, or assigned to it with `TO`) fails. Use the `settings` of the response instead.
 - `INSERT` into a `Distributed` table on a cluster with `<secret>`, both foreground and background, does not carry the roles to shards.
 - `ON CLUSTER` queries with `distributed_ddl_use_initial_user_and_roles` fail with `UNKNOWN_USER` on hosts that have not seen the user.
 - Such users should not be used as `DEFINER`, because a definer has no session roles.
-- A named session (`session_id`) can be reused only with the same roles, and settings returned by the service are not applied to named sessions.
+- A named session (`session_id`) can be reused only with the roles of the authentication that created it, and settings returned by the service are not applied to named sessions.
 - Materialized users stay in memory (`system.users`) until restart.
 - A user name that exists in another user directory is never authenticated by this one.
+- A user name containing `:` is never authenticated by this directory, because HTTP Basic credentials cannot carry it.
 - With several external directories, the order in `user_directories` decides. Every login with an unknown name costs a request, so the service must answer `404` for names it does not own.

@@ -70,7 +70,13 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
                 "CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x;"
                 "INSERT INTO t VALUES (1), (2), (3);"
                 "GRANT SELECT ON t TO r_reader;"
-                "GRANT REMOTE ON *.* TO r_reader"
+                "GRANT REMOTE ON *.* TO r_reader;"
+                "CREATE ROLE r_imp, r_prof;"
+                "CREATE ROLE r_ro SETTINGS readonly = 1;"
+                "CREATE SETTINGS PROFILE p_prof SETTINGS max_threads = 2 TO r_prof;"
+                "CREATE USER imp_target;"
+                "GRANT SELECT ON t TO imp_target;"
+                "GRANT IMPERSONATE ON imp_target TO r_imp"
             )
         yield cluster
     finally:
@@ -268,3 +274,28 @@ def test_directory_distributed_select(started_cluster: ClickHouseCluster):
     # The shard materialized the user from the interserver credentials and did not call the service.
     assert directory_count(user) == 1
     assert node_dir2.query(f"SELECT count() FROM system.users WHERE name = '{user}'") == "1\n"
+
+
+def test_directory_user_name_with_colon(started_cluster: ClickHouseCluster):
+    # The service would see user `colon` with password `tenant:secret`.
+    node = node_dir1
+    before = directory_count("colon")
+    assert "Authentication failed" in node.query_and_get_error("SELECT 1", user="colon:tenant", password="secret")
+    # Not HTTP Basic: there `colon:tenant:secret` is split at the first `:` by ClickHouse itself.
+    headers = {"X-ClickHouse-User": "colon:tenant", "X-ClickHouse-Key": "secret"}
+    assert node.http_request("", method="POST", data="SELECT 1", headers=headers).status_code != 200
+    assert directory_count("colon") == before
+    assert node.query("SELECT count() FROM system.users WHERE name = 'colon:tenant'") == "0\n"
+
+
+def test_directory_named_session_execute_as(started_cluster: ClickHouseCluster):
+    # Reuse is checked against the roles of the authentication which created the session, not of its context.
+    node = node_dir1
+    assert http_as(node, "tenant_user", "EXECUTE AS imp_target", tenant="imp", session_id="s_imp").status_code == 200
+    assert http_as(node, "tenant_user", "SELECT count() FROM t", tenant="imp", session_id="s_imp").text == "3\n"
+    assert http_as(node, "tenant_user", "SELECT count() FROM t", session_id="s_imp").status_code != 200
+
+
+def test_directory_role_with_settings(started_cluster: ClickHouseCluster):
+    for user in ["ro_user", "prof_user"]:
+        assert "Authentication failed" in node_dir1.query_and_get_error("SELECT 1", user=user, password=GOOD_PASSWORD)

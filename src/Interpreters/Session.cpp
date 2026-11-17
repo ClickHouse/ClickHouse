@@ -61,6 +61,8 @@ struct NamedSessionData
     std::chrono::steady_clock::duration timeout;
     std::chrono::steady_clock::time_point close_time_bucket{};
     NamedSessionsStorage & parent;
+    /// The roles of the authentication which created the session: `EXECUTE AS` changes the roles of `context`.
+    std::vector<UUID> authentication_roles;
 
     NamedSessionData(NamedSessionKey key_, ContextPtr context_, std::chrono::steady_clock::duration timeout_, NamedSessionsStorage & parent_)
         : key(std::move(key_)), context(Context::createCopy(context_)), timeout(timeout_), parent(parent_)
@@ -642,9 +644,13 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         = NamedSessionsStorage::instance().acquireSession(global_context, *user_id, session_name_, timeout_, session_check_);
 
     /// Roles are per authentication, but sessions are keyed by user: another authentication must not inherit the roles of the session.
-    if (!new_named_session_created)
+    if (new_named_session_created)
     {
-        auto session_roles = new_named_session->context->getExternalRoles();
+        new_named_session->authentication_roles = external_roles;
+    }
+    else
+    {
+        const auto & session_roles = new_named_session->authentication_roles;
         if (std::set<UUID>(session_roles.begin(), session_roles.end()) != std::set<UUID>(external_roles.begin(), external_roles.end()))
         {
             new_named_session->release();

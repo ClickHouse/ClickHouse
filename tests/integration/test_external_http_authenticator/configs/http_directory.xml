@@ -22,6 +22,9 @@
                 <r_reader/>
                 <r_a/>
                 <r_b/>
+                <r_imp/>
+                <r_ro/>
+                <r_prof/>
             </allowed_roles>
             <allowed_role_prefix>tenant_</allowed_role_prefix>
             <authentication_cache_ttl>2</authentication_cache_ttl>

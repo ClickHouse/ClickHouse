@@ -1,9 +1,11 @@
 #include <Access/HTTPAccessStorage.h>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
+#include <Access/EnabledRolesInfo.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/HTTPAuthClient.h>
 #include <Access/Role.h>
+#include <Access/SettingsProfilesInfo.h>
 #include <Access/User.h>
 #include <Access/resolveSetting.h>
 #include <Common/Exception.h>
@@ -139,6 +141,18 @@ std::vector<UUID> HTTPAccessStorage::resolveRoles(const Strings & role_names, co
         if (std::find(ids.begin(), ids.end(), *id) == ids.end())
             ids.push_back(*id);
     }
+
+    /// `Context::setUser` applies only the settings of the user's own roles, so fail closed on returned roles with settings:
+    /// their own or of the roles granted to them, or of the profiles assigned to them with `TO`.
+    if (!ids.empty())
+    {
+        auto roles_info = access_control.getEnabledRolesInfo(ids, {});
+        if (!roles_info->settings_from_enabled_roles.empty()
+            || *access_control.getEnabledSettingsInfo(UUID{}, {}, roles_info->enabled_roles, {}) != *access_control.getEnabledSettingsInfo(UUID{}, {}, {}, {}))
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "Role(s) returned by HTTP authentication server '{}' for user '{}' have settings or settings profiles, "
+                "which are not supported for roles of the `http` user directory", server_name, user_name);
+    }
     return ids;
 }
 
@@ -192,6 +206,10 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
     };
 
     if (!credentials.isReady())
+        return not_found();
+
+    /// HTTP Basic credentials cannot carry `:` in the user name: the service would see another user.
+    if (user_name.contains(':'))
         return not_found();
 
     /// A user with this name belongs to another storage: neither shadow it nor send its password to the server.

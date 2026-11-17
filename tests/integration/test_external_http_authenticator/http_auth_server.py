@@ -23,8 +23,13 @@ DIRECTORY_USERS = {
     "bad_role": {"roles": ["r_admin"]},
     "ghost_role": {"roles": ["tenant_missing"]},
     "broken": 500,
+    "colon": {},
+    "ro_user": {"roles": ["r_ro"]},
+    "prof_user": {"roles": ["r_prof"]},
 }
-TENANT_ROLES = {"a": ["r_a"], "b": ["r_b"]}
+# Passwords other than `GOOD_PASSWORD`.
+DIRECTORY_PASSWORDS = {"colon": "tenant:secret"}
+TENANT_ROLES = {"a": ["r_a"], "b": ["r_b"], "imp": ["r_imp"]}
 DIRECTORY_COUNTS = {}
 DIRECTORY_LOCK = threading.Lock()
 
@@ -81,7 +86,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
         if response is None:
             self.reply(http.HTTPStatus.NOT_FOUND)
-        elif password != GOOD_PASSWORD:
+        elif password != DIRECTORY_PASSWORDS.get(user_name, GOOD_PASSWORD):
             self.reply(http.HTTPStatus.UNAUTHORIZED)
         elif isinstance(response, int):
             self.reply(response)
