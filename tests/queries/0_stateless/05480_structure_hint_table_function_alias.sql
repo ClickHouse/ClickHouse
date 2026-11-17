@@ -42,6 +42,6 @@ INSERT INTO t_structure_hint_alias SELECT f.id, f.v FROM file(currentDatabase() 
 SET log_comment = DEFAULT;
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['SchemaInferenceCacheMisses'] + ProfileEvents['SchemaInferenceCacheHits'] FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05480_structure_hint_alias_no_inference';
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_kind = 'Insert' AND log_comment = '05480_structure_hint_alias_no_inference';
 
 DROP TABLE t_structure_hint_alias;
