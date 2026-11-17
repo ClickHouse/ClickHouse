@@ -1,0 +1,108 @@
+<!--
+    A projection that stores `_part_offset` (`PROJECTION ... INDEX ... TYPE basic`) filters the
+    parent read even when the table has patch parts, unless a patch changes a column of the projection.
+
+    Dataset: four identical tables of 30,000,000 rows. Each is optimized to one data part
+    (3663 granules of 8192 rows), and merges are stopped so that the patch parts stay unapplied.
+      `category` = 'needle' for ids 15,000,000 .. 15,050,000 (50,001 rows, 0.167% of the table,
+                   in 7 consecutive granules), otherwise one of 64 'hay_N' values.
+      `v1`, `v2`, `v3` = `id`, `id * 2`, `id * 3`.
+
+    Patch parts: one per table, covering `id % 1000 = 0` (30,000 rows, 0.1% of the table, spread over
+    every granule):
+      t_lwpp_none       - no patch parts (baseline).
+      t_lwpp_upd_other  - lightweight `UPDATE` of `v1`, which the projection does not use:
+                          the projection index is used.
+      t_lwpp_delete     - lightweight `DELETE` (`lightweight_delete_mode = 'lightweight_update'`),
+                          which changes only `_row_exists`: the projection index is used.
+                          49,950 needle rows remain.
+      t_lwpp_upd_key    - lightweight `UPDATE` of `category`, the projection column:
+                          the projection cannot be used.
+
+    Queries (`category = 'needle'` matches 0.167% of the rows):
+      SELECT sum(v1), sum(v2), sum(v3) ... WHERE category = 'needle'
+      SELECT count() ... WHERE category = 'needle'
+
+    Rows read per query:
+                        without the projection    with the projection index
+      t_lwpp_none       -                         57,344 (7 granules); `count` is answered from
+                                                  the projection itself
+      t_lwpp_upd_other  30,000,000                57,344 (7 granules)
+      t_lwpp_delete     30,000,000                57,344 (7 granules)
+      t_lwpp_upd_key    30,000,000                -
+    Before the projection could filter reads with patch parts present, every patched table was read
+    without the projection.
+-->
+<test>
+    <settings>
+        <enable_lightweight_update>1</enable_lightweight_update>
+        <lightweight_delete_mode>lightweight_update</lightweight_delete_mode>
+        <optimize_use_projections>1</optimize_use_projections>
+        <optimize_use_projection_filtering>1</optimize_use_projection_filtering>
+        <min_table_rows_to_use_projection_index>0</min_table_rows_to_use_projection_index>
+        <max_projection_rows_to_use_projection_index>1000000000</max_projection_rows_to_use_projection_index>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>tbl</name>
+            <values>
+                <value>t_lwpp_none</value>
+                <value>t_lwpp_upd_other</value>
+                <value>t_lwpp_delete</value>
+                <value>t_lwpp_upd_key</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE t_lwpp_none
+        (
+            id UInt64,
+            category String,
+            v1 UInt64,
+            v2 UInt64,
+            v3 UInt64,
+            PROJECTION category_proj INDEX category TYPE basic
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, lightweight_mutation_projection_mode = 'rebuild'
+    </create_query>
+    <create_query>CREATE TABLE t_lwpp_upd_other AS t_lwpp_none</create_query>
+    <create_query>CREATE TABLE t_lwpp_delete AS t_lwpp_none</create_query>
+    <create_query>CREATE TABLE t_lwpp_upd_key AS t_lwpp_none</create_query>
+
+    <fill_query>
+        INSERT INTO t_lwpp_none
+        SELECT
+            number,
+            if(number BETWEEN 15000000 AND 15050000, 'needle', concat('hay_', toString(number % 64))),
+            number, number * 2, number * 3
+        FROM numbers(30000000)
+        SETTINGS max_insert_threads = 8
+    </fill_query>
+    <fill_query>INSERT INTO t_lwpp_upd_other SELECT * FROM t_lwpp_none SETTINGS max_insert_threads = 8</fill_query>
+    <fill_query>INSERT INTO t_lwpp_delete SELECT * FROM t_lwpp_none SETTINGS max_insert_threads = 8</fill_query>
+    <fill_query>INSERT INTO t_lwpp_upd_key SELECT * FROM t_lwpp_none SETTINGS max_insert_threads = 8</fill_query>
+
+    <fill_query>OPTIMIZE TABLE t_lwpp_none FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE t_lwpp_upd_other FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE t_lwpp_delete FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE t_lwpp_upd_key FINAL</fill_query>
+
+    <fill_query>SYSTEM STOP MERGES t_lwpp_upd_other</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_lwpp_delete</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_lwpp_upd_key</fill_query>
+
+    <fill_query>UPDATE t_lwpp_upd_other SET v1 = v1 + 1 WHERE id % 1000 = 0</fill_query>
+    <fill_query>DELETE FROM t_lwpp_delete WHERE id % 1000 = 0</fill_query>
+    <fill_query>UPDATE t_lwpp_upd_key SET category = 'moved' WHERE id % 1000 = 0</fill_query>
+
+    <query>SELECT sum(v1), sum(v2), sum(v3) FROM {tbl} WHERE category = 'needle'</query>
+    <query>SELECT count() FROM {tbl} WHERE category = 'needle'</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_lwpp_none</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_lwpp_upd_other</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_lwpp_delete</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_lwpp_upd_key</drop_query>
+</test>
