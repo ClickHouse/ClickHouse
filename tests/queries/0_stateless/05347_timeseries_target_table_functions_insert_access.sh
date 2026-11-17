@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
 # Writing through a target table function of a TimeSeries table needs INSERT on that table and on the target,
 # like `INSERT INTO` the TimeSeries table, and does not need SELECT.
