@@ -10,6 +10,28 @@ rss: true
 
 In addition to this ClickHouse Cloud changelog, please see the [Cloud Compatibility](/products/cloud/guides/cloud-compatibility) page.
 
+<Update label="2026-11-16">
+
+The 2026-11-09–2026-11-16 updates add safeguards for Cloud services and support sessions, and preview more secure credential management. ClickHouse Observability and ClickHouse Managed Postgres became available on 2026-11-11; see that entry for details.
+
+### Deletion protection for Cloud services {#deletion-protection-for-cloud-services}
+
+You can now protect a service from accidental deletion. While deletion protection is enabled, the service cannot be deleted until someone turns the setting off, adding a deliberate confirmation step before a destructive operation. The setting is available in the Cloud console and through the OpenAPI for all organizations. See [deletion protection](/products/cloud/guides/deletion-protection).
+
+### Restrict access to monitoring dashboards {#restrict-access-to-monitoring-dashboards}
+
+The **View monitoring** permission is now configurable for each Cloud console role. Administrators can disable it to prevent users assigned that role from viewing in-console monitoring dashboards; it remains enabled by default.
+
+### Query masking for support sessions {#query-masking-for-support-sessions}
+
+You can request query masking for a service to limit the query text available to ClickHouse Support. With masking enabled, Support sees `[REDACTED]` in `system.query_log`, and sensitive values in `system.text_log` are masked. Unmasked log access requires your explicit approval for an investigation and uses a separate auditable account. Query masking is off by default and is available on ClickHouse `26.6.1-2397` or later, `26.8.1-548` or later, `26.10.2-15` or later, and `26.11`; contact Support to enable it for a service.
+
+### Secure named collections entering Public Beta {#secure-named-collections-entering-public-beta}
+
+Secure named collections will enter Public Beta in November 2026 with ClickHouse `26.10` on the fast-release channel for all Cloud providers. They let you store credentials, such as S3 keys, encrypted once with `CREATE NAMED COLLECTION`, then reference the collection by name instead of placing credentials in queries. See [named collections](/concepts/features/configuration/server-config/named-collections).
+
+</Update>
+
 <Update label="Nov 11, 2026">
 
 This week's Cloud updates include major platform additions and smoother operations across data, observability, security, and AI engineering:
