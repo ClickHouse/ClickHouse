@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Analyzer/Resolve/FunctionCompositionRewrite.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
+#include <Analyzer/Resolve/QueryExpressionsAliasVisitor.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -26,6 +27,7 @@
 #include <Common/StringUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/HiddenSecret.h>
+#include <AggregateFunctions/AggregateFunctionGroupConcat.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
 #include <Core/Settings.h>
@@ -114,6 +116,56 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
             backQuote(node.getFunctionName()),
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
 }
+
+/** The number of arguments of `function_name` when it is a `groupConcat` alias, possibly with combinators,
+  * called with the separator as its second argument. Nothing for any other name.
+  * `STRING_AGG(DISTINCT x, sep) FILTER (WHERE cond)` is parsed as `STRING_AGGDistinctIf(x, sep, cond)`.
+  * Only combinators that keep the separator as the second argument are matched, `-If` appends the condition and `-ArgMin`/`-ArgMax` the key.
+  */
+std::optional<size_t> getGroupConcatArgumentsCountWithSeparator(const String & function_name)
+{
+    const auto & aliases = GroupConcatImpl<false>::getNameAndAliases();
+    if (std::none_of(aliases.begin(), aliases.end(), [&](const auto & alias) { return equalsCaseInsensitive(alias, std::string_view(function_name).substr(0, alias.size())); }))
+        return {};
+
+    String nested_name = function_name;
+    size_t arguments_count = 2;
+    while (true)
+    {
+        if (std::any_of(aliases.begin(), aliases.end(), [&](const auto & alias) { return equalsCaseInsensitive(alias, nested_name); }))
+            return arguments_count;
+
+        auto combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(nested_name);
+        if (!combinator)
+            return {};
+
+        const auto suffix = combinator->getName();
+        if (suffix == "If" || suffix == "ArgMin" || suffix == "ArgMax")
+            ++arguments_count;
+        else if (suffix != "Distinct" && suffix != "OrNull" && suffix != "OrDefault" && suffix != "State" && suffix != "Array")
+            return {};
+
+        nested_name.resize(nested_name.size() - suffix.size());
+    }
+}
+
+}
+
+bool isGroupConcatWithSeparatorArgument(const FunctionNode & function_node, const ContextPtr & context)
+{
+    if (function_node.getArguments().getNodes().size() < 2)
+        return false;
+
+    const auto & function_name = function_node.getFunctionName();
+    auto arguments_count = getGroupConcatArgumentsCountWithSeparator(function_name);
+    return arguments_count && function_node.getArguments().getNodes().size() == *arguments_count
+        && (function_node.isWindowFunction()
+            || (!UserDefinedSQLFunctionFactory::instance().tryGet(function_name)
+                && !UserDefinedExecutableFunctionFactory::has(function_name, context))); /// NOLINT(readability-static-accessed-through-instance)
+}
+
+namespace
+{
 
 /// The arity of a registered function name, or nothing when no function with this name is
 /// registered. Used by the rewrites that turn a function name into a lambda (the bare function
@@ -1372,15 +1424,15 @@ QueryTreeNodePtr QueryAnalyzer::castNodeToType(
   * with constant (if it allow constant folding), or with expression list. It is caller responsibility to handle such cases appropriately.
   *
   * Steps:
-  * 1. Resolve function parameters. Validate that each function parameter must be constant node.
-  * 2. Try to lookup function as lambda in current scope. If it is lambda we can skip `in` and `count` special handling.
+  * 1. Try to lookup function as lambda in current scope. If it is lambda we can skip `in` and `count` special handling.
+  * 2. Resolve function parameters. Validate that each function parameter must be constant node.
   * 3. If function is count function, that take unqualified ASTERISK matcher, remove it from its arguments. Example: SELECT count(*) FROM test_table;
   * 4. If function is `IN` function, then right part of `IN` function is replaced as subquery.
   * 5. Resolve function arguments list, lambda expressions are allowed as function arguments.
   * For `IN` function table expressions are allowed as function arguments.
   * 6. Initialize argument_columns, argument_types, function_lambda_arguments_indexes arrays from function arguments.
   * 7. If function name identifier was not resolved as function in current scope, try to lookup lambda from sql user defined functions factory.
-  * 8. If function was resolve as lambda from step 2 or 7, then resolve lambda using function arguments and replace function node with lambda result.
+  * 8. If function was resolve as lambda from step 1 or 7, then resolve lambda using function arguments and replace function node with lambda result.
   * After than function node is resolved.
   * 9. If function was not resolved during step 6 as lambda, then try to resolve function as window function or executable user defined function
   * or ordinary function or aggregate function.
@@ -1422,6 +1474,52 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
+    /** The `f | g` operator parses into `__compose(f, g)`, which is not a function but a rewrite
+      * to a lambda (see FunctionCompositionRewrite.h), applied by the parent function when its
+      * argument is a composition. A composition being resolved by itself denotes a function,
+      * not a value, so explain the operator instead of resolving further. Only a node the parser
+      * marked as operator syntax is a composition, so no name is reserved: an ordinary call to a
+      * function named `__compose` (or `compose`) resolves as usual. The check runs before the
+      * function name is looked up in the scope, so that a lambda bound in the query under the
+      * name `__compose` (`WITH (x, y) -> x + y AS __compose`) applies to an ordinary call only
+      * and cannot change the meaning of the operator syntax.
+      */
+    if (isFunctionComposition(*function_node_ptr))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The function composition `f | g` can be used only where a function is expected: "
+            "as an argument of a higher-order function such as arrayMap. "
+            "For bitwise OR, use the function bitOr. In scope {}",
+            scope.scope_node->formatASTForErrorMessage());
+
+    //// If function node is not window function try to lookup function node name as lambda identifier.
+    QueryTreeNodePtr lambda_expression_untyped;
+    if (!function_node_ptr->isWindowFunction())
+    {
+        auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
+        lambda_expression_untyped = function_lookup_result.resolved_identifier;
+    }
+
+    /// `groupConcat(x, sep)` is `groupConcat(sep)(x)`. A scoped lambda, a SQL UDF or an executable UDF
+    /// with this name keeps its arguments.
+    if (isGroupConcatWithSeparatorArgument(*function_node_ptr, scope.context)
+        && (function_node_ptr->isWindowFunction() || !lambda_expression_untyped))
+    {
+        auto & arguments_nodes = function_node_ptr->getArguments().getNodes();
+        const auto * separator_node = arguments_nodes[1]->as<ConstantNode>();
+        if (!separator_node || separator_node->getValue().getType() != Field::Types::String)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "If groupConcat is used with a separator argument, the separator must be a constant String");
+
+        /// The separator replaces the raw delimiter parameter and keeps the optional limit. This happens
+        /// before the parameters are resolved, so an overridden delimiter expression is never evaluated.
+        auto & raw_parameters_nodes = function_node_ptr->getParameters().getNodes();
+        if (raw_parameters_nodes.empty())
+            raw_parameters_nodes.push_back(arguments_nodes[1]);
+        else
+            raw_parameters_nodes[0] = arguments_nodes[1];
+        arguments_nodes.erase(arguments_nodes.begin() + 1);
+    }
+
     /// Resolve function parameters
 
     auto parameters_projection_names = resolveExpressionNodeList(
@@ -1449,31 +1547,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             scope.scope_node->formatASTForErrorMessage());
 
         parameters.push_back(constant_node->getValue());
-    }
-
-    /** The `f | g` operator parses into `__compose(f, g)`, which is not a function but a rewrite
-      * to a lambda (see FunctionCompositionRewrite.h), applied by the parent function when its
-      * argument is a composition. A composition being resolved by itself denotes a function,
-      * not a value, so explain the operator instead of resolving further. Only a node the parser
-      * marked as operator syntax is a composition, so no name is reserved: an ordinary call to a
-      * function named `__compose` (or `compose`) resolves as usual. The check runs before the
-      * function name is looked up in the scope, so that a lambda bound in the query under the
-      * name `__compose` (`WITH (x, y) -> x + y AS __compose`) applies to an ordinary call only
-      * and cannot change the meaning of the operator syntax.
-      */
-    if (isFunctionComposition(*function_node_ptr))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The function composition `f | g` can be used only where a function is expected: "
-            "as an argument of a higher-order function such as arrayMap. "
-            "For bitwise OR, use the function bitOr. In scope {}",
-            scope.scope_node->formatASTForErrorMessage());
-
-    //// If function node is not window function try to lookup function node name as lambda identifier.
-    QueryTreeNodePtr lambda_expression_untyped;
-    if (!function_node_ptr->isWindowFunction())
-    {
-        auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
-        lambda_expression_untyped = function_lookup_result.resolved_identifier;
     }
 
     /** Early short-circuit optimization for ordinary builtin AND/OR functions. Perform this
