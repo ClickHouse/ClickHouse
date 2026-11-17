@@ -29,6 +29,12 @@ SELECT estimateCompressionRatio('LZ4', 'ZSTD', 'String')(n) FROM src; -- { serve
 SELECT estimateCompressionRatio('LZ4', 65536, 8192)(n) FROM src; -- { serverError BAD_QUERY_PARAMETER }
 SELECT estimateCompressionRatio('LZ4', 0, 'String')(n) FROM src; -- { serverError BAD_QUERY_PARAMETER }
 SELECT estimateCompressionRatio('LZ4', 65536, 'String', 1)(n) FROM src; -- { serverError UNKNOWN_QUERY_PARAMETER }
+-- A string that names neither a type nor a codec is an error when the function is created, also without rows and without a
+-- target type.
+SELECT estimateCompressionRatio('string')(n) FROM src; -- { serverError UNKNOWN_CODEC }
+SELECT estimateCompressionRatio('string')(n) FROM src WHERE n > 1000000; -- { serverError UNKNOWN_CODEC }
+SELECT estimateCompressionRatio('zstdd', 'String')(n) FROM src WHERE n > 1000000; -- { serverError UNKNOWN_CODEC }
+SELECT estimateCompressionRatio('T64')(s) FROM src WHERE n > 1000000; -- { serverError ILLEGAL_SYNTAX_FOR_CODEC_TYPE }
 -- A string that starts with the name of a type is a type, with the error of that type.
 SELECT estimateCompressionRatio('Decimal(100, 2)')(n) FROM src; -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT estimateCompressionRatio('LowCardinality(Strin)')(n) FROM src; -- { serverError UNKNOWN_TYPE }

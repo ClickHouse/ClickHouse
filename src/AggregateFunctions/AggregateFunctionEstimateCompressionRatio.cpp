@@ -79,6 +79,7 @@ extern const int BAD_QUERY_PARAMETER;
 extern const int INCORRECT_DATA;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
+extern const int UNKNOWN_CODEC;
 extern const int UNKNOWN_QUERY_PARAMETER;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -86,6 +87,15 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 namespace
 {
 
+/// The codec of the function, given as the body of `CODEC(...)`. The codec is applied to the serialized values directly, so a
+/// declarative codec would measure nothing.
+ASTPtr parseCodecDescription(const String & codec)
+{
+    ParserCodec codec_parser;
+    auto ast = parseQuery(codec_parser, "(" + codec + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    CompressionCodecFactory::instance().checkCodecChainIsNotDeclarative(ast);
+    return ast;
+}
 
 struct AggregationFunctionEstimateCompressionRatioData
 {
@@ -147,14 +157,7 @@ private:
     CompressionCodecPtr getCodecOrDefault() const
     {
         if (codec.has_value())
-        {
-            ParserCodec codec_parser;
-            auto ast
-                = parseQuery(codec_parser, "(" + codec.value() + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-            /// The aggregate compresses the serialized values directly, so a declarative codec would measure nothing.
-            CompressionCodecFactory::instance().checkCodecChainIsNotDeclarative(ast);
-            return CompressionCodecFactory::instance().get(ast, argument_types[0]);
-        }
+            return CompressionCodecFactory::instance().get(parseCodecDescription(*codec), argument_types[0]);
         return CompressionCodecFactory::instance().getDefaultCodec();
     }
 
@@ -405,18 +408,7 @@ public:
                 "Aggregate function {} with a target type does not support argument type {}; convert the argument in the query first",
                 getName(), source_type->getName());
 
-        if (codec)
-        {
-            ParserCodec codec_parser;
-            codec_description = parseQuery(
-                codec_parser, "(" + *codec + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-            /// The codec is applied to the serialized bytes directly, so a declarative codec would measure nothing.
-            CompressionCodecFactory::instance().checkCodecChainIsNotDeclarative(codec_description);
-        }
-        else
-        {
-            codec_description = CompressionCodecFactory::instance().getDefaultCodec()->getFullCodecDescription();
-        }
+        codec_description = codec ? parseCodecDescription(*codec) : CompressionCodecFactory::instance().getDefaultCodec()->getFullCodecDescription();
 
         /// The values are converted as `ALTER TABLE ... MODIFY COLUMN` converts them: with `_CAST`, which returns exactly the
         /// target type. It copies the conversion settings of the query, or of the server when there is no query (a table being
@@ -880,6 +872,23 @@ static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
             validation_settings.emplace(*settings);
         return std::make_shared<AggregateFunctionEstimateCompressionRatioWithTarget>(
             arguments, parameters, std::move(target_type), codec, block_size_bytes, std::move(validation_settings));
+    }
+
+    /// The function without a target type gets its codec at the first row. A query checks it here as well, so that a
+    /// misspelled codec, or a type name taken for a codec, is an error also without rows. Loading a table does not, so that
+    /// the server starts with a stored state type that names such a codec (its states are empty: any row fails).
+    if (codec && settings)
+    {
+        try
+        {
+            CompressionCodecFactory::instance().get(parseCodecDescription(*codec), arguments[0]);
+        }
+        catch (Exception & e)
+        {
+            if (e.code() == ErrorCodes::UNKNOWN_CODEC)
+                e.addMessage("A string parameter is the codec unless it names a data type (the target type)");
+            throw;
+        }
     }
     return std::make_shared<AggregateFunctionEstimateCompressionRatio>(arguments, parameters, codec, block_size_bytes);
 }
