@@ -4,10 +4,16 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnVector.h>
 #include <Functions/IFunction.h>
+#include <Functions/PerformanceAdaptors.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
 
 /** Pseudo-random number generation functions.
   * The function can be called without arguments or with one argument.
@@ -19,8 +25,8 @@ namespace DB
   *
   * Non-cryptographic generators:
   *
-  * rand   - values from the range 0 .. 2^32 - 1.
-  * rand64 - values from the range 0 .. 2^64 - 1.
+  * rand   - linear congruential generator 0 .. 2^32 - 1.
+  * rand64 - combines several rand values to get values from the range 0 .. 2^64 - 1.
   *
   * randConstant - service function, produces a constant column with a random value.
   *
@@ -31,8 +37,7 @@ namespace DB
 
 struct RandImpl
 {
-    /// Fill memory with random data. Up to PADDING_FOR_SIMD - 1 bytes past size may be overwritten,
-    /// so the memory region must be padded by at least that much.
+    /// Fill memory with random data. The memory region must be 15-bytes padded.
     static void execute(char * output, size_t size);
 };
 
@@ -54,18 +59,20 @@ public:
 
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
-    /// The optional argument only defeats common subexpression elimination; `executeImpl` never reads it.
-    bool useDefaultImplementationForSparseColumns() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "([Any]) -> " + DataTypeNumber<ToType>{}.getName();
+        if (arguments.size() > 1)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 0 or 1.",
+                getName(), arguments.size());
+
+        return std::make_shared<DataTypeNumber<ToType>>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
