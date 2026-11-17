@@ -35,7 +35,7 @@ struct IcebergRESTCatalogWarehouseDefinition
     /// Parses `{"base_location": "s3://...", "credential": {...}}`. Other keys, such as `name`, are ignored.
     static IcebergRESTCatalogWarehouseDefinition fromJSON(const Poco::JSON::Object & json);
     /// Response of the management API: `{"name": ..., "base_location": ..., "credential": {...}}` with secrets hidden.
-    Poco::JSON::Object::Ptr toJSON(const String & name) const;
+    [[nodiscard]] Poco::JSON::Object::Ptr toJSON(const String & name) const;
 
     /// Data of the warehouse root node: the JSON above plus the `format_version` and `uuid` fields.
     [[nodiscard]] String toKeeperData() const;
