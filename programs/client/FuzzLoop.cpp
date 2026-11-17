@@ -435,7 +435,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             {
                 String bytes;
                 {
-                    auto read_buf = getReadBufferFromASTInsertQuery(query);
+                    auto read_buf = getReadBufferFromASTInsertQuery(query, client_context);
                     WriteBufferFromString write_buf(bytes);
                     copyData(*read_buf, write_buf);
                 }
