@@ -652,7 +652,7 @@ export const CloudRegionsMap = () => {
           })}
         </div>
       </div>
-      <div role="group" aria-label="Filter cloud regions" style={{position: 'relative', zIndex: 30, display: 'flex', flexWrap: 'wrap', justifyContent: 'center', columnGap: 8, rowGap: 16, marginTop: 48}}>
+      <div role="group" aria-label="Filter cloud regions" style={{position: 'relative', zIndex: 30, display: 'flex', flexWrap: 'wrap', justifyContent: 'center', columnGap: 32, rowGap: 16, marginTop: 48}}>
       <div style={{display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-start', gap: 16, width: '100%'}}>
         <div onBlur={event => {if (!event.currentTarget.contains(event.relatedTarget)) setRegionOpen(false);}} style={{position: 'relative', width: 360, maxWidth: '100%'}}>
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--map-muted)', pointerEvents: 'none'}}><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
@@ -681,7 +681,7 @@ export const CloudRegionsMap = () => {
       {regionCount === 0 && <p style={{fontSize: 14, color: 'var(--map-muted)'}}>No regions match these filters. Try another region code or location, or clear the filters.</p>}
         {filters.map(filter => {
           const filterColors = [...new Set(regions.filter(region => matches(region, filter)).map(region => colors[region.provider]))];
-          return <button type="button" className="presence-filter" key={filter} aria-pressed={activeFilter === filter} onClick={() => {setActiveFilter(old => old === filter ? null : filter); setOptionIndex(-1); setRegionOpen(false); setHovered(null); setFocused(null);}} style={{display: 'flex', alignItems: 'center', gap: 8, border: 0, borderRadius: 6, padding: '4px 8px', color: 'var(--map-text)', fontSize: 14, cursor: 'pointer', opacity: !activeFilter || activeFilter === filter ? 1 : .5}}>
+          return <button type="button" className="presence-filter" key={filter} aria-pressed={activeFilter === filter} onClick={() => {setActiveFilter(old => old === filter ? null : filter); setOptionIndex(-1); setRegionOpen(false); setHovered(null); setFocused(null);}} style={{display: 'flex', alignItems: 'center', gap: 16, border: 0, borderRadius: 6, padding: '4px 12px', color: 'var(--map-text)', fontSize: 14, cursor: 'pointer', opacity: !activeFilter || activeFilter === filter ? 1 : .5}}>
             <span style={{display: 'inline-flex', gap: 8}}>
               {filter === 'HIPAA compliant' ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/></svg> : filterColors.map(color => <span key={color} style={{width: 10, height: 10, boxSizing: 'border-box', borderRadius: '50%', border: filter === 'BYOC only' ? `2px dashed ${color}` : filter === 'Private regions' ? `2px solid ${color}` : 'none', background: filter === 'Private regions' || filter === 'BYOC only' ? 'transparent' : color}} />)}
             </span>
