@@ -1,0 +1,35 @@
+p_asterisk	a
+p_asterisk	b
+p_asterisk	c
+p_keys	a
+p_keys	c
+p_keys	max(b)
+p_resolved	a
+p_resolved	any_respect_nulls(b)
+p_resolved	count()
+p_resolved	nothingNull(NULL)
+p_resolved	quantile(a)
+p_same	modulo(a, 10)
+p_same	count()
+p_same	uniqExact(c)
+p_same	sumIf(a, greater(a, plus(1, 1)))
+p_same	sum(plus(a, 1))
+p_where	c
+p_where	plus(a, 1)
+p_where	upper(c)
+1	1	1	2
+2	2	1	16
+1	\N	1
+2	5	2
+12	7	12
+x	\N
+y	7
+p	greater(a, _CAST(1, \'Nullable(Int32)\'))
+p	count()
+0	1
+1	2
+p	has(_CAST([1, 100], \'Array(Int32)\'), a)
+p	count()
+0	1
+1	2
+20

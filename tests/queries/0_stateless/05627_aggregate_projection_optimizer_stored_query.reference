@@ -43,9 +43,9 @@ z	2	6
 p_alias	modulo(a, 2)
 p_alias	sum(modulo(a, 2))
 p_alias	sum(a)
-p_alias	count() IGNORE NULLS
-p_alias	any(modulo(a, 2)) RESPECT NULLS
-p_alias	sum(NULL)
+p_alias	count()
+p_alias	any_respect_nulls(modulo(a, 2))
+p_alias	nothingNull(NULL)
 p_alias	quantile(0.5)(a)
 p_alias	uniqExact(b)
 p_expressions	in(a, (1, 2))
