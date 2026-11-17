@@ -195,6 +195,7 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
     offset_is_whole_number_of_minutes_during_epoch = true;
     offset_is_whole_number_of_hours_in_lut_range = true;
     offset_is_whole_number_of_minutes_in_lut_range = true;
+    offset_change_is_whole_number_of_hours_during_epoch = true;
     offset_is_fixed = true;
     offset_is_fixed_during_epoch = true;
     offset_minute_of_hour_is_constant_during_epoch = true;
@@ -252,6 +253,9 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
                 /// Shift the point of time change later.
                 if (values.time_at_offset_change_value + values.amount_of_offset_change_value < 0)
                     values.time_at_offset_change_value = -values.amount_of_offset_change_value;
+
+                if (start_of_day + 86400 > 0 && values.amount_of_offset_change() % 3600 != 0)
+                    offset_change_is_whole_number_of_hours_during_epoch = false;
             }
 
             /// After the last transition (all the time for UTC) the offset never changes, so stop looking up every day.

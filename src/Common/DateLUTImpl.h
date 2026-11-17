@@ -257,6 +257,9 @@ private:
     /// question about every value the LUT serves - a pre-1970 `DateTime64` included.
     bool offset_is_whole_number_of_hours_in_lut_range;
     bool offset_is_whole_number_of_minutes_in_lut_range;
+    /// No day that contains a non-negative time changes the offset by a fraction of an hour (unlike
+    /// `Australia/Lord_Howe`), so `toStartOfHour` can round on the grid counted from the local midnight there.
+    bool offset_change_is_whole_number_of_hours_during_epoch;
     bool offset_is_fixed;
 
     /// Epoch-scoped: `offset_is_fixed` above covers the whole lookup table and so excludes zones that merely
@@ -1058,8 +1061,11 @@ public:
         if (static_cast<Time>(t) >= 0 && offset_is_whole_number_of_hours_during_epoch) [[likely]]
             return roundDownToMultiple(t, 3600);
 
+        if (static_cast<Time>(t) >= 0 && offset_change_is_whole_number_of_hours_during_epoch) [[likely]]
+            return roundDownFromDate(t, find(t).date, 3600);
+
         const Values & values = find(t);
-        if (unlikely(values.amount_of_offset_change() % 3600 != 0))
+        if (values.amount_of_offset_change() % 3600 != 0)
             return roundDownToWallClockHour(t, values);
 
         return roundDownFromDate(t, values.date, 3600);
