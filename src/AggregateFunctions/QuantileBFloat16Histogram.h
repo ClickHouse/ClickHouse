@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <base/arithmeticOverflow.h>
 #include <base/sort.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -15,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int INCORRECT_DATA;
 }
 
@@ -64,19 +66,24 @@ struct QuantileBFloat16Histogram
         add(x, 1);
     }
 
-    /// The weight comes straight from the caller's column, so a negative one arrives as a huge
-    /// `UInt64` and the per-value sums are modular. Annotated rather than rewritten so the hash
-    /// map is still looked up once per row.
-    void NO_SANITIZE_UNSIGNED_OVERFLOW add(const Value & x, Weight w)
+    /// A weight is a number of occurrences: a sum that does not fit is rejected instead of wrapping around, which would
+    /// move the quantile to another bucket.
+    static void addWeight(Weight & sum, Weight weight)
     {
-        if (!isNaN(x))
-            data[toBFloat16(x)] += w;
+        if (common::addOverflow(sum, weight, sum))
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The sum of weights in `quantileBFloat16Weighted` does not fit UInt64");
     }
 
-    void NO_SANITIZE_UNSIGNED_OVERFLOW merge(const QuantileBFloat16Histogram & rhs)
+    void add(const Value & x, Weight w)
+    {
+        if (!isNaN(x))
+            addWeight(data[toBFloat16(x)], w);
+    }
+
+    void merge(const QuantileBFloat16Histogram & rhs)
     {
         for (const auto & pair : rhs.data)
-            data[pair.getKey()] += pair.getMapped();
+            addWeight(data[pair.getKey()], pair.getMapped());
     }
 
     void serialize(WriteBuffer & buf) const

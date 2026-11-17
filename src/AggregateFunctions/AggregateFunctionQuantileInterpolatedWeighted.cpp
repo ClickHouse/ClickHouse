@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionQuantile.h>
+#include <base/arithmeticOverflow.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <DataTypes/DataTypeDate.h>
@@ -16,6 +17,7 @@ struct Settings;
 
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
@@ -57,19 +59,24 @@ struct QuantileInterpolatedWeighted
             ++map[x];
     }
 
-    /// The weight comes straight from the caller's column, so a negative one arrives as a huge
-    /// `UInt64` and the per-value sums are modular. Annotated rather than rewritten so the hash
-    /// map is still looked up once per row.
-    void NO_SANITIZE_UNSIGNED_OVERFLOW add(const Value & x, Weight weight)
+    /// A weight is a number of occurrences: a sum that does not fit is rejected instead of wrapping around, which would
+    /// make the state forget the dominant value.
+    static void addWeight(Weight & sum, Weight weight)
     {
-        if (!isNaN(x))
-            map[x] += weight;
+        if (common::addOverflow(sum, weight, sum))
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The sum of weights in `quantileInterpolatedWeighted` does not fit UInt64");
     }
 
-    void NO_SANITIZE_UNSIGNED_OVERFLOW merge(const QuantileInterpolatedWeighted & rhs)
+    void add(const Value & x, Weight weight)
+    {
+        if (!isNaN(x))
+            addWeight(map[x], weight);
+    }
+
+    void merge(const QuantileInterpolatedWeighted & rhs)
     {
         for (const auto & pair : rhs.map)
-            map[pair.getKey()] += pair.getMapped();
+            addWeight(map[pair.getKey()], pair.getMapped());
     }
 
     void serialize(WriteBuffer & buf) const

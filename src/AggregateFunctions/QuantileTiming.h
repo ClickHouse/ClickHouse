@@ -16,6 +16,7 @@ struct Settings;
 
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
 }
@@ -318,33 +319,38 @@ namespace detail
             memset(this, 0, sizeof(*this));
         }
 
-        void insert(UInt64 x) noexcept
+        /// A weight is a number of occurrences: a sum that does not fit is rejected instead of wrapping around, which
+        /// would make the state forget the dominant value.
+        static void addWeight(UInt64 & sum, UInt64 weight)
+        {
+            if (common::addOverflow(sum, weight, sum))
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The sum of weights in `quantileTimingWeighted` does not fit UInt64");
+        }
+
+        void insert(UInt64 x)
         {
             insertWeighted(x, 1);
         }
 
-        void insertWeighted(UInt64 x, size_t weight) noexcept
+        void insertWeighted(UInt64 x, size_t weight)
         {
-            count = common::addIgnoreOverflow(count, weight);
+            addWeight(count, weight);
 
             if (x < SMALL_THRESHOLD)
-                count_small[x] = common::addIgnoreOverflow(count_small[x], weight);
+                addWeight(count_small[x], weight);
             else if (x < BIG_THRESHOLD)
-            {
-                UInt64 & bucket = count_big[(x - SMALL_THRESHOLD) / BIG_PRECISION];
-                bucket = common::addIgnoreOverflow(bucket, weight);
-            }
+                addWeight(count_big[(x - SMALL_THRESHOLD) / BIG_PRECISION], weight);
         }
 
-        void merge(const QuantileTimingLarge & rhs) noexcept
+        void merge(const QuantileTimingLarge & rhs)
         {
-            count = common::addIgnoreOverflow(count, rhs.count);
+            addWeight(count, rhs.count);
 
             for (size_t i = 0; i < SMALL_THRESHOLD; ++i)
-                count_small[i] = common::addIgnoreOverflow(count_small[i], rhs.count_small[i]);
+                addWeight(count_small[i], rhs.count_small[i]);
 
             for (size_t i = 0; i < BIG_SIZE; ++i)
-                count_big[i] = common::addIgnoreOverflow(count_big[i], rhs.count_big[i]);
+                addWeight(count_big[i], rhs.count_big[i]);
         }
 
         void serialize(WriteBuffer & buf) const
