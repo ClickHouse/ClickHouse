@@ -1690,6 +1690,7 @@ static DictionarySparseIndex serializeTokensAndPostings(
     MergeTreeIndexWriterStream * positions_stream)
 {
     size_t num_tokens = sorted_tokens.size();
+    /// Round up without forming the sum, which wraps when the block size is close to the maximum of size_t.
     size_t num_blocks = num_tokens / params.dictionary_block_size + (num_tokens % params.dictionary_block_size != 0);
 
     auto sparse_index_tokens = ColumnString::create();

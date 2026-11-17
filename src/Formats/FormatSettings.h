@@ -285,6 +285,14 @@ struct FormatSettings : FormatSettingsEnums
         String output_confluent_subject;
     } avro{};
 
+    struct
+    {
+        String output_blob_type = "deletion-vector-v1";
+        String output_field_ids;
+        Int64 output_snapshot_id = -1;
+        Int64 output_sequence_number = -1;
+    } puffin{};
+
     String bool_true_representation = "true";
     String bool_false_representation = "false";
     bool allow_special_bool_values = true;

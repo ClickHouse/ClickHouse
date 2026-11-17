@@ -121,6 +121,10 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
 
     format_settings.avro.allow_missing_fields = settings[Setting::input_format_avro_allow_missing_fields];
     format_settings.avro.output_codec = settings[Setting::output_format_avro_codec];
+    format_settings.puffin.output_blob_type = settings[Setting::output_format_puffin_blob_type];
+    format_settings.puffin.output_field_ids = settings[Setting::output_format_puffin_field_ids];
+    format_settings.puffin.output_snapshot_id = settings[Setting::output_format_puffin_snapshot_id];
+    format_settings.puffin.output_sequence_number = settings[Setting::output_format_puffin_sequence_number];
     format_settings.avro.output_sync_interval = settings[Setting::output_format_avro_sync_interval];
     format_settings.avro.schema_registry_url = settings[Setting::format_avro_schema_registry_url].toString();
     /// `doSettingsSanityCheckClamp` bounds these at apply time, but it does not run for
