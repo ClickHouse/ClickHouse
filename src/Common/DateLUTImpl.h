@@ -501,7 +501,7 @@ private:
     /// whole hour on it, but not before the change itself: the result never decreases and is at most an
     /// hour before `t`, also in the repeated or skipped part of the day. `t` must be inside the LUT range.
     template <typename DateOrTime>
-    static DateOrTime roundDownToWallClockHour(DateOrTime t, const Values & values)
+    NO_INLINE static DateOrTime roundDownToWallClockHour(DateOrTime t, const Values & values)
     {
         Time time = t - values.date;
         if (time >= values.time_at_offset_change())
@@ -1065,7 +1065,8 @@ public:
             return roundDownFromDate(t, find(t).date, 3600);
 
         const Values & values = find(t);
-        if (values.amount_of_offset_change() % 3600 != 0)
+        /// The amount is stored in quarters of an hour, so it is a whole number of hours when it is a multiple of 4.
+        if (values.amount_of_offset_change_value % static_cast<Int8>(3600 / Values::OffsetChangeFactor) != 0)
             return roundDownToWallClockHour(t, values);
 
         return roundDownFromDate(t, values.date, 3600);
