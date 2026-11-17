@@ -802,13 +802,13 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::getPool() co
 
 void DistributedAsyncInsertDirectoryQueue::updatePool(ConnectionPoolWithFailoverPtr new_pool)
 {
-    {
-        std::lock_guard lock(pool_mutex);
-        pool = std::move(new_pool);
-    }
+    std::lock_guard lock(pool_mutex);
     /// A recreated queue used to start sending right away; wake the task so files queued
     /// toward the old destination do not wait out an error backoff against it.
+    /// Scheduled before the swap, which cannot throw, so a failed wake-up changes nothing;
+    /// the task takes its pool snapshot under `pool_mutex`, so it still gets the new pool.
     task_handle->schedule();
+    pool = std::move(new_pool);
 }
 
 }
