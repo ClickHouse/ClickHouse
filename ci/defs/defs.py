@@ -61,6 +61,7 @@ NIGHTLY_PERF_PLACEMENT = {
     "skip_index_minmax_set_hits.xml": "1/4",
     "analyzer_large_queries.xml": "2/4",
     "external_sort_hits.xml": "2/4",
+    "iceberg_suite_local_tpcds_sf100.xml": "2/4",
     "parquet_pushdown_long.xml": "2/4",
     "tpch_sf100.xml": "2/4",
     "tpcds_sf100.xml": "3/4",
@@ -524,8 +525,8 @@ class JobNames:
 
 
 class ToolSet:
-    COMPILER_C = "clang-22"
-    COMPILER_CPP = "clang++-22"
+    COMPILER_C = "clang-23"
+    COMPILER_CPP = "clang++-23"
 
     COMPILER_CACHE = "sccache"
     COMPILER_CACHE_LEGACY = "sccache"
@@ -577,6 +578,7 @@ class ArtifactNames:
 
     FAST_TEST = "FAST_TEST"
 
+    UNITTEST_AMD_DEBUG = "UNITTEST_AMD_DEBUG"
     UNITTEST_AMD_ASAN_UBSAN = "UNITTEST_AMD_ASAN_UBSAN"
     UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
     UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
@@ -856,6 +858,7 @@ class ArtifactConfigs:
         compress_zst=True,
     ).parametrize(
         names=[
+            ArtifactNames.UNITTEST_AMD_DEBUG,
             ArtifactNames.UNITTEST_AMD_ASAN_UBSAN,
             ArtifactNames.UNITTEST_AMD_TSAN,
             ArtifactNames.UNITTEST_AMD_MSAN,

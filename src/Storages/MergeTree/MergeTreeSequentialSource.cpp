@@ -53,6 +53,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool cache_temporarily_for_merges;
     extern const MergeTreeSettingsBool force_read_through_cache_for_merges;
 }
 
@@ -170,6 +171,8 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     const bool read_if_exists_otherwise_bypass
         = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
     read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass = read_if_exists_otherwise_bypass;
+    read_settings.filesystem_cache_settings.cache_temporarily
+        = read_if_exists_otherwise_bypass && (*storage.getSettings())[MergeTreeSetting::cache_temporarily_for_merges];
 #if ENABLE_DISTRIBUTED_CACHE
     read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass = read_if_exists_otherwise_bypass;
 #endif
@@ -491,7 +494,7 @@ public:
     {
     }
 
-    String getName() const override { return fmt::format("ReadFromPart({})", data_part.data_part->name); }
+    [[nodiscard]] String getName() const override { return fmt::format("ReadFromPart({})", data_part.data_part->name); }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
@@ -540,7 +543,7 @@ public:
         pipeline.init(Pipe(std::move(source)));
     }
 
-    QueryPlanStepPtr clone() const override
+    [[nodiscard]] QueryPlanStepPtr clone() const override
     {
         return std::make_unique<ReadFromPart>(
             type,
