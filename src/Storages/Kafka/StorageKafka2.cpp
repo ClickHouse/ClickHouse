@@ -444,7 +444,7 @@ public:
     {
     }
 
-    String getName() const override { return "ReadFromStorageKafka2"; }
+    [[nodiscard]] String getName() const override { return "ReadFromStorageKafka2"; }
 
 private:
     Pipe makePipe() final
