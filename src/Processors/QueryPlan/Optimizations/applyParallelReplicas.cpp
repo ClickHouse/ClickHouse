@@ -236,6 +236,8 @@ static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::fu
 ///   different set, and an `IN` is supposed to compare against a single set - wrong rows, no exception.
 ///   `rand()` is the example: unlike `now()`, it is not constant-folded (folding needs a `ColumnConst`
 ///   result), so it reaches the replicas as a live function and each evaluates it itself.
+/// A set from a `Set` table is shipped by name instead, so one of a temporary table is unshippable too: a replica
+/// refuses a table of the temporary database with `DATABASE_ACCESS_DENIED`.
 /// `visited` holds the sets already checked: a set can be referenced from several places, and the sets nested in
 /// a set's plan are checked recursively.
 static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag, std::unordered_set<const FutureSetFromSubquery *> & visited)
@@ -249,7 +251,6 @@ static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag, std::uno
             continue;
         const auto future_set = column_set->getData();
 
-        /// A `Set` table is shipped by name, and a replica refuses one of the temporary database with `DATABASE_ACCESS_DENIED`.
         if (const auto * from_storage = typeid_cast<const FutureSetFromStorage *>(future_set.get()))
         {
             const auto & storage_id = from_storage->getStorageID();
