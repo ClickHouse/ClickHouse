@@ -28,6 +28,8 @@ public:
         DB::ContextPtr context);
 
     [[nodiscard]] bool canBePruned(const DB::ObjectInfo & object_info) const;
+    /// The same by the transform of a data file, which holds its partition values.
+    [[nodiscard]] bool canBePruned(const DB::ActionsDAG & schema_transform) const;
 
 private:
     std::optional<DB::KeyCondition> key_condition;

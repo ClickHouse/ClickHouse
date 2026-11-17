@@ -4,6 +4,7 @@
 
 #if USE_DELTA_KERNEL_RS
 
+#include <Core/Field.h>
 #include <Core/Types.h>
 #include <IO/S3/URI.h>
 #include <Common/Logger.h>
@@ -14,6 +15,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <boost/noncopyable.hpp>
 #include <Poco/JSON/Array.h>
+#include <functional>
 #include <unordered_set>
 #include "delta_kernel_ffi.hpp"
 
@@ -47,6 +49,23 @@ public:
         DB::IDataLakeMetadata::FileProgressCallback callback,
         size_t list_batch_size,
         DB::ContextPtr context);
+
+    /// What the log says about a data file, beyond what a read needs.
+    struct DataFileStatistics
+    {
+        /// The `stats` JSON of the `add` action, if it has one.
+        std::optional<std::string_view> stats;
+        /// The cardinality of the deletion vector, if the file has one.
+        std::optional<Int64> deleted_rows;
+        /// Aligned with `getPartitionColumns`; empty if the file gives none.
+        std::vector<DB::Field> partition_values;
+    };
+    /// Returns false to stop the scan.
+    using DataFileStatisticsVisitor = std::function<bool(const DataFileStatistics &)>;
+
+    /// Visits the data files left after pruning by `filter_dag` as `iterate` prunes them, without reading deletion vectors.
+    /// Returns whether a file was pruned by its partition values; files skipped by delta-kernel-rs are not counted.
+    bool visitDataFileStatistics(const DB::ActionsDAG * filter_dag, DB::ContextPtr context, const DataFileStatisticsVisitor & visitor);
 
     /// Get schema from DeltaLake table metadata.
     const DB::NamesAndTypesList & getTableSchema() const;
@@ -143,6 +162,23 @@ private:
         const char * context_for_log) const TSA_REQUIRES(mutex);
 
     std::shared_ptr<KernelSnapshotState> getKernelSnapshotState() const TSA_REQUIRES(mutex);
+
+    /// A scan of the snapshot, with `filter` as the predicate of delta-kernel-rs if `enable_engine_predicate`.
+    static KernelScan createScan(
+        const KernelSnapshotState & state,
+        const DB::ActionsDAG * filter,
+        bool enable_engine_predicate,
+        std::exception_ptr & engine_predicate_exception,
+        DB::ContextPtr context);
+
+    struct ScanSchema;
+    bool visitDataFileStatisticsImpl(
+        const KernelSnapshotState & state,
+        const ScanSchema & scan_schema,
+        const DB::ActionsDAG * filter_dag,
+        DB::ContextPtr context,
+        const DataFileStatisticsVisitor & visitor,
+        size_t & visited_files) const;
 };
 
 using TableSnapshotPtr = std::shared_ptr<TableSnapshot>;

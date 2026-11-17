@@ -8,12 +8,11 @@
 #include <Core/Names.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
+#include <Storages/ObjectStorage/DataLakes/Common/DataLakeColumnStatistics.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
-#include <set>
 #include <unordered_map>
 #include <vector>
 
@@ -47,8 +46,8 @@ namespace DB::Iceberg
 
 class IcebergSchemaProcessor;
 
-/// Merges the manifest metrics of the requested columns over the data files that a read keeps after pruning, as the
-/// `Basic` statistics of MergeTree parts are merged, and estimates the number of distinct values of each column.
+/// Extracts the manifest metrics of the requested columns from the data files that a read keeps after pruning and
+/// merges them with `DataLakeColumnStatistics`.
 class ManifestColumnStatistics
 {
 public:
@@ -73,19 +72,7 @@ public:
     void finalize(DataLakeReadEstimate & estimate);
 
 private:
-    /// A requested column that gets statistics.
-    struct Target
-    {
-        /// Storage column name, the key of its statistics and its number of distinct values.
-        String name;
-        /// Iceberg field id, which survives a rename; the manifest metrics are keyed by it.
-        Int32 field_id;
-        /// The statistics are built with this type, so the estimator accepts them for the column.
-        DataTypePtr storage_type;
-        /// `storage_type` without `LowCardinality` and `Nullable`; bounds and partition values are converted to it.
-        DataTypePtr nested_type;
-        std::optional<UInt64> table_distinct_values;
-    };
+    using ColumnMetrics = DataLakeColumnStatistics::ColumnMetrics;
 
     /// A target's type in one schema.
     struct FieldType
@@ -101,29 +88,6 @@ private:
     /// Field id -> type, for the targets that a schema has.
     using SchemaTypes = std::unordered_map<Int32, FieldType>;
 
-    /// What a data file's manifest entry says about one target, typed as the storage column.
-    struct ColumnMetrics
-    {
-        /// nullopt when the metric is missing or invalid.
-        std::optional<UInt64> nulls;
-        /// Null when the bounds are missing or do not convert.
-        Field min_value;
-        Field max_value;
-        /// nullopt when the column is not identity-partitioned in the file's spec or the value does not convert; Null for a
-        /// NULL partition value.
-        std::optional<Field> identity_partition_value;
-    };
-
-    /// What the number of distinct values needs beyond the merged statistics. Unlike those, it is known only when
-    /// every file gives it.
-    struct DistinctValuesInputs
-    {
-        /// Distinct identity-partition values over the files, for rule 1.
-        std::set<Field> identity_partition_values;
-        /// False once a file has no identity-partition value for the column.
-        bool identity_partition_known = true;
-    };
-
     /// The types of the targets in the schema with id `file_schema_id`, the schema id with which a data file was written.
     const SchemaTypes & getSchemaTypes(Int32 file_schema_id);
 
@@ -131,27 +95,14 @@ private:
     std::vector<ColumnMetrics> extractFileMetrics(
         const ProcessedManifestFileEntry & entry, const IcebergPathFromMetadata & path_to_manifest_file, UInt64 rows);
 
-    /// Adds the identity-partition value that a file gives for a target.
-    static void addToDistinctValuesInputs(DistinctValuesInputs & inputs, const ColumnMetrics & metrics);
-
-    /// The number of distinct values of a target by the first rule that applies (1: identity-partition values, 2: the
-    /// range of the bounds, 3: the table statistics), clamped to [1, non-NULL rows]; std::nullopt if none does. `column`
-    /// holds its merged statistics over `rows` rows.
-    static std::optional<UInt64> estimateDistinctValues(
-        const Target & target, const DistinctValuesInputs & inputs, const ColumnStats & column, UInt64 rows);
-
     /// Resolves field ids and the column types of each file's schema.
     const IcebergSchemaProcessor & schema_processor;
-    /// Set of column targets for which to track statistics
-    std::vector<Target> targets;
-    /// Aligned with `targets`.
-    std::vector<DistinctValuesInputs> distinct_values_inputs;
+    /// The targets, their merged statistics and numbers of distinct values.
+    DataLakeColumnStatistics statistics;
+    /// Iceberg field ids of the targets, which survive a rename; the manifest metrics are keyed by them.
+    std::vector<Int32> field_ids;
     /// By the schema id with which a file was written, so the files written with one schema share the lookups.
     std::unordered_map<Int32, SchemaTypes> schema_types;
-    /// Sum of `record_count` over the added files, less the subtracted deleted rows.
-    UInt64 total_rows = 0;
-    /// Merges the per-file `Basic` statistics of each target, as those of MergeTree parts.
-    ConditionSelectivityEstimatorBuilder statistics_builder;
 };
 
 }

@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/LogColumnStatistics.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeSink.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakePartitionedSink.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
@@ -68,6 +69,8 @@ namespace Setting
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
     extern const SettingsInt64 delta_lake_snapshot_version;
+    extern const SettingsBool use_datalake_metadata_statistics;
+    extern const SettingsBool use_statistics;
 }
 
 void tracingCallback(struct ffi::Event event);
@@ -348,6 +351,46 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
     }
 
     return getTableSnapshot(snapshot_version)->iterate(filter_dag, callback, list_batch_size, context);
+}
+
+std::optional<DataLakeReadEstimate> DeltaLakeMetadataDeltaKernel::estimateRead(
+    StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, const Names & column_names, ContextPtr context) const
+{
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::use_datalake_metadata_statistics] || !settings[Setting::use_statistics])
+        return std::nullopt;
+
+    const auto version = extractDeltaLakeSnapshotVersionFromMetadata(storage_metadata_snapshot);
+    if (!version)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No version found in table state snapshot");
+    const auto snapshot = getTableSnapshot(static_cast<SnapshotVersion>(*version));
+
+    DeltaLake::LogColumnStatistics column_statistics(
+        column_names,
+        storage_metadata_snapshot->getColumns(),
+        snapshot->getPartitionColumns(),
+        snapshot->getPhysicalNamesMap(),
+        context);
+
+    DataLakeReadEstimate estimate;
+    bool has_row_counts = true;
+    estimate.pruned_data_files = snapshot->visitDataFileStatistics(
+        filter,
+        context,
+        [&](const DeltaLake::TableSnapshot::DataFileStatistics & file)
+        {
+            has_row_counts = column_statistics.addFile(file);
+            return has_row_counts;
+        });
+    estimate.has_delete_files = column_statistics.hasDeletionVectors();
+
+    if (!has_row_counts)
+    {
+        LOG_DEBUG(log, "A data file of snapshot version {} has no valid `numRecords`, so the read gets no row estimate", *version);
+        return estimate;
+    }
+    column_statistics.finalize(estimate);
+    return estimate;
 }
 
 NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema(ContextPtr local_context) const

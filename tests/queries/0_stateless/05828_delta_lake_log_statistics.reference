@@ -1,0 +1,51 @@
+--- T1: the setting is off
+Join: m[1000] ⋈ t
+live rows: 112
+--- T2: 3 data files of 100, 50 and 12 rows, deletion vectors of 39 and 11 rows
+Join: m[1000] ⋈ t[no_stats~112]
+live rows: 112
+--- T2: WHERE id >= 100 skips the file with id 0..99
+Join: m[330] ⋈ t[no_stats~17]
+live rows: 43
+--- T3: 30 data files of 1 row, partitioned
+Join: m[1000] ⋈ t[30]
+live rows: 30
+--- T3: WHERE p_int = 1 keeps 8 files
+Join: m[1000] ⋈ t[no_stats~8]
+live rows: 8
+--- T3: WHERE p_int IS NULL keeps 6 files
+Join: m[1000] ⋈ t[no_stats~6]
+live rows: 6
+--- T3: p_int has 3 partition values and NULL
+t: 30 rows
+__table2.p_int: 3
+--- T4: bounds of each type, 2 data files of 20 and 15 rows
+Join: m[1000] ⋈ t[no_stats~15]
+live rows: 15
+Join: m[1000] ⋈ t[no_stats~7]
+live rows: 8
+Join: m[1000] ⋈ t[no_stats~4]
+live rows: 4
+Join: m[1000] ⋈ t[no_stats~14]
+live rows: 14
+Join: m[1000] ⋈ t[no_stats~10]
+live rows: 10
+Join: m[1000] ⋈ t[no_stats~11]
+live rows: 10
+Join: m[1000] ⋈ t[no_stats~16]
+live rows: 16
+Join: m[1000] ⋈ t[no_stats~14]
+live rows: 15
+--- T4: s has 7 NULLs in 35 rows
+Join: m[1000] ⋈ t[no_stats~7]
+live rows: 7
+--- T5: column mapping, the statistics are keyed by physical names
+Join: m[1000] ⋈ t[8]
+live rows: 8
+Join: m[330] ⋈ t[no_stats~1]
+live rows: 2
+--- T6: written by ClickHouse, only the rows
+Join: m[1000] ⋈ t[150]
+live rows: 150
+Join: m[1000] ⋈ t[no_stats~?]
+live rows: 30

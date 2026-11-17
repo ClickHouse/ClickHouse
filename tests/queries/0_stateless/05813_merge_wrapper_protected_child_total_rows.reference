@@ -1,0 +1,14 @@
+allowed	2
+merge_wrapper count	0
+merge_wrapper trivial count	0
+excluded_wrapper trivial count	0
+system.tables	allowed	2
+system.tables	excluded_wrapper	0
+system.tables	merge_wrapper	0
+system.tables	excluded_wrapper	0
+system.tables	merge_wrapper	0
+system.tables	mywrap	0	0
+mywrap count	0
+mywrap trivial count	0
+admin merge_wrapper trivial count	3
+admin system.tables	merge_wrapper	3
