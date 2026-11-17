@@ -27,6 +27,17 @@ ORDER BY i WITH FILL TO 1 STALENESS 5, k WITH FILL;
 SELECT * FROM values('a Int64, b Int64, c Int64', (1, 0, 0), (2, 3, 0))
 ORDER BY a WITH FILL FROM 2, b WITH FILL, c WITH FILL FROM -1 TO 1;
 
+-- A fill key with FROM: the rows stay in order.
+
+SELECT * FROM values('i Int64, j Int64, k Int64, l Int64', (3, 0, 0, 1), (3, 1, 1, 2), (3, 1, 2, 3))
+ORDER BY i WITH FILL TO 1, j WITH FILL, k WITH FILL FROM 2, l WITH FILL FROM 1;
+
+SELECT DISTINCT i, j, k FROM (SELECT * FROM values('i Int64, j Int64, k Int64, l Int64', (3, 0, 0, 1), (3, 1, 1, 2), (3, 1, 2, 3))
+ORDER BY i WITH FILL TO 1, j WITH FILL, k WITH FILL FROM 2, l WITH FILL FROM 1);
+
+SELECT * FROM values('a Int64, b Int64, c Int64, d Int64', (0, 0, 0, 1), (2, -3, 2, 0), (2, 1, 0, 3))
+ORDER BY a WITH FILL TO 0 STEP 2 STALENESS 3, b WITH FILL STEP 4, c WITH FILL FROM 0 TO 0, d WITH FILL TO 2;
+
 -- A Nullable fill key: the rows stay in order.
 
 SELECT * FROM values('i Nullable(Int64), k Int64', (1, 0), (3, 5), (NULL, 2))

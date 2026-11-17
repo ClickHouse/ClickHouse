@@ -308,11 +308,14 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     const size_t row_size = size();
     size_t pos = 0;
 
-    /// The filling row cannot step to a NULL, NaN or infinity and then stays behind that original row, so with a fill
-    /// column that can hold one a key at `min(TO, next value)` counts as reached.
-    bool unreachable_values = false;
+    /// The filling row cannot step to a NULL, NaN or infinity, and a reset to FROM can put it behind the next row, so
+    /// with a fill column that can hold one or has FROM a key at `min(TO, next value)` counts as reached.
+    bool keep_previous_comparison = false;
     for (size_t i = 0; i < row_size; ++i)
-        unreachable_values |= getFillDescription(i).fill_column_nullable || isFloat(getFillDescription(i).fill_column_type);
+    {
+        const auto & descr = getFillDescription(i);
+        keep_previous_comparison |= descr.fill_column_nullable || isFloat(descr.fill_column_type) || !descr.fill_from.isNull();
+    }
 
     /// Find position we need to increment for generating next row.
     for (; pos < row_size; ++pos)
@@ -321,7 +324,7 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
             continue;
 
         /// The cursor is in the group of the next row for a column only when it holds the value of the next row.
-        const Field & target = unreachable_values ? findBorder(constraints[pos], next_original_row[pos], getDirection(pos))
+        const Field & target = keep_previous_comparison ? findBorder(constraints[pos], next_original_row[pos], getDirection(pos))
             : next_original_row[pos].isNull() ? constraints[pos] : next_original_row[pos];
         logDebug("target: {}", target);
 
@@ -344,7 +347,7 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         return false;
 
     /// Towards another group, the following columns are walked to their constraints before the step is refused below.
-    if ((unreachable_values || next_original_row[pos].isNull()) && !constraints[pos].isNull()
+    if ((keep_previous_comparison || next_original_row[pos].isNull()) && !constraints[pos].isNull()
         && !less(row[pos], constraints[pos], getDirection(pos)))
         return false;
 
