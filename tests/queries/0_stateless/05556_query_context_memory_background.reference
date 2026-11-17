@@ -1,0 +1,8 @@
+native max_memory_usage rejects retained context at admission
+native max_memory_usage_for_user rejects retained context at admission
+native reports retained context while running
+native balances context cleanup with another live query
+http max_memory_usage rejects retained context at admission
+http max_memory_usage_for_user rejects retained context at admission
+http reports retained context while running
+http balances context cleanup with another live query
