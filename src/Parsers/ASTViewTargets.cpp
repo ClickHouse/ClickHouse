@@ -13,6 +13,8 @@
 #include <base/EnumReflection.h>
 #include <Core/UUID.h>
 
+#include <Poco/String.h>
+
 #include <unordered_set>
 
 
@@ -42,6 +44,14 @@ namespace
             case ViewTarget::MetricFamilies: return Keyword::METRIC_FAMILIES; /// METRIC FAMILIES mydb.mymetricfamilies
         }
         UNREACHABLE();
+    }
+
+    /// A target table without a database and with one of these names is parsed back as the beginning of an inner engine.
+    bool isInnerEngineKeyword(const String & table_name)
+    {
+        String upper_name = Poco::toUpper(table_name);
+        return upper_name == toStringView(Keyword::INNER) || upper_name == toStringView(Keyword::ENGINE)
+            || upper_name == toStringView(Keyword::TTL) || upper_name == toStringView(Keyword::SETTINGS);
     }
 }
 
@@ -274,9 +284,11 @@ void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr,
 {
     if (target.table_id)
     {
+        const auto & database_name = target.table_id.database_name;
+        const auto & table_name = target.table_id.table_name;
         ostr << s.nl_or_ws << toStringView(getKeyword(target.kind, time_series_version)) << " "
-             << (!target.table_id.database_name.empty() ? backQuoteIfNeed(target.table_id.database_name) + "." : "")
-             << backQuoteIfNeed(target.table_id.table_name);
+             << (!database_name.empty() ? backQuoteIfNeed(database_name) + "." : "")
+             << (database_name.empty() && isInnerEngineKeyword(table_name) ? backQuote(table_name) : backQuoteIfNeed(table_name));
     }
 
     if (target.inner_uuid != UUIDHelpers::Nil)
