@@ -26,6 +26,7 @@
 #include <Core/Defines.h>
 #include <Core/BaseSettings.h>
 #include <Core/Settings.h>
+#include <Disks/DiskFromAST.h>
 #include <Interpreters/JoinUtils.h>
 #include <Formats/NativeWriter.h>
 
@@ -501,7 +502,10 @@ void registerStorageJoin(StorageFactory & factory)
                 else if (setting.name == "any_join_distinct_right_table_keys")
                     old_any_join = setting.value;
                 else if (setting.name == "disk")
+                {
+                    DiskFromAST::ensureDiskIsNotInline(setting.value);
                     disk_name = setting.value.safeGet<String>();
+                }
                 else if (setting.name == "persistent")
                 {
                     persistent = setting.value.safeGet<bool>();
@@ -511,7 +515,7 @@ void registerStorageJoin(StorageFactory & factory)
             }
         }
 
-        DiskPtr disk = args.getContext()->getDisk(disk_name);
+        DiskPtr disk = args.getDisk(disk_name);
 
         if (engine_args.size() < 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -601,6 +605,8 @@ void registerStorageJoin(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .has_builtin_setting_fn = has_builtin_fn,
+            .stores_data_on_disk = true,
+            .supports_temporary = true,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -657,7 +663,7 @@ Main use-cases for `Join`-engine tables are following:
 
 ### Deleting data {#deleting-data}
 
-`ALTER DELETE` queries for `Join`-engine tables are implemented as [mutations](/reference/statements/alter#mutations). `DELETE` mutation reads filtered data and overwrites data of memory and disk.
+`ALTER DELETE` queries for `Join`-engine tables are implemented as [mutations](/reference/statements/alter/index#mutations). `DELETE` mutation reads filtered data and overwrites data of memory and disk.
 
 ### Limitations and settings {#join-limitations-and-settings}
 
