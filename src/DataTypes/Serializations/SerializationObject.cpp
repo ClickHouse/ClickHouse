@@ -1169,7 +1169,7 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
     {
         if (!column_object.hasSource())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Object column {} doesn't have the source column", column_object.getName());
-        source_serialization->deserializeBinaryBulkWithMultipleStreams(column_object.getSourcePtr(), limit, settings, object_state->source_state, cache);
+        source_serialization->deserializeBinaryBulkWithMultipleStreams(column_object.getSourceColumn(), limit, settings, object_state->source_state, cache);
     }
 
     if (structure_state->serialization_version.value == SerializationVersion::FLATTENED)

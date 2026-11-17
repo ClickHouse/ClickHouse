@@ -531,13 +531,11 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
 
             const auto & object_type = assert_cast<const DataTypeObject &>(*type);
             /// Write version of the serialization because we can add new arguments in the JSON type.
-            UInt8 serialization_version;
+            UInt8 serialization_version = TYPE_JSON_SERIALIZATION_VERSION;
             if (object_type.hasSource())
                 serialization_version = TYPE_JSON_SERIALIZATION_VERSION_WITH_SOURCE;
             else if (object_type.hasSharedTypedPaths())
                 serialization_version = TYPE_JSON_SERIALIZATION_VERSION_WITH_TYPED_PATH_FLAGS;
-            else
-                serialization_version = TYPE_JSON_SERIALIZATION_VERSION;
             writeBinary(serialization_version, buf);
             if (serialization_version >= TYPE_JSON_SERIALIZATION_VERSION_WITH_SOURCE)
                 writeBinary(object_type.hasSource(), buf);

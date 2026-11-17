@@ -274,28 +274,6 @@ bool tryGetNumericValueFromJSONElement(
 namespace
 {
 
-/// Reserve capacity for a chars buffer that is grown incrementally (one document per call). Keeps the
-/// default power-of-two doubling (amortized O(1) appends) until a single growth increment would exceed
-/// `max_growth_step`, after which it grows by exact step-sized chunks. This bounds the over-allocation
-/// for large buffers (e.g. shared-data path names) without reallocating on every row, which a plain
-/// per-row `reserve_exact` would cause. `max_growth_step == 0` keeps pure power-of-two growth.
-void reserveCharsWithGrowthCap(ColumnString::Chars & chars, size_t required, size_t max_growth_step)
-{
-    if (required <= chars.capacity())
-        return;
-
-    if (max_growth_step == 0)
-    {
-        chars.reserve(required);
-        return;
-    }
-
-    size_t new_capacity = chars.capacity() * 2;
-    if (new_capacity - chars.capacity() > max_growth_step)
-        new_capacity = chars.capacity() + max_growth_step;
-    chars.reserve_exact(std::max(new_capacity, required));
-}
-
 /// `IColumn::insertDefault` inserts the zero of the column, which is not the default of every type (an `Enum`
 /// whose smallest value is not 0, or a `Tuple` or `JSON` holding one). nullptr when it is.
 DataTypePtr getTypeForDefault(const DataTypePtr & type)
