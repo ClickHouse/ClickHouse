@@ -78,7 +78,7 @@ Authentication happens during the handshake, in the [`ClientHello`](#clienthello
 
 An empty `user` field is interpreted by the server as its configured default session user: the `default_session_user` server setting (whose default value is `default`), possibly overridden per listener in the `protocols` section. If the server is configured with an empty default session user, or the server is older than 26.8, an empty `user` field is rejected with an exception. Note that `clickhouse-client` never sends an empty user name: it substitutes `default` on the client side.
 
-SSH challenge-response authentication is available from protocol version 54466 onward — see [SSH challenge-response authentication](#ssh-authentication).
+SSH challenge-response authentication is available from protocol version 54466 onward, and from 54497 the signature is bound to the TLS session — see [SSH challenge-response authentication](#ssh-authentication).
 
 ### Inter-server secret {#inter-server-secret}
 
@@ -186,6 +186,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | MERGE_COMBINATOR_STATE_VERSION | 54494 | Block (Column) | The state of a `-Merge` function itself (not the states it merges) takes the state version of the merged function at the negotiated revision, and the outer `AggregateFunction` announces it. For example, for a distributed `quantileDeterministicMerge(state)` a shard sends `AggregateFunction(1, quantileDeterministicMerge, AggregateFunction(1, quantileDeterministic, UInt64, UInt64))`, and the payload has the trailing `skip_degree`. Below this revision the outer version is `0`: the type string is `AggregateFunction(quantileDeterministicMerge, AggregateFunction(1, quantileDeterministic, UInt64, UInt64))` and the payload has no `skip_degree`, which is what older releases send and expect. The payload always follows the outer version, never the version inside the argument type. Only the state payload changes; the column framing is untouched. |
 | INSERT_RETURNING | 54495 | Data (INSERT) | For `INSERT ... RETURNING (SELECT ...)` with the rows sent in `Data` packets, the server sends the result of the `RETURNING` query while it is still reading the rows: `Data` packets (the first one is the header of the result, with 0 rows), `Totals`, `Extremes`, `ProfileInfo`, and `Progress`, interleaved with the client's row stream and before `EndOfStream`. See the [INSERT phase](#insert-phase). Below this revision the server rejects such a query with an `Exception` (`NOT_IMPLEMENTED`) instead of sending the schema block, so an older client never sees the new packets. |
 | PROFILE_EVENTS_IN_SECONDARY_INSERT | 54496 | ProfileEvents (INSERT) | For a secondary `INSERT` (sent by the initiator of a distributed `INSERT`, `query_kind = SecondaryQuery`), after it has received the end-of-input terminator, the server sends the insert's final [`ProfileEvents`](#profileevents) before `EndOfStream`, or before the `Exception` if the query fails after that point; the initiator charges it to the quotas over profile events of the initiating user. Periodic reports while the rows are uploaded stay suppressed for secondary `INSERT`s. Below this version the server sends no `ProfileEvents` for a secondary `INSERT`. The packet format is unchanged. External clients send initial queries and see no change. |
+| SSH_CHANNEL_BINDING | 54497 | Auth flow | A server answers `SSHChallengeRequest` from a client of this revision with `SSHChallengeWithBinding` (type 19) instead of `SSHChallenge` (type 18), and the client signs a length-prefixed message that includes a binding to the TLS session. Gated on the **client** version from `ClientHello`, because it happens before `ServerHello`. See [Channel binding](#ssh-channel-binding). |
 
 ## Packet envelope {#packet-envelope}
 
@@ -844,22 +845,23 @@ Server → Client, gated by `TIMEZONE_UPDATES` (v54464). Sent in exactly one pla
 
 The packet arrives once, immediately after the input-schema block and before the client starts sending row blocks. A decoder that ignores `TimezoneUpdate` MUST still consume the trailing `String` to keep the wire aligned.
 
-### SSH challenge-response authentication (packet types 11, 12, 18) {#ssh-authentication}
+### SSH challenge-response authentication (packet types 11, 12, 18, 19) {#ssh-authentication}
 
 Gated by `SSH_AUTHENTICATION` (v54466), and opt-in only. A connection enters the SSH flow when ClientHello sends `user = " SSH KEY AUTHENTICATION " + <real_user>` (with the leading and trailing spaces) and `password = ""`. The server reads the prefix, strips it to recover the real user, and switches to challenge-response.
 
 | Packet | Code | Direction | Body |
 |--------|------|-----------|------|
 | SSHChallengeRequest | 11 | Client → Server | (no body) |
-| SSHChallenge       | 18 | Server → Client | `String challenge` — random bytes; one component of the string that gets signed (see below) |
+| SSHChallenge       | 18 | Server → Client | `String challenge` — random bytes; one component of the string that gets signed (see below). Sent to clients older than 54497. |
+| SSHChallengeWithBinding | 19 | Server → Client | `String challenge` — same body as `SSHChallenge`. Sent to clients of version 54497 or newer; the client must sign the [bound message](#ssh-channel-binding). |
 | SSHChallengeResponse | 12 | Client → Server | `String signature` — SSH signature over the concatenation defined below, **not** over the raw challenge |
 
 The flow runs in place of password authentication, and the challenge-response exchange happens **before** ServerHello — the server defers its Hello reply until authentication succeeds:
 
 1. The client sends ClientHello with the SSH marker prefix and an empty password.
 2. The client sends `SSHChallengeRequest` (packet 11). The server has **not** sent ServerHello yet — it processes authentication first and blocks here waiting for this packet.
-3. The server replies with `SSHChallenge` carrying random bytes (packet 18).
-4. The client builds the string to sign and signs **that**, not the raw challenge, then sends `SSHChallengeResponse` (packet 12) with the signature. The signed message is the byte-wise concatenation, with no separators, of four parts in this exact order:
+3. The server replies with `SSHChallengeWithBinding` (packet 19) if the client version is 54497 or newer, or with `SSHChallenge` (packet 18) otherwise, carrying random bytes.
+4. The client builds the string to sign and signs **that**, not the raw challenge, then sends `SSHChallengeResponse` (packet 12) with the signature. After `SSHChallengeWithBinding` the signed message is the [bound message](#ssh-channel-binding). After `SSHChallenge` (the legacy layout) it is the byte-wise concatenation, with no separators, of four parts in this exact order:
 
    ```text
    to_sign = decimal(protocol_version) + default_database + user + challenge
@@ -872,7 +874,7 @@ The flow runs in place of password authentication, and the challenge-response ex
    | `user` | The real user name **with the `" SSH KEY AUTHENTICATION "` marker prefix stripped** — the same name the server recovers after stripping the prefix. |
    | `challenge` | The raw `challenge` bytes from the `SSHChallenge` packet. |
 
-5. The server verifies the signature against the user's registered public key, reconstructing the same `decimal(protocol_version) + default_database + user + challenge` string. On success it sends `ServerHello` — the same reply as in the password flow — and the handshake continues normally (Addendum, etc.); on failure it returns an `Exception` and terminates the connection. A client that signs only the raw challenge bytes will fail authentication.
+5. The server verifies the signature against the user's registered public key, reconstructing the same message from its own data: the bound message for a client of version 54497 or newer, and the legacy `decimal(protocol_version) + default_database + user + challenge` string otherwise. On success it sends `ServerHello` — the same reply as in the password flow — and the handshake continues normally (Addendum, etc.); on failure it returns an `Exception` and terminates the connection. A client that signs only the raw challenge bytes will fail authentication.
 
 ```mermaid
 sequenceDiagram
@@ -883,8 +885,8 @@ sequenceDiagram
     C->>S: ClientHello (SSH marker user, empty password)
     C->>S: SSHChallengeRequest (11)
     Note over C,S: Server has NOT sent ServerHello yet —<br/>it authenticates first and blocks here
-    S->>C: SSHChallenge (18) — random bytes to sign
-    C->>S: SSHChallengeResponse (12) — signature over version+db+user+challenge
+    S->>C: SSHChallengeWithBinding (19) or SSHChallenge (18) — random bytes to sign
+    C->>S: SSHChallengeResponse (12) — signature over the bound or the legacy message
     alt signature verifies
         S->>C: ServerHello — handshake continues normally
     else verification fails
@@ -896,7 +898,25 @@ sequenceDiagram
 This is the reverse of the password handshake, where ServerHello immediately follows ClientHello. Under SSH auth, ServerHello is withheld until after the signature is verified, so the SSH challenge-response is interleaved into the handshake before any ServerHello is seen.
 </Note>
 
-External clients that don't use SSH auth never see packets 11, 12, or 18 — they stay off the wire unless the user explicitly opts in via the username prefix.
+External clients that don't use SSH auth never see packets 11, 12, 18, or 19 — they stay off the wire unless the user explicitly opts in via the username prefix.
+
+#### Channel binding (v54497+) {#ssh-channel-binding}
+
+After `SSHChallengeWithBinding`, the signed message binds the signature to the connection it was made on, so it cannot be verified on another connection. The message is the concatenation of seven fields, each encoded as `String` (a `VarUInt` length followed by the bytes):
+
+| # | Field | Value |
+|---|-------|-------|
+| 1 | tag | The constant `"ClickHouse native ssh_key auth v1"`. |
+| 2 | `decimal(protocol_version)` | The client's protocol version as a decimal ASCII string, as in the legacy layout. |
+| 3 | `default_database` | The `database` field from `ClientHello`. |
+| 4 | `user` | The real user name, without the marker prefix. |
+| 5 | `challenge` | The raw `challenge` bytes from the `SSHChallengeWithBinding` packet. |
+| 6 | binding type | `"tls-exporter"` on a TLS connection, `"none"` on a plaintext connection. |
+| 7 | binding value | On a TLS connection, the 32-byte [RFC 9266](https://www.rfc-editor.org/rfc/rfc9266) `tls-exporter` value: the TLS exporter with the label `"EXPORTER-Channel-Binding"`, a zero-length context, and a length of 32. Empty on a plaintext connection. |
+
+The binding is never sent on the wire. Each side derives the binding type and value from its own end of the connection, and never from what the peer reports: both ends of one TLS session compute the same exporter value, and two different TLS sessions compute different ones. A TLS 1.2 session must use the Extended Master Secret extension ([RFC 7627](https://www.rfc-editor.org/rfc/rfc7627)); without it the side that detects this fails the authentication instead of signing or verifying an unbound message. On TLS 1.2, each side also disables renegotiation for the rest of the connection before deriving the binding, because the binding is not defined for a connection with renegotiation enabled ([RFC 9266, section 4.2](https://www.rfc-editor.org/rfc/rfc9266#section-4.2)). TLS 1.3 needs nothing extra.
+
+A server never accepts the legacy message from a client of version 54497 or newer. Lowering the version in a forwarded `ClientHello` changes the version inside the message the server verifies, so it no longer matches the one the client signed. As a consequence, a proxy that terminates TLS in front of the server (as opposed to passing it through) makes `ssh_key` authentication fail for such clients, because the client and the server are then on different TLS sessions.
 
 ### MergeTreeAllRangesAnnouncementResponse (packet type 14) {#mergetreeallrangesannouncementresponse}
 
@@ -999,6 +1019,7 @@ Below version `8` the announcement is fire-and-forget regardless of mode, and th
 | 16   | MergeTreeReadTaskRequest       | not specified       | Parallel read task assignment |
 | 17   | TimezoneUpdate                 | [TimezoneUpdate](#timezoneupdate) | Server timezone update |
 | 18   | SSHChallenge                   | [SSH auth](#ssh-authentication) | SSH auth challenge |
+| 19   | SSHChallengeWithBinding        | [SSH auth](#ssh-authentication) | SSH auth challenge; the signed message is bound to the TLS session |
 
 ### QueryPlan {#queryplan}
 

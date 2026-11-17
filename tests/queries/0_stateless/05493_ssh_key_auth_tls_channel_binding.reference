@@ -1,0 +1,26 @@
+--- plaintext port
+1
+--- secure port
+1
+--- passthrough to the secure port: one TLS session between the client and the server
+1
+--- relay with its own TLS session to the secure port
+AUTHENTICATION_FAILED
+--- relay from TLS to the plaintext port
+AUTHENTICATION_FAILED
+--- TLS 1.2 with the Extended Master Secret extension (enabled by default)
+1
+--- a client of the new revision signing the bound message
+received SSHChallengeWithBinding
+authenticated
+--- a client of an older revision signing the legacy message
+received SSHChallenge
+authenticated
+--- a client of the new revision signing the legacy message, as after a relay has replaced the challenge packet
+received SSHChallengeWithBinding
+exception AUTHENTICATION_FAILED
+--- a lowered revision in Hello, while the client has signed its real revision, as after a relay has rewritten Hello
+received SSHChallenge
+exception AUTHENTICATION_FAILED
+--- the client against an old server: the signature is over the exact legacy message
+the signature is valid for the legacy message
