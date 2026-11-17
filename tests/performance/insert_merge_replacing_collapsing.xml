@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: they keep every inserted row, so there is no merge on insert to measure. -->
     <settings>
         <max_threads>1</max_threads>
         <max_insert_threads>1</max_insert_threads>
