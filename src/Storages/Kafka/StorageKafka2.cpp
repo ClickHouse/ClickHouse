@@ -232,6 +232,7 @@ StorageKafka2::~StorageKafka2()
     if (!shutdown_called)
         shutdown(false);
     replica_is_active_node.reset();
+    demand_aware_node.reset();
 }
 
 void StorageKafka2::partialShutdown()
@@ -254,6 +255,8 @@ void StorageKafka2::partialShutdown()
     /// use-after-free: setZooKeeper() called afterwards may free the old session, and the holder's
     /// destructor would then access a dangling reference when checking zookeeper.expired().
     replica_is_active_node = nullptr;
+    /// Same lifetime as `is_active`: the marker leaves with the registration, not with the session.
+    demand_aware_node = nullptr;
 }
 
 bool StorageKafka2::activate()
@@ -323,15 +326,23 @@ bool StorageKafka2::activate()
             replica_is_active_node = zkutil::EphemeralNodeHolder::existing(is_active_path, *zookeeper);
 
             /// Mark this replica as understanding the demand protocol, so that peers can
-            /// distinguish a genuinely idle new-code replica from an old-code one during
-            /// a rolling upgrade or rollback (which cannot publish or remove the marker).
-            zookeeper->tryCreate(fs::path(replica_path) / "demand_aware", "", zkutil::CreateMode::Ephemeral);
+            /// distinguish a genuinely idle new-code replica from an old-code one (rolling upgrade).
+            String demand_aware_path = fs::path(replica_path) / "demand_aware";
+            demand_aware_node = zkutil::EphemeralNodeHolder::tryCreate(demand_aware_path, *zookeeper);
+            if (!demand_aware_node)
+            {
+                /// A marker left by a previous registration of this identity can still be bound
+                /// to another live session; we hold `is_active`, so take the marker back.
+                zookeeper->tryRemove(demand_aware_path);
+                demand_aware_node = zkutil::EphemeralNodeHolder::create(demand_aware_path, *zookeeper);
+            }
 
             return true;
         }
         catch (const Coordination::Exception & e)
         {
             replica_is_active_node = nullptr;
+            demand_aware_node = nullptr;
             LOG_ERROR(log, "Couldn't start replica: {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
             return false;
 
@@ -339,6 +350,7 @@ bool StorageKafka2::activate()
         catch (const Exception & e)
         {
             replica_is_active_node = nullptr;
+            demand_aware_node = nullptr;
             if (e.code() != ErrorCodes::REPLICA_IS_ALREADY_ACTIVE)
                 throw;
 
