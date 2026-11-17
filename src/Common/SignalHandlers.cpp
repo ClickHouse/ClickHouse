@@ -141,8 +141,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     /// bad frame pointer dereferences an invalid address and raises SIGSEGV. On macOS the frame-pointer
     /// walk in backtrace() can additionally land on a misaligned address (e.g. when the profiler
     /// interrupts a thread parked in frame-pointer-less libsystem code), which raises SIGBUS, so recover
-    /// from that too there. A failed return address authentication raises SIGILL on Linux AArch64.
-    /// We siglongjmp back to asynchronous_stack_unwinding_signal_jump_buffer, where
+    /// from that too there. We siglongjmp back to asynchronous_stack_unwinding_signal_jump_buffer, where
     /// the handler drops the capture (the profiler also increments ProfileEvents::QueryProfilerErrors).
     if (asynchronous_stack_unwinding && std::ranges::contains(unwind_fault_signals, sig))
         siglongjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1);
