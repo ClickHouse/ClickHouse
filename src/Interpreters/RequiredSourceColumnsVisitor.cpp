@@ -64,6 +64,11 @@ bool RequiredSourceColumnsMatcher::needChildVisit(const ASTPtr & node, const AST
 
 void RequiredSourceColumnsMatcher::visit(const ASTPtr & ast, Data & data)
 {
+    /// An alias of any expression, e.g. of an identifier in `(c AS a).x`, hides the column `a` from `a.x` in its scope.
+    if (data.mask_subcolumns_of_aliases)
+        if (const String alias = ast->tryGetAlias(); !alias.empty())
+            data.alias_scopes[alias].insert(data.current_scopes.back());
+
     /// results are columns
 
     if (auto * t = ast->as<ASTIdentifier>())

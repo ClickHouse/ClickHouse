@@ -24,3 +24,9 @@ INSERT INTO FUNCTION file(currentDatabase() || '_02302_tuple.parquet', Parquet, 
 
 SELECT b FROM file(currentDatabase() || '_02302_tuple.parquet', Parquet, 'a Tuple(x UInt32), b UInt32 DEFAULT a.x * 2');
 SELECT a.x, b FROM file(currentDatabase() || '_02302_tuple.parquet', Parquet, 'a Tuple(x UInt32), b UInt32 DEFAULT a.x * 2');
+
+-- An element of a missing tuple takes the default of the tuple: the same as reading the whole tuple.
+INSERT INTO FUNCTION file(currentDatabase() || '_02302_parent_default.parquet', Parquet, 'z UInt32') SELECT 4 SETTINGS engine_file_truncate_on_insert = 1;
+SELECT a.x FROM file(currentDatabase() || '_02302_parent_default.parquet', Parquet, 'z UInt32, a Tuple(x UInt32) DEFAULT tuple(z * 2)') SETTINGS input_format_parquet_use_native_reader_v3 = 1;
+SELECT a FROM file(currentDatabase() || '_02302_parent_default.parquet', Parquet, 'z UInt32, a Tuple(x UInt32) DEFAULT tuple(z * 2)') SETTINGS input_format_parquet_use_native_reader_v3 = 1;
+SELECT a.x FROM file(currentDatabase() || '_02302_parent_default.parquet', Parquet, 'z UInt32, a Tuple(x UInt32) DEFAULT tuple(z * 2)') SETTINGS input_format_parquet_use_native_reader_v3 = 0;

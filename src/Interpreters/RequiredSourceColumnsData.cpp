@@ -18,8 +18,6 @@ bool RequiredSourceColumnsData::addColumnAliasIfAny(const IAST & ast)
         masked_columns.insert(alias);
 
     complex_aliases.insert(alias);
-    if (mask_subcolumns_of_aliases)
-        alias_scopes[alias].insert(current_scopes.back());
     return true;
 }
 

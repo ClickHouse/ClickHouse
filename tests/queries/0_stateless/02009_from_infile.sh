@@ -120,10 +120,18 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t_nested_lambda"
 
 # The lambda argument "q" hides the alias "q" of the first use of "a", but "a" in the lambda body is still the column. The same as the inline insert.
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_hidden_alias (a UInt32 DEFAULT 5, b UInt32 DEFAULT (a AS q) + arraySum(arrayMap(q -> a + q, [1, 2]))) ENGINE = Memory"
-printf '{"b":null}\n' > "${DATA_FILE}_hidden_alias.jsonl"
+printf '{"b":null}\n' > "${DATA_FILE}_hidden_alias.jsonl" "${DATA_FILE}_subcolumn.jsonl"
 $CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_hidden_alias (b) FROM INFILE '${DATA_FILE}_hidden_alias.jsonl' FORMAT JSONEachRow"
 $CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_hidden_alias (b) FORMAT JSONEachRow {\"b\":null}"
 $CLICKHOUSE_CLIENT -q "SELECT a, b FROM t_hidden_alias"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_hidden_alias"
 
-rm -f "${DATA_FILE}.json" "${DATA_FILE}.jsonl" "${DATA_FILE}_c.json" "${DATA_FILE}_lambda.jsonl" "${DATA_FILE}_capture.jsonl" "${DATA_FILE}_alias_capture.jsonl" "${DATA_FILE}_alias.jsonl" "${DATA_FILE}_chain.jsonl" "${DATA_FILE}_shared.jsonl" "${DATA_FILE}_lambda_alias.jsonl" "${DATA_FILE}_nested_lambda.jsonl" "${DATA_FILE}_hidden_alias.jsonl"
+# A subcolumn of a not inserted column is taken from the default of the column. The same as the inline insert.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_subcolumn (a Tuple(x UInt32) DEFAULT tuple(5), b UInt32 DEFAULT getSubcolumn(a, 'x') + a.x) ENGINE = Memory"
+printf '{"b":null}\n' > "${DATA_FILE}_subcolumn.jsonl"
+$CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_subcolumn (b) FROM INFILE '${DATA_FILE}_subcolumn.jsonl' FORMAT JSONEachRow"
+$CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_subcolumn (b) FORMAT JSONEachRow {\"b\":null}"
+$CLICKHOUSE_CLIENT -q "SELECT a, b FROM t_subcolumn"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_subcolumn"
+
+rm -f "${DATA_FILE}.json" "${DATA_FILE}.jsonl" "${DATA_FILE}_c.json" "${DATA_FILE}_lambda.jsonl" "${DATA_FILE}_capture.jsonl" "${DATA_FILE}_alias_capture.jsonl" "${DATA_FILE}_alias.jsonl" "${DATA_FILE}_chain.jsonl" "${DATA_FILE}_shared.jsonl" "${DATA_FILE}_lambda_alias.jsonl" "${DATA_FILE}_nested_lambda.jsonl" "${DATA_FILE}_hidden_alias.jsonl" "${DATA_FILE}_subcolumn.jsonl"

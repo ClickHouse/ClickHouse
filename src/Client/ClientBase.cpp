@@ -2696,65 +2696,37 @@ private:
         if (const auto * identifier = ast->as<ASTIdentifier>())
         {
             const String name = identifier->name();
-            if (inserted_columns.contains(name) || !columns.has(name) || scope_aliases.contains(name)
+            if (scope_aliases.contains(name)
                 || (!identifier->name_parts.empty() && shadowed_names.contains(identifier->name_parts.front()))
                 || (identifier->compound() && scope_aliases.contains(identifier->name_parts.front())))
                 return;
 
+            /// A subcolumn, e.g. `a.x`, is taken from the default of its column.
+            String column_name = name;
+            String subcolumn_name;
+            if (!columns.has(name))
+            {
+                const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+                if (!column || !column->isSubcolumn())
+                    return;
+                column_name = column->getNameInStorage();
+                subcolumn_name = column->getSubcolumnName();
+            }
+            if (inserted_columns.contains(column_name))
+                return;
+
             /// Keep the alias, the expression can refer to it.
             const String own_alias = identifier->tryGetAlias();
-            if (auto it = aliases.find(name); it != aliases.end())
+            if (subcolumn_name.empty())
             {
-                String alias = it->second;
-                if (shadowed_names.contains(alias))
-                {
-                    /// The own alias of the first use is hidden here, refer to it by a unique alias from the top level.
-                    auto [hoisted_it, inserted] = hoisted_aliases.try_emplace(name);
-                    if (inserted)
-                    {
-                        hoisted_it->second = unique_names.generate("__default_");
-                        auto reference = make_intrusive<ASTIdentifier>(alias);
-                        reference->setAlias(hoisted_it->second);
-                        top_level_definitions.push_back(std::move(reference));
-                    }
-                    alias = hoisted_it->second;
-                }
-
-                auto reference = make_intrusive<ASTIdentifier>(alias);
-                if (own_alias != alias)
-                    reference->setAlias(own_alias);
-                ast = std::move(reference);
+                ast = replaceColumn(column_name, own_alias, shadowed_names, in_lambda);
                 return;
             }
 
-            const String alias = own_alias.empty() || in_lambda ? unique_names.generate("__default_") : own_alias;
-            aliases.emplace(name, alias);
-
-            const auto & column = columns.get(name);
-            ASTPtr default_value;
-            if (column.default_desc.expression)
-            {
-                /// The default is computed in the scope of the top level, as the defaults of the server.
-                default_value = column.default_desc.expression->clone();
-                NameSet default_scope_aliases = top_level_scope_aliases;
-                collectScopeAliases(default_value, default_scope_aliases);
-                rewrite(default_value, default_scope_aliases, {});
-            }
-            else
-                default_value = make_intrusive<ASTLiteral>(column.type->getDefault());
-
-            auto definition = makeASTFunction("_CAST", std::move(default_value), make_intrusive<ASTLiteral>(column.type->getName()));
-            definition->setAlias(alias);
-
-            if (in_lambda)
-            {
-                top_level_definitions.push_back(std::move(definition));
-                auto reference = make_intrusive<ASTIdentifier>(alias);
-                reference->setAlias(own_alias);
-                ast = std::move(reference);
-            }
-            else
-                ast = std::move(definition);
+            auto subcolumn = makeASTFunction(
+                "getSubcolumn", replaceColumn(column_name, "", shadowed_names, in_lambda), make_intrusive<ASTLiteral>(subcolumn_name));
+            subcolumn->setAlias(own_alias);
+            ast = std::move(subcolumn);
             return;
         }
 
@@ -2780,6 +2752,61 @@ private:
 
         for (auto & child : ast->children)
             rewrite(child, scope_aliases, shadowed_names, in_lambda);
+    }
+
+    /// Returns the expression of the not inserted column `name`, which replaces its use with the alias `own_alias`:
+    /// its definition at the first use, a reference to the definition at the other ones.
+    ASTPtr replaceColumn(const String & name, const String & own_alias, const NameSet & shadowed_names, bool in_lambda)
+    {
+        if (auto it = aliases.find(name); it != aliases.end())
+        {
+            String alias = it->second;
+            if (shadowed_names.contains(alias))
+            {
+                /// The own alias of the first use is hidden here, refer to it by a unique alias from the top level.
+                auto [hoisted_it, inserted] = hoisted_aliases.try_emplace(name);
+                if (inserted)
+                {
+                    hoisted_it->second = unique_names.generate("__default_");
+                    auto reference = make_intrusive<ASTIdentifier>(alias);
+                    reference->setAlias(hoisted_it->second);
+                    top_level_definitions.push_back(std::move(reference));
+                }
+                alias = hoisted_it->second;
+            }
+
+            auto reference = make_intrusive<ASTIdentifier>(alias);
+            if (own_alias != alias)
+                reference->setAlias(own_alias);
+            return reference;
+        }
+
+        const String alias = own_alias.empty() || in_lambda ? unique_names.generate("__default_") : own_alias;
+        aliases.emplace(name, alias);
+
+        const auto & column = columns.get(name);
+        ASTPtr default_value;
+        if (column.default_desc.expression)
+        {
+            /// The default is computed in the scope of the top level, as the defaults of the server.
+            default_value = column.default_desc.expression->clone();
+            NameSet default_scope_aliases = top_level_scope_aliases;
+            collectScopeAliases(default_value, default_scope_aliases);
+            rewrite(default_value, default_scope_aliases, {});
+        }
+        else
+            default_value = make_intrusive<ASTLiteral>(column.type->getDefault());
+
+        auto definition = makeASTFunction("_CAST", std::move(default_value), make_intrusive<ASTLiteral>(column.type->getName()));
+        definition->setAlias(alias);
+
+        if (!in_lambda)
+            return definition;
+
+        top_level_definitions.push_back(std::move(definition));
+        auto reference = make_intrusive<ASTIdentifier>(alias);
+        reference->setAlias(own_alias);
+        return reference;
     }
 
     /// The defined not inserted columns and the aliases of their definitions.

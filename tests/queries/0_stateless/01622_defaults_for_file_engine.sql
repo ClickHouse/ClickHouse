@@ -68,3 +68,10 @@ INSERT INTO FUNCTION file(currentDatabase() || '_01622_lambda_alias.jsonl', Line
 SELECT b FROM file(currentDatabase() || '_01622_lambda_alias.jsonl', JSONEachRow,
     'z UInt32, a Tuple(x UInt32) DEFAULT tuple(z), b UInt32 DEFAULT a.x + arraySum(arrayMap(x -> (CAST(tuple(2) AS Tuple(x UInt32)) AS a).x, [1, 2]))')
     ORDER BY b;
+
+-- An alias of an identifier inside the lambda hides the column "a" from "a.x" too: its default (which fails for "oops") is not computed.
+INSERT INTO FUNCTION file(currentDatabase() || '_01622_identifier_alias.jsonl', LineAsString, 'line String')
+    SETTINGS engine_file_truncate_on_insert = 1 VALUES ('{"z":"oops","c":{"x":2},"b":null}');
+
+SELECT b FROM file(currentDatabase() || '_01622_identifier_alias.jsonl', JSONEachRow,
+    'z String, a Tuple(x UInt32) DEFAULT tuple(toUInt32(z)), c Tuple(x UInt32), b UInt32 DEFAULT arraySum(arrayMap(x -> (c AS a).x + a.x, [1, 2]))');

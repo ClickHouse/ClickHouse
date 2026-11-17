@@ -156,7 +156,19 @@ ReadFromFormatInfo prepareReadingFromFormat(
                 requested_names.insert(column.name);
             Names default_inputs;
             if (defaults_for_omitted_fields)
+            {
                 default_inputs = getColumnsRequiredForDefaults(info.requested_columns, requested_names, columns, hive_parameters);
+
+                /// A requested element of a column with a `DEFAULT` is extracted from the whole column, as without
+                /// `supports_tuple_elements`, so that the default is computed for the missing values of the column.
+                for (const auto & column : info.requested_columns)
+                {
+                    const String name_in_storage = column.getNameInStorage();
+                    if (column.isSubcolumn() && columns.hasDefault(name_in_storage) && !requested_names.contains(name_in_storage)
+                        && !std::ranges::contains(default_inputs, name_in_storage))
+                        default_inputs.push_back(name_in_storage);
+                }
+            }
             for (const auto & name : default_inputs)
                 info.requested_columns.push_back(columns.getPhysical(name));
 
