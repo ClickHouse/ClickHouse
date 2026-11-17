@@ -107,7 +107,6 @@ public:
         ObjectStorageQueueBucketingMode bucketing_mode,
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser,
-        size_t keeper_multiread_batch_size,
         LoggerPtr log);
 
     void prepareProcessedAtStartRequests(Coordination::Requests & requests);
@@ -150,6 +149,12 @@ private:
         std::optional<std::string> failed_node_path = std::nullopt,
         LoggerPtr log_ = nullptr,
         const std::string & zookeeper_name_ = {});
+
+    static bool getMaxProcessedFilesByPartition(
+        std::unordered_map<std::string, std::string> & last_processed_path_per_partition,
+        const std::string & processed_node_path_,
+        LoggerPtr log_,
+        const std::string & zookeeper_name_);
 
     void doPrepareProcessedRequests(
         Coordination::Requests & requests,

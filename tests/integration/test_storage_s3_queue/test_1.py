@@ -583,12 +583,12 @@ def test_regex_partitioning_does_not_read_all_buckets(started_cluster):
     fewer Keeper lists than there are buckets, both on a fresh queue and once
     the per-partition nodes exist.
 
-    A direct select runs the queue source in the foreground, so the Keeper
+    A direct `SELECT` runs the queue source in the foreground, so the Keeper
     requests of the poll land in the query's own `query_log` row and nothing
     from the background threads gets counted.
     """
-    # No keeper fault injection, same reason as in test_max_set_size: a direct
-    # select with commit_on_select fails on a fault injected into commit().
+    # No Keeper fault injection, as in `test_max_set_size`: a direct
+    # `SELECT` with `commit_on_select` fails on a fault injected into `commit`.
     node = started_cluster.instances["instance_without_keeper_fault_injection"]
     table_name = f"test_not_all_buckets_{generate_random_string()}"
     files_path = f"{table_name}_data"
@@ -619,7 +619,7 @@ def test_regex_partitioning_does_not_read_all_buckets(started_cluster):
             "processing_threads_num": buckets,
             "buckets": buckets,
             "bucketing_mode": "partition",
-            # The select commits what it read, so the second round has
+            # The `SELECT` commits what it read, so the second round has
             # per-partition nodes to look up.
             "commit_on_select": 1,
         },
@@ -628,7 +628,7 @@ def test_regex_partitioning_does_not_read_all_buckets(started_cluster):
         partition_component="hostname",
     )
 
-    def read_new_files(round_name):
+    def read_files(round_name, expected_rows):
         query_id = f"{table_name}_{round_name}"
         node.query(
             f"SELECT * FROM {table_name} FORMAT Null",
@@ -650,16 +650,18 @@ def test_regex_partitioning_does_not_read_all_buckets(started_cluster):
             .strip()
             .split("\t"),
         )
-        # Exactly the new files were read: the filter ran and, in the second
-        # round, skipped the files of the first one.
-        assert read_rows == num_writers, (round_name, read_rows)
+        # Only new files are read, including when every listed file is processed.
+        assert read_rows == expected_rows, (round_name, read_rows)
         # The old code did one list per bucket here.
-        assert keeper_lists < buckets, f"{round_name}: {keeper_lists} Keeper lists to read files of {num_writers} writers"
+        assert keeper_lists < buckets, (
+            f"{round_name}: {keeper_lists} Keeper lists to read files of {num_writers} writers"
+        )
 
-    read_new_files("fresh")
+    read_files("fresh", num_writers)
+    read_files("already_processed", 0)
 
     put_one_file_per_writer(2)
-    read_new_files("with_processed_nodes")
+    read_files("with_processed_nodes", num_writers)
 
     node.query(f"DROP TABLE {table_name} SYNC")
 
