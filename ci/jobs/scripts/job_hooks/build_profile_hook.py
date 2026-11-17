@@ -102,7 +102,7 @@ def _has_data(file):
 # compiled TU (an sccache hit does not run the compiler) plus one per linked
 # binary, so their presence is the ground truth for whether this build was
 # expected to produce time-trace rows.
-_RAW_TRACE_RE = re.compile(r"\.(c|cpp|cc|cxx)\.json$|\.time-trace$")
+_RAW_TRACE_RE = re.compile(r"\.(c|cpp|cc|cxx)\.json$|\.time-trace(\.json)?$")
 
 
 def _raw_traces_exist(directory):
@@ -268,9 +268,11 @@ def check():
     objects_only = build_type in _OBJECTS_ONLY_BUILDS
     try:
         if objects_only:
-            # lld writes the link trace next to its output.
+            # lld writes the link trace next to its output: <output>.time-trace
+            # up to LLVM 22, <output>.time-trace.json from LLVM 23 on.
             for rel in _FINAL_BINARIES:
-                (Path(build_dir) / f"{rel}.time-trace").unlink(missing_ok=True)
+                for suffix in (".time-trace", ".time-trace.json"):
+                    (Path(build_dir) / f"{rel}{suffix}").unlink(missing_ok=True)
         Shell.check(
             "./utils/prepare-time-trace/prepare-time-trace.sh "
             f"{build_dir} {profiles_dir.absolute()}",
