@@ -233,12 +233,12 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
 }
 
 /// Chosen per request, so that one client and its shared credentials providers serve both fibers and threads.
-/// Amber always uses cooperative transport. A fiber uses it inside `Silk::ThreadModeScope` too, as Amber already does.
+/// Amber always uses fiber-aware transport. A fiber uses it inside `Silk::ThreadModeScope` too, as Amber already does.
 static HTTPConnectionTransport getTransport(HTTPConnectionGroupType group)
 {
     if (group == HTTPConnectionGroupType::AMBER || Silk::isInsideFiber())
-        return HTTPConnectionTransport::Cooperative;
-    return HTTPConnectionTransport::Blocking;
+        return HTTPConnectionTransport::FiberAware;
+    return HTTPConnectionTransport::FiberUnaware;
 }
 
 static ConnectionTimeouts getTimeoutsFromConfiguration(const PocoHTTPClientConfiguration & client_configuration)
@@ -1007,7 +1007,7 @@ std::string PocoHTTPClientGCPOAuth::getBearerToken() const
     std::lock_guard lock(mutex);
     if (!bearer_token || std::chrono::system_clock::now() > bearer_token->is_valid_to)
     {
-        /// `postTokenRequest`, used for the ADC triple and the service account key, keeps blocking transport.
+        /// `postTokenRequest`, used for the ADC triple and the service account key, keeps fiber-unaware transport.
         Silk::ThreadModeScope thread_mode;
         bearer_token = requestBearerToken();
     }

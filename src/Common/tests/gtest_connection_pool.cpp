@@ -1201,47 +1201,47 @@ TEST_F(ConnectionPoolTest, ProxyConnectSkipsTargetResolution)
 /// other. Pools of both transports belong to the same group, so they share its metrics.
 TEST_F(ConnectionPoolTest, TransportsDoNotShareConnectionsButShareGroupMetrics)
 {
-    /// A cooperative connection used from a plain thread needs the scheduler.
+    /// A fiber-aware connection used from a plain thread needs the scheduler.
     initializeFiberSchedulerForTests();
 
     timeouts.withHTTPKeepAliveTimeout(Poco::Timespan(10, 0));
 
     auto uri = Poco::URI(getServerUrl());
-    auto blocking_pool = DB::HTTPConnectionPools::instance().getPool(
-        DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{}, DB::HTTPConnectionTransport::Blocking);
-    auto cooperative_pool = DB::HTTPConnectionPools::instance().getPool(
-        DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{}, DB::HTTPConnectionTransport::Cooperative);
-    auto metrics = blocking_pool->getMetrics();
+    auto fiber_unaware_pool = DB::HTTPConnectionPools::instance().getPool(
+        DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{}, DB::HTTPConnectionTransport::FiberUnaware);
+    auto fiber_aware_pool = DB::HTTPConnectionPools::instance().getPool(
+        DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{}, DB::HTTPConnectionTransport::FiberAware);
+    auto metrics = fiber_unaware_pool->getMetrics();
 
-    DB::HTTPConnectionInfo blocking_info;
+    DB::HTTPConnectionInfo fiber_unaware_info;
     {
-        auto connection = blocking_pool->getConnection(timeouts, nullptr);
-        blocking_info = echoRequestAndTakeConnectionInfo("Hello", *connection);
+        auto connection = fiber_unaware_pool->getConnection(timeouts, nullptr);
+        fiber_unaware_info = echoRequestAndTakeConnectionInfo("Hello", *connection);
     } // returned to the pool
-    ASSERT_TRUE(blocking_info.has_value);
+    ASSERT_TRUE(fiber_unaware_info.has_value);
     ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
 
-    /// The stored blocking connection is not handed out to the cooperative pool.
-    DB::HTTPConnectionInfo cooperative_info;
+    /// The stored fiber-unaware connection is not handed out to the fiber-aware pool.
+    DB::HTTPConnectionInfo fiber_aware_info;
     {
-        auto connection = cooperative_pool->getConnection(timeouts, nullptr);
-        cooperative_info = echoRequestAndTakeConnectionInfo("Hello", *connection);
+        auto connection = fiber_aware_pool->getConnection(timeouts, nullptr);
+        fiber_aware_info = echoRequestAndTakeConnectionInfo("Hello", *connection);
     } // returned to the pool
-    ASSERT_TRUE(cooperative_info.has_value);
-    ASSERT_NE(blocking_info.id, cooperative_info.id);
-    ASSERT_EQ(0, cooperative_info.requests_served);
+    ASSERT_TRUE(fiber_aware_info.has_value);
+    ASSERT_NE(fiber_unaware_info.id, fiber_aware_info.id);
+    ASSERT_EQ(0, fiber_aware_info.requests_served);
 
     /// Each transport reuses its own connection.
     {
-        auto connection = blocking_pool->getConnection(timeouts, nullptr);
+        auto connection = fiber_unaware_pool->getConnection(timeouts, nullptr);
         auto reused = echoRequestAndTakeConnectionInfo("Hello", *connection);
-        ASSERT_EQ(blocking_info.id, reused.id);
+        ASSERT_EQ(fiber_unaware_info.id, reused.id);
         ASSERT_EQ(1, reused.requests_served);
     }
     {
-        auto connection = cooperative_pool->getConnection(timeouts, nullptr);
+        auto connection = fiber_aware_pool->getConnection(timeouts, nullptr);
         auto reused = echoRequestAndTakeConnectionInfo("Hello", *connection);
-        ASSERT_EQ(cooperative_info.id, reused.id);
+        ASSERT_EQ(fiber_aware_info.id, reused.id);
         ASSERT_EQ(1, reused.requests_served);
     }
 
@@ -1255,9 +1255,9 @@ TEST_F(ConnectionPoolTest, TransportsDoNotShareConnectionsButShareGroupMetrics)
 
 #if USE_SSL
 
-/// `HTTPSClientSession` tunnels through the proxy with ordinary Poco sockets, so a cooperative HTTPS connection over a
+/// `HTTPSClientSession` tunnels through the proxy with ordinary Poco sockets, so a fiber-aware HTTPS connection over a
 /// tunneling proxy is rejected before it connects anywhere instead of blocking the thread of a fiber.
-TEST_F(ConnectionPoolTest, CooperativeHTTPSThroughTunnelingProxyIsRejected)
+TEST_F(ConnectionPoolTest, FiberAwareHTTPSThroughTunnelingProxyIsRejected)
 {
     initializeFiberSchedulerForTests();
 
@@ -1272,7 +1272,7 @@ TEST_F(ConnectionPoolTest, CooperativeHTTPSThroughTunnelingProxyIsRejected)
     proxy_config.original_request_protocol = DB::ProxyConfiguration::Protocol::HTTPS;
 
     auto pool = DB::HTTPConnectionPools::instance().getPool(
-        DB::HTTPConnectionGroupType::HTTP, uri, proxy_config, DB::HTTPConnectionTransport::Cooperative);
+        DB::HTTPConnectionGroupType::HTTP, uri, proxy_config, DB::HTTPConnectionTransport::FiberAware);
     auto metrics = pool->getMetrics();
 
     int error_code = 0;

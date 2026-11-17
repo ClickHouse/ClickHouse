@@ -2044,8 +2044,8 @@ void runFibersAndReleaseWhenReady(
 
 }
 
-/// S3 requests from fibers use cooperative transport also outside of `AMBER`: more fibers than the threads that run them
-/// wait for their answers at once, which the server holds until a request of every fiber has arrived. With blocking
+/// S3 requests from fibers use fiber-aware transport also outside of `AMBER`: more fibers than the threads that run them
+/// wait for their answers at once, which the server holds until a request of every fiber has arrived. With fiber-unaware
 /// transport every waiting fiber holds its thread, so the requests of the other fibers are never sent.
 TEST(IOTestAwsS3Client, RequestsFromConcurrentFibersDoNotBlockSchedulerThreads)
 {

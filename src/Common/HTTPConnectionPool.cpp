@@ -1030,7 +1030,7 @@ private:
     ConnectionPtr createConnection()
     {
 #if USE_SILK
-        if (transport == HTTPConnectionTransport::Cooperative)
+        if (transport == HTTPConnectionTransport::FiberAware)
         {
             Poco::Net::StreamSocket socket;
             if (https)
@@ -1120,10 +1120,10 @@ private:
 #if USE_SILK
         /// `HTTPSClientSession::connect` tunnels through a separate proxy session and wraps its socket in TLS
         /// with ordinary Poco sockets, so the connection would block despite its transport.
-        if (transport == HTTPConnectionTransport::Cooperative && https && poco_proxy_config.tunnel)
+        if (transport == HTTPConnectionTransport::FiberAware && https && poco_proxy_config.tunnel)
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "Cannot connect to {} over tunneling proxy {}: tunneling is not supported for cooperative HTTPS connections",
+                "Cannot connect to {} over tunneling proxy {}: tunneling is not supported for fiber-aware HTTPS connections",
                 host, proxy_configuration.host);
 #endif
         auto connection = createConnection();
