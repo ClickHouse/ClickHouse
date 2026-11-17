@@ -5,6 +5,7 @@
 # Each finished Iceberg data file used to keep its Parquet encoder threads until the commit, so writing
 # 30 partitions with `max_threads = 16` needed 480 threads of the 300-thread global pool.
 # https://github.com/ClickHouse/ClickHouse/issues/126508
+# `BackgroundSchedulePool` starts all of its threads at once in this release, so its default size of 512 does not fit the pool.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -27,7 +28,7 @@ ${CLICKHOUSE_LOCAL} --query "
     SELECT count(), uniqExact(_path) FROM t;
     ALTER TABLE t UPDATE c1 = c1 + 1 WHERE 1;
     SELECT count(), sum(c1) FROM t;
-" -- --max_thread_pool_size=300 --thread_pool_queue_size=300
+" -- --max_thread_pool_size=300 --thread_pool_queue_size=300 --background_schedule_pool_size=16
 
 # ALTER TABLE ... DELETE writes two-column position delete files, so it needs more partitions to fill the pool.
 ${CLICKHOUSE_LOCAL} --query "
@@ -36,4 +37,4 @@ ${CLICKHOUSE_LOCAL} --query "
     INSERT INTO t SELECT number % 80, number FROM numbers(2000);
     ALTER TABLE t DELETE WHERE x >= 1000;
     SELECT count(), sum(x) FROM t;
-" -- --max_thread_pool_size=300 --thread_pool_queue_size=300
+" -- --max_thread_pool_size=300 --thread_pool_queue_size=300 --background_schedule_pool_size=16

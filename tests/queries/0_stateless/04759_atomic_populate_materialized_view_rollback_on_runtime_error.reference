@@ -1,3 +1,0 @@
-view exists after failed CREATE:	0
-source has dependents after failed CREATE:	0
-rows in view after retry and insert:	15

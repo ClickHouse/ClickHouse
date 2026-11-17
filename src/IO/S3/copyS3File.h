@@ -16,21 +16,13 @@ namespace DB
 {
 struct ReadSettings;
 class SeekableReadBuffer;
-class StdStreamFromReadBuffer;
 
 using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 
-/// Builds the S3 upload request body for the part [offset, offset + size) of the source.
-/// The part is read fully into memory up front, so the returned body has no failable inner
-/// source buffer: the AWS SDK can rewind (clear(); seekg(0)) and resend the body on a retry
-/// without re-reading the source. Used for both PutObject and UploadPart request bodies.
-/// Declared here so unit tests can drive the real request-body construction.
-std::unique_ptr<StdStreamFromReadBuffer> createS3UploadBody(
-    const CreateReadBuffer & create_read_buffer, size_t offset, size_t size);
-
-/// Copies a whole file from S3 to S3. `src_size` is the size of the source object.
+/// Copies a file from S3 to S3.
 /// The same functionality can be done by using the function copyData() and the classes ReadBufferFromS3 and WriteBufferFromS3
 /// however copyS3File() is faster and spends less network traffic and memory.
+/// The parameters `src_offset` and `src_size` specify a part in the source to copy.
 ///
 /// Note, that it tries to copy file using native copy (CopyObject), but if it
 /// has been disabled (with settings.allow_native_copy) or request failed
@@ -42,30 +34,8 @@ void copyS3File(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
-    size_t src_size,
-    std::shared_ptr<const S3::Client> dest_s3_client,
-    const String & dest_bucket,
-    const String & dest_key,
-    const S3::S3RequestSettings & settings,
-    const ReadSettings & read_settings,
-    BlobStorageLogWriterPtr blob_storage_log,
-    ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
-
-/// Copies exactly `[src_offset, src_offset + src_size)` of a LARGER source object of size `src_object_size`.
-///
-/// Separate from copyS3File() rather than an extra offset argument, because the two cannot share a route:
-/// `CopyObject` carries no byte range and would copy the entire source. A ranged copy uses multipart
-/// `UploadPartCopy` (a `CopySourceRange` per part), but S3 accepts a byte-range copy source only if the source
-/// object is greater than 5 MB, so a smaller source (or no multipart copy) reads the range through buffers.
-void copyS3FileRange(
-    std::shared_ptr<const S3::Client> src_s3_client,
-    const String & src_bucket,
-    const String & src_key,
     size_t src_offset,
     size_t src_size,
-    size_t src_object_size,
     std::shared_ptr<const S3::Client> dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
@@ -73,8 +43,8 @@ void copyS3FileRange(
     const ReadSettings & read_settings,
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
+    const CreateReadBuffer& fallback_file_reader,
+    const std::optional<std::map<String, String>> & object_metadata = std::nullopt);
 
 /// Copies data from any seekable source to S3.
 /// The same functionality can be done by using the function copyData() and the class WriteBufferFromS3
@@ -91,7 +61,7 @@ void copyDataToS3File(
     const S3::S3RequestSettings & settings,
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
+    const std::optional<std::map<String, String>> & object_metadata = std::nullopt);
 
 }
 

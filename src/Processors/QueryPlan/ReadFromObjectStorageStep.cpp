@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
-#include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Settings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -14,25 +13,9 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
-#include <IO/WriteBufferFromString.h>
-#include <Storages/prepareReadingFromFormat.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <boost/algorithm/string/predicate.hpp>
-#include <Common/CurrentThread.h>
-#include <Common/SipHash.h>
-
-#include <algorithm>
-
-#include "config.h"
-
-#if USE_AWS_S3
-#include <IO/S3/Client.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
-#endif
 
 
 namespace DB
@@ -41,20 +24,10 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool parallelize_output_from_storages;
-    extern const SettingsBool s3_validate_etag_on_read;
-    extern const SettingsBool azure_validate_etag_on_read;
-    extern const SettingsBool use_query_condition_cache;
-    extern const SettingsBool use_query_condition_cache_for_top_k;
-}
-
-namespace DataLakeStorageSetting
-{
-    extern const DataLakeStorageSettingsBool paimon_incremental_read;
 }
 
 
 ReadFromObjectStorageStep::ReadFromObjectStorageStep(
-    const StorageID & storage_id_,
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
     const Names & columns_to_read,
@@ -69,7 +42,6 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     size_t max_block_size_,
     size_t num_streams_)
     : SourceStepWithFilter(std::make_shared<const Block>(info_.source_header), columns_to_read, query_info_, storage_snapshot_, context_)
-    , storage_id(storage_id_)
     , object_storage(object_storage_)
     , configuration(configuration_)
     , info(std::move(info_))
@@ -91,67 +63,24 @@ QueryPlanStepPtr ReadFromObjectStorageStep::clone() const
 void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-    data_lake_read_estimate.reset();
-    if (!filter_actions_dag)
-        return;
-
-    if (formatNeedsEagerKeyConditionSets(configuration->format))
-        prepareEagerKeyConditionSets(
-            filter_actions_dag,
-            storage_snapshot, info.source_header,
-            query_info.prewhere_info, query_info.row_level_filter, getContext());
-
     // It is important to build the inplace sets for the filter here, before reading data from object storage.
     // If we delay building these sets until later in the pipeline, the filter can be applied after the data
     // has already been read, potentially in parallel across many streams. This can significantly reduce the
     // effectiveness of an Iceberg partition pruning, as unnecessary data may be read. Additionally, building ordered sets
     // at this stage enables the KeyCondition class to apply more efficient optimizations than for unordered sets.
-    /// Idempotent — sets already built above are skipped via !future_set->get() check.
-    VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*filter_actions_dag, getContext());
-}
-
-bool ReadFromObjectStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const
-{
-    if (!boost::iequals(configuration->format, "Parquet"))
-        return false;
-
-    /// With a structure of only Hive partition columns the format reads them from the file, while the
-    /// query takes their values from the path, so the reader would compare other values than the
-    /// ones the threshold is made from.
-    if (info.formatReadsHivePartitionColumns())
-        return false;
-
-    /// The output header is broader than what the format reads: Hive partition columns (from the
-    /// path) and virtual columns (`_path`, `_file`, `_row_id`, ...) are added after the format has
-    /// produced its chunk, so the reader could never compare them against the threshold.
-    const auto * format_column = info.format_header.findByName(sort_column.name);
-    if (!format_column || !format_column->type->equals(*sort_column.type))
-        return false;
-
-    /// A column with a `DEFAULT` / `MATERIALIZED` / `ALIAS` expression is recomputed above the format
-    /// by `AddingDefaultsTransform` for the values the reader reported as missing, so the threshold
-    /// would come from other values than the ones the reader compares against it.
-    return !info.columns_description.hasDefault(sort_column.name);
+    if (!filter_actions_dag)
+        return;
+    VirtualColumnUtils::buildOrderedSetsForDAG(*filter_actions_dag, getContext());
 }
 
 void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
-    info = updateFormatPrewhereInfo(info, prewhere_info_value);
+    info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
     output_header = std::make_shared<const Block>(info.source_header);
-    data_lake_read_estimate.reset();
 }
 
-std::shared_ptr<const DataLakeReadEstimate> ReadFromObjectStorageStep::getOrCreateDataLakeReadEstimate() const
-{
-    /// The initiator assigns the files of this replica, so its own metadata may describe other files.
-    if (!data_lake_read_estimate && !distributed_processing)
-        if (auto estimate = configuration->estimateRead(storage_snapshot->metadata, filter_actions_dag.get(), requiredSourceColumns(), getContext()))
-            data_lake_read_estimate = std::make_shared<const DataLakeReadEstimate>(std::move(*estimate));
-    return data_lake_read_estimate;
-}
-
-void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
+void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     createIterator();
 
@@ -171,48 +100,16 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     // here create for node -> query -> level thread pool
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
 
-    auto format_filter_actions_dag = info.getFormatFilter(filter_actions_dag);
-    auto make_format_filter_info = [&]
-    {
-        auto result = std::make_shared<FormatFilterInfo>(
-            format_filter_actions_dag,
-            context,
-            configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
-            query_info.row_level_filter,
-            query_info.prewhere_info);
-        result->current_schema_column_mapper
-            = configuration->getCurrentSchemaColumnMapperForFilters(storage_snapshot->metadata, context);
-        /// The delete transforms of a data lake need row numbers only for files with attached deletes;
-        /// `StorageObjectStorageSource::createReader` asks for them per file in that case.
-        result->need_row_numbers = lazy_row_index_registry != nullptr
-            || VirtualColumnUtils::hasRowDependentVirtualColumns(info.requested_virtual_columns);
-        return result;
-    };
-    auto format_filter_info = make_format_filter_info();
-    format_filter_info->top_k_filter = top_k_filter;
-    auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
-    if (top_k_query_condition_cache_key)
-    {
-        /// The verdicts written under the key also cover row groups whose rows were all returned
-        /// before the threshold got tight enough to drop them. Tracking the best values costs work
-        /// per row group, so only the files that actually use the key are read with it (for plain
-        /// object storage, the key may turn out not to be made, see `createReader`).
-        auto top_k_filter_tracking_best_values = std::make_shared<FormatTopKFilterInfo>(*top_k_filter);
-        top_k_filter_tracking_best_values->track_row_group_best_values = true;
-        auto format_filter_info_tracking_best_values = make_format_filter_info();
-        format_filter_info_tracking_best_values->top_k_filter = std::move(top_k_filter_tracking_best_values);
-        top_k_query_condition_cache_key->format_filter_info_tracking_best_values = std::move(format_filter_info_tracking_best_values);
-    }
-
-    auto file_iterator = iterator_wrapper;
-    if (top_k_query_condition_cache_key && !top_k_query_condition_cache_key->condition_hash)
-        file_iterator = std::make_shared<ObjectIteratorListingAllForTopKQueryConditionCache>(
-            file_iterator, top_k_query_condition_cache_key, context->getProcessListElement());
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(
+        filter_actions_dag,
+        context,
+        configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
+        query_info.row_level_filter,
+        query_info.prewhere_info);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<StorageObjectStorageSource>(
-            storage_id,
             getName(),
             object_storage,
             configuration,
@@ -221,12 +118,10 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             format_settings,
             context,
             max_block_size,
-            file_iterator,
+            iterator_wrapper,
             parser_shared_resources,
             format_filter_info,
-            need_only_count,
-            lazy_row_index_registry,
-            top_k_query_condition_cache_key);
+            need_only_count);
 
         pipes.emplace_back(std::move(source));
     }
@@ -236,27 +131,15 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = context->getSettingsRef()[Setting::parallelize_output_from_storages];
-    /// `max_num_streams` is a read-parallelism request, not a thread budget.
-    const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
-    /// The format of a data lake configuration is only the format new files are written in, while
-    /// the files of the snapshot that is read can have any format, and resizing after a reader
-    /// that keeps the file order would scramble it again.
-    const bool format_allows_parallelize = configuration->isDataLakeConfiguration()
-        ? FormatFactory::instance().checkParallelizeOutputAfterReadingForAnyFormat(context)
-        : FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
-    if (parallelize_output && format_allows_parallelize && output_ports > 0 && output_ports < resize_to)
-        pipe.resize(resize_to);
+    if (parallelize_output
+        && FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context)
+        && output_ports > 0 && output_ports < max_num_streams)
+        pipe.resize(max_num_streams);
 
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
 
     pipeline.init(std::move(pipe));
-}
-
-void ReadFromObjectStorageStep::addJoinRuntimeFilterIndexAnalysisOnDataRead(
-    const String & filter_id, const String & column_name, const DataTypePtr & column_type)
-{
-    join_runtime_filters_for_file_pruning.push_back({filter_id, column_name, column_type});
 }
 
 void ReadFromObjectStorageStep::createIterator()
@@ -270,233 +153,10 @@ void ReadFromObjectStorageStep::createIterator()
 
     auto context = getContext();
 
-    /// The TopK query condition cache key is made from the same table state the files are read from.
-    iterator_metadata = StorageObjectStorageSource::ensureDataLakeTableState(*configuration, storage_snapshot->metadata, context);
-
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
-        configuration, configuration->getQuerySettings(context), object_storage, iterator_metadata, distributed_processing,
+        configuration, configuration->getQuerySettings(context), object_storage, storage_snapshot->metadata, distributed_processing,
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
         /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
-
-    /// The build side registers a join runtime filter in the lookup of the thread's query context, which is not always this step's context.
-    if (!join_runtime_filters_for_file_pruning.empty())
-        if (auto query_context = CurrentThread::tryGetQueryContext())
-            if (auto lookup = query_context->getRuntimeFilterLookup())
-                iterator_wrapper->setJoinRuntimeFilters(join_runtime_filters_for_file_pruning, std::move(lookup));
-}
-
-std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey() const
-{
-    const auto & settings = getContext()->getSettingsRef();
-    if (!top_k_filter || !allow_top_k_query_condition_cache
-        || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
-        return {};
-
-    if (!top_k_filter->filter_rows)
-        return {};
-
-    /// Only a table with a UUID has cache entries. With distributed processing each worker reads a
-    /// set of files that differs from run to run, and makes its own threshold from them.
-    if (storage_id.uuid == UUIDHelpers::Nil || distributed_processing)
-        return {};
-#if CLICKHOUSE_CLOUD
-    if (distributed_read_bucket_count)
-        return {};
-#endif
-
-    /// The threshold of the TopN filter comes from the rows of every file of the query, so the key
-    /// must identify the set of files and their contents. A data lake snapshot does: it lists the data
-    /// files (and the deletes applied to them), which are never modified in place, and the read
-    /// iterates exactly the snapshot pinned in the storage metadata (see `createFileIterator`). For
-    /// plain object storage, the key covers the ETags of all objects as they are listed (see
-    /// `ObjectIteratorListingAllForTopKQueryConditionCache`). An object can be overwritten after it is
-    /// listed, so the read of every object must be pinned to the listed ETag: otherwise an entry of
-    /// one file could be used while another file is read in a version the key does not describe.
-    const bool is_data_lake = configuration->isDataLakeConfiguration();
-    const auto & datalake_table_state = iterator_metadata->datalake_table_state;
-    if (is_data_lake ? !datalake_table_state : !isReadPinnedToListedGeneration())
-        return {};
-
-    /// Listing explicit keys (or a brace expansion) takes a `HEAD` request for each object, which the
-    /// sources issue concurrently otherwise, while listing all objects ahead of the read serializes them.
-    if (!is_data_lake && iterator_wrapper->estimatedKeysCount() > 1
-        && dynamic_cast<const StorageObjectStorageSource::KeysIterator *>(iterator_wrapper.get()))
-        return {};
-
-    /// Which column of a file is read and how its values are decoded depend on the format settings (e.g.
-    /// `input_format_parquet_case_insensitive_column_matching`). A table captures them when it is loaded,
-    /// so a `DETACH` / `ATTACH`, which keeps the UUID, may change them, and the hash of the filter does
-    /// not cover them.
-    if (!format_settings || !format_settings->source_settings_hash)
-        return {};
-
-    /// An incremental `Paimon` read iterates only the delta since the watermark committed in Keeper
-    /// (or of `paimon_target_snapshot_id`, bounded by `max_consume_snapshots`), so the same snapshot
-    /// yields different sets of files from query to query.
-    if (is_data_lake && (*configuration->getDataLakeSettings())[DataLakeStorageSetting::paimon_incremental_read])
-        return {};
-
-    /// The members of an archive make no key (see `ObjectIteratorListingAllForTopKQueryConditionCache`),
-    /// and listing them ahead would keep a reader of the archive open for each of them.
-    if (configuration->isArchive())
-        return {};
-
-    /// The tags and the modification time of an object can change without changing its `ETag` (a copy
-    /// of an object onto itself with replaced metadata keeps the contents) or the snapshot of a data lake,
-    /// so neither the key of the files nor the hash of the filter describes them. Likewise `_table` comes
-    /// from the name of the table, while the entries are keyed by its UUID, which a `RENAME TABLE` keeps.
-    if (info.requested_virtual_columns.contains("_tags") || info.requested_virtual_columns.contains("_time")
-        || info.requested_virtual_columns.contains("_table"))
-        return {};
-
-    /// The rows the reader drops besides those of the TopN filter must be dropped by a condition the
-    /// key covers, and so must the rows the filter drops after the format, which do not make the threshold.
-    /// So the key covers the whole filter of the step and a PREWHERE collected with it, not only the part
-    /// pushed into the format (`condition_hash` of `format_filter_info` lacks the conjuncts on virtual
-    /// columns such as `_path`, which narrow down the set of files read).
-    /// Without any of them nothing else drops rows. A row policy is covered by neither.
-    /// With the whole filter in the key, the pruning of data files (by partitions or statistics, depending
-    /// on settings) does not matter: it only removes files without rows passing the filter, which do not
-    /// make the threshold either.
-    if (query_info.row_level_filter)
-        return {};
-
-    /// A column with a `DEFAULT` / `MATERIALIZED` expression is computed above the format by
-    /// `AddingDefaultsTransform` when a file lacks it, and the hash of the filter sees it only as an
-    /// input, not the expression (which may be `queryID()`, `now()`, or depend on other columns). So
-    /// the same files and filter could let other rows through from query to query. The sort column
-    /// itself never has one (see `supportsTopKDynamicFilter`).
-    auto has_default = [&](const String & name)
-    {
-        if (info.columns_description.hasDefault(name))
-            return true;
-        /// A subcolumn (`t.a`) is read from its column.
-        for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
-            if (info.columns_description.hasDefault(name.substr(0, pos)))
-                return true;
-        return false;
-    };
-    auto filter_reads_column_with_default = [&](const ActionsDAG & dag)
-    {
-        return std::ranges::any_of(dag.getInputs(), [&](const auto * input) { return has_default(input->result_name); });
-    };
-    if ((filter_actions_dag && filter_reads_column_with_default(*filter_actions_dag))
-        || (query_info.prewhere_info && filter_reads_column_with_default(query_info.prewhere_info->prewhere_actions)))
-        return {};
-
-    /// The metadata of an object (its modification time, ETag, tags) can change without a new snapshot,
-    /// and so can the name of the table (`_table`, by `RENAME TABLE` or `EXCHANGE TABLES`, which keep
-    /// the UUID), so a condition on them may let other files make the threshold on a rerun.
-    auto reads_mutable_virtual_columns = [&](const ActionsDAG & dag)
-    {
-        return std::ranges::any_of(dag.getInputs(), [&](const auto * input)
-        {
-            const auto & name = input->result_name;
-            return (name == "_time" || name == "_etag" || name == "_tags" || name == "_table") && virtual_columns.contains(name);
-        });
-    };
-    if ((filter_actions_dag && reads_mutable_virtual_columns(*filter_actions_dag))
-        || (query_info.prewhere_info && reads_mutable_virtual_columns(query_info.prewhere_info->prewhere_actions)))
-        return {};
-
-    auto key = std::make_shared<ObjectStorageTopKQueryConditionCacheKey>();
-    UInt64 condition_hash = 0;
-    if (filter_actions_dag)
-    {
-        auto filter_condition_hash = FormatFilterInfo::computeConditionHash(*filter_actions_dag, query_info.prewhere_info, getContext());
-        if (!filter_condition_hash)
-            return {};
-        condition_hash = *filter_condition_hash;
-        key->condition = filter_actions_dag->dumpNames() + ", ";
-    }
-    else if (!query_info.prewhere_info)
-        condition_hash = queryConditionCacheHash(0, queryConditionCacheSettingsSalt(settings));
-    else
-        return {};
-
-    key->condition += fmt::format("TopK by {}", top_k_filter->column_name);
-
-    SipHash hash;
-    hash.update(condition_hash);
-    hash.update(top_k_filter->plan_hash);
-    hash.update(*format_settings->source_settings_hash);
-
-    /// The paths of the files are relative to the storage (endpoint, bucket, container, ...), which a
-    /// table keeps across a `DETACH` / `ATTACH` with its UUID, while e.g. an `ALTER NAMED COLLECTION`
-    /// may point it to another bucket with identical copies of the objects, where `_path` differs.
-    const String data_source = configuration->getDataSourceDescription();
-    hash.update(data_source.size());
-    hash.update(data_source);
-
-#if USE_AWS_S3
-    /// A URL with `versionId` makes every read fetch that version of the object, bypassing the check of
-    /// the listed `ETag`, while the metadata of the object (and so its `ETag` in the key of the file)
-    /// describes the latest version. An `ALTER NAMED COLLECTION` followed by a `DETACH` / `ATTACH` may
-    /// select another version, keeping the UUID of the table, the paths and the `ETag`s.
-    if (const auto * s3_object_storage = dynamic_cast<const S3ObjectStorage *>(object_storage.get()))
-    {
-        const String version_id = s3_object_storage->getURI().version_id;
-        hash.update(version_id.size());
-        hash.update(version_id);
-    }
-#endif
-
-    /// Whether a column is read from the file or from the Hive partition in its path (and with which type)
-    /// is captured by the table when it is loaded (`use_hive_partitioning`), so a `DETACH` / `ATTACH`,
-    /// which keeps the UUID, may change it, while the paths, the ETags and the hash of the filter stay.
-    hash.update(info.hive_partition_columns_to_read_from_file_path.size());
-    for (const auto & column : info.hive_partition_columns_to_read_from_file_path)
-    {
-        hash.update(column.name.size());
-        hash.update(column.name);
-        const String type_name = column.type->getName();
-        hash.update(type_name.size());
-        hash.update(type_name);
-    }
-
-    if (!is_data_lake)
-    {
-        key->condition_hash_without_files = hash.get64();
-        return key;
-    }
-
-    WriteBufferFromOwnString table_state;
-    serializeDataLakeTableStateSnapshot(*datalake_table_state, table_state);
-    table_state.finalize();
-
-    hash.update(table_state.str().size());
-    hash.update(table_state.str());
-    key->condition_hash = hash.get64();
-    return key;
-}
-
-bool ReadFromObjectStorageStep::isReadPinnedToListedGeneration() const
-{
-    /// On most backends a read is unconditional: `HDFSObjectStorage` and the local disk ignore
-    /// `StoredObject::etag`, so a concurrent in-place overwrite after the object was listed goes
-    /// unnoticed. A read is pinned to the listed generation when the backend issues it with the
-    /// captured `ETag` and rejects a response whose `ETag` drifted from it, which is atomic with respect
-    /// to an overwrite: S3 with `s3_validate_etag_on_read` (see `ReadBufferFromS3`), and Azure with
-    /// `azure_validate_etag_on_read` (see `ReadBufferFromAzureBlobStorage`). The pin only takes effect
-    /// when the captured metadata actually carries a non-empty `ETag` (see `createReadBuffer`), and
-    /// `GCS` accessed through the S3 API is documented to legitimately return objects without one -
-    /// so a `GCS`-provider client is not considered pinned even with the setting on.
-    /// A URL with `versionId` replaces the check of the `ETag` with a read of that version, which
-    /// pins the read for any real version, but not for `versionId=null`: in a bucket with versioning
-    /// suspended, an upload under the same key overwrites the null version in place.
-#if USE_AWS_S3
-    if (object_storage->getType() == ObjectStorageType::S3
-        && getContext()->getSettingsRef()[Setting::s3_validate_etag_on_read])
-    {
-        if (const auto * s3_object_storage = dynamic_cast<const S3ObjectStorage *>(object_storage.get());
-            s3_object_storage && s3_object_storage->getURI().version_id == "null")
-            return false;
-        const auto s3_client = object_storage->tryGetS3StorageClient();
-        return s3_client && s3_client->getProviderType() != S3::ProviderType::GCS;
-    }
-#endif
-    return object_storage->getType() == ObjectStorageType::Azure
-        && getContext()->getSettingsRef()[Setting::azure_validate_etag_on_read];
 }
 
 static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & key_description)
@@ -506,108 +166,6 @@ static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & ke
         sort_description_for_merging.push_back(
             SortColumnDescription(key_description.column_names[i], (!key_description.reverse_flags.empty() && key_description.reverse_flags[i]) ? -1 : 1));
     return std::make_shared<const InputOrderInfo>(sort_description_for_merging, sort_description_for_merging.size(), 1, 0);
-}
-
-bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
-{
-    if (need_only_count)
-        return false;
-
-    /// The global row index requires per-row file row numbers (ChunkInfoRowNumbers), and the lazy
-    /// branch requires reading an explicit set of rows (FormatFilterInfo::rows_to_read).
-    /// Only the Parquet and Vortex readers support both. The format of a data lake configuration is
-    /// only the format new files are written in, while the files of the snapshot that is read can
-    /// have other formats, so for a data lake the per-file check below decides.
-    if (!configuration->isDataLakeConfiguration()
-        && !boost::iequals(configuration->format, "Parquet") && !boost::iequals(configuration->format, "Vortex"))
-        return false;
-
-    /// Data lakes can have per-file formats, deletes, and schema evolution; the configuration
-    /// proves against the concrete data snapshot that every file can take the lazy path.
-    if (!configuration->supportsLazyMaterialization(storage_snapshot->metadata, getContext()))
-        return false;
-
-    /// The lazy pass rereads the surviving files and must prove it sees the same generation of
-    /// each object (see `LazyRowsObjectIterator::validateObjectGeneration`). A backend whose
-    /// metadata may carry no comparable token at all (no `ETag`, unknown size and modification
-    /// time — e.g. a web origin) would fail close on that reread even without any concurrent
-    /// overwrite, so keep it on the single-pass plan.
-    if (!object_storage->supportsObjectGenerationComparison())
-        return false;
-
-    /// Even when the two generations are comparable, the second pass could still stitch together rows
-    /// of two versions of a file overwritten in place between the metadata probe and the read. The
-    /// reread is only generation-safe when either:
-    ///   - the data files are immutable by the format's contract — a data lake never overwrites a
-    ///     data file in place, so a file identified by path is always the same generation; or
-    ///   - the backend pins the actual read to the captured generation (see `isReadPinnedToListedGeneration`).
-    /// Any provider that unexpectedly yields an empty `ETag` at read time fails close in
-    /// `LazyRowsObjectIterator::validateObjectGeneration` instead of degrading to an unpinned read.
-    /// For a mutable file on a backend that cannot pin the read, keep the single-pass plan.
-    if (!configuration->dataFilesAreImmutable() && !isReadPinnedToListedGeneration())
-        return false;
-
-#if CLICKHOUSE_CLOUD
-    /// The transformed plan is not serializable.
-    if (distributed_read_bucket_count)
-        return false;
-#endif
-
-    return true;
-}
-
-NameSet ReadFromObjectStorageStep::getNamesToKeepInMainRead(const NameSet & required_names) const
-{
-    /// A row policy is not part of `info`, but the source evaluates it in the main pass via
-    /// `FormatFilterInfo`, so its input columns must not be deferred to the lazy branch.
-    NameSet names_to_keep = required_names;
-    if (query_info.row_level_filter)
-        for (const auto & column : query_info.row_level_filter->actions.getRequiredColumns())
-            names_to_keep.insert(column.name);
-    return names_to_keep;
-}
-
-NameSet ReadFromObjectStorageStep::getLazilyReadColumns(const NameSet & required_names) const
-{
-    /// The split works on the info in place, so ask it on a copy.
-    auto main_info = info;
-    const auto lazy_info = splitLazilyReadColumnsFromFormatInfo(main_info, getNamesToKeepInMainRead(required_names));
-
-    NameSet lazy_names;
-    if (lazy_info)
-        for (const auto & column : lazy_info->source_header)
-            lazy_names.insert(column.name);
-    return lazy_names;
-}
-
-std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_names)
-{
-    auto lazy_info = splitLazilyReadColumnsFromFormatInfo(info, getNamesToKeepInMainRead(required_names));
-    if (!lazy_info)
-        return {};
-
-    output_header = std::make_shared<const Block>(info.source_header);
-
-    NameSet lazy_names;
-    for (const auto & column : lazy_info->source_header)
-        lazy_names.insert(column.name);
-    std::erase_if(required_source_columns, [&](const String & name) { return lazy_names.contains(name); });
-
-    lazy_row_index_registry = std::make_shared<LazyObjectStorageFileRegistry>();
-
-    auto lazy_source_header = std::make_shared<const Block>(lazy_info->source_header);
-    auto lazy_step = std::make_unique<LazilyReadFromObjectStorage>(
-        std::move(lazy_source_header),
-        storage_id,
-        object_storage,
-        configuration,
-        storage_snapshot,
-        format_settings,
-        std::move(*lazy_info),
-        getContext(),
-        max_block_size);
-
-    return lazy_step;
 }
 
 bool ReadFromObjectStorageStep::requestReadingInOrder() const
