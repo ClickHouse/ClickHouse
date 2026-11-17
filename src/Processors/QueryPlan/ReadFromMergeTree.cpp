@@ -187,14 +187,13 @@ bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting
 
 /// `Graphite` FINAL rolls rows with different times into one row, so the indexes may prune only by the path,
 /// and only when the path leads the sorting key: a rollup group is a run of adjacent rows of one path
-std::optional<ActionsDAG> buildGraphiteFinalIndexFilter(const ActionsDAG & filter, const MergeTreeData & data, const StorageInMemoryMetadata & metadata)
+std::optional<ActionsDAG> buildGraphiteFinalIndexFilter(const ActionsDAG & filter, const String & path, const StorageInMemoryMetadata & metadata)
 {
     /// virtual columns select parts and rows as for the other engines
     NameSet safe_columns;
     for (const auto & column : metadata.virtuals)
         safe_columns.insert(column.name);
 
-    const auto & path = data.merging_params.graphite_params.path_column_name;
     const auto & sorting_key_columns = metadata.getSortingKeyColumns();
     if (!sorting_key_columns.empty() && sorting_key_columns.front() == path)
         safe_columns.insert(path);
@@ -3265,14 +3264,13 @@ void ReadFromMergeTree::buildPartitionPruningIndexes(
 {
     const auto & settings = query_context->getSettingsRef();
     const bool skip_constant_folding = skip_partition_pruning_ || !settings[Setting::use_constant_folding_in_index_analysis];
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
     const auto data_settings = data.getSettings();
 
-    if (auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings); !minmax_columns.empty())
+    if (auto minmax_columns = MergeTreeData::getMinMaxColumns(*metadata_snapshot, data_settings); !minmax_columns.empty())
     {
         auto key_condition_factory = [query_context, metadata_snapshot, skip_partition_pruning_, minmax_columns, data_settings, require_ready_sets](const ActionsDAG *, const ActionsDAG::Node * predicate)
         {
-            auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(metadata_snapshot->getPartitionKey(), data_settings, ExpressionActionsSettings(query_context));
+            auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(*metadata_snapshot, data_settings, ExpressionActionsSettings(query_context));
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
             KeyCondition condition{
                 wrapped, query_context, minmax_columns.getNames(), minmax_expression_actions,
@@ -3317,11 +3315,33 @@ RangesInDataParts ReadFromMergeTree::filterPartsForStatistics(
         /* check_index_usage */ false);
 }
 
-ConditionTemplate<KeyCondition>::Ptr ReadFromMergeTree::buildPrimaryKeyCondition(
-    std::shared_ptr<ActionsDAGWithInversionPushDown> filter_dag,
-    const StorageMetadataPtr & metadata_snapshot,
+ReadFromMergeTree::IndexAnalysisFilter ReadFromMergeTree::prepareIndexAnalysisFilter(
+    const ActionsDAG * filter_actions_dag_,
+    const MergeTreeData::MergingParams & merging_params,
+    const StorageInMemoryMetadata & metadata,
+    bool is_final,
     const ContextPtr & query_context,
-    bool skip_constant_folding)
+    bool skip_partition_pruning)
+{
+    std::optional<ActionsDAG> graphite_final_filter;
+    if (filter_actions_dag_ && is_final && merging_params.mode == MergeTreeData::MergingParams::Graphite)
+    {
+        graphite_final_filter = buildGraphiteFinalIndexFilter(*filter_actions_dag_, merging_params.graphite_params.path_column_name, metadata);
+        filter_actions_dag_ = graphite_final_filter ? &*graphite_final_filter : nullptr;
+    }
+
+    /// The wrapper clones the predicate, so `graphite_final_filter` may be destroyed on return.
+    auto dag = std::make_shared<ActionsDAGWithInversionPushDown>(
+        filter_actions_dag_ ? filter_actions_dag_->getOutputs().front() : nullptr, query_context, /* boolean_context */ true);
+    const bool skip_constant_folding
+        = skip_partition_pruning || !query_context->getSettingsRef()[Setting::use_constant_folding_in_index_analysis];
+    return {std::move(dag), skip_constant_folding};
+}
+
+ConditionTemplate<KeyCondition>::Ptr ReadFromMergeTree::buildPrimaryKeyCondition(
+    const IndexAnalysisFilter & filter,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & query_context)
 {
     auto key_condition_factory = [query_context, metadata_snapshot](const ActionsDAG *, const ActionsDAG::Node * predicate)
     {
@@ -3329,40 +3349,16 @@ ConditionTemplate<KeyCondition>::Ptr ReadFromMergeTree::buildPrimaryKeyCondition
         return KeyCondition{wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key]};
     };
     return std::make_shared<ConditionTemplate<KeyCondition>>(
-        std::move(filter_dag), std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
+        filter.dag, std::move(key_condition_factory), metadata_snapshot, query_context, filter.skip_constant_folding);
 }
 
-void ReadFromMergeTree::buildIndexes(
+void ReadFromMergeTree::buildKeyConditions(
     std::optional<ReadFromMergeTree::Indexes> & indexes,
-    const ActionsDAG * filter_actions_dag_,
-    const MergeTreeData & data,
-    const RangesInDataParts & parts,
-    [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
-    [[maybe_unused]] const std::optional<TopKFilterInfo> top_k_filter_info,
-    const ContextPtr & query_context,
-    const SelectQueryInfo & query_info_,
+    const IndexAnalysisFilter & filter,
     const StorageMetadataPtr & metadata_snapshot,
-    bool skip_partition_pruning_)
+    const ContextPtr & query_context)
 {
-    indexes.reset();
-
-    // Build and check if primary key is used when necessary
-    const auto & primary_key = metadata_snapshot->getPrimaryKey();
-
-    const auto & settings = query_context->getSettingsRef();
-    const bool skip_constant_folding = skip_partition_pruning_ || !settings[Setting::use_constant_folding_in_index_analysis];
-
-    std::optional<ActionsDAG> graphite_final_filter;
-    if (filter_actions_dag_ && query_info_.isFinal() && data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
-    {
-        graphite_final_filter = buildGraphiteFinalIndexFilter(*filter_actions_dag_, data, *metadata_snapshot);
-        filter_actions_dag_ = graphite_final_filter ? &*graphite_final_filter : nullptr;
-    }
-
-    auto filter_dag_ptr = std::make_shared<ActionsDAGWithInversionPushDown>(filter_actions_dag_ ? filter_actions_dag_->getOutputs().front() : nullptr, query_context, /* boolean_context */ true);
-    const auto & filter_dag = *filter_dag_ptr;
-
-    indexes.emplace(buildPrimaryKeyCondition(filter_dag_ptr, metadata_snapshot, query_context, skip_constant_folding));
+    indexes.emplace(buildPrimaryKeyCondition(filter, metadata_snapshot, query_context));
 
     {
         auto key_condition_factory = [query_context](const ActionsDAG *, const ActionsDAG::Node * predicate)
@@ -3370,26 +3366,35 @@ void ReadFromMergeTree::buildIndexes(
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
             return KeyCondition{wrapped, query_context, {}, std::make_shared<ExpressionActions>(ActionsDAG(NamesAndTypesList{}))};
         };
-        indexes->key_condition_rpn_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
+        indexes->key_condition_rpn_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter.dag, std::move(key_condition_factory), metadata_snapshot, query_context, filter.skip_constant_folding);
     }
+}
 
-    buildPartitionPruningIndexes(*indexes, filter_dag_ptr, data, query_context, metadata_snapshot, skip_partition_pruning_);
-
-    indexes->part_values
-        = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter_dag.predicate, query_context);
+void ReadFromMergeTree::buildOffsetAndSkipIndexConditions(
+    ReadFromMergeTree::Indexes & indexes,
+    const IndexAnalysisFilter & filter,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeSettings & data_settings,
+    [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
+    [[maybe_unused]] const std::optional<TopKFilterInfo> & top_k_filter_info,
+    const ContextPtr & query_context,
+    bool is_final)
+{
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    const auto & settings = query_context->getSettingsRef();
 
     /// Perform virtual column key analysis only when no corresponding physical columns exist.
     const auto & columns = metadata_snapshot->getColumns();
     if (!columns.has("_part_offset") && !columns.has("_part"))
-        indexes->part_offset_condition = MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(filter_dag_ptr, metadata_snapshot, skip_constant_folding, query_context);
+        indexes.part_offset_condition = MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(filter.dag, metadata_snapshot, filter.skip_constant_folding, query_context);
     if (!columns.has("_part_offset") && !columns.has("_part_starting_offset"))
-        indexes->total_offset_condition = MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(filter_dag_ptr, metadata_snapshot, skip_constant_folding, query_context);
+        indexes.total_offset_condition = MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(filter.dag, metadata_snapshot, filter.skip_constant_folding, query_context);
 
-    indexes->use_skip_indexes = settings[Setting::use_skip_indexes];
-    if (query_info_.isFinal() && !settings[Setting::use_skip_indexes_if_final])
-        indexes->use_skip_indexes = false;
+    indexes.use_skip_indexes = settings[Setting::use_skip_indexes];
+    if (is_final && !settings[Setting::use_skip_indexes_if_final])
+        indexes.use_skip_indexes = false;
 
-    if (!indexes->use_skip_indexes)
+    if (!indexes.use_skip_indexes)
         return;
 
     const auto & all_indexes = metadata_snapshot->getSecondaryIndices();
@@ -3412,7 +3417,7 @@ void ReadFromMergeTree::buildIndexes(
         if (ignored_index_names.contains(index.name))
             continue;
 
-        auto index_helper = MergeTreeIndexFactory::instance().get(metadata_snapshot, index, *data.getSettings());
+        auto index_helper = MergeTreeIndexFactory::instance().get(metadata_snapshot, index, data_settings);
 
         /// Inert indices (a removed index type kept only for attach compatibility) hold no data and
         /// cannot answer queries. Skip them so a filtered query does not throw building the condition.
@@ -3440,7 +3445,7 @@ void ReadFromMergeTree::buildIndexes(
             };
         }
 
-        auto condition_template = std::make_shared<ConditionTemplate<MergeTreeIndexConditionPtr>>(filter_dag_ptr, std::move(factory), metadata_snapshot, query_context, skip_constant_folding);
+        auto condition_template = std::make_shared<ConditionTemplate<MergeTreeIndexConditionPtr>>(filter.dag, std::move(factory), metadata_snapshot, query_context, filter.skip_constant_folding);
 
         const auto & unsubstituted = condition_template->generateUnsubstituted();
         if (unsubstituted && !unsubstituted->alwaysUnknownOrTrue())
@@ -3491,18 +3496,47 @@ void ReadFromMergeTree::buildIndexes(
         }
     }
 
-    indexes->use_skip_indexes_for_disjunctions = settings[Setting::use_skip_indexes_for_disjunctions]
+    indexes.use_skip_indexes_for_disjunctions = settings[Setting::use_skip_indexes_for_disjunctions]
                                                     && skip_indexes.useful_indices.size() > 1
-                                                    && !indexes->key_condition_rpn_template->generateUnsubstituted().hasOnlyConjunctions()
+                                                    && !indexes.key_condition_rpn_template->generateUnsubstituted().hasOnlyConjunctions()
                                                     && MergeTreeDataSelectExecutor::isRPNSizeAllowedForSkipIndexesForDisjunctions(
-                                                        indexes->key_condition_rpn_template->generateUnsubstituted().getRPN().size(), settings);
+                                                        indexes.key_condition_rpn_template->generateUnsubstituted().getRPN().size(), settings);
 
-    indexes->use_skip_indexes_if_final_exact_mode = indexes->use_skip_indexes && !skip_indexes.empty()
-                                                        && query_info_.isFinal()
+    indexes.use_skip_indexes_if_final_exact_mode = indexes.use_skip_indexes && !skip_indexes.empty()
+                                                        && is_final
                                                         && settings[Setting::use_skip_indexes_if_final_exact_mode]
                                                         && !areAllSkipIndexColumnsInPrimaryKey(primary_key, skip_indexes);
 
-    indexes->skip_indexes = std::move(skip_indexes);
+    indexes.skip_indexes = std::move(skip_indexes);
+}
+
+void ReadFromMergeTree::buildIndexes(
+    std::optional<ReadFromMergeTree::Indexes> & indexes,
+    const ActionsDAG * filter_actions_dag_,
+    const MergeTreeData & data,
+    const RangesInDataParts & parts,
+    [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
+    [[maybe_unused]] const std::optional<TopKFilterInfo> top_k_filter_info,
+    const ContextPtr & query_context,
+    const SelectQueryInfo & query_info_,
+    const StorageMetadataPtr & metadata_snapshot,
+    bool skip_partition_pruning_)
+{
+    indexes.reset();
+
+    const auto filter = prepareIndexAnalysisFilter(
+        filter_actions_dag_, data.merging_params, *metadata_snapshot, query_info_.isFinal(), query_context, skip_partition_pruning_);
+
+    buildKeyConditions(indexes, filter, metadata_snapshot, query_context);
+
+    buildPartitionPruningIndexes(*indexes, filter.dag, data, query_context, metadata_snapshot, skip_partition_pruning_);
+
+    indexes->part_values
+        = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter.dag->predicate, query_context);
+
+    buildOffsetAndSkipIndexConditions(
+        *indexes, filter, metadata_snapshot, *data.getSettings(), vector_search_parameters, top_k_filter_info, query_context,
+        query_info_.isFinal());
 }
 
 String SkipIndexOrderCache::makeKey(const IMergeTreeDataPart & part)
@@ -4073,6 +4107,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             && !projection_parts_exist
             /// The replicas analyze the whole filter, which `Graphite` FINAL must not prune by (see `buildIndexes`).
             && !(query_info_.isFinal() && data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
+            /// The replicas' analysis query is not FINAL, so they would use the skip indexes `use_skip_indexes_if_final = 0` disables.
+            && !(query_info_.isFinal() && !settings[Setting::use_skip_indexes_if_final] && settings[Setting::use_skip_indexes]
+                && !metadata_snapshot->getSecondaryIndices().empty())
             && settings[Setting::distributed_index_analysis]
             && (settings[Setting::distributed_index_analysis_for_non_shared_merge_tree] || data.isSharedStorage())
             && (total_parts >= distributed_index_analysis_min_parts_to_activate)
@@ -5397,8 +5434,6 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
 }
 
 
-static const char * indexTypeToString(ReadFromMergeTree::IndexType type);
-
 void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) const
 {
     UInt64 sample_rate = context->getSettingsRef()[Setting::predicate_statistics_sample_rate];
@@ -5459,8 +5494,8 @@ void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) co
             UInt64 total = prev_granules > 0 ? prev_granules : stat.num_granules_after;
             UInt64 after = stat.num_granules_after;
 
-            element.index_names.push_back(stat.name.empty() ? indexTypeToString(stat.type) : stat.name);
-            element.index_types.push_back(indexTypeToString(stat.type));
+            element.index_names.push_back(stat.name.empty() ? toString(stat.type) : stat.name);
+            element.index_types.push_back(toString(stat.type));
             element.total_granules.push_back(total);
             element.granules_after.push_back(after);
             element.index_selectivities.push_back(total > 0 ? static_cast<Float64>(after) / static_cast<Float64>(total) : 1.0);
@@ -6396,29 +6431,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         pipeline.setQueryIdHolder(std::move(query_id_holder));
 }
 
-static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
-{
-    switch (type)
-    {
-        case ReadFromMergeTree::IndexType::None:
-            return "None";
-        case ReadFromMergeTree::IndexType::MinMax:
-            return "Min-Max";
-        case ReadFromMergeTree::IndexType::Partition:
-            return "Partition";
-        case ReadFromMergeTree::IndexType::Statistics:
-            return "Statistics";
-        case ReadFromMergeTree::IndexType::PrimaryKey:
-            return "PrimaryKey";
-        case ReadFromMergeTree::IndexType::Skip:
-            return "Skip";
-        case ReadFromMergeTree::IndexType::PrimaryKeyExpand:
-            return "PrimaryKeyExpand";
-        case ReadFromMergeTree::IndexType::NonIntersectingSplit:
-            return "NonIntersectingSplit";
-    }
-}
-
 static const char * readTypeToString(ReadFromMergeTree::ReadType type)
 {
     switch (type)
@@ -6623,22 +6635,6 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
         map.add("Virtual row conversions", virtual_row_conversion->toTree());
 }
 
-namespace
-{
-    std::string_view searchAlgorithmToString(const MarkRanges::SearchAlgorithm search_algorithm)
-    {
-        switch (search_algorithm)
-        {
-        case MarkRanges::SearchAlgorithm::BinarySearch:
-            return "binary search";
-        case MarkRanges::SearchAlgorithm::GenericExclusionSearch:
-            return "generic exclusion search";
-        default:
-            return "";
-        }
-    };
-}
-
 void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 {
     const auto & result = getAnalysisResult();
@@ -6660,7 +6656,7 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
             if (stat.type == IndexType::None)
                 continue;
 
-            format_settings.out << prefix << indent << indexTypeToString(stat.type) << '\n';
+            format_settings.out << prefix << indent << toString(stat.type) << '\n';
 
             if (!stat.name.empty())
                 format_settings.out << prefix << indent << indent << "Name: " << stat.name << '\n';
@@ -6688,7 +6684,7 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
                 format_settings.out << '/' << index_stats[i - 1].num_granules_after;
             format_settings.out << '\n';
 
-            auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
+            auto search_algorithm = toString(stat.search_algorithm);
             if (!search_algorithm.empty())
                 format_settings.out << prefix << indent << indent << "Search Algorithm: " << search_algorithm << "\n";
 
@@ -6712,81 +6708,8 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 
 void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
 {
-    const auto & result = getAnalysisResult();
-    const auto & index_stats = result.index_stats;
-
-    if (!index_stats.empty())
-    {
-        /// Do not print anything if no indexes is applied.
-        if (index_stats.size() == 1 && index_stats.front().type == IndexType::None)
-            return;
-
-        auto indexes_array = std::make_unique<JSONBuilder::JSONArray>();
-
-        for (size_t i = 0; i < index_stats.size(); ++i)
-        {
-            const auto & stat = index_stats[i];
-            if (stat.type == IndexType::None)
-                continue;
-
-            auto index_map = std::make_unique<JSONBuilder::JSONMap>();
-
-            index_map->add("Type", indexTypeToString(stat.type));
-
-            if (!stat.name.empty())
-                index_map->add("Name", stat.name);
-
-            if (!stat.description.empty())
-                index_map->add("Description", stat.description);
-
-            if (!stat.used_keys.empty())
-            {
-                auto keys_array = std::make_unique<JSONBuilder::JSONArray>();
-
-                for (const auto & used_key : stat.used_keys)
-                    keys_array->add(used_key);
-
-                index_map->add("Keys", std::move(keys_array));
-            }
-
-            if (!stat.condition.empty())
-                index_map->add("Condition", stat.condition);
-
-            auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
-            if (!search_algorithm.empty())
-                index_map->add("Search Algorithm", search_algorithm);
-
-            if (i)
-                index_map->add("Initial Parts", index_stats[i - 1].num_parts_after);
-            index_map->add("Selected Parts", stat.num_parts_after);
-
-            if (i)
-                index_map->add("Initial Granules", index_stats[i - 1].num_granules_after);
-            index_map->add("Selected Granules", stat.num_granules_after);
-
-            if (!stat.distributed.empty())
-            {
-                auto distributed_index_array = std::make_unique<JSONBuilder::JSONArray>();
-
-                for (const auto & node_stat : stat.distributed)
-                {
-                    auto node_stat_map = std::make_unique<JSONBuilder::JSONMap>();
-                    node_stat_map->add("Address", node_stat.address);
-                    node_stat_map->add("Parts send", node_stat.num_parts_send);
-                    node_stat_map->add("Parts received", node_stat.num_parts_received);
-                    node_stat_map->add("Granules send", node_stat.num_granules_send);
-                    node_stat_map->add("Granules received", node_stat.num_granules_received);
-                    distributed_index_array->add(std::move(node_stat_map));
-                }
-
-                index_map->add("Distributed", std::move(distributed_index_array));
-            }
-
-            indexes_array->add(std::move(index_map));
-        }
-
-        map.add("Indexes", std::move(indexes_array));
-    }
+    if (auto indexes_json = indexStatsToJSON(getIndexStats()))
+        map.add("Indexes", std::move(indexes_json));
 }
 
 void ReadFromMergeTree::describeProjections(FormatSettings & format_settings) const
@@ -6810,7 +6733,7 @@ void ReadFromMergeTree::describeProjections(FormatSettings & format_settings) co
             if (!stat.condition.empty())
                 format_settings.out << prefix << indent << indent << "Condition: " << stat.condition << '\n';
 
-            auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
+            auto search_algorithm = toString(stat.search_algorithm);
             if (!search_algorithm.empty())
                 format_settings.out << prefix << indent << indent << "Search Algorithm: " << search_algorithm << "\n";
 
@@ -6834,38 +6757,18 @@ void ReadFromMergeTree::describeProjections(FormatSettings & format_settings) co
 
 void ReadFromMergeTree::describeProjections(JSONBuilder::JSONMap & map) const
 {
-    const auto & result = getAnalysisResult();
-    const auto & projection_stats = result.projection_stats;
+    if (auto projections_json = projectionStatsToJSON(getProjectionStats()))
+        map.add("Projections", std::move(projections_json));
+}
 
-    if (!projection_stats.empty())
-    {
-        auto projections_array = std::make_unique<JSONBuilder::JSONArray>();
-        for (const auto & stat : projection_stats)
-        {
-             auto projection_map = std::make_unique<JSONBuilder::JSONMap>();
-            projection_map->add("Name", stat.name);
+const ReadFromMergeTree::IndexStats & ReadFromMergeTree::getIndexStats() const
+{
+    return getAnalysisResult().index_stats;
+}
 
-            if (!stat.description.empty())
-                projection_map->add("Description", stat.description);
-
-            if (!stat.condition.empty())
-                projection_map->add("Condition", stat.condition);
-
-            auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
-            if (!search_algorithm.empty())
-                projection_map->add("Search Algorithm", search_algorithm);
-
-            projection_map->add("Selected Parts", stat.selected_parts);
-            projection_map->add("Selected Marks", stat.selected_marks);
-            projection_map->add("Selected Ranges", stat.selected_ranges);
-            projection_map->add("Selected Rows", stat.selected_rows);
-            projection_map->add("Filtered Parts", stat.filtered_parts);
-
-            projections_array->add(std::move(projection_map));
-        }
-
-        map.add("Projections", std::move(projections_array));
-    }
+const ReadFromMergeTree::ProjectionStats & ReadFromMergeTree::getProjectionStats() const
+{
+    return getAnalysisResult().projection_stats;
 }
 
 void ReadFromMergeTree::clearParallelReadingExtension()

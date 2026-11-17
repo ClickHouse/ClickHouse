@@ -1,0 +1,47 @@
+<test iceberg="0">
+    <!--
+        Per-granule, per-substream bookkeeping of `MergeTreeReaderWide`: the callbacks it hands to the serialization
+        (stream getter, mark seeks, value size hints) run for every substream of every read. With empty arrays and
+        single-byte tuple fields a granule holds almost no data, so a column of many substreams read in many small
+        ranges is dominated by them. The minmax index selects alternating granules, which makes every granule a range
+        of its own; the last query gets the same effect from `max_block_size`.
+    -->
+    <create_query>
+        CREATE TABLE wide_many_substreams
+        (
+            id UInt64,
+            skip UInt8,
+            nested Array(Tuple(
+                f0 Int64, f1 UInt64, f2 Float64, f3 UInt64, f4 Float64, f5 Int8, f6 Float64, f7 Float64,
+                f8 UInt8, f9 UInt32, f10 UInt8, f11 Float64, f12 Float64, f13 UInt8,
+                a0 Array(Tuple(x Int32, y UInt32)), a1 Array(Tuple(x Int32, y UInt32)),
+                a2 Array(Tuple(x Int32, y UInt32)), a3 Array(Tuple(x Int32, y UInt32)))),
+            flat Tuple(
+                c0 UInt8, c1 UInt8, c2 UInt8, c3 UInt8, c4 UInt8, c5 UInt8, c6 UInt8, c7 UInt8,
+                c8 UInt8, c9 UInt8, c10 UInt8, c11 UInt8, c12 UInt8, c13 UInt8, c14 UInt8, c15 UInt8,
+                c16 UInt8, c17 UInt8, c18 UInt8, c19 UInt8, c20 UInt8, c21 UInt8, c22 UInt8, c23 UInt8,
+                c24 UInt8, c25 UInt8, c26 UInt8, c27 UInt8, c28 UInt8, c29 UInt8, c30 UInt8, c31 UInt8),
+            INDEX idx_skip skip TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0
+    </create_query>
+    <fill_query>
+        INSERT INTO wide_many_substreams (id, skip, flat)
+        SELECT
+            number,
+            intDiv(number, 8192) % 2,
+            tuple(number, number, number, number, number, number, number, number,
+                  number, number, number, number, number, number, number, number,
+                  number, number, number, number, number, number, number, number,
+                  number, number, number, number, number, number, number, number)
+        FROM numbers(24000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE wide_many_substreams FINAL</fill_query>
+
+    <query>SELECT nested FROM wide_many_substreams WHERE skip = 0 FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT flat FROM wide_many_substreams WHERE skip = 0 FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT nested FROM wide_many_substreams WHERE id &lt; 16000000 FORMAT Null SETTINGS max_threads = 1, max_block_size = 8192</query>
+
+    <drop_query>DROP TABLE IF EXISTS wide_many_substreams</drop_query>
+</test>
