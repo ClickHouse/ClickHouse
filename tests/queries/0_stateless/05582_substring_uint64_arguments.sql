@@ -88,3 +88,7 @@ SELECT substringUTF8('abcdefghij', nullIf(n, toUInt64(18446744073709551615))) FR
 SELECT byteSlice('hello', 2, nullIf(m, toUInt64(18446744073709551615))) FROM (SELECT arrayJoin([toUInt64(3), toUInt64(18446744073709551615)]) AS m);
 SELECT bitSlice('abcdefghij', nullIf(n, toUInt64(18446744073709551615))) FROM (SELECT arrayJoin([toUInt64(1), toUInt64(18446744073709551615)]) AS n);
 SELECT bitSlice('abcdefghij', 1, nullIf(m, toUInt64(18446744073709551615))) FROM (SELECT arrayJoin([toUInt64(8), toUInt64(18446744073709551615)]) AS m);
+-- substringIndex shares the same check, including for a constant and a non-constant string.
+SELECT substringIndex('a.b.c', '.', nullIf(n, toUInt64(18446744073709551615))) FROM (SELECT arrayJoin([toUInt64(2), toUInt64(18446744073709551615)]) AS n);
+SELECT substringIndex(materialize('a.b.c'), '.', nullIf(n, toUInt64(18446744073709551615))) FROM (SELECT arrayJoin([toUInt64(2), toUInt64(18446744073709551615)]) AS n);
+SELECT substringIndexUTF8('a。b。c', '。', nullIf(n, toUInt64(18446744073709551615))) FROM (SELECT arrayJoin([toUInt64(2), toUInt64(18446744073709551615)]) AS n);
