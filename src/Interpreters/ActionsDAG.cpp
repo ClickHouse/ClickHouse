@@ -952,6 +952,11 @@ const ActionsDAG::Node * ActionsDAG::tryFindInOutputs(const std::string & name) 
     return nullptr;
 }
 
+void ActionsDAG::renameOutput(const std::string & name, std::string new_name)
+{
+    const_cast<Node &>(findInOutputs(name)).result_name = std::move(new_name);
+}
+
 ActionsDAG::NodeRawConstPtrs ActionsDAG::findInOutputs(const Names & names) const
 {
     NodeRawConstPtrs required_nodes;
