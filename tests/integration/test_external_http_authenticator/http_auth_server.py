@@ -13,32 +13,33 @@ USER_RESPONSES = {
     "test_user_4": "not json string",
 }
 
-# Behaviour of the `/directory` endpoint (used by the `http` user directory tests), by user name.
-# A `str` value is sent verbatim as the 200 body. `None` roles/settings mean "empty body". `tenant_user` depends on the `X-Tenant` header.
+# Behaviour of the `/directory` endpoint (used by the `http` user directory tests), by user name, or by `user/tenant`
+# with the `X-Tenant` header. A `str` is sent verbatim as the 200 body, an `int` is a status.
 DIRECTORY_USERS = {
     "alice": {"settings": {"max_threads": "3"}, "roles": ["r_reader"]},
     "plain": {},
-    "cached_user": {"roles": []},
     "dist_user": {"roles": ["r_reader"]},
+    "tenant_user": {},
+    "tenant_user/a": {"roles": ["r_a"]},
+    "tenant_user/b": {"roles": ["r_b"]},
+    "tenant_user/imp": {"roles": ["r_imp"]},
+    "ro_session": {"settings": {"readonly": "1"}, "roles": ["r_reader"]},
+    "ro_session/x": {"settings": {"readonly": "1", "max_threads": "2"}, "roles": ["r_reader"]},
+    "default_setting": {"settings": {"readonly": "0"}, "roles": ["r_reader"]},
+    "unsettable": {"settings": {"max_sessions_for_user": "100"}, "roles": ["r_reader"]},
     "bad_role": {"roles": ["r_admin"]},
     "ghost_role": {"roles": ["tenant_missing"]},
-    "broken": 500,
-    "colon": {},
     "ro_user": {"roles": ["r_ro"]},
     "prof_user": {"roles": ["r_prof"]},
+    "bad_setting": {"settings": {"nonexistent_setting": "UInt64_1"}},
     "bad_json": '{"roles": [',
     "not_object": '["r_reader"]',
     "roles_not_array": {"roles": "r_reader"},
     "role_not_string": {"roles": [1]},
     "settings_not_object": {"settings": ["readonly"]},
     "bad_value": {"settings": {"max_threads": "abc"}},
-    "bad_setting": {"settings": {"nonexistent_setting": "UInt64_1"}, "roles": ["r_reader"]},
-    "default_setting": {"settings": {"readonly": "0"}, "roles": ["r_reader"]},
-    "constrained": {"settings": {"max_network_bandwidth": "2000000"}, "roles": ["r_reader"]},
+    "broken": 500,
 }
-# Passwords other than `GOOD_PASSWORD`.
-DIRECTORY_PASSWORDS = {"colon": "tenant:secret"}
-TENANT_ROLES = {"a": ["r_a"], "b": ["r_b"], "imp": ["r_imp"]}
 DIRECTORY_COUNTS = {}
 DIRECTORY_LOCK = threading.Lock()
 
@@ -79,27 +80,15 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body_raw)
 
     def do_directory(self) -> None:
-        auth_header = self.headers.get("Authorization") or ""
-        if not auth_header.startswith("Basic "):
-            self.reply(http.HTTPStatus.UNAUTHORIZED)
-            return
-
-        user_name, password = self.decode_basic(auth_header.split(" ", 1)[1])
+        user_name, password = self.decode_basic(self.headers["Authorization"].split(" ", 1)[1])
         with DIRECTORY_LOCK:
             DIRECTORY_COUNTS[user_name] = DIRECTORY_COUNTS.get(user_name, 0) + 1
 
-        if user_name == "tenant_user":
-            response = {"roles": TENANT_ROLES.get(self.headers.get("X-Tenant"), [])}
-        elif user_name == "ro_session":
-            # Another `X-Tenant` yields other settings, which must not reuse the session.
-            settings = {"readonly": "1", **({"max_threads": "2"} if self.headers.get("X-Tenant") else {})}
-            response = {"roles": ["r_reader"], "settings": settings}
-        else:
-            response = DIRECTORY_USERS.get(user_name)
-
+        tenant = self.headers.get("X-Tenant")
+        response = DIRECTORY_USERS.get(f"{user_name}/{tenant}" if tenant else user_name)
         if response is None:
             self.reply(http.HTTPStatus.NOT_FOUND)
-        elif password != DIRECTORY_PASSWORDS.get(user_name, GOOD_PASSWORD):
+        elif password != GOOD_PASSWORD:
             self.reply(http.HTTPStatus.UNAUTHORIZED)
         elif isinstance(response, int):
             self.reply(response)

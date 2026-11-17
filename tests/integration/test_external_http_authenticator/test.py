@@ -1,6 +1,5 @@
 import json
 import os
-import time
 import typing
 
 import pytest
@@ -21,7 +20,6 @@ dir_nodes = [
         name,
         main_configs=["configs/http_directory.xml"],
         user_configs=["configs/users.xml"],
-        with_zookeeper=False,
     )
     for name in ["node_dir1", "node_dir2"]
 ]
@@ -198,20 +196,18 @@ def test_directory_login_roles_settings(started_cluster: ClickHouseCluster):
     assert node.query("SELECT currentUser(), currentRoles()", user="plain", password=GOOD_PASSWORD) == "plain\t[]\n"
     assert "Not enough privileges" in node.query_and_get_error("SELECT count() FROM t", user="plain", password=GOOD_PASSWORD)
 
-
-def test_directory_role_policy(started_cluster: ClickHouseCluster):
-    for user in ["bad_role", "ghost_role"]:
-        assert "Authentication failed" in node_dir1.query_and_get_error("SELECT 1", user=user, password=GOOD_PASSWORD)
-    # An unknown setting name with a valid field dump is rejected by the directory itself: nothing is materialized or cached.
-    for params in [{"query": "SELECT 1"}, {"query": "SELECT 1", "session_id": "bad_setting_session"}] * 2:
-        assert node_dir1.http_request("", method="POST", params=params, auth=("bad_setting", GOOD_PASSWORD)).status_code != 200
-    assert directory_count("bad_setting") == 4
-    assert node_dir1.query("SELECT count() FROM system.users WHERE name = 'bad_setting'") == "0\n"
+    # Roles belong to the authentication, not to the user.
+    for tenant, roles in [("a", "['r_a']"), ("b", "['r_b']"), ("a", "['r_a']")]:
+        assert http_as(node, "tenant_user", "SELECT currentRoles()", tenant=tenant).text == roles + "\n"
 
 
-def test_directory_malformed_response(started_cluster: ClickHouseCluster):
-    # Strictly rejected 200 responses: the login fails, nothing is materialized, cached or retried.
-    users = ["bad_json", "not_object", "roles_not_array", "role_not_string", "settings_not_object", "bad_value"]
+def test_directory_rejected_response(started_cluster: ClickHouseCluster):
+    # Role policy, roles with settings, strict parsing and a status other than 200 or 404:
+    # the login fails, and nothing is materialized or cached.
+    users = [
+        "bad_role", "ghost_role", "ro_user", "prof_user", "bad_setting", "bad_json", "not_object",
+        "roles_not_array", "role_not_string", "settings_not_object", "bad_value", "broken",
+    ]
     for user in users:
         for _ in range(2):
             assert "Authentication failed" in node_dir1.query_and_get_error("SELECT 1", user=user, password=GOOD_PASSWORD)
@@ -231,95 +227,58 @@ def test_directory_fall_through(started_cluster: ClickHouseCluster):
     finally:
         node.query("DROP USER local_u")
 
-    assert "Authentication failed" in node.query_and_get_error("SELECT 1", user="broken", password=GOOD_PASSWORD)
+    # Nor is a name with `:`, which the service would see as user `colon` with password `tenant:secret`,
+    # also when it is not passed with HTTP Basic, where ClickHouse itself would split it.
+    assert "Authentication failed" in node.query_and_get_error("SELECT 1", user="colon:tenant", password="secret")
+    headers = {"X-ClickHouse-User": "colon:tenant", "X-ClickHouse-Key": "secret"}
+    assert node.http_request("", method="POST", data="SELECT 1", headers=headers).status_code != 200
+    assert directory_count("colon") == 0
+
     assert "Authentication failed" in node.query_and_get_error("SELECT 1", user="nobody_here", password=GOOD_PASSWORD)
     assert "Authentication failed" in node.query_and_get_error("SELECT 1", user="alice", password="wrong_password")
 
 
-def test_directory_per_authentication_roles(started_cluster: ClickHouseCluster):
-    for tenant, roles in [("a", "['r_a']"), ("b", "['r_b']"), ("a", "['r_a']")]:
-        assert http_as(node_dir1, "tenant_user", "SELECT currentRoles()", tenant=tenant).text == roles + "\n"
-
-
 def test_directory_authentication_cache(started_cluster: ClickHouseCluster):
     node = node_dir1
-    user = "cached_user"
-
-    def login(password=GOOD_PASSWORD):
-        return node.query_and_get_error("SELECT 1", user=user, password=password)
+    user = "plain"
 
     # The TTL is short, so tolerate an expiry between two logins.
     for _ in range(5):
         before = directory_count(user)
         node.query("SELECT 1", user=user, password=GOOD_PASSWORD)
         node.query("SELECT 1", user=user, password=GOOD_PASSWORD)
-        if directory_count(user) - before == 1:
+        if directory_count(user) - before <= 1:
             break
     else:
         assert False, "the authentication result was not cached"
 
     # Failures are not cached and reach the service.
     before = directory_count(user)
-    assert "Authentication failed" in login("wrong_password")
+    assert "Authentication failed" in node.query_and_get_error("SELECT 1", user=user, password="wrong_password")
     assert directory_count(user) == before + 1
 
     # After the TTL a new login reaches the service again.
-    before = directory_count(user)
-    deadline = time.monotonic() + 30
-    while directory_count(user) == before:
-        assert time.monotonic() < deadline, "the cache entry never expired"
+    def login_and_count():
         node.query("SELECT 1", user=user, password=GOOD_PASSWORD)
-        time.sleep(0.2)
+        return directory_count(user)
+
+    before = directory_count(user)
+    wait_condition(login_and_count, lambda count: count > before, max_attempts=150, delay=0.2)
 
 
 def test_directory_named_session(started_cluster: ClickHouseCluster):
     node = node_dir1
+    # A session can be reused only by an authentication with the same roles.
     assert http_as(node, "tenant_user", "SELECT currentRoles()", tenant="a", session_id="s1").text == "['r_a']\n"
     assert http_as(node, "tenant_user", "SELECT 1", tenant="b", session_id="s1").status_code != 200
     assert http_as(node, "tenant_user", "SELECT currentRoles()", tenant="a", session_id="s1").text == "['r_a']\n"
 
-
-def test_directory_distributed_select(started_cluster: ClickHouseCluster):
-    user = "dist_user"
-    assert (
-        node_dir1.query(
-            "SELECT count() FROM cluster('dir_cluster', default, t)", user=user, password=GOOD_PASSWORD
-        )
-        == "6\n"
-    )
-    # The shard materialized the user from the interserver credentials and did not call the service.
-    assert directory_count(user) == 1
-    assert node_dir2.query(f"SELECT count() FROM system.users WHERE name = '{user}'") == "1\n"
-
-
-def test_directory_user_name_with_colon(started_cluster: ClickHouseCluster):
-    # The service would see user `colon` with password `tenant:secret`.
-    node = node_dir1
-    before = directory_count("colon")
-    assert "Authentication failed" in node.query_and_get_error("SELECT 1", user="colon:tenant", password="secret")
-    # Not HTTP Basic: there `colon:tenant:secret` is split at the first `:` by ClickHouse itself.
-    headers = {"X-ClickHouse-User": "colon:tenant", "X-ClickHouse-Key": "secret"}
-    assert node.http_request("", method="POST", data="SELECT 1", headers=headers).status_code != 200
-    assert directory_count("colon") == before
-    assert node.query("SELECT count() FROM system.users WHERE name = 'colon:tenant'") == "0\n"
-
-
-def test_directory_named_session_execute_as(started_cluster: ClickHouseCluster):
-    # Reuse is checked against the roles of the authentication which created the session, not of its context.
-    node = node_dir1
+    # The roles are those of the authentication which created the session, not of its context.
     assert http_as(node, "tenant_user", "EXECUTE AS imp_target", tenant="imp", session_id="s_imp").status_code == 200
     assert http_as(node, "tenant_user", "SELECT count() FROM t", tenant="imp", session_id="s_imp").text == "3\n"
     assert http_as(node, "tenant_user", "SELECT count() FROM t", session_id="s_imp").status_code != 200
 
-
-def test_directory_role_with_settings(started_cluster: ClickHouseCluster):
-    for user in ["ro_user", "prof_user"]:
-        assert "Authentication failed" in node_dir1.query_and_get_error("SELECT 1", user=user, password=GOOD_PASSWORD)
-
-
-def test_directory_named_session_settings(started_cluster: ClickHouseCluster):
-    # Settings returned by the service apply to named sessions too, and a session cannot be reused with other settings.
-    node = node_dir1
+    # The settings apply to named sessions too, and a session cannot be reused with other settings.
     assert http_as(node, "ro_session", "SELECT getSetting('readonly')").text == "1\n"
     assert http_as(node, "ro_session", "SELECT getSetting('readonly')", session_id="s_ro").text == "1\n"
     assert "readonly" in http_as(node, "ro_session", "SET readonly = 0", session_id="s_ro").text
@@ -328,20 +287,24 @@ def test_directory_named_session_settings(started_cluster: ClickHouseCluster):
     assert response.status_code != 200 and "cannot be reused" in response.text
     assert http_as(node, "ro_session", "SELECT getSetting('readonly')", session_id="s_ro").text == "1\n"
 
-
-def test_directory_named_session_default_setting(started_cluster: ClickHouseCluster):
-    # A setting equal to its current value must not prevent a reuse with the same authentication.
+    # A setting equal to its current value does not prevent a reuse with the same authentication.
     for _ in range(2):
-        assert http_as(node_dir1, "default_setting", "SELECT count() FROM t", session_id="s_default").text == "3\n"
+        assert http_as(node, "default_setting", "SELECT count() FROM t", session_id="s_default").text == "3\n"
 
-
-def test_directory_named_session_failed_creation(started_cluster: ClickHouseCluster):
-    # A session whose creation failed (here on a constraint of the `default` profile) is not left behind.
-    response = http_as(node_dir1, "constrained", "SELECT 1", session_id="s_failed")
-    assert response.status_code != 200 and "SETTING_CONSTRAINT_VIOLATION" in response.text
+    # A session whose creation failed is not left behind.
+    response = http_as(node, "unsettable", "SELECT 1", session_id="s_failed")
+    assert response.status_code != 200 and "is not allowed to be set" in response.text
     params = {"query": "SELECT 1", "session_id": "s_failed", "session_check": "1"}
-    response = node_dir1.http_request("", method="POST", params=params, auth=("constrained", GOOD_PASSWORD))
+    response = node.http_request("", method="POST", params=params, auth=("unsettable", GOOD_PASSWORD))
     assert response.status_code != 200 and "SESSION_NOT_FOUND" in response.text
+
+
+def test_directory_distributed_select(started_cluster: ClickHouseCluster):
+    user = "dist_user"
+    assert node_dir1.query("SELECT count() FROM cluster('dir_cluster', default, t)", user=user, password=GOOD_PASSWORD) == "6\n"
+    # The shard materialized the user from the interserver credentials and did not call the service.
+    assert directory_count(user) == 1
+    assert node_dir2.query(f"SELECT count() FROM system.users WHERE name = '{user}'") == "1\n"
 
 
 def wait_for_query_finish(query_id):

@@ -31,18 +31,15 @@ public:
 
     HTTPAccessStorage(const String & storage_name_, AccessControl & access_control_, const Poco::Util::AbstractConfiguration & config, const String & prefix);
 
-    const String & getHTTPServerName() const { return server_name; }
-
     const char * getStorageType() const override { return STORAGE_TYPE; }
     String getStorageParamsJSON() const override;
     bool isReadOnly() const override { return true; }
-    bool exists(const UUID & id) const override;
+    bool exists(const UUID & id) const override { return memory_storage.exists(id); }
 
 private:
-    std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
-    std::vector<UUID> findAllImpl(AccessEntityType type) const override;
-    AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
-    std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const override;
+    std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override { return memory_storage.find(type, name); }
+    std::vector<UUID> findAllImpl(AccessEntityType type) const override { return memory_storage.findAll(type); }
+    AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override { return memory_storage.read(id, throw_if_not_exists); }
     std::optional<AuthResult> authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, const ClientInfo & client_info, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const override;
 
     /// Parsed body of a successful response of the authentication server.
@@ -67,8 +64,6 @@ private:
     std::set<String> allowed_roles;
     String allowed_role_prefix;
     std::chrono::seconds cache_ttl{0};
-    UInt64 hash_key0 = 0;
-    UInt64 hash_key1 = 0;
 
     mutable std::mutex cache_mutex;
     mutable std::unordered_map<String, CacheEntry> cache TSA_GUARDED_BY(cache_mutex); /// user name -> cache entry

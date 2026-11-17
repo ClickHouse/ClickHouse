@@ -104,9 +104,7 @@ If a response body from HTTP authentication server has JSON format and contains 
 
 ## HTTP user directory {#http-user-directory}
 
-In addition to authenticating users that already exist in ClickHouse (`IDENTIFIED WITH HTTP`), an HTTP authentication server can serve as a user directory. A user that is not defined in ClickHouse authenticates with HTTP Basic against the service and is materialized as an in-memory user without any grants. The service can also return session settings and a list of roles for this login.
-
-This is similar to the `ldap` user directory: users and their passwords live in an external system, and ClickHouse keeps only a transient copy. Unlike `IDENTIFIED WITH HTTP`, no `CREATE USER` is needed beforehand.
+An HTTP authentication server can also serve as a user directory, similar to the `ldap` one: unlike with `IDENTIFIED WITH HTTP`, no `CREATE USER` is needed. A user that is not defined in ClickHouse authenticates with HTTP Basic against the service and is materialized as an in-memory user without any grants. The service can also return session settings and a list of roles for this login.
 
 ### Configuration {#http-user-directory-configuration}
 
@@ -160,11 +158,7 @@ Parsing is strict: a malformed body, a body that is not a JSON object, a `roles`
 
 Every returned role must exist in ClickHouse and be listed in `allowed_roles` or start with `allowed_role_prefix`. Otherwise the authentication fails. If neither is configured, any returned role is rejected.
 
-Roles belong to the authentication, not to the user: two logins of one user name may get different roles. The roles are enabled in the session without being granted:
-
-- `currentRoles` shows them.
-- `SHOW GRANTS` shows nothing.
-- `SET ROLE NONE` does not remove them, and `SET ROLE` with a returned role fails because it is not granted.
+Roles belong to the authentication, not to the user: two logins of one user name may get different roles. The roles are enabled in the session without being granted: `currentRoles` shows them, `SHOW GRANTS` does not, `SET ROLE NONE` does not remove them, and `SET ROLE` with a returned role fails.
 
 <Note>
 Anyone who can run `CREATE ROLE` can create a role with a name matching `allowed_role_prefix`, which the service may then return. Restrict `CREATE ROLE`, or prefer `allowed_roles`.
@@ -172,9 +166,9 @@ Anyone who can run `CREATE ROLE` can create a role with a name matching `allowed
 
 ### Authentication cache {#http-user-directory-cache}
 
-By default (`authentication_cache_ttl` is `0`), every new authentication makes a request to the HTTP service. This is expensive for clients that open a new connection or send a separate HTTP request for every query.
+By default (`authentication_cache_ttl` is `0`), every new authentication makes a request to the HTTP service, which is expensive for clients that open a new connection or send a separate HTTP request for every query.
 
-With `authentication_cache_ttl` greater than zero, a successful validated response, including its roles and settings, is reused for the same user name, password, and forwarded headers until the TTL expires. There is one entry per user name, and the password and header values are kept only as a keyed hash. Only successful responses are cached: `404`, rejected credentials, an invalid response, or any other failure is never cached. After the TTL expires, ClickHouse contacts the service again and the authentication fails if the service cannot be reached; an expired entry is never used. Existence and the allow-list of the roles are checked again on every hit, so changes on the ClickHouse side take effect immediately.
+With `authentication_cache_ttl` greater than zero, a successful validated response, including its roles and settings, is reused for the same user name, password, and forwarded headers until the TTL expires. There is one entry per user name, and the password and header values are kept only as a hash. `404`, rejected credentials, an invalid response, or any other failure is never cached. After the TTL expires, ClickHouse contacts the service again, and the authentication fails if the service cannot be reached. Existence and the allow-list of the roles are checked again on every hit, so changes on the ClickHouse side take effect immediately.
 
 **Keep the TTL short.** While an entry is valid, ClickHouse does not ask the service, so a user who was disabled, whose password was revoked, or whose roles or settings were changed at the service keeps authenticating with the old result for up to the TTL. The TTL is therefore the maximum delay of a revocation for new authentications. Use 30-60 seconds when such a delay is acceptable, not hours, and keep `0` when every authentication must be verified by the service.
 

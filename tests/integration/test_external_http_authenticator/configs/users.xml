@@ -1,11 +1,6 @@
 <clickhouse>
     <profiles>
         <default>
-            <constraints>
-                <max_network_bandwidth>
-                    <max>1000000</max>
-                </max_network_bandwidth>
-            </constraints>
         </default>
     </profiles>
     <users>

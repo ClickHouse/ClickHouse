@@ -514,14 +514,6 @@ void AccessControl::addLDAPStorage(const String & storage_name_, const Poco::Uti
 }
 
 
-void AccessControl::addHTTPStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & config_, const String & prefix_)
-{
-    auto new_storage = std::make_shared<HTTPAccessStorage>(storage_name_, *this, config_, prefix_);
-    addStorage(new_storage);
-    LOG_DEBUG(getLogger(), "Added {} access storage '{}', HTTP server name: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getHTTPServerName());
-}
-
-
 void AccessControl::addStoragesFromUserDirectoriesConfig(
     const Poco::Util::AbstractConfiguration & config,
     const String & key,
@@ -575,7 +567,7 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
         }
         else if (type == HTTPAccessStorage::STORAGE_TYPE)
         {
-            addHTTPStorage(name, config, prefix);
+            addStorage(std::make_shared<HTTPAccessStorage>(name, *this, config, prefix));
         }
         else if (type == ReplicatedAccessStorage::STORAGE_TYPE)
         {

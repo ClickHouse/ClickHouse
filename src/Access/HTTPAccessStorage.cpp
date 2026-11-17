@@ -10,7 +10,6 @@
 #include <Access/resolveSetting.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
-#include <Common/thread_local_rng.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -54,20 +53,15 @@ namespace
 HTTPAccessStorage::HTTPAccessStorage(const String & storage_name_, AccessControl & access_control_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
     : IAccessStorage(storage_name_)
     , access_control(access_control_)
-    , hash_key0(thread_local_rng())
-    , hash_key1(thread_local_rng())
     , memory_storage(storage_name_, access_control.getChangesNotifier(), false)
 {
     server_name = config.getString(prefix + ".server", "");
     if (server_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'server' field for HTTP user directory");
 
-    if (config.has(prefix + ".allowed_roles"))
-    {
-        Poco::Util::AbstractConfiguration::Keys role_names;
-        config.keys(prefix + ".allowed_roles", role_names);
-        allowed_roles.insert(role_names.begin(), role_names.end());
-    }
+    Poco::Util::AbstractConfiguration::Keys role_names;
+    config.keys(prefix + ".allowed_roles", role_names);
+    allowed_roles.insert(role_names.begin(), role_names.end());
 
     allowed_role_prefix = config.getString(prefix + ".allowed_role_prefix", "");
     cache_ttl = std::chrono::seconds(config.getUInt64(prefix + ".authentication_cache_ttl", 0));
@@ -91,36 +85,6 @@ String HTTPAccessStorage::getStorageParamsJSON() const
     oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(params_json, oss);
     return oss.str();
-}
-
-
-bool HTTPAccessStorage::exists(const UUID & id) const
-{
-    return memory_storage.exists(id);
-}
-
-
-std::optional<UUID> HTTPAccessStorage::findImpl(AccessEntityType type, const String & name) const
-{
-    return memory_storage.find(type, name);
-}
-
-
-std::vector<UUID> HTTPAccessStorage::findAllImpl(AccessEntityType type) const
-{
-    return memory_storage.findAll(type);
-}
-
-
-AccessEntityPtr HTTPAccessStorage::readImpl(const UUID & id, bool throw_if_not_exists) const
-{
-    return memory_storage.read(id, throw_if_not_exists);
-}
-
-
-std::optional<std::pair<String, AccessEntityType>> HTTPAccessStorage::readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const
-{
-    return memory_storage.readNameWithType(id, throw_if_not_exists);
 }
 
 
@@ -227,7 +191,7 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
 
     /// The response depends on the URI, the password and the forwarded headers, so all of them are in the cache key.
     const std::set<String, HTTPFieldLess> forward_headers(params.forward_headers.begin(), params.forward_headers.end());
-    SipHash hash(hash_key0, hash_key1);
+    SipHash hash;
     auto hash_string = [&hash](const String & s)
     {
         hash.update(s.size());
@@ -254,12 +218,8 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
             response = it->second.response;
     }
 
-    std::vector<UUID> role_ids;
-    if (response)
-    {
-        role_ids = resolveRoles(response->roles, user_name);
-    }
-    else
+    const bool from_cache = response.has_value();
+    if (!from_cache)
     {
         auto raw = HTTPBasicAuthClient<RawResponseParser>(params).authenticate(user_name, basic_credentials->getPassword(), client_info.http_headers);
         if (raw.status == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
@@ -305,15 +265,15 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
                 }
             }
         }
+    }
 
-        /// Only a validated response is cached.
-        role_ids = resolveRoles(response->roles, user_name);
+    auto role_ids = resolveRoles(response->roles, user_name);
 
-        if (cache_ttl.count() > 0)
-        {
-            std::lock_guard lock(cache_mutex);
-            cache[user_name] = CacheEntry{.hash = key_hash, .time = std::chrono::steady_clock::now(), .response = *response};
-        }
+    /// Only a validated response is cached.
+    if (!from_cache && cache_ttl.count() > 0)
+    {
+        std::lock_guard lock(cache_mutex);
+        cache[user_name] = CacheEntry{.hash = key_hash, .time = std::chrono::steady_clock::now(), .response = *response};
     }
 
     return make_result(materializeUser(user_name), std::move(response->settings), std::move(role_ids));
