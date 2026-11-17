@@ -102,10 +102,19 @@ public:
             return;
         }
 
-        /// Merges in place from the back, so no unread sample of `buffer` is overwritten.
         size_t lhs_pos = buffer.size();
         size_t rhs_pos = rhs_end - rhs_begin;
         buffer.resize(lhs_pos + rhs_pos, arena);
+
+        /// Disjoint the other way round: the own samples move up as one block and `rhs` goes in front of them.
+        if (rhs_begin[rhs_pos - 1].first < buffer.front().first)
+        {
+            std::copy_backward(buffer.begin(), buffer.begin() + lhs_pos, buffer.end());
+            std::copy(rhs_begin, rhs_end, buffer.begin());
+            return;
+        }
+
+        /// Merges in place from the back, so no unread sample of `buffer` is overwritten.
         Sample * out = buffer.end();
         while (lhs_pos > 0 && rhs_pos > 0)
         {
@@ -116,6 +125,22 @@ public:
         }
         std::copy(rhs_begin, rhs_begin + rhs_pos, buffer.begin());
         deduplicateSorted(buffer);
+    }
+
+    /// Merges `other`, which the caller gives up: the bigger of the two buffers is kept and the smaller one is
+    /// merged into it, so a source merged into an empty bucket hands its buffer over instead of being copied.
+    void merge(AggregateFunctionTimeseriesSamples && other, Arena * arena)
+    {
+        if (buffer.size() < other.buffer.size())
+        {
+            /// For this allocator `swap` only exchanges the pointers; the arena is needed by the signature.
+            buffer.swap(other.buffer, arena);
+            std::swap(sorted, other.sorted);
+        }
+        /// `other` is ours to change, so it is sorted in place instead of into a copy.
+        other.sort();
+        /// A named rvalue reference is an lvalue: this calls the `const &` overload.
+        merge(other, arena);
     }
 
     void serialize(WriteBuffer & buf) const

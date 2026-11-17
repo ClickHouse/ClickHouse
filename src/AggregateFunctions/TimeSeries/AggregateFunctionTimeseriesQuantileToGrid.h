@@ -145,6 +145,12 @@ public:
         data(place)->phi.merge(data(rhs)->phi);
     }
 
+    void mergeTakingBuffers(AggregateDataPtr __restrict place, AggregateDataPtr __restrict rhs, Arena * arena) const
+    {
+        Base::mergeTakingBuffers(place, rhs, arena);
+        data(place)->phi.merge(data(rhs)->phi);
+    }
+
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         Base::serialize(place, buf, version);

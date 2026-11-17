@@ -334,6 +334,51 @@ public:
         }
     }
 
+    /// Unlike the default, the buckets take the buffers of the sources instead of copying them (see `mergeTakingBuffers`),
+    /// so a destination state may point into the arena of a source state. That is safe because the aggregator keeps the
+    /// arenas of all merged partial results as long as the result: `Aggregator::prepareVariantsToMerge` for the merge,
+    /// and `prepareOutputBlockColumns` for `-State` and intermediate results. The only callers,
+    /// `Aggregator::mergeAndDestroyDetachedBatch` and the `Tuple` combinator, satisfy this. Heap buffers (4096 bytes and
+    /// more) just change owner: the source ends up with the former buffer of the destination and frees it, if there is
+    /// one, when it is destroyed.
+    void mergeAndDestroyBatch(
+        AggregateDataPtr * dst_places,
+        AggregateDataPtr * rhs_places,
+        size_t size,
+        size_t offset,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
+        Arena * arena) const override
+    {
+        if constexpr (!bucket_allocates_memory_in_arena)
+        {
+            Base::mergeAndDestroyBatch(dst_places, rhs_places, size, offset, thread_pool, is_cancelled, arena);
+        }
+        else
+        {
+            size_t i = 0;
+            try
+            {
+                for (; i < size; ++i)
+                {
+                    if (unlikely(i == 1))
+                        Base::injectMergeBatchFault();
+
+                    chassert(!this->isSelfMerge(dst_places[i] + offset, rhs_places[i] + offset),
+                             "AggregateFunctionTimeseriesBase::mergeAndDestroyBatch called with the same source and destination state");
+                    derived().mergeTakingBuffers(dst_places[i] + offset, rhs_places[i] + offset, arena);
+                    destroy(rhs_places[i] + offset);
+                }
+            }
+            catch (...)
+            {
+                /// `destroy` does not throw, so the sources from `i` on are not destroyed yet.
+                Base::destroyBatch(i, size, rhs_places, offset);
+                throw;
+            }
+        }
+    }
+
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         writeBinaryLittleEndian(FORMAT_VERSION, buf);
@@ -581,6 +626,17 @@ protected:
         size_t /*row_begin*/, size_t /*row_end*/, AggregateDataPtr __restrict /*place*/, const IColumn ** /*extra_columns*/,
         const UInt8 * /*flags*/, bool /*flag_value_to_include*/) const
     {
+    }
+
+    /// The merge of `mergeAndDestroyBatch`: `rhs` is destroyed right after it, so the buckets take its buffers.
+    /// A derived class with extra state shadows it like `addExtraArguments`.
+    void mergeTakingBuffers(AggregateDataPtr __restrict place, AggregateDataPtr __restrict rhs, Arena * arena) const
+    {
+        auto & buckets = data(place)->buckets;
+        auto & rhs_buckets = data(rhs)->buckets;
+        buckets.reserve(rhs_buckets.size());
+        for (auto & rhs_bucket : rhs_buckets)
+            buckets[rhs_bucket.getKey()].merge(std::move(rhs_bucket.getMapped()), arena);
     }
 
 private:
