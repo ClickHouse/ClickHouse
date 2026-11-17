@@ -157,7 +157,7 @@ public:
     }
 
     /// Get quoting of the CTE name as written in the query
-    IdentifierPartQuote getCTENameQuote() const
+    [[nodiscard]] IdentifierPartQuote getCTENameQuote() const
     {
         return cte_name_quote;
     }
@@ -784,7 +784,7 @@ public:
 
     /// Sorted projection column names with double-quoted definitions (`AS "Name"` or `AS t("Name")`).
     /// Under `standard` matching only double-quoted exact-spelling references match them.
-    const Names & getPinnedProjectionColumnNames() const
+    [[nodiscard]] const Names & getPinnedProjectionColumnNames() const
     {
         return pinned_projection_column_names;
     }

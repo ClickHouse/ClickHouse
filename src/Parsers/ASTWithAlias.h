@@ -35,7 +35,7 @@ public:
     String alias;
 
     /// Quoting of the alias as written in the query.
-    IdentifierPartQuote getAliasQuote() const { return static_cast<IdentifierPartQuote>(flags<ASTWithAliasFlags>().alias_quote); }
+    [[nodiscard]] IdentifierPartQuote getAliasQuote() const { return static_cast<IdentifierPartQuote>(flags<ASTWithAliasFlags>().alias_quote); }
     void setAliasQuote(IdentifierPartQuote quote) { flags<ASTWithAliasFlags>().alias_quote = static_cast<UInt32>(quote); }
 
     /// If is true, getColumnName returns alias. Uses for aliases in former WITH section of SELECT query.

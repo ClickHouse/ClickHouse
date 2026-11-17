@@ -51,7 +51,7 @@ public:
     void setQuotes(std::vector<IdentifierPartQuote> argument_quotes);
 
     /// A double-quoted argument is pinned to exact-spelling lookups under `standard` matching.
-    bool isPinned(size_t index) const { return index < quotes.size() && quotes[index] == IdentifierPartQuote::DoubleQuoted; }
+    [[nodiscard]] bool isPinned(size_t index) const { return index < quotes.size() && quotes[index] == IdentifierPartQuote::DoubleQuoted; }
 
     void resolve(DataTypes argument_types)
     {

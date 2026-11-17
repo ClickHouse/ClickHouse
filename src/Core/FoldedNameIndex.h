@@ -36,10 +36,10 @@ public:
     void rename(const String & old_canonical, const String & new_canonical, bool new_pinned = false);
     void clear();
 
-    bool contains(const String & canonical) const { return objects.contains(canonical); }
-    bool empty() const { return objects.empty(); }
+    [[nodiscard]] bool contains(const String & canonical) const { return objects.contains(canonical); }
+    [[nodiscard]] bool empty() const { return objects.empty(); }
 
-    ResolutionResult resolve(const IdentifierPart & lookup, NameMatchMode mode) const;
+    [[nodiscard]] ResolutionResult resolve(const IdentifierPart & lookup, NameMatchMode mode) const;
 
 private:
     /// Canonical name -> pinned. Ordered so ambiguity candidates come out sorted.

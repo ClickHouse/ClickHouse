@@ -98,7 +98,7 @@ public:
     }
 
     /// Match an in-process expression whose alias folds to `folded_alias`; double-quoted (pinned) aliases are skipped.
-    QueryTreeNodePtr getExpressionWithAliasFolded(const std::string & folded_alias) const
+    [[nodiscard]] QueryTreeNodePtr getExpressionWithAliasFolded(const std::string & folded_alias) const
     {
         for (const auto & [alias, alias_expressions] : alias_name_to_expressions)
         {

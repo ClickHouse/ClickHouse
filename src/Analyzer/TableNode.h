@@ -106,7 +106,7 @@ public:
     }
 
     /// Quoting of the definition the temporary table name came from (e.g. a recursive CTE name).
-    IdentifierPartQuote getTemporaryTableNameQuote() const
+    [[nodiscard]] IdentifierPartQuote getTemporaryTableNameQuote() const
     {
         return temporary_table_name_quote;
     }
@@ -120,7 +120,7 @@ public:
 
     /// Sorted column names pinned to exact-spelling matching under `standard` matching. Used for
     /// synthetic tables built from a subquery projection (e.g. a recursive CTE's temporary table).
-    const Names & getPinnedColumnNames() const
+    [[nodiscard]] const Names & getPinnedColumnNames() const
     {
         return pinned_column_names;
     }

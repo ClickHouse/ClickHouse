@@ -215,7 +215,7 @@ public:
     }
 
     /// Per-name quotes mirroring `except_column_names`; empty for synthesized transformers.
-    const std::vector<IdentifierPartQuote> & getExceptColumnNamesQuotes() const
+    [[nodiscard]] const std::vector<IdentifierPartQuote> & getExceptColumnNamesQuotes() const
     {
         return except_column_names_quotes;
     }
@@ -297,7 +297,7 @@ public:
     }
 
     /// Per-name quotes mirroring `replacements_names`; empty for synthesized transformers.
-    const std::vector<IdentifierPartQuote> & getReplacementsNamesQuotes() const
+    [[nodiscard]] const std::vector<IdentifierPartQuote> & getReplacementsNamesQuotes() const
     {
         return replacements_names_quotes;
     }

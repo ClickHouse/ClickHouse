@@ -40,7 +40,7 @@ public:
     }
 
     /// Get structured name with per-part quoting; part spellings always mirror the identifier
-    const IdentifierName & getIdentifierName() const
+    [[nodiscard]] const IdentifierName & getIdentifierName() const
     {
         return identifier_name;
     }

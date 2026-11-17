@@ -77,7 +77,7 @@ public:
     ASTPtr window_definition;
 
     /// Quoting of the `OVER window_name` reference as written in the query.
-    IdentifierPartQuote getWindowNameQuote() const { return static_cast<IdentifierPartQuote>(flags<ASTFunctionFlags>().window_name_quote); }
+    [[nodiscard]] IdentifierPartQuote getWindowNameQuote() const { return static_cast<IdentifierPartQuote>(flags<ASTFunctionFlags>().window_name_quote); }
     void setWindowNameQuote(IdentifierPartQuote quote) { flags<ASTFunctionFlags>().window_name_quote = static_cast<UInt32>(quote); }
 
     NullsAction getNullsAction() const { return static_cast<NullsAction>(flags<ASTFunctionFlags>().nulls_action); }

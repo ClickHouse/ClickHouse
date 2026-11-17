@@ -191,7 +191,7 @@ public:
     }
 
     /// Get quoting of the alias as written in the query
-    IdentifierPartQuote getAliasQuote() const
+    [[nodiscard]] IdentifierPartQuote getAliasQuote() const
     {
         return alias_quote;
     }

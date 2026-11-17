@@ -100,7 +100,7 @@ private:
     /// From the raw query spellings; used for the ON CLUSTER pre-check.
     AccessRightsElements getRequiredAccess(RenameType type) const;
     /// From the resolved (canonicalized) names.
-    AccessRightsElements getRequiredAccess(RenameType type, const RenameDescriptions & descriptions) const;
+    [[nodiscard]] AccessRightsElements getRequiredAccess(RenameType type, const RenameDescriptions & descriptions) const;
 
     ASTPtr query_ptr;
     bool renamed_instead_of_exchange{false};

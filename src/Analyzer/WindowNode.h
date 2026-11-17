@@ -60,7 +60,7 @@ public:
     }
 
     /// Get quoting of the parent window name as written in the query
-    IdentifierPartQuote getParentWindowNameQuote() const
+    [[nodiscard]] IdentifierPartQuote getParentWindowNameQuote() const
     {
         return parent_window_name_quote;
     }

@@ -58,7 +58,7 @@ public:
     void setExpressionName(std::string name) { expression_name = std::move(name); }
 
     /// Original target spelling with quotes, captured at construction (unrecoverable after resolution).
-    const IdentifierName & getExpressionIdentifierName() const { return expression_identifier_name; }
+    [[nodiscard]] const IdentifierName & getExpressionIdentifierName() const { return expression_identifier_name; }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 

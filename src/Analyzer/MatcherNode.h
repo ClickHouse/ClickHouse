@@ -102,7 +102,7 @@ public:
     }
 
     /// Quote-structured qualified identifier; empty for internally synthesized matchers.
-    const IdentifierName & getQualifiedIdentifierName() const
+    [[nodiscard]] const IdentifierName & getQualifiedIdentifierName() const
     {
         return qualified_identifier_name;
     }
@@ -113,7 +113,7 @@ public:
     }
 
     /// Quote-structured COLUMNS list entries, mirroring `columns_identifiers`. Empty when synthesized.
-    const std::vector<IdentifierName> & getColumnsIdentifierNames() const
+    [[nodiscard]] const std::vector<IdentifierName> & getColumnsIdentifierNames() const
     {
         return columns_identifier_names;
     }

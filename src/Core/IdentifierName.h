@@ -35,10 +35,10 @@ struct IdentifierPart
     String spelling;
     IdentifierPartQuote quote = IdentifierPartQuote::Unquoted;
 
-    bool isCaseFoldable() const { return quote != IdentifierPartQuote::DoubleQuoted; }
+    [[nodiscard]] bool isCaseFoldable() const { return quote != IdentifierPartQuote::DoubleQuoted; }
 
     /// Matching key in `standard` mode: folded when foldable, exact when double-quoted.
-    String matchingKey() const;
+    [[nodiscard]] String matchingKey() const;
 
     bool operator==(const IdentifierPart & rhs) const = default;
 };
@@ -54,37 +54,37 @@ struct IdentifierName
     /// All parts unquoted.
     explicit IdentifierName(const std::vector<String> & spellings);
 
-    bool empty() const { return parts.empty(); }
-    size_t size() const { return parts.size(); }
+    [[nodiscard]] bool empty() const { return parts.empty(); }
+    [[nodiscard]] size_t size() const { return parts.size(); }
 
     IdentifierPart & operator[](size_t i) { return parts[i]; }
-    const IdentifierPart & operator[](size_t i) const { return parts[i]; }
+    [[nodiscard]] const IdentifierPart & operator[](size_t i) const { return parts[i]; }
     IdentifierPart & front() { return parts.front(); }
-    const IdentifierPart & front() const { return parts.front(); }
+    [[nodiscard]] const IdentifierPart & front() const { return parts.front(); }
     IdentifierPart & back() { return parts.back(); }
-    const IdentifierPart & back() const { return parts.back(); }
-    auto begin() const { return parts.begin(); }
-    auto end() const { return parts.end(); }
+    [[nodiscard]] const IdentifierPart & back() const { return parts.back(); }
+    [[nodiscard]] auto begin() const { return parts.begin(); }
+    [[nodiscard]] auto end() const { return parts.end(); }
     void push_back(IdentifierPart part) { parts.push_back(std::move(part)); }
     void pop_back() { parts.pop_back(); }
     void clear() { parts.clear(); }
 
-    std::vector<String> spellings() const;
+    [[nodiscard]] std::vector<String> spellings() const;
 
-    bool anyPartDoubleQuoted() const;
+    [[nodiscard]] bool anyPartDoubleQuoted() const;
 
     /// Matching key of the whole name in `standard` mode: ASCII fold of the dot-joined spellings.
-    String foldedFullKey() const;
+    [[nodiscard]] String foldedFullKey() const;
 
     /// Whether every double-quoted part matches its byte segment of `candidate` exactly. Valid only
     /// when `candidate` folds equal to this name: the fold is byte-wise, so offsets stay aligned.
-    bool quotedPartsMatch(std::string_view candidate) const;
+    [[nodiscard]] bool quotedPartsMatch(std::string_view candidate) const;
 
     /// `standard`-mode match against a canonical name: folded equality plus exact double-quoted parts.
-    bool matchesFolded(std::string_view candidate) const;
+    [[nodiscard]] bool matchesFolded(std::string_view candidate) const;
 
     /// Flattened form for display and error messages only. Never re-split it.
-    String toString() const;
+    [[nodiscard]] String toString() const;
 
     bool operator==(const IdentifierName & rhs) const = default;
 };

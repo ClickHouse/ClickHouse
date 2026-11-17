@@ -54,7 +54,7 @@ public:
 
     /// The composite identifier will have a concatenated name (of the form a.b.c),
     /// and individual components will be available inside the name_parts.
-    const String & shortName() const { return name_parts.back().spelling; }
+    [[nodiscard]] const String & shortName() const { return name_parts.back().spelling; }
     const String & name() const;
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_alias) const override;

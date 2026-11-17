@@ -185,7 +185,7 @@ public:
     }
 
     /// Get quoting of the CTE name as written in the query
-    IdentifierPartQuote getCTENameQuote() const
+    [[nodiscard]] IdentifierPartQuote getCTENameQuote() const
     {
         return cte_name_quote;
     }
