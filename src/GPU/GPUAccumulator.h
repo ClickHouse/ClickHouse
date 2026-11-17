@@ -68,6 +68,8 @@ private:
 
     void run();
     void rethrowError();
+    /// Where a queue of the pipeline is closed: by an error of its thread, which it rethrows, or by the end of it.
+    [[noreturn]] void throwEnded();
     void fail(std::exception_ptr error) noexcept;
 
     const Process process;

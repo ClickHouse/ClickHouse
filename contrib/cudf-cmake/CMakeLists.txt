@@ -711,7 +711,7 @@ set (CUDF_SOURCES
     "${CUDF_EMBED_DIR}/cudf_fragments.s"
 )
 
-# Sources unreachable from src/GPU/GPUAggregationCudf.cpp: 216 of 487 at cuDF 26.12.
+# Sources unreachable from src/GPU: 209 of 487 at cuDF 26.12.
 # Derived, not hand-picked - every archive member outside the transitive closure of the island's
 # undefined symbols. Regenerate by resolving `nm -u` of libclickhouse_gpu_cudf.a against
 # `nm -A --defined-only` of lib_cudf.a. A new cuDF call fails the link naming what is missing.
@@ -725,15 +725,8 @@ list (REMOVE_ITEM CUDF_SOURCES
     "${CUDF_DIR}/src/dictionary/remove_keys.cu"
     "${CUDF_DIR}/src/filling/calendrical_month_sequence.cu"
     "${CUDF_DIR}/src/filling/repeat.cu"
-    "${CUDF_DIR}/src/groupby/streaming_groupby.cpp"
-    "${CUDF_DIR}/src/groupby/streaming_groupby/aggregate.cu"
-    "${CUDF_DIR}/src/groupby/streaming_groupby/impl.cu"
-    "${CUDF_DIR}/src/groupby/streaming_groupby/insert.cu"
-    "${CUDF_DIR}/src/groupby/streaming_groupby/insert_nested.cu"
-    "${CUDF_DIR}/src/groupby/streaming_groupby/warp_aggregate.cu"
     "${CUDF_DIR}/src/hash/md5_hash.cu"
     "${CUDF_DIR}/src/hash/murmurhash3_x64_128.cu"
-    "${CUDF_DIR}/src/hash/murmurhash3_x86_32.cu"
     "${CUDF_DIR}/src/hash/sha1_hash.cu"
     "${CUDF_DIR}/src/hash/sha224_hash.cu"
     "${CUDF_DIR}/src/hash/sha256_hash.cu"

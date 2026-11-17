@@ -116,7 +116,7 @@ void GPUBatchPipeline::add(const Columns & columns)
     {
         size_t slot_index = 0;
         if (!free_slots.pop(slot_index))
-            rethrowError();
+            throwEnded();
 
         Slot & slot = slots[slot_index];
         /// The batch before in the slot may still be read on the device.
@@ -168,7 +168,7 @@ void GPUBatchPipeline::send()
     checkCuda(cudaEventRecord(slot.uploaded.get(), slot.upload.get()), "Cannot mark a point in an upload stream");
 
     if (!work.push(slot_index))
-        rethrowError();
+        throwEnded();
 }
 
 void GPUBatchPipeline::finish()
@@ -233,8 +233,12 @@ void GPUBatchPipeline::rethrowError()
     std::lock_guard lock(error_mutex);
     if (error)
         std::rethrow_exception(error);
-    if (work.isFinished() || free_slots.isFinished())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation was used after it ended");
+}
+
+void GPUBatchPipeline::throwEnded()
+{
+    rethrowError();
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation was used after it ended");
 }
 
 
