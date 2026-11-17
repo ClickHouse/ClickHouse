@@ -73,7 +73,7 @@ private:
 
     template <bool prefetch, typename Method>
     requires MapAggregationMethod<Method>
-    void consumeImpl(Method & hash_method, const ColumnRawPtrs & grouping_key_columns, UInt64 row_count);
+    NO_INLINE void consumeImpl(Method & hash_method, const ColumnRawPtrs & grouping_key_columns, UInt64 row_count);
 
     /// LimitBy keeps a group index in the cell's mapped slot, so it cannot use a set method. This overload
     /// exists only because the dispatch macro is generated over every `AggregatedDataVariants::Type`,
