@@ -2827,6 +2827,7 @@ void QueryFuzzer::fuzzCodecFunction(ASTFunction & codec_fn)
            "DoubleDelta",
            "T64",
            "GCD",
+           "BitPacking",
            "Gorilla",
            "FPC",
            "ALP",
