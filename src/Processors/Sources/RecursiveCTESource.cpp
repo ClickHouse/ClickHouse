@@ -8,7 +8,6 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/QueryPlan/Streaming/hasUnboundedSource.h>
 
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -39,7 +38,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_STREAM;
     extern const int LOGICAL_ERROR;
     extern const int TOO_DEEP_RECURSION;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
@@ -199,9 +197,6 @@ private:
         recursive_query_context->addOrUpdateExternalTable(recursive_table_name, working_temporary_table_holder);
 
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_to_execute, recursive_query_context, select_query_options);
-
-        if (hasUnboundedSource(interpreter->getQueryPlan()))
-            throw Exception(ErrorCodes::ILLEGAL_STREAM, "Cannot evaluate a recursive CTE over an unbounded STREAM");
 
         QueryPipelineBuilder pipeline_builder;
         {

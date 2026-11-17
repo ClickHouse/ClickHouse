@@ -12,7 +12,6 @@
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/Streaming/hasUnboundedSource.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/Chunk.h>
@@ -47,7 +46,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_STREAM;
     extern const int INCORRECT_RESULT_OF_SCALAR_SUBQUERY;
 }
 
@@ -286,9 +284,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         {
             BlockIO io;
             auto & query_plan = interpreter->getQueryPlan();
-            if (hasUnboundedSource(query_plan))
-                throw Exception(ErrorCodes::ILLEGAL_STREAM, "Cannot evaluate scalar subquery over an unbounded STREAM");
-
             bool skip_execution_for_exists = false;
 
             /// A scalar subquery is executed during the analysis of the query, before the quotas of the query are checked,

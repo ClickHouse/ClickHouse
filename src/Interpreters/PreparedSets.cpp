@@ -20,7 +20,6 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/DistributedPlanSets.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/Streaming/hasUnboundedSource.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -79,7 +78,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_STREAM;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
@@ -325,9 +323,6 @@ SetPtr FutureSetFromSubquery::get() const
 
 void FutureSetFromSubquery::setQueryPlan(std::unique_ptr<QueryPlan> source_)
 {
-    if (hasUnboundedSource(*source_))
-        throw Exception(ErrorCodes::ILLEGAL_STREAM, "Cannot build a set from a subquery over an unbounded STREAM");
-
     source = std::move(source_);
     set_and_key->set->setHeader(source->getCurrentHeader()->getColumnsWithTypeAndName());
 }
