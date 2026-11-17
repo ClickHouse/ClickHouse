@@ -384,8 +384,6 @@ void registerStorageKafka(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-
 # Kafka table engine
 
 <Tip>

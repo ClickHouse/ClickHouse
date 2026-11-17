@@ -1162,8 +1162,6 @@ void registerStorageHive(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # Hive table engine
 
 <CloudNotSupportedBadge/>
