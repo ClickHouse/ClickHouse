@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <optional>
 #include <shared_mutex>
@@ -399,9 +400,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
 
         CurrentThread::checkIfNotCancelled();
 
-        size_t chunk_end = i + cancellation_poll_interval;
-        if (chunk_end > rows)
-            chunk_end = rows;
+        const size_t chunk_end = std::min(i + cancellation_poll_interval, rows);
 
         /// For all rows of the chunk
         for (; i < chunk_end; ++i)
