@@ -3699,10 +3699,13 @@ public:
         /// arrayElementOrNull returns NULL where the index is out of range or the key is missing.
         const DataTypePtr nullable_type = array_element_or_null.getReturnTypeImpl({arguments[0].type, arguments[1].type});
 
-        /// arrayElement doesn't materialize const columns by itself, so do it before calling it directly.
-        const ColumnsWithTypeAndName element_arguments{
-            {arguments[0].column->convertToFullColumnIfConst(), arguments[0].type, arguments[0].name},
-            {arguments[1].column->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name}};
+        /// arrayElement handles a constant array (or map) with a full index column, and a full array with a constant index,
+        /// without copying the constant. Only the all-constant case is left to the default implementation for constants,
+        /// which is not used when calling it directly. In that case materialize the index, which is cheap,
+        /// but never the array, to avoid one copy of the whole array per row.
+        ColumnsWithTypeAndName element_arguments{arguments[0], arguments[1]};
+        if (isColumnConst(*arguments[0].column) && isColumnConst(*arguments[1].column))
+            element_arguments[1].column = arguments[1].column->convertToFullColumnIfConst();
 
         ColumnPtr nullable_column = array_element_or_null.executeImpl(element_arguments, nullable_type, input_rows_count);
         nullable_column = nullable_column->convertToFullColumnIfConst();
@@ -3710,18 +3713,30 @@ public:
         const auto & column_nullable = assert_cast<const ColumnNullable &>(*nullable_column);
         const auto & null_map = column_nullable.getNullMapData();
 
-        /// Bring both the elements and the default to the common result type.
-        const ColumnPtr elements = castColumn({column_nullable.getNestedColumnPtr(), removeNullable(nullable_type), ""}, result_type);
+        /// Bring the elements to the common result type. Only the present elements are converted:
+        /// an absent element holds a placeholder value that is not necessarily valid for the element type
+        /// (e.g. zero for an Enum without such a value), and its conversion could throw.
+        IColumn::Filter present(input_rows_count);
+        size_t num_present = 0;
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            present[row] = !null_map[row];
+            num_present += present[row];
+        }
+
+        const ColumnPtr present_column = column_nullable.getNestedColumn().filter(present, static_cast<ssize_t>(num_present));
+        const ColumnPtr present_elements = castColumn({present_column, removeNullable(nullable_type), ""}, result_type);
         const ColumnPtr defaults = castColumn({arguments[2].column->convertToFullColumnIfConst(), arguments[2].type, ""}, result_type);
 
         auto result = result_type->createColumn();
         result->reserve(input_rows_count);
+        size_t present_row = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             if (null_map[row])
                 result->insertFrom(*defaults, row);
             else
-                result->insertFrom(*elements, row);
+                result->insertFrom(*present_elements, present_row++);
         }
 
         return result;

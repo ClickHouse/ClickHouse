@@ -57,3 +57,18 @@ SELECT arrayElementOrDefault([1, 2], 9, 'x'); -- { serverError NO_COMMON_TYPE }
 -- The function must show up in system.functions (reading it also checks the docs are valid).
 SELECT 'system.functions';
 SELECT name, origin FROM system.functions WHERE name = 'arrayElementOrDefault';
+
+-- An absent element of an Enum type has no valid value, it must not be converted to the result type.
+SELECT 'enum element';
+SELECT arrayElementOrDefault(CAST(['a'] AS Array(Enum8('a' = 1))), 2, 'missing') AS v, toTypeName(v);
+SELECT arrayElementOrDefault(CAST(['a'] AS Array(Enum8('a' = 1))), 1, 'missing');
+SELECT arrayElementOrDefault(materialize(CAST(['a', 'b'] AS Array(Enum8('a' = 1, 'b' = 2)))), number, 'missing') FROM numbers(4) ORDER BY number;
+SELECT arrayElementOrDefault(map('k', CAST('a' AS Enum8('a' = 1))), 'x', 'missing');
+SELECT arrayElementOrDefault(map('k', CAST('a' AS Enum8('a' = 1))), 'k', 'missing');
+SELECT arrayElementOrDefault(materialize(map('k', CAST('a' AS Enum8('a' = 1)))), if(number = 0, 'k', 'x'), 'missing') FROM numbers(2) ORDER BY number;
+
+-- A constant array or map must not be copied for every row.
+SELECT 'constant container';
+SELECT sum(arrayElementOrDefault(range(toUInt64(100000)), number + 1, toUInt64(7))) FROM numbers(1000) SETTINGS max_memory_usage = 100000000;
+SELECT sum(arrayElementOrDefault(mapFromArrays(range(toUInt64(10000)), range(toUInt64(10000))), number, toUInt64(7))) FROM numbers(1000) SETTINGS max_memory_usage = 100000000;
+SELECT sum(arrayElementOrDefault(range(toUInt64(10)), number + 1, toUInt64(7))) FROM numbers(12);
