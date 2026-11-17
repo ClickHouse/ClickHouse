@@ -79,7 +79,13 @@ namespace Net
         /// Writes the queued bytes to the next BIO. Returns 1 when no bytes are queued any more,
         /// or -1 when a write fails, with the retry flags of the next BIO.
 
+        static constexpr size_t maxQueued = 64 * 1024;
+        /// The callers keep the queue within one record and a few control records. The limit does
+        /// not depend on that: a write over it fails the connection.
+
         void queueBytes(const char * data, size_t length);
+        /// Queues the bytes. Throws `SSLException` when the queue would go over `maxQueued`.
+
         void dropQueue();
 
         SocketImpl & socket;

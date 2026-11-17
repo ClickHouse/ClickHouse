@@ -2,6 +2,7 @@
 #include "Poco/Net/SocketImpl.h"
 #include "Poco/Net/SSLException.h"
 #include "Poco/Exception.h"
+#include "Poco/Format.h"
 
 #include <algorithm>
 #include <climits>
@@ -280,6 +281,10 @@ int NonBlockingFilterBIO::writeQueuedToNext(BIO* bio)
 
 void NonBlockingFilterBIO::queueBytes(const char* data, size_t length)
 {
+	/// Fails closed: a "retry write" result would leave OpenSSL with a pending write, after which
+	/// `SSL_read` is not allowed.
+	if (queue.size() - queueOffset + length > maxQueued)
+		throw SSLException(Poco::format("The TLS connection has more than %z encrypted bytes that the peer does not read", maxQueued));
 	if (queueOffset > 0)
 	{
 		queue.erase(0, queueOffset);
