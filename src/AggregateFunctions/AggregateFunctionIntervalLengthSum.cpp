@@ -178,7 +178,7 @@ private:
     }
 
 public:
-    String getName() const override { return "intervalLengthSum"; }
+    [[nodiscard]] String getName() const override { return "intervalLengthSum"; }
 
     explicit AggregateFunctionIntervalLengthSum(const DataTypes & arguments, const Array & parameters_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>(arguments, parameters_, createResultType())
@@ -194,11 +194,11 @@ public:
 
     /// `intervalLengthSum` accepts parameters but never reads them, so parameterized and parameterless
     /// states share one representation and stay Merge-/CAST-compatible.
-    Array getStateParameters() const override { return {}; }
+    [[nodiscard]] Array getStateParameters() const override { return {}; }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
-    AggregateFunctionPtr getOwnNullAdapter(
+    [[nodiscard]] AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function,
         const DataTypes & arguments,
         const Array & params,
