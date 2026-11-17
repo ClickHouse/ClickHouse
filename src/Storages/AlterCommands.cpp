@@ -2258,6 +2258,14 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
                     columns.rename(command.column_name, command.rename_to);
                 break;
             }
+            case AlterCommand::MODIFY_COLUMN:
+            {
+                /// A later subcolumn command, such as `MODIFY COLUMN IF EXISTS a.w CODEC(...)`,
+                /// resolves against this type. `validate` already does the same.
+                if (command.data_type && command.subcolumn_name.empty() && columns.has(command.column_name))
+                    columns.modify(command.column_name, [&](ColumnDescription & column) { column.type = command.data_type; });
+                break;
+            }
             default:
                 break;
         }
@@ -2656,7 +2664,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
-            if (all_columns.has(command.column_name) || (share_nested && all_columns.hasNested(command.column_name)))
+            /// `DROP COLUMN IF EXISTS n` is an exact-name no-op when only `n.*` exists.
+            /// `prepare` and `apply` keep those children; this snapshot has to keep them too.
+            const bool exact_if_exists_noop = command.if_exists && !all_columns.has(command.column_name);
+            if ((all_columns.has(command.column_name) || (share_nested && all_columns.hasNested(command.column_name)))
+                && !exact_if_exists_noop)
             {
                 /// `CLEAR` and `IN PARTITION` keep the column for later commands in this ALTER.
                 if (!command.clear && !command.partition)
@@ -2986,9 +2998,17 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
             && !(alter_cmd.if_exists && !alter_cmd.clear);
         if (nested_parent)
         {
+            /// An `ALIAS` or `EPHEMERAL` child is not stored. Emitting a mutation for it makes
+            /// `CLEAR COLUMN IF EXISTS n` fail on a `UNIQUE KEY` table when `n` has no physical member.
             for (const auto & column : metadata.columns.getNested(alter_cmd.column_name))
+            {
+                const auto kind = metadata.columns.get(column.name).default_desc.kind;
+                if (kind == ColumnDefaultKind::Alias || kind == ColumnDefaultKind::Ephemeral)
+                    continue;
+
                 result.push_back(mutationDropColumn(
                     column.name, alter_cmd.clear, alter_cmd.clear ? alter_cmd.partition : nullptr, max_parser_depth, max_parser_backtracks));
+            }
             alter_cmd.apply(metadata, context, share_nested_offsets);
             continue;
         }
