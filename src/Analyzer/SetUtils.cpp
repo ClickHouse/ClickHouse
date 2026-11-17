@@ -7,6 +7,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -15,7 +16,9 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertColumnToType.h>
+#include <Interpreters/convertFieldToType.h>
 
+#include <Common/DateLUTImpl.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -84,6 +87,65 @@ size_t getCompoundTypeDepth(const IDataType & type)
     return depth;
 }
 
+/// A `Date`/`Date32` element of a set can also be specified as a string containing a date and time,
+/// consistently with comparison operators (see `executeWithConstString` in `FunctionsComparison.h`):
+/// `d IN ('2026-01-01 00:00:00')` behaves the same as `d = '2026-01-01 00:00:00'`.
+/// The string is parsed as `DateTime64` with the scale 6 - it is enough for fractional seconds up to microseconds,
+/// and extra digits are ignored by parsing. `DateTime64` is used instead of `DateTime` because parsing
+/// of the latter clamps values outside the [1970, 2106] years range, while `DateTime64` covers
+/// the whole range of `Date32`. The default time zone is used, as for a `DateTime64` literal.
+///
+/// The parsed value can be equal to a value of the column type only if it is exactly the midnight of a date
+/// representable in that type; then the element is converted to that date. Any other value
+/// (e.g. `'2026-01-01 12:00:00'`) is excluded from the set, like other values that do not represent
+/// any possible value of the type of the filtered column (see `convertFieldToTypeCheckEnum`).
+std::optional<Field> convertDateAndTimeStringToDate(const Field & from_value, const IDataType & from_type, const IDataType & to_type)
+{
+    const auto datetime_type = std::make_shared<DataTypeDateTime64>(6);
+    Field converted_to_datetime = tryConvertFieldToType(from_value, *datetime_type, &from_type);
+
+    if (converted_to_datetime.isNull())
+    {
+        /// The string is not a date with a time either. Repeat the conversion to `Date`/`Date32` to report the original error.
+        Field result = convertFieldToType(from_value, to_type, &from_type, {}, /*strict=*/ true);
+        if (result.isNull())
+            return std::nullopt;
+        return result;
+    }
+
+    const Int64 ticks = converted_to_datetime.safeGet<DecimalField<DateTime64>>().getValue().value;
+    const Int64 ticks_per_second = datetime_type->getScaleMultiplier().value;
+
+    /// A value with a fractional second is not the midnight of any date.
+    if (ticks % ticks_per_second != 0)
+        return std::nullopt;
+
+    const Int64 seconds = ticks / ticks_per_second;
+    const DateLUTImpl & time_zone = datetime_type->getTimeZone();
+    const ExtendedDayNum day_num = time_zone.toDayNum(seconds);
+
+    /// A value inside a day (not its first time point) is not equal to any date.
+    if (time_zone.fromDayNum(day_num) != seconds)
+        return std::nullopt;
+
+    const Int32 day = day_num.toUnderType();
+
+    if (WhichDataType(to_type).isDate32())
+    {
+        /// A date outside the range of `Date32` is not equal to any value of the column.
+        if (day < -DAYNUM_OFFSET_EPOCH || day >= DATE_LUT_MAX_EXTEND_DAY_NUM)
+            return std::nullopt;
+
+        return Field(static_cast<Int64>(day));
+    }
+
+    /// A date outside the range of `Date` is not equal to any value of the column.
+    if (day < 0 || day > DATE_LUT_MAX_DAY_NUM)
+        return std::nullopt;
+
+    return Field(static_cast<UInt64>(day));
+}
+
 /// A single set member as a size-1 column of `type` (its value is at row 0).
 struct SetMember
 {
@@ -102,6 +164,29 @@ using SetMembers = std::vector<SetMember>;
 std::optional<ColumnPtr> convertColumnToTypeCheckEnum(
     const IColumn & member, const DataTypePtr & from_type, const DataTypePtr & to_type, bool forbid_unknown_enum_values)
 {
+    if (isString(removeNullable(from_type)) && !member.isNullAt(0))
+    {
+        const IDataType * to_type_not_null = to_type.get();
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(to_type_not_null))
+            to_type_not_null = nullable_type->getNestedType().get();
+
+        if (WhichDataType(*to_type_not_null).isDateOrDate32())
+        {
+            ColumnPtr result = tryConvertColumnToTypeOrNull(member, from_type, to_type, {}, /*strict=*/ true);
+            if (result)
+                return result;
+
+            /// The string cannot be parsed as `Date`/`Date32`, e.g. it contains a date with a time: '2026-01-01 00:00:00'.
+            auto date = convertDateAndTimeStringToDate(member[0], *from_type, *to_type_not_null);
+            if (!date)
+                return std::nullopt;
+
+            MutableColumnPtr date_column = to_type->createColumn();
+            date_column->insert(*date);
+            return ColumnPtr(std::move(date_column));
+        }
+    }
+
     try
     {
         ColumnPtr result = convertColumnToTypeOrNull(member, from_type, to_type, {}, /*strict=*/true);
