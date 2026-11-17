@@ -780,6 +780,13 @@ public:
         return projection_aliases_to_override;
     }
 
+    /// The names the projection columns have in this query, before the aliases from `setProjectionAliasesToOverride`
+    /// were applied to them. Empty if no aliases were applied. The `INTERPOLATE` items refer to the columns by these names.
+    [[nodiscard]] const Names & getProjectionColumnNamesBeforeOverride() const
+    {
+        return projection_column_names_before_override;
+    }
+
 protected:
     [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const override;
 
@@ -809,6 +816,8 @@ private:
     std::string cte_name;
     NamesAndTypes projection_columns;
     Names projection_aliases_to_override;
+    /// See `getProjectionColumnNamesBeforeOverride`.
+    Names projection_column_names_before_override;
     ContextMutablePtr context;
     SettingsChanges settings_changes;
     std::vector<String> default_settings;
