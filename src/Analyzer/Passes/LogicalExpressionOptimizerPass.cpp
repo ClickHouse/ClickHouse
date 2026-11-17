@@ -1431,14 +1431,20 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
     chassert(new_or_arguments.size() >= 2);
 
     /// The longest sequence of conditions that every disjunct starts with.
-    const auto & first_and_arguments = or_argument_nodes.front()->as<FunctionNode &>().getArguments().getNodes();
+    auto get_and_arguments = [&flattened_ands](const QueryTreeNodePtr & original_or_argument) -> const QueryTreeNodes &
+    {
+        auto it = flattened_ands.find(original_or_argument);
+        const auto & or_argument = it != flattened_ands.end() ? it->second : original_or_argument;
+        return or_argument->as<FunctionNode &>().getArguments().getNodes();
+    };
+    const auto & first_and_arguments = get_and_arguments(or_argument_nodes.front());
     QueryTreeNodePtrWithHashSet leading_exprs_set;
     for (size_t i = 0; i < first_and_arguments.size(); ++i)
     {
         const auto & leading_expr = keys(first_and_arguments[i]);
         bool starts_every_disjunct = std::ranges::all_of(or_argument_nodes, [&](const QueryTreeNodePtr & or_argument)
         {
-            const auto & and_arguments = or_argument->as<FunctionNode &>().getArguments().getNodes();
+            const auto & and_arguments = get_and_arguments(or_argument);
             return i < and_arguments.size() && keys(and_arguments[i]) == leading_expr;
         });
         if (!starts_every_disjunct)
