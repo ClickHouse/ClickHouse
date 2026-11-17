@@ -15,6 +15,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -478,8 +479,9 @@ static std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponseImpl(
     {
         readHTTPResponseHeader(session);
     }
-    catch (const Poco::Exception &)
+    catch (const Poco::Exception & e)
     {
+        const Poco::Net::HTTPHeaderLimits limits = session.responseParser().limits();
         /// Same cleanup as the `Poco::Net::HTTPClientSession::receiveResponse` this replaces: a
         /// half-parsed response header leaves the socket at an unknown offset, so the session must
         /// not be kept alive for a retry. Callers that reuse one session, such as `HTTPAuthClient`,
@@ -487,6 +489,14 @@ static std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponseImpl(
         session.reset();
         if (const auto * network_exception = session.networkException())
             network_exception->rethrow();
+        /// The peer sends the same header again, so this is not a network error, and the retry
+        /// loops which retry only network errors give up at once.
+        if (const auto * limit_exception = dynamic_cast<const Poco::Net::HTTPHeaderLimitException *>(&e))
+            throw Exception(
+                ErrorCodes::LIMIT_EXCEEDED,
+                "The header of the HTTP response exceeds a limit: {}. The limits are {} fields, {} bytes for a field name and {} bytes "
+                "for a field value, see the settings `http_max_fields`, `http_max_field_name_size` and `http_max_field_value_size`",
+                limit_exception->message(), limits.fields, limits.name_length, limits.value_length);
         throw;
     }
     copyHTTPResponseHeader(session.responseParser().response(), response);
