@@ -625,66 +625,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
     global_ctx->virtual_columns = global_ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
 
-    ctx->need_remove_expired_values = false;
-    ctx->force_ttl = false;
-
-    /// The TTL bound of a column is unknown for a part that stores it without TTL info,
-    /// so the merged part must not take the bound of the other parts for that column.
-    NameSet columns_without_ttl_info;
-    if (global_ctx->metadata_snapshot->hasAnyColumnTTL())
-    {
-        for (const auto & [column, _] : global_ctx->metadata_snapshot->getColumnTTLs())
-        {
-            if (std::ranges::any_of(global_ctx->future_part->parts, [&](const auto & part)
-                { return !part->isEmpty() && !part->ttl_infos.columns_ttl.contains(column) && part->getColumns().contains(column); }))
-                columns_without_ttl_info.insert(column);
-        }
-    }
-
-    for (const auto & part : global_ctx->future_part->parts)
-    {
-        if (columns_without_ttl_info.empty())
-        {
-            global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
-        }
-        else
-        {
-            auto part_ttl_infos = part->ttl_infos;
-            for (const auto & column : columns_without_ttl_info)
-                part_ttl_infos.columns_ttl.erase(column);
-            global_ctx->new_data_part->ttl_infos.update(part_ttl_infos);
-        }
-
-        if (global_ctx->metadata_snapshot->hasAnyTTL() && !part->checkAllTTLCalculated(global_ctx->metadata_snapshot))
-        {
-            LOG_INFO(ctx->log, "Some TTL values were not calculated for part {}. Will calculate them forcefully during merge.", part->name);
-            ctx->need_remove_expired_values = true;
-            ctx->force_ttl = true;
-        }
-    }
-
-    /// A part with rows but without a calculated rows TTL adds nothing to the aggregated bound,
-    /// so that bound must not decide that all merged rows have expired.
-    if (global_ctx->metadata_snapshot->hasRowsTTL()
-        && std::ranges::any_of(global_ctx->future_part->parts, [](const auto & part)
-            { return !part->isEmpty() && part->ttl_infos.table_ttl.min == 0; }))
-        global_ctx->new_data_part->ttl_infos.table_ttl = {};
-
-    const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
-    if (global_ctx->metadata_snapshot->hasAnyTTL() && local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
-        ctx->need_remove_expired_values = true;
-
-    const bool has_due_ttl = ctx->need_remove_expired_values;
-
-    if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
-    {
-        LOG_INFO(ctx->log, "Part {} has values with expired TTL, but merges with TTL are cancelled.", global_ctx->new_data_part->name);
-        ctx->need_remove_expired_values = false;
-    }
-
-    global_ctx->merge_list_element_ptr->is_removing_expired_values.store(
-        ctx->need_remove_expired_values, std::memory_order_relaxed);
-
     const auto & patch_parts = global_ctx->future_part->patch_parts;
 
     /// Snapshot of pending mutations for the source parts, fetched once and reused for
@@ -782,6 +722,91 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         if (state.has_different_types || state.parts_with_marker != non_empty_parts)
             missing_columns_to_materialize.insert(name);
     }
+
+    ctx->need_remove_expired_values = false;
+    ctx->force_ttl = false;
+
+    const auto & parts = global_ctx->future_part->parts;
+    const bool share_nested_offsets = (*merge_tree_settings)[MergeTreeSetting::share_nested_offsets];
+
+    /// The TTL infos of the source parts, keyed by the current column names.
+    std::vector<IMergeTreeDataPart::TTLInfos> source_ttl_infos;
+    source_ttl_infos.reserve(parts.size());
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+        source_ttl_infos.push_back(parts[i]->ttl_infos);
+        source_ttl_infos.back().applyColumnRenames(*global_ctx->alter_conversions[i]);
+    }
+
+    /// Whether the merge reads the column with the current name `column` from the data of the `i`-th part.
+    auto stores_column = [&](size_t i, const String & column)
+    {
+        const auto & conversions = *global_ctx->alter_conversions[i];
+        const String name_in_part = conversions.isColumnRenamed(column) ? conversions.getColumnOldName(column) : column;
+        return parts[i]->getColumns().contains(name_in_part) && !conversions.isColumnDropped(name_in_part, share_nested_offsets);
+    };
+
+    /// The TTL bound of a column is unknown for a part that stores it without TTL info,
+    /// so the merged part must not take the bound of the other parts for that column.
+    NameSet columns_without_ttl_info;
+    if (global_ctx->metadata_snapshot->hasAnyColumnTTL())
+    {
+        for (const auto & [column, _] : global_ctx->metadata_snapshot->getColumnTTLs())
+        {
+            for (size_t i = 0; i < parts.size(); ++i)
+            {
+                if (!parts[i]->isEmpty() && !source_ttl_infos[i].columns_ttl.contains(column) && stores_column(i, column))
+                {
+                    columns_without_ttl_info.insert(column);
+                    break;
+                }
+            }
+        }
+    }
+
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+        const auto & part = parts[i];
+        auto & part_ttl_infos = source_ttl_infos[i];
+        for (const auto & column : columns_without_ttl_info)
+            part_ttl_infos.columns_ttl.erase(column);
+        global_ctx->new_data_part->ttl_infos.update(part_ttl_infos);
+
+        if (global_ctx->metadata_snapshot->hasAnyTTL() && !part->checkAllTTLCalculated(global_ctx->metadata_snapshot))
+        {
+            LOG_INFO(ctx->log, "Some TTL values were not calculated for part {}. Will calculate them forcefully during merge.", part->name);
+            ctx->need_remove_expired_values = true;
+            ctx->force_ttl = true;
+        }
+    }
+
+    if (!columns_without_ttl_info.empty())
+    {
+        ctx->need_remove_expired_values = true;
+        ctx->force_ttl = true;
+    }
+
+    /// A part with rows but without a calculated rows TTL adds nothing to the aggregated bound,
+    /// so that bound must not decide that all merged rows have expired.
+    if (global_ctx->metadata_snapshot->hasRowsTTL()
+        && std::ranges::any_of(global_ctx->future_part->parts, [](const auto & part)
+            { return !part->isEmpty() && part->ttl_infos.table_ttl.min == 0; }))
+        global_ctx->new_data_part->ttl_infos.table_ttl = {};
+
+    const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
+    if (global_ctx->metadata_snapshot->hasAnyTTL() && local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
+        ctx->need_remove_expired_values = true;
+
+    const bool has_due_ttl = ctx->need_remove_expired_values;
+
+    if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
+    {
+        LOG_INFO(ctx->log, "Part {} has values with expired TTL, but merges with TTL are cancelled.", global_ctx->new_data_part->name);
+        ctx->need_remove_expired_values = false;
+    }
+
+    global_ctx->merge_list_element_ptr->is_removing_expired_values.store(
+        ctx->need_remove_expired_values, std::memory_order_relaxed);
 
     /// Determine columns that are absent in all source parts—either fully expired or never written—and mark them as
     /// expired to avoid unnecessary reads or writes during merges.

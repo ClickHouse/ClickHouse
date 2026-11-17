@@ -2629,6 +2629,7 @@ static void finalizeMutatedPart(
     MergeTreeData::MutableDataPartPtr new_data_part,
     const IMergedBlockOutputStream::GatheredData & all_gathered_data,
     ExecuteTTLType execute_ttl_type,
+    bool ttl_infos_renamed,
     const CompressionCodecPtr & codec,
     ContextPtr context,
     StorageMetadataPtr metadata_snapshot,
@@ -2647,7 +2648,7 @@ static void finalizeMutatedPart(
         written_files.push_back(std::move(out));
     }
 
-    if (execute_ttl_type != ExecuteTTLType::NONE)
+    if (execute_ttl_type != ExecuteTTLType::NONE || ttl_infos_renamed)
     {
         /// Write a file with ttl infos in json format.
         auto out_ttl = new_data_part->getDataPartStorage().writeFile("ttl.txt", 4096, context->getWriteSettings());
@@ -2956,6 +2957,7 @@ struct MutationContext
     bool need_sync{};
     bool changes_storage_type{};
     ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
+    bool ttl_infos_renamed = false;
 
     MergeTreeTransactionPtr txn;
 
@@ -4074,7 +4076,7 @@ private:
                 ctx->statistics_to_build.emplace(stat_name, it->second);
         }
 
-        if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
+        if (ctx->execute_ttl_type != ExecuteTTLType::NONE || ctx->ttl_infos_renamed)
             ctx->files_to_skip.insert("ttl.txt");
 
         ctx->new_data_part->getDataPartStorage().createDirectories();
@@ -4498,6 +4500,7 @@ private:
             ctx->new_data_part,
             ctx->all_gathered_data,
             ctx->execute_ttl_type,
+            ctx->ttl_infos_renamed,
             ctx->compression_codec,
             ctx->context,
             ctx->metadata_snapshot,
@@ -5421,6 +5424,7 @@ bool MutateTask::prepare()
     ctx->new_data_part->uuid = ctx->future_part->uuid;
     ctx->new_data_part->is_temp = true;
     ctx->new_data_part->ttl_infos = ctx->source_part->ttl_infos;
+    ctx->ttl_infos_renamed = ctx->new_data_part->ttl_infos.applyColumnRenames(*alter_conversions);
 
     /// Keep the source granularity properties while the part type survives the mutation (e.g. a
     /// legacy part with non-adaptive granularity must stay non-adaptive). When the mutation
