@@ -14,7 +14,7 @@ USER_RESPONSES = {
 }
 
 # Behaviour of the `/directory` endpoint (used by the `http` user directory tests), by user name.
-# `None` roles/settings mean "empty body". `tenant_user` depends on the `X-Tenant` header.
+# A `str` value is sent verbatim as the 200 body. `None` roles/settings mean "empty body". `tenant_user` depends on the `X-Tenant` header.
 DIRECTORY_USERS = {
     "alice": {"settings": {"max_threads": "3"}, "roles": ["r_reader"]},
     "plain": {},
@@ -26,6 +26,12 @@ DIRECTORY_USERS = {
     "colon": {},
     "ro_user": {"roles": ["r_ro"]},
     "prof_user": {"roles": ["r_prof"]},
+    "bad_json": '{"roles": [',
+    "not_object": '["r_reader"]',
+    "roles_not_array": {"roles": "r_reader"},
+    "role_not_string": {"roles": [1]},
+    "settings_not_object": {"settings": ["readonly"]},
+    "bad_value": {"settings": {"max_threads": "abc"}},
     "bad_setting": {"settings": {"nonexistent_setting": "UInt64_1"}, "roles": ["r_reader"]},
     "default_setting": {"settings": {"readonly": "0"}, "roles": ["r_reader"]},
     "constrained": {"settings": {"max_network_bandwidth": "2000000"}, "roles": ["r_reader"]},
@@ -98,7 +104,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         elif isinstance(response, int):
             self.reply(response)
         else:
-            self.reply(http.HTTPStatus.OK, json.dumps(response))
+            self.reply(http.HTTPStatus.OK, response if isinstance(response, str) else json.dumps(response))
 
     def do_GET(self):
         if self.path.startswith("/count"):

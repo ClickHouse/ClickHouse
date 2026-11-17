@@ -209,6 +209,17 @@ def test_directory_role_policy(started_cluster: ClickHouseCluster):
     assert node_dir1.query("SELECT count() FROM system.users WHERE name = 'bad_setting'") == "0\n"
 
 
+def test_directory_malformed_response(started_cluster: ClickHouseCluster):
+    # Strictly rejected 200 responses: the login fails, nothing is materialized, cached or retried.
+    users = ["bad_json", "not_object", "roles_not_array", "role_not_string", "settings_not_object", "bad_value"]
+    for user in users:
+        for _ in range(2):
+            assert "Authentication failed" in node_dir1.query_and_get_error("SELECT 1", user=user, password=GOOD_PASSWORD)
+        assert directory_count(user) == 2
+    names = ", ".join(f"'{user}'" for user in users)
+    assert node_dir1.query(f"SELECT count() FROM system.users WHERE name IN ({names})") == "0\n"
+
+
 def test_directory_fall_through(started_cluster: ClickHouseCluster):
     node = node_dir1
     node.query("CREATE USER local_u IDENTIFIED BY 'pw'")
