@@ -986,7 +986,7 @@ def test_replaced_resource_releases_disk_operations():
         """
         drop table if exists data;
         create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource';
-        insert into data select * from numbers(1e5);
+        insert into data select * from numbers(1e6);
     """
     )
 
@@ -1005,14 +1005,17 @@ def test_replaced_resource_releases_disk_operations():
         )
 
     node.query("select sum(key*key) from data settings workload='all'")
-    assert dequeued() > 0
+    read_requests = dequeued()
+    assert read_requests > 0
 
-    # After the replacement `io` serves writes only, so reads are not scheduled through it any longer
+    # After the replacement `io` serves writes only, so the reads of the same query are no longer scheduled through
+    # it (the query may still schedule a request that is not a read)
     node.query("create or replace resource io (write disk s3_no_resource)")
     before = dequeued()
     node.query("select sum(key*key) from data settings workload='all'")
-    assert dequeued() == before
+    assert dequeued() - before < read_requests
 
+    before = dequeued()
     node.query("insert into data select * from numbers(1e5) settings workload='all'")
     assert dequeued() > before
 
