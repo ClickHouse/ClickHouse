@@ -33,10 +33,6 @@ ACCESS_DENIED
 ACCESS_DENIED
 
 0
---- RemoteSecure database engine
-ACCESS_DENIED
-
-0
 --- Remote database engine over another Remote database
 
 0
@@ -59,8 +55,6 @@ DNS_ERROR
 DNS_ERROR
 DNS_ERROR
 --- with grants
-secret
-1
 secret
 1
 secret

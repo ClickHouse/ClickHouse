@@ -1,0 +1,8 @@
+--- without grants
+ACCESS_DENIED
+
+0
+--- with grants
+secret
+secret
+1
