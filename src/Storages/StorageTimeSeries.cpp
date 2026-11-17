@@ -985,8 +985,6 @@ void registerStorageTimeSeries(StorageFactory & factory)
     },
     Documentation{
         .description = String{R"DOCS_MD(
-import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
-
 # TimeSeries table engine
 
 <PrivatePreviewBadge/>
