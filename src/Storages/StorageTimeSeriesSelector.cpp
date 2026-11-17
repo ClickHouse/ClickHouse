@@ -366,14 +366,15 @@ namespace
 
     /// Makes a regular expression of a PromQL matcher match only whole values, as Prometheus does.
     /// Prometheus wraps the regex as `^(?:...)$`, but here the group is added only when the regex has an alternation
-    /// at the top level: a leading group stops `extractFixedPrefixFromRegularExpression`, so `{__name__=~"node_.*"}`
-    /// or `{__name__=~"^(node_foo|node_bar)$"}` would lose the primary key on `metric_name`.
+    /// or an inline multiline flag at the top level: a leading group stops `extractFixedPrefixFromRegularExpression`,
+    /// so `{__name__=~"node_.*"}` or `{__name__=~"^(node_foo|node_bar)$"}` would lose the primary key on `metric_name`.
     String anchorRegex(const String & regex)
     {
         size_t depth = 0;
         bool in_class = false;
         bool in_quote = false;
         bool top_level_alternation = false;
+        bool top_level_multiline = false;
         bool ends_with_anchor = false;
         for (size_t pos = 0; pos < regex.size(); ++pos)
         {
@@ -398,6 +399,13 @@ namespace
             {
                 if (c == ']')
                     in_class = false;
+                else if (c == '[' && pos + 1 < regex.size() && regex[pos + 1] == ':')
+                {
+                    /// A POSIX named class such as `[:alpha:]` is a part of the enclosing class, its `]` does not close it.
+                    /// RE2 treats `[:` without a following `:]` as literal characters.
+                    if (size_t end_of_named_class = regex.find(":]", pos + 2); end_of_named_class != String::npos)
+                        pos = end_of_named_class + 1;
+                }
             }
             else if (c == '[')
             {
@@ -409,7 +417,29 @@ namespace
                     ++pos;
             }
             else if (c == '(')
+            {
+                /// An inline flag group like `(?m)` at the top level would also apply to the `$` appended after the regex,
+                /// and in the multiline mode `$` matches before every newline, so the regex must be wrapped into a group.
+                if (depth == 0 && pos + 1 < regex.size() && regex[pos + 1] == '?')
+                {
+                    bool negated = false;
+                    bool multiline = false;
+                    size_t flag_pos = pos + 2;
+                    for (; flag_pos < regex.size(); ++flag_pos)
+                    {
+                        char flag = regex[flag_pos];
+                        if (flag == '-')
+                            negated = true;
+                        else if (flag == 'm')
+                            multiline = !negated;
+                        else if (flag != 'i' && flag != 's' && flag != 'U')
+                            break;
+                    }
+                    if (multiline && flag_pos < regex.size() && regex[flag_pos] == ')')
+                        top_level_multiline = true;
+                }
                 ++depth;
+            }
             else if (c == ')')
             {
                 if (depth > 0)
@@ -426,7 +456,7 @@ namespace
         if (in_quote)
             res += "\\E";
 
-        if (top_level_alternation)
+        if (top_level_alternation || top_level_multiline)
             return "^(?:" + res + ")$";
 
         if (!res.starts_with('^'))
