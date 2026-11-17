@@ -1,11 +1,13 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <Core/Defines.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Formats/ColumnNameMaps.h>
 #include <DataTypes/IDataType.h>
 #include <IO/CompressionMethod.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
+#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <generated/parquet_types.h>
 #include <Common/PODArray.h>
 
@@ -29,6 +31,7 @@ struct WriteOptions
     bool output_datetime_as_uint32 = false;
     bool output_date_as_uint16 = false;
     bool output_enum_as_byte_array = false;
+    VariantSettings variant_settings;
 
     /// Note: the meaning of some compression methods here is different from
     /// wrapReadBufferWithCompressionMethod:
