@@ -76,6 +76,11 @@ GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO pg_self_${CLICKHOUSE_DATABASE};
 CREATE TABLE t_pg (id Nullable(Int64), v Nullable(String))
     ENGINE = PostgreSQL('localhost:${CLICKHOUSE_PORT_POSTGRESQL}', '${CLICKHOUSE_DATABASE}', 't_l', 'pg_self_${CLICKHOUSE_DATABASE}', 'pgpass');
 CREATE TABLE m_pg (id Nullable(Int64), v Nullable(String)) ENGINE = Merge(currentDatabase(), '^t_(l|pg)\$');
+CREATE TABLE t_q (id Nullable(Int64), v Nullable(String)) ENGINE = SQLite('${DB_PATH}', query('SELECT id, v FROM src'));
+CREATE TABLE m_s (id Nullable(Int64), v Nullable(String)) ENGINE = Merge(currentDatabase(), '^t_s\$');
+DROP USER IF EXISTS strict_${CLICKHOUSE_DATABASE};
+CREATE USER strict_${CLICKHOUSE_DATABASE} IDENTIFIED WITH plaintext_password BY 'strictpass' SETTINGS external_table_strict_query = 1;
+GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO strict_${CLICKHOUSE_DATABASE};
 "
 
 echo 'MergeTree and MySQL:'
@@ -101,4 +106,26 @@ SELECT id, v FROM remote('127.0.0.2', currentDatabase(), t_s) WHERE v LIKE 's%'
 SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0, external_table_strict_query = 1;
 " 2>&1 | grep -c 'INCORRECT_QUERY'
 
+# Strict mode on the initiator sends the query text, so the filter is pushed down.
+echo 'Serialized query plan, strict mode, a filter SQLite evaluates:'
+${CLICKHOUSE_CLIENT} --query "
+SELECT id, v FROM remote('127.0.0.2', currentDatabase(), t_s) WHERE id = 5
+SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0, external_table_strict_query = 1;
+"
+
+echo 'Serialized query plan, strict mode of the remote user:'
+for t in t_s t_q m_s; do
+    ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "
+    SELECT id, v FROM remote('127.0.0.2', currentDatabase(), $t, 'strict_${CLICKHOUSE_DATABASE}', 'strictpass') WHERE v LIKE 's%'
+    SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0;
+    " 2>&1 | grep -c 'INCORRECT_QUERY'
+done
+
+echo 'Serialized query plan, strict mode of the remote user, no filter:'
+${CLICKHOUSE_CLIENT} --query "
+SELECT id, v FROM remote('127.0.0.2', currentDatabase(), m_s, 'strict_${CLICKHOUSE_DATABASE}', 'strictpass') ORDER BY id
+SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0;
+"
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS pg_self_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS strict_${CLICKHOUSE_DATABASE}"

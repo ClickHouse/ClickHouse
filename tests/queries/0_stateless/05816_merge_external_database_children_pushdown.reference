@@ -19,3 +19,13 @@ Serialized query plan:
 5	s5
 Serialized query plan, strict mode:
 1
+Serialized query plan, strict mode, a filter SQLite evaluates:
+5	s5
+Serialized query plan, strict mode of the remote user:
+1
+1
+1
+Serialized query plan, strict mode of the remote user, no filter:
+5	s5
+6	s6
+7	s7

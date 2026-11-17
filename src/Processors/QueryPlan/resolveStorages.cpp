@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/Sources/NullSource.h>
 
@@ -123,7 +124,8 @@ static ASTPtr wrapWithUnion(ASTPtr select)
     return select_with_union;
 }
 
-static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const ContextPtr & context)
+static QueryPlanResourceHolder replaceReadingFromTable(
+    QueryPlan::Node & node, QueryPlan::Nodes & nodes, const ContextPtr & context, bool filtered_by_plan)
 {
     const auto * reading_from_table = typeid_cast<const ReadFromTableStep *>(node.step.get());
     const auto * reading_from_table_function = typeid_cast<const ReadFromTableFunctionStep *>(node.step.get());
@@ -260,9 +262,16 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     {
         SelectQueryOptions options(QueryProcessingStage::FetchColumns);
         options.ignore_rename_columns = true;
-        InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), context, options);
+        ContextPtr read_context = context;
+        if (filtered_by_plan)
+        {
+            auto filtered_context = Context::createCopy(context);
+            filtered_context->setReadFilteredByQueryPlan();
+            read_context = std::move(filtered_context);
+        }
+        InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), read_context, options);
         reading_plan = std::move(interpreter).extractQueryPlan();
-        reading_plan.addInterpreterContext(context);
+        reading_plan.addInterpreterContext(read_context);
     }
     else
     {
@@ -328,11 +337,12 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
 void QueryPlan::resolveStorages(const ContextPtr & context)
 {
-    StackWithMemoryTracking<QueryPlan::Node *> stack;
-    stack.push(getRootNode());
+    /// A node and whether a filter step above it filters what it reads.
+    StackWithMemoryTracking<std::pair<QueryPlan::Node *, bool>> stack;
+    stack.push({getRootNode(), false});
     while (!stack.empty())
     {
-        auto * node = stack.top();
+        auto [node, filtered] = stack.top();
         stack.pop();
 
         if (const auto * delayed_creating_sets = typeid_cast<const DelayedCreatingSetsStep *>(node->step.get()))
@@ -347,11 +357,12 @@ void QueryPlan::resolveStorages(const ContextPtr & context)
             }
         }
 
+        filtered = filtered || typeid_cast<const FilterStep *>(node->step.get());
         for (auto * child : node->children)
-            stack.push(child);
+            stack.push({child, filtered});
 
         if (node->children.empty())
-            addResources(replaceReadingFromTable(*node, nodes, context));
+            addResources(replaceReadingFromTable(*node, nodes, context, filtered));
     }
 }
 

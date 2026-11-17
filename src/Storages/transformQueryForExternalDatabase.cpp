@@ -1247,6 +1247,15 @@ bool hasLocalFilterAppliedBeforeLimit(const SelectQueryInfo & query_info, const 
     return false;
 }
 
+void rejectReadFilteredByQueryPlanIfStrict(const ContextPtr & context)
+{
+    if (context->getSettingsRef()[Setting::external_table_strict_query] && context->isReadFilteredByQueryPlan())
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "A query received as a serialized query plan does not push its filters down to the external database "
+            "(and external_table_strict_query=true). Disable serialize_query_plan or external_table_strict_query");
+}
+
 }
 
 String transformQueryForExternalDatabase(
@@ -1265,6 +1274,8 @@ String transformQueryForExternalDatabase(
     bool require_dialect_neutral_literals,
     bool allow_limit_push_down)
 {
+    rejectReadFilteredByQueryPlanIfStrict(context);
+
     allow_limit_push_down = allow_limit_push_down && !hasLocalFilterAppliedBeforeLimit(query_info, context);
 
     if (!query_info.syntax_analyzer_result)
@@ -1326,6 +1337,8 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
 {
     if (!context->getSettingsRef()[Setting::external_table_strict_query])
         return;
+
+    rejectReadFilteredByQueryPlanIfStrict(context);
 
     /// Reconstruct the outer query the same way `transformQueryForExternalDatabase` does, and check whether it
     /// carries a filter on the source. For a query-backed source the user's query is passed to the external
