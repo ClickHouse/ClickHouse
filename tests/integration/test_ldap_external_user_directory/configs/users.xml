@@ -8,4 +8,7 @@
             <readonly>0</readonly>
         </common_user>
     </users>
+    <roles>
+        <ldap.common.role/>
+    </roles>
 </clickhouse>

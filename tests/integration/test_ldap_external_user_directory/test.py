@@ -251,3 +251,12 @@ def test_remote_query_user_does_not_exist_locally(ldap_cluster):
 
     instance2.query("DROP USER IF EXISTS non_local", user="common_user", password="qwerty")
     instance2.query("DROP TABLE IF EXISTS test_table SYNC", user="common_user", password="qwerty")
+
+
+def test_common_role_with_dot_in_name():
+    # The role `ldap.common.role` is defined in `users.xml` and assigned to all LDAP users on instance2
+    # with `<roles><ldap.common.role/></roles>`. Both names come from config keys with escaped dots,
+    # and both must be un-escaped to match.
+    assert instance2.query(
+        "SELECT role_name FROM system.current_roles", user="janedoe", password="qwerty"
+    ) == TSV([["ldap.common.role"]])

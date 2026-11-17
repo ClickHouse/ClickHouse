@@ -10,6 +10,10 @@
     <user_directories>
         <ldap>
             <server>openldap</server>
+            <roles>
+                <!-- A common role with a dot in its name, defined in `users.xml`. -->
+                <ldap.common.role/>
+            </roles>
         </ldap>
     </user_directories>
 </clickhouse>
