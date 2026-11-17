@@ -220,6 +220,7 @@ namespace Setting
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_fixed_and_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_parallel_single_level_merge;
+    extern const SettingsBool enable_parallel_single_level_merge_by_index;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
@@ -2974,6 +2975,7 @@ static Aggregator::Params getAggregatorParams(
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
         settings[Setting::serialize_string_in_memory_with_zero_byte],
         settings[Setting::enable_parallel_single_level_merge],
+        settings[Setting::enable_parallel_single_level_merge_by_index],
         settings[Setting::enable_packed_string_keys_in_aggregation],
         settings[Setting::enable_fixed_and_packed_string_keys_in_aggregation],
         settings[Setting::enable_adaptive_aggregator],

@@ -168,6 +168,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
         settings[Setting::serialize_string_in_memory_with_zero_byte],
         /*enable_parallel_single_level_merge_=*/false,
+        /*enable_parallel_single_level_merge_by_index_=*/true,
         settings[Setting::enable_packed_string_keys_in_aggregation],
         settings[Setting::enable_fixed_and_packed_string_keys_in_aggregation],
         /* enable_adaptive_aggregator */ false,

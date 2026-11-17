@@ -212,6 +212,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AG
 /// First query-plan serialization version that knows the `adaptive_aggregator_disable_thaw` plan setting
 /// name. Gates writing it in `AggregatingStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR_DISABLE_THAW = 21;
+/// First query-plan serialization version that knows the `enable_parallel_single_level_merge_by_index` plan
+/// setting name. Gates writing it in `AggregatingStep::serializeSettings`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_SINGLE_LEVEL_MERGE_BY_INDEX = 21;
 /// First query-plan serialization version that knows the `enable_fixed_and_packed_string_keys_in_aggregation`
 /// plan setting name. Gates writing it in the `serializeSettings` of the aggregation steps.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FIXED_AND_PACKED_STRING_KEYS_SETTING = 21;

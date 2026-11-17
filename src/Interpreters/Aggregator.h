@@ -244,6 +244,11 @@ public:
         /// instead of the serial merge.
         bool enable_parallel_single_level_merge = false;
 
+        /// Let the parallel single-level merge read the tables through their cell indexes when every table
+        /// has one (see `Aggregator::mergesByCellIndex`), instead of scanning every cell of every table for
+        /// each partition.
+        bool enable_parallel_single_level_merge_by_index = true;
+
         bool serialize_string_with_zero_byte = false;
 
         struct TopKParams
@@ -386,6 +391,7 @@ public:
             bool enable_producing_buckets_out_of_order_in_aggregation_,
             bool serialize_string_with_zero_byte_,
             bool enable_parallel_single_level_merge_,
+            bool enable_parallel_single_level_merge_by_index_,
             bool enable_packed_string_keys_,
             bool enable_fixed_and_packed_string_keys_,
             bool enable_adaptive_aggregator_,
@@ -677,8 +683,9 @@ public:
     using ClaimMergePartition = std::function<std::optional<size_t>(size_t rows)>;
 
     /// Whether the merge by partitions of `tables` reads them through their cell indexes (see
-    /// `AggregatedDataVariants::indexCells`), which every one of them has then.
-    static bool mergesByCellIndex(const ManyAggregatedDataVariants & tables);
+    /// `AggregatedDataVariants::indexCells`): when every one of them has one, unless
+    /// `enable_parallel_single_level_merge_by_index` is off.
+    bool mergesByCellIndex(const ManyAggregatedDataVariants & tables) const;
 
     /// Merges partition `first_partition` of `num_partitions`, then the partitions that `claim` hands out, out of every
     /// table of `non_empty_data` into one fresh table, and converts it to one output chunk. The partitions hold disjoint
@@ -691,9 +698,9 @@ public:
     /// double-destroy. The NULL key of the single-key nullable methods belongs to partition 0. `destination_size_hint`
     /// pre-sizes the destination table; the caller derives it from the source tables before any partition starts, since
     /// once the workers run, the source tables are mutated concurrently and may not be read outside the partitions that
-    /// a worker claimed. `parallel_merge` tells when the states of one group of indexed tables merge together on the
-    /// pool. The tables walked source by source defer their large pairs of states to the pool (see
-    /// `mergeDeferredLargeStates`).
+    /// a worker claimed. In the merge by cell index (see `mergesByCellIndex`), `parallel_merge` tells when the states
+    /// of one group merge together on the pool. The tables walked source by source defer their large pairs of states
+    /// to the pool (see `mergeDeferredLargeStates`).
     AggregatedChunk mergeSingleLevelPartitionsAndConvertToChunk(
         ManyAggregatedDataVariants & non_empty_data,
         bool final,
@@ -1780,7 +1787,7 @@ private:
     void mergeSingleLevelPartitionsImpl(
         Method & dst_method,
         const std::vector<AggregatedDataVariants *> & sources,
-        bool indexed,
+        bool merge_by_cell_index,
         Arena * arena,
         size_t num_partitions,
         size_t first_partition,
