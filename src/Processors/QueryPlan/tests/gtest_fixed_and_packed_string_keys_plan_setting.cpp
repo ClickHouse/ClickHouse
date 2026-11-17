@@ -170,6 +170,8 @@ TEST(FixedAndPackedStringKeysPlanSetting, NotEmittedWhenDisabled)
     {
         EXPECT_FALSE(aggregatingStepCarriesSetting(header, {"k", "s"}, false, version));
         EXPECT_FALSE(mergingAggregatedStepCarriesSetting(header, {"k", "s"}, false, version));
+        EXPECT_FALSE(rollupLikeStepCarriesSetting<RollupStep>(header, {"k", "s"}, false, version));
+        EXPECT_FALSE(rollupLikeStepCarriesSetting<CubeStep>(header, {"k", "s"}, false, version));
     }
 }
 
@@ -184,6 +186,8 @@ TEST(FixedAndPackedStringKeysPlanSetting, NotEmittedWhenTheMethodIsUnreachable)
         /// A lone `String` key, which has the packed method.
         EXPECT_FALSE(aggregatingStepCarriesSetting(header, {"s"}, true, version));
         EXPECT_FALSE(mergingAggregatedStepCarriesSetting(header, {"s"}, true, version));
+        EXPECT_FALSE(rollupLikeStepCarriesSetting<RollupStep>(header, {"s"}, true, version));
+        EXPECT_FALSE(rollupLikeStepCarriesSetting<CubeStep>(header, {"s"}, true, version));
     }
 }
 
@@ -208,14 +212,10 @@ TEST(FixedAndPackedStringKeysPlanSetting, EmittedTowardsOldPeersOnlyWhereTheMerg
 TEST(FixedAndPackedStringKeysPlanSetting, RollupAndCubeCarryTheValueTowardsPeersThatKnowIt)
 {
     const Block header = numberAndString();
-    for (const bool enabled : {true, false})
-    {
-        EXPECT_TRUE(rollupLikeStepCarriesSetting<RollupStep>(header, {"k", "s"}, enabled, current_version));
-        EXPECT_TRUE(rollupLikeStepCarriesSetting<CubeStep>(header, {"k", "s"}, enabled, current_version));
+    EXPECT_TRUE(rollupLikeStepCarriesSetting<RollupStep>(header, {"k", "s"}, true, current_version));
+    EXPECT_TRUE(rollupLikeStepCarriesSetting<CubeStep>(header, {"k", "s"}, true, current_version));
 
-        /// An older peer merges with its serialized method, as does the aggregation that feeds the step
-        /// there.
-        EXPECT_FALSE(rollupLikeStepCarriesSetting<RollupStep>(header, {"k", "s"}, enabled, pre_setting_version));
-        EXPECT_FALSE(rollupLikeStepCarriesSetting<CubeStep>(header, {"k", "s"}, enabled, pre_setting_version));
-    }
+    /// An older peer merges with its serialized method, as does the aggregation that feeds the step there.
+    EXPECT_FALSE(rollupLikeStepCarriesSetting<RollupStep>(header, {"k", "s"}, true, pre_setting_version));
+    EXPECT_FALSE(rollupLikeStepCarriesSetting<CubeStep>(header, {"k", "s"}, true, pre_setting_version));
 }

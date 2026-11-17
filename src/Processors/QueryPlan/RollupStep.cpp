@@ -99,10 +99,14 @@ void RollupStep::serializeSettings(QueryPlanSerializationSettings & settings, UI
     /// `serialize`), so unlike `AggregatingStep` no old-peer narrowing applies.
     settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = params.enable_packed_string_keys;
     /// A later name: a peer that knows it merges with the method of the aggregation that feeds this
-    /// step. A peer that predates it uses the serialized method for both (see
-    /// `AggregatingStep::serializeSettings`).
-    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FIXED_AND_PACKED_STRING_KEYS_SETTING)
-        settings[QueryPlanSerializationSetting::enable_fixed_and_packed_string_keys_in_aggregation] = params.enable_fixed_and_packed_string_keys;
+    /// step. A peer below the setting's version uses the serialized method for both (see
+    /// `AggregatingStep::serializeSettings`). The plan default `false` is that method too, so the name goes
+    /// on the wire only when the setting is on and the keys can take the method: a peer at the setting's
+    /// version that predates the name throws on it, because the setting is `IMPORTANT`.
+    if (params.enable_fixed_and_packed_string_keys
+        && version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FIXED_AND_PACKED_STRING_KEYS_SETTING
+        && aggregationCanUseFixedAndPackedStringKeys(*input_headers.front(), params.keys, {}))
+        settings[QueryPlanSerializationSetting::enable_fixed_and_packed_string_keys_in_aggregation] = true;
 }
 
 void RollupStep::serialize(Serialization & ctx) const
