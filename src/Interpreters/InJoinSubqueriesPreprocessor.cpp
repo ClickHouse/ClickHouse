@@ -75,7 +75,7 @@ private:
         const DistributedProductMode distributed_product_mode = getContext()->getSettingsRef()[Setting::distributed_product_mode];
 
         StoragePtr storage = tryGetTable(database_and_table, getContext());
-        if (!storage || !checker.hasAtLeastTwoShards(*storage))
+        if (!storage || !checker.needsDistributedProductMode(*storage))
             return;
 
         if (distributed_product_mode == DistributedProductMode::LOCAL)
@@ -259,7 +259,7 @@ void InJoinSubqueriesPreprocessor::visit(ASTPtr & ast) const
     /// If not really distributed table, skip it.
     {
         StoragePtr storage = tryGetTable(table_expression->database_and_table_name, getContext());
-        if (!storage || !checker->hasAtLeastTwoShards(*storage))
+        if (!storage || !checker->needsDistributedProductMode(*storage))
             return;
     }
 
@@ -268,13 +268,13 @@ void InJoinSubqueriesPreprocessor::visit(ASTPtr & ast) const
 }
 
 
-bool InJoinSubqueriesPreprocessor::CheckShardsAndTables::hasAtLeastTwoShards(const IStorage & table) const
+bool InJoinSubqueriesPreprocessor::CheckShardsAndTables::needsDistributedProductMode(const IStorage & table) const
 {
     const StorageDistributed * distributed = dynamic_cast<const StorageDistributed *>(&table);
     if (!distributed)
         return false;
 
-    return distributed->getShardCount() >= 2;
+    return distributed->needsDistributedProductMode();
 }
 
 

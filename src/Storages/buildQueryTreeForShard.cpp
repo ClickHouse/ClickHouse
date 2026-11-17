@@ -393,8 +393,7 @@ private:
         if (!distributed_storage)
             return;
 
-        bool distributed_valid_for_rewrite = distributed_storage->getShardCount() >= 2;
-        if (!distributed_valid_for_rewrite)
+        if (!distributed_storage->needsDistributedProductMode())
             return;
 
         auto distributed_product_mode = getSettings()[Setting::distributed_product_mode];

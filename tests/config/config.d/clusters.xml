@@ -365,6 +365,15 @@
                 </replica>
             </shard>
         </test_shard_localhost_secure>
+        <!-- A single shard without a local replica: 127.0.0.{2..255} are not considered local. -->
+        <test_shard_non_local>
+            <shard>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_shard_non_local>
         <test_unavailable_shard>
             <shard>
                 <replica>

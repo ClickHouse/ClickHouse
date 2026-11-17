@@ -2161,6 +2161,13 @@ size_t StorageDistributed::getShardCount() const
     return getCluster()->getShardCount();
 }
 
+bool StorageDistributed::needsDistributedProductMode() const
+{
+    const auto cluster = getCluster();
+    const auto & shards_info = cluster->getShardsInfo();
+    return shards_info.size() >= 2 || (shards_info.size() == 1 && !shards_info.front().isLocal());
+}
+
 ClusterPtr StorageDistributed::getCluster() const
 {
     return owned_cluster ? owned_cluster : getContext()->getCluster(cluster_name);

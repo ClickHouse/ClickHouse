@@ -1,0 +1,34 @@
+single local shard is not rewritten
+1
+1
+2
+2
+single remote shard is rewritten
+1
+1
+2
+2
+1
+1
+2
+2
+1
+1
+2
+2
+JOIN with a single remote shard
+1	1
+1	1
+2	2
+2	2
+3	3
+3	3
+old analyzer
+1
+1
+2
+2
+1
+1
+2
+2

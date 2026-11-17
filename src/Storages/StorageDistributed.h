@@ -152,6 +152,13 @@ public:
 
     size_t getShardCount() const;
 
+    /// Whether IN and JOIN subqueries over this table are rewritten according to `distributed_product_mode`.
+    /// A non-GLOBAL subquery over the table runs on each shard of the outer query. A single local shard is
+    /// then read in place on every node, so there is nothing to rewrite. A single shard without a local
+    /// replica is read over the network again from every shard of the outer query, the same as a table with
+    /// several shards, so it is rewritten too.
+    bool needsDistributedProductMode() const;
+
     bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
 
 private:
