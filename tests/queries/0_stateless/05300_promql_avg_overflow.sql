@@ -72,6 +72,16 @@ SELECT finalizeAggregation(CAST(unhex('02000105'), 'AggregateFunction(timeSeries
 -- A key without bytes does not limit the number of rows by the size of the state.
 SELECT finalizeAggregation(CAST(unhex('0100FFFFFFFFFFFFFFFFFF0100'), 'AggregateFunction(timeSeriesAvgOverGroup, Tuple(), Array(Float64))')); -- { serverError TOO_LARGE_ARRAY_SIZE }
 
+-- A state cannot get more rows than a reader accepts, neither by adding rows nor by merging states.
+SELECT timeSeriesAvgOverGroup(tuple(), CAST([], 'Array(Float64)')) FROM numbers(16777215) SETTINGS max_threads = 1;
+SELECT timeSeriesAvgOverGroup(tuple(), CAST([], 'Array(Float64)')) FROM numbers(16777216) SETTINGS max_threads = 1; -- { serverError TOO_LARGE_ARRAY_SIZE }
+SELECT timeSeriesAvgOverGroupMerge(s) FROM
+(
+    SELECT timeSeriesAvgOverGroupState(tuple(), CAST([], 'Array(Float64)')) AS s FROM numbers(8388607)
+    UNION ALL
+    SELECT timeSeriesAvgOverGroupState(tuple(), CAST([], 'Array(Float64)')) FROM numbers(8388609)
+) SETTINGS max_threads = 1; -- { serverError TOO_LARGE_ARRAY_SIZE }
+
 SELECT '-- PromQL avg';
 
 DROP TABLE IF EXISTS prometheus;

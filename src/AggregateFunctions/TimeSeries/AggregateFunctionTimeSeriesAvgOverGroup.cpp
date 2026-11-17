@@ -157,6 +157,7 @@ public:
         const auto & input_values = assert_cast<const ColumnFloat64 &>(*nested).getData();
 
         auto & state = data(place);
+        checkNumRows(state.size() + 1);
         checkNumSteps(state, end - begin);
         addKey(state, *columns[0], row_num);
 
@@ -180,6 +181,7 @@ public:
             return;
 
         auto & state = data(place);
+        checkNumRows(state.size() + rhs_state.size());
         checkNumSteps(state, rhs_state.num_steps);
         const size_t keys_size = state.keys.size();
         state.keys.insert(rhs_state.keys.begin(), rhs_state.keys.end());
@@ -215,9 +217,7 @@ public:
         size_t num_values = 0;
         readVarUInt(num_rows, buf);
         readVarUInt(num_steps, buf);
-        if (num_rows > MAX_ROWS_IN_STATE)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large number of rows {} in a state of aggregate function {} (maximum: {})",
-                            num_rows, getName(), MAX_ROWS_IN_STATE);
+        checkNumRows(num_rows);
         if (common::mulOverflow(num_rows, num_steps, num_values))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect size of a state of aggregate function {}", getName());
 
@@ -281,6 +281,13 @@ public:
     }
 
 private:
+    void checkNumRows(size_t num_rows) const
+    {
+        if (num_rows > MAX_ROWS_IN_STATE)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large number of rows {} in a state of aggregate function {} (maximum: {})",
+                            num_rows, getName(), MAX_ROWS_IN_STATE);
+    }
+
     void checkNumSteps(TimeSeriesAvgOverGroupData & state, size_t num_steps) const
     {
         if (state.size() == 0)
