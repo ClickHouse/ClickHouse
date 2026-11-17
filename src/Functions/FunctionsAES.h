@@ -1063,15 +1063,12 @@ private:
             for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
             {
                 size_t string_size = input_reader[row_idx].size();
-                resulting_size += string_size;
 
+                /// Too short GCM input is rejected in the row loop below.
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
-                {
-                    if (string_size < tag_size)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted data is smaller than the size of additional data for AEAD mode, cannot decrypt.");
+                    string_size = string_size < tag_size ? 0 : string_size - tag_size;
 
-                    resulting_size -= tag_size;
-                }
+                resulting_size += string_size;
             }
 
             decrypted_result_column_data.resize(resulting_size);
@@ -1097,15 +1094,24 @@ private:
             }
 
             auto input_value = input_reader[row_idx];
+            /// Taken before the GCM tag is cut off: the ciphertext of an empty plaintext
+            /// is a bare tag, which still has to be verified.
+            const bool input_is_empty = input_value.empty();
+            bool decrypt_fail = false;
 
             if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
             {
                 // empty plaintext results in empty ciphertext + tag, means there should be at least tag_size bytes.
                 if (input_value.size() < tag_size)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted data is too short: only {} bytes, "
-                            "should contain at least {} bytes of a tag.",
-                            input_value.size(), tag_size);
-                input_value.remove_suffix(tag_size);
+                {
+                    if constexpr (!use_null_when_decrypt_fail)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted data is too short: only {} bytes, "
+                                "should contain at least {} bytes of a tag.",
+                                input_value.size(), tag_size);
+                    decrypt_fail = true;
+                }
+                else
+                    input_value.remove_suffix(tag_size);
             }
 
             if constexpr (mode != CipherMode::MySQLCompatibility)
@@ -1122,11 +1128,9 @@ private:
                 }
             }
 
-            bool decrypt_fail = false;
             /// Avoid extra work on empty ciphertext/plaintext. Always decrypt empty to empty.
             /// This makes sense for default implementation for NULLs.
-            /// A GCM ciphertext of empty plaintext is a bare tag, which still has to be verified.
-            if (!input_reader[row_idx].empty())
+            if (!input_is_empty && !decrypt_fail)
             {
                 // 1: Init CTX
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)

@@ -21,7 +21,9 @@ FROM (SELECT encrypt('aes-128-gcm', '', '0123456789abcdef', '123456789012') AS c
 
 -- An empty string has no tag, so it is not a valid GCM ciphertext.
 SELECT decrypt('aes-128-gcm', '', '0123456789abcdef', '123456789012'); -- {serverError BAD_ARGUMENTS}
-SELECT tryDecrypt('aes-128-gcm', '', '0123456789abcdef', '123456789012'); -- {serverError BAD_ARGUMENTS}
+SELECT decrypt('aes-128-gcm', 'short', '0123456789abcdef', '123456789012'); -- {serverError BAD_ARGUMENTS}
+SELECT tryDecrypt('aes-128-gcm', c, '0123456789abcdef', '123456789012')
+FROM (SELECT arrayJoin(['', 'short', encrypt('aes-128-gcm', 'text', '0123456789abcdef', '123456789012')]) AS c);
 
 -- Rows with a NULL argument are not decrypted.
 WITH '0123456789abcdef' AS key, '123456789012' AS iv, encrypt('aes-128-gcm', '', key, iv, 'aad') AS c
