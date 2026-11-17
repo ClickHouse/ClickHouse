@@ -148,7 +148,11 @@ def test_three_replicas_ten_partitions_rebalance(kafka_cluster):
         expected_locks = {f"{topic_name}_{pid}.lock" for pid in range(num_partitions)}
         with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
             start = time.time()
-            timeout, interval = 30.0, 1.0
+            # The last partition is taken as a temporary lock, which the holders reserve
+            # for the slowest replica until it starts consuming and publishes demand;
+            # a cold librdkafka start (broker, metadata, group join) takes over a minute
+            # on loaded CI builders, so the budget must cover the whole startup.
+            timeout, interval = 180.0, 1.0
             while time.time() - start < timeout:
                 children = set(zk.ls(base))
                 if children == expected_locks:
