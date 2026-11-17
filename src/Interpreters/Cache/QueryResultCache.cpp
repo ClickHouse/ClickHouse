@@ -707,6 +707,16 @@ size_t QueryResultCache::EntryWeight::operator()(const Entry & entry) const
         res += chunk.allocatedBytes();
     res += entry.totals.has_value() ? entry.totals->allocatedBytes() : 0;
     res += entry.extremes.has_value() ? entry.extremes->allocatedBytes() : 0;
+    auto names_weight = [](const std::set<String> & names)
+    {
+        size_t bytes = 0;
+        for (const auto & name : names)
+            bytes += name.size();
+        return bytes;
+    };
+    res += names_weight(entry.access_info.databases) + names_weight(entry.access_info.tables)
+        + names_weight(entry.access_info.columns) + names_weight(entry.access_info.partitions)
+        + names_weight(entry.access_info.projections) + names_weight(entry.access_info.views);
     return res;
 }
 
@@ -823,6 +833,12 @@ void QueryResultCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
             break;
         }
     }
+}
+
+void QueryResultCacheWriter::setAccessInfo(QueryResultCache::AccessInfo access_info_)
+{
+    std::lock_guard lock(mutex);
+    query_result->access_info = std::move(access_info_);
 }
 
 void QueryResultCacheWriter::markResultIncomplete()
@@ -1077,6 +1093,7 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
         return;
     }
 
+    access_info = entry_mapped->access_info;
     if (!entry_key.is_compressed)
     {
         // Cloning chunks isn't exactly great. It could be avoided by another indirection, i.e. wrapping Entry's members chunks, totals and
