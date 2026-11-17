@@ -14,9 +14,11 @@ namespace DB
     M(UInt8) \
     M(UInt16) \
     M(UInt32) \
+    M(UInt64) \
     M(Int8) \
     M(Int16) \
-    M(Int32)
+    M(Int32) \
+    M(Int64)
 
 /** `NumericIndexedVector` encapsulates the vector (in mathematics) data structure and exposes the following operations.
  * Operations on a single vector:
@@ -166,13 +168,13 @@ public:
 
     void addValue(IndexType index, ValueType value) { impl.addValue(index, value); }
 
-    [[nodiscard]] ValueType getValue(IndexType index) const { return impl.getValue(index); }
+    ValueType getValue(IndexType index) const { return impl.getValue(index); }
 
-    [[nodiscard]] Float64 getAllValueSum() const { return impl.getAllValueSum(); }
+    Float64 getAllValueSum() const { return impl.getAllValueSum(); }
 
-    [[nodiscard]] UInt64 getCardinality() const { return impl.getCardinality(); }
+    UInt64 getCardinality() const { return impl.getCardinality(); }
 
-    [[nodiscard]] String shortDebugString() const { return impl.shortDebugString(); }
+    String shortDebugString() const { return impl.shortDebugString(); }
 
     UInt64 toIndexValueMap(PaddedPODArray<IndexType> & indexes_pod, PaddedPODArray<ValueType> & values_pod) const
     {

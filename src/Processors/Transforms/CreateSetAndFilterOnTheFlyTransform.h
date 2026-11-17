@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/Logger.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/ISimpleTransform.h>
 
 #include <vector>
@@ -18,7 +17,7 @@ using SetWithStatePtr = std::shared_ptr<SetWithState>;
  * Data is not changed and returned as is.
  * Can be executed in parallel, but blocks on operations with set.
  */
-class CreatingSetsOnTheFlyTransform final : public ISimpleTransform
+class CreatingSetsOnTheFlyTransform : public ISimpleTransform
 {
 public:
     CreatingSetsOnTheFlyTransform(SharedHeader header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_);
@@ -31,7 +30,7 @@ public:
 
 private:
     Names column_names;
-    VectorWithMemoryTracking<size_t> key_column_indices;
+    std::vector<size_t> key_column_indices;
 
     size_t num_streams;
 
@@ -45,7 +44,7 @@ private:
  * Filter the input chunk by the set.
  * When set building is not completed, just return the source data.
  */
-class FilterBySetOnTheFlyTransform final : public ISimpleTransform
+class FilterBySetOnTheFlyTransform : public ISimpleTransform
 {
 public:
     FilterBySetOnTheFlyTransform(SharedHeader header_, const Names & column_names_, SetWithStatePtr set_);
@@ -61,7 +60,7 @@ private:
     Block key_sample_block;
 
     Names column_names;
-    VectorWithMemoryTracking<size_t> key_column_indices;
+    std::vector<size_t> key_column_indices;
 
     /// Filter by this set when it's created
     SetWithStatePtr set;
