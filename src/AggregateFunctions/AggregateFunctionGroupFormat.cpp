@@ -4,7 +4,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnSparse.h>
 #include <Core/Block.h>
-#include <Core/Defines.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
@@ -30,7 +29,6 @@ extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int LOGICAL_ERROR;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace
@@ -186,7 +184,7 @@ public:
             const auto & column = state.columns[i];
             const auto & type = argument_types[i];
             auto serialization = type->getDefaultSerialization();
-            NativeWriter::writeData(*serialization, column->getPtr(), buf, nullptr, 0, num_rows, serialization_protocol_version);
+            NativeWriter::writeData(*serialization, column->getPtr(), buf, std::nullopt, 0, num_rows, serialization_protocol_version);
         }
     }
 
@@ -205,14 +203,6 @@ public:
                 getName(),
                 num_columns,
                 argument_types.size());
-
-        if (num_rows > DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS)
-            throw Exception(
-                ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                "State of aggregate function {} contains suspiciously many rows: {} (maximum: {})",
-                getName(),
-                num_rows,
-                DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS);
 
         state.columns.clear();
         state.columns.reserve(num_columns);

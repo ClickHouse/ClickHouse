@@ -27,7 +27,7 @@ using ExchangeConnectionAuthenticator = std::function<void(const String & auth_t
 class ExchangeServer : public Poco::Runnable
 {
 public:
-    ExchangeServer(const String & listen_host, UInt16 port, UInt32 listen_backlog, ExchangeConnectionsPtr connections_, ExchangeConnectionAuthenticator authenticate_connection_ = {});
+    ExchangeServer(const String & listen_host, UInt16 port, ExchangeConnectionsPtr connections_, ExchangeConnectionAuthenticator authenticate_connection_ = {});
     ~ExchangeServer() override;
 
     void start();

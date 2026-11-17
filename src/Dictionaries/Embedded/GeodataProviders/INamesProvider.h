@@ -23,16 +23,16 @@ class ILanguageRegionsNamesDataSource
 {
 public:
     // data modified since last createReader invocation
-    [[nodiscard]] virtual bool isModified() const = 0;
+    virtual bool isModified() const = 0;
 
     // Upper bound on total length of all names
-    [[nodiscard]] virtual size_t estimateTotalSize() const = 0;
+    virtual size_t estimateTotalSize() const = 0;
 
     virtual ILanguageRegionsNamesReaderPtr createReader() = 0;
 
-    [[nodiscard]] virtual std::string getLanguage() const = 0;
+    virtual std::string getLanguage() const = 0;
 
-    [[nodiscard]] virtual std::string getSourceName() const = 0;
+    virtual std::string getSourceName() const = 0;
 
     virtual ~ILanguageRegionsNamesDataSource() = default;
 };
@@ -45,7 +45,7 @@ class IRegionsNamesDataProvider
 {
 public:
     /// Returns nullptr if the language data does not exist.
-    [[nodiscard]] virtual ILanguageRegionsNamesDataSourcePtr getLanguageRegionsNamesSource(const std::string & language) const = 0;
+    virtual ILanguageRegionsNamesDataSourcePtr getLanguageRegionsNamesSource(const std::string & language) const = 0;
 
     virtual ~IRegionsNamesDataProvider() = default;
 };

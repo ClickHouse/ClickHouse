@@ -26,7 +26,7 @@ CREATE TABLE t_pr_scalar (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_pr_scalar SELECT number % 100, number FROM numbers(1000);
 "
 
-pr_settings="SETTINGS automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost'"
+pr_settings="SETTINGS enable_analyzer = 1, automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost'"
 
 # Number of "Creating parallel replicas coordinator" messages logged while running $1.
 coordinators_for() {
@@ -36,7 +36,7 @@ coordinators_for() {
     ${CLICKHOUSE_CLIENT} --query "
         SELECT count()
         FROM system.text_log
-        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$query_id'
+        WHERE query_id = '$query_id'
           AND message LIKE '%Creating parallel replicas coordinator%'"
 }
 
@@ -64,7 +64,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count() > 0
     FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$top_id'
+    WHERE query_id = '$top_id'
       AND message LIKE '%Creating parallel replicas coordinator%'"
 
 # The scalar subqueries must also still return correct results.

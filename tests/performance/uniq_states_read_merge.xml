@@ -37,14 +37,9 @@
     </fill_query>
     <fill_query>OPTIMIZE TABLE uniq_big_states FINAL</fill_query>
 
-    <query disabled="1">SELECT sum(finalizeAggregation(s)) FROM uniq_tiny_states FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT sum(finalizeAggregation(s)) FROM uniq_tiny_states FORMAT Null SETTINGS max_threads = 1</query>
     <query>SELECT uniqMerge(s) FROM uniq_tiny_states FORMAT Null SETTINGS max_threads = 1</query>
-    <query disabled="1">SELECT k % 1000, uniqMerge(s) FROM uniq_tiny_states GROUP BY k % 1000 FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT k % 1000, uniqMerge(s) FROM uniq_tiny_states GROUP BY k % 1000 FORMAT Null SETTINGS max_threads = 1</query>
     <query>SELECT uniqMerge(s) FROM uniq_big_states FORMAT Null SETTINGS max_threads = 1</query>
     <query>SELECT g % 4, uniqMerge(s) FROM uniq_big_states GROUP BY g % 4 FORMAT Null SETTINGS max_threads = 1</query>
-
-    <!-- Copies of the two disabled queries on the first quarter of uniq_tiny_states: the same mix of states,
-         and each set of the GROUP BY ends at a quarter of the size with the same fill. -->
-    <query>SELECT sum(finalizeAggregation(s)) FROM uniq_tiny_states WHERE k &lt; 1250000 FORMAT Null SETTINGS max_threads = 1</query>
-    <query>SELECT k % 1000, uniqMerge(s) FROM uniq_tiny_states WHERE k &lt; 1250000 GROUP BY k % 1000 FORMAT Null SETTINGS max_threads = 1</query>
 </test>

@@ -58,7 +58,7 @@ struct JoinedElement
             join->kind = JoinKind::Cross;
     }
 
-    [[nodiscard]] JoinKind getOriginalKind() const { return original_kind; }
+    JoinKind getOriginalKind() const { return original_kind; }
 
     bool rewriteCrossToInner(ASTPtr on_expression)
     {
@@ -73,11 +73,11 @@ struct JoinedElement
         return true;
     }
 
-    [[nodiscard]] ASTPtr arrayJoin() const { return element.array_join; }
-    [[nodiscard]] const ASTTableJoin * tableJoin() const { return join; }
+    ASTPtr arrayJoin() const { return element.array_join; }
+    const ASTTableJoin * tableJoin() const { return join; }
 
-    [[nodiscard]] bool canAttachOnExpression() const { return join && !join->on_expression; }
-    [[nodiscard]] bool hasUsing() const { return join && join->using_expression_list; }
+    bool canAttachOnExpression() const { return join && !join->on_expression; }
+    bool hasUsing() const { return join && join->using_expression_list; }
 
 private:
     const ASTTablesInSelectQueryElement & element;

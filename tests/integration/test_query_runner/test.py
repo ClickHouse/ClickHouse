@@ -123,7 +123,7 @@ def test_cluster_query_log():
         node_query_runner,
         "SELECT is_initial_query, user, initial_user, authenticated_user FROM system.query_log "
         "WHERE log_comment = 'qr_cluster_log' AND is_internal AND type = 'QueryFinish' LIMIT 1",
-        "1\t\tdefault\tdefault",
+        "1\t\t\tdefault",
     )
     node_cluster.query("SYSTEM FLUSH LOGS query_log")
     assert_eq_with_retry(

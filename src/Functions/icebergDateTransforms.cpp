@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Functions/icebergCommon.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/assert_cast.h>
@@ -29,6 +28,14 @@ enum class IcebergDateTransform : uint8_t
     Day,
     Hour,
 };
+
+Int64 floorDivide(Int64 numerator, Int64 denominator)
+{
+    Int64 quotient = numerator / denominator;
+    if (numerator % denominator != 0 && (numerator < 0) != (denominator < 0))
+        --quotient;
+    return quotient;
+}
 
 Int32 narrowToInt32(Int64 value, const char * function_name)
 {
@@ -59,21 +66,21 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIcebergDateTransform>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    [[nodiscard]] bool hasInformationAboutMonotonicity() const override { return true; }
-    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
+    bool hasInformationAboutMonotonicity() const override { return true; }
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
         return {.is_monotonic = true, .is_always_monotonic = true};
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 1)
             throw Exception(
@@ -101,7 +108,7 @@ public:
         return std::make_shared<DataTypeInt32>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto result_column = ColumnInt32::create(input_rows_count);
         auto & result_data = result_column->getData();
