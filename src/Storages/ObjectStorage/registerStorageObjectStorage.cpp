@@ -2537,7 +2537,7 @@ ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_cre
 - `account_key` — Azure storage account key
 - `extra_credentials` — Optional alternative to `account_name` / `account_key`. Use `client_id` and `tenant_id` for Azure workload identity authentication. Cannot be combined with account credentials. This is not the S3 `role_arn` form of `extra_credentials`.
 
-Engine parameters can be specified using [Named Collections](/operations/named-collections.md). Named collections accept the same `client_id` and `tenant_id` keys.
+Engine parameters can be specified using [Named Collections](/concepts/features/configuration/server-config/named-collections). Named collections accept the same `client_id` and `tenant_id` keys.
 
 **Workload identity**
 
