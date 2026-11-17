@@ -614,8 +614,7 @@ std::shared_ptr<const PlainRanges> Set::getPlainRanges() const
             const auto & type = *set_elements_types.front();
             const size_t size = column.size();
 
-            /// Points sorted by the column's own order that come out strictly increasing under `compareByLeftBound`
-            /// are exactly what sorting and merging them below would produce; otherwise take the general path.
+            /// Points strictly increasing under `compareByLeftBound` are exactly what sorting and merging below would produce.
             if (size > 1 && (type.isValueRepresentedByNumber() || isStringOrFixedString(type) || isUUID(type)))
             {
                 IColumn::Permutation permutation;
