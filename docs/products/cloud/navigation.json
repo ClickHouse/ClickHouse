@@ -180,7 +180,7 @@
                 },
                 {
                   "group": "Organization network connectivity",
-                  "hidden": true,
+                  "hidden": false,
                   "pages": [
                     "products/cloud/guides/security/connectivity/org-network-connectivity"
                   ]
