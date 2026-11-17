@@ -164,6 +164,7 @@ public:
         auto * i8_ptr_ptr = i8_ptr->getPointerTo();
         auto * func_type = llvm::FunctionType::get(b.getInt8Ty(), {i8_ptr, i8_ptr, i8_ptr, i8_ptr_ptr, i8_ptr_ptr}, false);
         function = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, "regexp_match", module);
+        setJITFunctionType<JITRegexpMatcherFunc>(*function);
 
         begin_arg = function->getArg(0);
         end_arg = function->getArg(1);
@@ -676,7 +677,7 @@ std::shared_ptr<CompiledRegexpHolder> compileMatcher(const RegexpProgram & progr
         throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Compiled regexp module has no `regexp_match` symbol");
     }
 
-    auto func = CHJIT::getFunction<JITRegexpMatcherFunc>(compiled_module, "regexp_match");
+    auto func = reinterpret_cast<JITRegexpMatcherFunc>(it->second);
 
     /// `compileModule` has already registered the module in the JIT instance; it is released only by
     /// `deleteCompiledModule` (called from `~CompiledRegexpHolder`). Until the holder is constructed and

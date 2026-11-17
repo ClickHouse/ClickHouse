@@ -7,8 +7,10 @@
 #include <unordered_map>
 #include <atomic>
 #include <mutex>
-#include <typeinfo>
 
+#include <Interpreters/JIT/callJITFunction.h>
+
+#include <llvm/IR/Constants.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Target/TargetMachine.h>
@@ -78,15 +80,6 @@ public:
       */
     void deleteCompiledModule(const CompiledModule & module_info);
 
-    /** The compiled function `name` of `module` as a pointer of type `Function`. Only pointers obtained here can be
-      * called through `callJITFunction`, until `deleteCompiledModule`. Throws if the module has no such function.
-      */
-    template <typename Function>
-    static Function getFunction(const CompiledModule & module, const std::string & name)
-    {
-        return reinterpret_cast<Function>(getFunctionAddress(module, name, typeid(Function)));
-    }
-
     /** Register external symbol for CHJIT instance to use, during linking.
       * It can be function, or global constant.
       * It is client responsibility to be sure that address of symbol is valid during CHJIT instance lifetime.
@@ -98,8 +91,6 @@ public:
     size_t getCompiledCodeSize() const { return compiled_code_size.load(std::memory_order_relaxed); }
 
 private:
-
-    static void * getFunctionAddress(const CompiledModule & module, const std::string & name, const std::type_info & type);
 
     std::unique_ptr<llvm::Module> createModuleForCompilation(llvm::LLVMContext & context);
 
@@ -141,6 +132,13 @@ void resetSortDescriptionJITInstance();
 /// Registers the targets of LLVM that the server compiles for, the host's and, with the GPU engine, NVPTX, once: the
 /// registry of LLVM is not synchronized, so a target is registered by no other means, and is looked up after this.
 void initializeLLVMTargets();
+
+/// Lets `callJITFunction` call `function` through a pointer of type `F`.
+template <typename F>
+void setJITFunctionType(llvm::Function & function)
+{
+    function.setPrefixData(llvm::ConstantInt::get(llvm::Type::getInt32Ty(function.getContext()), jitFunctionTag<F>()));
+}
 
 }
 
