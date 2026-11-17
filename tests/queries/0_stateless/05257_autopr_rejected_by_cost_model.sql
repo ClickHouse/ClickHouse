@@ -1,9 +1,9 @@
 -- A query the cost model turns down must say so with `AutoParallelReplicasRejectedByCostModel`, not
 -- only by the absence of every other outcome after `AutoParallelReplicasCostModelEvaluated`.
--- Every row is read as an 8-byte key and leaves the replicas as a 64-byte string, so shipping the
--- result costs far more than reading in parallel saves, whatever the thread counts are. The string is
--- built from the key, because a constant one is not shipped at all, and from hashes, because the output
--- is priced compressed and a repeated character compresses to almost nothing.
+-- The constant string is not shipped, so the query reads and ships the same 8-byte keys. The read cap turns
+-- such a small read down by itself; with the cap ignored (`automatic_parallel_replicas_ignore_thresholds`)
+-- the cost model declines it only from 3 threads per replica on, because with fewer, reading in parallel
+-- saves more than shipping the keys costs. Hence `max_threads` is pinned rather than left to the randomizer.
 
 DROP TABLE IF EXISTS t_autopr_rejected_by_cost_model;
 
@@ -13,14 +13,14 @@ INSERT INTO t_autopr_rejected_by_cost_model SELECT number FROM numbers(100000);
 
 SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1, parallel_replicas_local_plan = 1,
     parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3,
-    automatic_parallel_replicas_min_bytes_per_replica = 0,
+    automatic_parallel_replicas_min_bytes_per_replica = 0, max_threads = 4,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 
 -- Twice: the first run only collects statistics, the second is the one the cost model decides. It decides
 -- at the boundary the first run remembered, without building the plan, and still says why it declined.
-SELECT concat(hex(cityHash64(key, 1)), hex(cityHash64(key, 2)), hex(cityHash64(key, 3)), hex(cityHash64(key, 4))) AS s, key FROM t_autopr_rejected_by_cost_model ORDER BY key
+SELECT repeat('x', 1000) AS s, key FROM t_autopr_rejected_by_cost_model ORDER BY key
 FORMAT Null SETTINGS log_comment = '05257_autopr_rejected_by_cost_model';
-SELECT concat(hex(cityHash64(key, 1)), hex(cityHash64(key, 2)), hex(cityHash64(key, 3)), hex(cityHash64(key, 4))) AS s, key FROM t_autopr_rejected_by_cost_model ORDER BY key
+SELECT repeat('x', 1000) AS s, key FROM t_autopr_rejected_by_cost_model ORDER BY key
 FORMAT Null SETTINGS log_comment = '05257_autopr_rejected_by_cost_model';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
