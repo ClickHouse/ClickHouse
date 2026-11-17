@@ -18,6 +18,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -399,6 +400,32 @@ ColumnWithTypeAndName prepareArrowColumnForCast(
 
 }
 
+namespace
+{
+
+/// How much decoding a field depends on a requested type, to choose the one type kept for a normalized name
+/// that several header columns with different types share (see `ArrowIPC::RequestedType::shared`). A `Tuple`
+/// keeps the null map of a struct and the hints of its fields, another composite the hints of its elements,
+/// a date or time type and a number decide how a `date32` is read, and `Nullable` keeps the null map of a
+/// struct. The remaining types (`String`, `IPv6`) only ask for raw-byte conversions, which are deferred for a
+/// shared name anyway.
+int decodingRequirementRank(const DataTypePtr & type)
+{
+    const DataTypePtr stripped = ArrowIPC::stripHint(type);
+    int rank = 0;
+    if (isTuple(stripped))
+        rank = 4;
+    else if (isArray(stripped) || isMap(stripped))
+        rank = 3;
+    else if (isDateOrDate32(stripped) || isDateTimeOrDateTime64(stripped))
+        rank = 2;
+    else if (isNumber(stripped) || isDecimal(stripped))
+        rank = 1;
+    return rank * 2 + (type->isNullable() || type->isLowCardinalityNullable() ? 1 : 0);
+}
+
+}
+
 void ArrowIPCBlockInputFormat::prepareReader()
 {
     /// Determine which top-level Arrow fields the requested header needs, so the reader can skip the rest
@@ -421,12 +448,18 @@ void ArrowIPCBlockInputFormat::prepareReader()
         /// library reader's recursive numeric type-hint handling.
         ///
         /// With case-insensitive matching, several header columns can share a normalized name (`T String` and
-        /// `t Tuple(s IPv6)`). They are all taken from the one decoded field, so its type must not follow any
-        /// of them: the name is kept without a type, the field is decoded by its Arrow type, and each column
-        /// is converted by its own type after decoding.
-        auto [it, inserted] = requested_field_target_types.try_emplace(normalize(header_column.name), header_column.type);
-        if (!inserted && it->second && !it->second->equals(*header_column.type))
-            it->second = nullptr;
+        /// `t Tuple(s IPv6)`). They are all taken from the one decoded field, so its raw bytes must not follow
+        /// any one of them: the name is marked as shared, and each column is converted by its own type after
+        /// decoding. The type that decoding depends on the most is kept (`T Tuple(s IPv6)` keeps the null map
+        /// of the struct for `t String`, `T Int32` reads a `date32` as the day number for `t Int64` too).
+        auto [it, inserted] = requested_field_target_types.try_emplace(
+            normalize(header_column.name), ArrowIPC::RequestedType{.type = header_column.type});
+        if (!inserted && !it->second.type->equals(*header_column.type))
+        {
+            it->second.shared = true;
+            if (decodingRequirementRank(header_column.type) > decodingRequirementRank(it->second.type))
+                it->second.type = header_column.type;
+        }
     }
 
     if (stream)
@@ -883,6 +916,21 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
         if (from_no_null->equals(*to_leaf))
             return {col, from_type};
         return {col, with_source_nullability(to_leaf)};
+    }
+
+    /// A top-level dictionary is decoded as `LowCardinality` (see `RecordBatchDecoder::decodeDictionary`). Its
+    /// values keep their raw bytes when the field is decoded for several requested columns (see
+    /// `DictionaryUse::keep_raw_bytes`); convert them for this column through the full column, which keeps
+    /// the nulls of the rows. The later cast restores a requested `LowCardinality`.
+    if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&nested))
+    {
+        const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(from_no_null.get());
+        if (!low_cardinality_type
+            || low_cardinality->getDictionary().getNestedNotNullableColumn()->getDataType() == to_leaf->getTypeId())
+            return {col, from_type};
+        return reinterpretRawBytes(
+            low_cardinality->convertToFullColumn(), low_cardinality_type->getDictionaryType(), to_type, ancestor_nulls,
+            case_insensitive, field, format_settings);
     }
 
     MutableColumnPtr typed;

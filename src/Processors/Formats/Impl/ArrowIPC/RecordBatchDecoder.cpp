@@ -262,9 +262,9 @@ bool isMapKeyLookup(std::string_view map_path, std::string_view name)
 
 /// Whether the field at the dotted `path` is decoded for more than one requested column: its own name, those
 /// of the enclosing fields (`t` and `t.s` for the field `t.s`), and the dynamic key lookups of an enclosing map
-/// (`t` and `t.key_1` for the field `t.values`). A null type marks a name requested several times with
-/// different types (see `ArrowIPCBlockInputFormat::prepareReader`).
-bool isDecodedForSeveralRequests(const String & path, const UnorderedMapWithMemoryTracking<String, DataTypePtr> * types)
+/// (`t` and `t.key_1` for the field `t.values`). A name requested several times with different types
+/// (`RequestedType::shared`) counts as several requests.
+bool isDecodedForSeveralRequests(const String & path, const RequestedTypes * types)
 {
     if (!types || path.empty())
         return false;
@@ -272,7 +272,7 @@ bool isDecodedForSeveralRequests(const String & path, const UnorderedMapWithMemo
     auto count = [&](const String & name)
     {
         if (auto it = types->find(name); it != types->end())
-            requests += it->second ? 1 : 2;
+            requests += it->second.shared ? 2 : 1;
     };
     count(path);
     for (size_t pos = path.find('.'); pos != String::npos && requests < 2; pos = path.find('.', pos + 1))
@@ -282,7 +282,7 @@ bool isDecodedForSeveralRequests(const String & path, const UnorderedMapWithMemo
         /// The paths of map entries use the names `keys` / `values` (see `structFieldPath`).
         const std::string_view component = std::string_view(path).substr(pos + 1, path.find('.', pos + 1) - pos - 1);
         if (component == "keys" || component == "values")
-            for (const auto & [name, type] : *types)
+            for (const auto & [name, requested] : *types)
                 if (isMapKeyLookup(prefix, name))
                     ++requests;
     }
@@ -294,9 +294,6 @@ bool isDecodedForSeveralRequests(const String & path, const UnorderedMapWithMemo
 /// `UUID`, and is applied to the shared values of a dictionary when it is registered).
 bool hasRawByteLeaf(const DataTypePtr & type)
 {
-    /// A name requested several times with different types (see `isDecodedForSeveralRequests`).
-    if (!type)
-        return true;
     const DataTypePtr stripped = stripHint(type);
     const WhichDataType which(stripped);
     if (which.isUUID() || rawByteWidth(which) != 0)
@@ -310,27 +307,34 @@ bool hasRawByteLeaf(const DataTypePtr & type)
     return false;
 }
 
+/// A name requested several times with different types (see `isDecodedForSeveralRequests`) counts as asking
+/// for a raw-byte conversion: its columns can read the same bytes differently.
+bool asksForRawBytes(const RequestedType & requested)
+{
+    return requested.shared || hasRawByteLeaf(requested.type);
+}
+
 /// Whether the field at the dotted `path` carries a requested subcolumn below it together with a requested
 /// column that encloses that subcolumn (e.g. `t` and `t.s` for the struct `t`, or `t.u` and `t.u.s` for the
 /// struct `t`, where `t` itself is not requested), and one of these columns asks for a raw-byte conversion.
 /// Each such column is taken from the one decoded column, whose leaves then keep their bytes (see
 /// `RecordBatchDecoder::rawByteTarget`) and are converted after decoding.
-bool carriesNestedRequests(const String & path, const UnorderedMapWithMemoryTracking<String, DataTypePtr> * types)
+bool carriesNestedRequests(const String & path, const RequestedTypes * types)
 {
     if (!types || path.empty())
         return false;
-    for (const auto & [name, type] : *types)
+    for (const auto & [name, requested] : *types)
     {
         if (!isRequestedBelow(path, name))
             continue;
         bool enclosed = false;
-        bool converts = hasRawByteLeaf(type);
+        bool converts = asksForRawBytes(requested);
         for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
         {
             if (auto it = types->find(name.substr(0, pos)); it != types->end())
             {
                 enclosed = true;
-                converts = converts || hasRawByteLeaf(it->second);
+                converts = converts || asksForRawBytes(it->second);
             }
         }
         if (enclosed && converts)
@@ -583,7 +587,7 @@ FieldDictionaryValues dictionaryValuesFor(const ArrowField & field, const Dictio
 /// layers does not describe this field: no hint.
 DataTypePtr resolveHint(
     const DataTypePtr & parent_hint, const String & path, size_t list_depth,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * types)
+    const RequestedTypes * types)
 {
     if (parent_hint)
         return parent_hint;
@@ -592,7 +596,7 @@ DataTypePtr resolveHint(
     auto it = types->find(path);
     if (it == types->end())
         return nullptr;
-    DataTypePtr hint = it->second;
+    DataTypePtr hint = it->second.type;
     for (size_t i = 0; i < list_depth && hint; ++i)
         hint = arrayElementHint(hint);
     return hint;
@@ -2448,7 +2452,7 @@ void RecordBatchDecoder::convertBuffersFromBigEndian(const ArrowField * fields, 
 RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
     const flatbuf::RecordBatch & batch, const PODArray<char> & body,
     const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_,
+    const RequestedTypes * target_types_,
     const VectorWithMemoryTracking<char> * reachable_buffers)
 {
     beginBatch(batch, body, reachable_buffers, target_types_);
@@ -2479,7 +2483,7 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
 
 DictionaryRegistry::Values RecordBatchDecoder::decodeDictionaryValues(
     const flatbuf::RecordBatch & batch, const PODArray<char> & body, const ArrowField & value_field, const DictionaryUse & use,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_)
+    const RequestedTypes * target_types_)
 {
     beginBatch(batch, body, /*reachable_buffers=*/nullptr, target_types_);
     if (!schema.little_endian)
@@ -2499,7 +2503,7 @@ DictionaryRegistry::Values RecordBatchDecoder::decodeDictionaryValues(
 void RecordBatchDecoder::beginBatch(
     const flatbuf::RecordBatch & batch, const PODArray<char> & body,
     const VectorWithMemoryTracking<char> * reachable_buffers,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_)
+    const RequestedTypes * target_types_)
 {
     if (batch.length() < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has a negative length {}", batch.length());
@@ -2964,7 +2968,7 @@ DataTypePtr RecordBatchDecoder::rawByteTarget(const DataTypePtr & parent_hint, c
 
 UnorderedMapWithMemoryTracking<Int64, DictionaryUses> RecordBatchDecoder::collectDictionaryUses(
     const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_) const
+    const RequestedTypes * target_types_) const
 {
     UnorderedMapWithMemoryTracking<Int64, DictionaryUses> uses;
     for (const ArrowField & field : schema.fields)
@@ -2980,7 +2984,7 @@ UnorderedMapWithMemoryTracking<Int64, DictionaryUses> RecordBatchDecoder::collec
 
 void RecordBatchDecoder::collectDictionaryUses(
     const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * lookup_types,
+    const RequestedTypes * lookup_types,
     UnorderedMapWithMemoryTracking<Int64, DictionaryUses> & uses) const
 {
     const DataTypePtr effective_hint = resolveHint(target_hint, path, list_depth, lookup_types);

@@ -19,6 +19,22 @@
 namespace DB::ArrowIPC
 {
 
+/// The type requested for a normalized column name, including a dotted subcolumn name (see
+/// `ArrowIPCBlockInputFormat::prepareReader`).
+struct RequestedType
+{
+    /// Guides how the field is decoded (e.g. a `date32` read as the raw day number for a numeric type, or
+    /// the null map of a struct kept for a `Tuple`).
+    DataTypePtr type;
+    /// With case-insensitive matching, several header columns with different types share this normalized
+    /// name (`T String` and `t Tuple(s IPv6)`). All of them are taken from the one decoded field, so its raw
+    /// bytes must not be reinterpreted for any one of them: each column is converted by its own type after
+    /// decoding. `type` then keeps the requirements of these columns that decoding has to honor.
+    bool shared = false;
+};
+
+using RequestedTypes = UnorderedMapWithMemoryTracking<String, RequestedType>;
+
 /// Where a field sits for the requested-type rules of `RecordBatchDecoder::decodeField`: its dotted column
 /// name and the number of List/Map levels above it. Together with the requested types of the header, the
 /// position determines the type hint a field resolves, and with it how its values decode.
@@ -206,7 +222,7 @@ public:
     DecodedColumns decodeBatch(
         const flatbuf::RecordBatch & batch, const PODArray<char> & body,
         const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields = nullptr,
-        const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr,
+        const RequestedTypes * target_types = nullptr,
         const VectorWithMemoryTracking<char> * reachable_buffers = nullptr);
 
     /// Decodes a `DictionaryBatch` value column at the referencing field's position and requested type
@@ -214,7 +230,7 @@ public:
     /// types. The returned null map preserves entry validity independently of the resulting column type.
     DictionaryRegistry::Values decodeDictionaryValues(
         const flatbuf::RecordBatch & batch, const PODArray<char> & body, const ArrowField & value_field,
-        const DictionaryUse & use, const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_);
+        const DictionaryUse & use, const RequestedTypes * target_types_);
 
     /// Returns a 0/1 mask of the buffers referenced by the requested top-level fields. The `advanceField`
     /// traversal follows decoding's layout so subset reads can load, validate and decompress only the
@@ -238,7 +254,7 @@ public:
     /// belong only to unrequested fields.
     UnorderedMapWithMemoryTracking<Int64, DictionaryUses> collectDictionaryUses(
         const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
-        const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_) const;
+        const RequestedTypes * target_types_) const;
 
 private:
     Slice nextBuffer();
@@ -329,7 +345,7 @@ private:
     /// walked like any other's: `decodeDictionaryValues` decodes them at these same positions.
     void collectDictionaryUses(
         const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
-        const UnorderedMapWithMemoryTracking<String, DataTypePtr> * lookup_types,
+        const RequestedTypes * lookup_types,
         UnorderedMapWithMemoryTracking<Int64, DictionaryUses> & uses) const;
     ColumnPtr decodeUnion(const ArrowField & field, size_t rows, const InvisibleRowsMask * invisible_rows);
     /// `invisible_rows` carries the field's own nulls too (composed by `decodeField` from the same
@@ -382,7 +398,7 @@ private:
     void beginBatch(
         const flatbuf::RecordBatch & batch, const PODArray<char> & body,
         const VectorWithMemoryTracking<char> * reachable_buffers,
-        const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_);
+        const RequestedTypes * target_types_);
     /// Decodes one column of the current batch after the caller has validated its root node's row count,
     /// and reports its ClickHouse type. `target_hint`, `path`, and `list_depth` describe the requested-type
     /// position used by `decodeField`: a record batch column sits at the top level, and dictionary values
@@ -414,7 +430,7 @@ private:
     const flatbuf::RecordBatch * current_batch = nullptr;
     /// Requested column types by normalized (dotted) name, for the recursive `date32` numeric type hint;
     /// null when the caller did not provide them. Points at the caller's map for the call's duration.
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr;
+    const RequestedTypes * target_types = nullptr;
     /// The buffers to decode from: either views into the message body, or into `decompressed_body`.
     VectorWithMemoryTracking<Slice> buffer_slices;
     /// Total bytes across `buffer_slices`; bounds allocations sized by untrusted FieldNode lengths

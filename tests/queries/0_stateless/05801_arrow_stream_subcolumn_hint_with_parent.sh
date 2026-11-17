@@ -115,6 +115,23 @@ $CLICKHOUSE_LOCAL -q "SELECT 'abcdefghijklmnop' AS t FORMAT ArrowStream" > "$fil
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 'T String, t IPv6') SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't IPv6, T String') SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
 
+echo "case-insensitive names with a numeric date"
+# Written by PyArrow: a `date32` field holding the day number 3000000, beyond the `Date32` range.
+echo "/////3AAAAAQAAAAAAAKAAwABgAFAAgACgAAAAABBAAMAAAACAAIAAAABAAIAAAABAAAAAEAAAAUAAAAEAAUAAgABgAHAAwAAAAQABAAAAAAAAEIEAAAABgAAAAEAAAAAAAAAAEAAAB0AAYACAAGAAYAAAAAAAAA/////4gAAAAUAAAAAAAAAAwAFgAGAAUACAAMAAwAAAAAAwQAGAAAAAgAAAAAAAAAAAAKABgADAAEAAgACgAAADwAAAAQAAAAAQAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAEAAAABAAAAAAAAAAAAAAAAAAAAwMYtAAAAAAD/////AAAAAA==" | base64 -d > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 'T Int32, t Int64') SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Int64, T Int32') SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
+
+echo "case-insensitive names with a null struct row"
+$CLICKHOUSE_LOCAL -q "SELECT CAST(if(number = 1, NULL, tuple('abcdefghijklmnop')) AS Nullable(Tuple(s String))) AS t FROM numbers(2) FORMAT ArrowStream SETTINGS enable_nullable_tuple_type = 1" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 'T Tuple(s IPv6), t String') SETTINGS input_format_arrow_case_insensitive_column_matching = 1, enable_nullable_tuple_type = 0"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't String, T Tuple(s IPv6)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1, enable_nullable_tuple_type = 0"
+
+echo "case-insensitive names with a top-level dictionary"
+# Written by PyArrow: a dictionary-encoded `binary` field whose dictionary holds only `abcdefghijklmnop`.
+echo "/////5AAAAAQAAAAAAAKAAwABgAFAAgACgAAAAABBAAEAAAAvP///wQAAAABAAAAFAAAABAAGAAIAAYABwAMABAAFAAQAAAAAAABBBQAAABAAAAAHAAAAAQAAAAAAAAAAQAAAHQAAAAIAAgAAAAEAAgAAAAMAAAACAAMAAgABwAIAAAAAAAAASAAAAAEAAQABAAAAAAAAAD/////qAAAABQAAAAAAAAADAAUAAYABQAIAAwADAAAAAACBAAUAAAAGAAAAAAAAAAIAAoAAAAEAAgAAAAQAAAAAAAKABgADAAEAAgACgAAAEwAAAAQAAAAAQAAAAAAAAAAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAQAAAAAAAAAAAAAAABAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAYWJjZGVmZ2hpamtsbW5vcP////+IAAAAFAAAAAAAAAAMABYABgAFAAgADAAMAAAAAAMEABgAAAAIAAAAAAAAAAAACgAYAAwABAAIAAoAAAA8AAAAEAAAAAIAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAABAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/////wAAAAA=" | base64 -d > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 'T IPv6, t String') SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't String, T IPv6') SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
+
 echo "null struct row with a valid nullable child"
 # Written by PyArrow: a nullable `struct<s: binary>` whose second row is null while the child slot below it is valid.
 echo "/////5gAAAAQAAAAAAAKAAwABgAFAAgACgAAAAABBAAMAAAACAAIAAAABAAIAAAABAAAAAEAAAAEAAAA2P///wAAAQ0UAAAAGAAAAAQAAAABAAAAIAAAAAEAAAB0AAAAzP///xAAFAAIAAYABwAMAAAAEAAQAAAAAAABBBAAAAAYAAAABAAAAAAAAAABAAAAcwAAAAQABAAEAAAAAAAAAP////+4AAAAFAAAAAAAAAAMABYABgAFAAgADAAMAAAAAAMEABgAAAA4AAAAAAAAAAAACgAYAAwABAAIAAoAAABcAAAAEAAAAAIAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAEAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAADAAAAAAAAAAYAAAAAAAAACAAAAAAAAAAAAAAAAIAAAACAAAAAAAAAAEAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAABAAAAAgAAAAAAAAAGFiY2RlZmdoaWprbG1ub3BhYmNkZWZnaGlqa2xtbm9w/////wAAAAA=" | base64 -d > "$file"

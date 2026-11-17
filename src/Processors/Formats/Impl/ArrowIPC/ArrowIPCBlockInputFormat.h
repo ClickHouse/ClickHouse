@@ -94,7 +94,7 @@ private:
     /// subcolumn names like `t.d`). Passed to the decoder for the recursive `date32` numeric type hint: a
     /// `date32` mapped (at any nesting) to a numeric target is read as the raw `Int32` day number without
     /// the `Date32` range check, matching the Apache Arrow library reader's numeric type-hint behavior.
-    UnorderedMapWithMemoryTracking<String, DataTypePtr> requested_field_target_types;
+    ArrowIPC::RequestedTypes requested_field_target_types;
     /// For each Arrow dictionary id the requested columns reference, the positions of the fields encoding it
     /// with the requested type hint each resolves there (see `RecordBatchDecoder::collectDictionaryUses`),
     /// computed from the requested header before any dictionary batch is decoded. A DictionaryBatch whose id
