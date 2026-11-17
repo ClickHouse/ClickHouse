@@ -341,9 +341,10 @@ public:
 
         /// How many of the claimed partitions of the single-level merge, or buckets of the adaptive merge (see
         /// `next_bucket_to_merge`), merged without a cancellation. Each takes the states out of the cells of the source
-        /// tables that belong to it, so once all of them merged, the source tables hold no states, and the last one stops
-        /// the tables owning states. Their destruction then frees their buffers without walking their cells, which one
-        /// thread would otherwise do for every table at the end of the query. The adaptive merge frees the tables right
+        /// tables that belong to it (a unit that the adaptive merge skips leaves those that need no destructor), so
+        /// once all of them merged, the source tables hold no states to destroy, and the last one stops the tables
+        /// owning states. Their destruction then frees their buffers without walking their cells, which one thread
+        /// would otherwise do for every table at the end of the query. The adaptive merge frees the tables right
         /// then, in parallel (see `Aggregator::releaseAdaptiveMergeSources`). A cancelled merge leaves the tables to
         /// destroy the states they keep.
         std::atomic<size_t> merged_claims = 0;
