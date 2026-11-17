@@ -1112,3 +1112,32 @@ def test_empty_columns_txt_replicated_without_substreams_file(started_cluster):
     assert node1.contains_in_log("columns_substreams.txt to rebuild it from")
 
     node1.query(f"DROP TABLE {table} SYNC")
+
+
+def test_empty_columns_substreams_txt_replicated(started_cluster):
+    # columns_substreams.txt is not covered by the part checksums, so a power loss can leave it empty
+    # while the rest of the part is intact. It must be taken as absent - also under
+    # require_part_metadata - instead of detaching the part: this replica is the only one, so a
+    # detached part would not be re-fetched and its rows would be gone. The MergeTree case is covered
+    # by stateless test 05814_zero_length_columns_substreams_txt.sh.
+    table = "t_empty_columns_substreams_replicated"
+    create_wide_part_replicated_table(table)
+
+    data_path = single_wide_part_path(table)
+    assert node1.query(f"SELECT count(), sum(val) FROM {table}") == "500\t125250\n"
+
+    node1.query(f"DETACH TABLE {table}")
+    truncate_file(node1, data_path + "columns_substreams.txt")
+    node1.query(f"ATTACH TABLE {table}")
+    assert_no_detached_parts(table)
+    assert node1.query(f"SELECT count(), sum(val) FROM {table}") == "500\t125250\n"
+    assert node1.query(f"CHECK TABLE {table} SETTINGS check_query_single_value_result = 1") == "1\n"
+    assert node1.contains_in_log("Ignoring empty columns_substreams.txt in part all_0_0_0")
+
+    # The file stays empty on disk, so the next load must take the same path.
+    node1.query(f"DETACH TABLE {table}")
+    node1.query(f"ATTACH TABLE {table}")
+    assert_no_detached_parts(table)
+    assert node1.query(f"SELECT count(), sum(val) FROM {table}") == "500\t125250\n"
+
+    node1.query(f"DROP TABLE {table} SYNC")
