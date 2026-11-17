@@ -205,6 +205,10 @@ public:
 
     void adjustWithUntrackedMemory(Int64 untracked_memory);
 
+    /// Check retained query setup bytes against this query's limit, without rechecking
+    /// ancestors that have already accounted for those bytes.
+    void checkQueryLimit() const;
+
     Int64 get() const
     {
         return amount.load(std::memory_order_relaxed);

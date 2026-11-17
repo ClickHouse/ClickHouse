@@ -901,6 +901,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         std::optional<String> replacement_query = getReplacementQuery(query);
         bool with_output = false;
 
+        auto query_scope = QueryScope::createForQueryContext(session->sessionContext());
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
 
@@ -910,7 +911,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         socket().setReceiveTimeout(settings[Setting::receive_timeout]);
         socket().setSendTimeout(settings[Setting::send_timeout]);
 
-        QueryScope query_scope = QueryScope::create(query_context);
+        query_scope.attachToQueryContext(query_context);
 
         std::atomic<size_t> affected_rows {0};
         auto prev = query_context->getProgressCallback();
@@ -983,9 +984,10 @@ Block MySQLHandler::describePreparedStatement(const String & statement, ResultCo
     std::optional<String> replacement_query = getReplacementQuery(statement);
     const String & query = replacement_query ? *replacement_query : statement;
 
+    auto query_scope = QueryScope::createForQueryContext(session->sessionContext());
     auto query_context = session->makeQueryContext();
     query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
-    QueryScope query_scope = QueryScope::create(query_context);
+    query_scope.attachToQueryContext(query_context);
 
     const auto & settings = query_context->getSettingsRef();
 

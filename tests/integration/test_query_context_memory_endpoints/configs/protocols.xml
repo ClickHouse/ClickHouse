@@ -1,0 +1,6 @@
+<clickhouse>
+    <mysql_port>9004</mysql_port>
+    <postgresql_port>9005</postgresql_port>
+    <grpc_port>9100</grpc_port>
+    <arrowflight_port>8888</arrowflight_port>
+</clickhouse>
