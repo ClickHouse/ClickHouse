@@ -45,6 +45,14 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    String getSignatureString() const override
+    {
+        if constexpr (requires { T::signature; })
+            return T::signature;
+        else
+            return {};
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args_descriptors;
@@ -552,6 +560,7 @@ struct SimpleLevenshtein
 {
     static constexpr auto name{"arrayLevenshteinDistance"};
     static constexpr size_t arguments = 2;
+    static constexpr auto signature = "(Array, Array) -> UInt32";
 };
 
 template <>
@@ -577,6 +586,8 @@ struct Weighted
 {
     static constexpr auto name{"arrayLevenshteinDistanceWeighted"};
     static constexpr size_t arguments = 4;
+    static constexpr auto signature
+        = "(Array, Array, Array(T : Integer | Float), Array(T)) -> Float64";
 };
 
 template <>
@@ -589,6 +600,8 @@ struct Similarity
 {
     static constexpr auto name{"arraySimilarity"};
     static constexpr size_t arguments = 4;
+    static constexpr auto signature
+        = "(Array, Array, Array(T : Integer | Float), Array(T)) -> Float64";
 };
 
 template <>

@@ -9,8 +9,6 @@ SET query_plan_optimize_join_order_randomize = 0;
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS sales;
 
-SET enable_analyzer = 1;
-
 CREATE TABLE sales (
     id Int32,
     date Date,

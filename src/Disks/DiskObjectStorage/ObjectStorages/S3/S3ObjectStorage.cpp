@@ -490,7 +490,7 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
         }
 
         deleteFilesFromS3(client.get(), bucket, keys, if_exists,
-                          s3_capabilities, settings_ptr->request_settings[S3RequestSetting::objects_chunk_size_to_delete],
+                          s3_capabilities, settings_ptr->request_settings, settings_ptr->request_settings[S3RequestSetting::objects_chunk_size_to_delete],
                           blob_storage_log, local_paths_for_blob_storage_log, file_sizes_for_blob_storage_log,
                           ProfileEvents::DiskS3DeleteObjects,
                           &successful_keys);
@@ -733,27 +733,36 @@ void S3ObjectStorage::copyObject( // NOLINT
     auto settings_ptr = s3_settings.get();
     const auto [src_bucket, src_key] = splitBucketAndKey(object_from.remote_path);
     const auto [dest_bucket, dest_key] = splitBucketAndKey(object_to.remote_path);
-    auto size = S3::getObjectSize(*current_client, src_bucket, src_key, {});
-    auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
-    const auto read_settings_to_use = patchSettings(read_settings);
-    auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
-    if (blob_storage_log)
-        blob_storage_log->local_path = object_to.local_path;
 
-    copyS3File(
-        /*src_s3_client=*/current_client,
-        /*src_bucket=*/src_bucket,
-        /*src_key=*/src_key,
-        /*src_size=*/size,
-        /*dest_s3_client=*/current_client,
-        /*dest_bucket=*/dest_bucket,
-        /*dest_key=*/dest_key,
-        settings_ptr->request_settings,
-        read_settings_to_use,
-        blob_storage_log,
-        scheduler,
-        [&, this]{ return readObject(object_from, read_settings_to_use);},
-        object_to_attributes);
+    try
+    {
+        auto size = S3::getObjectSize(*current_client, src_bucket, src_key, {});
+        auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
+        const auto read_settings_to_use = patchSettings(read_settings);
+        auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
+        if (blob_storage_log)
+            blob_storage_log->local_path = object_to.local_path;
+
+        copyS3File(
+            /*src_s3_client=*/current_client,
+            /*src_bucket=*/src_bucket,
+            /*src_key=*/src_key,
+            /*src_size=*/size,
+            /*dest_s3_client=*/current_client,
+            /*dest_bucket=*/dest_bucket,
+            /*dest_key=*/dest_key,
+            settings_ptr->request_settings,
+            read_settings_to_use,
+            blob_storage_log,
+            scheduler,
+            [&, this]{ return readObject(object_from, read_settings_to_use);},
+            object_to_attributes);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(fmt::format("While copying '{}' to '{}' on disk {}", object_from.remote_path, object_to.remote_path, disk_name));
+        throw;
+    }
 }
 
 void S3ObjectStorage::shutdown()
@@ -816,6 +825,9 @@ void S3ObjectStorage::applyNewSettings(
         apply_config_settings();
         apply_endpoint_settings();
     }
+
+    for (const auto & [name, value] : options.explicit_request_settings)
+        modified_settings->request_settings.setByName(name, value);
 
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);

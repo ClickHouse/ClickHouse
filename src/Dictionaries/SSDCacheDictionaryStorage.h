@@ -13,6 +13,7 @@
 #include <absl/container/flat_hash_set.h>
 #include <Common/ErrnoException.h>
 #include <Common/ProfileEvents.h>
+#include <Common/filesystemHelpers.h>
 
 #    include <base/MemorySanitizer.h>
 #    include <Dictionaries/DictionaryHelpers.h>
@@ -481,24 +482,53 @@ public:
 
         ProfileEvents::increment(ProfileEvents::FileOpen);
 
+        /// Another storage with the same path may still be reading the old file, so it is replaced, not truncated.
+        /// rename(2) overwrites a symlink, not the file it points to, so the link is resolved first.
+        std::filesystem::path target_path = file_path;
+        for (size_t hops = 0; target_path.has_filename() && FS::isSymlinkNoThrow(target_path); ++hops)
+        {
+            if (hops == 40)
+                ErrnoException::throwFromPathWithErrno(ErrorCodes::CANNOT_OPEN_FILE, file_path, ELOOP, "Cannot open file {}", file_path);
+            target_path = target_path.parent_path() / FS::readSymlink(target_path);
+        }
+        const std::string target_file_path = target_path.string();
+
+        /// rename(2) ignores the replaced file's permissions: a file the server cannot read and write must not be replaced.
+        if (::access(target_file_path.c_str(), R_OK | W_OK) != 0 && errno != ENOENT)
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_path, "Cannot open file {}", target_file_path);
+
+        const std::string new_file_path = (target_path.parent_path() / fmt::format("ssd_cache_{}.tmp", randomSeed())).string();
+
         #if defined(OS_DARWIN)
         /// macOS has no O_DIRECT; F_NOCACHE (set below) is the closest equivalent.
-        file.fd = ::open(file_path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
+        file.fd = ::open(new_file_path.c_str(), O_RDWR | O_CREAT | O_EXCL, 0666);
         #else
-        file.fd = ::open(file_path.c_str(), O_RDWR | O_CREAT | O_TRUNC | O_DIRECT, 0666);
+        file.fd = ::open(new_file_path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_DIRECT, 0666);
         #endif
         if (file.fd == -1)
         {
             auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
-            ErrnoException::throwFromPath(error_code, file_path, "Cannot open file {}", file_path);
+            ErrnoException::throwFromPath(error_code, file_path, "Cannot create file {} to replace {}", new_file_path, target_file_path);
         }
 
-        #if defined(OS_DARWIN)
-        if (::fcntl(file.fd, F_NOCACHE, 1) == -1)
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_path, "Cannot set F_NOCACHE on file {}", file_path);
-        #endif
+        try
+        {
+            #if defined(OS_DARWIN)
+            if (::fcntl(file.fd, F_NOCACHE, 1) == -1)
+                ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_path, "Cannot set F_NOCACHE on file {}", file_path);
+            #endif
 
-        allocateSizeForNextPartition();
+            allocateSizeForNextPartition();
+
+            if (::rename(new_file_path.c_str(), target_file_path.c_str()) != 0)
+                ErrnoException::throwFromPath(
+                    ErrorCodes::CANNOT_OPEN_FILE, file_path, "Cannot rename {} to {}", new_file_path, target_file_path);
+        }
+        catch (...)
+        {
+            ::unlink(new_file_path.c_str());
+            throw;
+        }
     }
 
     void allocateSizeForNextPartition()
@@ -580,14 +610,16 @@ public:
         return true;
     }
 
-    bool readKeys(size_t block_start, size_t blocks_length, PaddedPODArray<KeyType> & out) const
+    /// For complex keys, the keys written into `out` are `std::string_view`s pointing into `read_buffer_memory`,
+    /// so the caller must keep `read_buffer_memory` alive for as long as it uses `out`.
+    bool readKeys(size_t block_start, size_t blocks_length, Memory<> & read_buffer_memory, PaddedPODArray<KeyType> & out) const
     {
         if (block_start + blocks_length > current_blocks_size)
             return false;
 
         size_t buffer_size_in_bytes = blocks_length * block_size;
 
-        Memory<> read_buffer_memory(block_size * blocks_length, block_size);
+        read_buffer_memory = Memory<>(block_size * blocks_length, block_size);
 
         iocb request{};
         iocb * request_ptr = &request;
@@ -623,6 +655,9 @@ public:
                 throw ErrnoException(ErrorCodes::CANNOT_IO_GETEVENTS, "io_getevents: Failed to get an event for asynchronous IO");
         }
 
+        // Unpoison the memory returned from an uninstrumented system function.
+        __msan_unpoison(&event, sizeof(event));
+
         auto read_bytes = eventResult(event);
 
         if (read_bytes != static_cast<ssize_t>(buffer_size_in_bytes))
@@ -634,6 +669,9 @@ public:
 
         ProfileEvents::increment(ProfileEvents::AIORead);
         ProfileEvents::increment(ProfileEvents::AIOReadBytes, read_bytes);
+
+        // Unpoison the memory returned from an uninstrumented system function.
+        __msan_unpoison(read_buffer_memory.data(), buffer_size_in_bytes);
 
         SSDCacheBlock block(block_size);
 
@@ -1151,8 +1189,8 @@ private:
             for (auto & key_in_block : keys_in_block)
             {
                 char * key_data = block_data + key_in_block.offset_in_block;
-                /// This is larger size than necessary but we don't know the exact size of serialized columns
-                size_t size = configuration.read_buffer_blocks_size;
+                /// The serialized columns are within the block, but we don't know their exact size.
+                size_t size = configuration.block_size - key_in_block.offset_in_block;
                 ReadBufferFromString in({key_data, size});
                 deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, in);
 
@@ -1323,8 +1361,10 @@ private:
                 if (started_reusing_old_partitions)
                 {
                     /// If we start reusing old partitions we need to remove old keys on disk from index before writing buffer
+                    /// For complex keys, `old_keys` point into `old_keys_buffer`, so it must outlive them.
+                    Memory<> old_keys_buffer;
                     PaddedPODArray<KeyType> old_keys;
-                    file_buffer.readKeys(block_index_in_file_before_write, configuration.write_buffer_blocks_size, old_keys);
+                    file_buffer.readKeys(block_index_in_file_before_write, configuration.write_buffer_blocks_size, old_keys_buffer, old_keys);
 
                     size_t file_read_end_block_index = block_index_in_file_before_write + configuration.write_buffer_blocks_size;
 
@@ -1368,8 +1408,8 @@ private:
                         auto key_to_update = keys_to_update[i];
                         auto * it = index.find(key_to_update);
 
-                        /// If there are no key to update or key to update not in memory
-                        if (!it || it->getMapped().state != Cell::in_memory)
+                        /// Skip absent keys and keys whose live cell is not in this partition's buffer
+                        if (!it || it->getMapped().state != Cell::in_memory || it->getMapped().in_memory_partition_index != current_partition_index)
                             continue;
 
                         /// If there were duplicated keys in memory buffer partition
@@ -1405,9 +1445,10 @@ private:
                     if (memory_buffer_partitions.size() < configuration.max_partitions_count)
                     {
                         /// Try tro create next partition without reusing old partitions
-                        ++current_partition_index;
                         file_buffer.allocateSizeForNextPartition();
                         memory_buffer_partitions.emplace_back(configuration.block_size, configuration.write_buffer_blocks_size);
+                        /// Advance only after both calls succeed, so the index stays valid if one of them throws.
+                        ++current_partition_index;
                     }
                     else
                     {

@@ -24,7 +24,7 @@
 #    include <Common/Crypto/OpenSSLInitializer.h>
 #endif
 
-/// Not tied to USE_MULTITARGET_CODE: the AVX2 kernel below is compiled whenever the build target has
+/// Not tied to USE_X86_64_MULTITARGET_CODE: the AVX2 kernel below is compiled whenever the build target has
 /// AVX2, which is independent of whether multi-target dispatch is on.
 #if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
@@ -123,14 +123,14 @@ public:
 /// ============================================================
 /// Multi-buffer MD5, templated on Ops.
 ///
-/// Template functions go inside DECLARE_MULTITARGET_CODE so each
+/// Template functions go inside DECLARE_X86_64_MULTITARGET_CODE so each
 /// target-specific copy is compiled with the correct ISA flags.
 /// The Ops structs (ScalarMD5Ops, AVX2MD5Ops, AVX512MD5Ops) are
 /// in their own DECLARE blocks and found via same-namespace lookup.
 /// ============================================================
 
 /// One interleaved MD5 round step for two independent groups.
-/// Defined outside DECLARE_MULTITARGET_CODE because preprocessor
+/// Defined outside DECLARE_X86_64_MULTITARGET_CODE because preprocessor
 /// directives inside macro arguments are undefined behavior.
 #define MD5_STEP_X2(func, w1, x1, y1, z1, w2, x2, y2, z2, g, s, ti) \
     { \
@@ -943,7 +943,7 @@ public:
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Function {} is not available in FIPS mode", name);
 #endif
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionMD5Impl>();

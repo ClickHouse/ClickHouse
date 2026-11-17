@@ -61,6 +61,7 @@ La consommation des ressources calculée pour chaque intervalle est consignée d
         <query_selects>100</query_selects>
         <query_inserts>100</query_inserts>
         <written_bytes>5000000</written_bytes>
+        <written_rows>100000</written_rows>
         <errors>100</errors>
         <result_rows>1000000000</result_rows>
         <read_rows>100000000000</read_rows>
@@ -107,6 +108,8 @@ Voici les quantités pouvant être limitées :
 `read_bytes` - La taille totale lue depuis les tables pour exécuter la requête sur l’ensemble des serveurs distants.
 
 `written_bytes` - La taille totale d’une opération d’écriture.
+
+`written_rows` - Le nombre total de lignes écrites par les requêtes `INSERT`.
 
 `execution_time` – Le temps d’exécution total des requêtes, en secondes (temps réel).
 

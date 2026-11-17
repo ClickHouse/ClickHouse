@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include "config.h"
 
 #if USE_SQLITE
@@ -97,7 +98,7 @@ private:
 
     Block sample_block;
     FormatSettings format_settings;
-    std::vector<ColumnReadInfo> columns_info;
+    VectorWithMemoryTracking<ColumnReadInfo> columns_info;
     DeclaredTypeTrust declared_type_trust = DeclaredTypeTrust::Trusted;
     bool undeclared_columns_resolved = false;
 };

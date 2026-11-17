@@ -3,7 +3,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
-#include <Interpreters/ActionsDAG.h>
+#include <base/types.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <span>
@@ -13,6 +13,8 @@
 
 namespace DB
 {
+
+class ActionsDAG;
 
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
@@ -36,6 +38,10 @@ struct ExplainPlanOptions;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
+
+/// Defined in Processors/QueryPlan/Serialization.h.
+struct QueryPlanStepSerialization;
+struct QueryPlanStepDeserialization;
 
 struct ExplainFormatSettings;
 
@@ -76,8 +82,8 @@ public:
     template <size_t size>
     ALWAYS_INLINE void setStepDescription(const char (&description)[size]) { step_description = std::string_view(description, size - 1); }
 
-    struct Serialization;
-    struct Deserialization;
+    using Serialization = QueryPlanStepSerialization;
+    using Deserialization = QueryPlanStepDeserialization;
 
     virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/, UInt64 /*version*/) const {}
     virtual void serialize(Serialization & /*ctx*/) const;
@@ -120,6 +126,8 @@ public:
     /// Updates the input streams of the given step. Used during query plan optimizations.
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
     String getUniqID() const;
+    /// The number in `getUniqID`, unique within the query.
+    size_t getStepIndex() const { return step_index.value; }
 
     /// (e.g. you correctly remove / add columns).
     void updateInputHeaders(SharedHeaders input_headers_);
@@ -250,7 +258,17 @@ protected:
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 
 private:
-    size_t step_index = 0;
+    /// A copy is a separate step, so it takes a new index; a move keeps it.
+    struct StepIndex
+    {
+        size_t value = 0;
+
+        StepIndex();
+        StepIndex(const StepIndex &) : StepIndex() {}
+        StepIndex(StepIndex &&) = default;
+    };
+
+    StepIndex step_index;
 };
 
 }

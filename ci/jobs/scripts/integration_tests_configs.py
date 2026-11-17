@@ -1,5 +1,7 @@
 import dataclasses
+import re
 import traceback
+from pathlib import Path
 
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.praktika.info import Info
@@ -10,10 +12,9 @@ class TC:
     prefix: str
     is_sequential: bool  # sequential in every integration job
     comment: str
-    # Sequential only under the flaky/targeted `--dist=each` schedule; parallel
-    # under the normal `--dist=loadfile` schedule. Set for modules that start one
-    # cluster per xdist worker under `--dist=each` and then contend on a shared
-    # resource (host memory, a fixed host port, or a global Docker-network lock).
+    # Sequential only under the flaky check's `--dist=each` schedule; parallel elsewhere.
+    # Set for modules that start one cluster per xdist worker under `--dist=each` and then
+    # contend on host memory or a fixed host port.
     dist_each_sequential: bool = False
 
 
@@ -24,6 +25,10 @@ LLVM_COVERAGE_SKIP_PREFIXES = [
     "test_storage_s3_queue/test_6.py",
     "test_named_collections_encrypted2/",
     "test_multiple_disks/",
+    # The YTsaurus backend container was OOM-killed under the memory pressure of a coverage
+    # shard (master, 2026-02-17). The module skips itself on ARM, so the `arm_binary` runs of a
+    # pull request skip it too, and without coverage rows the targeted amd jobs could never
+    # select it: the per-test coverage job keeps it, see `PER_TEST_COVERAGE_KEEP_PREFIXES`.
     "test_ytsaurus/",
     # Starts 20 server nodes. Under continuous-mode coverage (%c) every node
     # memory-maps its own ~178 MB profile, and the kernel's writeback of the
@@ -47,14 +52,20 @@ PER_TEST_COVERAGE_SKIP_PREFIXES = [
     "test_keeper_memory_soft_limit/",
 ]
 
+# Entries of `LLVM_COVERAGE_SKIP_PREFIXES` that the per-test coverage job (`per_test_coverage`)
+# runs anyway. That job records the coverage per test module, and the targeted integration
+# jobs of a pull request select the modules covering the changed lines from these records. A
+# module that skips itself on ARM has no other run in a pull request (`Integration tests
+# (arm_binary, N/4)` skips it, the LLVM coverage family is opt-in), so without the records a
+# change to its code is tested only after the merge, by the `excluded_from_llvm` job of master.
+PER_TEST_COVERAGE_KEEP_PREFIXES = [
+    "test_ytsaurus/",
+]
+assert set(PER_TEST_COVERAGE_KEEP_PREFIXES) <= set(
+    LLVM_COVERAGE_SKIP_PREFIXES
+), "PER_TEST_COVERAGE_KEEP_PREFIXES must be a subset of LLVM_COVERAGE_SKIP_PREFIXES"
+
 TEST_CONFIGS = [
-    TC(
-        "test_dns_cache/",
-        False,
-        "fixed IPv6 addresses; concurrent --dist=each clusters serialize on the "
-        "global /tmp/docker_net.lock and blow the 10-min acquire budget",
-        dist_each_sequential=True,
-    ),
     TC("test_global_overcommit_tracker/", False, "memory overcommit test; isolated to its own ClickHouse instance"),
     TC(
         "test_profile_max_sessions_for_user/",
@@ -84,6 +95,12 @@ TEST_CONFIGS = [
     ),
     TC("test_storage_iceberg_no_spark/", False, "minio/azurite per cluster; fully isolated"),
     TC("test_storage_iceberg_with_spark_cache/", False, "package-scoped Spark session; each xdist worker gets its own instance"),
+    TC(
+        "test_storage_paimon_with_spark/",
+        False,
+        "package-scoped Spark session; each xdist worker gets its own instance",
+        dist_each_sequential=True,
+    ),
     TC("test_storage_iceberg_concurrent/", False, "package-scoped Spark session; each xdist worker gets its own instance"),
     TC(
         "test_storage_delta/test_azure_cluster.py",
@@ -108,6 +125,12 @@ TEST_CONFIGS = [
         dist_each_sequential=True,
     ),
     TC(
+        "test_storage_delta/test_writes_interop.py",
+        False,
+        "starts a Spark JVM + multi-node ClickHouse cluster per module fixture",
+        dist_each_sequential=True,
+    ),
+    TC(
         "test_storage_delta_disks/test.py",
         False,
         "starts a Spark JVM + multi-node ClickHouse cluster per module fixture",
@@ -116,25 +139,45 @@ TEST_CONFIGS = [
 ]
 
 
-def force_heavy_modules_sequential(
+# A fixed address is on the one subnet of `docker_compose_net.yml`, so the cluster holds the
+# host-wide `/tmp/docker_net.lock` from `start` to `shutdown`.
+_FIXED_ADDRESS = re.compile(r"(?<![.\w])ipv[46]_address\s*=(?!=)(?!\s*None\b)")
+
+
+def _module_files(test: str) -> list[Path]:
+    selector = Path("./tests/integration") / test.split("::")[0]
+    return list(selector.glob("test*.py")) if selector.is_dir() else [selector.with_suffix(".py")]
+
+
+def holds_docker_net_lock(test: str) -> bool:
+    return any(f.is_file() and _FIXED_ADDRESS.search(f.read_text()) for f in _module_files(test))
+
+
+def force_exclusive_modules_sequential(
     parallel_test_modules: list[str],
     sequential_test_modules: list[str],
+    dist_each: bool,
 ) -> tuple[list[str], list[str]]:
-    """Move TEST_CONFIGS `dist_each_sequential` modules from the parallel to the
-    sequential bucket, preserving order.
+    """Move the modules that must not run concurrently from the parallel to the sequential
+    bucket (`-n 1`), preserving order. Called on the flaky and targeted paths.
 
-    Called only on the flaky/targeted path, whose parallel bucket runs with
-    `--dist=each` (every worker runs every parallel module at once). These
-    modules start one cluster per worker there and exhaust memory; the
-    sequential bucket runs `-n 1` (one cluster at a time, looped >=3x), which
-    keeps the flakiness signal without the concurrent OOM. Normal runs use
-    `--dist=loadfile` (one file -> one worker -> one cluster) and never call this.
+    Modules holding `/tmp/docker_net.lock` serialize on it and a waiter gives up after 10
+    minutes, so only the longest of them stays parallel. Under `--dist=each` every worker runs
+    every module, so none of them stays, and `dist_each_sequential` modules move too.
     """
-    prefixes = [tc.prefix for tc in TEST_CONFIGS if tc.dist_each_sequential]
+    holders = list(
+        dict.fromkeys(
+            m.split("::")[0] for m in parallel_test_modules if holds_docker_net_lock(m)
+        )
+    )
+    if holders and not dist_each:
+        holders.remove(max(holders, key=lambda f: TEST_DURATIONS.get(f, 0)))
+    prefixes = [f"tests/integration/{tc.prefix}" for tc in TEST_CONFIGS if dist_each and tc.dist_each_sequential]
     forced = [
         m
         for m in parallel_test_modules
-        if any(m.startswith(p) for p in prefixes)
+        if m.split("::")[0] in holders
+        or any(f.as_posix().startswith(p) for f in _module_files(m) for p in prefixes)
     ]
     if not forced:
         return parallel_test_modules, sequential_test_modules
@@ -886,7 +929,6 @@ test_cache_bypass_on_disk_failure/test.py	30560
 test_backward_compatibility/test_functions.py	30553
 test_broken_detached_part_quarantine/test.py	30524
 test_distributed_plan_worker_exchange_port/test.py	30506
-test_analyzer_compatibility/test.py	30493
 test_disabled_access_control_improvements/test_select_from_system_tables.py	30484
 test_access_cache_recompute_coalescing/test.py	30416
 test_incremental_refreshable_mv/test.py	30396

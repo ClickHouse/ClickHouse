@@ -38,6 +38,9 @@ struct SingleValueDataBase
     virtual bool setIfSmaller(const SingleValueDataBase &, Arena *) = 0;
     virtual bool setIfGreater(const IColumn &, size_t row_num, Arena *) = 0;
     virtual bool setIfGreater(const SingleValueDataBase &, Arena *) = 0;
+    /// Whether `setIfSmaller` / `setIfGreater` with the same argument would replace the value, without replacing it.
+    virtual bool wouldSetIfSmaller(const SingleValueDataBase &) const = 0;
+    virtual bool wouldSetIfGreater(const SingleValueDataBase &) const = 0;
 
     /// Given a column, sets the internal value to the smallest or greatest value from the column
     /// Used to implement batch min/max
@@ -118,6 +121,8 @@ struct SingleValueDataFixed
 
     bool setIfSmaller(const Self & to, Arena * arena);
     bool setIfGreater(const Self & to, Arena * arena);
+    bool wouldSetIfSmaller(const Self & to) const;
+    bool wouldSetIfGreater(const Self & to) const;
     bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena);
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena);
     void setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena *);
@@ -228,6 +233,8 @@ public:
 
     bool setIfSmaller(const SingleValueDataBase & to, Arena * arena) override;
     bool setIfGreater(const SingleValueDataBase & to, Arena * arena) override;
+    bool wouldSetIfSmaller(const SingleValueDataBase & other) const override;
+    bool wouldSetIfGreater(const SingleValueDataBase & other) const override;
     bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena) override;
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
     void setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena) override;
@@ -322,6 +329,8 @@ public:
 
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
     bool setIfGreater(const SingleValueDataBase &, Arena * arena) override;
+    bool wouldSetIfSmaller(const SingleValueDataBase & other) const override;
+    bool wouldSetIfGreater(const SingleValueDataBase & other) const override;
 
     static bool allocatesMemoryInArena() { return true; }
 };
@@ -352,6 +361,8 @@ public:
     bool setIfSmaller(const SingleValueDataBase & other, Arena *) override;
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
     bool setIfGreater(const SingleValueDataBase & other, Arena *) override;
+    bool wouldSetIfSmaller(const SingleValueDataBase & other) const override;
+    bool wouldSetIfGreater(const SingleValueDataBase & other) const override;
 
     static bool allocatesMemoryInArena() { return false; }
 };
@@ -385,6 +396,8 @@ public:
     bool setIfSmaller(const SingleValueDataBase & other, Arena *) override;
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
     bool setIfGreater(const SingleValueDataBase & other, Arena *) override;
+    bool wouldSetIfSmaller(const SingleValueDataBase & other) const override;
+    bool wouldSetIfGreater(const SingleValueDataBase & other) const override;
 
     static bool allocatesMemoryInArena() { return false; }
 };
@@ -415,6 +428,8 @@ struct SingleValueReference final : public SingleValueDataBase
 
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
     bool setIfGreater(const SingleValueDataBase &, Arena * arena) override;
+    bool wouldSetIfSmaller(const SingleValueDataBase & other) const override;
+    bool wouldSetIfGreater(const SingleValueDataBase & other) const override;
 
     static bool allocatesMemoryInArena() { return false; }
 };

@@ -13,7 +13,6 @@
 -- every query plan optimization, so the bailout still fires and the vector column survives for the deferred
 -- filter.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 -- The control query below relies on the non-rescoring rewrite actually happening under `FINAL`, which requires
 -- the vector index to be used. Pin the settings against randomization.

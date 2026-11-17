@@ -96,7 +96,7 @@ std::optional<UInt64> getTrivialGroupByLimit(const QueryNode & query, const Sett
     if (settings[Setting::exact_rows_before_limit])
         return std::nullopt;
 
-    if (!query.hasGroupBy() || !query.hasLimit() || query.hasHaving() || query.hasOrderBy() || query.hasWindow()
+    if (!query.hasGroupBy() || !query.hasLimit() || query.hasHaving() || query.hasOrderBy() || query.isShuffle() || query.hasWindow()
         || query.hasQualify() || query.hasLimitBy() || query.isDistinct() || query.isGroupByWithTotals()
         || query.isGroupByWithRollup() || query.isGroupByWithCube() || query.isGroupByWithGroupingSets())
         return std::nullopt;

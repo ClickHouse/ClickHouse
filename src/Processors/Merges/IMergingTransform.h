@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 
 #include <Core/Block_fwd.h>
@@ -59,7 +60,7 @@ protected:
 
         /// Inputs to ask for data without waiting for it (read-ahead for sources
         /// deferred behind virtual rows). See `IMergingAlgorithm::Status::sources_to_prefetch`.
-        std::vector<size_t> inputs_to_prefetch;
+        VectorWithMemoryTracking<size_t> inputs_to_prefetch;
 
         IMergingAlgorithm::Inputs init_chunks;
     };
@@ -75,7 +76,7 @@ private:
         bool is_initialized = false;
     };
 
-    std::vector<InputState> input_states;
+    VectorWithMemoryTracking<InputState> input_states;
     std::atomic<bool> have_all_inputs;
     bool is_initialized = false;
     UInt64 limit_hint = 0;

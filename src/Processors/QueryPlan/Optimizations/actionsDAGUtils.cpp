@@ -704,32 +704,6 @@ HeaderColumnsToInputs mapHeaderColumnsToInputs(const ActionsDAG::NodeRawConstPtr
     return result;
 }
 
-NodeSet findReachableNodes(
-    const ActionsDAG::NodeRawConstPtrs & roots,
-    const std::function<bool(const ActionsDAG::Node *)> & is_barrier)
-{
-    NodeSet visited;
-    std::stack<const ActionsDAG::Node *> stack;
-    for (const auto * root : roots)
-        if (visited.insert(root).second)
-            stack.push(root);
-
-    while (!stack.empty())
-    {
-        const auto * current = stack.top();
-        stack.pop();
-
-        if (is_barrier && is_barrier(current))
-            continue;
-
-        for (const auto * child : current->children)
-            if (visited.insert(child).second)
-                stack.push(child);
-    }
-
-    return visited;
-}
-
 bool isInjectiveFunction(const ActionsDAG::Node * node)
 {
     if (node->function_base->isInjective(getFunctionArgumentColumns(*node)))
@@ -818,7 +792,9 @@ bool allOutputsDependsOnlyOnAllowedNodes(
                 res = allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node->children.at(0), visited);
                 break;
             case ActionsDAG::ActionType::ARRAY_JOIN:
-                UNREACHABLE();
+                /// An exploded array element is not a per-row function of its source row, so the key
+                /// value it feeds is not determined by the allowed nodes.
+                break;
             case ActionsDAG::ActionType::COLUMN:
                 /// Constants doesn't matter, so let's always consider them matched.
                 res = true;
@@ -889,15 +865,26 @@ std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(cons
             continue;
         String filter_id(label->column->getDataAt(0));
 
-        /// Argument 1: the probe key column, possibly wrapped in a CAST and/or aliases
+        /// Argument 1: the probe key column, possibly wrapped in at most one CAST and/or aliases
         /// (composing the filter through expression steps turns a renamed key into an alias
         /// of the physical column - looking through it reports the physical name).
+        /// A key under nested casts, e.g. `_CAST(CAST(k, 'UInt8'), 'UInt64')`, is not reported: the pruning
+        /// predicate re-applies only the cast to the filter type, so the inner cast would be lost.
         const auto * key_arg = node->children[1];
-        while ((key_arg->type == ActionsDAG::ActionType::ALIAS
-                || (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
-                    && (key_arg->function_base->getName() == "CAST" || key_arg->function_base->getName() == "_CAST")))
-               && !key_arg->children.empty())
-            key_arg = key_arg->children.front();
+        size_t casts = 0;
+        while (!key_arg->children.empty())
+        {
+            if (key_arg->type == ActionsDAG::ActionType::ALIAS)
+                key_arg = key_arg->children.front();
+            else if (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
+                     && (key_arg->function_base->getName() == "CAST" || key_arg->function_base->getName() == "_CAST"))
+            {
+                ++casts;
+                key_arg = key_arg->children.front();
+            }
+            else
+                break;
+        }
 
         /// Only bare key columns are reported. This intentionally excludes the `tuple(key1, key2, ...)`
         /// argument built for multi-key LEFT ANTI joins: that filter has NOT IN semantics, so a positive
@@ -905,6 +892,32 @@ std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(cons
         /// (Multi-key non-ANTI joins are unaffected: they build one per-column filter per key, and each
         /// is reported here. Single-key ANTI filters reported here stay fail-open at read time:
         /// the negating filter exposes neither recorded key values nor a key range.)
+        if (casts > 1)
+            continue;
+
+        /// The global row index of the read, `_part_starting_offset + _part_offset` in either order, is reported
+        /// as a global row index key: it is not a column, but granules can be skipped easily using that.
+        if (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
+            && key_arg->function_base->getName() == "plus" && key_arg->children.size() == 2)
+        {
+            auto input_name = [](const ActionsDAG::Node * arg) -> std::optional<String>
+            {
+                while (arg->type == ActionsDAG::ActionType::ALIAS)
+                    arg = arg->children.front();
+                if (arg->type != ActionsDAG::ActionType::INPUT)
+                    return std::nullopt;
+                return arg->result_name;
+            };
+            auto lhs = input_name(key_arg->children[0]);
+            auto rhs = input_name(key_arg->children[1]);
+            if (lhs && rhs
+                && ((*lhs == "_part_offset" && *rhs == "_part_starting_offset") || (*lhs == "_part_starting_offset" && *rhs == "_part_offset")))
+            {
+                res.push_back({std::move(filter_id), String(runtime_filter_global_row_index_key_name), key_arg->result_type, /*is_global_row_index=*/true});
+            }
+            continue;
+        }
+
         if (key_arg->type != ActionsDAG::ActionType::INPUT)
             continue;
 

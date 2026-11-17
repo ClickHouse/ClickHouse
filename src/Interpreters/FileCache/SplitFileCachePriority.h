@@ -72,15 +72,18 @@ public:
         bool is_space_reservation_complete,
         CacheStateGuard & state_guard) override;
 
-    EvictionInfoPtr collectEvictionInfo(
+    /// Sub-priority selection here is by segment type, so `reservee_queue_type` is only
+    /// forwarded to the chosen sub-priority (which may itself be SLRU).
+    EvictionInfoPtr collectEvictionInfo( /// NOLINT
         size_t size,
         size_t elements,
         IFileCachePriority::Iterator * reservee,
         bool is_total_space_cleanup,
         const IFileCachePriority::OriginInfo & origin,
-        const CacheStateGuard::Lock &) override;
+        const CacheStateGuard::Lock &,
+        QueueEntryType reservee_queue_type = QueueEntryType::None) override;
 
-    bool collectCandidatesForEviction(
+    bool collectCandidatesForEviction( /// NOLINT
         EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
@@ -89,7 +92,8 @@ public:
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
-        CacheStateGuard &) override;
+        CacheStateGuard &,
+        QueueEntryType reservee_queue_type = QueueEntryType::None) override;
 
     void iterate(IterateFunc func, FileCacheReserveStat & stat) override;
 

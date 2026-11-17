@@ -265,17 +265,15 @@ UInt32 getCompressedHeaderSize(UInt8 data_bytes_size)
     return items_count_size + data_bytes_size + first_delta_bytes_size;
 }
 
-UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
+UInt64 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
 {
-    const UInt32 items_count = uncompressed_size / data_bytes_size;
+    const UInt64 items_count = uncompressed_size / data_bytes_size;
     const auto double_delta_write_spec = getDeltaMaxWriteSpecByteSize(data_bytes_size);
 
-    const UInt32 max_item_size_bits = double_delta_write_spec.prefix_bits + double_delta_write_spec.data_bits;
+    const UInt64 max_item_size_bits = double_delta_write_spec.prefix_bits + double_delta_write_spec.data_bits;
 
-    // + 8 is to round up to next byte.
-    auto result = (items_count * max_item_size_bits + 7) / 8;
-
-    return result;
+    // + 7 is to round up to next byte.
+    return (items_count * max_item_size_bits + 7) / 8;
 }
 
 template <typename ValueType>
@@ -325,7 +323,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
         prev_value = curr_value;
     }
 
-    BitWriter writer(dest, getCompressedDataSize(sizeof(ValueType), source_size - sizeof(ValueType)*2));
+    BitWriter writer(dest, getCompressedDataSize(sizeof(ValueType), static_cast<UInt32>(source_end - source)));
 
     int item = 2;
     for (; source < source_end; source += sizeof(ValueType), ++item)
@@ -482,20 +480,27 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
     return static_cast<UInt32>(dest - original_dest);
 }
 
-UInt8 getDataBytesSize(const IDataType * column_type)
+/// Returns nullopt if the codec is not applicable to the type and `throw_if_not_applicable` is false.
+std::optional<UInt8> getDataBytesSize(const IDataType & column_type, bool throw_if_not_applicable)
 {
-    if (!column_type->isValueRepresentedByNumber())
+    if (!column_type.isValueRepresentedByNumber())
+    {
+        if (!throw_if_not_applicable)
+            return {};
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec DoubleDelta is not applicable for {} because the data type is not numeric",
-            column_type->getName());
+            column_type.getName());
+    }
 
-    const size_t max_size = column_type->getSizeOfValueInMemory();
+    const size_t max_size = column_type.getSizeOfValueInMemory();
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
         return static_cast<UInt8>(max_size);
 
+    if (!throw_if_not_applicable)
+        return {};
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Codec DoubleDelta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
-        column_type->getName());
+        column_type.getName());
 }
 
 }
@@ -524,12 +529,18 @@ void CompressionCodecDoubleDelta::updateHash(SipHash & hash) const
 
 UInt32 CompressionCodecDoubleDelta::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
-    const auto result = 2 // common header
+    const UInt64 result = 2 // common header
             + data_bytes_size // max bytes skipped if source is not properly aligned.
             + getCompressedHeaderSize(data_bytes_size) // data-specific header
             + getCompressedDataSize(data_bytes_size, uncompressed_size);
 
-    return result;
+    /// The block header stores the compressed block size as UInt32.
+    if (result > std::numeric_limits<UInt32>::max() - getHeaderSize())
+        throw Exception(ErrorCodes::CANNOT_COMPRESS,
+            "Cannot compress with DoubleDelta codec, block of {} bytes is too large: worst-case compressed size {} does not fit into 32 bits",
+            uncompressed_size, result);
+
+    return static_cast<UInt32>(result);
 }
 
 UInt32 CompressionCodecDoubleDelta::doCompressData(const char * source, UInt32 source_size, char * dest) const
@@ -608,7 +619,7 @@ void registerCodecDoubleDelta(CompressionCodecFactory & factory)
 
         // But always check against column_type if available to ensure it is also a valid type
         if (column_type != nullptr)
-            data_bytes_size = getDataBytesSize(column_type);
+            data_bytes_size = *getDataBytesSize(*column_type, /*throw_if_not_applicable=*/ true);
 
         // Finally try to use a user argument if specified.
         if (arguments && !arguments->children.empty())
@@ -632,7 +643,8 @@ void registerCodecDoubleDelta(CompressionCodecFactory & factory)
         return std::make_shared<CompressionCodecDoubleDelta>(data_bytes_size);
     };
 
-    factory.registerCompressionCodecWithType("DoubleDelta", method_code, reg_func);
+    factory.registerCompressionCodecWithType("DoubleDelta", method_code, reg_func,
+        {.is_applicable_to_type = [](const IDataType & type) { return getDataBytesSize(type, /*throw_if_not_applicable=*/ false).has_value(); }});
 }
 
 CompressionCodecPtr getCompressionCodecDoubleDelta(UInt8 data_bytes_size)

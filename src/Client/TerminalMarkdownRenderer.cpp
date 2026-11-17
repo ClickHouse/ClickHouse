@@ -201,10 +201,13 @@ struct DocSnippet
 };
 
 const DocSnippet DOC_SNIPPETS[] = {
-    {"_snippet_dictionary_in_cloud.mdx", R"DOCS_MD(<Tip>
-If you are using a dictionary with ClickHouse Cloud please use the DDL query option to create your dictionaries, and create your dictionary as user `default`.
-Also, verify the list of supported dictionary sources in the [Cloud Compatibility guide](/products/cloud/guides/cloud-compatibility).
-</Tip>)DOCS_MD"},
+    {"_snippet_dictionary_in_cloud.mdx", R"DOCS_MD(<Note title="ClickHouse Cloud">
+Use [`CREATE DICTIONARY`](/reference/statements/create/dictionary#creating-a-dictionary-with-a-ddl-query) to create dictionaries.
+
+When creating a dictionary that reads from a ClickHouse table, include a dedicated user's username and password in the `SOURCE` clause. That user needs `SELECT` permission on the source table. See the [ClickHouse dictionary source example](/reference/statements/create/dictionary/sources/clickhouse).
+
+Verify the list of supported dictionary sources in the [Cloud Compatibility guide](/products/cloud/guides/cloud-compatibility).
+</Note>)DOCS_MD"},
 
     {"_when-to-use-json.mdx", R"DOCS_MD(## When to use the `JSON` Type {#when-to-use-json-type}
 

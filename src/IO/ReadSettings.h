@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 #include <base/unit.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
@@ -8,7 +9,6 @@
 #include <IO/DistributedCacheSettings.h>
 #endif
 #include <IO/ReadMethod.h>
-#include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/IThrottler.h>
@@ -132,8 +132,6 @@ struct FilesystemCacheSettings
     /// How long a read may wait for a file segment which is being downloaded by a concurrent query
     /// before bypassing the cache and reading directly from remote storage.
     size_t wait_for_concurrent_download_timeout_milliseconds = 1000;
-    size_t max_download_size_per_query = (128UL * 1024 * 1024 * 1024);
-    bool skip_download_if_exceeds_per_query_cache_write_limit = true;
     bool enable_log = false;
     bool verbose_logging = false;
 };

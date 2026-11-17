@@ -189,7 +189,7 @@ char * IColumn::serializeValueIntoMemory(size_t /* n */, char * /* memory */, co
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemory is not supported for {}", getName());
 }
 
-void IColumn::batchSerializeValueIntoMemory(std::span<char *> /* memories */, const IColumn::SerializationSettings * /* settings */) const
+void IColumn::batchSerializeValueIntoMemory(std::span<char *> /* memories */, size_t /* start_row */, const IColumn::SerializationSettings * /* settings */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemory is not supported for {}", getName());
 }
@@ -211,7 +211,7 @@ char * IColumn::serializeValueIntoMemoryWithNull(
 }
 
 void IColumn::batchSerializeValueIntoMemoryWithNull(
-    std::span<char *> /* memories */, const UInt8 * /* is_null */, const IColumn::SerializationSettings * /* settings */) const
+    std::span<char *> /* memories */, size_t /* start_row */, const UInt8 * /* is_null */, const IColumn::SerializationSettings * /* settings */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemoryWithNull is not supported for {}", getName());
 }
@@ -586,7 +586,8 @@ void IColumnHelper<Derived, Parent>::getIndicesOfNonDefaultRows(IColumn::Offsets
     }
 }
 
-/// Fills column from pre-resolved row data pointers. Devirtualized insertData.
+/// Fills columns from resolved row pointers. Fixed-size columns without missing rows grow once,
+/// so the copy loop does not update their size or check capacity for every value.
 template <bool has_defaults, bool with_null_map, bool range_mode, typename ColumnType>
 static void fillColumnFromRowStorePtrs(ColumnType * col, const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> * null_map, size_t begin, size_t count)
 {
@@ -604,7 +605,17 @@ static void fillColumnFromRowStorePtrs(ColumnType * col, const DataTypePtr & typ
     [[maybe_unused]] const char * const base_ptr = row_store_ptrs.base_ptr;
     [[maybe_unused]] const size_t row_length = row_store_ptrs.row_length;
 
-    col->reserve(col->size() + count);
+    constexpr bool copy_fixed_values = !has_defaults && std::is_base_of_v<ColumnFixedSizeHelper, ColumnType>;
+    char * values_dst = nullptr;
+    if constexpr (copy_fixed_values)
+    {
+        const size_t column_value_size = col->sizeOfValueIfFixed();
+        chassert(value_size == column_value_size);
+        value_size = column_value_size;
+        values_dst = col->insertRawUninitialized(count).data();
+    }
+    else
+        col->reserve(col->size() + count);
     for (size_t i = 0; i < count; ++i)
     {
         /// TODO: try prefetching row store rows.
@@ -627,7 +638,10 @@ static void fillColumnFromRowStorePtrs(ColumnType * col, const DataTypePtr & typ
 
         if constexpr (with_null_map)
             null_dst[i] = *reinterpret_cast<const UInt8 *>(row_store_ptr + field_offset);
-        col->insertData(row_store_ptr + value_offset, value_size);
+        if constexpr (copy_fixed_values)
+            memcpy(values_dst + i * value_size, row_store_ptr + value_offset, value_size);
+        else
+            col->insertData(row_store_ptr + value_offset, value_size);
     }
 }
 
@@ -657,9 +671,81 @@ static void dispatchFillColumnFromRowStorePtrs(ColumnType * col, const DataTypeP
     }
 }
 
+#define APPLY_FOR_FIELD_SIZES(M) \
+    M(1) M(2) M(3) M(4) M(5) M(6) M(7) M(8) \
+    M(9) M(10) M(11) M(12) M(13) M(14) M(15) M(16) \
+    M(17) M(18) M(19) M(20) M(21) M(22) M(23) M(24) \
+    M(25) M(26) M(27) M(28) M(29) M(30) M(31) M(32)
+
+template <size_t value_size, bool nullable, typename SourceRow, typename DestinationRow>
+static void gatherField(
+    const char * __restrict values,
+    const UInt8 * __restrict null_map,
+    size_t runtime_value_size,
+    size_t count,
+    SourceRow source_row,
+    DestinationRow destination_row)
+{
+    const size_t bytes = value_size ? value_size : runtime_value_size;
+    for (size_t i = 0; i < count; ++i)
+    {
+        const size_t row = source_row(i);
+        char * dst = destination_row(i);
+        if constexpr (nullable)
+            *dst++ = static_cast<char>(null_map[row]);
+        memcpy(dst, values + row * bytes, bytes);
+    }
+}
+
+template <bool nullable, typename SourceRow, typename DestinationRow>
+static void gatherColumn(const IColumn & values, const UInt8 * null_map, size_t count, SourceRow source_row, DestinationRow destination_row)
+{
+    chassert(values.isFixedAndContiguous());
+    const size_t value_size = values.sizeOfValueIfFixed();
+    const char * data = values.getRawData().data();
+    switch (value_size)
+    {
+#define M(N) \
+        case N: \
+            gatherField<N, nullable>(data, null_map, value_size, count, source_row, destination_row); \
+            break;
+        APPLY_FOR_FIELD_SIZES(M)
+#undef M
+        default:
+            gatherField<0, nullable>(data, null_map, value_size, count, source_row, destination_row);
+    }
+}
+
+#undef APPLY_FOR_FIELD_SIZES
+
 void IColumn::fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map)
 {
     dispatchFillColumnFromRowStorePtrs<IColumn>(this, type, row_store_ptrs, field_offset, field_size, null_map, begin, count);
+}
+
+void IColumn::gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *&, const UInt8 * null_map) const
+{
+    if (!isFixedAndContiguous())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} cannot be stored in the hash join row store", getName());
+    auto source_row = [start](size_t row) { return start + row; };
+    auto destination_row = [rows, row_length, field_offset](size_t row) { return rows + row * row_length + field_offset; };
+    if (null_map)
+        gatherColumn<true>(*this, null_map, count, source_row, destination_row);
+    else
+        gatherColumn<false>(*this, nullptr, count, source_row, destination_row);
+}
+
+void IColumn::gatherSelectedIntoRows(std::span<const UInt32> source_rows, std::span<char * const> destination_rows, size_t field_offset, const UInt8 * null_map) const
+{
+    if (!isFixedAndContiguous())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} cannot be gathered into rows", getName());
+    chassert(source_rows.size() == destination_rows.size());
+    auto source_row = [source_rows](size_t row) { return source_rows[row]; };
+    auto destination_row = [destination_rows, field_offset](size_t row) { return destination_rows[row] + field_offset; };
+    if (null_map)
+        gatherColumn<true>(*this, null_map, source_rows.size(), source_row, destination_row);
+    else
+        gatherColumn<false>(*this, nullptr, source_rows.size(), source_row, destination_row);
 }
 
 template <typename Derived, typename Parent>
@@ -734,24 +820,24 @@ ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemoryWit
 
 template <typename Derived, typename Parent>
 void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemoryWithNull(
-    std::span<char *> memories, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
+    std::span<char *> memories, size_t start_row, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
 {
     const auto & self = static_cast<const Derived &>(*this);
-    chassert(memories.size() == self.size());
+    chassert(start_row + memories.size() <= self.size());
 
     if (!is_null)
     {
-        self.batchSerializeValueIntoMemory(memories, settings);
+        self.batchSerializeValueIntoMemory(memories, start_row, settings);
         return;
     }
 
-    size_t rows = self.size();
-    for (size_t i = 0; i < rows; ++i)
+    for (size_t i = 0; i < memories.size(); ++i)
     {
-        *memories[i] = is_null[i];
+        const size_t row = start_row + i;
+        *memories[i] = is_null[row];
         ++memories[i];
-        if (!is_null[i])
-            memories[i] = self.serializeValueIntoMemory(i, memories[i], settings);
+        if (!is_null[row])
+            memories[i] = self.serializeValueIntoMemory(row, memories[i], settings);
     }
 }
 
@@ -768,12 +854,13 @@ ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(si
 }
 
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemory(std::span<char *> memories, const IColumn::SerializationSettings * settings) const
+void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemory(
+    std::span<char *> memories, size_t start_row, const IColumn::SerializationSettings * settings) const
 {
     const auto & self = static_cast<const Derived &>(*this);
-    chassert(memories.size() == self.size());
-    for (size_t i = 0; i < self.size(); ++i)
-        memories[i] = self.serializeValueIntoMemory(i, memories[i], settings);
+    chassert(start_row + memories.size() <= self.size());
+    for (size_t i = 0; i < memories.size(); ++i)
+        memories[i] = self.serializeValueIntoMemory(start_row + i, memories[i], settings);
 }
 
 template <typename Derived, typename Parent>

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 
 #include <algorithm>
@@ -17,6 +18,10 @@ NameSet injectRequiredColumns(
     const StorageSnapshotPtr & storage_snapshot,
     bool with_subcolumns,
     Names & columns);
+
+/// Whether the virtual columns of a text index can be read from the index in a part (direct read).
+/// Otherwise they are computed by their default expressions.
+bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions);
 
 PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column);
 

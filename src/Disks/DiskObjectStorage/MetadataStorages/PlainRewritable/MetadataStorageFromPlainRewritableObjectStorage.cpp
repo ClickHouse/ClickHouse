@@ -2,6 +2,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsMetadata.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/PlainRewritableSnapshotFile.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/PrefixPath.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/UncommittedState.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/Preconditions.h>
@@ -11,6 +12,10 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <Disks/WriteMode.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/StorageID.h>
 
 #include <cstddef>
 #include <memory>
@@ -22,6 +27,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteSettings.h>
 #include <IO/S3Common.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <IO/SharedThreadPools.h>
 #include <Poco/Timestamp.h>
 #include <Common/CurrentMetrics.h>
@@ -42,6 +48,9 @@
 namespace ProfileEvents
 {
     extern const Event DiskPlainRewritableLegacyLayoutDiskCount;
+    extern const Event DiskPlainRewritableSnapshotRead;
+    extern const Event DiskPlainRewritableSnapshotWritten;
+    extern const Event DiskPlainRewritableSnapshotWriteFailed;
     extern const Event DiskPlainRewritableOrphanedObjectsRemoved;
 }
 
@@ -162,102 +171,123 @@ std::vector<std::string> makeListingShards(const std::vector<std::string> & name
     return {prefixes.begin(), prefixes.end()};
 }
 
+DirectoryRemoteInfo makeRootDirectoryInfo()
+{
+    return DirectoryRemoteInfo{PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, "fake_etag", 0, {}};
 }
 
-void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load, bool do_not_load_unchanged_directories)
+/// Only the root directory without files.
+bool isEmptyLayout(const PlainRewritableRemoteLayout & remote_layout)
 {
-    ThreadPool & pool = getIOThreadPool().get();
+    if (remote_layout.empty())
+        return true;
+    if (remote_layout.size() > 1)
+        return false;
+    const auto & [path, info] = *remote_layout.begin();
+    return path.empty() && info.files.empty();
+}
 
-    LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
+/// How soon a failed snapshot write is retried, unless the configured delay is larger.
+constexpr UInt64 SNAPSHOT_WRITE_RETRY_DELAY_MS = 1000;
 
-    auto settings = getReadSettings();
-    settings.enable_filesystem_cache = false;
-    settings.useForSmallRemoteRead(1024);  /// These files are small.
+}
 
-    LOG_DEBUG(log, "Loading metadata");
+PlainRewritableRemoteLayout MetadataStorageFromPlainRewritableObjectStorage::getCurrentLayout() const
+{
+    return getLayoutOf(*fs.takeReadOnlySnapshot());
+}
 
-    /// This method can do both initial loading and incremental refresh of the metadata.
-    ///
-    /// We will list directories under __meta and compare it with the current list in memory.
-    /// Some directories may be new and some no longer exist in the storage.
-    /// We want to update the state in memory without holding a lock,
-    /// and we can do it while allowing certain race-conditions.
-
-    /// So, we obtain a list, then apply changes by:
-    /// 1. Deleting every directory in memory that no longer present in the storage;
-    ///    This works correctly under the assumption that if a directory with a certain name was deleted it cannot appear again.
-    ///    And this assumption is satisfied, because every name is a unique random value.
-    /// 2. Checking the value of `prefix.path` for every new directory and adding it to the state in memory.
-    ///    There is (?) a race condition, leading to the possibility to add a directory that was just deleted.
-    ///    This race condition can be ignored for MergeTree tables.
-    /// 3. Checking if the value of `prefix.path` changed for any already existing directory
-    ///    and apply the corresponding rename.
-
-    bool has_metadata = object_storage->existsOrHasAnyChild(layout->constructMetadataDirectoryKey());
-
-    std::unordered_map<std::string, DirectoryRemoteInfo> remote_layout;
-    remote_layout[""] = DirectoryRemoteInfo{PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, "fake_etag", 0, {}};
-
-    if (is_initial_load)
+PlainRewritableRemoteLayout MetadataStorageFromPlainRewritableObjectStorage::getLayoutOf(const FsSnapshot & tree)
+{
+    PlainRewritableRemoteLayout result;
+    for (auto & [path, info] : tree.getSubtreeRemoteInfo(""))
     {
-        /// Use iteration to determine if the disk contains data.
-        /// LocalObjectStorage creates an empty top-level directory even when no data is stored,
-        /// unlike blob storage, which has no concept of directories, therefore existsOrHasAnyChild
-        /// is not applicable.
-        auto common_key_prefix = fs::path(object_storage->getCommonKeyPrefix()) / "";
-        bool has_data = object_storage->isRemote() ? object_storage->existsOrHasAnyChild(common_key_prefix) : object_storage->iterate(common_key_prefix, 0, /*with_tags=*/ false, std::nullopt)->isValid();
-        /// No metadata directory: legacy layout is likely in use.
-        if (has_data && !has_metadata)
-        {
-            ProfileEvents::increment(ProfileEvents::DiskPlainRewritableLegacyLayoutDiskCount, 1);
-            LOG_WARNING(log, "Legacy layout is likely used for disk '{}'", object_storage->getCommonKeyPrefix());
-        }
+        /// Virtual directories (created only as parents of the real ones) are not stored anywhere.
+        if (info)
+            result.emplace(path, std::move(*info));
+    }
+    return result;
+}
 
-        if (!has_data && !has_metadata)
-        {
-            LOG_DEBUG(log, "Loaded metadata (empty)");
-            fs.applyLayout(std::move(remote_layout));
-            return;
-        }
+MetadataStorageFromPlainRewritableObjectStorage::SnapshotRole MetadataStorageFromPlainRewritableObjectStorage::chooseSnapshotRole() const
+{
+    if (!snapshot_settings.enabled)
+        return SnapshotRole::None;
+
+    /// A reader may read the snapshot at any moment, so the writer has to replace it atomically. An object storage that
+    /// creates or truncates the destination before uploading (HDFS, OneLake) would expose an incomplete snapshot and lose
+    /// the previous one on a failed write, so snapshots are not used there at all: neither written nor read.
+    if (!object_storage->supportsAtomicWrite())
+        return SnapshotRole::None;
+
+    return isReadOnlyDisk() ? SnapshotRole::Reader : SnapshotRole::Writer;
+}
+
+MetadataStorageFromPlainRewritableObjectStorage::SnapshotFileContents MetadataStorageFromPlainRewritableObjectStorage::tryReadSnapshotFile(
+    const LoggerPtr & log, bool skip_if_unchanged, bool read_contents) const
+{
+    SnapshotFileContents result;
+    const auto key = layout->constructSnapshotObjectKey();
+
+    const auto metadata = object_storage->tryGetObjectMetadata(key, /*with_tags=*/ false);
+    if (!metadata)
+    {
+        LOG_DEBUG(log, "There is no snapshot file '{}'", key);
+        return result;
     }
 
-    const auto read_snapshot = fs.takeReadOnlySnapshot();
+    result.exists = true;
+    if (metadata->isEtagUsableAsCacheKey())
+        result.etag = metadata->etag;
 
-    /// A removal that has been committed but not finished leaves its objects under a reserved name
-    /// (see `PlainRewritableLayout::REMOVED_NAME_PREFIX`) and a marker object for that name. Only a name that
-    /// has a marker is a leftover of a removal: a name of the same shape without one is ordinary data, possibly
-    /// created by a version that reserved nothing, so it is loaded and never touched.
-    ///
-    /// The marked objects are never loaded. They are deleted during the initial load only: a subsequent load may
-    /// run concurrently with the `finalize` of a transaction that has just committed such a removal, and that
-    /// `finalize` deletes them itself.
-    ///
-    /// A marker can also say that its removal is pending: the subtree was being moved under the reserved name and
-    /// the move may be incomplete (see `PlainRewritableLayout::PENDING_TOMBSTONE_PREFIX`). Such a removal is
-    /// rolled back during the initial load: the directories under its name are loaded under their original paths,
-    /// and the writable load rewrites their `prefix.path` back. Nothing of it is deleted. A subsequent load skips
-    /// them, because the removal may be running in this very process.
-    ///
-    /// A marker can also say that a replacement of a file is pending (see `PlainRewritableLayout::PENDING_REPLACE_TOMBSTONE_PREFIX`):
-    /// the backup of the target it marks may be the only copy of the target. The initial load copies a complete
-    /// backup back over the target before any listing, and then reclaims the backup like a committed removal.
-    ///
-    /// A read-only disk changes nothing on the object storage, but it shows the last committed state just the same:
-    /// a pending removal is loaded under its original paths, and the target of a pending replacement is read from its
-    /// complete backup. It does so on every load, not only on the initial one, because it never runs an operation
-    /// itself, so every unfinished operation it sees belongs to another process.
-    ///
-    /// A marker whose content is torn (see `PlainRewritableLayout::parseTombstoneMarkerContent`) tells neither whether
-    /// its removal was committed nor where its subtree came from. If anything on the disk still has its name, the load
-    /// fails rather than guess: either guess may lose data. Otherwise the process died while writing the first marker
-    /// of an operation that had not touched anything yet, and the initial load just deletes the marker.
-    ///
-    /// The value is the original path of the subtree for a pending removal, and empty for a committed one.
-    std::unordered_map<std::string, std::optional<std::string>> tombstones;
-    std::unordered_set<std::string> malformed_markers;
-    std::unordered_map<std::string, PlainRewritableLayout::PendingReplace> pending_replaces;
-    /// The backups of pending replacements that can be neither restored nor reclaimed: they are not loaded and not deleted.
-    std::unordered_set<std::string> kept_backups;
+    /// The same snapshot was already applied, there is nothing new to read.
+    /// Only a strong ETag proves that: a weak or missing one may stay the same after a rewrite.
+    if (skip_if_unchanged && !result.etag.empty() && result.etag == applied_snapshot_etag)
+    {
+        result.unchanged = true;
+        return result;
+    }
+
+    /// The state was loaded by listing the object storage while this file already existed, so applying the file would
+    /// roll the state back (e.g. after a single failed read of the file).
+    if (!result.etag.empty() && result.etag == superseded_snapshot_etag)
+    {
+        LOG_DEBUG(log, "The snapshot file '{}' is not newer than the state loaded by listing the object storage", key);
+        return result;
+    }
+
+    if (!read_contents)
+        return result;
+
+    try
+    {
+        auto read_settings = getReadSettings();
+        read_settings.enable_filesystem_cache = false;
+
+        /// Pin the download to the generation seen by `HEAD`: the file is rewritten while readers download it, and a download
+        /// may consist of several requests (ranged reads, retries), which must not splice bytes from different snapshots.
+        /// A changed generation makes the read fail, and the state is loaded by listing the object storage.
+        StoredObject object(key, /*local_path*/ "", metadata->size_bytes);
+        object.etag = result.etag;
+        auto in = object_storage->readObject(object, read_settings, metadata->size_bytes);
+        result.layout = readPlainRewritableSnapshot(*in);
+        LOG_DEBUG(log, "Read the snapshot file '{}' ({} bytes) with {} directories", key, metadata->size_bytes, result.layout->size());
+    }
+    catch (...)
+    {
+        /// The snapshot is only a copy of the state that can always be rebuilt from the object storage, so a file that
+        /// cannot be read (e.g. written by a newer version in a newer format, or removed just now) does not make the disk unusable.
+        /// Listing is not destructive: a read-only disk does not modify anything.
+        tryLogCurrentException(log, fmt::format("Cannot read the snapshot file '{}', the state will be loaded by listing the object storage", key));
+    }
+
+    return result;
+}
+
+std::vector<MetadataStorageFromPlainRewritableObjectStorage::TombstoneMarkerObject>
+MetadataStorageFromPlainRewritableObjectStorage::readTombstoneMarkers(const ReadSettings & settings) const
+{
+    std::vector<TombstoneMarkerObject> result;
     for (auto iterator = object_storage->iterate(layout->constructTombstoneDirectoryKey(), 0, /*with_tags=*/ false, std::nullopt); iterator->isValid(); iterator->next())
     {
         const auto marker = iterator->current();
@@ -300,23 +330,141 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
             throw;
         }
 
-        auto parsed = PlainRewritableLayout::parseTombstoneMarkerContent(content, removed_name.value());
+        result.push_back({std::move(removed_name.value()), marker->getPath(), std::move(content)});
+    }
+    return result;
+}
+
+std::vector<MetadataStorageFromPlainRewritableObjectStorage::TargetReadFromBackup>
+MetadataStorageFromPlainRewritableObjectStorage::findTargetsToReadFromBackups(const LoggerPtr & log, bool & has_malformed_markers) const
+{
+    auto settings = getReadSettings();
+    settings.enable_filesystem_cache = false;
+    settings.useForSmallRemoteRead(1024);  /// These files are small.
+
+    std::vector<TargetReadFromBackup> result;
+    for (const auto & [removed_name, marker_path, content] : readTombstoneMarkers(settings))
+    {
+        auto parsed = PlainRewritableLayout::parseTombstoneMarkerContent(content, removed_name);
+        if (parsed.kind == PlainRewritableLayout::TombstoneMarker::Kind::Malformed)
+        {
+            LOG_WARNING(log, "The marker '{}' of an unfinished operation is malformed: '{}'", marker_path, content);
+            has_malformed_markers = true;
+            continue;
+        }
+        if (parsed.kind != PlainRewritableLayout::TombstoneMarker::Kind::PendingReplace)
+            continue;
+
+        /// The same as `loadRemoteLayout` does on a read-only disk: without a complete backup the target is intact,
+        /// and a backup of an unexpected size is left alone.
+        const auto backup_key = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, removed_name);
+        const auto backup_metadata = object_storage->tryGetObjectMetadata(backup_key, /*with_tags=*/ false);
+        if (!backup_metadata || backup_metadata->size_bytes != parsed.pending_replace.size)
+            continue;
+
+        LOG_DEBUG(log, "Reading '{}' from its backup '{}' left by a replacement that was not committed",
+            layout->constructFileObjectKey(parsed.pending_replace.directory_remote_path, parsed.pending_replace.file_name), backup_key);
+        result.push_back({std::move(parsed.pending_replace), backup_key, *backup_metadata});
+    }
+    return result;
+}
+
+bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
+    const PlainRewritableRemoteLayout * base, bool is_initial_load, const LoggerPtr & log)
+{
+    ThreadPool & pool = getIOThreadPool().get();
+
+    auto settings = getReadSettings();
+    settings.enable_filesystem_cache = false;
+    settings.useForSmallRemoteRead(1024);  /// These files are small.
+
+    /// This method can do both initial loading and incremental refresh of the metadata.
+    ///
+    /// We will list directories under __meta and compare it with the base (the current list in memory).
+    /// Some directories may be new and some no longer exist in the storage.
+    /// We want to update the state in memory without holding a lock,
+    /// and we can do it while allowing certain race-conditions.
+
+    /// So, we obtain a list, then apply changes by:
+    /// 1. Deleting every directory in memory that no longer present in the storage;
+    ///    This works correctly under the assumption that if a directory with a certain name was deleted it cannot appear again.
+    ///    And this assumption is satisfied, because every name is a unique random value.
+    /// 2. Checking the value of `prefix.path` for every new directory and adding it to the state in memory.
+    ///    There is (?) a race condition, leading to the possibility to add a directory that was just deleted.
+    ///    This race condition can be ignored for MergeTree tables.
+    /// 3. Checking if the value of `prefix.path` changed for any already existing directory
+    ///    and apply the corresponding rename.
+
+    PlainRewritableRemoteLayout remote_layout;
+    remote_layout[""] = makeRootDirectoryInfo();
+
+    /// A directory whose `prefix.path` object has the same ETag as in the base has the same logical path, so `prefix.path`
+    /// is not read again, and its files are taken from the base, which is as fresh as the previous refresh.
+    std::unordered_map<std::string_view, const PlainRewritableRemoteLayout::value_type *> base_by_remote_path;
+    if (base)
+    {
+        for (const auto & entry : *base)
+        {
+            if (!entry.first.empty())
+                base_by_remote_path.emplace(entry.second.remote_path, &entry);
+        }
+    }
+    size_t reused_directories = 0;
+
+    /// A removal that has been committed but not finished leaves its objects under a reserved name
+    /// (see `PlainRewritableLayout::REMOVED_NAME_PREFIX`) and a marker object for that name. Only a name that
+    /// has a marker is a leftover of a removal: a name of the same shape without one is ordinary data, possibly
+    /// created by a version that reserved nothing, so it is loaded and never touched.
+    ///
+    /// The marked objects are never loaded. They are deleted during the initial load only: a subsequent load may
+    /// run concurrently with the `finalize` of a transaction that has just committed such a removal, and that
+    /// `finalize` deletes them itself.
+    ///
+    /// A marker can also say that its removal is pending: the subtree was being moved under the reserved name and
+    /// the move may be incomplete (see `PlainRewritableLayout::PENDING_TOMBSTONE_PREFIX`). Such a removal is
+    /// rolled back during the initial load: the directories under its name are loaded under their original paths,
+    /// and the writable load rewrites their `prefix.path` back. Nothing of it is deleted. A subsequent load skips
+    /// them, because the removal may be running in this very process.
+    ///
+    /// A marker can also say that a replacement of a file is pending (see `PlainRewritableLayout::PENDING_REPLACE_TOMBSTONE_PREFIX`):
+    /// the backup of the target it marks may be the only copy of the target. The initial load copies a complete
+    /// backup back over the target before any listing, and then reclaims the backup like a committed removal.
+    ///
+    /// A read-only disk changes nothing on the object storage, but it shows the last committed state just the same:
+    /// a pending removal is loaded under its original paths, and the target of a pending replacement is read from its
+    /// complete backup. It does so on every load, not only on the initial one, because it never runs an operation
+    /// itself, so every unfinished operation it sees belongs to another process.
+    ///
+    /// A marker whose content is torn (see `PlainRewritableLayout::parseTombstoneMarkerContent`) tells neither whether
+    /// its removal was committed nor where its subtree came from. If anything on the disk still has its name, the load
+    /// fails rather than guess: either guess may lose data. Otherwise the process died while writing the first marker
+    /// of an operation that had not touched anything yet, and the initial load just deletes the marker.
+    ///
+    /// The value is the original path of the subtree for a pending removal, and empty for a committed one.
+    std::unordered_map<std::string, std::optional<std::string>> tombstones;
+    std::unordered_set<std::string> malformed_markers;
+    std::unordered_map<std::string, PlainRewritableLayout::PendingReplace> pending_replaces;
+    /// The backups of pending replacements that can be neither restored nor reclaimed: they are not loaded and not deleted.
+    std::unordered_set<std::string> kept_backups;
+    for (auto & [removed_name, marker_path, content] : readTombstoneMarkers(settings))
+    {
+        auto parsed = PlainRewritableLayout::parseTombstoneMarkerContent(content, removed_name);
         switch (parsed.kind)
         {
             case PlainRewritableLayout::TombstoneMarker::Kind::Committed:
-                tombstones.emplace(std::move(removed_name.value()), std::nullopt);
+                tombstones.emplace(std::move(removed_name), std::nullopt);
                 break;
             case PlainRewritableLayout::TombstoneMarker::Kind::PendingRemoval:
-                tombstones.emplace(std::move(removed_name.value()), std::move(parsed.pending_original_path));
+                tombstones.emplace(std::move(removed_name), std::move(parsed.pending_original_path));
                 break;
             case PlainRewritableLayout::TombstoneMarker::Kind::PendingReplace:
                 /// The backup of a pending replacement is not loaded either, like one of a committed removal.
-                pending_replaces.emplace(removed_name.value(), std::move(parsed.pending_replace));
-                tombstones.emplace(std::move(removed_name.value()), std::nullopt);
+                pending_replaces.emplace(removed_name, std::move(parsed.pending_replace));
+                tombstones.emplace(std::move(removed_name), std::nullopt);
                 break;
             case PlainRewritableLayout::TombstoneMarker::Kind::Malformed:
-                LOG_WARNING(log, "The marker '{}' of an unfinished operation is malformed: '{}'", marker->getPath(), content);
-                malformed_markers.insert(std::move(removed_name.value()));
+                LOG_WARNING(log, "The marker '{}' of an unfinished operation is malformed: '{}'", marker_path, content);
+                malformed_markers.insert(std::move(removed_name));
                 break;
         }
     }
@@ -334,8 +482,8 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
     if (!tombstones.empty())
         LOG_DEBUG(log, "Found {} removals that were not finished", tombstones.size());
 
-    const bool remove_orphaned_objects = is_initial_load && !object_storage->isReadOnly();
-    const bool roll_back_pending_operations = is_initial_load || object_storage->isReadOnly();
+    const bool remove_orphaned_objects = is_initial_load && !isReadOnlyDisk();
+    const bool roll_back_pending_operations = is_initial_load || isReadOnlyDisk();
 
     /// A pending replacement appears and disappears without a change to the `prefix.path` of the directory of its target,
     /// and the info of such a directory in the previous snapshot may describe the target as read from its backup. So a
@@ -522,12 +670,34 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
             listing_runner.waitForAllToFinishAndRethrowFirstError();
         }
 
+        /// Directories whose `prefix.path` did not change since the base are taken from it without reading.
+        /// Only a strong ETag proves that: a weak or missing one may stay the same after a rewrite (a rename).
+        /// A directory with a pending replacement (now or at the previous load) is always loaded anew, see above.
+        {
+            std::vector<DirectoryObject> directories_to_load;
+            for (auto & directory : directories)
+            {
+                if (const auto it = base_by_remote_path.find(directory.remote_path);
+                    it != base_by_remote_path.end()
+                    && directory.metadata->isEtagUsableAsCacheKey()
+                    && !directories_with_pending_replaces.contains(directory.remote_path)
+                    && it->second->second.etag == directory.metadata->etag)
+                {
+                    remote_layout[it->second->first] = it->second->second;
+                    ++reused_directories;
+                    continue;
+                }
+                directories_to_load.push_back(std::move(directory));
+            }
+            directories = std::move(directories_to_load);
+        }
+
         /// Listing the files of every directory separately costs one request per directory and dominates
         /// the load time of a large disk. Now that the directory names are known, the same objects can be
         /// enumerated by a few listings of the whole disk running in parallel.
-        /// A refresh is excluded on purpose: it re-reads only the directories whose `prefix.path` changed,
-        /// so it lists far fewer directories than the disk holds and listing the whole disk would be waste.
-        files_are_prelisted = list_in_parallel && !do_not_load_unchanged_directories;
+        /// A refresh usually re-reads only a few directories whose `prefix.path` changed,
+        /// so listing the whole disk is done only when there are many directories left to load.
+        files_are_prelisted = list_in_parallel && directories.size() >= MIN_DIRECTORIES_TO_LIST_IN_PARALLEL;
         std::vector<std::string> listing_shards;
         if (files_are_prelisted)
         {
@@ -553,30 +723,13 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
 
             auto & directory = directories[i];
 
-            /// Reuse the version observed by LIST. A rename/delete after this listing is
-            /// observed by the next refresh; loading is not an atomic snapshot of remote metadata.
-            if (do_not_load_unchanged_directories && directory.metadata->isEtagUsableAsCacheKey()
-                && !directories_with_pending_replaces.contains(directory.remote_path))
-            {
-                if (const auto known_path = local_paths_by_remote_directory.find(directory.remote_path);
-                    known_path != local_paths_by_remote_directory.end())
-                {
-                    if (auto known_info = read_snapshot->getDirectoryRemoteInfo(known_path->second);
-                        known_info && known_info->remote_path == directory.remote_path && known_info->etag == directory.metadata->etag)
-                    {
-                        results[i] = DirectoryLoadResult{true, false, directory.object_path, known_path->second, std::move(*known_info)};
-                        continue;
-                    }
-                }
-            }
-
             /// Passing by reference:
             /// log: Created before runner, so it will be destroyed after
             /// settings: Same as log
             /// result: Same, and no two tasks are given the same slot
             /// In any case we have a try {} catch (...) around runner usage, so exceptions will call runner.waitForAllToFinish() first
             /// Thus the order of destruction of the variables is not important
-            runner.enqueueAndKeepTrack([remote_path = std::move(directory.remote_path), object_path = std::move(directory.object_path), metadata = std::move(directory.metadata), read_snapshot, do_not_load_unchanged_directories, files_are_prelisted, roll_back_pending_operations, remove_orphaned_objects, &tombstones, &malformed_markers, &throw_malformed_marker, &directories_with_pending_replaces, &result = results[i], &log, &settings, this]
+            runner.enqueueAndKeepTrack([remote_path = std::move(directory.remote_path), object_path = std::move(directory.object_path), metadata = std::move(directory.metadata), files_are_prelisted, roll_back_pending_operations, remove_orphaned_objects, &tombstones, &malformed_markers, &throw_malformed_marker, &result = results[i], &log, &settings, this]
             {
                 DB::setThreadName(ThreadName::PLAIN_REWRITABLE_META_LOAD);
 
@@ -665,16 +818,6 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                     {
                         LOG_TRACE(log, "The directory '{}' with the key '{}' is being removed, skipping", local_path, object_path);
                         return;
-                    }
-
-                    if (do_not_load_unchanged_directories && !is_orphaned && !directories_with_pending_replaces.contains(remote_path))
-                    {
-                        if (const auto known_info = read_snapshot->getDirectoryRemoteInfo(local_path);
-                            known_info && known_info->remote_path == remote_path && known_info->etag == metadata->etag)
-                        {
-                            result = DirectoryLoadResult{true, false, object_path, std::move(local_path), known_info.value()};
-                            return;
-                        }
                     }
 
                     /// In the implicit form, the files of the directory are the blobs stored under its prefix.
@@ -842,21 +985,22 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
         }
     }
 
-    LOG_DEBUG(log, "Loaded metadata for {} directories (listed {}, files listed {})",
+    LOG_DEBUG(log, "Listed metadata for {} directories (listed {}, files listed {}, {} directories unchanged since the base)",
         remote_layout.size(),
         list_in_parallel ? "by prefix shards" : "sequentially",
-        files_are_prelisted ? "for the whole disk at once" : "per directory");
+        files_are_prelisted ? "for the whole disk at once" : "per directory",
+        reused_directories);
 
-    std::unordered_map<std::string, std::string> new_local_paths;
-    new_local_paths.reserve(remote_layout.size());
+    std::unordered_map<std::string, std::string> local_paths;
+    local_paths.reserve(remote_layout.size());
     for (const auto & [local_path, info] : remote_layout)
-        new_local_paths.emplace(info.remote_path, local_path);
+        local_paths.emplace(info.remote_path, local_path);
 
     /// The target may have been removed or overwritten with the source by now, but its committed content is the backup.
     for (const auto & [pending_replace, backup_metadata] : targets_read_from_backups)
     {
-        const auto local_directory = new_local_paths.find(pending_replace.directory_remote_path);
-        if (local_directory == new_local_paths.end())
+        const auto local_directory = local_paths.find(pending_replace.directory_remote_path);
+        if (local_directory == local_paths.end())
             continue;
 
         remote_layout[local_directory->second].files.insert_or_assign(pending_replace.file_name, FileRemoteInfo{
@@ -866,9 +1010,9 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
         });
     }
 
+    const bool is_empty = isEmptyLayout(remote_layout);
     remote_directories_of_pending_replaces = std::move(current_remote_directories_of_pending_replaces);
     fs.applyLayout(std::move(remote_layout), std::move(backups_of_targets));
-    local_paths_by_remote_directory = std::move(new_local_paths);
     previous_refresh.restart();
 
     if (remove_orphaned_objects && (!tombstones.empty() || !malformed_markers.empty()))
@@ -910,18 +1054,291 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
             ProfileEvents::DiskPlainRewritableOrphanedObjectsRemoved,
             orphaned_data_objects.size() + orphaned_metadata_objects.size());
     }
+
+    return is_empty;
 }
 
-MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_, bool hard_links_enabled_)
+void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
+{
+    LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
+    LOG_DEBUG(log, "Loading metadata");
+
+    if (snapshot_role != chooseSnapshotRole())
+        LOG_WARNING(log, "The `readonly` setting of the disk was changed after the disk was created. The disk keeps working as a "
+            "{} of the metadata snapshot until the server is restarted", isSnapshotWriter() ? "writer" : "reader");
+
+    /// The snapshot file (see `PlainRewritableSnapshotFile.h`) is written by the only writer of the disk for the readers.
+    ///
+    /// A reader (a disk with `readonly`) works on a delayed state anyway: it refreshes the state periodically and relies
+    /// on the configuration of `MergeTree` tables (the lifetime of old parts) to make a delayed state usable. A snapshot
+    /// is a delayed state of the same kind, so the reader trusts it fully: every load reads only the snapshot file (and
+    /// does nothing if its ETag is the same as of the snapshot applied last time), without listing the object storage
+    /// or reading `prefix.path`. That includes the files replaced or rewritten in place after the snapshot was written:
+    /// the reader sees their previous size and blob (which may be overwritten or removed already) until the snapshot is
+    /// rewritten, exactly as a reader that lists the object storage sees them until its next refresh; the snapshot only
+    /// extends this window by `write_delay_ms`. Only if there is no snapshot file (e.g. the writer has snapshots disabled or is of an
+    /// older version), or it cannot be read, the state is loaded by listing the object storage (see `loadRemoteLayout`).
+    ///
+    /// The writer must have the latest and precise state, which it fully controls, so it never reads the snapshot: it
+    /// lists the object storage on startup and on reloads, and writes the snapshot after every change of the state.
+
+    /// The ETag of the snapshot file that a reader did not apply. The state loaded by listing is at least as fresh as it.
+    std::string snapshot_etag_to_supersede;
+
+    if (isSnapshotReader())
+    {
+        /// The only exception from trusting the snapshot is a replacement of a file that the writer is doing right now:
+        /// the target is overwritten in place, and until the replacement is committed, the committed content of the
+        /// target is in its backup (see `PlainRewritableLayout::PENDING_REPLACE_TOMBSTONE_PREFIX`). Such files are read
+        /// from their backups, as on a listing of the object storage. Finding them takes a listing of the markers,
+        /// which is a single request, since there are no markers most of the time.
+        ///
+        /// A torn marker does not tell whether it belongs to a replacement whose target was already overwritten, so then
+        /// the snapshot is not used at all: the listing of the object storage fails if anything still has its name.
+        bool has_malformed_markers = false;
+        auto targets_read_from_backups = findTargetsToReadFromBackups(log, has_malformed_markers);
+
+        auto snapshot = tryReadSnapshotFile(
+            log,
+            /*skip_if_unchanged=*/ targets_read_from_backups.empty() && !applied_snapshot_had_pending_replaces && !has_malformed_markers,
+            /*read_contents=*/ !has_malformed_markers);
+        if (snapshot.unchanged)
+        {
+            LOG_DEBUG(log, "The snapshot file did not change since it was loaded");
+            previous_refresh.restart();
+            return;
+        }
+
+        if (snapshot.layout)
+        {
+            ProfileEvents::increment(ProfileEvents::DiskPlainRewritableSnapshotRead);
+
+            std::unordered_map<std::string, std::string> local_paths;
+            local_paths.reserve(snapshot.layout->size());
+            for (const auto & [local_path, info] : *snapshot.layout)
+                local_paths.emplace(info.remote_path, local_path);
+
+            auto backups_of_targets = std::make_shared<BlobObjectKeyRemap>();
+            for (const auto & [pending_replace, backup_key, backup_metadata] : targets_read_from_backups)
+            {
+                const auto local_directory = local_paths.find(pending_replace.directory_remote_path);
+                if (local_directory == local_paths.end())
+                    continue;
+
+                backups_of_targets->emplace(layout->constructFileObjectKey(pending_replace.directory_remote_path, pending_replace.file_name), backup_key);
+                (*snapshot.layout)[local_directory->second].files.insert_or_assign(pending_replace.file_name, FileRemoteInfo{
+                    .bytes_size = backup_metadata.size_bytes,
+                    .last_modified = backup_metadata.last_modified.epochTime(),
+                    .blob_key = {},
+                });
+            }
+
+            const size_t directories = snapshot.layout->size();
+            bool applied = false;
+            try
+            {
+                /// A file that was parsed can still be inconsistent (e.g. a file and a directory on the same path).
+                /// `applyLayout` builds the new tree before replacing the current one, so a failure leaves the state as it was.
+                fs.applyLayout(std::move(*snapshot.layout), std::move(backups_of_targets));
+                applied = true;
+            }
+            catch (...)
+            {
+                /// The same as for a file that cannot be read (see `tryReadSnapshotFile`).
+                tryLogCurrentException(log, "Cannot apply the snapshot file, the state will be loaded by listing the object storage");
+            }
+
+            if (applied)
+            {
+                applied_snapshot_etag = std::move(snapshot.etag);
+                applied_snapshot_had_pending_replaces = !targets_read_from_backups.empty();
+                state_loaded_from_snapshot = true;
+                superseded_snapshot_etag.clear();
+                /// The state came from the writer: the pending replacements seen by a previous listing are no longer relevant.
+                remote_directories_of_pending_replaces.clear();
+                previous_refresh.restart();
+                LOG_DEBUG(log, "Loaded metadata for {} directories from the snapshot file", directories);
+                return;
+            }
+        }
+
+        applied_snapshot_etag.clear();
+        applied_snapshot_had_pending_replaces = false;
+        snapshot_etag_to_supersede = std::move(snapshot.etag);
+    }
+
+    bool has_metadata = true;
+    if (mode == LoadMode::Initial)
+    {
+        has_metadata = object_storage->existsOrHasAnyChild(layout->constructMetadataDirectoryKey());
+
+        /// Use iteration to determine if the disk contains data.
+        /// LocalObjectStorage creates an empty top-level directory even when no data is stored,
+        /// unlike blob storage, which has no concept of directories, therefore existsOrHasAnyChild
+        /// is not applicable.
+        auto common_key_prefix = fs::path(object_storage->getCommonKeyPrefix()) / "";
+        bool has_data = object_storage->isRemote() ? object_storage->existsOrHasAnyChild(common_key_prefix) : object_storage->iterate(common_key_prefix, 0, /*with_tags=*/ false, std::nullopt)->isValid();
+        /// No metadata directory: legacy layout is likely in use.
+        if (has_data && !has_metadata)
+        {
+            ProfileEvents::increment(ProfileEvents::DiskPlainRewritableLegacyLayoutDiskCount, 1);
+            LOG_WARNING(log, "Legacy layout is likely used for disk '{}'", object_storage->getCommonKeyPrefix());
+        }
+
+        if (!has_data && !has_metadata)
+        {
+            LOG_DEBUG(log, "Loaded metadata (empty)");
+            PlainRewritableRemoteLayout remote_layout;
+            remote_layout[""] = makeRootDirectoryInfo();
+            fs.applyLayout(std::move(remote_layout));
+            return;
+        }
+    }
+
+    /// A state loaded from the snapshot file is not a base for an incremental listing: the listing reuses a directory when
+    /// its `prefix.path` did not change, but the files of a directory change without rewriting it, and the state may also
+    /// contain files read from the backups of pending replacements. So it is replaced by a full listing.
+    std::optional<PlainRewritableRemoteLayout> base;
+    if (mode == LoadMode::Incremental && !state_loaded_from_snapshot)
+        base = getCurrentLayout();
+
+    const bool empty = loadRemoteLayout(base ? &base.value() : nullptr, /*is_initial_load=*/ mode == LoadMode::Initial, log);
+    state_loaded_from_snapshot = false;
+
+    if (isSnapshotReader())
+        superseded_snapshot_etag = std::move(snapshot_etag_to_supersede);
+
+    /// A writer with snapshots disabled must not leave a snapshot written before (e.g. when snapshots were enabled) for the
+    /// readers: they would trust the stale state forever instead of listing the object storage.
+    if (mode == LoadMode::Initial && has_metadata && snapshot_role == SnapshotRole::None && !isReadOnlyDisk())
+    {
+        const StoredObject snapshot_object(layout->constructSnapshotObjectKey());
+        if (object_storage->exists(snapshot_object))
+        {
+            object_storage->removeObjectIfExists(snapshot_object);
+            LOG_INFO(log, "Removed the snapshot file '{}' as snapshots are disabled", snapshot_object.remote_path);
+        }
+    }
+
+    /// Publish the state for the readers. A disk without metadata gets no snapshot until the first change, to not
+    /// write to a storage that is only looked at. An empty disk with metadata may have a snapshot left (e.g. it was
+    /// emptied by a server with snapshots disabled), which is removed then.
+    if (isSnapshotWriter() && (!empty || has_metadata))
+        onLayoutChanged();
+}
+
+void MetadataStorageFromPlainRewritableObjectStorage::onLayoutChanged()
+{
+    if (!isSnapshotWriter())
+        return;
+
+    /// The change was already applied to `fs`, so its version is not greater than the current one.
+    const UInt64 generation = fs.getVersion();
+    UInt64 dirty_generation = snapshot_dirty_generation.load();
+    while (dirty_generation < generation && !snapshot_dirty_generation.compare_exchange_weak(dirty_generation, generation))
+    {
+    }
+
+    /// When everything was removed from the disk, the snapshot is removed right away regardless of the delay:
+    /// this is a single cheap request, and nothing should be left behind in the object storage after the last `DROP`.
+    if (snapshot_settings.write_delay_ms == 0 || fs.takeReadOnlySnapshot()->listDirectory("").empty())
+        writeSnapshotIfDirty(generation);
+    else
+        snapshot_write_task->scheduleAfter(snapshot_settings.write_delay_ms, /*overwrite=*/ false);
+}
+
+void MetadataStorageFromPlainRewritableObjectStorage::writeSnapshotIfDirty(UInt64 required_generation)
+{
+    std::lock_guard lock(snapshot_write_mutex);
+
+    /// Concurrent committers coalesce: if a write that finished while we were waiting for the lock already included
+    /// our change, there is nothing to do. So at most one more write follows the one in progress.
+    if (required_generation && snapshot_written_generation >= required_generation)
+        return;
+
+    /// Nothing changed since the last write. A change applied while the previous write was in progress may have been
+    /// included in it already, then the delayed write that it scheduled does nothing.
+    if (snapshot_written_generation >= snapshot_dirty_generation.load())
+        return;
+
+    LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
+    const auto key = layout->constructSnapshotObjectKey();
+
+    std::unique_ptr<WriteBufferFromFileBase> out;
+    try
+    {
+        /// The tree and its version are taken together, so the recorded generation is exactly the state that is written.
+        auto [tree, generation] = fs.takeReadOnlySnapshotWithVersion();
+        auto remote_layout = getLayoutOf(*tree);
+        if (isEmptyLayout(remote_layout))
+        {
+            /// Everything was removed from the disk: do not leave the snapshot behind.
+            object_storage->removeObjectIfExists(StoredObject(key));
+            LOG_DEBUG(log, "Removed the snapshot file '{}' as the disk is empty", key);
+        }
+        else
+        {
+            /// The readers may read the snapshot at any moment, so they must never see it partially written.
+            auto write_settings = getWriteSettings();
+            write_settings.object_storage_write_atomically = true;
+            out = object_storage->writeObject(StoredObject(key), WriteMode::Rewrite, /*object_attributes*/ std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
+            writePlainRewritableSnapshot(remote_layout, *out);
+            out->finalize();
+            ProfileEvents::increment(ProfileEvents::DiskPlainRewritableSnapshotWritten);
+            LOG_DEBUG(log, "Written the snapshot file '{}' ({} bytes) with {} directories", key, out->count(), remote_layout.size());
+        }
+        snapshot_written_generation = generation;
+    }
+    catch (...)
+    {
+        if (out)
+            out->cancel();
+
+        /// The state in memory is correct, only its copy in the object storage is stale, so a transaction commit
+        /// must not fail because of this. The write is retried later: `snapshot_written_generation` is not advanced.
+        ProfileEvents::increment(ProfileEvents::DiskPlainRewritableSnapshotWriteFailed);
+        tryLogCurrentException(log, fmt::format("Cannot write the snapshot file '{}', will retry", key));
+        snapshot_write_task->scheduleAfter(std::max(snapshot_settings.write_delay_ms, SNAPSHOT_WRITE_RETRY_DELAY_MS), /*overwrite=*/ false);
+    }
+}
+
+void MetadataStorageFromPlainRewritableObjectStorage::snapshotWriteTask()
+{
+    writeSnapshotIfDirty();
+
+    /// The changes that happened during the write are written after the next delay.
+    if (snapshot_written_generation < snapshot_dirty_generation.load() && snapshot_settings.write_delay_ms > 0)
+        snapshot_write_task->scheduleAfter(snapshot_settings.write_delay_ms, /*overwrite=*/ false);
+}
+
+MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(
+    ObjectStoragePtr object_storage_,
+    String storage_path_prefix_,
+    bool hard_links_enabled_,
+    PlainRewritableSnapshotSettings snapshot_settings_,
+    bool read_only_disk_)
     : object_storage(std::move(object_storage_))
     , metrics(createPlainRewritableMetrics(object_storage->getType()))
     , storage_path_prefix(std::move(storage_path_prefix_))
     , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
     , hard_links_enabled(hard_links_enabled_)
+    , snapshot_settings(snapshot_settings_)
+    , read_only_disk(read_only_disk_)
+    , snapshot_role(chooseSnapshotRole())
     , fs(metrics->directory_map_size, metrics->file_count)
     , layout(std::make_shared<PlainRewritableLayout>(object_storage->getCommonKeyPrefix()))
 {
-    load(/*is_initial_load=*/true, /*do_not_load_unchanged_directories=*/false);
+    if (isSnapshotWriter())
+    {
+        auto context = Context::getGlobalContextInstance();
+        if (!context)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The global context is required to write the snapshots of the plain_rewritable metadata");
+
+        snapshot_write_task = context->getSchedulePool()->createTask(StorageID::createEmpty(), "PlainRewritableSnapshotWriter", [this] { snapshotWriteTask(); });
+    }
+
+    std::lock_guard lock(load_mutex);
+    load(LoadMode::Initial);
 }
 
 MetadataTransactionPtr MetadataStorageFromPlainRewritableObjectStorage::createTransaction()
@@ -933,7 +1350,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::dropCache()
 {
     std::unique_lock reload_lock(load_mutex);
     const auto tx_lock = path_locks.lockAll();
-    load(/*is_initial_load=*/false, /*do_not_load_unchanged_directories=*/false);
+    load(LoadMode::Full);
 }
 
 void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_than_milliseconds)
@@ -953,7 +1370,17 @@ void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_
     if (!tx_lock)
         return;
 
-    load(/*is_initial_load=*/false, /*do_not_load_unchanged_directories=*/true);
+    load(LoadMode::Incremental);
+}
+
+void MetadataStorageFromPlainRewritableObjectStorage::shutdown()
+{
+    if (!snapshot_write_task)
+        return;
+
+    /// Stop the background writes and write the latest state synchronously: the next start loads it.
+    snapshot_write_task->deactivate();
+    writeSnapshotIfDirty();
 }
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const
@@ -1025,7 +1452,7 @@ std::optional<StoredObjects> MetadataStorageFromPlainRewritableObjectStorage::ge
         return std::nullopt;
 
     auto object_key = layout->constructBlobObjectKey(getBlobKey(*directory_remote_info, normalized_path.filename(), file_it->second));
-    if (object_storage->isReadOnly())
+    if (isReadOnlyDisk())
     {
         /// Taken from the same snapshot as the file, so that the size and the key of the blob come from the same load.
         if (const auto backups = tree->getBackupsOfPendingReplaceTargets())
@@ -1122,6 +1549,9 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::commit(const Tr
         ///    The locks are per path, so this does not delay unrelated transactions.
         operations.finalize();
     }
+
+    /// 5. Publish the new state in the snapshot file.
+    metadata_storage.onLayoutChanged();
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::addAffectedPath(const std::string & path)

@@ -26,7 +26,9 @@
 
 #include <DataTypes/DataTypesDecimal.h>
 
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/MaskOperations.h>
 
@@ -1097,47 +1099,97 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
             using ContainerType = std::decay_t<decltype(containers.front())>;
             using AttributeValueType = typename ContainerType::mapped_type;
 
-            for (size_t key_index = 0; key_index < keys_size; ++key_index)
+            auto & container = containers[shard];
+
+            /// `is_null` is called only for a nullable attribute, and `get_value` only for a row that is not NULL.
+            auto insert_rows = [&](auto && is_null, auto && get_value)
             {
-                auto key = keys_extractor.extractCurrentKey();
-                auto & container = containers[shard];
-
-                auto it = container.find(key);
-                bool key_is_nullable_and_already_exists = attribute_is_nullable && (*attribute.is_nullable_sets)[shard].find(key) != nullptr;
-
-                if (key_is_nullable_and_already_exists || it != container.end())
+                for (size_t key_index = 0; key_index < keys_size; ++key_index)
                 {
-                    keys_extractor.rollbackCurrentKey();
-                    continue;
-                }
+                    auto key = keys_extractor.extractCurrentKey();
 
-                if constexpr (std::is_same_v<KeyType, std::string_view>)
-                    key = copyStringInArena(*string_arenas[shard], key);
+                    auto it = container.find(key);
+                    bool key_is_nullable_and_already_exists = attribute_is_nullable && (*attribute.is_nullable_sets)[shard].find(key) != nullptr;
 
-                attribute_column.get(key_index, column_value_to_insert);
+                    if (key_is_nullable_and_already_exists || it != container.end())
+                    {
+                        keys_extractor.rollbackCurrentKey();
+                        continue;
+                    }
 
-                if (attribute_is_nullable && column_value_to_insert.isNull())
-                {
-                    (*attribute.is_nullable_sets)[shard].insert(key);
+                    if constexpr (std::is_same_v<KeyType, std::string_view>)
+                        key = copyStringInArena(*string_arenas[shard], key);
+
+                    if (attribute_is_nullable && is_null(key_index))
+                    {
+                        (*attribute.is_nullable_sets)[shard].insert(key);
+                        ++new_element_count;
+                        keys_extractor.rollbackCurrentKey();
+                        continue;
+                    }
+
+                    container.insert({key, get_value(key_index)});
+
                     ++new_element_count;
                     keys_extractor.rollbackCurrentKey();
-                    continue;
+                }
+            };
+
+            /// Read the values directly from the column when it has the type of the attribute.
+            /// This avoids a virtual `IColumn::get` and a `Field` for every row, which is most of the cost
+            /// of loading a dictionary when the hash table does not fit in the cache.
+            /// A source is not required to return the exact attribute type (e.g. `UInt16` for a `UInt64` attribute),
+            /// so other columns are read through `Field`, which converts between the types.
+            constexpr bool has_typed_column = !std::is_same_v<AttributeValueType, Array>
+                && !std::is_same_v<AttributeValueType, Map>
+                && !std::is_same_v<AttributeValueType, Object>;
+
+            bool inserted_from_typed_column = false;
+
+            if constexpr (has_typed_column)
+            {
+                using ValuesColumnType = std::conditional_t<std::is_same_v<AttributeValueType, std::string_view>,
+                    ColumnString,
+                    ColumnVectorOrDecimal<AttributeValueType>>;
+
+                const IColumn * values_column = &attribute_column;
+                const NullMap * null_map = nullptr;
+
+                if (attribute_is_nullable)
+                {
+                    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&attribute_column))
+                    {
+                        values_column = &nullable_column->getNestedColumn();
+                        null_map = &nullable_column->getNullMapData();
+                    }
                 }
 
-                if constexpr (std::is_same_v<AttributeValueType, std::string_view>)
+                if (const auto * typed_column = typeid_cast<const ValuesColumnType *>(values_column))
                 {
-                    String & value_to_insert = column_value_to_insert.safeGet<String>();
-                    std::string_view arena_value = copyStringInArena(*string_arenas[shard], value_to_insert);
-                    container.insert({key, arena_value});
-                }
-                else
-                {
-                    auto value_to_insert = static_cast<AttributeValueType>(column_value_to_insert.safeGet<AttributeValueType>());
-                    container.insert({key, value_to_insert});
-                }
+                    auto is_null = [null_map](size_t row) { return null_map && (*null_map)[row]; };
 
-                ++new_element_count;
-                keys_extractor.rollbackCurrentKey();
+                    if constexpr (std::is_same_v<AttributeValueType, std::string_view>)
+                        insert_rows(is_null, [&](size_t row) { return copyStringInArena(*string_arenas[shard], typed_column->getDataAt(row)); });
+                    else
+                        insert_rows(is_null, [&](size_t row) { return typed_column->getData()[row]; });
+
+                    inserted_from_typed_column = true;
+                }
+            }
+
+            if (!inserted_from_typed_column)
+            {
+                auto is_null = [&](size_t row) { return attribute_column.isNullAt(row); };
+
+                insert_rows(is_null, [&](size_t row) -> AttributeValueType
+                {
+                    attribute_column.get(row, column_value_to_insert);
+
+                    if constexpr (std::is_same_v<AttributeValueType, std::string_view>)
+                        return copyStringInArena(*string_arenas[shard], column_value_to_insert.safeGet<String>());
+                    else
+                        return static_cast<AttributeValueType>(column_value_to_insert.safeGet<AttributeValueType>());
+                });
             }
 
             keys_extractor.reset();

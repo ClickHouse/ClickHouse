@@ -49,6 +49,9 @@ struct PrettyNames
     PrettyRuntimeFilterNameMap runtime_filter_names;
 };
 
+/// The plan of the fragment that sends to a receive step of a cut plan, by receive step.
+using FragmentInputs = std::unordered_map<const IQueryPlanStep *, const QueryPlan *>;
+
 /// Pretty column names are scoped per query plan: a child plan (e.g. a Merge sub-plan) is a separate
 /// naming scope, so each plan in the tree gets its own column-name map keyed by the plan pointer.
 /// Runtime-filter names are global ids and are shared across the tree (copied into every entry).
@@ -95,6 +98,10 @@ namespace QueryPlanFormat
     std::string_view getColumnAnnotation(const String & column_name, const ExplainFormatSettings & settings);
 
     PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan);
+    /// For the fragments of a cut plan, starting with the fragment that produces the result. The walk follows every
+    /// receive step in `fragment_inputs` into the fragment that sends to it, so the fragments share one column naming
+    /// scope (their child plans keep their own) and get the same names as the plan before the cut in plain `EXPLAIN`.
+    PrettyNamesPerPlan buildPrettyNamesForFragments(const std::vector<const QueryPlan *> & fragment_plans, const FragmentInputs & fragment_inputs);
 }
 
 }

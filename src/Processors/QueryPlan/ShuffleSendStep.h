@@ -22,10 +22,14 @@ public:
         chassert(num_buckets > 0);
         chassert(hash_cast_types.empty() || hash_cast_types.size() == key_names.size());
         updateInputHeaders({std::move(input_header_)});
+        /// The exchange name in `EXPLAIN`, to join the step with the exchanges of the query fragments.
+        setStepDescription(exchange_id, exchange_id.size());
     }
 
 
     String getName() const override { return "ShuffleSend"; }
+
+    const String & getExchangeId() const { return exchange_id; }
 
     bool hasOutputStream() const { return false; }
 

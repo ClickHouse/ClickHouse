@@ -298,3 +298,21 @@ TEST(FilterStepRequiredColumns, KeepsAPassThroughColumnAfterANeededOneOfTheSameN
     /// The DAG still outputs the filter column `f` first.
     EXPECT_EQ(runOnOneRow(step.getExpression(), *step.getInputHeaders().front(), {7, 1, 2}), std::vector<UInt64>({7, 1, 2}));
 }
+
+/// Input header (a, b, c). The DAG outputs the filter column `f`, computed from a, an alias of a, and b as it is, so c
+/// passes through. The output header is (x, b, c) once `f` is removed: `x` is computed, b is input 1, c is input 2.
+TEST(FilterStepRequiredColumns, MapsOutputsToTheInputsTheyAre)
+{
+    const Block input_header{column("a"), column("b"), column("c")};
+    ActionsDAG dag;
+    const auto & a = dag.addInput(column("a"));
+    const auto & b = dag.addInput(column("b"));
+    dag.getOutputs() = {&dag.addAlias(a, "f"), &dag.addAlias(a, "x"), &b};
+
+    const auto mapped = FilterStep::mapOutputsToInputs(dag, "f", /*remove_filter_column=*/true, input_header);
+    EXPECT_EQ(mapped, (std::vector<std::optional<size_t>>{std::nullopt, 1, 2}));
+
+    /// With the filter column kept, it is the first column of the output header, computed as well.
+    const auto mapped_with_filter = FilterStep::mapOutputsToInputs(dag, "f", /*remove_filter_column=*/false, input_header);
+    EXPECT_EQ(mapped_with_filter, (std::vector<std::optional<size_t>>{std::nullopt, std::nullopt, 1, 2}));
+}

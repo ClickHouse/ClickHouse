@@ -253,6 +253,8 @@ public:
         node->can_be_base = assert_cast<const ColumnVector<UInt8> *>(columns[base_cond_column_idx])->getData()[row_num];
 
         data(place).value.push_back(node, arena);
+        /// The state may have been sorted by an earlier `merge` or `insertResultInto`, and the new event can break that order.
+        data(place).sorted = false;
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override

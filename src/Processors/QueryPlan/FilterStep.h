@@ -3,6 +3,8 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Interpreters/ActionsDAG.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -13,6 +15,9 @@ struct FilterDAGOutputPruningResult
     /// The positions of the input header that the remaining outputs and the filter do not need, sorted.
     std::vector<size_t> unneeded_input_positions;
 };
+
+/// Can the atom be evaluated before the atoms that precede it in the AND chain? See the definition.
+bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node);
 
 /// Implements WHERE, HAVING operations. See FilterTransform.
 class FilterStep : public ITransformingStep
@@ -30,6 +35,7 @@ public:
         , filter_column_name(other.filter_column_name)
         , remove_filter_column(other.remove_filter_column)
         , condition(other.condition)
+        , optimize_constant_columns_after_filter(other.optimize_constant_columns_after_filter)
     {}
 
     String getName() const override { return "Filter"; }
@@ -50,6 +56,14 @@ public:
     void resetConditionForQueryConditionCache() { condition.reset(); }
     /// Folds a plan-level salt into the already set condition hash (see `updateQueryConditionCache`).
     void saltConditionForQueryConditionCache(UInt64 salt);
+
+    /// The value of `optimize_constant_columns_after_filter` from the context the filter was planned in.
+    /// It can differ from the value in the query context, e.g. for a subquery with its own `SETTINGS`.
+    /// If not set, `FilterTransform` reads the setting from the query context.
+    void setOptimizeConstantColumnsAfterFilter(std::optional<bool> value) { optimize_constant_columns_after_filter = value; }
+    std::optional<bool> getOptimizeConstantColumnsAfterFilter() const { return optimize_constant_columns_after_filter; }
+    /// The value for a filter combined from two filters: the optimization stays disabled if either disabled it.
+    static std::optional<bool> combineOptimizeConstantColumnsAfterFilter(std::optional<bool> lhs, std::optional<bool> rhs);
 
     static bool canUseType(const DataTypePtr & type);
 
@@ -79,6 +93,22 @@ public:
         bool & remove_filter_column,
         const Block & input_header,
         const std::vector<size_t> & unneeded_output_positions);
+
+    /// The input positions `pruneDAGOutputsByPosition` would say are unneeded, without changing the DAG.
+    static std::vector<size_t> getUnneededInputPositions(
+        const ActionsDAG & dag,
+        const String & filter_column_name,
+        bool remove_filter_column,
+        const Block & input_header,
+        const std::vector<size_t> & unneeded_output_positions);
+
+    /// For each column of the output header of a filter DAG, the position of the input column it is, unchanged: one the
+    /// filter passes through, or an input the DAG outputs as it is. Nothing for a column the DAG computes, an alias too.
+    static std::vector<std::optional<size_t>> mapOutputsToInputs(
+        const ActionsDAG & dag,
+        const String & filter_column_name,
+        bool remove_filter_column,
+        const Block & input_header);
 
 private:
     void updateOutputHeader() override;
@@ -133,6 +163,8 @@ private:
     bool remove_filter_column;
 
     std::optional<std::pair<UInt64, String>> condition; /// for query condition cache
+
+    std::optional<bool> optimize_constant_columns_after_filter;
 };
 
 }

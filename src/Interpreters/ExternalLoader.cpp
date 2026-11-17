@@ -9,6 +9,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/StringUtils.h>
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
@@ -495,7 +496,7 @@ public:
             if (!infos.contains(name))
             {
                 Info & info = infos.emplace(name, Info{name, config}).first->second;
-                if (!isObjectLazy(*config))
+                if (automatic_loading_enabled && !isObjectLazy(*config))
                 {
                     LOG_TRACE(log, "Will load '{}' because it is not loaded lazily.", name);
                     startLoading(info);
@@ -530,13 +531,23 @@ public:
 
         always_load_everything = enable;
 
+        if (enable && automatic_loading_enabled)
+            startLoadingNotLazy();
+    }
+
+    /// Sets whether the objects which are not loaded lazily start loading on their own, when they are added
+    /// to the configuration. When disabled, the objects are registered and can be found, but they are loaded
+    /// only when requested explicitly. When enabled again, the loading of such objects is started.
+    void enableAutomaticLoading(bool enable)
+    {
+        std::lock_guard lock{mutex};
+        if (automatic_loading_enabled == enable)
+            return;
+
+        automatic_loading_enabled = enable;
+
         if (enable)
-        {
-            /// Start loading all the objects which were not loaded yet and are not configured to load lazily.
-            for (auto & [name, info] : infos)
-                if (!info.triedToLoad() && !isObjectLazy(*info.config))
-                    startLoading(info);
-        }
+            startLoadingNotLazy();
     }
 
     /// Sets whether the objects should be loaded asynchronously, each loading in a new thread (from the thread pool).
@@ -769,6 +780,13 @@ public:
     }
 
 private:
+    /// Starts loading all the objects which were not loaded yet and are not configured to load lazily.
+    void startLoadingNotLazy()
+    {
+        for (auto & [name, info] : infos)
+            if (!info.triedToLoad() && !isObjectLazy(*info.config))
+                startLoading(info);
+    }
 
     struct Info
     {
@@ -903,6 +921,24 @@ private:
         return results;
     }
 
+    /// Parks this thread's CPU lease while waiting: the loading may run in the same workload and need its CPU slot.
+    template <typename Pred>
+    void waitForLoading(std::unique_lock<std::mutex> & lock, Duration timeout, Pred & pred)
+    {
+        if (pred() || timeout == NO_WAIT)
+            return;
+
+        /// Parking can block until the scheduler processes the request, so not under `mutex`
+        lock.unlock();
+        CPULeaseParkGuard park_guard;
+        lock.lock();
+
+        if (timeout == WAIT)
+            event.wait(lock, pred);
+        else
+            event.wait_for(lock, timeout, pred);
+    }
+
     Info * loadImpl(const String & name, Duration timeout, bool forced_to_reload, std::unique_lock<std::mutex> & lock)
     {
         /// Detect circular dependencies: if this thread is already loading the requested object
@@ -931,11 +967,7 @@ private:
             return (info->state_id >= min_id);
         };
 
-        if (timeout == WAIT)
-            event.wait(lock, pred);
-        else
-            event.wait_for(lock, timeout, pred);
-
+        waitForLoading(lock, timeout, pred);
         return info;
     }
 
@@ -961,10 +993,7 @@ private:
             return all_ready;
         };
 
-        if (timeout == WAIT)
-            event.wait(lock, pred);
-        else
-            event.wait_for(lock, timeout, pred);
+        waitForLoading(lock, timeout, pred);
     }
 
     /// When state_id >= getMinIDToFinishLoading() the loading is considered as finished.
@@ -1323,6 +1352,7 @@ private:
     ObjectConfigsPtr configs;
     std::unordered_map<String, Info> infos;
     std::atomic<bool> always_load_everything = false;
+    std::atomic<bool> automatic_loading_enabled = true;
     std::atomic<bool> enable_async_loading = false;
     std::unordered_map<size_t, ThreadFromGlobalPool> loading_threads;
     std::vector<size_t> recently_finished_loadings;
@@ -1464,6 +1494,11 @@ void ExternalLoader::setConfigSettings(const ExternalLoaderConfigSettings & sett
 void ExternalLoader::enableAlwaysLoadEverything(bool enable)
 {
     loading_dispatcher->enableAlwaysLoadEverything(enable);
+}
+
+void ExternalLoader::enableAutomaticLoading(bool enable)
+{
+    loading_dispatcher->enableAutomaticLoading(enable);
 }
 
 void ExternalLoader::enableAsyncLoading(bool enable)

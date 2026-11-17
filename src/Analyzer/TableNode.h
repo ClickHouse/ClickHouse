@@ -65,6 +65,9 @@ public:
       */
     void updateStorage(StoragePtr storage_value, const ContextPtr & context);
 
+    /// Replace the storage that reads the table. Storage id and storage lock stay those of the table.
+    void replaceStorage(StoragePtr storage_value, StorageSnapshotPtr storage_snapshot_value);
+
     /// Get storage
     const StoragePtr & getStorage() const
     {
