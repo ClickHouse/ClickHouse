@@ -266,7 +266,7 @@ public:
                 current.broken = !current.width.multiline && !width.fits(column, line_length);
                 if (current.width.multiline && current.mode == ASTFormattingGroup::Mode::ConsistentLines)
                 {
-                    /// Call arguments break together when the opening line or the tail after a subquery does not fit.
+                    /// Call arguments break together when any physical line or the attached suffix does not fit.
                     size_t tail_column = current.width.last_line_width;
                     size_t widest_column = current.width.max_after_first_line;
                     if (current.indent != current.source_line_indent)

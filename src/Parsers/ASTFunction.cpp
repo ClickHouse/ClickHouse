@@ -1105,12 +1105,8 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
         const bool literal_arguments = !written && (name == "array" || name == "tuple" || name == "map")
             && std::ranges::all_of(arguments->children, [](const ASTPtr & argument) { return argument->as<ASTLiteral>() != nullptr; });
-
-        if (!written && name == "array"sv && isOperator())
+        const auto format_collection_arguments = [&]
         {
-            ostr << '[';
-            if (!arguments->children.empty())
-                writeASTFormattingBreak(ostr, state, nested_dont_need_parens, 1, '\0');
             for (size_t i = 0; i < arguments->children.size(); ++i)
             {
                 if (i != 0)
@@ -1126,6 +1122,14 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 nested_dont_need_parens.list_element_index = i;
                 arguments->children[i]->format(ostr, settings, state, nested_dont_need_parens);
             }
+        };
+
+        if (!written && name == "array"sv && isOperator())
+        {
+            ostr << '[';
+            if (!arguments->children.empty())
+                writeASTFormattingBreak(ostr, state, nested_dont_need_parens, 1, '\0');
+            format_collection_arguments();
             if (!arguments->children.empty())
                 writeASTFormattingBreak(ostr, state, frame, 0, '\0');
             ostr << ']';
@@ -1139,21 +1143,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         {
             ostr << '(';
             writeASTFormattingBreak(ostr, state, nested_dont_need_parens, 1, '\0');
-            for (size_t i = 0; i < arguments->children.size(); ++i)
-            {
-                if (i != 0)
-                {
-                    ostr << ',';
-                    if (literal_arguments)
-                        writeASTFormattingFillBreak(ostr, state, nested_dont_need_parens);
-                    else
-                        writeASTFormattingBreak(ostr, state, nested_dont_need_parens);
-                }
-                if (arguments->children[i]->as<ASTSetQuery>())
-                    ostr << "SETTINGS ";
-                nested_dont_need_parens.list_element_index = i;
-                arguments->children[i]->format(ostr, settings, state, nested_dont_need_parens);
-            }
+            format_collection_arguments();
             writeASTFormattingBreak(ostr, state, frame, 0, '\0');
             ostr << ')';
             written = true;
@@ -1164,21 +1154,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             ostr << "map(";
             if (!arguments->children.empty())
                 writeASTFormattingBreak(ostr, state, nested_dont_need_parens, 1, '\0');
-            for (size_t i = 0; i < arguments->children.size(); ++i)
-            {
-                if (i != 0)
-                {
-                    ostr << ',';
-                    if (literal_arguments)
-                        writeASTFormattingFillBreak(ostr, state, nested_dont_need_parens);
-                    else
-                        writeASTFormattingBreak(ostr, state, nested_dont_need_parens);
-                }
-                if (arguments->children[i]->as<ASTSetQuery>())
-                    ostr << "SETTINGS ";
-                nested_dont_need_parens.list_element_index = i;
-                arguments->children[i]->format(ostr, settings, state, nested_dont_need_parens);
-            }
+            format_collection_arguments();
             if (!arguments->children.empty())
                 writeASTFormattingBreak(ostr, state, frame, 0, '\0');
             ostr << ')';
