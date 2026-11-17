@@ -19,6 +19,9 @@ packed merge projection adds exactly one file sync	1
 packed merge storage type	Packed
 packed merge check
 1
+group fsync projection adds exactly one file sync	1
+group fsync check
+1
 mutation syncs projection files	1
 materialize rows	10000
 materialize check

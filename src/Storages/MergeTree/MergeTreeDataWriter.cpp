@@ -1228,7 +1228,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             {
                 auto proj_temp_part
                     = writeProjectionPart(data, projection_block, projection, new_data_part.get(), compression_codec, /*merge_is_needed=*/false,
-                        /*sync=*/ (*data_settings)[MergeTreeSetting::fsync_after_insert], context);
+                        /*sync=*/ (*data_settings)[MergeTreeSetting::fsync_after_insert] && !defer_fsync, context);
                 new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
 
                 if (global_settings[Setting::finalize_projection_parts_synchronously])

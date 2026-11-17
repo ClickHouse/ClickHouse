@@ -24,6 +24,9 @@
 -- `async_insert = 0` keeps every `INSERT ... SELECT` on the synchronous route: through the async
 -- insert queue the part is written by the queue flush, so its fsyncs are not attributed to the
 -- `INSERT` query in `system.query_log`.
+--
+-- `group_fsync_before_insert_finish = 0` makes the `INSERT` fsync every part when it is written, as
+-- for replicated tables by default. The group fsync at the end of the `INSERT` is covered separately.
 SET async_insert = 0;
 
 DROP TABLE IF EXISTS t_proj;
@@ -36,7 +39,7 @@ SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
          min_rows_to_fsync_after_merge = 1000, min_compressed_bytes_to_fsync_after_merge = 0,
          min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          min_bytes_for_full_part_storage = 0,
-         max_bytes_to_merge_at_max_space_in_pool = 1;
+         max_bytes_to_merge_at_max_space_in_pool = 1, group_fsync_before_insert_finish = 0;
 
 CREATE TABLE t_plain (id UInt64, key String, v UInt64)
 ENGINE = MergeTree ORDER BY id
@@ -44,7 +47,7 @@ SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
          min_rows_to_fsync_after_merge = 1000, min_compressed_bytes_to_fsync_after_merge = 0,
          min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          min_bytes_for_full_part_storage = 0,
-         max_bytes_to_merge_at_max_space_in_pool = 1;
+         max_bytes_to_merge_at_max_space_in_pool = 1, group_fsync_before_insert_finish = 0;
 
 -- `INSERT` path: `fsync_after_insert = 1` must fsync the projection files too.
 INSERT INTO t_proj SELECT number, concat('k', toString(number % 7)), number FROM numbers(5000);
@@ -179,14 +182,14 @@ ENGINE = MergeTree ORDER BY id
 SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
          min_rows_to_fsync_after_merge = 1000, min_compressed_bytes_to_fsync_after_merge = 0,
          min_bytes_for_full_part_storage = 1000000000,
-         max_bytes_to_merge_at_max_space_in_pool = 1;
+         max_bytes_to_merge_at_max_space_in_pool = 1, group_fsync_before_insert_finish = 0;
 
 CREATE TABLE t_packed_plain (id UInt64, key String, v UInt64)
 ENGINE = MergeTree ORDER BY id
 SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
          min_rows_to_fsync_after_merge = 1000, min_compressed_bytes_to_fsync_after_merge = 0,
          min_bytes_for_full_part_storage = 1000000000,
-         max_bytes_to_merge_at_max_space_in_pool = 1;
+         max_bytes_to_merge_at_max_space_in_pool = 1, group_fsync_before_insert_finish = 0;
 
 INSERT INTO t_packed SELECT number, concat('k', toString(number % 7)), number FROM numbers(5000);
 INSERT INTO t_packed_plain SELECT number, concat('k', toString(number % 7)), number FROM numbers(5000);
@@ -276,6 +279,42 @@ CHECK TABLE t_packed SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_packed;
 DROP TABLE t_packed_plain;
+
+-- With `group_fsync_before_insert_finish = 1` the files of the inserted part, its projections
+-- included, are fsynced together when the `INSERT` finishes, so the projection must not be fsynced
+-- once more when it is written: a `Packed` projection still adds exactly one file sync.
+CREATE TABLE t_group (id UInt64, key String, v UInt64,
+                      PROJECTION pr (SELECT key, sum(v) GROUP BY key))
+ENGINE = MergeTree ORDER BY id
+SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
+         min_bytes_for_full_part_storage = 1000000000,
+         max_bytes_to_merge_at_max_space_in_pool = 1, group_fsync_before_insert_finish = 1;
+
+CREATE TABLE t_group_plain (id UInt64, key String, v UInt64)
+ENGINE = MergeTree ORDER BY id
+SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
+         min_bytes_for_full_part_storage = 1000000000,
+         max_bytes_to_merge_at_max_space_in_pool = 1, group_fsync_before_insert_finish = 1;
+
+INSERT INTO t_group SELECT number, concat('k', toString(number % 7)), number FROM numbers(5000);
+INSERT INTO t_group_plain SELECT number, concat('k', toString(number % 7)), number FROM numbers(5000);
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'group fsync projection adds exactly one file sync',
+    (SELECT ProfileEvents['FileSync'] FROM system.query_log
+     WHERE current_database = currentDatabase() AND query_kind = 'Insert'
+       AND query NOT LIKE '%query_log%' AND query LIKE '%t\_group %' AND type = 'QueryFinish')
+    -
+    (SELECT ProfileEvents['FileSync'] FROM system.query_log
+     WHERE current_database = currentDatabase() AND query_kind = 'Insert'
+       AND query NOT LIKE '%query_log%' AND query LIKE '%t\_group\_plain%' AND type = 'QueryFinish');
+
+SELECT 'group fsync check';
+CHECK TABLE t_group SETTINGS check_query_single_value_result = 1;
+
+DROP TABLE t_group;
+DROP TABLE t_group_plain;
 
 -- `MATERIALIZE PROJECTION` (mutation) path. Its fsyncs run on the IO thread pool and are not
 -- attributed to the `ALTER` in `system.query_log`, but the mutation is a part-level operation, so
