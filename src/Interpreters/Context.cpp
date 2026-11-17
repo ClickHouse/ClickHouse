@@ -1291,6 +1291,7 @@ struct ContextSharedPart : boost::noncopyable
 
         /// Not earlier: storages may use dictionaries until they are shut down (the final flush of `Buffer`),
         /// and queries on the introspection port may load or reload them.
+        SHUTDOWN(log, "dictionaries loader threads", external_dictionaries_loader, joinLoadingThreads());
         SHUTDOWN(log, "dictionaries background threads", external_dictionaries_loader, shutdownDictionaries());
 
         FileCacheFactory::instance().clear();
