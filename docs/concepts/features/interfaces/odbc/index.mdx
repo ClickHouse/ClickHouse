@@ -63,6 +63,55 @@ $reader.Close()
 $conn.Close()
 ```
 
+## Installation on Linux {#installation-on-linux}
+
+Each release at
+[https://github.com/ClickHouse/clickhouse-odbc/releases/latest](https://github.com/ClickHouse/clickhouse-odbc/releases/latest)
+includes a prebuilt driver for x86_64 Linux, `clickhouse-odbc-linux-Clang-UnixODBC-Release.zip`. The driver is used
+through the [unixODBC](https://www.unixodbc.org/) driver manager, so install unixODBC first, for example with
+`sudo apt install unixodbc` on Debian and Ubuntu.
+
+Download the archive and extract the driver, for example to `/opt/clickhouse-odbc`:
+
+```bash
+curl -LO https://github.com/ClickHouse/clickhouse-odbc/releases/latest/download/clickhouse-odbc-linux-Clang-UnixODBC-Release.zip
+unzip clickhouse-odbc-linux-Clang-UnixODBC-Release.zip
+sudo mkdir -p /opt/clickhouse-odbc
+sudo tar -xzf clickhouse-odbc-*-Linux.tar.gz -C /opt/clickhouse-odbc --strip-components=1
+```
+
+The archive contains the ANSI driver `lib/libclickhouseodbc.so`, the Unicode driver `lib/libclickhouseodbcw.so`, and
+sample configuration files in `share/doc/clickhouse-odbc/config`.
+
+Register the drivers by adding the following to `/etc/odbcinst.ini`:
+
+```ini
+[ClickHouse ODBC Driver (ANSI)]
+Description = ODBC Driver (ANSI) for ClickHouse
+Driver      = /opt/clickhouse-odbc/lib/libclickhouseodbc.so
+
+[ClickHouse ODBC Driver (Unicode)]
+Description = ODBC Driver (Unicode) for ClickHouse
+Driver      = /opt/clickhouse-odbc/lib/libclickhouseodbcw.so
+```
+
+Then define a data source in `~/.odbc.ini`, setting your URL, user, and password:
+
+```ini
+[ClickHouse]
+Driver   = ClickHouse ODBC Driver (Unicode)
+Url      = http://127.0.0.1:8123/
+Username = default
+Password =
+```
+
+To test the driver, run a query with the `isql` tool that comes with unixODBC. It should show your ClickHouse server
+version:
+
+```bash
+echo "select version()" | isql -b ClickHouse
+```
+
 ## Configuration parameters {#configuration-parameters}
 
 The parameters below represent the most commonly used settings for establishing a connection with the ClickHouse ODBC
