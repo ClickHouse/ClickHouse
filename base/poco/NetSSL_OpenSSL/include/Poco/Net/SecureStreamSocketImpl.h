@@ -117,6 +117,14 @@ namespace Net
         ///
         /// Returns the number of bytes received.
 
+        int waitForSendOrReceive(Poco::Timespan & timeout, int mode);
+        int sendNow(const void * buffer, int length);
+        int receiveNow(void * buffer, int length);
+        void throwHeldSendError();
+        /// The non-blocking calls of `SocketImpl` for the TLS stream, after the handshake.
+        /// See `SecureSocketImpl`: the versions of `SocketImpl`, which work on the descriptor,
+        /// would break the stream.
+
         int sendTo(const void * buffer, int length, const SocketAddress & address, int flags = 0);
         /// Not supported by a SecureStreamSocket.
         ///
