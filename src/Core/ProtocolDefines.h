@@ -205,6 +205,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AG
 /// First query-plan serialization version that knows the `adaptive_aggregator_disable_thaw` plan setting
 /// name. Gates writing it in `AggregatingStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR_DISABLE_THAW = 21;
+/// First query-plan serialization version that knows the `enable_parallel_single_level_merge_by_index` plan
+/// setting name. Gates writing it in `AggregatingStep::serializeSettings`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_SINGLE_LEVEL_MERGE_BY_INDEX = 21;
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOBS_LIST_PARTS = 10;
 /// First query-plan serialization version that preserves plan-level `max_threads` and `concurrency_control`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS = 11;
@@ -235,6 +238,8 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIO
 /// `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` plan settings
 /// and the input-order flag. Gates writing the settings in `DistinctStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
+/// First global query-plan version that writes version 2 of `Distinct` and `PreDistinct`, adding the limit hint.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_DISTINCT_LIMIT_HINT = 21;
 /// First global query-plan version that writes version 1 of `ReadFromMergeTree`, which carries the
 /// `allow_query_condition_cache` flag bit. A read whose query-condition cache was disabled for
 /// correctness cannot be shipped to a peer below this version: the peer would ignore the bit and

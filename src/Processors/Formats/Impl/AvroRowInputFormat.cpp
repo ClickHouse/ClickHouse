@@ -300,7 +300,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::tryCreateVariantDeserializeFn(
     else if (node->nameAt(0) != "metadata" || node->nameAt(1) != "value")
         return {};
 
-    return [variant_decoder = Parquet::VariantValueDecoder(target_type, current_column_name, settings),
+    return [variant_decoder = Parquet::VariantValueDecoder(target_type, current_column_name, Parquet::VariantSettings(settings)),
             metadata_position,
             blobs = std::array<std::string, 2>()](IColumn & column, avro::Decoder & decoder) mutable
     {
@@ -1720,7 +1720,7 @@ void registerInputFormatAvro(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<AvroRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
-    });
+    }, /*supports_reset_parser=*/ true);
 
     factory.markFormatSupportsSubsetOfColumns("Avro");
 
@@ -1731,7 +1731,7 @@ void registerInputFormatAvro(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<AvroConfluentRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
-    });
+    }, /*supports_reset_parser=*/ true);
 
     factory.markFormatSupportsSubsetOfColumns("AvroConfluent");
 

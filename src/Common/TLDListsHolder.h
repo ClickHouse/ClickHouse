@@ -35,8 +35,8 @@ public:
     explicit TLDList(size_t size);
 
     void insert(const String & host, TLDType type);
-    TLDType lookup(std::string_view host) const;
-    size_t size() const { return tld_container.size(); }
+    [[nodiscard]] TLDType lookup(std::string_view host) const;
+    [[nodiscard]] size_t size() const { return tld_container.size(); }
 
 private:
     Container tld_container;
