@@ -12,6 +12,7 @@
 #include <Interpreters/ProfileEventsExt.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Core/Settings.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
 
 
 namespace ProfileEvents
@@ -42,9 +43,11 @@ RemoteInserter::RemoteInserter(
     const String & query_,
     const Settings & settings_,
     const ClientInfo & client_info_,
+    const AccessControl & access_control_,
     QueryStatusPtr process_list_element_)
     : insert_settings(settings_)
     , client_info(client_info_)
+    , external_roles(getExternalRolesToPush(access_control_, settings_, client_info_.initial_user))
     , timeouts(timeouts_)
     , process_list_element(std::move(process_list_element_))
     , connection(connection_)
@@ -90,9 +93,8 @@ void RemoteInserter::initialize()
     /** Send query and receive "header", that describes table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
-    /// TODO (vnemkov): figure out should we pass additional roles in this case or not.
     connection.sendQuery(
-        timeouts, query, /* query_parameters */ {}, "", QueryProcessingStage::Complete, &settings, &modified_client_info, false, /* external_roles */ {}, {});
+        timeouts, query, /* query_parameters */ {}, "", QueryProcessingStage::Complete, &settings, &modified_client_info, false, external_roles, {});
 
     while (true)
     {
