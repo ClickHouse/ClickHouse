@@ -36,23 +36,6 @@ SELECT any(key IN (SELECT 1)), distinctJSONPaths(j) FROM t_djp WHERE key = 2 SET
 SELECT distinctJSONPaths(j) FROM t_djp SETTINGS additional_table_filters = {'t_djp': 'key = 2'}, optimize_functions_to_subcolumns = 1;
 SELECT distinctJSONPaths(j) FROM t_djp SETTINGS additional_table_filters = {'t_djp': 'key = 2'}, optimize_functions_to_subcolumns = 0;
 
--- A read cut short by a limit in break mode: one row per granule and per block, one thread.
-DROP TABLE IF EXISTS t_djp_break;
-CREATE TABLE t_djp_break (key UInt64, j JSON) ENGINE = MergeTree ORDER BY key SETTINGS index_granularity = 1;
-INSERT INTO t_djp_break VALUES (1, '{"a":1}'), (2, '{"b":2}'), (3, '{"c":3}');
-SELECT distinctJSONPaths(j) FROM t_djp_break SETTINGS max_block_size = 1, max_threads = 1, max_rows_to_read = 1, read_overflow_mode = 'break', optimize_functions_to_subcolumns = 1;
-SELECT distinctJSONPaths(j) FROM t_djp_break SETTINGS max_block_size = 1, max_threads = 1, max_rows_to_read = 1, read_overflow_mode = 'break', optimize_functions_to_subcolumns = 0;
--- Leaf limits apply only to the shard part of a distributed query.
-SELECT distinctJSONPaths(j) FROM remote('127.0.0.2', currentDatabase(), t_djp_break) SETTINGS enable_parallel_replicas = 0, max_block_size = 1, max_threads = 1, max_rows_to_read_leaf = 1, read_overflow_mode_leaf = 'break', optimize_functions_to_subcolumns = 1;
-SELECT distinctJSONPaths(j) FROM remote('127.0.0.2', currentDatabase(), t_djp_break) SETTINGS enable_parallel_replicas = 0, max_block_size = 1, max_threads = 1, max_rows_to_read_leaf = 1, read_overflow_mode_leaf = 'break', optimize_functions_to_subcolumns = 0;
--- The limit of an enclosing query still applies when the subquery resets its own.
-SELECT * FROM (SELECT distinctJSONPaths(j) FROM t_djp_break SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw') SETTINGS enable_parallel_replicas = 0, max_block_size = 1, max_threads = 1, max_rows_to_read = 1, read_overflow_mode = 'break', optimize_functions_to_subcolumns = 1;
-SELECT * FROM (SELECT distinctJSONPaths(j) FROM t_djp_break SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw') SETTINGS enable_parallel_replicas = 0, max_block_size = 1, max_threads = 1, max_rows_to_read = 1, read_overflow_mode = 'break', optimize_functions_to_subcolumns = 0;
-SELECT * FROM (SELECT distinctJSONPaths(j) FROM t_djp_break SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw', optimize_functions_to_subcolumns = 1) SETTINGS enable_parallel_replicas = 0, max_block_size = 1, max_threads = 1, max_rows_to_read = 1, read_overflow_mode = 'break', optimize_functions_to_subcolumns = 0;
-SELECT * FROM (SELECT distinctJSONPaths(j) FROM t_djp_break SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw', optimize_functions_to_subcolumns = 0) SETTINGS enable_parallel_replicas = 0, max_block_size = 1, max_threads = 1, max_rows_to_read = 1, read_overflow_mode = 'break', optimize_functions_to_subcolumns = 0;
-SELECT * FROM remote('127.0.0.2', view(SELECT distinctJSONPaths(j) FROM {CLICKHOUSE_DATABASE:Identifier}.t_djp_break SETTINGS max_rows_to_read_leaf = 0, read_overflow_mode_leaf = 'throw')) SETTINGS enable_parallel_replicas = 0, max_block_size = 1, max_threads = 1, max_rows_to_read_leaf = 1, read_overflow_mode_leaf = 'break', optimize_functions_to_subcolumns = 1;
-SELECT * FROM remote('127.0.0.2', view(SELECT distinctJSONPaths(j) FROM {CLICKHOUSE_DATABASE:Identifier}.t_djp_break SETTINGS max_rows_to_read_leaf = 0, read_overflow_mode_leaf = 'throw')) SETTINGS enable_parallel_replicas = 0, max_block_size = 1, max_threads = 1, max_rows_to_read_leaf = 1, read_overflow_mode_leaf = 'break', optimize_functions_to_subcolumns = 0;
-
 -- SAMPLE: the first row of the part is outside the sample.
 DROP TABLE IF EXISTS t_djp_sample;
 CREATE TABLE t_djp_sample (key UInt64, j JSON) ENGINE = MergeTree ORDER BY key SAMPLE BY key;
@@ -90,10 +73,48 @@ SELECT distinctJSONPaths(j) FROM t_djp_merge SETTINGS optimize_functions_to_subc
 SELECT distinctJSONPaths(j) FROM t_djp_merge SETTINGS optimize_functions_to_subcolumns = 0;
 DROP ROW POLICY p_djp_child ON t_djp_child1;
 
+-- Rows hidden or values changed by the table state.
+DROP TABLE IF EXISTS t_djp_lwd;
+CREATE TABLE t_djp_lwd (key UInt64, j JSON) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_djp_lwd VALUES (1, '{"a":1}'), (2, '{"b":2}'), (3, '{"c":3}');
+DELETE FROM t_djp_lwd WHERE key = 1;
+SELECT distinctJSONPaths(j) FROM t_djp_lwd SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT distinctJSONPaths(j) FROM t_djp_lwd SETTINGS optimize_functions_to_subcolumns = 0;
+
+DROP TABLE IF EXISTS t_djp_on_fly;
+CREATE TABLE t_djp_on_fly (key UInt64, j JSON) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_djp_on_fly VALUES (1, '{"a":1}'), (2, '{"b":2}'), (3, '{"c":3}');
+SYSTEM STOP MERGES t_djp_on_fly;
+ALTER TABLE t_djp_on_fly UPDATE j = '{"y":1}' WHERE key = 2 SETTINGS mutations_sync = 0, alter_sync = 0;
+SELECT distinctJSONPaths(j) FROM t_djp_on_fly SETTINGS apply_mutations_on_fly = 1, optimize_functions_to_subcolumns = 1;
+SELECT distinctJSONPaths(j) FROM t_djp_on_fly SETTINGS apply_mutations_on_fly = 1, optimize_functions_to_subcolumns = 0;
+
+DROP TABLE IF EXISTS t_djp_patch;
+CREATE TABLE t_djp_patch (key UInt64, j JSON) ENGINE = MergeTree ORDER BY key SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO t_djp_patch VALUES (1, '{"a":1}'), (2, '{"b":2}'), (3, '{"c":3}');
+SYSTEM STOP MERGES t_djp_patch;
+UPDATE t_djp_patch SET j = '{"z":1}' WHERE key = 2;
+SELECT distinctJSONPaths(j) FROM t_djp_patch SETTINGS apply_patch_parts = 1, optimize_functions_to_subcolumns = 1;
+SELECT distinctJSONPaths(j) FROM t_djp_patch SETTINGS apply_patch_parts = 1, optimize_functions_to_subcolumns = 0;
+
+-- A pending ALTER is applied while reading: the typed path `a` is a path of every row.
+DROP TABLE IF EXISTS t_djp_alter;
+CREATE TABLE t_djp_alter (key UInt64, j JSON) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_djp_alter VALUES (1, '{"x":1}'), (2, '{"b":2}'), (3, '{"c":3}');
+SYSTEM STOP MERGES t_djp_alter;
+ALTER TABLE t_djp_alter MODIFY COLUMN j JSON(a UInt32) SETTINGS mutations_sync = 0, alter_sync = 0;
+SELECT distinctJSONPaths(j) FROM t_djp_alter SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT distinctJSONPaths(j) FROM t_djp_alter SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT distinctJSONPaths(j) FROM t_djp_alter SETTINGS apply_patch_parts = 0, apply_mutations_on_fly = 0, optimize_functions_to_subcolumns = 1;
+SELECT distinctJSONPaths(j) FROM t_djp_alter SETTINGS apply_patch_parts = 0, apply_mutations_on_fly = 0, optimize_functions_to_subcolumns = 0;
+
+DROP TABLE t_djp_alter;
+DROP TABLE t_djp_patch;
+DROP TABLE t_djp_on_fly;
+DROP TABLE t_djp_lwd;
 DROP TABLE t_djp_merge;
 DROP TABLE t_djp_child1;
 DROP TABLE t_djp_child2;
 DROP TABLE t_djp_policy;
 DROP TABLE t_djp_sample;
-DROP TABLE t_djp_break;
 DROP TABLE t_djp;

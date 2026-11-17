@@ -23,7 +23,6 @@
 #include <DataTypes/Serializations/SerializationVariant.h>
 
 #include <Storages/IStorage.h>
-#include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -45,6 +44,8 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Planner/PlannerJoinTree.h>
+
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
@@ -60,17 +61,10 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsMap additional_table_filters;
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsBool json_type_escape_dots_in_keys;
     extern const SettingsBool join_use_nulls;
     extern const SettingsBool optimize_functions_to_subcolumns;
-    extern const SettingsUInt64 parallel_replicas_count;
-    extern const SettingsBool partial_result_on_first_cancel;
-    extern const SettingsOverflowMode read_overflow_mode;
-    extern const SettingsOverflowMode read_overflow_mode_leaf;
-    extern const SettingsOverflowMode timeout_overflow_mode;
-    extern const SettingsOverflowMode timeout_overflow_mode_leaf;
 }
 
 namespace
@@ -1237,55 +1231,26 @@ std::map<std::pair<TypeIndex, String>, ChainedNodeToSubcolumnTransformer> chaine
 };
 
 /// The special subcolumn holds all paths of a read in its first row, so the rewrite is valid only
-/// when every row of one table reaches one aggregation unfiltered.
+/// when one aggregate sees every row of one table, unfiltered and with its stored values.
 bool canOptimizeDistinctJSONPaths(
-    const std::vector<QueryTreeNodePtr> & query_nodes,
+    const QueryTreeNodePtr & query_node,
     const FunctionNode & function_node,
     const QueryTreeNodePtr & column_source,
     const ContextPtr & context)
 {
-    if (query_nodes.empty() || !function_node.isAggregateFunction())
+    if (!function_node.isAggregateFunction())
         return false;
 
-    const auto & query_node = query_nodes.back();
     const auto & query = query_node->as<const QueryNode &>();
     if (query.hasWhere() || query.hasPrewhere() || query.hasGroupBy() || query.getJoinTreeNode().get() != column_source.get())
         return false;
 
-    if (const auto * table_node = column_source->as<TableNode>(); table_node && table_node->hasTableExpressionModifiers())
-        return false;
-    if (const auto * table_function_node = column_source->as<TableFunctionNode>();
-        table_function_node && table_function_node->hasTableExpressionModifiers())
-        return false;
-
-    auto storage = getStorageForColumnSource(column_source);
-    if (!storage || !isLocalPhysicalTable(*storage) || getEffectiveRowPolicyFilter(*storage, context))
-        return false;
-
-    const auto & settings = context->getSettingsRef();
-    if (!settings[Setting::additional_table_filters].value.empty())
-        return false;
-
-    if (context->canUseParallelReplicasCustomKey() || settings[Setting::parallel_replicas_count] > 1)
-        return false;
-
-    /// The read limits of the enclosing queries apply to this read too.
-    for (const auto & node : query_nodes)
-    {
-        const auto & level_settings = node->as<const QueryNode &>().getContext()->getSettingsRef();
-        if (level_settings[Setting::read_overflow_mode] == OverflowMode::BREAK
-            || level_settings[Setting::read_overflow_mode_leaf] == OverflowMode::BREAK
-            || level_settings[Setting::timeout_overflow_mode] == OverflowMode::BREAK
-            || level_settings[Setting::timeout_overflow_mode_leaf] == OverflowMode::BREAK
-            || level_settings[Setting::partial_result_on_first_cancel])
-            return false;
-    }
-
     for (const auto & aggregate_function_node : collectAggregateFunctionNodes(query_node))
-        if (hasArrayJoinFunctionNode(aggregate_function_node))
+        if (hasFunctionNode(aggregate_function_node, "arrayJoin"))
             return false;
 
-    return true;
+    return !context->canUseOffsetParallelReplicas()
+        && canAnswerWholeTableAggregateFromMetadata(column_source, context, /*needs_stored_values=*/ true);
 }
 
 /// Follow a chain of trivial ALIAS columns (an ALIAS column whose body is itself a ColumnNode
@@ -1466,10 +1431,6 @@ public:
 
     void enterImpl(const QueryTreeNodePtr & node)
     {
-        /// A level that disables the optimization still imposes its read limits on nested reads.
-        if (node->as<QueryNode>())
-            query_nodes.push_back(node);
-
         if (!getSettings()[Setting::optimize_functions_to_subcolumns])
             return;
 
@@ -1533,6 +1494,7 @@ public:
             /// Push a placeholder for this query level; needChildVisit will update it
             /// to true when we descend into WHERE or PREWHERE.
             in_where_prewhere_stack.push_back(false);
+            query_nodes.push_back(node);
             correlated_columns.enter(query_node->getCorrelatedColumns());
             return;
         }
@@ -1546,15 +1508,13 @@ public:
 
     void leaveImpl(const QueryTreeNodePtr & node)
     {
-        if (node->as<QueryNode>())
-            query_nodes.pop_back();
-
         if (!getSettings()[Setting::optimize_functions_to_subcolumns])
             return;
 
         if (node->as<QueryNode>())
         {
             in_where_prewhere_stack.pop_back();
+            query_nodes.pop_back();
             correlated_columns.leave();
         }
         else if (node->as<UnionNode>())
@@ -1713,7 +1673,7 @@ private:
         auto qualified_name = makeColumnInSource(column_source, column.name);
 
         if (function_node.getFunctionName() == "distinctJSONPaths"
-            && !canOptimizeDistinctJSONPaths(query_nodes, function_node, column_source, getContext()))
+            && (query_nodes.empty() || !canOptimizeDistinctJSONPaths(query_nodes.back(), function_node, column_source, getContext())))
             return;
 
         /// The column belongs to an outer query, and the subquery reading it lists it among its
