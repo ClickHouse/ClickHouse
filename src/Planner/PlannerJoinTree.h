@@ -32,10 +32,8 @@ struct JoinTreeQueryPlan
     std::unordered_map<String, String> shard_collapse_duplicate_keys{};
 };
 
-/// Whether an aggregate over every row of `table_expression` (a table or a table function), read without WHERE and
-/// PREWHERE, can be computed from the table's metadata: no pinned snapshot, row policy, `additional_table_filters`,
-/// FINAL, SAMPLE or STREAM, and `IStorage::supportsTrivialCountOptimization`. With `needs_stored_values`, the read
-/// must also return the stored values of every row (no patch parts, pending ALTER, masking, unique key, Merge or Alias).
+/// Whether an aggregate over every row of `table_expression`, read without WHERE and PREWHERE, can be computed from
+/// the table's metadata, as for trivial count. `needs_stored_values` also requires the stored values of every row.
 bool canAnswerWholeTableAggregateFromMetadata(
     const QueryTreeNodePtr & table_expression, const ContextPtr & context, bool needs_stored_values);
 

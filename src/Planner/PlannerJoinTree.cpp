@@ -1831,7 +1831,6 @@ bool canAnswerWholeTableAggregateFromMetadata(
 
     if (needs_stored_values)
     {
-        /// The read must return the values the parts store, from the rows the snapshot shows.
         if (&storage_snapshot->storage != storage.get() || typeid_cast<const StorageMerge *>(storage.get())
             || storage_snapshot->metadata->hasUniqueKey())
             return false;
