@@ -4530,7 +4530,6 @@ Chunk Aggregator::insertResultsIntoColumns(
 #if USE_EMBEDDED_COMPILER
         if (use_compiled_functions && is_aggregate_function_compiled[aggregate_functions_destroy_index])
         {
-            ++aggregate_functions_destroy_index;
             continue;
         }
 #endif

@@ -22,7 +22,7 @@ o="log_path=$log"
 query()
 {
     echo "SYSTEM ENABLE FAILPOINT $2;
-        SELECT k, quantileExact(number), quantileExact(number + 1)
+        SELECT k, quantileExact(number), sum(number), quantileExact(number + 1)
         FROM (SELECT number, $4 AS k FROM numbers_mt(400000)) GROUP BY k $5 SETTINGS $3 FORMAT Null;
         SELECT '$1', value FROM system.errors WHERE name = 'FAULT_INJECTED';"
 }
@@ -36,7 +36,8 @@ results=aggregator_convert_insert_results_throw
 
 # A throw while states are queued: the conversion after the parallel hash-partition merge (one block), after the
 # serial merge (blocks of `max_block_size`), of a two-level bucket, and of a bucket with the `HAVING count()`
-# pre-filter. Then a throw inside the insertion of the first full block of a serial conversion.
+# pre-filter. Then a throw inside the insertion of the first full block of a serial conversion without and with JIT
+# (a compiled `sum` between the two `quantileExact`).
 ASAN_OPTIONS="${ASAN_OPTIONS:+$ASAN_OPTIONS:}$o" MSAN_OPTIONS="${MSAN_OPTIONS:+$MSAN_OPTIONS:}$o" \
 TSAN_OPTIONS="${TSAN_OPTIONS:+$TSAN_OPTIONS:}$o" UBSAN_OPTIONS="${UBSAN_OPTIONS:+$UBSAN_OPTIONS:}$o" \
     ${CLICKHOUSE_LOCAL} --ignore-error --query "
@@ -47,6 +48,7 @@ TSAN_OPTIONS="${TSAN_OPTIONS:+$TSAN_OPTIONS:}$o" UBSAN_OPTIONS="${UBSAN_OPTIONS:
         $(query serial $queued "$serial" "toUInt64(number % 1000)")
         $(query bucket $queued "$bucket" "toUInt64(number % 1000)")
         $(query bucket_having $queued "$bucket" "toUInt64(number % 1000)" "HAVING count() > 1")
-        $(query serial_results $results "$serial" "toUInt64(number % 5000)")" 2>/dev/null | cat
+        $(query serial_results $results "$serial" "toUInt64(number % 5000)")
+        $(query serial_results_jit $results "$serial, compile_aggregate_expressions = 1, min_count_to_compile_aggregate_expression = 0" "toUInt64(number % 5000)")" 2>/dev/null | cat
 echo "leaks: $(cat "$log"* 2>/dev/null | grep -c 'detected memory leaks')"
 rm -f "$log"*

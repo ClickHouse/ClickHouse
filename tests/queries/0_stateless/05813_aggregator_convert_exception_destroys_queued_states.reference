@@ -3,4 +3,5 @@ serial	2
 bucket	3
 bucket_having	4
 serial_results	5
+serial_results_jit	6
 leaks: 0
