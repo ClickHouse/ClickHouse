@@ -116,7 +116,7 @@ public:
     {
     }
 
-    String getName() const override { return "ReadFromStorageFileLog"; }
+    [[nodiscard]] String getName() const override { return "ReadFromStorageFileLog"; }
 
 private:
     Pipe makePipe() final
