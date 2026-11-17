@@ -3,7 +3,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Common/NaNUtils.h>
-#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
@@ -16,6 +15,8 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int BAD_ARGUMENTS;
 }
 
@@ -34,36 +35,64 @@ namespace
   * And you're right. But actually it's made similar to a random Python library from the internet:
   * https://github.com/jmoiron/humanize/blob/b37dc30ba61c2446eecb1a9d3e9ac8c9adf00f03/src/humanize/time.py#L462
   */
-class FunctionFormatReadableTimeDelta final : public IFunction
+class FunctionFormatReadableTimeDelta : public IFunction
 {
 public:
     static constexpr auto name = "formatReadableTimeDelta";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatReadableTimeDelta>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
+    bool isVariadic() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        /// `Interval` arguments are accepted in addition to numbers (master added
-        /// `formatReadableTimeDelta(INTERVAL ...)`); the value is converted to seconds in `executeImpl`.
-        return "(Number, [const StringOrFixedString], [const StringOrFixedString]) -> String"
-               " OR (Interval, [const StringOrFixedString], [const StringOrFixedString]) -> String";
+        if (arguments.empty())
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
+                            getName(), arguments.size());
+
+        if (arguments.size() > 3)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Number of arguments for function {} doesn't match: passed {}, should be 1, 2 or 3.",
+                            getName(), arguments.size());
+
+        const IDataType & type = *arguments[0];
+
+        if (!isNumber(type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time delta", type.getName());
+
+        if (arguments.size() >= 2)
+        {
+            const auto * maximum_unit_arg = arguments[1].get();
+            if (!isStringOrFixedString(maximum_unit_arg))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument maximum_unit of function {}",
+                                maximum_unit_arg->getName(), getName());
+
+            if (arguments.size() == 3)
+            {
+                const auto * minimum_unit_arg = arguments[2].get();
+                if (!isStringOrFixedString(minimum_unit_arg))
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument minimum_unit of function {}",
+                                    minimum_unit_arg->getName(), getName());
+            }
+        }
+
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     enum Unit
     {
@@ -78,7 +107,7 @@ public:
         Years = 9
     };
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         std::string_view maximum_unit_str;
         std::string_view minimum_unit_str;
@@ -120,13 +149,11 @@ public:
         offsets_to.resize(input_rows_count);
 
         WriteBufferFromVector<ColumnString::Chars> buf_to(data_to);
-        const auto * interval_type = checkAndGetDataType<DataTypeInterval>(arguments[0].type.get());
-        Float64 seconds_in_interval = interval_type ? interval_type->getKind().toSeconds() : 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             /// Virtual call is Ok (negligible comparing to the rest of calculations).
-            Float64 value = interval_type ? arguments[0].column->getFloat64(i) * seconds_in_interval : arguments[0].column->getFloat64(i);
+            Float64 value = arguments[0].column->getFloat64(i);
 
             if (!isFinite(value))
             {
@@ -145,43 +172,43 @@ public:
                 /// To output separators between parts: ", " and " and ".
                 bool has_output = false;
 
-                Float64 whole_part = 0;
+                Float64 whole_part;
                 std::string fractional_str = getFractionalString(std::modf(value, &whole_part));
 
                 switch (max_unit) /// A kind of Duff Device.
                 {
                     case Years:
-                        processUnit(secondsPerUnit(Years), 0, " year", 5, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Years);
+                        processUnit(365 * 24 * 3600, 0, " year", 5, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Years);
                         if (min_unit == Years)
                             break;
                         [[fallthrough]];
 
                     case Months:
-                        processUnit(secondsPerUnit(Months), 0, " month", 6, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Months);
+                        processUnit(static_cast<UInt64>(30.5 * 24 * 3600), 0, " month", 6, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Months);
                         if (min_unit == Months)
                             break;
                         [[fallthrough]];
 
                     case Days:
-                        processUnit(secondsPerUnit(Days), 0, " day", 4, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Days);
+                        processUnit(24 * 3600, 0, " day", 4, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Days);
                         if (min_unit == Days)
                             break;
                         [[fallthrough]];
 
                     case Hours:
-                        processUnit(secondsPerUnit(Hours), 0, " hour", 5, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Hours);
+                        processUnit(3600, 0, " hour", 5, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Hours);
                         if (min_unit == Hours)
                             break;
                         [[fallthrough]];
 
                     case Minutes:
-                        processUnit(secondsPerUnit(Minutes), 0, " minute", 7, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Minutes);
+                        processUnit(60, 0, " minute", 7, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Minutes);
                         if (min_unit == Minutes)
                             break;
                         [[fallthrough]];
 
                     case Seconds:
-                        processUnit(secondsPerUnit(Seconds), 0, " second", 7, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Seconds);
+                        processUnit(1, 0, " second", 7, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Seconds);
                         if (min_unit == Seconds)
                             break;
                         [[fallthrough]];
@@ -235,9 +262,8 @@ public:
 
             if (!num_units)
             {
-                /// Zero units, no need to print. But if it's seconds and no other unit is printed, print "0 seconds" nevertheless.
-                if (unit_multiplier != 1 || has_output
-                    || fractional_str.substr(0, subSecondDigits(min_unit)) != std::string(subSecondDigits(min_unit), '0'))
+                /// Zero units, no need to print. But if it's the last (seconds) and the only unit, print "0 seconds" nevertheless.
+                if (unit_multiplier != 1 || has_output)
                     return;
             }
 
@@ -270,7 +296,7 @@ public:
         if (has_output)
         {
             /// Need delimiter between values. The last delimiter is " and ", all previous are comma.
-            if (is_minimum_unit || isLastPrintedUnit(whole_part, fractional_str, min_unit))
+            if (is_minimum_unit || (whole_part < 1 && fractional_str.substr(0, (4 - min_unit) * 3) == std::string((4 - min_unit) * 3, '0')))
                 writeCString(" and ", buf_to);
             else
                 writeCString(", ", buf_to);
@@ -288,43 +314,6 @@ public:
     }
 
 private:
-    /// Number of seconds in one unit. Sub-second units return 1, as their `processUnit` calls take whole seconds.
-    static constexpr UInt64 secondsPerUnit(Unit unit)
-    {
-        switch (unit)
-        {
-            case Years: return 365 * 24 * 3600;
-            case Months: return static_cast<UInt64>(30.5 * 24 * 3600);
-            case Days: return 24 * 3600;
-            case Hours: return 3600;
-            case Minutes: return 60;
-            default: return 1;
-        }
-    }
-
-    /// Number of fractional digits shown down to `min_unit`: three per unit below seconds, 0 from seconds up.
-    static size_t subSecondDigits(Unit min_unit)
-    {
-        if (min_unit >= Seconds)
-            return 0;
-        return static_cast<size_t>(Seconds - min_unit) * 3;
-    }
-
-    /// Whether the current unit is the last one that will be printed, i.e. the value remaining after it
-    /// is smaller than one `min_unit`, so nothing below the current unit will be shown. This decides
-    /// whether the delimiter before the current unit is " and " (last) or ", " (more to come).
-    static bool isLastPrintedUnit(Float64 whole_part, const String & fractional_str, Unit min_unit)
-    {
-        if (min_unit >= Seconds)
-            /// Sub-second digits are never shown, so only remaining whole seconds can produce more output.
-            return whole_part < static_cast<Float64>(secondsPerUnit(min_unit));
-
-        /// A sub-second minimum unit: there is more to show if there are whole seconds left,
-        /// or any of the shown fractional digits is non-zero.
-        const size_t digits = subSecondDigits(min_unit);
-        return whole_part < 1 && fractional_str.substr(0, digits) == std::string(digits, '0');
-    }
-
     static std::string getFractionalString(const Float64 & fractional_part)
     {
         DB::DoubleConverter<true>::BufferType buffer;
@@ -336,7 +325,7 @@ private:
         return std::string(buffer, builder.position()).substr(2);   /// do not return `0.` -- we don't need it
     }
 
-    [[nodiscard]] Unit dispatchUnit(const std::string_view & unit_str, const Unit default_unit, const std::string & bound_name) const
+    Unit dispatchUnit(const std::string_view & unit_str, const Unit default_unit, const std::string & bound_name) const
     {
         if (unit_str.empty())
             return default_unit;
@@ -373,15 +362,13 @@ private:
 REGISTER_FUNCTION(FormatReadableTimeDelta)
 {
     FunctionDocumentation::Description description = R"(
-Given a time interval (delta) in seconds or an `INTERVAL` expression, this function returns a time delta with year/month/day/hour/minute/second/millisecond/microsecond/nanosecond as a string.
+Given a time interval (delta) in seconds, this function returns a time delta with year/month/day/hour/minute/second/millisecond/microsecond/nanosecond as a string.
 
 This function accepts any numeric type as input, but internally it casts them to `Float64`. Results might be suboptimal with large values.
-
-When an `INTERVAL` expression is passed, its value is converted to seconds. Interval units of `MONTH` and greater (`MONTH`, `QUARTER`, `YEAR`) are not supported as they don't represent a fixed-sized interval in seconds.
     )";
     FunctionDocumentation::Syntax syntax = "formatReadableTimeDelta(column[, maximum_unit, minimum_unit])";
     FunctionDocumentation::Arguments arguments = {
-        {"column", "A column with a numeric time delta, or an `INTERVAL` expression. Interval units of `MONTH` and greater are not supported.", {"Float64", "Interval"}},
+        {"column", "A column with a numeric time delta.", {"Float64"}},
         {"maximum_unit", "Optional. Maximum unit to show. Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`. Default value: `years`.", {"const String"}},
         {"minimum_unit", "Optional. Minimum unit to show. All smaller units are truncated. Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`. If explicitly specified value is bigger than `maximum_unit`, an exception will be thrown. Default value: `seconds` if `maximum_unit` is `seconds` or bigger, `nanoseconds` otherwise.", {"const String"}}
     };
@@ -395,11 +382,11 @@ SELECT
     formatReadableTimeDelta(elapsed) AS time_delta
         )",
         R"(
-┌───elapsed─┬─time_delta──────────────────────────────────────────────────────┐
-│       100 │ 1 minute and 40 seconds                                         │
-│     12345 │ 3 hours, 25 minutes and 45 seconds                              │
-│ 432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds │
-└───────────┴─────────────────────────────────────────────────────────────────┘
+┌────elapsed─┬─time_delta─────────────────────────────────────────────────────┐
+│        100 │ 1 minute and 40 seconds                                        │
+│      12345 │ 3 hours, 25 minutes and 45 seconds                             │
+│  432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds│
+└────────────┴────────────────────────────────────────────────────────────────┘
         )"
     },
     {
@@ -409,21 +396,11 @@ SELECT
     formatReadableTimeDelta(elapsed, 'minutes') AS time_delta
         )",
         R"(
-┌───elapsed─┬─time_delta─────────────────────┐
-│       100 │ 1 minute and 40 seconds        │
-│     12345 │ 205 minutes and 45 seconds     │
-│ 432546534 │ 7209108 minutes and 54 seconds │
-└───────────┴────────────────────────────────┘
-        )"
-    },
-    {
-        "With an INTERVAL expression", R"(
-SELECT formatReadableTimeDelta(INTERVAL 12345 SECOND) AS time_delta
-        )",
-        R"(
-┌─time_delta─────────────────────────┐
-│ 3 hours, 25 minutes and 45 seconds │
-└────────────────────────────────────┘
+┌────elapsed─┬─time_delta─────────────────────────────────────────────────────┐
+│        100 │ 1 minute and 40 seconds                                         │
+│      12345 │ 205 minutes and 45 seconds                                      │
+│  432546534 │ 7209108 minutes and 54 seconds                                  │
+└────────────┴─────────────────────────────────────────────────────────────────┘
         )"
     }
     };
