@@ -429,13 +429,10 @@ KeeperIcebergRESTCatalogStore::UpdateTablesResult KeeperIcebergRESTCatalogStore:
 
     /// Keeper stops at the first failed operation, so one index names the table that blocked the whole multi.
     const size_t index = zkutil::getFailedOpIndex(code, responses);
-    const auto & failed = updates[index];
     if (code == Coordination::Error::ZBADVERSION)
         return {UpdateTableResult::VersionMismatch, index};
     if (code == Coordination::Error::ZNONODE)
-        return {
-            zookeeper->exists(tablePath(failed.ns, failed.table)) ? UpdateTableResult::UuidMismatch : UpdateTableResult::TableMissing,
-            index};
+        return {UpdateTableResult::UuidNodeMissing, index};
     zkutil::KeeperMultiException::check(code, ops, responses);
     return {};
 }

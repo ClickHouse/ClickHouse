@@ -1139,6 +1139,7 @@ IcebergRESTCatalogWarehouse::CreateTableResult IcebergRESTCatalogHandler::writeA
     const auto created = warehouse.createTable(ns, table, pointer);
     if (created != CreateTableResult::Created)
     {
+        /// TODO: Make this removal best effort, as in `commitPreparedTables`. A failed removal must not replace the response.
         LOG_INFO(log, "Removing metadata file {} because table {}.{} was not registered", object_key, joinNamespace(ns), table);
         warehouse.object_storage->removeObjectIfExists(StoredObject(object_key));
     }
@@ -1203,12 +1204,22 @@ std::optional<IcebergRESTCatalogHandler::PreparedTableCommit> IcebergRESTCatalog
 bool IcebergRESTCatalogHandler::commitPreparedTables(
     const IcebergRESTCatalogWarehouse & warehouse, const std::vector<PreparedTableCommit> & prepared, HTTPServerResponse & response) const
 {
+    /// Best effort. A failed removal leaves an orphan file. It must not replace the result of the commit.
     const auto remove_written_files = [&](const std::vector<String> & keys)
     {
+        if (keys.empty())
+            return;
+        LOG_INFO(log, "Removing metadata files because the commit was not applied: {}", fmt::join(keys, ", "));
         for (const auto & key : keys)
         {
-            LOG_INFO(log, "Removing metadata file {} because the commit was not applied", key);
-            warehouse.object_storage->removeObjectIfExists(StoredObject(key));
+            try
+            {
+                warehouse.object_storage->removeObjectIfExists(StoredObject(key));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("Cannot remove metadata file {}", key));
+            }
         }
     };
 
@@ -1297,15 +1308,13 @@ void IcebergRESTCatalogHandler::sendUpdateTableError(
                 "CommitFailedException",
                 fmt::format("Table {}.{} was updated concurrently, retry the commit", joinNamespace(ns), table));
             return;
-        case UpdateTableResult::UuidMismatch:
+        case UpdateTableResult::UuidNodeMissing:
+            /// A concurrent drop. The client reloads and gets 404 if the name is gone.
             sendError(
                 response,
                 Poco::Net::HTTPResponse::HTTP_CONFLICT,
                 "CommitFailedException",
-                fmt::format("Table {}.{} was dropped and re-created, reload the table", joinNamespace(ns), table));
-            return;
-        case UpdateTableResult::TableMissing:
-            sendNoSuchTable(response, ns, table);
+                fmt::format("Table {}.{} was dropped or re-created concurrently, reload the table", joinNamespace(ns), table));
             return;
     }
 }

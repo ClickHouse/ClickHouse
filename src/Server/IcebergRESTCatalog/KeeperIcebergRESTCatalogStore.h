@@ -116,9 +116,8 @@ public:
         Updated,
         /// The node changed since `expected` was read.
         VersionMismatch,
-        TableMissing,
-        /// The name exists, but it was dropped and re-created with another uuid.
-        UuidMismatch,
+        /// The table with the expected uuid was dropped. A new table with the same name and another uuid may exist.
+        UuidNodeMissing,
     };
 
     struct TableUpdate
