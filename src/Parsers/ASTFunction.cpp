@@ -396,7 +396,8 @@ void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) 
 
     /// The function composition operator `f | g` and an ordinary call to a function of the same
     /// name are different expressions, see the formatting of `__compose` below.
-    if (name == "__compose"sv)
+    /// The same holds for the `UNIQUE` predicate (the operator `__unique`) and an ordinary call `__unique(...)`.
+    if (name == "__compose"sv || name == "__unique"sv)
         hash_state.update(isOperator());
 
     if (isWindowFunction())
