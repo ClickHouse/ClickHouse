@@ -1,4 +1,4 @@
-#include <Processors/QueryPlan/Streaming/hasUnboundedStreamSource.h>
+#include <Processors/QueryPlan/Streaming/hasUnboundedSource.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -8,7 +8,7 @@
 namespace DB
 {
 
-bool hasUnboundedStreamSource(const QueryPlan & query_plan)
+bool hasUnboundedSource(const QueryPlan & query_plan)
 {
     if (!query_plan.isInitialized())
         return false;

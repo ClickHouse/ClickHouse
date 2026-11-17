@@ -7,7 +7,7 @@
 #include <Planner/PlannerContext.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/Streaming/hasUnboundedStreamSource.h>
+#include <Processors/QueryPlan/Streaming/hasUnboundedSource.h>
 #include <Common/Exception.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -186,7 +186,7 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
                 cte_planner.buildQueryPlanIfNeeded();
 
                 auto cte_plan = std::move(cte_planner).extractQueryPlan();
-                if (hasUnboundedStreamSource(cte_plan))
+                if (hasUnboundedSource(cte_plan))
                     throw Exception(ErrorCodes::ILLEGAL_STREAM, "Cannot materialize CTE '{}' over an unbounded STREAM", materialized_cte->cte_name);
 
                 /// The CTE plan is kept aside until `optimize`, after the distributed-plan decision, so its

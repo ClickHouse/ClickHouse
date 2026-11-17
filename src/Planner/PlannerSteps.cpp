@@ -55,7 +55,7 @@
 #include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/ShuffleStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Processors/QueryPlan/Streaming/hasUnboundedStreamSource.h>
+#include <Processors/QueryPlan/Streaming/hasUnboundedSource.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 
@@ -1262,7 +1262,7 @@ void addDistinctStep(QueryPlan & query_plan,
     if (!before_order && (query_node.hasOrderBy() || query_node.isShuffle()))
         distinct_step->preserveInputOrder();
 
-    if (hasUnboundedStreamSource(query_plan))
+    if (hasUnboundedSource(query_plan))
         distinct_step->disableExternalDistinct();
 
     query_plan.addStep(std::move(distinct_step));
