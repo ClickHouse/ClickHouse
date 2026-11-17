@@ -151,10 +151,11 @@ SELECT count() FROM v_prewhere_own_alias PREWHERE a >= 5; -- { serverError ILLEG
 SELECT count() FROM v_prewhere_executable PREWHERE a >= 5; -- { serverError ILLEGAL_PREWHERE }
 
 -- The condition would be analyzed with the rights of the definer, so only the definer moves it into such a view.
+-- With `serialize_query_plan` the plan would be built for the user of this query, who is the definer.
 CREATE USER {CLICKHOUSE_DATABASE:Identifier};
 GRANT SELECT ON v_prewhere_definer TO {CLICKHOUSE_DATABASE:Identifier};
 SELECT count() FROM remote('127.0.0.2', currentDatabase(), v_prewhere_definer, {CLICKHOUSE_DATABASE:String}) WHERE a < 10;
-SELECT count() FROM remote('127.0.0.2', currentDatabase(), v_prewhere_definer, {CLICKHOUSE_DATABASE:String}) PREWHERE a < 10; -- { serverError ILLEGAL_PREWHERE }
+SELECT count() FROM remote('127.0.0.2', currentDatabase(), v_prewhere_definer, {CLICKHOUSE_DATABASE:String}) PREWHERE a < 10 SETTINGS serialize_query_plan = 0; -- { serverError ILLEGAL_PREWHERE }
 
 -- The condition must not see the rows that a row policy on the view hides.
 CREATE ROW POLICY p_prewhere_view ON v_prewhere_all USING a < 50 TO ALL;
