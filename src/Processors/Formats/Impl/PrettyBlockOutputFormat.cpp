@@ -1135,6 +1135,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         is_cut = true;
         serialized_fragment.resize(UTF8::computeBytesBeforeWidth(
             reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), prefix, format_settings.pretty.max_value_width));
+        /// Narrower than `max_value_width` when a wide character does not fit.
+        size_t kept_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), prefix);
 
         if (color)
         {
@@ -1146,7 +1148,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         else
             serialized_fragment += ellipsis;
 
-        value_width = format_settings.pretty.max_value_width;
+        value_width = kept_width;
     }
 
     auto write_padding = [&]()
