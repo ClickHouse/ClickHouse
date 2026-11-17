@@ -45,17 +45,6 @@ namespace
 /// The sizes of the arrays are unknown, so an array join is assumed to produce this many rows per input row.
 constexpr Float64 array_join_rows_multiplier = 100;
 
-/// The share of rows assumed to pass a filter that neither the index nor column statistics can estimate.
-constexpr Float64 unestimated_filter_selectivity = 0.2;
-
-/// At least 1 row for a non-empty read: the share of a table of a few rows truncates to 0.
-UInt64 applyUnestimatedFilterSelectivity(UInt64 rows)
-{
-    if (rows == 0)
-        return 0;
-    return std::max<UInt64>(toUInt64Saturating(Float64(rows) * unestimated_filter_selectivity), 1);
-}
-
 RelationStats estimateAggregatingStepStats(const Aggregator::Params & aggregator_params, const RelationStats & input_stats)
 {
     std::optional<Float64> total_number_of_distinct_values = 1;
@@ -290,9 +279,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 .imprecise_estimate = true,
                 .source = RowEstimateSource::NoStatistics};
 
+        /// If any conditions are pushed down to storage but not used in the index,
+        /// we cannot precisely estimate the row count
         if (has_filter && !is_filtered_by_index)
             return RelationStats{
-                .estimated_rows = applyUnestimatedFilterSelectivity(analyzed_result->selected_rows),
+                .estimated_rows = {},
                 .table_name = table_display_name,
                 .imprecise_estimate = true,
                 .source = RowEstimateSource::NoStatistics};
@@ -347,13 +338,9 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             return stats;
         }
 
-        /// As for MergeTree without column statistics, conditions that pruned nothing keep a default share of the rows.
+        /// As for MergeTree without column statistics, conditions that pruned nothing give no estimate.
         if (!estimate->pruned_data_files)
-        {
-            if (!for_runtime_filter_transport)
-                stats.estimated_rows = applyUnestimatedFilterSelectivity(rows);
             return stats;
-        }
 
         /// The remaining files bound the rows, as the selected parts bound a MergeTree read.
         stats.estimated_rows = rows;
@@ -394,13 +381,10 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         /// re-report its tables as missing statistics; `imprecise_estimate` still records reliability.
         /// The name is already a chain of the sub-joins with their own estimates, so mark it composite
         /// to keep the parent from appending a second estimate to it.
-        /// A filter above the join (`filter`, from the `FilterStep` branch) cannot be estimated, so like a storage read with such a
-        /// filter it keeps the default share of the rows.
-        std::optional<UInt64> rows = join_step->getResultRowsEstimation();
-        if (filter)
-            rows = rows && !for_runtime_filter_transport ? std::optional<UInt64>(applyUnestimatedFilterSelectivity(*rows)) : std::nullopt;
+        /// A filter above the join (`filter`, from the `FilterStep` branch) is not accounted for, so like
+        /// a storage read with a filter it cannot use, the row count is then unknown.
         return RelationStats{
-            .estimated_rows = rows,
+            .estimated_rows = filter ? std::nullopt : join_step->getResultRowsEstimation(),
             .column_stats = join_step->getResultColumnStats(),
             .table_name = join_step->getReadableRelationName(),
             .imprecise_estimate = filter != nullptr || join_step->hasImpreciseEstimate(),
