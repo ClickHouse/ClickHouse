@@ -37,37 +37,30 @@ public:
     }
     explicit FunctionGetMergeTreeSetting(ContextPtr context_) : WithContext(context_) {}
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1 ; }
+    size_t getNumberOfArguments() const override { return 1 ; }
 
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    /// Documentation-only — the result type is the dynamic type of the
-    /// MergeTree setting value resolved at query time from its const-string name.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(const String) -> Any";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto value = getValue(arguments);
         return applyVisitor(FieldToDataType{}, value);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto value = getValue(arguments);
         return result_type->createColumnConst(input_rows_count, convertFieldToType(value, *result_type));
     }
 
 private:
-    [[nodiscard]] Field getValue(const ColumnsWithTypeAndName & arguments) const
+    Field getValue(const ColumnsWithTypeAndName & arguments) const
     {
         if (arguments.size() != 1)
             throw Exception(

@@ -34,8 +34,6 @@ public:
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
-    void waitDetachedTableNotInUse(const UUID & uuid, std::function<void()> throw_if_cancelled) override;
-    void checkDetachedTableNotInUse(const UUID & uuid) override;
     DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
         ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 

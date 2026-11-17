@@ -34,7 +34,6 @@ Int16
 Variant(Int64, String)
 Array(Variant(Array(UInt8), Int64))
 Float64
-Variant(Decimal(18, 2), Float64)
 Float64
 Float64
 Array(Float64)

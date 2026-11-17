@@ -39,7 +39,6 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char column_aggregate_function_ensureOwnership_exception[];
-    extern const char column_aggregate_function_expand_exception[];
 }
 
 
@@ -402,61 +401,32 @@ void ColumnAggregateFunction::expand(const Filter & mask, bool inverted)
     if (mask.size() < data.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
-    const size_t set_bytes = countBytesInFilter(mask);
-    const size_t selected = inverted ? mask.size() - set_bytes : set_bytes;
-    if (selected > data.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
-    if (selected < data.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
-
-    bool inject_memory_limit_exceeded = false;
-    /// Avoid checking failpoint in a loop, since it uses atomic's
-    fiu_do_on(FailPoints::column_aggregate_function_expand_exception,
+    ssize_t from = data.size() - 1;
+    ssize_t index = mask.size() - 1;
+    data.resize(mask.size());
+    while (index >= 0)
     {
-        inject_memory_limit_exceeded = true;
-    });
-
-    /// The destructor destroys every state in `data`, so `data` must never hold a pointer to a state
-    /// that is not created. Build the expanded array aside and publish it only when it is complete.
-    Container new_data;
-    new_data.resize_exact(mask.size());
-
-    size_t from = 0;
-    size_t index = 0;
-    try
-    {
-        for (; index < mask.size(); ++index)
+        if (!!mask[index] ^ inverted)
         {
-            if (!!mask[index] ^ inverted)
-            {
-                new_data[index] = data[from];
-                ++from;
-            }
-            else
-            {
-                new_data[index] = arena.alignedAlloc(func->sizeOfData(), func->alignOfData());
-                func->create(new_data[index]);
+            if (from < 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
 
-                /// Throw after a state is created, so that the cleanup has something to destroy.
-                if (unlikely(inject_memory_limit_exceeded))
-                {
-                    ++index;
-                    throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint triggered");
-                }
-            }
+            /// Copy only if it makes sense.
+            if (index != from)
+                data[index] = data[from];
+            --from;
         }
-    }
-    catch (...)
-    {
-        /// Destroy the states created so far; the ones taken from `data` stay owned by `data`.
-        if (!func->hasTrivialDestructor())
-            for (size_t i = 0; i < index; ++i)
-                if (!(!!mask[i] ^ inverted))
-                    func->destroy(new_data[i]);
-        throw;
+        else
+        {
+            data[index] = arena.alignedAlloc(func->sizeOfData(), func->alignOfData());
+            func->create(data[index]);
+        }
+
+        --index;
     }
 
-    data.swap(new_data);
+    if (from != -1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
 }
 
 ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const

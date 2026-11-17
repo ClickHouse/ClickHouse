@@ -8,7 +8,6 @@
 #include <Disks/DiskObjectStorage/Replication/BlobCopierThread.h>
 #include <Disks/IDisk.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/FileCache/FileCache_fwd.h>
 
 #include <base/scope_guard.h>
 
@@ -219,8 +218,6 @@ public:
 
     bool prefersRecursiveRemoval() const override;
 
-    bool supportsAtomicFileCreation() const override;
-
     /// Return true if the disk is "shared-compatible", i.e. does not uses local disks
     bool isSharedCompatible() const;
 
@@ -319,13 +316,13 @@ public:
         , metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
     {}
 
-    [[nodiscard]] UInt64 getSize() const override { return size; }
+    UInt64 getSize() const override { return size; }
 
-    [[nodiscard]] std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
+    std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
 
-    [[nodiscard]] DiskPtr getDisk(size_t i) const override;
+    DiskPtr getDisk(size_t i) const override;
 
-    [[nodiscard]] Disks getDisks() const override { return {disk}; }
+    Disks getDisks() const override { return {disk}; }
 
     void update(UInt64 new_size) override;
 

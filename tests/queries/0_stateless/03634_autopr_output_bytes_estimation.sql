@@ -1,10 +1,5 @@
 -- Tags: stateful, long, no-msan
 
--- `test.hits` lives on a `web` disk (S3) behind a local filesystem cache. With the randomized
--- `enable_filesystem_cache=0` every query of this test downloads the whole table from S3 again, and when
--- the S3 throughput drops the full scans become slow enough to be killed by `max_estimated_execution_time`.
-SET enable_filesystem_cache=1, read_from_filesystem_cache_if_exists_otherwise_bypass_cache=0;
-
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
 SET optimize_move_to_prewhere = 1, query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10000;
@@ -48,13 +43,6 @@ SET group_by_two_level_threshold=100000, group_by_two_level_threshold_bytes=5000
 -- distributed between the reading threads, so `query_12` randomly took the two-level bucket merge,
 -- whose estimate (~6.6M) is 2.5x the single-level one the expected values are calibrated for.
 SET enable_adaptive_aggregator=0;
-
--- And pin the merge of the single-level tables to the serial one. Since the merge by hash partitions packs the
--- partitions that a worker claims into one table (#129565), `query_10`'s `uniqExact` states were sampled from
--- tables whose shape follows how the workers raced for the partitions, and the estimate randomly fell to
--- 91509..136213, 2.7x..4x below the expected value, in every failing run with the randomized
--- `enable_parallel_single_level_merge = 1`. See https://github.com/ClickHouse/ClickHouse/issues/131357.
-SET enable_parallel_single_level_merge=0;
 
 SELECT COUNT(*) FROM test.hits WHERE AdvEngineID <> 0 FORMAT Null SETTINGS log_comment='query_1';
 

@@ -17,7 +17,12 @@ class NativeInputFormat final : public IInputFormat
 public:
     NativeInputFormat(ReadBuffer & buf, SharedHeader header_, const FormatSettings & settings_)
         : IInputFormat(header_, &buf)
-        , reader(makeReader(buf, *header_, settings_, block_missing_values))
+        , reader(std::make_unique<NativeReader>(
+              buf,
+              *header_,
+              0,
+              settings_,
+              settings_.defaults_for_omitted_fields ? &block_missing_values : nullptr))
         , header(header_)
         , block_missing_values(header->columns())
         , settings(settings_)
@@ -51,7 +56,7 @@ public:
 
     void setReadBuffer(ReadBuffer & in_) override
     {
-        reader = makeReader(in_, *header, settings, block_missing_values);
+        reader = std::make_unique<NativeReader>(in_, *header, 0, settings, settings.defaults_for_omitted_fields ? &block_missing_values : nullptr);
         IInputFormat::setReadBuffer(in_);
     }
 
@@ -60,20 +65,6 @@ public:
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
 private:
-    /// Revision 0 has no serialization kinds in its layout, so the kind set takes effect only with a non-zero revision.
-    static std::unique_ptr<NativeReader> makeReader(
-        ReadBuffer & buf, const Block & header_, const FormatSettings & settings_, BlockMissingValues & block_missing_values_)
-    {
-        return std::make_unique<NativeReader>(
-            buf,
-            header_,
-            0,
-            settings_,
-            settings_.defaults_for_omitted_fields ? &block_missing_values_ : nullptr,
-            /*type_cache_=*/ nullptr,
-            ISerialization::KindSet{ISerialization::Kind::DEFAULT});
-    }
-
     std::unique_ptr<NativeReader> reader;
     SharedHeader header;
     BlockMissingValues block_missing_values;
@@ -114,7 +105,7 @@ public:
 
     NamesAndTypesList readSchema() override
     {
-        auto reader = NativeReader(in, 0, settings, ISerialization::KindSet{ISerialization::Kind::DEFAULT});
+        auto reader = NativeReader(in, 0, settings);
         auto block = reader.read();
         return block.getNamesAndTypesList();
     }
@@ -134,7 +125,7 @@ void registerInputFormatNative(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<NativeInputFormat>(buf, std::make_shared<const Block>(sample), settings);
-    }, /*supports_reset_parser=*/ true);
+    });
     factory.markFormatSupportsSubsetOfColumns("Native");
 
     factory.setDocumentation("Native", Documentation{

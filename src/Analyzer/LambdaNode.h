@@ -41,11 +41,11 @@ class LambdaArgumentsNode final : public ITableExpressionNode
 public:
     explicit LambdaArgumentsNode(Names argument_names);
 
-    [[nodiscard]] QueryTreeNodeType getNodeType() const override { return QueryTreeNodeType::LAMBDA_ARGS; }
+    QueryTreeNodeType getNodeType() const override { return QueryTreeNodeType::LAMBDA_ARGS; }
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-    [[nodiscard]] const Names & getNames() const { return names; }
-    [[nodiscard]] const DataTypes & getTypes() const { return types; }
+    const Names & getNames() const { return names; }
+    const DataTypes & getTypes() const { return types; }
 
     void resolve(DataTypes argument_types)
     {
@@ -53,10 +53,10 @@ public:
     }
 
 protected:
-    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const override;
     void updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const override;
-    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
-    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    QueryTreeNodePtr cloneImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
     Names names;
     DataTypes types;
@@ -69,7 +69,7 @@ public:
     explicit LambdaNode(LambdaArgumentsNodePtr arguments_, QueryTreeNodePtr expression_, bool is_operator_, DataTypePtr result_type_ = {});
 
     /// Get arguments
-    [[nodiscard]] const LambdaArgumentsNode & getArguments() const
+    const LambdaArgumentsNode & getArguments() const
     {
         return assert_cast<const LambdaArgumentsNode &>(*children[arguments_child_index]);
     }
@@ -103,7 +103,7 @@ public:
     // }
 
     /// Get expression
-    [[nodiscard]] const QueryTreeNodePtr & getExpression() const
+    const QueryTreeNodePtr & getExpression() const
     {
         return children[expression_child_index];
     }
@@ -114,12 +114,12 @@ public:
         return children[expression_child_index];
     }
 
-    [[nodiscard]] QueryTreeNodeType getNodeType() const override
+    QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::LAMBDA;
     }
 
-    [[nodiscard]] DataTypePtr getResultType() const override
+    DataTypePtr getResultType() const override
     {
         return result_type;
     }
@@ -132,13 +132,13 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(HashState & state, CompareOptions) const override;
 
-    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
+    QueryTreeNodePtr cloneImpl() const override;
 
-    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     DataTypePtr result_type;

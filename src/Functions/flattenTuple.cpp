@@ -25,30 +25,13 @@ public:
     static constexpr auto name = "flattenTuple";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFlattenTuple>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
-    /// Documentation-only — the input must be a named non-empty tuple; the
-    /// result is a flat tuple whose element names are the dot-joined paths.
-    /// The flattened layout isn't expressible in the DSL, so the override
-    /// below redirects the `ColumnsWithTypeAndName` path past the DSL.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(MaybeNullable(NonEmptyTuple)) -> Tuple";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-        return getReturnTypeImpl(data_types);
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto & type = arguments[0];
         const auto * type_tuple = checkAndGetDataType<DataTypeTuple>(removeNullable(type).get());
@@ -80,7 +63,7 @@ public:
         return result_type;
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         auto column = arguments.at(0).column;
         if (!checkAndGetColumn<ColumnTuple>(removeNullable(column).get()))
