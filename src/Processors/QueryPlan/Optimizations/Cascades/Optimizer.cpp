@@ -1,4 +1,6 @@
 #include <Common/ThreadStatus.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -15,6 +17,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
@@ -26,6 +29,7 @@
 #include <Common/typeid_cast.h>
 #include <IO/WriteBufferFromString.h>
 #include <fmt/format.h>
+#include <algorithm>
 #include <exception>
 #include <memory>
 #include <optional>
@@ -41,6 +45,36 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace QueryPlanOptimizations
+{
+    bool keyTypeBreaksHashSharding(const IDataType & type);
+}
+
+/// The partition keys of a partitioned sort as stream-disjointness columns, or empty when
+/// the split cannot be reproduced safely: the keys must be a prefix of the sort (so a
+/// rebuilt sort can split by them), be columns of the sort's input, and hash in agreement
+/// with `compareAt` (floats, `JSON`, `Dynamic` hash `-0.` and `0.` differently while they
+/// compare equal, so a hash split would tear one group apart).
+static DistributionColumns streamSplitColumns(const SortingStep & sorting_step)
+{
+    const auto & partition_by = sorting_step.getPartitionByDescription();
+    const auto & sort_description = sorting_step.getSortDescription();
+    if (sort_description.size() < partition_by.size()
+        || !std::equal(partition_by.begin(), partition_by.end(), sort_description.begin()))
+        return {};
+
+    const auto & input_header = sorting_step.getInputHeaders().front();
+    DistributionColumns columns;
+    for (const auto & partition_column : partition_by)
+    {
+        if (!input_header->has(partition_column.column_name)
+            || QueryPlanOptimizations::keyTypeBreaksHashSharding(*input_header->getByName(partition_column.column_name).type))
+            return {};
+        columns.push_back(NameSet{partition_column.column_name});
+    }
+    return columns;
 }
 
 static String dumpQueryPlanShort(const QueryPlan & query_plan)
@@ -131,6 +165,7 @@ CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOpt
     if (memo.getContext().cascades_aggregation_pushdown)
         addRule(createAggregationPushdown());
     addRule(createAggregationImplementation());
+    addRule(createDistinctImplementation());
     addRule(createMergingAggregationImplementation());
     addRule(createLocalReadImplementation());
     addRule(createParallelReadImplementation());
@@ -138,6 +173,7 @@ CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOpt
     addRule(createReplicatedSubplanImplementation());
     addRule(createTopNImplementation());
     addRule(createTwoStageTopN());
+    addRule(createWindowImplementation());
     addEnforcerRule(createDistributionEnforcer());
     addEnforcerRule(createSortingEnforcer());
 }
@@ -175,6 +211,17 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addGroup(QueryPlan::
         auto [child_group_id, _] = addGroup(*node.children.front());
         ExpressionProperties stripped_props;
         stripped_props.sorting = sorting_step->getSortDescription();
+        /// The stream layout the sort produced is part of the requirement: a plain sort
+        /// merges each node's streams into one, a partitioned sort (the planner builds them
+        /// for windows) keeps streams disjoint on the partition keys. A partitioned sort
+        /// whose keys cannot split safely demands one stream, which keeps every group whole.
+        DistributionColumns disjoint_columns;
+        if (sorting_step->hasPartitions())
+            disjoint_columns = streamSplitColumns(*sorting_step);
+        if (!disjoint_columns.empty())
+            stripped_props.setDisjointStreams(std::move(disjoint_columns));
+        else
+            stripped_props.stream_layout = StreamLayout::Single;
         return {child_group_id, stripped_props};
     }
 
@@ -205,14 +252,7 @@ GroupPtr CascadesOptimizer::getGroup(GroupId group_id)
     return memo.getGroup(group_id);
 }
 
-void CascadesOptimizer::updateBestPlan(GroupExpressionPtr expression)
-{
-    /// No pruning: an expression that loses to the current best still keeps its cost, so the
-    /// enforcer-input selection can consider it as an acyclic fallback.
-    costAndUpdateBest(expression, /*prune_against_best=*/false);
-}
-
-bool CascadesOptimizer::costAndUpdateBest(GroupExpressionPtr expression, bool prune_against_best)
+void CascadesOptimizer::costAndUpdateBest(GroupExpressionPtr expression)
 {
     const auto & cost_config = memo.getContext().cost_config;
     auto group = memo.getGroup(expression->group_id);
@@ -224,28 +264,13 @@ bool CascadesOptimizer::costAndUpdateBest(GroupExpressionPtr expression, bool pr
     {
         LOG_TEST(log, "Expression '{}' in group #{} has an unsatisfiable input, not a best-plan candidate",
             expression->getDescription(), expression->group_id);
-        return false;
-    }
-
-    if (prune_against_best)
-    {
-        Float64 subtree_weighted = cost.subtree_cost.total(cost_config);
-        Float64 current_best = group->getBestCostForProperties(expression->properties, cost_config);
-        if (std::isfinite(current_best) && subtree_weighted >= current_best)
-        {
-            LOG_TEST(log, "Pruned expression '{}' in group #{}: "
-                "cost {} >= current best {}",
-                expression->getDescription(), expression->group_id,
-                subtree_weighted, current_best);
-            return false;
-        }
+        return;
     }
 
     expression->cost = cost;
     LOG_TEST(log, "group #{} expression '{}' cost {}",
         expression->group_id, expression->getDescription(), cost.subtree_cost.total(cost_config));
     group->updateBestImplementation(expression, cost_config);
-    return true;
 }
 
 void CascadesOptimizer::deriveStatistics(GroupId group_id)
@@ -260,7 +285,7 @@ bool CascadesOptimizer::tryUpdateBestPlanDirectly(GroupExpressionPtr expression)
     /// Check if all inputs are fully optimized (all stages complete) and have
     /// a satisfying implementation.  A group can be fully done with no best if
     /// no rule could produce the required distribution (e.g. `ReadFromSystemOne`
-    /// at {N nodes}) - treat as pruned.
+    /// at {N nodes}) - the expression is skipped.
     for (const auto & input : expression->inputs)
     {
         auto child_group = getGroup(input.group_id);
@@ -272,13 +297,13 @@ bool CascadesOptimizer::tryUpdateBestPlanDirectly(GroupExpressionPtr expression)
                 "input group #{} has no implementation for {}",
                 expression->getDescription(), expression->group_id,
                 input.group_id, input.required_properties.dump());
-            return true;  /// Unsatisfiable input - treat as pruned
+            return true;  /// Unsatisfiable input - nothing to cost
         }
     }
 
     /// All inputs ready - compute cost directly, bypassing the `OptimizeInputsTask` chain.
     deriveStatistics(expression->group_id);
-    costAndUpdateBest(expression, /*prune_against_best=*/true);
+    costAndUpdateBest(expression);
     return true;
 }
 
@@ -395,17 +420,19 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
 {
     const auto & cost_config = memo.getContext().cost_config;
 
-    /// Single-input expressions on the current DFS path, used to break enforcer self-reference
-    /// cycles. Path-local: added when a frame is pushed, removed when popped, so the same expression
+    /// Single-input expressions on the current DFS path. An enforcer is not an answer to its own
+    /// input, but enforcers of one group can lead to each other through different required
+    /// properties (a gather from N nodes, a scatter from one node). Their costs prevent such a
+    /// cycle only while an exchange costs more than nothing, so the path excludes it by construction.
+    /// Path-local: added when a frame is pushed, removed when popped, so the same expression
     /// can still be reused in an independent sibling branch.
-    std::unordered_set<GroupExpression *> active_path;
+    UnorderedSetWithMemoryTracking<GroupExpression *> active_path;
 
-    /// Select the cheapest eligible (acyclic) implementation for a group. `input_is_self_referential`
-    /// is true when this selection is for the self-referential input of a same-group enforcer.
-    auto select_best = [&](GroupId group_id, const ExpressionProperties & props, bool input_is_self_referential) -> GroupExpressionPtr
+    /// Select the cheapest implementation of a group that is not on the current path.
+    auto select_best = [&](GroupId group_id, const ExpressionProperties & props) -> GroupExpressionPtr
     {
         auto group = memo.getGroup(group_id);
-        auto best = group->selectInputImplementation(props, cost_config, active_path, input_is_self_referential).expression;
+        auto best = group->getBestImplementation(props, cost_config, active_path).expression;
         if (!best)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Cascades optimizer: no acyclic implementation found for group #{} satisfying required properties {}.\n"
@@ -420,11 +447,11 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         GroupId group_id;
         GroupExpressionPtr expression;
         size_t next_child = 0;
-        std::vector<QueryPlanPtr> child_plans;
+        QueryPlanPtrs child_plans;
         bool on_active_path = false;  /// whether this frame's expression was added to `active_path`
     };
 
-    std::vector<Frame> stack;
+    VectorWithMemoryTracking<Frame> stack;
     QueryPlanPtr result;
 
     /// Push a frame for `expression`, recording it on the active path if it is single-input.
@@ -442,8 +469,7 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
     /// guarantees its inputs are satisfiable.
     {
         auto root_group = memo.getGroup(subtree_root_group_id);
-        auto root_best = root_group->selectInputImplementation(
-            required_properties, cost_config, active_path, /*input_is_self_referential=*/false).expression;
+        auto root_best = root_group->getBestImplementation(required_properties, cost_config, active_path).expression;
         if (!root_best)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "make_distributed_plan cannot distribute this query: no plan satisfies {} at the root. "
@@ -462,8 +488,7 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         {
             const auto & input = frame.expression->inputs[frame.next_child];
             ++frame.next_child;
-            const bool input_is_self_referential = input.group_id == frame.group_id;
-            auto child = select_best(input.group_id, input.required_properties, input_is_self_referential);
+            auto child = select_best(input.group_id, input.required_properties);
             push_frame(input.group_id, std::move(child));
             continue;
         }

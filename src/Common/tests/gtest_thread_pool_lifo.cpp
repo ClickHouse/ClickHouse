@@ -160,7 +160,7 @@ TEST(ThreadPool, LIFOSchedulesOnMostRecentlyIdleThread)
 
     /// `pool.wait` returns only after the worker that completed the last job
     /// has pushed itself onto the idle stack: the worker holds `pool.mutex`
-    /// continuously from notifying `job_finished` through the idle push, and
+    /// continuously from notifying `all_jobs_finished` through the idle push, and
     /// `pool.wait` reacquires that mutex before returning. So once `pool.wait`
     /// returns, both workers are parked in the idle stack.
     pool.wait();

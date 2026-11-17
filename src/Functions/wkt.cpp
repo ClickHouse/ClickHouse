@@ -1,11 +1,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
+#include <Functions/geometryFormatting.h>
 #include <Columns/ColumnString.h>
-#include <IO/DoubleConverter.h>
-#include <IO/WriteHelpers.h>
 
-#include <algorithm>
 #include <locale>
 #include <string>
 #include <memory>
@@ -15,19 +13,6 @@ namespace DB
 
 namespace
 {
-
-/// `boost::geometry::wkt` writes coordinates with `operator<<`, which uses 6 significant digits by default.
-/// This facet writes them with the shortest representation that round-trips, as the text output of `Float64` does.
-class ShortestFloatNumPut : public std::num_put<char>
-{
-protected:
-    iter_type do_put(iter_type out, std::ios_base & /*str*/, char_type /*fill*/, double value) const override
-    {
-        DoubleConverter<false>::BufferType buffer;
-        size_t length = writeFloatTextFastPath(value, buffer, false);
-        return std::copy(buffer, buffer + length, out);
-    }
-};
 
 class FunctionWKT final : public IFunction
 {
@@ -41,29 +26,29 @@ public:
         return std::make_shared<FunctionWKT>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Any) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         auto res_column = ColumnString::create();
         const std::locale locale(std::locale::classic(), new ShortestFloatNumPut);
@@ -90,7 +75,7 @@ public:
         return res_column;
     }
 
-    bool useDefaultImplementationForConstants() const override
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override
     {
         return true;
     }

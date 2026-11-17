@@ -64,7 +64,7 @@ namespace
 constexpr size_t ROW_BLOCK = 6;
 constexpr size_t COL_BLOCK = 16;
 
-DECLARE_MULTITARGET_CODE(
+DECLARE_X86_64_MULTITARGET_CODE(
 
 /// Score every row against one tile of centroids, keeping the running best score and id per row.
 /// See `build` and `assignBlock` for how the tile is prepared.
@@ -139,7 +139,7 @@ void scoreTile(
     }
 }
 
-) // DECLARE_MULTITARGET_CODE
+) // DECLARE_X86_64_MULTITARGET_CODE
 
 /// Runtime dispatch to the widest ISA the CPU supports. Where multitarget code is off (ARM, or
 /// ENABLE_MULTITARGET_CODE=OFF) only Default exists, hence the plain loops above that auto-vectorize.
@@ -150,7 +150,7 @@ void scoreTile(
     const Float32 * tile_centroids, const Float32 * tile_sq_norms, const UInt32 * tile_ids,
     size_t width, Float32 * best_score, UInt32 * result_ids)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         TargetSpecific::x86_64_v4::scoreTile(vec_data, num_rows, dim, tile_centroids, tile_sq_norms, tile_ids, width, best_score, result_ids);
