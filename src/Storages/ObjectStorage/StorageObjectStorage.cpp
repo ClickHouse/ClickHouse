@@ -1076,16 +1076,12 @@ SinkToStoragePtr StorageObjectStorage::createSink(
 
     if (configuration->isArchive())
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Table '{}' reads from an archive. Write into archive is not supported",
-                        storage_id.getNameForLogs());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table reads from an archive. Write into archive is not supported");
     }
 
     if (raw_path.hasGlobsIgnorePlaceholders())
     {
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                        "Table '{}' is in readonly mode because of globs in path",
-                        storage_id.getNameForLogs());
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Table is in readonly mode because of globs in path");
     }
 
     if (!configuration->supportsWrites())
