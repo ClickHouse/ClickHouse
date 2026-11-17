@@ -954,6 +954,10 @@ private:
         UInt32 total_worker;
     };
 
+    /// Destroy the states of the aggregate functions from `first_function` on of the detached source rows `src_places`,
+    /// except, with `skip_compiled`, those of the compiled functions (see `mergeAndDestroyDetachedBatch`).
+    void destroyDetachedSources(PaddedPODArray<AggregateDataPtr> & src_places, size_t first_function, bool skip_compiled) const noexcept;
+
     /// Merge NULL key data from hash table `src` into `dst`.
     template <typename Method, typename Table>
     void mergeDataNullKey(
@@ -968,6 +972,16 @@ private:
         Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch,
         std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr)
         const;
+
+    /// Merge the batch of source rows `src_places` into `dst_places` and destroy them. The source rows are detached
+    /// from their hash table: if it throws, every state of the batch has been destroyed, except, with `skip_compiled`,
+    /// the states of the compiled functions, which the caller has merged by the JIT-compiled function.
+    void mergeAndDestroyDetachedBatch(
+        PaddedPODArray<AggregateDataPtr> & dst_places,
+        PaddedPODArray<AggregateDataPtr> & src_places,
+        Arena * arena,
+        std::atomic<bool> & is_cancelled,
+        bool skip_compiled) const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
     template <typename Method, typename Table>
