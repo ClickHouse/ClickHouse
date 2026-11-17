@@ -250,6 +250,7 @@ def test_shutdown_does_not_start_parts_cleanup(started_cluster):
         node.query(f"INSERT INTO t_shutdown_cleanup VALUES ({i})")
     node.query("SYSTEM START MERGES t_shutdown_cleanup")
     node.query("OPTIMIZE TABLE t_shutdown_cleanup FINAL")
+    outdated_at = time.time()
 
     # A background merge may have taken some of the parts before OPTIMIZE,
     # so the number of outdated parts is read rather than assumed.
@@ -263,6 +264,7 @@ def test_shutdown_does_not_start_parts_cleanup(started_cluster):
     assert node.stop_clickhouse(stop_wait_sec=90) is True
 
     # The outdated parts expired during the shutdown and were left on disk.
+    assert time.time() - outdated_at >= 25
     assert count_part_dirs() == total_parts
 
     node.start_clickhouse()
