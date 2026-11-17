@@ -4624,14 +4624,25 @@ void StorageFile::truncate(
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot truncate file at {}", path);
 
         /// The files after the first one were created by the inserts into this table - with
-        /// `engine_file_allow_create_multiple_files` or by splitting the data by size. The truncated table
-        /// is empty, so they are deleted rather than kept empty: otherwise the next insert split by size
-        /// would find its numbered names taken by these leftovers, and the table would go on reading them.
-        /// Each of them is forgotten right after it is gone, so that a failure in the middle leaves the
-        /// table reading exactly the files that still exist.
-        removeStaleSplitFiles(
-            Strings(current_paths.begin() + 1, current_paths.end()),
-            [this](const String & removed_path) { retirePath(removed_path); });
+        /// `engine_file_allow_create_multiple_files` or by splitting the data by size.
+        ///
+        /// The files that an insert with `engine_file_allow_create_multiple_files` alone has created are truncated
+        /// in place, as they always were before the splitting by size existed: this needs only the permission to
+        /// write the files, not the directory, and the table keeps reading them as empty files.
+        const Strings split_tail = getSplitTailSnapshot();
+        for (auto it = current_paths.begin() + 1; it != current_paths.end(); ++it)
+        {
+            if (std::ranges::find(split_tail, *it) != split_tail.end())
+                continue;
+            if (fs::exists(*it) && 0 != ::truncate(it->c_str(), 0))
+                ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, *it, "Cannot truncate file at {}", *it);
+        }
+
+        /// The files written by an insert split by size are deleted rather than kept empty: otherwise the next
+        /// insert split by size would find its numbered names taken by these leftovers, and the table would go
+        /// on reading them. Each of them is forgotten right after it is gone, so that a failure in the middle
+        /// leaves the table reading exactly the files that still exist.
+        removeStaleSplitFiles(split_tail, [this](const String & removed_path) { retirePath(removed_path); });
 
         warnAboutForgottenSplitTail(current_paths, getNumberedFileNames(path), getStorageID().getNameForLogs());
     }
