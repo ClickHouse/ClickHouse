@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+
+import os
+import shlex
+import socket
+import socketserver
+import struct
+import subprocess
+import threading
+
+
+# Encode BSON directly so the mock server can send malformed embedded documents.
+def document(*elements):
+    body = b"".join(elements)
+    return struct.pack("<i", len(body) + 5) + body + b"\0"
+
+
+def element(kind, name, payload):
+    return bytes([kind]) + name.encode() + b"\0" + payload
+
+
+def string(value):
+    data = value.encode() + b"\0"
+    return struct.pack("<i", len(data)) + data
+
+
+OK = element(0x01, "ok", struct.pack("<d", 1.0))
+HELLO = document(
+    element(0x08, "ismaster", b"\1"),
+    element(0x08, "helloOk", b"\1"),
+    element(0x10, "minWireVersion", struct.pack("<i", 0)),
+    element(0x10, "maxWireVersion", struct.pack("<i", 21)),
+    OK,
+)
+VALID = document(element(0x02, "v", string("hello")))
+SHORT = b"\x04\x00\x00\x00"
+NONNUL = b"\x05\x00\x00\x00\x01"
+
+
+def cursor_reply(documents, batch="firstBatch", cursor_id=0):
+    return document(
+        element(
+            0x03,
+            "cursor",
+            document(
+                element(0x12, "id", struct.pack("<q", cursor_id)),
+                element(0x02, "ns", string("db.coll")),
+                element(
+                    0x04,
+                    batch,
+                    document(
+                        *(element(0x03, str(i), doc) for i, doc in enumerate(documents))
+                    ),
+                ),
+            ),
+        ),
+        OK,
+    )
+
+
+class MongoHandler(socketserver.StreamRequestHandler):
+    timeout = 60
+
+    def handle(self):
+        while header := self.rfile.read(16):
+            length, request_id, _, opcode = struct.unpack("<iiii", header)
+            body = self.rfile.read(length - 16)
+            if opcode == 2004:  # `OP_QUERY`: flags, namespace, skip, return, command.
+                command_doc = body[body.index(b"\0", 4) + 9 :]
+            else:
+                # `OP_MSG`, section kind 0.
+                assert opcode == 2013 and body[4] == 0, (opcode, body)
+                command_doc = body[5:]
+
+            command = command_doc[5 : command_doc.index(b"\0", 5)].decode()
+            if command.lower() in ("hello", "ismaster"):
+                reply = HELLO
+            elif command == "find":
+                reply = self.server.find_reply
+            elif command == "getMore":
+                assert self.server.getmore_reply is not None, "Unexpected getMore"
+                reply = self.server.getmore_reply
+            elif command == "killCursors":
+                reply = document(OK)
+            else:
+                raise AssertionError(f"Unexpected command: {command}")
+
+            if opcode == 2004:
+                # `OP_REPLY`: flags, cursor ID, starting offset, document count.
+                payload = struct.pack("<iqii", 0, 0, 0, 1) + reply
+                reply_opcode = 1
+            else:
+                payload = struct.pack("<I", 0) + b"\0" + reply
+                reply_opcode = 2013
+            self.request.sendall(
+                struct.pack(
+                    "<iiii", 16 + len(payload), request_id + 1, request_id, reply_opcode
+                )
+                + payload
+            )
+
+
+FAMILY, _, _, _, ADDRESS = socket.getaddrinfo(
+    os.environ["CLICKHOUSE_HOST"], 0, type=socket.SOCK_STREAM
+)[0]
+
+
+class MongoServer(socketserver.ThreadingTCPServer):
+    address_family = FAMILY
+
+
+def query(sql):
+    return subprocess.run(
+        shlex.split(os.environ["CLICKHOUSE_CLIENT"])
+        + ["--query", sql, "--format", "TSV", "--calculate_text_stack_trace=0"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+def check(name, first_batch, expected=None, next_batch=None, cursor_id=0):
+    with MongoServer(ADDRESS, MongoHandler) as server:
+        server.find_reply = cursor_reply(first_batch, cursor_id=cursor_id)
+        server.getmore_reply = (
+            cursor_reply(next_batch, "nextBatch") if next_batch is not None else None
+        )
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        try:
+            host, port = server.server_address[:2]
+            if FAMILY == socket.AF_INET6:
+                host = f"[{host}]"
+            result = query(
+                f"SELECT * FROM mongodb('{host}:{port}', 'db', 'coll', '', '', 'v String', "
+                "'serverSelectionTimeoutMS=30000&socketTimeoutMS=30000')"
+            )
+            if expected is None:
+                assert result.returncode != 0, result
+                assert "Invalid BSON document in cursor reply." in result.stderr, result
+            else:
+                assert result.returncode == 0, result
+                assert result.stdout == expected, result
+
+            alive = query("SELECT 1")
+            assert alive.returncode == 0 and alive.stdout == "1\n", alive
+            print(f"{name}: OK")
+        finally:
+            server.shutdown()
+            thread.join()
+
+
+check("valid", [VALID, VALID], expected="hello\nhello\n")
+check("empty", [], expected="")
+# Neither a short length nor a missing NUL terminator must abort the process.
+check("short", [SHORT])
+check("nonnul", [NONNUL])
+# Reject a bad document after reading a valid one, even when the cursor is still open.
+check("after_valid", [VALID, SHORT], cursor_id=1)
+# The same validation must apply to a `getMore` reply.
+check("next_batch", [VALID], next_batch=[NONNUL], cursor_id=1)
