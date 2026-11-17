@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database
+# Tags: no-fasttest, no-replicated-database, long
 # Tag no-fasttest: Kafka and the Keeper client are not available in fast tests
 # Tag no-replicated-database: the test drives activation of a single fixed replica identity
+# Tag long: activation retries and session teardown are wall-clock bound
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,6 +14,8 @@ KEEPER_PATH="/clickhouse/test/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 REPLICA_DIR="$KEEPER_PATH/replicas/migrated"
 FOREIGN_SESSION_PID=""
 FOREIGN_FIFO=""
+FOREIGN2_PID=""
+FOREIGN2_FIFO=""
 
 POLL_TIMEOUT_MS=50
 
@@ -24,8 +27,12 @@ cleanup()
     set +e
 
     exec 3>&- 2>/dev/null
+    exec 4>&- 2>/dev/null
     [ -n "$FOREIGN_SESSION_PID" ] && kill "$FOREIGN_SESSION_PID" 2>/dev/null
     [ -n "$FOREIGN_FIFO" ] && rm -f "$FOREIGN_FIFO"
+    [ -n "$FOREIGN2_PID" ] && kill "$FOREIGN2_PID" 2>/dev/null
+    [ -n "$FOREIGN2_FIFO" ] && rm -f "$FOREIGN2_FIFO"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_migrated2" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_migrated" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_anchor" 2>/dev/null
     timeout 10 rpk topic delete $KAFKA_TOPIC --brokers $KAFKA_BROKER > /dev/null 2>&1
@@ -81,17 +88,17 @@ exec 3<>"$FOREIGN_FIFO"
 printf '%s\n' "touch '$REPLICA_DIR'" "create '$REPLICA_DIR/demand_aware' 'stale' EPHEMERAL" >&3
 
 marker_count() {
-    $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$REPLICA_DIR' AND name = 'demand_aware'" 2>/dev/null || echo 0
+    $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$1' AND name = 'demand_aware'" 2>/dev/null || echo 0
 }
 
 node_owner() {
-    $CLICKHOUSE_CLIENT -q "SELECT ephemeralOwner FROM system.zookeeper WHERE path = '$REPLICA_DIR' AND name = '$1'" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "SELECT ephemeralOwner FROM system.zookeeper WHERE path = '$1' AND name = '$2'" 2>/dev/null
 }
 
 planted=0
 deadline=$((SECONDS + 60))
 while [ "$SECONDS" -lt "$deadline" ]; do
-    if [ "$(marker_count)" -ge 1 ]; then
+    if [ "$(marker_count "$REPLICA_DIR")" -ge 1 ]; then
         planted=1
         break
     fi
@@ -137,8 +144,8 @@ fi
 owners_agree=0
 deadline=$((SECONDS + 30))
 while [ "$SECONDS" -lt "$deadline" ]; do
-    marker_owner=$(node_owner demand_aware)
-    active_owner=$(node_owner is_active)
+    marker_owner=$(node_owner "$REPLICA_DIR" demand_aware)
+    active_owner=$(node_owner "$REPLICA_DIR" is_active)
     if [ -n "$marker_owner" ] && [ -n "$active_owner" ] && [ "$marker_owner" = "$active_owner" ]; then
         owners_agree=1
         break
@@ -159,8 +166,89 @@ FOREIGN_SESSION_PID=""
 rm -f "$FOREIGN_FIFO"
 FOREIGN_FIFO=""
 sleep 7
-if [ "$(marker_count)" -lt 1 ]; then
+if [ "$(marker_count "$REPLICA_DIR")" -lt 1 ]; then
     echo "FAIL: the marker disappeared together with the foreign session although the replica is active" >&2
     exit 1
 fi
 echo "--- Marker survived the expiry of the foreign session ---"
+
+# A handover that passes through a failed activation: while another registration holds
+# `is_active`, activation attempts fail and back off; once that registration releases its
+# nodes (the marker first, like the fixed cleanup order), a retry must end up owning both
+# nodes on this server's session.
+REPLICA2_DIR="$KEEPER_PATH/replicas/migrated2"
+FOREIGN2_FIFO=$(mktemp -u /tmp/clickhouse_foreign_session.XXXXXX)
+mkfifo "$FOREIGN2_FIFO"
+$CLICKHOUSE_KEEPER_CLIENT --tests-mode < "$FOREIGN2_FIFO" > /dev/null 2>&1 &
+FOREIGN2_PID=$!
+exec 4<>"$FOREIGN2_FIFO"
+printf '%s\n' "touch '$REPLICA2_DIR'" "create '$REPLICA2_DIR/is_active' 'foreign' EPHEMERAL" "create '$REPLICA2_DIR/demand_aware' 'stale' EPHEMERAL" >&4
+
+registered=0
+deadline=$((SECONDS + 60))
+while [ "$SECONDS" -lt "$deadline" ]; do
+    if $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$REPLICA2_DIR' AND name = 'is_active'" 2>/dev/null | grep -q 1; then
+        registered=1
+        break
+    fi
+    sleep 1
+done
+if [ "$registered" -ne 1 ]; then
+    echo "FAIL: the foreign session did not register the second identity" >&2
+    exit 1
+fi
+
+$CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
+    CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_migrated2 (id UInt64, data String)
+    ENGINE = Kafka
+    SETTINGS kafka_broker_list = '$KAFKA_BROKER',
+             kafka_topic_list = '$KAFKA_TOPIC',
+             kafka_group_name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_group2',
+             kafka_format = 'JSONEachRow',
+             kafka_max_block_size = 100,
+             kafka_poll_timeout_ms = $POLL_TIMEOUT_MS,
+             kafka_consumer_reschedule_ms = 100,
+             kafka_keeper_path = '$KEEPER_PATH',
+             kafka_replica_name = 'migrated2';
+ "
+# Let an activation attempt fail against the foreign is_active, then release the foreign
+# nodes in the cleanup order: the marker while is_active is still owned. The final touch
+# marks that the client has processed both removals, so it is only killed afterwards.
+sleep 2
+printf '%s\n' "rm '$REPLICA2_DIR/demand_aware'" "rm '$REPLICA2_DIR/is_active'" "touch '$REPLICA2_DIR/rms_done'" >&4
+released=0
+deadline=$((SECONDS + 15))
+while [ "$SECONDS" -lt "$deadline" ]; do
+    if $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$REPLICA2_DIR' AND name = 'rms_done'" 2>/dev/null | grep -q 1; then
+        released=1
+        break
+    fi
+    sleep 1
+done
+if [ "$released" -ne 1 ]; then
+    echo "FAIL: the foreign session did not release its nodes" >&2
+    exit 1
+fi
+exec 4>&-
+kill "$FOREIGN2_PID" 2>/dev/null
+wait "$FOREIGN2_PID" 2>/dev/null
+FOREIGN2_PID=""
+rm -f "$FOREIGN2_FIFO"
+FOREIGN2_FIFO=""
+
+handed=0
+deadline=$((SECONDS + 60))
+while [ "$SECONDS" -lt "$deadline" ]; do
+    marker2_owner=$(node_owner "$REPLICA2_DIR" demand_aware)
+    active2_owner=$(node_owner "$REPLICA2_DIR" is_active)
+    if [ -n "$marker2_owner" ] && [ -n "$active2_owner" ] && [ "$marker2_owner" = "$active2_owner" ]; then
+        handed=1
+        break
+    fi
+    sleep 1
+done
+if [ "$handed" -ne 1 ]; then
+    echo "FAIL: the retry after a failed activation did not own the marker (owner $marker2_owner, is_active owner $active2_owner)" >&2
+    exit 1
+fi
+echo "--- Handover through a failed activation left the marker owned by the server ---"

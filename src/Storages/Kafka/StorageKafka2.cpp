@@ -231,8 +231,8 @@ StorageKafka2::~StorageKafka2()
     /// The `librdkafka` callbacks dereference `this`, so the consumers must go first. Same as `StorageKafka`.
     if (!shutdown_called)
         shutdown(false);
-    replica_is_active_node.reset();
     demand_aware_node.reset();
+    replica_is_active_node.reset();
 }
 
 void StorageKafka2::partialShutdown()
@@ -254,9 +254,10 @@ void StorageKafka2::partialShutdown()
     /// EphemeralNodeHolder stores a raw ZooKeeper reference, so resetting it here prevents a
     /// use-after-free: setZooKeeper() called afterwards may free the old session, and the holder's
     /// destructor would then access a dangling reference when checking zookeeper.expired().
-    replica_is_active_node = nullptr;
-    /// Same lifetime as `is_active`: the marker leaves with the registration, not with the session.
+    /// The marker goes first: it must be released while we still own `is_active`,
+    /// otherwise a concurrent activation of this identity could lose its marker to our stale holder.
     demand_aware_node = nullptr;
+    replica_is_active_node = nullptr;
 }
 
 bool StorageKafka2::activate()
@@ -341,16 +342,16 @@ bool StorageKafka2::activate()
         }
         catch (const Coordination::Exception & e)
         {
-            replica_is_active_node = nullptr;
             demand_aware_node = nullptr;
+            replica_is_active_node = nullptr;
             LOG_ERROR(log, "Couldn't start replica: {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
             return false;
 
         }
         catch (const Exception & e)
         {
-            replica_is_active_node = nullptr;
             demand_aware_node = nullptr;
+            replica_is_active_node = nullptr;
             if (e.code() != ErrorCodes::REPLICA_IS_ALREADY_ACTIVE)
                 throw;
 
