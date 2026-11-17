@@ -61,6 +61,7 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     /// last one, so the fast-forward to the last row of the run does not apply either.
     can_skip_to_run_end = version_column_number == -1 && is_deleted_column_number == -1
         && out_row_sources_buf == nullptr && !enable_vertical_final && !read_in_reverse;
+    nonzero_level_parts_have_unique_keys = true;
     uses_runs_of_equal_keys = can_skip_to_run_end;
 }
 

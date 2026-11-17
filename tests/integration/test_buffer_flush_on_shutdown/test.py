@@ -68,7 +68,9 @@ def test_chain_of_buffer_tables(started_cluster):
     node.query("DROP DATABASE d3 SYNC")
 
 
-def create_distributed_over_delay_threshold(database):
+def create_distributed_over_delay_threshold(
+    database, settings="bytes_to_delay_insert = 1, max_delay_to_insert = 3600"
+):
     # A block queued while the sends are stopped keeps the pending bytes over the threshold.
     node.query(f"CREATE DATABASE {database}")
     shard.query(f"CREATE DATABASE {database}")
@@ -76,7 +78,7 @@ def create_distributed_over_delay_threshold(database):
     node.query(
         f"CREATE TABLE {database}.dist (x UInt64) "
         f"ENGINE = Distributed(shard_cluster, {database}, data) "
-        "SETTINGS bytes_to_delay_insert = 1, max_delay_to_insert = 3600"
+        f"SETTINGS {settings}"
     )
     node.query(f"SYSTEM STOP DISTRIBUTED SENDS {database}.dist")
     node.query(f"INSERT INTO {database}.dist SELECT number FROM numbers(10)")
@@ -316,3 +318,57 @@ def test_buffer_flush_delayed_over_threshold_at_shutdown(started_cluster):
     assert shard.query("SELECT count() FROM dist_bufd.data WHERE x = 1000") == "1\n"
 
     drop_database("dist_bufd")
+
+
+THROW_SETTINGS = "bytes_to_throw_insert = 1"
+
+
+def assert_insert_rejected(database):
+    # The limit rejects a direct `INSERT` before the shutdown, so the flush below would be rejected too.
+    error = node.query_and_get_error(f"INSERT INTO {database}.dist VALUES (1)")
+    assert "DISTRIBUTED_TOO_MANY_PENDING_BYTES" in error, error
+
+
+def test_buffer_into_distributed_over_throw_threshold(started_cluster):
+    # The `Buffer` holds 100 rows for `dist`, whose stopped queue holds 10 more.
+    create_distributed_over_delay_threshold("dist_buf_throw", settings=THROW_SETTINGS)
+    node.query(
+        f"CREATE TABLE dist_buf_throw.buf (x UInt64) ENGINE = Buffer(dist_buf_throw, dist, {BUFFER_THRESHOLDS})"
+    )
+    node.query("INSERT INTO dist_buf_throw.buf SELECT number + 10 FROM numbers(100)")
+    assert node.query("SELECT count() FROM dist_buf_throw.buf") == "100\n"
+    assert_insert_rejected("dist_buf_throw")
+
+    restart_node_while_shard_is_down()
+
+    node.query("SYSTEM FLUSH DISTRIBUTED dist_buf_throw.dist")
+    assert shard.query("SELECT count() FROM dist_buf_throw.data") == "110\n"
+
+    drop_database("dist_buf_throw")
+
+
+def test_async_insert_into_distributed_over_throw_threshold(started_cluster):
+    # The asynchronous insert queue holds 5 rows for `dist`, whose stopped queue holds 10 more.
+    create_distributed_over_delay_threshold("dist_async_throw", settings=THROW_SETTINGS)
+    node.query(
+        "INSERT INTO dist_async_throw.dist SETTINGS async_insert = 1, wait_for_async_insert = 0, "
+        "async_insert_use_adaptive_busy_timeout = 0, async_insert_busy_timeout_min_ms = 600000, "
+        "async_insert_busy_timeout_max_ms = 600000 VALUES (1000), (1001), (1002), (1003), (1004)"
+    )
+    assert (
+        node.query(
+            "SELECT count() FROM system.asynchronous_inserts "
+            "WHERE database = 'dist_async_throw' AND table = 'dist'"
+        )
+        == "1\n"
+    )
+    assert_insert_rejected("dist_async_throw")
+
+    restart_node_while_shard_is_down()
+
+    node.query("SYSTEM FLUSH DISTRIBUTED dist_async_throw.dist")
+    # A delivered block keeps the settings of its `INSERT`, so it is queued again.
+    shard.query("SYSTEM FLUSH ASYNC INSERT QUEUE")
+    assert shard.query("SELECT count() FROM dist_async_throw.data") == "15\n"
+
+    drop_database("dist_async_throw")
