@@ -19,6 +19,10 @@ static constexpr double FILECACHE_DEFAULT_FREE_SPACE_SIZE_RATIO = 0; /// Disable
 static constexpr double FILECACHE_DEFAULT_FREE_SPACE_ELEMENTS_RATIO = 0; /// Disabled.
 static constexpr int FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH = 250;
 static constexpr int FILECACHE_DEFAULT_FREE_SPACE_EVICTION_THREADS = 1;
+static constexpr size_t FILECACHE_DEFAULT_BATCH_PRIORITY_INCREASE_BUFFER_SIZE = 32;
+static constexpr size_t FILECACHE_DEFAULT_BATCH_PRIORITY_INCREASE_MAX_BATCH_SIZE = 64;
+/// With one slot, a ring cannot tell a written slot from a free one.
+static constexpr size_t FILECACHE_MIN_BATCH_PRIORITY_INCREASE_BUFFER_SIZE = 2;
 static constexpr auto FILECACHE_DEFAULT_CONFIG_PATH = "filesystem_caches";
 
 static constexpr auto FILECACHE_DEFAULT_CACHE_POLICY = FileCachePolicy::SLRU;

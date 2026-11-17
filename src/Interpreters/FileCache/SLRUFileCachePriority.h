@@ -136,6 +136,32 @@ protected:
         probationary_queue.setInvalidateNotifier(threshold, on_invalidate);
     }
 
+    void setBatchPriorityIncrease(const BatchPriorityIncreaseSettings & settings) override
+    {
+        IFileCachePriority::setBatchPriorityIncrease(settings);
+        protected_queue.setBatchPriorityIncrease(settings);
+        probationary_queue.setBatchPriorityIncrease(settings);
+    }
+
+    void setApplyPriorityIncreasesNotifier(std::function<void()> notifier) override
+    {
+        IFileCachePriority::setApplyPriorityIncreasesNotifier(notifier);
+        protected_queue.setApplyPriorityIncreasesNotifier(notifier);
+        probationary_queue.setApplyPriorityIncreasesNotifier(notifier);
+    }
+
+    bool applyPendingPriorityIncreasesBatch() override
+    {
+        const bool protected_has_more = protected_queue.applyPendingPriorityIncreasesBatch();
+        const bool probationary_has_more = probationary_queue.applyPendingPriorityIncreasesBatch();
+        return protected_has_more || probationary_has_more;
+    }
+
+    size_t getPendingPriorityIncreasesApprox() const override
+    {
+        return protected_queue.getPendingPriorityIncreasesApprox() + probationary_queue.getPendingPriorityIncreasesApprox();
+    }
+
     size_t removeInvalidatedEntries(size_t max_batch) override
     {
         size_t removed = protected_queue.removeInvalidatedEntries(max_batch);

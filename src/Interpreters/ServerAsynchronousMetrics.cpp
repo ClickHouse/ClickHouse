@@ -215,12 +215,14 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         size_t total_bytes = 0;
         size_t max_bytes = 0;
         size_t total_files = 0;
+        size_t pending_priority_increases = 0;
 
         for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
         {
             total_bytes += cache_data->cache->getUsedCacheSize();
             max_bytes += cache_data->cache->getMaxCacheSize();
             total_files += cache_data->cache->getFileSegmentsNum();
+            pending_priority_increases += cache_data->cache->getPendingPriorityIncreasesApprox();
         }
 
         new_values["FilesystemCacheBytes"] = { total_bytes,
@@ -229,6 +231,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             "Total capacity in the `cache` virtual filesystem. This cache is hold on disk." };
         new_values["FilesystemCacheFiles"] = { total_files,
             "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
+        new_values["FilesystemCachePendingPriorityIncreases"] = { pending_priority_increases,
+            "Approximate number of filesystem cache hits whose priority increase is buffered and not yet applied to the priority queue (see the `lru_batch_priority_increase` cache setting)." };
     }
 
     /// Experimental ReaderExecutor read-path efficiency KPI: modeled cost (ms) per MiB of

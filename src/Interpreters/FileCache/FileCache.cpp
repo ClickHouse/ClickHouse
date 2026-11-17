@@ -125,6 +125,9 @@ namespace FileCacheSetting
     extern const FileCacheSettingsUInt64 bypass_cache_threshold;
     extern const FileCacheSettingsUInt64 cache_hits_threshold;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
+    extern const FileCacheSettingsBool lru_batch_priority_increase;
+    extern const FileCacheSettingsNonZeroUInt64 lru_batch_priority_increase_buffer_size;
+    extern const FileCacheSettingsNonZeroUInt64 lru_batch_priority_increase_max_batch_size;
     extern const FileCacheSettingsUInt64 dynamic_resize_lock_wait_ms;
     extern const FileCacheSettingsBool use_split_cache;
     extern const FileCacheSettingsDouble split_cache_ratio;
@@ -426,6 +429,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);
 
     supports_dynamic_resize = main_priority->supportsDynamicResize();
+    main_priority->setBatchPriorityIncrease(getBatchPriorityIncreaseSettings(settings));
 
     main_priority->setOnEvictCallback([this](const FileSegment & segment, size_t disk_accounted_size, const String & user_id)
     {
@@ -443,6 +447,20 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
                          "per-client usage; idle-client eviction is disabled");
 
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSizeLimit, settings[FileCacheSetting::max_size]);
+}
+
+IFileCachePriority::BatchPriorityIncreaseSettings FileCache::getBatchPriorityIncreaseSettings(const FileCacheSettings & settings)
+{
+    return {
+        .enabled = settings[FileCacheSetting::lru_batch_priority_increase],
+        .buffer_size = settings[FileCacheSetting::lru_batch_priority_increase_buffer_size],
+        .max_batch_size = settings[FileCacheSetting::lru_batch_priority_increase_max_batch_size],
+    };
+}
+
+size_t FileCache::getPendingPriorityIncreasesApprox() const
+{
+    return main_priority->getPendingPriorityIncreasesApprox();
 }
 
 const FileCache::OriginInfo & FileCache::getCommonOrigin()
@@ -587,6 +605,7 @@ void FileCache::initializeImpl(bool load_metadata)
             StorageID::createEmpty(), "FileCacheBackgroundCleanup", [this] { backgroundCleanupTaskFunc(); });
         main_priority->setInvalidateNotifier(
             invalidated_entries_cleanup_threshold, [this] { background_cleanup_task->schedule(); });
+        main_priority->setApplyPriorityIncreasesNotifier([this] { background_cleanup_task->schedule(); });
         background_cleanup_task->scheduleAfter(backgroundCleanupIntervalMs());
 
         if (load_metadata)
@@ -1897,11 +1916,13 @@ UInt64 FileCache::backgroundCleanupIntervalMs() const
 void FileCache::backgroundCleanupTaskFunc()
 {
     size_t removed = 0;
+    bool has_more_priority_increases = false;
     {
         Stopwatch watch;
         try
         {
             removed = main_priority->removeInvalidatedEntries(invalidated_entries_cleanup_remove_batch);
+            has_more_priority_increases = main_priority->applyPendingPriorityIncreasesBatch();
         }
         catch (...)
         {
@@ -1929,7 +1950,7 @@ void FileCache::backgroundCleanupTaskFunc()
         return;
 
     /// A full batch likely means there is more to clean: come back immediately.
-    if (removed == invalidated_entries_cleanup_remove_batch)
+    if (removed == invalidated_entries_cleanup_remove_batch || has_more_priority_increases)
         background_cleanup_task->schedule();
     else
         background_cleanup_task->scheduleAfter(backgroundCleanupIntervalMs());
@@ -2963,6 +2984,19 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
     {
         expose_eviction_metrics_per_user.store(new_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user], std::memory_order_relaxed);
         actual_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user] = new_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user];
+    }
+
+    if (new_settings[FileCacheSetting::lru_batch_priority_increase] != actual_settings[FileCacheSetting::lru_batch_priority_increase]
+        || new_settings[FileCacheSetting::lru_batch_priority_increase_max_batch_size] != actual_settings[FileCacheSetting::lru_batch_priority_increase_max_batch_size])
+    {
+        /// `lru_batch_priority_increase_buffer_size` is not reloadable, so it keeps its value from `actual_settings`.
+        auto batch_settings = getBatchPriorityIncreaseSettings(actual_settings);
+        batch_settings.enabled = new_settings[FileCacheSetting::lru_batch_priority_increase];
+        batch_settings.max_batch_size = new_settings[FileCacheSetting::lru_batch_priority_increase_max_batch_size];
+        main_priority->setBatchPriorityIncrease(batch_settings);
+
+        actual_settings[FileCacheSetting::lru_batch_priority_increase] = new_settings[FileCacheSetting::lru_batch_priority_increase];
+        actual_settings[FileCacheSetting::lru_batch_priority_increase_max_batch_size] = new_settings[FileCacheSetting::lru_batch_priority_increase_max_batch_size];
     }
 }
 

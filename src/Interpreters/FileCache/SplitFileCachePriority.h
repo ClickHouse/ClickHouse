@@ -138,6 +138,31 @@ protected:
         getPriority(SegmentType::System).setInvalidateNotifier(threshold, on_invalidate);
     }
 
+    void setBatchPriorityIncrease(const BatchPriorityIncreaseSettings & settings) override
+    {
+        getPriority(SegmentType::Data).setBatchPriorityIncrease(settings);
+        getPriority(SegmentType::System).setBatchPriorityIncrease(settings);
+    }
+
+    void setApplyPriorityIncreasesNotifier(std::function<void()> notifier) override
+    {
+        getPriority(SegmentType::Data).setApplyPriorityIncreasesNotifier(notifier);
+        getPriority(SegmentType::System).setApplyPriorityIncreasesNotifier(notifier);
+    }
+
+    bool applyPendingPriorityIncreasesBatch() override
+    {
+        const bool data_has_more = getPriority(SegmentType::Data).applyPendingPriorityIncreasesBatch();
+        const bool system_has_more = getPriority(SegmentType::System).applyPendingPriorityIncreasesBatch();
+        return data_has_more || system_has_more;
+    }
+
+    size_t getPendingPriorityIncreasesApprox() const override
+    {
+        return getPriority(SegmentType::Data).getPendingPriorityIncreasesApprox()
+            + getPriority(SegmentType::System).getPendingPriorityIncreasesApprox();
+    }
+
     size_t removeInvalidatedEntries(size_t max_batch) override
     {
         size_t removed = getPriority(SegmentType::Data).removeInvalidatedEntries(max_batch);

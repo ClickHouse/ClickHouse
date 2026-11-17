@@ -4,12 +4,15 @@
 #include <list>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/CacheUsage.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/FileCache/Guards.h>
+#include <Interpreters/FileCache/PendingPriorityIncreases.h>
 
 class FileCacheTest_MoveEvictionPos_Test;
+class FileCacheTest_LRUPendingPriorityIncreasesBuffer_Test;
 
 namespace DB
 {
@@ -184,6 +187,7 @@ private:
     using LRUQueue = std::list<EntryPtr>;
     friend class SLRUFileCachePriority;
     friend class ::FileCacheTest_MoveEvictionPos_Test;
+    friend class ::FileCacheTest_LRUPendingPriorityIncreasesBuffer_Test;
 
     /// Non-null when this queue's structural locking is redirected to another guard
     /// (set by SLRU for its sub-queues). See `getPriorityGuard`.
@@ -192,6 +196,10 @@ private:
     void setPriorityGuard(CachePriorityGuard & guard) { effective_priority_guard = &guard; }
 
     size_t removeInvalidatedEntries(size_t max_batch) override;
+
+    bool applyPendingPriorityIncreasesBatch() override;
+
+    size_t getPendingPriorityIncreasesApprox() const override { return pending_priority_increases.getSizeApprox(); }
 
     /// Throws if `sealStructure` was called. Called from every operation which mutates or reads
     /// `queue`, so a wrapper missing an override throws instead of silently using the sealed, unused base queue.
@@ -221,6 +229,14 @@ private:
     /// Size of `invalidated_refs`, kept as an atomic so the background cleanup can skip
     /// this queue without taking `invalidated_mutex` when there is nothing to clean up.
     std::atomic<size_t> invalidated_count = 0;
+
+    PendingPriorityIncreases pending_priority_increases;
+    /// Set when the buffer of a thread in `pending_priority_increases` becomes half full, so that the cleanup
+    /// task is woken once per request and not on every hit.
+    std::atomic<bool> apply_priority_increases_requested = false;
+    /// Records popped from `pending_priority_increases`. Used only under the queue write lock.
+    std::vector<PendingPriorityIncrease> increases_to_apply;
+
     /// Id of the current priority queue.
     /// Used to find its eviction info in collected eviction info map
     /// (which contains eviction info for several priority queues).
@@ -279,6 +295,16 @@ private:
     void setEvictionPos(EvictionCursor cursor, LRUQueue::iterator it, const CachePriorityGuard::ReadLock &);
     /// Advance every cursor that points at `it` (which is about to be removed/spliced out).
     void moveEvictionPosIfEqual(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &);
+    void moveEvictionPosIfEqualImpl(LRUQueue::iterator it) TSA_REQUIRES(eviction_pos_mutex);
+
+    /// Move the entry to the queue tail, unless it was removed from the queue in the meantime.
+    void applyPriorityIncrease(const PendingPriorityIncrease & increase, const CachePriorityGuard::WriteLock &)
+        TSA_REQUIRES(eviction_pos_mutex);
+    void applyPriorityIncreases(std::span<const PendingPriorityIncrease> increases, const CachePriorityGuard::WriteLock &);
+    /// Applies one batch of the pending increases and returns its size.
+    size_t applyPendingPriorityIncreases(const CachePriorityGuard::WriteLock &);
+    /// For a hit whose buffer is full: waits for the write lock and applies that buffer and `increase`.
+    void applyPriorityIncreasesOfCurrentThread(const PendingPriorityIncrease & increase);
 };
 
 class LRUFileCachePriority::LRUIterator : public IFileCachePriority::Iterator
