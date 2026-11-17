@@ -58,6 +58,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/Statistics/Statistics.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <Common/BackgroundTaskCancellationException.h>
 #include <Common/FailPoint.h>
 #include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
@@ -4663,7 +4664,7 @@ MutateTask::MutateTask(
         [mutation_cancelled]
         {
             if (mutation_cancelled())
-                throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+                throw BackgroundTaskCancellationException(ErrorCodes::ABORTED, "Cancelled mutating parts");
         });
 }
 

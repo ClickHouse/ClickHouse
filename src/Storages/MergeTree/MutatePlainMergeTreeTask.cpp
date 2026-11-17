@@ -26,6 +26,7 @@ namespace ErrorCodes
 
 namespace FailPoints
 {
+    extern const char mt_mutation_pause_after_part_rename[];
     extern const char mt_mutate_task_pause_before_rename_part[];
 }
 
@@ -149,6 +150,7 @@ bool MutatePlainMergeTreeTask::executeStep()
                 {
                     auto lock = storage.lockParts();
                     storage.renameTempPartAndReplaceUnlocked(new_part, transaction, lock, /*rename_in_transaction=*/ false);
+                    FailPointInjection::pauseFailPoint(FailPoints::mt_mutation_pause_after_part_rename);
                     transaction.commit(lock);
                 }
 

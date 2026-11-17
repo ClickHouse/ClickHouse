@@ -345,7 +345,7 @@ public:
     /// Throws the real cancellation cause if the query has been cancelled. No-op if not attached to a query.
     void throwIfQueryCanceled() const;
 
-    /// While alive, `isQueryCanceled` returns false and `throwIfQueryCanceled` does nothing in the current thread.
+    /// While alive, `isQueryCanceled` returns false and `throwIfQueryCanceled` does nothing in the current fiber or thread.
     /// For code that must not be interrupted, like the finalization of a committed transaction.
     class QueryCancellationBlocker : private boost::noncopyable
     {
@@ -353,7 +353,7 @@ public:
         QueryCancellationBlocker();
         ~QueryCancellationBlocker();
 
-        /// Whether a blocker is alive in the current thread. `ThreadPool` carries it into the jobs scheduled under it.
+        /// Whether a blocker is alive in the current fiber or thread. `ThreadPool` carries it into the jobs scheduled under it.
         static bool isActive();
 
     private:

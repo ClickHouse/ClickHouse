@@ -22,4 +22,8 @@ bool isIOErrorException(std::exception_ptr exception_ptr);
 /// which can surface from inside a part read and says nothing about the part.
 bool isQueryCancellation(std::exception_ptr exception_ptr);
 
+/// Decide from the caught exception, not from mutable query cancellation state: a real data error
+/// must still report the part as broken if cancellation races with exception unwinding.
+bool shouldReportBrokenPart(std::exception_ptr exception_ptr);
+
 }

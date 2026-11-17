@@ -116,18 +116,23 @@ public:
     void setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling) override;
 
 private:
+    void checkIfNotCancelled() const;
+
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);
 
     /// If true, if we destroy impl now, no work was wasted. Just for metrics.
     bool atEndOfRequestedRangeGuess();
 
-    /// Call inside catch() block if GetObject fails. Bumps metrics, logs the error.
+    bool shouldRetryRead(size_t read_offset, size_t attempt) const;
+
+    /// Called inside a catch block to classify a read failure and record its metrics.
     /// Returns true if the error looks retriable.
     bool processException(size_t read_offset, size_t attempt) const;
 
     size_t getObjectSizeFromS3() const;
 
-    Aws::S3::Model::GetObjectResult sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const;
+    Aws::S3::Model::GetObjectResult sendRequest(
+        size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl, bool * request_started = nullptr) const;
 
     ReadSettings read_settings;
 
