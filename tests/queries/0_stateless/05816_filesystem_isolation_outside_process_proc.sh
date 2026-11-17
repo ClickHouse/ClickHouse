@@ -24,7 +24,8 @@ write through /proc/<pid>/root: denied
 read through /proc/<pid>/cwd: denied
 read through /proc/<pid>/fd: denied
 marker: unchanged
-proc of the host inside path: refused"
+proc of the host inside path: refused
+path inside a proc of the host: refused"
 
 # The configuration of the tests enables the isolation only where the container allows the namespaces: see
 # `tests/config/install.sh`.
@@ -90,7 +91,9 @@ function finish()
     [ -n "$PID" ] && kill "$PID" 2>/dev/null
     [ -n "$OUTSIDE" ] && kill "$OUTSIDE" 2>/dev/null
     wait
-    mountpoint -q "$DIR/data/host_proc" && umount "$DIR/data/host_proc"
+    for mount_point in "$DIR/data/host_proc" "$DIR/host_proc"; do
+        mountpoint -q "$mount_point" && umount "$mount_point"
+    done
 }
 trap finish EXIT
 
@@ -124,24 +127,41 @@ $CLICKHOUSE_CLIENT_BINARY --host 127.0.0.1 --port "$PORT" --query "
 
 echo "marker: $([ "$(cat "$MARKER")" = "outside" ] && echo unchanged || echo "changed: $(cat "$MARKER")")"
 
-# A `proc` of the PID namespace of the host inside `path`, which the server would see under the bind mount of `path`.
 kill "$PID"
 wait "$PID"
 PID=
+
+# Starts the server, and prints `$1: refused` if it refuses a mount of `proc` of the host among the visible paths.
+function check_refused()
+{
+    rm -f "$DIR/log/server.log"
+    $CLICKHOUSE_BINARY server --config-file "$DIR/conf/config.xml" > "$DIR/server.out" 2>&1 &
+    PID=$!
+    for _ in {1..600}; do
+        grep -q 'Ready for connections' "$DIR/log/server.log" 2>/dev/null && break
+        kill -0 "$PID" 2>/dev/null || break
+        sleep 0.1
+    done
+    if grep -q 'Cannot isolate the filesystem: .*`proc`' "$DIR/server.out" && ! kill -0 "$PID" 2>/dev/null; then
+        echo "$1: refused"
+    else
+        echo "$1: $(kill -0 "$PID" 2>/dev/null && echo started || echo failed)"
+        tail -n 3 "$DIR/server.out"
+        kill "$PID" 2>/dev/null
+    fi
+    wait "$PID"
+    PID=
+}
+
+# A `proc` of the PID namespace of the host inside `path`, which the server would see under the bind mount of `path`.
 mkdir -p "$DIR/data/host_proc"
 mount -t proc proc "$DIR/data/host_proc"
-rm -f "$DIR/log/server.log"
-$CLICKHOUSE_BINARY server --config-file "$DIR/conf/config.xml" > "$DIR/server.out" 2>&1 &
-PID=$!
-for _ in {1..600}; do
-    grep -q 'Ready for connections' "$DIR/log/server.log" 2>/dev/null && break
-    kill -0 "$PID" 2>/dev/null || break
-    sleep 0.1
-done
-if grep -q 'Cannot isolate the filesystem: .* has a mount of `proc`' "$DIR/server.out" && ! kill -0 "$PID" 2>/dev/null; then
-    echo "proc of the host inside path: refused"
-else
-    echo "proc of the host inside path: $(kill -0 "$PID" 2>/dev/null && echo started || echo failed)"
-    tail -n 3 "$DIR/server.out"
-fi
+check_refused "proc of the host inside path"
 umount "$DIR/data/host_proc"
+
+# A visible path inside a `proc` of the host: the directory of the outside process.
+mkdir -p "$DIR/host_proc"
+mount -t proc proc "$DIR/host_proc"
+sed -i "s|<read_only>/usr</read_only>|<read_only>/usr</read_only><read_only>$DIR/host_proc/$OUTSIDE</read_only>|" "$DIR/conf/config.xml"
+check_refused "path inside a proc of the host"
+umount "$DIR/host_proc"

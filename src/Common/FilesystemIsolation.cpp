@@ -1381,22 +1381,31 @@ std::string checkPidFile(const std::string & pid_file, const std::vector<Mount> 
     return {};
 }
 
-/// Why the paths cannot be made visible in a new PID namespace, or empty: a mount of `proc` inside one of them, as a
-/// `/host/proc` of a monitoring agent, would come with its recursive bind mount, and show the processes outside of the
-/// PID namespace, and their files through `/proc/<pid>/root`.
-std::string findProcMountInside(const std::vector<Mount> & mounts)
+/// Why the paths cannot be made visible in a new PID namespace, or empty: a `proc` other than the new one, as a
+/// `/host/proc` of a monitoring agent, would show the processes outside of the PID namespace, and their files through
+/// `/proc/<pid>/root`. So no bind mount may be of a path in a `proc`, or have a `proc` inside, which its recursive bind
+/// mount would bring along: the paths, `/sys` and the devices.
+std::string findProcMount(const std::vector<Mount> & mounts)
 {
-    for (const auto & info : readMountInfo())
+    std::vector<std::pair<std::string, std::string>> sources = {{"/sys", "system"}};
+    for (const auto * device : devices)
+        sources.emplace_back(fmt::format("/dev/{}", device), "system");
+    for (const auto & mount : mounts)
+        sources.emplace_back(mount.path, mount.source);
+
+    const std::vector<MountInfo> mount_info = readMountInfo();
+    for (const auto & [path, source] : sources)
     {
-        if (info.filesystem_type != "proc")
-            continue;
-        for (const auto & mount : mounts)
+        const auto id = getMountIdOfPath(path);
+        for (const auto & info : mount_info)
         {
-            if (isSameOrInside(info.mount_point, mount.path))
+            if (info.filesystem_type != "proc")
+                continue;
+            if ((id && info.id == *id) || isSameOrInside(info.mount_point, path))
                 return fmt::format(
-                    "the path {} ({}) has a mount of `proc` at {}, which would show the processes outside of the isolation, "
+                    "the path {} ({}) {} a mount of `proc` at {}, which would show the processes outside of the isolation, "
                     "and their files through `/proc/<pid>/root`",
-                    mount.path, mount.source, info.mount_point);
+                    path, source, isSameOrInside(info.mount_point, path) ? "has" : "is in", info.mount_point);
         }
     }
     return {};
@@ -1495,7 +1504,7 @@ FilesystemIsolationStatus isolateFilesystem(
     /// and there is no supervisor: the server creates the pid file itself, inside.
     if (!with_user_namespace)
     {
-        if (std::string reason = findProcMountInside(mounts); !reason.empty())
+        if (std::string reason = findProcMount(mounts); !reason.empty())
             return cannotIsolate(mode, std::move(reason));
         if (std::string reason = checkPidFile(pid_file, mounts); !reason.empty())
             return cannotIsolate(mode, std::move(reason));

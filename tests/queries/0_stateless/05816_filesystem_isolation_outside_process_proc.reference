@@ -11,3 +11,4 @@ read through /proc/<pid>/cwd: denied
 read through /proc/<pid>/fd: denied
 marker: unchanged
 proc of the host inside path: refused
+path inside a proc of the host: refused
