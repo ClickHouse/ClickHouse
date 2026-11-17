@@ -3,6 +3,7 @@
 #include <Core/AccurateComparison.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/NaNUtils.h>
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -891,6 +892,10 @@ private:
     template <typename Value>
     static Int64 checkOverflow(Value val)
     {
+        if constexpr (is_floating_point<Value>)
+            if (isNaN(val))
+                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+
         Int64 result = 0;
         if (accurate::convertNumeric<Value, Int64, false>(val, result))
             return result;
