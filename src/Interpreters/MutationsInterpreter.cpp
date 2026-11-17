@@ -2524,7 +2524,8 @@ void MutationsInterpreter::initQueryPlan(Stage & first_stage, QueryPlan & plan)
 
 QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
 {
-    PreparedSets::Subqueries subqueries;
+    /// The sets of each stage, in the order of the stages.
+    std::vector<PreparedSets::Subqueries> subqueries_per_stage;
     std::unordered_set<const FutureSetFromSubquery *> seen_subqueries;
 
     for (const Stage & stage : prepared_stages)
@@ -2549,7 +2550,7 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
                     plan.getCurrentHeader(), std::move(dag)));
         }
 
-        planSubqueriesForSets(stage.new_prepared_sets, context, subqueries, seen_subqueries);
+        planSubqueriesForSets(stage.new_prepared_sets, context, subqueries_per_stage.emplace_back(), seen_subqueries);
     }
 
     /// The stages of the mutation plan must keep their shape, so the plan is not optimized.
@@ -2560,8 +2561,13 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
     /// The set subqueries are ordinary reads, so they are not in the plan: each set is built by a pipeline
     /// of its own, from a fully optimized plan (e.g. its filter moves to `PREWHERE`), before any row reaches
     /// the stages. A set that the read has already built for index analysis is skipped.
-    if (!subqueries.empty())
-        builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), context);
+    /// Each stage has sets of its own, so two stages can have different sets with the same key in the
+    /// `PreparedSetsCache`. If they are built at the same time, the second one waits for the first in the
+    /// same executor, which a mutation runs with one thread. So the sets of each stage get their own
+    /// `CreatingSets`: an outer one builds its sets before the inner one starts.
+    for (auto & subqueries : subqueries_per_stage)
+        if (!subqueries.empty())
+            builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), context);
 
     auto pipeline = std::move(*builder);
 
