@@ -1,0 +1,6 @@
+consumer:
+Kafka property sasl.oauthbearer.metadata.authentication.type=azure_imds is not allowed
+producer:
+Kafka property sasl.oauthbearer.metadata.authentication.type=azure_imds is not allowed
+upper case value and the flag in the named collection:
+Kafka property sasl.oauthbearer.metadata.authentication.type=azure_imds is not allowed

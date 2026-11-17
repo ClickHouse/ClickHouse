@@ -20,6 +20,7 @@ struct KafkaConfigLoader
     static inline const String CONFIG_NAME_TAG = "name";
     static inline const String CONFIG_KAFKA_CONSUMER_TAG = "consumer";
     static inline const String CONFIG_KAFKA_PRODUCER_TAG = "producer";
+    static inline const String CONFIG_ALLOW_AZURE_IMDS_AUTHENTICATION_TAG = "allow_azure_imds_authentication";
     using LogCallback = cppkafka::Configuration::LogCallback;
 
 

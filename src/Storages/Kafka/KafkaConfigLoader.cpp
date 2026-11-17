@@ -226,8 +226,10 @@ void setKafkaConfigValue(cppkafka::Configuration & kafka_config, const String & 
 
     /// ClickHouse-specific keys that live under <kafka> in server config but are not librdkafka properties.
     /// Exclude them here so they are not forwarded to cppkafka.
-    static const std::unordered_set<String> clickhouse_only_kafka_config_keys
-        = {"use_environment_credentials"}; /// AWS MSK IAM: controls AWS credentials provider selection
+    static const std::unordered_set<String> clickhouse_only_kafka_config_keys = {
+        "use_environment_credentials", /// AWS MSK IAM: controls AWS credentials provider selection
+        KafkaConfigLoader::CONFIG_ALLOW_AZURE_IMDS_AUTHENTICATION_TAG, /// See `checkAzureIMDSAuthentication`
+    };
     if (clickhouse_only_kafka_config_keys.contains(key))
         return;
 
@@ -415,6 +417,40 @@ void loadProducerConfig(cppkafka::Configuration & kafka_config, const KafkaConfi
     loadFromConfig(kafka_config, params, producer_path);
 }
 
+/// With `sasl.oauthbearer.metadata.authentication.type=azure_imds`, librdkafka gets an access token for the managed
+/// identity of the server from the Azure Instance Metadata Service (IMDS) and sends it to the brokers.
+/// The user who creates the table selects the brokers and the token audience (`sasl.oauthbearer.config`),
+/// thus the user can get a token of the server identity. Only the server configuration can allow this.
+///
+/// The check uses the effective value of the property, which librdkafka returns in its canonical form.
+/// Thus it applies to all configuration sources and to all spellings (librdkafka ignores the case of the value).
+/// If librdkafka does not know the property (for example, after a rename in a new version), `get` throws
+/// and no Kafka client is created.
+void checkAzureIMDSAuthentication(const cppkafka::Configuration & kafka_config, const Poco::Util::AbstractConfiguration & config)
+{
+    static const String property_name = "sasl.oauthbearer.metadata.authentication.type";
+    static const String azure_imds = "azure_imds";
+
+    if (kafka_config.get(property_name) != azure_imds)
+        return;
+
+    /// The flag comes from the server configuration only, never from a named collection.
+    const String flag_path = KafkaConfigLoader::CONFIG_KAFKA_TAG + "." + KafkaConfigLoader::CONFIG_ALLOW_AZURE_IMDS_AUTHENTICATION_TAG;
+    if (config.getBool(flag_path, false))
+        return;
+
+    throw Exception(
+        ErrorCodes::SUPPORT_IS_DISABLED,
+        "Kafka property {}={} is not allowed, because it authenticates with the identity of the server. "
+        "A server administrator can allow it with <{}><{}>true</{}></{}> in the server configuration",
+        property_name,
+        azure_imds,
+        KafkaConfigLoader::CONFIG_KAFKA_TAG,
+        KafkaConfigLoader::CONFIG_ALLOW_AZURE_IMDS_AUTHENTICATION_TAG,
+        KafkaConfigLoader::CONFIG_ALLOW_AZURE_IMDS_AUTHENTICATION_TAG,
+        KafkaConfigLoader::CONFIG_KAFKA_TAG);
+}
+
 template <typename TKafkaStorage>
 using SpecificConfigUpdaterFunc = void (*)(
     cppkafka::Configuration & kafka_config,
@@ -431,6 +467,10 @@ void updateConfigurationFromConfig(
     loadFromConfig(kafka_config, params, KafkaConfigLoader::CONFIG_KAFKA_TAG);
 
     specific_config_updater(kafka_config, params);
+
+    /// All sources of arbitrary librdkafka properties are loaded at this point.
+    /// The table settings below set only a fixed list of other properties.
+    checkAzureIMDSAuthentication(kafka_config, params.config);
 
     auto kafka_settings = storage.getKafkaSettings();
     if (!kafka_settings[KafkaSetting::kafka_security_protocol].value.empty())

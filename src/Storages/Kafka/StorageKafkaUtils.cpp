@@ -548,6 +548,24 @@ When defining these properties in ClickHouse XML, replace periods with underscor
 
 For `ENGINE = Kafka(named_collection)`, extended `librdkafka` settings (including OIDC) use the same `kafka.` / `<kafka>` namespace described in [TLS and SASL with named collections](#kafka-tls-sasl-named-collections). The global server `<kafka>` configuration is not merged when a named collection is used, so each collection must include all required OIDC properties. See [Kafka named collections](/concepts/features/configuration/server-config/named-collections#oauthbearer-oidc-authentication) for a complete example.
 
+**Azure IMDS authentication:**
+
+With `sasl.oauthbearer.metadata.authentication.type` set to `azure_imds`, `librdkafka` gets the token for the managed identity of the server from the Azure Instance Metadata Service (IMDS). By default, ClickHouse rejects this value, and the Kafka table fails with the error `SUPPORT_IS_DISABLED`. To allow it, add to your server configuration:
+
+```xml
+<kafka>
+  <allow_azure_imds_authentication>true</allow_azure_imds_authentication>
+</kafka>
+```
+
+This setting can only be configured by server administrators. ClickHouse reads it only from the global server `<kafka>` configuration and ignores it in named collections. Default: `false`.
+
+<Warning>
+This setting is unsafe. When it is enabled, every user who can create a Kafka table with extended `librdkafka` settings (for example, through a named collection) can select `azure_imds`, the broker list, and the token audience in `sasl.oauthbearer.config`. The server then gets an access token for its own Azure managed identity and sends the token to the user-chosen broker. The receiving host can use the token as the server until the token expires.
+
+Enable this setting only if you trust every user who can create Kafka tables with the server's Azure identity. Restrict the hosts that Kafka tables can connect to with [remote_url_allow_hosts](/reference/settings/server-settings/settings/remote#remote_url_allow_hosts), which is empty (allow all hosts) by default.
+</Warning>
+
 Examples:
 
 ```sql
