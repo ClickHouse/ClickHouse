@@ -10,15 +10,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Covers all 5 CTE cleanup sites: join-tree CTE, expression CTE, expression materialized CTE,
 # and join-tree materialized CTE (both first and subsequent references).
 #
-# Serialize concurrent flaky-check workers on a host-level lock so 8 parallel instances
-# do not simultaneously contend for CPU and skew millisecond cancellation calibration.
-LOCK_FILE="${CLICKHOUSE_TMP}/ch_04954_cte_cancel.lock"
+# Note: CLICKHOUSE_TMP is per-database/per-worker in clickhouse-test, so use a host-wide
+# /tmp directory for the flock file and generated SQL/calibration cache across flaky-check workers.
+SHARED_TMP="${TMPDIR:-/tmp}"
+LOCK_FILE="${SHARED_TMP}/ch_04954_cte_cancel_v4.lock"
 exec 9>"$LOCK_FILE"
 if command -v flock >/dev/null 2>&1; then
     flock -w 120 9 || true
 fi
 
-CACHE_DIR="${CLICKHOUSE_TMP}/ch_04954_cte_cache_v3"
+CACHE_DIR="${SHARED_TMP}/ch_04954_cte_cache_v4"
 mkdir -p "$CACHE_DIR"
 
 TMP_SQL_DIR="${CLICKHOUSE_TMP}/cte_cancel_${CLICKHOUSE_DATABASE}_$$"
@@ -77,13 +78,7 @@ if [ ! -s "$CACHE_DIR/join_mat_2.sql" ]; then
         print "WITH c AS (" body ") SELECT 1 WHERE toUInt64(0) IN c FORMAT Null;" > (dir "/expr.sql");
         print "WITH c AS MATERIALIZED (" body ") SELECT 1 WHERE toUInt64(0) IN c FORMAT Null;" > (dir "/expr_mat.sql");
         print "WITH c AS MATERIALIZED (" body ") SELECT v FROM c FORMAT Null;" > (dir "/join_mat_1.sql");
-
-        u = "";
-        for (b = 1; b <= 4; b++) {
-            if (b > 1) u = u " UNION ALL ";
-            u = u "SELECT v FROM c";
-        }
-        print "WITH c AS MATERIALIZED (" body ") " u " FORMAT Null;" > (dir "/join_mat_2.sql");
+        print "WITH c AS MATERIALIZED (" body ") SELECT v FROM c UNION ALL SELECT v FROM c FORMAT Null;" > (dir "/join_mat_2.sql");
     }'
 fi
 
@@ -130,8 +125,12 @@ run_cancelled_cte()
 {
     local label="$1"
     local sql_file="$2"
-    shift 2
+    local min_r1_frac="$3"
+    shift 3
     local attempt=0
+
+    local min_srv_ms
+    min_srv_ms=$(awk -v tp="$T_PARSE_MS" -v r1="$R1_MS" -v f="$min_r1_frac" 'BEGIN { print int(tp + r1 * f) }')
 
     for mult in "$@"; do
         attempt=$((attempt + 1))
@@ -144,13 +143,16 @@ run_cancelled_cte()
         local qid="${CLICKHOUSE_DATABASE}_cte_cancel_${label}_${attempt}_$$"
         local err_file="$TMP_SQL_DIR/err_${label}_${attempt}.txt"
 
-        local rc=0
+        local t0 t1 elapsed_ms rc=0
+        t0=$(date +%s%3N)
         $CLICKHOUSE_CLIENT \
             --query_id "$qid" \
             "${COMMON_ARGS[@]}" \
             --max_execution_time="$timeout_s" \
             --timeout_overflow_mode='throw' \
             --queries-file "$sql_file" > "$err_file" 2>&1 || rc=$?
+        t1=$(date +%s%3N)
+        elapsed_ms=$((t1 - t0))
 
         if [ "$rc" -eq 0 ]; then
             continue
@@ -170,12 +172,14 @@ run_cancelled_cte()
             return 1
         fi
 
-        echo "TIMEOUT_EXCEEDED"
-        WINNING_QIDS+=("'$qid'")
-        return 0
+        if [ "$elapsed_ms" -ge "$min_srv_ms" ]; then
+            echo "TIMEOUT_EXCEEDED"
+            WINNING_QIDS+=("'$qid'")
+            return 0
+        fi
     done
 
-    printf 'Failed to trigger ExceptionBeforeStart TIMEOUT_EXCEEDED for %s (T_PARSE_MS=%s, R1_MS=%s)\n' \
+    printf 'Failed to trigger in-scope ExceptionBeforeStart TIMEOUT_EXCEEDED for %s (T_PARSE_MS=%s, R1_MS=%s)\n' \
         "$label" "$T_PARSE_MS" "$R1_MS" >&2
     return 1
 }
@@ -183,16 +187,16 @@ run_cancelled_cte()
 # Single-reference cases: `max_execution_time` starts after `parseQuery`, and `CTEInResolveProcessGuard`
 # spans roughly [0.14*R1_MS, 0.45*R1_MS] before later optimizer passes run. Start at 0.25*R1_MS so
 # cancellation hits strictly inside `CTEInResolveProcessGuard`.
-run_cancelled_cte "join"       "$CACHE_DIR/join.sql"       0.25 0.34 0.18 0.44 0.56
-run_cancelled_cte "expr"       "$CACHE_DIR/expr.sql"       0.25 0.34 0.18 0.44 0.56
-run_cancelled_cte "expr_mat"   "$CACHE_DIR/expr_mat.sql"   0.25 0.34 0.18 0.44 0.56
-run_cancelled_cte "join_mat_1" "$CACHE_DIR/join_mat_1.sql" 0.25 0.34 0.18 0.44 0.56
+run_cancelled_cte "join"       "$CACHE_DIR/join.sql"       "0.12" 0.25 0.34 0.18 0.44 0.56
+run_cancelled_cte "expr"       "$CACHE_DIR/expr.sql"       "0.12" 0.25 0.34 0.18 0.44 0.56
+run_cancelled_cte "expr_mat"   "$CACHE_DIR/expr_mat.sql"   "0.12" 0.25 0.34 0.18 0.44 0.56
+run_cancelled_cte "join_mat_1" "$CACHE_DIR/join_mat_1.sql" "0.12" 0.25 0.34 0.18 0.44 0.56
 
-# Subsequent materialized-reference case (4 UNION ALL branches):
+# Subsequent materialized-reference case (2 UNION ALL branches):
 # Reference #1 finishes `resolveQuery` and initializes `materialized_cte_ptr->storage` by ~0.45*R1_MS,
-# and References #2..#4 resolve in [0.45*R1_MS, 1.80*R1_MS]. Start at 0.95*R1_MS so cancellation hits
-# strictly inside subsequent-reference cleanup.
-run_cancelled_cte "join_mat_2" "$CACHE_DIR/join_mat_2.sql" 0.95 1.30 0.72 1.65 2.10
+# and Reference #2 resolves in [0.45*R1_MS, 0.90*R1_MS]. Require elapsed >= T_PARSE_MS + 0.50*R1_MS
+# and start at 0.68*R1_MS so cancellation hits strictly inside subsequent-reference cleanup.
+run_cancelled_cte "join_mat_2" "$CACHE_DIR/join_mat_2.sql" "0.50" 0.68 0.82 0.55 1.00 1.25
 
 if [ "${#WINNING_QIDS[@]}" -eq 5 ]; then
     QID_LIST=$(IFS=,; echo "${WINNING_QIDS[*]}")
@@ -202,7 +206,6 @@ if [ "${#WINNING_QIDS[@]}" -eq 5 ]; then
         FROM system.query_log
         WHERE current_database = currentDatabase()
           AND query_id IN ($QID_LIST)
-          AND type != 'QueryStart'"
+          AND type != 'QueryStart';
+        SELECT 1;"
 fi
-
-$CLICKHOUSE_CLIENT -q "SELECT 1"
