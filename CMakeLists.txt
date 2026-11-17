@@ -700,6 +700,10 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
             set (CFI_FLAGS "-fsanitize=cfi -fno-sanitize-recover=cfi -fsanitize-trap=cfi")
         endif ()
         set (CFI_FLAGS "${CFI_FLAGS} -fsanitize-ignorelist=${PROJECT_SOURCE_DIR}/cmake/cfi-ignorelist.txt")
+        # Encode integer types by size, as `-Zsanitizer-cfi-normalize-integers` does for Rust: the type ids of an
+        # indirect call between C or C++ and Rust then match (the Rust code is checked in the same link, see
+        # contrib/corrosion-cmake).
+        set (CFI_FLAGS "${CFI_FLAGS} -fsanitize-cfi-icall-experimental-normalize-integers")
         set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS} -fvisibility=default")
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS} -fvisibility=hidden")
         set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS} -fvisibility=hidden")
