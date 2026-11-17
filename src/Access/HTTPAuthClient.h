@@ -22,9 +22,9 @@ struct HTTPAuthClientParams
 {
     Poco::URI uri;
     ConnectionTimeouts timeouts;
-    size_t max_tries{};
-    size_t retry_initial_backoff_ms{};
-    size_t retry_max_backoff_ms{};
+    size_t max_tries;
+    size_t retry_initial_backoff_ms;
+    size_t retry_max_backoff_ms;
     std::vector<String> forward_headers;
 };
 
@@ -56,9 +56,9 @@ public:
             bool last_attempt = attempt + 1 >= max_tries;
             try
             {
-                sendHTTPRequest(*session, request)->finalize();
-                auto body = receiveHTTPResponse(*session, response);
-                return parser.parse(response, body.get());
+                session->sendRequest(request);
+                auto & body_stream = session->receiveResponse(response);
+                return parser.parse(response, &body_stream);
             }
             catch (const Poco::Exception &) // TODO: make retries smarter
             {
@@ -72,9 +72,9 @@ public:
         UNREACHABLE();
     }
 
-    [[nodiscard]] const Poco::URI & getURI() const { return uri; }
+    const Poco::URI & getURI() const { return uri; }
 
-    [[nodiscard]] const std::set<String, HTTPFieldLess> & getForwardHeaders() const { return forward_headers; }
+    const std::set<String, HTTPFieldLess> & getForwardHeaders() const { return forward_headers; }
 
 private:
     const ConnectionTimeouts timeouts;
@@ -94,7 +94,7 @@ public:
     using HTTPAuthClient<TResponseParser>::HTTPAuthClient;
     using Result = HTTPAuthClient<TResponseParser>::Result;
 
-    [[nodiscard]] Result authenticate(const String & user_name, const String & password, const std::map<String, String, HTTPFieldLess> & headers) const
+    Result authenticate(const String & user_name, const String & password, const std::map<String, String, HTTPFieldLess> & headers) const
     {
         Poco::Net::HTTPRequest request{
             Poco::Net::HTTPRequest::HTTP_GET, this->getURI().getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1};

@@ -7,7 +7,8 @@
 #include <Core/Block_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MaterializedCTE.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Core/NamesAndTypes.h>
+#include <Storages/IStorage.h>
 
 #include <Common/MultiVersion.h>
 
@@ -22,7 +23,7 @@ struct MemorySettings;
   * It does not support keys.
   * Data is stored as a set of blocks and is not stored anywhere else.
   */
-class StorageMemory final : public StorageWithCommonVirtualColumns
+class StorageMemory final : public IStorage
 {
 friend class MemorySink;
 
@@ -38,26 +39,21 @@ public:
 
     String getName() const override { return "Memory"; }
 
-    size_t getSize() const { return data.get()->blocks.size(); }
+    size_t getSize() const { return data.get()->size(); }
 
     /// Snapshot for StorageMemory contains current set of blocks
     /// at the moment of the start of query.
     struct SnapshotData : public StorageSnapshot::Data
     {
         std::shared_ptr<const Blocks> blocks;
-        /// The exact number of rows in `blocks`.
-        size_t rows = 0;
-        /// The identity of the blocks for the query condition cache, see `BlocksWithCounts`.
-        UInt64 generation = 0;
-        UInt64 first_block_number = 0;
+        size_t rows_approx = 0;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
-    /// A snapshot: `ALTER ... MODIFY SETTING` installs a new version instead of changing this one, so hold it while reading.
-    MultiVersion<MemorySettings>::Version getMemorySettings() const { return memory_settings.get(); }
+    const MemorySettings & getMemorySettingsRef() const { return *memory_settings; }
 
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -67,34 +63,9 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    size_t getMaxReadStreams(size_t num_streams, ContextPtr) override;
-
     bool supportsParallelInsert() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
     bool supportsColumnsWithDynamicStructure() const override { return true; }
-    bool supportsPinnedSnapshot() const override { return true; }
-
-    /// `PREWHERE` (and the row-level security filter) are applied inside the reading source:
-    /// only the columns of the conditions are read at first, and the remaining columns are read
-    /// only for the blocks where some rows pass and only for the passing rows. For a table with
-    /// `compress = true` this skips decompression of the remaining columns.
-    bool supportsPrewhere() const override { return true; }
-
-    /// Only the table's own stored columns whose values every block really contains: virtual
-    /// columns (e.g. `_table`) are materialized outside the reading source, and a column with a
-    /// `DEFAULT` expression can be missing from the blocks written before `ALTER ... ADD COLUMN`.
-    std::optional<NameSet> supportedPrewhereColumns() const override;
-    bool supportedPrewhereColumnsIncludeSubcolumns() const override { return true; }
-
-    /// Real per-column in-memory sizes (compressed sizes when `compress = true`), so the
-    /// WHERE -> PREWHERE query plan optimization can order conditions by the cost of reading
-    /// their columns. Also shown in `system.columns`.
-    ColumnSizeByName getColumnSizes() const override;
-
-    /// `totalRows` is the exact row count of a committed state of the table (the counter is
-    /// published together with the blocks it describes), so `SELECT count() FROM table` is served
-    /// from metadata.
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override;
 
     /// Smaller blocks (e.g. 64K rows) are better for CPU cache.
     bool prefersLargeBlocks() const override { return false; }
@@ -114,7 +85,7 @@ public:
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder, DDLGuardPtr & ddl_guard) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
 
     std::optional<UInt64> totalRows(ContextPtr) const override;
     std::optional<UInt64> totalBytes(ContextPtr) const override;
@@ -156,9 +127,6 @@ public:
       */
     void delayReadForGlobalSubqueries() { delay_read_for_global_subqueries = true; }
 
-    /// Marks a table created with `CREATE TEMPORARY TABLE`, which is subject to `max_temporary_table_memory_usage`.
-    void markAsTemporaryTable() { is_temporary_table = true; }
-
     /// Stored as a weak_ptr to break the reference cycle: MaterializedCTE owns the StorageMemory
     /// (via its `storage` and `table_holder` members), and this back-pointer lets us recover the
     /// CTE descriptor from the storage. If we kept a shared_ptr here, neither object would ever
@@ -167,48 +135,22 @@ public:
     MaterializedCTEPtr getMaterializedCTE() const { return materialized_cte.lock(); }
 
 private:
-    static VirtualColumnsDescription createVirtuals();
-
     /// Restores the data of this table from backup.
-    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, const ContextPtr & context);
-
-    /// The blocks of the table together with the exact number of rows and bytes in them.
-    /// The counters are a part of the same object, so they are published atomically with the
-    /// blocks they describe: a reader never observes a row count that does not correspond to
-    /// any state the table really had, and `SELECT count()` served from `totalRows` (the trivial
-    /// count optimization) is always the exact number of rows of one of the committed states.
-    struct BlocksWithCounts
-    {
-        Blocks blocks;
-        size_t rows = 0;
-        size_t bytes = 0;
-
-        /// The identity of the blocks for the query condition cache: block `i` is block number
-        /// `first_block_number + i` of the generation, and the same number of the same generation is
-        /// always the same data. A state that is derived from the previous one by appending blocks or by
-        /// removing them from the front (inserts, `max_rows_to_keep`, ...) is a copy that keeps the
-        /// generation; any other state (e.g. after a mutation or `TRUNCATE`) is constructed anew and
-        /// gets a new generation.
-        UInt64 generation = nextGeneration();
-        UInt64 first_block_number = 0;
-
-        static UInt64 nextGeneration();
-    };
-
-    /// Table data belongs to the server: what this drops is not credited to the query, what it keeps is left to the server.
-    void setData(std::unique_ptr<BlocksWithCounts> new_data);
+    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
 
     /// MultiVersion data storage, so that we can copy the vector of blocks to readers.
 
-    MultiVersion<BlocksWithCounts> data;
+    MultiVersion<Blocks> data;
 
     mutable std::mutex mutex;
 
     bool delay_read_for_global_subqueries = false;
-    bool is_temporary_table = false;
     MaterializedCTEWeakPtr materialized_cte;
 
-    MultiVersion<MemorySettings> memory_settings;
+    std::atomic<size_t> total_size_bytes = 0;
+    std::atomic<size_t> total_size_rows = 0;
+
+    std::unique_ptr<MemorySettings> memory_settings;
 
     friend class ReadFromMemoryStorageStep;
 };

@@ -21,30 +21,46 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
-extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-class FunctionConv final : public IFunction
+namespace
+{
+
+bool isStringOrFixedStringOrNativeNumber(const IDataType & arg)
+{
+    return isStringOrFixedString(arg) || isNativeNumber(arg);
+}
+
+}
+
+class FunctionConv : public IFunction
 {
 public:
     static constexpr auto name = "conv";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConv>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 3; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(String | FixedString | NativeNumber, NativeInteger, NativeInteger) -> String";
+        FunctionArgumentDescriptors mandatory_args{
+            {"number", &isStringOrFixedStringOrNativeNumber, nullptr, "String, FixedString or Number"},
+            {"from_base", &isNativeInteger, nullptr, "Integer"},
+            {"to_base", &isNativeInteger, nullptr, "Integer"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args);
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr number_column = arguments[0].column;
-        if (!isString(arguments[0].type))
+        if (!isStringOrFixedString(arguments[0].type))
         {
             ColumnWithTypeAndName string_arg = {number_column, arguments[0].type, arguments[0].name};
             number_column = castColumn(string_arg, std::make_shared<DataTypeString>());
@@ -53,7 +69,7 @@ public:
         const auto * number_const_col = checkAndGetColumnConst<ColumnString>(number_column.get());
         if (!number_col && !number_const_col)
             throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal column {} of first argument of function {}",
                 arguments[0].column->getName(),
                 getName());
@@ -81,11 +97,11 @@ private:
     {
         if (from_base < 2 || from_base > 36 || to_base < 2 || to_base > 36)
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Base is less than 2 or greater than 36 which is not supported");
         if (number.empty())
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Number for conversion is empty");
         std::string clean_number = number;
         bool is_negative = false;
@@ -124,7 +140,7 @@ private:
         catch (...)
         {
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Invalid number format for base conversion in function conv");
 
         }

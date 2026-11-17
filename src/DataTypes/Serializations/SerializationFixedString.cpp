@@ -1,11 +1,9 @@
-#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationFixedString.h>
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
 
 #include <Formats/FormatSettings.h>
-#include <Formats/ParseError.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -27,15 +25,6 @@ namespace ErrorCodes
 }
 
 static constexpr size_t MAX_STRINGS_SIZE = 1ULL << 30;
-
-
-UInt128 SerializationFixedString::getHash(size_t n_)
-{
-    SipHash hash;
-    hash.update("FixedString");
-    hash.update(n_);
-    return hash.get128();
-}
 
 static const char * getEndWithOptionalTrim(const char * pos, size_t n, const FormatSettings & settings)
 {
@@ -105,38 +94,35 @@ void SerializationFixedString::serializeBinaryBulk(const IColumn & column, Write
 }
 
 
-void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
 {
     ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
 
-    /// The column is grown in steps of at most MAX_STRINGS_SIZE bytes, so a `limit` that the stream
-    /// cannot back does not preallocate an arbitrary amount of memory.
-    const size_t elements_per_step = MAX_STRINGS_SIZE / n;
+    size_t skipped_bytes;
 
-    size_t elements_left = limit;
-    while (elements_left)
-    {
-        const size_t bytes_to_read = std::min(elements_per_step, elements_left) * n;
+    if (unlikely(__builtin_mul_overflow(rows_offset, n, &skipped_bytes)))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
+    istr.ignore(skipped_bytes);
 
-        const size_t initial_size = data.size();
-        size_t new_data_size = 0;
-        if (unlikely(__builtin_add_overflow(initial_size, bytes_to_read, &new_data_size)))
-            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
+    size_t initial_size = data.size();
+    size_t max_bytes;
+    size_t new_data_size;
 
-        data.resize(new_data_size);
-        const size_t read_bytes = istr.readBig(reinterpret_cast<char *>(&data[initial_size]), bytes_to_read);
+    if (unlikely(__builtin_mul_overflow(limit, n, &max_bytes)))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
+    if (unlikely(max_bytes > MAX_STRINGS_SIZE))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large sizes of FixedString to deserialize: {}", max_bytes);
+    if (unlikely(__builtin_add_overflow(initial_size, max_bytes, &new_data_size)))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
 
-        if (read_bytes % n != 0)
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data of type FixedString. "
-                "Bytes read:{}. String size:{}.", read_bytes, toString(n));
+    data.resize(new_data_size);
+    size_t read_bytes = istr.readBig(reinterpret_cast<char *>(&data[initial_size]), max_bytes);
 
-        data.resize(initial_size + read_bytes);
+    if (read_bytes % n != 0)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data of type FixedString. "
+            "Bytes read:{}. String size:{}.", read_bytes, toString(n));
 
-        if (read_bytes < bytes_to_read)
-            break;      /// End of the stream.
-
-        elements_left -= bytes_to_read / n;
-    }
+    data.resize(initial_size + read_bytes);
 }
 
 
@@ -210,24 +196,13 @@ static inline bool tryRead(const SerializationFixedString & self, IColumn & colu
     size_t prev_size = data.size();
     try
     {
-        if (reader(data) && SerializationFixedString::tryAlignStringLength(self.getN(), data, prev_size))
-            return true;
-        /// A failed parse must leave the column byte-identical (reader may append partial bytes before returning false).
-        data.resize_assume_reserved(prev_size);
-        return false;
+        return reader(data) && SerializationFixedString::tryAlignStringLength(self.getN(), data, prev_size);
     }
     catch (...) // Ok: tryRead is a try-pattern
     {
         data.resize_assume_reserved(prev_size);
-        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
-        rethrowIfNotParseError();
         return false;
     }
-}
-
-SerializationPtr SerializationFixedString::create(size_t n_)
-{
-    return ISerialization::pooled(getHash(n_), [=] { return new SerializationFixedString(n_); });
 }
 
 

@@ -7,7 +7,6 @@ add_library (Poco::Util ALIAS _poco_util)
 target_compile_options (_poco_util
     PRIVATE
         -Wno-deprecated-dynamic-exception-spec
-        -Wno-disabled-macro-expansion
         -Wno-extra-semi-stmt
         -Wno-newline-eof
         -Wno-old-style-cast

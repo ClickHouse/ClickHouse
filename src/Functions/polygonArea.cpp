@@ -19,7 +19,7 @@ namespace
 {
 
 template <typename Point>
-class FunctionPolygonArea final : public IFunction
+class FunctionPolygonArea : public IFunction
 {
 public:
     static inline const char * name;
@@ -31,34 +31,34 @@ public:
         return std::make_shared<FunctionPolygonArea>();
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] bool isVariadic() const override
+    bool isVariadic() const override
     {
         return false;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(Any) -> Float64";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
         return std::make_shared<DataTypeFloat64>();
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeFloat64>();
+    }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         auto res_column = ColumnFloat64::create();
         auto & res_data = res_column->getData();
@@ -84,7 +84,7 @@ public:
         return res_column;
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override
+    bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
