@@ -40,7 +40,7 @@ def test_cast_keep_nullable(started_cluster):
         ALTER TABLE t UPDATE x = x % 3 = 0 ? NULL : x WHERE x % 2 = 1;　
     """
     )
-    assert "DB::Exception: Cannot convert NULL value to non-Nullable type" in error
+    assert "DB::Exception: Prevent converting Nullable type to non-Nullable type inside mutation" in error
 
     result = node1.query("SELECT * FROM t;")
     assert result.strip() == "0\n1\n2\n3\n4\n5\n6\n7\n8\n9"
