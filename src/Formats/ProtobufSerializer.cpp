@@ -370,7 +370,7 @@ namespace
         /// The column is borrowed from the caller who guarantees mutability,
         /// but it is stored as `ColumnPtr` (shared with the caller), so we cannot use `assumeMutableRef`.
         /// Routed through `borrowColumnRef` so all single-value field serializers share the same helper.
-        IColumn & columnRef() const { return borrowColumnRef(column); }
+        [[nodiscard]] IColumn & columnRef() const { return borrowColumnRef(column); }
 
         template <typename NumberType>
         void writeInt(NumberType value)
