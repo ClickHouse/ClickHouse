@@ -1284,6 +1284,7 @@ AvroDeserializer::AvroDeserializer(
     bool null_as_default_,
     const FormatSettings & settings_,
     const NameSet & absent_columns_,
+    const NameSet & absent_columns_without_default,
     const ColumnMapper * column_mapper)
     : absent_columns(absent_columns_), null_as_default(null_as_default_), settings(settings_)
 {
@@ -1299,7 +1300,7 @@ AvroDeserializer::AvroDeserializer(
         for (size_t i = 0; i < header.columns(); ++i)
         {
             const auto & column = header.getByPosition(i);
-            if (!absent_columns.contains(column.name))
+            if (!absent_columns.contains(column.name) || absent_columns_without_default.contains(column.name))
                 continue;
             if (auto value = column_mapper->getIcebergInitialDefault(column.name, column.type))
                 absent_column_defaults[i] = std::move(*value);
@@ -1374,9 +1375,13 @@ void collectIcebergFieldIds(const Poco::Dynamic::Var & schema, UnorderedSetWithM
 }
 
 /// Iceberg reads a field whose id is not in a data file as NULL. Returns the columns of `header` whose
-/// field id is not in the file, if the file identifies all its top-level fields by id.
+/// field id is not in the file, if the file identifies all its top-level fields by id. Those of them in a struct that is absent
+/// too and has no struct default are NULL whatever their `initial-default`: they are also added to `columns_without_default`.
 NameSet getColumnsAbsentFromIcebergFile(
-    const Block & header, const ColumnMapper & column_mapper, const std::map<std::string, std::vector<uint8_t>> & metadata) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `avro::DataFileReaderBase::metadata` returns std::map
+    const Block & header,
+    const ColumnMapper & column_mapper,
+    const std::map<std::string, std::vector<uint8_t>> & metadata, // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `avro::DataFileReaderBase::metadata` returns std::map
+    NameSet & columns_without_default)
 {
     auto it = metadata.find("avro.schema");
     if (it == metadata.end())
@@ -1410,8 +1415,22 @@ NameSet getColumnsAbsentFromIcebergFile(
     for (const auto & column : header)
     {
         auto field_id = storage_encoding.find(column.name);
-        if (field_id != storage_encoding.end() && !file_field_ids.contains(field_id->second))
-            result.insert(column.name);
+        if (field_id == storage_encoding.end() || file_field_ids.contains(field_id->second))
+            continue;
+        result.insert(column.name);
+        for (String parent = column_mapper.getIcebergParentPath(column_mapper.getIcebergFieldPath(column.name)); !parent.empty();
+             parent = column_mapper.getIcebergParentPath(parent))
+        {
+            auto parent_id = storage_encoding.find(parent);
+            if (parent_id == storage_encoding.end() || file_field_ids.contains(parent_id->second))
+                break;
+            const Field * parent_default = column_mapper.getIcebergInitialDefault(parent);
+            if (!parent_default || parent_default->getType() != Field::Types::Tuple)
+            {
+                columns_without_default.insert(column.name);
+                break;
+            }
+        }
     }
     return result;
 }
@@ -1423,9 +1442,11 @@ void AvroRowInputFormat::readPrefix()
     file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(
         std::make_unique<AvroInputStreamReadBufferAdapter>(*in), MAX_AVRO_SCHEMA_DEPTH);
     NameSet absent_columns;
+    NameSet absent_columns_without_default;
     if (column_mapper)
     {
-        absent_columns = getColumnsAbsentFromIcebergFile(output.getHeader(), *column_mapper, file_reader_ptr->metadata());
+        absent_columns = getColumnsAbsentFromIcebergFile(
+            output.getHeader(), *column_mapper, file_reader_ptr->metadata(), absent_columns_without_default);
         /// Iceberg row lineage columns are stored only by a rewritten data file: a file without them reads them as NULL.
         size_t index = 0;
         for (const auto * name : {"_row_id", "_last_updated_sequence_number"})
@@ -1437,7 +1458,7 @@ void AvroRowInputFormat::readPrefix()
     }
     deserializer_ptr = std::make_unique<AvroDeserializer>(
         output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings,
-        absent_columns, column_mapper.get());
+        absent_columns, absent_columns_without_default, column_mapper.get());
     file_reader_ptr->init();
 }
 

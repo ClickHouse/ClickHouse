@@ -147,6 +147,22 @@ for table, mode in zip(sys.argv[1::2], sys.argv[2::2]):
         schema_id = 2
         for struct in (fields[-2]["type"]["element"], fields[-1]["type"]["value"]):
             struct["fields"].append({"id": new_id(), "name": "y", "required": False, "type": "int", "initial-default": 5})
+    elif mode == "element_member":
+        member, element = new_id(), new_id()
+        fields.append({"id": new_id(), "name": "l", "required": False, "initial-default": [{str(member): 5}, {str(member): 6}],
+            "type": {"type": "list", "element-id": element, "element-required": False, "element": {"type": "struct", "fields": [
+                {"id": member, "name": "element", "required": False, "type": "int"}]}}})
+    elif mode == "absent_parent":
+        def struct_field(name, field, default):
+            result = {"id": new_id(), "name": name, "required": False, "type": {"type": "struct", "fields": [field]}}
+            if default is not None:
+                result["initial-default"] = default
+            return result
+        def x():
+            return {"id": new_id(), "name": "x", "required": False, "type": "int", "initial-default": 6}
+        fields.append(struct_field("n", x(), None))
+        fields.append(struct_field("d", struct_field("s", x(), None), {}))
+        fields.append(struct_field("e", struct_field("s", x(), {}), {}))
     elif mode == "bad_long":
         fields.append({"id": new_id(), "name": "d", "required": False, "type": "long", "initial-default": "abc"})
     elif mode == "bad_timestamp":
@@ -645,6 +661,33 @@ for format in Parquet ORC Avro; do
             SELECT 'null element', l.y, m.values.y FROM icebergLocal('${table}/');
             SELECT 'null element', count() FROM icebergLocal('${table}/') WHERE has(l.y, 5);"
     fi
+
+    # An absent list of structs with a field named `element`: the subcolumn `l.element` is that field of its elements.
+    table="${format}_element_member"
+    create+="
+        CREATE TABLE t_element_member (k Int32) ENGINE = IcebergLocal('${table}/', '${format}');
+        INSERT INTO t_element_member VALUES (1);"
+    evolve+=("${table}" element_member)
+    bind+=("${table}")
+    after+="
+        SELECT 'element member', l FROM icebergLocal('${table}/');
+        SELECT 'element member', l.element FROM icebergLocal('${table}/');
+        SELECT 'element member', count() FROM icebergLocal('${table}/') WHERE has(l.element, 5);"
+
+    # A field of an absent struct that has no default is NULL, whatever its own default; also in an Avro file read through the
+    # subcolumns of the table function's default format.
+    table="${format}_absent_parent"
+    create+="
+        CREATE TABLE t_absent_parent (k Int32) ENGINE = IcebergLocal('${table}/', '${format}');
+        INSERT INTO t_absent_parent VALUES (1);"
+    evolve+=("${table}" absent_parent)
+    bind+=("${table}")
+    before+="
+        SELECT 'absent parent', n, d, e FROM icebergLocal('${table}/');"
+    after+="
+        SELECT 'absent parent', n, d, e FROM icebergLocal('${table}/');
+        SELECT 'absent parent', n.x, d.s.x, e.s.x FROM icebergLocal('${table}/');
+        SELECT 'absent parent', count() FROM icebergLocal('${table}/') WHERE n.x = 6 OR d.s.x = 6;"
 
     ${LOCAL} --allow_insert_into_iceberg=1 -q "${create}"
     null_struct "${null_structs[@]}"

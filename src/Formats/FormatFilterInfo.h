@@ -149,7 +149,8 @@ public:
     }
     /// The path of the struct, list or map that has the field `path`, empty for a top-level field.
     [[nodiscard]] String getIcebergParentPath(const String & path) const;
-    /// The field of the storage encoding that is `path` or has it as a subcolumn (the longest such prefix), empty if none.
+    /// The field of the storage encoding that is the subcolumn path `path` or has it as a subcolumn (the longest such prefix,
+    /// reached from the top level through structs only), empty if none.
     [[nodiscard]] String getIcebergFieldPath(const String & path) const;
 
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).

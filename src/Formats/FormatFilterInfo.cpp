@@ -152,10 +152,21 @@ String ColumnMapper::getIcebergParentPath(const String & path) const
 
 String ColumnMapper::getIcebergFieldPath(const String & path) const
 {
+    /// A subcolumn path does not name list elements and map keys and values (`l.x` is the field `x` of the elements of `l`).
+    auto is_reached_through_structs = [&](String field)
+    {
+        for (const String * struct_path = getIcebergStructPath(field); struct_path; struct_path = getIcebergStructPath(field))
+        {
+            if (struct_path->empty())
+                return true;
+            field = *struct_path;
+        }
+        return false;
+    };
     for (size_t end = path.size(); end != String::npos && end > 0; end = path.rfind('.', end - 1))
     {
         String prefix = path.substr(0, end);
-        if (storage_encoding.contains(prefix))
+        if (storage_encoding.contains(prefix) && is_reached_through_structs(prefix))
             return prefix;
     }
     return {};

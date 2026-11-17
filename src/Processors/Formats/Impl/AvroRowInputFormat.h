@@ -50,7 +50,8 @@ class AvroDeserializer
 {
 public:
     /// `absent_columns` are known to be missing from the file and get defaults even if `allow_missing_fields` is false:
-    /// their `initial-default` from `column_mapper` if any, else the type default. No field of the file is read into them.
+    /// their `initial-default` from `column_mapper` if any (not for `absent_columns_without_default`), else the type default.
+    /// No field of the file is read into them.
     AvroDeserializer(
         const Block & header,
         avro::ValidSchema schema,
@@ -58,6 +59,7 @@ public:
         bool null_as_default_,
         const FormatSettings & settings_,
         const NameSet & absent_columns_ = {},
+        const NameSet & absent_columns_without_default = {},
         const ColumnMapper * column_mapper = nullptr);
     AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
 

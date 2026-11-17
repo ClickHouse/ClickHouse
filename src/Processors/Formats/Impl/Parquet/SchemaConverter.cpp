@@ -85,12 +85,9 @@ bool SchemaConverter::isAbsentFromFile(const String & path) const
     return level_field_ids->has_value() && !(*level_field_ids)->contains(field_id->second);
 }
 
-std::optional<Field> SchemaConverter::getAbsentFieldDefault(const String & path, const DataTypePtr & type) const
+std::optional<Field> SchemaConverter::getAbsentFieldDefault(const String & field, const String & path, const DataTypePtr & type) const
 {
-    if (!column_mapper)
-        return {};
-    const String field = column_mapper->getIcebergFieldPath(path);
-    if (!column_mapper->getIcebergInitialDefault(field) || !isAbsentFromFile(field))
+    if (!column_mapper || !column_mapper->getIcebergInitialDefault(field) || !isAbsentFromFile(field))
         return {};
     return column_mapper->getIcebergInitialDefault(path, type);
 }
@@ -156,7 +153,8 @@ void SchemaConverter::prepareForReading()
         if (found_columns[i])
             continue;
         const auto & missing_column = sample_block->getByPosition(i);
-        auto missing_column_default = getAbsentFieldDefault(missing_column.name, missing_column.type);
+        const String field = column_mapper ? column_mapper->getIcebergFieldPath(missing_column.name) : String{};
+        auto missing_column_default = getAbsentFieldDefault(field, missing_column.name, missing_column.type);
         if (!options.format.parquet.allow_missing_columns && !missing_column_default)
             throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column {} was not found in parquet schema", missing_column.name);
         if (!missing_column_default && addMissingElementOfTupleInArray(i))
@@ -1257,7 +1255,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
                 continue;
             String missing_name = node.name + "." + (tuple_type_hint->hasExplicitNames() ? tuple_type_hint->getNameByPosition(i + 1) : std::to_string(i + 1));
             const DataTypePtr & missing_type = tuple_type_hint->getElement(i);
-            auto missing_column_default = getAbsentFieldDefault(missing_name, missing_type);
+            auto missing_column_default = getAbsentFieldDefault(missing_name, missing_name, missing_type);
             if (!options.format.parquet.allow_missing_columns && !missing_column_default)
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Requested tuple element {} of column {} was not found in parquet schema ({})", tuple_type_hint->getNameByPosition(i + 1), node.getNameForLogging(), element_names_in_file);
 
