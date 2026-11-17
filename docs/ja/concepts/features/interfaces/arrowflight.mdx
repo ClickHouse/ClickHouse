@@ -6,7 +6,9 @@ title: 'Arrow Flight インターフェイス'
 doc_type: 'reference'
 ---
 
-## 概要 {#overview}
+<div id="overview">
+  ## 概要
+</div>
 
 ClickHouse は [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html) プロトコルをサポートしています。これは、[gRPC](https://grpc.io/) 上で [Arrow IPC](https://arrow.apache.org/docs/format/Columnar.html#serialization-and-interprocess-communication-ipc) フォーマットを使用し、効率的な列指向データ転送を実現する高性能な RPC フレームワークです。
 
@@ -23,7 +25,9 @@ ClickHouse は [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight
 * `PollFlightInfo` による段階的な結果取得。
 * `CancelFlightInfo` によるクエリのキャンセル。
 
-## Arrow Flight Server を有効にする {#enabling-server}
+<div id="enabling-server">
+  ## Arrow Flight Server を有効にする
+</div>
 
 Arrow Flight Server を有効にするには、ClickHouse サーバー設定に `arrowflight_port` 設定を追加します。
 
@@ -39,7 +43,9 @@ Arrow Flight Server を有効にするには、ClickHouse サーバー設定に 
 {} <Information> Application: Arrow Flight compatibility protocol: 0.0.0.0:9090
 ```
 
-## TLS 設定 {#tls-configuration}
+<div id="tls-configuration">
+  ## TLS 設定
+</div>
 
 Arrow Flight インターフェイスで TLS を有効にするには、以下の設定を行います。
 
@@ -56,19 +62,27 @@ Arrow Flight インターフェイスで TLS を有効にするには、以下�
 
 TLS が有効な場合、クライアントは `grpc://` ではなく `grpc+tls://` 認証スキームを使用して接続する必要があります。
 
-## 認証 {#authentication}
+<div id="authentication">
+  ## 認証
+</div>
 
 Arrow Flight インターフェイスでは、2 つの認証方法がサポートされています。
 
-### 基本認証 {#basic-auth}
+<div id="basic-auth">
+  ### 基本認証
+</div>
 
 クライアントは、標準の HTTP `Authorization: Basic` ヘッダーを介して、ユーザー名とパスワードで認証します。認証に成功すると、サーバーはレスポンスヘッダーで Bearer トークンを返します。
 
-### ベアラートークン認証 {#bearer-auth}
+<div id="bearer-auth">
+  ### ベアラートークン認証
+</div>
 
 後続のリクエストでは、基本認証で返されたベアラートークンを `Authorization: Bearer <token>` ヘッダーで使用できます。トークンは使用するたびに自動的に更新され、有効期限は `default_session_timeout` サーバー設定 (既定値: 60 秒) に従います。
 
-### Python の例 {#auth-python-example}
+<div id="auth-python-example">
+  ### Python の例
+</div>
 
 ```python
 import pyarrow.flight as flight
@@ -97,7 +111,9 @@ token_pair = client.authenticate_basic_token("default", "password")
 options = flight.FlightCallOptions(headers=[token_pair])
 ```
 
-## セッション管理 {#session-management}
+<div id="session-management">
+  ## セッション管理
+</div>
 
 Arrow Flight インターフェイスは、カスタム gRPC メタデータヘッダーを介して ClickHouse のセッションをサポートします。
 
@@ -114,7 +130,9 @@ Arrow Flight インターフェイスは、カスタム gRPC メタデータヘ�
 
 セッションを使用すると、`SetSessionOptions` アクションで永続的な ClickHouse 設定を指定できます ([DoAction](#doaction) を参照) 。
 
-## サーバー設定リファレンス {#configuration-reference}
+<div id="configuration-reference">
+  ## サーバー設定リファレンス
+</div>
 
 | 設定                                                            | デフォルト   | 説明                                                                                                                                                                                                                     |
 | ------------------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -132,9 +150,13 @@ Arrow Flight インターフェイスは、カスタム gRPC メタデータヘ�
 | `default_session_timeout`                                     | `60`    | デフォルトのセッションタイムアウト (秒) です。Bearer トークンの有効期限も制御します。                                                                                                                                                                       |
 | `max_session_timeout`                                         | `3600`  | 許可されるセッションタイムアウトの最大値 (秒) です。                                                                                                                                                                                           |
 
-## サポート対象のRPCメソッド {#rpc-methods}
+<div id="rpc-methods">
+  ## サポート対象のRPCメソッド
+</div>
 
-### GetFlightInfo {#getflightinfo}
+<div id="getflightinfo">
+  ### GetFlightInfo
+</div>
 
 クエリを実行し、結果のスキーマ、データ取得用チケット付きのエンドポイント、行数、バイト数を含む `FlightInfo` を返します。
 
@@ -163,7 +185,9 @@ for endpoint in info.endpoints:
     print(table.to_pandas())
 ```
 
-### PollFlightInfo {#pollflightinfo}
+<div id="pollflightinfo">
+  ### PollFlightInfo
+</div>
 
 長時間実行されるクエリの結果を、段階的に取得できるようにします。`GetFlightInfo` のようにクエリ全体の完了を待つのではなく、`PollFlightInfo` は結果をブロック単位で返します。
 
@@ -178,7 +202,9 @@ for endpoint in info.endpoints:
   現在の実装では、データブロックが利用可能になるまで待機し、データがない場合に即座に返すことはありません。
 </Note>
 
-### GetSchema {#getschema}
+<div id="getschema">
+  ### GetSchema
+</div>
 
 クエリ全体を実行せずに、クエリ結果の Arrow スキーマを返します。`GetFlightInfo` と同じ種類のディスクリプタを受け付けます。
 
@@ -191,7 +217,9 @@ schema = schema_result.schema
 print(schema)  # x: int32, y: string
 ```
 
-### DoGet {#doget}
+<div id="doget">
+  ### DoGet
+</div>
 
 指定された ticket に対応するデータを取得します。次のいずれかを受け付けます。
 
@@ -209,7 +237,9 @@ reader = client.do_get(ticket, options)
 table = reader.read_all()
 ```
 
-### DoPut {#doput}
+<div id="doput">
+  ### DoPut
+</div>
 
 ClickHouse にデータを送信します。`FlightDescriptor` と Arrow レコードバッチのストリームを受け取ります。
 
@@ -253,11 +283,15 @@ Flight SQL クライアントは、DDL/DML ステートメント (CREATE、INSER
   データ転送に使用できるのは `Arrow` フォーマットのみです。SQL で他のフォーマット (例: `FORMAT JSON`) を指定すると、エラーになります。
 </Note>
 
-### DoAction {#doaction}
+<div id="doaction">
+  ### DoAction
+</div>
 
 名前付きアクションを実行します。サポートされているアクションは次のとおりです。
 
-#### CancelFlightInfo {#cancelflightinfo}
+<div id="cancelflightinfo">
+  #### CancelFlightInfo
+</div>
 
 `FlightInfo` に関連付けられた実行中のクエリをキャンセルします。クエリ ID は `FlightInfo` の `app_metadata` フィールドから抽出されます。また、そのクエリに関連付けられたすべての poll ディスクリプタもキャンセルします。
 
@@ -268,7 +302,9 @@ result = client.cancel_flight_info(cancel_request, options)
 # 成功した場合、result.status は CancelStatus.CANCELLED になる
 ```
 
-#### SetSessionOptions {#setsessionoptions}
+<div id="setsessionoptions">
+  #### SetSessionOptions
+</div>
 
 現在のセッションに対する ClickHouse のサーバー設定を行います。`x-clickhouse-session-id` ヘッダーでセッション ID が設定されている必要があります。
 
@@ -276,11 +312,15 @@ result = client.cancel_flight_info(cancel_request, options)
 
 設定名が不明な場合は、error `INVALID_NAME` が返されます。値をパースできない場合は、error `INVALID_VALUE` が返されます。
 
-#### GetSessionOptions {#getsessionoptions}
+<div id="getsessionoptions">
+  #### GetSessionOptions
+</div>
 
 現在のセッションの ClickHouse 設定とその値をすべて返します。設定名から文字列値へのマップを返します (内部的には `system.settings` にクエリします) 。
 
-#### CreatePreparedStatement {#createpreparedstatement}
+<div id="createpreparedstatement">
+  #### CreatePreparedStatement
+</div>
 
 サーバー側のプリペアドステートメントを作成し、ステートメントハンドルを返します。リクエストには、`?` プレースホルダーを含む SQL クエリテキストが含まれます。
 
@@ -293,24 +333,21 @@ result = client.cancel_flight_info(cancel_request, options)
 
 有効なクエリでスキーマ推論に失敗した場合でも (たとえば、そのクエリではプレースホルダーを `NULL` に置き換えることが有効でない場合) 、ClickHouse はプリペアドステートメントを作成し、`dataset_schema` を含めずにハンドルを返します。
 
-`dataset_schema` は、Flight SQL 仕様が意図しているとおり、あくまで最善の推測です。仕様では、結果スキーマはパラメータに依存する可能性があり、サーバーは最善の推測を返すべきであり、クライアントはそのスキーマが正確であると想定してはならないとされています。これに依存しないでください。データを表すスキーマを得るには、ステートメントを実行してください。ClickHouse では、次の 2 つの理由により、実際に返されるものと異なる場合があります。
-
-* 推論では各 `?` を `NULL` に置き換えるため、結果カラムを決定するプレースホルダーは、後でバインドする値ではなくその `NULL` から型付けされます。`SELECT ? AS x` では `Nothing` 型のカラムが推論されますが、`5` をバインドすると `UInt8` が返されます。`SELECT id, name FROM t WHERE id = ?` のように、predicate の中でのみ使用されるプレースホルダーでは、結果の型はテーブルから決まるため、この問題は発生しません。
-* Arrow に同等の型が存在しないカラムは、[`output_format_arrow_unsupported_types`](/ja/reference/settings/formats/output-format) から Arrow の型が決まりますが、これは呼び出しごとに、その呼び出しを行うセッションから解決されます。ハンドルは単一のセッションではなくユーザーに属するため、後の呼び出しでは異なる解決結果となり、`utf8` と通知されていたところで `binary` が返される、またはその逆が起こることがあります。プリペアドクエリ自体の中でモードを設定すれば、両方について固定できます。
-
 プリペアドステートメントは、単一のセッションではなく、認証されたユーザーに属します。同じユーザーとして複数のセッションを開いている場合、それらのどのセッションからでも同じステートメントハンドルを実行、再バインド、クローズできます。
 
 他のユーザーは、自分で作成していないステートメントハンドルを実行、バインド、またはクローズできません。
 
 `arrowflight.prepared_statements_lifetime_seconds` は有効期限の動作を制御します。
 
-* `> 0`: 設定された値をステートメントの有効期間として使用します。セッションに紐づくステートメントとセッションレスステートメントの両方で、リクエストのたびに有効期限が更新されます。
+* `> 0`: 設定された値をステートメントの有効期間として使用します。セッションに紐づくステートメントとセッションに紐づかないステートメントの両方で、リクエストのたびに有効期限が更新されます。
 * `0`: プリペアドステートメントは自動的に期限切れになりません。
 * `-1` (デフォルト): ステートメントがセッション内で作成された場合、その有効期間はそのセッションのタイムアウトに従い、そのセッション内のリクエストごとに更新されます。セッションなしでステートメントが作成された場合、自動的に期限切れにはなりません。
 
 期限切れになったステートメントは削除され、`arrowflight.max_prepared_statements_per_user` のカウント対象にも含まれなくなります。
 
-#### ClosePreparedStatement {#closepreparedstatement}
+<div id="closepreparedstatement">
+  #### ClosePreparedStatement
+</div>
 
 リクエストに空でないステートメントハンドルが含まれている場合、プリペアドステートメントを閉じ、関連するサーバー側リソースを解放します。
 
@@ -321,11 +358,15 @@ ClickHouse は、ハンドルが空の場合、`ClosePreparedStatement` によ�
 
 プリペアドステートメントがセッション内で (`x-clickhouse-session-id` を介して) 作成された場合、そのセッションが閉じられると、そのステートメントも自動的に閉じられます。
 
-## Flight SQL コマンド {#flight-sql-commands}
+<div id="flight-sql-commands">
+  ## Flight SQL コマンド
+</div>
 
 `CMD` ディスクリプタにシリアライズされた [Flight SQL protobuf](https://arrow.apache.org/docs/format/FlightSql.html) メッセージが含まれている場合、ClickHouse は以下のコマンドを処理します。
 
-### GetFlightInfo / GetSchema でサポート {#flightsql-getflightinfo}
+<div id="flightsql-getflightinfo">
+  ### GetFlightInfo / GetSchema でサポート
+</div>
 
 | Command                         | Description                                                                    |
 | ------------------------------- | ------------------------------------------------------------------------------ |
@@ -338,7 +379,9 @@ ClickHouse は、ハンドルが空の場合、`ClosePreparedStatement` によ�
 | `CommandGetPrimaryKeys`         | 指定したテーブルの主キーを構成するキーカラムを取得します。                                                  |
 | `CommandPreparedStatementQuery` | ハンドルで指定した、プリペアドステートメントの `SELECT` 形式のステートメントを実行します。                                     |
 
-### DoPut 経由でサポートされるもの {#flightsql-doput}
+<div id="flightsql-doput">
+  ### DoPut 経由でサポートされるもの
+</div>
 
 | Command                          | Description                                                                                                                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -347,7 +390,9 @@ ClickHouse は、ハンドルが空の場合、`ClosePreparedStatement` によ�
 | `CommandPreparedStatementQuery`  | `DoPut` 経由で送信する際にプリペアドステートメントのパラメータ値をバインドし、その後、ステートメントハンドルを含む `DoPutPreparedStatementResult` を返します。受け付けられるパラメータセットは 1 つ (1 行) のみで、バインドする値の数は `?` プレースホルダーの数と完全に一致している必要があります。 |
 | `CommandPreparedStatementUpdate` | ハンドルを使用してプリペアド DDL/DML ステートメントを実行し、影響を受けた行数を返します。                                                                                                                             |
 
-### ClickHouse でサポートされていないもの {#flightsql-not-implemented}
+<div id="flightsql-not-implemented">
+  ### ClickHouse でサポートされていないもの
+</div>
 
 これらのコマンドは ClickHouse が提供していない機能に対応しているため、Arrow Flight SQL インターフェイスではサポートされていません。
 
@@ -358,7 +403,9 @@ ClickHouse は、ハンドルが空の場合、`ClosePreparedStatement` によ�
 | `CommandGetImportedKeys`        | ClickHouse はリレーショナルデータベースではなく、外部キー制約を実装していないため、インポートされたキーのメタデータは利用できません。  |
 | `CommandStatementSubstraitPlan` | ClickHouse は Substrait プランをサポートしていません。                                    |
 
-## 完全な使用例 {#complete-example}
+<div id="complete-example">
+  ## 完全な使用例
+</div>
 
 ```python title="Query"
 import pyarrow as pa
@@ -398,36 +445,17 @@ for endpoint in info.endpoints:
 2   3     c
 ```
 
-## データフォーマット {#data-format}
+<div id="data-format">
+  ## データフォーマット
+</div>
 
-すべてのデータは Apache Arrow IPC フォーマットで転送されます。サポートされるのは `Arrow` フォーマットのみで、他の ClickHouse フォーマット (例: `FORMAT JSON`、`FORMAT CSV`) を指定するとエラーになります。
+すべてのデータは Apache Arrow IPC フォーマットで転送されます。サポートされるのは `Arrow` フォーマットのみで、ほかの ClickHouse フォーマット (例: `FORMAT JSON`、`FORMAT CSV`) を指定するとエラーになります。
 
-ClickHouse データ型は、シリアライゼーション時に Arrow の型へマッピングされます。Arrow Flight は常に canonical な Arrow マッピングを使用し、`Arrow` および `ArrowStream` 出力フォーマットとは異なり、型の表現方法を変更する `output_format_arrow_*` 系の設定には従い**ません**。`output_format_arrow_string_as_string`、`output_format_arrow_low_cardinality_as_dictionary`、`output_format_arrow_date_as_uint16`、`output_format_arrow_fixed_string_as_fixed_byte_array`、および dictionary インデックス関連の設定は、ここでは効果がありません。したがって、同一のクエリであっても Arrow Flight 経由では `FORMAT Arrow` 経由と異なるスキーマになることがありますが、これは次の 2 つの理由による意図的な設計です。
+ClickHouse のデータ型は、シリアライゼーション時に Arrow 型にマッピングされます。設定 `output_format_arrow_unsupported_types_as_binary` は、未サポートの ClickHouse データ型をバイナリブロブとしてシリアライズするかどうかを制御します。
 
-* Flight SQL はメタデータ応答のスキーマを固定しています。たとえば `CommandGetTables` は `catalog_name: utf8, db_schema_name: utf8, table_name: utf8 not null, table_type: utf8 not null, table_schema: bytes not null` を返す必要があります。session setting によってこれらの `utf8` カラムが `binary` に変わってしまうと、ClickHouse はあらゆる Flight SQL ドライバーに対して非準拠となり、さらに ClickHouse が `table_schema` 内で公開するテーブルごとのスキーマも変わってしまいます。
-* Flight クライアントは、スキーマとデータを別々の呼び出し (`GetFlightInfo` または `GetSchema`、続いて `DoGet`) で取得します。スキーマを変更し得る設定が存在すると、その間に session が変化した場合に、公開されたスキーマと実際に配信されるストリームが食い違う余地が生まれます。
-
-唯一の例外は、`JSON`、`Dynamic`、`QBit`、`AggregateFunction` のように Arrow に対応する型がまったく存在しないケースです。基準とすべき canonical なマッピングがないため、ClickHouse は何らかの表現を選択せざるを得ず、[`output_format_arrow_unsupported_types`](/ja/reference/settings/formats/output-format) でどの表現を使うかを指定できます。
-
-| 値                 | 動作                                                                               |
-| ----------------- | -------------------------------------------------------------------------------- |
-| `throw`           | クエリが拒否されます。                                                                      |
-| `text`            | 各行の値を text form で Arrow の `Utf8` カラムとして出力します — `CAST(col AS String)` が返すものと同じです。 |
-| `binary` (デフォルト)  | 各行の値をバイナリ形式で Arrow の `Binary` カラムとして出力します — `RowBinary` が用いる encoding です。        |
-
-`AggregateFunction` カラムは、`text` モードであっても Arrow の `Binary` カラムのままとなる唯一の型です。その text form は生の aggregate state であり valid UTF-8 ではない一方、Arrow の `Utf8` カラムは valid UTF-8 を保持しなければならないためです。読みやすい値が必要な場合は `finalizeAggregation` を使用してください。
-
-同じ理由から、ClickHouse は `text` の値に含まれるすべての invalid UTF-8 sequence を、`Utf8` カラムへ書き込む前に U+FFFD (`�`) に置き換えます。`String` を保持する `Dynamic` はそのバイト列をそのままシリアライズし、その内容は任意のバイトになり得るため、この処理がなければカラムが Arrow 仕様に違反し、厳格なクライアントに拒否される可能性があります。変化するのは、もともと valid text ではない値だけです。バイト列を厳密に保持する必要がある場合は `binary` モードを使用してください。
-
-`output_format_arrow_string_as_string` は、`FORMAT Arrow` の場合も含めてこれらのカラムには適用されません。この設定が制御するのは実際の `String` および `FixedString` カラムのみです。したがって、`clickhouse.opaque` カラムの Arrow 型は、保持している encoding を常に示します。text form であれば `Utf8`、バイナリ形式であれば `Binary` です。
-
-これが、`AggregateFunction` カラムでは問題にならないにもかかわらず、`Dynamic` に保持された aggregate state が `text` モードでは情報を失う理由です。カラムは `Dynamic` として型付けされるため各行が何を保持しているかは分からず、しかもスキーマは値を 1 つも見ない段階で確定するため、その state に専用の `Binary` カラムを割り当てることはできません。保持したい場合は `binary` モードを使用してください。`Variant` は取り得る型を列挙するため、その中に含まれる `AggregateFunction` は専用の `Binary` の子を持ち、影響を受けません。
-
-こうしたカラムは、それ以外の点では本物の `Utf8`/`Binary` カラムと区別できないため、Arrow の extension 型として宣言されます。フィールドのメタデータには `ARROW:extension:name` = `clickhouse.opaque` が保持され、元の ClickHouse 型名は `ARROW:extension:metadata` に格納されます。extension 名を認識しないクライアントは、Arrow 仕様が定めるとおり、素の storage 型として認識します。nested カラムはそれぞれ自身のフィールドにタグ付けされるため、`Array(JSON)` ではその子がタグを持ち、`Map(JSON, ...)` ではそのキーがタグを持ちます。コンテナ自体ではありません。
-
-従来のブール値設定 `output_format_arrow_unsupported_types_as_binary` も引き続き使用でき、`0` の場合は `throw`、`1` の場合は `binary` と同等です。この設定は、`output_format_arrow_unsupported_types` がデフォルト値のままの場合にのみ参照されます。
-
-## 互換性 {#compatibility}
+<div id="compatibility">
+  ## 互換性
+</div>
 
 Arrow Flight インターフェイスは、Arrow Flight または Arrow Flight SQL プロトコルをサポートするあらゆるクライアントやツールと互換性があります。具体的には、次のようなものが含まれます。
 
@@ -440,14 +468,18 @@ Arrow Flight インターフェイスは、Arrow Flight または Arrow Flight S
 
 お使いのツール向けにネイティブの ClickHouse コネクタ (例: JDBC、ODBC、ネイティブプロトコル) が利用できる場合は、パフォーマンス上の理由やフォーマット互換性のために Arrow Flight が特に必要でない限り、そちらを優先して使用してください。
 
-## クライアント側のArrowFlight機能 {#client-side}
+<div id="client-side">
+  ## クライアント側のArrowFlight機能
+</div>
 
 ClickHouseは、外部のArrow Flightサーバーからデータを読み取るFlightクライアントとしても動作します。詳しくは、以下を参照してください。
 
 * [ArrowFlightテーブルエンジン](/ja/reference/engines/table-engines/integrations/arrowflight)
 * [arrowFlightテーブル関数](/ja/reference/functions/table-functions/arrowflight)
 
-## 関連項目 {#see-also}
+<div id="see-also">
+  ## 関連項目
+</div>
 
 * [Apache Arrow Flight 仕様](https://arrow.apache.org/docs/format/Flight.html)
 * [Apache Arrow Flight SQL 仕様](https://arrow.apache.org/docs/format/FlightSql.html)

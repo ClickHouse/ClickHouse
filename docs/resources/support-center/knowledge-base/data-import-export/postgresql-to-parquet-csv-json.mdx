@@ -12,7 +12,7 @@ This one is easy with `clickhouse-local`:
 - Use the [`postgresql` table function](/reference/functions/table-functions/postgresql) to read the data
 - Use the `INTO OUTFILE _filename_ FORMAT` clause and specify the desired output format
 
-The output format can be any of the supported [output formats](/reference/formats/index) in ClickHouse. Let's look at a few examples...
+The output format can be any of the supported [ouput formats](/reference/formats/index) in ClickHouse. Let's look at a few examples...
 
 These examples use `clickhouse-local`, which is a part of the ClickHouse binary. Download it using the following:
 
@@ -54,7 +54,7 @@ Because the name of the output file has a `.parquet` extension, ClickHouse assum
 </Note>
 
 ## Export PostgreSQL to CSV {#export-postgresql-to-csv}
-It's the same as for Parquet, except we specify a more appropriate filename for the output:
+It's the same as for Parquet, except we specify a more approriate filename for the output:
 
 ```bash
 ./clickhouse local -q "SELECT * FROM

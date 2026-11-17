@@ -381,11 +381,11 @@ public:
     VectorWithMemoryTracking<float> remainder;
     VectorWithMemoryTracking<float> weights;
 
-    [[nodiscard]] float seasonal_strength() const {
+    float seasonal_strength() const {
         return strength(seasonal, remainder);
     }
 
-    [[nodiscard]] float trend_strength() const {
+    float trend_strength() const {
         return strength(trend, remainder);
     }
 };

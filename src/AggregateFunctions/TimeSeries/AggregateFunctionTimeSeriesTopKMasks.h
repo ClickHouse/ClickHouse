@@ -95,7 +95,7 @@ public:
             return "timeSeriesLimitKMasks";
     }
 
-    [[nodiscard]] String getName() const override { return getNameImpl(); }
+    String getName() const override { return getNameImpl(); }
 
     static DataTypePtr createResultType()
     {
@@ -110,7 +110,7 @@ public:
     {
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

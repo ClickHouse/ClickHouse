@@ -40,7 +40,7 @@ private:
         ObjectStorageKeyGeneratorPtr key_generator_,
         const String & disk_name_,
         bool for_disk_s3_ = true,
-        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = {},
+        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] -> std::unique_ptr<const S3::Client>{ return nullptr; },
         bool client_restricts_server_credentials_ = true)
         : uri(uri_)
         , disk_name(disk_name_)
@@ -103,8 +103,6 @@ public:
         bool with_tags,
         const std::optional<std::string> & start_after) const override;
 
-    bool supportsPrefixListing() const override { return true; }
-
     /// Uses `DeleteObjectRequest`.
     void removeObjectIfExists(const StoredObject & object) override;
 
@@ -124,7 +122,7 @@ public:
 
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
 
-    void copyObject( /// NOLINT
+    String copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
         const ReadSettings & read_settings,
@@ -155,9 +153,6 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
-    /// An object becomes visible only on the completion of `PutObject` or `CompleteMultipartUpload`.
-    bool supportsAtomicWrite() const override { return true; }
-
     ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
     bool isReadOnly() const override { return s3_settings.get()->request_settings[S3RequestSetting::read_only]; }
@@ -166,17 +161,9 @@ public:
     std::shared_ptr<const S3::Client> tryGetS3StorageClient() override;
 
     bool tryRefreshCredentialsViaCallback() override;
-    bool hasCredentialsRefreshCallback() const override { return static_cast<bool>(credentials_refresh_callback); }
 
     S3::URI getURI() const { return uri; }
     S3Settings getS3Settings() const { return *s3_settings.get(); }
-
-    ObjectStoragePtr cloneImpl() const override;
-
-    /// Throws `ACCESS_DENIED` if the client was built with `s3_allow_server_credentials_in_user_queries` and the session
-    /// of `context` is restricted. Does not change the client.
-    void checkSessionMayUseServerCredentials(const ContextPtr & context) const;
-
 private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists, StoredObjects * successful_objects = nullptr);
@@ -191,8 +178,9 @@ private:
     mutable MultiVersion<S3::Client> client;
     /// The user-query credential restriction mode the current `client` was built under (initialized by the
     /// caller from the policy used to build the initial client -- e.g. a table created with the opt-in starts
-    /// `false`). Only a forced rebuild in `applyNewSettings` changes it. Defaults to restricted
-    /// (the server default) for callers that do not pass an explicit value.
+    /// `false`). `applyNewSettings` rebuilds the client when a session with a different restriction mode accesses
+    /// the storage, so a restricted session never reuses a credentialed client built for an opt-in session (and
+    /// vice versa). Defaults to restricted (the server default) for callers that do not pass an explicit value.
     /// Atomic: `applyNewSettings` can run concurrently on a shared storage.
     mutable std::atomic<bool> client_restricts_server_credentials = true;
     MultiVersion<S3Settings> s3_settings;

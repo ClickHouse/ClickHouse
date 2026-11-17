@@ -32,15 +32,15 @@ public:
     static constexpr auto name = "naiveBayesNgrams";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNaiveBayesNgrams>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3, 4}; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3, 4}; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
@@ -55,7 +55,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const UInt64 n = arguments[1].column->getUInt(0);
         if (n == 0 || n > MAX_NGRAM_SIZE)
@@ -172,7 +172,7 @@ REGISTER_FUNCTION(NaiveBayesNgrams)
                        "[`NAIVE_BAYES`](/reference/statements/create/dictionary/layouts/naive-bayes) layout): "
                        "`byte`, `codepoint`, or `token` mode, with optional boundary padding. Use it to build the "
                        "pre-aggregated `(ngram, class_id, count)` training data such a dictionary consumes, so the training "
-                       "n-grams match exactly what [`naiveBayesClassifier`](/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifier) produces at query time.",
+                       "n-grams match exactly what [`naiveBayesClassifier`](/reference/functions/regular-functions/machine-learning-functions#naivebayesclassifier) produces at query time.",
         .syntax = "naiveBayesNgrams(text, n, mode[, start_token, end_token])",
         .arguments
         = {{"text", "Text to split into n-grams.", {"String"}},

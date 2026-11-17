@@ -1,6 +1,5 @@
 #include <Columns/ColumnVector.h>
 #include <Core/callOnTypeIndex.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
@@ -26,29 +25,29 @@ namespace DB
     class ExecutableFunctionRunningConcurrency final : public IExecutableFunction
     {
     public:
-        [[nodiscard]] String getName() const override
+        String getName() const override
         {
             return "runningConcurrency";
         }
 
-        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             return executeForType(arguments, input_rows_count);
         }
 
-        [[nodiscard]] bool useDefaultImplementationForConstants() const override
+        bool useDefaultImplementationForConstants() const override
         {
             return true;
         }
 
-        [[nodiscard]] bool isDeterministicInScopeOfQuery() const override
+        bool isDeterministicInScopeOfQuery() const override
         {
             return false;
         }
 
     private:
         template <typename ArgDataType>
-        [[nodiscard]] ColumnPtr executeTyped(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+        ColumnPtr executeTyped(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
         {
             using ColVecArg = typename ArgDataType::ColumnType;
             const ColVecArg * col_begin = checkAndGetColumn<ColVecArg>(arguments[0].column.get());
@@ -95,7 +94,7 @@ namespace DB
             return col_concurrency;
         }
 
-        [[nodiscard]] ColumnPtr executeForType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+        ColumnPtr executeForType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
         {
             WhichDataType which(arguments[0].type);
             if (which.isDate())
@@ -176,20 +175,15 @@ namespace DB
 
         FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
         {
-            /// `getReturnTypeImpl` is called on `LowCardinality`-stripped types, so strip them here too:
-            /// otherwise the checks below reject a `LowCardinality(DateTime)` pair the function handles.
-            const auto begin_type = recursiveRemoveLowCardinality(arguments[0].type);
-            const auto end_type = recursiveRemoveLowCardinality(arguments[1].type);
-
             // The type of the second argument must match with that of the first one.
-            if (unlikely(!end_type->equals(*begin_type)))
+            if (unlikely(!arguments[1].type->equals(*(arguments[0].type))))
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} must be called with two arguments having the same type.", getName());
             }
 
             // Validate the argument type early so that unsupported types
             // (e.g. NULL literals) are rejected before execution.
-            WhichDataType which(begin_type);
+            WhichDataType which(arguments[0].type);
             if (!which.isDate() && !which.isDateTime() && !which.isDateTime64())
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -200,9 +194,9 @@ namespace DB
             return std::make_unique<FunctionBaseRunningConcurrency>(argument_types, return_type);
         }
 
-        String getSignatureString() const override
+        DataTypePtr getReturnTypeImpl(const DataTypes &) const override
         {
-            return "(DateOrDateTime, DateOrDateTime) -> UInt32";
+            return std::make_shared<DataTypeUInt32>();
         }
 
         size_t getNumberOfArguments() const override
@@ -253,7 +247,7 @@ If events from different data blocks overlap then they can not be processed corr
 </Tip>
 
 <Warning title="Deprecated">
-It is advised to use [window functions](/reference/functions/window-functions/index) instead.
+It is advised to use [window functions](/reference/functions/window-functions) instead.
 </Warning>
 )";
         FunctionDocumentation::Syntax syntax = "runningConcurrency(start, end)";

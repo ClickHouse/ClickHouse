@@ -68,7 +68,7 @@ public:
     {
     }
 
-    [[nodiscard]] bool isCompressed() const { return compressed; }
+    bool isCompressed() const { return compressed; }
     void setCompressed() { compressed = true; }
 
     void insert(T x)
@@ -298,7 +298,7 @@ public:
     }
 
 private:
-    [[nodiscard]] QueryResult findApproxQuantile(size_t index, Int64 min_rank_at_index, double target_error, double percentile) const
+    QueryResult findApproxQuantile(size_t index, Int64 min_rank_at_index, double target_error, double percentile) const
     {
         Stats curr_sample = sampled[index];
         Int64 rank = static_cast<Int64>(std::ceil(percentile * static_cast<Float64>(count)));
@@ -556,7 +556,7 @@ void registerAggregateFunctionsQuantileApprox(AggregateFunctionFactory & factory
 void registerAggregateFunctionsQuantileApprox(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
     FunctionDocumentation::Description description = R"(
 Computes the [`quantile`](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [Greenwald-Khanna](http://infolab.stanford.edu/~datar/courses/cs361a/papers/quantiles.pdf) algorithm.
@@ -608,7 +608,7 @@ SELECT quantileGK(100, 0.25)(number + 1) FROM numbers(1000);
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileGK::name, {createAggregateFunctionQuantile<FuncQuantileGK>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction(NameQuantileGK::name, {createAggregateFunctionQuantile<FuncQuantileGK>, documentation});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously using the [Greenwald-Khanna](http://infolab.stanford.edu/~datar/courses/cs361a/papers/quantiles.pdf) algorithm.
