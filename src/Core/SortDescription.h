@@ -38,8 +38,7 @@ struct FillColumnDescription
     Field fill_staleness;   /// Default = Null - should not be considered
     std::optional<IntervalKind> staleness_kind;
     DataTypePtr fill_column_type;
-    /// Whether the column can hold NULL. If not, a NULL in the filling row marks a column without a value (no FROM).
-    bool fill_column_nullable = false;
+    bool fill_column_nullable = false;  /// `fill_column_type` has `Nullable` removed
     /// The inclusive range of the values a fill column of `fill_column_type` can hold - the range of the storage
     /// type intersected with the calendar window for `Date32`/`DateTime64` - precomputed once so that the per-row
     /// representability check is two comparisons. Null bounds mean the type is not checked (see

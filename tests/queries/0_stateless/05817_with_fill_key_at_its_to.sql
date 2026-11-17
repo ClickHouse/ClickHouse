@@ -22,7 +22,12 @@ ORDER BY i WITH FILL, j WITH FILL TO 2, k WITH FILL TO 3;
 SELECT * FROM values('i Int64, k Int64', (1, 0), (3, 5), (3, 8))
 ORDER BY i WITH FILL TO 1 STALENESS 5, k WITH FILL;
 
--- A NULL in a fill key that is not the last one, in the next row or in the filling row.
+-- A fill key without FROM after a key with FROM: its NULL in the filling row is not a value.
+
+SELECT * FROM values('a Int64, b Int64, c Int64', (1, 0, 0), (2, 3, 0))
+ORDER BY a WITH FILL FROM 2, b WITH FILL, c WITH FILL FROM -1 TO 1;
+
+-- A Nullable fill key: the rows stay in order.
 
 SELECT * FROM values('i Nullable(Int64), k Int64', (1, 0), (3, 5), (NULL, 2))
 ORDER BY i WITH FILL TO 1, k WITH FILL;
@@ -36,17 +41,8 @@ ORDER BY i DESC NULLS LAST WITH FILL TO 3, k WITH FILL;
 SELECT * FROM values('i Int64, j Nullable(Int64), k Int64', (0, 1, 0), (0, 3, 5), (0, NULL, 2))
 ORDER BY i WITH FILL, j WITH FILL TO 1, k WITH FILL;
 
-SELECT * FROM values('i Nullable(Int64), k Int64', (1, 0), (NULL, 2), (NULL, 5))
-ORDER BY i WITH FILL, k WITH FILL TO 8;
+SELECT * FROM values('i Nullable(Int64), k Nullable(Int64)', (NULL, 2), (0, 0), (1, 3), (3, 0))
+ORDER BY i NULLS FIRST WITH FILL, k DESC NULLS LAST WITH FILL FROM 2;
 
-SELECT * FROM values('i Int64, k Nullable(Int64)', (2, NULL), (2, 3), (2, 4))
-ORDER BY i WITH FILL TO 0, k NULLS FIRST WITH FILL FROM 0 TO 2;
-
-SELECT * FROM values('i Nullable(Int64), k Int64', (NULL, 0), (1, 5), (1, 8))
-ORDER BY i NULLS FIRST WITH FILL, k WITH FILL;
-
-SELECT * FROM values('a Nullable(Int64), b Nullable(Int64), c Nullable(Int64)', (NULL, 0, 3), (NULL, NULL, NULL), (NULL, NULL, 1))
-ORDER BY a NULLS FIRST WITH FILL TO -1, b DESC WITH FILL TO 4, c NULLS FIRST WITH FILL TO 5;
-
-SELECT * FROM values('i Nullable(Int64), k Nullable(Int64)', (0, 3), (NULL, 1), (1, 4))
-ORDER BY i DESC NULLS FIRST WITH FILL TO 1 STALENESS -3, k NULLS FIRST WITH FILL;
+SELECT DISTINCT i FROM (SELECT * FROM values('i Nullable(Int64), k Nullable(Int64)', (NULL, 2), (0, 0), (1, 3), (3, 0))
+ORDER BY i NULLS FIRST WITH FILL, k DESC NULLS LAST WITH FILL FROM 2);

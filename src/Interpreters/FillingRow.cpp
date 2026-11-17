@@ -308,23 +308,24 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     const size_t row_size = size();
     size_t pos = 0;
 
-    /// A next row of NULLs only (as at the end of the range) leaves every column to be filled towards its constraint.
-    const bool towards_constraints = next_original_row.isNull();
+    /// NULL is unordered against values here, so with a Nullable fill column the group of a row is unknown and a key at
+    /// `min(TO, next value)` counts as reached.
+    bool nullable_fill_column = false;
+    for (size_t i = 0; i < row_size; ++i)
+        nullable_fill_column |= getFillDescription(i).fill_column_nullable;
 
     /// Find position we need to increment for generating next row.
     for (; pos < row_size; ++pos)
     {
-        if (row[pos].isNull() && !getFillDescription(pos).fill_column_nullable)
+        if (row[pos].isNull())
             continue;
 
         /// The cursor is in the group of the next row for a column only when it holds the value of the next row.
-        const Field & target = towards_constraints ? constraints[pos] : next_original_row[pos];
+        const Field & target = nullable_fill_column ? findBorder(constraints[pos], next_original_row[pos], getDirection(pos))
+            : next_original_row[pos].isNull() ? constraints[pos] : next_original_row[pos];
         logDebug("target: {}", target);
 
-        if (towards_constraints && (row[pos].isNull() || target.isNull()))
-            continue;
-
-        if (!equals(row[pos], target))
+        if (!target.isNull() && !equals(row[pos], target))
             break;
     }
 
@@ -342,17 +343,14 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     if (!next_original_row[pos].isNull() && less(next_original_row[pos], row[pos], getDirection(pos)))
         return false;
 
-    /// The same for a NULL on one side: it sorts first under NULLS FIRST and last under NULLS LAST.
-    if (!towards_constraints && row[pos].isNull() != next_original_row[pos].isNull())
-    {
-        const bool nulls_last = sort_description[pos].nulls_direction == getDirection(pos);
-        if (next_original_row[pos].isNull() != nulls_last)
-            return false;
-    }
+    /// Towards another group, the following columns are walked to their constraints before the step is refused below.
+    if ((nullable_fill_column || next_original_row[pos].isNull()) && !constraints[pos].isNull()
+        && !less(row[pos], constraints[pos], getDirection(pos)))
+        return false;
 
     /// A NaN border (a NaN `fill_to` or a staleness border derived from a NaN row) generates nothing: `accurateLess`
-    /// orders NaN greatest, so the comparison with it below cannot stop an ascending fill towards it, and the sequence
-    /// would run until the step stagnates in the float precision.
+    /// orders NaN greatest, so the comparison above cannot stop an ascending fill towards it, and the sequence would
+    /// run until the step stagnates in the float precision.
     if (constraints[pos].isNaN())
         return false;
 
@@ -409,10 +407,6 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         value_changed = true;
         return true;
     }
-
-    /// A NULL does not step, and a NULL in the next row does not bound the step, only a constraint does.
-    if (row[pos].isNull() || (next_original_row[pos].isNull() && constraints[pos].isNull()))
-        return false;
 
     auto next_value = row[pos];
     getFillDescription(pos).step_func(next_value, 1);
@@ -474,15 +468,8 @@ bool FillingRow::shift(const FillingRow & next_original_row, bool& value_changed
 
     for (size_t pos = 0; pos < size(); ++pos)
     {
-        if (equals(row[pos], next_original_row[pos]))
+        if (row[pos].isNull() || next_original_row[pos].isNull() || equals(row[pos], next_original_row[pos]))
             continue;
-
-        if (row[pos].isNull() && !getFillDescription(pos).fill_column_nullable)
-            continue;
-
-        /// A NULL on one side: the next row is in another group of this column, which no jump reaches.
-        if (row[pos].isNull() || next_original_row[pos].isNull())
-            return false;
 
         if (less(next_original_row[pos], row[pos], getDirection(pos)))
             return false;
