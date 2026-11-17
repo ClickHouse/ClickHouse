@@ -33,6 +33,7 @@ TEST(ColumnsSubstreams, ReadTextThrowsOnInvalidColumnEntry)
 {
     const std::vector<String> files = {
         "columns substreams version: 1\n1 columns:\n0 substreams for column `c`:\n",
+        "columns substreams version: 1\n1 columns:\n1 substreams for column `c`:\n\t\n",
         "columns substreams version: 1\n1 columns:\n2 substreams for column `c`:\n\tc\n\tc\n",
     };
 

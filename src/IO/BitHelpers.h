@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 
 #include <cstring>
+#include <cassert>
 
 
 namespace DB
@@ -83,18 +84,18 @@ public:
     }
 
 
-    [[nodiscard]] bool eof() const
+    bool eof() const
     {
         return bits_count == 0 && source_current >= source_end;
     }
 
     // number of bits that was already read by clients with readBits()
-    [[nodiscard]] UInt64 count() const
+    UInt64 count() const
     {
         return (source_current - source_begin) * 8 - bits_count;
     }
 
-    [[nodiscard]] UInt64 remaining() const
+    UInt64 remaining() const
     {
         return (source_end - source_current) * 8 + bits_count;
     }
@@ -105,7 +106,7 @@ private:
     template <GetBitsMode mode>
     UInt64 getBitsFromBitBuffer(UInt8 bits_to_read)
     {
-        chassert(bits_to_read > 0);
+        assert(bits_to_read > 0);
 
         // push down the high-bits
         const UInt64 result = static_cast<UInt64>(bits_buffer >> (sizeof(bits_buffer) * 8 - bits_to_read));
@@ -176,7 +177,7 @@ public:
     // write `bits_to_write` low-bits of `value` to the buffer
     void writeBits(UInt8 bits_to_write, UInt64 value)
     {
-        chassert(bits_to_write > 0);
+        assert(bits_to_write > 0);
 
         UInt32 capacity = BIT_BUFFER_SIZE - bits_count;
         if (capacity < bits_to_write)
@@ -202,7 +203,7 @@ public:
             doFlush();
     }
 
-    [[nodiscard]] UInt64 count() const
+    UInt64 count() const
     {
         return (dest_current - dest_begin) * 8 + bits_count;
     }

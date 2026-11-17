@@ -6,9 +6,10 @@
 SELECT * FROM format(RowBinary, 'd Dynamic', unhex(concat('2e017801', repeat('0d01', 300000)))) SETTINGS input_format_binary_max_type_complexity = 10; -- { serverError INCORRECT_DATA }
 SELECT * FROM format(RowBinary, 'd Dynamic', unhex(concat('2e017801', repeat('0f0100', 300000)))) SETTINGS input_format_binary_max_type_complexity = 10; -- { serverError INCORRECT_DATA }
 
--- Without a complexity budget only the stack guard is left.
+-- Without a complexity budget only the stack guard is left. On this branch the budget also applies to
+-- stored data such as an aggregate state, so it is disabled for that read too.
 SELECT * FROM format(RowBinary, 'd Dynamic', unhex(concat('2e017801', repeat('0d01', 300000)))) SETTINGS input_format_binary_max_type_complexity = 0; -- { serverError TOO_DEEP_RECURSION }
-SELECT finalizeAggregation(CAST(unhex(concat('012e017801', repeat('0d01', 300000))) AS AggregateFunction(any, Dynamic))); -- { serverError TOO_DEEP_RECURSION }
+SELECT finalizeAggregation(CAST(unhex(concat('012e017801', repeat('0d01', 300000))) AS AggregateFunction(any, Dynamic))) SETTINGS input_format_binary_max_type_complexity = 0; -- { serverError TOO_DEEP_RECURSION }
 
 -- Ordinary parameters still fit in the budget: AggregateFunction(quantiles(0.1, 0.9), UInt64).
 SELECT dynamicType(d), finalizeAggregation(d::AggregateFunction(quantiles(0.1, 0.9), UInt64))

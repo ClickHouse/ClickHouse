@@ -16,10 +16,11 @@
 #include <base/range.h>
 #include <BridgeHelper/IBridgeHelper.h>
 
+#include "config.h"
+
+
 namespace DB
 {
-
-using URLParams = std::vector<std::pair<std::string, std::string>>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// Class for Helpers for XDBC-bridges, provide utility methods, not main request.
 class IXDBCBridgeHelper : public IBridgeHelper
@@ -28,15 +29,15 @@ class IXDBCBridgeHelper : public IBridgeHelper
 public:
     explicit IXDBCBridgeHelper(ContextPtr context_) : IBridgeHelper(context_) {}
 
-    [[nodiscard]] virtual URLParams getURLParams(UInt64 max_block_size) const = 0;
+    virtual std::vector<std::pair<std::string, std::string>> getURLParams(UInt64 max_block_size) const = 0;
 
-    [[nodiscard]] virtual Poco::URI getColumnsInfoURI() const = 0;
+    virtual Poco::URI getColumnsInfoURI() const = 0;
 
     virtual IdentifierQuotingStyle getIdentifierQuotingStyle() = 0;
 
     virtual bool isSchemaAllowed() = 0;
 
-    [[nodiscard]] virtual String getName() const = 0;
+    virtual String getName() const = 0;
 };
 
 using BridgeHelperPtr = std::shared_ptr<IXDBCBridgeHelper>;
@@ -71,7 +72,7 @@ public:
     }
 
 protected:
-    [[nodiscard]] Poco::URI getPingURI() const override
+    Poco::URI getPingURI() const override
     {
         auto uri = createBaseURI();
         uri.setPath(PING_HANDLER);
@@ -79,7 +80,7 @@ protected:
     }
 
 
-    [[nodiscard]] Poco::URI getMainURI() const override
+    Poco::URI getMainURI() const override
     {
         auto uri = createBaseURI();
         uri.setPath(MAIN_HANDLER);
@@ -106,28 +107,28 @@ protected:
         }
     }
 
-    [[nodiscard]] auto getConnectionString() const { return connection_string; }
+    auto getConnectionString() const { return connection_string; }
 
-    [[nodiscard]] String getName() const override { return BridgeHelperMixin::getName(); }
+    String getName() const override { return BridgeHelperMixin::getName(); }
 
-    [[nodiscard]] unsigned getDefaultPort() const override { return DEFAULT_PORT; }
+    unsigned getDefaultPort() const override { return DEFAULT_PORT; }
 
-    [[nodiscard]] String serviceAlias() const override { return BridgeHelperMixin::serviceAlias(); }
+    String serviceAlias() const override { return BridgeHelperMixin::serviceAlias(); }
 
     /// Same for odbc and jdbc
-    [[nodiscard]] String serviceFileName() const override { return "clickhouse-odbc-bridge"; }
+    String serviceFileName() const override { return "clickhouse-odbc-bridge"; }
 
-    [[nodiscard]] String configPrefix() const override { return BridgeHelperMixin::configPrefix(); }
+    String configPrefix() const override { return BridgeHelperMixin::configPrefix(); }
 
-    [[nodiscard]] Poco::Timespan getHTTPTimeout() const override { return http_timeout; }
+    Poco::Timespan getHTTPTimeout() const override { return http_timeout; }
 
-    [[nodiscard]] const Poco::Util::AbstractConfiguration & getConfig() const override { return config; }
+    const Poco::Util::AbstractConfiguration & getConfig() const override { return config; }
 
-    [[nodiscard]] LoggerPtr getLog() const override { return log; }
+    LoggerPtr getLog() const override { return log; }
 
-    [[nodiscard]] bool startBridgeManually() const override { return BridgeHelperMixin::startBridgeManually(); }
+    bool startBridgeManually() const override { return BridgeHelperMixin::startBridgeManually(); }
 
-    [[nodiscard]] Poco::URI createBaseURI() const override;
+    Poco::URI createBaseURI() const override;
 
     void startBridge(std::unique_ptr<ShellCommand> cmd) const override
     {
@@ -153,7 +154,9 @@ private:
     Poco::Net::HTTPBasicCredentials credentials{};
 
 protected:
-    [[nodiscard]] Poco::URI getColumnsInfoURI() const override
+    using URLParams = std::vector<std::pair<std::string, std::string>>;
+
+    Poco::URI getColumnsInfoURI() const override
     {
         auto uri = createBaseURI();
         uri.setPath(COL_INFO_HANDLER);
@@ -161,9 +164,9 @@ protected:
         return uri;
     }
 
-    [[nodiscard]] URLParams getURLParams(UInt64 max_block_size) const override
+    URLParams getURLParams(UInt64 max_block_size) const override
     {
-        URLParams result;
+        std::vector<std::pair<std::string, std::string>> result;
 
         result.emplace_back("connection_string", connection_string); /// already validated
         result.emplace_back("max_block_size", std::to_string(max_block_size));
