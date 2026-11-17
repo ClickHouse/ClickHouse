@@ -5,6 +5,7 @@
 #include <limits>
 #include <memory>
 #include <span>
+#include <utility>
 #include <vector>
 
 #include <base/defines.h>
@@ -41,14 +42,14 @@ inline size_t ALWAYS_INLINE bucketCountBin(UInt64 hash)
 class AdaptiveTopKCountBins
 {
 public:
-    bool isAllocated() const { return bins != nullptr; }
+    [[nodiscard]] bool isAllocated() const { return bins != nullptr; }
 
     /// Allocates the zeroed bins.
     void allocate() { bins = std::make_unique<UInt16[]>(adaptive_count_bins); }
 
     /// The rows in the bins that hold fewer than `bound` rows each. A saturated bin holds an unknown number
     /// of rows, so it is never among them.
-    UInt64 rowsInBinsBelow(UInt64 bound) const
+    [[nodiscard]] UInt64 rowsInBinsBelow(UInt64 bound) const
     {
         UInt64 rows = 0;
         for (size_t bin = 0; bin < adaptive_count_bins; ++bin)
@@ -148,7 +149,7 @@ public:
     }
 
     /// Whether `table` is the table of a producer that never froze, whose groups the merge adds to the bounds.
-    bool isMergeCounted(const AggregatedDataVariants & table) const
+    [[nodiscard]] bool isMergeCounted(const AggregatedDataVariants & table) const
     {
         return std::ranges::find(merge_counted_tables, &table) != merge_counted_tables.end();
     }
@@ -156,7 +157,7 @@ public:
     /// Whether all `producers` handed their bins or their tables over, which the bounds rely on: if some
     /// producer handed over neither, the pruning cannot be used. Called after the finish barrier, before the
     /// merge starts.
-    bool countsEveryProducer(size_t producers) const { return producer_bins.size() + merge_counted_tables.size() == producers; }
+    [[nodiscard]] bool countsEveryProducer(size_t producers) const { return producer_bins.size() + merge_counted_tables.size() == producers; }
 
     /// Orders the buckets for the merge by their bounds, `count_bound_per_bucket`. A table without the
     /// largest counts of its buckets is not in this order, which only lets the threshold rise later. Called
@@ -164,11 +165,11 @@ public:
     void orderBuckets();
 
     /// The bucket that the merge claim `claim` takes: the buckets with the largest bounds come first.
-    UInt32 bucketToMerge(UInt32 claim) const { return bucket_order[claim]; }
+    [[nodiscard]] UInt32 bucketToMerge(UInt32 claim) const { return bucket_order[claim]; }
 
     /// The bounds of a bucket's bins: their sums over the producers' bins, unbounded where a producer's counter
     /// saturated. The merge adds the groups of the tables it counts.
-    BucketBounds boundsForBucket(size_t bucket) const;
+    [[nodiscard]] BucketBounds boundsForBucket(size_t bucket) const;
 
     /// Adds the count of a group of `hash` to the bounds of its bucket, saturating at the unbounded value.
     static ALWAYS_INLINE void addToBounds(std::span<UInt64> bounds, UInt64 hash, UInt64 count)
@@ -176,6 +177,9 @@ public:
         UInt64 & bound = bounds[bucketCountBin(hash)];
         bound = count > std::numeric_limits<UInt64>::max() - bound ? std::numeric_limits<UInt64>::max() : bound + count;
     }
+
+    /// Takes the producers' finished bins out, to be freed once the merge has bounded its last bucket.
+    std::vector<AdaptiveTopKCountBins> takeProducerBins() { return std::exchange(producer_bins, {}); }
 
     /// Selects what the merge does with unit `unit` of the `units` that split the bucket, each a run of its partitions
     /// and so of its bins, at the merge's threshold of the moment, `threshold`: a bin can hold a group of the
