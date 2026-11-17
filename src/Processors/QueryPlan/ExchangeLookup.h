@@ -34,7 +34,7 @@ struct ExchangeStreamId
         , destination_bucket(std::to_string(destination_bucket_))
     {}
 
-    String toString() const
+    [[nodiscard]] String toString() const
     {
         return exchange_id + "__" + source_bucket + "_" + destination_bucket;
     }

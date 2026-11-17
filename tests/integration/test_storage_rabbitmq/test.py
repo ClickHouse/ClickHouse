@@ -1747,10 +1747,10 @@ def test_rabbitmq_virtual_columns_with_materialized_view(rabbitmq_cluster, db, u
                      rabbitmq_max_block_size=100,
                      rabbitmq_format = 'JSONEachRow';
         CREATE TABLE {db}.view (key UInt64, value UInt64,
-            exchange_name String, channel_id String, delivery_tag UInt64, redelivered UInt8) ENGINE = MergeTree()
+            exchange_name String, channel_id String, delivery_tag UInt64, redelivered UInt8, table_name String) ENGINE = MergeTree()
             ORDER BY key;
         CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS
-        SELECT *, _exchange_name as exchange_name, _channel_id as channel_id, _delivery_tag as delivery_tag, _redelivered as redelivered
+        SELECT *, _exchange_name as exchange_name, _channel_id as channel_id, _delivery_tag as delivery_tag, _redelivered as redelivered, _table as table_name
         FROM {db}.rabbitmq_virtuals_mv;
     """
     )
@@ -1779,6 +1779,7 @@ def test_rabbitmq_virtual_columns_with_materialized_view(rabbitmq_cluster, db, u
     result = instance.query(
         f"SELECT key, value, exchange_name, SUBSTRING(channel_id, 1, 3), delivery_tag, redelivered FROM {db}.view ORDER BY delivery_tag"
     )
+    table_name_result = instance.query(f"SELECT table_name, count() FROM {db}.view GROUP BY table_name")
     exchange = f"{unique}_virtuals_mv"
     expected = "\n".join(
         [f"{i}\t{i}\t{exchange}\t1_0\t{i+1}\t0" for i in range(10)]
@@ -1793,6 +1794,7 @@ def test_rabbitmq_virtual_columns_with_materialized_view(rabbitmq_cluster, db, u
     )
 
     assert TSV(result) == TSV(expected)
+    assert table_name_result == "rabbitmq_virtuals_mv\t10\n"
 
 
 def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster, db, unique):
@@ -2117,6 +2119,73 @@ def test_rabbitmq_vhost(rabbitmq_cluster, db, unique):
         pytest.fail(
             f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value '1\\t2\\n'."
         )
+
+
+def test_rabbitmq_trickle_does_not_spin_event_loop(rabbitmq_cluster, db, unique):
+    # A trickle of messages must not keep a core busy: the event loop blocks in the poller.
+    if instance.is_built_with_sanitizer():
+        pytest.skip("CPU-tick bound is meaningless under sanitizers; covered by gtest LoopingTaskBlocksAndStops")
+    instance.query(
+        f"""
+        CREATE TABLE {db}.trickle (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{unique}_trickle',
+                     rabbitmq_queue_base = '{unique}_trickle',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_flush_interval_ms = 2000,
+                     rabbitmq_max_block_size = 1000;
+        CREATE TABLE {db}.view (key UInt64, value UInt64)
+            ENGINE = MergeTree ORDER BY key;
+        CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS
+            SELECT * FROM {db}.trickle;
+        """
+    )
+
+    def server_cpu_ticks():
+        # utime + stime of the whole server, in clock ticks (100/s).
+        return int(instance.exec_in_container(
+            ["bash", "-c", "pid=$(awk '/^PID:/{print $2}' /var/lib/clickhouse/status); "
+             "sed 's/.*) //' /proc/$pid/stat | awk '{print $12+$13}'"],
+            user="root",
+        ))
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    def publish(key):
+        channel.basic_publish(
+            exchange=f"{unique}_trickle", routing_key="", body=json.dumps({"key": key, "value": key})
+        )
+
+    # One message first, so the measurement starts with streaming already active.
+    publish(0)
+    check_expected_result_polling(1, f"SELECT count() FROM {db}.view")
+
+    # Idle window first: only the difference counts, so a slow (sanitizer) build does not fail the test.
+    before = server_cpu_ticks()
+    time.sleep(10)
+    idle = server_cpu_ticks() - before
+
+    before = server_cpu_ticks()
+    for key in range(1, 51):
+        publish(key)
+        time.sleep(0.2)
+    busy = server_cpu_ticks() - before
+    connection.close()
+
+    check_expected_result_polling(51, f"SELECT count() FROM {db}.view")
+
+    # ~10 s window: a spinning loop adds most of a core (~1000 ticks).
+    logging.info(f"CPU ticks in 10 s: {idle} idle, {busy} while consuming")
+    assert busy - idle < 300, (
+        f"the server used {busy} CPU ticks while consuming 50 messages over 10 s and {idle} idle; "
+        "the event loop is spinning instead of blocking in the poller"
+    )
 
 
 def test_rabbitmq_drop_table_properly(rabbitmq_cluster, db, unique):
