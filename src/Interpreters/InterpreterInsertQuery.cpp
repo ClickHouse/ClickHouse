@@ -117,6 +117,7 @@ namespace Setting
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
+    extern const SettingsUInt64 readonly;
 }
 
 namespace MergeTreeSetting
@@ -139,6 +140,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int LOGICAL_ERROR;
+    extern const int READONLY;
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
@@ -177,6 +179,19 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
     {
         const auto & factory = TableFunctionFactory::instance();
         TableFunctionPtr table_function_ptr = factory.get(query.table_function, current_context);
+
+        /// An insert into a table function writes to its source, not to a temporary table,
+        /// so unlike temporary tables it is not allowed at `readonly = 2` either.
+        if (current_context->getSettingsRef()[Setting::readonly])
+        {
+            const auto & client_info = current_context->getClientInfo();
+            if (client_info.interface == ClientInfo::Interface::HTTP && client_info.http_method == ClientInfo::HTTPMethod::GET)
+                throw Exception(ErrorCodes::READONLY,
+                    "Cannot execute query in readonly mode. "
+                    "For queries over HTTP, method GET implies readonly. "
+                    "You should use method POST for modifying queries");
+            throw Exception(ErrorCodes::READONLY, "Cannot execute query in readonly mode");
+        }
 
         /// If table function needs structure hint from select query
         /// we can create a temporary pipeline and get the header.

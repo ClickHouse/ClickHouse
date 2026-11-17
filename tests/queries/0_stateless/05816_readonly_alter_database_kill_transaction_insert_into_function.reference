@@ -1,0 +1,25 @@
+alter database comment: accepted
+insert into function: accepted
+kill transaction: accepted
+--readonly 1
+select: accepted
+alter database comment: READONLY
+alter database setting: READONLY
+kill transaction: READONLY
+insert into function: READONLY
+--readonly 2
+select: accepted
+alter database comment: READONLY
+alter database setting: READONLY
+kill transaction: READONLY
+insert into function: READONLY
+--allow_ddl 0
+select: accepted
+alter database comment: QUERY_IS_PROHIBITED
+alter database setting: QUERY_IS_PROHIBITED
+HTTP GET
+alter database comment: READONLY
+insert into function: READONLY
+method GET implies readonly
+kept
+1
