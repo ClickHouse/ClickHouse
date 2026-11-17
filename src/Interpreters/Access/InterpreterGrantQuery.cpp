@@ -515,6 +515,11 @@ BlockIO InterpreterGrantQuery::execute()
         checkGrantOption(access_control, *current_user_access, grantees, need_check_grantees_are_allowed, no_elements_to_grant, elements_to_revoke);
     }
 
+    /// A readonly session cannot change privileges. The REVOKE fallback in checkGrantOption and
+    /// GRANT CURRENT GRANTS authorize without ContextAccess, so they are refused here.
+    if (!elements_to_grant.empty() || !elements_to_revoke.empty())
+        current_user_access->checkCanChangeGrants();
+
     /// Check if the current user has corresponding roles granted with admin option.
     checkAdminOption(access_control, *current_user_access, grantees, need_check_grantees_are_allowed, roles_to_grant, roles_to_revoke, query.admin_option);
 
