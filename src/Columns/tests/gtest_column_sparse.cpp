@@ -1,4 +1,5 @@
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 
 #include <Common/Exception.h>
@@ -440,6 +441,17 @@ TEST(ColumnSparse, Index)
     test_case({1, 4, 7}, 3);
     test_case({0, 1, 4}, 3);
 
+    /// Rows that are the next non-default rows, each once, up to the limit, the last offset, a default row, a repeated row
+    /// or a smaller index.
+    test_case({1, 4}, 2);
+    test_case({1, 4, 6}, 2);
+    test_case({1, 4, 6, 7}, 4);
+    test_case({1, 2, 4, 6}, 4);
+    test_case({1, 4, 4, 6}, 4);
+    test_case({1, 4, 6, 6}, 4);
+    test_case({4, 6, 1}, 3);
+    test_case({1, 4, 4, 6, 6, 7}, 6);
+
     auto own_rows = ColumnUInt64::create();
     for (UInt64 index : {1, 4, 6})
         own_rows->insertValue(index);
@@ -449,6 +461,48 @@ TEST(ColumnSparse, Index)
     const auto * shared_sparse = typeid_cast<const ColumnSparse *>(shared_result.get());
     ASSERT_NE(shared_sparse, nullptr);
     ASSERT_EQ(&shared_sparse->getValuesColumn(), &sparse_ref.getValuesColumn());
+}
+
+TEST(ColumnSparse, IndexString)
+{
+    auto values = ColumnString::create();
+    auto offsets = ColumnUInt64::create();
+    auto full = ColumnString::create();
+
+    for (const char * value : {"", "a", "bb", "ccc"})
+        values->insertData(value, strlen(value));
+
+    offsets->insertValue(1);
+    offsets->insertValue(4);
+    offsets->insertValue(6);
+
+    for (const char * value : {"", "a", "", "", "bb", "", "ccc", ""})
+        full->insertData(value, strlen(value));
+
+    auto sparse = ColumnSparse::create(std::move(values), std::move(offsets), full->size());
+
+    auto test_case = [&](std::initializer_list<UInt64> index_values, size_t limit)
+    {
+        auto indexes = ColumnUInt64::create();
+        for (UInt64 index : index_values)
+            indexes->insertValue(index);
+
+        auto sparse_result = sparse->index(*indexes, limit);
+        auto full_result = full->index(*indexes, limit);
+
+        ASSERT_TRUE(checkEquals(*sparse_result->convertToFullColumnIfSparse(), *full_result));
+    };
+
+    test_case({4, 4, 2, 2, 0}, 5);
+    test_case({1, 4, 6}, 3);
+    test_case({1, 4}, 2);
+    test_case({1, 4, 6}, 2);
+    test_case({1, 4, 6, 7}, 4);
+    test_case({1, 2, 4, 6}, 4);
+    test_case({1, 4, 4, 6}, 4);
+    test_case({1, 4, 6, 6}, 4);
+    test_case({4, 6, 1}, 3);
+    test_case({0, 1, 2, 3, 4, 5, 6, 7}, 8);
 }
 
 TEST(ColumnSparse, IndexSortedRows)
@@ -514,6 +568,62 @@ TEST(ColumnSparse, IndexSortedRows)
             size_t k = sparse_ratios[rng() % K];
 
             test_case(n, k);
+        }
+    }
+    catch (const Exception & e)
+    {
+        FAIL() << e.displayText();
+    }
+}
+
+TEST(ColumnSparse, IndexKeptRows)
+{
+    /// Ascending rows as kept by a filter on another sparse column with almost the same non-default rows:
+    /// most non-default rows, some default rows, a few of them twice, and a random limit.
+    auto test_case = [&](size_t n, size_t k, size_t m)
+    {
+        auto [sparse_src, full_src] = createColumns(n, k);
+        const auto & offsets_data = assert_cast<const ColumnSparse &>(*sparse_src).getOffsetsData();
+
+        auto kept_rows = ColumnUInt64::create();
+        size_t next_offset = 0;
+        for (size_t row = 0; row < n; ++row)
+        {
+            const bool is_default = next_offset == offsets_data.size() || offsets_data[next_offset] != row;
+            next_offset += !is_default;
+
+            /// Drop 1 / m of the non-default rows, keep 1 / m of the default rows.
+            if ((rng() % m == 0) != is_default)
+                continue;
+
+            kept_rows->insertValue(row);
+            if (rng() % 8 == 0)
+                kept_rows->insertValue(row);
+        }
+
+        const size_t limit = kept_rows->empty() ? 0 : rng() % kept_rows->size() + 1;
+        auto sparse_kept = sparse_src->index(*kept_rows, limit);
+        auto full_kept = full_src->index(*kept_rows, limit);
+
+        if (!checkEquals(*sparse_kept->convertToFullColumnIfSparse(), *full_kept))
+        {
+            DUMP_COLUMN(sparse_src);
+            DUMP_COLUMN(full_src);
+            DUMP_COLUMN(sparse_kept);
+            DUMP_COLUMN(full_kept);
+            throw Exception(error_code, "Columns are unequal");
+        }
+    };
+
+    try
+    {
+        for (size_t i = 0; i < T; ++i)
+        {
+            size_t n = rng() % MAX_ROWS + 1;
+            size_t k = sparse_ratios[rng() % K];
+            size_t m = sparse_ratios[rng() % K];
+
+            test_case(n, k, m);
         }
     }
     catch (const Exception & e)

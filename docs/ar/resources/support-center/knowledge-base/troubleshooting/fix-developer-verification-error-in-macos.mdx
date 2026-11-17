@@ -6,8 +6,6 @@ tags: ['الأخطاء والاستثناءات']
 keywords: ['التحقق من المطوّر', 'macOS']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 ## إصلاح خطأ التحقق من المطوّر في macOS {#fix-the-developer-verification-error-in-macos}
 
 لا يشغّل macOS افتراضيًا أي تطبيق أو أداة جرى تنزيلها من الإنترنت ما لم تكن موقّعة من مطوّر معروف وموثّقة من Apple.
@@ -24,7 +22,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 عند محاولة تشغيل ملف تنفيذي لـ `clickhouse` موضوع في الحجر، قد يظهر لك هذا الخطأ:
 
-<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="md" alt="مربع حوار خطأ التحقق من المطوّر في MacOS" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![مربع حوار خطأ التحقق من المطوّر في MacOS](/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp)
+
+</Frame>
+
+</div>
 
 إذا تعذّر عليك الانتقال إلى إصدار بناء موقّع، فأزل الملف التنفيذي من الحجر، إما من إعدادات النظام أو من الطرفية.
 
@@ -36,13 +42,29 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 3. انتقل إلى **الخصوصية والأمان**:
 
-   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="العرض الافتراضي لإعدادات الخصوصية والأمان في macOS" border />
+   <div className="ch-image-md">
+
+   <Frame>
+
+   ![العرض الافتراضي لإعدادات الخصوصية والأمان في macOS](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp)
+
+   </Frame>
+
+   </div>
 
 4. مرّر إلى الأسفل حتى قسم **الأمان** لتجد رسالة تفيد بأن *&quot;clickhouse-macos-aarch64&quot; تم حظره من الاستخدام لأنه ليس من مطوّر معروف*.
 
 5. انقر على **السماح على أي حال** (**Open Anyway** في إصدارات macOS الحديثة).
 
-   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="إعدادات الخصوصية والأمان في macOS مع ظهور زر السماح على أي حال" border />
+   <div className="ch-image-md">
+
+   <Frame>
+
+   ![إعدادات الخصوصية والأمان في macOS مع ظهور زر السماح على أي حال](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp)
+
+   </Frame>
+
+   </div>
 
 6. أدخل كلمة مرور مستخدم macOS الخاصة بك.
 
