@@ -223,9 +223,6 @@ private:
     Int64 snapshot_id = 0;
     /// The snapshot referencing the written files is committed, so they must never be removed.
     bool committed = false;
-    /// A catalog commit failed with an unknown outcome: the catalog may have applied it, so a live
-    /// snapshot may reference the written files, and they must never be removed.
-    bool commit_outcome_unknown = false;
 
     /// The manifests are written once and reused on commit retries.
     Strings manifest_entries_in_storage;
