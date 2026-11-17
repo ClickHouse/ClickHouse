@@ -40,7 +40,8 @@ MultipleFileWriter::MultipleFileWriter(
     : max_data_file_num_rows(max_data_file_num_rows_)
     , max_data_file_num_bytes(max_data_file_num_bytes_)
     , column_mapper(Iceberg::createColumnMapperFromFields(schema_))
-    , stats(fieldIdsOfWrittenColumns(*column_mapper, *sample_block_))
+    , required_field_ids(DataFileStatistics::getRequiredFieldIds(schema_))
+    , stats(fieldIdsOfWrittenColumns(*column_mapper, *sample_block_), required_field_ids)
     , filename_generator(filename_generator_)
     , path_resolver(path_resolver_)
     , object_storage(object_storage_)
@@ -56,7 +57,7 @@ void MultipleFileWriter::startNewFile()
     if (buffer)
         finalize();
 
-    current_file_stats = std::make_shared<DataFileStatistics>(fieldIdsOfWrittenColumns(*column_mapper, *sample_block));
+    current_file_stats = std::make_shared<DataFileStatistics>(fieldIdsOfWrittenColumns(*column_mapper, *sample_block), required_field_ids);
     current_file_num_rows = 0;
     auto metadata_path = filename_generator.generateDataFileName();
     auto storage_path = path_resolver.resolve(metadata_path);
