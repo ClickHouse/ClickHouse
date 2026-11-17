@@ -25,8 +25,22 @@ namespace zkutil
 namespace DB
 {
 
+/// Thrown by commitPart when selective replication assignment changes during the ZK CAS check.
+struct AssignmentChangedException : public Exception
+{
+    AssignmentChangedException(const String & partition_id_, const String & error_message_);
+
+    String partition_id;
+};
+
+class IConnectionPool;
+using ConnectionPoolPtr = std::shared_ptr<IConnectionPool>;
+enum class InsertDeduplicationVersions : uint8_t;
+
+
 class StorageReplicatedMergeTree;
 struct BlockWithPartition;
+using BlocksWithPartition = std::vector<BlockWithPartition>;
 
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
@@ -85,7 +99,22 @@ public:
     bool writeExistingPart(MergeTreeData::MutableDataPartPtr & part, bool deduplicate_part = true);
 
 protected:
-    virtual void finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper);
+    struct AssignmentFailure
+    {
+        BlockWithPartition block_with_partition;
+        String partition_id;
+    };
+
+    /// Run the full local commit loop on an explicit set of parts.
+    /// The caller manages the lifetime of `parts` — this method does NOT clear or move them.
+    /// If `assignment_failures` is non-null, assignment races are collected; otherwise they throw.
+    void finishParts(
+        std::vector<DelayedPartInPartition> & parts,
+        const ZooKeeperWithFaultInjectionPtr & zookeeper,
+        std::vector<AssignmentFailure> * assignment_failures = nullptr);
+
+    virtual void finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper, std::vector<AssignmentFailure> * assignment_failures);
+
     virtual TemporaryPartPtr writeNewTempPart(BlockWithPartition & block);
 
     ZooKeeperWithFaultInjectionPtr createKeeper(String name);
@@ -161,6 +190,7 @@ protected:
     bool allow_attach_while_readonly = false;
     bool quorum_parallel = false;
     bool deduplicate = true;
+    bool is_patch_sink = false; /// Set to true in ReplicatedMergeTreeSinkPatch
     bool synchronously_commit_part_for_dependent_views = false;
     UInt64 num_blocks_processed = 0;
 

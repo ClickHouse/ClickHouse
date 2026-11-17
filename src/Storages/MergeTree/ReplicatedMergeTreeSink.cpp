@@ -5,14 +5,25 @@
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
+#include <Storages/MergeTree/SelectiveReplication/Constants.h>
+#include <Storages/MergeTree/SelectiveReplication/InsertForwarder.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <Interpreters/InsertDeduplication.h>
+#include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <IO/Operators.h>
+#include <IO/ConnectionTimeouts.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Processors/Sinks/RemoteSink.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Client/Connection.h>
+#include <Client/ConnectionPool.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
@@ -26,12 +37,19 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/quoteString.h>
+#include <Common/ThreadPool.h>
+#include <Common/setThreadName.h>
+#include <Common/CurrentThread.h>
+#include <Storages/RemoteQueryCommon.h>
 #include <Common/thread_local_rng.h>
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <algorithm>
+#include <filesystem>
+#include <unordered_set>
 #include <vector>
 
 namespace ProfileEvents
@@ -48,6 +66,9 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace fs = std::filesystem;
+
 namespace Setting
 {
     extern const SettingsFloat insert_keeper_fault_injection_probability;
@@ -55,14 +76,18 @@ namespace Setting
     extern const SettingsUInt64 insert_keeper_max_retries;
     extern const SettingsUInt64 insert_keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 insert_keeper_retry_max_backoff_ms;
+    extern const SettingsString insert_deduplication_token;
     extern const SettingsUInt64 input_format_max_block_wait_ms;
     extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
     extern const SettingsBool optimize_on_insert;
     extern const SettingsBool wait_for_part_commit_in_dependent_materialized_views;
+    extern const SettingsUInt64 distributed_connections_pool_size;
+    extern const SettingsNonZeroUInt64 max_distributed_connections;
 }
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsUInt64 replication_factor;
     extern const MergeTreeSettingsMilliseconds sleep_before_commit_local_part_in_replicated_table_ms;
     extern const MergeTreeSettingsUInt64 replicated_deduplication_window;
 }
@@ -92,6 +117,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TABLE_IS_READ_ONLY;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int ALL_REPLICAS_ARE_STALE;
+    extern const int REPLICA_STATUS_CHANGED;
+    extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
+}
+
+AssignmentChangedException::AssignmentChangedException(const String & partition_id_, const String & error_message_)
+    : Exception(ErrorCodes::ALL_REPLICAS_ARE_STALE, "{}", error_message_)
+    , partition_id(partition_id_)
+{
 }
 
 namespace
@@ -273,6 +307,14 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const ZooKeeperWithFault
                     replicas_number);
             }
 
+            /// Selective replication: quorum can only be satisfied by assigned replicas.
+            if (storage.replica_assignment)
+            {
+                const auto selective_settings = storage.getSettings();
+                UInt64 rf = (*selective_settings)[MergeTreeSetting::replication_factor];
+                SelectiveReplication::InsertForwarder::validateQuorumVsReplicationFactor(quorum_size, rf);
+            }
+
             /** Is there a quorum for the last part for which a quorum is needed?
                 * Write of all the parts with the included quorum is linearly ordered.
                 * This means that at any time there can be only one part,
@@ -319,6 +361,38 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
     IColumn::Selector partition_selector;
     BlocksWithPartition part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context, &partition_selector);
+
+    /// Selective replication: split blocks by partition, forward remote partitions to assigned replicas.
+    /// Skip for patch parts — they are a local concept (each replica produces them independently).
+    const auto selective_settings = storage.getSettings();
+    if (storage.selective_insert_forwarder
+        && (*selective_settings)[MergeTreeSetting::replication_factor] > 0
+        && !is_patch_sink)
+    {
+        auto plan = storage.selective_insert_forwarder->planForwardByAssignment(
+            part_blocks, metadata_snapshot, context);
+
+        storage.selective_insert_forwarder->validateQuorumForAssignments(
+            plan.assignments, plan.local_blocks, isQuorumEnabled(), getQuorumSize(total_replicas_count));
+
+        if (context->getClientInfo().distributed_depth >= SelectiveReplication::MAX_FORWARDING_DEPTH
+            && !plan.remote_blocks_storage.empty())
+        {
+            throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH,
+                "Selective replication: cannot forward {} INSERT block(s) "
+                "not assigned to this replica — exceeded max forwarding depth ({}). "
+                "distributed_depth={}.",
+                plan.remote_blocks_storage.size(),
+                SelectiveReplication::MAX_FORWARDING_DEPTH,
+                context->getClientInfo().distributed_depth);
+        }
+
+        if (!plan.remote_blocks_storage.empty())
+            storage.selective_insert_forwarder->executeForwarding(
+                plan, metadata_snapshot, context, "forward");
+
+        part_blocks = std::move(plan.local_blocks);
+    }
 
     decltype(delayed_parts) current_parts;
 
@@ -411,9 +485,9 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
         if (total_streams + current_streams > max_insert_delayed_streams_for_parallel_write)
         {
-            finishDelayed(zookeeper);
+            finishDelayed(zookeeper, nullptr);
             delayed_parts = std::move(current_parts);
-            finishDelayed(zookeeper);
+            finishDelayed(zookeeper, nullptr);
 
             total_streams = 0;
             support_parallel_write = false;
@@ -433,17 +507,43 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
         total_streams += current_streams;
     }
 
-    finishDelayed(zookeeper);
+    std::vector<AssignmentFailure> assignment_failures;
+    finishDelayed(zookeeper, &assignment_failures);
 
     delayed_parts = std::move(current_parts);
     /// Streaming `INSERT` flushes partial blocks on a timeout, so commit the just-written
     /// part immediately to make its rows visible without waiting for the next consume()
     /// or onFinish(); the normal write/commit pipelining is preferred otherwise.
     if (settings[Setting::input_format_max_block_wait_ms] != 0)
-        finishDelayed(zookeeper);
+        finishDelayed(zookeeper, nullptr);
 
     if (synchronously_commit_part_for_dependent_views)
-        finishDelayed(zookeeper);
+        finishDelayed(zookeeper, nullptr);
+
+    if (!assignment_failures.empty())
+    {
+        /// Convert Sink::AssignmentFailure to InsertForwarder::AssignmentFailure
+        std::vector<SelectiveReplication::InsertForwarder::AssignmentFailure> forwarder_failures;
+        forwarder_failures.reserve(assignment_failures.size());
+        for (auto & f : assignment_failures)
+            forwarder_failures.push_back(SelectiveReplication::InsertForwarder::AssignmentFailure{
+                .block_with_partition = std::move(f.block_with_partition),
+                .partition_id = std::move(f.partition_id),
+            });
+
+        storage.selective_insert_forwarder->handleAssignmentRace(
+            forwarder_failures,
+            zookeeper->getKeeper(),
+            metadata_snapshot,
+            context,
+            [this](BlockWithPartition & block_with_partition) { return writeNewTempPart(block_with_partition); },
+            [this](std::vector<DelayedPartInPartition> & parts, const ZooKeeperWithFaultInjectionPtr & zk, std::vector<SelectiveReplication::InsertForwarder::AssignmentFailure> *) -> void
+            {
+                finishParts(parts, zk, nullptr);
+            },
+            deduplication_info,
+            log);
+    }
 
     ++num_blocks_processed;
 }
@@ -453,16 +553,18 @@ MergeTreeTemporaryPartPtr ReplicatedMergeTreeSink::writeNewTempPart(BlockWithPar
     return storage.writer.writeTempPart(block, metadata_snapshot, context, /*may_have_leftover=*/ true, defer_fsync);
 }
 
-void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper)
+void ReplicatedMergeTreeSink::finishParts(
+    std::vector<DelayedPartInPartition> & parts,
+    const ZooKeeperWithFaultInjectionPtr & zookeeper,
+    std::vector<AssignmentFailure> * assignment_failures)
 {
-    if (delayed_parts.empty())
-        return;
-
-    for (auto & partition : delayed_parts)
+    for (auto & partition : parts)
     {
         ExecutionStatus status;
         std::vector<std::string> block_ids_for_log;
+        bool assignment_failed = false;
 
+        try
         {
             Stopwatch watch;
             SCOPE_EXIT({
@@ -605,20 +707,54 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                     resolveQuorum(zookeeper, part);
             }
         }
+        catch (const AssignmentChangedException & e)
+        {
+            LOG_INFO(log, "Selective replication: assignment changed for partition {}, canceling local part. {}",
+                e.partition_id, e.message());
+
+            /// Cancel the temp part — orphan files will be cleaned by tmp_ prefix cleanup.
+            partition.temp_part->cancel();
+
+            if (assignment_failures)
+            {
+                assignment_failures->push_back(AssignmentFailure{
+                    .block_with_partition = std::move(partition.block_with_partition),
+                    .partition_id = e.partition_id,
+                });
+                assignment_failed = true;
+                continue;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::REPLICA_STATUS_CHANGED,
+                    "Selective replication: assignment changed for partition {} and no re-forwarding "
+                    "context available. Retry the INSERT. {}",
+                    e.partition_id, e.message());
+            }
+        }
 
         /// The part is null if the retry loop above exited on a block that became empty after merge.
         if (!partition.temp_part->part)
             continue;
 
         // profile_events_scope has to be destroyed in the scope above
-        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
-        PartLog::addNewPart(
-            storage.getContext(),
-            PartLog::PartLogEntry(partition.temp_part->part, partition.elapsed_ns, counters_snapshot),
-            block_ids_for_log, // it is either blocks for committed part, or conflicting blocks for deduplicated part
-            status);
+        if (!assignment_failed)
+        {
+            auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
+            PartLog::addNewPart(
+                storage.getContext(),
+                PartLog::PartLogEntry(partition.temp_part->part, partition.elapsed_ns, counters_snapshot),
+                block_ids_for_log, // it is either blocks for committed part, or conflicting blocks for deduplicated part
+                status);
+        }
     }
+}
 
+void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper, std::vector<AssignmentFailure> * assignment_failures)
+{
+    if (delayed_parts.empty())
+        return;
+    finishParts(delayed_parts, zookeeper, assignment_failures);
     delayed_parts.clear();
 
     parts_to_sync.syncOld();
@@ -704,6 +840,15 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
         }
         PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, watch.elapsed(), profile_events_scope.getSnapshot()), deduplication_ids, ExecutionStatus(error, error_message));
         return deduplicated;
+    }
+    catch (const AssignmentChangedException & e)
+    {
+        /// writeExistingPart is for ATTACH/RESTORE — no re-forwarding context.
+        try_rollback_part_rename();
+        PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, watch.elapsed(), profile_events_scope.getSnapshot()), deduplication_ids, ExecutionStatus::fromCurrentException("", true));
+        throw Exception(ErrorCodes::ALL_REPLICAS_ARE_STALE,
+            "Selective replication: assignment changed for partition {} during writeExistingPart. {}",
+            e.partition_id, e.message());
     }
     catch (...)
     {
@@ -984,6 +1129,21 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
 
         get_logs_ops(ops);
 
+        /// Selective replication CAS check: verify the partition assignment hasn't
+        /// changed since the write path decided to write here.
+        size_t assignment_cas_op_idx = std::numeric_limits<size_t>::max();
+        if (storage.replica_assignment)
+        {
+            const auto selective_settings = storage.getSettings();
+            UInt64 rf = (*selective_settings)[MergeTreeSetting::replication_factor];
+            if (rf > 0)
+            {
+                assignment_cas_op_idx = ops.size();
+                storage.selective_insert_forwarder->addAssignmentCASCheck(
+                    ops, part, storage.replica_name, zookeeper->getKeeper());
+            }
+        }
+
         /// Deletes the information that the block number is used for writing.
         size_t block_unlock_op_idx = ops.size();
         block_number_lock.getUnlockOp(ops);
@@ -1182,6 +1342,29 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
             return CommitRetryContext::RESOLVE_CONFLICTS;
         }
 
+        /// Selective replication CAS check: assignment version changed during commit.
+        if (multi_code == Coordination::Error::ZBADVERSION
+            && failed_op_idx == assignment_cas_op_idx)
+        {
+            auto result = storage.selective_insert_forwarder->handleCommitCASFailure(
+                part, transaction, initial_part_name,
+                temporary_part_relative_path, storage.replica_name, log);
+
+            if (result == SelectiveReplication::InsertForwarder::CASFailureResult::RETRY)
+            {
+                retries_ctl.setUserError(
+                    Exception(ErrorCodes::ALL_REPLICAS_ARE_STALE,
+                        "Selective replication: assignment version changed, retrying"));
+                return CommitRetryContext::LOCK_AND_COMMIT;
+            }
+
+            String partition_id = part->info.isPatch() ? part->info.getOriginalPartitionId() : part->info.getPartitionId();
+            throw AssignmentChangedException(partition_id,
+                fmt::format("Selective replication: partition {} is no longer assigned to this replica. "
+                    "Retry the INSERT or check replica availability.",
+                    partition_id));
+        }
+
         transaction.rollback();
 
         if (!Coordination::isUserError(multi_code))
@@ -1322,7 +1505,12 @@ void ReplicatedMergeTreeSink::onFinish()
 
     ZooKeeperWithFaultInjectionPtr zookeeper = createKeeper("ReplicatedMergeTreeSink::onFinish");
     auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeSink::onFinish");
-    finishDelayed(zookeeper);
+    /// Note: finishDelayed is called WITHOUT assignment_failures collection (nullptr).
+    /// If a selective replication assignment changes during this final flush,
+    /// AssignmentChangedException propagates as REPLICA_STATUS_CHANGED to the user.
+    /// Phase 2 re-forwarding is not possible here because we have no deduplication_info
+    /// context for the delayed parts. The user must retry the INSERT.
+    finishDelayed(zookeeper, nullptr);
     parts_to_sync.syncAll();
 }
 

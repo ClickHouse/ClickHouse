@@ -59,6 +59,8 @@
 #include <Storages/System/StorageSystemUserProcesses.h>
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/System/StorageSystemDatabaseReplicas.h>
+#include <Storages/System/StorageSystemSelectiveAssignments.h>
+#include <Storages/System/StorageSystemSelectiveMigrations.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
 #include <Storages/System/StorageSystemDistributionQueue.h>
 #include <Storages/System/StorageSystemServerSettings.h>
@@ -3074,6 +3076,14 @@ total_replicas:      1
 zookeeper_exception:
 is_session_expired:  0
 ```
+)DOCS_MD");
+    attach<StorageSystemSelectiveAssignments>(context, system_database, "selective_assignments", R"DOCS_MD(
+.description
+Shows partition-to-replica assignments for tables with selective replication enabled.
+)DOCS_MD");
+    attach<StorageSystemSelectiveMigrations>(context, system_database, "selective_migrations", R"DOCS_MD(
+.description
+Shows active and completed partition migrations for tables with selective replication.
 )DOCS_MD");
     attach<StorageSystemReplicationQueue>(context, system_database, "replication_queue", R"DOCS_MD(
 .description

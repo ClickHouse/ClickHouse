@@ -1,0 +1,38 @@
+test_error_on_plain_mergetree
+SYSTEM START SELECTIVE REBALANCE is only supported
+SYSTEM SYNC SELECTIVE MIGRATIONS is only supported
+test_error_on_full_replication
+only supported
+only supported
+test_commands_on_selective_table
+start_rebalance_ok
+sync_migrations_ok
+assignments_exist
+1
+all_partitions_have_rf_replicas
+1
+test_sync_migrations_timeout
+1
+test_access_control_start_rebalance
+1
+test_access_control_sync_migrations
+1
+test_access_control_migrate_partition
+1
+test_migrate_partition_error_on_plain_mergetree
+only supported
+test_migrate_partition_error_on_full_replication
+only supported
+test_migrate_partition_valid
+migrate_partition_ok
+test_migrate_partition_nonexistent_partition
+does not have a selective replication assignment
+test_migrate_partition_invalid_replica
+not an active replica
+test_migrate_partition_already_assigned
+already_assigned_noop_ok
+test_enable_auto_rebalance_setting
+insert_ok
+sync_ok
+alter_setting_ok
+manual_rebalance_ok

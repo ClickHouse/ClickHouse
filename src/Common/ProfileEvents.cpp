@@ -1966,6 +1966,13 @@ The server successfully detected this situation and will download merged part fr
     M(RuntimeFilterGranulesDropped, "Number of granules pruned at read time by JOIN Runtime Filters", ValueType::Number) \
     M(RuntimeFilterLookupsBeforeBuildFinished, "Number of blocks looked up in a JOIN Runtime Filter whose build side had not finished yet, which pass through unfiltered", ValueType::Number) \
     \
+    M(SelectiveReplicationInsertForwarded, "Number of selective replication INSERT blocks forwarded to other replicas", ValueType::Number) \
+    M(SelectiveReplicationQueueSkipped, "Number of queue entries skipped due to selective replication partition filters", ValueType::Number) \
+    M(SelectiveReplicationMigrationStarted, "Number of partition migrations started", ValueType::Number) \
+    M(SelectiveReplicationMigrationCompleted, "Number of partition migrations completed successfully", ValueType::Number) \
+    M(SelectiveReplicationMigrationFailed, "Number of partition migrations failed", ValueType::Number) \
+    M(SelectiveReplicationMigrationRolledBack, "Number of partition migrations rolled back", ValueType::Number) \
+    M(SelectiveReplicationAssignmentZKError, "Number of Keeper errors encountered while reading selective replication assignments", ValueType::Number) \
     M(JoinBuildPostProcessingMicroseconds, "Elapsed time of post-processing steps after building the right JOIN side.", ValueType::Microseconds) \
     \
     M(JoinBuildRowStoreMicroseconds, "Elapsed time transforming the right JOIN side payload into row-major format.", ValueType::Microseconds) \
@@ -1983,6 +1990,10 @@ The server successfully detected this situation and will download merged part fr
     M(AIRowsProcessed, "Number of rows that received an AI result.", ValueType::Number) \
     M(AIRowsSkipped, "Number of rows that received a default value due to quota or error.", ValueType::Number) \
     \
+    M(SelectiveReplicationOptimizeForwardedCommands, "Number of OPTIMIZE commands that forwarded at least one partition to another replica under selective replication.", ValueType::Number) \
+    M(SelectiveReplicationOptimizeForwardedPartitions, "Number of partitions forwarded by OPTIMIZE commands under selective replication.", ValueType::Number) \
+    M(SelectiveReplicationSelectForwardedQueries, "Number of SELECT queries that re-routed at least one partition at distributed_depth>0 under selective replication, due to stale routing information at the upstream replica.", ValueType::Number) \
+    M(SelectiveReplicationSelectForwardedPartitions, "Number of partitions re-routed by SELECT queries at distributed_depth>0 under selective replication.", ValueType::Number) \
     M(YTsaurusLookupThrottled, "Number of lookup requests to YTsaurus that were throttled", ValueType::Number) \
     \
     M(StatelessWorkerRequested, "Number of stateless workers requested by queries for distributed query execution.", ValueType::Number) \

@@ -48,6 +48,7 @@
 #include <QueryPipeline/UnavailableShardTracker.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include <Storages/RemoteQueryCommon.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/buildQueryTreeForShard.h>
@@ -650,6 +651,7 @@ void executeQuery(
         // according to settings and number of replicas declared per shard
         const auto & addresses = cluster->getShardsAddresses().at(i);
         const bool parallel_replicas_enabled = addresses.size() > 1 && new_context->canUseTaskBasedParallelReplicas();
+        const bool use_parallel_replicas_custom_key = addresses.size() > 1 && new_context->canUseParallelReplicasCustomKey();
 
         stream_factory.createForShard(
             shard_info,
@@ -661,6 +663,7 @@ void executeQuery(
             remote_shards,
             static_cast<UInt32>(shards),
             parallel_replicas_enabled,
+            use_parallel_replicas_custom_key,
             shard_filter_generator,
             unavailable_shard_tracker);
     }

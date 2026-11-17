@@ -547,7 +547,11 @@ static struct InitFiu
     REGULAR(aggregate_function_state_transfer_throw_after_child) \
     REGULAR(marks_loader_hold_task_until_canceled) \
     REGULAR(whatif_projection_scan_cut_short) \
-    REGULAR(http_connection_socket_inode_unavailable)
+    REGULAR(http_connection_socket_inode_unavailable) \
+    REGULAR(selective_replication_takeover_cas_fail) \
+    REGULAR(selective_replication_rollback_cas_fail) \
+    REGULAR(selective_replication_read_partitions_zk_error) \
+    PAUSEABLE_ONCE(selective_replication_after_batch_ensure)
 
 namespace FailPoints
 {

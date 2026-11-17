@@ -187,6 +187,7 @@ namespace DB
     M(ZOOKEEPER_SEND, "ZooKeeperSend") \
     M(BLOB_KILLER_TASK, "BlobKillerTask") \
     M(BLOB_COPIER_TASK, "BlobCopierTask") \
+    M(SELECTIVE_REPLICATION_FORWARD, "SRForward") \
     M(DISK_OBJECT_STORAGE_COPY, "DiskObjStCopy") \
     M(DISK_OBJECT_STORAGE_WRITE_BLOB, "DiskObjStWrBlob") \
     M(DISTRIBUTED_CACHE, "DistribCache") \

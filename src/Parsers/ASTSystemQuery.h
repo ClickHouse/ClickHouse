@@ -172,6 +172,9 @@ public:
         PAUSE,
         CANCEL,
         REFRESH,
+        START_SELECTIVE_REBALANCE,
+        SYNC_SELECTIVE_MIGRATIONS,
+        MIGRATE_PARTITION,
         END
     };
 
@@ -191,6 +194,8 @@ public:
 
     String target_function;
     String replica;
+    String target_replica;
+    String partition_id;
     String shard;
     String zk_name;
     String full_replica_zk_path;

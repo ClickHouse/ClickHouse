@@ -10,13 +10,15 @@ CREATE TABLE r1 (
     key UInt64, value String
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/{database}/01509_parallel_quorum_insert_no_replicas', '1')
-ORDER BY tuple();
+ORDER BY tuple()
+SETTINGS replication_factor = 0;
 
 CREATE TABLE r2 (
     key UInt64, value String
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/{database}/01509_parallel_quorum_insert_no_replicas', '2')
-ORDER BY tuple();
+ORDER BY tuple()
+SETTINGS replication_factor = 0;
 
 SET insert_quorum_parallel=1;
 

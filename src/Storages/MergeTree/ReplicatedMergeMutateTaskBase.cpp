@@ -10,6 +10,7 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -168,6 +169,15 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 
         return false;
     };
+
+    /// Selective replication: skip entries for unassigned partitions.
+    if (storage.queue.shouldSkipForSelectiveReplication(entry))
+    {
+        LOG_DEBUG(log, "Removing log entry {} of type {} for part {} from queue: "
+            "this replica is not assigned to the partition (selective replication)",
+            entry.znode_name, entry.typeToString(), entry.new_part_name);
+        return remove_processed_entry();
+    }
 
 
     auto execute_fetch = [&] (bool need_to_check_missing_part) -> bool

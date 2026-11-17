@@ -107,6 +107,7 @@
 #include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Storages/Distributed/parseRemoteFunctionArguments.h>
 
+#include <Storages/RemoteQueryCommon.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/IStorageCluster.h>

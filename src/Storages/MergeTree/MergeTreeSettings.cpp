@@ -2672,6 +2672,48 @@ into account sharding expressions.
     DECLARE(UInt64, part_moves_between_shards_delay_seconds, 30, R"(
 Time to wait before/after moving parts between shards.
 )", EXPERIMENTAL) \
+    DECLARE(UInt64, replication_factor, 0, R"(
+Number of replicas that store each partition's data.
+0 means all replicas store all data (default, compatible with standard ReplicatedMergeTree).
+When > 0, selective replication is enabled and each partition is assigned to exactly
+this many replicas. Requires all replicas to use the same value.
+)", EXPERIMENTAL, \
+        {"26.11", 0, 0, "Selective replication: number of replicas per partition"}) \
+    DECLARE(UInt64, selective_replication_assignment_cache_ttl_seconds, 60, R"(
+Maximum age, in seconds, of cached partition-to-replica assignments read from
+ZooKeeper. When a cached entry is older than this, the next call to
+getAssignments with force_refresh=false will re-read from ZK. Shorter values
+give fresher routing at the cost of ZK load; longer values do the opposite.
+Fixed per-table at CREATE TABLE.
+)", EXPERIMENTAL, \
+        {"26.11", 60, 60, "Selective replication: cache TTL for partition-to-replica assignments"}) \
+    DECLARE(UInt64, max_concurrent_partition_migrations, 4, R"(
+Maximum number of partitions that can be migrated simultaneously during automatic rebalancing.
+)", EXPERIMENTAL, \
+        {"26.11", 4, 4, "Selective replication: max concurrent partition migrations"}) \
+    DECLARE(UInt64, migration_timeout_seconds, 3600, R"(
+Timeout in seconds for the CLONE phase of a partition migration.
+If the target replica does not complete fetching all parts within this time,
+the migration is rolled back to FAILED state and the assignment is restored.
+)", EXPERIMENTAL, \
+        {"26.11", 3600, 3600, "Selective replication: migration timeout"}) \
+    DECLARE(UInt64, migration_coordinator_timeout, 60, R"(
+Time in seconds after which a migration coordinator is considered dead
+and another replica can take over the migration. Used by the background
+migration monitor task to detect orphaned migrations.
+)", EXPERIMENTAL, \
+        {"26.11", 60, 60, "Selective replication: coordinator task timeout"}) \
+    DECLARE(Bool, enable_auto_rebalance, true, R"(
+Controls whether the background migration monitor automatically starts
+partition migrations to balance partition assignments across replicas.
+When false, the monitor still drives existing migrations, recovers
+orphaned migrations, and signals clone completion — it only skips
+computing and starting new rebalance migrations.
+Manual migrations via SYSTEM MIGRATE PARTITION and SYSTEM START SELECTIVE
+REBALANCE remain functional regardless of this setting.
+Only meaningful when replication_factor > 0.
+)", 0, \
+        {"26.11", true, true, "Selective replication: enable automatic rebalance by the migration monitor"}) \
     DECLARE(Bool, allow_remote_fs_zero_copy_replication, false, R"(
 Don't use this setting in production, because it is not ready.
 )", EXPERIMENTAL) \
@@ -3725,6 +3767,7 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "table_disk"
         || name == "allow_tuple_element_aggregation"
         || name == "share_nested_offsets"
+        || name == "replication_factor"
     ;
 }
 

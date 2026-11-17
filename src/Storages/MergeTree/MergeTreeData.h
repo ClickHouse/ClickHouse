@@ -739,6 +739,10 @@ public:
 
         MutationsSnapshotPtr mutations_snapshot;
 
+        /// Selective replication: partition_id → assigned replicas.
+        /// Populated during snapshot creation when replication_factor > 0.
+        /// Empty map = no selective replication or assignment data unavailable.
+        std::unordered_map<String, Strings> selective_assignment_map;
         /// Taken no later than `parts`. Null for a table without a unique key.
         DeleteBitmapSnapshotPtr uk_read_snapshot;
     };
@@ -1797,6 +1801,9 @@ protected:
     friend class UniqueKeyDenseIndexOps; // for access to log + data_parts_by_info
     friend class DeleteBitmapStore; // for access to outdated_data_parts_loading_finished
 
+    virtual StorageSnapshotPtr
+    createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
+
     bool require_part_metadata;
 
     /// Relative path data, changes during rename for ordinary databases use
@@ -2373,7 +2380,6 @@ protected:
     void setFilenameRegexpForCachePrewarming(MergeTreeSettingsPtr settings);
     std::shared_ptr<const re2::RE2> getFilenameRegexpForCachePrewarming() const;
 
-    StorageSnapshotPtr createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
     void injectSleepBeforeCreatingStorageSnapshot(ContextPtr query_context) const;
 
 private:

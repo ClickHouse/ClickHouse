@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/SelectiveReplication/KeeperAssignment.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
@@ -8,6 +9,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
+#include <Common/ProfileEvents.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/ReplicatedMergeTreeMergePredicate.h>
 #include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
 #include <IO/ReadHelpers.h>
@@ -24,10 +26,12 @@
 #include <base/sort.h>
 #include <ranges>
 #include <shared_mutex>
+#include <unordered_set>
 #include <Poco/Timestamp.h>
 
 namespace ProfileEvents
 {
+    extern const Event SelectiveReplicationQueueSkipped;
     extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeLog;
     extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeMutations;
 }
@@ -40,13 +44,14 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
-    extern const MergeTreeSettingsUInt64 replicated_max_mutations_in_one_entry;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_mutations_ms;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_replicated_fetches_ms;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_replicated_merges_ms;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_replicated_tasks_ms;
     extern const MergeTreeSettingsUInt64 replicated_fetches_min_part_level;
     extern const MergeTreeSettingsUInt64 replicated_fetches_min_part_level_timeout_seconds;
+    extern const MergeTreeSettingsUInt64 replicated_max_mutations_in_one_entry;
+    extern const MergeTreeSettingsUInt64 replication_factor;
 }
 
 namespace ErrorCodes
@@ -958,6 +963,12 @@ std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::Zo
                     fs::path(replica_path) / "min_unprocessed_insert_time", toString(*min_unprocessed_insert_time_changed), -1));
 
             auto responses = zookeeper->multi(ops, /* check_session_valid */ true);
+
+            /// Layer 1 of selective-replication race defense:
+            /// Ensure assignment cache is populated for all new entries' partitions.
+            if (storage.replica_assignment && !copied_entries.empty())
+                KeeperReplicaAssignment::ensureCacheForEntries(
+                    storage.replica_assignment, copied_entries, format_version, zookeeper);
 
             /// Now we have successfully updated the queue in ZooKeeper. Update it in RAM.
 
@@ -3047,6 +3058,27 @@ void ReplicatedMergeTreeQueue::removeCurrentPartsFromMutations()
     std::lock_guard state_lock(state_mutex);
     for (const auto & part_name : current_parts.getParts())
         removeCoveredPartsFromMutations(part_name, /*remove_part = */ false, /*remove_covered_parts = */ true);
+}
+
+
+bool ReplicatedMergeTreeQueue::shouldSkipForSelectiveReplication(const ReplicatedMergeTreeLogEntryData & entry) const
+{
+    if (!storage.replica_assignment)
+        return false;
+
+    const auto settings = storage.getSettings();
+    UInt64 rf = (*settings)[MergeTreeSetting::replication_factor];
+    if (rf == 0)
+        return false;
+
+    bool should_skip = KeeperReplicaAssignment::shouldSkipEntry(
+        storage.replica_assignment, entry, storage.format_version,
+        storage.replica_name, storage.getZooKeeper(), log);
+
+    if (should_skip)
+        ProfileEvents::increment(ProfileEvents::SelectiveReplicationQueueSkipped);
+
+    return should_skip;
 }
 
 }

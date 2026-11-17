@@ -14,7 +14,8 @@ CREATE TABLE sample_table (
     key UInt64
 )
 ENGINE ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/02221_system_zookeeper_unrestricted', '1')
-ORDER BY tuple();
+ORDER BY tuple()
+SETTINGS replication_factor=0;
 "
 
 ${CLICKHOUSE_CLIENT} -q"
@@ -22,7 +23,8 @@ CREATE TABLE sample_table_2 (
     key UInt64
 )
 ENGINE ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/02221_system_zookeeper_unrestricted_2', '1')
-ORDER BY tuple();
+ORDER BY tuple()
+SETTINGS replication_factor=0;
 "
 
 ${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 --query "SELECT name FROM (SELECT path, name FROM system.zookeeper ORDER BY name) WHERE path LIKE '%$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/02221_system_zookeeper_unrestricted%' AND name NOT LIKE 'zero\\_copy%' AND name != 'shared'";

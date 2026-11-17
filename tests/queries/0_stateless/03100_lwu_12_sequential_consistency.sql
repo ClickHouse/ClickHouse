@@ -9,6 +9,7 @@ CREATE TABLE t_lwu_sequential_1 (id UInt64, s FixedString(3))
 ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_lwu_sequential/', '1')
 ORDER BY id
 SETTINGS
+    replication_factor = 0,
     enable_block_number_column = 1,
     enable_block_offset_column = 1;
 
@@ -16,6 +17,7 @@ CREATE TABLE t_lwu_sequential_2 (id UInt64, s FixedString(3))
 ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_lwu_sequential/', '2')
 ORDER BY id
 SETTINGS
+    replication_factor = 0,
     enable_block_number_column = 1,
     enable_block_offset_column = 1;
 

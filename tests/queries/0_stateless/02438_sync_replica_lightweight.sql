@@ -6,8 +6,8 @@
 set prefer_warmed_unmerged_parts_seconds=0;
 set ignore_cold_parts_seconds=0;
 
-create table rmt1 (n int) engine=ReplicatedMergeTree('/test/{database}/02438/', '1') order by tuple() settings cache_populated_by_fetch=0;
-create table rmt2 (n int) engine=ReplicatedMergeTree('/test/{database}/02438/', '2') order by tuple() settings cache_populated_by_fetch=0;
+create table rmt1 (n int) engine=ReplicatedMergeTree('/test/{database}/02438/', '1') order by tuple() settings cache_populated_by_fetch=0, replication_factor=0;
+create table rmt2 (n int) engine=ReplicatedMergeTree('/test/{database}/02438/', '2') order by tuple() settings cache_populated_by_fetch=0, replication_factor=0;
 
 system stop replicated sends rmt1;
 system stop merges rmt2;

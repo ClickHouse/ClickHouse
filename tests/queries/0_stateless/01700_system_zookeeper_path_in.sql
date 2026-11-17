@@ -7,7 +7,8 @@ CREATE TABLE sample_table (
     key UInt64
 )
 ENGINE ReplicatedMergeTree('/clickhouse/{database}/01700_system_zookeeper_path_in/{shard}', '{replica}')
-ORDER BY tuple();
+ORDER BY tuple()
+SETTINGS replication_factor=0;
 
 SELECT name FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/01700_system_zookeeper_path_in/' || getMacro('shard') AND name like 'block%' ORDER BY name;
 SELECT 'r1' FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/01700_system_zookeeper_path_in/' || getMacro('shard') || '/replicas' AND name LIKE '%'|| getMacro('replica') ||'%' ORDER BY name;

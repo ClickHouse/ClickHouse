@@ -65,6 +65,11 @@ public:
         /// (When there is a local replica with big delay).
         bool lazy = false;
         AdditionalShardFilterGenerator shard_filter_generator{};
+
+        /// True when task-based parallel replicas are active (community semantics).
+        bool parallel_replicas_enabled = false;
+        /// True when parallel-replicas-custom-key routing is active.
+        bool use_parallel_replicas_custom_key = false;
     };
 
     using Shards = std::vector<Shard>;
@@ -84,6 +89,7 @@ public:
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
+        bool use_parallel_replicas_custom_key,
         AdditionalShardFilterGenerator shard_filter_generator,
         const UnavailableShardTrackerPtr & unavailable_shard_tracker);
 
@@ -97,6 +103,7 @@ public:
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
+        bool use_parallel_replicas_custom_key,
         AdditionalShardFilterGenerator shard_filter_generator,
         const UnavailableShardTrackerPtr & unavailable_shard_tracker);
 
@@ -116,6 +123,7 @@ private:
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
+        bool use_parallel_replicas_custom_key,
         AdditionalShardFilterGenerator shard_filter_generator,
         const UnavailableShardTrackerPtr & unavailable_shard_tracker) const;
 };
