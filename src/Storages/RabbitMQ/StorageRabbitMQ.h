@@ -170,7 +170,7 @@ private:
     std::mutex loop_mutex;
 
     size_t read_attempts = 0;
-    mutable bool drop_table = false;
+    mutable std::atomic<bool> drop_table = false;
 
     RabbitMQConsumerPtr createConsumer();
     std::atomic<bool> initialized = false;
