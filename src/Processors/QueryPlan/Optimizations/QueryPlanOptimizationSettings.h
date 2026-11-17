@@ -33,10 +33,10 @@ struct TableOccurrences;
 
 /// The read of the single-node plan that a read of the plan with parallel replicas stands for, or nullptr.
 using FindSingleNodeRead = std::function<const ReadFromMergeTree *(const ReadFromMergeTree &)>;
-/// Makes `FindSingleNodeRead` once the builder of the plan with parallel replicas has the tables of both query trees,
+/// `FindSingleNodeRead` before the builder of the plan with parallel replicas binds it the tables of both query trees,
 /// the single-node one first (`collectTableOccurrences`).
-using MakeSingleNodeReadFinder
-    = std::function<FindSingleNodeRead(std::shared_ptr<const TableOccurrences>, std::shared_ptr<const TableOccurrences>)>;
+using FindSingleNodeReadByOccurrence = std::function<const ReadFromMergeTree *(
+    const std::shared_ptr<const TableOccurrences> &, const std::shared_ptr<const TableOccurrences> &, const ReadFromMergeTree &)>;
 
 /// What the builder of the plan with parallel replicas for automatic parallel replicas produced. When
 /// it built nothing, `skip_reason` says which kind of reason stopped it, so that the optimization can
@@ -61,7 +61,7 @@ struct PlanWithParallelReplicas
 };
 
 using QueryPlanWithParallelReplicasBuilder
-    = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const MakeSingleNodeReadFinder &, const LoggerPtr &)>;
+    = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const FindSingleNodeReadByOccurrence &, const LoggerPtr &)>;
 
 struct QueryPlanOptimizationSettings
 {
@@ -70,8 +70,7 @@ struct QueryPlanOptimizationSettings
         UInt64 max_entries_for_hash_table_stats_,
         String initial_query_id_,
         ExpressionActionsSettings actions_settings_,
-        PreparedSetsCachePtr prepared_sets_cache_,
-        bool is_parallel_replicas_initiator_with_projection_support_);
+        PreparedSetsCachePtr prepared_sets_cache_);
 
     explicit QueryPlanOptimizationSettings(ContextPtr from);
 
@@ -243,10 +242,6 @@ struct QueryPlanOptimizationSettings
     /// containing such sets).
     size_t max_set_size_for_projection_match = 0;
 
-    /// When optimizing projections for parallel replicas reading, the initiator and the remote replicas require different handling.
-    /// This parameter is used to distinguish between the initiator and the remote replicas.
-    bool is_parallel_replicas_initiator_with_projection_support = false;
-
     /// If lazy materialization optimisation is enabled
     bool optimize_lazy_materialization = false;
     bool optimize_lazy_materialization_for_object_storage = false;
@@ -326,6 +321,7 @@ struct QueryPlanOptimizationSettings
     size_t min_bytes_per_task_for_reading;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
     float automatic_parallel_replicas_max_duplicated_read_ratio;
+    float automatic_parallel_replicas_statistics_drift_ratio;
     bool automatic_parallel_replicas_remember_boundary = true;
     /// Folded into the key under which automatic parallel replicas remembers the boundary of the single-replica
     /// plan; see `parallelReplicasBoundarySettingsHash`.

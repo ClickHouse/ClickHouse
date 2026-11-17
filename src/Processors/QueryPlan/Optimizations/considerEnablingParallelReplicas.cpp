@@ -39,7 +39,6 @@
 #include <optional>
 #include <set>
 #include <tuple>
-#include <unordered_map>
 #include <unordered_set>
 #include <Common/SetWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -605,24 +604,15 @@ VectorWithMemoryTracking<ReadFromMergeTree *> collectReadingSteps(QueryPlan::Nod
     return reading_steps;
 }
 
-/// Where the read's table was written in the query, if that is certain to be the same occurrence in both plans: the
-/// read's table was found in its own plan's tree, `own`, and exactly one table in each tree has that identity.
-std::optional<UInt128> certainOccurrence(
-    const ReadFromMergeTree & read,
-    const TableOccurrences & own,
-    const TableOccurrences & single_node_table_occurrences,
-    const TableOccurrences & replicas_table_occurrences)
+/// Where the read's table was written in the query, if no other table of its plan's tree, `own`, was written alike. A
+/// read of the other plan with the same identity is then certain to be the same occurrence: unique there too.
+std::optional<UInt128> certainOccurrence(const ReadFromMergeTree & read, const TableOccurrences & own)
 {
     const auto & table_expression = read.getQueryInfo().table_expression;
     if (!table_expression || !table_expression->getOriginalAST())
         return {};
     auto it = own.identity_by_ast.find(table_expression->getOriginalAST());
     if (it == own.identity_by_ast.end())
-        return {};
-    auto single_node_count = single_node_table_occurrences.counts.find(it->second);
-    auto replicas_count = replicas_table_occurrences.counts.find(it->second);
-    if (single_node_count == single_node_table_occurrences.counts.end() || single_node_count->second != 1
-        || replicas_count == replicas_table_occurrences.counts.end() || replicas_count->second != 1)
         return {};
     return it->second;
 }
@@ -631,41 +621,36 @@ std::optional<UInt128> certainOccurrence(
 /// being optimized, as `transplantAnalysisToAllReads` pairs them: the only read of its table in the single-node plan,
 /// or else the one written in the same place. A read with no certain counterpart gets none. A probe plan that reads a
 /// table a different number of times than the single-node plan is declined by the transplant later.
-MakeSingleNodeReadFinder makeSingleNodeReadFinder(QueryPlan::Node & single_node_root)
+FindSingleNodeReadByOccurrence makeSingleNodeReadFinder(QueryPlan::Node & single_node_root)
 {
-    return [single_node_reads = collectReadingSteps(single_node_root)](
-               std::shared_ptr<const TableOccurrences> single_node_occurrences,
-               std::shared_ptr<const TableOccurrences> replicas_occurrences) -> FindSingleNodeRead
+    UnorderedMapWithMemoryTracking<const MergeTreeData *, VectorWithMemoryTracking<const ReadFromMergeTree *>> single_node_reads_by_table;
+    for (const auto * read : collectReadingSteps(single_node_root))
+        single_node_reads_by_table[&read->getMergeTreeData()].push_back(read);
+
+    return [reads_by_table = std::move(single_node_reads_by_table)](
+               const std::shared_ptr<const TableOccurrences> & single_node_table_occurrences,
+               const std::shared_ptr<const TableOccurrences> & replicas_table_occurrences,
+               const ReadFromMergeTree & read) -> const ReadFromMergeTree *
     {
-        UnorderedMapWithMemoryTracking<const MergeTreeData *, VectorWithMemoryTracking<const ReadFromMergeTree *>> single_node_reads_by_table;
-        for (const auto * read : single_node_reads)
-            single_node_reads_by_table[&read->getMergeTreeData()].push_back(read);
+        auto it = reads_by_table.find(&read.getMergeTreeData());
+        if (it == reads_by_table.end())
+            return nullptr;
+        if (it->second.size() == 1)
+            return it->second.front();
 
-        return [reads_by_table = std::move(single_node_reads_by_table),
-                single_node_table_occurrences = std::move(single_node_occurrences),
-                replicas_table_occurrences = std::move(replicas_occurrences)](const ReadFromMergeTree & read) -> const ReadFromMergeTree *
+        auto identity = certainOccurrence(read, *replicas_table_occurrences);
+        if (!identity)
+            return nullptr;
+        const ReadFromMergeTree * found = nullptr;
+        for (const auto * candidate : it->second)
         {
-            auto it = reads_by_table.find(&read.getMergeTreeData());
-            if (it == reads_by_table.end())
+            if (certainOccurrence(*candidate, *single_node_table_occurrences) != identity)
+                continue;
+            if (found)
                 return nullptr;
-            if (it->second.size() == 1)
-                return it->second.front();
-
-            auto identity = certainOccurrence(read, *replicas_table_occurrences, *single_node_table_occurrences, *replicas_table_occurrences);
-            if (!identity)
-                return nullptr;
-            const ReadFromMergeTree * found = nullptr;
-            for (const auto * candidate : it->second)
-            {
-                if (certainOccurrence(*candidate, *single_node_table_occurrences, *single_node_table_occurrences, *replicas_table_occurrences)
-                    != identity)
-                    continue;
-                if (found)
-                    return nullptr;
-                found = candidate;
-            }
-            return found;
-        };
+            found = candidate;
+        }
+        return found;
     };
 }
 
@@ -678,14 +663,11 @@ MakeSingleNodeReadFinder makeSingleNodeReadFinder(QueryPlan::Node & single_node_
 /// by the table they read, and a table read once by each plan leaves only one possible pairing. Only a
 /// table read more than once needs telling its occurrences apart.
 ///
-/// Neither the analyzer's name for the table expression nor the position in the plan can do that. The
-/// replicas plan's local plan is built from the tree `buildQueryTreeForShard` produces, which re-runs
-/// `createUniqueAliasesIfNecessary` and renumbers `__tableN` from 1 over a tree that passes such as
-/// `CrossToInnerJoinPass` may have reordered, so two reads of one table can swap names while every name
-/// still finds exactly one counterpart. The two plans are also optimized differently and may order a
-/// join's sides differently. Occurrences are told apart by where they were written in the query instead
-/// (`collectTableOccurrences`), and only by an identity that exactly one table has in each plan's tree;
-/// anything less certain declines.
+/// The analyzer's `__tableN` names cannot do that: `buildQueryTreeForShard` renumbers them over a join tree
+/// passes may have reordered, so two reads of one table can swap names. Nor can the position in the plan, as
+/// the plans are optimized differently. Occurrences are told apart by where they were written in the query
+/// (`collectTableOccurrences`), only when that is unique in both trees; anything less certain declines.
+/// Every read is paired before any analysis is handed over, so a pairing that fails leaves both plans untouched.
 ///
 /// Returns whether every read was paired. A read left unpaired keeps no analysis of its own either - the
 /// replicas plan is built with `query_plan_optimize_primary_key` off - so it would read every mark, which
@@ -748,7 +730,7 @@ bool transplantAnalysisToAllReads(
         UnorderedMapWithMemoryTracking<UInt128, ReadFromMergeTree *> single_node_by_occurrence;
         for (auto * read : single_node_reads_of_table)
         {
-            auto identity = certainOccurrence(*read, single_node_table_occurrences, single_node_table_occurrences, replicas_table_occurrences);
+            auto identity = certainOccurrence(*read, single_node_table_occurrences);
             if (!identity || !single_node_by_occurrence.emplace(*identity, read).second)
             {
                 LOG_TRACE(
@@ -761,12 +743,12 @@ bool transplantAnalysisToAllReads(
             }
         }
 
-        UnorderedSetWithMemoryTracking<const ReadFromMergeTree *> claimed;
+        /// A paired read is taken out, so a second claim on it finds nothing.
         for (auto * read : reads_of_table)
         {
-            auto identity = certainOccurrence(*read, replicas_table_occurrences, single_node_table_occurrences, replicas_table_occurrences);
+            auto identity = certainOccurrence(*read, replicas_table_occurrences);
             auto it = identity ? single_node_by_occurrence.find(*identity) : single_node_by_occurrence.end();
-            if (it == single_node_by_occurrence.end() || !claimed.insert(it->second).second)
+            if (it == single_node_by_occurrence.end())
             {
                 LOG_TRACE(
                     getLogger("AutoParallelReplicas"),
@@ -777,6 +759,7 @@ bool transplantAnalysisToAllReads(
                 return false;
             }
             paired_by_replicas_read.emplace(read, it->second);
+            single_node_by_occurrence.erase(it);
         }
     }
 
@@ -787,9 +770,7 @@ bool transplantAnalysisToAllReads(
         /// hand over. Produce it here, the same way the matched read step does: it is one analysis per
         /// read either way, and this way it is done once and shared instead of being repeated by the
         /// replicas plan.
-        auto analyzed = single_node_read->getAnalyzedResult();
-        if (!analyzed)
-            analyzed = single_node_read->selectRangesToRead();
+        auto analyzed = single_node_read->getOrCreateAnalyzedResult();
 
         /// A read that a projection answered selects that projection's parts and columns. The
         /// candidate is built with `optimize_projection` off, so its reads are of the base table and
@@ -1322,7 +1303,9 @@ static bool decideAtBoundary(
     if (const auto stats = stats_cache.getStats(single_replica_plan_boundary_hash))
     {
         bool apply_plan_with_parallel_replicas = optimization_settings.automatic_parallel_replicas_mode != 2;
-        if (std::max<size_t>(stats->total_rows_to_read, rows_to_read) > std::min<size_t>(stats->total_rows_to_read, rows_to_read) * 2)
+        if (static_cast<double>(std::max<size_t>(stats->total_rows_to_read, rows_to_read))
+            > static_cast<double>(std::min<size_t>(stats->total_rows_to_read, rows_to_read))
+                * static_cast<double>(optimization_settings.automatic_parallel_replicas_statistics_drift_ratio))
         {
             /// Statistics are recollected only with the replicas plan; the call with it counts the event.
             if (!replicas)

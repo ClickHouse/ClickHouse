@@ -15,6 +15,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -44,9 +45,8 @@ namespace
 /// The sizes of the arrays are unknown, so an array join is assumed to produce this many rows per input row.
 constexpr Float64 array_join_rows_multiplier = 100;
 
-RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
+RelationStats estimateAggregatingStepStats(const Aggregator::Params & aggregator_params, const RelationStats & input_stats)
 {
-    const auto & aggregator_params = aggregating_step.getAggregatorParameters();
     std::optional<Float64> total_number_of_distinct_values = 1;
     RelationStats aggregation_stats;
     /// Carry imprecision and source from the input, or the annotation is lost for aggregation subqueries.
@@ -466,8 +466,13 @@ RelationStats estimateReadRowsCount(
     if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
     {
         auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport, find_single_node_read);
-        auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
-        return aggregation_stats;
+        return estimateAggregatingStepStats(aggregating_step->getAggregatorParameters(), stats);
+    }
+
+    if (const auto * merging_aggregated_step = typeid_cast<const MergingAggregatedStep *>(step))
+    {
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport, find_single_node_read);
+        return estimateAggregatingStepStats(merging_aggregated_step->getParams(), stats);
     }
 
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))

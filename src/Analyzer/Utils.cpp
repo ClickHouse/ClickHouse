@@ -946,7 +946,7 @@ public:
         has_function = function_node->getFunctionName() == function_name;
     }
 
-    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
+    [[nodiscard]] bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
     {
         if (has_function)
             return false;
@@ -955,7 +955,7 @@ public:
         return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
     }
 
-    bool hasFunction() const
+    [[nodiscard]] bool hasFunction() const
     {
         return has_function;
     }
@@ -1291,7 +1291,7 @@ namespace
 class CollectPrewhereTableExpressionVisitor : public ConstInDepthQueryTreeVisitor<CollectPrewhereTableExpressionVisitor>
 {
 public:
-    const TableExpressionNodePtr & getTableExpression() const
+    [[nodiscard]] const TableExpressionNodePtr & getTableExpression() const
     {
         return table_expression;
     }
@@ -2182,6 +2182,7 @@ SipHash hashScopeSelect(const ASTSelectQuery & select)
 TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree)
 {
     TableOccurrences result;
+    std::unordered_map<UInt128, size_t> counts;
     std::vector<const IQueryTreeNode *> stack{tree.get()};
     while (!stack.empty())
     {
@@ -2192,9 +2193,10 @@ TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree)
 
         /// Walked by hand rather than with `extractTableExpressions`: an unresolved query, such as the argument
         /// of a `view` table function, has an identifier for its join tree, and that is not an error here.
-        if (const auto * query_node = node->as<QueryNode>())
+        /// A scope without a `SELECT` to identify its tables by records none of them, and its subqueries are its children.
+        const auto * query_node = node->as<QueryNode>();
+        if (const auto * scope_select = query_node ? getScopeSelect(query_node->getOriginalAST().get()) : nullptr)
         {
-            const auto * scope_select = getScopeSelect(query_node->getOriginalAST().get());
             /// Taken at the first table found in this scope, and then for all of them.
             std::optional<SipHash> scope_hash;
             std::vector<const IQueryTreeNode *> join_tree{query_node->getJoinTreeNode().get()};
@@ -2223,19 +2225,22 @@ TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree)
                 {
                     const auto & table_expression_ast = table_expression->getOriginalAST();
                     std::vector<size_t> path;
-                    if (!scope_select || !table_expression_ast
-                        || !findPathInAST(*scope_select->tables(), table_expression_ast.get(), path))
+                    if (!table_expression_ast || !findPathInAST(*scope_select->tables(), table_expression_ast.get(), path))
                         continue;
 
                     if (!scope_hash)
                         scope_hash = hashScopeSelect(*scope_select);
+                    /// Every table of one scope shares its hash: in `FROM d, t AS a, t AS b` both reads of `t` would get one
+                    /// identity, be counted twice and never be paired. The path to the table under `FROM` tells them
+                    /// apart, and it is the same in both builds: it is taken in the AST, which passes reordering the
+                    /// join tree do not touch.
                     SipHash hash = *scope_hash;
                     hash.update(path.size());
                     for (size_t index : path)
                         hash.update(index);
                     const auto identity = hash.get128();
 
-                    ++result.counts[identity];
+                    ++counts[identity];
                     result.identity_by_ast.emplace(table_expression_ast, identity);
                 }
             }
@@ -2244,6 +2249,8 @@ TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree)
         for (const auto & child : node->getChildren())
             stack.push_back(child.get());
     }
+
+    std::erase_if(result.identity_by_ast, [&](const auto & table) { return counts.at(table.second) != 1; });
     return result;
 }
 

@@ -126,14 +126,13 @@ QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);
   *
   * A table is found by the AST it was built from, which every clone of the tree keeps. One that is not in the tree's
   * join trees, such as a table read inside a view that is not inlined or inside a table function, is not found, and
-  * neither is one that has no AST. Occurrences can share an identity - a CTE or a view expanded twice - and
-  * `counts` shows that.
+  * neither is one that has no AST. Occurrences can share an identity - a CTE or a view expanded twice - and then
+  * none of them is kept: only an identity that exactly one table of the tree has can tell that table apart.
   */
 struct TableOccurrences
 {
     /// Keyed by the AST pointer itself, which also keeps it from being freed and its address reused.
     std::unordered_map<ASTPtr, UInt128> identity_by_ast;
-    std::unordered_map<UInt128, size_t> counts;
 };
 
 TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree);
