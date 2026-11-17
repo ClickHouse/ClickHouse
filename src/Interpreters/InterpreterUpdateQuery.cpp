@@ -147,8 +147,9 @@ BlockIO InterpreterUpdateQuery::execute()
     if (!update_query.cluster.empty())
     {
         /// Substitute the database into table functions that use the current database implicitly, e.g.
-        /// `merge('tables_regexp')`, before `executeDDLQueryOnCluster` replaces `currentDatabase()` with the
-        /// database of the session. The table identifiers are qualified on each host instead.
+        /// `merge('tables_regexp')`, and into `currentDatabase()`, which is the database of the table in a mutation,
+        /// before `executeDDLQueryOnCluster` replaces it with the database of the session. The table identifiers are
+        /// qualified on each host instead.
         if (resolved_table_id)
         {
             AddDefaultDatabaseVisitor visitor(getContext(), resolved_table_id.getDatabaseName());
@@ -156,6 +157,9 @@ BlockIO InterpreterUpdateQuery::execute()
                 visitor.substituteDatabaseInTableFunctions(*update_query.predicate);
             if (update_query.assignments)
                 visitor.substituteDatabaseInTableFunctions(*update_query.assignments);
+            const String mutation_database = InterpreterAlterQuery::getMutationDatabase(resolved_table_id, table_for_access);
+            AddDefaultDatabaseVisitor(getContext(), mutation_database, /* only_replace_current_database_function */ true)
+                .visitDDL(query_ptr);
         }
 
         DDLQueryOnClusterParams params;
@@ -232,7 +236,7 @@ BlockIO InterpreterUpdateQuery::execute()
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
 
     BlockIO res;
-    res.pipeline = table->updateLightweight(commands, getContext());
+    res.pipeline = table->updateLightweight(commands, InterpreterAlterQuery::createMutationContext(table, getContext()));
     res.pipeline.addStorageHolder(table);
 
     /// The patch part is committed while the pipeline runs, so the share lock must outlive this

@@ -385,7 +385,14 @@ private:
             /// so `currentDatabase()` is substituted everywhere in the first argument, not only when it is the whole argument.
             else if (arguments.size() == 2)
             {
-                substituteCurrentDatabase(arguments[0], *function->arguments);
+                /// An empty database name means the current database too, see `evaluateConstantExpressionForDatabaseName`.
+                /// An aliased one is kept, because the other references to the alias need its value.
+                const auto * literal = arguments[0]->as<ASTLiteral>();
+                if (literal && literal->alias.empty() && literal->value.getType() == Field::Types::String
+                    && literal->value.safeGet<String>().empty())
+                    arguments[0] = make_intrusive<ASTLiteral>(database_name);
+                else
+                    substituteCurrentDatabase(arguments[0], *function->arguments);
             }
         }
 
@@ -417,6 +424,7 @@ private:
             /// However, just for safety, let's store the old node for a little longer.
             ASTPtr old_ast = ast;
             ast = make_intrusive<ASTLiteral>(database_name);
+            ast->setAlias(function->alias);
             parent.updatePointerToChild(old_ast.get(), ast);
             return;
         }
@@ -597,6 +605,7 @@ private:
             /// However, just for safety, let's store the old node for a little longer.
             ASTPtr old_node = node;
             node = make_intrusive<ASTLiteral>(database_name);
+            node->setAlias(function.alias);
 
             if (parent)
             {

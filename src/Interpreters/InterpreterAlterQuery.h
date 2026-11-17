@@ -11,6 +11,7 @@ namespace DB
 class AccessRightsElements;
 class ASTAlterCommand;
 class ASTAlterQuery;
+struct StorageID;
 
 
 /** Allows you add or remove a column in the table.
@@ -44,6 +45,10 @@ public:
 
     /// Returns unknown when the target storage is not available on the submitting host.
     static RowExistsColumnKind getRowExistsColumnKind(const StoragePtr & storage, const ContextPtr & context_);
+
+    /// The current database of the commands of a mutation: the database of the table that runs it, the target of an `Alias`.
+    static String getMutationDatabase(const StorageID & table_id, const StoragePtr & table);
+    static ContextMutablePtr createMutationContext(const StoragePtr & table, const ContextPtr & context_);
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 

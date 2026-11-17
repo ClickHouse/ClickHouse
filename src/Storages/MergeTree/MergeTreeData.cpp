@@ -11650,6 +11650,13 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
             const auto & name_parts = identifier->name_parts;
             const bool is_lambda_parameter = !name_parts.empty()
                 && std::ranges::find(lambda_parameters, name_parts.front()) != lambda_parameters.end();
+            /// A name that is not a column can be a function called without parentheses (`currentDatabase`, `now`).
+            if (!is_lambda_parameter && name_parts.size() == 1 && !metadata_snapshot->getColumns().has(name_parts.front()))
+            {
+                const auto function = FunctionFactory::instance().tryGet(name_parts.front(), query_context);
+                if (function && function->allowsOmittingParentheses() && !function->isDeterministic())
+                    return true;
+            }
             for (size_t begin = 0; !is_lambda_parameter && begin < name_parts.size(); ++begin)
             {
                 String candidate;
