@@ -14,10 +14,12 @@ INSERT INTO t_encrypted_prefetch SELECT number, toString(number) FROM numbers(10
 INSERT INTO t_encrypted_prefetch SELECT number, toString(number) FROM numbers(100000, 100000);
 OPTIMIZE TABLE t_encrypted_prefetch FINAL;
 
--- Pin the randomized settings that could disable remote prefetches.
+-- Pin the randomized settings that could disable remote prefetches. With parallel replicas the reads can
+-- happen in the queries on the replicas, which this query's `ProfileEvents` would not show.
 SELECT count(), sum(k), sum(length(s)) FROM t_encrypted_prefetch
 SETTINGS remote_filesystem_read_method = 'threadpool', remote_filesystem_read_prefetch = 1, use_uncompressed_cache = 0,
-    use_page_cache_for_object_storage = 0, use_page_cache_for_disks_without_file_cache = 0, log_comment = '05813_select';
+    use_page_cache_for_object_storage = 0, use_page_cache_for_disks_without_file_cache = 0, enable_parallel_replicas = 0,
+    log_comment = '05813_select';
 
 SYSTEM FLUSH LOGS part_log, query_log;
 
