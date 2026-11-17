@@ -1086,9 +1086,9 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseRowPolicies(const Poco::Uti
                 if (((database_key == "database") || (database_key.starts_with("database["))) && config.has(database_config + "[@name]"))
                     database_name = config.getString(database_config + "[@name]");
                 else if (size_t bracket_pos = database_key.find('['); bracket_pos != std::string::npos)
-                    database_name = database_key.substr(0, bracket_pos);
+                    database_name = unescapeDots(database_key.substr(0, bracket_pos));
                 else
-                    database_name = database_key;
+                    database_name = unescapeDots(database_key);
 
                 Poco::Util::AbstractConfiguration::Keys table_keys;
                 config.keys(database_config, table_keys);
@@ -1101,9 +1101,9 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseRowPolicies(const Poco::Uti
                     if (((table_key == "table") || (table_key.starts_with("table["))) && config.has(table_config + "[@name]"))
                         table_name = config.getString(table_config + "[@name]");
                     else if (size_t bracket_pos = table_key.find('['); bracket_pos != std::string::npos)
-                        table_name = table_key.substr(0, bracket_pos);
+                        table_name = unescapeDots(table_key.substr(0, bracket_pos));
                     else
-                        table_name = table_key;
+                        table_name = unescapeDots(table_key);
 
                     String filter_config = table_config + ".filter";
                     all_filters_map[{database_name, table_name}][user_name] = config.getString(filter_config);

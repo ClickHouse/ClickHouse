@@ -7,6 +7,9 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
+    main_configs=[
+        "configs/config.d/default_profile.xml",
+    ],
     user_configs=[
         "configs/users.xml",
     ],
@@ -173,3 +176,38 @@ def test_ids_of_dotted_entities_are_unchanged():
             == _users_xml_id(name.replace(".", "\\."), unique_char)
         )
 
+
+def test_escaped_default_profile_in_server_config():
+    """The server config references `server.profile` as `<default_profile>server\\.profile</default_profile>`.
+    The server must start, and the settings of the profile must apply."""
+    assert node.query("SELECT getSetting('max_query_size')") == "262145\n"
+
+
+def test_row_policy_for_dotted_database_and_table():
+    """The database and table names of a row policy also come from config keys with escaped dots."""
+    node.query("DROP TABLE IF EXISTS default.`t.dot`")
+    node.query("DROP DATABASE IF EXISTS `db.dot`")
+    node.query("CREATE TABLE default.`t.dot` (x UInt8) ENGINE = MergeTree ORDER BY x")
+    node.query("INSERT INTO default.`t.dot` VALUES (1), (2), (3)")
+    node.query("CREATE DATABASE `db.dot`")
+    node.query("CREATE TABLE `db.dot`.t (x UInt8) ENGINE = MergeTree ORDER BY x")
+    node.query("INSERT INTO `db.dot`.t VALUES (1), (2), (3)")
+
+    assert node.query("SELECT x FROM default.`t.dot` ORDER BY x", user="dotted.user") == "2\n"
+    assert node.query("SELECT x FROM `db.dot`.t ORDER BY x", user="dotted.user") == "3\n"
+
+    node.query("DROP TABLE default.`t.dot`")
+    node.query("DROP DATABASE `db.dot`")
+
+
+def test_old_spelling_of_names_is_resolved():
+    """Names of roles, quotas, and settings profiles can be passed by name in the old escaped spelling,
+    e.g. by a server of an older version in a distributed query, or in a queued `ON CLUSTER` task."""
+    assert node.query(
+        "SET ROLE `my\\.role`; SELECT role_name FROM system.current_roles",
+        user="dotted.user",
+    ) == "my.role\n"
+
+    assert node.query(
+        "SET profile = 'my\\.profile'; SELECT getSetting('max_memory_usage')"
+    ) == "10000000\n"

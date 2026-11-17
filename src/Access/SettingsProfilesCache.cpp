@@ -114,11 +114,19 @@ void SettingsProfilesCache::setDefaultProfileName(const String & default_profile
         return;
     }
 
-    auto it = profiles_by_name.find(default_profile_name);
-    if (it == profiles_by_name.end())
+    if (auto it = profiles_by_name.find(default_profile_name); it != profiles_by_name.end())
+    {
+        default_profile_id = it->second;
+        return;
+    }
+
+    /// The exact name is not found, but an access storage can resolve an alternative spelling of the name,
+    /// e.g. `UsersConfigAccessStorage` resolves `my\.profile` to the profile `my.profile` for compatibility.
+    auto id = access_control.find<SettingsProfile>(default_profile_name);
+    if (!id || !all_profiles.contains(*id))
         throw Exception(ErrorCodes::THERE_IS_NO_PROFILE, "Settings profile {} not found", backQuote(default_profile_name));
 
-    default_profile_id = it->second;
+    default_profile_id = *id;
 }
 
 

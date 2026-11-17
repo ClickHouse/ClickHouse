@@ -1,0 +1,5 @@
+<clickhouse>
+    <!-- Older servers stored `<server.profile>` under the escaped name `server\.profile`,
+         so a server configuration could reference it with the escaped spelling. It must still work. -->
+    <default_profile>server\.profile</default_profile>
+</clickhouse>

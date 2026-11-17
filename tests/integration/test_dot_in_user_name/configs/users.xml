@@ -4,6 +4,9 @@
         <my.profile>
             <max_memory_usage>10000000</max_memory_usage>
         </my.profile>
+        <server.profile>
+            <max_query_size>262145</max_query_size>
+        </server.profile>
     </profiles>
     <users>
         <default>
@@ -32,13 +35,23 @@
             <grants>
                 <query>GRANT `my.role`</query>
                 <query>GRANT SELECT ON default.test_row_policy</query>
+                <query>GRANT SELECT ON default.`t.dot`</query>
+                <query>GRANT SELECT ON `db.dot`.t</query>
             </grants>
             <databases>
                 <default>
                     <test_row_policy>
                         <filter>x = 1</filter>
                     </test_row_policy>
+                    <t.dot>
+                        <filter>x = 2</filter>
+                    </t.dot>
                 </default>
+                <db.dot>
+                    <t>
+                        <filter>x = 3</filter>
+                    </t>
+                </db.dot>
             </databases>
         </dotted.user>
         <legacy.user>
