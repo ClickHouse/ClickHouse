@@ -49,7 +49,9 @@ constexpr double max_runs_per_row_to_reduce = 0.5;
 
 /// The reduced runs gathered are combined into their groups once they take more than this, or twice what they took
 /// after they were combined last, whichever is more, or once they reach this many rows, below what cuDF concatenates.
-constexpr size_t min_bytes_to_combine_runs = 4UL << 30;
+/// The runs gathered stay on the device until then, and combining them concatenates them into a copy as large: with
+/// 4 GiB, TPC-H Q1 over SF100, of 4 groups but runs of a fourth of its rows, took 10 GiB of the device with one reader.
+constexpr size_t min_bytes_to_combine_runs = 256UL << 20;
 constexpr size_t max_rows_to_combine_runs = 1UL << 30;
 
 static_assert(std::is_same_v<cudf::bitmask_type, uint32_t>);
