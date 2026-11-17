@@ -1,6 +1,10 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
+-- The subquery query result cache is not used with plan-based parallel replicas:
+-- https://github.com/ClickHouse/ClickHouse/issues/131463
+SET parallel_replicas_plan_based = 0;
+
 SYSTEM DROP QUERY CACHE;
 
 -- Test 1: UNION ALL subquery with query_cache_for_subqueries creates cache entries

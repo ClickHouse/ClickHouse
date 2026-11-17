@@ -59,8 +59,6 @@ namespace Setting
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool optimize_use_implicit_projections;
     extern const SettingsBool optimize_use_projections;
-    extern const SettingsBool parallel_replicas_local_plan;
-    extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool query_plan_aggregation_bucket_top_k;
     extern const SettingsBool query_plan_aggregation_having_prefilter;
     extern const SettingsBool query_plan_convert_any_join_to_semi_or_anti_join;
@@ -107,6 +105,7 @@ namespace Setting
     extern const SettingsBool optimize_aggregation_in_order_limit;
     extern const SettingsBool query_plan_remove_redundant_distinct;
     extern const SettingsBool query_plan_remove_redundant_sorting;
+    extern const SettingsBool query_plan_use_shuffle_for_order_by_rand;
     extern const SettingsBool query_plan_remove_unused_columns;
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
     extern const SettingsBool query_plan_split_filter;
@@ -143,6 +142,7 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
     extern const SettingsFloat automatic_parallel_replicas_max_duplicated_read_ratio;
+    extern const SettingsFloat automatic_parallel_replicas_statistics_drift_ratio;
     extern const SettingsBool automatic_parallel_replicas_remember_boundary;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
@@ -247,13 +247,13 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     UInt64 max_entries_for_hash_table_stats_,
     String initial_query_id_,
     ExpressionActionsSettings actions_settings_,
-    PreparedSetsCachePtr prepared_sets_cache_,
-    bool is_parallel_replicas_initiator_with_projection_support_)
+    PreparedSetsCachePtr prepared_sets_cache_)
 {
     optimize_plan = from[Setting::query_plan_enable_optimizations];
     max_optimizations_to_apply = from[Setting::query_plan_max_optimizations_to_apply];
 
     remove_redundant_sorting = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_remove_redundant_sorting];
+    use_shuffle_for_order_by_rand = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_use_shuffle_for_order_by_rand];
 
     lift_up_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lift_up_array_join];
     push_down_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_limit];
@@ -269,7 +269,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     propagate_predicate_across_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_propagate_predicate_across_join]
         && from[Setting::use_primary_key];
     fuse_filter_into_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_fuse_filter_into_array_join];
-    lower_array_join_function = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lower_array_join_function];
+    lower_array_join_function = from[Setting::query_plan_lower_array_join_function];
     legacy_array_join_function_nondeterministic_evaluation = from[Setting::legacy_array_join_function_nondeterministic_evaluation];
     enable_lazy_columns_replication = from[Setting::enable_lazy_columns_replication];
     short_circuit_function_evaluation_disabled = from[Setting::short_circuit_function_evaluation] == ShortCircuitFunctionEvaluation::DISABLE;
@@ -371,7 +371,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];
     force_projection_name = optimize_projection ? from[Setting::force_optimize_projection_name].value : "";
     max_set_size_for_projection_match = from[Setting::query_plan_max_set_size_for_projection_match];
-    is_parallel_replicas_initiator_with_projection_support = is_parallel_replicas_initiator_with_projection_support_;
 
     make_distributed_plan = from[Setting::make_distributed_plan];
     serialize_query_plan = from[Setting::serialize_query_plan];
@@ -487,6 +486,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     automatic_parallel_replicas_mode = Context::getAutomaticParallelReplicasMode(from);
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
     automatic_parallel_replicas_max_duplicated_read_ratio = from[Setting::automatic_parallel_replicas_max_duplicated_read_ratio];
+    automatic_parallel_replicas_statistics_drift_ratio = from[Setting::automatic_parallel_replicas_statistics_drift_ratio];
     automatic_parallel_replicas_remember_boundary = from[Setting::automatic_parallel_replicas_remember_boundary];
     parallel_replicas_boundary_settings_hash = parallelReplicasBoundarySettingsHash(from);
 
@@ -500,10 +500,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
         from->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         from->getInitialQueryId(),
         ExpressionActionsSettings(from),
-        from->getPreparedSetsCache(),
-        from->canUseParallelReplicasOnInitiator()
-            && from->getSettingsRef()[Setting::parallel_replicas_local_plan]
-            && from->getSettingsRef()[Setting::parallel_replicas_support_projection])
+        from->getPreparedSetsCache())
 {
     skip_forced_projection_check = from->skipsForcedProjectionCheck();
     distributed_plan_local_object = from->getDistributedPlanLocalObject();
