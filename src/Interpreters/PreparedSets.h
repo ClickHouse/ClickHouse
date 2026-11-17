@@ -133,7 +133,10 @@ using FutureSetFromStoragePtr = std::shared_ptr<FutureSetFromStorage>;
 class FutureSetFromTuple final : public FutureSet
 {
 public:
-    FutureSetFromTuple(Hash hash_, ASTPtr ast_, ColumnsWithTypeAndName block, bool transform_null_in, SizeLimits size_limits);
+    /// With source_node_, the source AST is built from it on the first getSourceAST call; only remote filters read it.
+    FutureSetFromTuple(
+        Hash hash_, ASTPtr ast_, ColumnsWithTypeAndName block, bool transform_null_in, SizeLimits size_limits,
+        QueryTreeNodePtr source_node_ = nullptr);
 
     SetPtr get() const override { return set; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
@@ -150,7 +153,7 @@ public:
     /// `getHash()`. Callers must check the set is small enough to justify the O(N log N) cost
     /// (see `query_plan_max_set_size_for_projection_match`).
     Hash getContentHash() const;
-    ASTPtr getSourceAST() const override { return ast; }
+    ASTPtr getSourceAST() const override;
     Columns getKeyColumns() const;
     /// Number of rows on the right-hand side *before* deduplication — the full length of the
     /// original `IN (...)` list, including repeated and `NULL` values. Available in O(1) and without
@@ -165,7 +168,9 @@ private:
 
     Hash hash;
     mutable Hash content_hash{};
-    ASTPtr ast;
+    mutable ASTPtr ast;
+    mutable QueryTreeNodePtr source_node;
+    mutable OnceFlag source_ast_once;
     SetPtr set;
     mutable SetKeyColumns set_key_columns;
     mutable OnceFlag fill_set_elements_once;
@@ -305,7 +310,8 @@ public:
     /// The set lives in a table (`ENGINE = Set`, or `SharedSet` in ClickHouse Cloud), so it is mutable:
     /// both hand over the table's own `Set` object, which an `INSERT` writes into in place.
     FutureSetFromStoragePtr addFromStorage(const Hash & key, ASTPtr ast, SetPtr set_, StorageID storage_id);
-    FutureSetFromTuplePtr addFromTuple(const Hash & key, ASTPtr ast, ColumnsWithTypeAndName block, const Settings & settings);
+    FutureSetFromTuplePtr addFromTuple(
+        const Hash & key, ASTPtr ast, ColumnsWithTypeAndName block, const Settings & settings, QueryTreeNodePtr source_node = nullptr);
 
     FutureSetFromSubqueryPtr addFromSubquery(
         const Hash & key,
