@@ -1,0 +1,25 @@
+bloom_filter isNotNull	2
+bloom_filter isNotNull no index	2
+bloom_filter index not used
+bloom_filter equals	1
+bloom_filter equals no index	1
+bloom_filter in	1
+bloom_filter in no index	1
+text isNotNull	2
+text isNotNull no index	2
+text index not used
+text array isNotNull	2
+text array isNotNull no index	2
+text array index not used
+path named @a	1
+path named @a no index	1
+path named ^a	1
+path named ^a no index	1
+path named @a index used
+Skip
+Parts: 1/2
+Granules: 1/2
+path named ^a index used
+Skip
+Parts: 1/2
+Granules: 1/2

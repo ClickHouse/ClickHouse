@@ -206,7 +206,7 @@ def optimize(node, table, final, no_wait):
 def reattach(node, table):
     node.query(
         f"""
-    DETACH TABLE {table};
+    DETACH TABLE {table} SYNC;
     ATTACH TABLE {table};
     """
     )
@@ -853,7 +853,7 @@ def test_check_table_broken_projection_columns(cluster):
         f"SELECT path FROM system.parts WHERE database = 'default' AND table = '{table_name}' AND active"
     ).strip()
 
-    node.query(f"DETACH TABLE {table_name}")
+    node.query(f"DETACH TABLE {table_name} SYNC")
     bash(node, f"printf 'garbage' > '{data_path}p1.proj/serialization.json'")
     # The attach legitimately logs the broken projection at error level (the original
     # stateless test had to silence server logs on the client side for that reason).
@@ -894,7 +894,7 @@ def test_check_table_broken_projection_columns(cluster):
         f"SELECT path FROM system.parts WHERE database = 'default' AND table = '{table_name}' AND active"
     ).strip()
 
-    node.query(f"DETACH TABLE {table_name}")
+    node.query(f"DETACH TABLE {table_name} SYNC")
     bash(node, f"printf 'garbage' > '{data_path}p1.proj/serialization.json'")
     node.query(f"ATTACH TABLE {table_name}")
 

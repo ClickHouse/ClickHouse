@@ -11,9 +11,7 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnVariant.h>
 
 #include <Interpreters/Context.h>
 
@@ -23,6 +21,7 @@
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/NullableUtils.h>
 
 namespace DB
 {
@@ -36,20 +35,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
-/// Row-wise source null map (ColumnUInt8, 1 = source value is NULL), or nullptr
-/// when the column cannot hold NULLs. Dynamic/Variant encode NULLs with their
-/// null discriminator instead of a separate null map.
-static ColumnPtr getSourceNullMap(const IColumn & source_column)
-{
-    if (const auto * source_nullable = checkAndGetColumn<ColumnNullable>(&source_column))
-        return source_nullable->getNullMapColumnPtr();
-    if (const auto * source_dynamic = checkAndGetColumn<ColumnDynamic>(&source_column))
-        return source_dynamic->getVariantColumn().createNullMap();
-    if (const auto * source_variant = checkAndGetColumn<ColumnVariant>(&source_column))
-        return source_variant->createNullMap();
-    return nullptr;
 }
 
 class FunctionCastOrDefault final : public IFunction
@@ -68,19 +53,27 @@ public:
     {
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// Documentation-only — result type is parsed from the const-string
+    /// type-name (2nd argument). If the value can't be cast, the optional
+    /// default (3rd argument) is returned instead.
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(Any, const String, [Any]) -> Any";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         size_t arguments_size = arguments.size();
         if (arguments_size != 2 && arguments_size != 3)
@@ -133,7 +126,7 @@ public:
         return result_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & column_to_cast = arguments[0];
 
@@ -156,7 +149,7 @@ public:
         return executeOnNonConstArguments(arguments, return_type, input_rows_count);
     }
 
-    ColumnPtr executeOnNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t /*input_rows_count*/) const
+    [[nodiscard]] ColumnPtr executeOnNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t /*input_rows_count*/) const
     {
         const ColumnWithTypeAndName & column_to_cast = arguments[0];
         auto non_const_column_to_cast = column_to_cast.column->convertToFullColumnIfConst();
@@ -174,10 +167,8 @@ public:
         auto probe_type = cast_or_null_resolver->getReturnType(cast_args);
         auto cast_func = cast_or_null_resolver->build(cast_args);
         auto cast_result = cast_func->execute(cast_args, probe_type, non_const_column_to_cast->size(), false);
-        auto cast_result_full = cast_result->convertToFullColumnIfLowCardinality();
-        auto cast_null_map_column = getSourceNullMap(*cast_result_full);
-        auto source_column_full = non_const_column_to_cast->convertToFullColumnIfLowCardinality();
-        auto source_null_map_column = getSourceNullMap(*source_column_full);
+        auto cast_null_map_column = getOuterNullMap(*cast_result);
+        auto source_null_map_column = getOuterNullMap(*non_const_column_to_cast);
         const auto * cast_null_map_data = cast_null_map_column
             ? &assert_cast<const ColumnUInt8 &>(*cast_null_map_column).getData()
             : nullptr;
@@ -255,7 +246,7 @@ public:
     {
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
 private:
     FunctionCastOrDefault impl;
@@ -263,19 +254,34 @@ private:
     DataTypePtr type;
     WhichDataType which;
 
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    bool useDefaultImplementationForNulls() const override { return impl.useDefaultImplementationForNulls(); }
-    bool useDefaultImplementationForNothing() const override { return impl.useDefaultImplementationForNothing(); }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return impl.useDefaultImplementationForLowCardinalityColumns();}
-    bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants();}
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return impl.useDefaultImplementationForNulls(); }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return impl.useDefaultImplementationForNothing(); }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return impl.useDefaultImplementationForLowCardinalityColumns();}
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants();}
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
         return impl.isSuitableForShortCircuitArgumentsExecution(arguments);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// Documentation-only — the result type is the destination type bound at
+    /// construction time. For `Decimal*` / `DateTime64` a const-`UInt` scale
+    /// is required before the optional default value; for `DateTime` /
+    /// `DateTime64` a const-`String` timezone may follow; the trailing
+    /// argument is the optional fallback that's returned when parsing fails.
+    [[nodiscard]] String getSignatureString() const override
+    {
+        const String target = type->getName();
+        if (isDecimal(type) || isDateTime64(type))
+            return "(Any, const UInt8, [const String], [" + target + "]) -> " + target;
+        if (isDateTimeOrDateTime64(type))
+            return "(Any, [const String], [" + target + "]) -> " + target;
+        return "(Any, [" + target + "]) -> " + target;
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args = {{"Value", nullptr, nullptr, "any type"}};
         FunctionArgumentDescriptors optional_args;
@@ -364,7 +370,7 @@ private:
         return impl.getReturnTypeImpl(arguments_with_cast_type);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_size) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_size) const override
     {
         /// Scale and time zone
         size_t additional_arguments_size = (which.isDecimal() || which.isDateTime64()) + which.isDateTimeOrDateTime64();

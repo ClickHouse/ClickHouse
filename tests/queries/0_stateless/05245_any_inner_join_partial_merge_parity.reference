@@ -1,0 +1,11 @@
+-- Duplicate left keys: one row per key with every algorithm
+1
+1
+1
+-- Right duplicates crossing the sorted right block boundaries
+100	100
+-- The spilled right side (external partial_merge)
+10000	10000
+-- The spilling hash join switched to the order-preserving MergeJoin
+10000	10000	1
+10000	10000

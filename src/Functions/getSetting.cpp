@@ -5,6 +5,8 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
 #include <Core/Field.h>
+#include <Core/SettingsSecrets.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Core/Settings.h>
 
 
@@ -39,27 +41,36 @@ public:
         , function_name(mode == ErrorHandlingMode::Exception ? "getSetting" : "getSettingOrDefault")
     {}
 
-    String getName() const override { return function_name; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    size_t getNumberOfArguments() const override { return (mode == ErrorHandlingMode::Default) ? 2 : 1; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
+    [[nodiscard]] String getName() const override { return function_name; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return (mode == ErrorHandlingMode::Default) ? 2 : 1; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// Documentation-only — the result type is the dynamic type of the
+    /// setting value resolved at query time from its const-string name.
+    [[nodiscard]] String getSignatureString() const override
+    {
+        if (mode == ErrorHandlingMode::Default)
+            return "(const String, Any) -> Any";
+        return "(const String) -> Any";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto value = getValue(arguments);
         return applyVisitor(FieldToDataType{}, value);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto value = getValue(arguments);
         return result_type->createColumnConst(input_rows_count, convertFieldToType(value, *result_type));
     }
 
 private:
-    Field getValue(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] Field getValue(const ColumnsWithTypeAndName & arguments) const
     {
         if (!isString(arguments[0].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -86,6 +97,16 @@ private:
             if (!getContext()->getSettingsRef().tryGet(setting_name, setting_value))
                 setting_value = (*default_value_column)[0];
         }
+
+        /// Hide the credential the value may carry, exactly as `system.settings` does: it is the same
+        /// value read by the same user, so returning it here would be a way around that column.
+        if (!canDisplaySecrets(getContext()))
+        {
+            String rendered;
+            if (setting_value.tryGet<String>(rendered) && CoreSettings::maskSettingValue(String(setting_name), rendered))
+                setting_value = rendered;
+        }
+
         return setting_value;
     }
 
@@ -109,17 +130,18 @@ Returns the current value of a setting.
     {
         "Usage example",
         R"(
-SELECT getSetting('enable_analyzer');
-SET enable_analyzer = false;
-SELECT getSetting('enable_analyzer');
+SET optimize_move_to_prewhere = false;
+SELECT getSetting('optimize_move_to_prewhere');
+SET optimize_move_to_prewhere = true;
+SELECT getSetting('optimize_move_to_prewhere');
         )",
         R"(
-┌─getSetting('enable_analyzer')─┐
-│ true                          │
-└───────────────────────────────┘
-┌─getSetting('enable_analyzer')─┐
-│ false                         │
-└───────────────────────────────┘
+┌─getSetting('optimize_move_to_prewhere')─┐
+│ false                                   │
+└─────────────────────────────────────────┘
+┌─getSetting('optimize_move_to_prewhere')─┐
+│ true                                    │
+└─────────────────────────────────────────┘
         )"
     }
     };

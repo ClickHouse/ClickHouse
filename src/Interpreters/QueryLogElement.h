@@ -6,6 +6,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Parsers/IAST.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/FlatStringMap.h>
 #include <Common/ProfileEvents.h>
 #include <Common/TransactionID.h>
 
@@ -89,6 +90,15 @@ struct QueryLogElement
     std::unordered_set<String> used_privileges;
     std::unordered_set<String> missing_privileges;
 
+    UInt64 used_number_of_joins{};
+    /// Sorted containers, so that the logged arrays do not depend on the order of execution.
+    std::set<String> used_join_algorithms;
+    /// Both `used_join_kinds` and `used_join_strictness` are positionally aligned and have
+    /// `used_number_of_joins` elements each, one per physical join.
+    std::vector<String> used_join_kinds;
+    std::vector<String> used_join_strictness;
+    std::set<String> spilled_to_disk;
+
     Int32 exception_code{}; // because ErrorCodes are int
     String exception;
     String stack_trace;
@@ -111,13 +121,19 @@ struct QueryLogElement
     /// element owns all its memory - see SystemLogBase::add.
     std::optional<ProfileEvents::Counters::Snapshot> profile_counters;
     std::map<String, UInt64> async_read_counters;
-    std::map<String, String> query_settings;
+    /// Unset when the settings were not dumped, which is not the same as a query that changed none.
+    std::optional<FlatStringMap> query_settings;
 
     bool is_internal{};
 
     TransactionID tid;
 
     QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::Unknown;
+
+    /// The query's plan as JSON text, parsed into the `JSON` column when the row is appended. On a
+    /// row for a query that threw, this is the plan it had built by then, which it may never have run.
+    /// Only filled when `log_query_plans` is enabled.
+    String query_plan;
 
     static std::string name() { return "QueryLog"; }
 

@@ -1,4 +1,7 @@
 #include <Interpreters/JoinUtils.h>
+#include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/JoinOperator.h>
+#include <Interpreters/MergeJoin.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -7,12 +10,14 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/FilterDescription.h>
 
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/getMostSubtype.h>
+#include <DataTypes/transformTypesRecursively.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
@@ -107,6 +112,49 @@ LowcardAndNull getLowcardAndNullability(const ColumnPtr & col)
 
 namespace JoinCommon
 {
+
+bool canBeExecutedByEnabledAlgorithm(const JoinSettings & join_settings, JoinKind kind, JoinStrictness strictness)
+{
+    const auto & join_algorithms = join_settings.join_algorithms;
+    for (auto algorithm : join_algorithms)
+    {
+        switch (algorithm)
+        {
+            case JoinAlgorithm::FULL_SORTING_MERGE:
+            case JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE:
+                if (FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(kind, strictness))
+                    return true;
+                break;
+            case JoinAlgorithm::PARTIAL_MERGE:
+                if (MergeJoin::isSupported(kind, strictness))
+                    return true;
+                break;
+            case JoinAlgorithm::DIRECT:
+                /// Only over a key-value right table, and only for the strictness it already has.
+                break;
+            case JoinAlgorithm::IE_JOIN:
+                /// Only for an inequality `ON` condition, which no rewrite introduces.
+                break;
+            case JoinAlgorithm::DEFAULT:
+            case JoinAlgorithm::AUTO:
+            case JoinAlgorithm::HASH:
+                /// The hash-based algorithms implement every kind and strictness.
+                return true;
+            case JoinAlgorithm::GRACE_HASH:
+                /// So does `grace_hash`, but without a spill threshold `tryCreateJoin` passes it over for
+                /// the next algorithm of the list, so there it cannot execute anything.
+                if (join_settings.canRunGraceHash())
+                    return true;
+                break;
+            case JoinAlgorithm::PREFER_PARTIAL_MERGE:
+                /// `prefer_partial_merge` means `partial_merge` with a hash fallback for everything
+                /// `MergeJoin` cannot execute, so it can execute every kind and strictness as well.
+                return true;
+        }
+    }
+
+    return false;
+}
 
 Int64 getCurrentQueryMemoryUsage()
 {
@@ -215,7 +263,31 @@ static bool hasOnlyIntegerLeaves(const DataTypePtr & type)
     return isInteger(removeNullable(type));
 }
 
-DataTypePtr tryGetCommonSubtypeForJoinKeys(const DataTypePtr & left_type, const DataTypePtr & right_type)
+DataTypePtr compareBoolKeysAsUInt8(DataTypePtr type, const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    auto is_bool = [](const DataTypePtr & t) { return isBool(t) || isSimpleAggregateFunctionOfBool(*t); };
+    for (const auto & key_type : {left_type, right_type})
+    {
+        bool replaced = false;
+        auto result = replaceNestedTypesInPair(type, key_type,
+            [&](const DataTypePtr & leaf, const DataTypePtr & key_leaf) -> DataTypePtr
+            {
+                if (is_bool(leaf) && !is_bool(key_leaf) && leaf->equals(*key_leaf))
+                {
+                    replaced = true;
+                    return std::make_shared<DataTypeUInt8>();
+                }
+                return leaf;
+            },
+            /*left_is_common_type=*/ true);
+        if (replaced && result)
+            type = std::move(result);
+    }
+    return type;
+}
+
+DataTypePtr tryGetCommonSubtypeForJoinKeys(
+    const DataTypePtr & left_type, const DataTypePtr & right_type, bool force_support_conversion)
 {
     DataTypes types{
         removeNullable(recursiveRemoveLowCardinality(left_type)),
@@ -225,13 +297,44 @@ DataTypePtr tryGetCommonSubtypeForJoinKeys(const DataTypePtr & left_type, const 
     if (!std::ranges::all_of(types, hasOnlyIntegerLeaves))
         return nullptr;
 
-    auto subtype = getMostSubtype(types, /* throw_if_result_is_nothing= */ false);
+    auto subtype = getMostSubtype(types, /* throw_if_result_is_nothing= */ false, force_support_conversion);
     /// `accurateCastOrNull` reports an inexact conversion by returning NULL, so the type has to be
     /// allowed inside Nullable, and the same holds for the elements of a Tuple, recursively.
     if (isNothing(subtype) || !subtype->canBeInsideNullable() || !isSupportedByAccurateCastOrNull(subtype))
         return nullptr;
 
     return subtype;
+}
+
+DataTypePtr removeNullableInsideTuple(const DataTypePtr & type)
+{
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+    if (!tuple_type)
+        return type;
+
+    DataTypes elements;
+    elements.reserve(tuple_type->getElements().size());
+    for (const auto & element : tuple_type->getElements())
+        elements.push_back(removeNullableInsideTuple(removeNullable(element)));
+
+    /// `accurateCastOrNull` matches the elements of two named Tuples by name and the elements of
+    /// unnamed ones by position, so the names have to be carried over.
+    if (tuple_type->hasExplicitNames())
+        return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames());
+    return std::make_shared<DataTypeTuple>(elements);
+}
+
+bool keyMatchesValuesEqualsRejects(const DataTypePtr & type)
+{
+    /// A top-level NULL of Nullable and LowCardinality(Nullable) never matches.
+    auto key_type = removeLowCardinalityAndNullable(type);
+    /// A JOIN key can match a NaN to a NaN, while `nan = nan` is false.
+    if (canContainNull(*key_type) || isFloat(key_type))
+        return true;
+
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get());
+    return tuple_type && std::ranges::any_of(tuple_type->getElements(), [](const DataTypePtr & element)
+        { return canContainNull(*element) || keyMatchesValuesEqualsRejects(element); });
 }
 
 bool canBecomeNullable(const DataTypePtr & type)
@@ -623,6 +726,19 @@ bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
     return left_type_strict->equals(*right_type_strict);
 }
 
+bool isExactJoinKeyEquality(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    auto left = removeLowCardinalityAndNullable(left_type);
+    auto right = removeLowCardinalityAndNullable(right_type);
+    if (left->equals(*right))
+        return true;
+    if (isNumber(left) && isNumber(right))
+        return true;
+    if (isDateOrDate32OrDateTimeOrDateTime64(left) && isDateOrDate32OrDateTimeOrDateTime64(right))
+        return true;
+    return isFixedString(left) && isFixedString(right);
+}
+
 static ColumnPtr castToBoolColumn(ColumnPtr column)
 {
     if (!typeid_cast<const ColumnUInt8 *>(column.get()))
@@ -781,32 +897,27 @@ bool hasNonJoinedBlocks(const TableJoin & table_join)
     return hasNonJoinedBlocks(table_join.kind(), table_join.strictness());
 }
 
-ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter)
+ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter, const DataTypePtr & default_type)
 {
     ColumnPtr column = src_column->convertToFullColumnIfConst();
     MutableColumnPtr mut_column = column->cloneEmpty();
     mut_column->reserve(column->size());
 
-    if (inverse_filter)
+    if (default_type && !default_type->isDefaultInsertTrivial())
     {
+        /// `mut_column` keeps the wrapper of `column` (e.g. `ColumnReplicated`), so the type default is built unwrapped.
+        auto default_row = default_type->createColumn();
+        default_type->insertDefaultInto(*default_row);
         for (size_t row = 0; row < filter.size(); ++row)
         {
-            if (filter[row])
-                mut_column->insertDefault();
-            else
+            if (static_cast<bool>(filter[row]) != inverse_filter)
                 mut_column->insertFrom(*column, row);
+            else
+                mut_column->insertFrom(*default_row, 0);
         }
     }
     else
-    {
-        for (size_t row = 0; row < filter.size(); ++row)
-        {
-            if (filter[row])
-                mut_column->insertFrom(*column, row);
-            else
-                mut_column->insertDefault();
-        }
-    }
+        mut_column->insertFromOrDefaults(*column, filter, inverse_filter);
 
     return mut_column;
 }

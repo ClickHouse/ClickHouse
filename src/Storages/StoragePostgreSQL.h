@@ -23,6 +23,7 @@ using PoolWithFailoverPtr = std::shared_ptr<PoolWithFailover>;
 namespace DB
 {
 class NamedCollection;
+class ASTSetQuery;
 struct StorageID;
 struct PostgreSQLSettings;
 
@@ -79,7 +80,9 @@ public:
     /// `storage_settings` may be nullptr for callers that do not honor the `PostgreSQLSettings`
     /// (e.g. the `MaterializedPostgreSQL` engines): the setting names are then rejected in named
     /// collections instead of being accepted and silently ignored.
-    static Configuration getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id = nullptr);
+    static Configuration getConfiguration(
+        ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings,
+        const StorageID * table_id = nullptr, const ASTSetQuery * settings = nullptr);
 
     static Configuration processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table = true);
 

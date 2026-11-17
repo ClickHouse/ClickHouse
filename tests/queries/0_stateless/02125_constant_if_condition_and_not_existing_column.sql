@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 drop table if exists test;
 -- this queries does not have to pass, but they works historically

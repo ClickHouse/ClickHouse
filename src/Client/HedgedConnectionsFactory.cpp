@@ -1,4 +1,4 @@
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Client/HedgedConnectionsFactory.h>
 #include <base/sort.h>
@@ -30,6 +30,7 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
     bool fallback_to_stale_replicas_,
     UInt64 max_parallel_replicas_,
     bool skip_unavailable_shards_,
+    bool fail_if_replica_unprobed_,
     std::shared_ptr<QualifiedTableName> table_to_check_,
     GetPriorityForLoadBalancing::Func priority_func)
     : pool(pool_)
@@ -40,6 +41,7 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
     , fallback_to_stale_replicas(fallback_to_stale_replicas_)
     , max_parallel_replicas(max_parallel_replicas_)
     , skip_unavailable_shards(skip_unavailable_shards_)
+    , fail_if_replica_unprobed(fail_if_replica_unprobed_)
 {
     shuffled_pools = pool->getShuffledPools(settings_, priority_func, /* use_slowdown_count */ true);
 
@@ -116,7 +118,17 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
         else if (state == State::CANNOT_CHOOSE)
         {
             if (connections.size() >= min_entries)
+            {
+                bool unprobed_replica = false;
+                for (const ReplicaStatus & replica : replicas)
+                    unprobed_replica |= replica.connection_establisher->getResult().local_pool_exhausted;
+
+                if (fail_if_replica_unprobed && connections.empty() && unprobed_replica)
+                    throw NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
+                        "All connection tries failed. Log: \n\n{}\n", fail_messages);
+
                 break;
+            }
 
             /// Determine the reason of not enough replicas.
             if (!fallback_to_stale_replicas && up_to_date_count < min_entries)

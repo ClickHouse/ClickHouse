@@ -11,8 +11,11 @@ namespace DB
   */
 class ParserSetRoleQuery : public IParserBase
 {
+public:
+    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
+
 protected:
-    const char * getName() const override { return "SET ROLE or SET DEFAULT ROLE query"; }
+    [[nodiscard]] const char * getName() const override { return "SET ROLE or SET DEFAULT ROLE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 }

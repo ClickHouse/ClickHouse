@@ -35,12 +35,87 @@ trap cleanup EXIT
 # here is unique per concurrent copy of this test, so any derived port would be the same in every
 # copy, and probe-then-bind is a race those copies lose against each other. Collisions are detected
 # by binding, which is the only reliable test, so a retry always makes progress.
+#
+# What the retries cannot survive is a window where nearly everything is taken, and the local
+# ephemeral range is exactly that: it is where the kernel puts the source port of every outgoing
+# connection, a runner running the rest of the suite has tens of thousands of those at a time, and
+# each one that ends holds its port for another minute in `TIME_WAIT`. `SO_REUSEADDR` on the
+# listener does not get past them - the socket that opened the connection never set it - and the
+# raft listener binds the wildcard address, so a port taken on any interface is lost. The window is
+# therefore the larger of the two ranges the ephemeral one leaves free.
+read -r EPHEMERAL_LOW EPHEMERAL_HIGH <<< "$(cat /proc/sys/net/ipv4/ip_local_port_range 2>/dev/null)"
+: "${EPHEMERAL_LOW:=32768}" "${EPHEMERAL_HIGH:=60999}"
+
+if [ "$((EPHEMERAL_LOW - 1024))" -ge "$((65535 - EPHEMERAL_HIGH))" ]; then
+    PORT_WINDOW_LOW=1024
+    PORT_WINDOW_HIGH=$((EPHEMERAL_LOW - 1))
+else
+    PORT_WINDOW_LOW=$((EPHEMERAL_HIGH + 1))
+    PORT_WINDOW_HIGH=65535
+fi
+
+# Every slot has to fit all three ports, so the last one starts two below the top of the window.
+PORT_WINDOW_SLOTS=$(((PORT_WINDOW_HIGH - 2 - PORT_WINDOW_LOW) / 4 + 1))
+
+# A range configured to cover everything leaves a window of a single slot, and every retry would
+# then pick the port that has already been refused. Picking from all of the unprivileged ports is
+# no worse than what this replaces, and it still makes progress.
+if [ "$PORT_WINDOW_SLOTS" -lt 256 ]; then
+    PORT_WINDOW_LOW=1024
+    PORT_WINDOW_HIGH=65535
+    PORT_WINDOW_SLOTS=$(((PORT_WINDOW_HIGH - 2 - PORT_WINDOW_LOW) / 4 + 1))
+fi
+
 function pick_ports()
 {
-    PORT_BASE=$((32768 + RANDOM % 8000 * 4))
+    PORT_BASE=$((PORT_WINDOW_LOW + RANDOM % PORT_WINDOW_SLOTS * 4))
     PROM_PORT=$PORT_BASE
     KEEPER_PORT=$((PORT_BASE + 1))
     RAFT_PORT=$((PORT_BASE + 2))
+}
+
+# A backgrounded keeper that is gone before it answered never reached the listener under test, so
+# that attempt says nothing about the handler section and is retried. What it reported cannot decide
+# that: a process that is killed - by the OOM killer on a loaded runner, say - or that dies before
+# its logger exists writes nothing to the error log, and then a grep for a known startup failure
+# retries nothing and the arm reports a bare `000`. Being gone is the observable that covers every
+# such case, including the port collisions the grep used to look for, since those end the process
+# too. `wait` also reaps it, so the next attempt starts from a clean slate.
+function keeper_is_gone()
+{
+    if kill -0 "$KEEPER_PID" 2>/dev/null; then
+        KEEPER_EXIT=""
+        return 1
+    fi
+
+    wait "$KEEPER_PID" 2>/dev/null
+    KEEPER_EXIT=$?
+    KEEPER_PID=""
+    return 0
+}
+
+# Everything the process said, wherever it said it. Output from before the logger is configured only
+# exists on the captured stream, so a failure there is invisible in the error log alone. This is what
+# an assertion has to look at: a message the keeper wrote early is still there.
+function keeper_said_all()
+{
+    cat "${TMP_DIR}/keeper.stdouterr" "${TMP_DIR}/keeper.err.log" 2>/dev/null
+}
+
+# The same output, trimmed for the test's own diagnostics: the tail is enough to name a startup
+# failure and keeps a trace log out of the test output. Never assert on it - what it does not show
+# is not absent, it is only out of the window.
+function keeper_said()
+{
+    keeper_said_all | tail -n 40
+}
+
+# Every attempt starts from a clean slate: the storage a previous attempt left behind, and the
+# places a keeper reports itself in.
+function reset_state()
+{
+    rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.log" "${TMP_DIR}/keeper.err.log" \
+        "${TMP_DIR}/keeper.stdouterr"
 }
 
 # $1 = <handler> body, $2 = extra top-level config, $3 = config file, $4 = "no-port" to omit the port
@@ -94,7 +169,7 @@ for listen_try in '' '<listen_try>1</listen_try>'; do
     # fail for an unrelated reason, so a port collision is retried rather than asserted on.
     for _ in $(seq 1 20); do
         pick_ports
-        rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log" "${TMP_DIR}/keeper.log"
+        reset_state
         write_config '<type>no_such_prometheus_type</type>' "$listen_try" "${TMP_DIR}/keeper_config.xml"
 
         OUT="$(timeout 60 "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" 2>&1)"
@@ -125,9 +200,9 @@ done
 echo '--- no port'
 for _ in $(seq 1 20); do
     pick_ports
-    rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log" "${TMP_DIR}/keeper.log"
+    reset_state
     write_config '<type>no_such_prometheus_type</type>' '' "${TMP_DIR}/keeper_config.xml" no-port
-    "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" >/dev/null 2>&1 &
+    "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" >"${TMP_DIR}/keeper.stdouterr" 2>&1 &
     KEEPER_PID=$!
 
     READY=0
@@ -138,12 +213,11 @@ for _ in $(seq 1 20); do
     done
 
     [ "$READY" = 1 ] && break
-    grep -qE 'RAFT_ERROR|Address already in use' "${TMP_DIR}/keeper.err.log" 2>/dev/null || break
-    kill "$KEEPER_PID" 2>/dev/null; wait "$KEEPER_PID" 2>/dev/null; KEEPER_PID=""
+    keeper_is_gone || break
 done
 
 [ "$READY" = 1 ] && echo 'starts anyway' || echo 'FAIL: kept down without a listener'
-grep -qF 'Unknown type no_such_prometheus_type' "${TMP_DIR}/keeper.err.log" 2>/dev/null \
+keeper_said_all | grep -qF 'Unknown type no_such_prometheus_type' \
     && echo 'FAIL: the handler section was read' || echo 'handler section not read'
 kill "$KEEPER_PID" 2>/dev/null; wait "$KEEPER_PID" 2>/dev/null; KEEPER_PID=""
 
@@ -152,10 +226,10 @@ echo '--- valid'
 STATUS=000
 for _ in $(seq 1 20); do
     pick_ports
-    rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log" "${TMP_DIR}/keeper.log"
+    reset_state
     write_config '<type>expose_metrics</type><metrics>true</metrics><events>true</events>' \
         '' "${TMP_DIR}/keeper_config.xml"
-    "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" >/dev/null 2>&1 &
+    "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" >"${TMP_DIR}/keeper.stdouterr" 2>&1 &
     KEEPER_PID=$!
 
     for _ in $(seq 1 600); do
@@ -167,11 +241,12 @@ for _ in $(seq 1 20); do
     done
 
     [ "$STATUS" = 200 ] && break
-    # Only a port collision is retried; anything else is reported as it is.
-    grep -qE 'RAFT_ERROR|Address already in use' "${TMP_DIR}/keeper.err.log" 2>/dev/null || break
-    kill "$KEEPER_PID" 2>/dev/null; wait "$KEEPER_PID" 2>/dev/null; KEEPER_PID=""
+    # Only a keeper that did not survive to serve is retried; one that is up and simply never
+    # answered is the failure this arm is looking for, and is reported as it is.
+    keeper_is_gone || break
 done
 
+[ "$STATUS" = 200 ] || { echo "last keeper exit: ${KEEPER_EXIT:-still running}"; keeper_said; }
 echo "metrics endpoint: ${STATUS}"
 kill "$KEEPER_PID" 2>/dev/null; wait "$KEEPER_PID" 2>/dev/null; KEEPER_PID=""
 
@@ -227,7 +302,7 @@ for listen_try in '' '<listen_try>1</listen_try>'; do
 
     for _ in $(seq 1 20); do
         pick_ports
-        rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log" "${TMP_DIR}/keeper.log"
+        reset_state
         write_control_config '<type>no_such_control_type</type>' "$listen_try"
 
         OUT="$(timeout 60 "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" 2>&1)"
@@ -253,9 +328,9 @@ done
 echo '--- control no port'
 for _ in $(seq 1 20); do
     pick_ports
-    rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log" "${TMP_DIR}/keeper.log"
+    reset_state
     write_control_config '<type>no_such_control_type</type>' '' no-port
-    "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" >/dev/null 2>&1 &
+    "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" >"${TMP_DIR}/keeper.stdouterr" 2>&1 &
     KEEPER_PID=$!
 
     READY=0
@@ -266,12 +341,11 @@ for _ in $(seq 1 20); do
     done
 
     [ "$READY" = 1 ] && break
-    grep -qE 'RAFT_ERROR|Address already in use' "${TMP_DIR}/keeper.err.log" 2>/dev/null || break
-    kill "$KEEPER_PID" 2>/dev/null; wait "$KEEPER_PID" 2>/dev/null; KEEPER_PID=""
+    keeper_is_gone || break
 done
 
 [ "$READY" = 1 ] && echo 'starts anyway' || echo 'FAIL: kept down without a listener'
-grep -qF "Unknown handler type 'no_such_control_type'" "${TMP_DIR}/keeper.err.log" 2>/dev/null \
+keeper_said_all | grep -qF "Unknown handler type 'no_such_control_type'" \
     && echo 'FAIL: the handler section was read' || echo 'handler section not read'
 kill "$KEEPER_PID" 2>/dev/null; wait "$KEEPER_PID" 2>/dev/null; KEEPER_PID=""
 
@@ -280,9 +354,9 @@ echo '--- control valid'
 STATUS=000
 for _ in $(seq 1 20); do
     pick_ports
-    rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log" "${TMP_DIR}/keeper.log"
+    reset_state
     write_control_config '<type>ready</type>' ''
-    "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" >/dev/null 2>&1 &
+    "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" >"${TMP_DIR}/keeper.stdouterr" 2>&1 &
     KEEPER_PID=$!
 
     # The readiness handler binds its own configured path rather than the rule's <url>.
@@ -295,10 +369,10 @@ for _ in $(seq 1 20); do
     done
 
     [ "$STATUS" = 200 ] && break
-    grep -qE 'RAFT_ERROR|Address already in use' "${TMP_DIR}/keeper.err.log" 2>/dev/null || break
-    kill "$KEEPER_PID" 2>/dev/null; wait "$KEEPER_PID" 2>/dev/null; KEEPER_PID=""
+    keeper_is_gone || break
 done
 
+[ "$STATUS" = 200 ] || { echo "last keeper exit: ${KEEPER_EXIT:-still running}"; keeper_said; }
 echo "control endpoint: ${STATUS}"
 kill "$KEEPER_PID" 2>/dev/null; wait "$KEEPER_PID" 2>/dev/null; KEEPER_PID=""
 
@@ -308,7 +382,7 @@ kill "$KEEPER_PID" 2>/dev/null; wait "$KEEPER_PID" 2>/dev/null; KEEPER_PID=""
 echo '--- control secure'
 for _ in $(seq 1 20); do
     pick_ports
-    rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log" "${TMP_DIR}/keeper.log"
+    reset_state
     write_control_config '<type>no_such_control_type</type>' '' secure
 
     OUT="$(timeout 60 "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" 2>&1)"

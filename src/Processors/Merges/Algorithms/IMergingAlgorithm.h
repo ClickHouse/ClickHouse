@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Chunk.h>
 #include <Common/PODArray_fwd.h>
 #include <Core/Block.h>
@@ -24,7 +25,7 @@ public:
         /// Additional sources that are worth reading ahead because the merge is likely
         /// to need them soon (e.g. sources deferred behind a virtual row). Unlike
         /// `required_source`, the algorithm does not wait for data from them.
-        std::vector<size_t> sources_to_prefetch;
+        VectorWithMemoryTracking<size_t> sources_to_prefetch;
 
         explicit Status(Chunk chunk_) : chunk(std::move(chunk_)) {}
         explicit Status(Chunk chunk_, bool is_finished_) : chunk(std::move(chunk_)), is_finished(is_finished_) {}
@@ -55,7 +56,7 @@ public:
         }
     };
 
-    using Inputs = std::vector<Input>;
+    using Inputs = VectorWithMemoryTracking<Input>;
 
     static void removeConstAndSparse(Input & input)
     {
@@ -108,7 +109,7 @@ public:
             removeReplicatedFromSortingColumns(input, description);
     }
 
-    virtual const char * getName() const = 0;
+    [[nodiscard]] virtual const char * getName() const = 0;
     virtual void initialize(Inputs inputs) = 0;
     virtual void consume(Input & input, size_t source_num) = 0;
     virtual Status merge() = 0;
@@ -130,7 +131,7 @@ public:
         UInt64 blocks = 0;
     };
 
-    virtual MergedStats getMergedStats() const = 0;
+    [[nodiscard]] virtual MergedStats getMergedStats() const = 0;
 };
 
 // TODO: use when compile with clang which could support it

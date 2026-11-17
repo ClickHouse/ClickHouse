@@ -30,8 +30,12 @@ from ci.praktika.s3 import S3
 from ci.praktika.settings import Settings
 from ci.praktika.utils import Shell, Utils
 
-TIMEOUT_MASTER = 60 * 60  # 60 minutes for nightly/master runs
+TIMEOUT_MASTER = 5 * 60 * 60  # 5 hours of fuzzing for nightly/master runs
 TIMEOUT_PR = 30 * 60  # 30 minutes for PR runs
+# Corpus minimization is a fixed amount of work proportional to the corpus (the
+# slowest target takes about 40 minutes), so its cap does not move with the
+# fuzzing budget.
+TIMEOUT_MINIMIZATION = 60 * 60
 NO_CHANGES_MSG = "Nothing to run"
 RUNNER_OUTPUT = "/test_output"
 
@@ -75,6 +79,47 @@ def get_run_command(
         f"--cap-add=SYS_PTRACE {env_str} {image} "
         "python3 /usr/share/clickhouse-test/fuzz/runner.py"
     )
+
+
+def generate_dictionary(
+    fuzzers_path: Path, repo_path: Path, image: DockerImage
+) -> None:
+    # The libFuzzer dictionary (all.dict) lists every function, data type and
+    # keyword known to the server. It is generated here from the release binary,
+    # so it never drifts from the actual SQL grammar (see tests/fuzz/update_dict.sh).
+    clickhouse_bin = fuzzers_path / "clickhouse"
+    assert clickhouse_bin.exists(), "ClickHouse release binary not found"
+    original_mode = clickhouse_bin.stat().st_mode
+    clickhouse_bin.chmod(original_mode | 0o111)
+
+    uid = os.getuid()
+    gid = os.getgid()
+    # The whole repository is mounted (read-only), not just tests/: update_dict.sh
+    # verifies that the source-derived dictionary covers the binary-derived one,
+    # and derives the source root from its own location, so it must run from a
+    # full checkout.
+    cmd = (
+        f"docker run --rm "
+        f"--user {uid}:{gid} "
+        f"--workdir=/fuzzers "
+        f"--volume={fuzzers_path}:/fuzzers "
+        f"--volume={repo_path}:/repo:ro "
+        f'-e CLICKHOUSE_BIN="/fuzzers/clickhouse" '
+        f'-e OUTPUT_DIR="/fuzzers" '
+        f"{image} "
+        f"bash /repo/tests/fuzz/update_dict.sh"
+    )
+    logging.info("Generating fuzzer dictionary: %s", cmd)
+    try:
+        subprocess.check_call(cmd, shell=True)
+    finally:
+        # Everything executable in this directory is a fuzzer target to the
+        # runner, so only the *_fuzzer files may stay executable in it.
+        clickhouse_bin.chmod(original_mode)
+
+
+def count_fuzzers(path: Path) -> int:
+    return max(1, len([f for f in os.listdir(path) if f.endswith("_fuzzer")]))
 
 
 def parse_args():
@@ -469,13 +514,26 @@ def main():
             with zipfile.ZipFile(fuzzers_path / file, "r") as zfd:
                 zfd.extractall(seed_corpus_path)
 
+    # A minimization run replays an existing corpus, which libFuzzer takes no
+    # dictionary for, and is given no release binary to generate one from.
+    if not args.minimize_only:
+        generate_dictionary(fuzzers_path, repo_path, docker_image)
+
     result_path = temp_path / "result_path"
     result_path.mkdir(parents=True, exist_ok=True)
 
     additional_envs = []
 
-    timeout = TIMEOUT_MASTER if is_master else TIMEOUT_PR
+    if args.minimize_only:
+        timeout = TIMEOUT_MINIMIZATION
+    else:
+        timeout = TIMEOUT_MASTER if is_master else TIMEOUT_PR
     additional_envs.append(f"TIMEOUT={timeout}")
+
+    # Every fuzzer holds its runner thread for the whole run, so anything above
+    # this many targets would not start until another one finishes - at a 5 hour
+    # budget that doubles the length of the job instead of queueing for minutes.
+    additional_envs.append(f"RUNNERS={count_fuzzers(fuzzers_path)}")
 
     if args.minimize_only:
         additional_envs.append("MINIMIZE_ONLY=1")

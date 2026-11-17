@@ -1,4 +1,3 @@
--- Tags: no-old-analyzer
 -- Regression: query-construction settings on the OUTERMOST query must be materialized exactly once.
 -- `applyQueryConstructionSettings` re-attaches the query-level `SETTINGS` clause to the outer wrapped
 -- query; the consumed construction settings (`select` / `filter` / `order` / `sort`) must be stripped

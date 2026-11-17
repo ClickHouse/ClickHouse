@@ -33,6 +33,55 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
 }
 
+Settings networkCompressionSettings(const Settings & settings)
+{
+    static constexpr std::string_view compression_setting_names[]
+        = {"network_compression_method", "network_zstd_compression_level", "allow_suspicious_codecs", "allow_experimental_codecs"};
+
+    /// The server re-derives the settings that `compatibility` changed, and a profile may pin them as
+    /// read-only, so an explicitly serialized compatibility-derived value would make the helper query fail
+    /// where an ordinary query succeeds. Drop them first, exactly as ordinary queries do, to tell an
+    /// explicit override apart from a derived value.
+    const Settings * source = &settings;
+    Settings settings_without_compat;
+    if (settings.hasSettingsChangedByCompatibility())
+    {
+        settings_without_compat = settings;
+        settings_without_compat.resetSettingsChangedByCompatibility();
+        source = &settings_without_compat;
+    }
+
+    Settings result;
+
+    /// `compatibility` itself is an explicit user setting; forward it so the server applies it to the
+    /// helper query the same way it does to an ordinary query of this session. Setting it re-derives its
+    /// effects inside `result`, so the network settings it changed get their derived values back.
+    if (source->isChanged("compatibility"))
+        result.set("compatibility", source->get("compatibility"));
+
+    /// An explicit override wins over a derived value; `set` also stops tracking the setting as
+    /// compatibility-derived, so it survives the demotion below and is serialized to the server
+    /// (the server cannot re-derive an explicit override).
+    for (std::string_view name : compression_setting_names)
+        if (source->isChanged(name))
+            result.set(name, source->get(name));
+
+    /// The derived values must select the client-side network codec in `Connection::sendQuery`, but they
+    /// must not be serialized as explicit changes. Keep the values, clear the `changed` flags.
+    result.markSettingsChangedByCompatibilityAsUnchanged();
+
+    /// Force ClickHouse SQL unconditionally, and after the demotion above so that the override stays
+    /// `changed` and is therefore serialized: dropping the session `dialect` is not enough, because the
+    /// server takes the parser from the effective `dialect` of the authenticated user, which a profile
+    /// may itself default to Kusto or PRQL. The same override, for the same reason, is applied to
+    /// secondary queries by the interserver senders (`MultiplexedConnections`, `HedgedConnections`,
+    /// `RemoteInserter`). Sending the value a user already has is a no-op for setting constraints, so
+    /// this does not trip a profile that pins `dialect` as read-only to `clickhouse`.
+    result.set("dialect", String("clickhouse"));
+
+    return result;
+}
+
 /// Should we celebrate a bit?
 bool isNewYearMode()
 {
@@ -140,20 +189,25 @@ bool isCloudEndpoint(const std::string & host)
 }
 
 #if USE_REPLXX
-/// Issue: https://github.com/ClickHouse/ClickHouse/issues/83987
-/// countCodePointsWithSeqLength calculates utf-8 code point position consistently with
-/// colors vector allocation (with iteration and `UTF8::seqLength`). This function replaces the use
-/// of `UTF8::countCodePoints()`, since, `UTF8::countCodePoints` and `UTF8::seqLength` seem to handle
-/// invalid utf-8 sequences inconsistently (e.g., hex literals like x'A0'), causing count mismatches
-/// and crashes. TODO: @bharatnc fix `UTF8::countCodePoints` to handle invalid utf-8 sequences consistently
-/// with `UTF8::seqLength` so that this helper function's usage can be removed.
-static size_t countCodePointsWithSeqLength(const String & query, const char * end)
+/// Like `UTF8::seqLength`, but a malformed sequence covers only the continuation bytes that follow it, up to `end`.
+static size_t codePointLength(const char * pos, const char * end)
 {
+    const size_t max_length = std::min<size_t>(UTF8::seqLength(*pos), end - pos);
+    size_t length = 1;
+    while (length < max_length && UTF8::isContinuationOctet(pos[length]))
+        ++length;
+    return length;
+}
+
+/// The number of code points (as partitioned by `codePointLength`) that start before `pos`.
+static size_t countCodePointsBefore(const String & query, const char * pos)
+{
+    const char * const end = query.data() + query.size();
     size_t code_points = 0;
-    const char * pos = query.data();
-    while (pos < end)
+    const char * current = query.data();
+    while (current < pos)
     {
-        pos += UTF8::seqLength(*pos);
+        current += codePointLength(current, end);
         ++code_points;
     }
     return code_points;
@@ -236,18 +290,18 @@ static void highlightWithLexer(const String & query, std::vector<replxx::Replxx:
         while (char_pos < token.begin && code_point_pos < colors.size())
         {
             ++code_point_pos;
-            char_pos += UTF8::seqLength(*char_pos);
+            char_pos += codePointLength(char_pos, end);
         }
         while (char_pos < token.end && code_point_pos < colors.size())
         {
             colors[code_point_pos] = color;
             ++code_point_pos;
-            char_pos += UTF8::seqLength(*char_pos);
+            char_pos += codePointLength(char_pos, end);
         }
     }
 }
 
-void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context, int cursor_position, bool rainbow_parentheses, bool lexer_fallback)
+void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context, int cursor_position, bool rainbow_parentheses, bool * last_is_delimiter, bool lexer_fallback)
 {
     using namespace replxx;
 
@@ -351,7 +405,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
             while (char_pos < range.begin)
             {
                 ++code_point_pos;
-                char_pos += UTF8::seqLength(*char_pos);
+                char_pos += codePointLength(char_pos, end);
             }
 
             if (!highlight_matching_identifiers
@@ -400,7 +454,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
                 }
 
                 ++code_point_pos;
-                char_pos += UTF8::seqLength(*char_pos);
+                char_pos += codePointLength(char_pos, end);
             }
 
             /// Highlight digit groups inside numbers
@@ -433,14 +487,14 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
                 while (identifiers_char_pos < range.begin)
                 {
                     ++identifiers_code_point_pos;
-                    identifiers_char_pos += UTF8::seqLength(*identifiers_char_pos);
+                    identifiers_char_pos += codePointLength(identifiers_char_pos, end);
                 }
 
                 while (identifiers_char_pos < range.end)
                 {
                     colors[identifiers_code_point_pos] = replxx::color::underline(colors[identifiers_code_point_pos]);
                     ++identifiers_code_point_pos;
-                    identifiers_char_pos += UTF8::seqLength(*identifiers_char_pos);
+                    identifiers_char_pos += codePointLength(identifiers_char_pos, end);
                 }
             }
         }
@@ -513,15 +567,13 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
                     continue;
                 }
 
-                /// TODO: @bharatnc replace the usages of countCodePointsWithSeqLength() below with UTF8::countCodePoints()
-                /// once it's fixed to handle invalid utf-8 sequences consistently with seqLength.
                 /// Highlight the closing round bracket.
-                auto highlight_pos = countCodePointsWithSeqLength(query, highlight_token_iterator->begin);
+                auto highlight_pos = countCodePointsBefore(query, highlight_token_iterator->begin);
                 if (highlight_pos < colors.size())
                     colors[highlight_pos] = color_stack.back();
 
                 /// Highlight the matching opening round bracket.
-                auto matching_brace_pos = countCodePointsWithSeqLength(query, brace_stack.back().begin);
+                auto matching_brace_pos = countCodePointsBefore(query, brace_stack.back().begin);
                 if (matching_brace_pos < colors.size())
                     colors[matching_brace_pos] = color_stack.back();
 
@@ -579,7 +631,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         && !(insert_data && expected.max_parsed_pos >= insert_data)
         && expected.max_parsed_pos >= char_pos)
     {
-        code_point_pos += countCodePointsWithSeqLength(query, expected.max_parsed_pos) - countCodePointsWithSeqLength(query, char_pos);
+        code_point_pos += countCodePointsBefore(query, expected.max_parsed_pos) - countCodePointsBefore(query, char_pos);
 
         if (code_point_pos >= colors.size())
             code_point_pos = colors.size() - 1;
@@ -602,23 +654,25 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     }
 
     /// This is a callback for the client/local app to better find query end. Note: this is a kludge, remove it.
+    if (!last_is_delimiter)
+        return;
     if (last_token.type == TokenType::Semicolon || last_token.type == TokenType::VerticalDelimiter
         || query.ends_with(';') || query.ends_with("\\G"))  /// This is for raw data in INSERT queries, which is not necessarily tokenized.
     {
-        ReplxxLineReader::setLastIsDelimiter(true);
+        *last_is_delimiter = true;
     }
     else if (last_token.type != TokenType::Whitespace)
     {
-        ReplxxLineReader::setLastIsDelimiter(false);
+        *last_is_delimiter = false;
     }
 }
 
 String highlighted(const String & query, const Context & context, bool rainbow_parentheses, bool lexer_fallback)
 {
-    const size_t num_code_points = countCodePointsWithSeqLength(query, query.data() + query.size());
+    const size_t num_code_points = countCodePointsBefore(query, query.data() + query.size());
 
     std::vector<replxx::Replxx::Color> colors(num_code_points, replxx::Replxx::Color::DEFAULT);
-    highlight(query, colors, context, 0, rainbow_parentheses, lexer_fallback);
+    highlight(query, colors, context, 0, rainbow_parentheses, nullptr, lexer_fallback);
 
     String res;
     size_t query_size = query.size();
@@ -635,7 +689,7 @@ String highlighted(const String & query, const Context & context, bool rainbow_p
             res += replxx::ansi_color(curr_color);
             prev_color = curr_color;
         }
-        size_t code_point_length = UTF8::seqLength(query[byte_pos]);
+        size_t code_point_length = codePointLength(query.data() + byte_pos, query.data() + query_size);
         res.append(query.data() + byte_pos, code_point_length);
         byte_pos += code_point_length;
         ++code_point_pos;

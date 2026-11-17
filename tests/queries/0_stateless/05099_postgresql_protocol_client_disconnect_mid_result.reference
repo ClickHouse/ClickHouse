@@ -1,0 +1,6 @@
+--- the statement is running
+1
+--- after the client is gone, the statement is gone too
+0
+--- and the server did not try to write into the canceled socket buffer
+0

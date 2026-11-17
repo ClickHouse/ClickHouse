@@ -119,7 +119,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         if (res & drop_table)
             res |= drop_view;
 
-        if (res & alter_table)
+        if (res.contains(alter_table))
             res |= alter_view;
 
         /// CREATE TABLE (on any database/table) => CREATE_TEMPORARY_TABLE (global)
@@ -197,7 +197,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
     /// If "select_from_system_db_requires_grant" is enabled we provide implicit grants only for a few tables in the system database.
     if (access_control.doesSelectFromSystemDatabaseRequireGrant())
     {
-        const char * always_accessible_tables[] = {
+        static constexpr std::string_view always_accessible_tables[] = {
             /// Constant tables
             "one",
 
@@ -234,7 +234,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
             "quota_usage"
         };
 
-        for (const auto * table_name : always_accessible_tables)
+        for (const std::string_view table_name : always_accessible_tables)
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, table_name);
 
         /// `system.user_query_log` shows each user only their own query log records, so SELECT on it is
@@ -261,6 +261,20 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
         if (max_flags.contains(AccessType::SHOW_MASKING_POLICIES))
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "masking_policies");
+
+        if (max_flags.contains(AccessType::SYSTEM_JEMALLOC))
+        {
+            static constexpr std::string_view jemalloc_tables[] = {
+                "jemalloc_bins",
+                "jemalloc_arena_bins",
+                "jemalloc_stats",
+                "jemalloc_profile_text",
+                "jemalloc_sampled_allocations",
+            };
+
+            for (const std::string_view table_name : jemalloc_tables)
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, table_name);
+        }
     }
     else
     {
@@ -388,12 +402,15 @@ void ContextAccess::setUser(const UserPtr & user_) const
         subscription_for_user_change = {};
         subscription_for_initial_user_change = {};
         subscription_for_roles_changes = {};
+        subscription_for_roles_of_initial_user_changes = {};
         access = nullptr;
         access_with_implicit = nullptr;
         enabled_roles = nullptr;
         roles_info = nullptr;
         enabled_row_policies = nullptr;
         row_policies_of_initial_user = nullptr;
+        unknown_current_roles_of_initial_user.clear();
+        failed_to_find_row_policies_of_initial_user = false;
         enabled_quota = nullptr;
         enabled_settings = nullptr;
         return;
@@ -447,6 +464,26 @@ void ContextAccess::setUser(const UserPtr & user_) const
                     ptr->findRowPoliciesOfInitialUser();
                 }
             });
+
+        /// The forwarded current roles of the initial user are found by name, and their row policies depend on the
+        /// roles granted to them. Both change with the roles, not with the users: a role can be created, dropped,
+        /// or granted another role. So the forwarded names are found again on any change of roles.
+        if (params.initial_user_current_roles)
+        {
+            subscription_for_roles_of_initial_user_changes = access_control->subscribeForChanges(
+                AccessEntityType::ROLE,
+                [weak_ptr = weak_from_this()](const std::vector<AccessChangesNotifier::Change> & changes)
+                {
+                    if (auto ptr = weak_ptr.lock())
+                    {
+                        std::lock_guard lock2{ptr->mutex};
+                        /// Handlers by type are called also without changes, which retries a failed attempt.
+                        if (changes.empty() && !ptr->failed_to_find_row_policies_of_initial_user)
+                            return;
+                        ptr->findRowPoliciesOfInitialUser();
+                    }
+                });
+        }
         findRowPoliciesOfInitialUser();
     }
 }
@@ -501,7 +538,52 @@ void ContextAccess::calculateAccessRights() const
 
 void ContextAccess::findRowPoliciesOfInitialUser() const
 {
-    row_policies_of_initial_user = params.initial_user_id ? access_control->tryGetDefaultRowPolicies(*params.initial_user_id) : nullptr;
+    /// This also runs on changes of users and roles, where an exception is only logged. Until the new row policies are
+    /// published, reading tables is denied (see `getRowPolicyFilter`), so a failure cannot leave the old or no policies.
+    failed_to_find_row_policies_of_initial_user = true;
+    std::shared_ptr<const EnabledRowPolicies> new_row_policies;
+    std::vector<String> new_unknown_current_roles;
+    findRowPoliciesOfInitialUserImpl(new_row_policies, new_unknown_current_roles);
+    row_policies_of_initial_user = std::move(new_row_policies);
+    unknown_current_roles_of_initial_user = std::move(new_unknown_current_roles);
+    failed_to_find_row_policies_of_initial_user = false;
+}
+
+
+void ContextAccess::findRowPoliciesOfInitialUserImpl(
+    std::shared_ptr<const EnabledRowPolicies> & row_policies, std::vector<String> & unknown_current_roles) const
+{
+    if (!params.initial_user_id)
+        return;
+
+    if (!params.initial_user_current_roles)
+    {
+        row_policies = access_control->tryGetDefaultRowPolicies(*params.initial_user_id);
+        return;
+    }
+
+    /// The initiator forwarded the roles its query runs with (after `SET ROLE`), so take the row policies of these roles
+    /// instead of the default roles. The roles are used as is, the same way as with the interserver secret
+    /// (see `Session::makeQueryContextImpl`): the initiator has already checked that they are granted to the user.
+    if (!access_control->tryRead<User>(*params.initial_user_id))
+        return;
+
+    std::vector<UUID> current_roles;
+    for (const auto & role_name : *params.initial_user_current_roles)
+    {
+        if (auto role_id = access_control->find<Role>(role_name))
+            current_roles.push_back(*role_id);
+        else
+            unknown_current_roles.push_back(role_name);
+    }
+
+    /// Fail closed: a role unknown here cannot be honored, and dropping it could drop a restrictive policy.
+    /// `getRowPolicyFilter` throws in this case.
+    if (!unknown_current_roles.empty())
+        return;
+
+    auto initial_user_enabled_roles = access_control->getEnabledRolesInfo(current_roles, {})->enabled_roles;
+    row_policies = access_control->getEnabledRowPolicies(*params.initial_user_id, initial_user_enabled_roles);
 }
 
 
@@ -560,6 +642,15 @@ RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, co
 
         if (initialized && !user && !user_was_dropped)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
+
+        if (failed_to_find_row_policies_of_initial_user)
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "The row policies of the initial user could not be found on this node, see the log for the error");
+
+        if (!unknown_current_roles_of_initial_user.empty())
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "Not all of the current roles of the initial user are known on this node: [{}]",
+                boost::algorithm::join(unknown_current_roles_of_initial_user, ", "));
 
         if (enabled_row_policies)
             filter = enabled_row_policies->getFilter(database, table_name, filter_type);
@@ -623,6 +714,10 @@ std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
             return nullptr;
         }
     }
+
+    /// Outside the branch above on purpose: `QuotaCache` refreshes the quota set in place, so an already
+    /// memoised object has to be re-checked on every call.
+    enabled_quota->checkClientKeySupplied();
 
     return enabled_quota;
 }
@@ -813,22 +908,23 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
     {
         const AccessFlags table_ddl = AccessType::CREATE_DATABASE | AccessType::CREATE_TABLE | AccessType::CREATE_VIEW
             | AccessType::ALTER_TABLE | AccessType::ALTER_VIEW | AccessType::DROP_DATABASE | AccessType::DROP_TABLE | AccessType::DROP_VIEW
-            | AccessType::TRUNCATE;
+            | AccessType::TRUNCATE | AccessType::UNDROP_TABLE;
 
         const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
         const AccessFlags function_ddl = AccessType::CREATE_FUNCTION | AccessType::DROP_FUNCTION;
         const AccessFlags workload_ddl = AccessType::CREATE_WORKLOAD | AccessType::DROP_WORKLOAD;
         const AccessFlags resource_ddl = AccessType::CREATE_RESOURCE | AccessType::DROP_RESOURCE;
+        const AccessFlags named_collection_ddl = AccessType::CREATE_NAMED_COLLECTION | AccessType::DROP_NAMED_COLLECTION | AccessType::ALTER_NAMED_COLLECTION;
         const AccessFlags handler_ddl = AccessType::CREATE_HANDLER | AccessType::ALTER_HANDLER | AccessType::DROP_HANDLER;
         const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;
         const AccessFlags table_and_dictionary_and_function_ddl = table_ddl | dictionary_ddl | function_ddl;
         const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
         const AccessFlags write_dcl_access = AccessType::ACCESS_MANAGEMENT - AccessType::SHOW_ACCESS;
 
-        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_and_function_ddl | workload_ddl | resource_ddl | handler_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
-        const AccessFlags not_readonly_1_flags = AccessType::CREATE_TEMPORARY_TABLE;
+        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_and_function_ddl | workload_ddl | resource_ddl | named_collection_ddl | handler_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
+        const AccessFlags not_readonly_1_flags = AccessType::CREATE_TEMPORARY_TABLE | AccessType::CREATE_TEMPORARY_VIEW;
 
-        const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl | workload_ddl | resource_ddl | handler_ddl;
+        const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl | workload_ddl | resource_ddl | named_collection_ddl | handler_ddl;
         const AccessFlags introspection_flags = AccessType::INTROSPECTION;
 
         const AccessFlags role_management_flags

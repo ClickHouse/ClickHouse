@@ -10,6 +10,9 @@ timeSeriesExtractTag:
 timeSeriesExtractTag mixed rows:
 2	2	2
 
+timeSeriesGroupToSamplingKey:
+[1,1,1,1,1,1]
+
 timeSeriesCopyTag:
 [('__name__','http_codes'),('env','dev'),('region','eu')]	[('__name__','http_codes'),('code','404'),('env','dev'),('region','eu')]	1	1	[('__name__','http_codes'),('code','404'),('region','eu')]
 

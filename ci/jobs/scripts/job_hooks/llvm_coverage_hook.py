@@ -29,22 +29,6 @@ def preserved_coverage_lines(section: str) -> str:
     return "\n".join(kept).strip()
 
 
-def parse_paginated_arrays(output: str) -> list:
-    """Flatten the output of `gh api --paginate --jq '[...]'`, which emits one
-    JSON array per page, concatenated - a single json.loads breaks on page 2."""
-    decoder = json.JSONDecoder()
-    items = []
-    text = (output or "").strip()
-    idx = 0
-    while idx < len(text):
-        page, end = decoder.raw_decode(text, idx)
-        items.extend(page)
-        idx = end
-        while idx < len(text) and text[idx].isspace():
-            idx += 1
-    return items
-
-
 def current_coverage_section(repo: str, pr: int) -> str:
     """The coverage section of the existing updateable PR comment, "" if absent."""
     cmd = (
@@ -53,7 +37,7 @@ def current_coverage_section(repo: str, pr: int) -> str:
     )
     output = GH.get_output_with_retries(cmd, verbose=False)
     try:
-        bodies = parse_paginated_arrays(output)
+        bodies = GH._json_loads_paginated(output)
     except (json.JSONDecodeError, TypeError):
         return ""
     for body in bodies:
@@ -124,6 +108,10 @@ def check():
         pr_changed_lines_info = d.get("pr_changed_lines_info", "")
         diff_url = d.get("diff_url", "")
         uncovered_code_url = d.get("uncovered_code_url", "")
+        # Set only for PRs with no coverable C/C++ changes (tests-only PRs forced
+        # with `ci-coverage`): the global transitions against the master baseline.
+        newly_covered_info = d.get("newly_covered_info", "")
+        newly_covered_url = d.get("newly_covered_url", "")
 
         if info.pr_number > 0:
             # The "Measured on commit" line attributes the numbers: when a later
@@ -144,6 +132,11 @@ def check():
                 if uncovered_code_url:
                     changed_line += f" · [Uncovered code]({uncovered_code_url})"
                 body += changed_line + "\n"
+            if newly_covered_info:
+                newly_line = f"\n**Newly covered:** {newly_covered_info}"
+                if newly_covered_url:
+                    newly_line += f" · [Details]({newly_covered_url})"
+                body += newly_line + "\n"
             links = []
             if coverage_report_url := d.get("coverage_report_url", ""):
                 links.append(f"[Full report]({coverage_report_url})")

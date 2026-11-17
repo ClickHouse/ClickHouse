@@ -42,27 +42,32 @@ public:
     {
     }
 
-    bool isVariadic() const override
+    [[nodiscard]] bool isVariadic() const override
     {
         return false;
     }
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 3;
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
-    bool isDeterministic() const override { return false; }
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(const String, const String, const String) -> UInt8";
+    }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 };
 
 
@@ -133,10 +138,10 @@ Checks if a specific column exists in a database table.
 For elements in a nested data structure, the function checks for the existence of a column.
 For the nested data structure itself, the function returns `0`.
 
-:::note Privilege `SHOW COLUMNS` is required
+<Note title="Privilege `SHOW COLUMNS` is required">
 The function requires the `SHOW COLUMNS` privilege on the target table (the same grant needed by `DESCRIBE` and `SHOW CREATE TABLE`).
 Without it the call fails with `ACCESS_DENIED` instead of returning `1` or `0`, so column names cannot be probed without access.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "hasColumnInTable(database, table, column)";
     FunctionDocumentation::Arguments arguments = {

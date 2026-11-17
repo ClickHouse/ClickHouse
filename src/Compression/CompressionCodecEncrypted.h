@@ -1,11 +1,10 @@
 #pragma once
 
-#include <string_view>
-#include <base/types.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Compression/ICompressionCodec.h>
+#include <base/types.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/MultiVersion.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -84,6 +83,7 @@ public:
 
         /// Same as getCurrentKeyAndNonce. It is used to get key. (need for correct decryption, that is why nonce is not necessary)
         String getKey(EncryptionMethod method, const UInt64 & key_id) const;
+
     private:
         /// struct Params consists of:
         /// 1) hash-table of keys and their ids
@@ -99,18 +99,23 @@ public:
         };
 
         // used to read data from config and create Params
-        static void loadImpl(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, EncryptionMethod method, std::unique_ptr<Params>& new_params);
+        static void loadImpl(
+            const Poco::Util::AbstractConfiguration & config,
+            const String & config_prefix,
+            EncryptionMethod method,
+            std::unique_ptr<Params> & new_params);
 
         MultiVersion<Params> params;
     };
 
-    uint8_t getMethodByte() const override;
+    [[nodiscard]] uint8_t getMethodByte() const override;
+    [[nodiscard]] ASTPtr getCodecDescription() const override;
     void updateHash(SipHash & hash) const override;
 
-    bool isCompression() const override { return false; }
-    bool isGenericCompression() const override { return false; }
-    bool isEncryption() const override { return true; }
-    String getDescription() const override
+    [[nodiscard]] bool isCompression() const override { return false; }
+    [[nodiscard]] bool isGenericCompression() const override { return false; }
+    [[nodiscard]] bool isEncryption() const override { return true; }
+    [[nodiscard]] String getDescription() const override
     {
         switch (encryption_method)
         {
@@ -121,7 +126,7 @@ public:
     }
 
 protected:
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
+    [[nodiscard]] UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
     /// Encrypt data with chosen method.
     /// Throws exception if encryption is impossible or size of encrypted text is incorrect
@@ -130,6 +135,7 @@ protected:
     /// Decrypt data with chosen method
     /// Throws exception if decryption is impossible or size of decrypted text is incorrect
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+
 private:
     EncryptionMethod encryption_method;
 };

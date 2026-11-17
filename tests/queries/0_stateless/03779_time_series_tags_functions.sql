@@ -105,6 +105,31 @@ FROM
 );
 
 SELECT '';
+SELECT 'timeSeriesGroupToSamplingKey:';
+
+WITH
+    (
+        SELECT groupArray(timeSeriesGroupToSamplingKey(group))
+        FROM
+        (
+            SELECT number,
+                   multiIf(number % 3 = 0,
+                           timeSeriesTagsToGroup([('env', 'dev')]),
+                           number % 3 = 1,
+                           timeSeriesTagsToGroup([('env', 'prod')]),
+                           timeSeriesTagsToGroup([])) AS group
+            FROM numbers(6)
+            ORDER BY number
+        )
+    ) AS keys
+SELECT [keys[1] = keys[4],
+        keys[2] = keys[5],
+        keys[3] = keys[6],
+        keys[1] != keys[2],
+        keys[1] != keys[3],
+        keys[2] != keys[3]];
+
+SELECT '';
 SELECT 'timeSeriesCopyTag:';
 
 SELECT timeSeriesGroupToTags(group1),

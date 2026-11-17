@@ -46,11 +46,11 @@ public:
         : IAggregateFunctionDataHelper<AggregationFunctionDeltaSumData<T>, AggregationFunctionDeltaSum<T>>{}
     {}
 
-    String getName() const override { return "deltaSum"; }
+    [[nodiscard]] String getName() const override { return "deltaSum"; }
 
     static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<T>>(); }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -160,10 +160,10 @@ void registerAggregateFunctionDeltaSum(AggregateFunctionFactory & factory)
 Sums the arithmetic difference between consecutive rows.
 If the difference is negative, it is ignored.
 
-:::tip
+<Tip>
 The underlying data must be sorted for this function to work properly.
 If you would like to use this function in a [materialized view](/reference/statements/create/view#materialized-view), you most likely want to use the [`deltaSumTimestamp`](/reference/functions/aggregate-functions/deltaSumTimestamp) function instead.
-:::
+</Tip>
 
 See also:
 - [`runningDifference`](/reference/functions/regular-functions/other-functions#runningDifference)
@@ -212,7 +212,7 @@ SELECT deltaSum(arrayJoin([2.25, 3, 4.5]))
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {21, 3};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
 
     factory.registerFunction("deltaSum", { createAggregateFunctionDeltaSum, documentation, properties });
 }
