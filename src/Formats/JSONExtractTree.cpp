@@ -983,6 +983,12 @@ public:
         }
         else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
         {
+            using ValueType = ColumnTime::ValueType;
+            if (element.isInt64() ? !std::in_range<ValueType>(element.getInt64()) : !std::in_range<ValueType>(element.getUInt64()))
+            {
+                error = fmt::format("value {} is out of bounds of type Time", jsonElementToStringForError<JSONParser>(element, format_settings));
+                return false;
+            }
             value = element.isInt64() ? element.getInt64() : element.getUInt64();
         }
         else
