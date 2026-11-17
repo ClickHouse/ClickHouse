@@ -1,0 +1,24 @@
+toUInt64(dateTrunc(\'month\', d))
+Join: probe[10] ⋈ aggregated[10]
+plus(plus(materialize(1), materialize(1)), n)
+Join: probe[10] ⋈ aggregated[10]
+toUInt64(dateTrunc((SELECT \'month\'), d))
+Join: probe[10] ⋈ aggregated[10]
+plus(length(queryID()), n)
+Join: probe[10] ⋈ aggregated[no_stats~100]
+arrayMap(x -> x * 2, [n])[1]
+Join: probe[10] ⋈ aggregated[10]
+arrayMap(x -> x + rand(x) % 1000, [n])[1]
+Join: probe[10] ⋈ aggregated[no_stats~100]
+n + arraySum(arrayMap(x -> x + rand(x) % 1000, materialize([1, 2, 3])))
+Join: probe[10] ⋈ aggregated[no_stats~100]
+arrayMap(x -> arraySum(arrayMap(y -> y + rand(y) % 1000, [x])), [n])[1]
+Join: probe[10] ⋈ aggregated[no_stats~100]
+arrayMap(x -> length(addressToSymbol(x)), [n])[1]
+Join: probe[10] ⋈ aggregated[no_stats~100]
+arrayMap(x -> arraySum(arrayMap(y -> length(addressToSymbol(y)), [x])), [n])[1]
+Join: probe[10] ⋈ aggregated[no_stats~100]
+arrayMap(x -> length(addressToSymbol(x)) + n, [toUInt64(1)])[1]
+Join: probe[10] ⋈ aggregated[no_stats~100]
+length(addressToSymbol(n))
+Join: probe[10] ⋈ aggregated[no_stats~100]
