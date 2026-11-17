@@ -6,11 +6,9 @@
 
 SET allow_experimental_time_series_table = 1;
 SET distributed_foreground_insert = 1;
--- A serialized plan is analyzed on the initiator, which resolves the missing table there and raises `UNKNOWN_TABLE`
--- before the local shard is skipped or its remote replicas are tried (`distributed plan` job).
+-- A serialized plan fails with `UNKNOWN_TABLE` on the initiator, before the shard is skipped (`distributed plan` job).
 SET serialize_query_plan = 0;
--- The local replica is asked first, and the remote ones only when its table is missing, so the result does not depend
--- on which replica a randomized `load_balancing` picks.
+-- The local replica goes first, so a randomized `load_balancing` does not change the result.
 SET prefer_localhost_replica = 1;
 
 DROP TABLE IF EXISTS ts_dist;
@@ -64,7 +62,7 @@ SELECT count() FROM t_saved SETTINGS skip_unavailable_shards = 0; -- { serverErr
 SELECT count() FROM t_saved SETTINGS skip_unavailable_shards_mode = 'unavailable'; -- { serverError UNKNOWN_TABLE }
 
 SELECT '--- the remote replica of the shard of the missing local table answers, whatever the shard skip settings are';
--- The two replicas of the only shard are both this server, but the second one has the default database shard_1, so it is a remote replica.
+-- Both replicas are this server, but the second one has the database shard_1, so it is remote.
 DESCRIBE cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain));
 DESCRIBE cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain)) SETTINGS skip_unavailable_shards = 1, skip_unavailable_shards_mode = 'unavailable';
 DESCRIBE cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain)) SETTINGS skip_unavailable_shards = 1;
@@ -77,7 +75,7 @@ DESCRIBE cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT 
 SELECT count() FROM cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain)) SETTINGS use_hedged_requests = 0;
 
 SELECT '--- custom-key parallel replicas ask the local replica as a remote one, so its missing table is an error';
--- `FORMAT Null`: the other replica may send its rows before the error arrives, and they must not reach the output.
+-- `FORMAT Null`: rows sent before the error must not reach the output.
 SELECT x FROM cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain))
 SETTINGS prefer_localhost_replica = 1, enable_parallel_replicas = 1, max_parallel_replicas = 2, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'x', serialize_query_plan = 0
 FORMAT Null; -- { serverError UNKNOWN_TABLE }

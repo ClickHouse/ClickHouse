@@ -18,7 +18,7 @@ struct ConverterContext
 
     const StorageID time_series_storage_id;
 
-    /// Set when the target is a Distributed table over per-shard TimeSeries tables, see PrometheusQueryEvaluationSettings.
+    /// Set when the target is a Distributed table, see PrometheusQueryEvaluationSettings.
     const std::optional<PrometheusQueryDistributedTarget> distributed;
 
     UInt64 time_series_version = TimeSeriesVersion::LATEST;

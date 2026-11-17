@@ -27,16 +27,14 @@ namespace
             make_intrusive<ASTLiteral>(STALE_NAN_BITS));
     }
 
-    /// Reads a selector from the TimeSeries tables of the shards of a cluster, selecting on each shard
-    /// and evaluating centrally.
+    /// Selects on each shard and evaluates centrally, so every shard only sends raw samples.
     ASTPtr fromRangeSelectorOnCluster(std::string_view instant_selector_text,
                                       TimestampType min_time,
                                       TimestampType max_time,
                                       bool filter_stale_markers,
                                       const ConverterContext & context)
     {
-        /// SELECT timeSeriesIdToTags(id) AS tags, timestamp, value
-        /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>, 'timestamp_and_value')
+        /// Per shard: SELECT timeSeriesIdToTags(id) AS tags, timestamp, value FROM timeSeriesSelector(...)
         SelectQueryBuilder shard_builder;
 
         shard_builder.select_list.push_back(makeASTFunction("timeSeriesIdToTags", make_intrusive<ASTIdentifier>(ColumnNames::ID)));
@@ -69,7 +67,7 @@ namespace
         cluster_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
         cluster_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
 
-        /// The table's declared settings go on the cluster() call, so the caller's own settings still override them.
+        /// Set on cluster() so that the settings of the caller still override them.
         auto cluster_settings = make_intrusive<ASTSetQuery>();
         cluster_settings->is_standalone = false;
         cluster_settings->changes.emplace_back("skip_unavailable_shards", context.distributed->skip_unavailable_shards);
@@ -81,8 +79,7 @@ namespace
             makeASTFunction("view", shard_builder.getSelectQuery()),
             std::move(cluster_settings));
 
-        /// SELECT timeSeriesTagsToGroup(tags) AS group, timestamp, value FROM view(<cluster query>)
-        /// Groups are node-local: without the view() the whole query goes to the shards, which each restart their own counter.
+        /// Group numbers are node-local, so view() keeps this part on the initiator instead of the shards.
         SelectQueryBuilder builder;
 
         builder.select_list.push_back(makeASTFunction("timeSeriesTagsToGroup", make_intrusive<ASTIdentifier>(ColumnNames::Tags)));

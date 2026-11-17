@@ -6,8 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# A user without the SELECT grant on a Distributed table must not learn anything about it from prometheusQuery,
-# not even from DESCRIBE or CREATE TABLE AS, which inspect the table before it is read.
+# Without the SELECT grant nothing about the table may leak, not even via DESCRIBE or CREATE TABLE AS.
 
 user="user_${CLICKHOUSE_DATABASE}"
 

@@ -106,7 +106,7 @@ ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr conte
 {
     chassert(cluster);
 
-    /// The function's own shard-skip settings apply to the structure discovery too, unless the query sets them.
+    /// Own shard-skip settings apply to the structure discovery too, unless the query sets them.
     DistributedSettings declared;
     declared.applyChanges(settings_changes);
     auto discovery_context = Context::createCopy(context);

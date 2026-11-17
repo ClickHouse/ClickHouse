@@ -2,8 +2,7 @@
 -- no-parallel, no-flaky-check: uses the global shard_0 / shard_1 databases of test_cluster_two_shards_different_databases.
 -- no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
--- Raw samples are selected on every shard and the PromQL is evaluated on the initiator, so the answer
--- must be the same as evaluating it against one local TimeSeries table holding all of the data.
+-- Shards send raw samples and the initiator evaluates, so the answer must equal one local table's.
 
 SET allow_experimental_time_series_table = 1;
 SET distributed_foreground_insert = 1;
@@ -27,8 +26,7 @@ CREATE DATABASE shard_1;
 CREATE TABLE shard_0.ts_local ENGINE = TimeSeries;
 CREATE TABLE shard_1.ts_local ENGINE = TimeSeries;
 
--- Sharded on the host tag, not on metric_name: the key has to split the series of one metric, otherwise
--- every aggregation below would be answerable by a single shard on its own.
+-- Sharded on host, not metric_name, so that one metric's series are split across the shards.
 CREATE TABLE ts_dist AS shard_0.ts_local
     ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local, cityHash64(tags['host']));
 
@@ -61,8 +59,7 @@ SELECT '--- sum(): a single row with the total of all four series ---';
 SELECT * FROM prometheusQuery(ts_dist, 'sum(m)', 140) ORDER BY ALL;
 
 SELECT '--- topk over series the shards hold separately ---';
--- Distinct values, so the answer does not depend on the order the shards are read in: with a tie,
--- `topk` ranks by the group number, which is assigned in arrival order (true of one table too).
+-- Distinct values: on a tie `topk` ranks by group number, which depends on the arrival order.
 SELECT * FROM prometheusQuery(ts_dist, 'topk(2, m)', 140) ORDER BY ALL;
 SELECT * FROM prometheusQuery(ts_dist, 'bottomk(1, m)', 140) ORDER BY ALL;
 
@@ -99,8 +96,7 @@ CREATE TABLE ts_nested AS ts_all ENGINE = Distributed(test_shard_localhost, curr
 SELECT * FROM prometheusQuery(ts_nested, 'm', 140); -- { serverError UNEXPECTED_TABLE_ENGINE }
 
 SELECT '--- declared Distributed settings the generated read has to carry ---';
--- Only a shard that is really down tells a declared value apart from the default: with skipping
--- declared the live shard answers alone, and a query-level 0 still turns that back into an error.
+-- Only a down shard tells a declared value from the default; a query-level 0 still makes it an error.
 SET send_logs_level = 'fatal';
 CREATE TABLE ts_dead AS ts_all ENGINE = Distributed(test_unavailable_shard, currentDatabase(), ts_all);
 CREATE TABLE ts_dead_skip AS ts_all ENGINE = Distributed(test_unavailable_shard, currentDatabase(), ts_all) SETTINGS skip_unavailable_shards = 1;

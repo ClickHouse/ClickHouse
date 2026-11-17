@@ -219,8 +219,7 @@ void SelectStreamFactory::createForShardImpl(
             }
             catch (const Exception & e)
             {
-                /// A table function that finds no table is an absent table below: the remote replicas of the shard are tried,
-                /// and a shard without them is skipped in the mode that skips one.
+                /// No table is treated as an absent one below: try the remote replicas, else skip the shard if allowed.
                 const bool missing_table = e.code() == ErrorCodes::UNKNOWN_TABLE || e.code() == ErrorCodes::UNKNOWN_DATABASE;
                 const bool skip_missing_table = settings[Setting::skip_unavailable_shards]
                     && settings[Setting::skip_unavailable_shards_mode] != SkipUnavailableShardsMode::UNAVAILABLE;

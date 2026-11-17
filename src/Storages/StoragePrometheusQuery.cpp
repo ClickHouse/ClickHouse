@@ -239,7 +239,7 @@ void StoragePrometheusQuery::readImpl(
     /// Isolate the settings required by generated PromQL from the outer query.
     auto query_context = Context::createCopy(context);
     applySettingsForPrometheusQuery(*query_context);
-    /// The shards must get the query text: a serialized plan would resolve the shard-local table on this server.
+    /// The shards get the query text, as a serialized plan would resolve the shard-local table here.
     if (evaluation_settings.distributed)
         query_context->setSetting("serialize_query_plan", false);
 

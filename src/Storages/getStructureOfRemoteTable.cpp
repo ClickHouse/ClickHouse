@@ -171,7 +171,7 @@ ColumnsDescription getStructureOfRemoteTable(
 
     std::string fail_messages;
 
-    /// A read with these settings skips a local shard whose table function finds no table, so the discovery does too.
+    /// A read skips a local shard whose table function finds no table, so the discovery does too.
     const auto & settings = context->getSettingsRef();
     const bool skip_missing_table = table_func_ptr && settings[Setting::skip_unavailable_shards]
         && settings[Setting::skip_unavailable_shards_mode] != SkipUnavailableShardsMode::UNAVAILABLE;

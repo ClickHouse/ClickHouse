@@ -83,14 +83,14 @@ UInt64 outerSamplesVersion(const IStorage & storage, const StorageInMemoryMetada
 {
     if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(&storage))
         return time_series->getVersion();
-    /// A Distributed table has no version: the samples column it declares is named `samples` since that version.
+    /// A Distributed table has no version, so it is taken from the name of its samples column.
     return metadata.columns.has(TimeSeriesColumnNames::Samples) ? TimeSeriesVersion::MIN_WITH_SAMPLES_OUTER_COLUMN
                                                                 : TimeSeriesVersion::MIN_SUPPORTED;
 }
 
 namespace
 {
-    /// Parsed as the planner parses it: a literal true, which isAlwaysTrue() exempts for a row policy, restricts nothing.
+    /// Parsed as the planner does, as a literal true restricts nothing.
     bool isRestrictiveFilter(const String & filter, const ContextPtr & context)
     {
         if (filter.empty())
