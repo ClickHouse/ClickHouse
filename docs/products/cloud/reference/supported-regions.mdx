@@ -13,7 +13,7 @@ import { CloudRegionsMap } from "/snippets/components/CloudRegionsMap/CloudRegio
 
 ClickHouse Cloud is available in regions across AWS, Google Cloud, and Microsoft Azure. Use the map and tables below to find a supported location for your service and check which deployment and compliance options are available.
 
-Search the map by region code or location, or filter by cloud provider, private regions, or HIPAA compliance. Colors identify cloud providers. Filled circles indicate public regions; hollow circles indicate private regions. Map locations are approximate.
+Search the map by region code or location, or filter by cloud provider, private regions, BYOC-only regions, or HIPAA compliance. Colors identify cloud providers. Filled circles indicate public regions; hollow circles indicate private regions; dashed circles indicate BYOC-only regions. Map locations are approximate.
 
 <CloudRegionsMap />
 
@@ -21,7 +21,7 @@ Search the map by region code or location, or filter by cloud provider, private 
 
 The tables list all supported regions by cloud provider, regardless of the map filters. Badges indicate availability: `Public` for generally available regions, and `Private`, `HIPAA`, or `PCI` for regions that offer those options.
 
-`BYOC` marks regions where [Bring Your Own Cloud](/products/cloud/guides/infrastructure/deployment-options/byoc/overview) deployments are available. For regions also marked `Private`, BYOC is available upon request.
+`BYOC` marks regions where [Bring Your Own Cloud](/products/cloud/guides/infrastructure/deployment-options/byoc/overview) deployments are available. For regions also marked `Private`, BYOC is available upon request. Regions marked only `BYOC` support BYOC deployments only.
 
 <Tabs>
 <Tab title="AWS" id="aws-regions" icon="aws">
