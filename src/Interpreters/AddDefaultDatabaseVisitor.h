@@ -424,6 +424,7 @@ private:
             /// However, just for safety, let's store the old node for a little longer.
             ASTPtr old_ast = ast;
             ast = make_intrusive<ASTLiteral>(database_name);
+            ast->setAlias(function->alias);
             parent.updatePointerToChild(old_ast.get(), ast);
             return;
         }

@@ -34,6 +34,8 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -46,6 +48,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/ExecuteCommands.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageKeeperMap.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
@@ -54,6 +57,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
+#include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
@@ -246,24 +250,40 @@ bool hasCommands(const CommandSegments & segments)
     return std::ranges::any_of(segments, [](const auto & segment) { return std::holds_alternative<CommandsType>(segment); });
 }
 
-/// A mutation runs later in another context (in the background, with no current database), so the names that depend
-/// on the current database are bound when it is submitted, with the rule of `ON CLUSTER`: the database of `merge` is
-/// the database of the altered table, as for table names, and any other `currentDatabase()` is the session's.
-void bindCurrentDatabase(const ASTAlterQuery & alter, const StorageID & table_id, const ContextPtr & context)
+/// A partition value has no columns, so a name there is a function called without parentheses.
+void bindCurrentDatabaseWithoutParentheses(IAST & ast, const String & database)
 {
-    if (table_id)
-        AddDefaultDatabaseVisitor(context, table_id.getDatabaseName()).substituteDatabaseInTableFunctions(*alter.command_list);
+    for (auto & child : ast.children)
+    {
+        const auto * identifier = child->as<ASTIdentifier>();
+        if (identifier && FunctionFactory::instance().getCanonicalNameIfAny(identifier->name()) == "currentDatabase")
+        {
+            ASTPtr old_child = child;
+            child = make_intrusive<ASTLiteral>(database);
+            ast.updatePointerToChild(old_child.get(), child);
+        }
+        else if (!child->as<ASTSubquery>())
+            bindCurrentDatabaseWithoutParentheses(*child, database);
+    }
+}
 
-    const String session_database = context->getCurrentDatabase();
-    if (session_database.empty())
+/// In a mutation the current database is the database of the table, as for table names: it is the only one the
+/// background tasks know. It is bound when the mutation is submitted, before the query is stored for other hosts.
+void bindCurrentDatabase(const ASTAlterQuery & alter, const StorageID & table_id, const StoragePtr & table, const ContextPtr & context)
+{
+    if (!table_id)
         return;
 
-    AddDefaultDatabaseVisitor visitor(context, session_database, /* only_replace_current_database_function */ true);
+    AddDefaultDatabaseVisitor(context, table_id.getDatabaseName()).substituteDatabaseInTableFunctions(*alter.command_list);
+    const String database = InterpreterAlterQuery::getMutationDatabase(table_id, table);
+    AddDefaultDatabaseVisitor visitor(context, database, /* only_replace_current_database_function */ true);
     for (auto & child : alter.command_list->children)
     {
         const auto & command = child->as<const ASTAlterCommand &>();
         if (command.type == ASTAlterCommand::UPDATE || command.type == ASTAlterCommand::DELETE || command.partition)
             visitor.visitDDL(child);
+        if (command.partition)
+            bindCurrentDatabaseWithoutParentheses(*command.partition, database);
     }
 }
 
@@ -305,7 +325,8 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
             if (mutation_command->type == MutationCommand::UPDATE || mutation_command->type == MutationCommand::DELETE)
             {
                 /// TODO: add a check for result query size.
-                auto rewritten_command_ast = replaceNonDeterministicToScalars(*command_ast, context);
+                auto rewritten_command_ast = replaceNonDeterministicToScalars(
+                    *command_ast, InterpreterAlterQuery::createMutationContext(table, context));
                 if (rewritten_command_ast)
                 {
                     auto * new_alter_command = rewritten_command_ast->as<ASTAlterCommand>();
@@ -467,7 +488,7 @@ std::optional<BlockIO> tryRewriteToLightweightUpdate(CommandSegments & segments,
     LOG_DEBUG(getLogger("InterpreterAlterQuery"), "Will execute query '{}' as a lightweight update", query_ptr->formatForErrorMessage());
 
     BlockIO res;
-    res.pipeline = table->updateLightweight(mutation_commands, context);
+    res.pipeline = table->updateLightweight(mutation_commands, InterpreterAlterQuery::createMutationContext(table, context));
     res.pipeline.addStorageHolder(table);
     return res;
 }
@@ -546,11 +567,12 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 /// fails to analyze.
                 MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, *mutation_commands, context);
                 MutationsInterpreter::Settings mutation_settings(false);
-                auto validation_context = Context::createCopy(context);
+                auto mutation_context = InterpreterAlterQuery::createMutationContext(table, context);
+                auto validation_context = Context::createCopy(mutation_context);
                 validation_context->setAnalyzingBackgroundExpressions(true);
                 MutationsInterpreter(table, metadata_snapshot, *mutation_commands, validation_context, mutation_settings).validate();
                 context->onQueryExecutionStarted();
-                table->mutate(*mutation_commands, context);
+                table->mutate(*mutation_commands, mutation_context);
             }
         }
         else if (auto * partition_commands = std::get_if<PartitionCommands>(&segment))
@@ -667,7 +689,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     /// Before the query is stored for other hosts by `executeDDLQueryOnCluster` or a replicated database.
     /// The table identifiers are qualified with the database of the altered table below, on each host.
-    bindCurrentDatabase(alter, table_id, getContext());
+    bindCurrentDatabase(alter, table_id, table, getContext());
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
@@ -912,6 +934,20 @@ InterpreterAlterQuery::RowExistsColumnKind InterpreterAlterQuery::getRowExistsCo
     return metadata_snapshot->isVirtualColumn(RowExistsColumn::name)
         ? RowExistsColumnKind::LightweightDeleteMarker
         : RowExistsColumnKind::Regular;
+}
+
+String InterpreterAlterQuery::getMutationDatabase(const StorageID & table_id, const StoragePtr & table)
+{
+    if (auto alias = castStorage<StorageAlias>(table, DeferredTable::Load))
+        return alias->getTargetChain().back().first;
+    return table_id.getDatabaseName();
+}
+
+ContextMutablePtr InterpreterAlterQuery::createMutationContext(const StoragePtr & table, const ContextPtr & context_)
+{
+    auto mutation_context = Context::createCopy(context_);
+    mutation_context->setCurrentDatabase(getMutationDatabase(table->getStorageID(), table));
+    return mutation_context;
 }
 
 /** `MODIFY QUERY` replaces the body a view executes, and for `SQL SECURITY DEFINER` or `NONE` that body does

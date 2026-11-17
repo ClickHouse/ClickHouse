@@ -187,14 +187,18 @@ BlockIO InterpreterDeleteQuery::execute()
         if (!delete_query.cluster.empty())
         {
             /// Substitute the database into table functions that use the current database implicitly, e.g.
-            /// `merge('tables_regexp')`, before `executeDDLQueryOnCluster` replaces `currentDatabase()` with
-            /// the database of the session. The table identifiers are qualified on each host instead.
+            /// `merge('tables_regexp')`, and into `currentDatabase()`, which is the database of the table in a
+            /// mutation, before `executeDDLQueryOnCluster` replaces it with the database of the session.
+            /// The table identifiers are qualified on each host instead.
             AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
             auto & mutable_delete_query = query_ptr->as<ASTDeleteQuery &>();
             if (mutable_delete_query.predicate)
                 visitor.substituteDatabaseInTableFunctions(*mutable_delete_query.predicate);
             if (mutable_delete_query.partition)
                 visitor.substituteDatabaseInTableFunctions(*mutable_delete_query.partition);
+            const String mutation_database = InterpreterAlterQuery::getMutationDatabase(table_id, table);
+            AddDefaultDatabaseVisitor(getContext(), mutation_database, /* only_replace_current_database_function */ true)
+                .visitDDL(query_ptr);
 
             DDLQueryOnClusterParams params;
             params.access_to_check.emplace_back(AccessType::ALTER_DELETE, table_id.database_name, table_id.table_name);

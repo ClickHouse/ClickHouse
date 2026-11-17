@@ -1,9 +1,8 @@
 -- Tags: zookeeper, distributed, no-replicated-database
 -- Tag no-replicated-database: ON CLUSTER is not allowed
 
--- The names in a mutation are bound when it is submitted, as for `ON CLUSTER`: the database of `merge` (also an
--- empty one) is the database of the altered table, and any other `currentDatabase()` is the database of the session.
--- A database name computed while the mutation runs in the background means the database of the table.
+-- In a mutation the current database is the database of the altered table, as for table names: for `merge` (also
+-- with an empty or a computed database), `currentDatabase()` with or without parentheses and an `ALIAS` column using it.
 -- The queries are issued from the database of the session, whose `t_src` has other rows.
 
 SET distributed_ddl_output_mode = 'none';
@@ -13,8 +12,8 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_src (id UInt64, s String DEFAU
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_src (id) VALUES (1), (2), (3);
 CREATE TABLE t_src (id UInt64, s String DEFAULT 'x') ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_src (id) VALUES (9);
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut (id UInt64, s String) ENGINE = MergeTree ORDER BY id SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_mut SELECT number, '' FROM numbers(10);
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut (id UInt64, s String, db String ALIAS currentDatabase()) ENGINE = MergeTree ORDER BY id SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_mut SELECT number, '' FROM numbers(12);
 CREATE TABLE t_alias ENGINE = Alias({CLICKHOUSE_DATABASE_1:String}, 't_mut');
 
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut DELETE WHERE id IN (SELECT id FROM merge('', '^t_src$') WHERE id = 1) SETTINGS mutations_sync = 2;
@@ -26,19 +25,27 @@ UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut SET s = 'u' WHERE id IN (SELECT 
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut UPDATE s = currentDatabase() WHERE id = 5 SETTINGS mutations_sync = 2, alter_update_mode = 'heavy';
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut UPDATE s = currentDatabase() WHERE id = 6 SETTINGS alter_update_mode = 'lightweight_force', enable_lightweight_update = 1;
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut ON CLUSTER test_shard_localhost UPDATE s = currentDatabase() WHERE id = 7 SETTINGS mutations_sync = 2, alter_update_mode = 'heavy';
--- An alias of `currentDatabase()` or of an empty database of `merge` keeps its value, which hides the column `s`: nothing is deleted.
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut UPDATE s = currentDatabase WHERE id = 10 SETTINGS mutations_sync = 2, alter_update_mode = 'heavy';
+UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut SET s = currentDatabase() WHERE id = 11 SETTINGS enable_lightweight_update = 1;
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut DELETE WHERE db != currentDatabase() SETTINGS mutations_sync = 2;
+ALTER TABLE t_alias DELETE WHERE db != currentDatabase() SETTINGS mutations_sync = 2;
+-- An alias of `currentDatabase()` (also in `merge`) or of an empty database of `merge` keeps its value, which hides the column `s`: nothing is deleted.
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut DELETE WHERE (currentDatabase() AS s) != s SETTINGS mutations_sync = 2;
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut DELETE WHERE id IN (SELECT id + 5 FROM merge((currentDatabase() AS s), '^t_src$') WHERE s != currentDatabase() AND id = 1) SETTINGS mutations_sync = 2;
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut DELETE WHERE id IN (SELECT id + 5 FROM merge(('' AS s), '^t_src$') WHERE s != '' AND id = 1) SETTINGS mutations_sync = 2;
-SELECT id, if(s = currentDatabase(), 'session', s) FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_mut ORDER BY id;
+SELECT id, multiIf(s = currentDatabase(), 'session', s = {CLICKHOUSE_DATABASE_1:String}, 'table', s) FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_mut ORDER BY id;
 CREATE VIEW v_merge AS SELECT id FROM merge(('' AS s), '^t_src$') WHERE s != '';
 SELECT count() FROM v_merge;
 
 -- The same for a partition and for `ReplicatedMergeTree`.
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_part (p String, id UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_part', 'r1') PARTITION BY p ORDER BY id;
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_part VALUES ({CLICKHOUSE_DATABASE:String}, 1), ({CLICKHOUSE_DATABASE_1:String}, 2), ({CLICKHOUSE_DATABASE_1:String}, 3);
-ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_part DELETE IN PARTITION tuple(currentDatabase()) WHERE 1 SETTINGS mutations_sync = 2;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_part (p String, k UInt8, id UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_part', 'r1') PARTITION BY (p, k) ORDER BY id;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_part VALUES ({CLICKHOUSE_DATABASE:String}, 0, 1), ({CLICKHOUSE_DATABASE:String}, 1, 2), ({CLICKHOUSE_DATABASE_1:String}, 0, 3), ({CLICKHOUSE_DATABASE_1:String}, 1, 4), ({CLICKHOUSE_DATABASE_1:String}, 2, 5), ({CLICKHOUSE_DATABASE_1:String}, 3, 6);
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_part DELETE IN PARTITION (currentDatabase(), 0) WHERE 1 SETTINGS mutations_sync = 2;
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_part DELETE IN PARTITION (currentDatabase, 1) WHERE 1 SETTINGS mutations_sync = 2;
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_part DROP PARTITION (currentDatabase(), 2);
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_part DROP PARTITION (currentDatabase, 3);
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_part DELETE WHERE id IN (SELECT id FROM merge(concat('', ''), '^t_src$') WHERE id = 2) SETTINGS mutations_sync = 2, allow_nondeterministic_mutations = 1;
-SELECT p = currentDatabase(), id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_part ORDER BY id;
+SELECT p = currentDatabase(), k, id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_part ORDER BY id;
 
 DROP VIEW v_merge;
 DROP TABLE t_alias;
