@@ -22,15 +22,29 @@ kafka.consumer.ssl_key_location: Kafka property `ssl.key.location` can only be s
 kafka.producer.ssl_ca_location: Kafka property `ssl.ca.location` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `ssl.ca.pem` instead. (BAD_ARGUMENTS)
 kafka.kafka_topic.offset_store_path: Kafka property `offset.store.path` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
 kafka.kafka_topic.ssl_ca_location: Kafka property `ssl.ca.location` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `ssl.ca.pem` instead. (BAD_ARGUMENTS)
+--- A null character in the name of a property
+kafka.ssl_key_location\0suffix: Kafka property name `kafka.ssl_key_location\0suffix` contains a null character. (BAD_ARGUMENTS)
+kafka.consumer.ssl_key_location\0: Kafka property name `kafka.consumer.ssl_key_location\0` contains a null character. (BAD_ARGUMENTS)
+kafka.client_rack\0suffix: Kafka property name `kafka.client_rack\0suffix` contains a null character. (BAD_ARGUMENTS)
 --- The contents of the file are accepted, and also the value that is not a path
 kafka.ssl_ca_location: OK
 kafka.ssl_key_pem: OK
 --- A collection from the server configuration file is accepted
 OK
+--- Consumers are created for the accepted properties
+kafka_config_table: OK 0
+kafka_pem_table: OK 0
+kafka_probe_table: OK 0
 --- A property that is added after the table is created
+kafka.ssl_key_pem: OK
+kafka.ssl_key_location:
 Kafka property `ssl.key.location` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `ssl.key.pem` instead. (BAD_ARGUMENTS)
 Kafka property `ssl.key.location` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `ssl.key.pem` instead. (BAD_ARGUMENTS)
 OK
 Kafka property `ssl.key.location` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `ssl.key.pem` instead. (BAD_ARGUMENTS)
---- Consumers are created for the accepted properties
-OK 0
+kafka.ssl_key_pem: OK
+kafka.ssl_key_location\0suffix:
+Kafka property name `ssl_key_location\0suffix` contains a null character. (BAD_ARGUMENTS)
+Kafka property name `ssl_key_location\0suffix` contains a null character. (BAD_ARGUMENTS)
+OK
+Kafka property name `ssl_key_location\0suffix` contains a null character. (BAD_ARGUMENTS)

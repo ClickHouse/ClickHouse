@@ -20,10 +20,15 @@ collection="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 required_keys="kafka_broker_list = '127.0.0.1:1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow'"
 table_settings="SETTINGS kafka_poll_timeout_ms = 100, kafka_flush_interval_ms = 100"
 all_collections=()
+all_tables=(kafka_table kafka_probe_table kafka_pem_table kafka_config_table kafka_altered_table kafka_altered_null_table)
 
 function cleanup()
 {
-    local queries="DROP TABLE IF EXISTS kafka_table; DROP TABLE IF EXISTS kafka_config_table;"
+    local queries=""
+    for name in "${all_tables[@]}"
+    do
+        queries+=" DROP TABLE IF EXISTS ${name};"
+    done
     for name in "${all_collections[@]}"
     do
         queries+=" DROP NAMED COLLECTION IF EXISTS ${name};"
@@ -51,12 +56,29 @@ function create_table()
 {
     local key="$1"
     local value="$2"
+    local table="${3:-kafka_table}"
     local name="${collection}_${#all_collections[@]}"
     all_collections+=("$name")
 
     echo "${key}: $(run "
         CREATE NAMED COLLECTION ${name} AS ${required_keys}, \`${key}\` = '${value}';
-        CREATE TABLE kafka_table (x UInt64) ENGINE = Kafka(${name}) ${table_settings};")"
+        CREATE TABLE ${table} (x UInt64) ENGINE = Kafka(${name}) ${table_settings};")"
+}
+
+# Creates a table with an accepted named collection, and then adds a property to the collection.
+function alter_collection_of_existing_table()
+{
+    local key="$1"
+    local table="$2"
+
+    create_table 'kafka.ssl_key_pem' 'contents of the file' "$table"
+    $CLICKHOUSE_CLIENT -q "ALTER NAMED COLLECTION ${all_collections[-1]} SET \`${key}\` = '/etc/passwd'"
+    echo "${key}:"
+    run "SELECT count() FROM ${table} SETTINGS stream_like_engine_allow_direct_select = 1"
+    run "INSERT INTO ${table} VALUES (1)"
+    # The table is loaded from its metadata, but it cannot create a consumer.
+    run "DETACH TABLE ${table}; ATTACH TABLE ${table};"
+    run "SELECT count() FROM ${table} SETTINGS stream_like_engine_allow_direct_select = 1"
 }
 
 echo '--- All properties are rejected in a collection created by SQL'
@@ -78,27 +100,30 @@ create_table 'kafka.producer.ssl_ca_location' '/etc/passwd'
 create_table 'kafka.kafka_topic.offset_store_path' '/etc/passwd'
 create_table 'kafka.kafka_topic.ssl_ca_location' ''
 
+echo '--- A null character in the name of a property'
+# librdkafka gets the name as a C string, thus it uses only the part before the null character:
+# without the check, the first key sets `ssl.key.location`.
+create_table 'kafka.ssl_key_location\0suffix' '/etc/passwd'
+create_table 'kafka.consumer.ssl_key_location\0' '/etc/passwd'
+create_table 'kafka.client_rack\0suffix' 'rack'
+
 echo '--- The contents of the file are accepted, and also the value that is not a path'
-create_table 'kafka.ssl_ca_location' 'probe'
-$CLICKHOUSE_CLIENT -q "DROP TABLE kafka_table"
-create_table 'kafka.ssl_key_pem' 'contents of the file'
+create_table 'kafka.ssl_ca_location' 'probe' kafka_probe_table
+create_table 'kafka.ssl_key_pem' 'contents of the file' kafka_pem_table
 
 echo '--- A collection from the server configuration file is accepted'
 run "CREATE TABLE kafka_config_table (x UInt64) ENGINE = Kafka(kafka_config_file_paths) ${table_settings}"
 
-echo '--- A property that is added after the table is created'
-$CLICKHOUSE_CLIENT -q "ALTER NAMED COLLECTION ${all_collections[-1]} SET \`kafka.ssl_key_location\` = '/etc/passwd'"
-run "SELECT count() FROM kafka_table SETTINGS stream_like_engine_allow_direct_select = 1"
-run "INSERT INTO kafka_table VALUES (1)"
-# The table is loaded from its metadata, but it cannot create a consumer.
-run "DETACH TABLE kafka_table; ATTACH TABLE kafka_table;"
-run "SELECT count() FROM kafka_table SETTINGS stream_like_engine_allow_direct_select = 1"
-
 echo '--- Consumers are created for the accepted properties'
-$CLICKHOUSE_CLIENT -q "
-    ALTER NAMED COLLECTION ${all_collections[-1]} DELETE \`kafka.ssl_key_location\`;
-    ALTER NAMED COLLECTION ${all_collections[-1]} SET \`kafka.ssl_ca_location\` = 'probe';"
-# Each consumer waits for the assignment of partitions for 15 seconds, thus the tables are read in parallel.
-run "
-    SELECT count() FROM (SELECT x FROM kafka_table UNION ALL SELECT x FROM kafka_config_table)
-    SETTINGS stream_like_engine_allow_direct_select = 1, max_threads = 2"
+# Each consumer waits for the assignment of partitions for 15 seconds, thus the tables are read at the same time.
+{
+    for table in kafka_probe_table kafka_pem_table kafka_config_table
+    do
+        echo "${table}: $(run "SELECT count() FROM ${table} SETTINGS stream_like_engine_allow_direct_select = 1")" &
+    done
+    wait
+} | sort
+
+echo '--- A property that is added after the table is created'
+alter_collection_of_existing_table 'kafka.ssl_key_location' kafka_altered_table
+alter_collection_of_existing_table 'kafka.ssl_key_location\0suffix' kafka_altered_null_table

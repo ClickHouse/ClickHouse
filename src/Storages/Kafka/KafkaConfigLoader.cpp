@@ -19,6 +19,7 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/QueryProfiler.h>
 #include <Common/config_version.h>
+#include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <IO/S3/getAvailabilityZone.h>
 #include <chrdkafka_conf_sensitive.h>
@@ -220,8 +221,16 @@ namespace
 {
 
 /// Converts a key of the server configuration or of a named collection to the name of a librdkafka property.
+///
+/// librdkafka gets the name as a C string, thus it uses only the part before the first null character.
+/// A key with a null character is rejected: the checks of the name must see the name that librdkafka uses.
+/// Otherwise a key such as `ssl_key_location\0suffix` (a quoted key of a named collection can contain a null character)
+/// passes the checks and sets `ssl.key.location`.
 String toKafkaPropertyName(const String & key)
 {
+    if (key.contains('\0'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kafka property name {} contains a null character", backQuote(key));
+
     return (key == "log_level") ? key : boost::replace_all_copy(key, "_", ".");
 }
 
