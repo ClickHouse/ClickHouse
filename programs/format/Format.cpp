@@ -286,7 +286,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     const char * this_query_end = find_first_symbols<'\n'>(insert_query->data, end);
                     insert_query->end = this_query_end;
                     pos = this_query_end;
-                    insert_query_payload = getReadBufferFromASTInsertQuery(res);
+                    insert_query_payload = getReadBufferFromASTInsertQuery(res, context);
                 }
 
                 if (!quiet)
