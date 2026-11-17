@@ -6873,6 +6873,10 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     if (table_node->hasTableExpressionModifiers())
         return;
 
+    /// `PREWHERE` is moved into the query of the view, which needs the view itself, see `StorageView::getPrewhereColumns`.
+    if (const auto * query_node = scope.scope_node->as<QueryNode>(); query_node && query_node->hasPrewhere())
+        return;
+
     /// Get the view's inner query AST.
     const auto & storage_snapshot = table_node->getStorageSnapshot();
 

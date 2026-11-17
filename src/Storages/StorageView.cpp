@@ -173,14 +173,15 @@ void countAliases(const ASTPtr & expr, std::unordered_map<String, size_t> & alia
         countAliases(child, aliases);
 }
 
-/// A stateful function, such as `rowNumberInAllBlocks`, depends on the rows that were read before, and `arrayJoin` multiplies the rows.
+/// A stateful function, such as `rowNumberInAllBlocks`, depends on the rows that were read before, a function that is not
+/// deterministic in the scope of a query, such as `blockSize`, on the rows read with it, and `arrayJoin` multiplies the rows.
 bool dependsOnOtherRows(const ASTPtr & expr, const ContextPtr & context)
 {
     if (!expr)
         return false;
     if (const auto * function = expr->as<ASTFunction>())
         if (auto resolver = FunctionFactory::instance().tryGet(function->name, context);
-            resolver && (resolver->isStateful() || resolver->getName() == "arrayJoin"))
+            resolver && (resolver->isStateful() || !resolver->isDeterministicInScopeOfQuery() || resolver->getName() == "arrayJoin"))
             return true;
     return std::ranges::any_of(expr->children, [&](const ASTPtr & child) { return dependsOnOtherRows(child, context); });
 }

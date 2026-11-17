@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS t_prewhere_view_other;
 DROP VIEW IF EXISTS v_prewhere_swapped;
 DROP VIEW IF EXISTS v_prewhere_alias_of_alias;
 DROP VIEW IF EXISTS v_prewhere_stateful;
+DROP VIEW IF EXISTS v_prewhere_block_size;
 DROP VIEW IF EXISTS v_prewhere_aggregate;
 DROP VIEW IF EXISTS v_prewhere_final;
 DROP VIEW IF EXISTS v_prewhere_none;
@@ -47,6 +48,8 @@ SELECT count() FROM v_prewhere_all WHERE arrayExists(e -> e = 4, arr) AND a < 50
 SELECT count() FROM v_prewhere_qualified PREWHERE a < 10 AND y > 95;
 -- A condition without a column of the view.
 SELECT count() FROM v_prewhere_all PREWHERE 1;
+-- The view is not inlined, so that the condition is moved into its query.
+SELECT count() FROM v_prewhere_all PREWHERE a < 10 SETTINGS analyzer_inline_views = 1;
 -- The definer reads the view as its own query.
 SELECT count() FROM v_prewhere_definer PREWHERE a < 10;
 -- It applies to the view before a join.
@@ -90,11 +93,13 @@ SELECT count() FROM v_prewhere_all FINAL PREWHERE a < 10; -- { serverError ILLEG
 SELECT l.a, r.a FROM v_prewhere_qualified AS l CROSS JOIN t_prewhere_view_other AS r PREWHERE arrayExists(e -> e = r.a, l.arr); -- { serverError ILLEGAL_PREWHERE }
 -- A stateful function would see the rows of the table instead of the rows of the view.
 SELECT count() FROM v_prewhere_all PREWHERE a = rowNumberInAllBlocks(); -- { serverError ILLEGAL_PREWHERE }
+SELECT count() FROM v_prewhere_all PREWHERE blockSize() > 5; -- { serverError ILLEGAL_PREWHERE }
 
 -- A view whose columns are not the columns of the table, or that changes or hides the rows.
 CREATE VIEW v_prewhere_swapped AS SELECT b AS a, a AS b FROM t_prewhere_view;
 CREATE VIEW v_prewhere_alias_of_alias AS SELECT rand64() AS b, b AS c FROM t_prewhere_view;
 CREATE VIEW v_prewhere_stateful AS SELECT a, rowNumberInAllBlocks() AS n FROM t_prewhere_view;
+CREATE VIEW v_prewhere_block_size AS SELECT a, blockSize() AS n FROM t_prewhere_view;
 CREATE VIEW v_prewhere_aggregate AS SELECT s, count() AS c FROM t_prewhere_view GROUP BY s;
 CREATE VIEW v_prewhere_final AS SELECT * FROM t_prewhere_view FINAL;
 CREATE VIEW v_prewhere_none SQL SECURITY NONE AS SELECT * FROM t_prewhere_view WHERE b > 10;
@@ -110,6 +115,7 @@ CREATE VIEW v_prewhere_stateful_default AS SELECT a, n FROM t_prewhere_view_stat
 SELECT count() FROM v_prewhere_swapped PREWHERE a < 10; -- { serverError ILLEGAL_PREWHERE }
 SELECT count() FROM v_prewhere_alias_of_alias PREWHERE c % 2 = 0; -- { serverError ILLEGAL_PREWHERE }
 SELECT count() FROM v_prewhere_stateful PREWHERE a >= 50; -- { serverError ILLEGAL_PREWHERE }
+SELECT count() FROM v_prewhere_block_size PREWHERE a >= 50; -- { serverError ILLEGAL_PREWHERE }
 SELECT count() FROM v_prewhere_aggregate PREWHERE c = 1; -- { serverError ILLEGAL_PREWHERE }
 SELECT count() FROM v_prewhere_final PREWHERE a < 10; -- { serverError ILLEGAL_PREWHERE }
 SELECT count() FROM v_prewhere_none PREWHERE a < 10; -- { serverError ILLEGAL_PREWHERE }
@@ -137,6 +143,7 @@ DROP TABLE t_prewhere_view_other;
 DROP VIEW v_prewhere_swapped;
 DROP VIEW v_prewhere_alias_of_alias;
 DROP VIEW v_prewhere_stateful;
+DROP VIEW v_prewhere_block_size;
 DROP VIEW v_prewhere_aggregate;
 DROP VIEW v_prewhere_final;
 DROP VIEW v_prewhere_none;
