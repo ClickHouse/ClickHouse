@@ -29,7 +29,7 @@ class FillingRow
     Field doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to);
 
     /// Sets the keys after `pos` to their FROM values, or to the values of `next_original_row` for keys without one, and
-    /// returns whether to insert the row before `next_original_row`; never when it does not sort before it.
+    /// returns whether to insert the row before `next_original_row`; never when it equals it up to `pos` and does not sort before it.
     [[nodiscard]] bool resetKeysAfter(size_t pos, const FillingRow & next_original_row);
 
     void checkGeneratedValueFitsColumnType(const Field & value, size_t column_ind) const;

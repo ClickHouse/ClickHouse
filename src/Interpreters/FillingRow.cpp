@@ -319,13 +319,17 @@ bool FillingRow::resetKeysAfter(size_t pos, const FillingRow & next_original_row
         );
     }
 
-    /// A row that does not sort before `next_original_row` is not inserted before it: the first differing key decides.
-    for (size_t i = pos + 1; i < size(); ++i)
+    /// A row whose keys up to `pos` equal `next_original_row` does not sort before it when its first differing later key is
+    /// not less. Otherwise the decision above stands: `less` does not place NULL and NaN where the sort does.
+    for (size_t i = 0; i < size(); ++i)
     {
         if (equals(row[i], next_original_row[i]))
             continue;
 
-        return is_less && (next_original_row[i].isNull() || less(row[i], next_original_row[i], getDirection(i)));
+        if (i < pos || row[i].isNaN() || next_original_row[i].isNull() || next_original_row[i].isNaN())
+            return is_less;
+
+        return is_less && less(row[i], next_original_row[i], getDirection(i));
     }
 
     return false;

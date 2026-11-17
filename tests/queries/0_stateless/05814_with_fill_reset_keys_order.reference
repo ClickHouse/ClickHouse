@@ -23,3 +23,12 @@
 --- Nullable, reset row equal to the next original row
 0	\N
 1	\N
+--- empty FROM = TO range on a later key, the row sorting first is kept
+0	0	1
+1	2	1
+1	3	2
+--- NaN on a later DESC key, the row sorting first is kept
+0	0	0
+0	0	1
+1	0	1
+1	nan	2
