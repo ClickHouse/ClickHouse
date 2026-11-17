@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -26,18 +27,17 @@ namespace
     };
 }
 
-class FunctionStructureToFormatSchema final : public IFunction
+class FunctionStructureToFormatSchema : public IFunction
 {
 private:
     Impl impl;
-    ContextPtr context;
 
 public:
     explicit FunctionStructureToFormatSchema(Impl impl_, ContextPtr context_) : impl(impl_), context(std::move(context_))
     {
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         switch (impl)
         {
@@ -46,20 +46,44 @@ public:
         }
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const  override { return {0, 1}; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const  override { return {0, 1}; }
+    bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(const String, [const String]) -> String";
+        if (arguments.empty() || arguments.size() > 2)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, expected 1 or 2",
+                getName(), arguments.size());
+
+        if (!isString(arguments[0]))
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of the first argument of function {}, expected constant string",
+                arguments[0]->getName(),
+                getName());
+        }
+
+        if (arguments.size() > 1 && !isString(arguments[1]))
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of the second argument of function {}, expected constant string",
+                arguments[1]->getName(),
+                getName());
+        }
+
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (arguments.empty() || arguments.size() > 2)
             throw Exception(
@@ -69,7 +93,6 @@ public:
 
         String structure{arguments[0].column->getDataAt(0)};
         String message_name = arguments.size() == 2 ? std::string{arguments[1].column->getDataAt(0)} : "Message";
-
         auto columns_list = parseColumnsListFromString(structure, context);
         auto col_res = ColumnString::create();
         auto & data = assert_cast<ColumnString &>(*col_res).getChars();
@@ -91,6 +114,8 @@ public:
         return ColumnConst::create(std::move(col_res), input_rows_count);
     }
 
+private:
+    ContextPtr context;
 };
 
 
