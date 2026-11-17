@@ -895,6 +895,47 @@ def test_postgresql_database_engine_quoted_remote_table_name(started_cluster):
         cursor.execute('DROP TABLE "quoted""table"')
 
 
+def test_postgresql_database_settings_reattach_table_after_not_overridable(
+    started_cluster,
+):
+    # A short `ATTACH TABLE` builds the table from the stored definition of the database, with its
+    # `SETTINGS`. If the named collection marks an overridden key `NOT OVERRIDABLE` after the
+    # database was created, the table still attaches, as the database itself still loads.
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+    cursor.execute("CREATE TABLE test_reattach (id integer NOT NULL)")
+    cursor.execute("INSERT INTO test_reattach VALUES (1), (2)")
+    try:
+        node1.query(
+            f"""
+            CREATE NAMED COLLECTION nc_later_locked_pool AS host = 'postgres1', port = 5432,
+                database = 'postgres_database', user = 'postgres', password = '{pg_pass}',
+                postgresql_connection_pool_size = 7;
+            CREATE DATABASE postgres_database_settings ENGINE = PostgreSQL(nc_later_locked_pool)
+                SETTINGS postgresql_connection_pool_size = 3;
+            ALTER NAMED COLLECTION nc_later_locked_pool
+                SET postgresql_connection_pool_size = 7 NOT OVERRIDABLE;
+            DETACH TABLE postgres_database_settings.test_reattach;
+            ATTACH TABLE postgres_database_settings.test_reattach;
+            """
+        )
+        assert (
+            node1.query(
+                "SELECT count() FROM postgres_database_settings.test_reattach"
+            ).rstrip()
+            == "2"
+        )
+        assert "postgresql_connection_pool_size = 3" in node1.query(
+            "SHOW CREATE TABLE postgres_database_settings.test_reattach"
+        )
+    finally:
+        node1.query("DROP DATABASE IF EXISTS postgres_database_settings")
+        node1.query("DROP NAMED COLLECTION IF EXISTS nc_later_locked_pool")
+        cursor.execute("DROP TABLE test_reattach")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
