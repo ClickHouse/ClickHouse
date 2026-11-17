@@ -11,7 +11,6 @@ integration:
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
-import { CloudSQLIAMAuthentication } from "/snippets/pt-BR/clickpipes/_cloudsql_iam_authentication.mdx";
 
 Este é um guia passo a passo sobre como configurar sua instância do Cloud SQL for MySQL para replicar os dados por meio do ClickPipe para MySQL.
 
@@ -21,7 +20,9 @@ Este é um guia passo a passo sobre como configurar sua instância do Cloud SQL 
 
 O log binário é um conjunto de arquivos de log que contém informações sobre modificações de dados feitas em uma instância de servidor MySQL, e os arquivos de log binário são necessários para a replicação.
 
-### Habilite o logging binário via PITR {#enable-binlog-logging-gcp}
+<div id="enable-binlog-logging-gcp">
+  ### Habilite o logging binário via PITR
+</div>
 
 O recurso PITR determina se o logging binário está ativado ou desativado para o MySQL no Google Cloud. Ele pode ser configurado na Cloud Console, editando sua instância do Cloud SQL e rolando a página até a seção abaixo.
 
@@ -68,11 +69,9 @@ Conecte-se à sua instância do Cloud SQL MySQL como usuário root e execute os 
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
-## Usando autenticação de banco de dados via IAM (opcional, Beta) {#iam-database-authentication}
-
-<CloudSQLIAMAuthentication engine="mysql" />
-
-## Configure o acesso à rede {#configure-network-access-gcp-mysql}
+<div id="configure-network-access-gcp-mysql">
+  ## Configure o acesso à rede
+</div>
 
 Se você quiser restringir o tráfego para sua instância do Cloud SQL, adicione os [IPs NAT estáticos documentados](/pt-BR/integrations/clickpipes/networking/static-ips) à lista de IPs permitidos da sua instância MySQL do Cloud SQL.
 Isso pode ser feito editando a instância ou acessando a guia `Connections` na barra lateral do Cloud Console.

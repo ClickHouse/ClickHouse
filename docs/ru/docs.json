@@ -9,48 +9,32 @@
     {
       "menu": [
         {
-          "href": "#",
-          "icon": "/images/icons/icon-clickhouse.svg",
-          "item": "ClickHouse"
-        },
-        {
           "$ref": "./get-started/navigation.json"
-        },
-        {
-          "$ref": "./guides/navigation.json"
         },
         {
           "$ref": "./concepts/navigation.json"
         },
         {
-          "$ref": "./reference/navigation.json"
+          "$ref": "./guides/navigation.json"
         },
         {
-          "$ref": "./products/managed-postgres/navigation.json"
+          "$ref": "./reference/navigation.json"
         }
       ],
-      "tab": "Базы данных"
+      "tab": "База данных"
     },
     {
       "menu": [
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Развертывания"
+          "item": "ClickHouse Cloud"
         },
         {
           "$ref": "./products/cloud/navigation.json"
         },
         {
-          "item": "BYOC",
-          "pages": [
-            "ru/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
-          ]
-        },
-        {
-          "href": "#",
-          "icon": "/images/icons/section-header.svg",
-          "item": "Приложения"
+          "$ref": "./products/managed-postgres/navigation.json"
         },
         {
           "$ref": "./clickstack/navigation.json"
@@ -58,12 +42,7 @@
         {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
-          "item": "Инженерия ИИ"
-        },
-        {
-          "href": "https://docs.runreveal.com/",
-          "icon": "/images/integrations/logos/runreveal.webp",
-          "item": "Безопасность"
+          "item": "Langfuse"
         },
         {
           "href": "#",
@@ -71,23 +50,16 @@
           "item": "С открытым исходным кодом"
         },
         {
-          "item": "ClickStack",
-          "pages": [
-            "ru/clickstack/index"
-          ]
+          "$ref": "./products/agentic-data-stack/navigation.json"
         },
         {
           "$ref": "./chdb/navigation.json"
         },
         {
           "$ref": "./products/kubernetes-operator/navigation.json"
-        },
-        {
-          "href": "https://www.librechat.ai/docs",
-          "item": "LibreChat"
         }
       ],
-      "tab": "Продукты"
+      "tab": "Решения"
     },
     {
       "menu": [

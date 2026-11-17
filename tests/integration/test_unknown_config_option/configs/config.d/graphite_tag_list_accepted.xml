@@ -1,0 +1,19 @@
+<clickhouse>
+    <!-- Compatibility case: a valid `GraphiteMergeTree` rollup section whose `<pattern>` uses
+         `<rule_type>tag_list</rule_type>` together with a non-empty `<regexp>` (a tag spec).
+         `appendGraphitePattern` rewrites this into the dispatchable `tagged` type via
+         `buildTaggedRegex`, so `setGraphitePatternsFromConfig` accepts it. The validator must
+         recognize it as a valid rollup section and NOT reject it as an unknown top-level key —
+         the `tag_list`-without-`<regexp>` tightening must only reject the invalid shape. -->
+    <retention_tag_list>
+        <pattern>
+            <rule_type>tag_list</rule_type>
+            <regexp>retention=hour</regexp>
+            <function>avg</function>
+            <retention>
+                <age>0</age>
+                <precision>60</precision>
+            </retention>
+        </pattern>
+    </retention_tag_list>
+</clickhouse>

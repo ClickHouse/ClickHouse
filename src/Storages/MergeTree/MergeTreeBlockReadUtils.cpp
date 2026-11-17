@@ -106,7 +106,7 @@ bool injectRequiredColumnsRecursively(
         if (alter_conversions && alter_conversions->isColumnRenamed(column_name_in_part))
             column_name_in_part = alter_conversions->getColumnOldName(column_name_in_part);
 
-        auto column_in_part = data_part_info_for_reader.getColumnsDescription().tryGetPhysical(column_name_in_part);
+        auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
 
         bool share_nested = true;
         if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage))
@@ -118,11 +118,7 @@ bool injectRequiredColumnsRecursively(
             /// This can happen if the column was dropped and then re-added with the same name.
             && !(alter_conversions && alter_conversions->isColumnDropped(column_name_in_part, share_nested)))
         {
-            /// Resolved against the serialization the part holds for the column - which it always does, the column
-            /// comes from its own list - instead of a newly built one.
-            if (!column_in_storage->isSubcolumn()
-                || column_in_part->type->tryGetSubcolumnType(
-                       column_in_storage->getSubcolumnName(), data_part_info_for_reader.getSerialization(*column_in_part)))
+            if (!column_in_storage->isSubcolumn() || column_in_part->type->tryGetSubcolumnType(column_in_storage->getSubcolumnName()))
             {
                 add_column(column_name);
                 return true;
@@ -253,10 +249,10 @@ NameSet injectRequiredColumns(
 }
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
-    const MergeTreeDataPartInfoForReaderPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation_)
+    const DataPartPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation_)
     : data_part(data_part_), allow_subcolumns_sizes_calculation(allow_subcolumns_sizes_calculation_)
 {
-    number_of_rows_in_part = data_part->getRowCount();
+    number_of_rows_in_part = data_part->rows_count;
     /// Initialize with sample block until update won't called.
     initialize(sample_block, {}, columns);
 }
@@ -562,8 +558,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             index_read_tasks,
             actions_settings,
             reader_settings.enable_multiple_prewhere_read_steps,
-            reader_settings.force_short_circuit_execution,
-            reader_settings.read_ahead_prewhere_columns);
+            reader_settings.force_short_circuit_execution);
 
         for (const auto & step : prewhere_actions.steps)
             add_step(*step);

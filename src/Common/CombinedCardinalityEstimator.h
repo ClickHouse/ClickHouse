@@ -23,6 +23,12 @@ enum class ContainerType : uint8_t
     LARGE = 3
 };
 
+static inline ContainerType max(const ContainerType & lhs, const ContainerType & rhs)
+{
+    uint8_t res = std::max(static_cast<uint8_t>(lhs), static_cast<uint8_t>(rhs));
+    return static_cast<ContainerType>(res);
+}
+
 }
 
 /** For a small number of keys - an array of fixed size "on the stack".
@@ -75,15 +81,6 @@ public:
     ~CombinedCardinalityEstimator()
     {
         destroy();
-    }
-
-    void ALWAYS_INLINE prefetch(Key value) const
-    {
-        const auto container_type = getContainerType();
-        if (container_type == details::ContainerType::MEDIUM)
-            getContainer<Medium>().prefetch(value);
-        else if (container_type == details::ContainerType::LARGE)
-            getContainer<Large>().prefetch(value);
     }
 
     void insert(Key value)
@@ -198,36 +195,27 @@ public:
     void merge(const Self & rhs)
     {
         auto container_type = getContainerType();
-        auto rhs_container_type = rhs.getContainerType();
+        auto max_container_type = details::max(container_type, rhs.getContainerType());
 
-        /// When rhs is `HyperLogLogCounter` and we are not, copy it and insert our values into the copy:
-        /// copying is much cheaper than walking all buckets of `HyperLogLogCounter` one at a time.
-        /// This is common, as merging into an empty state happens in `-Merge`, `AggregatingSortedTransform`
-        /// and squashing of aggregate function columns.
-        /// The result is the same, because `HyperLogLogCounter` does not depend on the order of insertion.
-        /// Medium sets are not copied: the layout of a hash table depends on the order of insertion,
-        /// and so does, through the order of iteration, when a later merge converts it to `HyperLogLogCounter`.
-        if (rhs_container_type == details::ContainerType::LARGE && container_type != details::ContainerType::LARGE)
+        if (container_type != max_container_type)
         {
-            toLarge(std::make_unique<Large>(rhs.getContainer<Large>()));
-            return;
+            if (max_container_type == details::ContainerType::MEDIUM)
+                toMedium();
+            else if (max_container_type == details::ContainerType::LARGE)
+                toLarge();
         }
 
-        if (rhs_container_type == details::ContainerType::MEDIUM && container_type == details::ContainerType::SMALL)
-            toMedium();
-
-        /// Here our container is not smaller than the one of rhs.
-        if (rhs_container_type == details::ContainerType::SMALL)
+        if (rhs.getContainerType() == details::ContainerType::SMALL)
         {
             for (const auto & x : rhs.small)
                 insert(x.getValue());
         }
-        else if (rhs_container_type == details::ContainerType::MEDIUM)
+        else if (rhs.getContainerType() == details::ContainerType::MEDIUM)
         {
             for (const auto & x : rhs.getContainer<Medium>())
                 insert(x.getValue());
         }
-        else
+        else if (rhs.getContainerType() == details::ContainerType::LARGE)
             getContainer<Large>().merge(rhs.getContainer<Large>());
     }
 
@@ -280,13 +268,14 @@ private:
         setContainerType(details::ContainerType::MEDIUM);
     }
 
-    /// Inserts our values into `tmp_large` (an empty counter by default) and switches to it.
-    void toLarge(std::unique_ptr<Large> tmp_large = std::make_unique<Large>())
+    void toLarge()
     {
         auto container_type = getContainerType();
 
         if ((container_type != details::ContainerType::SMALL) && (container_type != details::ContainerType::MEDIUM))
             throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
+
+        auto tmp_large = std::make_unique<Large>();
 
         if (container_type == details::ContainerType::SMALL)
         {

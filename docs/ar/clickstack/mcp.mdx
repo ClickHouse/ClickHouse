@@ -11,11 +11,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يتضمن ClickStack خادم [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) مدمجًا يتيح لمساعدات الذكاء الاصطناعي التفاعل مع بيانات observability الخاصة بك. وبمجرد الاتصال، يمكن لمساعد ذكاء اصطناعي إجراء استعلامات على السجلات والتتبعات والمقاييس؛ وإدارة لوحات المعلومات والتنبيهات؛ واستكشاف مصادر البيانات؛ والعمل مع عمليات البحث المحفوظة — وكل ذلك باللغة الطبيعية.
 
-يتيح لك ذلك استخدام أدوات مثل [Claude Code](https://docs.anthropic.com/en/docs/claude-code) و[Cursor](https://www.cursor.com/) أو أي عميل متوافق مع MCP للتحقيق في الحوادث، وإنشاء لوحات معلومات، وإدارة إعداد observability لديك من دون مغادرة بيئة التطوير.
-
-<Frame>
-  <iframe src="https://www.youtube.com/embed/FaL5iOgNogg?si=dUbsRQe4wYuZ78zt" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
-</Frame>
+يتيح لك ذلك استخدام أدوات مثل [Claude Code](https://docs.anthropic.com/en/docs/claude-code) و[Cursor](https://www.cursor.com/) أو أي client متوافق مع MCP للتحقيق في الحوادث، وإنشاء لوحات معلومات، وإدارة إعداد observability لديك من دون مغادرة بيئة التطوير.
 
 <div id="availability">
   ## التوافر
@@ -148,7 +144,9 @@ https://mcp.clickhouse.cloud/clickstack
 
 تستخدم عمليات النشر مفتوحة المصدر وBYOC نقطة النهاية MCP المضمنة في مثيل ClickStack لديك، مع المصادقة باستخدام Bearer token.
 
-### المتطلبات الأساسية {#oss-prerequisites}
+<div id="oss-prerequisites">
+  ### المتطلبات الأساسية
+</div>
 
 * مثيل ClickStack قيد التشغيل (راجع [النشر](/ar/clickstack/deployment/overview) للاطّلاع على خيارات الإعداد)
 * **مفتاح الوصول الشخصي إلى API** — يمكنك العثور على مفتاحك في HyperDX ضمن **إعدادات الفريق → مفاتيح API → مفتاح الوصول الشخصي إلى API**
@@ -160,7 +158,6 @@ https://mcp.clickhouse.cloud/clickstack
 </Note>
 
 <div id="managed-endpoint">
-  <a id="oss-endpoint" />
   ### نقطة النهاية
 </div>
 
@@ -270,7 +267,7 @@ https://mcp.clickhouse.cloud/clickstack
 * **الاستعلام عن البيانات** — ابحث في السجلات والتتبعات والمقاييس واجرِ تجميعًا لها باستخدام منشئ الاستعلامات في ClickStack، أو صياغة البحث، أو Raw SQL.
 * **مصادر البيانات** — اعرض مصادر البيانات المتاحة، واتصالات قواعد البيانات، وبُنى الأعمدة، ومفاتيح السمات.
 * **لوحات المعلومات** — أنشئ لوحات المعلومات وحدّثها واحذفها وافحصها، بما في ذلك عناصرها.
-* **التنبيهات** — أنشئ التنبيهات وحدّثها وافحصها، بما في ذلك سجل تقييمها. وعندما تكون ميزة [اكتشاف الشذوذ](/ar/clickstack/features/anomaly-detection) مفعّلة، يمكن للمساعدين أيضًا اختبار إعدادات تنبيهات الشذوذ رجعيًا على البيانات التاريخية الحديثة قبل حفظها.
+* **التنبيهات** — أنشئ التنبيهات وحدّثها وافحصها، بما في ذلك سجل تقييمها.
 * **عمليات البحث المحفوظة** — أنشئ تعريفات عمليات البحث المحفوظة القابلة لإعادة الاستخدام وحدّثها وافحصها.
 * **Webhooks** — اعرض وجهات webhook المتاحة لإشعارات التنبيه.
 * **الفرق** — اعرض الفرق التي ينتمي إليها المستخدم الحالي وحدد الفريق النشط.
