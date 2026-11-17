@@ -2787,8 +2787,9 @@ namespace
 {
 
 /// Whether the user holds `access` on the table, or on at least one of its columns for a right that can be
-/// granted per column (the user then sees those columns). The stand-in of a lazily loaded table knows
-/// its columns without being loaded.
+/// granted per column (the user then sees those columns). A grant on the exact name of a subcolumn (e.g.
+/// ``GRANT SELECT(`p.s`)``) is enough to read that subcolumn, so it counts as well. The stand-in of a lazily
+/// loaded table knows its columns without being loaded.
 bool isAnyAccessGranted(const IStorage & table, const StorageID & table_id, const ContextPtr & context, const AccessFlags & access)
 {
     const auto access_rights = context->getAccess();
@@ -2799,8 +2800,16 @@ bool isAnyAccessGranted(const IStorage & table, const StorageID & table_id, cons
         return false;
 
     const auto metadata = table.getInMemoryMetadataPtr(context, false);
-    for (const auto & column : metadata->getColumns())
+    const auto & columns = metadata->getColumns();
+    for (const auto & column : columns)
         if (access_rights->isGranted(access, table_id.database_name, table_id.table_name, column.name))
+            return true;
+
+    /// Probe the raw rights, like `getColumnsSelectableByTrivialQuery`, so that probing does not pollute `used_privileges`.
+    const auto rights_with_implicit = access_rights->getAccessRightsWithImplicit();
+    for (const auto & column : columns)
+        if (!columns.getSubcolumnsWithExplicitGrant(
+                *rights_with_implicit, access, table_id.database_name, table_id.table_name, column.name).empty())
             return true;
     return false;
 }
