@@ -196,6 +196,9 @@ private:
     const String name;
 };
 
+namespace
+{
+
 /// The storage chain of the server: implicit (outermost) -> SQL -> configuration (innermost).
 /// The manager is subscribed to the outermost layer, and queries go through it like in interpreters.
 struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
@@ -344,6 +347,8 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
         });
     }
 };
+
+}
 
 using TestGuard = ResourceTest::Guard;
 

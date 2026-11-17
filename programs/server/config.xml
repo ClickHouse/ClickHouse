@@ -1993,7 +1993,7 @@
         </rule>
         <rule>
             <name>hide sensitive HTTP query-string parameters</name>
-            <regexp>([?&][^&=]*(?:secret|password|passwd|token|credential|signature|key)[^&=]*=)[^&\s]*</regexp>
+            <regexp>([?&amp;][^&amp;=]*(?:secret|password|passwd|token|credential|signature|key)[^&amp;=]*=)[^&amp;\s]*</regexp>
             <replace>\1[HIDDEN]</replace>
         </rule>
     </query_masking_rules> -->

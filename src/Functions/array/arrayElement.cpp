@@ -3658,9 +3658,9 @@ Operator `[n]` provides the same functionality.
 
 The first argument may also be:
 
-- a [`Map`](/sql-reference/data-types/map): `m['key']` returns the value stored for `key`, or the default value of the value type when the key is absent.
-- a [`QBit`](/sql-reference/data-types/qbit): `q[n]` reconstructs the n-th vector element at the full precision of the QBit element type, reading only the bit planes of the stride group that contains it.
-- a [`JSON`](/sql-reference/data-types/newjson) or a `Nullable(JSON)`: `json['key']` returns the value stored at the path `key`, which must be a constant string, exactly as the dot syntax `json.key` does. For a `Nullable(JSON)` the result follows the same nullability rules as `json.key`: a path that can represent `NULL` (`Dynamic`, or a typed path that can be wrapped into `Nullable`) gives `NULL` for the outer `NULL` rows, while a non-nullable typed path such as `Array` or `Map` keeps its default value there. The key may also be a constant `Nullable(String)`; a `NULL` key gives `NULL`. Nested access can be chained: `json['a']['b']`.
+- a [`Map`](/reference/data-types/map): `m['key']` returns the value stored for `key`, or the default value of the value type when the key is absent.
+- a [`QBit`](/reference/data-types/qbit): `q[n]` reconstructs the n-th vector element at the full precision of the QBit element type, reading only the bit planes of the stride group that contains it.
+- a [`JSON`](/reference/data-types/newjson) or a `Nullable(JSON)`: `json['key']` returns the value stored at the path `key`, which must be a constant string, exactly as the dot syntax `json.key` does. For a `Nullable(JSON)` the result follows the same nullability rules as `json.key`: a path that can represent `NULL` (`Dynamic`, or a typed path that can be wrapped into `Nullable`) gives `NULL` for the outer `NULL` rows, while a non-nullable typed path such as `Array` or `Map` keeps its default value there. The key may also be a constant `Nullable(String)`; a `NULL` key gives `NULL`. Nested access can be chained: `json['a']['b']`.
     )";
     FunctionDocumentation::Syntax syntax = "arrayElement(arr, n)";
     FunctionDocumentation::Arguments arguments = {
@@ -3699,8 +3699,8 @@ Arrays in ClickHouse are one-indexed.
 
 Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
 
-The first argument may also be a [`Map`](/sql-reference/data-types/map): an absent key gives `NULL` instead of the default value of the value type, as long as that type can be wrapped in `Nullable`.
-[`JSON`](/sql-reference/data-types/newjson) is not supported here, use `arrayElement` instead.
+The first argument may also be a [`Map`](/reference/data-types/map): an absent key gives `NULL` instead of the default value of the value type, as long as that type can be wrapped in `Nullable`.
+[`JSON`](/reference/data-types/newjson) is not supported here, use `arrayElement` instead.
 )";
     FunctionDocumentation::Syntax syntax_null = "arrayElementOrNull(arr, n)";
     FunctionDocumentation::Arguments arguments_null = {

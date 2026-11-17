@@ -83,6 +83,11 @@ constexpr size_t adaptive_spill_min_buffer_bytes = 4 << 10;
 /// table, grown to hold them, stays in the cache while the unit is drained and converted; a bucket smaller than a
 /// unit is merged as one, which spares a small bucket the fixed cost of every further unit.
 constexpr size_t adaptive_merge_unit_records = 16'384;
+/// Once the merge ends, what the producers left is freed in parallel jobs of this many producers each (see
+/// `Aggregator::releaseAdaptiveMergeSources`). Freeing a producer's table, cell index, arenas, staging buffer and
+/// count bins takes about twenty microseconds, as waking a thread of the pool does, so fewer producers do not pay
+/// for a job.
+constexpr size_t adaptive_release_producers_per_job = 16;
 /// Groups below this work estimate use the existing parallelism across merge buckets. Above the upper
 /// bound, a group has enough work to amortize additional merge tasks even while other buckets are busy.
 /// Between the bounds, the threshold follows the estimated work per worker for this query.
@@ -233,6 +238,12 @@ struct AdaptiveAggregationSession
     /// The cells of the producers' tables, published under the same mutex.
     size_t table_cells = 0;
 
+    /// A rank that `bucket_top_k` groups of a descending top-K are known to reach, the floor that the merge's
+    /// threshold starts from (see `AdaptiveTopKThreshold`): the largest of the producers' floors, each the threshold
+    /// of the ranks of the producer's own table (see `Aggregator::finishAdaptiveProducer`). Published under the same
+    /// mutex.
+    UInt64 top_k_floor = 0;
+
     /// The staged records the producers spilled over the external-aggregation threshold (see
     /// `Aggregator::spillAdaptivePartitions`): one raw stream per partition, shared by the producers and created by the
     /// first spill into it, so that a merge unit reads back the records of its own partitions only. A stream is a
@@ -295,7 +306,7 @@ struct AdaptiveMergeTask
     PaddedPODArray<UInt32> merge_order;
     AggregateDataPtrs merge_group;
     PaddedPODArray<AggregateDataPtr> record_places;
-    RowStorePointers records;
+    RowPointers records;
     AdaptiveRecordRanges ranges;
     std::vector<std::pair<UInt64, UInt64>> best_counts_and_hashes;
     PaddedPODArray<UInt64> best_hashes;
