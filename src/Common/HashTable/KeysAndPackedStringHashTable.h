@@ -320,9 +320,9 @@ public:
         for (auto & cell : m0)
         {
             if constexpr (is_set)
-                func(Key::withEmptyString(cell.getKey()));
+                func(iteratedKey<0>(cell));
             else
-                func(Key::withEmptyString(cell.getKey()), cell.getMapped());
+                func(iteratedKey<0>(cell), cell.getMapped());
         }
         m1.forEachValue(func);
     }
