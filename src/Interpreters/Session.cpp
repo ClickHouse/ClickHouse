@@ -697,6 +697,15 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         /// expiry of the method used by this connection, not the one that originally created the session.
         new_session_context->setAuthenticationValidUntil(getAuthenticationValidUntil());
 
+        /// `EXECUTE AS` may have switched the session context to another user: the client info replaced above
+        /// must keep naming that user, as `InterpreterExecuteAsQuery` set it, so that `currentUser` and the
+        /// initial user sent to other servers match the access rights of the session context.
+        if (access->getUserID() != user_id)
+        {
+            new_session_context->setCurrentUserName(access->getUserName());
+            new_session_context->setInitialUserName(access->getUserName());
+        }
+
         // Always get setting from profile
         // profile can be changed by ALTER PROFILE during single session
         auto settings = access->getDefaultSettings();
@@ -820,7 +829,11 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     }
 
     /// Set user information for the new context: current profiles, roles, access rights.
-    if (user_id && !query_context->getAccess()->tryGetUser())
+    /// A detached query runs as the user of the session context, which `EXECUTE AS` may have switched.
+    if (detached && session_context)
+        query_context->setUser(*session_context->getUserID(), session_context->getExternalRoles(),
+            session_context->getAuthenticationGrants(), session_context->getAuthenticationValidUntil());
+    else if (user_id && !query_context->getAccess()->tryGetUser())
     {
         query_context->setUser(*user_id, effective_external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
         /// Without a session context (e.g. gRPC without `session_id`, Prometheus) apply them as `makeSessionContext` does.
