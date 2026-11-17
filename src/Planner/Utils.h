@@ -26,8 +26,6 @@
 namespace DB
 {
 
-class ColumnsDescription;
-
 /// Dump query plan
 String dumpQueryPlan(const QueryPlan & query_plan);
 
@@ -88,7 +86,7 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
 using ResultReplacementMap = std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr>;
 QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
     const QueryTreeNodePtr & query_node,
-    const TableExpressionNodes & table_nodes,
+    const QueryTreeNodes & table_nodes,
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map = nullptr);
 
@@ -97,16 +95,6 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
 /// Names of `table_expression` columns referenced from `node`, with ALIAS columns under their own name:
 /// their expressions are not entered, because a grant on the alias name is sufficient to use it.
 NameSet collectReferencedColumnNames(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression);
-
-/// Names of the columns and subcolumns of a table that the current user can read with `SELECT`, for a trivial query like
-/// `SELECT count() FROM table`, which is allowed if at least one of them is readable. Besides the columns, it includes
-/// subcolumns with a grant on their exact name, on the table itself or on a table of its `Alias` chain (`storage` may be
-/// null). Each name is checked like a query that reads it, on the table and on every hop of the `Alias` chain.
-NameSet getColumnsSelectableByTrivialQuery(
-    const StoragePtr & storage,
-    const StorageID & storage_id,
-    const ColumnsDescription & columns,
-    const ContextPtr & query_context);
 
 /// Check if current user has privileges to SELECT columns from table
 /// Throws an exception if access to any column from `column_names` is not granted
@@ -119,23 +107,21 @@ NameSet checkAccessRights(
     const ContextPtr & query_context);
 
 /// Build and resolve a filter against the table expression; `check_access_rights` checks column-level SELECT for the columns it reads.
-/// `view_source_in_subqueries`: see `SelectQueryOptions`.
 QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
-        const TableExpressionNodePtr & table_expression,
+        const QueryTreeNodePtr & table_expression,
         const ContextPtr & query_context,
-        bool view_source_in_subqueries,
         bool check_access_rights = false);
 
 /// Build filter for specific table_expression
 /// `check_access_rights`: check column-level SELECT for the columns the filter reads (for user-supplied filters).
 FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
-        const TableExpressionNodePtr & table_expression,
+        const QueryTreeNodePtr & table_expression,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter = {},
         bool check_access_rights = false);
 
 FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
-        const TableExpressionNodePtr & table_expression,
+        const QueryTreeNodePtr & table_expression,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter = {});
 
