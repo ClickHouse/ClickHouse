@@ -214,6 +214,7 @@ static struct InitFiu
     REGULAR(refresh_mv_skip_execution) \
     REGULAR(refresh_mv_incremental_fail_after_append) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
+    ONCE(column_aggregate_function_expand_exception) \
     ONCE(space_saving_copy_arena_throw) \
     ONCE(adaptive_aggregation_drain_create_states_throw) \
     REGULAR(keepermap_fail_drop_data) \
