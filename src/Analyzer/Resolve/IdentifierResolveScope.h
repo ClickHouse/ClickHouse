@@ -259,7 +259,7 @@ struct IdentifierResolveScope
 
     void pushExpressionNode(const QueryTreeNodePtr & node);
 
-    void popExpressionNode();
+    void popExpressionNode() noexcept;
 
     /// Identifier resolution cache — prevents AST explosion by sharing resolved alias nodes.
     /// Policy is encapsulated in `findCachedIdentifier` and `tryCacheIdentifier`.

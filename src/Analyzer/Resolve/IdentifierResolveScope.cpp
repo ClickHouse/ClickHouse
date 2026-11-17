@@ -127,7 +127,7 @@ void IdentifierResolveScope::pushExpressionNode(const QueryTreeNodePtr & node)
     expressions_in_resolve_process_stack.push(node);
 }
 
-void IdentifierResolveScope::popExpressionNode()
+void IdentifierResolveScope::popExpressionNode() noexcept
 {
     expressions_in_resolve_process_stack.pop();
 }
