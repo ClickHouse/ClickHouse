@@ -1,4 +1,6 @@
 #include <Core/Settings.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Columns/ColumnConst.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldAccurateComparison.h>
@@ -31,6 +33,7 @@
 #include <Storages/MergeTree/WhatIf/HypotheticalProjection.h>
 
 #include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -61,7 +64,7 @@ namespace DB::QueryPlanOptimizations
 
 /// Extract AND-connected conjuncts from an AST expression tree.
 /// For example, (a = 1 AND b = 2 AND c = 3) yields {a = 1, b = 2, c = 3}.
-static void extractConjunctsFromAST(const ASTPtr & expr, std::vector<ASTPtr> & result)
+static void extractConjunctsFromAST(const ASTPtr & expr, VectorWithMemoryTracking<ASTPtr> & result)
 {
     if (const auto * func = expr->as<ASTFunction>(); func && func->name == "and" && func->arguments)
     {
@@ -266,7 +269,7 @@ static bool doesQueryFilterImplyProjectionWhere(
     }
 
     /// Extract projection's WHERE conjuncts from the AST.
-    std::vector<ASTPtr> proj_conjuncts;
+    VectorWithMemoryTracking<ASTPtr> proj_conjuncts;
     extractConjunctsFromAST(projection_where, proj_conjuncts);
 
     /// Unwrap a leading ALIAS wrapper before splitting conjuncts. `QueryDAG::build` wraps the
@@ -315,7 +318,7 @@ static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header,
     if (proj_header.columns() != num_columns)
         return {};
 
-    std::vector<size_t> const_positions;
+    VectorWithMemoryTracking<size_t> const_positions;
     for (size_t i = 0; i < num_columns; ++i)
     {
         auto col_proj = proj_header.getByPosition(i).column;
@@ -358,7 +361,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     const auto metadata = reading->getStorageMetadata();
     const auto & projections = metadata->projections;
 
-    std::vector<const ProjectionDescription *> normal_projections;
+    VectorWithMemoryTracking<const ProjectionDescription *> normal_projections;
     for (const auto & projection : projections)
         if (projection.type == ProjectionDescription::Type::Normal)
             normal_projections.push_back(&projection);
@@ -486,36 +489,14 @@ UseProjectionsResult optimizeUseNormalProjections(
     if (!relax_projection_checks && helps_nothing)
         return reject_all("the query has neither a filter nor an ORDER BY a projection could serve");
 
-    std::list<NormalProjectionCandidate> candidates;
+    ListWithMemoryTracking<NormalProjectionCandidate> candidates;
     NormalProjectionCandidate * best_candidate = nullptr;
 
     const auto & query_info = reading->getQueryInfo();
+    /// Even over the row limit, this is the analysis the read executes with: the projections below prune it, not a copy of it.
     auto parent_reading_select_result = reading->getAnalyzedResult();
     if (!parent_reading_select_result)
         parent_reading_select_result = reading->selectRangesToRead();
-
-    /// parent parts (non-projection result) exceeded limits
-    /// construct a base AnalysisResult with all parts to analyze projection candidates
-    if (!parent_reading_select_result->isUsable())
-    {
-        const auto & parts = reading->getParts();
-
-        parent_reading_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>();
-        parent_reading_select_result->parts_with_ranges = parts;
-        parent_reading_select_result->selected_parts = parts.size();
-        parent_reading_select_result->exceeded_row_limits = true;
-
-        size_t total_marks = 0;
-        size_t total_rows = 0;
-        for (const auto & part : parts)
-        {
-            total_marks += part.data_part->getMarksCount();
-            total_rows += part.data_part->rows_count;
-        }
-        parent_reading_select_result->selected_marks = total_marks;
-        parent_reading_select_result->selected_rows = total_rows;
-        parent_reading_select_result->selected_ranges = parts.size();
-    }
 
     if (!relax_projection_checks)
     {
@@ -716,7 +697,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     /// ranking depends on the declaration order of the projections.
     auto refresh_candidate_costs = [&]
     {
-        std::unordered_map<const IMergeTreeDataPart *, size_t> parent_marks_by_part;
+        UnorderedMapWithMemoryTracking<const IMergeTreeDataPart *, size_t> parent_marks_by_part;
         for (const auto & part : parent_reading_select_result->parts_with_ranges)
             parent_marks_by_part[part.data_part.get()] = part.getMarksCount();
 
@@ -1032,8 +1013,8 @@ UseProjectionsResult optimizeUseNormalProjections(
         [&](const auto & part) { return best_candidate->parent_parts.contains(part.data_part.get()); });
 
     /// Only the initiator should read the projection to avoid potential data duplication.
-    bool should_skip_projection_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !optimization_settings.is_parallel_replicas_initiator_with_projection_support
-        && has_parent_parts;
+    const bool is_local_plan_for_initiator = reading->isParallelReplicasLocalPlanForInitiator();
+    bool should_skip_projection_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !is_local_plan_for_initiator && has_parent_parts;
     /// True when the projection read is replaced by a prepared source that does not announce the
     /// base-table stream itself. See the announcement call below.
     bool projection_replaced_with_prepared_source = false;
@@ -1057,7 +1038,7 @@ UseProjectionsResult optimizeUseNormalProjections(
         projection_replaced_with_prepared_source = true;
     }
 
-    if (has_parent_parts && optimization_settings.is_parallel_replicas_initiator_with_projection_support)
+    if (has_parent_parts && is_local_plan_for_initiator)
         fallbackToLocalProjectionReading(projection_reading);
 
     /// `reading` is detached below without running initializePipeline(), so announce its empty read
