@@ -111,6 +111,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char aggregator_merge_collect_states_throw[];
+    extern const char aggregator_convert_two_level_schedule_throw[];
 }
 
 }
@@ -5032,17 +5033,27 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
         {
             if (use_thread_pool)
+            {
+                fiu_do_on(FailPoints::aggregator_convert_two_level_schedule_throw,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault while scheduling the conversion of a two-level table");
+                });
                 /// Passing converter as a reference is fine, it will outlive runner. Also it's arguments will outlive it too
                 /// Even if it didn't we capture all exceptions and wait for all tasks, so all of them will be deleted before arguments
                 /// will be destroyed
                 runner.enqueueAndKeepTrack([&converter, thread_id]() { return converter(thread_id); }, Priority{});
+            }
             else
                 converter(thread_id);
         }
     }
     catch (...) // Ok: wait for parallel tasks to finish before rethrowing
     {
+        /// Rethrow the original exception if no task failed: it may come from the scheduling itself (e.g.
+        /// `CANNOT_SCHEDULE_TASK`) or from the synchronous `converter`. Returning normally would silently lose
+        /// the buckets that were not converted.
         runner.waitForAllToFinishAndRethrowFirstError();
+        throw;
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();

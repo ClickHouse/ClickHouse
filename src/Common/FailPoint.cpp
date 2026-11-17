@@ -263,6 +263,7 @@ static struct InitFiu
     ONCE(adaptive_aggregation_drain_create_states_throw) \
     ONCE(aggregator_merge_collect_states_throw) \
     ONCE(aggregator_merge_batch_throw) \
+    ONCE(aggregator_convert_two_level_schedule_throw) \
     REGULAR(adaptive_aggregation_spill_no_room_to_append) \
     REGULAR(keepermap_fail_drop_data) \
     PAUSEABLE_ONCE(keepermap_create_pause_before_drop_lock_version) \
