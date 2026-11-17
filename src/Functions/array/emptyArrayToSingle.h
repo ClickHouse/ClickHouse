@@ -7,7 +7,7 @@ namespace DB
 
 /** emptyArrayToSingle(arr) - replace empty arrays with arrays of one element with a default value.
   */
-class FunctionEmptyArrayToSingle final : public IFunction
+class FunctionEmptyArrayToSingle : public IFunction
 {
 public:
     static constexpr auto name = "emptyArrayToSingle";
@@ -21,7 +21,7 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override { return "(Array(T)) -> Array(T)"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 };

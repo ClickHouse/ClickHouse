@@ -1,12 +1,10 @@
 #pragma once
 
 #include <Common/logger_useful.h>
+#include <Poco/Util/Application.h>
 #include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
 
 #include <Parsers/IAST.h>
-
-#include <unordered_map>
 
 namespace DB
 {
@@ -91,11 +89,8 @@ inline void dumpAST(const IAST & ast, WriteBuffer & ostr, DumpASTNode * parent =
 class DumpASTNodeInDotFormat
 {
 public:
-    /// Sequential node ids, so that a node shared by several parents keeps one id.
-    using NodeIds = std::unordered_map<const IAST *, size_t>;
-
-    DumpASTNodeInDotFormat(const IAST & ast_, WriteBuffer * ostr_, NodeIds & node_ids_, bool root_ = true, const char * label_ = nullptr)
-        : ast(ast_), ostr(ostr_), node_ids(node_ids_), root(root_), label(label_)
+    DumpASTNodeInDotFormat(const IAST & ast_, WriteBuffer * ostr_, bool root_ = true, const char * label_ = nullptr)
+        : ast(ast_), ostr(ostr_), root(root_), label(label_)
     {
         if (!ostr)
             return;
@@ -121,12 +116,11 @@ public:
 private:
     const IAST & ast;
     WriteBuffer * ostr;
-    NodeIds & node_ids;
     bool root;
     const char * label;
 
     String getASTId() const { return ast.getID(' '); }
-    String getNodeId(const IAST & a) const { return "n" + std::to_string(node_ids.try_emplace(&a, node_ids.size()).first->second); }
+    static String getNodeId(const IAST & a) { return "n" + std::to_string(reinterpret_cast<std::uintptr_t>(&a)); }
 
     void printNode() const
     {
@@ -154,17 +148,11 @@ private:
 
 /// Print AST in "dot" format for GraphViz
 /// You can render it with: dot -Tpng ast.dot ast.png
-inline void dumpASTInDotFormat(const IAST & ast, WriteBuffer & ostr, DumpASTNodeInDotFormat::NodeIds & node_ids, bool root)
+inline void dumpASTInDotFormat(const IAST & ast, WriteBuffer & ostr, bool root = true)
 {
-    DumpASTNodeInDotFormat dump(ast, &ostr, node_ids, root);
+    DumpASTNodeInDotFormat dump(ast, &ostr, root);
     for (const auto & child : ast.children)
-        dumpASTInDotFormat(*child, ostr, node_ids, false);
-}
-
-inline void dumpASTInDotFormat(const IAST & ast, WriteBuffer & ostr)
-{
-    DumpASTNodeInDotFormat::NodeIds node_ids;
-    dumpASTInDotFormat(ast, ostr, node_ids, true);
+        dumpASTInDotFormat(*child, ostr, false);
 }
 
 
