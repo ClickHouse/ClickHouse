@@ -1,0 +1,30 @@
+filter on a column without statistics
+Join: orders ⋈ (customer ⋈ nation)
+Join: customer ⋈ nation
+0
+50000
+filter on the primary key
+Join: orders ⋈ (customer ⋈ nation)
+Join: customer ⋈ nation
+primary key and another column
+Join: orders ⋈ (customer ⋈ nation)
+Join: customer ⋈ nation
+sub-join reordered on its own
+Join: orders ⋈ (cn) ⋈ n2
+Join: orders ⋈ (cn)
+Join: customer ⋈ nation
+sub-join not reordered
+Join: orders ⋈ (cn) ⋈ n2
+Join: orders ⋈ (cn)
+Join: customer ⋈ n
+statistics of some parts
+Join: orders ⋈ customer ⋈ nation_partial
+Join: orders ⋈ customer
+aggregation without keys
+Join: customer ⋈ m ⋈ orders
+Join: customer ⋈ m
+no primary key analysis
+Join: orders ⋈ (customer ⋈ nation)
+Join: customer ⋈ nation
+build_rows_empty	0
+build_rows_one_nation	10001

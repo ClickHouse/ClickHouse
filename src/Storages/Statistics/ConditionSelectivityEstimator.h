@@ -116,6 +116,9 @@ public:
 
     [[nodiscard]] UInt64 getTotalRows() const { return total_rows; }
 
+    /// Whether the column has statistics of every row the estimator counts, not of some parts only.
+    [[nodiscard]] bool hasStatisticsForAllRows(const StorageMetadataPtr & metadata, const String & column_name) const;
+
 private:
     friend class ColumnStatistics;
 

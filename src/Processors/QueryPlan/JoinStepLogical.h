@@ -157,6 +157,7 @@ public:
     [[nodiscard]] std::optional<double> getEstimatedCost() const { return estimated_cost; }
     [[nodiscard]] std::optional<double> getEstimatedSelectivity() const { return estimated_selectivity; }
     [[nodiscard]] bool hasImpreciseEstimate() const { return imprecise_estimate; }
+    [[nodiscard]] std::optional<bool> hasUnestimatedFilter() const { return unestimated_filter; }
     [[nodiscard]] const UnorderedMapWithMemoryTracking<String, ColumnStats> & getResultColumnStats() const { return result_column_stats; }
     [[nodiscard]] std::optional<UInt64> getInputRowsEstimation(JoinTableSide side) const;
 
@@ -166,7 +167,8 @@ public:
         bool imprecise_estimate_ = false,
         std::optional<double> estimated_cost_ = {},
         std::optional<double> estimated_selectivity_ = {},
-        UInt64 cluster_id_ = 0)
+        UInt64 cluster_id_ = 0,
+        std::optional<bool> unestimated_filter_ = {})
     {
         optimized = true;
         result_rows_estimation = estimated_rows_;
@@ -175,6 +177,7 @@ public:
         estimated_cost = estimated_cost_;
         estimated_selectivity = estimated_selectivity_;
         cluster_id = cluster_id_;
+        unestimated_filter = unestimated_filter_;
     }
 
     [[nodiscard]] UInt64 getClusterId() const { return cluster_id; }
@@ -307,6 +310,8 @@ protected:
     /// True when the row count estimation used by join reordering was derived from the primary index
     /// rather than column statistics (because `use_statistics` is enabled but statistics are missing).
     bool imprecise_estimate = false;
+    /// Whether a relation of this join has `RowEstimateSource::UnestimatedFilter`; unset when join reordering did not plan this join.
+    std::optional<bool> unestimated_filter;
     UInt64 right_hash_table_cache_key = 0;
     UInt64 join_output_cache_key = 0;
 
