@@ -314,6 +314,9 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     /// Find position we need to increment for generating next row.
     for (; pos < row_size; ++pos)
     {
+        if (row[pos].isNull() && !getFillDescription(pos).fill_column_nullable)
+            continue;
+
         /// The cursor is in the group of the next row for a column only when it holds the value of the next row.
         const Field & target = towards_constraints ? constraints[pos] : next_original_row[pos];
         logDebug("target: {}", target);
@@ -472,6 +475,9 @@ bool FillingRow::shift(const FillingRow & next_original_row, bool& value_changed
     for (size_t pos = 0; pos < size(); ++pos)
     {
         if (equals(row[pos], next_original_row[pos]))
+            continue;
+
+        if (row[pos].isNull() && !getFillDescription(pos).fill_column_nullable)
             continue;
 
         /// A NULL on one side: the next row is in another group of this column, which no jump reaches.

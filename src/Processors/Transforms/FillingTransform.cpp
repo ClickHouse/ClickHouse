@@ -751,6 +751,7 @@ FillingTransform::FillingTransform(
 
         const Block & output_header = getOutputPort().getHeader();
         const DataTypePtr & type = removeNullable(output_header.getByPosition(block_position).type);
+        descr.fill_column_nullable = isNullableOrLowCardinalityNullable(output_header.getByPosition(block_position).type);
 
         if (!tryConvertFields(descr, type))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
