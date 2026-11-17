@@ -532,4 +532,31 @@
         <deterministic>false</deterministic>
     </function>
 
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_server_limit_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>805306368</shared_memory_size>
+        <command>shm_udf.py</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_server_limit_second_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>805306368</shared_memory_size>
+        <command>shm_udf.py</command>
+    </function>
+
 </functions>
