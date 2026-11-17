@@ -257,6 +257,22 @@ void recomputeImplicitIndexPolicy(
     metadata.addImplicitIndicesForVirtualColumns(context);
 }
 
+/// Builds the projection that `ADD PROJECTION` or `MODIFY PROJECTION` stores. The persisted definition does not
+/// record the session settings, and a reload analyzes it with the global context, so the stored projection is
+/// analyzed with the global context too: otherwise a session setting such as
+/// `enable_extended_results_for_datetime_functions` gives the projection key a type that a reload does not
+/// reproduce, and the projection index written in the meantime cannot be loaded. The definition is analyzed
+/// with the context of the query first, only to validate it for the issuer: the access to the functions it
+/// uses, the rejection of functions that cannot run in the background, and the settings constraints.
+ProjectionDescription buildProjectionOfAlter(const ASTPtr & projection_decl, const StorageInMemoryMetadata & metadata, ContextPtr context)
+{
+    ProjectionDescription::getProjectionFromAST(
+        projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE, /*attach_short_syntax=*/ true, &metadata);
+    return ProjectionDescription::getProjectionFromAST(
+        projection_decl, metadata.columns, &metadata.partition_key, context->getGlobalContext(), LoadingStrictnessLevel::CREATE,
+        /*attach_short_syntax=*/ true, &metadata, /*constraints_context=*/ context);
+}
+
 /// Splits a parsed `SETTINGS` clause into changes and resets.
 /// The parser keeps `name = DEFAULT` entries apart from `changes`, and such an entry means a reset.
 void parseSettingsChangesAndResets(const ASTSetQuery & set_query, SettingsChanges & settings_changes, std::set<String> & settings_resets)
@@ -1406,8 +1422,7 @@ void AlterCommand::apply(
     }
     else if (type == ADD_PROJECTION)
     {
-        auto projection = ProjectionDescription::getProjectionFromAST(
-            projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE, /*attach_short_syntax=*/ true, &metadata);
+        auto projection = buildProjectionOfAlter(projection_decl, metadata, context);
         metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
     }
     else if (type == MODIFY_PROJECTION)
@@ -1426,8 +1441,7 @@ void AlterCommand::apply(
         }
 
         /// create a new projection with the modified settings
-        auto new_projection = ProjectionDescription::getProjectionFromAST(
-            projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE, /*attach_short_syntax=*/ true, &metadata);
+        auto new_projection = buildProjectionOfAlter(projection_decl, metadata, context);
 
         /// Existing parts store projection data built from the query body, so only the `WITH SETTINGS` clause may change
         auto definition_without_settings = [](const IAST & definition_ast)
@@ -2157,9 +2171,11 @@ void AlterCommands::apply(
     {
         try
         {
-            /// Check if we can still build projection from new metadata.
+            /// Check if we can still build projection from new metadata. The rebuilt projection is what the table
+            /// uses until a reload, so it is analyzed in the global context, as a reload does.
             auto new_projection = ProjectionDescription::getProjectionFromAST(
-                projection.definition_ast, metadata_copy.columns, &metadata_copy.partition_key, context, LoadingStrictnessLevel::ATTACH, /*attach_short_syntax=*/ true, &metadata_copy);
+                projection.definition_ast, metadata_copy.columns, &metadata_copy.partition_key, context->getGlobalContext(),
+                LoadingStrictnessLevel::ATTACH, /*attach_short_syntax=*/ true, &metadata_copy);
             /// Check if new metadata has the same keys as the old one.
             if (!blocksHaveEqualStructure(projection.sample_block_for_keys, new_projection.sample_block_for_keys))
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "Cannot ALTER column");
