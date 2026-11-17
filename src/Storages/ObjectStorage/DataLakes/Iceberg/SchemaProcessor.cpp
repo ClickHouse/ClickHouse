@@ -513,7 +513,20 @@ Field parseIcebergDefaultValue(
     {
         if (required)
             throwInvalidDefault(value, iceberg_type, field_name);
-        return type->isNullable() ? Field() : type->getDefault();
+        if (type->isNullable())
+            return Field();
+        /// The fields of a NULL struct read as fields added to it later do: their own `initial-default`, else the type default.
+        if (!iceberg_type.isString() && iceberg_type.extract<Poco::JSON::Object::Ptr>()->getValue<String>(f_type) == f_struct)
+        {
+            const auto & element_types = assert_cast<const DataTypeTuple &>(*type).getElements();
+            auto fields = iceberg_type.extract<Poco::JSON::Object::Ptr>()->getArray(f_fields);
+            Tuple result;
+            result.reserve(fields->size());
+            for (UInt32 i = 0; i < fields->size(); ++i)
+                result.push_back(getIcebergInitialDefault(fields->getObject(i), element_types[i]).value_or(element_types[i]->getDefault()));
+            return result;
+        }
+        return type->getDefault();
     }
 
     const DataTypePtr nested_type = removeNullable(type);
@@ -630,8 +643,10 @@ Field parseIcebergDefaultValue(
                     parseIcebergDefaultValue(value_object->get(key), child->get(f_type), element_types[i], child_required, child_name));
             else if (auto child_default = getIcebergInitialDefault(child, element_types[i]))
                 result.push_back(std::move(*child_default));
+            else if (child_required)
+                throwInvalidDefault({}, child->get(f_type), child_name);
             else
-                result.push_back(parseIcebergDefaultValue({}, child->get(f_type), element_types[i], child_required, child_name));
+                result.push_back(element_types[i]->getDefault());
         }
         return result;
     }

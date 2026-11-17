@@ -80,6 +80,8 @@ t.j = 9	(9)
 null struct	1	(NULL,5)
 null struct	2	(10,5)
 dropped member	1	[(2),(4)]	{'a':(6,7)}
+null element	1	[(NULL,5)]	{'a':(NULL,5)}
+null element	1
 Parquet, current schema
 schema ids	[1]
 1	(10,5)	[(11,5)]	7	8	(6)	(NULL)	[1,NULL]
@@ -139,6 +141,10 @@ absent list	1
 dropped member	1	[(2),(4)]	{'a':(6,7)}
 dropped member	[2,4]	[6]	[7]
 dropped member	1
+null element	1	[(NULL,5)]	{'a':(NULL,5)}
+null element	1
+null element	[5]	[5]
+null element	1
 ORC
 schema ids	[0]
 1	(10,5)	[(11,5)]	7	(6)	(NULL)	[1,NULL]
@@ -149,6 +155,8 @@ t.j = 9	(9)
 null struct	1	(NULL,5)
 null struct	2	(10,5)
 dropped member	1	[(2),(4)]	{'a':(6,7)}
+null element	1	[(NULL,5)]	{'a':(NULL,5)}
+null element	1
 ORC, current schema
 schema ids	[1]
 1	(10,5)	[(11,5)]	7	8	(6)	(NULL)	[1,NULL]
@@ -212,6 +220,10 @@ absent list	1
 dropped member	1	[(2),(4)]	{'a':(6,7)}
 dropped member	[2,4]	[6]	[7]
 dropped member	1
+null element	1	[(NULL,5)]	{'a':(NULL,5)}
+null element	1
+null element	[5]	[5]
+null element	1
 Avro
 schema ids	[0]
 1	(10,5)	[(11,5)]	7	(6)	(NULL)	[1,NULL]
@@ -220,10 +232,14 @@ readd	1	(9)	9
 t.j = 9	(9)
 t.j = 9	(9)
 dropped member	1	[(2),(4)]	{'a':(6,7)}
+null element	1	[(NULL,5)]	{'a':(NULL,5)}
+null element	1
 Avro, current schema
 schema ids	[1]
 1	7	8	(6)	(NULL)	[1,NULL]
 readd, current schema	1	9
 readd, current schema	1	9
 dropped member	1	[(2),(4)]	{'a':(6,7)}
+null element	1	[(NULL,5)]	{'a':(NULL,5)}
+null element	1
 malformed defaults

@@ -48,6 +48,7 @@ for table, mode in zip(sys.argv[1::2], sys.argv[2::2]):
     with open(os.path.join(metadata_dir, f"v{latest}.metadata.json")) as f:
         metadata = json.load(f)
     schema = copy.deepcopy(metadata["schemas"][0])
+    schema_id = 1
     last_id = metadata["last-column-id"]
     def new_id():
         global last_id
@@ -129,6 +130,23 @@ for table, mode in zip(sys.argv[1::2], sys.argv[2::2]):
             "type": {"type": "map", "key-id": key, "key": "string", "value-id": value, "value-required": False, "value": {"type": "struct", "fields": [
                 {"id": y, "name": "y", "required": False, "type": "int"},
                 {"id": new_id(), "name": "x", "required": False, "type": "int", "initial-default": 7}]}}})
+    elif mode == "null_element":
+        # Schema 1 adds `l` and `m` with a NULL struct in their defaults, schema 2 adds a field with a default to these structs,
+        # and the file is read under schema 1 until it is bound to the current schema.
+        def struct_type():
+            return {"type": "struct", "fields": [{"id": new_id(), "name": "x", "required": False, "type": "int"}]}
+        element = new_id()
+        fields.append({"id": new_id(), "name": "l", "required": False, "initial-default": [None],
+            "type": {"type": "list", "element-id": element, "element-required": False, "element": struct_type()}})
+        key, value = new_id(), new_id()
+        fields.append({"id": new_id(), "name": "m", "required": False, "initial-default": {"keys": ["a"], "values": [None]},
+            "type": {"type": "map", "key-id": key, "key": "string", "value-id": value, "value-required": False, "value": struct_type()}})
+        metadata["schemas"].append(dict(copy.deepcopy(schema), **{"schema-id": 1}))
+        for snapshot in metadata["snapshots"]:
+            snapshot["schema-id"] = 1
+        schema_id = 2
+        for struct in (fields[-2]["type"]["element"], fields[-1]["type"]["value"]):
+            struct["fields"].append({"id": new_id(), "name": "y", "required": False, "type": "int", "initial-default": 5})
     elif mode == "bad_long":
         fields.append({"id": new_id(), "name": "d", "required": False, "type": "long", "initial-default": "abc"})
     elif mode == "bad_timestamp":
@@ -154,9 +172,9 @@ for table, mode in zip(sys.argv[1::2], sys.argv[2::2]):
         element = new_id()
         fields.append({"id": new_id(), "name": "ll", "required": False, "initial-default": [1, None],
             "type": {"type": "list", "element-id": element, "element": "int", "element-required": False}})
-    schema["schema-id"] = 1
+    schema["schema-id"] = schema_id
     metadata["schemas"].append(schema)
-    metadata["current-schema-id"] = 1
+    metadata["current-schema-id"] = schema_id
     metadata["last-column-id"] = last_id
     metadata["last-updated-ms"] += 1
     with open(os.path.join(metadata_dir, f"v{latest + 1}.metadata.json"), "w") as f:
@@ -608,6 +626,24 @@ for format in Parquet ORC Avro; do
         after+="
             SELECT 'dropped member', l.y, m.values.y, m.values.x FROM icebergLocal('${table}/');
             SELECT 'dropped member', count() FROM icebergLocal('${table}/') WHERE has(l.y, 4);"
+    fi
+
+    # A NULL struct in a default reads the defaults of the fields added to it, under the older schema and under the current one.
+    table="${format}_null_element"
+    create+="
+        CREATE TABLE t_null_element (k Int32) ENGINE = IcebergLocal('${table}/', '${format}');
+        INSERT INTO t_null_element VALUES (1);"
+    evolve+=("${table}" null_element)
+    bind+=("${table}")
+    queries="
+        SELECT 'null element', k, l, m FROM icebergLocal('${table}/');
+        SELECT 'null element', count() FROM icebergLocal('${table}/') WHERE l[1].y = 5 AND m['a'].y = 5;"
+    before+="${queries}"
+    after+="${queries}"
+    if [ "${format}" != Avro ]; then
+        after+="
+            SELECT 'null element', l.y, m.values.y FROM icebergLocal('${table}/');
+            SELECT 'null element', count() FROM icebergLocal('${table}/') WHERE has(l.y, 5);"
     fi
 
     ${LOCAL} --allow_insert_into_iceberg=1 -q "${create}"
