@@ -136,6 +136,7 @@ namespace FailPoints
     extern const char storage_buffer_fail_capturing_flush_identity[];
     extern const char storage_buffer_pause_flush_for_other_identity[];
     extern const char storage_buffer_fail_appending_block[];
+    extern const char storage_buffer_fail_after_installing_columns[];
 }
 
 /// Access identity captured from the context that initiated an INSERT into a Buffer. A buffered block is
@@ -1058,7 +1059,13 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
     size_t old_bytes = to.bytes();
 
     if (to.empty())
+    {
         to = from.cloneEmpty();
+        fiu_do_on(FailPoints::storage_buffer_fail_after_installing_columns,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after installing the columns of an empty Buffer shard");
+        });
+    }
 
     assertBlocksHaveEqualStructure(from, to, "Buffer");
 
@@ -1340,7 +1347,17 @@ private:
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while appending a block to a Buffer shard");
         });
+
+        /// A failed append into an empty shard leaves the columns it installed, without rows. Drop them, so that the shard
+        /// is empty again instead of holding a block without the identity of any rows.
+        bool appended = false;
+        SCOPE_EXIT(
+        {
+            if (!appended && shard_was_empty)
+                buffer.data = Block();
+        });
         appendBlock(storage.log, sorted_block, buffer.data);
+        appended = true;
 
         if (shard_was_empty)
             buffer.first_write_time = current_time;
@@ -1783,8 +1800,12 @@ void StorageBuffer::writeBlockToDestination(
     const Context * query_context,
     FlushState * state)
 {
-    if (!destination_id || block.empty())
+    /// A block may have columns but no rows, and then possibly no identity either: there is nothing to write.
+    if (!destination_id || block.rows() == 0)
         return;
+
+    if (!write_identity)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A Buffer block of {} rows has no identity to be flushed under", block.rows());
 
     if (!table)
     {
