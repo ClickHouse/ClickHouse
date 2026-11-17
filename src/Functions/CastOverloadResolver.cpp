@@ -25,6 +25,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TYPE_MISMATCH;
 }
 
 /// accurateCastOrNull wraps the result in Nullable to represent conversion failures.
@@ -63,6 +64,38 @@ bool canBeAccurateCastOrNullTarget(const DataTypePtr & type)
         return false;
 
     return findUnsupportedTypeForAccurateCastOrNull(type) == nullptr;
+}
+
+std::optional<VectorWithMemoryTracking<std::optional<size_t>>> tryGetTupleCastElementPositions(
+    const DataTypeTuple & from, const DataTypeTuple & to, TupleElementsMatching matching)
+{
+    if (from.hasExplicitNames() && to.hasExplicitNames())
+    {
+        auto positions = from.matchElementsByName(to, matching == TupleElementsMatching::ByNameCaseInsensitive);
+        if (matching != TupleElementsMatching::Default
+            || std::ranges::any_of(positions, [](const auto & position) { return position.has_value(); }))
+            return positions;
+    }
+
+    if (from.getElements().size() != to.getElements().size())
+        return std::nullopt;
+
+    VectorWithMemoryTracking<std::optional<size_t>> positions;
+    positions.reserve(to.getElements().size());
+    for (size_t i = 0; i < to.getElements().size(); ++i)
+        positions.emplace_back(i);
+    return positions;
+}
+
+VectorWithMemoryTracking<std::optional<size_t>> getTupleCastElementPositions(
+    const DataTypeTuple & from, const DataTypeTuple & to, TupleElementsMatching matching)
+{
+    auto positions = tryGetTupleCastElementPositions(from, to, matching);
+    if (!positions)
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple types "
+                        "with the same number of elements or from String.\nLeft type: {}, right type: {}",
+                        from.getName(), to.getName());
+    return std::move(*positions);
 }
 
 static void validateNestedTypesForAccurateCastOrNull(const DataTypePtr & type)

@@ -219,6 +219,9 @@ private:
     }
 };
 
+namespace
+{
+
 struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
 {
     WorkloadEntityTestStorage storage;
@@ -342,6 +345,8 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
         });
     }
 };
+
+}
 
 using TestGuard = ResourceTest::Guard;
 

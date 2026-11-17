@@ -237,6 +237,29 @@ bool DataTypeTuple::isDefaultInsertTrivial() const
             [](const DataTypePtr & elem) { return elem->isDefaultInsertTrivial(); });
 }
 
+MutableColumnConstPtr DataTypeTuple::createColumnConst(size_t size, const Field & field) const
+{
+    /// `ColumnTuple::insert` skips the elements' `createColumnConst`, which for `JSON` gives the typed paths absent from an empty `Object` their type default.
+    if (isDefaultInsertTrivial() || field.getType() != Field::Types::Tuple || field.safeGet<Tuple>().size() != elems.size())
+        return IDataType::createColumnConst(size, field);
+
+    const auto & tuple = field.safeGet<Tuple>();
+    Columns columns;
+    columns.reserve(elems.size());
+    for (size_t i = 0; i < elems.size(); ++i)
+    {
+        if (elems[i]->isDefaultInsertTrivial())
+        {
+            auto column = elems[i]->createColumn();
+            column->insert(tuple[i]);
+            columns.push_back(std::move(column));
+        }
+        else
+            columns.push_back(elems[i]->createColumnConst(1, tuple[i])->getDataColumnPtr());
+    }
+    return ColumnConst::create(ColumnTuple::create(columns), size);
+}
+
 bool DataTypeTuple::equals(const IDataType & rhs) const
 {
     if (typeid(rhs) != typeid(*this))
@@ -509,7 +532,7 @@ void registerDataTypeTuple(DataTypeFactory & factory)
 {
     factory.registerDataType("Tuple", create, DataTypeFactory::Case::Sensitive, Documentation{
             .description = R"DOCS_MD(
-A tuple of elements, each having an individual [type](/reference/data-types). Tuple must contain at least one element.
+A tuple of elements, each having an individual [type](/reference/data-types/index). Tuple must contain at least one element.
 
 Tuples are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](/reference/statements/in) and [Higher order functions](/reference/functions/regular-functions/overview#higher-order-functions).
 
