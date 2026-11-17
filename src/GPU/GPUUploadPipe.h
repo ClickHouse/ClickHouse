@@ -171,6 +171,13 @@ public:
 
     const IDeviceColumn & flush() override;
 
+    /// Sends what is staged without waiting for it: the device column holds it once the pipe's stream gets this far.
+    /// The staging is taken again only after the copy, which `reset` and the next `stage` wait for.
+    const IDeviceColumn & sendWithoutWaiting();
+
+    /// What is on the device, or is going there in the order of the pipe's stream.
+    const IDeviceColumn & deviceColumn() const;
+
     void reset() override;
 
     void waitForUploads();

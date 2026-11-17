@@ -337,6 +337,17 @@ const IDeviceColumn & ColumnUploadPipe::flush()
     return std::visit([](const auto & column) -> const IDeviceColumn & { return column; }, device);
 }
 
+const IDeviceColumn & ColumnUploadPipe::sendWithoutWaiting()
+{
+    sendStagedToDevice();
+    return deviceColumn();
+}
+
+const IDeviceColumn & ColumnUploadPipe::deviceColumn() const
+{
+    return std::visit([](const auto & column) -> const IDeviceColumn & { return column; }, device);
+}
+
 void ColumnUploadPipe::waitForUploads()
 {
     if (!in_flight)

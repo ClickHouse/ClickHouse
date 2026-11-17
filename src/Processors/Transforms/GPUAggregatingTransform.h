@@ -34,7 +34,7 @@ private:
     std::vector<size_t> argument_positions;
     size_t num_aggregates = 0;
 
-    std::vector<GPU::GPUAccumulator> accumulators;
+    std::optional<GPU::GPUAccumulator> accumulator;
     std::optional<GPU::GroupByGPUAccumulator> group_by_accumulator;
 
     const bool empty_result_for_empty_set;

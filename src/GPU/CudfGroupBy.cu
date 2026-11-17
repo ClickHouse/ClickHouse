@@ -70,6 +70,9 @@ struct CudfGroupBy::State
     /// Sized for `capacity` groups, and made again for more of them by `grow`.
     std::optional<cudf::groupby::streaming_groupby> grouping;
     size_t capacity = 0;
+    /// At least as many as the groups of `grouping`: the groups it had when it was asked last, which waits for the
+    /// device, and the rows grouped since.
+    size_t max_groups = 0;
 
     /// The keys, then the values, once the groups are closed.
     std::unique_ptr<cudf::table> groups;
@@ -209,16 +212,18 @@ struct CudfGroupBy::State
         size_t offset = 0;
         while (offset < rows)
         {
-            const size_t distinct = grouping ? static_cast<size_t>(grouping->distinct_keys()) : 0;
             const size_t slice_rows = std::min(rows - offset, max_slice_rows);
             const auto begin = static_cast<cudf::size_type>(offset);
             const auto end = static_cast<cudf::size_type>(offset + slice_rows);
             const cudf::table_view slice = begin == 0 && end == table.num_rows() ? table : cudf::slice(table, {begin, end}).front();
 
-            if (!grouping || distinct + slice_rows > capacity)
+            if (grouping && max_groups + slice_rows > capacity)
+                max_groups = static_cast<size_t>(grouping->distinct_keys());
+
+            if (!grouping || max_groups + slice_rows > capacity)
             {
                 /// Grown by half, with a quarter to spare: its hash table holds twice as many slots as groups.
-                const size_t new_capacity = std::max({capacity + capacity / 2, (distinct + slice_rows) + (distinct + slice_rows) / 4, min_capacity});
+                const size_t new_capacity = std::max({capacity + capacity / 2, (max_groups + slice_rows) + (max_groups + slice_rows) / 4, min_capacity});
                 if (new_capacity + slice_rows > max_capacity)
                     throwGPUError(("a `GROUP BY` of more than " + std::to_string(max_capacity - slice_rows) + " groups").c_str());
 
@@ -239,6 +244,7 @@ struct CudfGroupBy::State
                     "grouping " + std::to_string(slice_rows) + " rows by " + std::to_string(numKeyColumns()) + " keys",
                     [&] { grouping->aggregate(slice, stream); return 0; });
             }
+            max_groups += slice_rows;
             offset += slice_rows;
         }
     }

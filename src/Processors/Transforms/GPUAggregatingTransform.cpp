@@ -33,17 +33,18 @@ GPUAggregatingTransform::GPUAggregatingTransform(
 
     if (params.keys.empty())
     {
-        accumulators.reserve(params.aggregates.size());
-        for (size_t i = 0; i < params.aggregates.size(); ++i)
+        DataTypes argument_types;
+        DataTypes result_types;
+        for (const auto & aggregate : params.aggregates)
         {
-            const auto & aggregate = params.aggregates[i];
             if (aggregate.argument_names.size() != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation without keys of an aggregate of other than one argument");
             const String & argument_name = aggregate.argument_names.front();
             argument_positions.push_back(input_header_->getPositionByName(argument_name));
-            accumulators.emplace_back(
-                *input_header_->getByName(argument_name).type, *aggregate.function->getResultType(), (*aggregations)[i], batch_bytes);
+            argument_types.push_back(input_header_->getByName(argument_name).type);
+            result_types.push_back(aggregate.function->getResultType());
         }
+        accumulator.emplace(argument_types, result_types, *aggregations, batch_bytes);
 
         return;
     }
@@ -106,13 +107,13 @@ void GPUAggregatingTransform::consume(Chunk chunk)
 
     const Columns & columns = chunk.getColumns();
 
-    if (!group_by_accumulator)
+    if (accumulator)
     {
-        for (size_t i = 0; i < accumulators.size(); ++i)
-        {
-            const ColumnPtr column = columns[argument_positions[i]]->convertToFullIfWrapped();
-            accumulators[i].add(*column);
-        }
+        Columns arguments;
+        arguments.reserve(argument_positions.size());
+        for (const size_t position : argument_positions)
+            arguments.push_back(columns[position]->convertToFullIfWrapped());
+        accumulator->add(arguments);
 
         return;
     }
@@ -145,13 +146,15 @@ Chunk GPUAggregatingTransform::generate()
     if (total_rows == 0 && empty_result_for_empty_set)
         return {};
 
-    Columns columns;
-    columns.reserve(accumulators.size());
+    const std::vector<Field> results = accumulator->finalize();
 
-    for (size_t i = 0; i < accumulators.size(); ++i)
+    Columns columns;
+    columns.reserve(results.size());
+
+    for (size_t i = 0; i < results.size(); ++i)
     {
         auto column = header.getByPosition(i).type->createColumn();
-        column->insert(accumulators[i].finalize());
+        column->insert(results[i]);
         columns.push_back(std::move(column));
     }
 

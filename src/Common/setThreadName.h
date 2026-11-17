@@ -69,6 +69,7 @@ namespace DB
     M(EXTERNAL_LOADER, "ExternalLoader") \
     M(FILE_LOG_WATCH, "FileLogWatch") \
     M(FILESYSTEM_CACHE_DROP, "FSCacheDropKeys") \
+    M(GPU_AGGREGATION, "GPUAggregation") \
     M(GRPC_SERVER_CALL, "gRPCServerCall") \
     M(GRPC_SERVER_QUEUE, "gRPCServerQueue") \
     M(HASHED_DICT_DTOR, "HashedDictDtor") \

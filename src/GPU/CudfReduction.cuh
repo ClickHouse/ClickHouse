@@ -2,13 +2,16 @@
 
 #include <GPU/GPUTypes.cuh>
 
+#include <cuda/stream_ref>
+
 namespace DB::GPU
 {
 
+/// A `sum`, a `min` or a `max` of the values of every batch, reduced in `stream`.
 class CudfReduction
 {
 public:
-    __host__ CudfReduction(GPUElementType element_type, GPUElementType result_type, GPUAggregationKind aggregation);
+    __host__ CudfReduction(GPUElementType element_type, GPUElementType result_type, GPUAggregationKind aggregation, cuda::stream_ref stream);
     __host__ ~CudfReduction();
 
     CudfReduction(const CudfReduction &) = delete;
