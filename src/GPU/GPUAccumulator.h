@@ -304,6 +304,9 @@ private:
 
     std::optional<size_t> variableOrdinalOfOffsetsColumn(size_t column_index) const;
 
+    /// The decompressed bytes of a piece of a column that a reader stages before it hands the piece over.
+    size_t maxStagedDecompressedBytes(size_t column_index) const;
+
     void sendBatchToDevice();
 
     Reader & readerOrThrow(size_t reader);

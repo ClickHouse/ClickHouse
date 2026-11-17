@@ -324,14 +324,19 @@ std::vector<DeviceFixedColumnBuffer> deviceColumnsFor(
 /// memory of the queue, and the pinned memory of the staging.
 constexpr size_t compressed_stage_bytes = 32UL * 1024 * 1024;
 
+/// A piece of a column is handed over once it expands to about `reader_batch_rows` rows, see
+/// `maxStagedDecompressedBytes`, and not to less than this, which is about a compressed block. Rows are grouped only once
+/// every column of a reader has them, and a column of varying width only up to where its bytes are on the device, so
+/// that a piece of many rows of one column keeps as many of every other on the device: 32 MiB of the bytes of
+/// `l_returnflag`, one a row, made each reader of TPC-H Q1 hold 33 million rows of each of its columns.
+constexpr size_t min_staged_decompressed_bytes = 1UL * 1024 * 1024;
+
 /// The uncompressed bytes the device thread expands in one batched call, and so the size of its buffer for them.
 constexpr size_t max_expansion_bytes = 256UL * 1024 * 1024;
 
 /// Of rows collected rather than grouped: how many are kept on the device before they are handed over.
 constexpr size_t collect_flush_rows = 1UL << 20;
 
-/// The fewest rows a reader groups at once, below which the calls into cuDF cost more than the rows.
-constexpr size_t min_reader_batch_rows = 1UL << 20;
 
 /// What the pieces in the work queue may take of the device's memory, together, see `DeviceStagingBudget`.
 constexpr size_t max_staged_device_bytes = 2UL * 1024 * 1024 * 1024;
@@ -368,7 +373,7 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
     , filter(std::move(filter_))
     , filter_aliases(std::move(filter_aliases_))
     , batch_rows(std::clamp(batch_bytes / rowBytesOf(key_element_types, values, filter_element_types), size_t{1}, max_batch_rows))
-    , reader_batch_rows(std::min(batch_rows, std::max(batch_rows / std::max<size_t>(num_readers_, 1), min_reader_batch_rows)))
+    , reader_batch_rows(batch_rows)
     , compressed(compressed_)
     , key_pipes(pipesFor(key_types, batch_rows, compressed))
     , value_pipes(pipesFor(value_types, batch_rows, compressed))
@@ -547,6 +552,23 @@ size_t GroupByGPUAccumulator::variableOffsetsColumnOf(size_t column_index) const
     return group_keys.size() + values.size() + filter_element_types.size() + static_cast<size_t>(it - variable_column_indices.begin());
 }
 
+size_t GroupByGPUAccumulator::maxStagedDecompressedBytes(size_t column_index) const
+{
+    /// Of a column of varying width, its bytes, of a row each at least where the row is not empty.
+    size_t row_bytes = 1;
+    if (variableOrdinalOfOffsetsColumn(column_index))
+        row_bytes = sizeof(UInt64);
+    else if (isVariableColumn(column_index))
+        row_bytes = 1;
+    else if (column_index < group_keys.size())
+        row_bytes = sizeOf(key_element_types[column_index]);
+    else if (column_index < group_keys.size() + values.size())
+        row_bytes = sizeOf(dataElementTypeOf(values[column_index - group_keys.size()]));
+    else
+        row_bytes = sizeOf(filter_element_types[column_index - group_keys.size() - values.size()]);
+    return std::clamp(reader_batch_rows * row_bytes, min_staged_decompressed_bytes, compressed_stage_bytes);
+}
+
 std::optional<size_t> GroupByGPUAccumulator::variableOrdinalOfOffsetsColumn(size_t column_index) const
 {
     const size_t first = group_keys.size() + values.size() + filter_element_types.size();
@@ -628,7 +650,7 @@ void GroupByGPUAccumulator::addCompressedBlock(
 
     /// A piece skips bytes before its first block only.
     if (column.raw || column.cut || (!column.blocks.empty() && skipped_bytes != 0)
-        || (!column.blocks.empty() && (column.decompressed_bytes + decompressed_bytes > compressed_stage_bytes || column.codec != codec)))
+        || (!column.blocks.empty() && (column.decompressed_bytes + decompressed_bytes > maxStagedDecompressedBytes(column_index) || column.codec != codec)))
         handOff(reader_index, column_index);
 
     if (column.blocks.empty())
@@ -885,13 +907,22 @@ void GroupByGPUAccumulator::runDeviceThread()
                         return;
                 }
                 /// Between pieces as well, so that while the readers keep the queue full the rows already in every column
-                /// are grouped and dropped, and do not pile up on the device until it runs dry.
-                groupPiece();
+                /// are grouped and dropped, and do not pile up on the device until it runs dry. Every reader's, not one:
+                /// an expansion brings rows to many readers at once, and with 16 readers of TPC-H Q1 handing over one
+                /// piece per expansion let the readers' columns grow until the device ran out of memory.
+                while (groupPiece())
+                {
+                }
                 continue;
             }
 
             if (groupPiece())
+            {
+                while (groupPiece())
+                {
+                }
                 continue;
+            }
 
             if (!in_flight.empty())
             {
