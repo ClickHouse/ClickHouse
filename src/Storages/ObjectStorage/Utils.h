@@ -90,6 +90,8 @@ using WrittenPathReservationsPtr = std::shared_ptr<WrittenPathReservations>;
 /// insert split by size continues the numbering from it. A key that another insert into the same table has
 /// reserved is taken as well - also the starting key itself: its object is not there until the insert writing
 /// it is committed, and without the reservation every concurrent insert would start writing the same key.
+/// `check_new_key` is called on each generated key before it is looked up, so that a key outside the grant of
+/// the writer is refused before its existence can be observed.
 std::optional<std::string> checkAndGetNewFileOnInsertIfNeeded(
     const IObjectStorage & object_storage,
     const StorageObjectStorageConfiguration & configuration,
@@ -97,19 +99,22 @@ std::optional<std::string> checkAndGetNewFileOnInsertIfNeeded(
     const std::string & key,
     const NumberedFileNames & numbered_keys,
     size_t & sequence_number,
-    WrittenPathReservations & reservations);
+    WrittenPathReservations & reservations,
+    const std::function<void(const std::string & new_key)> & check_new_key = {});
 
 /// Returns the key of the next object to write when the data is split by size (see `*_split_on_write_by_size_bytes`).
 /// `sequence_number` is advanced past the returned key. If the generated key is already taken, either the number is
 /// skipped (when `create_new_file_on_insert` is enabled) or an exception is thrown. A key reserved by another insert
 /// into the same table is skipped whatever the settings are: the object is not there yet, but it is being written.
+/// `check_new_key` is called on each generated key before it is looked up, like in `checkAndGetNewFileOnInsertIfNeeded`.
 std::string getNextKeyForSplittingBySize(
     const IObjectStorage & object_storage,
     const StorageObjectStorageConfiguration & configuration,
     const StorageObjectStorageQuerySettings & settings,
     const NumberedFileNames & numbered_keys,
     size_t & sequence_number,
-    WrittenPathReservations & reservations);
+    WrittenPathReservations & reservations,
+    const std::function<void(const std::string & new_key)> & check_new_key = {});
 
 /// A truncating insert overwrites the whole dataset of the table. If the previous insert has produced
 /// more objects than the current one, the leftovers have to be deleted - otherwise the stale data will be
@@ -137,12 +142,15 @@ void removeStaleSplitObjects(
 /// starting from 1, so the removal stops at the first missing number.
 /// Nothing is removed if `create_new_file_on_insert` is enabled - see the comment in the implementation.
 /// A key that another insert into the table is still writing is skipped, like in `removeStaleSplitObjects`.
+/// `check_key` is called on each numbered key before it is looked up or removed, so that an insert cannot probe
+/// or delete an object outside the grant of the writer.
 void removeStaleSplitObjectsByNumber(
     IObjectStorage & object_storage,
     StorageObjectStorageConfiguration & configuration,
     const NumberedFileNames & numbered_keys,
     bool create_new_file_on_insert,
-    const LoggerPtr & log);
+    const LoggerPtr & log,
+    const std::function<void(const std::string & key)> & check_key = {});
 
 void resolveSchemaAndFormat(
     ColumnsDescription & columns,

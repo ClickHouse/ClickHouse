@@ -56,7 +56,8 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
     const String & key,
     const NumberedFileNames & numbered_keys,
     size_t & sequence_number,
-    WrittenPathReservations & reservations)
+    WrittenPathReservations & reservations,
+    const std::function<void(const String & new_key)> & check_new_key)
 {
     if (settings.truncate_on_insert)
     {
@@ -100,6 +101,8 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
         {
             new_key = numbered_keys.getName(sequence_number);
             ++sequence_number;
+            if (check_new_key)
+                check_new_key(new_key);
         }
         /// A key is free when the object is not there and no other insert into this table is writing it.
         while (object_storage.exists(StoredObject(new_key)) || !reservations.tryReserve(new_key));
@@ -129,12 +132,16 @@ String getNextKeyForSplittingBySize(
     const StorageObjectStorageQuerySettings & settings,
     const NumberedFileNames & numbered_keys,
     size_t & sequence_number,
-    WrittenPathReservations & reservations)
+    WrittenPathReservations & reservations,
+    const std::function<void(const String & new_key)> & check_new_key)
 {
     while (true)
     {
         String new_key = numbered_keys.getName(sequence_number);
         ++sequence_number;
+        /// A numbered key can be outside the grant of the writer, e.g. `data.1.tsv` for `data.tsv`.
+        if (check_new_key)
+            check_new_key(new_key);
 
         /// A truncating insert overwrites the numbered keys of the previous inserts into this key - but only when
         /// the numbered sequence is unambiguously its own. `*_create_new_file_on_insert` declares the numbered keys
@@ -214,7 +221,8 @@ void removeStaleSplitObjectsByNumber(
     StorageObjectStorageConfiguration & configuration,
     const NumberedFileNames & numbered_keys,
     bool create_new_file_on_insert,
-    const LoggerPtr & log)
+    const LoggerPtr & log,
+    const std::function<void(const String & key)> & check_key)
 {
     if (create_new_file_on_insert)
         return;
@@ -224,6 +232,10 @@ void removeStaleSplitObjectsByNumber(
     {
         String stale_key = numbered_keys.getName(sequence_number);
         ++sequence_number;
+        /// The key is checked before it is looked up, so that neither the existence of an object outside the grant
+        /// of the writer is disclosed, nor the object is removed.
+        if (check_key)
+            check_key(stale_key);
 
         /// See `removeStaleSplitObjects`. The object of a key that is being written may or may not be there yet,
         /// so the probing goes on past it.

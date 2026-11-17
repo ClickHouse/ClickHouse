@@ -1061,7 +1061,9 @@ SinkToStoragePtr StorageObjectStorage::write(
         configuration->update(object_storage, local_context);
     }
 
-    return createSink(configuration, object_storage, storage_id, format_settings, catalog, metadata_snapshot, local_context);
+    return createSink(
+        configuration, object_storage, storage_id, format_settings, catalog, metadata_snapshot, local_context,
+        getPartitionedWriteAccessCheck());
 }
 
 SinkToStoragePtr StorageObjectStorage::createSink(
@@ -1071,7 +1073,8 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     const std::optional<FormatSettings> & format_settings,
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const StorageMetadataPtr & metadata_snapshot,
-    const ContextPtr & local_context)
+    const ContextPtr & local_context,
+    const PartitionedWriteAccessCheck & write_access_check)
 {
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
     const auto & settings = configuration->getQuerySettings(local_context);
@@ -1102,7 +1105,8 @@ SinkToStoragePtr StorageObjectStorage::createSink(
 
     if (configuration->partition_strategy)
     {
-        return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
+        return std::make_shared<PartitionedStorageObjectStorageSink>(
+            object_storage, configuration, format_settings, sample_block, local_context, write_access_check);
     }
 
     auto paths = configuration->getPaths();
@@ -1146,8 +1150,23 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     /// same starting key, see `checkAndGetNewFileOnInsertIfNeeded`. A truncating insert keeps the starting key, so
     /// the cleanup below does not change it.
     auto reservations = std::make_shared<WrittenPathReservations>(configuration);
+
+    /// The written key can differ from the typed URI that the source access check covered, e.g. after `{_schema_hash}`
+    /// is expanded, so it is checked before it is probed or written.
+    if (write_access_check)
+        write_access_check(local_context, configuration->getURIForAccessCheck(first_key));
+
+    /// A key renamed by `*_create_new_file_on_insert` or generated for the data split by size can be outside the grant,
+    /// e.g. `data.1.tsv` for `data.tsv`. The check is captured by value: it is called by the sink for every next object.
+    std::function<void(const String &)> check_key;
+    if (write_access_check)
+        check_key = [write_access_check, local_context, configuration](const String & key)
+        {
+            write_access_check(local_context, configuration->getURIForAccessCheck(key));
+        };
+
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
-            *object_storage, *configuration, settings, first_key, numbered_keys, sequence_number, *reservations))
+            *object_storage, *configuration, settings, first_key, numbered_keys, sequence_number, *reservations, check_key))
         first_key = *new_key;
 
     /// The new objects are registered in the configuration, so that they are visible for reading from the same table.
@@ -1155,9 +1174,9 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     StorageObjectStorageSink::PublishPathCallback publish_path;
     if (settings.split_on_write_by_size_bytes)
     {
-        get_next_path = [storage = object_storage, config = configuration, settings, numbered_keys, sequence_number, reservations]() mutable -> String
+        get_next_path = [storage = object_storage, config = configuration, settings, numbered_keys, sequence_number, reservations, check_key]() mutable -> String
         {
-            return getNextKeyForSplittingBySize(*storage, *config, settings, numbered_keys, sequence_number, *reservations);
+            return getNextKeyForSplittingBySize(*storage, *config, settings, numbered_keys, sequence_number, *reservations, check_key);
         };
     }
 
@@ -1272,7 +1291,8 @@ SinkToStoragePtr StorageObjectStorage::createSink(
                 *configuration,
                 getNumberedFileNames(live_paths.front().path),
                 settings.create_new_file_on_insert,
-                log);
+                log,
+                check_key);
         }
     }
 

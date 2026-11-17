@@ -63,6 +63,8 @@ public:
     [[nodiscard]] Path getRawPath() const override { return path; }
     void setRawPath(const Path & p) override { path = p; }
     [[nodiscard]] const String & getRawURI() const override { return url; }
+    /// The raw URI is only the authority, so grants never filter paths, and any path is checked as the authority.
+    [[nodiscard]] String getURIForAccessCheck(const String & /*write_path*/) const override { return url; }
 
     [[nodiscard]] const Paths & getPathsUnlocked() const override { return paths; }
     Paths & getMutablePathsUnlocked() override { return paths; }

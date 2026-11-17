@@ -4,6 +4,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Common/FullyQualifiedObjectPath.h>
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
@@ -281,7 +282,8 @@ PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     StorageObjectStorageConfigurationPtr configuration_,
     std::optional<FormatSettings> format_settings_,
     SharedHeader sample_block_,
-    ContextPtr context_)
+    ContextPtr context_,
+    PartitionedWriteAccessCheck write_access_check_)
     : PartitionedSink(configuration_->partition_strategy, context_, sample_block_)
     , object_storage(object_storage_)
     , configuration(configuration_)
@@ -289,6 +291,7 @@ PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     , format_settings(format_settings_)
     , sample_block(sample_block_)
     , context(context_)
+    , write_access_check(std::move(write_access_check_))
     , reservations(std::make_shared<WrittenPathReservations>(configuration_))
 {
 }
@@ -305,6 +308,30 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
 
     validateNamespace(configuration->getNamespace(), configuration);
     validateKey(file_path);
+
+    /// A partition id can make the key fully qualified, e.g. `s3://other-bucket/x.tsv` for the template `{_partition_id}.tsv`,
+    /// and the S3 object storage would then write to that bucket instead of the one whose URI is checked below.
+    /// Other object storages write such a key as a literal name.
+    if (object_storage->getType() == ObjectStorageType::S3 && !configuration->supportsFullyQualifiedPaths()
+        && trySplitFullyQualifiedObjectPath(file_path))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The key {} of a partition refers to another bucket, which is not allowed",
+            file_path);
+
+    /// The partition id comes from the data, so its destination is checked before anything is written to it.
+    /// The key is checked before it is looked up too, so that an existing object outside the grant is not disclosed.
+    if (write_access_check)
+        write_access_check(context, configuration->getURIForAccessCheck(file_path));
+
+    /// A key renamed by `s3_create_new_file_on_insert` can be outside the grant, e.g. `data.1.tsv` for `data.tsv`.
+    /// The same for the numbered keys of the data split by size, so the check is captured by value: the sink calls it for every next object.
+    std::function<void(const String &)> check_key;
+    if (write_access_check)
+        check_key = [check = write_access_check, check_context = context, config = configuration](const String & key)
+        {
+            check(check_context, config->getURIForAccessCheck(key));
+        };
 
     /// The objects written after the first one are numbered: `data.1.tsv`, `data.2.tsv`, ... The number is placed
     /// into the path pattern rather than into the key of the partition, so that a partition id with a dot in it
@@ -333,10 +360,8 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     /// inserts into this table for as long as this insert lasts. The reservations of every partition belong to
     /// the partitioned sink, which outlives the sinks of the partitions it has created.
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
-            *object_storage, *configuration, query_settings, file_path, numbered_keys, sequence_number, *reservations))
-    {
+            *object_storage, *configuration, query_settings, file_path, numbered_keys, sequence_number, *reservations, check_key))
         file_path = *new_key;
-    }
 
     last_written_object_path = file_path;
 
@@ -366,9 +391,9 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     StorageObjectStorageSink::GetNextPathCallback get_next_path;
     if (query_settings.split_on_write_by_size_bytes)
     {
-        get_next_path = [storage = object_storage, config = configuration, settings = query_settings, numbered_keys, sequence_number, path_reservations = reservations]() mutable -> String
+        get_next_path = [storage = object_storage, config = configuration, settings = query_settings, numbered_keys, sequence_number, path_reservations = reservations, check_key]() mutable -> String
         {
-            return getNextKeyForSplittingBySize(*storage, *config, settings, numbered_keys, sequence_number, *path_reservations);
+            return getNextKeyForSplittingBySize(*storage, *config, settings, numbered_keys, sequence_number, *path_reservations, check_key);
         };
     }
 
@@ -401,7 +426,8 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
             *configuration,
             numbered_keys,
             query_settings.create_new_file_on_insert,
-            getLogger("PartitionedStorageObjectStorageSink"));
+            getLogger("PartitionedStorageObjectStorageSink"),
+            check_key);
 
     return sink;
 }
