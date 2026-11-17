@@ -7,6 +7,7 @@
 #include <Common/CurrentThread.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/DatabasesCommon.h>
@@ -42,7 +43,9 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -105,6 +108,7 @@ namespace Setting
 {
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool prefer_localhost_replica;
     extern const SettingsUInt64 readonly;
 }
 
@@ -121,6 +125,9 @@ namespace ErrorCodes
     extern const int USER_EXPIRED;
     extern const int ACCESS_ENTITY_NOT_FOUND;
     extern const int FAULT_INJECTED;
+    extern const int FUNCTION_NOT_ALLOWED;
+    extern const int QUERY_IS_PROHIBITED;
+    extern const int READONLY;
 }
 
 namespace FailPoints
@@ -312,6 +319,77 @@ void restoreWriteIdentity(const ContextMutablePtr & insert_context, const Buffer
         insert_context->setForwardedFor(identity.forwarded_for);
     if (identity.normalized_query_hash != 0)
         insert_context->setNormalizedQueryHash(identity.normalized_query_hash);
+}
+
+/// Hops of a forwarded write are followed this deep at most; the write itself checks any beyond.
+constexpr size_t max_forwarded_insert_depth = 16;
+
+/// Checks, without writing, the `INSERT` privileges of the user of `context` that a write into `table` checks as it
+/// writes: on the targets of the materialized views that depend on `table`, and hop by hop on every table the write is
+/// forwarded to (the target of an `Alias`, the destination of a `Buffer`, the target of a materialized view, the table of
+/// a local shard of a `Distributed`), and so on from each of them. A materialized view and what is behind it are checked
+/// with the rights of its SQL security, as its write is. A remote shard authorizes its part of the write itself. The
+/// caller checks `INSERT` on `table`.
+void checkForwardedInsertAccess(const StoragePtr & table, const ContextPtr & context, size_t depth = 0)
+{
+    if (depth >= max_forwarded_insert_depth)
+        return;
+
+    /// As `InsertDependenciesBuilder` and `StorageMaterializedView::write` check it.
+    const auto check_view_target = [&](const StorageMaterializedView & view)
+    {
+        const auto target = view.tryGetTargetTable();
+        if (!target)
+            return;
+        const auto view_metadata = view.getInMemoryMetadataPtr(context, false);
+        const ContextPtr view_context = view_metadata->getSQLSecurityOverriddenContext(context);
+        if (!view.hasInnerTable() && view_metadata->sql_security_type)
+        {
+            const auto target_metadata = target->getInMemoryMetadataPtr(view_context, false);
+            view_context->checkAccess(AccessType::INSERT, target->getStorageID(), target_metadata->getSampleBlockInsertable().getNames());
+        }
+        checkForwardedInsertAccess(target, view_context, depth + 1);
+    };
+
+    auto & catalog = DatabaseCatalog::instance();
+    for (const auto & view_id : catalog.getDependentViews(table->getStorageID()))
+    {
+        const auto view = catalog.tryGetTable(view_id, context);
+        if (const auto * materialized_view = view ? view->as<StorageMaterializedView>() : nullptr)
+            check_view_target(*materialized_view);
+    }
+
+    StoragePtr next;
+    if (const auto * alias = table->as<StorageAlias>())
+    {
+        next = alias->tryGetTargetTable();
+    }
+    else if (const auto * buffer = table->as<StorageBuffer>())
+    {
+        next = buffer->getDestinationTable();
+    }
+    else if (const auto * materialized_view = table->as<StorageMaterializedView>())
+    {
+        check_view_target(*materialized_view);
+    }
+    else if (const auto * distributed = table->as<StorageDistributed>())
+    {
+        /// A shard with a local replica is written here, by a nested `INSERT` into its table under this identity.
+        const auto & remote_database = distributed->getRemoteDatabaseName();
+        const auto & remote_table = distributed->getRemoteTableName();
+        if (context->getSettingsRef()[Setting::prefer_localhost_replica] && !remote_database.empty() && !remote_table.empty())
+        {
+            const auto cluster = distributed->getCluster();
+            if (std::ranges::any_of(cluster->getShardsInfo(), [](const auto & shard) { return shard.isLocal(); }))
+                next = catalog.tryGetTable(StorageID(remote_database, remote_table), context);
+        }
+    }
+
+    if (next)
+    {
+        context->checkAccess(AccessType::INSERT, next->getStorageID());
+        checkForwardedInsertAccess(next, context, depth + 1);
+    }
 }
 
 }
@@ -1113,6 +1191,14 @@ public:
         if (destination)
         {
             getContext()->checkAccess(AccessType::INSERT, destination->getStorageID());
+            /// Refuse rows the flush could not write now, while the user can still be told: a flush that is denied drops
+            /// them with only a log record. Once per insert, as it costs about as much as planning an insert into the
+            /// destination.
+            if (!forwarded_insert_checked)
+            {
+                checkForwardedInsertAccess(destination, getContext());
+                forwarded_insert_checked = true;
+            }
             destination = DatabaseCatalog::instance().tryGetTable(storage.destination_id, storage.getContext());
             if (destination.get() == &storage)
                 throw Exception(ErrorCodes::INFINITE_LOOP, "Destination table is myself. Write will cause infinite loop.");
@@ -1202,6 +1288,7 @@ private:
     StorageBuffer & storage;
     StorageMetadataPtr metadata_snapshot;
     std::shared_ptr<const BufferWriteIdentity> write_identity;
+    bool forwarded_insert_checked = false;
 
     void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer, int32_t metadata_version)
     {
@@ -1619,73 +1706,45 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     }
 
     Stopwatch watch;
-    FlushStage stage = FlushStage::RestoringIdentity;
+    FlushState flush_state;
     try
     {
-        writeBlockToDestination(block_to_write, getDestinationTable(), buffer.write_identity, /*query_context=*/ nullptr, &stage);
+        writeBlockToDestination(block_to_write, getDestinationTable(), buffer.write_identity, /*query_context=*/ nullptr, &flush_state);
     }
     catch (...)
     {
         ProfileEvents::increment(ProfileEvents::StorageBufferErrorOnFlush);
 
-        /// Discard a block that can never be delivered under its captured identity rather than retaining it (which
-        /// would wedge the shard for every other identity, background flush, OPTIMIZE and shutdown, and let a user
-        /// with INSERT on the buffer but not its destination wedge a single-shard buffer with one row).
-        /// While the flush context is rebuilt, only a missing access entity (the user or one of its roles was
-        /// dropped) or an expired credential mean the identity is gone for good, whether or not the destination is
-        /// remote; any other failure there (e.g. the user's default database is detached) can recover, so the block
-        /// is retained. A denial while authorizing the destination comes from a local check, so it is permanent
-        /// however remote the destination. While writing, for a LOCAL destination ACCESS_DENIED /
-        /// ACCESS_ENTITY_NOT_FOUND mean the user is not authorized at a deeper local hop (permanent) - discard; for a
-        /// REMOTE (`Distributed`) destination they can come from the remote shard with a valid local identity, so
-        /// retain for retry after the remote RBAC/secret is corrected rather than losing an already-accepted batch.
-        const auto is_undeliverable = [&](int code)
+        /// A block that the identity which buffered it may no longer write is dropped with an error logged, and not
+        /// retried: the user or one of their roles was dropped, their credential expired, or the write was denied one of
+        /// their privileges (which their insert checked on the tables that existed then). Retaining the block would wedge
+        /// the shard for every other identity, the background flush, `OPTIMIZE` and `ALTER`. A failure to rebuild the
+        /// flush context that leaves the identity valid (e.g. its default database is detached) and any other failure to
+        /// write, including a denial that is not of these privileges (by a remote shard, of the definer of a view, or of
+        /// an operation that runs only in a query of a user), keeps the block for retry.
+        const auto lost_write_access = [&]
         {
-            const bool access_failure = code == ErrorCodes::ACCESS_DENIED || code == ErrorCodes::ACCESS_ENTITY_NOT_FOUND;
-            switch (stage)
-            {
-                case FlushStage::RestoringIdentity:
-                    return code == ErrorCodes::USER_EXPIRED || code == ErrorCodes::ACCESS_ENTITY_NOT_FOUND;
-                case FlushStage::Authorizing:
-                    return access_failure;
-                case FlushStage::Writing:
-                {
-                    if (!access_failure)
-                        return false;
-                    const auto destination = getDestinationTable();
-                    return !destination || !destination->isRemote();
-                }
-            }
-            UNREACHABLE();
+            const int code = getCurrentExceptionCode();
+            if (!flush_state.context)
+                return code == ErrorCodes::USER_EXPIRED || code == ErrorCodes::ACCESS_ENTITY_NOT_FOUND;
+            if (code != ErrorCodes::ACCESS_DENIED && code != ErrorCodes::READONLY && code != ErrorCodes::QUERY_IS_PROHIBITED
+                && code != ErrorCodes::FUNCTION_NOT_ALLOWED)
+                return false;
+            const auto & privileges = flush_state.context->getQueryPrivilegesInfo();
+            std::lock_guard privileges_lock(privileges.mutex);
+            return !privileges.missing_privileges.empty();
         };
 
-        bool undeliverable = false;
-        if (flushed_under_user_identity)
-        {
-            try
-            {
-                undeliverable = is_undeliverable(getCurrentExceptionCode());
-            }
-            catch (...)
-            {
-                /// The failure cannot be classified (e.g. resolving a destination `Alias` whose target database is
-                /// detached): keep the block for retry and rethrow the original exception below.
-                tryLogCurrentException(log, "While classifying a failed flush");
-            }
-        }
-
-        if (undeliverable)
+        if (flushed_under_user_identity && lost_write_access())
         {
             block_settled = true;
             total_writes.rows -= block_rows;
             total_writes.bytes -= block_allocated_bytes_delta;
-            /// Omits the exception text and the buffering user name, which the client of a flush triggered under
-            /// different access does not see anyway.
-            LOG_INFO(
+            tryLogCurrentException(
                 log,
-                "Discarding {} rows ({} bytes) buffered for destination table {}: it can no longer be flushed "
-                "under the identity that buffered it.",
-                block_rows, block_bytes, destination_id.getNameForLogs());
+                fmt::format(
+                    "Discarding {} rows ({} bytes) buffered for destination table {}: the user who inserted them may no longer write them",
+                    block_rows, block_bytes, destination_id.getNameForLogs()));
             return true;
         }
 
@@ -1717,7 +1776,7 @@ void StorageBuffer::writeBlockToDestination(
     StoragePtr table,
     const std::shared_ptr<const BufferWriteIdentity> & write_identity,
     const Context * query_context,
-    FlushStage * stage)
+    FlushState * state)
 {
     if (!destination_id || block.empty())
         return;
@@ -1741,25 +1800,17 @@ void StorageBuffer::writeBlockToDestination(
     /// destination is re-authorized as that user instead of the full-access buffer context. Done before the
     /// destination schema is read so an `Alias` is resolved under that identity rather than the buffer context.
     restoreWriteIdentity(insert_context, *write_identity);
-    if (stage)
-        *stage = FlushStage::Authorizing;
+    if (state)
+        state->context = insert_context;
 
-    /// Authorize the destination under the restored identity before its schema is read, intersected, or used to
-    /// emit a "columns discarded" warning, which would otherwise tell an unauthorized user a real column (a warning,
-    /// then ACCESS_DENIED) from an absent one and let it probe the schema of a table it cannot see. The insert
-    /// checked the same only if the destination existed then: it may have been created after the rows were
-    /// buffered, or access to it revoked since. Reading an `Alias`'s metadata also follows it through every alias
-    /// hop to the final target, so the whole chain is authorized too (`isTargetTableGranted` checks every hop),
-    /// matching the table-level check each nested insert does per hop.
+    /// Authorize the whole write under the restored identity before writing any of it, and before the destination schema
+    /// is read, intersected, or used to emit a "columns discarded" warning, which would otherwise tell an unauthorized
+    /// user a real column (a warning, then ACCESS_DENIED) from an absent one and let it probe the schema of a table it
+    /// cannot see. The insert checked the same, but only for the tables that existed then, and access may have been
+    /// revoked since. Reading an `Alias`'s metadata follows it through every hop to the final target, which is
+    /// authorized hop by hop here too.
     insert_context->checkAccess(AccessType::INSERT, destination_id);
-    if (const auto * alias = table->as<StorageAlias>();
-        alias && !alias->isTargetTableGranted(insert_context, AccessType::INSERT, {}))
-        throw Exception(
-            ErrorCodes::ACCESS_DENIED,
-            "Not enough privileges to insert into the target of {}",
-            destination_id.getNameForLogs());
-    if (stage)
-        *stage = FlushStage::Writing;
+    checkForwardedInsertAccess(table, insert_context);
 
     auto destination_metadata_snapshot = table->getInMemoryMetadataPtr(insert_context, false);
 

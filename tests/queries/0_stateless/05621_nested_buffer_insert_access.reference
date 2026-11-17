@@ -2,8 +2,10 @@
 direct insert denied:   OK
 inner buffer denied:    OK
 outer buffer denied:    OK
+buffered row denied:    OK
+nothing buffered:       0
 victim unchanged:       ['original']
-## Part B: an unauthorized buffered row is discarded and does not wedge the shard
+## Part B: a buffered row its user may no longer write is dropped and does not wedge the shard
 outer_b OPTIMIZE: OK
 inner_b OPTIMIZE: OK
 victim after Part B:    ['legit_b','original']

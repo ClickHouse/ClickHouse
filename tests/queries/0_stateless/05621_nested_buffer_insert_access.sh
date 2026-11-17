@@ -4,9 +4,9 @@
 # https://github.com/ClickHouse/clickhouse-private/issues/87440
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# Run the client at warning level: undeliverable-batch discards are logged below warning (server-side only),
-# so they do not reach this client, while Part E can still check that the Buffer -> Alias access check fires
-# before any schema-revealing warning would be emitted.
+# Run the client at warning level, so that Parts E and I can check that no schema-revealing warning is emitted. A batch
+# its user may no longer write is dropped with an error logged: only a flush by that user shows it to its client, and the
+# parts that run one capture it.
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=warning
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
@@ -46,14 +46,20 @@ EOF
 echo -n "direct insert denied:   "; denied run_low --query "INSERT INTO ${victim_db}.victim VALUES ('direct')"
 echo -n "inner buffer denied:    "; denied run_low --query "INSERT INTO ${db}.inner_buffer VALUES ('one_hop')"
 echo -n "outer buffer denied:    "; denied run_low --query "INSERT INTO ${db}.outer_buffer VALUES ('two_a'),('two_b')"
+# A row that fits the buffer is refused by the insert too, instead of being buffered and dropped by the flush.
+echo -n "buffered row denied:    "; denied run_low --query "INSERT INTO ${db}.outer_buffer VALUES ('two_c')"
+echo -n "nothing buffered:       "; ${CH} --query "SELECT count() FROM ${db}.outer_buffer WHERE s LIKE 'two%'"
 echo -n "victim unchanged:       "; victim
 
-echo "## Part B: an unauthorized buffered row is discarded and does not wedge the shard"
+echo "## Part B: a buffered row its user may no longer write is dropped and does not wedge the shard"
 # Large thresholds keep a single row buffered; OPTIMIZE forces a synchronous flush.
 run_low --query "CREATE TABLE ${db}.inner_b (s String) ENGINE = Buffer(${victim_db}, victim, 1, 3600, 7200, 1000000, 2000000, 100000000, 200000000)"
 run_low --query "CREATE TABLE ${db}.outer_b (s String) ENGINE = Buffer(${db}, inner_b, 1, 3600, 7200, 1000000, 2000000, 100000000, 200000000)"
-run_low --query "INSERT INTO ${db}.outer_b VALUES ('poison')"   # buffered under the low user
-# The authorized user's insert flushes the low user's incompatible row first; it is discarded, not wedged.
+# low may write to victim when it inserts, so the row is buffered, and loses that grant before the flush.
+${CH} --query "GRANT INSERT ON ${victim_db}.victim TO ${low}"
+run_low --query "INSERT INTO ${db}.outer_b VALUES ('poison')"
+${CH} --query "REVOKE INSERT ON ${victim_db}.victim FROM ${low}"
+# The authorized user's insert flushes the low user's row first; it is dropped, not written and not wedged.
 run_ok  --query "INSERT INTO ${db}.outer_b VALUES ('legit_b')"
 ${CH} --query "OPTIMIZE TABLE ${db}.outer_b" && echo "outer_b OPTIMIZE: OK"
 ${CH} --query "OPTIMIZE TABLE ${db}.inner_b" && echo "inner_b OPTIMIZE: OK"
@@ -75,8 +81,8 @@ echo -n "destinationless rows:   "; ${CH} --query "SELECT groupArray(s) FROM (SE
 
 echo "## Part E: a Buffer -> Alias chain does not leak target column names"
 # low may insert into the buffer and the alias but not the alias's target (victim). Whether low declares the
-# target's real column or an absent one, the oversized (direct) flush must deny it the same way, so the
-# difference cannot be used as an oracle for which columns the target has.
+# target's real column or an absent one, the insert must be denied the same way, so the difference cannot be
+# used as an oracle for which columns the target has.
 ${CH} --multiquery <<EOF
 CREATE TABLE ${db}.al ENGINE = Alias('${victim_db}', 'victim');
 CREATE TABLE ${db}.b_probe_real (s String) ENGINE = Buffer(${db}, al, 1, 1, 1, 1, 1, 1, 1);
@@ -108,7 +114,7 @@ echo -n "victim after Part E:    "; victim
 
 echo "## Part F: a cross-identity flush shows the triggering user nothing of the buffering user"
 # low buffers a row while it may write to victim, then loses that grant. ok's synchronous insert then flushes
-# low's now-undeliverable batch (discarded). Rebuilding low's access logs low's name and grants at trace level;
+# low's batch, which is dropped with an error logged. Rebuilding low's access logs low's name and grants at trace level;
 # nothing of the flush may reach ok's client, even at trace level. Synchronous inserts keep the flush on ok's
 # query thread. low's grant on secret_05621, which ok lacks, tells low's grants apart from ok's own.
 ${CH} --multiquery <<EOF
@@ -123,7 +129,7 @@ ${CH} --query "REVOKE INSERT ON ${victim_db}.victim FROM ${low}"
 trace_client="${CLICKHOUSE_CLIENT/--send_logs_level=warning/--send_logs_level=trace}"
 leak=$(${trace_client} --user "${ok}" --async-insert 0 --query "INSERT INTO ${db}.single_hop VALUES ('from_ok')" 2>&1)
 echo -n "flush hidden from the triggering user: "
-if ! echo "$leak" | grep -qE "${low}|secret_05621|Not enough privileges|can no longer be flushed"; then echo "OK"; else echo "UNEXPECTED"; fi
+if ! echo "$leak" | grep -qE "${low}|secret_05621|Not enough privileges|may no longer write"; then echo "OK"; else echo "UNEXPECTED"; fi
 echo -n "undeliverable batch discarded:         "; ${CH} --query "SELECT countIf(s = 'from_low') FROM ${db}.single_hop"
 # The same between two credentials of one user: a credential limited to the buffer and its destination flushes a
 # batch of the full credential, and must not see the full credential's grant on secret_05621.
@@ -214,10 +220,12 @@ EOF
 run_low --async-insert 0 --query "INSERT INTO ${db}.b_later_present VALUES ('p', 'x')"
 run_low --async-insert 0 --query "INSERT INTO ${db}.b_later_absent VALUES ('a', 'x')"
 ${CH} --query "CREATE TABLE ${victim_db}.later (s String, secret_present String) ENGINE = MergeTree ORDER BY s"
+# Both flushes run as low, so low's client gets the error logged for dropping its batch, but nothing about the columns.
 present=$(run_low --query "OPTIMIZE TABLE ${db}.b_later_present" 2>&1)
 absent=$(run_low --query "OPTIMIZE TABLE ${db}.b_later_absent" 2>&1)
 echo -n "probes are indistinguishable: "
-if [ "${present}" = "${absent}" ] && ! echo "${absent}" | grep -qi "columns"; then echo "OK"; else echo "UNEXPECTED"; fi
+if echo "${present}" | grep -q "may no longer write" && echo "${absent}" | grep -q "may no longer write" \
+    && ! echo "${present}${absent}" | grep -qiE "columns|secret_"; then echo "OK"; else echo "UNEXPECTED"; fi
 echo -n "destination untouched:        "; ${CH} --query "SELECT count() FROM ${victim_db}.later"
 
 ${CH} --query "DROP USER IF EXISTS ${low}; DROP USER IF EXISTS ${ok}; DROP USER IF EXISTS ${tmp}; DROP USER IF EXISTS ${home}; DROP USER IF EXISTS ${cred}" 2>/dev/null

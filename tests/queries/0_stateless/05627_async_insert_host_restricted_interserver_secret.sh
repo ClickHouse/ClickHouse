@@ -62,5 +62,29 @@ for order in "sync async" "async sync"; do
     ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE ${db}.mixed_dst"
 done
 
+# A shard's denial reached through a materialized view says nothing of the privileges of the user here, so the batch is
+# retained for retry, as for a `Distributed` destination, not dropped as if the user had lost a privilege.
+mv_user="u_05627_mv_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} --multiquery <<EOF
+DROP USER IF EXISTS ${mv_user};
+CREATE USER ${mv_user} SETTINGS prefer_localhost_replica = 0, distributed_foreground_insert = 1;
+CREATE TABLE ${db}.mv_src (s String) ENGINE = Null;
+CREATE TABLE ${db}.mv_dst (s String) ENGINE = MergeTree ORDER BY s;
+CREATE TABLE ${db}.mv_dist (s String) ENGINE = Distributed(test_cluster_interserver_secret, ${db}, mv_dst, 0);
+CREATE MATERIALIZED VIEW ${db}.mv TO ${db}.mv_dist DEFINER = ${mv_user} SQL SECURITY DEFINER AS SELECT s FROM ${db}.mv_src;
+CREATE TABLE ${db}.mv_buf (s String) ENGINE = Buffer(${db}, mv_src, 1, 1000, 1000, 1000000, 1000000, 1000000000, 1000000000);
+GRANT INSERT ON ${db}.mv_buf TO ${mv_user};
+GRANT INSERT, SELECT ON ${db}.mv_src TO ${mv_user};
+GRANT INSERT ON ${db}.mv_dist TO ${mv_user};
+EOF
+${CLICKHOUSE_CLIENT} --user "${mv_user}" --query "INSERT INTO ${db}.mv_buf SETTINGS async_insert = 0 VALUES ('via_view')"
+echo -n "denied by the shard, retained: "
+if ${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE ${db}.mv_buf" 2>&1 | grep -q "retained for retry"; then echo "OK"; else echo "UNEXPECTED"; fi
+${CLICKHOUSE_CLIENT} --query "GRANT INSERT ON ${db}.mv_dst TO ${mv_user}"
+${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE ${db}.mv_buf"
+${CLICKHOUSE_CLIENT} --query "SELECT 'delivered once allowed', groupArray(s) FROM ${db}.mv_dst"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${db}.mv"
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${user}"
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${any_user}"
+${CLICKHOUSE_CLIENT} --query "DROP USER ${mv_user}"

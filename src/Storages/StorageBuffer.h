@@ -213,13 +213,12 @@ private:
     bool checkThresholds(const Buffer & buffer, bool direct, time_t current_time, size_t additional_rows = 0, size_t additional_bytes = 0) const;
     bool checkThresholdsImpl(bool direct, size_t rows, size_t bytes, time_t time_passed) const;
 
-    /// How far writeBlockToDestination got, to classify a failure of the flush.
-    enum class FlushStage : uint8_t
+    /// What writeBlockToDestination leaves to classify a failure of the flush.
+    struct FlushState
     {
-        RestoringIdentity,
-        /// Checking the restored identity's access to the destination: a local check, however remote the destination.
-        Authorizing,
-        Writing,
+        /// Set once the identity that buffered the block is restored onto the flush context. The write records in it the
+        /// privileges this identity is denied (a `DEFINER` view checks its definer in a context of its own).
+        ContextPtr context;
     };
 
     /// `table` argument is passed, as it is sometimes evaluated beforehand. It must match the `destination`.
@@ -230,7 +229,7 @@ private:
         StoragePtr table,
         const std::shared_ptr<const BufferWriteIdentity> & write_identity,
         const Context * query_context = nullptr,
-        FlushStage * stage = nullptr);
+        FlushState * state = nullptr);
 
     void backgroundFlush();
     void reschedule(size_t min_delay);

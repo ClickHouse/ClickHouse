@@ -1,0 +1,18 @@
+## The local shard of a Distributed destination
+insert denied:              OK
+nothing buffered:           0
+written once allowed:       ['dist']
+## A materialized view on the destination writes with the rights of its definer
+written by the view:        ['mv']
+direct insert denied:       OK
+insert denied:              OK
+nothing buffered:           0
+## A privilege lost before the flush
+flush succeeds:             OK
+error logged:               OK
+not written:                0
+dropped:                    0
+## A denial that is not about the privileges of the user
+flush denied:               OK
+still buffered:             1
+written once allowed:       ['a']
