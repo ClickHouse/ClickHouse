@@ -130,16 +130,17 @@ SELECT '--- key (a, b): the parts which begin with `a = 1` far from the result a
 SELECT b FROM t_fixed_key WHERE a = 1 ORDER BY a, b LIMIT 5 FORMAT Null SETTINGS log_comment = '05620_virtual_row';
 SELECT b FROM t_fixed_key WHERE a = 1 ORDER BY a, b LIMIT 5 FORMAT Null SETTINGS read_in_order_use_virtual_row = 0, log_comment = '05620_no_virtual_row';
 SYSTEM FLUSH LOGS query_log;
+-- system.query_log holds every other test's queries: read it in default-size blocks.
+SET max_block_size = DEFAULT;
 
--- `system.query_log` also holds the queries of every other test: read it with the default block size and threads.
 SELECT
     (SELECT read_rows FROM system.query_log
      WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05620_virtual_row' AND event_date >= yesterday()
      ORDER BY event_time_microseconds DESC LIMIT 1)
   < (SELECT read_rows FROM system.query_log
      WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05620_no_virtual_row' AND event_date >= yesterday()
-     ORDER BY event_time_microseconds DESC LIMIT 1)
-SETTINGS max_block_size = DEFAULT, max_threads = DEFAULT;
+     ORDER BY event_time_microseconds DESC LIMIT 1);
+SET max_block_size = 8;
 
 SELECT '--- key (a, b, c)';
 
