@@ -28,6 +28,7 @@
 #include <base/DayNum.h>
 #include <Common/Exception.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/NaNUtils.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -84,6 +85,15 @@ std::optional<ColumnPtr> tryConvertNumericColumnNative(
         using To = typename Types::RightType;
 
         const From source = assert_cast<const ColumnVector<From> &>(value).getData()[0];
+
+        /// A `NaN` or infinity is not representable in an integer type, and `accurate::convertNumeric` would cast a
+        /// `NaN` before noticing (undefined behavior). The same guard as in the accurate `CAST` (`convertNumericGeneral`).
+        if constexpr (is_floating_point<From> && !is_floating_point<To>)
+        {
+            if (!isFinite(source))
+                return true; /// Not representable: `result` stays null.
+        }
+
         const bool exact = strict || !convert_inexact_floats || !is_floating_point<To>;
 
         To converted{};
