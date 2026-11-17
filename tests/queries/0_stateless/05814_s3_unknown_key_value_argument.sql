@@ -5,6 +5,8 @@ SELECT count() FROM s3('http://localhost:11111/test/a.tsv', 'TSV', 'a UInt8, b U
 SELECT count() FROM s3('http://localhost:11111/test/a.tsv', 'TSV', 'a UInt8, b UInt8, c UInt8', SECRET_ACCESS_KEY = 'x'); -- { serverError BAD_ARGUMENTS }
 SELECT count() FROM s3('http://localhost:11111/test/a.tsv', 'TSV', 'a UInt8, b UInt8, c UInt8', secret_acess_key = 'x'); -- { serverError BAD_ARGUMENTS }
 SELECT count() FROM s3('http://localhost:11111/test/a.tsv', 'TSV', 'a UInt8, b UInt8, c UInt8', compression = 'none'); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM s3('http://localhost:11111/test/a.tsv', 'TSV', 'a UInt8, b UInt8, c UInt8', http_client = 'gcp_oauth'); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM s3('http://localhost:11111/test/a.tsv', 'TSV', 'a UInt8, b UInt8, c UInt8', google_service_account_key = 'x'); -- { serverError BAD_ARGUMENTS }
 SELECT count() FROM s3('http://localhost:11111/test/a.tsv', NOSIGN, 'TSV', 'a UInt8, b UInt8, c UInt8', foo_bar = 'x'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM icebergS3('http://localhost:11111/test/05814_no_such_table/', foo_bar = 'x'); -- { serverError BAD_ARGUMENTS }
 
