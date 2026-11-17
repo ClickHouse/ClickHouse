@@ -3962,9 +3962,10 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
         }
     };
 
-    /// Merges a source cell that a walk of its table or its cell index handed out into `dst_table`: the destination
-    /// table, or a sub-table of a destination that dispatches its keys over sub-tables.
-    auto merge_cell = [&](auto & dst_table, const auto & key, [[maybe_unused]] auto && src_data, size_t hash_value)
+    /// Merges into `dst_table` a source cell that a walk of its table or its cell index handed out. `dst_table` is
+    /// the destination table, or the sub-table of the destination that pairs with the walked sub-table of the
+    /// source.
+    auto merge_cell_into = [&](auto & dst_table, const auto & key, [[maybe_unused]] auto && src_data, size_t hash_value)
     {
         typename std::decay_t<decltype(dst_table)>::LookupResult it;
         bool inserted = false;
@@ -3983,6 +3984,12 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
             dst_table.emplaceIteratedKey(key, it, inserted, hash_value);
             adopt_or_collect(inserted, it->getMapped(), src_data);
         }
+    };
+
+    /// Merges a source cell that a walk of its table or its cell index handed out into the destination table.
+    auto merge_cell = [&](const auto & key, auto && src_data, size_t hash_value)
+    {
+        merge_cell_into(dst_method.data, key, src_data, hash_value);
     };
 
     auto flush_merges = [&]
@@ -4046,10 +4053,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
             for (auto * source : sources)
             {
                 chassert(source->cellIndex().numPartitions() == num_partitions);
-                source->cellIndex().forEachCell<Table>(
-                    partition_index,
-                    partition_index + 1,
-                    [&](const auto & key, auto && src_data, size_t hash_value) { merge_cell(dst_method.data, key, src_data, hash_value); });
+                source->cellIndex().forEachCell<Table>(partition_index, partition_index + 1, merge_cell);
             }
 
             if (!collects_source_slots)
@@ -4104,7 +4108,6 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
 
                         for (size_t i = 0; i < batch_size; ++i)
                             merge_cell(
-                                dst_method.data,
                                 std::decay_t<decltype(*batch[i].first)>::getKey(batch[i].first->getValue()),
                                 batch[i].first->getMapped(),
                                 batch[i].second);
@@ -4148,7 +4151,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
                                 if ((TwoLevelMethod::Data::getBucketFromHash(hash_value) & partition_mask) != partition_index)
                                     continue;
 
-                                merge_cell(dst_sub, std::decay_t<decltype(*it)>::getKey(it->getValue()), it->getMapped(), hash_value);
+                                merge_cell_into(dst_sub, std::decay_t<decltype(*it)>::getKey(it->getValue()), it->getMapped(), hash_value);
                             }
                         });
                 }
