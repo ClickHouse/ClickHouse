@@ -11,6 +11,7 @@ doc_type: '参考'
 import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
@@ -35,6 +36,10 @@ analyzer 是自 v24.3 起默认启用的查询分析与查询计划基础设施�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "新设置"}]}]} />
 
 允许在 Iceberg 合并整理期间清理旧数据文件。
+
+清理操作会在合并整理完成后运行 `iceberg_compaction_data_cleanup`。它会将因本次合并整理而失效的快照置为过期，处理方式与 `expire_snapshots` 相同：从表元数据中移除这些快照，
+并删除未被其他任何快照引用的文件。对于格式版本为 1 的表，或基于事务性目录的表，
+该操作仅删除文件，快照仍保留在元数据中。
 
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
@@ -104,11 +109,11 @@ analyzer 是自 v24.3 起默认启用的查询分析与查询计划基础设施�
 
 ## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "一项新设置"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Kusto 查询语言 (KQL) 方言已进入 Beta 阶段。"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "一项新设置"}]}]} />
 
 启用 Kusto 查询语言 (KQL) 方言，可作为 SQL 的替代方案。
 

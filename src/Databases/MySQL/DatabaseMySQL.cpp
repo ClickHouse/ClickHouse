@@ -40,6 +40,7 @@
 #    include <Common/filesystemHelpers.h>
 #    include <Common/parseAddress.h>
 #    include <Common/parseRemoteDescription.h>
+#    include <Common/RemoteHostFilter.h>
 #    include <Common/setThreadName.h>
 #    include <Core/LogsLevel.h>
 
@@ -854,7 +855,18 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             configuration.username = safeGetLiteralValue<String>(arguments[2], engine_name);
             configuration.password = safeGetLiteralValue<String>(arguments[3], engine_name);
         }
-        mysql_settings->loadFromQueryContext(args.context, *engine_define);
+
+        /// Same policy as the `PostgreSQL` database engine: skip only the server's own metadata replay.
+        if (!(args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH))
+        {
+            for (const auto & address : configuration.addresses)
+                args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
+        }
+
+        /// On `RESTORE` we don't use the session context: it may contain a conflicting `mysql_datatypes_support_level`
+        /// setting and make the `RESTORE` fail.
+        if (!args.is_restore_from_backup)
+            mysql_settings->loadFromQueryContext(args.context, *engine_define);
         if (engine_define->settings)
             mysql_settings->loadFromQuery(*engine_define);
 
@@ -887,8 +899,6 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         .has_builtin_setting_fn = MySQLSettings::hasBuiltin,
     }, Documentation{
         .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # MySQL database engine
 
 <CloudNotSupportedBadge />
@@ -913,7 +923,7 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 
 **Engine Parameters**
 
-- `host:port` — MySQL server address.
+- `host:port` — MySQL server address. The host must be a plain host name or IP address and is reached over TCP at the given port, also for `localhost`: Unix sockets are not supported. Other host syntax of the MySQL client library, such as connection strings or comma-separated host lists, is rejected.
 - `database` — Remote database name.
 - `user` — MySQL user.
 - `password` — User password.

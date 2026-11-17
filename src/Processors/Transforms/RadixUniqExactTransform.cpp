@@ -182,8 +182,8 @@ struct SlotHash
 /// itself: the load factor of 0.5 is kept by the callers, which rebuild the set (see `growLocalSet`).
 struct SlotGrower : HashTableGrower<1>
 {
-    size_t place(size_t x) const { return x >> (64 - size_degree); }
-    bool overflow(size_t /*elems*/) const { return false; }
+    [[nodiscard]] size_t place(size_t x) const { return x >> (64 - size_degree); }
+    [[nodiscard]] bool overflow(size_t /*elems*/) const { return false; }
 };
 
 /// A `HashSet` with the interface the streams and the buckets use.
@@ -232,9 +232,9 @@ public:
             insertMany<false>(keys, num_keys);
     }
 
-    size_t size() const { return set.size(); }
-    size_t capacity() const { return set.getBufferSizeInCells(); }
-    size_t numCellsInUse() const { return set.size() - set.hasZero(); }
+    [[nodiscard]] size_t size() const { return set.size(); }
+    [[nodiscard]] size_t capacity() const { return set.getBufferSizeInCells(); }
+    [[nodiscard]] size_t numCellsInUse() const { return set.size() - set.hasZero(); }
 
     template <typename Func>
     void forEach(Func && func) const
@@ -702,12 +702,12 @@ public:
             part_limit = std::max(builder_bytes / sizeof(Key) / num_parts, SPLIT_INSERT_CHUNK);
         }
 
-        std::vector<PODArray<Key>> parts(num_parts);
+        VectorWithMemoryTracking<PODArray<Key>> parts(num_parts);
         for (auto & part : parts)
             part.reserve(std::min(total / num_parts + total / (8 * num_parts) + MIN_BLOCK_SIZE, part_limit));
 
         RadixSet<Key> part_set;
-        std::vector<size_t> deduplicate_at(spilled ? num_parts : 0, part_limit);
+        VectorWithMemoryTracking<size_t> deduplicate_at(spilled ? num_parts : 0, part_limit);
         const size_t shift = 64 - split_bits;
         forEachKeys(bucket, [&](const Key * keys, size_t num_keys)
         {
@@ -761,15 +761,15 @@ public:
             || num_distinct == 0 || has_spilled.load(std::memory_order_relaxed))
             return;
 
-        std::vector<size_t> stream_distinct;
-        std::vector<size_t> stream_keys;
+        VectorWithMemoryTracking<size_t> stream_distinct;
+        VectorWithMemoryTracking<size_t> stream_keys;
         for (const auto & stream : streams)
         {
             stream_distinct.push_back(stream.estimated_distinct);
             stream_keys.push_back(stream.num_routed);
         }
 
-        auto median = [](std::vector<size_t> & values)
+        auto median = [](VectorWithMemoryTracking<size_t> & values)
         {
             auto middle = values.begin() + values.size() / 2;
             std::nth_element(values.begin(), middle, values.end());
@@ -832,9 +832,9 @@ private:
         /// The capacity is `MIN_BLOCK_SIZE << size_class`.
         UInt32 size_class;
 
-        size_t capacity() const { return MIN_BLOCK_SIZE << size_class; }
+        [[nodiscard]] size_t capacity() const { return MIN_BLOCK_SIZE << size_class; }
         Key * keys() { return reinterpret_cast<Key *>(this + 1); }
-        const Key * keys() const { return reinterpret_cast<const Key *>(this + 1); }
+        [[nodiscard]] const Key * keys() const { return reinterpret_cast<const Key *>(this + 1); }
     };
 
     /// The keys follow the header, aligned.
@@ -868,8 +868,8 @@ private:
         RadixSet<Key> local_set;
         Mode mode = Mode::BoundedSet;
 
-        std::vector<Buffer> local_buffers;
-        std::vector<Cursor> local_cursors;
+        VectorWithMemoryTracking<Buffer> local_buffers;
+        VectorWithMemoryTracking<Cursor> local_cursors;
         std::unique_ptr<Arena> arena = std::make_unique<Arena>(4096, 2, ARENA_LINEAR_GROWTH_THRESHOLD);
         std::array<Block *, MAX_BLOCK_CLASS + 1> free_blocks{};
 
@@ -1149,8 +1149,8 @@ private:
         /// The decisions are made by the medians over the sampled buffers, not by the totals: a key that is repeated
         /// much more often than the others (such as an empty string) is in a single buffer, and must not make the
         /// stream look like all its keys are repeated.
-        std::vector<double> remaining_ratios;
-        std::vector<double> new_distinct_ratios;
+        VectorWithMemoryTracking<double> remaining_ratios;
+        VectorWithMemoryTracking<double> new_distinct_ratios;
         size_t sampled_keys = 0;
         size_t num_deduplicated = 0;
         for (; num_deduplicated < num_buckets && (sampled_keys < DEDUPLICATION_SAMPLE_KEYS || num_deduplicated < DEDUPLICATION_SAMPLE_BUFFERS);
@@ -1179,7 +1179,7 @@ private:
             }
         }
 
-        auto median = [](std::vector<double> & values, double if_empty)
+        auto median = [](VectorWithMemoryTracking<double> & values, double if_empty)
         {
             if (values.empty())
                 return if_empty;
@@ -1330,7 +1330,7 @@ private:
         stream.local_buffers.assign(num_buckets, Buffer{});
         stream.local_cursors.assign(num_buckets, Cursor{});
 
-        std::vector<const Block *> blocks;
+        VectorWithMemoryTracking<const Block *> blocks;
         for (size_t bucket = 0; bucket < num_buckets; ++bucket)
         {
             blocks.clear();
@@ -1441,7 +1441,7 @@ private:
 
     const size_t bucket_bits;
     const size_t num_buckets;
-    std::vector<Stream> streams;
+    VectorWithMemoryTracking<Stream> streams;
 
     const StatsCollectingParams stats_collecting_params;
     const std::optional<RadixUniqExactEntry> hint;
@@ -1784,7 +1784,7 @@ void RadixUniqExactRouteTransform::work()
     /// Only the distinct values of the dictionary that the rows use are routed: a shared dictionary can be much larger
     /// than the chunk. They are `Nullable` for `LowCardinality(Nullable)`.
     if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
-        column = column_low_cardinality->getMinimalDictionaryEncodedColumn(0, column_low_cardinality->size()).dictionary;
+        column = column_low_cardinality->getMinimalDictionary(0, column_low_cardinality->size());
     {
         RADIX_UNIQ_EXACT_TRACK_MEMORY(state);
         if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
