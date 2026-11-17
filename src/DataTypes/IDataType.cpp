@@ -121,7 +121,10 @@ MutableColumnPtr IDataType::createUninitializedColumnWithSize(size_t size) const
 
 MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) const
 {
-    return serialization.createColumnForDeserialization(*this);
+    /// Let the serialization wrap the base column into the layout it deserializes into: ColumnSparse for the
+    /// Sparse kind, ColumnReplicated for Replicated, ColumnBLOB for Detached, and any custom wrapping such as
+    /// the ColumnConst produced by the quantized-vector codebook serialization.
+    return serialization.wrapColumnForDeserialization(createColumn());
 }
 
 MutableColumnConstPtr IDataType::createColumnConst(size_t size, const Field & field) const

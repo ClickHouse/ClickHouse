@@ -1,6 +1,4 @@
 #include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/ListWithMemoryTracking.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
@@ -26,6 +24,9 @@
 #include <algorithm>
 #include <bit>
 #include <cstring>
+#include <list>
+#include <optional>
+#include <vector>
 
 #include <fmt/format.h>
 
@@ -121,7 +122,7 @@ struct Metadata
     UInt32 count = 0;
     UInt8 offset_size = 0;
 
-    [[nodiscard]] std::string_view getName(UInt32 id) const
+    std::string_view getName(UInt32 id) const
     {
         if (id >= count)
             throw Exception(
@@ -173,8 +174,6 @@ void checkDepth(const DecodeContext & context, size_t depth)
             context.max_depth);
 }
 
-}
-
 /// Typed paths and `SKIP` clauses of a `JSON` column requested by the user.
 class JSONPathsFilter
 {
@@ -183,14 +182,13 @@ public:
         : type(type_)
         , sorted_paths_to_skip(type.getPathsToSkip().begin(), type.getPathsToSkip().end())
         , use_partial_match(use_partial_match_)
-        , typed_paths_have_trivial_defaults(type.isDefaultInsertTrivial())
     {
         std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
         for (const auto & regexp : type.getPathRegexpsToSkip())
             path_regexps_to_skip.emplace_back(regexp);
     }
 
-    [[nodiscard]] bool shouldSkip(const String & path) const
+    bool shouldSkip(const String & path) const
     {
         if (type.getPathsToSkip().contains(path))
             return true;
@@ -207,25 +205,19 @@ public:
         return false;
     }
 
-    [[nodiscard]] const DataTypePtr * findTypedPath(const String & path) const
+    const DataTypePtr * findTypedPath(const String & path) const
     {
         const auto & typed_paths = type.getTypedPaths();
         auto it = typed_paths.find(path);
         return it == typed_paths.end() ? nullptr : &it->second;
     }
 
-    [[nodiscard]] bool typedPathsHaveTrivialDefaults() const { return typed_paths_have_trivial_defaults; }
-
 private:
     const DataTypeObject & type;
-    VectorWithMemoryTracking<String> sorted_paths_to_skip;
-    ListWithMemoryTracking<re2::RE2> path_regexps_to_skip;
+    std::vector<String> sorted_paths_to_skip;
+    std::list<re2::RE2> path_regexps_to_skip;
     bool use_partial_match;
-    bool typed_paths_have_trivial_defaults;
 };
-
-namespace
-{
 
 struct ObjectLayout
 {
@@ -236,12 +228,12 @@ struct ObjectLayout
     size_t offsets_pos = 0;
     size_t values_pos = 0;
 
-    [[nodiscard]] UInt32 fieldId(std::string_view data, UInt32 i) const
+    UInt32 fieldId(std::string_view data, UInt32 i) const
     {
         return readUnsigned(data, ids_pos + size_t(i) * id_size, id_size);
     }
 
-    [[nodiscard]] size_t valuePos(std::string_view data, UInt32 i) const
+    size_t valuePos(std::string_view data, UInt32 i) const
     {
         return values_pos + readUnsigned(data, offsets_pos + size_t(i) * offset_size, offset_size);
     }
@@ -268,7 +260,7 @@ struct ArrayLayout
     size_t offsets_pos = 0;
     size_t values_pos = 0;
 
-    [[nodiscard]] size_t elementPos(std::string_view data, UInt32 i) const
+    size_t elementPos(std::string_view data, UInt32 i) const
     {
         return values_pos + readUnsigned(data, offsets_pos + size_t(i) * offset_size, offset_size);
     }
@@ -510,7 +502,7 @@ void insertObjectPaths(
     ColumnObject & column,
     const JSONPathsFilter * filter,
     size_t prev_size,
-    VectorWithMemoryTracking<SharedDataValue> & shared_data_values)
+    std::vector<SharedDataValue> & shared_data_values)
 {
     const ObjectLayout layout = parseObjectLayout(data, pos, value_header);
 
@@ -583,7 +575,7 @@ void decodeObjectIntoJSON(
 {
     const size_t prev_size = column.size();
 
-    VectorWithMemoryTracking<SharedDataValue> shared_data_values;
+    std::vector<SharedDataValue> shared_data_values;
     insertObjectPaths(data, pos, value_header, context, depth, "", true, column, filter, prev_size, shared_data_values);
 
     /// Paths in shared data must be sorted.
@@ -612,16 +604,10 @@ void decodeObjectIntoJSON(
     }
     column.getSharedDataOffsets().push_back(shared_data_paths->size());
 
-    /// Only the root object of a `JSON` column is decoded with a filter; nested objects have no typed paths.
-    const bool trivial_defaults = !filter || filter->typedPathsHaveTrivialDefaults();
-    for (auto & [path, typed_column] : column.getTypedPaths())
+    for (auto & [_, typed_column] : column.getTypedPaths())
     {
-        if (typed_column->size() != prev_size)
-            continue;
-        if (trivial_defaults)
+        if (typed_column->size() == prev_size)
             typed_column->insertDefault();
-        else
-            (*filter->findTypedPath(path))->insertDefaultInto(*typed_column);
     }
 
     for (auto & [_, dynamic_column] : column.getDynamicPathsPtrs())
@@ -733,57 +719,6 @@ const ColumnString & unwrapLeaf(const IColumn & column, const NullMap *& out_nul
 
 }
 
-VariantValueDecoder::VariantValueDecoder(DataTypePtr output_type_, String column_name_, const FormatSettings & format_settings)
-    : output_type(std::move(output_type_))
-    , column_name(std::move(column_name_))
-    , max_depth(format_settings.max_parser_depth)
-{
-    const DataTypePtr inner_type = removeNullable(output_type);
-    if (const auto * object_type = typeid_cast<const DataTypeObject *>(inner_type.get()))
-        filter = std::make_shared<const JSONPathsFilter>(*object_type, format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp);
-    else
-        chassert(isDynamic(inner_type));
-}
-
-void VariantValueDecoder::decode(std::string_view metadata_blob, std::string_view value_blob, IColumn & output) const
-{
-    const Metadata parsed_metadata = parseMetadata(metadata_blob);
-    const DecodeContext context{.metadata = parsed_metadata, .max_depth = max_depth};
-
-    /// `Nullable(JSON)`: values are decoded into the nested column, nulls (of the whole group or a variant
-    /// null) get the default of `output_type`, NULL for a nullable column.
-    auto * output_nullable = typeid_cast<ColumnNullable *>(&output);
-    IColumn & output_inner = output_nullable ? output_nullable->getNestedColumn() : output;
-
-    if (!filter)
-    {
-        decodeValueIntoDynamic(value_blob, 0, context, 0, assert_cast<ColumnDynamic &>(output_inner));
-        return;
-    }
-
-    const UInt8 header = readByte(value_blob, 0);
-    if (BasicType(header & 0x03) != BasicType::Object)
-    {
-        const String type_name = getValueTypeName(value_blob, 0);
-        /// A variant null is an empty object, the same as a null of the whole column.
-        if (type_name.empty())
-        {
-            output_type->insertDefaultInto(output);
-            return;
-        }
-        throw Exception(
-            ErrorCodes::TYPE_MISMATCH,
-            "Cannot read Parquet variant column '{}' as {}: it contains a value of type {}, but only objects can be "
-            "read as JSON. Read the column as Dynamic instead",
-            column_name, output_type->getName(), type_name);
-    }
-
-    checkDepth(context, 0);
-    decodeObjectIntoJSON(value_blob, 1, header >> 2, context, 0, assert_cast<ColumnObject &>(output_inner), filter.get());
-    if (output_nullable)
-        output_nullable->getNullMapData().push_back(false);
-}
-
 void decodeVariantColumn(
     const IColumn & metadata,
     const IColumn & value,
@@ -799,7 +734,26 @@ void decodeVariantColumn(
     const NullMap * value_nulls = nullptr;
     const ColumnString & value_strings = unwrapLeaf(value, value_nulls);
 
-    const VariantValueDecoder decoder(output_type, column_name, format_settings);
+    /// `Nullable(JSON)`: values are decoded into the nested column, nulls (of the whole group or a variant
+    /// null) go through `output.insertDefault()`, which inserts NULL into a nullable column.
+    IColumn * output_inner = &output;
+    NullMap * output_null_map = nullptr;
+    DataTypePtr inner_type = output_type;
+    if (auto * output_nullable = typeid_cast<ColumnNullable *>(&output))
+    {
+        output_inner = &output_nullable->getNestedColumn();
+        output_null_map = &output_nullable->getNullMapData();
+        inner_type = removeNullable(output_type);
+    }
+
+    auto * output_dynamic = typeid_cast<ColumnDynamic *>(output_inner);
+    auto * output_object = typeid_cast<ColumnObject *>(output_inner);
+    std::optional<JSONPathsFilter> filter;
+    if (output_object)
+        filter.emplace(
+            assert_cast<const DataTypeObject &>(*inner_type), format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp);
+    else
+        chassert(output_dynamic);
 
     for (size_t row = 0; row < num_rows; ++row)
     {
@@ -815,7 +769,7 @@ void decodeVariantColumn(
         const bool value_missing = (value_nulls && (*value_nulls)[row]) || value_blob.empty();
         if (metadata_missing && value_missing)
         {
-            output_type->insertDefaultInto(output);
+            output.insertDefault();
             continue;
         }
         if (metadata_missing || value_missing)
@@ -824,7 +778,38 @@ void decodeVariantColumn(
                 "Malformed Parquet variant column '{}': a row has {} but no {}",
                 column_name, metadata_missing ? "`value`" : "`metadata`", metadata_missing ? "`metadata`" : "`value`");
 
-        decoder.decode(metadata_blob, value_blob, output);
+        const Metadata parsed_metadata = parseMetadata(metadata_blob);
+        const DecodeContext context{.metadata = parsed_metadata, .max_depth = format_settings.max_parser_depth};
+
+        if (output_dynamic)
+        {
+            decodeValueIntoDynamic(value_blob, 0, context, 0, *output_dynamic);
+            if (output_null_map)
+                output_null_map->push_back(false);
+            continue;
+        }
+
+        const UInt8 header = readByte(value_blob, 0);
+        if (BasicType(header & 0x03) != BasicType::Object)
+        {
+            const String type_name = getValueTypeName(value_blob, 0);
+            /// A variant null is an empty object, the same as a null of the whole column.
+            if (type_name.empty())
+            {
+                output.insertDefault();
+                continue;
+            }
+            throw Exception(
+                ErrorCodes::TYPE_MISMATCH,
+                "Cannot read Parquet variant column '{}' as {}: it contains a value of type {}, but only objects can be "
+                "read as JSON. Read the column as Dynamic instead",
+                column_name, output_type->getName(), type_name);
+        }
+
+        checkDepth(context, 0);
+        decodeObjectIntoJSON(value_blob, 1, header >> 2, context, 0, *output_object, &*filter);
+        if (output_null_map)
+            output_null_map->push_back(false);
     }
 }
 

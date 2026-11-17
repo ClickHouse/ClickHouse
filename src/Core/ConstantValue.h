@@ -35,34 +35,34 @@ public:
         , data_type(std::move(data_type_))
     {}
 
-    [[nodiscard]] const ColumnConstPtr & getColumn() const
+    const ColumnConstPtr & getColumn() const
     {
         return column;
     }
 
-    [[nodiscard]] const DataTypePtr & getType() const
+    const DataTypePtr & getType() const
     {
         return data_type;
     }
 
     /// Value accessors - read row 0 of the size-1 column without materializing a `Field`.
-    [[nodiscard]] bool isNull() const { return column->isNullAt(0); }
-    [[nodiscard]] UInt64 getUInt() const { return column->getUInt(0); }
-    [[nodiscard]] Int64 getInt() const { return column->getInt(0); }
-    [[nodiscard]] Float64 getFloat64() const { return column->getFloat64(0); }
-    [[nodiscard]] bool getBool() const { return column->getBool(0); }
-    [[nodiscard]] std::string_view getDataAt() const { return column->getDataAt(0); }
+    bool isNull() const { return column->isNullAt(0); }
+    UInt64 getUInt() const { return column->getUInt(0); }
+    Int64 getInt() const { return column->getInt(0); }
+    Float64 getFloat64() const { return column->getFloat64(0); }
+    bool getBool() const { return column->getBool(0); }
+    std::string_view getDataAt() const { return column->getDataAt(0); }
 
     /// Transitional: materialize the value as a `Field`. Prefer the typed getters above; this exists for
     /// callers not yet migrated off `Field` (e.g. `ConstantNode::getValue`).
-    [[nodiscard]] Field getField() const
+    Field getField() const
     {
         Field field;
         column->get(0, field);
         return field;
     }
 
-    [[nodiscard]] String getValueName(const IColumn::Options & options) const
+    String getValueName(const IColumn::Options & options) const
     {
         return column->getValueName(0, options);
     }
