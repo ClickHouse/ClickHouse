@@ -8,8 +8,6 @@ doc_type: 'guide'
 
 import IntroClickPipe from '/snippets/ja/_intro.mdx';
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <IntroClickPipe />
 
 ## 前提条件 {#pre-requisites}
@@ -24,11 +22,27 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   <Step title="データソースを選択する" id="1-select-the-data-source">
     **1.** ClickHouse Cloud のメインナビゲーションメニューから **データソース** を選択し、**ClickPipe を作成** をクリックします。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="インポートを選択" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![インポートを選択](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+    </Frame>
+
+    </div>
 
     **2.** **BigQuery** のタイルをクリックします。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="BigQuery のタイルを選択" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![BigQuery のタイルを選択](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
   <Step title="ClickPipe の接続を設定する" id="2-setup-your-clickpipe-connection">
@@ -36,11 +50,27 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     **1.** ClickPipes 用に作成した service account の `.json` キーをアップロードします。service account に最低限必要な[アクセス許可](/ja/integrations/clickpipes/bigquery/overview#permissions)が付与されていることを確認してください。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="サービスアカウントキーをアップロード" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![サービスアカウントキーをアップロード](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp)
+
+    </Frame>
+
+    </div>
 
     **2.** **レプリケーションモード**として、[初期ロードのみ](/ja/integrations/clickpipes/bigquery/overview#initial-load)、**初期ロード + CDC**、または **CDC のみ**を選択します。CDC モードを選択した場合は、[クエリベースまたはイベントベースの方式](/ja/integrations/clickpipes/bigquery/overview#cdc)を選びます。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/select-replication-mode.png" alt="BigQuery のレプリケーションモードの選択肢：初期ロードのみ、初期ロード + CDC、CDC のみ" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![BigQuery のレプリケーションモードの選択肢：初期ロードのみ、初期ロード + CDC、CDC のみ](/images/integrations/data-ingestion/clickpipes/bigquery/select-replication-mode.png)
+
+    </Frame>
+
+    </div>
 
     **3.** 初期ロードを実行する場合は、データのステージングに使用する GCS バケットのパスを指定します。
 
@@ -50,7 +80,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   <Step title="ClickPipe を設定する" id="3-configure-your-clickpipe">
     選択したフェーズについて、以下の値を設定してください。初期ロードの設定は ClickPipe が既存データをインポートするときにのみ、CDC の設定は変更のレプリケーションを継続するときにのみ適用されます。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/configure-pipe.png" alt="同期間隔、初期ロード、CDC に関する BigQuery ClickPipe の設定" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![同期間隔、初期ロード、CDC に関する BigQuery ClickPipe の設定](/images/integrations/data-ingestion/clickpipes/bigquery/configure-pipe.png)
+
+    </Frame>
+
+    </div>
 
     | 設定                     | 制御する内容                                                                                                                                                                                                                             |
     | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -68,7 +106,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     **2.** ソーステーブルを選択します。**カラム設定**では、宛先テーブルごとに名前を変更したり、レプリケーションするカラムを選んだりできます。一覧には、service account がアクセスできるデータセットのみが表示されます。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/select-table-settings.png" alt="BigQuery のソーステーブルを選択し、宛先テーブル名、CDC ウォーターマーク、sorting key、詳細設定を指定する" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![BigQuery のソーステーブルを選択し、宛先テーブル名、CDC ウォーターマーク、sorting key、詳細設定を指定する](/images/integrations/data-ingestion/clickpipes/bigquery/select-table-settings.png)
+
+    </Frame>
+
+    </div>
 
     **3.** テーブルごとに CDC オプションを設定します。スクリーンショットはクエリベースの設定を示しています。`TIMESTAMP` 型の **CDC ウォーターマークカラム**を選択し、レプリケーション対象のカラムに含めてください。また、行が変更されるたびに、そのカラムの値を更新してください。イベントベースのレプリケーションでは、代わりに [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) または [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) を選択します。[`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) を使用する場合は、ソーステーブルで `enable_change_history = TRUE` を設定する必要があります。
 
@@ -89,6 +135,14 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   <Step title="セットアップを完了する" id="7-complete-setup">
     **Create ClickPipe** をクリックしてセットアップを完了します。概要ページに移動したら、初期ロードの進行状況を確認できます。さらに、クリックすると BigQuery ClickPipes の詳細を表示できます。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="アクセス許可" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![アクセス許可](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
