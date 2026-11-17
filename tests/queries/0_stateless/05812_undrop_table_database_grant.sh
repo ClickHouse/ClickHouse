@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-replicated-database
+# Tags: zookeeper, no-ordinary-database, no-replicated-database
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -45,5 +45,16 @@ $CLICKHOUSE_CLIENT --user "$user" -q "UNDROP TABLE t2 UUID '$uuid'" 2>&1 | grep 
 $CLICKHOUSE_CLIENT -q "UNDROP TABLE t2"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM t2"
 
+session="${CLICKHOUSE_DATABASE}_05812"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${session}" -d "CREATE TEMPORARY TABLE tmp (n UInt64)"
+tmp_uuid=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${session}" -d "SELECT uuid FROM system.tables WHERE is_temporary AND name = 'tmp'")
+$CLICKHOUSE_CLIENT --user "$user" -q "UNDROP TABLE _temporary_and_external_tables.\`_tmp_${tmp_uuid}\`" 2>&1 | grep -Fq "(DATABASE_ACCESS_DENIED)" && echo OK
+$CLICKHOUSE_CLIENT --user "$user" -q "UNDROP TABLE _temporary_and_external_tables.\`_tmp_00000000-0000-0000-0000-000000000000\`" 2>&1 | grep -Fq "(DATABASE_ACCESS_DENIED)" && echo OK
+
+$CLICKHOUSE_CLIENT -q "CREATE DATABASE ${CLICKHOUSE_DATABASE}_rep ENGINE = Replicated('/test/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/05812_rep', '1', '1')"
+$CLICKHOUSE_CLIENT --user "$user" -q "UNDROP TABLE ${CLICKHOUSE_DATABASE}_rep.t ON CLUSTER ${CLICKHOUSE_DATABASE}_rep" 2>&1 | grep -Fq "(ACCESS_DENIED)" && echo OK
+$CLICKHOUSE_CLIENT --user "$user" -q "UNDROP TABLE ${CLICKHOUSE_DATABASE}_absent.t ON CLUSTER ${CLICKHOUSE_DATABASE}_absent" 2>&1 | grep -Fq "(ACCESS_DENIED)" && echo OK
+
+$CLICKHOUSE_CLIENT -q "DROP DATABASE ${CLICKHOUSE_DATABASE}_rep"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${CLICKHOUSE_DATABASE}_other"
 $CLICKHOUSE_CLIENT -q "DROP USER $user"

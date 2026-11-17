@@ -18,6 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int DATABASE_ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int SUPPORT_IS_DISABLED;
@@ -33,11 +34,16 @@ BlockIO InterpreterUndropQuery::execute()
 {
     auto component_guard = Coordination::setCurrentComponent("InterpreterUndropQuery::execute");
     auto & undrop = query_ptr->as<ASTUndropQuery &>();
-    if (!undrop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
+    if (!undrop.cluster.empty())
     {
-        DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccessForDDLOnCluster();
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        /// Check the grant before `maybeRemoveOnCluster` looks at the database, so its existence and engine are not revealed.
+        getContext()->checkAccess(AccessType::UNDROP_TABLE, undrop.getDatabase(), undrop.getTable());
+        if (!maybeRemoveOnCluster(query_ptr, getContext()))
+        {
+            DDLQueryOnClusterParams params;
+            params.access_to_check = getRequiredAccessForDDLOnCluster();
+            return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        }
     }
 
     if (undrop.table)
@@ -55,6 +61,11 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
         table_id.database_name = context->getCurrentDatabase();
         query.setDatabase(table_id.database_name);
     }
+
+    /// Every grant is considered given on this database, and it holds the temporary tables of all sessions.
+    if (table_id.database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+        throw Exception(
+            ErrorCodes::DATABASE_ACCESS_DENIED, "Direct access to `{}` database is not allowed", DatabaseCatalog::TEMPORARY_DATABASE);
 
     context->checkAccess(AccessType::UNDROP_TABLE, table_id);
 
