@@ -74,21 +74,23 @@ struct UTF8Decoder
     UInt32 codepoint {0};
 };
 
-static int wcwidth(wchar_t wc)
+size_t codePointWidth(UInt32 code_point) noexcept
 {
-    int width = widechar_wcwidth(wc);
+    int width = widechar_wcwidth(code_point);
     switch (width)
     {
         case widechar_nonprint:
         case widechar_combining:
         case widechar_unassigned:
+        case widechar_non_character:
             return 0;
         case widechar_ambiguous:
         case widechar_private_use:
-        case widechar_widened_in_9:
             return 1;
+        case widechar_widened_in_9:
+            return 2;
         default:
-            return width;
+            return static_cast<size_t>(width);
     }
 }
 
@@ -212,7 +214,7 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
                     else if (decoder.codepoint == '\t')
                         next_width += 8 - (prefix + width) % 8;
                     else
-                        next_width += wcwidth(decoder.codepoint);
+                        next_width += codePointWidth(decoder.codepoint);
 
                     if (mode == BytesBeforeLimit && next_width > limit)
                         return i - rollback;

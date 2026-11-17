@@ -110,6 +110,9 @@ constexpr bool isSurrogateCodePoint(UInt32 code_point)
 }
 
 
+/// The terminal columns of a code point, as in terminals with Unicode 9 or newer widths: most emoji take two.
+size_t codePointWidth(UInt32 code_point) noexcept;
+
 /// returns UTF-8 wcswidth. Invalid sequence is treated as zero width character.
 /// `prefix` is used to compute the `\t` width which extends the string before
 /// and include `\t` to the nearest longer length with multiple of eight.

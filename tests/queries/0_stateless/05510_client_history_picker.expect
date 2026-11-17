@@ -17,7 +17,7 @@ exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
 set history_file $CLICKHOUSE_TMP/$basename.history
 
 # Entries with a terminal control sequence and with non-ASCII letters.
-exec bash -c "printf '### 2026-01-01 00:00:00.000\\nSELECT \\x27\\033]0;zzctl\\007\\x27\\n### 2026-01-01 00:00:01.000\\nSELECT \\x27ПРИВЕТ_unicode\\x27\\n### 2026-01-01 00:00:02.000\\nSELECT \\x27zzba\\x27\\n### 2026-01-01 00:00:03.000\\nSELECT \\x27zzab\\x27\\n### 2026-01-01 00:00:04.000\\nSELECT \\x27[string repeat y 100] long_target_one\\x27\\n### 2026-01-01 00:00:05.000\\nSELECT \\x27[string repeat 😀 60]emoji_target\\x27\\n' > $history_file"
+exec bash -c "printf '### 2026-01-01 00:00:00.000\\nSELECT \\x27\\033]0;zzctl\\007\\x27\\n### 2026-01-01 00:00:01.000\\nSELECT \\x27\\320\\237\\320\\240\\320\\230\\320\\222\\320\\225\\320\\242_unicode\\x27\\n### 2026-01-01 00:00:02.000\\nSELECT \\x27zzba\\x27\\n### 2026-01-01 00:00:03.000\\nSELECT \\x27zzab\\x27\\n### 2026-01-01 00:00:04.000\\nSELECT \\x27[string repeat y 100] long_target_one\\x27\\n### 2026-01-01 00:00:05.000\\nSELECT \\x27[string repeat \\360\\237\\230\\200 60]emoji_target\\x27\\n' > $history_file"
 
 log_user 0
 set timeout 60
@@ -30,6 +30,8 @@ expect_after {
 }
 
 spawn bash -c "stty rows 24 columns 80 ; source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+# Non-ASCII text is written as UTF-8 bytes, independent of the encoding of Tcl.
+fconfigure $spawn_id -encoding binary
 expect ":) "
 
 send -- "SELECT 'alpha_marker_one'\r"
@@ -105,7 +107,7 @@ expect ":) "
 # Case-insensitive for non-ASCII letters too.
 send -- "\022"
 expect -re {[0-9]+/[0-9]+}
-send -- "привет"
+send -- "\xd0\xbf\xd1\x80\xd0\xb8\xd0\xb2\xd0\xb5\xd1\x82"
 expect -re {1/[0-9]+}
 send -- "\033"
 expect ":) "
@@ -146,19 +148,18 @@ expect "_one'"
 send -- "\033"
 expect ":) "
 
-# Emoji take two columns, as in terminals and `replxx`: the entry is clipped to at most 31 of them
-# before the match, and the cursor of four emoji in the query is at column 11 (counting one column
-# per emoji would never reach it).
+# Emoji take two columns, as in terminals: the entry is clipped to at most 31 of them before the match,
+# and the cursor after four emoji in the query (two of them from Unicode 13 and 14) is at column 11.
 send -- "\022"
 expect -re {[0-9]+/[0-9]+}
 send -- "emoji_target"
 expect -re {1/[0-9]+}
-expect -re { \.\.(😀){1,31}\x1b\[[0-9;]*memoji_target}
+expect -re { \.\.(\xf0\x9f\x98\x80){1,31}\x1b\[[0-9;]*memoji_target}
 send -- "\033"
 expect ":) "
 send -- "\022"
 expect -re {[0-9]+/[0-9]+}
-send -- "😀😀😀😀"
+send -- "\xf0\x9f\xa5\xb2\xf0\x9f\xab\xa0\xf0\x9f\x98\x80\xf0\x9f\x98\x80"
 expect -ex "\033\[11G"
 send -- "\033"
 expect ":) "
