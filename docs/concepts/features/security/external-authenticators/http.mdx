@@ -148,7 +148,7 @@ The service receives a GET request with Basic credentials and the configured for
 - `404` - The user is not known to this service. Authentication continues with the next user directory.
 - Any other status (`401`, `403`, `5xx`) - Authentication fails, the next directories are not tried.
 
-Parsing is strict: a malformed body, a body that is not a JSON object, a `roles` value that is not an array, a non-string role, or an unknown or unparsable setting fails the authentication. The `settings` are applied as session settings, as with `IDENTIFIED WITH HTTP`, and are subject to constraints.
+Parsing is strict: a malformed body, a body that is not a JSON object, a `roles` value that is not an array, a non-string role, or an unknown or unparsable setting fails the authentication. The `settings` are applied as [session settings](#passing-session-settings) and are subject to constraints.
 
 ```json
 {"settings": {"max_threads": "4"}, "roles": ["reader", "tenant_a"]}
@@ -176,15 +176,16 @@ The TTL does not affect sessions that are already established. A native protocol
 
 ### Distributed queries {#http-user-directory-distributed}
 
-Configure the directory and create the roles on every node. The cluster must define a `<secret>`. The initiator pushes the user and its roles to shards, which materialize the user and apply the roles without calling the service. Define the roles identically on all nodes: settings attached to a role on a shard are not applied to the roles pushed by the initiator, and the check that rejects roles with settings runs only on the node where the user authenticates.
+Configure the directory and create the roles on every node. The cluster must define a `<secret>`. The initiator pushes the user and its roles to shards, which materialize the user and apply the roles without calling the service. Define the roles identically on all nodes.
 
 ### Limitations {#http-user-directory-limitations}
 
-- Settings and settings profiles of returned roles, including their constraints such as `readonly`, are not applied at login, so a login that gets a role with settings or settings profiles (its own, of the roles granted to it, or assigned to it with `TO`) fails. Use the `settings` of the response instead.
+- Settings and settings profiles of returned roles, including their constraints such as `readonly`, are not applied at login, so a login that gets a role with settings or settings profiles (its own, of the roles granted to it, or assigned to it with `TO`) fails. Use the `settings` of the response instead. This check runs only on the node where the user authenticates, and settings of a role on a shard are not applied to the roles pushed by the initiator.
 - `INSERT` into a `Distributed` table on a cluster with `<secret>`, both foreground and background, does not carry the roles to shards.
 - `ON CLUSTER` queries with `distributed_ddl_use_initial_user_and_roles` fail with `UNKNOWN_USER` on hosts that have not seen the user.
 - Such users should not be used as `DEFINER`, because a definer has no session roles.
 - Settings returned by the service are applied when a named session (`session_id`) is created, and the session can be reused only by an authentication that returns the same roles and settings.
+- Settings returned by the service are not applied to the jobs of a `QueryRunner` table.
 - Materialized users stay in memory (`system.users`) until restart.
 - A user name that exists in another user directory is never authenticated by this one.
 - A user name containing `:` is never authenticated by this directory, because HTTP Basic credentials cannot carry it.

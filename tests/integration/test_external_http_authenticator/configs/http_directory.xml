@@ -12,10 +12,9 @@
         </dir_server>
     </http_authentication_servers>
 
+    <!-- Otherwise `users.xml` is the first directory, before `http`. -->
+    <users_config remove="remove"/>
     <user_directories replace="replace">
-        <users_xml>
-            <path>users.xml</path>
-        </users_xml>
         <http>
             <server>dir_server</server>
             <allowed_roles>
@@ -29,6 +28,9 @@
             <allowed_role_prefix>tenant_</allowed_role_prefix>
             <authentication_cache_ttl>2</authentication_cache_ttl>
         </http>
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
         <local_directory>
             <path>/var/lib/clickhouse/access/</path>
         </local_directory>

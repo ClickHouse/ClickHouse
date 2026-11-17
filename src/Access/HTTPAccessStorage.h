@@ -51,7 +51,7 @@ private:
 
     struct CacheEntry
     {
-        UInt128 hash;
+        UInt128 hash{};
         std::chrono::steady_clock::time_point time;
         Response response;
     };

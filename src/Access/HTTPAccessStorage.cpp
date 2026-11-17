@@ -177,8 +177,10 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
         return not_found();
 
     /// A user with this name belongs to another storage: neither shadow it nor send its password to the server.
-    if (auto id = access_control.find<User>(user_name); id && !memory_storage.exists(*id))
-        return not_found();
+    /// The other storages are checked directly: once materialized here, the user hides a later one from `AccessControl::find`.
+    for (const auto & storage : *access_control.getStoragesPtr())
+        if (storage.get() != this && storage->find<User>(user_name))
+            return not_found();
 
     if (typeid_cast<const AlwaysAllowCredentials *>(&credentials))
         return make_result(materializeUser(user_name), {}, {});
@@ -237,7 +239,7 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
             auto json = parser.parse(raw.body);
             if (json.type() != typeid(Poco::JSON::Object::Ptr))
                 throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "The response of HTTP authentication server '{}' is not a JSON object", server_name);
-            const auto obj = json.extract<Poco::JSON::Object::Ptr>();
+            const auto & obj = json.extract<Poco::JSON::Object::Ptr>();
 
             if (obj->has("roles"))
             {

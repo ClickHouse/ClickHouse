@@ -237,6 +237,20 @@ def test_directory_fall_through(started_cluster: ClickHouseCluster):
     assert "Authentication failed" in node.query_and_get_error("SELECT 1", user="nobody_here", password=GOOD_PASSWORD)
     assert "Authentication failed" in node.query_and_get_error("SELECT 1", user="alice", password="wrong_password")
 
+    # A user of a later directory (SQL refuses the name, `users.xml` reload does not) takes over a materialized name.
+    assert node.query("SELECT currentUser()", user="alice", password=GOOD_PASSWORD) == "alice\n"
+    late_users = "/etc/clickhouse-server/users.d/late_alice.xml"
+    node.exec_in_container(["bash", "-c", f"echo '<clickhouse><users><alice><password>local_pw</password></alice></users></clickhouse>' > {late_users}"])
+    node.query("SYSTEM RELOAD CONFIG")
+    try:
+        count = directory_count("alice")
+        assert node.query("SELECT currentUser()", user="alice", password="local_pw") == "alice\n"
+        assert "Authentication failed" in node.query_and_get_error("SELECT 1", user="alice", password=GOOD_PASSWORD)
+        assert directory_count("alice") == count
+    finally:
+        node.exec_in_container(["rm", late_users])
+        node.query("SYSTEM RELOAD CONFIG")
+
 
 def test_directory_authentication_cache(started_cluster: ClickHouseCluster):
     node = node_dir1
