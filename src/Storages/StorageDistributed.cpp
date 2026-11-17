@@ -2407,7 +2407,9 @@ void StorageDistributed::delayInsertOrThrowIfNeeded(const std::function<bool()> 
 
     UInt64 total_bytes = *totalBytes(getContext());
 
-    if ((*distributed_settings)[DistributedSetting::bytes_to_throw_insert] && total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_throw_insert])
+    /// A rejection at shutdown would drop rows that a Buffer or an asynchronous insert flush has already acknowledged.
+    if ((*distributed_settings)[DistributedSetting::bytes_to_throw_insert] && total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_throw_insert]
+        && !getContext()->isShutdownCalled())
     {
         ProfileEvents::increment(ProfileEvents::DistributedRejectedInserts);
         throw Exception(ErrorCodes::DISTRIBUTED_TOO_MANY_PENDING_BYTES,

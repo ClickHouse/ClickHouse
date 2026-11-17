@@ -2256,11 +2256,21 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
     bool inserted = false;
     TokenToPostingsBuilderMap::LookupResult it{};
 
+    /// Below this size tokens_map fits in L1 and a direct probe costs about as much as the bloom check.
+    static constexpr size_t min_keep_set_bloom_tokens = 64;
+
+    const bool build_bloom = keep_set_bloom.empty() && filter_tokens.size() >= min_keep_set_bloom_tokens;
+    if (build_bloom)
+        keep_set_bloom.init(filter_tokens.size());
+
     for (const auto & filter_token : filter_tokens)
     {
         memcpy(data, filter_token.data(), filter_token.size());
         auto key = PackedStringRef::build(data, filter_token.size(), PackedStringRefHash{});
         data += filter_token.size();
+
+        if (build_bloom)
+            keep_set_bloom.add(key.getHash());
 
         tokens_map.emplace(key, it, inserted);
         chassert(inserted);
@@ -2276,6 +2286,9 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
     /// Keep-set mode: the map is pre-seeded with the only tokens to keep, everything else is skipped.
     if (postprocessor_drop_filter && !postprocessor_drop_filter->drop_on_match)
     {
+        if (!keep_set_bloom.empty() && !keep_set_bloom.mayContain(packed_key.getHash()))
+            return;
+
         auto * it = tokens_map.find(packed_key);
         if (!it)
             return;
