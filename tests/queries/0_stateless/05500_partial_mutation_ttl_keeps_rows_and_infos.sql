@@ -202,6 +202,21 @@ SELECT 'T14', count(), countIf(c = toDateTime('2090-01-01 00:00:00', 'UTC')), co
 SELECT 'T14 x', column_ttl_min = toDateTime('2090-01-01 00:00:01', 'UTC'), column_ttl_max = toDateTime('2090-01-01 00:00:01', 'UTC')
 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't14' AND active AND column = 'x';
 
+-- T15: `MOVE` TTL on a column the mutation does not read. An object-storage policy has no disk `default`.
+CREATE TABLE t15 (k UInt64, d1 DateTime('UTC'), d2 DateTime('UTC'), w String TTL d1 + INTERVAL 10 YEAR, v String)
+ENGINE = MergeTree ORDER BY k TTL d2 + INTERVAL 1 DAY TO DISK 'default'
+SETTINGS storage_policy = 'default', min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+SYSTEM STOP TTL MERGES t15;
+INSERT INTO t15 SELECT number, toDateTime('2090-01-01 00:00:00', 'UTC'), toDateTime('2090-01-01 00:00:00', 'UTC'), toString(number), toString(number)
+FROM numbers(100) SETTINGS max_block_size = 1000, min_insert_block_size_rows = 1000, max_insert_block_size = 1000;
+SELECT 'T15 parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't15' AND active;
+ALTER TABLE t15 UPDATE d1 = toDateTime('2095-01-01 00:00:00', 'UTC') WHERE 1 SETTINGS mutations_sync = 2;
+SELECT 'T15', count(), countIf(d1 = toDateTime('2095-01-01 00:00:00', 'UTC')) FROM t15;
+SELECT 'T15 info', move_ttl_info.min = [toDateTime('2090-01-02 00:00:00', 'UTC')], move_ttl_info.max = [toDateTime('2090-01-02 00:00:00', 'UTC')]
+FROM system.parts WHERE database = currentDatabase() AND table = 't15' AND active;
+SELECT 'T15 w', column_ttl_min = toDateTime('2105-01-01 00:00:00', 'UTC') FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't15' AND active AND column = 'w';
+
 -- Every mutation above rewrote only some columns of its part.
 SYSTEM FLUSH LOGS part_log;
 SELECT 'partial', table, ProfileEvents['MutationSomePartColumns'] > 0, ProfileEvents['MutationAllPartColumns'] = 0
