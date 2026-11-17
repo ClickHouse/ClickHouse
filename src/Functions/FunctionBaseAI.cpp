@@ -623,19 +623,10 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 continue;
             }
 
-            const String & response = ai_response->result;
-            String processed = postProcessResponse(response);
-            if (response_format && processed == response) /// Some models output whitespace around a structured reply
-            {
-                String trimmed(trimWhitespace(response));
-                if (trimmed.size() != response.size() && trimmed.starts_with('{'))
-                {
-                    String unwrapped = postProcessResponse(trimmed);
-                    if (unwrapped != trimmed) /// Keep the original reply if it is not a structured one
-                        processed = std::move(unwrapped);
-                }
-            }
-            insertProcessedResult(*result_col, processed);
+            String & response = ai_response->result;
+            if (response_format) /// Some models output whitespace around a structured reply
+                response = String(trimWhitespace(response));
+            insertProcessedResult(*result_col, postProcessResponse(response));
             ++rows_processed;
         }
     }
