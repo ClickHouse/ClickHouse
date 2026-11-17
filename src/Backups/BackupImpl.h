@@ -111,7 +111,6 @@ public:
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
     bool tryRemoveAllFiles() noexcept override;
-    bool tryRemoveLockFileIfNothingWritten() noexcept override;
     void setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept override;
 
 private:
@@ -222,17 +221,11 @@ private:
     std::atomic<bool> lock_file_before_first_file_checked = false;
 
     bool writing_finalized = false;
-    bool started_writing_metadata = false;
     bool corrupted = false;
     /// Outcome of the one own-lock cleanup a failed `open` performs; see `tryRemoveOwnLockFile`.
     std::optional<bool> own_lock_cleanup_result;
-    /// Whether this `open` wrote the destination lock, which is what makes it ours to take back. After a
-    /// failed lock write it is set only on a backend that creates the lock exclusively: elsewhere the
-    /// matching contents `removeLockFile` relies on may sit in a lock this attempt wrote over.
+    /// Whether this `open` wrote the destination lock, which is what makes it ours to take back.
     bool created_own_lock_file = false;
-    /// `createLockFile` has created the lock file exclusively, or read it back and found this attempt's own
-    /// contents in it, so there is nothing for an immediate re-check to add.
-    bool lock_file_verified_on_create = false;
     const LoggerPtr log;
 };
 
