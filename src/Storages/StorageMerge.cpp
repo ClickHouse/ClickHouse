@@ -1736,8 +1736,9 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         if (query_info.table_expression_modifiers)
             replacement_table_expression->setTableExpressionModifiers(*query_info.table_expression_modifiers);
 
-        /// A remote child builds the query it sends from this tree, so at `FetchColumns` it must ask for
-        /// the columns to read and nothing else.
+        /// A remote child (`isRemote`, also behind a wrapper or a `Merge`) builds the query it sends from this tree,
+        /// so at `FetchColumns` it must ask for the columns to read and nothing else. A `Merge` with only local tables
+        /// also reads this tree (`readRequiresAnalyzedQuery`) but sends no query, so it gets the tree as is.
         const bool select_only_required_columns
             = common_processed_stage == QueryProcessingStage::FetchColumns && storage->isRemote();
         modified_query_info.query_tree = replaceTableExpressionAndRemoveJoin(
