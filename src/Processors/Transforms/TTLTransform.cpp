@@ -1,4 +1,5 @@
 #include <Processors/Transforms/TTLTransform.h>
+#include <Common/logger_useful.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -320,7 +321,44 @@ void TTLTransform::recomputeDependentColumns(Block & block, const VectorWithMemo
                 [&](const auto & required) { return !block.has(required); }))
             continue;
 
-        auto recomputed = ITTLAlgorithm::executeExpressionAndGetColumn(dependent.expression, block, dependent.result_column_name);
+        ColumnPtr recomputed;
+        try
+        {
+            recomputed = ITTLAlgorithm::executeExpressionAndGetColumn(dependent.expression, block, dependent.result_column_name);
+        }
+        catch (const Exception & e)
+        {
+            /// The recompute runs inside the TTL merge with no error isolation: a MATERIALIZED default
+            /// that throws on the reset default (e.g. `intDiv(100, x)` when the TTL resets `x` to 0)
+            /// used to fail every background merge, retry forever and wedge the table (issue #123953).
+            /// Leave the column as it is instead: the stale value is what the part already carried, and
+            /// the pre-#117815 behaviour did not recompute it at all. A later level that reads this
+            /// column then recomputes from the kept value, which stays deterministic.
+            LOG_ERROR(
+                log,
+                "Failed to recompute MATERIALIZED column '{}' after a column TTL reset its source to "
+                "the default, keeping the previous values (first error: {})",
+                dependent.name, e.message());
+            continue;
+        }
+        catch (const Poco::Exception & e)
+        {
+            LOG_ERROR(
+                log,
+                "Failed to recompute MATERIALIZED column '{}' after a column TTL reset its source to "
+                "the default, keeping the previous values (first error: {})",
+                dependent.name, e.displayText());
+            continue;
+        }
+        catch (const std::exception & e)
+        {
+            LOG_ERROR(
+                log,
+                "Failed to recompute MATERIALIZED column '{}' after a column TTL reset its source to "
+                "the default, keeping the previous values (first error: {})",
+                dependent.name, e.what());
+            continue;
+        }
         if (recomputed)
             block.getByName(dependent.name).column = recomputed->convertToFullColumnIfConst();
     }

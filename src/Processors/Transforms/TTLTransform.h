@@ -98,7 +98,7 @@ private:
         const NameSet & columns_to_leave_alone);
 
     /// Recomputes `dependents` in the block the TTL algorithms have already worked on.
-    static void recomputeDependentColumns(Block & block, const VectorWithMemoryTracking<DependentMaterializedColumn> & dependents);
+    void recomputeDependentColumns(Block & block, const VectorWithMemoryTracking<DependentMaterializedColumn> & dependents);
 
     /// Runs the TTL algorithms, recomputing the dependents in between.
     void executeAlgorithms(Block & block);
