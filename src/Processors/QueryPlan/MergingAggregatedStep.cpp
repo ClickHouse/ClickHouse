@@ -353,6 +353,11 @@ static void checkMergedAggregatesLayout(
 {
     if (grouping_sets_params.empty())
     {
+        /// `appendGroupingIfNeeded` would copy a `__grouping_set` column of the input into the output header,
+        /// but the merge without grouping sets does not produce it.
+        if (header.has("__grouping_set"))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The input of a deserialized `MergingAggregated` step without grouping sets has a `__grouping_set` column");
         checkDeserializedMergedAggregatesLayout(keys, aggregates, header.getColumnsWithTypeAndName());
         return;
     }

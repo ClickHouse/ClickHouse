@@ -140,6 +140,12 @@ forge("grouping set column is duplicated", GS, [[("__grouping_set", U64)] * 2 + 
 forge("well-formed grouping sets merge", GS, [[("__grouping_set", U64)] + K_STATE], VERSION,
       [("__grouping_set", U64)] + K_A, "MergingAggregated")
 
+# Without grouping sets, the merge does not produce `__grouping_set`, so the input must not have it.
+MERGING = bytes([FINAL]) + vu(1) + sb("k") + aggregating(FINAL, aggregates=ANY_SUM[:1])[2:-1] + vu(0) + vu(0)
+forge("grouping set column without grouping sets", MERGING, [K_STATE + [("__grouping_set", U64)]], VERSION,
+      [("__grouping_set", U64)] + K_A, "MergingAggregated")
+forge("well-formed merge without grouping sets", MERGING, [K_STATE], VERSION, K_A, "MergingAggregated")
+
 # `TotalsHaving` finalizes the states it finds in the input by the names of its aggregates.
 def totals_having(aggregates):   # flags (final), then the aggregates as for `Aggregating`, without the keys
     return bytes([FINAL]) + aggregating(FINAL, aggregates=aggregates)[2:]
