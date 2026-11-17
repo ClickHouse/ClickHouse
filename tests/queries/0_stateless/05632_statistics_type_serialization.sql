@@ -1,4 +1,5 @@
--- The bounds of `minmax` and `basic` statistics are written with the serialization of the column type.
+-- With `serialize_statistics_bounds_with_column_type`, the bounds of `minmax` and `basic` statistics are written with
+-- the serialization of the column type (statistics file format `V5`). The other statistics tests cover the default `V4`.
 -- The estimates of a part are kept in memory when it is written, so `DETACH` / `ATTACH` makes them be read
 -- from the statistics file, and a merge always reads the statistics of the parts it merges.
 
@@ -35,7 +36,7 @@ CREATE TABLE t_stats
     lcn LowCardinality(Nullable(UInt16)) STATISTICS(minmax, basic)
 )
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 1;
+SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 1, serialize_statistics_bounds_with_column_type = 1;
 
 INSERT INTO t_stats SELECT
     toInt8(number) - 50,
@@ -62,14 +63,14 @@ FROM numbers(100);
 
 SELECT 'written';
 SELECT column, `estimates.min`, `estimates.max` FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_stats' AND active ORDER BY column;
+WHERE database = currentDatabase() AND table = 't_stats' AND active AND NOT startsWith(column, '_') ORDER BY column;
 
 DETACH TABLE t_stats;
 ATTACH TABLE t_stats;
 
 SELECT 'read';
 SELECT column, `estimates.min`, `estimates.max` FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_stats' AND active ORDER BY column;
+WHERE database = currentDatabase() AND table = 't_stats' AND active AND NOT startsWith(column, '_') ORDER BY column;
 
 DROP TABLE t_stats;
 
@@ -81,7 +82,7 @@ CREATE TABLE t_stats_merge
     dt64 DateTime64(3, 'UTC') STATISTICS(basic)
 )
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 1;
+SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 1, serialize_statistics_bounds_with_column_type = 1;
 
 INSERT INTO t_stats_merge SETTINGS materialize_statistics_on_insert = 0 VALUES (true, 'c', '2020-01-02 00:00:00.500');
 INSERT INTO t_stats_merge VALUES (false, 'b', '2020-01-01 00:00:00.250'), (false, 'b', '2020-01-03 00:00:00.750');
@@ -91,7 +92,7 @@ ATTACH TABLE t_stats_merge;
 
 SELECT 'merged';
 SELECT column, `estimates.min`, `estimates.max` FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_stats_merge' AND active ORDER BY column;
+WHERE database = currentDatabase() AND table = 't_stats_merge' AND active AND NOT startsWith(column, '_') ORDER BY column;
 
 DROP TABLE t_stats_merge;
 
@@ -104,7 +105,7 @@ CREATE TABLE t_stats_alter
     d Date STATISTICS(basic)
 )
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 1;
+SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 1, serialize_statistics_bounds_with_column_type = 1;
 
 INSERT INTO t_stats_alter SELECT number - 5, if(number % 2 = 0, 'a', 'b'), toDate('2020-01-01') + number FROM numbers(10);
 
@@ -116,7 +117,7 @@ ATTACH TABLE t_stats_alter;
 
 SELECT 'altered';
 SELECT column, type, `estimates.min`, `estimates.max` FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_stats_alter' AND active ORDER BY column;
+WHERE database = currentDatabase() AND table = 't_stats_alter' AND active AND NOT startsWith(column, '_') ORDER BY column;
 
 OPTIMIZE TABLE t_stats_alter FINAL;
 DETACH TABLE t_stats_alter;
@@ -124,6 +125,6 @@ ATTACH TABLE t_stats_alter;
 
 SELECT 'altered and merged';
 SELECT column, type, `estimates.min`, `estimates.max` FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_stats_alter' AND active ORDER BY column;
+WHERE database = currentDatabase() AND table = 't_stats_alter' AND active AND NOT startsWith(column, '_') ORDER BY column;
 
 DROP TABLE t_stats_alter;

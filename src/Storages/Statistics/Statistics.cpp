@@ -25,6 +25,7 @@
 #include <Storages/Statistics/StatisticsUniqV2.h>
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
+#include <Common/assert_cast.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
 
@@ -644,10 +645,13 @@ Estimate ColumnStatistics::getEstimate() const
     return info;
 }
 
-void ColumnStatistics::serialize(WriteBuffer & buf) const
+void ColumnStatistics::serialize(WriteBuffer & buf, StatisticsFileVersion version) const
 {
-    /// Layout (V5, the same as V4, which differs in the payload of `minmax` and `basic`):
-    ///   UInt16  version (= V5)
+    if (version != StatisticsFileVersion::V4 && version != StatisticsFileVersion::V5)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write statistics file of version {}", static_cast<UInt16>(version));
+
+    /// Layout (V4 and V5, which differ only in the payload of `minmax` and `basic`):
+    ///   UInt16  version
     ///   UInt64  stat_types_mask
     ///   String  stored_type_name   — column type at write time; deserialization returns nullptr on mismatch
     ///   UInt64  rows
@@ -655,7 +659,7 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
     ///       UInt64  stat_size
     ///       <stat_size> bytes of per-statistics payload
     /// The per-stat size prefix lets a reader skip statistics types it doesn't recognize.
-    writeIntBinary(StatisticsFileVersion::V5, buf);
+    writeIntBinary(version, buf);
 
     UInt64 stat_types_mask = 0;
     for (const auto & [type, _] : stats)
@@ -672,12 +676,12 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
     /// fallback needed for the V4 prefix.
     for (const auto & [type, stat_ptr] : stats)
     {
-        if (std::optional<UInt64> serialized_size = stat_ptr->getSerializedSize())
+        if (std::optional<UInt64> serialized_size = stat_ptr->getSerializedSize(version))
         {
             writeIntBinary(*serialized_size, buf);
 
             const auto count_before = buf.count();
-            stat_ptr->serialize(buf);
+            stat_ptr->serialize(buf, version);
             const auto written = static_cast<UInt64>(buf.count() - count_before);
             if (written != *serialized_size)
                 throw Exception(
@@ -690,7 +694,7 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
 
         String temp_data;
         WriteBufferFromString temp_buf(temp_data);
-        stat_ptr->serialize(temp_buf);
+        stat_ptr->serialize(temp_buf, version);
         temp_buf.finalize();
 
         writeIntBinary(static_cast<UInt64>(temp_data.size()), buf);
@@ -833,6 +837,15 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
 
     for (const auto & [_, desc] : result->stats)
         desc->deserialize(buf, version);
+
+    /// `minmax` of `V1` has `Float64` bounds, which are converted to the type of the column, so that they can be
+    /// written again. If they cannot be converted, drop the statistics: a merge then builds them from the rows.
+    if (auto it = result->stats.find(StatisticsType::MinMax); it != result->stats.end()
+        && assert_cast<const StatisticsMinMax &>(*it->second).hasUnconvertibleLegacyBounds())
+    {
+        result->stats.erase(it);
+        result->stats_desc.types_to_desc.erase(StatisticsType::MinMax);
+    }
 
     return result;
 }

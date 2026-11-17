@@ -4,9 +4,12 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/convertFieldToType.h>
 #include <IO/ReadHelpers.h>
+#include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
 #include <Common/FieldVisitorWriteBinary.h>
 #include <Common/FieldVisitorToString.h>
+
+#include <cmath>
 
 
 namespace DB
@@ -49,15 +52,31 @@ void StatisticsMinMax::merge(const StatisticsPtr & other_stats)
     row_count += other->row_count;
 }
 
-void StatisticsMinMax::serialize(WriteBuffer & buf)
+void StatisticsMinMax::serialize(WriteBuffer & buf, StatisticsFileVersion version)
 {
     writeIntBinary(row_count, buf);
-    StatisticsUtils::serializeBounds(min, max, *value_type, buf);
+    if (version >= StatisticsFileVersion::V5)
+    {
+        StatisticsUtils::serializeBounds(min, max, *value_type, buf);
+        return;
+    }
+
+    /// V2 - V4 format: type name followed by min and max in the `Field` encoding
+    writeStringBinary(data_type->getName(), buf);
+    writeFieldBinary(min, buf);
+    writeFieldBinary(max, buf);
 }
 
-std::optional<UInt64> StatisticsMinMax::getSerializedSize() const
+std::optional<UInt64> StatisticsMinMax::getSerializedSize(StatisticsFileVersion version) const
 {
-    return sizeof(row_count) + StatisticsUtils::getSerializedBoundsSize(min, max, *value_type);
+    if (version >= StatisticsFileVersion::V5)
+        return sizeof(row_count) + StatisticsUtils::getSerializedBoundsSize(min, max, *value_type);
+
+    const String type_name = data_type->getName();
+    return sizeof(row_count)
+        + getLengthOfVarUInt(type_name.size()) + type_name.size()
+        + getFieldBinarySize(min)
+        + getFieldBinarySize(max);
 }
 
 void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion version)
@@ -71,8 +90,7 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion versi
         Float64 max_val = 0;
         readFloatBinary(min_val, buf);
         readFloatBinary(max_val, buf);
-        min = min_val;
-        max = max_val;
+        convertLegacyBounds(min_val, max_val);
         return;
     }
 
@@ -91,6 +109,34 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion versi
     }
     min = readFieldBinary(buf);
     max = readFieldBinary(buf);
+}
+
+void StatisticsMinMax::convertLegacyBounds(Float64 min_value, Float64 max_value)
+{
+    /// The bounds must be of the type of the column, because they are written with its serialization
+    /// when the statistics are written again, e.g. by a merge or a mutation that reuses them.
+    auto convert = [&](Float64 value, bool is_min) -> Field
+    {
+        if (!std::isfinite(value))
+            return {};
+        Field converted = tryConvertFieldToType(Field(is_min ? std::floor(value) : std::ceil(value)), *value_type);
+        if (converted.isNull())
+            return {};
+        /// The conversion may round, so check that the converted bound still contains the original one.
+        std::optional<Float64> converted_value = StatisticsUtils::tryConvertToFloat64(converted, value_type);
+        if (!converted_value || (is_min ? *converted_value > value : *converted_value < value))
+            return {};
+        return converted;
+    };
+
+    min = convert(min_value, true);
+    max = convert(max_value, false);
+    if (min.isNull() || max.isNull())
+    {
+        min = Field();
+        max = Field();
+        has_unconvertible_legacy_bounds = true;
+    }
 }
 
 std::optional<Float64> StatisticsMinMax::estimateLess(const Field & val) const

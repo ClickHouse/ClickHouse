@@ -251,7 +251,7 @@ void StatisticsBasic::build(UInt64 rows, const Field & min_value, const Field & 
     sum.reset();
 }
 
-void StatisticsBasic::serialize(WriteBuffer & buf)
+void StatisticsBasic::serialize(WriteBuffer & buf, StatisticsFileVersion version)
 {
     writeIntBinary(row_count, buf);
 
@@ -267,7 +267,17 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
     writeIntBinary(mask, buf);
 
     if (tracks_numeric)
-        StatisticsUtils::serializeBounds(min, max, *data_type, buf);
+    {
+        if (version >= StatisticsFileVersion::V5)
+        {
+            StatisticsUtils::serializeBounds(min, max, *data_type, buf);
+        }
+        else
+        {
+            writeFieldBinary(min, buf);
+            writeFieldBinary(max, buf);
+        }
+    }
     if (tracks_string)
         writeIntBinary(string_total_bytes, buf);
     if (has_default_count)
@@ -276,11 +286,16 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         sum->function.function->serialize(sum->state, buf);
 }
 
-std::optional<UInt64> StatisticsBasic::getSerializedSize() const
+std::optional<UInt64> StatisticsBasic::getSerializedSize(StatisticsFileVersion version) const
 {
     UInt64 size = sizeof(row_count) + sizeof(UInt8);
     if (tracks_numeric)
-        size += StatisticsUtils::getSerializedBoundsSize(min, max, *data_type);
+    {
+        if (version >= StatisticsFileVersion::V5)
+            size += StatisticsUtils::getSerializedBoundsSize(min, max, *data_type);
+        else
+            size += getFieldBinarySize(min) + getFieldBinarySize(max);
+    }
     if (tracks_string)
         size += sizeof(string_total_bytes);
     if (has_default_count)

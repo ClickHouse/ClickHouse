@@ -42,9 +42,9 @@ public:
     void build(UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count);
     void merge(const StatisticsPtr & other_stats) override;
 
-    void serialize(WriteBuffer & buf) override;
+    void serialize(WriteBuffer & buf, StatisticsFileVersion version) override;
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
-    [[nodiscard]] std::optional<UInt64> getSerializedSize() const override;
+    [[nodiscard]] std::optional<UInt64> getSerializedSize(StatisticsFileVersion version) const override;
 
     [[nodiscard]] std::optional<Float64> estimateLess(const Field & val) const override;
     [[nodiscard]] std::optional<Float64> estimateEqual(const Field & val) const override;

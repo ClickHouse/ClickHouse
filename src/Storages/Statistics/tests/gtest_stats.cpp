@@ -770,7 +770,7 @@ TEST(Statistics, BasicDefaultCountRoundTrip)
     ASSERT_EQ(stats->estimateDefaults(), 4u);
 
     WriteBufferFromOwnString wb;
-    stats->serialize(wb);
+    stats->serialize(wb, LATEST_STATISTICS_FILE_VERSION);
     ReadBufferFromString rb(wb.str());
     auto restored = ColumnStatistics::deserialize(rb, data_type);
 
@@ -815,7 +815,7 @@ TEST(Statistics, BasicDefaultCountRoundTrip)
         ReadBufferFromString file_rb(file);
         auto loaded = ColumnStatistics::deserialize(file_rb, type);
         WriteBufferFromOwnString rewritten_wb;
-        loaded->serialize(rewritten_wb);
+        loaded->serialize(rewritten_wb, LATEST_STATISTICS_FILE_VERSION);
         ReadBufferFromString rewritten_rb(rewritten_wb.str());
         return ColumnStatistics::deserialize(rewritten_rb, type);
     };
@@ -908,7 +908,7 @@ TEST(Statistics, BasicSumMissingFromOlderStatistics)
     EXPECT_TRUE(fresh->structureEquals(*older));
 
     WriteBufferFromOwnString reserialized;
-    older->serialize(reserialized);
+    older->serialize(reserialized, LATEST_STATISTICS_FILE_VERSION);
     ReadBufferFromString reserialized_buf(reserialized.str());
     EXPECT_FALSE(ColumnStatistics::deserialize(reserialized_buf, data_type)->hasSum());
 
@@ -936,7 +936,7 @@ TEST(Statistics, BasicSumRoundTrip)
         ASSERT_TRUE(stats->hasSum()) << type_name;
 
         WriteBufferFromOwnString buf;
-        stats->serialize(buf);
+        stats->serialize(buf, LATEST_STATISTICS_FILE_VERSION);
         ReadBufferFromString read_buf(buf.str());
         auto read_stats = ColumnStatistics::deserialize(read_buf, data_type);
         ASSERT_TRUE(read_stats->hasSum()) << type_name;
@@ -1100,6 +1100,65 @@ TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
     EXPECT_FALSE(restored->hasNullCount());
 }
 
+/// `minmax` of `V1` stored `Float64` bounds for any column type. They are converted to the type of the column,
+/// so that the statistics can be written again, e.g. by a merge, with both `V4` and `V5`.
+TEST(Statistics, DeserializeV1MinMaxConvertsBounds)
+{
+    tryRegisterAggregateFunctions();
+
+    auto data_type = std::make_shared<DataTypeUInt64>();
+
+    auto make_v1_file = [](Float64 min, Float64 max)
+    {
+        String file;
+        WriteBufferFromString buf(file);
+        writeIntBinary(static_cast<UInt16>(1), buf); /// StatisticsFileVersion::V1
+        writeIntBinary(static_cast<UInt64>(1ULL << static_cast<UInt8>(StatisticsType::MinMax)), buf);
+        writeIntBinary(static_cast<UInt64>(100), buf); /// rows
+        writeIntBinary(static_cast<UInt64>(100), buf); /// row_count of `minmax`
+        writeFloatBinary(min, buf);
+        writeFloatBinary(max, buf);
+        buf.finalize();
+        return file;
+    };
+
+    auto load = [&](const String & file)
+    {
+        ReadBufferFromString rb(file);
+        return ColumnStatistics::deserialize(rb, data_type);
+    };
+
+    for (auto version : {StatisticsFileVersion::V4, StatisticsFileVersion::V5})
+    {
+        /// The bounds are widened to the nearest integers.
+        auto loaded = load(make_v1_file(1.5, 2.5));
+        ASSERT_TRUE(loaded != nullptr);
+        ASSERT_TRUE(loaded->getStats().contains(StatisticsType::MinMax));
+
+        WriteBufferFromOwnString rewritten;
+        loaded->serialize(rewritten, version);
+        auto restored = load(rewritten.str());
+        ASSERT_TRUE(restored != nullptr);
+        auto estimate = restored->getEstimate();
+        ASSERT_TRUE(estimate.estimated_min.has_value());
+        ASSERT_TRUE(estimate.estimated_max.has_value());
+        EXPECT_EQ(*estimate.estimated_min, Field(UInt64(1)));
+        EXPECT_EQ(*estimate.estimated_max, Field(UInt64(3)));
+    }
+
+    /// The bounds that do not fit the type are dropped together with the statistics.
+    for (auto [min, max] : {std::pair{-1.0, 2.0}, std::pair{1.0, std::numeric_limits<Float64>::infinity()}})
+    {
+        auto loaded = load(make_v1_file(min, max));
+        ASSERT_TRUE(loaded != nullptr);
+        EXPECT_FALSE(loaded->getStats().contains(StatisticsType::MinMax));
+
+        WriteBufferFromOwnString rewritten;
+        loaded->serialize(rewritten, LATEST_STATISTICS_FILE_VERSION);
+        EXPECT_TRUE(load(rewritten.str()) != nullptr);
+    }
+}
+
 #if USE_DATASKETCHES
 
 TEST(Statistics, CountMinSketchRoundTrip)
@@ -1109,7 +1168,7 @@ TEST(Statistics, CountMinSketchRoundTrip)
     auto round_trip = [&](const ColumnStatisticsPtr & stats)
     {
         WriteBufferFromOwnString wb;
-        stats->serialize(wb);
+        stats->serialize(wb, LATEST_STATISTICS_FILE_VERSION);
         ReadBufferFromString rb(wb.str());
         auto restored = ColumnStatistics::deserialize(rb, data_type);
         EXPECT_TRUE(rb.eof());
@@ -1168,7 +1227,7 @@ TEST(Statistics, CountMinSketchDeserializeCorrupted)
         auto stats = create();
         stats->build(column);
         WriteBufferFromOwnString wb;
-        stats->serialize(wb);
+        stats->serialize(wb, LATEST_STATISTICS_FILE_VERSION);
         ReadBufferFromString rb(wb.str());
         UInt64 size = 0;
         readIntBinary(size, rb);

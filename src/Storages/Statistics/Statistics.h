@@ -32,7 +32,14 @@ enum class StatisticsFileVersion : UInt16
     V5 = 5, /// the min and max of `minmax` and `basic` statistics are written with the serialization of the
             /// column type, like any other value of the column, instead of the self-describing `Field` encoding,
             /// and `minmax` no longer repeats the column type name. See `StatisticsUtils::serializeBounds`.
+            /// It is written only with the MergeTree setting `serialize_statistics_bounds_with_column_type`,
+            /// so that the versions that cannot read it keep working during a rolling upgrade.
 };
+
+/// The latest version, which can be written when nothing else reads the file, e.g. in merge checkpoints.
+static constexpr StatisticsFileVersion LATEST_STATISTICS_FILE_VERSION = StatisticsFileVersion::V5;
+/// The version of the statistics files of data parts by default, readable by all supported versions.
+static constexpr StatisticsFileVersion COMPATIBLE_STATISTICS_FILE_VERSION = StatisticsFileVersion::V4;
 
 class Field;
 class Block;
@@ -98,11 +105,12 @@ public:
     virtual void build(const ColumnPtr & column) = 0;
     virtual void merge(const StatisticsPtr & other_stats) = 0;
 
-    virtual void serialize(WriteBuffer & buf) = 0;
+    /// `version` is the version of the statistics file, `V4` or later.
+    virtual void serialize(WriteBuffer & buf, StatisticsFileVersion version) = 0;
     virtual void deserialize(ReadBuffer & buf, StatisticsFileVersion version) = 0;
-    /// Returns the exact number of bytes written by serialize(), if it can be computed
+    /// Returns the exact number of bytes written by `serialize`, if it can be computed
     /// without serializing into a temporary buffer.
-    [[nodiscard]] virtual std::optional<UInt64> getSerializedSize() const { return std::nullopt; }
+    [[nodiscard]] virtual std::optional<UInt64> getSerializedSize(StatisticsFileVersion /*version*/) const { return std::nullopt; }
 
     /// Estimate the cardinality of the column.
     /// Throws if the statistics object is not able to do a meaningful estimation.
@@ -165,7 +173,8 @@ public:
     using StatsMap = std::map<StatisticsType, StatisticsPtr>;
     explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_);
 
-    void serialize(WriteBuffer & buf) const;
+    /// `version` is `V4` or later.
+    void serialize(WriteBuffer & buf, StatisticsFileVersion version) const;
     static std::shared_ptr<ColumnStatistics> deserialize(ReadBuffer & buf, const DataTypePtr & data_type);
     /// `Basic` statistics built from the rows, bounds and NULL count of data that was not read.
     static std::shared_ptr<ColumnStatistics> createBasicFromSummary(
