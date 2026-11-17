@@ -253,13 +253,21 @@ NameSet injectRequiredColumns(
 }
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
-    const MergeTreeDataPartInfoForReaderPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation_)
+    const MergeTreeDataPartInfoForReaderPtr & data_part_,
+    const Names & columns,
+    const Block & sample_block,
+    bool allow_subcolumns_sizes_calculation_,
+    double part_bytes_per_row)
     : data_part(data_part_), allow_subcolumns_sizes_calculation(allow_subcolumns_sizes_calculation_)
 {
     number_of_rows_in_part = data_part->getRowCount();
 
     /// Initialize with sample block until update won't called.
     initialize(sample_block, {}, columns);
+
+    if (part_bytes_per_row > 0
+        && std::ranges::any_of(dynamic_columns_infos, [](const ColumnInfo & info) { return !info.is_subcolumn; }))
+        bytes_per_row_current = std::max(bytes_per_row_current, part_bytes_per_row);
 }
 
 void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const Columns & columns, const Names & names, bool from_update)
@@ -348,6 +356,11 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
 
 void MergeTreeBlockSizePredictor::startBlock()
 {
+    /// `update` is not called for a block whose rows were all filtered out: the estimation from the size of the part is for the first block only.
+    if (is_block_started && !is_initialized_in_update)
+        bytes_per_row_current = bytes_per_row_global;
+    is_block_started = true;
+
     block_size_bytes = 0;
     block_size_rows = 0;
     for (auto & info : dynamic_columns_infos)
