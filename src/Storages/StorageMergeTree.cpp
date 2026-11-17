@@ -2298,7 +2298,7 @@ bool StorageMergeTree::merge(
     PreformattedMessage & out_disable_reason,
     bool optimize_skip_merged_partitions)
 {
-    /// `OPTIMIZE` calls this per partition, and nothing below observes its cancellation.
+    /// Only `OPTIMIZE` calls this; a table-wide `OPTIMIZE ... FINAL` calls it once per partition.
     CurrentThread::checkIfNotCancelled();
 
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
