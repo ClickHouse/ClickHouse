@@ -1,5 +1,4 @@
 #include <DataTypes/Serializations/SerializationObject.h>
-#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/DeserializationTask.h>
 #include <DataTypes/Serializations/SerializationObjectHelpers.h>
@@ -762,7 +761,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
             for (size_t i = 0; i != paths_size; ++i)
             {
                 String path;
-                readStringBinaryGrowing(path, *structure_stream);
+                readStringBinary(path, *structure_stream);
                 structure_state->flattened_paths.push_back(std::move(path));
             }
 
@@ -798,7 +797,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
             for (size_t i = 0; i != dynamic_paths_size; ++i)
             {
                 String path;
-                readStringBinaryGrowing(path, *structure_stream);
+                readStringBinary(path, *structure_stream);
                 structure_state->sorted_dynamic_paths->push_back(std::move(path));
             }
             structure_state->dynamic_paths.insert(structure_state->sorted_dynamic_paths->begin(), structure_state->sorted_dynamic_paths->end());
@@ -1102,7 +1101,7 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
         FormatSettings format_settings = settings.format_settings ? *settings.format_settings : FormatSettings{};
         for (size_t i = 0; i != limit; ++i)
         {
-            readStringBinaryGrowing(data, *data_stream);
+            readStringBinary(data, *data_stream);
             ReadBufferFromString buf(data);
             deserializeObject(column, data, format_settings);
         }
@@ -1282,22 +1281,6 @@ void SerializationObject::serializeBinary(const IColumn & col, size_t row_num, W
 
 void SerializationObject::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (settings.binary.read_json_as_string)
-    {
-        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_path_columns;
-        typed_path_columns.reserve(typed_paths_types.size());
-        for (const auto & [path, type] : typed_paths_types)
-            typed_path_columns[path] = type->createColumn();
-
-        auto column = ColumnObject::create(
-            std::move(typed_path_columns),
-            DataTypeObject::DEFAULT_MAX_DYNAMIC_PATHS,
-            assert_cast<const DataTypeDynamic &>(*dynamic_type).getMaxDynamicTypes());
-        deserializeBinary(*column, istr, settings);
-        field = (*column)[0];
-        return;
-    }
-
     Object object;
     size_t number_of_paths = 0;
     readVarUInt(number_of_paths, istr);
@@ -1313,7 +1296,7 @@ void SerializationObject::deserializeBinary(Field & field, ReadBuffer & istr, co
     for (size_t i = 0; i != number_of_paths; ++i)
     {
         String path;
-        readStringBinaryGrowing(path, istr);
+        readStringBinary(path, istr);
         if (!shouldSkipPath(path))
         {
             if (auto it = typed_paths_serializations.find(path); it != typed_paths_serializations.end())
@@ -1403,7 +1386,7 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
     if (settings.binary.read_json_as_string)
     {
         String data;
-        readStringBinaryGrowing(data, istr);
+        readStringBinary(data, istr);
         deserializeObject(col, data, settings);
         return;
     }
@@ -1424,7 +1407,7 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
         for (size_t i = 0; i != number_of_paths; ++i)
         {
             String path;
-            readStringBinaryGrowing(path, istr);
+            readStringBinary(path, istr);
             if (!shouldSkipPath(path))
             {
                 /// Check if we have this path in typed paths.
@@ -1494,24 +1477,24 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
             }
         }
         shared_data_offsets.push_back(shared_data_paths->size());
-
-        /// Insert default to all remaining typed and dynamic paths.
-        for (auto & [path, column] : typed_paths)
-        {
-            if (column->size() == prev_size)
-                typed_paths_types.at(path)->insertDefaultInto(*column);
-        }
-
-        for (auto & [_, column] : column_object.getDynamicPathsPtrs())
-        {
-            if (column->size() == prev_size)
-                column->insertDefault();
-        }
     }
     catch (...)
     {
         restoreColumnObject(column_object, prev_size);
         throw;
+    }
+
+    /// Insert default to all remaining typed and dynamic paths.
+    for (auto & [_, column] : typed_paths)
+    {
+        if (column->size() == prev_size)
+            column->insertDefault();
+    }
+
+    for (auto & [_, column] : column_object.getDynamicPathsPtrs())
+    {
+        if (column->size() == prev_size)
+            column->insertDefault();
     }
 }
 

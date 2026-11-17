@@ -1,8 +1,6 @@
 #pragma once
 
 #include <unordered_map>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/Profiling/Analysis/StepStatsModel.h>
 #include <Processors/QueryPlan/Profiling/Execution/WorkInterval.h>
 #include <Processors/QueryPlan/Profiling/Time/ConcurrencyProfile.h>
@@ -29,24 +27,24 @@ public:
     const StepTimeAndConcurrency * findTiming(const IQueryPlanStep * step) const;
 
     /// `execution_time_ns` is the wall-clock time of the whole pipeline execution, the denominator of every time share.
-    [[nodiscard]] ExecutionTimeBreakdown executionTimeBreakdown(UInt64 execution_time_ns) const;
+    ExecutionTimeBreakdown executionTimeBreakdown(UInt64 execution_time_ns) const;
 
 private:
 
-    using TimeIntervalsByStep = UnorderedMapWithMemoryTracking<const IQueryPlanStep *, TimeIntervals>;
+    using TimeIntervalsByStep = std::unordered_map<const IQueryPlanStep *, TimeIntervals>;
 
     /// Traverse the plan to get all the steps
     void collectPlanSteps(const QueryPlan &);
 
     /// One sorted, non-overlapping sequence per step, merged from the per-thread runs.
-    [[nodiscard]] TimeIntervalsByStep collectStepIntervals(const WorkIntervalsPerThread & intervals_per_thread) const;
+    TimeIntervalsByStep collectStepIntervals(const WorkIntervalsPerThread & intervals_per_thread) const;
 
     /// Post-order walk that records the metrics of every node from its own and its subtree's intervals.
     void computeBranchTime(const QueryPlan & plan, TimeIntervalsByStep time_intervals_by_step);
 
-    VectorWithMemoryTracking<TimeIntervals> collectLowerBranchIntervals(TimeIntervals && current_step_intervals, const VectorWithMemoryTracking<QueryPlan::Node *> & children, const VectorWithMemoryTracking<QueryPlan *> & child_plans, TimeIntervalsByStep & branch_intervals_by_step) const;
+    std::vector<TimeIntervals> collectLowerBranchIntervals(TimeIntervals && current_step_intervals, const std::vector<QueryPlan::Node *> & children, const std::vector<QueryPlan *> & child_plans, TimeIntervalsByStep & branch_intervals_by_step) const;
 
-    UnorderedMapWithMemoryTracking<const IQueryPlanStep *, StepTimeAndConcurrency> timing_by_step;
+    std::unordered_map<const IQueryPlanStep *, StepTimeAndConcurrency> timing_by_step;
     ConcurrencyProfile concurrency_profile;
 
     /// Length of the union of the intervals of every step of the plan: the branch time of the root step.

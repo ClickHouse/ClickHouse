@@ -1,20 +1,17 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <Core/SortDescription.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #include <type_traits>
 #include <unordered_map>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
 
 class ActionsDAG;
-class ReadFromMergeTree;
 
 struct IDescriptionHolder
 {
@@ -77,9 +74,6 @@ enum class FilterResult
 
 [[nodiscard]] FilterResult getFilterResult(const ColumnWithTypeAndName & column);
 
-/// True if the subtree can produce totals, also through a remote server, the query result cache or a nested plan.
-[[nodiscard]] bool canProduceTotals(QueryPlan::Node & root);
-
 [[nodiscard]] bool dagContainsNonReadySet(const ActionsDAG & dag);
 
 [[nodiscard]] bool dagContainsNonDeterministicFunction(const ActionsDAG & dag);
@@ -98,7 +92,7 @@ enum class FilterResult
 [[nodiscard]] bool canHoistGatherThroughStep(const IQueryPlanStep & step);
 
 /// Columns of each node's output that are a constant there, or below it where a filter pushed down from above can read them.
-using ConstantColumns = UnorderedMapWithMemoryTracking<const QueryPlan::Node *, NameSet>;
+using ConstantColumns = std::unordered_map<const QueryPlan::Node *, NameSet>;
 
 [[nodiscard]] ConstantColumns collectConstantColumns(const QueryPlan::Node & root);
 
@@ -114,13 +108,6 @@ using ConstantColumns = UnorderedMapWithMemoryTracking<const QueryPlan::Node *, 
     ActionsDAG pre_actions_dag,
     const ActionsDAG & filter_dag,
     const String & filter_column_name);
-
-/// move `node` below the `ExpressionStep`s that only pass the sort keys through and rename the keys to the inputs,
-/// false if a step computes a key, has `arrayJoin` or depends on the number of evaluated rows
-[[nodiscard]] bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & description, size_t max_peel = 4);
-
-/// the `ReadFromMergeTree` at the end of a chain of single-child steps, or nullptr
-const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node);
 
 struct NoOp
 {

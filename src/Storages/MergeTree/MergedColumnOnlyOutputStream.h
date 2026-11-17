@@ -39,8 +39,8 @@ public:
         writer->preloadPackedSkipIndicesArchive(source, files);
     }
 
-    [[nodiscard]] const Block & getColumnsSample() const { return writer->getColumnsSample(); }
-    [[nodiscard]] const ColumnsSubstreams & getColumnsSubstreams() const { return writer->getColumnsSubstreams(); }
+    const Block & getColumnsSample() const { return writer->getColumnsSample(); }
+    const ColumnsSubstreams & getColumnsSubstreams() const { return writer->getColumnsSubstreams(); }
     void finish(bool sync);
     void cancel() noexcept override;
 };
