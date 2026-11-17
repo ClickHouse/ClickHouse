@@ -783,12 +783,18 @@ JoinStepLogicalLookup::JoinStepLogicalLookup(QueryPlan child_plan_, PreparedJoin
 
 void JoinStepLogicalLookup::initializePipeline(QueryPipelineBuilder & pipeline_builder, const BuildQueryPipelineSettings & build_pipeline_settings)
 {
-    QueryPlanOptimizationSettings optimization_settings({}, {}, {}, {}, {}, false);
+    QueryPlanOptimizationSettings optimization_settings({}, {}, {}, {}, {});
     pipeline_builder = std::move(*child_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings, /* do_optimize */ false));
 }
 
 QueryPlanRawPtrs JoinStepLogicalLookup::getChildPlans(bool /*for_explain*/)
 {
+    return {&child_plan};
+}
+
+QueryPlanRawPtrs JoinStepLogicalLookup::getBuiltChildPlans()
+{
+    /// The plan is held, not built on demand, so observing it costs nothing.
     return {&child_plan};
 }
 
