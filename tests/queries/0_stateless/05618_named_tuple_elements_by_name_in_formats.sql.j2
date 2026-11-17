@@ -1,7 +1,8 @@
 -- Tags: no-fasttest, no-msan
 -- no-fasttest, no-msan: the Vortex format is not included in the fast test and MSan builds
 -- The input format readers convert a column to the requested type with one shared function: named tuple elements
--- are matched by name, a missing element or column gets the default of its type, and NULLs are paired by name.
+-- are matched by name, a missing element or column gets the default of its type, NULLs are paired by name, and the
+-- value of a NULL row is never converted: the row gets the default of the requested type.
 
 SET engine_file_truncate_on_insert = 1;
 
@@ -34,20 +35,36 @@ SELECT * FROM file(currentDatabase() || '_05618.{{ format }}', '{{ format }}', '
 {% endif -%}
 {% if format in ['ORC', 'Arrow'] -%}
 INSERT INTO FUNCTION file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}')
-SELECT id, c0, (toDate32('2000-01-01'), toDate32('2200-01-01'))::Tuple(A Date32, a Date32) AS c1, (toInt128(id), toInt256(id + 10))::Tuple(A Int128, a Int256) AS c2
+SELECT id, c0, (toDate32('2000-01-01'), toDate32('2200-01-01'))::Tuple(A Date32, a Date32) AS c1, (toInt128(id), toInt256(id + 10))::Tuple(A Int128, a Int256) AS c2,
+    (11, 22)::Tuple(AB Int32, ab Int32) AS c3, (11, 22)::Tuple(Ab Int32, AB Int32) AS c4
 FROM values('id UInt32, c0 Tuple(A Nullable(Tuple(b UInt32)), a Tuple(b UInt32))', (1, tuple(tuple(11), tuple(21))), (2, tuple(NULL, tuple(22))));
 SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, c0 Tuple(a Tuple(b UInt32))') ORDER BY id SETTINGS {{ ci }};
 SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, c0 Tuple(A Nullable(Tuple(b UInt32)), a Tuple(b UInt32))') ORDER BY id SETTINGS {{ ci }}, input_format_null_as_default = 1;
 SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, c1 Tuple(A DateTime(\'UTC\'), a Int32), c2 Tuple(A Int128, a Int256)') ORDER BY id SETTINGS {{ ci }};
+SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, c3 Tuple(Ab Int32, aB Int32), c4 Tuple(AB Int32, ab Int32)') ORDER BY id SETTINGS {{ ci }};
 {% endif -%}
 {% endfor -%}
 
-SELECT CAST(CAST(tuple(1), 'Tuple(a Int32)'), 'Tuple(a Int32, e Enum8(\'x\' = 5, \'y\' = 7))');
-SELECT CAST(CAST(tuple(1), 'Tuple(a Int32)'), 'Tuple(b Int32)');
+{% for format in ['Parquet', 'ORC', 'Arrow', 'Native', 'Vortex'] -%}
+SELECT '{{ format }} NULL rows';
+INSERT INTO FUNCTION file(currentDatabase() || '_05618_null.{{ format }}', '{{ format }}') SELECT
+    number AS id,
+    [CAST('7', 'Nullable(String)'), NULL][number + 1] AS e1,
+    [CAST(2, 'Nullable(Int8)'), NULL][number + 1] AS e2,
+    [CAST('b', 'Nullable(Enum8(\'a\' = 1, \'b\' = 2))'), NULL][number + 1] AS e3,
+    [CAST(tuple('9'), 'Nullable(Tuple(s String))'), NULL][number + 1] AS e4
+FROM numbers(2);
+SELECT * FROM file(currentDatabase() || '_05618_null.{{ format }}', '{{ format }}', 'id UInt64, e1 Int32, e2 Enum8(\'a\' = 1, \'b\' = 2), e3 Enum8(\'a\' = 1, \'b\' = 2), e4 Tuple(s Int32)') ORDER BY id;
+SELECT * FROM file(currentDatabase() || '_05618_null.{{ format }}', '{{ format }}', 'id UInt64, e1 Int32 DEFAULT 42, e4 Nullable(Tuple(s Int32))') ORDER BY id;
+SELECT * FROM file(currentDatabase() || '_05618_null.{{ format }}', '{{ format }}', 'id UInt64, e1 Nullable(Int32)') ORDER BY id;
+{% endfor -%}
 
-DROP TABLE IF EXISTS t_05618;
-CREATE TABLE t_05618 (id UInt64, t Tuple(a Int32)) ENGINE = MergeTree ORDER BY id;
-INSERT INTO t_05618 VALUES (1, (11));
-ALTER TABLE t_05618 MODIFY COLUMN t Tuple(a Int32, e Enum8('x' = 5, 'y' = 7)) SETTINGS mutations_sync = 2;
-SELECT * FROM t_05618;
-DROP TABLE t_05618;
+INSERT INTO FUNCTION file(currentDatabase() || '_05618_positional.Native', 'Native') SELECT CAST((1, NULL), 'Tuple(a Int32, b Nullable(Int32))') AS t;
+SELECT * FROM file(currentDatabase() || '_05618_positional.Native', 'Native', 't Tuple(x Int64, y Int64)');
+
+INSERT INTO FUNCTION file(currentDatabase() || '_05618_pruning.Parquet', 'Parquet') SELECT [NULL, '1950-01-01'][intDiv(number, 2) + 1]::Nullable(Date32) AS d
+FROM numbers(4) SETTINGS output_format_parquet_row_group_size = 2;
+SELECT count() FROM file(currentDatabase() || '_05618_pruning.Parquet', 'Parquet', 'd Date32') WHERE d > '1960-01-01' SETTINGS input_format_parquet_filter_push_down = 1;
+SELECT count() FROM file(currentDatabase() || '_05618_pruning.Parquet', 'Parquet', 'd Date32') WHERE d > '1960-01-01' SETTINGS input_format_parquet_filter_push_down = 0;
+
+SELECT CAST(CAST(tuple(1), 'Tuple(a Int32)'), 'Tuple(b Int32)');
