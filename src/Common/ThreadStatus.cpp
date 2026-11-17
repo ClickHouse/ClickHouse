@@ -196,7 +196,16 @@ ThreadStatus::ThreadStatus(UInt64 thread_id_)
     };
 #endif
 
+    ThreadStatus * const previous_thread = current_thread;
     current_thread = this;
+    /// A failed constructor runs no destructor, so `current_thread` would keep pointing at the destroyed members
+    /// (the alternative stack below can throw) and the code that handles the exception would use them.
+    /// The allocations made since then are deferred in `untracked_memory`, so they are flushed first, as the destructor does.
+    scope_guard restore_current_thread_on_failure = [this, previous_thread]
+    {
+        flushUntrackedMemory();
+        current_thread = previous_thread;
+    };
 
     /// NOTE: It is important not to do any non-trivial actions (like updating ProfileEvents or logging) before ThreadStatus is created
     /// Otherwise it could lead to SIGSEGV due to current_thread dereferencing
@@ -223,6 +232,7 @@ ThreadStatus::ThreadStatus(UInt64 thread_id_)
     }
 #endif
 
+    restore_current_thread_on_failure.release();
 #if defined(OS_DARWIN)
     unregister_on_failure.release();
 #endif
