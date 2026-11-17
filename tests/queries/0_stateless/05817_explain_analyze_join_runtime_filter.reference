@@ -1,0 +1,18 @@
+exact set
+Runtime filter: type exact set · unique keys 1.00 thousand
+bloom filter
+Runtime filter: type bloom filter
+disabled bloom filter
+1	1
+nullable key
+Runtime filter: type disabled · reason too many keys for exact set
+anti join
+Runtime filter: type exact set · unique keys 1.00 thousand
+Runtime filter: type partial exact set · unique keys 1.00 thousand
+fixed hash map
+Runtime filter: type fixed hash map · replaced exact set
+Runtime filter: type fixed hash map · replaced bloom filter
+probe
+1
+no runtime filter
+0

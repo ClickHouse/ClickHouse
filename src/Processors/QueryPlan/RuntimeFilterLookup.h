@@ -18,10 +18,12 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
+#include <base/defines.h>
 #include <base/types.h>
 #include <boost/noncopyable.hpp>
 
@@ -43,6 +45,55 @@ struct RuntimeFilterStats
     std::atomic<Int64> rows_skipped = 0;
     std::atomic<Int64> blocks_processed = 0;
     std::atomic<Int64> blocks_skipped = 0;
+    /// Looked up while the filter was registered but not built yet; such rows pass unfiltered.
+    std::atomic<Int64> rows_before_ready = 0;
+};
+
+/// See `RuntimeFilter::describe`.
+enum class RuntimeFilterKind : UInt8
+{
+    /// Not every build stream has published its keys, e.g. the query was cancelled.
+    Incomplete,
+    /// No build keys.
+    Empty,
+    /// One build key, compared with `equals`.
+    SingleValue,
+    ExactSet,
+    /// A `NOT IN` set that overflowed: it holds only a part of the build keys, so it filters out fewer rows.
+    PartialExactSet,
+    BloomFilter,
+    /// The join's `FixedHashMap`, published by `HashJoin` in place of the built filter.
+    FixedHashMap,
+    /// Passes every row.
+    Disabled,
+};
+
+enum class RuntimeFilterDisabledReason : UInt8
+{
+    None,
+    /// Too many keys for the exact set, and the key type has no approximate filter.
+    ExactSetOverflow,
+    /// The build side statistics predicted that the Bloom filter would have too many bits set, so it was not built.
+    BloomFilterPredictedTooFull,
+    /// The Bloom filter was built, but has too many bits set.
+    BloomFilterTooFull,
+};
+
+[[nodiscard]] std::string_view toString(RuntimeFilterKind kind);
+[[nodiscard]] std::string_view toString(RuntimeFilterDisabledReason reason);
+
+struct RuntimeFilterDescription
+{
+    RuntimeFilterKind kind = RuntimeFilterKind::Incomplete;
+    RuntimeFilterDisabledReason disabled_reason = RuntimeFilterDisabledReason::None;
+    /// Distinct keys, where the filter knows them.
+    std::optional<UInt64> keys;
+    /// Memory of the filter's own structure: the set's hash table or the Bloom filter bits.
+    std::optional<UInt64> bytes;
+    /// Bloom filters only.
+    std::optional<Float64> set_bits_ratio;
+    /// The filter that this one replaced in the lookup, see `IRuntimeFilterLookup::replace`.
+    std::optional<RuntimeFilterKind> replaced_kind;
 };
 
 struct RuntimeFilterConfig
@@ -124,9 +175,13 @@ public:
     explicit RuntimeFilterEvaluationState(RuntimeFilterConfig config_);
 
     void updateStats(UInt64 rows_checked, UInt64 rows_passed) const;
-    const RuntimeFilterStats & getStats() const { return stats; }
+    void recordLookupBeforeReady(UInt64 rows) const { stats->rows_before_ready += rows; }
+    const RuntimeFilterStats & getStats() const { return *stats; }
+    /// From now on, counts into the statistics of `other`.
+    void shareStatsWith(const RuntimeFilterEvaluationState & other) { stats = other.stats; }
     const RuntimeFilterConfig & getConfig() const { return config; }
     void markKeySetDropped() { key_set_dropped = true; }
+    bool isKeySetDropped() const { return key_set_dropped.load(); }
 
     /// Checks if a block should bypass the filter because its key set was dropped or evaluation is temporarily throttled.
     bool shouldSkip(size_t next_block_rows) const;
@@ -136,7 +191,7 @@ private:
 
     const RuntimeFilterConfig config;
 
-    mutable RuntimeFilterStats stats;
+    std::shared_ptr<RuntimeFilterStats> stats = std::make_shared<RuntimeFilterStats>();
 
     mutable detail::RuntimeFilterSkipBudget skip_budget;
     std::atomic<bool> key_set_dropped = false;
@@ -166,6 +221,7 @@ public:
     void releaseExactValues();
     [[nodiscard]] ColumnPtr getRecordedKeyValues() const;
     [[nodiscard]] DataTypePtr getTargetType() const { return filter_column_target_type; }
+    [[nodiscard]] RuntimeFilterDescription describe() const;
 
 private:
     struct Empty
@@ -222,6 +278,8 @@ public:
     ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
     void mergeFrom(const ApproximateSetRuntimeFilter & source);
     [[nodiscard]] bool isWorthUsing(Float64 max_ratio_of_set_bits_in_bloom_filter) const;
+    /// Counts the set bits, so it reads the whole filter.
+    [[nodiscard]] RuntimeFilterDescription describe() const;
 
     /// Writes the bloom filter parameters followed by its raw bits.
     void serialize(WriteBuffer & out) const;
@@ -257,6 +315,7 @@ public:
     void mergeFrom(const AdaptiveSetRuntimeFilter & source);
     [[nodiscard]] ColumnPtr getRecordedKeyValues() const;
     [[nodiscard]] DataTypePtr getTargetType() const { return filter_column_target_type; }
+    [[nodiscard]] RuntimeFilterDescription describe() const;
 
     /// Records the range of the inserted keys, so that it is serialized and merged with the state. A
     /// transported partial needs it: no `RuntimeFilter` is around it to record the range for index
@@ -284,11 +343,19 @@ private:
     using ExactFilter = ExactSetRuntimeFilter<false>;
     struct KeySetDropped
     {
+        /// No default: a dropped key set shows as `disabled` in `EXPLAIN ANALYZE`, which has to say why.
+        explicit KeySetDropped(RuntimeFilterDisabledReason reason_)
+            : reason(reason_)
+        {
+            chassert(reason != RuntimeFilterDisabledReason::None);
+        }
+
+        RuntimeFilterDisabledReason reason;
     };
     using Filter = std::variant<ExactFilter, ApproximateSetRuntimeFilter, KeySetDropped>;
 
     void insert(ColumnPtr values, Filter & filter);
-    void dropKeySet(Filter & filter);
+    void dropKeySet(Filter & filter, RuntimeFilterDisabledReason reason);
     ApproximateSetRuntimeFilter * switchToApproximateFilter(Filter & filter);
 
     /// Disables approximate filter if it is likely to have bad selectivity.
@@ -339,6 +406,7 @@ public:
     ColumnPtr getRecordedKeyValues() const { return recorded_key_values; }
     DataTypePtr getTargetType() const { return filter_column_target_type; }
     const std::optional<Range> & getInitialKeyRange() const { return key_range; }
+    [[nodiscard]] RuntimeFilterDescription describe() const;
 
 private:
     const DataTypePtr filter_column_target_type;
@@ -426,10 +494,21 @@ public:
     const RuntimeFilterStats & getStats() const { return evaluation_state.getStats(); }
     const RuntimeFilterConfig & getConfig() const { return evaluation_state.getConfig(); }
 
+    /// Counts the rows of a block that passed unfiltered because the filter was not ready.
+    void recordLookupBeforeReady(UInt64 rows) const { evaluation_state.recordLookupBeforeReady(rows); }
+
+    /// For `EXPLAIN ANALYZE`: what the filter was built as. A Bloom filter is read whole to count its set bits.
+    [[nodiscard]] RuntimeFilterDescription describe() const;
+
+    /// Makes this filter continue `replaced` under its key: it counts into the statistics of `replaced`, which may
+    /// have been probed already, and `describe` names it. Call before this filter is published.
+    void supersede(const RuntimeFilter & replaced);
+
 private:
     const DataTypePtr filter_column_target_type;
 
     RuntimeFilterEvaluationState evaluation_state;
+    std::optional<RuntimeFilterKind> replaced_kind;
     mutable SharedMutex mutex;
     Data data TSA_GUARDED_BY(mutex);
 };
@@ -447,7 +526,7 @@ struct IRuntimeFilterLookup : boost::noncopyable
     /// Replace the runtime filter with the specified name (if it exists, it is overwritten).
     /// Used by `HashJoin` to install a runtime filter backed by
     /// `SharedFixedHashTableRuntimeFilter` that supersedes the `Set`/`BloomFilter`
-    /// built by `BuildRuntimeFilterStep`.
+    /// built by `BuildRuntimeFilterStep`, see `RuntimeFilter::supersede`.
     virtual void replace(const String & name, UniqueRuntimeFilterPtr runtime_filter) = 0;
 
     /// Return a registered filter, which may still be building. Check `isReady` before probing.
