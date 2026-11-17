@@ -88,8 +88,11 @@ size_t countNotNull(const char * not_null, size_t num_values)
 /// The k-th value goes to a position i >= k, so moving from the back never overwrites a value before it is moved.
 void moveToNotNullPositions(char * data, size_t num_values, size_t num_present, const char * not_null)
 {
-    for (size_t i = num_values; i-- > 0;)
+    for (size_t i = num_values; i > 0;)
+    {
+        --i;
         data[i] = not_null[i] ? data[--num_present] : 0;
+    }
 }
 
 }
