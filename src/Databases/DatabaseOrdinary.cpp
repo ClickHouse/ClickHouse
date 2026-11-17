@@ -369,7 +369,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     /// makes the loaded `ReplicatedMergeTree` set `transactions_enabled`, and every replicated merge, which runs
     /// without a transaction, is then cancelled in `renameMergedTemporaryPart`. Nothing holds the table at this
     /// point -- it has not been loaded yet -- so the files can go away right here.
-    InterpreterCreateQuery::clearTransactionMetadata(getTableDataPath(create_query), getContext());
+    InterpreterCreateQuery::clearTransactionMetadata(getTableDataPath(create_query), policy, getContext());
 
     /// Write changes to metadata
     String table_metadata_path = full_path;

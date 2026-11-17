@@ -4601,7 +4601,8 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     if (to_replicated && !engine_name.starts_with("Replicated"))
     {
         String table_data_path = database->getTableDataPath(create);
-        clearTransactionMetadata(table_data_path, getContext());
+        auto storage_policy = dynamic_cast<const DatabaseOrdinary &>(*database).getStoragePolicyFromCreateQuery(create, /* create_custom_disk = */ true);
+        clearTransactionMetadata(table_data_path, storage_policy, getContext());
     }
 
     /// Set new engine
@@ -4625,7 +4626,7 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
 }
 
-void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_path, ContextPtr local_context)
+void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_path, const StoragePolicyPtr & storage_policy, ContextPtr local_context)
 {
     LOG_INFO(getLogger("InterpreterCreateQuery"), "Clearing transaction metadata for table, relative path: {} when ATTACH AS REPLICATED.", table_data_path);
 
@@ -4635,6 +4636,9 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
 
     for (const auto & [disk_name, disk] : disks)
     {
+        if (disk->isBroken() && !storage_policy->tryGetVolumeIndexByDiskName(disk_name).has_value())
+            continue;
+
         try
         {
             /// Skip if the table data path doesn't exist on this disk

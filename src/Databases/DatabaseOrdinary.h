@@ -123,6 +123,8 @@ public:
     /// table before their side effects.
     static bool isTableReadonlyAsReplicated(const ASTCreateQuery & create_query, ContextPtr local_context);
 
+    StoragePolicyPtr getStoragePolicyFromCreateQuery(const ASTCreateQuery & create_query, bool create_custom_disk) const;
+
 protected:
     /// Erase pending async load/startup task references for a table. Must hold `mutex`.
     /// Shared by detachTableUnlocked and the Atomic rename detach path (issue #91777).
@@ -180,7 +182,6 @@ private:
     /// resolves the path through the database's attached-table map.
     String getConvertToReplicatedFlagPath(const ASTCreateQuery & create_query);
     String getConvertToReplicatedFlagPath(const String & table_name);
-    StoragePolicyPtr getStoragePolicyFromCreateQuery(const ASTCreateQuery & create_query, bool create_custom_disk) const;
 };
 
 }
