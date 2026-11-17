@@ -1212,6 +1212,52 @@ static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argume
     }
 }
 
+/// Returns whether the `rewrite_in_to_join` rewrite of `x IN (subquery)` into
+/// `EXISTS (SELECT 1 FROM (subquery) WHERE x = <row> LIMIT 1)` keeps the semantics of regular `IN`: the
+/// same result or the same error. The left operand has the type `left_type`, and the subquery has the
+/// columns `subquery_columns`. The caller guarantees that `left_type` is not null and that
+/// `validateInColumnsCountMatch` accepted both sides.
+///
+/// Regular `IN` rejects a left operand with dynamic structure before it builds the set. With
+/// `transform_null_in = 0`, which the rewrite requires, it returns NULL for a NULL left operand, while
+/// `NOT EXISTS` returns 1.
+///
+/// For any other operand, the set has one key per subquery column. `FunctionIn` compares the whole left
+/// operand with the only column of a subquery, even when the operand is a tuple. Otherwise it compares
+/// each element of the left tuple with its own column. `Set::execute` converts each key to the type of
+/// its column, and a value that the column cannot hold is not a member. For example,
+/// `(t, 1) IN (SELECT toFloat64(1767225600), 1)` returns 0 for
+/// `t = fromUnixTimestamp64Nano(1767225600000000001, 'UTC')` because `Float64` cannot hold the nanosecond,
+/// while `equals` compares in a common supertype and matches. The conversion also parses text as a number,
+/// where `equals` finds no common type. A key of a `Bool` column is converted even when it has the column's
+/// type, which turns every byte other than 0 into `true`, while `equals` compares the bytes. The set holds
+/// NULL as a value of a `Variant` key and NULL fields as values of a tuple key, while `equals` returns NULL
+/// for them. And the set compares floating-point values by their bits, also inside `Array` and `Map`: a NaN
+/// is a member of a set that holds it, and `-0.0` is not a member of a set of `0.0`, while `equals` compares
+/// the numbers. So the rewrite keeps the semantics only when every key has the type of its column, is
+/// neither a tuple nor a `Variant`, holds no floating-point type, and its column is not `Bool`. A `Nullable`
+/// element of the left tuple is fine, unlike a `Nullable` left operand: the set never matches a NULL element,
+/// neither does `equals`, and `IN` of a plain tuple returns 0 rather than NULL.
+static bool existsRewriteKeepsInSemantics(const DataTypePtr & left_type, const NamesAndTypes & subquery_columns)
+{
+    if (left_type->hasDynamicStructure() || isNullableOrLowCardinalityNullable(left_type))
+        return false;
+
+    /// `validateInColumnsCountMatch` made a left operand without dynamic structure a tuple as wide as a
+    /// subquery with several columns.
+    const DataTypes key_types = subquery_columns.size() == 1 ? DataTypes{left_type} : getInKeyColumnTypes(left_type);
+    chassert(key_types.size() == subquery_columns.size());
+    for (size_t i = 0; i < key_types.size(); ++i)
+    {
+        const auto key_type_without_nullable = removeNullable(key_types[i]);
+        const DataTypePtr & column_type = subquery_columns[i].type;
+        if (isTuple(key_type_without_nullable) || isVariant(key_type_without_nullable) || !key_types[i]->equals(*column_type)
+            || hasTypeThatCanContainFloat(column_type) || isBool(removeNullable(removeLowCardinality(column_type))))
+            return false;
+    }
+    return true;
+}
+
 /// Builds and resolves `IF(isNull(element), NULL, has(array, element))`
 QueryTreeNodePtr QueryAnalyzer::makeNullSafeHas(
     QueryTreeNodePtr array_arg,    // [1,2,number]
@@ -1226,16 +1272,16 @@ QueryTreeNodePtr QueryAnalyzer::makeNullSafeHas(
     has_fn->getArguments().getNodes().push_back(element_arg);
 
     QueryTreeNodePtr in_result = has_fn;
-    /// `has` treats tuple values with equal `NULL` elements as a match, while `IN`
-    /// with `transform_null_in = 0` skips such tuple values. Guard tuple LHS
-    /// elements to preserve `IN` semantics in the row-wise rewrite.
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(element_arg->getResultType()).get());
-        tuple_type && !tuple_type->getElements().empty())
+    /// `IN` compares the columns of a multi-column key separately, and with `transform_null_in = 0` a NULL
+    /// element never matches, while `has` compares the tuples as values, where equal NULL elements match.
+    /// Guard the elements to preserve the `IN` semantics; a single key needs no guard, its NULL fields are
+    /// values.
+    if (const size_t key_column_count = getInKeyColumnTypes(element_arg->getResultType()).size(); key_column_count > 1)
     {
         auto and_fn = std::make_shared<FunctionNode>("and");
         and_fn->getArguments().getNodes() =
         {
-            makeTupleHasNoNullElementsPredicate(element_arg, tuple_type->getElements().size()),
+            makeTupleHasNoNullElementsPredicate(element_arg, key_column_count),
             std::move(in_result),
         };
         in_result = std::move(and_fn);
@@ -2043,41 +2089,21 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 validateInColumnsCountMatch(in_first_argument, in_second_argument);
             }
 
-            /// When the right side is a single column and the left side is kept as one key,
-            /// regular IN does not unpack the left value: the whole left value is one set key, and
-            /// `Set::execute` accurately casts it to the right column type before probing (so
-            /// e.g. `(toUInt16(256), x) IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)'))` throws
-            /// when `256` does not fit into `Int8`). The `equals` predicate built by this rewrite
-            /// compares element-wise over a common supertype instead and cannot reproduce those
-            /// semantics, so skip the rewrite for this shape and fall through to the regular IN
-            /// handling below - the observable behavior must not depend on `rewrite_in_to_join`.
-            /// The mutated clones are discarded; the regular path re-resolves the original
-            /// arguments and flattens/validates them again itself.
-            /// A wrapped tuple such as `Nullable(Tuple(...))` (or a `LowCardinality(...)` wrapper) is
-            /// kept as a single key by `FunctionIn` as well - it unpacks only a raw top-level
-            /// `ColumnTuple`/`DataTypeTuple`. The same is true for every type with dynamic
-            /// structure, which regular `IN` rejects before building the set, and for plain
-            /// `Variant`, which still needs the accurate set-key cast when it has no dynamic
-            /// member. Scalar values also need that cast when their type differs from the sole
-            /// subquery column type. Unwrap the wrappers before identifying the structural types.
-            bool left_value_compared_as_single_key = false;
-            if (const auto * rhs_query_node = in_second_argument->as<QueryNode>())
-            {
-                const auto & left_result_type = in_first_argument->getResultType();
-                const auto left_key_type = left_result_type ? removeNullable(removeLowCardinality(left_result_type)) : nullptr;
-                left_value_compared_as_single_key = rhs_query_node->getProjectionColumns().size() == 1
-                    && left_key_type
-                    && (typeid_cast<const DataTypeTuple *>(left_key_type.get()) || left_key_type->hasDynamicStructure() || isVariant(left_key_type)
-                        || isNullableOrLowCardinalityNullable(left_result_type)
-                        || !left_result_type->equals(*rhs_query_node->getProjectionColumns().front().type));
-            }
-
-            if (in_second_argument->as<QueryNode>() && !left_value_compared_as_single_key)
+            /// The rewrite applies only where it keeps the semantics of regular `IN`, see
+            /// `existsRewriteKeepsInSemantics`. The other shapes fall through to the regular `IN` handling
+            /// below, so the observable behavior does not depend on `rewrite_in_to_join`. The mutated
+            /// clones are discarded: the regular path re-resolves the original arguments and flattens and
+            /// validates them again itself. A lambda on the left has no result type, and the rewrite
+            /// rejects it like regular `IN`.
+            const auto * rhs_query_node = in_second_argument->as<QueryNode>();
+            const auto left_type = in_first_argument->getResultType();
+            if (rhs_query_node
+                && (!left_type || existsRewriteKeepsInSemantics(left_type, rhs_query_node->getProjectionColumns())))
             {
                 /// The rewrite below produces a correlated subquery, so it requires the setting.
                 /// Checked here rather than at the gate above, so that the shapes which are not
                 /// rewritten at all are never rejected because of it: a constant or tuple `IN`, and
-                /// the single-key shape just identified, which stays on the regular `IN` path.
+                /// the shapes whose semantics the rewrite would change, which stay on the regular path.
                 /// Otherwise enabling `rewrite_in_to_join` alone would change query acceptance even
                 /// though no correlated rewrite happens.
                 if (!scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
@@ -2880,15 +2906,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         if (tuple_function_is_set)
                         {
                             tuple_args = candidate_arguments;
-                            /// For a `Nullable(Tuple(...))` LHS, the constant `Set` path interprets an
-                            /// explicit all-`NULL` RHS tuple as both top-level `NULL` set elements and,
-                            /// when its elements are nullable, the tuple value itself. Preserve both
-                            /// interpretations in the row-wise rewrite.
-                            if (rhs_tuple_all_null
-                                && compare_nulls
-                                && candidate_arguments.size() == nullable_left_tuple_type->getElements().size()
-                                && std::all_of(nullable_left_tuple_type->getElements().begin(), nullable_left_tuple_type->getElements().end(),
-                                    [](const auto & type) { return type->isNullable(); }))
+                            /// An explicit all-`NULL` RHS tuple, such as `(NULL, NULL)`, is read as in the
+                            /// constant `Set` path: as top-level `NULL` set elements and, when the key can
+                            /// hold it, as the tuple value too (see `nullableTupleKeyCanHoldAllNullTuple`).
+                            if (rhs_tuple_all_null && nullableTupleKeyCanHoldAllNullTuple(
+                                    *nullable_left_tuple_type, candidate_arguments.size()))
                                 tuple_args.push_back(fn_args[1]);
                         }
                         else
