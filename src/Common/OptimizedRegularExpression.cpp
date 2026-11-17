@@ -63,7 +63,10 @@ const char * skipNameCapturingGroup(const char * pos, size_t offset, const char 
         {
             return pos + offset;
         }
-        if (('0' <= cur && cur <= '9') || ('a' <= cur && cur <= 'z') || ('A' <= cur && cur <= 'Z'))
+        /// re2 accepts Unicode letters, digits, marks and connector punctuation in a group name (`IsValidCaptureName`),
+        /// that is `[0-9A-Za-z_]` in ASCII. Take every byte of a multi-byte UTF-8 character as well: re2 validates the name.
+        if (('0' <= cur && cur <= '9') || ('a' <= cur && cur <= 'z') || ('A' <= cur && cur <= 'Z') || cur == '_'
+            || static_cast<unsigned char>(cur) >= 0x80)
             offset ++;
         else
             return pos;

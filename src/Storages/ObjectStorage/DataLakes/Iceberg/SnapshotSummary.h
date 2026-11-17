@@ -121,17 +121,17 @@ public:
     }
 
     template <typename UpdateType>
-    const UpdateType & getUpdate() const
+    [[nodiscard]] const UpdateType & getUpdate() const
     {
         return std::get<UpdateType>(update);
     }
 
-    Iceberg::SnapshotSummaryOperation getOperation() const;
-    SnapshotSummaryTotals getTotals() const;
-    const SnapshotSummaryExtraFields & getExtraFields() const;
+    [[nodiscard]] Iceberg::SnapshotSummaryOperation getOperation() const;
+    [[nodiscard]] SnapshotSummaryTotals getTotals() const;
+    [[nodiscard]] const SnapshotSummaryExtraFields & getExtraFields() const;
 
-    Poco::JSON::Object::Ptr toJSON() const;
-    Map toMap() const;
+    [[nodiscard]] Poco::JSON::Object::Ptr toJSON() const;
+    [[nodiscard]] Map toMap() const;
 
     using Expected = std::expected<SnapshotSummary, std::string>;
     static Expected fromJSON(

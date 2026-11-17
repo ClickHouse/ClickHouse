@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/Logger.h>
-#include <Core/Field.h>
+#include <Core/ConstantValue.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
@@ -55,10 +55,8 @@ public:
         StorageID time_series_storage_id = StorageID::createEmpty();
         String selector;
 
-        Field min_time;
-        DataTypePtr min_time_type;
-        Field max_time;
-        DataTypePtr max_time_type;
+        std::optional<ConstantValue> min_time;
+        std::optional<ConstantValue> max_time;
 
         Configuration::ReturnColumns return_columns = Configuration::ReturnColumns::Samples;
     };

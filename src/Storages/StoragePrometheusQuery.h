@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Field.h>
+#include <Core/ConstantValue.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/TimeSeries/PrometheusQueryEvaluationSettings.h>
@@ -26,13 +26,10 @@ public:
         StorageID time_series_storage_id = StorageID::createEmpty();
         String promql_query;
         PrometheusQueryEvaluationMode mode = {};
-        Field start_time;
-        DataTypePtr start_time_type;
-        Field end_time;
-        DataTypePtr end_time_type;
-        /// Only prometheusQueryRange() has a step; prometheusQuery() evaluates at a single instant.
-        Field step;
-        DataTypePtr step_type;
+        std::optional<ConstantValue> start_time;
+        /// Only prometheusQueryRange() has an end time and a step; prometheusQuery() evaluates at a single instant.
+        std::optional<ConstantValue> end_time;
+        std::optional<ConstantValue> step;
     };
 
     /// `parseArgumentsOnly()` must not read the catalog: a stored `AS prometheusQuery(...)` definition is replayed
@@ -45,6 +42,9 @@ public:
     std::string getName() const override { return "PrometheusQuery"; }
 
     static VirtualColumnsDescription createVirtuals();
+
+    /// Sets the settings the SQL generated from a PromQL query relies on in the context the query is executed with.
+    static void applySettingsForPrometheusQuery(Context & context);
 
     void readImpl(
         QueryPlan & query_plan,

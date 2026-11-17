@@ -11,6 +11,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Core/ConstantValue.h>
+#include <Interpreters/convertColumnToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -144,16 +145,14 @@ StoragePrometheusQuery::Arguments StoragePrometheusQuery::parseArgumentsOnly(AST
     if (over_range)
     {
         parsed_args.mode = PrometheusQueryEvaluationMode::QUERY_RANGE;
-        std::tie(parsed_args.start_time, parsed_args.start_time_type) = evaluateConstantExpression(args[argument_index++], context);
-        std::tie(parsed_args.end_time, parsed_args.end_time_type) = evaluateConstantExpression(args[argument_index++], context);
-        std::tie(parsed_args.step, parsed_args.step_type) = evaluateConstantExpression(args[argument_index++], context);
+        parsed_args.start_time = evaluateConstantExpressionAsColumn(args[argument_index++], context);
+        parsed_args.end_time = evaluateConstantExpressionAsColumn(args[argument_index++], context);
+        parsed_args.step = evaluateConstantExpressionAsColumn(args[argument_index++], context);
     }
     else
     {
         parsed_args.mode = PrometheusQueryEvaluationMode::QUERY;
-        std::tie(parsed_args.start_time, parsed_args.start_time_type) = evaluateConstantExpression(args[argument_index++], context);
-        parsed_args.end_time = parsed_args.start_time;
-        parsed_args.end_time_type = parsed_args.start_time_type;
+        parsed_args.start_time = evaluateConstantExpressionAsColumn(args[argument_index++], context);
     }
 
     chassert(argument_index == args.size());
@@ -173,11 +172,21 @@ StoragePrometheusQuery::resolveConfiguration(const Arguments & parsed_args, cons
 
     UInt32 time_scale = getPromQLResultTimestampScale(table_timestamp_type);
 
-    /// The types of the timestamp parameters: they can specify the time zone of the results.
-    DataTypes time_parameter_types{parsed_args.start_time_type, parsed_args.end_time_type};
-
     Configuration config;
     config.promql_query = std::make_shared<PrometheusQueryTree>(parsed_args.promql_query, time_scale);
+
+    DateTime64 start_time = parseTimeSeriesTimestamp(resolveActiveAlternative(*parsed_args.start_time), time_scale);
+    DateTime64 end_time = start_time;
+    Decimal64 step = 0;
+    DataTypes time_parameter_types{parsed_args.start_time->getType()};  /// The types of the timestamp parameters: they can specify the time zone of the results.
+
+    if (parsed_args.mode == PrometheusQueryEvaluationMode::QUERY_RANGE)
+    {
+        end_time = parseTimeSeriesTimestamp(resolveActiveAlternative(*parsed_args.end_time), time_scale);
+        step = parseTimeSeriesDuration(resolveActiveAlternative(*parsed_args.step), time_scale);
+        time_parameter_types.push_back(parsed_args.end_time->getType());
+    }
+
     auto & evaluation_settings = config.evaluation_settings;
     evaluation_settings.time_series_storage_id = std::move(time_series_storage_id);
     evaluation_settings.time_series_version = time_series_version;
@@ -185,11 +194,9 @@ StoragePrometheusQuery::resolveConfiguration(const Arguments & parsed_args, cons
     evaluation_settings.table_timestamp_type = std::move(table_timestamp_type);
     evaluation_settings.time_scale = time_scale;
     evaluation_settings.mode = parsed_args.mode;
-    evaluation_settings.start_time = parseTimeSeriesTimestamp(parsed_args.start_time, parsed_args.start_time_type, time_scale);
-    evaluation_settings.end_time = parseTimeSeriesTimestamp(parsed_args.end_time, parsed_args.end_time_type, time_scale);
-    evaluation_settings.step = parsed_args.step_type
-        ? parseTimeSeriesDuration(parsed_args.step, parsed_args.step_type, time_scale)
-        : Decimal64{0};
+    evaluation_settings.start_time = start_time;
+    evaluation_settings.end_time = end_time;
+    evaluation_settings.step = step;
     return config;
 }
 
@@ -215,6 +222,15 @@ VirtualColumnsDescription StoragePrometheusQuery::createVirtuals()
     return desc;
 }
 
+void StoragePrometheusQuery::applySettingsForPrometheusQuery(Context & context)
+{
+    if (!context.getSettingsRef()[Setting::enable_materialized_cte].changed)
+        context.setSetting("enable_materialized_cte", true);
+
+    context.setSetting("empty_result_for_aggregation_by_empty_set", false);
+}
+
+
 void StoragePrometheusQuery::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -228,20 +244,18 @@ void StoragePrometheusQuery::readImpl(
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.evaluation_settings.time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
 
-    LOG_INFO(log, "Building SQL to evaluate promql: {}", *config.promql_query);
+    LOG_DEBUG(log, "Building SQL to evaluate promql: {}", *config.promql_query);
     auto evaluation_settings = config.evaluation_settings;
     evaluation_settings.push_down_label_matchers = context->getSettingsRef()[Setting::promql_push_down_label_matchers];
     PrometheusQueryToSQL::Converter converter{config.promql_query, evaluation_settings};
     ASTPtr select_query = converter.getSQL();
 
-    LOG_INFO(log, "Will execute query:\n{}", select_query->formatForLogging());
+    LOG_DEBUG(log, "Will execute query:\n{}", select_query->formatForLogging());
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
     /// Isolate the settings required by generated PromQL from the outer query.
     auto query_context = Context::createCopy(context);
-    if (!context->getSettingsRef()[Setting::enable_materialized_cte].changed)
-        query_context->setSetting("enable_materialized_cte", true);
-    query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
+    applySettingsForPrometheusQuery(*query_context);
 
     InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);

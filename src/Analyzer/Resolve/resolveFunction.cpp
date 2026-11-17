@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Analyzer/Resolve/FunctionCompositionRewrite.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
+#include <Analyzer/Resolve/QueryExpressionsAliasVisitor.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -26,6 +27,7 @@
 #include <Common/StringUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/HiddenSecret.h>
+#include <AggregateFunctions/AggregateFunctionGroupConcat.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
 #include <Core/Settings.h>
@@ -46,6 +48,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/misc.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
@@ -113,6 +116,56 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
             backQuote(node.getFunctionName()),
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
 }
+
+/** The number of arguments of `function_name` when it is a `groupConcat` alias, possibly with combinators,
+  * called with the separator as its second argument. Nothing for any other name.
+  * `STRING_AGG(DISTINCT x, sep) FILTER (WHERE cond)` is parsed as `STRING_AGGDistinctIf(x, sep, cond)`.
+  * Only combinators that keep the separator as the second argument are matched, `-If` appends the condition and `-ArgMin`/`-ArgMax` the key.
+  */
+std::optional<size_t> getGroupConcatArgumentsCountWithSeparator(const String & function_name)
+{
+    const auto & aliases = GroupConcatImpl<false>::getNameAndAliases();
+    if (std::none_of(aliases.begin(), aliases.end(), [&](const auto & alias) { return equalsCaseInsensitive(alias, std::string_view(function_name).substr(0, alias.size())); }))
+        return {};
+
+    String nested_name = function_name;
+    size_t arguments_count = 2;
+    while (true)
+    {
+        if (std::any_of(aliases.begin(), aliases.end(), [&](const auto & alias) { return equalsCaseInsensitive(alias, nested_name); }))
+            return arguments_count;
+
+        auto combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(nested_name);
+        if (!combinator)
+            return {};
+
+        const auto suffix = combinator->getName();
+        if (suffix == "If" || suffix == "ArgMin" || suffix == "ArgMax")
+            ++arguments_count;
+        else if (suffix != "Distinct" && suffix != "OrNull" && suffix != "OrDefault" && suffix != "State" && suffix != "Array")
+            return {};
+
+        nested_name.resize(nested_name.size() - suffix.size());
+    }
+}
+
+}
+
+bool isGroupConcatWithSeparatorArgument(const FunctionNode & function_node, const ContextPtr & context)
+{
+    if (function_node.getArguments().getNodes().size() < 2)
+        return false;
+
+    const auto & function_name = function_node.getFunctionName();
+    auto arguments_count = getGroupConcatArgumentsCountWithSeparator(function_name);
+    return arguments_count && function_node.getArguments().getNodes().size() == *arguments_count
+        && (function_node.isWindowFunction()
+            || (!UserDefinedSQLFunctionFactory::instance().tryGet(function_name)
+                && !UserDefinedExecutableFunctionFactory::has(function_name, context))); /// NOLINT(readability-static-accessed-through-instance)
+}
+
+namespace
+{
 
 /// The arity of a registered function name, or nothing when no function with this name is
 /// registered. Used by the rewrites that turn a function name into a lambda (the bare function
@@ -1371,15 +1424,15 @@ QueryTreeNodePtr QueryAnalyzer::castNodeToType(
   * with constant (if it allow constant folding), or with expression list. It is caller responsibility to handle such cases appropriately.
   *
   * Steps:
-  * 1. Resolve function parameters. Validate that each function parameter must be constant node.
-  * 2. Try to lookup function as lambda in current scope. If it is lambda we can skip `in` and `count` special handling.
+  * 1. Try to lookup function as lambda in current scope. If it is lambda we can skip `in` and `count` special handling.
+  * 2. Resolve function parameters. Validate that each function parameter must be constant node.
   * 3. If function is count function, that take unqualified ASTERISK matcher, remove it from its arguments. Example: SELECT count(*) FROM test_table;
   * 4. If function is `IN` function, then right part of `IN` function is replaced as subquery.
   * 5. Resolve function arguments list, lambda expressions are allowed as function arguments.
   * For `IN` function table expressions are allowed as function arguments.
   * 6. Initialize argument_columns, argument_types, function_lambda_arguments_indexes arrays from function arguments.
   * 7. If function name identifier was not resolved as function in current scope, try to lookup lambda from sql user defined functions factory.
-  * 8. If function was resolve as lambda from step 2 or 7, then resolve lambda using function arguments and replace function node with lambda result.
+  * 8. If function was resolve as lambda from step 1 or 7, then resolve lambda using function arguments and replace function node with lambda result.
   * After than function node is resolved.
   * 9. If function was not resolved during step 6 as lambda, then try to resolve function as window function or executable user defined function
   * or ordinary function or aggregate function.
@@ -1421,6 +1474,52 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
+    /** The `f | g` operator parses into `__compose(f, g)`, which is not a function but a rewrite
+      * to a lambda (see FunctionCompositionRewrite.h), applied by the parent function when its
+      * argument is a composition. A composition being resolved by itself denotes a function,
+      * not a value, so explain the operator instead of resolving further. Only a node the parser
+      * marked as operator syntax is a composition, so no name is reserved: an ordinary call to a
+      * function named `__compose` (or `compose`) resolves as usual. The check runs before the
+      * function name is looked up in the scope, so that a lambda bound in the query under the
+      * name `__compose` (`WITH (x, y) -> x + y AS __compose`) applies to an ordinary call only
+      * and cannot change the meaning of the operator syntax.
+      */
+    if (isFunctionComposition(*function_node_ptr))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The function composition `f | g` can be used only where a function is expected: "
+            "as an argument of a higher-order function such as arrayMap. "
+            "For bitwise OR, use the function bitOr. In scope {}",
+            scope.scope_node->formatASTForErrorMessage());
+
+    //// If function node is not window function try to lookup function node name as lambda identifier.
+    QueryTreeNodePtr lambda_expression_untyped;
+    if (!function_node_ptr->isWindowFunction())
+    {
+        auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
+        lambda_expression_untyped = function_lookup_result.resolved_identifier;
+    }
+
+    /// `groupConcat(x, sep)` is `groupConcat(sep)(x)`. A scoped lambda, a SQL UDF or an executable UDF
+    /// with this name keeps its arguments.
+    if (isGroupConcatWithSeparatorArgument(*function_node_ptr, scope.context)
+        && (function_node_ptr->isWindowFunction() || !lambda_expression_untyped))
+    {
+        auto & arguments_nodes = function_node_ptr->getArguments().getNodes();
+        const auto * separator_node = arguments_nodes[1]->as<ConstantNode>();
+        if (!separator_node || separator_node->getValue().getType() != Field::Types::String)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "If groupConcat is used with a separator argument, the separator must be a constant String");
+
+        /// The separator replaces the raw delimiter parameter and keeps the optional limit. This happens
+        /// before the parameters are resolved, so an overridden delimiter expression is never evaluated.
+        auto & raw_parameters_nodes = function_node_ptr->getParameters().getNodes();
+        if (raw_parameters_nodes.empty())
+            raw_parameters_nodes.push_back(arguments_nodes[1]);
+        else
+            raw_parameters_nodes[0] = arguments_nodes[1];
+        arguments_nodes.erase(arguments_nodes.begin() + 1);
+    }
+
     /// Resolve function parameters
 
     auto parameters_projection_names = resolveExpressionNodeList(
@@ -1448,31 +1547,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             scope.scope_node->formatASTForErrorMessage());
 
         parameters.push_back(constant_node->getValue());
-    }
-
-    /** The `f | g` operator parses into `__compose(f, g)`, which is not a function but a rewrite
-      * to a lambda (see FunctionCompositionRewrite.h), applied by the parent function when its
-      * argument is a composition. A composition being resolved by itself denotes a function,
-      * not a value, so explain the operator instead of resolving further. Only a node the parser
-      * marked as operator syntax is a composition, so no name is reserved: an ordinary call to a
-      * function named `__compose` (or `compose`) resolves as usual. The check runs before the
-      * function name is looked up in the scope, so that a lambda bound in the query under the
-      * name `__compose` (`WITH (x, y) -> x + y AS __compose`) applies to an ordinary call only
-      * and cannot change the meaning of the operator syntax.
-      */
-    if (isFunctionComposition(*function_node_ptr))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The function composition `f | g` can be used only where a function is expected: "
-            "as an argument of a higher-order function such as arrayMap. "
-            "For bitwise OR, use the function bitOr. In scope {}",
-            scope.scope_node->formatASTForErrorMessage());
-
-    //// If function node is not window function try to lookup function node name as lambda identifier.
-    QueryTreeNodePtr lambda_expression_untyped;
-    if (!function_node_ptr->isWindowFunction())
-    {
-        auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
-        lambda_expression_untyped = function_lookup_result.resolved_identifier;
     }
 
     /** Early short-circuit optimization for ordinary builtin AND/OR functions. Perform this
@@ -1525,7 +1599,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             type_inference_scope.projection_mask_map
                 = std::make_shared<std::map<IQueryTreeNode::Hash, size_t>>(*scope.projection_mask_map);
 
-            QueryAnalyzer type_inference_analyzer(/*only_analyze_=*/ false);
+            QueryAnalyzer type_inference_analyzer(
+                /*only_analyze_=*/ false,
+                /*positional_arguments_already_resolved_=*/ false,
+                replaced_storage,
+                view_source_in_subqueries);
             type_inference_analyzer.early_short_circuit_type_inference_in_process = true;
             type_inference_analyzer.subquery_counter = subquery_counter;
 
@@ -1674,7 +1752,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
             else
             {
-                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, scope.context).resolved_identifier;
+                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, scope.context, replaced_storage).resolved_identifier;
                 if (!table_node)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function {} first argument expected table identifier '{}'. In scope {}",
@@ -2193,7 +2271,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
             else
             {
-                evaluateScalarSubqueryIfNeeded(new_exists_argument, scope, true);
+                IdentifierResolveScope & exists_subquery_scope = createIdentifierResolveScope(new_exists_argument, &scope /*parent_scope*/);
+                exists_subquery_scope.subquery_depth = scope.subquery_depth + 1;
+
+                evaluateScalarSubqueryIfNeeded(new_exists_argument, exists_subquery_scope, true);
                 auto res_col = ColumnUInt8::create();
                 const auto * const_node = new_exists_argument->as<ConstantNode>();
                 res_col->getData().push_back(static_cast<UInt8>(const_node->getColumn()->isNullAt(0) ? 0 : 1));
@@ -2578,6 +2659,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             evaluateScalarSubqueryIfNeeded(in_first_argument, subquery_scope);
         }
 
+        /// Replace storage with values storage of insertion block.
+        /// The inner query of an ordinary view referenced by the view query reads the table itself.
+        if (StoragePtr storage = getViewSourceIfRead(scope.context, view_source_in_subqueries);
+            storage && !in_second_argument->as<TableFunctionNode>())
+            replaceStorageInQueryTree(in_second_argument, scope.context, storage);
+
         auto * table_node = in_second_argument->as<TableNode>();
         auto * table_function_node = in_second_argument->as<TableFunctionNode>();
 
@@ -2641,36 +2728,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
         else
         {
-            /// Replace storage with values storage of insertion block.
-            /// The inner query of an ordinary view referenced by the view query reads the table itself.
-            if (StoragePtr storage = scope.context->getViewSource(); storage && !scope.context->isViewInnerQuery())
-            {
-                QueryTreeNodePtr table_expression = in_second_argument;
-
-                /// Process possibly nested sub-selects
-                while (table_expression)
-                {
-                    if (auto * query_node = table_expression->as<QueryNode>())
-                        table_expression = extractLeftTableExpression(query_node->getJoinTreeNodeTyped());
-                    else if (auto * union_node = table_expression->as<UnionNode>())
-                        table_expression = union_node->getQueries().getNodes().at(0);
-                    else
-                        break;
-                }
-
-                TableNode * table_expression_table_node = table_expression ? table_expression->as<TableNode>() : nullptr;
-
-                if (table_expression_table_node &&
-                    table_expression_table_node->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
-                {
-                    auto replacement_table_expression_table_node = table_expression_table_node->clone();
-                    replacement_table_expression_table_node->as<TableNode &>().updateStorage(storage, scope.context);
-                    in_second_argument = in_second_argument->cloneAndReplace(
-                        static_pointer_cast<ITableExpressionNode>(table_expression),
-                        static_pointer_cast<ITableExpressionNode>(std::move(replacement_table_expression_table_node)));
-                }
-            }
-
             /// If the subquery's single column is an Array one dimension deeper than the left
             /// argument, flatten it with arrayJoin so its elements become the set elements.
             flattenArraySubqueryOnRightOfIn(in_second_argument, in_first_argument, scope.context);
@@ -3141,10 +3198,37 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             const auto & untuple_argument_projection_name = arguments_projection_names.at(0);
             result_projection_names.clear();
 
+            /// When `untuple` is the body of an inlined lambda (SQL UDF), the alias of the call it replaces applies to it
+            /// and takes priority over an alias inside the body, as in the old analyzer. The call is the top of the parent
+            /// scope's expression stack; nested calls are walked the same way, so the outermost alias wins.
+            String untuple_alias = node->getAlias();
+            const auto * current_scope = &scope;
+            const auto * current_node = node.get();
+            while (current_scope->parent_scope)
+            {
+                const auto * lambda_scope_node = current_scope->scope_node->as<LambdaNode>();
+                if (!lambda_scope_node || lambda_scope_node->getExpression().get() != current_node)
+                    break;
+
+                const auto & parent_expressions_stack = current_scope->parent_scope->expressions_in_resolve_process_stack;
+                if (parent_expressions_stack.empty())
+                    break;
+
+                /// Only a call is inlined; the lambda of an `APPLY` transformer sits under the matcher it expands.
+                const auto & call_node = parent_expressions_stack.getTop();
+                if (call_node->getNodeType() != QueryTreeNodeType::FUNCTION)
+                    break;
+
+                if (call_node->hasAlias())
+                    untuple_alias = call_node->getAlias();
+                current_node = call_node.get();
+                current_scope = current_scope->parent_scope;
+            }
+
             for (const auto & element_name : element_names)
             {
-                if (node->hasAlias())
-                    result_projection_names.push_back(node->getAlias() + '.' + element_name);
+                if (!untuple_alias.empty())
+                    result_projection_names.push_back(untuple_alias + '.' + element_name);
                 else
                     result_projection_names.push_back(fmt::format("tupleElement({}, '{}')", untuple_argument_projection_name, element_name));
             }
@@ -3209,18 +3293,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         bool window_node_is_identifier = function_node.getWindowNode()->getNodeType() == QueryTreeNodeType::IDENTIFIER;
         ProjectionName window_projection_name = resolveWindow(function_node.getWindowNode(), scope);
-
-        if (function_name == "lag" || function_name == "lead")
-        {
-            auto & frame = function_node.getWindowNode()->as<WindowNode>()->getWindowFrame();
-            if (!frame.is_default)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Window function '{}' does not expect window frame to be explicitly specified. In expression {}",
-                    function_name,
-                    function_node.formatASTForErrorMessage());
-            }
-        }
 
         if (window_node_is_identifier)
             result_projection_names[0] += " OVER " + window_projection_name;

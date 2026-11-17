@@ -301,7 +301,7 @@ REGISTER_FUNCTION(PredictXGBoost)
 {
     factory.registerFunction<FunctionPredictXGBoost>(FunctionDocumentation{
         .description = "Predicts a numeric target for a feature vector using an "
-                       "[`XGBOOST`](/sql-reference/statements/create/dictionary/layouts/xgboost) dictionary. Features are "
+                       "[`XGBOOST`](/reference/statements/create/dictionary/layouts/xgboost) dictionary. Features are "
                        "passed positionally, in the order the dictionary's key columns were declared. This is the only way to "
                        "query an `XGBOOST` dictionary: it holds a trained model rather than rows, so the generic dictionary "
                        "interface (`dictGet`, `dictHas`, `SELECT * FROM dict`) is not supported. The XGBoost integration is "
@@ -310,7 +310,7 @@ REGISTER_FUNCTION(PredictXGBoost)
         .arguments
         = {{"dictionary_name",
             "Name of a dictionary with the XGBOOST layout. See the "
-            "[XGBOOST dictionary layout](/sql-reference/statements/create/dictionary/layouts/xgboost) for how to create it "
+            "[XGBOOST dictionary layout](/reference/statements/create/dictionary/layouts/xgboost) for how to create it "
             "and the training parameters it accepts.",
             {"String"}},
            {"featureN",
@@ -321,7 +321,7 @@ REGISTER_FUNCTION(PredictXGBoost)
             "Optional constant Map of XGBoost prediction parameters, from parameter name to an integer value, e.g. "
             "`map('type', 0, 'iteration_end', 0)`. Every accepted parameter is an integer or a boolean, so fractional "
             "values are rejected. See "
-            "[prediction parameters](/sql-reference/statements/create/dictionary/layouts/xgboost#prediction-parameters) for "
+            "[prediction parameters](/reference/statements/create/dictionary/layouts/xgboost#prediction-parameters) for "
             "the accepted keys.",
             {"Map(String, (U)Int8/16/32/64)"}}},
         .returned_value = {"The model prediction as Float64, one per row.", {"Float64"}},

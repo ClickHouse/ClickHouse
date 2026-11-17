@@ -87,6 +87,9 @@ public:
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
     ~ThreadGroup();
 
+    /// The group this one is nested in, if any (see `parent`).
+    ThreadGroupPtr getParent() const { return parent; }
+
     /// The first thread created this thread group
     const UInt64 master_thread_id;
 
@@ -258,12 +261,12 @@ protected:
     struct TimePoint
     {
         void setUp();
-        UInt64 nanoseconds() const;
-        UInt64 microseconds() const;
-        UInt64 seconds() const;
+        [[nodiscard]] UInt64 nanoseconds() const;
+        [[nodiscard]] UInt64 microseconds() const;
+        [[nodiscard]] UInt64 seconds() const;
 
-        UInt64 elapsedMilliseconds() const;
-        UInt64 elapsedMilliseconds(const TimePoint & current) const;
+        [[nodiscard]] UInt64 elapsedMilliseconds() const;
+        [[nodiscard]] UInt64 elapsedMilliseconds(const TimePoint & current) const;
 
         std::chrono::time_point<std::chrono::system_clock> point;
     };
@@ -299,7 +302,15 @@ public:
     explicit ThreadStatus(NoOSThreadTag);
     ~ThreadStatus();
 
+#if defined(OS_DARWIN)
+    /// The ThreadStatus of another OS thread, or nullptr. The lock keeps it alive; its fields are
+    /// only safe to read while that thread is stopped (StackTrace::SuspendedThread), since this is
+    /// how `system.stack_trace` reads them without signalling the thread.
+    static std::pair<std::unique_lock<std::mutex>, ThreadStatus *> findByThreadId(UInt64 thread_id);
+#endif
+
     ThreadGroupPtr getThreadGroup() const;
+    bool hasThreadGroup() const;
 
     void setQueryId(std::string && new_query_id) noexcept;
     void clearQueryId() noexcept;
