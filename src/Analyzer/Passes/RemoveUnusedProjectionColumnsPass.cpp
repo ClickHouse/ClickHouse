@@ -7,6 +7,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -15,11 +16,18 @@
 #include <Analyzer/Utils.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageMerge.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 #include <Analyzer/traverseQueryTree.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
+}
 
 namespace
 {
@@ -45,8 +53,7 @@ std::unordered_set<size_t> convertUsedColumnNamesToUsedProjectionIndexes(const Q
 }
 
 /// Whether the rows of a query over this join tree do not depend on which columns it reads.
-/// `ARRAY JOIN` of a `Nested` column joins only the subcolumns that are read, which may have different sizes,
-/// and a view is read like an `ARRAY JOIN` subquery would be, so the projection must name the columns to read.
+/// `ARRAY JOIN` of a `Nested` column joins only the subcolumns that are read, which may have different sizes.
 bool rowsDoNotDependOnReadColumns(const TableExpressionNodePtr & join_tree_node)
 {
     for (const auto & table_expression : extractTableExpressions(join_tree_node, /*add_array_join=*/ true))
@@ -77,6 +84,18 @@ bool rowsDoNotDependOnReadColumns(const TableExpressionNodePtr & join_tree_node)
         }
     }
     return true;
+}
+
+/// With `analyzer_compatibility_join_using_top_level_identifier` a `USING` key may name a projection alias,
+/// which a remote server resolves again from the query text.
+bool hasJoinUsing(const QueryTreeNodePtr & join_tree_node)
+{
+    if (const auto * join_node = join_tree_node->as<JoinNode>())
+        return join_node->isUsingJoinExpression() || hasJoinUsing(join_node->getLeftTableExpressionNode())
+            || hasJoinUsing(join_node->getRightTableExpressionNode());
+    if (const auto * cross_join_node = join_tree_node->as<CrossJoinNode>())
+        return std::ranges::any_of(cross_join_node->getTableExpressions(), [](const auto & table) { return hasJoinUsing(table); });
+    return false;
 }
 
 /// We cannot remove aggregate functions, if query does not contain GROUP BY or arrayJoin from subquery projection
@@ -226,7 +245,9 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
             {
                 auto * query_node = query_or_union_node->as<QueryNode>();
                 if (query_node && !query_node->hasInterpolate() && query_node->getProjectionAliasesToOverride().empty()
-                    && rowsDoNotDependOnReadColumns(query_node->getJoinTreeNodeTyped()))
+                    && rowsDoNotDependOnReadColumns(query_node->getJoinTreeNodeTyped())
+                    && !(query_node->getContext()->getSettingsRef()[Setting::analyzer_compatibility_join_using_top_level_identifier]
+                         && hasJoinUsing(query_node->getJoinTreeNode())))
                 {
                     NameAndTypePair projection_column{query_node->getProjectionColumns().front().name, std::make_shared<DataTypeUInt8>()};
                     query_node->removeUnusedProjectionColumns({0});

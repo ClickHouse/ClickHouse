@@ -19,6 +19,8 @@ DROP TABLE IF EXISTS u_old;
 DROP TABLE IF EXISTS u_new;
 DROP TABLE IF EXISTS mk;
 DROP TABLE IF EXISTS t_dep;
+DROP TABLE IF EXISTS t_ua;
+DROP TABLE IF EXISTS t_ub;
 
 CREATE TABLE t_old (k UInt64, s String, f UInt16, kk UInt64 ALIAS k + 1) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_old SELECT number, if(number = 500, 'n/a', toString(number)), 0 FROM numbers(1000);
@@ -94,6 +96,19 @@ SELECT count() FROM (SELECT c FROM al) SETTINGS optimize_trivial_count_query = 0
 SELECT count() FROM (SELECT c FROM merge(currentDatabase(), '^vj$')) SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 CREATE TABLE mj (c UInt8) ENGINE = Merge(currentDatabase(), '^(vj|al)$');
 SELECT count() FROM mj SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+-- `system.parts` returns more part states when `_state` is read, so the subquery keeps it.
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT _state FROM system.parts WHERE database = currentDatabase())) WHERE explain ILIKE '%column_name: _state%';
+-- The `USING` key is the projection alias `k`, which a replica resolves again from the query text.
+CREATE TABLE t_ua (k UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE t_ub (k UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_ua VALUES (1), (2);
+INSERT INTO t_ub VALUES (2), (3);
+SELECT count() FROM (SELECT a.k + 1 AS k FROM t_ua AS a JOIN t_ub USING (k))
+SETTINGS analyzer_compatibility_join_using_top_level_identifier = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3,
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1,
+    parallel_replicas_local_plan = 0, automatic_parallel_replicas_mode = 0;
+DROP TABLE t_ua;
+DROP TABLE t_ub;
 DROP TABLE mj;
 DROP TABLE al;
 DROP TABLE vj;

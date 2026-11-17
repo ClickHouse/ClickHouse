@@ -75,7 +75,7 @@ QUERY id: 0
                   1 UInt8
                 PROJECTION
                   LIST id: 15, nodes: 1
-                    CONSTANT id: 16, constant_value: UInt64_0, constant_value_type: UInt8
+                    CONSTANT id: 16, constant_value: UInt64_1, constant_value_type: UInt8
                 JOIN TREE
                   TABLE id: 17, alias: __table4, table_name: system.one
                 WHERE

@@ -409,9 +409,9 @@ private:
     StorageMetadataPtr getChildMetadataSnapshot(const StoragePtr & storage, const ContextPtr & query_context) const;
 };
 
-/// Whether the number of rows read from `storage` may depend on which of its columns are read: a view,
-/// `MaterializedPostgreSQL` (it returns the deleted rows when `_sign` is read), or a storage that reads
-/// other tables, which may be such a storage. A `Merge` table is looked through one level down.
+/// Whether the number of rows read from `storage` may depend on which of its columns are read. False only for
+/// a `MergeTree` table and a `Merge` table over such tables: e.g. a view with `ARRAY JOIN`, `MaterializedPostgreSQL`
+/// (`_sign`) and `system.parts` (`_state`) return other rows.
 bool rowsMayDependOnReadColumns(const StoragePtr & storage);
 
 }

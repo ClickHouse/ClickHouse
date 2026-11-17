@@ -455,19 +455,17 @@ bool StorageMerge::hasChildTable(std::function<bool(const StoragePtr &)> predica
 
 bool rowsMayDependOnReadColumns(const StoragePtr & storage)
 {
-    auto rows_depend_on_read_columns = [](const IStorage & table) { return table.isView() || table.needRewriteQueryWithFinal({}); };
-
-    const auto nested_storage = unwrapStorageProxy(storage);
-    if (!nested_storage || rows_depend_on_read_columns(*nested_storage))
-        return true;
-    if (!nested_storage->readsFromOtherTables())
-        return false;
-    const auto * storage_merge = nested_storage->as<StorageMerge>();
-    return !storage_merge || storage_merge->hasChildTable([&](const StoragePtr & table)
+    auto is_merge_tree = [](const StoragePtr & table)
     {
         const auto nested_table = unwrapStorageProxy(table);
-        return !nested_table || rows_depend_on_read_columns(*nested_table) || nested_table->readsFromOtherTables();
-    });
+        return nested_table && nested_table->isMergeTree() && !nested_table->readsFromOtherTables();
+    };
+
+    if (is_merge_tree(storage))
+        return false;
+    const auto nested_storage = unwrapStorageProxy(storage);
+    const auto * storage_merge = nested_storage ? nested_storage->as<StorageMerge>() : nullptr;
+    return !storage_merge || storage_merge->hasChildTable([&](const StoragePtr & table) { return !is_merge_tree(table); });
 }
 
 bool StorageMerge::supportsPrewhere() const
