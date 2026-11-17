@@ -2924,8 +2924,10 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper() const
 {
     using FieldType = EnumType::FieldType;
 
-    return [function_name = cast_name] (
-        ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/)
+    const bool accurate_or_null = cast_type == CastType::accurateOrNull;
+
+    return [function_name = cast_name, accurate_or_null] (
+        ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/) -> ColumnPtr
     {
         const auto & first_col = arguments.front().column.get();
         const auto & result_type = typeid_cast<const EnumType &>(*res_type);
@@ -2952,11 +2954,29 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper() const
         if (nullable_col)
             null_map = &nullable_col->getNullMapData();
 
+        ColumnUInt8::MutablePtr col_null_map_to;
+        if (accurate_or_null)
+            col_null_map_to = ColumnUInt8::create(size, false);
+
         for (size_t i = 0; i < size; ++i)
         {
             if (null_map && (*null_map)[i])
             {
                 out_data[i] = default_enum_value;
+            }
+            else if (accurate_or_null)
+            {
+                FieldType converted_value;
+                if (accurate::convertNumeric<typename ColumnNumberType::ValueType, FieldType, false>(in_data[i], converted_value)
+                    && result_type.hasValue(converted_value))
+                {
+                    out_data[i] = converted_value;
+                }
+                else
+                {
+                    out_data[i] = default_enum_value;
+                    col_null_map_to->getData()[i] = true;
+                }
             }
             else
             {
@@ -2969,6 +2989,9 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper() const
                 out_data[i] = converted_value;
             }
         }
+
+        if (accurate_or_null)
+            return ColumnNullable::create(std::move(res), std::move(col_null_map_to));
 
         return res;
     };
