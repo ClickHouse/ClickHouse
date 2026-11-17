@@ -349,12 +349,15 @@ void writeMessageToFile(
     ContextPtr context,
     const std::string & write_if_none_match,
     const std::string & write_if_match,
-    CompressionMethod compression_method)
+    CompressionMethod compression_method,
+    std::shared_ptr<WriteOutcomeTracker> outcome_tracker)
 {
     auto write_settings = context->getWriteSettings();
     write_settings.object_storage_write_if_none_match = write_if_none_match;
     write_settings.object_storage_write_if_match = write_if_match;
-    if (!write_if_none_match.empty() || !write_if_match.empty())
+    if (outcome_tracker)
+        write_settings.write_outcome_tracker = std::move(outcome_tracker);
+    else if (!write_if_none_match.empty() || !write_if_match.empty())
         write_settings.write_outcome_tracker = std::make_shared<WriteOutcomeTracker>();
     auto buffer_metadata = object_storage->writeObject(
         StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
@@ -424,35 +427,6 @@ static bool isKnownAbsent(const DB::ObjectStoragePtr & object_storage, const std
     }
 }
 
-/// The S3 client decides a failed conditional upload from the answers to all its attempts and from its idempotency id,
-/// and puts its verdict on the error. An error without a verdict proves nothing: it can come from another request,
-/// e.g. from the check after the upload.
-enum class UploadVerdict : uint8_t
-{
-    NotProven,
-    NotApplied,
-    Unknown,
-};
-
-static UploadVerdict getUploadVerdict(const Exception & e)
-{
-#if USE_AWS_S3
-    if (const auto * s3_exception = dynamic_cast<const S3Exception *>(&e))
-    {
-        switch (s3_exception->getConditionalWriteVerdict())
-        {
-            case S3::ConditionalWriteVerdict::NotApplied:
-                return UploadVerdict::NotApplied;
-            case S3::ConditionalWriteVerdict::Unknown:
-                return UploadVerdict::Unknown;
-            case S3::ConditionalWriteVerdict::None:
-                break;
-        }
-    }
-#endif
-    return UploadVerdict::NotProven;
-}
-
 /// The upload was sent and failed without proof either way, so it may have published the new version.
 [[noreturn]] static void throwCommitOutcomeUnknown(const String & storage_metadata_path)
 {
@@ -473,6 +447,34 @@ bool isCommitOutcomeUnknown()
     return getCurrentExceptionCode() == ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
+/// Decides a failed write of the metadata file by the outcome that the storage tracked. Returns true when the file is
+/// published, false after a lost race, and rethrows the exception being handled when nothing was published.
+static bool decideByTrackedOutcome(const WriteOutcomeTracker & tracker, const Exception * e, const String & storage_metadata_path)
+{
+    /// Not set: the request that publishes the file never started, e.g. after a failed upload of a part.
+    switch (tracker.getOutcome().value_or(WriteOutcome::NotApplied))
+    {
+        case WriteOutcome::Applied:
+            tryLogCurrentException(
+                getLogger("IcebergWrites"),
+                fmt::format("Metadata file {} is published, but its write reported an error", storage_metadata_path),
+                LogsLevel::warning);
+            return true;
+        case WriteOutcome::NotApplied:
+            if (e && isConditionalWriteConflict(*e))
+            {
+                LOG_DEBUG(
+                    getLogger("IcebergWrites"), "Metadata file {} was written by a concurrent commit: {}", storage_metadata_path, e->message());
+                return false;
+            }
+            /// The commit fails, and the caller rolls it back.
+            throw;
+        case WriteOutcome::Unknown:
+            throwCommitOutcomeUnknown(storage_metadata_path);
+    }
+    UNREACHABLE();
+}
+
 bool writeMetadataFile(
     const IcebergPathResolver & resolver,
     const GeneratedMetadataFileWithInfo & metadata_file_info,
@@ -481,6 +483,9 @@ bool writeMetadataFile(
     DB::ContextPtr context)
 {
     auto storage_metadata_path = resolver.resolve(metadata_file_info.path);
+    /// A storage that tracks the outcome of the upload, e.g. S3, attaches to it, so a failure tells whether the new
+    /// version is published. For any other storage the outcome follows from the error.
+    auto outcome_tracker = std::make_shared<WriteOutcomeTracker>();
     bool write_attempted = false;
     try
     {
@@ -495,22 +500,19 @@ bool writeMetadataFile(
             context,
             /* write-if-none-match */ "*",
             "",
-            metadata_file_info.compression_method);
+            metadata_file_info.compression_method,
+            outcome_tracker);
     }
     catch (const Exception & e)
     {
-        const auto upload_verdict = write_attempted ? getUploadVerdict(e) : UploadVerdict::NotProven;
-        if (upload_verdict == UploadVerdict::Unknown)
-            throwCommitOutcomeUnknown(storage_metadata_path);
+        if (write_attempted && outcome_tracker->isAttached())
+            return decideByTrackedOutcome(*outcome_tracker, &e, storage_metadata_path);
         if (isConditionalWriteConflict(e))
         {
             LOG_DEBUG(
                 getLogger("IcebergWrites"), "Metadata file {} was written by a concurrent commit: {}", storage_metadata_path, e.message());
             return false;
         }
-        /// Nothing of the upload was applied, so the commit fails, and the caller rolls it back.
-        if (upload_verdict == UploadVerdict::NotApplied)
-            throw;
         /// A refused write is not a lost race, and retrying the commit cannot get past it. Once the write was sent,
         /// a refusal (e.g. of the check after an upload) proves nothing was written only while the file is absent.
         if (isRefusedWrite(e) && (!write_attempted || isKnownAbsent(object_storage, storage_metadata_path)))
@@ -540,6 +542,8 @@ bool writeMetadataFile(
 #endif
     catch (...)
     {
+        if (write_attempted && outcome_tracker->isAttached())
+            return decideByTrackedOutcome(*outcome_tracker, nullptr, storage_metadata_path);
         if (write_attempted)
             throwCommitOutcomeUnknown(storage_metadata_path);
         tryLogCurrentException(__PRETTY_FUNCTION__);

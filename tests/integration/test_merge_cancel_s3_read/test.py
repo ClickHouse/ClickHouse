@@ -1294,6 +1294,119 @@ def test_iceberg_commit_rolls_back_when_no_upload_was_applied(cluster, broken_s3
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
 
+def test_killed_iceberg_commit_rolls_back_when_no_upload_was_applied(cluster, broken_s3):
+    """A commit killed after only refusals of its metadata upload must roll back.
+
+    Every attempt of the upload gets `SlowDown`, an answer that refuses the request, and the query is
+    killed while the client waits before the next attempt. Nothing was published, so the commit must
+    remove its data files instead of keeping them for an unknown outcome. The client gets the
+    cancellation in both cases, so only the files tell the decision.
+    """
+    node = cluster.instances["node"]
+    table = "t_killed_iceberg_refused_upload"
+    # The prefix gets the backoff step of 10 s from `configs/storage_conf.xml`.
+    prefix = f"iceberg_backoff_refused_{uuid.uuid4().hex}/"
+    url = f"http://resolver:8087/root/{prefix}"
+    insert_query_id = f"killed_iceberg_refused_{uuid.uuid4().hex}"
+    throttled_writes_query = (
+        "SELECT sumIf(value, event = 'S3WriteRequestsThrottling') FROM system.events"
+    )
+    insert_running = (
+        f"SELECT count() FROM system.processes WHERE query_id = '{insert_query_id}'"
+    )
+    insert = None
+
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"CREATE TABLE {table} (id Int64, s String) ENGINE = IcebergS3("
+        f"'{url}', 'minio', '{minio_secret_key}')",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    try:
+        broken_s3.setup_at_object_upload(
+            key="metadata/v2.metadata.json", count=1000000, action="slow_down"
+        )
+        throttled_writes = int(node.query(throttled_writes_query))
+        insert = node.get_query_request(
+            f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(20) "
+            f"SETTINGS allow_insert_into_iceberg = 1, async_insert = 0",
+            query_id=insert_query_id,
+        )
+        assert wait_for(
+            node, throttled_writes_query, lambda v: int(v) > throttled_writes
+        ), "the upload of the metadata file did not get `SlowDown`"
+        node.query(f"KILL QUERY WHERE query_id = '{insert_query_id}' ASYNC")
+        assert wait_for(
+            node, insert_running, lambda v: int(v) == 0
+        ), "the killed INSERT did not end"
+        broken_s3.reset()
+
+        answer, select_error = node.query_and_get_answer_with_error(
+            f"SELECT count() FROM {table}"
+        )
+        assert not select_error, f"the table is not readable: {select_error[:2000]}"
+        assert int(answer) == 0, f"the table holds {answer.strip()} rows instead of 0"
+        data_files = list(
+            cluster.minio_client.list_objects(
+                cluster.minio_bucket, prefix=f"{prefix}data/", recursive=True
+            )
+        )
+        assert not data_files, [obj.object_name for obj in data_files]
+    finally:
+        broken_s3.reset()
+        if insert is not None:
+            insert.get_answer_and_error()
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def test_iceberg_commit_is_published_when_the_check_after_the_upload_fails(
+    cluster, broken_s3
+):
+    """A commit whose metadata upload succeeded is published, even if a later step of the write fails.
+
+    With `s3_check_objects_after_upload` the write checks the uploaded file with a `HEAD`, which fails
+    here after the upload succeeded.
+    """
+    node = cluster.instances["node"]
+    table = "t_iceberg_failed_check_after_upload"
+    # The prefix gets two attempts per request from `configs/storage_conf.xml`.
+    prefix = f"iceberg_unknown_{uuid.uuid4().hex}/"
+    url = f"http://resolver:8087/root/{prefix}"
+
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"CREATE TABLE {table} (id Int64, s String) ENGINE = IcebergS3("
+        f"'{url}', 'minio', '{minio_secret_key}')",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    try:
+        # The commit checks that `v2` is absent before the upload, so the first `HEAD` passes.
+        broken_s3.setup_at_object_head(
+            key="metadata/v2.metadata.json",
+            after=1,
+            count=1000000,
+            action="connection_reset_by_peer",
+        )
+        _, insert_error = node.query_and_get_answer_with_error(
+            f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(20) "
+            f"SETTINGS allow_insert_into_iceberg = 1, async_insert = 0, "
+            f"s3_check_objects_after_upload = 1"
+        )
+        broken_s3.reset()
+
+        assert not insert_error, insert_error[:2000]
+        answer, select_error = node.query_and_get_answer_with_error(
+            f"SELECT count() FROM {table}"
+        )
+        assert not select_error, f"the table is not readable: {select_error[:2000]}"
+        assert int(answer) == 20, f"the table holds {answer.strip()} rows instead of 20"
+    finally:
+        broken_s3.reset()
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
 def test_iceberg_commit_keeps_its_files_when_the_hint_fails(cluster, broken_s3):
     """A commit that is published must not roll back when the update of `version-hint.text` fails after it.
 

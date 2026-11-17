@@ -9,6 +9,7 @@
 
 #include <Common/ErrnoException.h>
 #include <Common/Exception.h>
+#include <Common/WriteOutcomeTracker.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/CompressionMethod.h>
@@ -30,6 +31,7 @@ namespace DB::ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int READONLY;
     extern const int UNKNOWN_STATUS_OF_TRANSACTION;
+    extern const int S3_ERROR;
 }
 
 namespace
@@ -37,6 +39,8 @@ namespace
 
 using WriteErrorThrower = std::function<void(const std::string & path)>;
 using ExistsAnswer = std::function<bool(size_t call)>;
+/// What a storage that tracks the outcome of the write, as S3 does, puts into the tracker before the error.
+using TrackerAction = std::function<void(WriteOutcomeTracker & tracker)>;
 
 /// `writeMetadataFileAndVersionHint` reports a commit that published nothing as `false`, which every caller reads as
 /// a lost compare-and-swap and retries after removing the files of the attempt. A write the storage refused (it cannot
@@ -49,8 +53,10 @@ using ExistsAnswer = std::function<bool(size_t call)>;
 class ThrowingObjectStorage : public IObjectStorage
 {
 public:
-    ThrowingObjectStorage(WriteErrorThrower throw_write_error_, ExistsAnswer exists_answer_)
-        : throw_write_error(std::move(throw_write_error_)), exists_answer(std::move(exists_answer_))
+    ThrowingObjectStorage(WriteErrorThrower throw_write_error_, ExistsAnswer exists_answer_, TrackerAction tracker_action_)
+        : throw_write_error(std::move(throw_write_error_))
+        , exists_answer(std::move(exists_answer_))
+        , tracker_action(std::move(tracker_action_))
     {
     }
 
@@ -67,6 +73,11 @@ public:
         /// version-hint write. `EXPECT_*` keeps the throw below reachable.
         EXPECT_EQ(write_settings.object_storage_write_if_none_match, "*");
         EXPECT_TRUE(write_settings.object_storage_write_if_match.empty());
+
+        /// The commit passes a tracker, so that a storage that tracks the outcome can tell it.
+        EXPECT_TRUE(write_settings.write_outcome_tracker);
+        if (tracker_action && write_settings.write_outcome_tracker)
+            tracker_action(*write_settings.write_outcome_tracker);
 
         throw_write_error(object.remote_path);
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The stub must throw");
@@ -121,11 +132,13 @@ private:
 
     WriteErrorThrower throw_write_error;
     ExistsAnswer exists_answer;
+    TrackerAction tracker_action;
     mutable size_t exists_calls = 0;
 };
 
 /// Drives the real commit against a stub whose write fails with whatever `throw_write_error` throws.
-bool commitWithFailingWrite(WriteErrorThrower throw_write_error, ExistsAnswer exists_answer = [](size_t) { return false; })
+bool commitWithFailingWrite(
+    WriteErrorThrower throw_write_error, ExistsAnswer exists_answer = [](size_t) { return false; }, TrackerAction tracker_action = {})
 {
     Iceberg::IcebergPathResolver resolver(
         "/table",
@@ -142,7 +155,7 @@ bool commitWithFailingWrite(WriteErrorThrower throw_write_error, ExistsAnswer ex
         metadata_file_info,
         "{}",
         Iceberg::IcebergPathFromMetadata::deserialize("/table/metadata/version-hint.text"),
-        std::make_shared<ThrowingObjectStorage>(std::move(throw_write_error), std::move(exists_answer)),
+        std::make_shared<ThrowingObjectStorage>(std::move(throw_write_error), std::move(exists_answer), std::move(tracker_action)),
         getContext().context,
         /*try_write_version_hint=*/ false);
 }
@@ -157,11 +170,12 @@ bool commitWithFailingWrite(int write_error_code)
 }
 
 /// Expects the commit to report that its outcome is unknown.
-void expectUnknownOutcome(WriteErrorThrower throw_write_error, ExistsAnswer exists_answer = [](size_t) { return false; })
+void expectUnknownOutcome(
+    WriteErrorThrower throw_write_error, ExistsAnswer exists_answer = [](size_t) { return false; }, TrackerAction tracker_action = {})
 {
     try
     {
-        bool committed = commitWithFailingWrite(std::move(throw_write_error), std::move(exists_answer));
+        bool committed = commitWithFailingWrite(std::move(throw_write_error), std::move(exists_answer), std::move(tracker_action));
         FAIL() << "Expected an unknown outcome, got " << committed;
     }
     catch (const Exception & e)
@@ -170,6 +184,76 @@ void expectUnknownOutcome(WriteErrorThrower throw_write_error, ExistsAnswer exis
     }
 }
 
+/// The storage attaches to the tracker and decides the outcome, or leaves it not set when the request that publishes
+/// the file never ran.
+TrackerAction trackedAs(std::optional<WriteOutcome> outcome)
+{
+    return [outcome](WriteOutcomeTracker & tracker)
+    {
+        tracker.attach();
+        if (outcome)
+            tracker.setOutcome(*outcome);
+    };
+}
+
+void throwStorageError(const std::string & path)
+{
+    throw Exception(ErrorCodes::S3_ERROR, "Write of {} failed in the test stub", path);
+}
+
+/// Expects the error of the storage to propagate, so that the commit rolls back.
+void expectStorageErrorToPropagate(TrackerAction tracker_action)
+{
+    try
+    {
+        bool committed = commitWithFailingWrite(throwStorageError, [](size_t) { return false; }, std::move(tracker_action));
+        FAIL() << "Expected the error of the storage to propagate, got " << committed;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::S3_ERROR) << e.message();
+    }
+}
+
+}
+
+TEST(IcebergCommitPropagation, TrackedWriteThatMayHaveBeenAppliedIsNotRetried)
+{
+    /// The storage could not prove whether an attempt of the upload was applied.
+    expectUnknownOutcome(throwStorageError, [](size_t) { return false; }, trackedAs(WriteOutcome::Unknown));
+
+    /// The tracked outcome wins over the error: the conflict may be the answer to a replay of this write.
+    expectUnknownOutcome(
+        [](const std::string & path) { throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "{} exists in the test stub", path); },
+        [](size_t) { return false; },
+        trackedAs(WriteOutcome::Unknown));
+}
+
+TEST(IcebergCommitPropagation, TrackedWriteThatWasNotAppliedPropagates)
+{
+    /// Every attempt of the upload got an answer that refuses it, so nothing was published.
+    expectStorageErrorToPropagate(trackedAs(WriteOutcome::NotApplied));
+}
+
+TEST(IcebergCommitPropagation, TrackedWriteWhoseUploadNeverStartedPropagates)
+{
+    /// The request that publishes the file never ran, e.g. after a failed upload of a part.
+    expectStorageErrorToPropagate(trackedAs(std::nullopt));
+}
+
+TEST(IcebergCommitPropagation, TrackedLostRaceStaysRetryable)
+{
+    /// The storage proved that another writer created the file.
+    EXPECT_FALSE(commitWithFailingWrite(
+        [](const std::string & path) { throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "{} exists in the test stub", path); },
+        [](size_t) { return false; },
+        trackedAs(WriteOutcome::NotApplied)));
+}
+
+TEST(IcebergCommitPropagation, TrackedWriteThatWasAppliedIsPublished)
+{
+    /// The upload succeeded, and a later step of the write failed, e.g. the check after the upload.
+    EXPECT_TRUE(commitWithFailingWrite(throwStorageError, [](size_t) { return false; }, trackedAs(WriteOutcome::Applied)));
 }
 
 TEST(IcebergCommitPropagation, RefusedConditionalWriteIsNotReportedAsALostRace)
@@ -297,56 +381,6 @@ TEST(IcebergCommitPropagation, S3AccessDeniedIsNotReportedAsALostRace)
             EXPECT_EQ(e.getS3ErrorCode(), error) << e.message();
         }
     }
-}
-
-TEST(IcebergCommitPropagation, S3WriteWithUnknownOutcomeIsNotRetried)
-{
-    /// The S3 client could not prove whether an attempt of the upload was applied, and it marked the error.
-    expectUnknownOutcome([](const std::string &)
-    {
-        S3Exception exception("Connection reset by peer", Aws::S3::S3Errors::NETWORK_CONNECTION);
-        exception.setConditionalWriteVerdict(S3::ConditionalWriteVerdict::Unknown);
-        throw exception; /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
-    });
-
-    /// The mark wins over a lost race: the 412 may be the answer to a replay of this write.
-    expectUnknownOutcome([](const std::string &)
-    {
-        S3Exception exception(
-            "Unable to parse ExceptionName: PreconditionFailed Message: At least one of the pre-conditions you specified did not hold",
-            Aws::S3::S3Errors::UNKNOWN);
-        exception.setConditionalWriteVerdict(S3::ConditionalWriteVerdict::Unknown);
-        throw exception; /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
-    });
-}
-
-TEST(IcebergCommitPropagation, S3WriteThatWasNotAppliedPropagates)
-{
-    /// Every attempt of the upload got an answer that refuses it, so nothing was published: the commit fails with the
-    /// error of S3, and its caller rolls back.
-    try
-    {
-        bool committed = commitWithFailingWrite([](const std::string &)
-        {
-            S3Exception exception("Slow Down.", Aws::S3::S3Errors::SLOW_DOWN);
-            exception.setConditionalWriteVerdict(S3::ConditionalWriteVerdict::NotApplied);
-            throw exception; /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
-        });
-        FAIL() << "Expected the S3 error to propagate, got " << committed;
-    }
-    catch (const S3Exception & e)
-    {
-        EXPECT_EQ(e.getS3ErrorCode(), Aws::S3::S3Errors::SLOW_DOWN) << e.message();
-    }
-}
-
-TEST(IcebergCommitPropagation, S3ErrorWithoutVerdictLeavesTheOutcomeUnknown)
-{
-    /// An error that the client did not decide, e.g. of the check after the upload, proves nothing about the upload.
-    expectUnknownOutcome([](const std::string & path)
-    {
-        throw S3Exception(Aws::S3::S3Errors::NO_SUCH_KEY, "Object {} suddenly disappeared", path);
-    });
 }
 
 TEST(IcebergCommitPropagation, RefusedExistenceCheckIsNotReportedAsALostRace)

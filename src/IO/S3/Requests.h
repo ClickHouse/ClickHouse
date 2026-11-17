@@ -249,17 +249,6 @@ static constexpr auto IDEMPOTENCY_ID_METADATA_KEY = "clickhouse-idempotency-id";
 /// racing for one key.
 static constexpr size_t IDEMPOTENCY_ID_LENGTH = 22;
 
-/// What the client proved about a failed conditional write.
-enum class ConditionalWriteVerdict : uint8_t
-{
-    /// Nothing is proven: the write is not conditional, or the error does not come from its request.
-    None,
-    /// No attempt was applied, and no attempt can be applied later.
-    NotApplied,
-    /// An attempt may have been applied, and nothing proves whether it was.
-    Unknown,
-};
-
 /// The id the writer stamped in the object's metadata. Set it and the client accepts a failure whose
 /// object carries it. Left empty, the client asks nothing.
 ///

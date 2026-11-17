@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/WriteOutcomeTracker.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -42,6 +43,7 @@ class ICatalog;
 namespace DB::Iceberg
 {
 
+/// A write with a precondition tracks its outcome in `outcome_tracker`, or in a tracker of its own if it is null.
 void writeMessageToFile(
     const String & data,
     const String & filename,
@@ -49,13 +51,15 @@ void writeMessageToFile(
     DB::ContextPtr context,
     const std::string & write_if_none_match,
     const std::string & write_if_match = "",
-    DB::CompressionMethod compression_method = DB::CompressionMethod::None);
+    DB::CompressionMethod compression_method = DB::CompressionMethod::None,
+    std::shared_ptr<DB::WriteOutcomeTracker> outcome_tracker = nullptr);
 
 /// Whether a conditional write failed because another writer created or changed the object first.
 bool isConditionalWriteConflict(const DB::Exception & e);
 
-/// Writes the metadata file with If-None-Match. Returns false when nothing was published: the path already exists,
-/// or another writer won the race. Throws `UNKNOWN_STATUS_OF_TRANSACTION` when the outcome of the upload is unknown.
+/// Writes the metadata file with If-None-Match. Returns true when it is published, also if a later step of the write
+/// failed. Returns false when nothing was published: the path already exists, or another writer won the race. Throws
+/// `UNKNOWN_STATUS_OF_TRANSACTION` when the outcome of the upload is unknown.
 bool writeMetadataFile(
     const IcebergPathResolver & resolver,
     const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
