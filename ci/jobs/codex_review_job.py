@@ -11,7 +11,8 @@ so the top-level comment is always authored by the pre-authenticated app, not
 the agent's account. When the summary's Final Verdict is `✅ Approve`, the job also
 submits an `APPROVE` review on the reviewed commit, so the approval is recorded
 on GitHub (needed for compliance); any other verdict dismisses the app's earlier
-approvals of the PR.
+approvals of the PR. A review whose sessions the provider stopped as a cybersecurity risk does not
+approve: its summary comes from the fallback model and can miss a finding.
 
 The agent occasionally hits transient GitHub authorization errors mid-run
 ("Authorization error, you may need to run /login"). The whole attempt is
@@ -249,7 +250,7 @@ def _review_approves():
     return "✅ Approve" in status and not re.search(r"Request changes|Block", status)
 
 
-def _update_approval(info):
+def _update_approval(info, cyber_risk_flagged):
     """Record the verdict as a GitHub review of the app: approve the reviewed commit on `✅ Approve`,
     otherwise dismiss the app's approvals left by earlier runs, so that a PR which needs changes does not
     keep an approval. A run for a commit that is no longer the PR head changes nothing: overlapping runs
@@ -275,7 +276,9 @@ def _update_approval(info):
         print(f"Commit {info.sha} is superseded by the PR head {pr['headRefOid']}, keeping the approval state")
         return
 
-    if _review_approves():
+    if cyber_risk_flagged:
+        print("Not approving: a review session was stopped as a cybersecurity risk")
+    elif _review_approves():
         if any((r.get("commit") or {}).get("oid") == info.sha for r in own_approvals):
             print(f"Commit {info.sha} is already approved")
             return
@@ -448,6 +451,7 @@ def _run(prompt):
 
     # Post the summary from the job script so the job fails loudly if anything is broken.
     _post_review()
+    return bool(flagged_sessions)
 
 
 def review():
@@ -458,8 +462,8 @@ def review():
 
     os.makedirs("./ci/tmp", exist_ok=True)
     prompt = _pre_review_prompt(info)
-    _run(prompt)
-    _update_approval(info)
+    cyber_risk_flagged = _run(prompt)
+    _update_approval(info, cyber_risk_flagged)
 
 
 if __name__ == "__main__":
