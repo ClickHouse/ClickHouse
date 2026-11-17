@@ -195,7 +195,7 @@ struct BufferWriteIdentity
     /// The forwarded address and normalized query hash are restored best-effort but never compared. A shard is
     /// flushed before it accepts a different identity; with several shards the sink routes different identities to
     /// different shards instead.
-    bool hasSameFlushIdentity(const BufferWriteIdentity & other) const
+    [[nodiscard]] bool hasSameFlushIdentity(const BufferWriteIdentity & other) const
     {
         if (std::tie(user_id, current_roles, external_roles, authentication_valid_until,
                      current_user, initial_user, authenticated_user, quota_key)
@@ -212,7 +212,7 @@ struct BufferWriteIdentity
     /// Whether a context with this identity has the same access as one with `other`: the same user, effective and
     /// external roles, and credential grant limit. Only then may a query under one see the diagnostics of a flush
     /// under the other; two credentials of one user may grant different rights.
-    bool hasSameAccess(const BufferWriteIdentity & other) const
+    [[nodiscard]] bool hasSameAccess(const BufferWriteIdentity & other) const
     {
         if (std::tie(user_id, current_roles, external_roles) != std::tie(other.user_id, other.current_roles, other.external_roles))
             return false;
@@ -222,7 +222,7 @@ struct BufferWriteIdentity
 private:
     /// Compare the credential grant limit by content, as `AsynchronousInsertQueue` does: a shared_ptr
     /// identity comparison would wrongly split two equal limits coming from different sessions.
-    bool sameAuthenticationGrants(const BufferWriteIdentity & other) const
+    [[nodiscard]] bool sameAuthenticationGrants(const BufferWriteIdentity & other) const
     {
         if (static_cast<bool>(authentication_grants) != static_cast<bool>(other.authentication_grants))
             return false;
