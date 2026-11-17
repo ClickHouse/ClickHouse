@@ -30,6 +30,10 @@ void CachedCompressedReadBuffer::initInput()
 
 void CachedCompressedReadBuffer::prefetch(Priority priority)
 {
+    /// The next block is served from the cache without touching the file, see `nextImpl`.
+    if (!(read_until_position && file_pos >= *read_until_position) && cache->contains(UncompressedCache::hash(path, file_pos)))
+        return;
+
     initInput();
     file_in->prefetch(priority);
 }

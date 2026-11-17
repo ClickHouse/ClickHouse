@@ -272,6 +272,11 @@ void ReadBufferFromEncryptedFile::performSeekAndSetReadUntilPosition()
 
 void ReadBufferFromEncryptedFile::prefetch(Priority priority)
 {
+    /// Apply a pending seek or `read_until_position` before prefetching. Otherwise the inner buffer
+    /// prefetches with the old range, and applying the new one in `nextImpl` discards that prefetch.
+    if (need_seek || need_set_read_until_position)
+        performSeekAndSetReadUntilPosition();
+
     in->prefetch(priority);
 }
 
