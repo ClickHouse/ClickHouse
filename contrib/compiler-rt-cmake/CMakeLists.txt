@@ -58,6 +58,7 @@ endif()
 #     declarations for anything musl does not provide)
 #   * -march= / -mcpu= / -mtune= (target microarchitecture from cmake/cpu_features.cmake)
 #   * -mpclmul / -maltivec (explicit ISA features added by cmake/cpu_features.cmake)
+#   * -mbranch-protection= (return address signing, so the RTL is protected like the rest of the binary)
 # The --target= flag is applied automatically by cmake from CMAKE_<LANG>_COMPILER_TARGET.
 #
 # Keeping the -march/-m* ISA bits aligns the RTL with the rest of the build:
