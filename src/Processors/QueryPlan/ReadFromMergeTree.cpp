@@ -2025,18 +2025,29 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         const bool is_local_unordered_read
             = !is_parallel_reading_from_replicas && !isQueryWithFinal() && !checkAnyPartOnRemoteFS(parts_with_ranges);
 
-        /// If that left some streams without a task, use smaller tasks, not below `merge_tree_min_read_task_size`.
-        /// A single stream stays one (it reads in order). Only the plain read pool cuts tasks of exactly this size
-        /// (adaptive granularity, local prefetched pool not allowed). With the columns cache, the pool does not align
-        /// tasks to the stripes of the cache when a stripe exceeds the share of a stream, so the small tasks stay small.
-        if (allow_spreading_small_read && is_local_unordered_read && data.canUseAdaptiveGranularity()
-            && !settings[Setting::allow_prefetched_read_pool_for_local_filesystem]
+        /// Only the plain read pool cuts tasks of exactly `info.min_marks_for_concurrent_read` marks
+        /// (adaptive granularity, local prefetched pool not allowed), so only its task size is lowered.
+        const bool pool_cuts_tasks_of_exact_size = is_local_unordered_read && data.canUseAdaptiveGranularity()
+            && !settings[Setting::allow_prefetched_read_pool_for_local_filesystem];
+
+        /// Returns the task size that cuts the share of each of `streams` streams into `tasks_per_stream`
+        /// tasks. It only lowers the current task size, and not below `merge_tree_min_read_task_size`.
+        const auto task_marks_for_share = [&](size_t streams, size_t tasks_per_stream)
+        {
+            const size_t min_task_marks = settings[Setting::merge_tree_min_read_task_size];
+            return std::min(
+                info.min_marks_for_concurrent_read, std::max(info.sum_marks / streams / tasks_per_stream, min_task_marks));
+        };
+
+        /// If the reduction above left some streams without a task, use smaller tasks, not below
+        /// `merge_tree_min_read_task_size`. A single stream stays one (it reads in order). With the columns
+        /// cache, the pool does not align tasks to the stripes of the cache when a stripe exceeds the share
+        /// of a stream, so the small tasks stay small.
+        if (allow_spreading_small_read && pool_cuts_tasks_of_exact_size
             && requested_num_streams <= MIN_STREAMS_TO_CAP_BY_READ_BYTES && num_streams > 1 && num_streams < initial_num_streams)
         {
             static constexpr size_t tasks_per_stream = 3;
-            const size_t min_task_marks = settings[Setting::merge_tree_min_read_task_size];
-            const size_t task_marks = std::min(
-                info.min_marks_for_concurrent_read, std::max(info.sum_marks / tasks_per_stream / initial_num_streams, min_task_marks));
+            const size_t task_marks = task_marks_for_share(initial_num_streams, tasks_per_stream);
             size_t tasks = 0;
             for (const size_t part_marks : info.sum_marks_in_parts)
                 tasks += std::max<size_t>(1, part_marks / task_marks);
@@ -2054,6 +2065,20 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
             && settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability] == 0)
             capStreamsByReadBytes(
                 num_streams, parts_with_ranges, column_names, storage_snapshot, mutations_snapshot, context, settings, log);
+
+        /// The number of streams is final here, which fixes the share of the marks that a stream gets. A
+        /// stream that has read its share takes tasks from the shares of other streams, one task at a time,
+        /// so the last streams of a read work alone for up to one task each. The share of a stream is
+        /// therefore cut into at least `min_tasks_per_stream` tasks, which keeps that time at about 3% of a
+        /// share, unless that needs tasks below `merge_tree_min_read_task_size`. For example, 192 streams
+        /// over 12,288 marks have 64 marks each: the default task of 24 marks gives a stream three tasks, and
+        /// the smallest task of 8 marks gives it eight. 16 streams have 768 marks each, which is 32 default
+        /// tasks, so their task stays.
+        if (pool_cuts_tasks_of_exact_size && num_streams > 1)
+        {
+            static constexpr size_t min_tasks_per_stream = 32;
+            info.min_marks_for_concurrent_read = task_marks_for_share(num_streams, min_tasks_per_stream);
+        }
     }
 
     auto read_type = is_parallel_reading_from_replicas ? ReadType::ParallelReplicas : ReadType::Default;
