@@ -101,6 +101,20 @@ FROM file(currentDatabase() || '_05331_b.parquet') PREWHERE s != 'v1' SETTINGS l
 SELECT 'BL', count() FROM file(currentDatabase() || '_05331_b.parquet') PREWHERE s LIKE '%v1%'
 SETTINGS apply_string_filters_during_scan = 1, log_comment = '05331:bl';
 
+-- The first subgroup references only the 10 long values and the others only the 290 short ones, so each
+-- subgroup leaves dictionary values unreferenced.
+INSERT INTO FUNCTION file(currentDatabase() || '_05331_d.parquet')
+SELECT number AS k, if(number < 1000, repeat('L', 1000) || toString(number % 10), 'v' || toString(number % 290)) AS s
+FROM numbers(10000)
+SETTINGS max_block_size = 1000, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_insert_threads = 1, max_threads = 1,
+    output_format_parquet_row_group_size = 10000, output_format_parquet_data_page_size = 1024,
+    output_format_parquet_write_page_index = 0, output_format_parquet_batch_size = 100;
+
+SELECT 'D', count(), sum(cityHash64(k, s)) = (
+    SELECT sum(cityHash64(number, if(number < 1000, repeat('L', 1000) || toString(number % 10), 'v' || toString(number % 290))))
+    FROM numbers(10000) WHERE if(number < 1000, repeat('L', 1000) || toString(number % 10), 'v' || toString(number % 290)) != 'v1')
+FROM file(currentDatabase() || '_05331_d.parquet') PREWHERE s != 'v1' SETTINGS log_comment = '05331:d';
+
 -- Page index and small pages: the column is read range by range.
 INSERT INTO FUNCTION file(currentDatabase() || '_05331_c.parquet') SELECT * FROM ref ORDER BY k
 SETTINGS max_block_size = 1000, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_insert_threads = 1, max_threads = 1,

@@ -7,8 +7,6 @@ keywords: ['chdb', 'datastore', 'pandas', 'dataframe', 'sql', 'lazy evaluation']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 DataStore هي واجهة برمجة تطبيقات chDB المتوافقة مع pandas، وتجمع بين واجهة pandas DataFrame المألوفة وقوة تحسين استعلامات SQL، ما يتيح لك كتابة شيفرة بأسلوب pandas مع الحصول على أداء ClickHouse.
 
 <div id="key-features">
@@ -25,7 +23,15 @@ DataStore هي واجهة برمجة تطبيقات chDB المتوافقة مع
   ## معمارية
 </div>
 
-<Image size="md" img="/images/chdb/datastore_architecture.png" alt="معمارية DataStore" />
+<div className="ch-image-md">
+
+<Frame>
+
+![معمارية DataStore](/images/chdb/datastore_architecture.png)
+
+</Frame>
+
+</div>
 
 يستخدم DataStore **التقييم الكسول** مع **تنفيذ ثنائي المحرك**:
 

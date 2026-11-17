@@ -161,7 +161,7 @@ Upgrades work the same way as in ClickHouse Cloud: services enroll in release ch
 </Accordion>
 
 <Accordion title="Who is responsible for Kubernetes upgrades, and what impact should we expect?">
-ClickHouse owns and performs Kubernetes upgrades proactively, ahead of provider end-of-support dates, and coordinates the window with you through support. Control-plane upgrades are transparent; node-group upgrades roll nodes one by one with make-before-break semantics, so you may see brief connection resets as pods restart, but no data loss. See [operations](/products/bring-your-own-cloud/configuration/operations).
+ClickHouse owns and performs Kubernetes upgrades proactively, ahead of provider end-of-support dates. Control-plane upgrades are transparent; node-group upgrades roll nodes one by one with make-before-break semantics, so you may see brief connection resets as pods restart, but no data loss. See [operations](/products/bring-your-own-cloud/configuration/operations).
 </Accordion>
 
 ### Backups and disaster recovery {#backups-and-disaster-recovery}

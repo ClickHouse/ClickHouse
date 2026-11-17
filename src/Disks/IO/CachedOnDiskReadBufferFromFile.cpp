@@ -1511,7 +1511,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     if (size)
         file_offset_of_buffer_end += size;
 
-    working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + size);
+    setWorkingBufferFromInternal();
+    working_buffer.resize(size);
 
     /// The reader stays in the segment, so drop our reference before the next downloader can take it over.
     if (state->read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE)
