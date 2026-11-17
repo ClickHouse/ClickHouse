@@ -471,7 +471,7 @@ TEST(FileEncryptionPreFinalizeTest, ForwardsToUnderlyingBuffer)
         if (std::filesystem::exists(tmp_path))
             std::filesystem::remove(tmp_path);
 
-        String key = "1234567812345678";
+        SecretString key{"1234567812345678"};
         FileEncryption::Header header;
         header.algorithm = Algorithm::AES_128_CTR;
         header.key_fingerprint = calculateKeyFingerprint(key);
