@@ -55,7 +55,7 @@ struct AggregateFunctionUniqUpToData
     UInt8 count = 0;
     char data_ptr[0];
 
-    T load(size_t i) const
+    [[nodiscard]] T load(size_t i) const
     {
         return unalignedLoad<T>(data_ptr + i * sizeof(T));
     }
@@ -65,7 +65,7 @@ struct AggregateFunctionUniqUpToData
         unalignedStore<T>(data_ptr + i * sizeof(T), x);
     }
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         return count;
     }
@@ -204,14 +204,14 @@ public:
     {
     }
 
-    size_t sizeOfData() const override
+    [[nodiscard]] size_t sizeOfData() const override
     {
         return sizeof(AggregateFunctionUniqUpToData<T>) + sizeof(T) * threshold;
     }
 
-    String getName() const override { return "uniqUpTo"; }
+    [[nodiscard]] String getName() const override { return "uniqUpTo"; }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     /// A float NaN is never `==` to the kept one, so each NaN counts.
     bool ignoresRepeatedValues() const override { return !is_floating_point<T>; }
@@ -267,14 +267,14 @@ public:
             num_args = arguments.size();
     }
 
-    size_t sizeOfData() const override
+    [[nodiscard]] size_t sizeOfData() const override
     {
         return sizeof(AggregateFunctionUniqUpToData<UInt64>) + sizeof(UInt64) * threshold;
     }
 
-    String getName() const override { return "uniqUpTo"; }
+    [[nodiscard]] String getName() const override { return "uniqUpTo"; }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     /// The state keeps the hashes of the arguments.
     bool ignoresRepeatedValues() const override { return true; }
