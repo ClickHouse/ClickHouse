@@ -1013,7 +1013,6 @@ DataTypes getWrittenTypesOfVariantMembers(const DataTypeVariant & type, std::str
 {
     const auto & members = type.getVariants();
     DataTypes res(members.size());
-    UnorderedMapWithMemoryTracking<String, size_t> member_of_written_type;
     for (size_t i = 0; i < members.size(); ++i)
     {
         const String name = getWrittenTypeName(*members[i]);
@@ -1023,23 +1022,14 @@ DataTypes getWrittenTypesOfVariantMembers(const DataTypeVariant & type, std::str
                 "The type {} cannot be stored in the Parquet variant column '{}': its member {} cannot be read back. "
                 "Use `Dynamic` instead",
                 type.getName(), column_name, members[i]->getName());
-        /// TODO: Support members whose values are written the same way, such as `UInt8` and `Int16`, or `UInt32` and
-        /// `Int64`, for example by writing one of them as a wider variant type, so that a reader with the same
-        /// `Variant` type can tell them apart.
-        auto [it, inserted] = member_of_written_type.try_emplace(name, i);
-        if (!inserted)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The type {} cannot be stored in the Parquet variant column '{}': the values of its members {} and {} are "
-                "both read as {}, so they cannot be told apart",
-                type.getName(), column_name, members[it->second]->getName(), members[i]->getName(), name);
         res[i] = getDataTypesCache().getType(name);
     }
     return res;
 }
 
 /// Converts the values read as `Dynamic` to an ordinary `Variant`, putting every value into the member
-/// that values of its type are written from.
+/// that values of its type are written from. When several members are written as the same type, the values
+/// go to the member of exactly that type if there is one, and to the first of them otherwise.
 ColumnPtr convertDynamicToVariant(const ColumnPtr & dynamic, const DataTypeVariant & type, std::string_view column_name)
 {
     const DataTypes written_types = getWrittenTypesOfVariantMembers(type, column_name);
@@ -1048,16 +1038,39 @@ ColumnPtr convertDynamicToVariant(const ColumnPtr & dynamic, const DataTypeVaria
     const auto & written_variant = assert_cast<const ColumnVariant &>(*written);
 
     const auto & members = type.getVariants();
-    Columns variants(members.size());
-    VectorWithMemoryTracking<ColumnVariant::Discriminator> local_to_global(members.size());
-    for (size_t local = 0; local < members.size(); ++local)
+    const size_t num_written = written_variant_type->getVariants().size();
+    Columns variants(num_written);
+    VectorWithMemoryTracking<ColumnVariant::Discriminator> local_to_global(num_written);
+    VectorWithMemoryTracking<bool> member_used(members.size(), false);
+    for (size_t local = 0; local < num_written; ++local)
     {
         const auto & written_type = written_variant_type->getVariant(
             written_variant.globalDiscriminatorByLocal(static_cast<ColumnVariant::Discriminator>(local)));
-        const size_t member = std::find_if(
-            written_types.begin(), written_types.end(), [&](const auto & t) { return t->equals(*written_type); }) - written_types.begin();
-        variants[local] = castColumnAccurate({written_variant.getVariantPtrByLocalDiscriminator(local), written_type, ""}, members[member]);
-        local_to_global[local] = static_cast<ColumnVariant::Discriminator>(member);
+        std::optional<size_t> member;
+        for (size_t i = 0; i < members.size(); ++i)
+        {
+            if (!written_types[i]->equals(*written_type))
+                continue;
+            if (members[i]->equals(*written_type))
+            {
+                member = i;
+                break;
+            }
+            if (!member)
+                member = i;
+        }
+        chassert(member.has_value());
+        variants[local] = castColumnAccurate({written_variant.getVariantPtrByLocalDiscriminator(local), written_type, ""}, members[*member]);
+        local_to_global[local] = static_cast<ColumnVariant::Discriminator>(*member);
+        member_used[*member] = true;
+    }
+    for (size_t i = 0; i < members.size(); ++i)
+    {
+        if (!member_used[i])
+        {
+            variants.push_back(members[i]->createColumn());
+            local_to_global.push_back(static_cast<ColumnVariant::Discriminator>(i));
+        }
     }
     return ColumnVariant::create(written_variant.getLocalDiscriminatorsPtr(), written_variant.getOffsetsPtr(), variants, local_to_global);
 }

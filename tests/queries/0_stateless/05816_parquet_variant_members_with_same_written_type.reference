@@ -1,0 +1,13 @@
+--- v Variant(UInt32, Int64)
+-5	Int64
+1	Int64
+\N	None
+--- v Variant(UInt8, Int16, String)
+1000	Int16
+7	Int16
+x	String
+--- v Variant(UInt32, UInt64)
+3	UInt32
+4	UInt32
+--- v Variant(Array(Int64), Array(String))
+[1,2]	Array(Int64)
