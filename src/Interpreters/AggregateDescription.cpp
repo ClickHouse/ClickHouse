@@ -434,21 +434,15 @@ void checkDeserializedMergedAggregatesLayout(
     }
 }
 
-void checkDeserializedGroupByModifierInput(
-    const Names & keys, const AggregateDescriptions & aggregates, bool final, const Block & header)
+namespace
 {
-    /// `RollupTransform` and `CubeTransform` always finalize the states (both planners build the steps with `final`),
-    /// so a step without it would advertise states in the output header but produce finalized values.
-    if (!final)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "A deserialized `Rollup` or `Cube` step must finalize the aggregate states");
 
-    /// The transforms address the whole input with a mask built for the keys and the states only.
-    const auto & layout = header.getColumnsWithTypeAndName();
-    checkDeserializedMergedAggregatesLayout(keys, aggregates, layout, /*exact=*/ true);
-
-    /// A single chunk of the input is finalized as is, with the functions of its columns rather than those of the plan,
-    /// while the output header takes the result types from the plan. Functions with the same state representation
-    /// (like `quantile` and `quantiles`) may have different result types.
+/// A single chunk of a merge-only input is finalized as is, with the functions of its columns rather than those of the plan,
+/// while the output header takes the result types from the plan. Functions with the same state representation
+/// (like `quantile` and `quantiles`) may have different result types. `layout` is already checked to start with the keys and the states.
+void checkDeserializedMergedStatesResultTypes(
+    const Names & keys, const AggregateDescriptions & aggregates, const ColumnsWithTypeAndName & layout)
+{
     for (size_t i = 0; i < aggregates.size(); ++i)
     {
         const auto & aggregate = aggregates[i];
@@ -461,6 +455,29 @@ void checkDeserializedGroupByModifierInput(
                 aggregate.column_name, column.type->getName(), state_function->getResultType()->getName(),
                 aggregate.function->getResultType()->getName());
     }
+}
+
+}
+
+void checkDeserializedMergeOnlyInput(const Names & keys, const AggregateDescriptions & aggregates, const Block & header)
+{
+    /// The transforms address the whole input with a mask built for the keys and the states only.
+    const auto & layout = header.getColumnsWithTypeAndName();
+    checkDeserializedMergedAggregatesLayout(keys, aggregates, layout, /*exact=*/ true);
+    /// Checked even without `final`: the step may be made final later (`setFinal`), and the states
+    /// of a legitimate plan come from the same functions anyway.
+    checkDeserializedMergedStatesResultTypes(keys, aggregates, layout);
+}
+
+void checkDeserializedGroupByModifierInput(
+    const Names & keys, const AggregateDescriptions & aggregates, bool final, const Block & header)
+{
+    /// `RollupTransform` and `CubeTransform` always finalize the states (both planners build the steps with `final`),
+    /// so a step without it would advertise states in the output header but produce finalized values.
+    if (!final)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "A deserialized `Rollup` or `Cube` step must finalize the aggregate states");
+
+    checkDeserializedMergeOnlyInput(keys, aggregates, header);
 }
 
 }

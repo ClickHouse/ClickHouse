@@ -26,4 +26,10 @@ Cube input has another column INCORRECT_DATA
 Cube state is finalized to another type INCORRECT_DATA
 Cube without final INCORRECT_DATA
 well-formed Cube accepted
+in-order sort description for merging is longer INCORRECT_DATA
+in-order sort description for merging is not a prefix INCORRECT_DATA
+in-order sort description refers to an aggregate INCORRECT_DATA
+well-formed in-order accepted
+in-order merged state is finalized to another type INCORRECT_DATA
+well-formed in-order merge accepted
 3

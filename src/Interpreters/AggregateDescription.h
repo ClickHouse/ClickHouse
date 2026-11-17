@@ -64,6 +64,10 @@ void checkDeserializedMergedAggregatesLayout(
 /// The names of the keys and the aggregates (the columns of the output) must be distinct.
 void checkDeserializedAggregateOutputNames(const Names & keys, const AggregateDescriptions & aggregates);
 
+/// The input of the merge-only `Aggregating` step: exactly the keys and then the states, finalized to the types of the plan
+/// (`AggregatingInOrderTransform` and the finalization of a single chunk keep the functions of the input).
+void checkDeserializedMergeOnlyInput(const Names & keys, const AggregateDescriptions & aggregates, const Block & header);
+
 /// The input of `Rollup` and `Cube`: `final`, exactly the keys and then the states, finalized to the types of the plan.
 void checkDeserializedGroupByModifierInput(
     const Names & keys, const AggregateDescriptions & aggregates, bool final, const Block & header);

@@ -100,8 +100,8 @@ def aggregating(flags, argument_type=None, keys=(), aggregates=None):
     if aggregates is None:
         aggregates = [("a", "x", argument_type, "any")]
     out = bytes([flags]) + vu(len(keys)) + b"".join(sb(k) for k in keys) + vu(len(aggregates))
-    for name, argument, a_type, function in aggregates:
-        out += sb(name) + vu(1) + sb(argument) + a_type + sb(function) + vu(0)
+    for name, argument, a_type, function, *parameters in aggregates:
+        out += sb(name) + vu(1) + sb(argument) + a_type + sb(function) + vu(len(parameters)) + b"".join(parameters)
     return out + vu(0)
 
 X = [("x", U64)]
@@ -182,6 +182,31 @@ for step in ("Rollup", "Cube"):
     forge(f"{step} without final", group_by_modifier(0, [("a", "sum", U64, [])]), [K_SUM], VERSION,
           [("__grouping_set", U64), ("k", U64), ("a", state("sum", U64))], step)
     forge(f"well-formed {step}", SUM, [K_SUM], VERSION, OUT, step)
+
+# The in-order aggregation takes the first columns of the `GROUP BY` sort description as those the input is sorted by
+# (the sort description for merging) and compares the key columns at their positions.
+IN_ORDER = 32
+def sort_description(columns):   # ascending, nulls last, no collation or fill
+    return vu(len(columns)) + b"".join(sb(c) + b"\x03" for c in columns)
+
+def in_order(flags, merging, group_by, keys, aggregates):
+    out = aggregating(flags | IN_ORDER, keys=keys, aggregates=aggregates)
+    return out[:1] + sort_description(merging) + sort_description(group_by) + out[1:]
+
+KX = [("k", U64), ("x", U64)]
+forge("in-order sort description for merging is longer", in_order(FINAL, ["k"], [], ["k"], ANY_SUM[:1]), [KX], VERSION, K_A)
+forge("in-order sort description for merging is not a prefix", in_order(FINAL, ["x"], ["k"], ["k"], ANY_SUM[:1]),
+      [KX], VERSION, K_A)
+forge("in-order sort description refers to an aggregate", in_order(FINAL, ["a"], ["a"], ["k"], ANY_SUM[:1]), [KX], VERSION, K_A)
+forge("well-formed in-order", in_order(FINAL, ["k"], ["k"], ["k"], ANY_SUM[:1]), [KX], VERSION, K_A)
+
+# The merge-only in-order aggregation finalizes with the functions of the input states, and the header has the plan's types.
+QUANTILES_OF_X = [("a", "x", U64, "quantiles", F64 + struct.pack("<d", 0.5))]
+forge("in-order merged state is finalized to another type",
+      in_order(FINAL | ONLY_MERGE, ["k"], ["k"], ["k"], QUANTILES_OF_X), [[("k", U64), ("a", state("quantile", U64))]], VERSION,
+      [("k", U64), ("a", b"\x1e" + b"\x0e")])   # Array(Float64)
+forge("well-formed in-order merge",
+      in_order(FINAL | ONLY_MERGE, ["k"], ["k"], ["k"], ANY_SUM[:1]), [K_STATE], VERSION, K_A)
 PYEOF
 
 # The server has to be serving after each refusal.
