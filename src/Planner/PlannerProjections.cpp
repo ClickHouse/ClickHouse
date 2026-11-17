@@ -9,6 +9,7 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -81,6 +82,22 @@ void collectStoredNodeNames(const QueryTreeNodePtr & node, QueryTreeNodeToName &
         /// a subquery has its own plan with its own names
         if (child && !isQueryOrUnionNode(child))
             collectStoredNodeNames(child, result);
+}
+
+/// a projection stores what a window function reads, not its result
+void collectExpressionsBeforeWindow(const QueryTreeNodePtr & node, QueryTreeNodes & result)
+{
+    auto node_type = node->getNodeType();
+    bool is_expression = node_type == QueryTreeNodeType::FUNCTION || node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::CONSTANT;
+    if (is_expression && !hasWindowFunctionNodes(node))
+    {
+        result.push_back(node);
+        return;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child)
+            collectExpressionsBeforeWindow(child, result);
 }
 
 }
@@ -212,7 +229,9 @@ QueryPlan ProjectionPlanner::buildPlanForNormalProjection(Block source)
 {
     auto plan = buildPlanForSource(std::move(source));
 
-    auto projection_dag = buildActions({query_tree->as<QueryNode &>().getProjectionNode()});
+    QueryTreeNodes stored_expressions;
+    collectExpressionsBeforeWindow(query_tree->as<QueryNode &>().getProjectionNode(), stored_expressions);
+    auto projection_dag = buildActions(stored_expressions);
     /// the projection stores only the columns of its SELECT
     projection_dag.appendInputsForUnusedColumns(*plan.getCurrentHeader());
     plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(projection_dag)));
