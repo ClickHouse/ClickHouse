@@ -271,7 +271,7 @@ static void readUnquotedColumnName(String & name, ReadBuffer & in)
     name.clear();
     while (!in.eof())
     {
-        char * pos = find_first_symbols<',', ')', ' ', '\t', '\n', '\r'>(in.position(), in.buffer().end());
+        char * pos = find_first_symbols<',', ')', ' ', '\t', '\n', '\r', '\f', '\v'>(in.position(), in.buffer().end());
         name.append(in.position(), pos - in.position());
         in.position() = pos;
 

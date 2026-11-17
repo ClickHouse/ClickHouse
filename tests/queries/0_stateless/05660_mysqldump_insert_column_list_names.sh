@@ -54,3 +54,6 @@ ${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', MySQLDump)"
 printf 'CREATE TABLE t1 (id int NOT NULL, b int NOT NULL);\nINSERT INTO t1 (B, ID) VALUES (100,1);\n' > "${DATA_FILE}"
 ${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', MySQLDump, 'ID Int32, B Int32')"
 ${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', MySQLDump, 'ID Int32, B Int32') SETTINGS input_format_skip_unknown_fields = 0"
+
+printf 'CREATE TABLE t1 (id int, b int);\nINSERT INTO t1 (b\f, id\v) VALUES (100,1);\n' > "${DATA_FILE}"
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', MySQLDump)"
