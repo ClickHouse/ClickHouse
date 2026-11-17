@@ -103,7 +103,7 @@ public:
     /// - adjust, if needed and allowed, passed queue settings according to
     /// what is in keeper (for example, processing_threads_num is adjustable,
     /// because its default depends on the CPU cores on the server);
-    /// - if not `strict`, use `after_processing` and `source` from keeper instead of failing on a mismatch;
+    /// - if not `strict`, a table is loaded even if its `source` differs from keeper;
     /// - if keeper has no `source` (metadata written by an older version), save the table's `source` there;
     static ObjectStorageQueueTableMetadata syncWithKeeper(
         const String & zookeeper_name,
@@ -119,7 +119,6 @@ public:
     /// Alter settings in keeper metadata
     /// (rewrites what we write in syncWithKeeper()).
     void alterSettings(const SettingsChanges & changes, const ContextPtr & context);
-    void syncChangeableSettingsFromKeeper();
 
     /// Get object storage type: s3, azure, local, etc.
     ObjectStorageType getType() const { return storage_type; }

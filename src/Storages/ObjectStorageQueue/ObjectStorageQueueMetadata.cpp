@@ -401,7 +401,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     Coordination::Stat stat;
     auto metadata_str = zookeeper->get(fs::path(zookeeper_path) / "metadata", &stat);
     auto metadata_from_zk = ObjectStorageQueueTableMetadata::parse(metadata_str);
-    auto new_table_metadata{metadata_from_zk};
+    auto new_table_metadata{table_metadata};
 
     for (const auto & change : changes)
     {
@@ -427,7 +427,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         if (change.name == "processing_threads_num")
         {
             const auto value = change.value.safeGet<UInt64>();
-            if (metadata_from_zk.processing_threads_num == value)
+            if (table_metadata.processing_threads_num == value)
             {
                 LOG_TRACE(log, "Setting `processing_threads_num` already equals {}. "
                         "Will do nothing", value);
@@ -438,7 +438,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         else if (change.name == "loading_retries")
         {
             const auto value = change.value.safeGet<UInt64>();
-            if (metadata_from_zk.loading_retries == value)
+            if (table_metadata.loading_retries == value)
             {
                 LOG_TRACE(log, "Setting `loading_retries` already equals {}. "
                         "Will do nothing", value);
@@ -449,7 +449,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         else if (change.name == "after_processing")
         {
             const auto value = ObjectStorageQueueTableMetadata::actionFromString(change.value.safeGet<String>());
-            if (metadata_from_zk.after_processing == value)
+            if (table_metadata.after_processing == value)
             {
                 LOG_TRACE(log, "Setting `after_processing` already equals {}. "
                         "Will do nothing", value);
@@ -460,7 +460,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         else if (change.name == "tracked_files_limit")
         {
             const auto value = change.value.safeGet<UInt64>();
-            if (metadata_from_zk.tracked_files_limit == value)
+            if (table_metadata.tracked_files_limit == value)
             {
                 LOG_TRACE(log, "Setting `tracked_files_limit` already equals {}. "
                         "Will do nothing", value);
@@ -471,7 +471,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         else if (change.name == "tracked_file_ttl_sec")
         {
             const auto value = change.value.safeGet<UInt64>();
-            if (metadata_from_zk.tracked_files_ttl_sec == value)
+            if (table_metadata.tracked_files_ttl_sec == value)
             {
                 LOG_TRACE(log, "Setting `tracked_file_ttl_sec` already equals {}. "
                         "Will do nothing", value);
@@ -517,9 +517,15 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting `{}` is not changeable", change.name);
         }
+
+        chassert(ObjectStorageQueueTableMetadata::isChangeableSetting(change.name));
     }
 
-    const auto new_metadata_str = new_table_metadata.toString();
+    /// Keeper gets only settings named in the query, because local copy can be outdated.
+    auto metadata_for_keeper{metadata_from_zk};
+    metadata_for_keeper.syncChangeableSettings(new_table_metadata, changes);
+
+    const auto new_metadata_str = metadata_for_keeper.toString();
     LOG_TRACE(log, "New metadata: {}", new_metadata_str);
 
     const fs::path table_metadata_path = zookeeper_path / "metadata";
@@ -529,14 +535,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     if (is_initial_query)
         zookeeper->set(table_metadata_path, new_metadata_str, stat.version);
 
-    table_metadata.syncChangeableSettings(new_table_metadata);
-}
-
-void ObjectStorageQueueMetadata::syncChangeableSettingsFromKeeper()
-{
-    String metadata_str;
-    getKeeperRetriesControl(log).retryLoop([&] { metadata_str = getZooKeeper()->get(zookeeper_path / "metadata"); });
-    table_metadata.syncChangeableSettings(ObjectStorageQueueTableMetadata::parse(metadata_str));
+    table_metadata.syncChangeableSettings(new_table_metadata, changes);
 }
 
 void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)

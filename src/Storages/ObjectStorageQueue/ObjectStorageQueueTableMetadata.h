@@ -13,6 +13,7 @@ namespace DB
 struct ObjectStorageQueueSettings;
 class WriteBuffer;
 class ReadBuffer;
+class SettingsChanges;
 
 /** The basic parameters of ObjectStorageQueue table engine for saving in ZooKeeper.
  * Lets you verify that they match local ones.
@@ -87,15 +88,6 @@ struct ObjectStorageQueueTableMetadata
     {
     }
 
-    void syncChangeableSettings(const ObjectStorageQueueTableMetadata & other)
-    {
-        after_processing = other.after_processing.load();
-        loading_retries = other.loading_retries.load();
-        processing_threads_num = other.processing_threads_num.load();
-        tracked_files_limit = other.tracked_files_limit.load();
-        tracked_files_ttl_sec = other.tracked_files_ttl_sec.load();
-    }
-
     explicit ObjectStorageQueueTableMetadata(const Poco::JSON::Object::Ptr & json);
 
     static ObjectStorageQueueTableMetadata parse(const String & metadata_str);
@@ -135,6 +127,9 @@ struct ObjectStorageQueueTableMetadata
         };
         return settings_names.contains(name);
     }
+
+    static bool isChangeableSetting(std::string_view name);
+    void syncChangeableSettings(const ObjectStorageQueueTableMetadata & other, const SettingsChanges & changes);
 
     size_t getBucketsNum() const
     {

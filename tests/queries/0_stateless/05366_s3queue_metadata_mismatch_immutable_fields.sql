@@ -116,55 +116,72 @@ SELECT JSONExtractString(value, 'source_endpoint'), JSONExtractString(value, 'so
 DROP TABLE tq_az_upper;
 DROP TABLE tq_az_sas;
 
--- A table attached from its saved definition must not fail when it differs from keeper: it uses `after_processing`
--- from keeper and the server logs a warning. `send_logs_level` keeps these warnings, and the errors of the refused
--- queries below, out of the test output.
+-- `send_logs_level` keeps the warnings of the attached tables, and the errors of the refused queries, out of the test output.
 SET send_logs_level = 'fatal';
 
 CREATE TABLE tq_a (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_shared/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_shared', processing_threads_num = 1;
 CREATE TABLE tq_b (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_shared/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_shared', processing_threads_num = 1, after_processing = 'keep';
 SELECT JSONExtractString(value, 'source_type'), JSONExtractString(value, 'source_endpoint'), JSONExtractString(value, 'source_bucket'), JSONExtractString(value, 'source_path_pattern') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
 
--- After the `ALTER` of `tq_a`, `tq_b` still has `keep` in its definition, but is attached with `delete` from keeper.
+-- Tables with the same `keeper_path` share `after_processing`: after the `ALTER` of `tq_a` both tables have `delete`,
+-- while `tq_b` still has `keep` in its definition.
 ALTER TABLE tq_a MODIFY SETTING after_processing = 'delete';
-DETACH TABLE tq_b; ATTACH TABLE tq_b;
 SELECT table, value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table IN ('tq_a', 'tq_b') AND name = 'after_processing' ORDER BY table;
-
 -- `tq_b` already has `keep` in its definition, but an `ALTER` or a `RESET` to `keep` must still change the queue.
 -- The same holds for `tq_a`, whose definition already has `delete`.
 ALTER TABLE tq_b MODIFY SETTING after_processing = 'keep';
 SELECT table, value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table IN ('tq_a', 'tq_b') AND name = 'after_processing' ORDER BY table;
 ALTER TABLE tq_a MODIFY SETTING after_processing = 'delete';
+SELECT table, value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table IN ('tq_a', 'tq_b') AND name = 'after_processing' ORDER BY table;
 ALTER TABLE tq_b RESET SETTING after_processing;
 SELECT table, value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table IN ('tq_a', 'tq_b') AND name = 'after_processing' ORDER BY table;
-ALTER TABLE tq_a MODIFY SETTING after_processing = 'delete';
 SELECT JSONExtractString(value, 'after_processing') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
--- The same holds for any setting stored in keeper, e.g. `processing_threads_num`.
+-- Leave `keep` in the definition of `tq_a` too, so that both tables can be attached again below.
+ALTER TABLE tq_a MODIFY SETTING after_processing = 'keep';
+-- The same holds for any setting stored in keeper that an `ALTER` can change, e.g. `processing_threads_num`.
 ALTER TABLE tq_a MODIFY SETTING processing_threads_num = 2;
 ALTER TABLE tq_b MODIFY SETTING processing_threads_num = 1;
 SELECT table, value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table IN ('tq_a', 'tq_b') AND name = 'processing_threads_num' ORDER BY table;
--- `parallel_inserts` is not stored in keeper, so an `ALTER` of another setting keeps it in the definition.
+
+-- A setting that the mode does not allow to change can still be repeated with the value of the definition.
+CREATE TABLE tq_o (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_o/*', NOSIGN, 'CSV') SETTINGS mode = 'ordered', keeper_path = '/clickhouse/{database}/05366_o', processing_threads_num = 4;
+ALTER TABLE tq_o MODIFY SETTING processing_threads_num = 4;
+ALTER TABLE tq_o MODIFY SETTING processing_threads_num = 5; -- { serverError SUPPORT_IS_DISABLED }
+DROP TABLE tq_o;
+
+-- An `ALTER` of another setting keeps `parallel_inserts` in the definition.
 CREATE TABLE tq_p (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_p/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_p', parallel_inserts = 1;
 ALTER TABLE tq_p MODIFY SETTING polling_max_timeout_ms = 2000;
 SELECT create_table_query LIKE '%parallel_inserts = 1%' FROM system.tables WHERE database = currentDatabase() AND name = 'tq_p';
 DROP TABLE tq_p;
 
--- Set `after_processing` to `keep` directly in keeper, as another server would, while the copy of this server still has
--- `delete`. Then a reattached table and a new table fail instead of taking the outdated `delete`, as on master. A table that
--- fails this way stays attached without starting, which a `Replicated` database cannot detach, so this uses an `Atomic` one.
+-- `after_processing` is still checked when a table is attached, as on master. A table that fails to attach cannot be
+-- detached again in a `Replicated` database, so this uses an `Atomic` one.
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic;
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s1 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_stale/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_stale', after_processing = 'delete';
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s2 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_stale/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_stale', after_processing = 'delete';
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s1 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_stale/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_stale', after_processing = 'keep';
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s2 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_stale/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_stale', after_processing = 'keep';
+-- After the `ALTER` of `tq_s1`, `tq_s2` still has `keep` in its definition and keeper has `delete`.
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s1 MODIFY SETTING after_processing = 'delete';
+DETACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s2;
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s2; -- { serverError METADATA_MISMATCH }
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s1 MODIFY SETTING after_processing = 'keep';
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s2;
+SELECT table, value FROM system.s3_queue_settings WHERE database = currentDatabase() || '_1' AND table IN ('tq_s1', 'tq_s2') AND name = 'after_processing' ORDER BY table;
+
+-- Set `after_processing` to `keep` directly in keeper, as another server would, while the copy of this server has `delete`.
+-- Then a reattached table and a new table fail instead of taking the outdated `delete`.
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s1 MODIFY SETTING after_processing = 'delete';
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s2 MODIFY SETTING after_processing = 'delete';
 INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceOne(value, '"after_processing":"delete"', '"after_processing":"keep"') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '_1/05366_stale' AND name = 'metadata';
 DETACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s2;
 ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s2; -- { serverError METADATA_MISMATCH }
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s3 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_stale/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_stale'; -- { serverError METADATA_MISMATCH }
--- An `ALTER` of another setting must take `keep` from keeper, and must not write the outdated `delete` of this server
--- back to keeper. Then `tq_s2` attaches with `keep`.
+-- An `ALTER` of another setting needs no `WRITE` grant, so it must not write the outdated `delete` of this server back to keeper.
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s1 MODIFY SETTING polling_max_timeout_ms = 2000;
 SELECT JSONExtractString(value, 'after_processing') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '_1/05366_stale' AND name = 'metadata';
-DETACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s2; ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s2;
-SELECT table, value FROM system.s3_queue_settings WHERE database = currentDatabase() || '_1' AND table IN ('tq_s1', 'tq_s2') AND name = 'after_processing' ORDER BY table;
+-- An `ALTER` of `after_processing` itself is written to keeper.
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s1 MODIFY SETTING after_processing = 'tag', after_processing_tag_key = 'k', after_processing_tag_value = 'v';
+SELECT JSONExtractString(value, 'after_processing') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '_1/05366_stale' AND name = 'metadata';
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
 
 -- Set `delete` directly in keeper, as another server would, while the definition and the copy of this server have
@@ -176,10 +193,10 @@ SELECT JSONExtractString(value, 'after_processing'), (SELECT value FROM system.s
 INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceOne(value, '"after_processing":"keep"', '"after_processing":"delete"') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_k' AND name = 'metadata';
 ALTER TABLE tq_k RESET SETTING after_processing;
 SELECT JSONExtractString(value, 'after_processing'), (SELECT value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table = 'tq_k' AND name = 'after_processing') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_k' AND name = 'metadata';
--- An `ALTER` of another setting keeps what another server set in keeper, for any setting stored there.
+-- An `ALTER` changes only the settings it names: `loading_retries` set by another server stays in keeper.
 INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceOne(value, '"loading_retries":10', '"loading_retries":5') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_k' AND name = 'metadata';
 ALTER TABLE tq_k MODIFY SETTING polling_max_timeout_ms = 2000;
-SELECT JSONExtractUInt(value, 'loading_retries'), (SELECT value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table = 'tq_k' AND name = 'loading_retries') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_k' AND name = 'metadata';
+SELECT JSONExtractUInt(value, 'loading_retries') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_k' AND name = 'metadata';
 DROP TABLE tq_k;
 
 -- Change the source in keeper: `tq_b` must still attach, with a warning.

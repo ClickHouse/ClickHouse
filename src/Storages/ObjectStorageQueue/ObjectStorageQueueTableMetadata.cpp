@@ -9,6 +9,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ColumnsDescription.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/SettingsChanges.h>
 #include <Common/maskURIPassword.h>
 
 
@@ -56,6 +57,17 @@ namespace
     {
         if (mode != "ordered" && mode != "unordered" && mode != "exclusive")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue mode: {}", mode);
+    }
+
+    template <typename F>
+    void forEachChangeableSetting(F && f)
+    {
+        f("after_processing", &ObjectStorageQueueTableMetadata::after_processing);
+        f("loading_retries", &ObjectStorageQueueTableMetadata::loading_retries);
+        f("processing_threads_num", &ObjectStorageQueueTableMetadata::processing_threads_num);
+        f("tracked_files_limit", &ObjectStorageQueueTableMetadata::tracked_files_limit);
+        f("tracked_file_ttl_sec", &ObjectStorageQueueTableMetadata::tracked_files_ttl_sec);
+        f("buckets", &ObjectStorageQueueTableMetadata::buckets);
     }
 
     String sourceToString(const ObjectStorageQueueTableMetadata::Source & source)
@@ -235,6 +247,22 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     validateMode(mode);
 }
 
+bool ObjectStorageQueueTableMetadata::isChangeableSetting(std::string_view name)
+{
+    bool res = false;
+    forEachChangeableSetting([&](std::string_view setting, auto) { res |= setting == name; });
+    return res;
+}
+
+void ObjectStorageQueueTableMetadata::syncChangeableSettings(const ObjectStorageQueueTableMetadata & other, const SettingsChanges & changes)
+{
+    forEachChangeableSetting([&](std::string_view setting, auto member)
+    {
+        if (changes.tryGet(setting))
+            (this->*member) = (other.*member).load();
+    });
+}
+
 ObjectStorageQueueTableMetadata ObjectStorageQueueTableMetadata::parse(const String & metadata_str)
 {
     Poco::JSON::Parser parser;
@@ -267,13 +295,6 @@ void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueT
 
     if (strict)
         return;
-
-    if (after_processing != from_zk.after_processing)
-    {
-        LOG_WARNING(log, "Using `after_processing` {} of the queue instead of {} of this table",
-            actionToString(from_zk.after_processing.load()), actionToString(after_processing.load()));
-        after_processing = from_zk.after_processing.load();
-    }
 
     if (!source.from_named_collection && !from_zk.source.empty() && source != from_zk.source)
     {

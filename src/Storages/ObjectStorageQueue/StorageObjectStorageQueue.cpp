@@ -1755,10 +1755,6 @@ void StorageObjectStorageQueue::alter(
         auto table_id = getStorageID();
         auto alter_commands = normalizeAlterCommands(commands);
 
-        auto metadata = tryGetFilesMetadata();
-        if (!metadata)
-            throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
-
         auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
         StorageInMemoryMetadata old_metadata(*metadata_snapshot); /// NOLINT
         SettingsChanges * old_settings = nullptr;
@@ -1767,13 +1763,6 @@ void StorageObjectStorageQueue::alter(
             old_settings = &old_metadata.settings_changes->as<ASTSetQuery &>().changes;
             for (auto & setting : *old_settings)
                 setting.name = normalizeSetting(setting.name);
-
-            /// Take the values from keeper, table definition can be outdated.
-            metadata->syncChangeableSettingsFromKeeper();
-            auto settings_in_effect = getSettings();
-            for (auto & setting : *old_settings)
-                if (ObjectStorageQueueTableMetadata::isStoredInKeeper(setting.name))
-                    setting.value = settings_in_effect.get(setting.name);
         }
 
         /// settings_changes will be cloned.
@@ -1826,6 +1815,18 @@ void StorageObjectStorageQueue::alter(
         SettingsChanges changed_settings;
         std::set<std::string> new_settings_set;
 
+        std::set<std::string> settings_in_query;
+        for (const auto & command : alter_commands)
+        {
+            for (const auto & change : command.settings_changes)
+                settings_in_query.insert(change.name);
+            settings_in_query.insert(command.settings_resets.begin(), command.settings_resets.end());
+        }
+
+        auto metadata = tryGetFilesMetadata();
+        if (!metadata)
+            throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
+
         const auto mode = metadata->getTableMetadata().getMode();
         const size_t dependencies_count = getDependencies();
         bool requires_detached_mv = false;
@@ -1847,6 +1848,9 @@ void StorageObjectStorageQueue::alter(
 
                 setting_changed = it == old_settings->end() || it->value != setting.value;
             }
+            if (settings_in_query.contains(setting.name) && ObjectStorageQueueTableMetadata::isChangeableSetting(setting.name)
+                && isSettingChangeable(setting.name, mode) && !requiresDetachedMV(setting.name))
+                setting_changed = true;
             if (!setting_changed)
                 continue;
 
