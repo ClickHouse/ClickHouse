@@ -118,7 +118,7 @@ namespace
     {
         const bool * alive_bins;
 
-        bool ALWAYS_INLINE takes(UInt64 hash) const { return alive_bins[DB::bucketCountBin(hash)]; }
+        [[nodiscard]] bool ALWAYS_INLINE takes(UInt64 hash) const { return alive_bins[DB::bucketCountBin(hash)]; }
     };
 
     /// The filter of the best groups of a count-first unit: their hashes, sorted, and a bitset on 12 bits of them. A
@@ -137,12 +137,12 @@ namespace
                 bits[(hash >> 6) & 63] |= UInt64{1} << (hash & 63);
         }
 
-        bool ALWAYS_INLINE contains(UInt64 hash) const
+        [[nodiscard]] bool ALWAYS_INLINE contains(UInt64 hash) const
         {
             return ((bits[(hash >> 6) & 63] >> (hash & 63)) & 1) && std::binary_search(hashes.begin(), hashes.end(), hash);
         }
 
-        bool ALWAYS_INLINE takes(UInt64 hash) const { return contains(hash); }
+        [[nodiscard]] bool ALWAYS_INLINE takes(UInt64 hash) const { return contains(hash); }
 
     private:
         const DB::PaddedPODArray<UInt64> & hashes;
@@ -290,12 +290,17 @@ namespace
         {
         }
 
-        /// The record count of partition `sub` of the bucket, in the producers' chunks and in its spill stream.
-        size_t recordsOf(size_t sub) const
+        /// The record counts of the bucket's partitions, in the producers' chunks and in their spill streams. A
+        /// producer keeps the counts of consecutive partitions together, so the producers are read one after another.
+        [[nodiscard]] std::vector<size_t> recordsOfPartitions() const
         {
-            size_t records = spilledOf(sub).recordCount();
+            const size_t partitions = session.layout.partitionsPerBucket();
+            std::vector<size_t> records(partitions);
+            for (size_t sub = 0; sub < partitions; ++sub)
+                records[sub] = spilledOf(sub).recordCount();
             for (const auto & producer : session.producer_buffers)
-                records += producer->recordsOf(first_partition + sub);
+                for (size_t sub = 0; sub < partitions; ++sub)
+                    records[sub] += producer->recordsOf(first_partition + sub);
             return records;
         }
 
@@ -332,17 +337,24 @@ namespace
             }
         }
 
-        /// Frees the records of partition `sub` of the bucket: the producers' chunks and its spill stream, which a unit
-        /// that the top-K pruning skips leaves unread.
-        void release(size_t sub)
+        /// Frees the records of the partitions [first_sub, end_sub) of the bucket: the producers' chunks and the spill
+        /// streams, which a unit that the top-K pruning skips leaves unread. Every producer releases its partitions
+        /// in one batch, and the next producer's are prefetched meanwhile.
+        void release(size_t first_sub, size_t end_sub)
         {
-            for (const auto & producer : session.producer_buffers)
-                producer->releasePartition(first_partition + sub);
-            spilledOf(sub).release();
+            const auto & producers = session.producer_buffers;
+            for (size_t i = 0; i < producers.size(); ++i)
+            {
+                if (i + 1 < producers.size())
+                    producers[i + 1]->prefetchRelease(first_partition + first_sub, end_sub - first_sub);
+                producers[i]->releasePartitions(first_partition + first_sub, end_sub - first_sub);
+            }
+            for (size_t sub = first_sub; sub < end_sub; ++sub)
+                spilledOf(sub).release();
         }
 
     private:
-        DB::AdaptiveAggregationSession::SpilledPartition & spilledOf(size_t sub) const
+        [[nodiscard]] DB::AdaptiveAggregationSession::SpilledPartition & spilledOf(size_t sub) const
         {
             return session.spilled_partitions[first_partition + sub];
         }
@@ -452,7 +464,7 @@ namespace
         }
 
         /// How many source cells `unit` has.
-        size_t count(size_t unit) const
+        [[nodiscard]] size_t count(size_t unit) const
         {
             const size_t unit_first_partition = first_partition + unit * partitions_per_unit;
             size_t cells = routed[unit].size();
@@ -1098,13 +1110,10 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     const size_t partitions_per_bucket = layout.partitionsPerBucket();
 
     AdaptiveBucketRecords staged(session, bucket);
-    std::vector<size_t> partition_records(partitions_per_bucket);
+    const std::vector<size_t> partition_records = staged.recordsOfPartitions();
     size_t bucket_records = 0;
     for (size_t sub = 0; sub < partitions_per_bucket; ++sub)
-    {
-        partition_records[sub] = staged.recordsOf(sub);
         bucket_records += partition_records[sub];
-    }
 
     size_t source_cells = 0;
     for (size_t i = 1; i < data.size(); ++i)
@@ -1186,8 +1195,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         {
             if constexpr (MapAggregationMethod<Method>)
                 for_each_cell([&](const auto &, AggregateDataPtr * mapped, size_t) { discardAdaptiveSourceState(*mapped); });
-            for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
-                staged.release(sub);
+            staged.release(unit_first_sub, unit_end_sub);
             pruned_records += unit_records;
             ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPrunedUnits);
             continue;
@@ -1315,8 +1323,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationMergeUnits);
 
         /// The conversion copied the keys out of the records, so the unit's records go now.
-        for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
-            staged.release(sub);
+        staged.release(unit_first_sub, unit_end_sub);
 
         /// The next unit creates its states in a fresh arena, so the states of this one free with its arena: at once
         /// where the conversion copied their results out, or with the chunk where they are part of it, as the non-final
