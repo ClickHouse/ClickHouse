@@ -5,12 +5,14 @@ DROP TABLE IF EXISTS t_tuple_json_default_skip_empty;
 CREATE TABLE t_tuple_json_default
 (
     id UInt32,
-    t Tuple(j JSON(a Enum8('x' = 1, 'y' = 2), z Enum8('m' = -3, 'n' = 0)), d Date32, e Enum8('p' = 5, 'q' = 6)),
+    t Tuple(j JSON(a Enum8('x' = 1, 'y' = 2), z Enum8('m' = -3, 'n' = 0)), d Date32, e Enum8('p' = 5, 'q' = 6), v Nullable(Enum8('p' = 5, 'q' = 6))),
     n Tuple(o Tuple(j JSON(a Enum8('x' = 1, 'y' = 2))))
 )
 ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_tuple_json_default (id) VALUES (1);
 SELECT 'omitted', id, t, n, toInt8(t.j.a), toInt8(t.j.z) FROM t_tuple_json_default;
+-- The value hidden under a NULL element stays the column zero (insert deduplication hashes it).
+SELECT 'hidden under NULL', id, toInt8(assumeNotNull(t.v)) FROM t_tuple_json_default;
 ALTER TABLE t_tuple_json_default ADD COLUMN added Tuple(j JSON(a Enum8('x' = 1, 'y' = 2)));
 SELECT 'add column', id, added, added.j.a FROM t_tuple_json_default;
 SELECT 'default', defaultValueOfArgumentType(t), defaultValueOfTypeName('Tuple(j JSON(a Enum8(\'x\' = 1, \'y\' = 2)))') FROM t_tuple_json_default;
