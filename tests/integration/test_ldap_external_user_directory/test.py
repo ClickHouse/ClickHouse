@@ -260,3 +260,63 @@ def test_common_role_with_dot_in_name():
     assert instance2.query(
         "SELECT role_name FROM system.current_roles", user="janedoe", password="qwerty"
     ) == TSV([["ldap.common.role"]])
+
+
+def test_mapped_role_with_legacy_escaped_name(ldap_cluster):
+    # The role `ldap.mapped.role` is defined in `users.xml`. It used to be stored under the escaped name
+    # `ldap\.mapped\.role`, so an LDAP group can still map to that legacy spelling of the name.
+    group_cn = "clickhouse-ldap\\.mapped\\.role"
+    ldif = [
+        "dn: cn=" + group_cn.replace("\\", "\\\\") + ",dc=example,dc=org",
+        "objectClass: top",
+        "objectClass: groupOfNames",
+        "member: cn=johndoe,ou=users,dc=example,dc=org",
+    ]
+    # Pass the LDIF lines as arguments to avoid any processing of the backslashes by the shell.
+    code, (stdout, stderr) = ldap_cluster.ldap_container.exec_run(
+        [
+            "sh",
+            "-c",
+            'printf "%s\\n" "$@" | ldapadd -H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}'.format(
+                host=ldap_cluster.ldap_host,
+                port=ldap_cluster.ldap_port,
+                admin_bind_dn=LDAP_ADMIN_BIND_DN,
+                admin_password=LDAP_ADMIN_PASSWORD,
+            ),
+            "sh",
+        ]
+        + ldif,
+        demux=True,
+    )
+    logging.debug(f"ldapadd code:{code} stdout:{stdout}, stderr:{stderr}")
+    assert code == 0
+
+    users_xml = "/etc/clickhouse-server/users.d/users.xml"
+    try:
+        assert instance1.query(
+            "SELECT role_name FROM system.current_roles", user="johndoe", password="qwertz"
+        ) == TSV([["ldap.mapped.role"]])
+
+        # Change the role in `users.xml`. The notification about the change carries the real name of the role,
+        # and the role must stay granted.
+        instance1.replace_in_config(
+            users_xml,
+            "<ldap.mapped.role/>",
+            "<ldap.mapped.role><grants><query>GRANT SELECT ON system.one</query></grants></ldap.mapped.role>",
+        )
+        instance1.query("SYSTEM RELOAD USERS", user="common_user", password="qwerty")
+        assert instance1.query(
+            "SELECT count() FROM system.grants WHERE role_name = 'ldap.mapped.role'", user="common_user", password="qwerty"
+        ) == "1\n"
+
+        assert instance1.query(
+            "SELECT role_name FROM system.current_roles", user="johndoe", password="qwertz"
+        ) == TSV([["ldap.mapped.role"]])
+    finally:
+        instance1.replace_in_config(
+            users_xml,
+            "<ldap.mapped.role><grants><query>GRANT SELECT ON system.one</query></grants></ldap.mapped.role>",
+            "<ldap.mapped.role/>",
+        )
+        instance1.query("SYSTEM RELOAD USERS", user="common_user", password="qwerty")
+        delete_ldap_group(ldap_cluster, group_cn=group_cn.replace("\\", "\\\\"))

@@ -225,6 +225,27 @@ void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPClient::SearchR
         }
     };
 
+    // A mapped role name can be an alternative spelling of the real name of the role, e.g. `UsersConfigAccessStorage`
+    // resolves the legacy escaped name `my\.role` to the role `my.role` defined in `users.xml`. All the mappings below
+    // are keyed by the real names, because they are compared with the names in the notifications about role changes.
+    std::set<String> resolved_local_role_names;
+    for (const auto & role_name : local_role_names)
+    {
+        if (!granted_role_ids.contains(role_name))
+        {
+            if (const auto role_id = access_control.find<Role>(role_name))
+            {
+                if (auto real_name = access_control.tryReadName(*role_id))
+                {
+                    resolved_local_role_names.insert(std::move(*real_name));
+                    continue;
+                }
+            }
+        }
+        resolved_local_role_names.insert(role_name);
+    }
+    local_role_names = std::move(resolved_local_role_names);
+
     users_external_roles.erase(user_name);
     granted_roles = {};
     const auto old_role_names = std::move(roles_per_users[user_name]);

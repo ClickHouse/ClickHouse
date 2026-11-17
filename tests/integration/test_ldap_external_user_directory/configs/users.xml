@@ -10,5 +10,6 @@
     </users>
     <roles>
         <ldap.common.role/>
+        <ldap.mapped.role/>
     </roles>
 </clickhouse>
