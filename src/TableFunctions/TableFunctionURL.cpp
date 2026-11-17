@@ -511,9 +511,6 @@ std::optional<String> TableFunctionURL::tryGetFormatFromFirstArgument()
 void registerTableFunctionURL(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionURL>({.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 `url` function creates a table from the `URL` with given `format` and `structure`.
 
 `url` function may be used in `SELECT` and `INSERT` queries on data in [URL](/reference/engines/table-engines/special/url) tables.
