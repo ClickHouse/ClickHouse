@@ -30,10 +30,10 @@ namespace FailPoints
     extern const char stateless_worker_pause_before_start_task[];
 }
 
-StatelessWorkerEndpoint::StatelessWorkerEndpoint(size_t max_threads, size_t max_free_threads, size_t queue_size)
+StatelessWorkerEndpoint::StatelessWorkerEndpoint()
     : endpoint_name("stateless_worker/")
     , log(Poco::Logger::getShared("StatelessWorkerEndpoint"))
-    , task_runner(std::make_shared<StatelessTaskExecutor>(max_threads, max_free_threads, queue_size))
+    , task_runner(std::make_shared<StatelessTaskExecutor>())
 {
 }
 

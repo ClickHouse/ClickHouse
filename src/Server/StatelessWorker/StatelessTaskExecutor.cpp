@@ -113,12 +113,12 @@ InternalTextLogsQueuePtr StatelessTaskExecutor::LogsQueueSlot::get() const
     return logs_queue;
 }
 
-StatelessTaskExecutor::StatelessTaskExecutor(size_t max_threads, size_t max_free_threads, size_t queue_size)
+StatelessTaskExecutor::StatelessTaskExecutor()
     : thread_pool(
         CurrentMetrics::StatelessWorkerThreads,
         CurrentMetrics::StatelessWorkerThreadsActive,
         CurrentMetrics::StatelessWorkerThreadsScheduled,
-        max_threads, max_free_threads, queue_size)
+        GlobalThreadPool::instance().getMaxThreads(), /*max_free_threads=*/ 0, /*queue_size=*/ 0)
 {
 }
 

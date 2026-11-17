@@ -26,7 +26,7 @@ class QueryStatus;
 class StatelessTaskExecutor
 {
 public:
-    StatelessTaskExecutor(size_t max_threads, size_t max_free_threads, size_t queue_size);
+    StatelessTaskExecutor();
     virtual ~StatelessTaskExecutor() = default;
 
     enum Result
@@ -161,6 +161,7 @@ private:
     void scheduleTask(const String & unique_task_id, TaskStatePtr task_state, TaskPromisePtr task_promise,
         DistributedQueryTaskDescription task_description_, const String & unique_temp_file_path, OpenTelemetry::TracingContext trace_context_);
 
+    /// A thread for every task, as many as the global thread pool has: a task waiting for its peers holds only its own.
     ThreadPool thread_pool;
 
     std::unordered_map<String, TaskStatePtr> tasks TSA_GUARDED_BY(tasks_mutex);
