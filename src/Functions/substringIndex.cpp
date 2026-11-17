@@ -44,11 +44,11 @@ namespace
         [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
         [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-        /// A row whose result is NULL, because of a NULL in any argument, may hold a UInt64 that does not fit Int64, and
-        /// `executeImpl` would throw for it
+        /// A row whose result is NULL, or an unused dictionary entry of a `LowCardinality` argument, may hold a UInt64 that
+        /// does not fit Int64, and `executeImpl` would throw for it
         [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
         {
-            return !hasUInt64AndNullableArguments(arguments);
+            return !uint64ArgumentMayHoldUnusedValues(arguments);
         }
 
         [[nodiscard]] String getSignatureString() const override

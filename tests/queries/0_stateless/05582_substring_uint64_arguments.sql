@@ -103,3 +103,21 @@ SELECT substringIndex(nullIf(if(number = 0, '', 'a.b.c'), ''), '.', if(number = 
 SELECT substring('abcdefghij', if(number = 0, toUInt64(18446744073709551615), toUInt64(3)), nullIf(if(number = 0, -1, 2), -1)) FROM numbers(2);
 SELECT bitSlice('abcdefghij', if(number = 0, toUInt64(18446744073709551615), toUInt64(1)), nullIf(if(number = 0, -1, 8), -1)) FROM numbers(2);
 SELECT left(toLowCardinality(nullIf(if(number = 0, '', 'abcdefghij'), '')), if(number = 0, toUInt64(18446744073709551615), toUInt64(3))) FROM numbers(2);
+
+--- The dictionary of a `LowCardinality(UInt64)` argument keeps entries that no row references after a filter,
+-- and only the referenced ones are checked.
+SET allow_suspicious_low_cardinality_types = 1;
+DROP TABLE IF EXISTS t_lc_05582;
+CREATE TABLE t_lc_05582 (n LowCardinality(UInt64)) ENGINE = Memory;
+INSERT INTO t_lc_05582 VALUES (3), (18446744073709551615);
+SELECT left('abcdefghij', n) FROM t_lc_05582 WHERE n < 100;
+SELECT right('abcdefghij', n) FROM t_lc_05582 WHERE n < 100;
+SELECT leftUTF8('abcdefghij', n) FROM t_lc_05582 WHERE n < 100;
+SELECT substring('abcdefghij', n) FROM t_lc_05582 WHERE n < 100;
+SELECT substring('abcdefghij', 1, n) FROM t_lc_05582 WHERE n < 100;
+SELECT hex(bitSlice('abcdefghij', n, 8)) FROM t_lc_05582 WHERE n < 100;
+SELECT substringIndex('a.b.c.d', '.', n) FROM t_lc_05582 WHERE n < 100;
+SELECT left('abcdefghij', n) FROM (SELECT toLowCardinality(toNullable(n)) AS n FROM t_lc_05582) WHERE n < 100;
+-- A value that is referenced is still reported.
+SELECT left('abcdefghij', n) FROM t_lc_05582; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+DROP TABLE t_lc_05582;

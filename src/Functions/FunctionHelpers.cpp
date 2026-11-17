@@ -588,13 +588,19 @@ void checkIntegerArgumentFitsInt64(const IColumn & column, std::string_view func
             *max_value);
 }
 
-bool hasUInt64AndNullableArguments(const ColumnsWithTypeAndName & arguments)
+bool uint64ArgumentMayHoldUnusedValues(const ColumnsWithTypeAndName & arguments)
 {
     bool has_uint64 = false;
     bool has_nullable = false;
     for (const auto & argument : arguments)
     {
-        has_uint64 |= WhichDataType(removeNullable(removeLowCardinality(argument.type))).isUInt64();
+        if (WhichDataType(removeNullable(removeLowCardinality(argument.type))).isUInt64())
+        {
+            /// The dictionary of a `LowCardinality` column may keep values that no row references, e.g. after a filter.
+            if (argument.type->lowCardinality())
+                return true;
+            has_uint64 = true;
+        }
         has_nullable |= isNullableOrLowCardinalityNullable(argument.type);
     }
     return has_uint64 && has_nullable;
