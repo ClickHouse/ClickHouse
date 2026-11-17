@@ -129,6 +129,11 @@ public:
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
+    /// Called when the deferred fsync of an inserted part failed, see `DeferredPartsSync`. Its data may not be durable,
+    /// so the part is moved to `detached` with the prefix `fsync-failed`, and it is removed from the deduplication log,
+    /// so that a retry of the insert writes the data again, even after a restart of the server.
+    void detachPartAfterFailedFsync(const DataPartPtr & part);
+
 private:
 
     /// Mutex and condvar for synchronous mutations wait
@@ -494,9 +499,9 @@ private:
         MutationsSnapshot() = default;
         MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByVersion mutations_snapshot, DataPartsVector patches_);
 
-        MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
-        std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
-        NameSet getColumnsChangedOnFly() const override;
+        [[nodiscard]] MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
+        [[nodiscard]] std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
+        [[nodiscard]] NameSet getColumnsChangedOnFly() const override;
     };
 
     class PartMutationBackoffPolicy
@@ -516,7 +521,7 @@ private:
             {}
 
 
-            size_t getNextMinExecutionTimeUsResolution() const
+            [[nodiscard]] size_t getNextMinExecutionTimeUsResolution() const
             {
                 if (max_postpone_time_ms == 0)
                     return static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
@@ -532,7 +537,7 @@ private:
                 latest_fail_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
             }
 
-            bool partCanBeMutated() const
+            [[nodiscard]] bool partCanBeMutated() const
             {
                 if (max_postpone_time_ms == 0)
                     return true;

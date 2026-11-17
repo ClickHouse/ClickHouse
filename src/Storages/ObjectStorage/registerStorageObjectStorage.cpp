@@ -210,7 +210,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 - `blobpath` - file path. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
 - `account_name` - if storage_account_url is used, then account name can be specified here
 - `account_key` - if storage_account_url is used, then account key can be specified here
-- `format` — The [format](/reference/formats) of the file.
+- `format` — The [format](/reference/formats/index) of the file.
 - `compression` — Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. By default, it will autodetect compression by file extension. (same as setting to `auto`). For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).
 - `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `wildcard`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 - `partition_columns_in_data_file` - Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
@@ -292,7 +292,7 @@ With the `hive` partition strategy, the default set by `file_like_engine_default
 
 When no `partition_strategy` is set, a path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 
-`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
+`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern that skips hidden paths (segments starting with `_` or `.`, e.g. `_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), following the Hive ecosystem convention. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
 Note: When using `hive` partition strategy, the `use_hive_partitioning` setting has no effect.
 
@@ -367,12 +367,14 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 
 - `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings. For more information see [below](#wildcards-in-path).
 - `NOSIGN` - If this keyword is provided in place of credentials, all the requests will not be signed.
-- `format` — The [format](/reference/formats#formats-overview) of the file.
+- `format` — The [format](/reference/formats/index#formats-overview) of the file.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file. For more information see [Using S3 for Data Storage](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
 - `compression` — Compression type. Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. Parameter is optional. By default, it will auto-detect compression by file extension. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).
 - `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `wildcard`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 - `partition_columns_in_data_file` - Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
 - `storage_class_name` - Options: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Only S3 storage classes that allow immediate retrieval are supported (archival classes such as `GLACIER` and `DEEP_ARCHIVE` are not). Allows to specify [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
+- `upload_checksum_algorithm` - Optional. Checksum algorithm for uploads: `MD5` (sent as `Content-MD5`), `CRC32` or `SHA256` (sent as `x-amz-checksum-*`). Empty uses `Content-MD5`, or `CRC32` for S3Express buckets. Ignored for GCS.
+- `delete_checksum_algorithm` - Optional. Checksum algorithm for batch `DeleteObjects` requests: `MD5` (sent as `Content-MD5`), `CRC32` or `SHA256`. Empty uses `MD5`, `CRC32` for S3Express buckets, or `SHA256` when `MD5` is unavailable (FIPS mode) or rejected by the server. Ignored for GCS.
 - `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
 ### Data cache {#data-cache}
@@ -418,7 +420,7 @@ With the `hive` partition strategy, the default set by `file_like_engine_default
 
 When no `partition_strategy` is set, a path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 
-`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern, it is equivalent to `SELECT * FROM s3('table_root/**.parquet')`.
+`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern, it is equivalent to `SELECT * FROM s3('table_root/**.parquet')`, except that hidden paths (segments below the table root starting with `_` or `.`, e.g. `_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`) are skipped, following the Hive ecosystem convention. For plain glob paths without a partition strategy, the same filtering is available via the `s3_skip_hidden_files` / `azure_skip_hidden_files` / `hdfs_skip_hidden_files` settings.
 Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
 Note: When using `hive` partition strategy, the `use_hive_partitioning` setting has no effect.
@@ -482,7 +484,7 @@ in subsets, hence partitioned writes.
 </Note>
 
 #### Create the table {#create-the-table}
-```sql
+```sql highlight={8}
 CREATE TABLE p
 (
     `column1` UInt32,
@@ -490,7 +492,6 @@ CREATE TABLE p
     `column3` UInt32
 )
 ENGINE = S3(
--- highlight-next-line
            'http://minio:10000/clickhouse//test_{_partition_id}.csv',
            'minioadmin',
            'minioadminpassword',
@@ -860,8 +861,6 @@ static void registerStorageHDFS(StorageFactory & factory)
     },
     Documentation{
         .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # HDFS table engine
 
 <CloudNotSupportedBadge/>
@@ -882,7 +881,7 @@ ENGINE = HDFS(URI, format)
 - `format` - specifies one of the available file formats. To perform
 `SELECT` queries, the format must be supported for input, and to perform
 `INSERT` queries – for output. The available formats are listed in the
-[Formats](/reference/formats#formats-overview) section.
+[Formats](/reference/formats/index#formats-overview) section.
 - [PARTITION BY expr]
 
 ### PARTITION BY {#partition-by}
@@ -953,8 +952,6 @@ Constructions with `{}` are similar to the [remote](/reference/functions/table-f
     - 'hdfs://hdfs1:9000/another_dir/some_file_3'
 
 1.  There are several ways to make a table consisting of all six files:
-
-<!-- -->
 
 ```sql
 CREATE TABLE table_with_range (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV')
@@ -1278,13 +1275,14 @@ The following table shows how Iceberg data types are mapped to ClickHouse data t
 | `date` | `Date32` | |
 | `time` | `Int64` | Microseconds since midnight |
 | `timestamp` | `DateTime64(6)` | Microseconds, no timezone |
-| `timestamptz` | `DateTime64(6, 'UTC')` | Microseconds, UTC timezone |
+| `timestamptz` | `DateTime64(6, 'UTC')` | Microseconds, the time zone is set by the table setting `iceberg_timezone_for_timestamptz` |
 | `timestamp_ns` | `DateTime64(9)` | Nanoseconds, no timezone (since Iceberg v3 only) |
-| `timestamptz_ns` | `DateTime64(9, 'UTC')` | Nanoseconds, UTC timezone (since Iceberg v3 only) |
+| `timestamptz_ns` | `DateTime64(9, 'UTC')` | Nanoseconds, the time zone is set by the table setting `iceberg_timezone_for_timestamptz` (since Iceberg v3 only) |
 | `string`, `binary` | `String` | |
 | `uuid` | `UUID` | |
 | `fixed(N)` | `FixedString(N)` | |
 | `decimal(P, S)` | `Decimal(P, S)` | |
+| `unknown` | `Nullable(Nothing)` | Always `NULL`, not stored in data files (since Iceberg v3 only) |
 
 ### Complex types {#complex-types}
 
@@ -1302,7 +1300,7 @@ The data type mappings above apply to reads. The following limitations apply whe
 - ClickHouse cannot create an Iceberg schema containing `UInt64` either: the widest Iceberg integer type is the signed 64-bit `long`, which cannot represent every `UInt64` value. Use `Int64` or `Decimal(20, 0)`. Creating a table with a `UInt64` column, including a nested one such as `Array(UInt64)`, fails with an exception even if the Iceberg table already exists at the path. A `UInt32` column is widened to Iceberg `long` for the same reason, and is therefore read back as `Int64`.
 - When ClickHouse creates or evolves an Iceberg schema, it maps every `DateTime` and `DateTime64` column to Iceberg `timestamp`, which has microsecond precision and no timezone. ClickHouse cannot generate `timestamptz`, `timestamp_ns`, or `timestamptz_ns` schema types, so higher precision and timezone semantics are not represented in the Iceberg schema.
 - ClickHouse cannot write to an Iceberg table that uses a `decimal`, `fixed`, `timestamp_ns`, or `timestamptz_ns` column as a direct partition field. The operation fails with an unsupported-type exception.
-- For data files containing types whose bounds ClickHouse cannot serialize, such as `Float32`, `Float64`, and `UUID`, ClickHouse omits the lower and upper bounds of those columns from the Iceberg manifest entry. Column sizes and null counts are still included, and the data remains correct, but readers cannot use manifest-level min-max pruning for those files.
+- For data files containing types whose bounds ClickHouse cannot serialize, such as `UUID`, ClickHouse omits the lower and upper bounds of those columns from the Iceberg manifest entry. Column sizes and null counts are still included, and the data remains correct, but readers cannot use manifest-level min-max pruning for those files.
 
 ## Schema evolution {#schema-evolution}
 ClickHouse supports reading Iceberg tables whose schema has evolved over time. This includes tables where columns have been added, removed, or reordered, as well as columns changed from required to nullable. Additionally, the following type casts are supported:
@@ -1310,6 +1308,7 @@ ClickHouse supports reading Iceberg tables whose schema has evolved over time. T
 * int -> long
 * float -> double
 * decimal(P, S) -> decimal(P', S) where P' > P.
+* unknown -> any primitive type (since Iceberg v3 only)
 
 Currently, it is not possible to change nested structures or the types of elements within arrays and maps.
 
@@ -1910,12 +1909,16 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 - Partition pruning when `use_paimon_partition_pruning` is enabled.
 - Optional background refresh of metadata when configured.
 - Stable table UUID when using Atomic/Replicated databases, enabling `{uuid}` macros in Keeper paths.
+- Schema evolution: each data file is read with the schema it was written with, and its top-level columns are matched to the current schema by Paimon field id, so renamed columns and columns dropped and re-added under the same name read as in Spark.
 
 ## Primary-key tables {#primary-key-tables}
 
-Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
-snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
-declares `primary-key` therefore throws.
+Merge-on-read is not implemented, so a primary-key table is read only where Paimon reads it without merging: a bucket is
+read when all its data files are above level 0, are known to have no retract rows, and are in one level. With
+`deletion-vectors.enabled` or `'merge-engine' = 'first-row'` the files may be in several levels, and, unless
+`batch-scan-mode` is set to a mode other than `none`, level-0 files are not read until they are compacted, as in Paimon.
+Reading any other bucket throws; a full compaction in Paimon (`compact_strategy => 'full'`) makes it readable. Incremental
+reads of primary-key tables are not supported.
 
 ## Tables with deletion vectors {#deletion-vectors}
 
@@ -2132,7 +2135,7 @@ Stop the MV before dropping it to prevent background refresh from blocking DDL o
 - The first incremental read returns every row of the current snapshot. After that, an incremental read delivers the rows of `APPEND` snapshots only, like Paimon's streaming read of an append table: `COMPACT`, `OVERWRITE` and `ANALYZE` snapshots are skipped. Paimon commits every write that deletes or rewrites data files as `OVERWRITE` (`INSERT OVERWRITE`, `TRUNCATE`, and the copy-on-write rewrites of `DELETE`, `UPDATE` and of a `MERGE INTO` that updates or deletes rows), so the rows such a commit writes, such as the new versions of updated rows, are not delivered, and a warning is logged for every skipped `OVERWRITE` snapshot. With `paimon_incremental_read_append_overwrite = 1` they are delivered, like with Paimon's `streaming-read-append-overwrite`, together with the unchanged rows of every data file the commit rewrote, except for the data files that a later snapshot read by the same query removes. `COMPACT` snapshots are not read, so a query that reads an `APPEND` snapshot, a `COMPACT` that merges the file it added and an `OVERWRITE` that rewrites the merged file returns the rows of both the original and the rewritten file: the unchanged rows appear twice in its result, and the changed ones in their old and new versions. `paimon_target_snapshot_id` still returns the delta of any snapshot.
 - After the first incremental read, a snapshot with a commit kind that ClickHouse does not know fails the incremental read, and every later one fails too until ClickHouse is upgraded or the cursor is moved past the snapshot in Keeper, as the error message describes.
 - If the underlying Paimon table is dropped and recreated at the same object-storage path (e.g. via Flink or Spark), you must `DROP` and re-`CREATE` the corresponding ClickHouse table. ClickHouse detects the recreation by comparing the schema-0 creation timestamp and raises an error; the stale ClickHouse table cannot be used until it is recreated.
-- Columns are matched to data files by name, not by Paimon field id. Reading a data file written before a column was renamed, or before a column was dropped and another one with the same name (compared case-insensitively) was added, therefore throws: the result would contain `NULL` for the renamed column and the dropped column's values for the re-added one. Adding and dropping columns is supported. Rewriting the table with the current schema in Paimon, for example with `INSERT OVERWRITE <table> SELECT * FROM <table>`, makes the snapshots created after it readable. An incremental read that reaches such a data file throws without advancing its cursor. To move on, wait until Paimon expires the snapshots committed before the change, or abandon them by moving the cursor to the last of them, which drops every snapshot not yet consumed up to it (see [When a snapshot cannot be read](#when-a-snapshot-cannot-be-read)).
+- Fields inside a `ROW` column are matched to data files by name, not by Paimon field id. Reading a data file written before a field inside a `ROW` was renamed, or before such a field was dropped and another one with the same name (compared case-insensitively) was added, therefore throws: the result would contain `NULL` for the renamed field and the dropped field's values for the re-added one. Adding and dropping fields is supported. Rewriting the table with the current schema in Paimon, for example with `INSERT OVERWRITE <table> SELECT * FROM <table>`, makes the snapshots created after it readable. An incremental read that reaches such a data file throws without advancing its cursor. To move on, wait until Paimon expires the snapshots committed before the change, or abandon them by moving the cursor to the last of them, which drops every snapshot not yet consumed up to it (see [When a snapshot cannot be read](#when-a-snapshot-cannot-be-read)).
 
 ## Aliases {#aliases}
 
@@ -2411,9 +2414,6 @@ void registerStorageDeltaLake(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-
 # DeltaLake table engine
 
 This engine provides an integration with existing [Delta Lake](https://github.com/delta-io/delta) tables in S3, GCP and Azure storage and supports both reads and writes (writes for S3 and GCS from v25.10, for Azure from v26.9).
@@ -2423,7 +2423,7 @@ This engine provides an integration with existing [Delta Lake](https://github.co
 By default the Delta Lake table must already exist in S3, GCP or Azure storage, and the commands below attach to it without DDL column definitions. With `allow_delta_lake_create_table = 1`, a `CREATE TABLE` with explicit columns against a location that has no `_delta_log` instead creates a new Delta Lake table by writing the initial commit through `delta-kernel-rs` (creating a partitioned table is not supported yet), and inside a Unity `DataLakeCatalog` database the table is also registered in the catalog.
 
 <Tabs>
-<TabItem value="S3" label="S3" default>
+<Tab title="S3">
 
 **Syntax**
 
@@ -2465,9 +2465,9 @@ Using named collections:
 CREATE TABLE deltalake
 ENGINE = DeltaLake(deltalake_conf, filename = 'test_table')
 ```
-</TabItem>
+</Tab>
 
-<TabItem value="GCP" label="GCP" default>
+<Tab title="GCP">
 
 **Syntax**
 
@@ -2502,9 +2502,9 @@ CREATE TABLE gcpDeltaLake
 ENGINE = DeltaLake(gcs_creds, url = 'https://storage.googleapis.com/<bucket>/<path>')
 ```
 
-</TabItem>
+</Tab>
 
-<TabItem value="Azure" label="Azure" default>
+<Tab title="Azure">
 
 **Syntax**
 
@@ -2522,7 +2522,7 @@ ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpa
 - `account_name` — Azure storage account name
 - `account_key` — Azure storage account key
 
-</TabItem>
+</Tab>
 </Tabs>
 
 ## Write data using a DeltaLake table {#insert-data}
@@ -2737,6 +2737,10 @@ Using named collections:
 ```sql
 CREATE TABLE hudi_table ENGINE=Hudi(hudi_conf, filename = 'test_table')
 ```
+
+## Limitations {#limitations}
+
+Merge-on-Read is not implemented: the log files of a Merge-on-Read table are not read. Reading a table whose latest file slices have log files, that is changes written after the last compaction, therefore throws `NOT_IMPLEMENTED` instead of returning the values from before those changes. Schema inference throws for such a table too. Copy-on-Write tables and Merge-on-Read tables without such log files, for example right after a compaction in Hudi, are read as usual.
 
 ## See also {#see-also}
 

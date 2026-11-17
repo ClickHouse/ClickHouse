@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <optional>
+#include <span>
 
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseReplicatedSettings.h>
@@ -44,6 +45,15 @@ struct ReplicasInfo
 {
     std::vector<ReplicaInfo> replicas;
     bool replicas_belong_to_shared_catalog = false;
+};
+
+class DatabaseReplicated;
+
+/// A cluster of a `Replicated` database whose replica state is requested by `DatabaseReplicated::tryGetReplicasInfoBatch`.
+struct ReplicasInfoTarget
+{
+    const DatabaseReplicated * database;
+    ClusterPtr cluster;
 };
 
 class DatabaseReplicated : public DatabaseAtomic
@@ -155,7 +165,11 @@ public:
 
     void restoreDatabaseInKeeper(ContextPtr ctx);
 
+    /// The replica state of one cluster of this database. A failed request yields an empty `ReplicasInfo` and is logged.
     ReplicasInfo tryGetReplicasInfo(const ClusterPtr & cluster_) const;
+    /// `result[i]` is what `targets[i].database->tryGetReplicasInfo(targets[i].cluster)` returns, but the requests
+    /// of several targets are in flight at once instead of one round trip per target.
+    static std::vector<ReplicasInfo> tryGetReplicasInfoBatch(std::span<const ReplicasInfoTarget> targets);
 
     void renameDatabase(ContextPtr query_context, const String & new_name) override;
 
@@ -168,7 +182,7 @@ public:
 protected:
     void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                            const String & table_metadata_tmp_path, const String & table_metadata_path,
-                           ContextPtr query_context) override;
+                           const String & statement, ContextPtr query_context) override;
     void commitAlterTable(const StorageID & table_id,
                           const String & table_metadata_tmp_path, const String & table_metadata_path,
                           const String & statement, ContextPtr query_context) override;
@@ -258,6 +272,15 @@ private:
     void stopLoading() override;
 
     void initDDLWorkerUnlocked() TSA_REQUIRES(ddl_worker_mutex);
+    /// Returns a reference to the DDL worker taken under `ddl_worker_mutex`, or nullptr if the database
+    /// is not initialized yet or is being dropped.
+    std::shared_ptr<DatabaseReplicatedDDLWorker> tryGetDDLWorker() const;
+    /// Assigns `ddl_worker` and returns the previous worker. Requires both mutexes, see `ddl_worker_ptr_mutex`.
+    std::shared_ptr<DatabaseReplicatedDDLWorker> replaceDDLWorkerUnlocked(std::shared_ptr<DatabaseReplicatedDDLWorker> new_worker)
+        TSA_REQUIRES(ddl_worker_mutex);
+    /// Whether the current DDL worker exists and is active. Does not take `ddl_worker_mutex`,
+    /// so it is safe to call from the callbacks of DDL queries executed by the worker.
+    bool isDDLWorkerCurrentlyActive() const;
 
     void restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zookeeper);
     void reinitializeDDLWorker();
@@ -281,13 +304,31 @@ private:
 
     ZooKeeperPtr getZooKeeper() const;
 
+    /// Keeper paths of the replica state of one cluster of this database: `max_log_ptr`, then `active` and `log_ptr` of every replica.
+    Strings getReplicasInfoPaths(const Cluster & cluster_) const;
+    /// Parses the responses to `getReplicasInfoPaths`, waiting for them if they are still in flight; throws when `max_log_ptr` is missing.
+    /// `MultiGetResponses` is `zkutil::ZooKeeper::MultiTryGetResponse`: a template only to keep `ZooKeeper.h` out of this header.
+    template <typename MultiGetResponses>
+    ReplicasInfo parseReplicasInfo(const Cluster & cluster_, MultiGetResponses & responses) const;
+
     std::atomic_bool is_readonly = true;
     std::atomic_bool is_probably_dropped = false;
     std::atomic_bool is_recovering = false;
     std::atomic_bool ddl_worker_initialized = false;
-    std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
+    /// Shared, so that a query thread that uses the worker outside of `ddl_worker_mutex` (e.g. waiting in
+    /// `tryEnqueueAndExecuteEntry`) keeps it alive while `shutdown`, `restoreDatabaseInKeeper` or
+    /// `reinitializeDDLWorker` concurrently stop and replace it. Such a thread must take its own reference
+    /// under the mutex with `tryGetDDLWorker` and never dereference this member without the lock.
+    std::shared_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
     mutable std::mutex ddl_worker_mutex;
+    /// Protects only the `ddl_worker` pointer itself: it is assigned under both mutexes and can be read under either.
+    /// Unlike `ddl_worker_mutex`, it is never held while the worker is shut down (and its threads are joined),
+    /// so the callbacks of DDL queries (`commitCreateTable`, `dropTable`, ...) can take it with `isDDLWorkerCurrentlyActive`
+    /// even when they are executed by the worker's threads or concurrently with `SYSTEM RESTORE DATABASE REPLICA`.
+    mutable std::mutex ddl_worker_ptr_mutex;
     UInt32 max_log_ptr_at_creation = 0;
+    /// Serializes `restoreDatabaseInKeeper`. Taken before `ddl_worker_mutex`.
+    std::mutex restore_in_keeper_mutex;
 
     /// Usually operation with metadata are single-threaded because of the way replication works,
     /// but StorageReplicatedMergeTree may call alterTable outside from DatabaseReplicatedDDLWorker causing race conditions.
