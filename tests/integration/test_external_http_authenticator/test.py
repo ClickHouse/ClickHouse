@@ -316,3 +316,18 @@ def test_directory_named_session_settings(started_cluster: ClickHouseCluster):
     response = http_as(node, "ro_session", "SELECT 1", tenant="x", session_id="s_ro")
     assert response.status_code != 200 and "cannot be reused" in response.text
     assert http_as(node, "ro_session", "SELECT getSetting('readonly')", session_id="s_ro").text == "1\n"
+
+
+def test_directory_named_session_default_setting(started_cluster: ClickHouseCluster):
+    # A setting equal to its current value must not prevent a reuse with the same authentication.
+    for _ in range(2):
+        assert http_as(node_dir1, "default_setting", "SELECT count() FROM t", session_id="s_default").text == "3\n"
+
+
+def test_directory_named_session_failed_creation(started_cluster: ClickHouseCluster):
+    # A session whose creation failed (here on a constraint of the `default` profile) is not left behind.
+    response = http_as(node_dir1, "constrained", "SELECT 1", session_id="s_failed")
+    assert response.status_code != 200 and "SETTING_CONSTRAINT_VIOLATION" in response.text
+    params = {"query": "SELECT 1", "session_id": "s_failed", "session_check": "1"}
+    response = node_dir1.http_request("", method="POST", params=params, auth=("constrained", GOOD_PASSWORD))
+    assert response.status_code != 200 and "SESSION_NOT_FOUND" in response.text

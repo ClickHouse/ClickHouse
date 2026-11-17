@@ -1,6 +1,7 @@
 #include <Interpreters/Session.h>
 
 #include <base/isSharedPtrUnique.h>
+#include <base/scope_guard.h>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Access/ContextAccess.h>
@@ -645,6 +646,22 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     std::tie(new_named_session, new_named_session_created)
         = NamedSessionsStorage::instance().acquireSession(global_context, *user_id, session_name_, timeout_, session_check_);
 
+    /// Until `named_session` owns it, a failure must not leave the session acquired: a reused session is released,
+    /// a created one (maybe half-initialized) is removed. Its context is kept here to be destroyed outside the storage lock.
+    bool named_session_owned = false;
+    SCOPE_EXIT(
+    {
+        if (named_session_owned)
+            return;
+        if (!new_named_session_created)
+        {
+            new_named_session->release();
+            return;
+        }
+        auto context_to_destroy = new_named_session->context;
+        NamedSessionsStorage::instance().releaseAndCloseSession(*user_id, session_name_, new_named_session);
+    });
+
     /// Roles are per authentication, but sessions are keyed by user: another authentication must not inherit the roles of the session.
     if (new_named_session_created)
     {
@@ -655,10 +672,7 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         const auto & session_roles = new_named_session->authentication_roles;
         if (std::set<UUID>(session_roles.begin(), session_roles.end()) != std::set<UUID>(external_roles.begin(), external_roles.end())
             || new_named_session->authentication_settings != settings_from_auth_server)
-        {
-            new_named_session->release();
             throw Exception(ErrorCodes::ACCESS_DENIED, "Session {} cannot be reused: the roles or settings of this authentication differ from those of the session", session_name_);
-        }
     }
 
     auto new_session_context = new_named_session->context;
@@ -678,10 +692,11 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
         max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
 
-        /// As in the unnamed `makeSessionContext`. A reuse compares with `authentication_settings`, so they are
-        /// stored only after being applied: a session whose creation failed here cannot be reused without them.
-        new_session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
-        new_session_context->applySettingsChanges(settings_from_auth_server);
+        /// As in the unnamed `makeSessionContext`, but on a copy: the check drops changes equal to the current values,
+        /// while a reuse compares the unfiltered settings of its authentication with `authentication_settings`.
+        SettingsChanges settings_to_apply = settings_from_auth_server;
+        new_session_context->checkSettingsConstraints(settings_to_apply, SettingSource::QUERY);
+        new_session_context->applySettingsChanges(settings_to_apply);
         new_named_session->authentication_settings = settings_from_auth_server;
     }
     else
@@ -706,6 +721,7 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     /// Session context is ready.
     session_context = std::move(new_session_context);
     named_session = new_named_session;
+    named_session_owned = true;
     named_session_created = new_named_session_created;
     user = session_context->getUser();
 
