@@ -920,7 +920,7 @@ static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
     {
         try
         {
-            CompressionCodecFactory::instance().get(parseCodecDescription(*codec), arguments[0]);
+            (void)CompressionCodecFactory::instance().get(parseCodecDescription(*codec), arguments[0]);
         }
         catch (Exception & e)
         {
