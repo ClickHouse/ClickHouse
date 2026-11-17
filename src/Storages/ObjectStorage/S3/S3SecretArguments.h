@@ -19,10 +19,8 @@ SecretArgumentsSpec s3BackupSecretArguments();
 /// Named arguments carrying S3 secrets, shared by every S3 form.
 bool isS3SecretKey(std::string_view key);
 
-/// Whether the value of this key of an `extra_credentials(..)` map stays visible when the map is masked.
-bool isNonSecretExtraCredentialsKey(std::string_view key);
-
-/// Records the nested `headers(..)` and `extra_credentials(..)` maps, which carry secret auth material at any position.
+/// Records the nested `headers(..)` map, whose values are hidden, and hides every `extra_credentials(..)` whole: both carry
+/// secret auth material at any position.
 void maskHeadersAndExtraCredentials(FunctionSecretArgumentsFinder & finder);
 
 }

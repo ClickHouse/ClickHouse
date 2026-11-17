@@ -385,7 +385,10 @@ bool S3StorageParsedArguments::collectCredentials(ASTPtr maybe_credentials, S3::
         else if (arg_name == "external_id")
             auth_settings_[S3AuthSetting::external_id] = arg_value.safeGet<String>();
         else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid credential argument found: {}", arg_name);
+            /// The name is not repeated in the message: it can be a secret typed in the wrong place.
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid credential argument found in `extra_credentials`. Expected `role_arn`, `role_session_name` or `external_id`");
     }
 
     return true;

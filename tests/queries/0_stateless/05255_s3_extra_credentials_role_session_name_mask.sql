@@ -3,11 +3,11 @@
 
 -- role_session_name inside extra_credentials(...) can act as a shared secret: a role's trust policy
 -- can require a specific value through the sts:RoleSessionName condition, and the ClickHouse Cloud
--- guide documents exactly this use. It must therefore be masked like external_id, while role_arn is
--- a non-secret identifier that stays visible. Every secret value below is tagged so the final
+-- guide documents exactly this use. It must therefore be masked like external_id. The whole
+-- extra_credentials(...) is hidden, its keys included, because a key can be a secret too. Every secret value below is tagged so the final
 -- assertion can prove none of them leaks. role_session_name used to be logged in plaintext.
 
--- Engine form: SHOW CREATE hides role_session_name and external_id and keeps role_arn.
+-- Engine form: SHOW CREATE hides extra_credentials(...) whole.
 DROP TABLE IF EXISTS t_05255;
 CREATE TABLE t_05255 (x UInt8)
 ENGINE = S3('http://localhost:11111/test/05255', 'ak', 'SEKRIT_SAK',

@@ -8,8 +8,7 @@
 -- so the final assertion can prove none of them leaks. They used to leak in plaintext in SHOW CREATE
 -- and logged query text.
 
--- Engine form: SHOW CREATE hides every secret; the non-secret extra_credentials identifier
--- (role_arn) stays visible while external_id is hidden.
+-- Engine form: SHOW CREATE hides every secret; extra_credentials(...) is hidden whole, its keys included.
 DROP TABLE IF EXISTS t_04510;
 CREATE TABLE t_04510 (x UInt8)
 ENGINE = S3('http://localhost:11111/test/04510', 'ak', 'SEKRIT_SAK',
@@ -137,8 +136,7 @@ SELECT * FROM s3('url_exprkey', 'ak', 'SEKRIT_SAK',
 SELECT * FROM s3('url_fmthdr', format = headers('Authorization' = 'SEKRIT_FMTHDR'),
                  structure = 'x UInt8'); -- { serverError BAD_ARGUMENTS, UNKNOWN_FUNCTION }
 
--- Same inside extra_credentials: role_arn stays visible only for a literal/identifier value; a nested
--- map value carries a secret and must be hidden.
+-- Same inside extra_credentials, which is hidden whole anyway.
 SELECT * FROM s3('url_rolehdr', 'ak', 'SEKRIT_SAK',
                  extra_credentials(role_arn = headers('Authorization' = 'SEKRIT_ROLEHDR'))); -- { serverError BAD_ARGUMENTS, UNKNOWN_FUNCTION }
 

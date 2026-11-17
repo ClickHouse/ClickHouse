@@ -65,6 +65,22 @@ format "mysql TLS path key" \
 format "postgresql TLS path key" \
     "SELECT * FROM postgresql(nc, table = 't', sslkey = '${SECRET}')"
 
+# `extra_credentials(...)` is hidden whole, its keys included: a key can be a secret too.
+format "extra_credentials with the secret as the key" \
+    "CREATE TABLE t (x Int32) ENGINE = S3(nc, format = 'CSV', extra_credentials('${SECRET}' = 'x'))"
+format "extra_credentials with a computed key" \
+    "SELECT * FROM s3(nc, extra_credentials(concat('${SECRET}', 'x') = 'x'), format = 'CSV')"
+format "extra_credentials with valid keys" \
+    "SELECT * FROM s3('http://127.0.0.1:1/x', 'CSV', extra_credentials(role_arn = 'arn', external_id = '${SECRET}'))"
+
+echo "--- extra_credentials in the query tree"
+dump=$($CLICKHOUSE_CLIENT --query "EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3(nc, extra_credentials('${SECRET}' = 'x'), format = 'CSV')")
+if echo "$dump" | grep -q "$SECRET"; then
+    echo "FAIL: secret leaked in the query tree"
+else
+    echo "OK"
+fi
+
 # A key is compared as the parser compares it: case-sensitively, with the aliases of `user`, `db` and `host`.
 format "aliases and case" \
     "SELECT * FROM mysql(nc, username = 'u', db = 'db', hostname = 'h', PASSWORD = '${SECRET}')"
@@ -96,6 +112,7 @@ $CLICKHOUSE_CLIENT -m -q "
     SELECT * FROM mysql(${NC_MYSQL}, ssl_key = '${SECRET}'); -- { serverError BAD_ARGUMENTS }
     SELECT * FROM postgresql(${NC_PG}, sslkey = '${SECRET}'); -- { serverError BAD_ARGUMENTS }
     SELECT * FROM mysql(${NC_MYSQL}, \`${SECRET}[\` = 'x'); -- { serverError BAD_ARGUMENTS }
+    SELECT * FROM s3('http://127.0.0.1:1/bucket/data.csv', 'CSV', 'x Int32', extra_credentials(role_arn_${SECRET} = 'x')); -- { serverError BAD_ARGUMENTS }
 "
 
 $CLICKHOUSE_CLIENT -m -q "

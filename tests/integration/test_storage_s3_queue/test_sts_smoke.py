@@ -52,6 +52,14 @@ def started_cluster():
         cluster.shutdown()
 
 
+def assert_extra_credentials_kept(node, table_name):
+    # `extra_credentials(...)` is hidden whole in `SHOW CREATE`, its keys included. The definition still keeps it as
+    # the last engine argument, right before the `SETTINGS` clause, and `role_arn` is not shown.
+    create_query = node.query(f"SHOW CREATE TABLE {table_name}")
+    assert "\\'[HIDDEN]\\')\\nSETTINGS" in create_query, create_query
+    assert "arn::role" not in create_query, create_query
+
+
 def test_s3_queue_extra_credentials(started_cluster):
     node = started_cluster.instances["s3_with_environment_credentials"]
     table_name = "test_extra_credentials"
@@ -110,17 +118,11 @@ def test_s3_queue_extra_credentials(started_cluster):
 
     assert get_count(node, dst_table_name) == 10
 
-    assert (
-        "extra_credentials(\\'role_arn\\' = \\'arn::role\\', \\'role_session_name\\' = \\'[HIDDEN]\\')"
-        in node.query(f"SHOW CREATE TABLE {table_name}")
-    )
+    assert_extra_credentials_kept(node, table_name)
 
     node.restart_clickhouse()
 
-    assert (
-        "extra_credentials(\\'role_arn\\' = \\'arn::role\\', \\'role_session_name\\' = \\'[HIDDEN]\\')"
-        in node.query(f"SHOW CREATE TABLE {table_name}")
-    )
+    assert_extra_credentials_kept(node, table_name)
 
 
 def test_s3_queue_extra_credentials_backup(started_cluster):
@@ -180,10 +182,7 @@ def test_s3_queue_extra_credentials_backup(started_cluster):
     # extra_credentials clause: the base environment credentials (aws/aws123)
     # are equally invalid for MinIO, so a restored table that silently dropped
     # the clause would fail with the same error. Pin the round trip explicitly.
-    assert (
-        "extra_credentials(\\'role_arn\\' = \\'arn::role\\', \\'role_session_name\\' = \\'[HIDDEN]\\')"
-        in node.query(f"SHOW CREATE TABLE {table_name}")
-    )
+    assert_extra_credentials_kept(node, table_name)
 
     # And prove the restored clause is effective: once the STS mock grants
     # 'miniorole' again, the restored table becomes readable — impossible with

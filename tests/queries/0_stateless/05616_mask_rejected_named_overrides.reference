@@ -34,6 +34,14 @@ SELECT * FROM postgresql(nc, schema = 's', '[HIDDEN]')
 SELECT * FROM mysql(nc, `table` = 't', '[HIDDEN]')
 --- postgresql TLS path key
 SELECT * FROM postgresql(nc, `table` = 't', '[HIDDEN]')
+--- extra_credentials with the secret as the key
+CREATE TABLE t (`x` Int32) ENGINE = S3(nc, format = 'CSV', '[HIDDEN]')
+--- extra_credentials with a computed key
+SELECT * FROM s3(nc, '[HIDDEN]', format = 'CSV')
+--- extra_credentials with valid keys
+SELECT * FROM s3('http://127.0.0.1:1/x', 'CSV', '[HIDDEN]')
+--- extra_credentials in the query tree
+OK
 --- aliases and case
 SELECT * FROM mysql(nc, username = 'u', db = 'db', hostname = 'h', '[HIDDEN]')
 --- s3 table function, explicit url
@@ -48,3 +56,4 @@ SELECT * FROM postgresql(nc_pg, \'[HIDDEN]\')	1	1
 SELECT * FROM mysql(nc_mysql, \'[HIDDEN]\')	1	1
 SELECT * FROM postgresql(nc_pg, \'[HIDDEN]\')	1	1
 SELECT * FROM mysql(nc_mysql, \'[HIDDEN]\')	1	1
+SELECT * FROM s3(\'http://127.0.0.1:1/bucket/data.csv\', \'CSV\', \'x Int32\', \'[HIDDEN]\')	1	1

@@ -727,42 +727,11 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
             continue;
         }
 
-        /// Nested `extra_credentials(k = v, ...)` map: reconstruct with every value hidden. Build into
-        /// a temporary; if any inner key is not a plain literal (e.g. a constant expression the parser
-        /// still accepts), fail closed by hiding the whole map rather than emitting it verbatim.
-        if (auto extra_credentials_func = arg->getFunction();
-            extra_credentials_func && extra_credentials_func->name() == "extra_credentials" && extra_credentials_func->hasArguments())
+        /// Nested `extra_credentials(...)` map: hidden whole, its keys included, because a key can be written as anything,
+        /// a credential too (the same as in the masking of the query text, see `maskHeadersAndExtraCredentials`).
+        if (auto extra_credentials_func = arg->getFunction(); extra_credentials_func && extra_credentials_func->name() == "extra_credentials")
         {
-            std::string masked_map = "extra_credentials(";
-            bool reconstructed = true;
-            const auto & cred_args = *extra_credentials_func->arguments;
-            for (size_t j = 0; j < cred_args.size(); ++j)
-            {
-                String cred_key;
-                auto cred_kv = cred_args.at(j)->getFunction();
-                if (cred_kv && cred_kv->name() == "equals" && cred_kv->hasArguments() && cred_kv->arguments->size() == 2
-                    && cred_kv->arguments->at(0)->tryGetString(&cred_key, /* allow_identifier= */ true))
-                {
-                    if (j > 0)
-                        masked_map += ", ";
-                    String cred_value;
-                    if (isNonSecretExtraCredentialsKey(cred_key)
-                        && cred_kv->arguments->at(1)->tryGetString(&cred_value, /* allow_identifier= */ true))
-                        masked_map += cred_key + " = " + quoteString(cred_value);
-                    else
-                    {
-                        masked_map += cred_key + " = ";
-                        masked_map += HIDDEN_SECRET_LITERAL;
-                    }
-                }
-                else
-                {
-                    reconstructed = false;
-                    break;
-                }
-            }
-            masked_map += ")";
-            replacement += reconstructed ? std::string_view(masked_map) : HIDDEN_SECRET_LITERAL;
+            replacement += HIDDEN_SECRET_LITERAL;
             has_secret = true;
             continue;
         }

@@ -16,18 +16,7 @@ namespace
 {
 
 /// Named arguments carrying S3 secrets, shared by every S3 form (explicit-url and named-collection).
-/// `external_id` and `role_session_name` are the secrets of the assume-role triple; the third key
-/// (`role_arn`) is a non-secret identifier passed inside `extra_credentials` and stays visible
-/// (see isNonSecretExtraCredentialsKey).
-/// The keys of the `extra_credentials(..)` nested map whose value stays visible when the map is masked.
-/// Only `role_arn` qualifies: it names the role to assume, like `access_key_id` names a key. The other two
-/// keys of the assume-role triple are secrets: `external_id` is its shared secret, and `role_session_name`
-/// can be one too, because a trust policy can require a specific value through the `sts:RoleSessionName`
-/// condition (the ClickHouse Cloud guide documents exactly this use). Any other key fails closed.
-/// The `.backup` metadata is a different matter: its `<base_backup>` locator keeps `role_session_name`
-/// on purpose, so that a role-authenticated backup chain stays restorable (see `BackupInfo.cpp`).
-constexpr std::string_view extra_credentials_visible_keys[] = {"role_arn"};
-
+/// `external_id` and `role_session_name` are the secrets of the assume-role triple, as named overrides of a collection.
 constexpr std::string_view s3_secret_keys[]
     = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "google_service_account_key",
        "external_id", "role_session_name"};
@@ -331,12 +320,14 @@ void findS3BackupSecretArguments(FunctionSecretArgumentsFinder & finder)
 void maskHeadersAndExtraCredentials(FunctionSecretArgumentsFinder & finder)
 {
     finder.maskNestedSecretMap("headers");
-    finder.maskNestedSecretMap("extra_credentials", {std::begin(extra_credentials_visible_keys), std::end(extra_credentials_visible_keys)});
-}
 
-bool isNonSecretExtraCredentialsKey(std::string_view key)
-{
-    return std::ranges::contains(extra_credentials_visible_keys, key);
+    /// `extra_credentials(...)` is hidden whole, its keys included: a key can be written as anything, a credential too
+    /// (`extra_credentials('secret' = 'x')`). The same as for the Azure engines.
+    for (size_t i = 0, size = finder.function->arguments->size(); i < size; ++i)
+    {
+        if (const auto f = finder.function->arguments->at(i)->getFunction(); f && f->name() == "extra_credentials")
+            finder.markSecretArgument(i);
+    }
 }
 
 bool isS3SecretKey(std::string_view key)
