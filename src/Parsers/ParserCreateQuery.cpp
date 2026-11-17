@@ -2939,16 +2939,6 @@ This codec is experimental and requires `SET enable_gdeflate_codec = 1` to use.
 
 These codecs are designed to make compression more effective by exploiting specific features of the data. Some of these codecs do not compress data themselves, they instead preprocess the data such that a second compression stage using a general-purpose codec can achieve a higher data compression rate.
 
-### BitPacking {#bitpacking}
-
-<ExperimentalBadge/>
-
-`BitPacking` — Packs the integers of a column in chunks of 64 KiB. Each chunk is stored as its least value and the difference of every value from it, in as many bits as the largest difference takes. Applicable to integers of 1, 2, 4 or 8 bytes: `Int*`, `UInt*`, `Decimal32`, `Decimal64`, `Date`, `Date32`, `DateTime`, `DateTime64`, `Enum*` and `IPv4`. It can be used on its own or in front of a general-purpose codec, e.g. `CODEC(BitPacking, ZSTD)`. A GPU unpacks it as well as the CPU.
-
-<Note>
-This codec is experimental and requires `SET enable_bitpacking_codec = 1` to use.
-</Note>
-
 ### Delta {#delta}
 
 `Delta(delta_bytes)` — Compression approach in which raw values are replaced by the difference of two neighboring values, except for the first value that stays unchanged. `delta_bytes` is the maximum size of raw values, the default value is `sizeof(type)`. Specifying `delta_bytes` as an argument is deprecated and support will be removed in a future release. Delta is a data preparation codec, i.e. it cannot be used stand-alone.

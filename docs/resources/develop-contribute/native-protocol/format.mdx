@@ -1457,22 +1457,6 @@ When the `0x80` flag is clear, the payload is a standalone `.pco` stream that is
 
 Chunk `i` expands to bytes `[i × 65536, min((i + 1) × 65536, uncompressed_size))` of the block. The first chunk starts right after the sizes, and every chunk starts at a multiple of 4 from the start of the body.
 
-`0xa2` (BitPacking) carries a body written by the `BitPacking` codec, which packs integers of one width `W` (1, 2, 4 or 8 bytes) in chunks of 65536 bytes of them, the last one possibly shorter. All integers are little-endian:
-
-```text
-[1 byte:  version = 1]
-[1 byte:  W]                               ← width of an integer in bytes
-[1 byte:  T]                               ← number of tail bytes = uncompressed_size mod W
-[1 byte:  0]
-[4 bytes: N LE u32]                        ← number of chunks = ceil((uncompressed_size − T) / 65536)
-[16 bytes × N: chunk descriptor]           ← [1 byte: bits][7 bytes: 0][8 bytes: reference LE u64]
-[packed chunk × N]                         ← each followed by zero bytes up to a multiple of 8
-[T bytes]                                  ← the tail, as it is
-[8 bytes: 0]                               ← padding
-```
-
-Each integer of a chunk is stored as its difference from the chunk's `reference`, the least integer of the chunk, in `bits` bits, from the lowest bit of the first byte of the packed chunk on. `bits` is at most 56, or 64 for integers of 8 bytes stored as they are, and 0 for a chunk whose integers are all equal.
-
 The method byte also encodes the [column-level codecs](/reference/statements/create/table/codec). These are applied per column on the MergeTree on-disk paths rather than to whole-stream framing, but the `decompress=1` HTTP input path takes the codec from each frame's method byte, so any of these bytes may legitimately appear on input. A conforming decoder must therefore recognize the whole assigned space and reject a byte it does not implement rather than misread the body. Their bodies are codec-specific and outside this generic frame contract:
 
 | Byte   | Method            |
@@ -1492,7 +1476,6 @@ The method byte also encodes the [column-level codecs](/reference/statements/cre
 | `0x9f` | `ZXC`             |
 | `0xa0` | `PCO` (see [Per-column codec frames](#per-column-codec-frames)) |
 | `0xa1` | `GDeflate` (see [Per-column codec frames](#per-column-codec-frames)) |
-| `0xa2` | `BitPacking` (see [Per-column codec frames](#per-column-codec-frames)) |
 
 `DoubleDelta` (`0x94`) stores second differences as MSB-first prefix/sign/magnitude bits. Word-based decoding preserves this encoding, element count, and final-byte padding.
 
@@ -1509,8 +1492,6 @@ The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs 
 `0xa0` (`PCO`) is a **beta** lossless codec for fixed-width numeric columns, implemented by the pcodec Rust library. A table can be created with `CODEC(PCO)` only when the `enable_pco_codec` setting is set. In builds that include the library, the method byte is always accepted on decompression so that previously written data stays readable. A server built without it (without Rust, or with `ENABLE_PCO=OFF`) does not register the codec and rejects `0xa0` frames with `UNKNOWN_CODEC`.
 
 `0xa1` (`GDeflate`) is an **experimental** Deflate variant whose chunks a GPU can expand in parallel. A table can be created with `CODEC(GDeflate)` only when the `enable_gdeflate_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable.
-
-`0xa2` (`BitPacking`) is an **experimental** preprocessing codec for integer columns, which a GPU can unpack as well. A table can be created with `CODEC(BitPacking)` only when the `enable_bitpacking_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable.
 
 ### Checksum {#checksum}
 

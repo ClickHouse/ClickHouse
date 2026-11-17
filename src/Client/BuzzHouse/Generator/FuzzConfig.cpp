@@ -37,7 +37,6 @@ const DB::Strings codecs
        "T64",
        "FPC",
        "GCD",
-       "BitPacking",
        "ALP",
        "PCO",
        "AES_128_GCM_SIV",

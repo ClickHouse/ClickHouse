@@ -11066,10 +11066,6 @@ Enables the `SZ3` compression codec.
 Enables the `GDeflate` compression codec.
 )", EXPERIMENTAL, \
         {"26.11", false, false, "New setting to enable the experimental `GDeflate` compression codec."}) \
-    DECLARE(Bool, enable_bitpacking_codec, false, R"(
-Enables the `BitPacking` compression codec.
-)", EXPERIMENTAL, \
-        {"26.11", false, false, "New setting to enable the experimental `BitPacking` compression codec."}) \
     DECLARE(Bool, enable_zxc_codec, false, R"(
 Enables the `ZXC` compression codec.
 )", BETA, \

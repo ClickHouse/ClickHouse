@@ -389,7 +389,6 @@ CompressionCodecFactory::CompressionCodecFactory()
 #endif
     registerCodecZXC(*this);
     registerCodecGDeflate(*this);
-    registerCodecBitPacking(*this);
 #if USE_PCO
     registerCodecPco(*this);
 #endif
