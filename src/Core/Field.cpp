@@ -753,36 +753,40 @@ void writeText(const CustomType & x, WriteBuffer & buf)
 template <typename T>
 void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
 {
-    assertChar('\'', buf);
+    String text;
+    readQuotedString(text, buf);
+    ReadBufferFromString in(text);
     T value{};
-    UInt32 scale = 0;
     int32_t exponent = 0;
     uint32_t max_digits = static_cast<uint32_t>(-1);
-    /// Not `digits_only`: the closing quote must stop the parser rather than be rejected as an unexpected symbol,
-    /// otherwise an ordinary dump such as `Decimal32_'2147483647'` cannot be read. Any other trailing symbol
-    /// also stops it and is then rejected by the `assertChar` below.
-    readDigits<true>(buf, value, max_digits, exponent, false);
-    /// The exponent comes from the text and can be anything in `int32_t`. A positive one is applied with
-    /// `mulPow10AddChecked`, exact for the wide types too (`common::mulOverflow` never reports overflow for them).
-    /// A negative one becomes the scale; check it before negating, as `-INT32_MIN` overflows. An out-of-range
-    /// scale, e.g. `Decimal64_'1e-1000'` (in a `CUSTOM`-flagged setting parsed by `SettingFieldCustom::parseFromString`),
-    /// later overruns a fixed-size buffer in the decimal text writer, so reject it here, matching
-    /// `readDecimalFieldBinary` and `DataTypeDecimalBase`.
-    constexpr int32_t max_precision = static_cast<int32_t>(DecimalUtils::max_precision<T>);
-    if (exponent > 0)
+    bool has_digits = false;
+    if (!text.empty())
+        readDigits<true>(in, value, max_digits, exponent, true, &has_digits);
+    if (!has_digits || !in.eof())
+        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse decimal dump '{}'", text);
+
+    /// `readDigits` drops trailing fractional zeroes, but the dump writes them to keep the scale.
+    size_t mantissa_end = std::min(text.find_first_of("eE"), text.size());
+    uint32_t trailing_zeroes = 0;
+    if (text.find('.') < mantissa_end)
+        while (text[mantissa_end - 1 - trailing_zeroes] == '0')
+            ++trailing_zeroes;
+    if (!mulPow10AddChecked(value.value, trailing_zeroes, typename T::NativeType(0)))
+        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+
+    /// An out-of-range scale overruns the decimal text writer.
+    Int64 total_exponent = static_cast<Int64>(exponent) - trailing_zeroes;
+    UInt32 scale = 0;
+    if (total_exponent > 0)
     {
-        scale = 0;
-        if (!mulPow10AddChecked(value.value, static_cast<uint32_t>(exponent), typename T::NativeType(0)))
+        if (!mulPow10AddChecked(value.value, static_cast<uint32_t>(std::min<Int64>(total_exponent, UINT32_MAX)), typename T::NativeType(0)))
             throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
     }
+    else if (-total_exponent > static_cast<Int64>(DecimalUtils::max_precision<T>))
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})",
+                        -total_exponent, DecimalUtils::max_precision<T>);
     else
-    {
-        if (exponent < -max_precision)
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})",
-                            -static_cast<Int64>(exponent), max_precision);
-        scale = -exponent;
-    }
-    assertChar('\'', buf);
+        scale = static_cast<UInt32>(-total_exponent);
     x = DecimalField<T>{value, scale};
 }
 
