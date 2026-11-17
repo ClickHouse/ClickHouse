@@ -35,7 +35,7 @@ struct WithContextImpl
     WithContextImpl() = default;
     explicit WithContextImpl(Weak context_) : context(context_) {}
 
-    Shared getContext() const;
+    [[nodiscard]] Shared getContext() const;
 
 protected:
     Weak context;

@@ -424,7 +424,7 @@ See the settings tab in the Cloud console for a list of all service sizes.
     DECLARE(UInt64, max_threads_min_free_memory_per_thread, 1_GiB, R"(
 Lowers `max_threads` when the server is under memory pressure, to avoid starting highly-parallel queries that are likely to hit the memory limit.
 
-Free memory is computed as the server's `max_server_memory_usage` minus the memory currently tracked by the global memory tracker. If that free memory is less than `max_threads` multiplied by this value, `max_threads` is reduced to the largest N such that `N * value <= free_memory`, with a minimum of `1`.
+Free memory is computed as the server's `max_server_memory_usage` minus the memory currently tracked by the global memory tracker. If that free memory is less than `max_threads` multiplied by this value, `max_threads` is reduced to the largest N such that `N * value <= free_memory`, with a minimum of `1`. Free memory is taken once per query, when its plan is built, so that all parts of the query are planned with the same number of threads.
 
 Set to `0` to disable this limit.
 
@@ -449,6 +449,8 @@ Respect the server's concurrency control (see the `concurrent_threads_soft_limit
 Choose the parallelism of a query (the number of streams and threads it is planned with) from the fair share of CPU slots of the server's concurrency control, instead of the number of CPU cores. The fair share is the slot limit (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings) divided evenly between the currently running pipelines and the new query.
 
 This way, when many queries run concurrently, each of them is planned with fewer streams: it uses less memory and spends less CPU on merging the partial results of its threads (e.g. aggregation states), which increases the total throughput. A query that is planned while the server is idle uses all CPU cores as before.
+
+The fair share is taken once per query, when its plan is built, so that all parts of the query (subqueries, sets, joined tables) are planned with the same number of streams.
 
 It only applies if `max_threads` is `auto` (not set explicitly) and `use_concurrency_control` is enabled.
 )", 0, \
@@ -1023,6 +1025,12 @@ Expired time for HSTS. 0 means disable HSTS.
 Whether to count extreme values (the minimums and maximums in columns of a query result). Accepts 0 or 1. By default, 0 (disabled).
 For more information, see the section "Extreme values".
 )", IMPORTANT) \
+    DECLARE(Bool, use_lz4_library_decompression, false, R"(
+Use the upstream `LZ4` library to decompress native ClickHouse blocks, including data compressed with `LZ4HC` or a codec chain containing `LZ4`.
+Disabled by default: ClickHouse's adaptive `LZ4` decoder is used. Both decoders read the same stored data; changing this setting does not require rewriting data parts.
+The setting applies to decompression performed in the query's context. Outside a query, the global context's setting is used, or ClickHouse's decoder if no context exists.
+)", 0, \
+        {"26.11", false, false, "New setting: optionally use the upstream `LZ4` library decoder instead of ClickHouse's adaptive decoder."}) \
     DECLARE(Bool, use_uncompressed_cache, false, R"(
 Whether to use a cache of uncompressed blocks. Accepts 0 or 1. By default, 0 (disabled).
 Using the uncompressed cache (only for tables in the MergeTree family) can significantly reduce latency and increase throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed_cache_size](/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
@@ -1175,7 +1183,7 @@ You should not rely on automatic batch splitting, since this may hurt performanc
 )", 0, distributed_directory_monitor_split_batch_on_failure) \
     \
     DECLARE(Bool, optimize_trivial_view_pushdown_to_distributed, true, R"(
-When enabled, for views over [Distributed](../../engines/table-engines/special/distributed.md) tables whose `SELECT` list contains only column references, `*`,
+When enabled, for views over [Distributed](/reference/engines/table-engines/special/distributed) tables whose `SELECT` list contains only column references, `*`,
 or expressions (but no window functions or scalar subqueries), and that have no aggregation, grouping, ordering, or joins, the full outer query is pushed to
 each shard. This allows the shard to apply the view's filters and expressions locally, reducing the amount of data transferred over the network.
 
@@ -1768,9 +1776,9 @@ Since v25.4, `INSERT ... SELECT` from a `ReplicatedMergeTree` or `SharedMergeTre
 - `parallel_distributed_insert_select = 2`
 - `enable_parallel_replicas = 1`
 
-:::note
+<Note>
 The rewritten query, including every expression of the `SELECT` (subqueries, UDFs, and so on), is executed on the shards under the credentials of the cluster configuration — the same trust model as other shard-side processing, such as the subqueries of a non-`GLOBAL` `IN`. Configure an interserver secret (the `secret` element of the cluster configuration) if shard-side reads must be authorized as the calling user.
-:::
+</Note>
 )", 0, \
         {"25.7", 0, 2, "Enable parallel distributed insert select by default"}) \
     DECLARE(UInt64, distributed_group_by_no_merge, 0, R"(
@@ -2758,7 +2766,7 @@ Possible values:
 - 1 — All queries are logged in the system tables.
 )", 0) \
     DECLARE(UInt64, session_query_ids_history_size, 1000, R"(
-The maximum number of query ids kept in the session-local history exposed through the [`system.session_query_ids`](/operations/system-tables/session_query_ids) system table.
+The maximum number of query ids kept in the session-local history exposed through the [`system.session_query_ids`](/reference/system-tables/session_query_ids) system table.
 The query id of every non-internal query executed in the session is recorded there at query start; when the history exceeds this size, the oldest entries are evicted first.
 
 The value is read at query start, before the query is parsed, so a `SETTINGS` clause of the query itself does not affect whether that query is recorded; use `SET`, an HTTP URL parameter, or a settings profile instead.
@@ -3529,14 +3537,20 @@ Possible values:
 )", 0) \
     DECLARE(UInt64, http_max_fields, 1000, R"(
 Maximum number of fields in HTTP request headers, query parameters, and form data.
+
+Also limits the number of fields in the headers of the HTTP responses that ClickHouse reads as a client, for example in the `url` table function.
 )", 0, \
         {"26.4", 1000000, 1000, "Reduce default to limit pre-authentication memory usage by HTTP connections."}) \
     DECLARE(UInt64, http_max_field_name_size, 4 * 1024, R"(
 Maximum length of a field name in HTTP request headers, query parameters, and form data.
+
+Also limits the length of a field name in the headers of the HTTP responses that ClickHouse reads as a client, for example in the `url` table function.
 )", 0, \
         {"26.4", 131072, 4096, "Reduce default to limit pre-authentication memory usage by HTTP connections."}) \
     DECLARE(UInt64, http_max_field_value_size, 128 * 1024, R"(
 Maximum length of a field value in HTTP request headers, query parameters, and form data.
+
+Also limits the length of a field value in the headers of the HTTP responses that ClickHouse reads as a client, for example in the `url` table function.
 )", 0) \
     DECLARE(UInt64, http_max_request_header_size, 10 * 1024 * 1024, R"(
 Maximum total size of all HTTP request headers (names and values combined) in bytes.
@@ -4002,7 +4016,7 @@ this threshold.
 `0` disables this threshold. If `max_bytes_ratio_before_external_distinct` also provides a threshold,
 the smaller is used. Set both settings to `0` to disable spilling.
 
-See [DISTINCT in external memory](/sql-reference/statements/select/distinct#distinct-in-external-memory).
+See [DISTINCT in external memory](/reference/statements/select/distinct#distinct-in-external-memory).
 )", 0, \
         {"26.9", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."}) \
     DECLARE(Double, max_bytes_ratio_before_external_distinct, 0.5, R"(
@@ -5260,7 +5274,7 @@ Possible values:
 - [ORDER BY Clause](/reference/statements/select/order-by#optimization-of-data-reading)
 )", 0) \
     DECLARE(Bool, optimize_read_in_reverse_order_final, true, R"(
-Enables reading data in reverse order of the sorting key in `SELECT` queries with the `FINAL` modifier from [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables, and from [Merge](../../engines/table-engines/special/merge.md) tables when every underlying table supports it. Takes effect only when [optimize_read_in_order](#optimize_read_in_order) is also enabled.
+Enables reading data in reverse order of the sorting key in `SELECT` queries with the `FINAL` modifier from [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) tables, and from [Merge](/reference/engines/table-engines/special/merge) tables when every underlying table supports it. Takes effect only when [optimize_read_in_order](#optimize_read_in_order) is also enabled.
 
 Possible values:
 
@@ -5669,6 +5683,11 @@ A trusted administrative client may need server-managed credentials for legitima
 For `BACKUP`/`RESTORE ... ON CLUSTER` the initiator's value of this setting is propagated to the other hosts and used there as-is. Those hosts run the per-host continuation of the operation through the distributed DDL queue, by default without the initiator's user, so they would otherwise evaluate the restriction against their own default profile; the initiator's value is preserved instead, because it has already opened the same backup destination under its own, constrained, settings. A `readonly` constraint on the initiator still applies (an untrusted initiator cannot enable the setting for its own on-cluster backup), so this does not weaken the restriction.
 
 Durability for persistent `S3` and `S3Queue` tables: enabling this only per session or profile is not durable across a restart. When the server reloads such a table from its stored definition (startup or `RESTORE`) it rebuilds the S3 client and re-applies the restriction with the startup context, so a table that relied on server-managed credentials and was created only under a session/profile `s3_allow_server_credentials_in_user_queries = 1` is created successfully but becomes inaccessible after a restart (the table is left in place; queries against it fail until its credentials resolve to a permitted source again). The server itself still starts. Give such tables explicit credentials for durable access; alternatively, enabling the setting server-wide keeps them loading across restarts, at the cost of relaxing the restriction for all reloads.
+
+Sessions with different values of this setting do not share a table's access. A persistent `S3`, `S3Queue`, `AzureBlobStorage` or `AzureQueue` table keeps the value it was created with (or the value of the startup context after a restart), and no session changes it:
+- A session where this setting is disabled cannot use an `S3` or `S3Queue` table created with it enabled, even if the table has explicit credentials or `NOSIGN`, and cannot use an Azure table that authenticates with the server's identity. To share a table with such sessions, create it in one of them.
+- A session where this setting is enabled does not give the server's credentials back to a table that lost them on a restart. Detach the table and attach it again in such a session instead.
+- An `S3` table created with this setting disabled keeps the authentication settings it was created with: later changes of the server `<s3>` configuration, such as rotated keys, reach it only when it is attached again.
 
 Azure Blob Storage is covered by this setting as well. When it is disabled, the `azureBlobStorage`/`azureBlobStorageCluster` table functions, the `AzureBlobStorage`/`AzureQueue` engines, Azure named collections, dynamic `disk(type = azure_blob_storage, ...)` definitions, `BACKUP`/`RESTORE TO AzureBlobStorage`, and DataLake table-data reads over Azure may not authenticate with the identity the server itself runs under: the AKS workload identity (a projected service-account token from `AZURE_FEDERATED_TOKEN_FILE`) or the Azure managed identity of the machine. Such a request is rejected with `ACCESS_DENIED`. Credentials supplied explicitly are unaffected: an `account_name`/`account_key` pair, a connection string, a SAS token, and static credentials in a named collection or in the server `<storage_configuration>` all keep working. Azure binds a storage bearer token to the account it was minted for and not to the host it is sent to, so a request to a URL taken from the query would both hand a usable token to whoever controls that URL and read containers the user has no rights to.
 
@@ -7738,7 +7757,7 @@ When the relative URL comes from a [named collection](/concepts/features/configu
 )", 0, \
         {"26.5", "", "", "New setting to specify the base URL for resolving relative URLs in the url table function and URL table engine."}) \
     DECLARE(String, s3_base, "", R"(
-The base URL used to resolve relative URLs in the [s3](../../sql-reference/table-functions/s3.md) table function and the [S3](../../engines/table-engines/integrations/s3.md) table engine, as well as in the table functions that share their configuration (`s3Cluster`, `gcs`, `oss`).
+The base URL used to resolve relative URLs in the [s3](/reference/functions/table-functions/s3) table function and the [S3](/reference/engines/table-engines/integrations/s3) table engine, as well as in the table functions that share their configuration (`s3Cluster`, `gcs`, `oss`).
 
 When set, a URL without a scheme is resolved against `s3_base` per RFC 3986, using the same rules as [url_base](#url_base). URLs that already contain a scheme are used as-is.
 
@@ -8105,9 +8124,9 @@ This is an expert-level setting which should only be used for debugging by devel
     DECLARE(Bool, query_plan_lower_array_join_function, true, R"(
 Runs the `arrayJoin` function in the same way as the `ARRAY JOIN` clause: as a separate `ARRAY JOIN` step of the query plan. When disabled, the function is calculated inside the expression that contains it, as in older versions.
 
-:::note
+<Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
+</Note>
 )", 0, \
         {"26.10", false, true, "Enable query_plan_lower_array_join_function by default."}, \
         {"26.9", false, false, "New optimization to lower an arrayJoin function into a real ARRAY JOIN step; disabled by default."}) \
@@ -8539,7 +8558,7 @@ This is a query-construction setting applied by the engine on the parsed query (
 It shapes result-producing `SELECT` / `UNION` queries. For a write query (`INSERT … SELECT`, `CREATE … AS SELECT`) it takes effect only when the source `SELECT` carries it in its own `SETTINGS` clause; a value inherited from a profile or session, or set on the `INSERT` / `CREATE` statement itself, does not propagate into the source `SELECT` — the same non-propagation rule that applies to any other setting.
 
 <Danger>
-`filter` is **not** an access-control mechanism and must not be used as a substitute for [row-level security policies](/operations/access-rights#row-policy-management) or the `additional_table_filters` setting. It only adds a `WHERE` over the wrapping subquery, so the underlying data is still read and processed before the filter is applied — a query can observe the filtered-out rows during processing (for example with `throwIf` to leak information through the error path). Use row-level security or `additional_table_filters` when the goal is to restrict which rows a user may access.
+`filter` is **not** an access-control mechanism and must not be used as a substitute for [row-level security policies](/concepts/features/security/access-rights#row-policy-management) or the `additional_table_filters` setting. It only adds a `WHERE` over the wrapping subquery, so the underlying data is still read and processed before the filter is applied — a query can observe the filtered-out rows during processing (for example with `throwIf` to leak information through the error path). Use row-level security or `additional_table_filters` when the goal is to restrict which rows a user may access.
 </Danger>
 )", 0, \
         {"26.8", "", "", "New setting to add a WHERE clause around a query."}) \
@@ -8808,6 +8827,10 @@ Allows to record the filesystem caching log for each query
 Emit `TEST`-level log messages for every filesystem cache buffer refill (state of the read, remaining size to read, bytes read). Only for debugging: the messages are formatted once per read, so enabling it on a query that does many small cached reads adds a large amount of logging overhead. The messages are only visible when the log level is `test` anyway (see `send_logs_level`).
 )", 0, \
         {"26.8", false, false, "New setting gating the per-buffer-refill TEST-level log messages of the filesystem cache read buffer, which were previously emitted unconditionally once the log level allowed them."}) \
+    DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_cache_temporarily, false, R"(
+Use the filesystem cache as a temporary buffer for data that is not in it: a miss is read into the cache and served from it, and the cache removes it when nobody holds it anymore, unless a reader or writer outside this mode used it. Only the experimental `ReaderExecutor` supports it; other readers bypass the cache. `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` takes precedence.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New experimental setting."}) \
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(
 Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.
 )", 0) \
@@ -9863,7 +9886,7 @@ Skip whole Iceberg manifest files whose partition summaries in the manifest list
     DECLARE(Bool, use_join_runtime_filters_for_iceberg_pruning, true, R"(
 Skip Iceberg data files, and the Parquet row groups and pages of the files that are read, that cannot contain a key of a JOIN runtime filter (see [enable_join_runtime_filters](#enable_join_runtime_filters)). Once the build side of the join finishes, the filter's keys (or their min/max range, if the set is too large) are checked against the column bounds in the manifest files, the row group statistics and the page index. Data files requested earlier are read in full.
 
-Requires [enable_join_runtime_filters_index_analysis](#enable_join_runtime_filters_index_analysis) and [use_iceberg_partition_pruning](#use_iceberg_partition_pruning). Row groups also require [input_format_parquet_filter_push_down](/reference/settings/formats/input-format#input_format_parquet_filter_push_down), pages that and [input_format_parquet_page_filter_push_down](#input_format_parquet_page_filter_push_down).
+Requires [enable_join_runtime_filters_index_analysis](#enable_join_runtime_filters_index_analysis) and [use_iceberg_partition_pruning](#use_iceberg_partition_pruning). Row groups also require [input_format_parquet_filter_push_down](/reference/settings/formats/input-format#input_format_parquet_filter_push_down), and pages require it and [input_format_parquet_page_filter_push_down](/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down).
 )", 0, \
         {"26.11", false, true, "New setting to prune Iceberg data files, Parquet row groups and pages by JOIN runtime filters."}) \
     DECLARE(Bool, use_datalake_metadata_statistics, false, R"(
@@ -9937,6 +9960,16 @@ keeps running on one node, however the time comparison turns out.
 Set to 1 to accept any amount of duplicated reading, which restores the behaviour of only comparing times.
 )", 0, \
         {"26.10", 1.0, 0.5, "Automatic parallel replicas now declines a query that would repeat more than half of its reading on every replica. Previously there was no limit, which is what 1 still asks for."}) \
+    DECLARE(Float, automatic_parallel_replicas_statistics_drift_ratio, 1.5, R"(
+How much the rows a read selects may differ from the rows it selected when automatic parallel replicas collected its
+statistics, as the ratio of the larger to the smaller, before the statistics are considered stale and collected again
+instead of being decided on.
+
+The rows are the ones the initiator's index analysis selects, so pruning that only the replicas do while reading (for
+example by their own query condition caches) is not seen. A lower ratio recollects the statistics sooner as the table
+changes. Should be greater than 1.
+)", 0, \
+        {"26.11", 2.0, 1.5, "New setting. The ratio was 2 and could not be changed; statistics are now recollected sooner as the data changes."}) \
     DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 1_MiB, R"(
 Threshold of bytes to read per replica to enable parallel replicas automatically (applies only when `automatic_parallel_replicas_mode`=1). 0 means no threshold.
 The total number of bytes to read is estimated based on the collected statistics.
@@ -10591,6 +10624,10 @@ All servers participating in a distributed query must agree on this value: with 
 Parallelize the final merge of the per-thread single-level aggregation hash tables. The key space is split into disjoint partitions by key hash, and each partition is merged independently: the merging thread enumerates all per-thread tables and combines the keys that belong to its partition, so no two threads ever touch the same key. If the setting is turned off, the single-level tables are merged serially on one thread. Aggregation by 8- and 16-bit keys keeps its own range-partitioned parallel merge regardless of this setting.
 )", 0, \
         {"26.8", false, true, "New setting to parallelize the final merge of the single-level aggregation hash tables by splitting the key space into disjoint hash partitions that the threads merge independently."}) \
+    DECLARE(Bool, enable_parallel_single_level_merge_by_index, true, R"(
+Lets the parallel merge of single-level aggregation hash tables (see `enable_parallel_single_level_merge`) read the tables of the adaptive aggregator (see `enable_adaptive_aggregator`) through an index of their cells, which every thread builds when it finishes aggregating. For each partition, the merge then reads only the cells of that partition from every table. If the setting is turned off, the merge scans every cell of every table for each partition.
+)", 0, \
+        {"26.11", false, true, "New setting to let the parallel merge read only the cells of each partition from the adaptive aggregator's single-level hash tables through the indexes of their cells, instead of scanning every cell of every table for each partition."}) \
     DECLARE(UInt64, min_outstreams_per_resize_after_split, 24, R"(
 Specifies the minimum number of output streams of a `Resize` or `StrictResize` processor after the split is performed during pipeline generation. If the resulting number of streams is less than this value, the split operation will not occur.
 
@@ -10655,7 +10692,7 @@ Possible values:
 )", 0, \
         {"25.12", false, true, "New setting. Add optimization to remove unused columns in query plan."}) \
     DECLARE(Bool, kill_throw_if_noop, true, R"(
-Controls whether [`KILL QUERY`](/sql-reference/statements/kill#kill-query) and [`KILL MUTATION`](/sql-reference/statements/kill#kill-mutation) throw an exception when their `WHERE` clauses match no rows.
+Controls whether [`KILL QUERY`](/reference/statements/kill#kill-query) and [`KILL MUTATION`](/reference/statements/kill#kill-mutation) throw an exception when their `WHERE` clauses match no rows.
 
 Enabled by default. `KILL QUERY` throws when there are no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throws when no rows match in `system.mutations`. Set to `false` to allow empty matches without an exception. `TEST` dry runs return an empty preview without throwing. `ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
 
@@ -11001,7 +11038,8 @@ Enables the `GDeflate` compression codec.
         {"26.11", false, false, "New setting to enable the experimental `GDeflate` compression codec."}) \
     DECLARE(Bool, enable_zxc_codec, false, R"(
 Enables the `ZXC` compression codec.
-)", EXPERIMENTAL, \
+)", BETA, \
+        {"26.11", false, false, "The `ZXC` compression codec was moved to Beta."}, \
         {"26.8", false, false, "New setting to enable the experimental `ZXC` compression codec individually, without the `allow_experimental_codecs`."}) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
@@ -12008,17 +12046,17 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     void dumpToMapColumn(IColumn * column, bool changed_only, bool show_secrets);
 
     /// The changed settings as an owning name -> value-string map (same values as dumpToMapColumn).
-    FlatStringMap changedToFlatMap(bool show_secrets) const;
+    [[nodiscard]] FlatStringMap changedToFlatMap(bool show_secrets) const;
 
     /// Check that there is no user-level settings at the top level in config.
     /// This is a common source of mistake (user don't know where to write user-level setting).
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     void set(std::string_view name, const Field & value) override;
 
-    bool hasSettingsChangedByCompatibility() const { return num_settings_changed_by_compatibility_setting != 0; }
+    [[nodiscard]] bool hasSettingsChangedByCompatibility() const { return num_settings_changed_by_compatibility_setting != 0; }
     void resetSettingsChangedByCompatibility();
     void resetSettingsChangedByCompatibility(const std::function<bool(std::string_view, const Field &)> & is_allowed);
     void markSettingsChangedByCompatibilityAsUnchanged();
@@ -12036,7 +12074,7 @@ private:
     std::array<UInt64, num_setting_bitmap_words> settings_changed_by_compatibility_setting = {};
     size_t num_settings_changed_by_compatibility_setting = 0;
 
-    bool isChangedByCompatibility(size_t index) const
+    [[nodiscard]] bool isChangedByCompatibility(size_t index) const
     {
         return (settings_changed_by_compatibility_setting[index / 64] & (1ULL << (index % 64))) != 0;
     }
@@ -12779,14 +12817,14 @@ NameToNameMap readQueryParameters(ReadBuffer & in)
     return parameters;
 }
 
-void Settings::write(WriteBuffer & out, SettingsWriteFormat format) const
+void Settings::write(WriteBuffer & out) const
 {
-    impl->write(out, format);
+    impl->write(out);
 }
 
-void Settings::read(ReadBuffer & in, SettingsWriteFormat format)
+void Settings::read(ReadBuffer & in, bool skip_invalid_values)
 {
-    impl->read(in, format);
+    impl->read(in, skip_invalid_values);
 }
 
 void Settings::writeEmpty(WriteBuffer & out)

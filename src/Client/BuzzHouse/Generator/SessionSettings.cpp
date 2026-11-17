@@ -468,6 +468,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"enable_packed_string_keys_in_hash_join", trueOrFalseSetting},
        {"enable_parallel_replicas", trueOrFalseSetting},
        {"enable_parallel_single_level_merge", trueOrFalseSetting},
+       {"enable_parallel_single_level_merge_by_index", trueOrFalseSetting},
        {"enable_producing_buckets_out_of_order_in_aggregation", trueOrFalseSetting},
        {"enable_software_prefetch_in_join", trueOrFalseSetting},
        {"external_storage_push_down_limit", trueOrFalseSetting},
@@ -1958,6 +1959,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"query_plan_text_index_add_hint", trueOrFalseSetting},
     {"read_from_distributed_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
     {"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
+    {"read_from_filesystem_cache_if_exists_otherwise_cache_temporarily", trueOrFalseSetting},
     {"read_from_page_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
     {"read_in_order_two_level_merge_threshold",
      CHSetting(
@@ -2239,6 +2241,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_page_cache_lookahead_for_text_index", trueOrFalseSettingNoOracle},
     {"use_paimon_metadata_files_cache", trueOrFalseSetting},
     {"use_legacy_to_time", trueOrFalseSettingNoOracle},
+    {"use_lz4_library_decompression", trueOrFalseSetting},
     {"use_page_cache_for_disks_without_file_cache", trueOrFalseSetting},
     {"use_page_cache_for_local_disks", trueOrFalseSetting},
     {"use_page_cache_for_object_storage", trueOrFalseSetting},

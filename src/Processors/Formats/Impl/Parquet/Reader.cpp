@@ -112,18 +112,6 @@ static bool writesCompressedV2PagesAsUncompressed(std::string_view created_by)
     return major < 2;
 }
 
-/// Thrift deserialization can store an out-of-range value into an unscoped enum field when the
-/// input file is malformed. Loading such an enum directly is undefined behavior (caught by
-/// -fsanitize=enum); reading the raw underlying integer via memcpy is well-defined. We use it to
-/// validate page-header enums up front, so the rest of the reader only ever loads valid values.
-template <typename E>
-static int thriftEnumToInt(const E & e)
-{
-    std::underlying_type_t<E> v;
-    memcpy(&v, &e, sizeof(v));
-    return static_cast<int>(v);
-}
-
 /// The smallest memory limit in effect for the current thread: of the query, of the user, or of the server.
 /// 0 if there is none.
 static size_t memoryLimitOfCurrentThread()
@@ -3756,6 +3744,8 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         }
     }
 
+    column.dictionary.flushStringValueFilterStats();
+
     for (const auto & offsets : subchunk.arrays_offsets)
     {
         /// If repetition levels say that the column chunk starts in the middle of an array
@@ -4252,7 +4242,7 @@ void Reader::createPageDecoder(PageState & page, ColumnChunk & column, const Pri
     if (page.is_dictionary_encoded)
         page.decoder = makeDictionaryIndicesDecoder(page.encoding, column.dictionary.count, page.data);
     else
-        page.decoder = column_info.decoder.makeDecoder(page.encoding, page.data, column_info.string_value_filter.get());
+        page.decoder = column_info.decoder.makeDecoder(page.encoding, page.data, page.num_values, column_info.string_value_filter.get());
 }
 
 /// Returns true if this row is found in this page, and value_idx is at the first value of this row.
@@ -4780,7 +4770,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         else
             res = ColumnTuple::create(std::move(columns));
     }
-    else if (kind == TypeIndex::Dynamic || kind == TypeIndex::Object)
+    else if (kind == TypeIndex::Dynamic || kind == TypeIndex::Object || kind == TypeIndex::Variant)
     {
         chassert(output_info.nested_columns.size() == 2);
         MutableColumnPtr metadata = formOutputColumn(row_subgroup, output_info.nested_columns[0], num_rows);
@@ -4788,7 +4778,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
 
         res = output_info.input_type->createColumn();
         res->reserve(num_rows);
-        decodeVariantColumn(*metadata, *value, *res, output_info.input_type, output_info.name, num_rows, options.format);
+        decodeVariantColumn(*metadata, *value, *res, output_info.input_type, output_info.name, num_rows, VariantSettings(options.format));
     }
     else
     {
