@@ -34,7 +34,7 @@ public:
     explicit IdentifierNode(IdentifierName identifier_name_, TableExpressionModifiers table_expression_modifiers_);
 
     /// Get identifier
-    const Identifier & getIdentifier() const
+    [[nodiscard]] const Identifier & getIdentifier() const
     {
         return identifier;
     }
@@ -46,18 +46,18 @@ public:
     }
 
     /// Return true if identifier node has table expression modifiers, false otherwise
-    bool hasTableExpressionModifiers() const
+    [[nodiscard]] bool hasTableExpressionModifiers() const
     {
         return table_expression_modifiers.has_value();
     }
 
     /// Get table expression modifiers
-    const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
+    [[nodiscard]] const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
     {
         return table_expression_modifiers;
     }
 
-    QueryTreeNodeType getNodeType() const override
+    [[nodiscard]] QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::IDENTIFIER;
     }
@@ -65,13 +65,13 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(HashState & state, CompareOptions) const override;
 
-    QueryTreeNodePtr cloneImpl() const override;
+    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     Identifier identifier;

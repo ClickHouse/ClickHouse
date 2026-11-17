@@ -69,11 +69,11 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     ~TemporaryTableHolder();
 
-    StorageID getGlobalTableID() const;
+    [[nodiscard]] StorageID getGlobalTableID() const;
 
-    StoragePtr getTable() const;
+    [[nodiscard]] StoragePtr getTable() const;
 
-    std::shared_ptr<IDatabase> getDatabase() const;
+    [[nodiscard]] std::shared_ptr<IDatabase> getDatabase() const;
 
     operator bool () const { return id != UUIDHelpers::Nil; } /// NOLINT
 
@@ -231,6 +231,11 @@ public:
     void removeUUIDMappingFinally(const UUID & uuid);
     /// For moving table between databases
     void updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table);
+    /// Replaces `old_table` with `new_table` in the mapping of `uuid`, but only if the mapping holds
+    /// `old_table` and nobody holds it apart from the mapping and the caller, who holds one reference.
+    /// Returns whether the mapping was replaced. For a lazily loaded table, see
+    /// `DatabaseWithOwnTablesBase::replaceLoadedLazyTableUnlocked`.
+    bool replaceUnusedTableInUUIDMapping(const UUID & uuid, const StoragePtr & old_table, StoragePtr new_table);
     /// This method adds empty mapping (with database and storage equal to nullptr).
     /// It's required to "lock" some UUIDs and protect us from collision.
     /// Collisions of random 122-bit integers are very unlikely to happen,

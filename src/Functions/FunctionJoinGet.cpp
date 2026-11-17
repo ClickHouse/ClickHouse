@@ -57,13 +57,13 @@ public:
         , result_columns(result_columns_)
     {}
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
-    String getName() const override { return function_name; }
+    [[nodiscard]] String getName() const override { return function_name; }
 
 private:
     const char * function_name;
@@ -173,7 +173,11 @@ ExecutableFunctionPtr FunctionJoinGet::prepare(const ColumnsWithTypeAndName &) c
     Names column_names = storage_join->getKeyNames();
     column_names.push_back(attr_name);
     const auto storage_id = storage_join->getStorageID();
-    context->checkAccess(AccessType::SELECT, storage_id, column_names);
+    auto metadata_snapshot = storage_join->getInMemoryMetadataPtr(context, false);
+    context->checkAccess(
+        AccessType::SELECT,
+        storage_id,
+        metadata_snapshot->getColumns().getColumnNamesForSelectAccessCheck(column_names, context, storage_id));
 
     /// The hash table is read as is, so a row policy on the table cannot be applied here any more than in a JOIN.
     auto row_policy_filter = context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
@@ -221,6 +225,8 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
     }
     const auto storage_id = context->resolveStorageID(std::move(requested_storage_id));
 
+    /// Otherwise the errors below would reveal the existence and the engine of a table the user cannot see.
+    context->checkAccess(AccessType::SHOW_TABLES, storage_id);
     auto table = DatabaseCatalog::instance().getTable(storage_id, std::const_pointer_cast<Context>(context));
     auto storage_join = castStorage<StorageJoin>(table, DeferredTable::Load);
     if (!storage_join)

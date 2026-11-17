@@ -14,6 +14,8 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Common/StringValueFilter.h>
 
+#include <atomic>
+#include <mutex>
 #include <optional>
 #include <variant>
 
@@ -108,6 +110,24 @@ namespace DB::Parquet
 ///  * ReadManager drives the Reader. Responsible for scheduling work to threads, thread safety,
 ///    limiting memory usage, and delivering output.
 
+/// Column chunks of one file, parsed by any of the readers that read parts of this file within one
+/// query (see `ParquetBucketSplitter::splitForParallelReading`). Each column is parsed only once and
+/// kept in memory once, regardless of the number of readers, even without `ParquetMetadataCache`.
+struct SharedFileColumnChunks
+{
+    std::mutex mutex;
+    /// By Parquet column index, nullptr if not parsed yet. Protected by `mutex`.
+    VectorWithMemoryTracking<FileColumnChunksPtr> column_chunks;
+
+    /// Sorted offsets of all structures in the file, to find where a bloom filter without
+    /// `bloom_filter_length` ends (see `Reader::initializePrefetches`). Built once by the first reader
+    /// that needs it, the others wait for it. Protected by `bloom_filter_bounds_mutex`, which is
+    /// taken before `mutex`.
+    std::mutex bloom_filter_bounds_mutex;
+    std::shared_ptr<const VectorWithMemoryTracking<size_t>> bloom_filter_bounds;
+};
+using SharedFileColumnChunksPtr = std::shared_ptr<SharedFileColumnChunks>;
+
 struct RowGroupByteRange
 {
     UInt64 offset = 0;
@@ -191,6 +211,10 @@ struct Reader
         /// Definition level of innermost array. I.e. max levels[i].def where levels[i].is_array.
         UInt8 max_array_def = 0;
 
+        /// If nonzero, the column is read only for the sizes of its `levels_only_arrays` outermost
+        /// arrays, and its values are not used. See SchemaConverter::addLevelsOnlyPrimitive.
+        UInt8 levels_only_arrays = 0;
+
         bool use_bloom_filter = false;
 
         /// A single-column `KeyCondition` used for page-level pruning through the column index.
@@ -204,6 +228,9 @@ struct Reader
             /// only under the same four-column zero-nulls guarantee the row-group path requires
             /// (see `spatialBboxStatsHaveNoNulls`).
             size_t spatial_key_condition_idx = SIZE_MAX;
+
+            /// The condition is a conjunct of `join_runtime_filter_key_condition`.
+            bool from_join_runtime_filter = false;
         };
 
         /// Multiple conjunctive predicates on the same column (e.g. two `pointInPolygon` calls
@@ -224,6 +251,7 @@ struct Reader
         StringValueFilterPtr string_value_filter;
 
         bool used_by_key_condition = false;
+        bool used_by_join_runtime_filter = false;
         bool is_spatial_bbox_column = false; // one of the four covering.bbox primitives
 
         /// The hashes to look up in the bloom filter (a subset of the query constants hashed for this
@@ -255,6 +283,8 @@ struct Reader
         bool is_primitive = false;
         /// Column not in the file, fill it with default values.
         bool is_missing_column = false;
+        /// Not in the file but sized like an array of the file; set in block missing values so that its DEFAULT applies.
+        bool report_as_missing = false;
         bool needs_cast = false; // if output_type is different from input_type
 
         /// If set, the assembled column (a ColumnTuple) is wrapped in ColumnNullable using the group
@@ -641,6 +671,14 @@ struct Reader
 
     std::optional<KeyCondition> bloom_filter_condition;
 
+    /// See FormatFilterInfo::join_runtime_filter_predicate.
+    std::shared_ptr<const KeyCondition> join_runtime_filter_key_condition;
+    size_t row_groups_pruned_by_join_runtime_filter = 0;
+    /// Per-column conditions extracted from `join_runtime_filter_key_condition`, referenced by
+    /// PrimitiveColumnInfo::column_index_conditions.
+    VectorWithMemoryTracking<std::pair<size_t, std::shared_ptr<KeyCondition>>> join_runtime_filter_column_conditions;
+    std::atomic<size_t> pages_pruned_by_join_runtime_filter {0};
+
     /// TopN dynamic filtering: index in `primitive_columns` of the sort column, when eligible for
     /// row-group skipping by min/max statistics (see FormatFilterInfo::top_k_filter).
     std::optional<size_t> top_k_primitive_idx;
@@ -677,13 +715,21 @@ struct Reader
     /// Works around writer bugs in column chunk metadata.
     static void fixUpColumnChunk(parq::ColumnChunk & column, bool written_by_old_duckdb);
     /// `cached_column_chunks`, by Parquet column index (nullptr = absent), were parsed from `footer`.
-    void setFileFooter(std::shared_ptr<const FileFooter> footer, VectorWithMemoryTracking<FileColumnChunksPtr> cached_column_chunks_ = {});
+    /// `shared_column_chunks_`, if not null, are taken from and filled with the column chunks of `footer`
+    /// that are not in `cached_column_chunks`, so that other readers of the same file don't parse them again.
+    void setFileFooter(
+        std::shared_ptr<const FileFooter> footer,
+        VectorWithMemoryTracking<FileColumnChunksPtr> cached_column_chunks_ = {},
+        SharedFileColumnChunksPtr shared_column_chunks_ = nullptr);
     void prefilterAndInitRowGroups(const RowGroupSelection & row_group_selection);
     /// Takes or parses the column chunks of `primitive_columns`; called by prefilterAndInitRowGroups.
     void parseColumnChunks();
-    /// Takes from the cache or parses those of `column_indices` (sorted, unique) that are not in `column_chunks` yet.
+    /// Takes from the cache, from `shared_column_chunks`, or parses those of `column_indices` (sorted, unique)
+    /// that are not in `column_chunks` yet.
     /// Never replaces an entry: ColumnChunk::meta points into them.
     void ensureColumnChunks(const ColumnIndices & column_indices);
+    /// Sorted offsets of everything in the file that a bloom filter may be followed by, see initializePrefetches.
+    std::shared_ptr<const VectorWithMemoryTracking<size_t>> collectSortedMetadataOffsets();
     /// Only for the columns of `primitive_columns`, see parseColumnChunks.
     const parq::ColumnChunk & getColumnChunk(size_t row_group_idx, size_t column_idx) const;
     /// By Parquet column index, nullptr for the columns that are not parsed.
@@ -877,6 +923,7 @@ private:
     VectorWithMemoryTracking<FileColumnChunksPtr> column_chunks;
     /// See setFileFooter, released by prefilterAndInitRowGroups.
     VectorWithMemoryTracking<FileColumnChunksPtr> cached_column_chunks;
+    SharedFileColumnChunksPtr shared_column_chunks;
 };
 
 }

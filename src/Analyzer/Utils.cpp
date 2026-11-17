@@ -1,4 +1,5 @@
 #include <Analyzer/Utils.h>
+#include <Formats/FormatSettings.h>
 
 #include <Core/Settings.h>
 
@@ -11,6 +12,7 @@
 #include <Parsers/ASTLiteral.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromMemory.h>
 
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -940,7 +942,7 @@ public:
         has_function = function_node->getFunctionName() == function_name;
     }
 
-    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
+    [[nodiscard]] bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
     {
         if (has_function)
             return false;
@@ -949,7 +951,7 @@ public:
         return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
     }
 
-    bool hasFunction() const
+    [[nodiscard]] bool hasFunction() const
     {
         return has_function;
     }
@@ -1285,7 +1287,7 @@ namespace
 class CollectPrewhereTableExpressionVisitor : public ConstInDepthQueryTreeVisitor<CollectPrewhereTableExpressionVisitor>
 {
 public:
-    const TableExpressionNodePtr & getTableExpression() const
+    [[nodiscard]] const TableExpressionNodePtr & getTableExpression() const
     {
         return table_expression;
     }

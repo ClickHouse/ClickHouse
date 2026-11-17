@@ -96,6 +96,10 @@ public:
 
     static void prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr context, const String & cluster_name);
 
+    /// The engine of a table created from the table function, when its `TABLE ENGINE` grant is required, i.e. when the
+    /// engine has a source. A definition that cannot be a table is refused.
+    static std::optional<String> getSourceEngineOfTableFunction(const ASTPtr & table_function_ast, const ContextPtr & query_context);
+
     static String getDatabaseDefaultTableEngineName(const ASTCreateQuery & create, ContextPtr local_context);
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const override;
@@ -129,7 +133,7 @@ private:
     /// folding: the stored query must analyze in sensitive-mode sessions too.
     void validateViewSelectColumnSpellings(const ASTCreateQuery & create) const;
     void setEngine(ASTCreateQuery & create) const;
-    AccessRightsElements getRequiredAccess() const;
+    [[nodiscard]] AccessRightsElements getRequiredAccess() const;
 
     /// The part of `getRequiredAccess` for settings that send the table's data elsewhere, checked again once
     /// `setEngine` has resolved an engine inherited through `AS`, which `getRequiredAccess` cannot see.
@@ -151,12 +155,12 @@ private:
 
     /// Whether this CREATE MATERIALIZED VIEW ... POPULATE should be populated atomically: the feature
     /// setting is enabled and the query is an immediate INSERT SELECT into a non-window, non-clone view.
-    bool shouldPopulateMaterializedViewAtomically(const ASTCreateQuery & create) const;
+    [[nodiscard]] bool shouldPopulateMaterializedViewAtomically(const ASTCreateQuery & create) const;
 
     /// The name of the single source table an atomically populated materialized view would be subscribed
     /// to (the table of its FROM clause), or std::nullopt when the view has no such single source. Pure
     /// AST analysis - it does not touch the catalog, so it can be called before the view is created.
-    std::optional<QualifiedTableName> tryGetAtomicPopulateSourceName(const ASTCreateQuery & create) const;
+    [[nodiscard]] std::optional<QualifiedTableName> tryGetAtomicPopulateSourceName(const ASTCreateQuery & create) const;
 
     /// Resolves the single source table that an atomically populated materialized view is subscribed to,
     /// if it can provide a pinned point-in-time snapshot. Returns nullptr when atomic population does not

@@ -18,6 +18,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
+#include <Interpreters/Context.h>
+
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -546,6 +548,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     select_query->shuffle = is_shuffle;
     select_query->limit_by_all = is_limit_by_all;
     select_query->limit_after_all = is_limit_after_all;
+    select_query->is_view_inner_query = getContext()->isViewInnerQuery();
 
     if (hasWith())
     {

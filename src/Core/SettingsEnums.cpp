@@ -396,6 +396,13 @@ IMPLEMENT_SETTING_ENUM(
      {"kill", SeccompMode::Kill}})
 
 IMPLEMENT_SETTING_ENUM(
+    FilesystemIsolationMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"disabled", FilesystemIsolationMode::Disabled},
+     {"best_effort", FilesystemIsolationMode::BestEffort},
+     {"enforce", FilesystemIsolationMode::Enforce}})
+
+IMPLEMENT_SETTING_ENUM(
     IdentifierQuotingStyle,
     ErrorCodes::BAD_ARGUMENTS,
     {{"Backticks", IdentifierQuotingStyle::Backticks},
@@ -430,6 +437,13 @@ IMPLEMENT_SETTING_ENUM(
      {"horizon", DatabaseDataLakeCatalogType::ICEBERG_HORIZON},
      {"s3tables", DatabaseDataLakeCatalogType::S3_TABLES},
      {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING}})
+
+IMPLEMENT_SETTING_ENUM(
+    DatabaseDataLakeSnapshotLoadingMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", DatabaseDataLakeSnapshotLoadingMode::AUTO},
+     {"all", DatabaseDataLakeSnapshotLoadingMode::ALL},
+     {"refs", DatabaseDataLakeSnapshotLoadingMode::REFS}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
