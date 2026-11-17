@@ -4618,7 +4618,7 @@ TEST(SchedulerWorkloadResourceManager, ReversedHierarchyIsApplied)
     EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "c", "a"));
 }
 
-// A workload that becomes a resource of the same name is dropped only after its children leave it
+// A workload replaced by a resource of the same name is dropped only after its children leave it
 TEST(SchedulerWorkloadResourceManager, WorkloadReplacedByResourceOutlivesItsChildren)
 {
     ResourceTest t;
@@ -4632,6 +4632,16 @@ TEST(SchedulerWorkloadResourceManager, WorkloadReplacedByResourceOutlivesItsChil
             has_b_in_a = true;
     });
     EXPECT_TRUE(has_b_in_a);
+}
+
+// A resource replaced by a workload of the same name is created before its new children are attached to it
+TEST(SchedulerWorkloadResourceManager, ResourceReplacedByWorkloadPrecedesItsChildren)
+{
+    ResourceTest t;
+    t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE RESOURCE a (WRITE DISK d); CREATE WORKLOAD b SETTINGS weight = 2 FOR a");
+    t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
+    EXPECT_FALSE(t.manager->hasResource("a"));
+    EXPECT_TRUE(hasWorkloadNodeUnder(t, "io", "a", "b"));
 }
 
 // Unit-test coverage for the lazy-allocation path in CPULeaseAllocation

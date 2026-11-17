@@ -207,6 +207,12 @@ struct EntityChange
         return before && after && getEntityType(before) != getEntityType(after);
     }
 
+    /// True if the change replaces a workload by a resource of the same name
+    [[nodiscard]] bool replacesWorkloadByResource() const
+    {
+        return changesType() && getEntityType(after) == WorkloadEntityType::Resource;
+    }
+
     [[nodiscard]] std::vector<IWorkloadEntityStorage::Event> toEvents() const
     {
         if (!after)
@@ -295,7 +301,11 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
         {
             if (!event.entity) // DROP
             {
-                // Rule 1: Entity can only be removed after all existing references to it are removed as well.
+                // Rule 1: Entity can only be removed after all existing references to it are removed as well. A resource
+                // replaced by a workload is exempt: the workload must exist before its new children are attached (rules 2
+                // and 3), while a `FOR` clause that names a missing resource is harmless until its workload is updated.
+                if (change.changesType() && !change.replacesWorkloadByResource())
+                    continue;
                 for (const String & source : old_sources[change.name])
                 {
                     if (change_by_name.contains(source))
@@ -304,19 +314,19 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
             }
             else // CREATE || CREATE OR REPLACE
             {
-                // Rule 2: Entity can only be created or updated after all changed entities it references. A target that is
-                // dropped or changes its type is not waited for: its drop may wait for this entity (rule 1), so the rules
-                // form no cycle.
+                // Rule 2: Entity can only be created or updated after all changed entities it references. A dropped target or
+                // a workload replaced by a resource is not waited for: its drop waits for its old children (rule 1), so the
+                // rules form no cycle.
                 for (const String & target : new_targets[change.name])
                 {
-                    if (auto it = change_by_name.find(target); it != change_by_name.end() && it->second->after && !it->second->changesType())
+                    if (auto it = change_by_name.find(target);
+                        it != change_by_name.end() && it->second->after && !it->second->replacesWorkloadByResource())
                         dependencies[change.name].insert(target);
                 }
 
                 // Rule 3: A workload is changed after its nearest changed ancestor in the new hierarchy, so all its new
-                // ancestors already have their new parents when it is attached, and the hierarchy stays acyclic. An ancestor
-                // that changes its type is not waited for, as in rule 2.
-                if (auto ancestor = nearest_changed_ancestor(change.name); ancestor && !change_by_name.at(*ancestor)->changesType())
+                // ancestors already have their new parents when it is attached, and the hierarchy stays acyclic
+                if (auto ancestor = nearest_changed_ancestor(change.name))
                     dependencies[change.name].insert(*ancestor);
             }
         }
