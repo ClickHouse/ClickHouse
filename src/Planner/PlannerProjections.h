@@ -17,7 +17,7 @@ class ColumnsDescription;
 class QueryPlan;
 
 /// plans the SELECT of a projection
-/// names each expression as the query writes it, because a projection part stores its columns under these names
+/// names each stored expression as the query writes it, because a projection part stores its columns under these names
 class ProjectionPlanner
 {
 public:
@@ -51,8 +51,9 @@ private:
 
     QueryTreeNodePtr query_tree;
     PlannerContextPtr planner_context;
-    QueryTreeNodeToName node_to_name;
     Names aggregation_keys;
+    /// the names that the planner gives to the keys, in the order of aggregation_keys
+    Names planner_key_names;
     AggregateDescriptions aggregates;
 };
 
