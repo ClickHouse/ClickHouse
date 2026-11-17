@@ -21,6 +21,20 @@ ALTER that changes the type of such a subcolumn of the prefix column is refused
 2	22
 1
 1
+ALTER that changes the subcolumns of the column with the dotted name is refused
+1	11
+2	22
+1	11
+2	22
+1
+1
+33
+33
+ALTER that adds a prefix column with a subcolumn under the dotted name is refused
+1	11
+2	22
+1
+1
 a part that does not hold the column reads its default
 Wide
 1

@@ -112,6 +112,42 @@ SELECT countIf(assumeNotNull(toUInt64(`a.x.UInt64`)) = 11) FROM t_shadow_deeper;
 
 DROP TABLE t_shadow_deeper;
 
+-- Nor may a pair that stays change the subcolumns of the column with the dotted name: a regular subcolumn `y` of
+-- `a.x` takes precedence over the path `x.y` of the `JSON` column `a`.
+SELECT 'ALTER that changes the subcolumns of the column with the dotted name is refused';
+DROP TABLE IF EXISTS t_shadow_dotted;
+CREATE TABLE t_shadow_dotted (id UInt64, a JSON, `a.x` String)
+ENGINE = MergeTree ORDER BY toUInt64(`a.x.y`)
+SETTINGS index_granularity = 1, share_nested_offsets = 0;
+INSERT INTO t_shadow_dotted VALUES (1, '{"x":{"y":11}}', '(55)'), (2, '{"x":{"y":22}}', '(44)');
+ALTER TABLE t_shadow_dotted ADD PROJECTION p (SELECT sum(toUInt64(`a.x.y`)));
+ALTER TABLE t_shadow_dotted MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+ALTER TABLE t_shadow_dotted MODIFY COLUMN `a.x` Tuple(y Dynamic) SETTINGS mutations_sync = 2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_dotted MODIFY COLUMN `a.x` Nullable(String) SETTINGS mutations_sync = 2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT id, `a.x.y` FROM t_shadow_dotted ORDER BY toUInt64(`a.x.y`) SETTINGS optimize_read_in_order = 1;
+SELECT id, `a.x.y` FROM t_shadow_dotted ORDER BY toUInt64(`a.x.y`) SETTINGS optimize_read_in_order = 0;
+SELECT count() FROM t_shadow_dotted WHERE toUInt64(`a.x.y`) = 11;
+SELECT countIf(toUInt64(`a.x.y`) = 11) FROM t_shadow_dotted;
+SELECT sum(toUInt64(`a.x.y`)) FROM t_shadow_dotted SETTINGS optimize_use_projections = 0;
+SELECT sum(toUInt64(`a.x.y`)) FROM t_shadow_dotted SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+DROP TABLE t_shadow_dotted;
+
+-- Nor may a prefix column appear whose subcolumn is under the name of the column with the dotted name: the element
+-- `x.y` of the `Tuple` column `a` would take the name `a.x.y` from the path `y` of the `JSON` column `a.x`.
+SELECT 'ALTER that adds a prefix column with a subcolumn under the dotted name is refused';
+DROP TABLE IF EXISTS t_shadow_element;
+CREATE TABLE t_shadow_element (id UInt64, `a.x` JSON)
+ENGINE = MergeTree ORDER BY toUInt64(`a.x.y`)
+SETTINGS index_granularity = 1, share_nested_offsets = 0;
+INSERT INTO t_shadow_element VALUES (1, '{"y":11}'), (2, '{"y":22}');
+ALTER TABLE t_shadow_element ADD COLUMN a Tuple(`x.y` UInt64) DEFAULT tuple(toUInt64(7)); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_element ADD COLUMN a Tuple(z UInt64) DEFAULT tuple(toUInt64(7));
+ALTER TABLE t_shadow_element MODIFY COLUMN a Tuple(z UInt64, `x.y` UInt64) DEFAULT tuple(toUInt64(7), toUInt64(7)); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT id, `a.x.y` FROM t_shadow_element ORDER BY id;
+SELECT count() FROM t_shadow_element WHERE toUInt64(`a.x.y`) = 11;
+SELECT countIf(toUInt64(`a.x.y`) = 11) FROM t_shadow_element;
+DROP TABLE t_shadow_element;
+
 -- A table created with such a column may still have parts that do not hold it: with
 -- `skip_empty_columns_on_insert`, an `INSERT` that omits the column records it as missing.
 SELECT 'a part that does not hold the column reads its default';

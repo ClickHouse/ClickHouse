@@ -143,7 +143,7 @@ struct ProjectionDescription
     /// subcolumn of another projection column, and a subcolumn of a table column only by the same subcolumn of the
     /// same projection column, never by a same-named path of another column (`a.x.y` with a column `a.x` next
     /// to a `JSON` column `a`).
-    bool providesColumn(const String & column_name, const ColumnsDescription & table_columns) const;
+    [[nodiscard]] bool providesColumn(const String & column_name, const ColumnsDescription & table_columns) const;
 
     /**
      * @brief Calculates the projection result for a given input block.
