@@ -165,11 +165,11 @@ Proto::StripeFooter Reader::readStripeFooter(size_t stripe_index)
     return result;
 }
 
-std::vector<std::pair<UInt64, UInt64>> Reader::getStripeRanges(
-    size_t stripe_index, const Proto::StripeFooter & stripe_footer, const std::vector<bool> & selected) const
+VectorWithMemoryTracking<std::pair<UInt64, UInt64>> Reader::getStripeRanges(
+    size_t stripe_index, const Proto::StripeFooter & stripe_footer, const VectorWithMemoryTracking<bool> & selected) const
 {
     const auto & stripe = getStripe(stripe_index);
-    std::vector<std::pair<UInt64, UInt64>> ranges;
+    VectorWithMemoryTracking<std::pair<UInt64, UInt64>> ranges;
     UInt64 offset = stripe.offset;
     const UInt64 data_end = stripe.offset + stripe.index_length + stripe.data_length;
     for (const auto & s : stripe_footer.streams)
@@ -186,11 +186,11 @@ std::vector<std::pair<UInt64, UInt64>> Reader::getStripeRanges(
     return ranges;
 }
 
-std::vector<Reader::Slice> Reader::readRanges(const std::vector<std::pair<UInt64, UInt64>> & ranges)
+VectorWithMemoryTracking<Reader::Slice> Reader::readRanges(const VectorWithMemoryTracking<std::pair<UInt64, UInt64>> & ranges)
 {
-    std::vector<Slice> result(ranges.size());
+    VectorWithMemoryTracking<Slice> result(ranges.size());
 
-    std::vector<size_t> order(ranges.size());
+    VectorWithMemoryTracking<size_t> order(ranges.size());
     for (size_t i = 0; i < order.size(); ++i)
         order[i] = i;
     std::sort(order.begin(), order.end(), [&](size_t a, size_t b) { return ranges[a].first < ranges[b].first; });
@@ -257,7 +257,7 @@ std::vector<Reader::Slice> Reader::readRanges(const std::vector<std::pair<UInt64
     return result;
 }
 
-void Reader::preBuffer(const std::vector<UInt32> & stripes, const std::vector<UInt64> & include_types)
+void Reader::preBuffer(const VectorWithMemoryTracking<UInt32> & stripes, const VectorWithMemoryTracking<UInt64> & include_types)
 {
     auto selected = selectColumnsByTypeIds(*schema, include_types);
     for (UInt32 stripe_index : stripes)
@@ -337,7 +337,7 @@ public:
         Reader & reader_,
         size_t stripe_index_,
         Proto::StripeFooter footer_,
-        const std::vector<bool> & selected_columns_,
+        const VectorWithMemoryTracking<bool> & selected_columns_,
         const DateLUTImpl & writer_timezone_,
         const DateLUTImpl & reader_timezone_)
         : reader(reader_)
@@ -383,8 +383,8 @@ public:
     /// that are not read are loaded on demand by `getStream`.
     void loadStreams(bool only_index)
     {
-        std::vector<std::pair<UInt64, UInt64>> ranges;
-        std::vector<std::pair<UInt64, UInt32>> keys;
+        VectorWithMemoryTracking<std::pair<UInt64, UInt64>> ranges;
+        VectorWithMemoryTracking<std::pair<UInt64, UInt32>> keys;
         for (const auto & [key, range] : stream_ranges)
         {
             if (streams.contains(key) || (only_index && !isIndexStream(key.second)))
@@ -399,7 +399,7 @@ public:
         slices.insert(slices.end(), std::make_move_iterator(new_slices.begin()), std::make_move_iterator(new_slices.end()));
     }
 
-    const Proto::ColumnEncoding & getEncoding(UInt64 column_id) const override
+    [[nodiscard]] const Proto::ColumnEncoding & getEncoding(UInt64 column_id) const override
     {
         if (column_id >= footer.columns.size())
             throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -407,7 +407,7 @@ public:
         return footer.columns[column_id];
     }
 
-    std::unique_ptr<InputByteStream> getStream(UInt64 column_id, Proto::StreamKind kind) const override
+    [[nodiscard]] std::unique_ptr<InputByteStream> getStream(UInt64 column_id, Proto::StreamKind kind) const override
     {
         std::pair<UInt64, UInt32> key{column_id, static_cast<UInt32>(kind)};
         auto name = fmt::format("column {} kind {} in stripe {}", column_id, static_cast<UInt32>(kind), stripe_index);
@@ -426,7 +426,7 @@ public:
             std::move(loader), it->second.second, reader.getCompression(), reader.getCompressionBlockSize(), std::move(name));
     }
 
-    std::optional<std::string_view> getStreamData(UInt64 column_id, Proto::StreamKind kind) const
+    [[nodiscard]] std::optional<std::string_view> getStreamData(UInt64 column_id, Proto::StreamKind kind) const
     {
         auto it = streams.find({column_id, static_cast<UInt32>(kind)});
         if (it == streams.end())
@@ -434,30 +434,30 @@ public:
         return it->second;
     }
 
-    const std::vector<bool> & getSelectedColumns() const override { return selected_columns; }
-    const DateLUTImpl & getWriterTimezone() const override { return writer_timezone; }
-    const DateLUTImpl & getReaderTimezone() const override { return reader_timezone; }
-    UInt64 getNumberOfRows() const override { return reader.getStripe(stripe_index).number_of_rows; }
-    bool isDecimalAsLong() const override
+    [[nodiscard]] const VectorWithMemoryTracking<bool> & getSelectedColumns() const override { return selected_columns; }
+    [[nodiscard]] const DateLUTImpl & getWriterTimezone() const override { return writer_timezone; }
+    [[nodiscard]] const DateLUTImpl & getReaderTimezone() const override { return reader_timezone; }
+    [[nodiscard]] UInt64 getNumberOfRows() const override { return reader.getStripe(stripe_index).number_of_rows; }
+    [[nodiscard]] bool isDecimalAsLong() const override
     {
         const auto & version = reader.getPostScript().version;
         return version.size() == 2 && version[0] == 1 && version[1] == 9999;
     }
 
-    const Proto::StripeFooter & getFooter() const { return footer; }
+    [[nodiscard]] const Proto::StripeFooter & getFooter() const { return footer; }
 
 private:
     Reader & reader;
     size_t stripe_index;
     Proto::StripeFooter footer;
-    const std::vector<bool> & selected_columns;
+    const VectorWithMemoryTracking<bool> & selected_columns;
     const DateLUTImpl & writer_timezone;
     const DateLUTImpl & reader_timezone;
     /// The offset in the file and the length of each selected stream.
-    std::map<std::pair<UInt64, UInt32>, std::pair<UInt64, UInt64>> stream_ranges;
+    MapWithMemoryTracking<std::pair<UInt64, UInt32>, std::pair<UInt64, UInt64>> stream_ranges;
     /// The streams read into memory.
-    std::vector<Reader::Slice> slices;
-    std::map<std::pair<UInt64, UInt32>, std::string_view> streams;
+    VectorWithMemoryTracking<Reader::Slice> slices;
+    MapWithMemoryTracking<std::pair<UInt64, UInt32>, std::string_view> streams;
 };
 
 
@@ -525,16 +525,24 @@ const DateLUTImpl & RowReader::getWriterTimezone(const Proto::StripeFooter & str
     return DateLUT::serverTimezoneInstance();
 }
 
-bool RowReader::evaluateStatistics(const std::vector<Proto::ColumnStatistics> & stats) const
+bool RowReader::areTimestampsShifted(const DateLUTImpl & writer_timezone) const
+{
+    /// The statistics are not comparable with the UTC literals unless both time zones are UTC, even if they
+    /// are the same: the statistics of the files written in a local time zone are not UTC instants.
+    auto is_utc = [](const DateLUTImpl & tz) { return tz.getTimeZone() == "UTC" || tz.getTimeZone() == "GMT"; };
+    return !(is_utc(writer_timezone) && is_utc(reader_timezone));
+}
+
+bool RowReader::evaluateStatistics(const VectorWithMemoryTracking<Proto::ColumnStatistics> & stats, bool timestamps_shifted) const
 {
     const auto & leaves = options.search_argument->getLeaves();
-    std::vector<TruthValue> values(leaves.size(), TruthValue::YES_NO_NULL);
+    VectorWithMemoryTracking<TruthValue> values(leaves.size(), TruthValue::YES_NO_NULL);
     UInt32 writer_version = reader.getPostScript().writer_version;
     for (size_t i = 0; i < leaves.size(); ++i)
     {
         UInt64 column = leaves[i].getColumnId();
         if (column < stats.size())
-            values[i] = leaves[i].evaluate(writer_version, stats[column], nullptr);
+            values[i] = leaves[i].evaluate(writer_version, stats[column], nullptr, timestamps_shifted);
     }
     return isNeeded(options.search_argument->evaluate(values));
 }
@@ -615,7 +623,7 @@ void RowReader::pickRowGroups()
     }
 
     next_skipped_rows.assign(groups, 0);
-    std::vector<TruthValue> values(leaves.size(), TruthValue::YES_NO_NULL);
+    VectorWithMemoryTracking<TruthValue> values(leaves.size(), TruthValue::YES_NO_NULL);
     const UInt32 writer_version = reader.getPostScript().writer_version;
     const Proto::ColumnStatistics empty_statistics;
 
@@ -640,7 +648,8 @@ void RowReader::pickRowGroups()
             const BloomFilter * bloom_filter = nullptr;
             if (auto bf = bloom_filters.find(column); bf != bloom_filters.end() && group < bf->second.size())
                 bloom_filter = bf->second[group].get();
-            values[i] = leaves[i].evaluate(writer_version, entry.statistics ? *entry.statistics : empty_statistics, bloom_filter);
+            values[i] = leaves[i].evaluate(
+                writer_version, entry.statistics ? *entry.statistics : empty_statistics, bloom_filter, current_timestamps_shifted);
         }
 
         bool needed = isNeeded(options.search_argument->evaluate(values));
@@ -693,7 +702,7 @@ UInt64 RowReader::computeBatchSize(UInt64 requested, UInt64 current_row) const
 
 void RowReader::seekToRowGroup(size_t row_group)
 {
-    std::unordered_map<UInt64, PositionProvider> positions;
+    RowGroupPositions positions;
     for (const auto & [column, index] : row_indexes)
     {
         if (row_group >= index.entry.size())
@@ -717,7 +726,8 @@ void RowReader::startNextStripe()
 
     if (search_argument && !file_statistics_evaluated)
     {
-        file_statistics_result = footer.statistics.empty() || evaluateStatistics(footer.statistics);
+        /// The writer time zone is per stripe, so the timestamps are not compared at the file level.
+        file_statistics_result = footer.statistics.empty() || evaluateStatistics(footer.statistics, /* timestamps_shifted */ true);
         file_statistics_evaluated = true;
     }
     if (search_argument && !file_statistics_result)
@@ -732,19 +742,32 @@ void RowReader::startNextStripe()
         rows_in_current_stripe = stripe.number_of_rows;
 
         bool is_stripe_needed = true;
+        std::optional<Proto::StripeFooter> stripe_footer;
+        current_timestamps_shifted = false;
+        if (search_argument)
+        {
+            const auto & search_leaves = search_argument->getLeaves();
+            if (std::any_of(search_leaves.begin(), search_leaves.end(),
+                    [](const PredicateLeaf & leaf) { return leaf.getType() == PredicateDataType::TIMESTAMP; }))
+            {
+                stripe_footer = reader.readStripeFooter(current_stripe);
+                current_timestamps_shifted = areTimestampsShifted(getWriterTimezone(*stripe_footer));
+            }
+        }
         const auto & stripe_statistics = reader.getMetadata().stripe_stats;
         if (search_argument && stripe_statistics.size() == footer.stripes.size())
         {
             const auto & stats = stripe_statistics[current_stripe].col_stats;
-            is_stripe_needed = stats.empty() || evaluateStatistics(stats);
+            is_stripe_needed = stats.empty() || evaluateStatistics(stats, current_timestamps_shifted);
         }
 
         if (is_stripe_needed)
         {
-            auto stripe_footer = reader.readStripeFooter(current_stripe);
-            const DateLUTImpl & writer_timezone = getWriterTimezone(stripe_footer);
+            if (!stripe_footer)
+                stripe_footer = reader.readStripeFooter(current_stripe);
+            const DateLUTImpl & writer_timezone = getWriterTimezone(*stripe_footer);
             stripe_streams = std::make_unique<StripeStreamsImpl>(
-                reader, current_stripe, std::move(stripe_footer), selected_columns, writer_timezone, reader_timezone);
+                reader, current_stripe, std::move(*stripe_footer), selected_columns, writer_timezone, reader_timezone);
             if (!search_argument)
                 stripe_streams->loadStreams(/* only_index */ false);
 
