@@ -45,7 +45,7 @@ struct DistributedSettings
     void applyBackgroundInsertDefaults(const Settings & query_settings);
 
     static bool hasBuiltin(std::string_view name);
-    SettingDescriptions enumerateSettings() const;
+    [[nodiscard]] SettingDescriptions enumerateSettings() const;
     /// For `system.engine_settings`: the server-level instance a new table starts from, with the `background_insert_*`
     /// values filled from the global context, which the engine's creator reads them from. `changed` is that of the
     /// server-level instance.

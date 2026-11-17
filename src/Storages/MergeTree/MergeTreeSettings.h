@@ -126,9 +126,9 @@ struct MergeTreeSettings
 
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToSystemCompletionsColumns(MutableColumns & columns) const;
-    SettingDescriptions enumerateSettings() const;
+    [[nodiscard]] SettingDescriptions enumerateSettings() const;
     /// With `constraints` and `isReadonlySetting` applied, as `system.merge_tree_settings` shows them.
-    SettingDescriptions enumerateSettingsWithConstraints(const SettingsConstraints & constraints) const;
+    [[nodiscard]] SettingDescriptions enumerateSettingsWithConstraints(const SettingsConstraints & constraints) const;
     /// For `system.engine_settings`: the server-level instance a new table starts from.
     static SettingDescriptions enumerateEngineSettings(ContextPtr context);
     static SettingDescriptions enumerateReplicatedEngineSettings(ContextPtr context);

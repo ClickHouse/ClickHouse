@@ -40,7 +40,7 @@ struct MaterializedPostgreSQLSettings
     void checkConsistencyForFreshDefinition() const;
 
     static bool hasBuiltin(std::string_view name);
-    SettingDescriptions enumerateSettings() const;
+    [[nodiscard]] SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<MaterializedPostgreSQLSettingsImpl> impl;

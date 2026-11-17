@@ -30,7 +30,7 @@ struct RocksDBSettings
     void loadFromQuery(const ASTStorage & storage_def);
 
     static bool hasBuiltin(std::string_view name);
-    SettingDescriptions enumerateSettings() const;
+    [[nodiscard]] SettingDescriptions enumerateSettings() const;
     static void checkCanSet(std::string_view name, const Field & value);
 
 private:

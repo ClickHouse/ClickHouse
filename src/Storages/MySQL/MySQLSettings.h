@@ -51,7 +51,7 @@ struct MySQLSettings
     void loadFromNamedCollection(const NamedCollection & named_collection);
 
     static bool hasBuiltin(std::string_view name);
-    SettingDescriptions enumerateSettings() const;
+    [[nodiscard]] SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<MySQLSettingsImpl> impl;

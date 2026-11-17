@@ -35,7 +35,7 @@ struct QueryRunnerSettings
     void loadFromQuery(ASTStorage & storage_def);
 
     static bool hasBuiltin(std::string_view name);
-    SettingDescriptions enumerateSettings() const;
+    [[nodiscard]] SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<QueryRunnerSettingsImpl> impl;

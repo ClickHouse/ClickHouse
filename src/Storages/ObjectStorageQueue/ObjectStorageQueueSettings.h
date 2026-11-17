@@ -75,7 +75,7 @@ struct ObjectStorageQueueSettings
     Field get(const std::string & name);
 
     static bool hasBuiltin(std::string_view name);
-    SettingDescriptions enumerateSettings() const;
+    [[nodiscard]] SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<ObjectStorageQueueSettingsImpl> impl;

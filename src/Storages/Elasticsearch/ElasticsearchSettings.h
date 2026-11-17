@@ -35,7 +35,7 @@ struct ElasticsearchSettings
     void loadFromQuery(const ASTSetQuery & settings_def);
 
     static bool hasBuiltin(std::string_view name);
-    SettingDescriptions enumerateSettings() const;
+    [[nodiscard]] SettingDescriptions enumerateSettings() const;
 
     static void checkCanSet(std::string_view name, const Field & value);
 
