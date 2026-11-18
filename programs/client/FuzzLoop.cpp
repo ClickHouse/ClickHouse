@@ -763,7 +763,7 @@ bool Client::buzzHouse()
         /// Load server configurations for the fuzzer
         fuzz_config->loadServerConfigurations();
         loadFuzzerServerSettings(*fuzz_config);
-        loadFuzzerTableSettings(*fuzz_config);
+        loadFuzzerTableSettings(*fuzz_config, has_cloud_features);
         loadSystemTables(*fuzz_config);
 
         if (fuzz_config->allow_client_restarts && fuzz_config->allow_query_oracles)
@@ -793,18 +793,24 @@ bool Client::buzzHouse()
         BuzzHouse::QueryOracle qo(*fuzz_config);
         /// Open transactions and hypothetical objects are session scoped on the server, so the
         /// bookkeeping must be dropped on every reconnect, including the ones `tryToReconnect`
-        /// does after query errors on a dropped TCP session.
-        after_fuzz_reconnect = [&gen]()
-        {
-            gen.setInTransaction(false);
-            gen.clearHypotheticals();
-        };
+        /// does after query errors on a dropped TCP session. A reconnect can happen while generation
+        /// or an oracle still holds references into the catalog, so the cleanup waits for the next iteration.
+        bool session_reset = false;
+        after_fuzz_reconnect = [&session_reset]() { session_reset = true; };
         SCOPE_EXIT({ after_fuzz_reconnect = {}; });
         while (server_up)
         {
             no_timeout = !deadline || clock::now() < *deadline;
             if (!no_timeout)
                 break;
+
+            if (session_reset)
+            {
+                session_reset = false;
+                gen.setInTransaction(false);
+                gen.clearHypotheticals();
+                gen.dropTemporaryObjects();
+            }
 
             sq1.Clear();
             full_query.resize(0);
@@ -1229,17 +1235,12 @@ bool Client::buzzHouse()
                          const uint64_t nseed = rg.nextInFullRange();
                          const auto & tbl
                              = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call)).get();
-                         const auto & engine = tbl.isAnyIcebergEngine()
-                             ? "iceberg"
-                             : (tbl.isAnyDeltaLakeEngine()
-                                    ? "deltalake"
-                                    : (tbl.isAnyPaimonEngine() ? "paimon" : (tbl.isFileEngine() ? "file" : "kafka")));
+                         const String engine = tbl.getDolorEngineName();
                          const auto & ndname
-                             = (tbl.isKafkaEngine() || tbl.isFileEngine()) ? tbl.getDatabaseName() : tbl.getSparkCatalogName();
+                             = (tbl.isAnyStreamingEngine() || tbl.isFileEngine()) ? tbl.getDatabaseName() : tbl.getSparkCatalogName();
                          const auto & ntname = tbl.getBaseName(false);
                          const bool async = fuzz_config->allow_async_requests && rg.nextSmallNumber() < 4;
 
-                         chassert(tbl.isAnyLakeEngine() || tbl.isKafkaEngine() || tbl.isFileEngine());
                          fuzz_config->outf << external_cmd << (async ? "async " : "") << "with seed " << nseed << " to " << engine
                                            << " table " << markerHexEncode(ndname) << " " << markerHexEncode(ntname) << std::endl;
                          runExternalCommand(external_integrations, nseed, async, engine, ndname, ntname);
@@ -1267,13 +1268,16 @@ bool Client::buzzHouse()
     {
         LOG_INFO(fuzz_config->log, "The server is not responding, stopping fuzzing");
     }
-    if (!no_timeout)
+    if (!no_timeout || !no_eof)
     {
         /// Don't let the last query's error code become the exit code
         have_error = false;
         error_code = 0;
         server_exception.reset();
         client_exception.reset();
+    }
+    if (!no_timeout)
+    {
         LOG_INFO(fuzz_config->log, "The fuzzing time limit has been reached, stopping fuzzing");
     }
     if (!no_eof)

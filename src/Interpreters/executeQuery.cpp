@@ -4424,6 +4424,38 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     }
 }
 
+/// Runs the AST fuzzer from `BlockIO::onFinish`, after the query's own finish callbacks: its `query_log` entry
+/// does not include the fuzzing, and on HTTP the response is already sent and the session released.
+static void addASTFuzzerFinishCallback(BlockIO & io, const ASTPtr & ast, const ContextMutablePtr & context, QueryFlags flags)
+{
+    if (flags.internal || context->getClientInfo().is_shared_catalog_internal || !ast)
+        return;
+
+    Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
+    if (!(ast_fuzzer_runs_value > 0))
+        return;
+
+    bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
+    io.finish_callbacks.emplace_back(
+        [ast, context, ast_fuzzer_runs_value, any_query](const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point)
+        {
+            try
+            {
+                executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                    throw; /// Oracle mismatch — propagate so CI sees it
+                tryLogCurrentException("ASTFuzzer");
+            }
+            catch (...)
+            {
+                tryLogCurrentException("ASTFuzzer");
+            }
+        });
+}
+
 
 std::pair<ASTPtr, BlockIO> executeQuery(
     std::string_view query,
@@ -4506,29 +4538,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
         });
     }
 
-    const bool is_shared_catalog_internal = context->getClientInfo().is_shared_catalog_internal;
-    if (!flags.internal && !is_shared_catalog_internal && ast)
-    {
-        Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
-        if (ast_fuzzer_runs_value > 0)
-        {
-            bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
-            res.finish_callbacks.emplace_back(
-                [ast, context, ast_fuzzer_runs_value, any_query](const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point)
-                {
-                    try
-                    {
-                        executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
-                    }
-                    catch (const Exception & e)
-                    {
-                        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-                            throw; /// Oracle mismatch — propagate to abort the server
-                        tryLogCurrentException("ASTFuzzer");
-                    }
-                });
-        }
-    }
+    addASTFuzzerFinishCallback(res, ast, context, flags);
 
     return std::make_pair(std::move(ast), std::move(res));
 }
@@ -5248,30 +5258,7 @@ void executeQuery(
         if (implicit_tcl_executor->transactionRunning())
             implicit_tcl_executor->commit(context);
 
-        const bool is_shared_catalog_internal = context->getClientInfo().is_shared_catalog_internal;
-        if (!flags.internal && !is_shared_catalog_internal && ast)
-        {
-            Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
-            if (ast_fuzzer_runs_value > 0)
-            {
-                bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
-                try
-                {
-                    executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
-                }
-                catch (const Exception & e)
-                {
-                    if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-                        throw; /// Oracle mismatch — propagate so CI sees it
-                    tryLogCurrentException("ASTFuzzer");
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("ASTFuzzer");
-                }
-            }
-        }
-
+        addASTFuzzerFinishCallback(streams, ast, context, flags);
     }
     catch (...)
     {

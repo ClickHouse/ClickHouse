@@ -372,6 +372,13 @@ String getNextIcebergTimestamp(RandomGenerator & rg, FuzzConfig & fc)
     }
 }
 
+/// Delta Lake versions and Paimon snapshot ids are small sequential numbers (each write adds one),
+/// so low values usually exist. `DEFAULT` resets the pin to the latest version.
+static String getNextLakeVersion(RandomGenerator & rg, const int64_t min_version)
+{
+    return rg.nextSmallNumber() < 3 ? "DEFAULT" : std::to_string(rg.randomInt<int64_t>(min_version, min_version + 10));
+}
+
 /// Returns a DateTime string suitable for expire_snapshots positional/expire_before arguments.
 /// The parser uses readDateTimeText (expects "YYYY-MM-DD HH:MM:SS") and then multiplies by 1000,
 /// so we must produce seconds-granularity DateTime strings, not millisecond integers.
@@ -421,6 +428,16 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"apply_string_filters_during_scan", trueOrFalseSetting},
        {"automatic_parallel_replicas_max_duplicated_read_ratio", probRangeSetting},
        {"automatic_parallel_replicas_remember_boundary", trueOrFalseSetting},
+       /// The ratio of the larger to the smaller row count before the statistics are collected again
+       {"automatic_parallel_replicas_statistics_drift_ratio",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            {
+                static const DB::Strings choices = {"1", "1.01", "1.5", "2", "10", "1000"};
+                return rg.pickRandomly(choices);
+            },
+            {"1", "1.5", "1000"},
+            false)},
        {"cascades_aggregation_pushdown", trueOrFalseSetting},
        {"cluster_function_process_archive_on_multiple_nodes", trueOrFalseSetting},
        {"compile_aggregate_expressions", trueOrFalseSetting},
@@ -471,6 +488,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"enable_parallel_single_level_merge", trueOrFalseSetting},
        {"enable_parallel_single_level_merge_by_index", trueOrFalseSetting},
        {"enable_producing_buckets_out_of_order_in_aggregation", trueOrFalseSetting},
+       {"enable_robin_hood_hash_for_joins", trueOrFalseSetting},
        {"enable_software_prefetch_in_join", trueOrFalseSetting},
        {"external_storage_push_down_limit", trueOrFalseSetting},
        {"group_by_top_k_optimization_shared_boundary", trueOrFalseSetting},
@@ -742,6 +760,7 @@ std::unordered_map<String, CHSetting> performanceSettings
             false)},
        {"use_indexes_refiner_in_read_pools", trueOrFalseSetting},
        {"use_join_disjunctions_push_down", trueOrFalseSetting},
+       {"use_join_runtime_filters_for_iceberg_pruning", trueOrFalseSetting},
        {"use_lightweight_primary_key_index_analysis", trueOrFalseSetting},
        {"use_page_cache_with_distributed_cache", trueOrFalseSetting},
        {"use_paimon_partition_pruning", trueOrFalseSetting},
@@ -847,6 +866,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"async_query_sending_for_remote", trueOrFalseSettingNoOracle},
     {"async_socket_for_remote", trueOrFalseSettingNoOracle},
     {"automatic_parallel_replicas_mode", CHSetting(zeroOneTwo, {"0", "1", "2"}, false)},
+    {"azure_skip_hidden_files", trueOrFalseSettingNoOracle},
     {"azure_validate_etag_on_read", trueOrFalseSettingNoOracle},
     {"backup_s3_expired_token_retry_timeout_ms",
      CHSetting(
@@ -986,6 +1006,12 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"delta_lake_enable_expression_visitor_logging", trueOrFalseSettingNoOracle},
     {"delta_lake_log_metadata", trueOrFalseSettingNoOracle},
     {"delta_lake_reload_schema_for_consistency", trueOrFalseSettingNoOracle},
+    /// Time travel and the change data feed range: versions start at 0
+    {"delta_lake_snapshot_end_version",
+     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return getNextLakeVersion(rg, 0); }, {}, false)},
+    {"delta_lake_snapshot_start_version",
+     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return getNextLakeVersion(rg, 0); }, {}, false)},
+    {"delta_lake_snapshot_version", CHSetting([](RandomGenerator & rg, FuzzConfig &) { return getNextLakeVersion(rg, 0); }, {}, false)},
     {"delta_lake_throw_on_engine_predicate_error", trueOrFalseSettingNoOracle},
     {"describe_include_subcolumns", trueOrFalseSettingNoOracle},
     {"describe_include_virtual_columns", trueOrFalseSettingNoOracle},
@@ -1075,6 +1101,8 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"enable_memory_bound_merging_of_aggregation_results", trueOrFalseSettingNoOracle},
     {"enable_multiple_prewhere_read_steps", trueOrFalseSetting},
     {"enable_named_columns_in_function_tuple", trueOrFalseSettingNoOracle},
+    /// Needed by `use_hive_partitioning` on the `S3Queue` and `AzureQueue` engines
+    {"enable_object_storage_queue_hive_partitioning", trueOrFalseSettingNoOracle},
     {"enable_parallel_blocks_marshalling", trueOrFalseSettingNoOracle},
     {"enable_parsing_to_custom_serialization", trueOrFalseSetting},
     {"enable_positional_arguments_for_projections", trueOrFalseSettingNoOracle},
@@ -1202,6 +1230,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"hdfs_create_new_file_on_insert", trueOrFalseSettingNoOracle},
     {"hdfs_ignore_file_doesnt_exist", trueOrFalseSettingNoOracle},
     {"hdfs_skip_empty_files", trueOrFalseSettingNoOracle},
+    {"hdfs_skip_hidden_files", trueOrFalseSettingNoOracle},
     {"hdfs_throw_on_zero_files_match", trueOrFalseSettingNoOracle},
     {"http_allow_database_as_path", trueOrFalseSettingNoOracle},
     {"http_allow_filters_as_path", trueOrFalseSettingNoOracle},
@@ -1410,6 +1439,15 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"insert_shard_id",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 2)); }, {}, false)},
+    {"insert_squashing_max_memory_ratio",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings choices = {"0", "0.0001", "0.01", "0.1125", "0.5", "1"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
     {"intersect_default_mode", setSetting},
     {"interval_output_format",
      CHSetting(
@@ -1735,6 +1773,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_arrow_low_cardinality_as_dictionary", trueOrFalseSettingNoOracle},
     {"output_format_arrow_max_record_batch_size_bytes", CHSetting(bytesRangeNonZero, {}, false)},
     {"output_format_arrow_string_as_string", trueOrFalseSettingNoOracle},
+    {"output_format_arrow_uuid_as_fixed_byte_array", trueOrFalseSettingNoOracle},
     {"output_format_arrow_unsupported_types",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -1878,6 +1917,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_vortex_string_as_string", trueOrFalseSettingNoOracle},
     {"output_format_write_statistics", trueOrFalseSettingNoOracle},
     {"page_cache_inject_eviction", trueOrFalseSettingNoOracle},
+    /// Targeted snapshot read of Paimon incremental mode; snapshot ids start at 1
+    {"paimon_target_snapshot_id", CHSetting([](RandomGenerator & rg, FuzzConfig &) { return getNextLakeVersion(rg, 1); }, {}, false)},
     {"parallel_distributed_insert_select", CHSetting(zeroOneTwo, {}, false)},
     {"parallel_replicas_allow_in_with_subquery", trueOrFalseSetting},
     {"parallel_replicas_allow_materialized_views", trueOrFalseSettingNoOracle},
@@ -2012,6 +2053,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"s3_create_new_file_on_insert", trueOrFalseSettingNoOracle},
     {"s3_ignore_file_doesnt_exist", trueOrFalseSettingNoOracle},
     {"s3_skip_empty_files", trueOrFalseSettingNoOracle},
+    {"s3_skip_hidden_files", trueOrFalseSettingNoOracle},
     {"s3_slow_all_threads_after_network_error", trueOrFalseSettingNoOracle},
     {"s3_throw_on_zero_files_match", trueOrFalseSettingNoOracle},
     {"s3_upload_checksum_algorithm",
@@ -2347,11 +2389,11 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     {
         serverSettings.insert({{"implicit_transaction", trueOrFalseSettingNoOracle}});
     }
-    if (!fc.dolor_server.has_value())
+    if (!fc.dolor_server.has_value() || !fc.dolor_spark_tables)
     {
         /// Dolor writes whole-file snappy File tables in the basic/Hadoop framing (the server
         /// default), so flipping the decode mode would fail every read of them. Randomize only
-        /// when dolor is not in use; the oracle values would flip it behind the tables' back too.
+        /// when dolor writes no File tables; the oracle values would flip it behind the tables' back too.
         serverSettings.insert(
             {{"snappy_mode",
               CHSetting(
@@ -2417,6 +2459,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
            "min_external_table_block_size_bytes",
            "min_insert_block_size_bytes",
            "min_joined_block_size_bytes",
+           "min_string_column_bytes_for_hash_join_row_store",
            "page_cache_block_size",
            "page_cache_max_coalesced_bytes",
            "partial_merge_join_left_table_buffer_bytes",
@@ -3045,7 +3088,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
          {"input_format_with_types_use_header", trueOrFalseSettingNoOracle},
          {"low_cardinality_allow_in_native_format", trueOrFalseSettingNoOracle},
          {"output_format_avro_confluent_subject", CHSetting(nastyStrings, {}, false)},
-         {"output_format_avro_rows_in_file", CHSetting(rowsRange, {}, false)},
+         {"output_format_avro_rows_in_file", CHSetting(rowsRangeNonZero, {}, false)},
          {"output_format_arrow_date_as_uint16", trueOrFalseSettingNoOracle},
          {"output_format_orc_dictionary_key_size_threshold",
           CHSetting(

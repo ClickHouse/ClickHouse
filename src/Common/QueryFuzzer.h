@@ -36,6 +36,8 @@ class ASTCreateQuery;
 class ASTInsertQuery;
 class ASTColumnDeclaration;
 class ASTDropQuery;
+class ASTDictionaryLayout;
+class ASTFunctionWithKeyValueArguments;
 class ASTIndexDeclaration;
 class ASTProjectionDeclaration;
 class ASTRefreshStrategy;
@@ -264,6 +266,8 @@ private:
 
     // Various helper functions follow, normally you shouldn't have to call them.
     Field getRandomField(int type);
+    /// A `(key, value)` tuple, the element type of `Map`
+    Field getRandomMapEntry();
     Field fuzzField(Field field);
     ASTPtr getRandomColumnLike();
     /// Builds a fuzzed asterisk/matcher (`*`, `* LIKE/ILIKE '<pattern>'`, `table.*`, `COLUMNS(...)`),
@@ -334,7 +338,7 @@ private:
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
-    void fuzzCodecFunction(ASTFunction & codec_fn);
+    void fuzzCodecFunction(ASTFunction & codec_fn, bool always = false);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
     void fuzzColumnDeclarationList(ASTExpressionList & columns);
     /// The `CODEC <path> (...)` entries of a column list, added to a list that has none.
@@ -368,6 +372,15 @@ private:
 
     void fuzzTableFunctionName(ASTPtr & table_function);
     void fuzzClusterFunctionArguments(ASTFunction & fn);
+    void fuzzStorageArguments(ASTFunction & fn, ASTSetQuery * engine_settings);
+    String fuzzStructure(const String & structure);
+    String fuzzHivePath(String path);
+    String fuzzQueryText(const String & text, bool is_expression);
+    void fuzzDictionaryLayout(ASTDictionaryLayout & layout);
+    void fuzzDictionarySource(ASTFunctionWithKeyValueArguments & source);
+    void addQueueSettings(SettingsChanges & changes, bool on_s3);
+    void addMemorySettings(SettingsChanges & changes);
+    void fuzzExistingEngineParameters(ASTStorage & storage);
     void fuzzProxyDatabaseEngine(ASTStorage & storage);
     void fuzzStorageDatabaseEngine(ASTStorage & storage);
     void fuzzMergeFunctionArguments(ASTFunction & fn);
