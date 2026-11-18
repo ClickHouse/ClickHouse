@@ -864,11 +864,7 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
         /// -1 means that the table has no snapshot yet.
         Int64 parent_snapshot_id = -1;
         if (metadata_object->has(Iceberg::f_current_snapshot_id) && !metadata_object->isNull(Iceberg::f_current_snapshot_id))
-        {
-            Int64 current_snapshot_id = metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
-            if (current_snapshot_id >= 0)
-                parent_snapshot_id = current_snapshot_id;
-        }
+            parent_snapshot_id = metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
 
         FileNamesGenerator filename_generator(
             persistent_components.path_resolver.getTableLocation(),
