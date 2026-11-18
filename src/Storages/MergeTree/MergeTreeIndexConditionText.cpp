@@ -2113,6 +2113,10 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     if (!key_const_value.has_value())
         return false;
 
+    /// A `FixedString(N)` key is indexed padded to N bytes.
+    if (indexed_fixed_string_size && key_const_value->size() < *indexed_fixed_string_size)
+        key_const_value->resize(*indexed_fixed_string_size, '\0');
+
     if (!prepareSetsForDefaultValueEvaluation(subdag, getContext()))
         return false;
 

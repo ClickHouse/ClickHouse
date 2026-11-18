@@ -7,6 +7,7 @@ SET optimize_functions_to_subcolumns = 1;
 
 DROP TABLE IF EXISTS tab;
 DROP TABLE IF EXISTS tab_nothing;
+DROP TABLE IF EXISTS tab_fixed;
 
 CREATE TABLE tab
 (
@@ -61,3 +62,23 @@ SELECT id FROM tab_nothing WHERE m['k'].x = 'a' ORDER BY id SETTINGS force_data_
 SELECT id FROM tab_nothing WHERE m['k'].x = 'z' ORDER BY id;
 
 DROP TABLE tab_nothing;
+
+-- A `FixedString` key is looked up in the index padded to its width.
+CREATE TABLE tab_fixed
+(
+    id UInt32,
+    m Map(FixedString(4), Date32),
+    l Map(LowCardinality(FixedString(4)), Date32),
+    INDEX idx_m mapKeys(m) TYPE text(tokenizer = 'array'),
+    INDEX idx_l mapKeys(l) TYPE text(tokenizer = 'array')
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1, map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
+
+INSERT INTO tab_fixed VALUES (1, {'k': '1900-01-01'}, {'k': '1900-01-01'}), (2, {'x': '2000-01-01'}, {'x': '2000-01-01'}), (3, {'k': '2000-01-01'}, {'k': '2000-01-01'});
+
+SELECT id FROM tab_fixed WHERE m.key_k = toDate32('1900-01-01') ORDER BY id;
+SELECT id FROM tab_fixed WHERE m.key_k = toDate32('2000-01-01') ORDER BY id SETTINGS force_data_skipping_indices = 'idx_m';
+SELECT id FROM tab_fixed WHERE l.key_k = toDate32('2000-01-01') ORDER BY id SETTINGS force_data_skipping_indices = 'idx_l';
+
+DROP TABLE tab_fixed;
