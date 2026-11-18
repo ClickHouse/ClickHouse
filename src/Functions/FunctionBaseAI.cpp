@@ -8,6 +8,7 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/ProfileEvents.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Core/ServerSettings.h>
@@ -40,6 +41,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_ai_functions;
     extern const SettingsUInt64 ai_function_request_timeout_sec;
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsNonZeroUInt64 ai_function_max_concurrent_requests_per_thread;
@@ -59,6 +61,7 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -292,7 +295,7 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
     params.collection.collection_name = credentials;
     params.collection.provider = collection->getOrDefault<String>("provider", "");
     params.collection.endpoint = collection->getOrDefault<String>("endpoint", "");
-    params.collection.api_key = collection->getOrDefault<String>("api_key", "");
+    params.collection.api_key = collection->getOrDefault<SecretString>("api_key");
     params.collection.api_version = collection->getOrDefault<String>("api_version", "");
 
     if (params.collection.provider.empty())
@@ -300,7 +303,17 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
     if (params.collection.endpoint.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", credentials);
 
-    const Poco::URI endpoint_uri(params.collection.endpoint);
+    /// The endpoint can carry a secret, so the error below names only the collection.
+    Poco::URI endpoint_uri;
+    try
+    {
+        endpoint_uri = Poco::URI(params.collection.endpoint);
+    }
+    catch (const Poco::SyntaxException &)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' has a malformed endpoint", credentials);
+    }
+
     context->getRemoteHostFilter().checkURL(endpoint_uri);
 
     /// Refuse to send prompts and API keys over an unencrypted connection to a remote host.
@@ -309,10 +322,10 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
         && !isLoopbackHost(endpoint_uri.getHost())
         && !context->getSettingsRef()[Setting::ai_function_allow_insecure_endpoint])
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "AI named collection '{}' uses an insecure endpoint '{}': prompts and the API key would be sent to a "
+            "AI named collection '{}' uses an insecure endpoint: prompts and the API key would be sent to a "
             "remote host over an unencrypted connection. Use an 'https://' endpoint, or set "
             "'ai_function_allow_insecure_endpoint' to allow plaintext requests to remote hosts.",
-            credentials, params.collection.endpoint);
+            credentials);
 
     /// A function that does not declare `model` (i.e. `aiEmbed`, which takes it as an argument) must
     /// not silently ignore a `model` defined in the named collection: reject it instead.
@@ -389,8 +402,11 @@ void FunctionBaseAI::checkHasUser(const ContextPtr & context)
         "AI functions cannot be executed without a user, e.g. in background merges, mutations or `Buffer` flushes");
 }
 
-void FunctionBaseAI::throwIfBackgroundExpression(const ContextPtr & context)
+void FunctionBaseAI::throwIfNotAllowed(const ContextPtr & context)
 {
+    if (!context->getSettingsRef()[Setting::allow_ai_functions])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "AI functions are disabled. Set `allow_ai_functions` to enable them");
+
     if (context->isAnalyzingBackgroundExpressions())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "AI functions cannot be used in expressions executed in the background: mutations, keys, TTL, skip indexes "
@@ -622,7 +638,10 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 continue;
             }
 
-            insertProcessedResult(*result_col, postProcessResponse(ai_response->result));
+            String & response = ai_response->result;
+            if (response_format) /// Some models output whitespace around a structured reply
+                response = String(trimWhitespace(response));
+            insertProcessedResult(*result_col, postProcessResponse(response));
             ++rows_processed;
         }
     }

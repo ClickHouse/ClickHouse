@@ -178,6 +178,7 @@ public:
 
     String getName() const override { return function->getName(); }
     void updateHash(SipHash & hash) const override { function->updateHash(hash); }
+    void checkAccessOnBuild() const override { function->checkAccessOnBuild(); }
     bool isStateful() const override { return function->isStateful(); }
     bool isVariadic() const override { return function->isVariadic(); }
     bool isServerConstant() const override { return function->isServerConstant(); }
