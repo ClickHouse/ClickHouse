@@ -1249,6 +1249,14 @@ void ContextAccess::checkCanAdministerDefaultRoles() const
             "and such sessions cannot administer roles");
 }
 
+void ContextAccess::checkCanChangeGrants() const
+{
+    if (params.full_access)
+        return;
+    if (params.readonly)
+        throw Exception(ErrorCodes::READONLY, "{}: Cannot change grants in readonly mode.", getUserName());
+}
+
 bool ContextAccess::isGrantedWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter) const
 {
     if (isGranted(context, flags, parameter))
