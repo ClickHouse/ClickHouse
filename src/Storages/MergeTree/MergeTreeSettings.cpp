@@ -861,10 +861,11 @@ ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = '';
 ```
 )", 0, \
         {"25.10", "", "", "New setting."}) \
-    DECLARE(NonZeroUInt64, text_index_dictionary_block_size, 512, R"(
+    DECLARE(NonZeroUInt64, text_index_dictionary_block_size, 8192, R"(
 Default dictionary block size for text indexes.
 Can be overridden by explicit `dictionary_block_size` index argument.
 )", 0, \
+        {"26.11", 512, 8192, "Increase the default dictionary block size of text indexes"}, \
         {"26.6", 512, 512, "New setting"}) \
     DECLARE(Bool, text_index_dictionary_block_frontcoding_compression, true, R"(
 Default front-coding compression for text index dictionary blocks.
