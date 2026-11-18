@@ -5,7 +5,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageMaterializedView.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryLog.h>
 #include <Access/Common/AccessRightsElement.h>
@@ -126,10 +125,6 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), getContext());
         }
 
-        StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(StorageID(elem.from_database_name, elem.from_table_name), getContext(), /*is_drop_database*/ false);
-        if (exchange_tables)
-            StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(StorageID(elem.to_database_name, elem.to_table_name), getContext(), /*is_drop_database*/ false);
-
         /// Run the caller's pre-swap check while still holding `ddl_guards`. If it
         /// throws, the guards release via RAII, no rename happens, and the caller's
         /// catch path runs. Skip when the destination doesn't exist — there is no
@@ -151,7 +146,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             UniqueTableName to(elem.to_database_name, elem.to_table_name);
             ddl_guards[from]->releaseTableLock();
             ddl_guards[to]->releaseTableLock();
-            return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(ddl_guards[from]));
+            return database->tryEnqueueReplicatedDDL(query_ptr->clone(), getContext(), {}, std::move(ddl_guards[from]));
         }
 
         StorageID from_table_id{elem.from_database_name, elem.from_table_name};
@@ -275,10 +270,6 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
         auto db_guard = catalog.getExclusiveDDLGuardForDatabase(old_name);
 
         catalog.assertDatabaseDoesntExist(new_name);
-
-        /// Views from the same database are checked too: their stored query keeps the old database name.
-        StorageMaterializedView::checkDatabaseHasNoIncrementalRefreshSources(*db, old_name, getContext(), /*is_drop_database*/ false);
-
         db->renameDatabase(getContext(), new_name);
     }
 

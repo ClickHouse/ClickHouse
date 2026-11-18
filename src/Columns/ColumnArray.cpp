@@ -592,7 +592,7 @@ struct ColumnArray::ComparatorBase
     {
     }
 
-    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = parent.compareAt(lhs, rhs, parent, nan_direction_hint);
 
@@ -611,7 +611,7 @@ struct ColumnArray::ComparatorCollationBase
     {
     }
 
-    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = parent.compareAtWithCollation(lhs, rhs, parent, nan_direction_hint, *collator);
 
@@ -637,9 +637,12 @@ void ColumnArray::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> 
     source_data_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
-        const auto & source_array_column = assert_cast<const ColumnArray &>(*source_column);
-        new_size += source_array_column.size();
-        source_data_columns.push_back(source_array_column.getDataPtr());
+        const auto * source_array_column = typeid_cast<const ColumnArray *>(source_column.get());
+        if (!source_array_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for squashing of {} is not Array, but {}", getName(), source_column->getName());
+
+        new_size += source_array_column->size();
+        source_data_columns.push_back(source_array_column->getDataPtr());
     }
 
     getOffsets().reserve_exact(new_size * factor);
@@ -671,6 +674,14 @@ size_t ColumnArray::byteSizeAt(size_t n) const
     size_t end = offsets_data[n];
 
     size_t res = sizeof(offsets_data[0]);
+    const size_t array_size = end - pos;
+    /// Avoid the additional virtual call for short arrays.
+    if (array_size > 4 && pos < end && getData().isFixedAndContiguous())
+    {
+        /// Per-value accounting can include overhead beyond the contiguous payload.
+        return res + array_size * getData().byteSizeAt(pos);
+    }
+
     for (; pos < end; ++pos)
         res += getData().byteSizeAt(pos);
 
@@ -1558,7 +1569,7 @@ ColumnPtr ColumnArray::replicateNumber(const Offsets & replicate_offsets) const
         for (size_t j = 0; j < size_to_replicate; ++j)
         {
             /// memcpySmallAllowReadWriteOverflow15 is slower than memcpy for long values.
-            if (value_bytes <= 64)
+            if (value_bytes <= 128)
                 memcpySmallAllowReadWriteOverflow15(&res_data[current_new_offset], src, value_bytes);
             else
                 memcpy(&res_data[current_new_offset], src, value_bytes);
@@ -1737,14 +1748,24 @@ void ColumnArray::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<
     VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-        nested_source_columns.push_back(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
+    {
+        const auto * source_array = typeid_cast<const ColumnArray *>(source_column.get());
+        if (!source_array)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for merge of {} is not Array, but {}", getName(), source_column->getName());
+
+        nested_source_columns.push_back(source_array->getDataPtr());
+    }
 
     data->chooseDynamicStructureForMerge(nested_source_columns, max_dynamic_subcolumns);
 }
 
 void ColumnArray::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    data->takeExactDynamicStructureFrom(assert_cast<const ColumnArray &>(source).getData());
+    const auto * source_array = typeid_cast<const ColumnArray *>(&source);
+    if (!source_array)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot take dynamic structure for {} from {}: it is not Array", getName(), source.getName());
+
+    data->takeExactDynamicStructureFrom(source_array->getData());
 }
 
 void ColumnArray::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
