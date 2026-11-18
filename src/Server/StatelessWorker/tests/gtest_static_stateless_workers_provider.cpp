@@ -296,6 +296,39 @@ TEST(StaticStatelessWorkersProvider, ClusterFormRetiredWhenRemoteServersChange)
     EXPECT_EQ(p2->allocate(0, PROVISIONING_TIMEOUT_MS)->getAddresses()[0].host, "host-b");
 }
 
+/// The provider reads the liveness of the cluster that `<cluster>` names. A change of that name must
+/// retire the provider, also when the new cluster has the same replicas.
+TEST(StaticStatelessWorkersProvider, ClusterFormRetiredWhenClusterNameChanges)
+{
+    const std::string remote_servers = R"(
+    <remote_servers>
+        <sw_first><shard><replica><host>host-a</host><port>9000</port></replica></shard></sw_first>
+        <sw_second><shard><replica><host>host-a</host><port>9000</port></replica></shard></sw_second>
+    </remote_servers>
+)";
+    applyStatelessWorkerConfig(remote_servers + R"(
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <clusters><dyn><cluster>sw_first</cluster></dyn></clusters>
+    </stateless_worker_client>
+)");
+    StatelessWorkersProviderRegistry registry;
+    auto p1 = registry.getProvider("dyn");
+    ASSERT_TRUE(p1);
+
+    applyStatelessWorkerConfig(remote_servers + R"(
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <clusters><dyn><cluster>sw_second</cluster></dyn></clusters>
+    </stateless_worker_client>
+)");
+    registry.reloadConfig(getContext().context->getConfigRef());
+    EXPECT_FALSE(registry.tryGetProvider("dyn"));
+
+    auto p2 = registry.getProvider("dyn");
+    EXPECT_NE(p1.get(), p2.get());
+}
+
 /// A lookup after the configuration changed, but before the reload reached the registry, builds a
 /// provider from the new configuration instead of returning the stale cached one.
 TEST(StatelessWorkersProviderRegistry, LookupRebuildsProviderChangedBeforeReload)
