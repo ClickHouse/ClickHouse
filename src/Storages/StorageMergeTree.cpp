@@ -2281,6 +2281,9 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                             .explanation = PreformattedMessage::create("Timeout ({} ms) while waiting for already running merges before running OPTIMIZE with FINAL.", timeout_ms),
                         });
 
+                    /// The wait released the selection lock, so `DETACH` may have added a gap.
+                    merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, txn, lock);
+                    parts_collector = std::make_shared<MergeTreePartsCollector>(*this, txn, merge_predicate);
                     continue;
                 }
                 else

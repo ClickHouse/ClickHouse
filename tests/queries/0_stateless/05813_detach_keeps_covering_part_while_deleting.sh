@@ -35,6 +35,17 @@ detach_pid=$!
 timeout 30s $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT mt_pause_before_outdating_detached_empty_parts PAUSE"
 $CLICKHOUSE_CLIENT -q "SYSTEM START CLEANUP t_detach_deleting_parts"
 timeout 30s $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT storage_merge_tree_background_clear_old_parts_pause PAUSE"
+deadline=$((SECONDS + 60))
+while [[ $($CLICKHOUSE_CLIENT -q "
+    SELECT count() FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_detach_deleting_parts'
+        AND name = 'all_1_1_0' AND _state = 'Deleting'") != 1 ]]; do
+    if ((SECONDS >= deadline)); then
+        echo "Timed out waiting for the detached source part to enter Deleting" >&2
+        exit 1
+    fi
+    sleep 0.1
+done
 $CLICKHOUSE_CLIENT -q "
     SELECT name, _state FROM system.parts
     WHERE database = currentDatabase() AND table = 't_detach_deleting_parts'
