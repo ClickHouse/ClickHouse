@@ -72,7 +72,7 @@ inline Aws::S3::Model::ChecksumAlgorithm toSDKFlexibleChecksumAlgorithm(Algorith
 
 /// Set the flexible checksum on a request or a completed part; both expose `SetChecksumCRC32`/`SetChecksumSHA256`.
 template <typename T>
-inline void setChecksum(T & target, Algorithm algorithm, const std::string & checksum)
+inline void setChecksum(T & target, Algorithm algorithm, std::string_view checksum)
 {
     switch (algorithm)
     {
@@ -88,7 +88,7 @@ inline void setChecksum(T & target, Algorithm algorithm, const std::string & che
     UNREACHABLE();
 }
 
-inline std::string calculateFlexibleChecksum(Model::UploadPartRequest & req, Algorithm algorithm)
+inline Aws::String calculateFlexibleChecksum(Model::UploadPartRequest & req, Algorithm algorithm)
 {
     const auto sdk_algorithm = toSDKFlexibleChecksumAlgorithm(algorithm);
 
@@ -152,7 +152,7 @@ public:
         {
             static const Aws::String AWS_S3_FORCE_PATH_STYLE = "ForcePathStyle";
             params.emplace_back(AWS_S3_FORCE_PATH_STYLE, !uri_override->is_virtual_hosted_style);
-            params.emplace_back("Endpoint", uri_override->endpoint);
+            params.emplace_back("Endpoint", uri_override->endpoint.c_str());
         }
 
         return params;
@@ -164,14 +164,14 @@ public:
         return false;
     }
 
-    std::string getRegionOverride() const
+    const Aws::String & getRegionOverride() const
     {
         return region_override;
     }
 
-    void overrideRegion(std::string region) const
+    void overrideRegion(std::string_view region) const
     {
-        region_override = std::move(region);
+        region_override = region;
     }
 
     void overrideURI(S3::URI uri) const
@@ -214,7 +214,7 @@ public:
     }
 
 protected:
-    mutable std::string region_override;
+    mutable Aws::String region_override;
     mutable std::optional<S3::URI> uri_override;
     mutable ApiMode api_mode{ApiMode::AWS};
     bool is_s3express_bucket = false;
@@ -288,7 +288,7 @@ struct AttemptsRecord
 class RequestWithIdempotencyId
 {
 public:
-    void setIdempotencyId(Aws::String value) { idempotency_id = std::move(value); }
+    void setIdempotencyId(std::string_view value) { idempotency_id = value; }
     [[nodiscard]] const Aws::String & getIdempotencyId() const { return idempotency_id; }
 
     [[nodiscard]] AttemptsRecord & getAttemptsRecord() { return attempts_record; }
@@ -356,13 +356,13 @@ public:
     void SetKey(Aws::String && value);
     void SetKey(const char * value);
 
-    void SetComponentNames(Strings component_names_);
+    void SetComponentNames(Aws::Vector<Aws::String> component_names_);
 
     void SetContentType(Aws::String value);
 private:
     Aws::String bucket;
     Aws::String key;
-    Strings component_names;
+    Aws::Vector<Aws::String> component_names;
     Aws::String content_type;
 };
 
