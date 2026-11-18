@@ -46,9 +46,10 @@ SETTINGS max_block_size = 1, max_threads = 4;
 
 SELECT '-- infinite input';
 -- These queries finish only if a group is emitted as soon as the time changes.
+-- The limits on read rows are disabled, because the input is read for up to a second before the time changes.
 SELECT count() FROM (SELECT nowInBlock() AS t, count() FROM system.numbers GROUP BY t LIMIT 1)
-SETTINGS max_threads = 1, max_execution_time = 300;
+SETTINGS max_threads = 1, max_execution_time = 300, max_rows_to_read = 0, max_bytes_to_read = 0;
 SELECT count() FROM (SELECT nowInBlock() AS t, count() FROM system.numbers_mt GROUP BY t LIMIT 1)
-SETTINGS max_threads = 4, max_execution_time = 300;
+SETTINGS max_threads = 4, max_execution_time = 300, max_rows_to_read = 0, max_bytes_to_read = 0;
 SELECT count() FROM (SELECT nowInBlock() AS t, number % 10 AS k, count() FROM system.numbers_mt GROUP BY t, k LIMIT 10)
-SETTINGS max_threads = 4, max_execution_time = 300;
+SETTINGS max_threads = 4, max_execution_time = 300, max_rows_to_read = 0, max_bytes_to_read = 0;
