@@ -468,6 +468,15 @@ void textIndexValidator(const IndexDescription & index, bool attach, const Merge
 
 String getIndexFileName(const String & index_name, bool escape_filename);
 
+/// The file name of a skip index that a `DROP INDEX` mutation removes. The index is no longer in the
+/// metadata, so the current `escape_index_filenames` policy may differ from the one it was written
+/// with. A name containing '/' can only have been written with escaping on (`getIndexFromAST` rejects
+/// it otherwise, and so does disabling escaping while such an index exists), so it is always resolved
+/// with escaping. This keeps the drop mutation independent of a later change of the setting, e.g.
+/// when a replica of a `Replicated` database replays the setting change before its drop mutation
+/// has finished.
+String getDroppedIndexFileName(const String & index_name, bool escape_filename);
+
 /// Check if an index substream file exists for the part. Returns true if the file is listed
 /// directly in checksums.txt (original or hashed name) OR if it's a virtual file inside
 /// skp_idx.packed. Standalone files are always in checksums, so the archive check looks only at
