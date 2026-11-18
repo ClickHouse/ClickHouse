@@ -111,22 +111,6 @@ namespace S3
 
 static constexpr size_t MAX_CACHES_BY_ENDPOINT_AND_BUCKET = 10000;
 
-namespace
-{
-
-/// A write with a precondition. After a lost response only a later attempt tells whether it landed: the precondition
-/// fails on the object of the earlier attempt, and the idempotency id proves that object to be its own.
-template <typename RequestType>
-bool isConditionalWrite(const RequestType & request)
-{
-    if constexpr (std::is_same_v<RequestType, PutObjectRequest> || std::is_same_v<RequestType, CompleteMultipartUploadRequest>)
-        return request.IfNoneMatchHasBeenSet() || request.IfMatchHasBeenSet();
-    else
-        return false;
-}
-
-}
-
 bool isConditionalWriteAttempt(const Aws::Http::HttpRequest & request)
 {
     const auto method = request.GetMethod();
@@ -731,19 +715,30 @@ Client::ObjectWriter Client::findObjectWriter(
     return ObjectWriter::AnotherWrite;
 }
 
+namespace
+{
+
+/// Whether a `HeadObject` of the key can prove the outcome of a failed write, and is worth its request.
+template <typename RequestType>
+bool shouldFindObjectWriter(const RequestType & request, const Aws::S3::S3Error & error)
+{
+    /// A replay over a landed attempt fails its own precondition, or finds its upload id consumed.
+    if (error.GetExceptionName() == "PreconditionFailed" || error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD)
+        return true;
+    /// After another error, only a conditional write checks, so that an unconditional write keeps its error and costs no
+    /// request.
+    return request.getAttemptsRecord().may_have_been_applied && (request.IfNoneMatchHasBeenSet() || request.IfMatchHasBeenSet());
+}
+
+}
+
 template <typename RequestType, typename OutcomeType>
 WriteOutcome Client::resolveFailedWrite(const RequestType & request, const OutcomeType & outcome, bool warn_if_unproven) const
 {
-    /// Without an attempt that may have been applied, nothing of this write can be at the key.
-    const auto unproven = request.getAttemptsRecord().may_have_been_applied ? WriteOutcome::Unknown : WriteOutcome::NotApplied;
-
-    const auto & error = outcome.GetError();
-    /// A replay of a landed write fails its own precondition, and a replayed completion finds its upload id consumed.
-    const bool may_be_replay
-        = error.GetExceptionName() == "PreconditionFailed" || error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD;
-    /// After another answer only a conditional write asks for the id, so that an unconditional write costs no request.
-    if (!may_be_replay && !(request.getAttemptsRecord().may_have_been_applied && isConditionalWrite(request)))
-        return unproven;
+    /// What the attempts alone tell: without an attempt that may have been applied, nothing of this write can be at the key.
+    const auto by_attempts = request.getAttemptsRecord().may_have_been_applied ? WriteOutcome::Unknown : WriteOutcome::NotApplied;
+    if (!shouldFindObjectWriter(request, outcome.GetError()))
+        return by_attempts;
 
     switch (findObjectWriter(request.GetBucket(), request.GetKey(), request.getIdempotencyId(), warn_if_unproven))
     {
@@ -758,7 +753,7 @@ WriteOutcome Client::resolveFailedWrite(const RequestType & request, const Outco
         case ObjectWriter::Unproven:
             break;
     }
-    return unproven;
+    return by_attempts;
 }
 
 Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const
