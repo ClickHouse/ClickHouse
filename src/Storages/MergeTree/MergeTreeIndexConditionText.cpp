@@ -2122,8 +2122,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     if (mayBeTrueOnDefaultValue(subdag, [&] { return createColumnConstWithDefaultValue(required_column.type->createColumn()); }))
         return false;
 
-    /// Probe the type's own default too (`insertDefaultInto`, an `Enum`'s lowest member), so the decision
-    /// does not depend on which of the two a missing key is filled with.
+    /// Also probe the type default (`insertDefaultInto`), so the result does not depend on which one fills a missing key.
     if (!required_column.type->isDefaultInsertTrivial())
     {
         auto make_type_default = [&]
