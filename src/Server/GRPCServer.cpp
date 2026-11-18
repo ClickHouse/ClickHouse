@@ -377,6 +377,11 @@ namespace
             return std::nullopt;
         }
 
+        const std::multimap<::grpc::string_ref, ::grpc::string_ref> & getClientHeaders() const
+        {
+            return grpc_context.client_metadata();
+        }
+
         void setTransportCompression(const TransportCompression & transport_compression)
         {
             grpc_context.set_compression_algorithm(transport_compression.algorithm);
@@ -688,6 +693,15 @@ namespace
         {
             std::lock_guard lock{mutex};
             return responder->getClientHeader(key);
+        }
+
+        std::vector<std::pair<String, String>> getClientHeaders() const
+        {
+            std::lock_guard lock{mutex};
+            std::vector<std::pair<String, String>> res;
+            for (const auto & [key, value] : responder->getClientHeaders())
+                res.emplace_back(String{key.data(), key.size()}, String{value.data(), value.size()});
+            return res;
         }
 
         void setTransportCompression(const TransportCompression & transport_compression)
@@ -1085,6 +1099,13 @@ namespace
         }
 
         query_context = session->makeQueryContext(std::move(client_info));
+
+        /// Extract query params from gRPC client context.
+        for (const auto & [key, value] : call_responder->getClientHeaders())
+        {
+            if (key.starts_with("param_"))
+                query_context->setQueryParameter(key.substr(6), value);
+        }
 
         auto settings_changes = settingsChangesFromMap(query_info.settings());
         query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
