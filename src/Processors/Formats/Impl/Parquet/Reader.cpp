@@ -2064,11 +2064,8 @@ void Reader::preparePrewhere()
     const auto & prewhere_info = format_filter_info->prewhere_info;
     UnorderedSetWithMemoryTracking<size_t> prewhere_output_column_idxs;
 
-    /// TODO [parquet]: We currently run prewhere after reading all prewhere columns of the row
-    ///     subgroup, in one thread per row group. Instead, we could extract single-column conditions
-    ///     and run them after decoding the corresponding columns, in parallel.
-    ///     (Still run multi-column conditions, like `col1 = 42 or col2 = 'yes'`, after reading all columns.)
-    ///     Probably reuse tryBuildPrewhereSteps from MergeTree for splitting the expression.
+    /// TODO [parquet]: Steps run one after another, each after all of its columns are decoded.
+    ///     Single-column steps could instead run in parallel, as soon as their column is decoded.
 
     /// Convert ActionsDAG to ExpressionActions.
     std::optional<ExpressionActionsSettings> actions_settings;
