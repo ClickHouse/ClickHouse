@@ -24,6 +24,8 @@ SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1, parallel
     parallel_replicas_index_analysis_only_on_coordinator = 1, parallel_replicas_for_non_replicated_merge_tree = 1,
     max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, use_query_condition_cache = 0;
+-- A `max_rows_to_read` limit (the test profile sets one) makes the skip indexes apply at analysis instead.
+SET max_rows_to_read = 0;
 -- Small blocks so enough are fed to the statistics collector.
 SET max_threads = 4, max_block_size = 128;
 SET automatic_parallel_replicas_min_bytes_per_replica = 0, merge_tree_min_bytes_per_task_for_remote_reading = 0;
