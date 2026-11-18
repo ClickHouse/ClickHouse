@@ -8,6 +8,8 @@ SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS ts_buckets;
 DROP TABLE IF EXISTS ts_rows;
+DROP TABLE IF EXISTS ts_names;
+DROP TABLE IF EXISTS ts_names_rows;
 
 CREATE TABLE ts_buckets ENGINE = TimeSeries SETTINGS tags_to_columns = {'job': 'job_column'}, recent_samples_ttl_seconds = 0;
 CREATE TABLE ts_rows ENGINE = TimeSeries SETTINGS version = 10, tags_to_columns = {'job': 'job_column'}, recent_samples_ttl_seconds = 0;
@@ -54,5 +56,21 @@ FROM (SELECT id, timeSeriesGroupArray(samples) AS samples FROM timeSeriesSelecto
 ANY INNER JOIN timeSeriesSelector(ts_buckets, 'm', 0, 5000, 'tags') AS t ON s.id = t.id
 ORDER BY tags;
 
+SELECT '-- the tags stored in columns named like the columns of the generated queries';
+CREATE TABLE ts_names ENGINE = TimeSeries SETTINGS tags_to_columns = {'job': 'series_tags', 'env': 'series_id'}, recent_samples_ttl_seconds = 0;
+CREATE TABLE ts_names_rows ENGINE = TimeSeries SETTINGS version = 10, tags_to_columns = {'job': 'series_tags', 'env': 'series_id'}, recent_samples_ttl_seconds = 0;
+INSERT INTO ts_names (metric_name, tags, samples) VALUES
+    ('m', map('job', 'a', 'env', 'prod'), [(toDateTime64(100, 3), 1.)]),
+    ('m', map('job', 'b'), [(toDateTime64(150, 3), 10.)]);
+INSERT INTO ts_names_rows (metric_name, tags, samples) VALUES
+    ('m', map('job', 'a', 'env', 'prod'), [(toDateTime64(100, 3), 1.)]),
+    ('m', map('job', 'b'), [(toDateTime64(150, 3), 10.)]);
+SELECT tags FROM timeSeriesSelector(ts_names, 'm{job="a"}', 0, 1000, 'tags');
+SELECT tags FROM timeSeriesSelector(ts_names, 'm{env="prod"}', 0, 1000, 'tags');
+SELECT tags, value FROM prometheusQuery(ts_names, 'm{job="a"}', 160);
+SELECT tags, value FROM prometheusQuery(ts_names_rows, 'm{job="a"}', 160);
+
+DROP TABLE ts_names_rows;
+DROP TABLE ts_names;
 DROP TABLE ts_rows;
 DROP TABLE ts_buckets;

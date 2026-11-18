@@ -353,15 +353,22 @@ VirtualColumnsDescription StorageTimeSeriesSelector::createVirtuals()
 
 namespace
 {
-    /// Makes an AST for the expression referencing a tag value.
-    ASTPtr tagNameToAST(const String & tag_name, const std::unordered_map<String, String> & column_name_by_tag_name)
+    /// A column of `tags_to_columns` can have any name, so it's qualified by the tags table: an alias of the query can't shadow it.
+    ASTPtr tagColumnToAST(const StorageID & tags_table_id, const String & column_name)
+    {
+        return make_intrusive<ASTIdentifier>(std::vector<String>{tags_table_id.database_name, tags_table_id.table_name, column_name});
+    }
+
+    /// Makes an AST for the expression referencing a tag value in a query reading the tags table.
+    ASTPtr tagNameToAST(
+        const String & tag_name, const std::unordered_map<String, String> & column_name_by_tag_name, const StorageID & tags_table_id)
     {
         if (tag_name == TimeSeriesTagNames::MetricName)
             return make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName);
 
         auto it = column_name_by_tag_name.find(tag_name);
         if (it != column_name_by_tag_name.end())
-            return make_intrusive<ASTIdentifier>(it->second);
+            return tagColumnToAST(tags_table_id, it->second);
 
         /// arrayElement() can be used to extract a value from a Map too.
         return makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags), make_intrusive<ASTLiteral>(tag_name));
@@ -469,7 +476,10 @@ namespace
         return res;
     }
 
-    ASTPtr matcherToAST(const PrometheusQueryTree::Matcher & matcher, const std::unordered_map<String, String> & column_name_by_tag_name)
+    ASTPtr matcherToAST(
+        const PrometheusQueryTree::Matcher & matcher,
+        const std::unordered_map<String, String> & column_name_by_tag_name,
+        const StorageID & tags_table_id)
     {
         std::string_view function_name;
         bool add_anchors = false;
@@ -493,18 +503,21 @@ namespace
                 /// A single term is an equality, which the text index on tags can serve too.
                 if (terms->size() == 1)
                     return makeASTFunction(add_not ? "notEquals" : "equals",
-                        tagNameToAST(matcher.label_name, column_name_by_tag_name), make_intrusive<ASTLiteral>(std::move(terms->front())));
+                        tagNameToAST(matcher.label_name, column_name_by_tag_name, tags_table_id),
+                        make_intrusive<ASTLiteral>(std::move(terms->front())));
 
                 ASTs literals;
                 for (auto & term : *terms)
                     literals.push_back(make_intrusive<ASTLiteral>(std::move(term)));
                 return makeASTFunction(add_not ? "notIn" : "in",
-                    tagNameToAST(matcher.label_name, column_name_by_tag_name), makeASTFunction("tuple", std::move(literals)));
+                    tagNameToAST(matcher.label_name, column_name_by_tag_name, tags_table_id),
+                    makeASTFunction("tuple", std::move(literals)));
             }
 
             value = anchorRegex(value);
         }
-        ASTPtr res = makeASTFunction(function_name, tagNameToAST(matcher.label_name, column_name_by_tag_name), make_intrusive<ASTLiteral>(value));
+        ASTPtr res = makeASTFunction(
+            function_name, tagNameToAST(matcher.label_name, column_name_by_tag_name, tags_table_id), make_intrusive<ASTLiteral>(value));
         if (add_not)
             res = makeASTFunction("not", res);
         return res;
@@ -687,13 +700,14 @@ namespace
     ASTPtr makeWhereFilterForTagsTable(
         const PrometheusQueryTree::MatcherList & matchers,
         const std::unordered_map<String, String> & column_name_by_tag_name,
+        const StorageID & tags_table_id,
         const StorageID & time_ranges_table_id,
         const TableTimeRange & time_range_to_filter_ids,
         const DataTypePtr & table_timestamp_type)
     {
         ASTs asts;
         for (const auto & matcher : matchers)
-            asts.push_back(matcherToAST(matcher, column_name_by_tag_name));
+            asts.push_back(matcherToAST(matcher, column_name_by_tag_name, tags_table_id));
 
         if (asts.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Instant selector without matchers is not allowed");
@@ -763,7 +777,7 @@ namespace
                 for (const auto & [tag_name, column_name] : column_name_by_tag_name)
                 {
                     tags_args.push_back(make_intrusive<ASTLiteral>(tag_name));
-                    tags_args.push_back(make_intrusive<ASTIdentifier>(column_name));
+                    tags_args.push_back(tagColumnToAST(tags_table_id, column_name));
                 }
 
                 select_list.push_back(timeSeriesNormalizedTagsToAST(std::move(tags_args)));
@@ -790,7 +804,8 @@ namespace
 
         /// WHERE <filter>
         {
-            auto where_filter = makeWhereFilterForTagsTable(matchers, column_name_by_tag_name, time_ranges_table_id, time_range_to_filter_ids, table_timestamp_type);
+            auto where_filter = makeWhereFilterForTagsTable(
+                matchers, column_name_by_tag_name, tags_table_id, time_ranges_table_id, time_range_to_filter_ids, table_timestamp_type);
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
         }
 
@@ -1217,7 +1232,7 @@ namespace
                     && ((matcher.matcher_type == PrometheusQueryTree::MatcherType::EQ) || (matcher.matcher_type == PrometheusQueryTree::MatcherType::RE)))
                     name_matcher_only.push_back(matcher);
                 else
-                    other_matcher_conditions.push_back(matcherToAST(matcher, column_name_by_tag_name));
+                    other_matcher_conditions.push_back(matcherToAST(matcher, column_name_by_tag_name, tags_table_id));
             }
 
             ASTPtr counterexample = makeIDOutOfRangeCondition(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), metric_id_range);
@@ -1228,7 +1243,9 @@ namespace
             }
 
             ASTPtr probe_where = makeASTForLogicalAnd(
-                {makeWhereFilterForTagsTable(name_matcher_only, column_name_by_tag_name, time_ranges_table_id, time_range_to_filter_ids, table_timestamp_type),
+                {makeWhereFilterForTagsTable(
+                    name_matcher_only, column_name_by_tag_name, tags_table_id, time_ranges_table_id, time_range_to_filter_ids,
+                    table_timestamp_type),
                  std::move(counterexample)});
 
             /// SELECT id FROM tags_table WHERE <probe_where>

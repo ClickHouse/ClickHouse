@@ -71,3 +71,7 @@ timeSeriesRemoveAllTagsExcept vectorized repeated tag sets:
 
 timeSeriesRemoveAllTagsExcept vectorized repeated tag sets (2):
 5	1	[[('shared','value')]]
+
+A trailing zero byte of a String tag value is kept by the next operation, the padding of FixedString is not:
+[('x','\0')]	00	1
+[('x','a')]

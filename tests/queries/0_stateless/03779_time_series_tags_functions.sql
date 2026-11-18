@@ -434,3 +434,11 @@ FROM
     SELECT timeSeriesRemoveAllTagsExcept(tag_sets[[1, 25, 1, 25, 1][number + 1]], ['shared']) AS new_tags
     FROM numbers(5)
 );
+
+SELECT '';
+SELECT 'A trailing zero byte of a String tag value is kept by the next operation, the padding of FixedString is not:';
+
+WITH timeSeriesReplaceTag([], 'x', unhex('00'), '', '') AS t
+SELECT t, hex(timeSeriesExtractTag(t, 'x')), timeSeriesRemoveTags(t, []) = t;
+
+SELECT timeSeriesRemoveTags(CAST([('x', 'a')], 'Array(Tuple(FixedString(2), FixedString(2)))'), []);

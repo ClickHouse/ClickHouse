@@ -1,6 +1,9 @@
 #include <Functions/TimeSeries/TimeSeriesTagsFunctionHelpers.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
@@ -79,13 +82,27 @@ namespace
             tags.reserve(tags.size() + num_tags);
     }
 
-    std::string_view extractStringViewAt(const IColumn & column, size_t row)
+    /// FixedString pads its values with zero bytes, the values of String are kept as is.
+    bool isFixedStringColumn(const IColumn & column)
+    {
+        const IColumn * nested = &column;
+        if (const auto * const_column = checkAndGetColumn<ColumnConst>(nested))
+            nested = &const_column->getDataColumn();
+        if (const auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(nested))
+            nested = low_cardinality_column->getDictionary().getNestedNotNullableColumn().get();
+        if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(nested))
+            nested = &nullable_column->getNestedColumn();
+        return checkColumn<ColumnFixedString>(nested);
+    }
+
+    std::string_view extractStringViewAt(const IColumn & column, size_t row, bool trim_zeros)
     {
         if (column.isNullAt(row))
             return {};
 
         auto value = std::string_view{column.getDataAt(row)};
-        trimRight(value, '\0'); /// Trim zero characters in case FixedString was used for this column.
+        if (trim_zeros)
+            trimRight(value, '\0');
         return value;
     }
 
@@ -108,6 +125,8 @@ namespace
             {
                 const IColumn & tag_names = tuple_column->getColumn(0);
                 const IColumn & tag_values = tuple_column->getColumn(1);
+                bool trim_tag_names = isFixedStringColumn(tag_names);
+                bool trim_tag_values = isFixedStringColumn(tag_values);
                 const IColumn::Offsets & offsets = array_column->getOffsets();
                 for (size_t i = 0; i != num_rows; ++i)
                 {
@@ -117,8 +136,8 @@ namespace
                     res.reserve(res.size() + (end_offset - start_offset) + num_extra_tags);
                     for (size_t j = start_offset; j != end_offset; ++j)
                     {
-                        auto tag_name = extractStringViewAt(tag_names, j);
-                        auto tag_value = extractStringViewAt(tag_values, j);
+                        auto tag_name = extractStringViewAt(tag_names, j, trim_tag_names);
+                        auto tag_value = extractStringViewAt(tag_values, j, trim_tag_values);
                         res.emplace_back(tag_name, tag_value);
                     }
                 }
@@ -186,9 +205,10 @@ namespace
     {
         size_t num_rows = column.size();
         VectorWithMemoryTracking<std::string_view> res{num_rows, ""};
+        bool trim_zeros = isFixedStringColumn(column);
         for (size_t i = 0; i != res.size(); ++i)
         {
-            res[i] = extractStringViewAt(column, i);
+            res[i] = extractStringViewAt(column, i, trim_zeros);
         }
         return res;
     }
