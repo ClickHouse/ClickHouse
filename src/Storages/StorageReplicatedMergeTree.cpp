@@ -7665,6 +7665,11 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
 
     LOG_INFO(log, "Moved all parts to detached/");
 
+    /// The parts get new names from the reset block number counters, possibly the old names of other parts,
+    /// which the query condition cache still holds verdicts for.
+    if (getStorageID().hasUUID())
+        getContext()->clearQueryConditionCache();
+
     const bool is_first_replica = createTableIfNotExists(metadata_snapshot, zookeeper_retries_info);
 
     LOG_INFO(log, "Created initial ZK nodes, replica is first: {}", is_first_replica);
