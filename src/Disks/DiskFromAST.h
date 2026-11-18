@@ -8,6 +8,7 @@
 namespace DB
 {
 
+class Field;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 
@@ -42,6 +43,8 @@ namespace DiskFromAST
     /// existing metadata (including numeric values, `from_env` and `from_zk`), without creating the disk. The nested
     /// `disk(...)` functions must already be replaced with the names of the disks they describe.
     CustomDiskNames resolveCustomDiskNames(const ASTPtr & disk_function, ContextPtr context);
+    /// Rejects an inline `disk(...)` definition, for the settings that take only a disk name.
+    void ensureDiskIsNotInline(const Field & value);
     /// Refuse, for a session without `s3_allow_server_credentials_in_user_queries`, a custom disk that uses the server's own
     /// credentials, or a storage policy with one. For a table definition selecting a disk or a policy by name.
     void ensureDiskIsAllowed(const DiskPtr & disk, ContextPtr context);

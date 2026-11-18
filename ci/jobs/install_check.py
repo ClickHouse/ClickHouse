@@ -127,6 +127,13 @@ resolved=$(clickhouse-client -q "
 journalctl -u clickhouse-server > /packages/clickhouse-server.service.log || :
 journalctl -u clickhouse-keeper > /packages/clickhouse-keeper.service.log || :
 cp /var/log/clickhouse-server/clickhouse-server.* /packages/ || :
+# A server that fails before it opens its log, as in the isolation of its filesystem at startup,
+# leaves its error only on stderr, which the journal of the container does not keep and `--daemon`
+# closes. Run it once more in the foreground as its user to keep the error.
+if [ -x /usr/bin/clickhouse-server ] && ! ls /var/log/clickhouse-server/clickhouse-server.log >/dev/null 2>&1; then
+    timeout 30 su -s /bin/sh clickhouse -c 'CLICKHOUSE_WATCHDOG_ENABLE=0 /usr/bin/clickhouse-server --config-file=/etc/clickhouse-server/config.xml' \
+        > /packages/clickhouse-server.foreground.log 2>&1 < /dev/null || :
+fi
 cp /var/log/clickhouse-keeper/clickhouse-keeper.* /packages/ || :
 chmod a+rw -R /packages
 exit 1

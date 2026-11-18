@@ -782,6 +782,8 @@ void registerStorageStripeLog(StorageFactory & factory)
     StorageFactory::StorageFeatures features{
         .supports_settings = true,
         .has_builtin_setting_fn = StorageLogSettings::hasBuiltin,
+        .stores_data_on_disk = true,
+        .supports_temporary = true,
     };
 
     factory.registerStorage("StripeLog", [](const StorageFactory::Arguments & args)
@@ -810,8 +812,6 @@ void registerStorageStripeLog(StorageFactory & factory)
         return storage;
     }, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # StripeLog table engine
 
 <CloudNotSupportedBadge/>

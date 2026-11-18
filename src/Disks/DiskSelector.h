@@ -36,19 +36,19 @@ public:
 
     /// `retiring_disks` are the custom disks that are not in the selector anymore but are not shut down yet, see
     /// `findPlainRewritableDisksOverlappingNewDisk`. A new disk overlapping one of them is not created.
-    DiskSelectorPtr updateFromConfig(
+    [[nodiscard]] DiskSelectorPtr updateFromConfig(
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         ContextPtr context,
         const std::vector<std::pair<String, DiskPtr>> & retiring_disks = {}) const;
 
     /// Get disk by name
-    DiskPtr get(const String & name) const;
+    [[nodiscard]] DiskPtr get(const String & name) const;
 
-    DiskPtr tryGet(const String & name) const;
+    [[nodiscard]] DiskPtr tryGet(const String & name) const;
 
     /// Get all disks with names
-    const DisksMap & getDisksMap() const;
+    [[nodiscard]] const DisksMap & getDisksMap() const;
 
     void addToDiskMap(const String & name, DiskPtr disk);
 

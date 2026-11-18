@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <bit>
 #include <limits>
 #include <mutex>
@@ -293,7 +295,7 @@ void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch &&
     if (row_count == 0)
         return;
 
-    std::vector<BloomFilterHashPair> hash_pairs(std::min(HASH_BATCH_SIZE, row_count));
+    VectorWithMemoryTracking<BloomFilterHashPair> hash_pairs(std::min(HASH_BATCH_SIZE, row_count));
 
     if (!isColumnConst(column) && column.isFixedAndContiguous())
     {
@@ -1127,10 +1129,10 @@ public:
 
 private:
     mutable SharedMutex mutex;
-    std::unordered_map<String, SharedRuntimeFilterPtr> filters_by_name TSA_GUARDED_BY(mutex);
+    UnorderedMapWithMemoryTracking<String, SharedRuntimeFilterPtr> filters_by_name TSA_GUARDED_BY(mutex);
     /// Readable structural name per rendezvous key, for logging. Kept under the same lock and
     /// preserved across `replace` because the replacement keeps the original registration's name.
-    std::unordered_map<String, String> display_names TSA_GUARDED_BY(mutex);
+    UnorderedMapWithMemoryTracking<String, String> display_names TSA_GUARDED_BY(mutex);
 };
 
 RuntimeFilterLookupPtr createRuntimeFilterLookup()
@@ -1221,7 +1223,7 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
 
 const ActionsDAG::Node * buildRuntimeRangePredicate(
     const IRuntimeFilterLookup & lookup,
-    const std::vector<RuntimeFilterIndexAnalysisDescriptor> & descriptors,
+    const VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> & descriptors,
     ActionsDAG & dag,
     const ContextPtr & context)
 {
@@ -1243,6 +1245,37 @@ const ActionsDAG::Node * buildRuntimeRangePredicate(
 
     FunctionOverloadResolverPtr and_func = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
     return &dag.addFunction(and_func, std::move(and_args), {});
+}
+
+RuntimeFilterPruningPredicate::RuntimeFilterPruningPredicate(
+    RuntimeFilterIndexAnalysisDescriptors descriptors_, RuntimeFilterLookupPtr lookup_, ContextPtr context_)
+    : descriptors(std::move(descriptors_))
+    , lookup(std::move(lookup_))
+    , context(std::move(context_))
+{
+}
+
+std::optional<std::shared_ptr<const ActionsDAG>> RuntimeFilterPruningPredicate::tryGet() const
+{
+    std::lock_guard lock(mutex);
+    if (built)
+        return predicate_dag;
+
+    for (const auto & descriptor : descriptors)
+    {
+        auto filter = lookup->find(descriptor.filter_id);
+        if (!filter || !filter->isReady())
+            return std::nullopt;
+    }
+
+    built = true;
+    auto dag = std::make_shared<ActionsDAG>();
+    if (const auto * predicate = buildRuntimeRangePredicate(*lookup, descriptors, *dag, context))
+    {
+        dag->getOutputs() = {predicate};
+        predicate_dag = std::move(dag);
+    }
+    return predicate_dag;
 }
 
 }

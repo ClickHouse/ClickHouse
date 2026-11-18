@@ -4,7 +4,7 @@ export const PreviewFeatures = () =>
 
   function getConsoleUrl(previewId)
   {
-    const url = new URL('https://console.clickhouse.cloud/');
+    const url = new URL('https://console.clickhouse.cloud/public-previews');
     url.searchParams.set('loc', `docs-self-service-previews-${previewId}`);
     return url.toString();
   }
