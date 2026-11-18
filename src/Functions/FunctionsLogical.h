@@ -211,6 +211,8 @@ public:
     }
     ColumnPtr executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, bool eager_arguments_reordered) const;
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// Only the numbers and the null maps of the arguments are read.
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     [[nodiscard]] bool isNameInsensitive() const override { return true; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     [[nodiscard]] bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
@@ -331,6 +333,9 @@ public:
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// Only the number of the argument is read.
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     [[nodiscard]] bool isNameInsensitive() const override { return true; }
 

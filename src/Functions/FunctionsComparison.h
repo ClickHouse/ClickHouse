@@ -892,11 +892,12 @@ template <> struct CompileOp<GreaterOrEqualsOp>
   * narrower side is only widened: numbers are compared by an accurate numeric comparison, strings
   * byte-wise, and values of exactly the same type by `IColumn::compareAt`. It throws as soon as one
   * of the sides has to be interpreted as something else: a string parsed as a date, a time or a
-  * tuple (`CANNOT_PARSE_DATE`), a string validated against an enum, or decimals of different scales
-  * brought to a common scale, which can overflow (`DECIMAL_OVERFLOW`).
+  * tuple (`CANNOT_PARSE_DATE`), a string validated against an enum, or an integer that does not fit
+  * the integer a decimal is compared as (`DECIMAL_OVERFLOW`).
   *
-  * These are the same groups of types that `getComparisonOrderDomainForType` keys its domains by:
-  * a comparison inside one domain is direct, a comparison across domains goes through a conversion.
+  * Apart from decimals, these are the same groups of types that `getComparisonOrderDomainForType`
+  * keys its domains by: a comparison inside one domain is direct, a comparison across domains goes
+  * through a conversion.
   * Types that are not listed here are reported as throwing, which is always safe: it only means
   * that an optimization is lost.
   */
@@ -928,8 +929,8 @@ inline bool comparisonCanThrow(const DataTypePtr & left_type, const DataTypePtr 
         return false;
 
     /// Types that are compared through their scale. Equal scales are compared as the stored
-    /// integers (the narrower side is only widened), different scales are rescaled to a common
-    /// scale first, and that multiplication can overflow.
+    /// integers (the narrower side is only widened). Time types of different scales or kinds are
+    /// reported as throwing; decimals are handled below.
     enum class ScaledKind : uint8_t
     {
         TimePoint,
@@ -956,6 +957,22 @@ inline bool comparisonCanThrow(const DataTypePtr & left_type, const DataTypePtr 
     if (const auto left_scaled = scale_and_kind(left, which_left);
         left_scaled && left_scaled == scale_and_kind(right, which_right))
         return false;
+
+    /// A rescale that overflows does not throw: it is compared exactly, or ignored without `decimal_check_overflow`. The
+    /// integer side is converted to an integer at least as wide as the decimal, which overflows only for a wider integer or
+    /// an unsigned one of the same width.
+    if (which_left.isDecimal() && which_right.isDecimal())
+        return false;
+    if (which_left.isDecimal() || which_right.isDecimal())
+    {
+        const auto & decimal = which_left.isDecimal() ? left : right;
+        const auto & integer = which_left.isDecimal() ? right : left;
+        const WhichDataType which_integer(integer);
+        const size_t decimal_size = decimal->getSizeOfValueInMemory();
+        if ((which_integer.isInt() && integer->getSizeOfValueInMemory() <= decimal_size)
+            || (which_integer.isUInt() && integer->getSizeOfValueInMemory() < decimal_size))
+            return false;
+    }
 
     /// Tuples are compared element-wise by `executeTuple`. A tuple comparison cannot throw if and
     /// only if both sides have the same non-zero number of elements and each corresponding element

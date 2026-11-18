@@ -79,8 +79,8 @@ std::optional<size_t> findSourceOfInput(const MergedPlanDAG & merged, const Acti
 }
 
 /// Whether evaluating the node on rows it was never meant to see is harmless: the rows a join padded hold the
-/// defaults, so the function must not throw on any value. Being cheap is not enough: a comparison of decimals of
-/// different scales is not worth evaluating lazily, but rescaling can overflow.
+/// defaults, so the function must not throw on any value. Being cheap is not enough: a comparison of a `Decimal32` with
+/// a `UInt32` is not worth evaluating lazily, but it throws for a `UInt32` that does not fit into `Int32`.
 bool canEvaluateOnPaddedRows(const ActionsDAG::Node * node)
 {
     DataTypesWithConstInfo arguments;

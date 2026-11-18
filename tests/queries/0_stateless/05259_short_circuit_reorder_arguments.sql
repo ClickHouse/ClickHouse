@@ -198,3 +198,42 @@ SELECT trim(explain) FROM (
 WHERE explain LIKE '%AND column%'
 SETTINGS enable_variant_type = 1, use_variant_default_implementation_for_comparisons = 1,
     short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
+
+-- A comparison of a `Decimal` with another `Decimal` or with an integer that always fits into it cannot throw, neither can
+-- `or`, `not`, `isNull` and `isNotNull`, so such an atom is moved in front of a heavy one.
+SELECT trim(explain) FROM (EXPLAIN actions = 1, pretty = 0, compact = 1 SELECT count() FROM values('s String, d Decimal(76, 38)', ('a', 300), ('b', 1)) WHERE isValidUTF8(repeat(s, 10)) AND d > 240)
+WHERE explain LIKE '%AND column%'
+SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
+SELECT trim(explain) FROM (EXPLAIN actions = 1, pretty = 0, compact = 1 SELECT count() FROM values('s String, n Nullable(Decimal(76, 38))', ('a', 300), ('b', NULL)) WHERE isValidUTF8(repeat(s, 10)) AND (n > 240 OR n IS NULL))
+WHERE explain LIKE '%AND column%'
+SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1, optimize_functions_to_subcolumns = 0;
+SELECT trim(explain) FROM (EXPLAIN actions = 1, pretty = 0, compact = 1 SELECT count() FROM values('s String, x UInt64', ('a', 2), ('b', 5)) WHERE isValidUTF8(repeat(s, 10)) AND (x % 2 = 0 OR x % 3 = 0))
+WHERE explain LIKE '%AND column%'
+SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
+SELECT trim(explain) FROM (EXPLAIN actions = 1, pretty = 0, compact = 1 SELECT count() FROM values('s String, lc LowCardinality(Nullable(String)), n Nullable(Decimal(18, 2))', ('a', 'x', 1), ('b', NULL, NULL)) WHERE isValidUTF8(repeat(s, 10)) AND (not(n > 1) OR isNotNull(lc)))
+WHERE explain LIKE '%AND column%'
+SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1, optimize_functions_to_subcolumns = 0;
+SELECT trim(explain) FROM (EXPLAIN actions = 1, pretty = 0, compact = 1 SELECT count() FROM values('s String, d Decimal(18, 2), i Int64', ('a', 1, 2), ('b', 1, 2)) WHERE isValidUTF8(repeat(s, 10)) AND i < d)
+WHERE explain LIKE '%AND column%'
+SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
+SELECT trim(explain) FROM (EXPLAIN actions = 1, pretty = 0, compact = 1 SELECT count() FROM values('s String, d Decimal(9, 2)', ('a', 3), ('b', 1)) WHERE isValidUTF8(repeat(s, 10)) AND d > toDecimal64(1, 5))
+WHERE explain LIKE '%AND column%'
+SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
+
+-- A comparison of a `Decimal32` with a `UInt32` can throw, so it is not moved.
+SELECT trim(explain) FROM (EXPLAIN actions = 1, pretty = 0, compact = 1 SELECT count() FROM values('s String, d Decimal(9, 2), u UInt32', ('a', 3, 1), ('b', 1, 4000000000)) WHERE isValidUTF8(repeat(s, 10)) AND d < u)
+WHERE explain LIKE '%AND column%'
+SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
+SELECT toDecimal32(1, 2) < materialize(toUInt32(4000000000)) SETTINGS decimal_check_overflow = 1; -- { serverError DECIMAL_OVERFLOW }
+
+-- A cheap atom that can throw does not stop the search and keeps its place after the heavy atom in front of it:
+-- `d > 240` is moved to the front, `toBool` is left for the final filter, and the guard still runs before `toBool`.
+SELECT trim(explain) FROM (EXPLAIN actions = 1, pretty = 0, compact = 1 SELECT count() FROM values('s String, b String, d Decimal(76, 38)', ('a', 'true', 300), ('b', 'false', 1)) WHERE isValidUTF8(repeat(s, 10)) AND toBool(b) AND d > 240)
+WHERE explain LIKE '%AND column%'
+SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
+SELECT count() FROM values('s String, d Decimal(76, 38)', ('true', 300), ('maybe', 300), ('false', 1))
+WHERE repeat(s, 2) != 'maybemaybe' AND toBool(s) AND d > 240
+SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1, query_plan_merge_filters = 1;
+SELECT count() FROM values('s String, d Decimal(76, 38)', ('true', 300), ('maybe', 300), ('false', 1))
+WHERE repeat(s, 2) != 'maybemaybe' AND toBool(s) AND d > 240
+SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 0, query_plan_merge_filters = 1;

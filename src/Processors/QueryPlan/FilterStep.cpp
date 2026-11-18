@@ -423,18 +423,17 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
     if (atoms.size() < 2)
         return {};
 
-    /// A heavy atom is evaluated only on the rows that passed the atoms split before it. If a cheap atom follows it,
-    /// split the cheap one first. The atoms that are not moved keep their relative order.
-    /// A cheap atom is never moved in front of another cheap atom: it does not save anything, while the written order
-    /// may put the more selective condition first, as in `notEmpty(s) AND s < 'x'`.
+    /// If the first atom is heavy, split the first atom that can be moved to the front instead, but not past an atom with
+    /// order-sensitive functions. The other atoms keep their relative order. A cheap first atom is kept: it may be the more
+    /// selective one, as in `notEmpty(s) AND s < 'x'`.
     /// This is decided once per pipeline, not per block, so the profile event `ShortCircuitArgumentsReordered` is not incremented here.
-    if (reorder)
+    if (reorder && isHeavyAndChainAtom(atoms.front()))
     {
         for (const auto * atom : atoms)
         {
             if (canBeMovedToTheFrontOfAndChain(atom))
                 return splitSingleAndFilter(dag, atom);
-            if (!isHeavyAndChainAtom(atom) || hasOrderSensitiveFunctions(atom))
+            if (hasOrderSensitiveFunctions(atom))
                 break;
         }
     }
