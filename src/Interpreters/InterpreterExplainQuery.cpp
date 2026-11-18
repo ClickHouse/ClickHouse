@@ -220,7 +220,7 @@ namespace
 
             auto view_query = metadata->getSelectQuery().inner_query->clone();
             NameToNameMap parameter_values = analyzeFunctionParamValues(table_expr.table_function, query_context);
-            StorageView::replaceQueryParametersIfParameterizedView(view_query, parameter_values, view_id.database_name, query_context);
+            StorageView::replaceQueryParametersIfParameterizedView(view_query, parameter_values);
 
             /// Replace the table function with a subquery in-place on this table expression,
             /// rather than using `StorageView::replaceWithSubquery` which only handles the

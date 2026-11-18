@@ -192,8 +192,7 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
             auto view_metadata = storage_view->getInMemoryMetadataPtr(current_context, false);
             auto query = view_metadata->getSelectQuery().inner_query->clone();
             NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression.table_function, current_context);
-            StorageView::replaceQueryParametersIfParameterizedView(
-                query, parameterized_view_values, table->getStorageID().database_name, current_context);
+            StorageView::replaceQueryParametersIfParameterizedView(query, parameterized_view_values);
             /// Analyze the substituted query under the view's SQL security context (`DEFINER`/`INVOKER`),
             /// matching execution via `Context::buildParameterizedViewStorage`, so that a user with
             /// `SHOW COLUMNS` on the view but without direct grants on the inner tables can still describe
