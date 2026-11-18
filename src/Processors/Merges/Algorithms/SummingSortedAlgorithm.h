@@ -34,12 +34,12 @@ public:
         bool allow_tuple_element_aggregation,
         UInt64 limit_ = 0);
 
-    const char * getName() const override { return "SummingSortedAlgorithm"; }
+    [[nodiscard]] const char * getName() const override { return "SummingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
-    MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
+    [[nodiscard]] MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
 
     struct AggregateDescription;
     struct MapDescription;
@@ -72,8 +72,8 @@ public:
         /// Does SimpleAggregateFunction allocates memory in arena?
         bool allocates_memory_in_arena = false;
 
-        /// Per-column flag: true for Float32/Float64 columns that need bit-exact
-        /// copy via insertFrom() to avoid SNaN→QNaN conversion in Field roundtrip.
+        /// Per-column flag: true for columns whose `Field` roundtrip changes the value (floats: SNaN to QNaN,
+        /// `Variant`: the alternative), so they are inserted with insertFrom() from the source row.
         VectorWithMemoryTracking<bool> columns_need_exact_copy;
 
         /// Record the origin header before tuple flattening.
@@ -97,7 +97,7 @@ public:
         void startGroup(ColumnRawPtrs & raw_columns, size_t row);
         void finishGroup();
 
-        bool isGroupStarted() const { return is_group_started; }
+        [[nodiscard]] bool isGroupStarted() const { return is_group_started; }
         void addRow(ColumnRawPtrs & raw_columns, size_t row); /// Possible only when group was started.
 
         Chunk pull();
@@ -110,6 +110,8 @@ public:
         Row current_row;
         /// Some types like Dynamic/JSON doesn't work well with Fields, for them we save values in IColumn.
         Columns current_row_columns;
+        /// Row of the value in `current_row_columns[i]`.
+        VectorWithMemoryTracking<size_t> current_row_column_rows;
         bool current_row_is_zero = true;    /// Are all summed columns zero (or empty)? It is updated incrementally.
 
         void addRowImpl(ColumnRawPtrs & raw_columns, size_t row);

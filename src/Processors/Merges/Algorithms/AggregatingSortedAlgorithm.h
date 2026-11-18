@@ -31,12 +31,12 @@ public:
         bool allow_tuple_element_aggregation_,
         UInt64 limit_ = 0);
 
-    const char * getName() const override { return "AggregatingSortedAlgorithm"; }
+    [[nodiscard]] const char * getName() const override { return "AggregatingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
-    MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
+    [[nodiscard]] MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
 
     /// Stores information for aggregation of SimpleAggregateFunction columns
     struct SimpleAggregateDescription
@@ -134,7 +134,7 @@ private:
         void startGroup(const ColumnRawPtrs & raw_columns, size_t row);
         void finishGroup();
 
-        bool isGroupStarted() const { return is_group_started; }
+        [[nodiscard]] bool isGroupStarted() const { return is_group_started; }
         void addRow(SortCursor & cursor); /// Possible only when group was started.
 
         Chunk pull(); /// Possible only if group was finished.
