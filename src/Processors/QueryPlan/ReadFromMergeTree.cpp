@@ -5631,6 +5631,12 @@ bool ReadFromMergeTree::pinPartsToReceivedMarks()
         && (*data_settings)[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries] > 0)
         return false;
 
+    /// `AnalysisResult::checkLimits` counts the partitions of the analysis result against
+    /// `max_partitions_to_read`. A FINAL replica kept the whole selection there, so the limit held for the
+    /// whole read; pinned, it would count only the partitions of this task's lanes.
+    if (isQueryWithFinal() && getMaxPartitionsToRead(context->getSettingsRef(), *data_settings) > 0)
+        return false;
+
     /// The coordinator has already analyzed the whole table and this task reads only its share, so the
     /// analysis here starts from the received marks instead of from every part of the snapshot.
     /// A non-FINAL read has one bucket, which names each part once. The lanes of a FINAL read can name

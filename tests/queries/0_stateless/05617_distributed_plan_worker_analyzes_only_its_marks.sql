@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS t_dp_keys;
 DROP TABLE IF EXISTS t_dp_final;
 DROP TABLE IF EXISTS t_dp_sample;
 DROP TABLE IF EXISTS t_dp_final_partitions;
+DROP TABLE IF EXISTS t_dp_final_three_partitions;
 
 CREATE TABLE t_dp_marks (id UInt64, v UInt64, INDEX idx_v v TYPE minmax GRANULARITY 1)
 ENGINE = MergeTree ORDER BY id
@@ -160,6 +161,25 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
     distributed_plan_fallback_to_local_execution = 0, enable_join_runtime_filters = 0,
     max_rows_to_group_by = 0, max_partitions_to_read = 1;
+
+-- The limit concerns the whole read: with the partition key first in the sorting key, the
+-- primary-key-range layers of FINAL follow the partitions, and each of the three tasks reads one of the
+-- three partitions. That must not pass `max_partitions_to_read = 1`.
+DROP TABLE IF EXISTS t_dp_final_three_partitions;
+CREATE TABLE t_dp_final_three_partitions (p UInt8, k UInt64, v UInt64) ENGINE = ReplacingMergeTree PARTITION BY p ORDER BY (p, k)
+SETTINGS index_granularity = 1000, index_granularity_bytes = '10Mi';
+SYSTEM STOP MERGES t_dp_final_three_partitions;
+INSERT INTO t_dp_final_three_partitions SELECT 0, number, number FROM numbers(30000);
+INSERT INTO t_dp_final_three_partitions SELECT 1, number, number FROM numbers(30000);
+INSERT INTO t_dp_final_three_partitions SELECT 2, number, number FROM numbers(30000);
+SELECT count(), sum(v) FROM t_dp_final_three_partitions FINAL
+SETTINGS make_distributed_plan = 0, max_partitions_to_read = 1; -- { serverError TOO_MANY_PARTITIONS }
+SELECT count(), sum(v) FROM t_dp_final_three_partitions FINAL
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
+    distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
+    distributed_plan_fallback_to_local_execution = 0, enable_join_runtime_filters = 0,
+    max_rows_to_group_by = 0, max_partitions_to_read = 1; -- { serverError TOO_MANY_PARTITIONS }
+DROP TABLE t_dp_final_three_partitions;
 
 DROP TABLE t_dp_final_partitions;
 DROP TABLE t_dp_sample;
