@@ -1147,7 +1147,8 @@ FunctionCast::ElementWrappers FunctionCast::getElementWrappers(const DataTypes &
 /// For `accurateCastOrNull` to a tuple, returns the null map of the rows where the conversion of an element
 /// failed. A failure at any element makes the conversion of the tuple inaccurate, so the whole tuple is NULL.
 /// - An element type that cannot hold NULL fails on every NULL: one that the conversion reports by wrapping
-///   the element in `Nullable`, which is removed from `converted_columns`, and one of the source element.
+///   the element in `Nullable`, or a `LowCardinality(T)` element in `LowCardinality(Nullable(T))`, which is
+///   removed from `converted_columns`, and one of the source element.
 /// - An element type that can hold NULL (`Nullable`, `LowCardinality(Nullable)`, `Variant` or `Dynamic`)
 ///   keeps the NULLs of its source element as values, so only the NULLs that the conversion adds are
 ///   failures. These column kinds encode NULLs differently, and `getOuterNullMap` reads each of them.
@@ -1196,6 +1197,15 @@ static ColumnPtr extractTupleElementConversionFailures(
                     failures[row] |= result_nulls[row];
                 converted_columns[i] = converted_nullable->getNestedColumnPtr();
             }
+            else if (const auto * converted_low_cardinality = checkAndGetColumn<ColumnLowCardinality>(converted_columns[i].get());
+                     converted_low_cardinality && converted_low_cardinality->nestedIsNullable())
+            {
+                const ColumnPtr result_null_map = getOuterNullMap(*converted_low_cardinality);
+                const auto & result_nulls = assert_cast<const ColumnUInt8 &>(*result_null_map).getData();
+                for (size_t row = 0; row < rows; ++row)
+                    failures[row] |= result_nulls[row];
+                converted_columns[i] = converted_low_cardinality->cloneWithDefaultOnNull();
+            }
 
             /// The conversion does not always report a NULL of the source element: a `Variant` or `Dynamic`
             /// source without a convertible row yields a plain column of default values.
@@ -1232,18 +1242,28 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(
     const auto & to_element_types = to_type->getElements();
 
     const auto source_positions = getTupleCastElementPositions(*from_type, *to_type);
+
+    /// `Nullable(LowCardinality(T))` is not a type, so an element of type `LowCardinality(T)` reports the failures of its
+    /// conversion as the NULLs of `LowCardinality(Nullable(T))` (see `extractTupleElementConversionFailures`).
+    DataTypes conversion_types = to_element_types;
     ElementWrappers element_wrappers;
     element_wrappers.reserve(to_element_types.size());
     for (size_t i = 0; i < to_element_types.size(); ++i)
     {
-        if (source_positions[i])
-            element_wrappers.emplace_back(
-                prepareUnpackDictionaries(from_element_types[*source_positions[i]], to_element_types[i], reports_failures));
-        else
+        if (!source_positions[i])
+        {
             element_wrappers.emplace_back();
+            continue;
+        }
+
+        const auto & from_element_type = from_element_types[*source_positions[i]];
+        if (reports_failures && conversion_types[i]->lowCardinality() && !from_element_type->equals(*conversion_types[i]))
+            conversion_types[i] = makeNullableOrLowCardinalityNullable(conversion_types[i]);
+
+        element_wrappers.emplace_back(prepareUnpackDictionaries(from_element_type, conversion_types[i], reports_failures));
     }
 
-    return [element_wrappers, from_element_types, to_element_types, source_positions, reports_failures]
+    return [element_wrappers, from_element_types, to_element_types, conversion_types, source_positions, reports_failures]
         (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
     {
         const auto * col = arguments.front().column.get();
@@ -1269,7 +1289,7 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(
             {
                 const size_t source_position = *source_positions[i];
                 ColumnsWithTypeAndName element = {{column_tuple.getColumns()[source_position], from_element_types[source_position], "" }};
-                converted_columns[i] = element_wrappers[i](element, to_element_types[i], nullable_source, input_rows_count);
+                converted_columns[i] = element_wrappers[i](element, conversion_types[i], nullable_source, input_rows_count);
             }
             else
             {

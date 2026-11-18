@@ -1,0 +1,27 @@
+-- A failed conversion of a non-nullable LowCardinality element makes the tuple NULL.
+SELECT accurateCastOrNull(tuple(materialize('abc')), 'Nullable(Tuple(LowCardinality(FixedString(2))))');
+SELECT accurateCastOrDefault(tuple(materialize('abc')), 'Nullable(Tuple(LowCardinality(FixedString(2))))');
+SELECT accurateCastOrNull(tuple(materialize(300)), 'Nullable(Tuple(LowCardinality(UInt8)))') SETTINGS allow_suspicious_low_cardinality_types = 1;
+
+-- So does a NULL of the source element.
+SELECT accurateCastOrNull(tuple(materialize(NULL::Nullable(String))), 'Nullable(Tuple(LowCardinality(String)))');
+SELECT accurateCastOrNull(tuple(materialize(NULL)), 'Nullable(Tuple(LowCardinality(String)))');
+
+-- LowCardinality sources.
+SELECT accurateCastOrNull(tuple(toLowCardinality(materialize(toNullable('ab')))), 'Nullable(Tuple(LowCardinality(String)))');
+SELECT accurateCastOrNull(tuple(toLowCardinality(materialize('abc'))), 'Nullable(Tuple(LowCardinality(FixedString(2))))');
+
+-- Rows, a second element, and the declared non-nullable dictionary of the result.
+SELECT x, accurateCastOrNull(tuple(x, x), 'Nullable(Tuple(LowCardinality(FixedString(2)), LowCardinality(String)))')
+FROM (SELECT arrayJoin(['ab', 'abc', NULL, 'cd'])::LowCardinality(Nullable(String)) AS x);
+SELECT accurateCastOrNull(tuple('ab'), 'Nullable(Tuple(LowCardinality(FixedString(2))))');
+SELECT dumpColumnStructure(accurateCastOrNull(tuple(materialize('ab')), 'Nullable(Tuple(LowCardinality(FixedString(2))))'));
+
+-- Variant, Dynamic and nested tuple sources.
+SELECT accurateCastOrNull(tuple(materialize('abc')::Variant(String, UInt64)), 'Nullable(Tuple(LowCardinality(FixedString(2))))');
+SELECT accurateCastOrNull(tuple(materialize(NULL)::Variant(String, UInt64)), 'Nullable(Tuple(LowCardinality(String)))') SETTINGS cast_keep_nullable = 1;
+SELECT accurateCastOrNull(tuple(materialize('abc')::Dynamic), 'Nullable(Tuple(LowCardinality(FixedString(2))))');
+SELECT accurateCastOrNull(tuple(tuple(materialize('abc'))), 'Nullable(Tuple(Tuple(LowCardinality(FixedString(2)))))');
+
+-- A nullable dictionary keeps a NULL of the source element as a value.
+SELECT accurateCastOrNull(tuple(materialize(NULL::Nullable(String))), 'Nullable(Tuple(LowCardinality(Nullable(String))))');
