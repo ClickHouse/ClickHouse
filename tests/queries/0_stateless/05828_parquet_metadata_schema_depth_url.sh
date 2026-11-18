@@ -2,8 +2,9 @@
 # Tags: no-fasttest
 # Tag no-fasttest: the `ParquetMetadata` format needs Arrow, which is not built in the fast test.
 
-# The depth check of the `ParquetMetadata` format and Arrow read the same copy of the footer, also for a URL
-# whose server returns a shallow footer to short range requests and a deeply nested one to long range requests.
+# The depth check of the `ParquetMetadata` format and Arrow read the same copy of the footer, also for a URL whose
+# server returns a shallow footer to short range requests and a deeply nested one to long range requests, or a
+# shallow footer to the first range request and a deeply nested one to every later request.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -63,6 +64,7 @@ def parquet(depth, size=0):
 
 deep = parquet(200000)
 shallow = parquet(1, len(deep))
+once_ranges = []
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -79,7 +81,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         m = re.match(r"bytes=(\d+)-(\d+)", self.headers.get("Range", ""))
         begin, end = (int(m.group(1)), min(int(m.group(2)) + 1, len(deep))) if m else (0, len(deep))
-        swap = self.path == "/swap.parquet" and end - begin >= 64
+        if self.path == "/once.parquet":
+            # The first range request gets the shallow file, every later one the deep file.
+            swap = bool(m) and bool(once_ranges)
+            if m:
+                once_ranges.append(begin)
+        else:
+            swap = self.path == "/swap.parquet" and end - begin >= 64
         data = (deep if swap else shallow)[begin:end]
         self.send_response(206 if m else 200)
         if m:
@@ -101,9 +109,10 @@ done
 
 $CLICKHOUSE_LOCAL -q "SELECT num_columns FROM url('http://127.0.0.1:$HTTP_PORT/shallow.parquet', ParquetMetadata)"
 $CLICKHOUSE_LOCAL -q "SELECT num_columns FROM url('http://127.0.0.1:$HTTP_PORT/swap.parquet', ParquetMetadata)" 2>&1 | grep -o -m1 'TOO_DEEP_RECURSION'
+$CLICKHOUSE_LOCAL -q "SELECT num_columns FROM url('http://127.0.0.1:$HTTP_PORT/once.parquet', ParquetMetadata)"
 
 # The size of the metadata in the footer exceeds the size of the file.
 file="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet"
 python3 -I -c 'import struct, sys; sys.stdout.buffer.write(b"PAR1" + bytes(70000) + struct.pack("<I", 1000000) + b"PAR1")' > "$file"
-$CLICKHOUSE_LOCAL -q "SELECT num_columns FROM file('$file', ParquetMetadata)" 2>&1 | grep -o -m1 'CANNOT_READ_ALL_DATA'
+$CLICKHOUSE_LOCAL -q "SELECT num_columns FROM file('$file', ParquetMetadata)" 2>&1 | grep -o -m1 -F 'exceeds the size of the file (70012 bytes)'
 rm -f "$file"
