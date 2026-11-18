@@ -51,6 +51,8 @@ class CacheRunnerHooks:
             ]
             print(f"Job [{job_name}] digest salted with [{salt}]")
             job_digest_map[job_name] = f"{job_digest_map[job_name]}-{salt_token}"
+        if Settings.S3_ARTIFACT_BUCKET:
+            Cache.store_digest_salts(digest_salts)
 
         # Build lookup: requires entry (artifact name or job name) -> providing job name
         dep_job_lookup = {}

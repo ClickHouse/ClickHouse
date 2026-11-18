@@ -275,6 +275,17 @@ class Runner:
             else:
                 print("WARNING: Failed to fetch changed file metadata for PR")
 
+        if (pr > 0 or branch) and sha and Settings.S3_ARTIFACT_BUCKET:
+            # Artifacts of a salted job are in their own directory (see `Cache.artifact_dir`),
+            # and only the run that produced them knows the salts.
+            salts = Cache.load_digest_salts()
+            if salts is None:
+                print(
+                    "NOTE: the run published no digest salts, artifact directories are not salted"
+                )
+            elif salts:
+                Info().store_kv_data(Cache.DIGEST_SALTS_KV_KEY, salts)
+
         Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
 
     def _setup_env(self, _workflow, job):

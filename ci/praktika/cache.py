@@ -1,5 +1,6 @@
 import dataclasses
 import json
+import tempfile
 from pathlib import Path
 
 from . import Artifact, Job, Workflow
@@ -58,6 +59,48 @@ class Cache:
         if job_name in salts:
             name += f"_{Utils.normalize_string(salts[job_name])}"
         return name
+
+    # Object with the run's digest salts under the run's S3 prefix, see `store_digest_salts`.
+    DIGEST_SALTS_FILE_NAME = "job_digest_salts.json"
+
+    @classmethod
+    def _digest_salts_s3_path(cls):
+        return f"{Settings.S3_ARTIFACT_BUCKET}/{_Environment.get().get_s3_prefix()}/{cls.DIGEST_SALTS_FILE_NAME}"
+
+    @classmethod
+    def store_digest_salts(cls, salts):
+        """Publish the digest salts of a run next to its artifacts.
+
+        A local job run with `--pr`/`--sha` (see `Runner.generate_local_run_environment`) does
+        not have the kv data of the run that produced the artifacts, and the PR labels at the
+        time of the local run do not tell which variant was built at that commit. It restores
+        the salts from this object to find the artifact directories (see `artifact_dir`).
+        Written even when empty, so that a rerun at the same commit without salts replaces
+        the salts of an earlier run."""
+        local_path = f"{Settings.TEMP_DIR}/{cls.DIGEST_SALTS_FILE_NAME}"
+        with open(local_path, "w", encoding="utf8") as f:
+            json.dump(salts, f)
+        S3.copy_file_to_s3(
+            s3_path=cls._digest_salts_s3_path(),
+            local_path=local_path,
+            tags={"retention": "default"},
+        )
+
+    @classmethod
+    def load_digest_salts(cls):
+        """The digest salts published by `store_digest_salts` for the run at the current
+        S3 prefix, None if the run did not publish them."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            if not S3.copy_file_from_s3(
+                s3_path=cls._digest_salts_s3_path(), local_path=tmp_dir, no_strict=True
+            ):
+                return None
+            with open(
+                Path(tmp_dir) / cls.DIGEST_SALTS_FILE_NAME, "r", encoding="utf8"
+            ) as f:
+                salts = json.load(f)
+        assert isinstance(salts, dict), f"Invalid digest salts [{salts}]"
+        return salts
 
     def __init__(self):
         self.digest = Digest()
