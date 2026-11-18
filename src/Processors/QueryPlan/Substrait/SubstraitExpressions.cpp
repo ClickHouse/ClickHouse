@@ -125,6 +125,7 @@ struct MappedFunction
     bool variadic = false;
     bool never_null = false;
     bool negate_result = false; /// For negated ClickHouse functions with no negated Substrait form, as in notLike -> not(like(...)).
+    bool safe_constant_divisor_only = false; /// We throw for the smallest integer modulo -1, which Substrait `modulus` cannot express.
     std::vector<FunctionOverload> overloads;
 };
 
@@ -179,7 +180,8 @@ std::unordered_map<std::string_view, MappedFunction> buildFunctionTable()
     std::vector<FunctionOverload> modulus_overloads;
     for (std::string_view ty : {"i8", "i16", "i32", "i64"})
         modulus_overloads.push_back({{ty, ty}, ty, arithmetic, modulus_options});
-    add_function("modulo", "modulus", std::move(modulus_overloads), Coercion::ToResultType);
+
+    add_function("modulo", "modulus", std::move(modulus_overloads), Coercion::ToResultType).safe_constant_divisor_only = true;
 
     std::vector<FunctionOverload> negate_overloads;
     for (std::string_view ty : {"i8", "i16", "i32", "i64"})
@@ -705,6 +707,14 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
 
     if (args.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Function {} has no arguments, but every mapped function takes at least one", name);
+
+    if (mapping.safe_constant_divisor_only)
+    {
+        const auto & divisor = *args.back().node;
+        const auto value = isConstantNode(divisor) ? tryGetIntegerField((*divisor.column)[0]) : std::nullopt;
+        if (!value || *value == -1)
+            return blocked(fmt::format("function {} is mapped only with a constant divisor other than -1", name));
+    }
 
     std::optional<substrait::Type> ch_result_type;
     String ch_result_short;
