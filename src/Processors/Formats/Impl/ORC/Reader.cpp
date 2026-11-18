@@ -615,7 +615,10 @@ void RowReader::pickRowGroups()
                 it->first, it->second.entry.size(), groups, current_stripe);
     }
 
-    if (!has_leaf_index)
+    const bool has_filter_index = options.row_group_filter
+        && std::ranges::any_of(row_indexes, [&](const auto & column_index) { return column_index.second.entry.size() >= groups; });
+
+    if (!has_leaf_index && !has_filter_index)
     {
         /// Without the row indexes all row groups are read.
         next_skipped_rows.clear();
