@@ -998,7 +998,6 @@ const std::unordered_map<TypeIndex, size_t> & getTypesTextDeserializePriorityMap
         for (size_t i = 0; i != priorities.size(); ++i)
             pm[priorities[i]] = (priorities.size() - i) * text_deserialize_priority_step;
 
-        /// Smaller floats first, as in the list.
         pm[TypeIndex::BFloat16] = pm.at(TypeIndex::Float32) + 1;
         /// Times go before Dates: they reject any text with a date part,
         /// while DateTimes parsed with best_effort also accept a time alone.
