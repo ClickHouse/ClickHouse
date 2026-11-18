@@ -67,9 +67,38 @@ SELECT 'one type', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash
 FROM (EXPLAIN PLAN SELECT count() FROM t_cost_a JOIN t_cost_same ON t_cost_a.k = t_cost_same.k AND t_cost_a.x = t_cost_same.y)
 WHERE explain LIKE '%Algorithm:%';
 
+-- With inputs sorted by both keys, a monotonic cast of a key keeps the order: `UInt32` to `UInt64` needs no sorting,
+-- so the inputs merge as they are. `Date` to `DateTime` is not monotonic on the whole type, so a merge would sort them.
+DROP TABLE IF EXISTS t_sorted_u32;
+DROP TABLE IF EXISTS t_sorted_u64;
+DROP TABLE IF EXISTS t_sorted_date;
+DROP TABLE IF EXISTS t_sorted_datetime;
+CREATE TABLE t_sorted_u32 (k UInt64, x UInt32) ENGINE = MergeTree ORDER BY (k, x);
+CREATE TABLE t_sorted_u64 (k UInt64, y UInt64) ENGINE = MergeTree ORDER BY (k, y);
+CREATE TABLE t_sorted_date (k UInt64, x Date) ENGINE = MergeTree ORDER BY (k, x);
+CREATE TABLE t_sorted_datetime (k UInt64, y DateTime('UTC')) ENGINE = MergeTree ORDER BY (k, y);
+INSERT INTO t_sorted_u32 SELECT intDiv(number, 10), number % 10 FROM numbers(100);
+INSERT INTO t_sorted_u64 SELECT intDiv(number, 10), number % 10 FROM numbers(100);
+INSERT INTO t_sorted_date SELECT intDiv(number, 10), toDate('2024-01-01') + number % 10 FROM numbers(100);
+INSERT INTO t_sorted_datetime SELECT intDiv(number, 10), toDateTime(toDate('2024-01-01') + number % 10, 'UTC') FROM numbers(100);
+
+SET param__internal_join_table_stat_hints = '{"t_sorted_u32": {"cardinality": 5000000, "distinct_keys": {"k": 500000, "x": 10}}, "t_sorted_u64": {"cardinality": 5000000, "distinct_keys": {"k": 500000, "y": 10}}, "t_sorted_date": {"cardinality": 5000000, "distinct_keys": {"k": 500000, "x": 10}}, "t_sorted_datetime": {"cardinality": 5000000, "distinct_keys": {"k": 500000, "y": 10}}}';
+
+SELECT 'widening cast', if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join'), replaceRegexpAll(explain, '^[│└├─ ]+', ''))
+FROM (EXPLAIN PLAN sorting = 1 SELECT count() FROM t_sorted_u32 JOIN t_sorted_u64 ON t_sorted_u32.k = t_sorted_u64.k AND t_sorted_u32.x = t_sorted_u64.y)
+WHERE explain LIKE '%Algorithm:%' OR explain LIKE '%Prefix sort description:%';
+SELECT 'Date to DateTime', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join')
+FROM (EXPLAIN PLAN SELECT count() FROM t_sorted_date JOIN t_sorted_datetime ON t_sorted_date.k = t_sorted_datetime.k AND t_sorted_date.x = t_sorted_datetime.y)
+WHERE explain LIKE '%Algorithm:%';
+SELECT count() FROM t_sorted_u32 JOIN t_sorted_u64 ON t_sorted_u32.k = t_sorted_u64.k AND t_sorted_u32.x = t_sorted_u64.y;
+
 DROP TABLE t_mixed_a;
 DROP TABLE t_mixed_b;
 DROP TABLE t_mixed_c;
 DROP TABLE t_cost_a;
 DROP TABLE t_cost_mixed;
 DROP TABLE t_cost_same;
+DROP TABLE t_sorted_u32;
+DROP TABLE t_sorted_u64;
+DROP TABLE t_sorted_date;
+DROP TABLE t_sorted_datetime;

@@ -2,3 +2,8 @@
 1
 mixed types	hash join
 one type	hash join
+widening cast	merge join
+widening cast	Prefix sort description: k ASC, CAST(x AS UInt64) ASC
+widening cast	Prefix sort description: k ASC, y ASC
+Date to DateTime	hash join
+100
