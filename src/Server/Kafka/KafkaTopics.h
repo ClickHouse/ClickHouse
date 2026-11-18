@@ -47,8 +47,10 @@ struct BrokerSettings
     String database = "default";
 
     /// The host and port to return to clients in the metadata. By default, the address the client connected to.
+    /// `advertised_port_secure` is returned to the clients connected to `kafka_port_secure`.
     String advertised_host;
     UInt16 advertised_port = 0;
+    UInt16 advertised_port_secure = 0;
 
     String cluster_id = "ClickHouse";
 

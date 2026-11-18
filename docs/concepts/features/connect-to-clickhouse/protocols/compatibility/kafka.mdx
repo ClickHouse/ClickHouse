@@ -50,6 +50,8 @@ The interface is configured in the `kafka_protocol` section:
              By default, the address of the server the client is connected to. -->
         <advertised_host>clickhouse.example.com</advertised_host>
         <advertised_port>9092</advertised_port>
+        <!-- The port returned to the clients connected to kafka_port_secure. -->
+        <advertised_port_secure>9093</advertised_port_secure>
         <!-- The cluster id returned in the metadata. -->
         <cluster_id>ClickHouse</cluster_id>
         <!-- Whether to write the queries made for Kafka requests to system.query_log. -->
@@ -135,7 +137,19 @@ The offsets are stable across merges, because the `_block_number` and `_block_of
 
 ## Authentication and access control {#authentication}
 
-Clients authenticate with SASL `PLAIN` as ClickHouse users. A client without SASL authentication connects as the user set by the `default_session_user` server setting, with an empty password. The requests are executed as queries of the user, so the user needs the `SELECT` privilege on a topic to consume it, the `INSERT` privilege to produce into it, `CREATE TABLE` and `DROP TABLE` to create and delete topics, and `INSERT` and `SELECT` on the table of committed offsets to use consumer groups. The logins are shown with `interface = 'Kafka'` in `system.session_log`. Use TLS termination in front of the server to protect the passwords on the network, since the interface does not support TLS.
+Clients authenticate with SASL `PLAIN` as ClickHouse users. A client without SASL authentication connects as the user set by the `default_session_user` server setting, with an empty password. The requests are executed as queries of the user, so the user needs the `SELECT` privilege on a topic to consume it, the `INSERT` privilege to produce into it, `CREATE TABLE` and `DROP TABLE` to create and delete topics, and `INSERT` and `SELECT` on the table of committed offsets to use consumer groups. The logins are shown with `interface = 'Kafka'` in `system.session_log`.
+
+## TLS {#tls}
+
+To protect the passwords and the data on the network, enable the `kafka_port_secure` port, which accepts the Kafka protocol over TLS. The server uses its `openSSL.server` configuration, as for `tcp_port_secure` and `https_port`. The clients connect to it with the `SSL` security protocol, or `SASL_SSL` to authenticate with SASL `PLAIN`:
+
+```xml
+<clickhouse>
+    <kafka_port_secure>9093</kafka_port_secure>
+</clickhouse>
+```
+
+Both ports can be enabled at the same time. The cluster metadata returned to a client contains the port it is connected to, so a client stays on the secure port.
 
 ## Consumer groups {#consumer-groups}
 

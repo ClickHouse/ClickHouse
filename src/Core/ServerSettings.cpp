@@ -2454,6 +2454,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "mysql_port",
         "postgresql_port",
         "kafka_port",
+        "kafka_port_secure",
         "grpc_port",
         "interserver_http_port",
         "interserver_https_port",

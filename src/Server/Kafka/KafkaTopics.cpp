@@ -75,6 +75,7 @@ void BrokerSettings::load(const Poco::Util::AbstractConfiguration & config, cons
     database = config.getString(prefix + ".database", database);
     advertised_host = config.getString(prefix + ".advertised_host", advertised_host);
     advertised_port = static_cast<UInt16>(config.getUInt(prefix + ".advertised_port", advertised_port));
+    advertised_port_secure = static_cast<UInt16>(config.getUInt(prefix + ".advertised_port_secure", advertised_port_secure));
     cluster_id = config.getString(prefix + ".cluster_id", cluster_id);
     log_queries = config.getBool(prefix + ".log_queries", log_queries);
     max_request_size = config.getUInt64(prefix + ".max_request_size", max_request_size);

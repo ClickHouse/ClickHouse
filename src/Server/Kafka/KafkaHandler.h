@@ -36,6 +36,7 @@ public:
         IServer & server_,
         TCPServer & tcp_server_,
         const Kafka::BrokerSettings & settings_,
+        bool secure_,
         UInt64 connection_id_,
         const ProfileEvents::Event & read_event_,
         const ProfileEvents::Event & write_event_);
@@ -88,6 +89,8 @@ private:
     IServer & server;
     TCPServer & tcp_server;
     const Kafka::BrokerSettings settings;
+    /// The connection is to `kafka_port_secure`, over TLS.
+    const bool secure;
     const UInt64 connection_id;
     LoggerPtr log = getLogger("KafkaHandler");
 

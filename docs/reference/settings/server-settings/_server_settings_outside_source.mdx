@@ -1819,8 +1819,22 @@ Port for communicating with clients over the Kafka protocol. See [Kafka interfac
 <kafka_port>9092</kafka_port>
 ```
 
+## kafka_port_secure {#kafka_port_secure}
+Port for communicating with clients over the Kafka protocol with TLS, configured in the `openSSL` section. See [Kafka interface](/concepts/features/connect-to-clickhouse/protocols/compatibility/kafka#tls).
+
+<Note>
+- Positive integers specify the port number to listen to
+- Empty values are used to disable communication with clients over the Kafka protocol with TLS.
+</Note>
+
+**Example**
+
+```xml
+<kafka_port_secure>9093</kafka_port_secure>
+```
+
 ## kafka_protocol {#kafka_protocol}
-Settings of the Kafka-compatible interface enabled by [kafka_port](#kafka_port): the database of the topics, the advertised host and port, the table of committed offsets of consumer groups, and others. See [Kafka interface](/concepts/features/connect-to-clickhouse/protocols/compatibility/kafka#enabling).
+Settings of the Kafka-compatible interface enabled by [kafka_port](#kafka_port) and [kafka_port_secure](#kafka_port_secure): the database of the topics, the advertised host and port, the table of committed offsets of consumer groups, and others. See [Kafka interface](/concepts/features/connect-to-clickhouse/protocols/compatibility/kafka#enabling).
 
 **Example**
 

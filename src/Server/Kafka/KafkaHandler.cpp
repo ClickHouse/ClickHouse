@@ -131,6 +131,7 @@ KafkaHandler::KafkaHandler(
     IServer & server_,
     TCPServer & tcp_server_,
     const BrokerSettings & settings_,
+    bool secure_,
     UInt64 connection_id_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
@@ -138,6 +139,7 @@ KafkaHandler::KafkaHandler(
     , server(server_)
     , tcp_server(tcp_server_)
     , settings(settings_)
+    , secure(secure_)
     , connection_id(connection_id_)
     , read_event(read_event_)
     , write_event(write_event_)
@@ -157,7 +159,7 @@ void KafkaHandler::run()
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket(), read_event);
     out = std::make_shared<WriteBufferFromPocoSocket>(socket(), write_event);
-    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::KAFKA);
+    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::KAFKA, secure);
 
     SCOPE_EXIT({
         session.reset();
@@ -340,8 +342,8 @@ String KafkaHandler::advertisedHost()
 
 Int32 KafkaHandler::advertisedPort()
 {
-    if (settings.advertised_port)
-        return settings.advertised_port;
+    if (const UInt16 port = secure ? settings.advertised_port_secure : settings.advertised_port)
+        return port;
     return socket().address().port();
 }
 
