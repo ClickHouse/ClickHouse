@@ -1,4 +1,5 @@
 #include <Storages/StorageFile.h>
+#include <Storages/prepareReadingFromFormat.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -1448,7 +1449,11 @@ std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
     /// Currently don't support prewhere for virtual columns, columns with default expressions,
     /// and columns taken from file path (hive partitioning).
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    auto columns = metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    /// The `size` subcolumns that `length`, `empty` and `notEmpty` are rewritten to (see `supportsOptimizationToStringSizeSubcolumn`).
+    if (supports_prewhere)
+        addStringSizesSubcolumnsReadByFormat(columns, metadata_snapshot->getColumns());
+    return columns;
 }
 
 IStorage::ColumnSizeByName StorageFile::getColumnSizes() const

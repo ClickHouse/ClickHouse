@@ -2462,6 +2462,13 @@ std::optional<Field> TrivialStringConverter::convertField(std::span<const char> 
     return Field(String(data.data(), data.size()));
 }
 
+std::optional<Field> StringSizeConverter::convertField(std::span<const char> data, bool is_max) const
+{
+    if (is_max)
+        return data.empty() ? std::optional<Field>(UInt64(0)) : std::nullopt;
+    return Field(UInt64(data.empty() ? 0 : 1));
+}
+
 void StringSizeConverter::convertColumn(std::span<const char> /*chars*/, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
 {
     auto & data = assert_cast<ColumnUInt64 &>(col).getData();

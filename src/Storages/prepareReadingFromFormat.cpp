@@ -160,6 +160,33 @@ ReadFromFormatInfo prepareReadingFromFormat(
     return info;
 }
 
+bool isStringSizesSubcolumnReadByFormat(const IDataType & type, const String & subcolumn_name)
+{
+    auto resolved = type.tryGetSubcolumnInfo(subcolumn_name);
+    if (!resolved || !SerializationString::isStringSizesSubcolumn(resolved->substreams_path))
+        return false;
+    const auto & path = resolved->substreams_path;
+    for (size_t i = 0; i + 1 < path.size(); ++i)
+        if (path[i].type != ISerialization::Substream::TupleElement && path[i].type != ISerialization::Substream::NullableElements)
+            return false;
+    return true;
+}
+
+void addStringSizesSubcolumnsReadByFormat(NameSet & names, const ColumnsDescription & columns)
+{
+    NameSet added;
+    for (const auto & name : names)
+    {
+        const auto * column = columns.tryGet(name);
+        if (!column)
+            continue;
+        for (const auto & subcolumn : columns.getSubcolumns(name))
+            if (isStringSizesSubcolumnReadByFormat(*column->type, subcolumn.getSubcolumnName()))
+                added.insert(subcolumn.name);
+    }
+    names.insert(added.begin(), added.end());
+}
+
 Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns, const std::function<bool(const String &)> & can_read_string_sizes)
 {
     /// Format can read tuple element subcolumns, e.g. `t.x` or `t.a.x`.
@@ -243,28 +270,17 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns, const std:
             if (!column_info.path.empty())
                 column_info.type = ISerialization::createFromPath(column_info.path, column_info.path.size()).type;
 
-            /// The `size` subcolumn of a `String`, possibly `Nullable` and inside tuples, but not inside arrays: the format
-            /// reads it from the lengths of the values. The path is the whole subcolumn, so it is read as is.
-            if (can_read_string_sizes && can_read_string_sizes(column_to_read.getNameInStorage()))
+            /// The `size` subcolumn of a `String`: the format reads it from the lengths of the values. The path is the whole
+            /// subcolumn, so it is read as is.
+            if (can_read_string_sizes && can_read_string_sizes(column_to_read.getNameInStorage())
+                && isStringSizesSubcolumnReadByFormat(*type, column_to_read.getSubcolumnName()))
             {
-                if (auto resolved = type->tryGetSubcolumnInfo(column_to_read.getSubcolumnName());
-                    resolved && SerializationString::isStringSizesSubcolumn(resolved->substreams_path))
-                {
-                    const auto & path = resolved->substreams_path;
-                    bool only_tuple_elements = true;
-                    for (size_t i = 0; i + 1 < path.size(); ++i)
-                        if (path[i].type != ISerialization::Substream::TupleElement && path[i].type != ISerialization::Substream::NullableElements)
-                            only_tuple_elements = false;
-                    if (only_tuple_elements)
-                    {
-                        column_info.path = path;
-                        column_info.type = column_to_read.type;
-                        column_info.name = column_to_read.name;
-                        bool emplaced = name_to_idx.emplace(column_info.name, idx).second;
-                        column_info.is_duplicate = !emplaced;
-                        continue;
-                    }
-                }
+                column_info.path = type->tryGetSubcolumnInfo(column_to_read.getSubcolumnName())->substreams_path;
+                column_info.type = column_to_read.type;
+                column_info.name = column_to_read.name;
+                bool emplaced = name_to_idx.emplace(column_info.name, idx).second;
+                column_info.is_duplicate = !emplaced;
+                continue;
             }
         }
 

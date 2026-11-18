@@ -116,6 +116,12 @@ namespace DB
         const PrepareReadingFromFormatHiveParams & hive_parameters = {},
         bool supports_string_sizes = false);
 
+    /// Whether the subcolumn is the `size` subcolumn of a `String`, possibly `Nullable` and inside tuples, but not inside
+    /// arrays, which the Parquet reader reads from the lengths of the values (see `filterTupleColumnsToRead`).
+    bool isStringSizesSubcolumnReadByFormat(const IDataType & type, const String & subcolumn_name);
+    /// Adds to the columns in `names` their subcolumns for which `isStringSizesSubcolumnReadByFormat` holds.
+    void addStringSizesSubcolumnsReadByFormat(NameSet & names, const ColumnsDescription & columns);
+
     /// Returns columns_to_read from file.
     /// `can_read_string_sizes` tells, by the name of a column in storage, whether the format reads the `size`
     /// subcolumn of its `String` value (or of a `String` element of its tuples) on its own. If not set, it never does.

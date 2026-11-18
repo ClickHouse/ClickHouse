@@ -601,8 +601,8 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
                 || (decoded_type && !WhichDataType(decoded_type).isString()))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Cannot read the size subcolumn of a column whose values are converted to String");
+            /// The statistics of the strings, if usable, bound the sizes too (see `StringSizeConverter::convertField`).
             decoder.string_converter = std::make_shared<StringSizeConverter>();
-            decoder.allow_stats = false;
             decoder.allow_hash_filters = false;
             decoder.cast_stats_to_output_type = false;
             decoded_type = std::make_shared<DataTypeUInt64>();

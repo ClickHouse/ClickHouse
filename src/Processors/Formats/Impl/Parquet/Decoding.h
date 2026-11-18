@@ -376,6 +376,8 @@ struct TrivialStringConverter : public StringConverter
 struct StringSizeConverter : public StringConverter
 {
     void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
+    /// From the min/max string: a nonempty min means that all strings are nonempty, an empty max that all are empty.
+    [[nodiscard]] std::optional<Field> convertField(std::span<const char> data, bool is_max) const override;
     [[nodiscard]] bool needsChars() const override { return false; }
 };
 

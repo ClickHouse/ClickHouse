@@ -12,6 +12,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The queries cache the String column `s`: `length(s)` must not read only its `size` subcolumn.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --optimize_functions_to_subcolumns=0"
+
 FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet"
 FILE_PATH="${USER_FILES_PATH}/${FILE}"
 

@@ -1,5 +1,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include <Storages/prepareReadingFromFormat.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
@@ -514,8 +515,12 @@ bool StorageObjectStorage::supportsOptimizationToStringSizeSubcolumn(const Strin
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    return metadata_snapshot->getColumnsWithoutDefaultExpressions(
+    auto columns = metadata_snapshot->getColumnsWithoutDefaultExpressions(
         /*exclude=*/ hive_partitioning_columns.get()->hive_partition_columns_to_read_from_file_path);
+    /// The `size` subcolumns that `length`, `empty` and `notEmpty` are rewritten to (see `supportsOptimizationToStringSizeSubcolumn`).
+    if (supports_tuple_elements && !configuration->isDataLakeConfiguration())
+        addStringSizesSubcolumnsReadByFormat(columns, metadata_snapshot->getColumns());
+    return columns;
 }
 
 IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
