@@ -8,12 +8,12 @@
         "ko/clickstack/observability/index",
         {
           "expanded": true,
-          "group": "Introduction",
+          "group": "소개",
           "pages": [
             "ko/clickstack/observability/overview",
             "ko/clickstack/observability/getting-started/index",
             {
-              "group": "Sample datasets",
+              "group": "샘플 데이터 세트",
               "root": "ko/clickstack/observability/example-datasets/index",
               "pages": [
                 "ko/clickstack/observability/example-datasets/sample-data",
@@ -31,11 +31,11 @@
           ]
         },
         {
-          "group": "Features",
+          "group": "기능",
           "pages": [
             "ko/clickstack/observability/features/search",
             {
-              "group": "Dashboards",
+              "group": "대시보드",
               "pages": [
                 "ko/clickstack/observability/features/dashboards/overview",
                 "ko/clickstack/observability/features/dashboards/dashboard-templates",
@@ -56,14 +56,14 @@
             "ko/clickstack/observability/mcp",
             "ko/clickstack/observability/url-parameters",
             {
-              "group": "Demo days",
+              "group": "데모 데이",
               "root": "ko/clickstack/observability/demo-days/index",
               "pages": [
                 {
                   "group": "2026",
                   "pages": [
                     {
-                      "group": "October",
+                      "group": "10월",
                       "pages": [
                         "ko/clickstack/demo-days/2026/2026-10-22",
                         "ko/clickstack/demo-days/2026/2026-10-15",
@@ -72,7 +72,7 @@
                       ]
                     },
                     {
-                      "group": "September",
+                      "group": "9월",
                       "pages": [
                         "ko/clickstack/demo-days/2026/2026-09-24",
                         "ko/clickstack/observability/demo-days/2026/2026-09-17",
@@ -81,7 +81,7 @@
                       ]
                     },
                     {
-                      "group": "August",
+                      "group": "8월",
                       "pages": [
                         "ko/clickstack/observability/demo-days/2026/2026-08-28",
                         "ko/clickstack/observability/demo-days/2026/2026-08-21",
@@ -90,7 +90,7 @@
                       ]
                     },
                     {
-                      "group": "July",
+                      "group": "7월",
                       "pages": [
                         "ko/clickstack/observability/demo-days/2026/2026-07-31",
                         "ko/clickstack/observability/demo-days/2026/2026-07-24",
@@ -100,7 +100,7 @@
                       ]
                     },
                     {
-                      "group": "June",
+                      "group": "6월",
                       "pages": [
                         "ko/clickstack/observability/demo-days/2026/2026-06-26",
                         "ko/clickstack/observability/demo-days/2026/2026-06-18",
@@ -109,7 +109,7 @@
                       ]
                     },
                     {
-                      "group": "May",
+                      "group": "5월",
                       "pages": [
                         "ko/clickstack/observability/demo-days/2026/2026-05-29",
                         "ko/clickstack/observability/demo-days/2026/2026-05-22",
@@ -118,7 +118,7 @@
                       ]
                     },
                     {
-                      "group": "April",
+                      "group": "4월",
                       "pages": [
                         "ko/clickstack/observability/demo-days/2026/2026-04-17",
                         "ko/clickstack/observability/demo-days/2026/2026-04-10",
@@ -133,7 +133,7 @@
         },
         {
           "expanded": true,
-          "group": "Administration",
+          "group": "관리",
           "pages": [
             "ko/clickstack/observability/managing/overview",
             "ko/clickstack/observability/managing/config",
@@ -141,17 +141,17 @@
           ]
         },
         {
-          "group": "Guides",
+          "group": "가이드",
           "pages": [
             {
               "expanded": true,
-              "group": "Ingesting data",
+              "group": "데이터 수집",
               "pages": [
                 "ko/clickstack/observability/ingesting-data/overview",
                 "ko/clickstack/observability/ingesting-data/opentelemetry",
                 "ko/clickstack/observability/ingesting-data/vector",
                 {
-                  "group": "Integrations",
+                  "group": "통합",
                   "pages": [
                     "ko/clickstack/observability/integration-examples/index",
                     "ko/clickstack/observability/integration-examples/nginx-logs",
@@ -161,7 +161,7 @@
                     "ko/clickstack/observability/integration-examples/cloudwatch",
                     "ko/clickstack/observability/integration-examples/aws-lambda",
                     {
-                      "group": "Host logs",
+                      "group": "호스트 로그",
                       "pages": [
                         "ko/clickstack/observability/integration-examples/host-logs",
                         "ko/clickstack/observability/integration-examples/host-logs/ec2"
@@ -182,7 +182,7 @@
                   ]
                 },
                 {
-                  "group": "Language SDKs",
+                  "group": "언어별 SDK",
                   "pages": [
                     "ko/clickstack/observability/ingesting-data/sdks/index",
                     "ko/clickstack/observability/ingesting-data/sdks/instrument-with-ai",
@@ -204,11 +204,11 @@
             },
             {
               "expanded": true,
-              "group": "Migration guides",
+              "group": "마이그레이션(migration) 가이드",
               "pages": [
                 "ko/clickstack/observability/migration/index",
                 {
-                  "group": "Migrating from Elastic",
+                  "group": "Elastic에서 마이그레이션",
                   "pages": [
                     "ko/clickstack/observability/migration/elastic/index",
                     "ko/clickstack/observability/migration/elastic/intro",
@@ -225,7 +225,7 @@
         },
         {
           "expanded": true,
-          "group": "Integration partners",
+          "group": "통합 파트너",
           "pages": [
             "ko/clickstack/observability/integration-partners/index",
             "ko/clickstack/observability/integration-partners/bindplane",
@@ -235,14 +235,14 @@
           ]
         },
         {
-          "group": "Self-managed",
+          "group": "자가 관리형",
           "pages": [
             "ko/clickstack/self-configured/overview",
             "ko/clickstack/self-configured/getting-started/managed",
             "ko/clickstack/self-configured/architecture",
             "ko/clickstack/self-configured/deployment/managed",
             {
-              "group": "Configuration and schemas",
+              "group": "구성 및 스키마(Schema)",
               "pages": [
                 "ko/clickstack/self-configured/ingesting-data/collector",
                 "ko/clickstack/self-configured/managing/config",
@@ -252,7 +252,7 @@
               ]
             },
             {
-              "group": "Administration",
+              "group": "관리",
               "pages": [
                 "ko/clickstack/self-configured/managing/overview",
                 "ko/clickstack/self-configured/managing/estimating-resources",
@@ -264,7 +264,7 @@
               ]
             },
             {
-              "group": "Migration reference",
+              "group": "마이그레이션(migration) 참고",
               "pages": [
                 {
                   "group": "Elasticsearch",
@@ -278,10 +278,10 @@
           ]
         },
         {
-          "group": "API reference",
+          "group": "API 참조",
           "pages": [
             {
-              "group": "Dashboards",
+              "group": "대시보드",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
@@ -292,7 +292,7 @@
               ]
             },
             {
-              "group": "Alerts",
+              "group": "알림",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
@@ -302,7 +302,7 @@
               ]
             },
             {
-              "group": "Sources",
+              "group": "SOURCES",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources",
@@ -312,7 +312,7 @@
               ]
             },
             {
-              "group": "Webhooks",
+              "group": "웹훅",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks",
@@ -322,7 +322,7 @@
               ]
             },
             {
-              "group": "Roles",
+              "group": "역할",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/roles",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/roles",
@@ -332,7 +332,7 @@
               ]
             },
             {
-              "group": "Saved searches",
+              "group": "저장된 검색",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches",
@@ -350,7 +350,7 @@
           }
         },
         {
-          "group": "Onboarding guides",
+          "group": "온보딩 가이드",
           "hidden": true,
           "pages": [
             "ko/clickstack/managed-onboarding/instrument-application-serverless",
@@ -385,12 +385,12 @@
         "ko/clickstack",
         {
           "expanded": true,
-          "group": "Introduction",
+          "group": "소개",
           "pages": [
             "ko/clickstack/overview",
             "ko/clickstack/getting-started/oss",
             {
-              "group": "Sample datasets",
+              "group": "샘플 데이터 세트",
               "pages": [
                 "ko/clickstack/example-datasets/index",
                 "ko/clickstack/example-datasets/sample-data",
@@ -409,10 +409,10 @@
           ]
         },
         {
-          "group": "Features",
+          "group": "기능",
           "pages": [
             {
-              "group": "Deployment",
+              "group": "배포",
               "pages": [
                 "ko/clickstack/deployment/oss",
                 "ko/clickstack/deployment/all-in-one",
@@ -431,7 +431,7 @@
                       ]
                     },
                     {
-                      "group": "v1.x (deprecated)",
+                      "group": "v1.x (사용 중단 권고)",
                       "pages": [
                         "ko/clickstack/deployment/helm-v1",
                         "ko/clickstack/deployment/helm-configuration-v1",
@@ -449,7 +449,7 @@
             },
             "ko/clickstack/features/search",
             {
-              "group": "Dashboards",
+              "group": "대시보드",
               "pages": [
                 "ko/clickstack/features/dashboards/overview",
                 "ko/clickstack/features/dashboards/dashboard-templates",
@@ -467,14 +467,14 @@
             "ko/clickstack/mcp",
             "ko/clickstack/url-parameters",
             {
-              "group": "Demo days",
+              "group": "데모 데이",
               "pages": [
                 "ko/clickstack/demo-days/index",
                 {
                   "group": "2026",
                   "pages": [
                     {
-                      "group": "October",
+                      "group": "10월",
                       "pages": [
                         "ko/clickstack/demo-days/2026/2026-10-22",
                         "ko/clickstack/demo-days/2026/2026-10-15",
@@ -483,7 +483,7 @@
                       ]
                     },
                     {
-                      "group": "September",
+                      "group": "9월",
                       "pages": [
                         "ko/clickstack/demo-days/2026/2026-09-24",
                         "ko/clickstack/demo-days/2026/2026-09-17",
@@ -492,7 +492,7 @@
                       ]
                     },
                     {
-                      "group": "August",
+                      "group": "8월",
                       "pages": [
                         "ko/clickstack/demo-days/2026/2026-08-28",
                         "ko/clickstack/demo-days/2026/2026-08-21",
@@ -501,7 +501,7 @@
                       ]
                     },
                     {
-                      "group": "July",
+                      "group": "7월",
                       "pages": [
                         "ko/clickstack/demo-days/2026/2026-07-31",
                         "ko/clickstack/demo-days/2026/2026-07-24",
@@ -511,7 +511,7 @@
                       ]
                     },
                     {
-                      "group": "June",
+                      "group": "6월",
                       "pages": [
                         "ko/clickstack/demo-days/2026/2026-06-26",
                         "ko/clickstack/demo-days/2026/2026-06-18",
@@ -520,7 +520,7 @@
                       ]
                     },
                     {
-                      "group": "May",
+                      "group": "5월",
                       "pages": [
                         "ko/clickstack/demo-days/2026/2026-05-29",
                         "ko/clickstack/demo-days/2026/2026-05-22",
@@ -529,7 +529,7 @@
                       ]
                     },
                     {
-                      "group": "April",
+                      "group": "4월",
                       "pages": [
                         "ko/clickstack/demo-days/2026/2026-04-17",
                         "ko/clickstack/demo-days/2026/2026-04-10",
@@ -544,7 +544,7 @@
         },
         {
           "expanded": true,
-          "group": "Administration",
+          "group": "관리",
           "pages": [
             "ko/clickstack/managing/overview",
             "ko/clickstack/managing/config",
@@ -556,11 +556,11 @@
           ]
         },
         {
-          "group": "Guides",
+          "group": "가이드",
           "pages": [
             {
               "expanded": true,
-              "group": "Ingesting data",
+              "group": "데이터 수집",
               "pages": [
                 "ko/clickstack/ingesting-data/overview",
                 "ko/clickstack/ingesting-data/opentelemetry",
@@ -570,7 +570,7 @@
                 "ko/clickstack/ingesting-data/schema/map-vs-json",
                 "ko/clickstack/ingesting-data/trace-sampling",
                 {
-                  "group": "Integrations",
+                  "group": "통합",
                   "pages": [
                     "ko/clickstack/integration-examples/index",
                     "ko/clickstack/integration-examples/nginx-logs",
@@ -580,7 +580,7 @@
                     "ko/clickstack/integration-examples/cloudwatch",
                     "ko/clickstack/integration-examples/aws-lambda",
                     {
-                      "group": "Host logs",
+                      "group": "호스트 로그",
                       "pages": [
                         "ko/clickstack/integration-examples/host-logs",
                         "ko/clickstack/integration-examples/host-logs/ec2"
@@ -601,7 +601,7 @@
                   ]
                 },
                 {
-                  "group": "Language SDKs",
+                  "group": "언어별 SDK",
                   "pages": [
                     "ko/clickstack/ingesting-data/sdks/index",
                     "ko/clickstack/ingesting-data/sdks/browser",
@@ -622,11 +622,11 @@
             },
             {
               "expanded": true,
-              "group": "Migration guides",
+              "group": "마이그레이션(migration) 가이드",
               "pages": [
                 "ko/clickstack/migration/index",
                 {
-                  "group": "Migrating from Elastic",
+                  "group": "Elastic에서 마이그레이션",
                   "pages": [
                     "ko/clickstack/migration/elastic/index",
                     "ko/clickstack/migration/elastic/intro",
@@ -645,7 +645,7 @@
         },
         {
           "expanded": true,
-          "group": "Integration partners",
+          "group": "통합 파트너",
           "pages": [
             "ko/clickstack/integration-partners/index",
             "ko/clickstack/integration-partners/bindplane",
@@ -656,7 +656,7 @@
         },
         {
           "expanded": true,
-          "group": "API reference",
+          "group": "API 참조",
           "openapi": {
             "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
             "directory": "ko/clickstack/api-reference"

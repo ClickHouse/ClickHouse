@@ -1,7 +1,7 @@
 ---
 title: '安全的组织内网络连接'
 sidebarTitle: '组织内网络连接'
-hidden: true
+hidden: false
 description: '借助 ClickHouse Cloud 私有网络连接，使用 remoteSecure() 从一个 ClickHouse Cloud 服务查询同一组织、同一区域内的另一个服务，即使源服务启用了 PrivateLink 或配置了严格的 IP 访问列表也同样适用'
 keywords: ['remoteSecure', 'service to service', 'cross service', 'private networking', 'privatelink', 'ip access list', 'named collection', 'organization network connectivity']
 doc_type: 'guide'
@@ -11,7 +11,7 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge />
 
-借助安全的组织网络连接，一个 ClickHouse Cloud 服务可以通过 [`remoteSecure()`](/zh/reference/functions/table-functions/remote) 查询同一组织和区域内的另一个服务。流量始终在 ClickHouse Cloud 的私有网络内传输，不经过公共互联网，因此即使被读取的服务已通过 [PrivateLink](/zh/products/cloud/guides/security/connectivity/private-networking/aws-privatelink) 或 [IP 访问列表](/zh/products/cloud/guides/security/connectivity/setting-ip-filters)限制了访问，该功能依然可用。
+借助安全的组织内网络连接，一个 ClickHouse Cloud 服务可以通过 [`remoteSecure()`](/zh/reference/functions/table-functions/remote) 查询同一组织和区域内的另一个服务。流量始终在 ClickHouse Cloud 的私有网络内传输，不经过公共互联网，因此即使被读取的服务已通过 [PrivateLink](/zh/products/cloud/guides/security/connectivity/private-networking/aws-privatelink) 或 [IP 访问列表](/zh/products/cloud/guides/security/connectivity/setting-ip-filters)限制了访问，该功能依然可用。
 
 适用场景：
 

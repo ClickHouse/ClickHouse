@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Get started",
+      "group": "시작하기",
       "pages": [
         "ko/products/managed-postgres/overview",
         "ko/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "Features",
+      "group": "기능",
       "pages": [
         "ko/products/managed-postgres/connection",
         "ko/products/managed-postgres/settings",
@@ -43,7 +43,7 @@
       ]
     },
     {
-      "group": "Guides",
+      "group": "가이드",
       "pages": [
         "ko/products/managed-postgres/guides/bun",
         "ko/products/managed-postgres/guides/cloudflare-workers",
@@ -63,20 +63,20 @@
       ]
     },
     {
-      "group": "Pricing",
+      "group": "요금",
       "pages": [
         "ko/products/managed-postgres/pricing"
       ]
     },
     {
-      "group": "ClickHouse Integration",
+      "group": "ClickHouse 통합",
       "pages": [
         "ko/products/managed-postgres/sync-to-clickhouse/clickpipes",
         "ko/products/managed-postgres/sync-to-clickhouse/walshadow"
       ]
     },
     {
-      "group": "Migrations",
+      "group": "마이그레이션(migration)",
       "pages": [
         "ko/products/managed-postgres/migrations/overview",
         "ko/products/managed-postgres/migrations/clickpipes",
@@ -89,7 +89,7 @@
       ]
     },
     {
-      "group": "Monitoring",
+      "group": "모니터링",
       "pages": [
         "ko/products/managed-postgres/monitoring/overview",
         "ko/products/managed-postgres/monitoring/dashboard",
@@ -100,7 +100,7 @@
       ]
     },
     {
-      "group": "FAQ",
+      "group": "자주 묻는 질문",
       "pages": [
         "ko/products/managed-postgres/faq"
       ]

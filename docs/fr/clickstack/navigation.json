@@ -13,7 +13,7 @@
             "fr/clickstack/observability/overview",
             "fr/clickstack/observability/getting-started/index",
             {
-              "group": "Sample datasets",
+              "group": "Jeux de données d’exemple",
               "root": "fr/clickstack/observability/example-datasets/index",
               "pages": [
                 "fr/clickstack/observability/example-datasets/sample-data",
@@ -31,11 +31,11 @@
           ]
         },
         {
-          "group": "Features",
+          "group": "Fonctionnalités",
           "pages": [
             "fr/clickstack/observability/features/search",
             {
-              "group": "Dashboards",
+              "group": "Tableaux de bord",
               "pages": [
                 "fr/clickstack/observability/features/dashboards/overview",
                 "fr/clickstack/observability/features/dashboards/dashboard-templates",
@@ -63,7 +63,7 @@
                   "group": "2026",
                   "pages": [
                     {
-                      "group": "October",
+                      "group": "Octobre",
                       "pages": [
                         "fr/clickstack/demo-days/2026/2026-10-22",
                         "fr/clickstack/demo-days/2026/2026-10-15",
@@ -72,7 +72,7 @@
                       ]
                     },
                     {
-                      "group": "September",
+                      "group": "Septembre",
                       "pages": [
                         "fr/clickstack/demo-days/2026/2026-09-24",
                         "fr/clickstack/observability/demo-days/2026/2026-09-17",
@@ -81,7 +81,7 @@
                       ]
                     },
                     {
-                      "group": "August",
+                      "group": "Août",
                       "pages": [
                         "fr/clickstack/observability/demo-days/2026/2026-08-28",
                         "fr/clickstack/observability/demo-days/2026/2026-08-21",
@@ -90,7 +90,7 @@
                       ]
                     },
                     {
-                      "group": "July",
+                      "group": "Juillet",
                       "pages": [
                         "fr/clickstack/observability/demo-days/2026/2026-07-31",
                         "fr/clickstack/observability/demo-days/2026/2026-07-24",
@@ -100,7 +100,7 @@
                       ]
                     },
                     {
-                      "group": "June",
+                      "group": "Juin",
                       "pages": [
                         "fr/clickstack/observability/demo-days/2026/2026-06-26",
                         "fr/clickstack/observability/demo-days/2026/2026-06-18",
@@ -109,7 +109,7 @@
                       ]
                     },
                     {
-                      "group": "May",
+                      "group": "Mai",
                       "pages": [
                         "fr/clickstack/observability/demo-days/2026/2026-05-29",
                         "fr/clickstack/observability/demo-days/2026/2026-05-22",
@@ -118,7 +118,7 @@
                       ]
                     },
                     {
-                      "group": "April",
+                      "group": "Avril",
                       "pages": [
                         "fr/clickstack/observability/demo-days/2026/2026-04-17",
                         "fr/clickstack/observability/demo-days/2026/2026-04-10",
@@ -145,13 +145,13 @@
           "pages": [
             {
               "expanded": true,
-              "group": "Ingesting data",
+              "group": "Ingestion de données",
               "pages": [
                 "fr/clickstack/observability/ingesting-data/overview",
                 "fr/clickstack/observability/ingesting-data/opentelemetry",
                 "fr/clickstack/observability/ingesting-data/vector",
                 {
-                  "group": "Integrations",
+                  "group": "Intégrations",
                   "pages": [
                     "fr/clickstack/observability/integration-examples/index",
                     "fr/clickstack/observability/integration-examples/nginx-logs",
@@ -161,7 +161,7 @@
                     "fr/clickstack/observability/integration-examples/cloudwatch",
                     "fr/clickstack/observability/integration-examples/aws-lambda",
                     {
-                      "group": "Host logs",
+                      "group": "Journaux de l’hôte",
                       "pages": [
                         "fr/clickstack/observability/integration-examples/host-logs",
                         "fr/clickstack/observability/integration-examples/host-logs/ec2"
@@ -182,7 +182,7 @@
                   ]
                 },
                 {
-                  "group": "Language SDKs",
+                  "group": "SDK par langage",
                   "pages": [
                     "fr/clickstack/observability/ingesting-data/sdks/index",
                     "fr/clickstack/observability/ingesting-data/sdks/instrument-with-ai",
@@ -204,11 +204,11 @@
             },
             {
               "expanded": true,
-              "group": "Migration guides",
+              "group": "Guides de migration",
               "pages": [
                 "fr/clickstack/observability/migration/index",
                 {
-                  "group": "Migrating from Elastic",
+                  "group": "Migration depuis Elastic",
                   "pages": [
                     "fr/clickstack/observability/migration/elastic/index",
                     "fr/clickstack/observability/migration/elastic/intro",
@@ -225,7 +225,7 @@
         },
         {
           "expanded": true,
-          "group": "Integration partners",
+          "group": "Partenaires d’intégration",
           "pages": [
             "fr/clickstack/observability/integration-partners/index",
             "fr/clickstack/observability/integration-partners/bindplane",
@@ -235,14 +235,14 @@
           ]
         },
         {
-          "group": "Self-managed",
+          "group": "Autogéré",
           "pages": [
             "fr/clickstack/self-configured/overview",
             "fr/clickstack/self-configured/getting-started/managed",
             "fr/clickstack/self-configured/architecture",
             "fr/clickstack/self-configured/deployment/managed",
             {
-              "group": "Configuration and schemas",
+              "group": "Configuration et schémas",
               "pages": [
                 "fr/clickstack/self-configured/ingesting-data/collector",
                 "fr/clickstack/self-configured/managing/config",
@@ -264,7 +264,7 @@
               ]
             },
             {
-              "group": "Migration reference",
+              "group": "Référence pour la migration",
               "pages": [
                 {
                   "group": "Elasticsearch",
@@ -278,10 +278,10 @@
           ]
         },
         {
-          "group": "API reference",
+          "group": "Référence de l’API",
           "pages": [
             {
-              "group": "Dashboards",
+              "group": "Tableaux de bord",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
@@ -292,7 +292,7 @@
               ]
             },
             {
-              "group": "Alerts",
+              "group": "Alertes",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
@@ -322,7 +322,7 @@
               ]
             },
             {
-              "group": "Roles",
+              "group": "Rôles",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/roles",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/roles",
@@ -332,7 +332,7 @@
               ]
             },
             {
-              "group": "Saved searches",
+              "group": "Recherches enregistrées",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches",
@@ -350,7 +350,7 @@
           }
         },
         {
-          "group": "Onboarding guides",
+          "group": "Guides de prise en main",
           "hidden": true,
           "pages": [
             "fr/clickstack/managed-onboarding/instrument-application-serverless",
@@ -390,7 +390,7 @@
             "fr/clickstack/overview",
             "fr/clickstack/getting-started/oss",
             {
-              "group": "Sample datasets",
+              "group": "Jeux de données d’exemple",
               "pages": [
                 "fr/clickstack/example-datasets/index",
                 "fr/clickstack/example-datasets/sample-data",
@@ -409,10 +409,10 @@
           ]
         },
         {
-          "group": "Features",
+          "group": "Fonctionnalités",
           "pages": [
             {
-              "group": "Deployment",
+              "group": "Déploiement",
               "pages": [
                 "fr/clickstack/deployment/oss",
                 "fr/clickstack/deployment/all-in-one",
@@ -431,7 +431,7 @@
                       ]
                     },
                     {
-                      "group": "v1.x (deprecated)",
+                      "group": "v1.x (déconseillé)",
                       "pages": [
                         "fr/clickstack/deployment/helm-v1",
                         "fr/clickstack/deployment/helm-configuration-v1",
@@ -449,7 +449,7 @@
             },
             "fr/clickstack/features/search",
             {
-              "group": "Dashboards",
+              "group": "Tableaux de bord",
               "pages": [
                 "fr/clickstack/features/dashboards/overview",
                 "fr/clickstack/features/dashboards/dashboard-templates",
@@ -474,7 +474,7 @@
                   "group": "2026",
                   "pages": [
                     {
-                      "group": "October",
+                      "group": "Octobre",
                       "pages": [
                         "fr/clickstack/demo-days/2026/2026-10-22",
                         "fr/clickstack/demo-days/2026/2026-10-15",
@@ -483,7 +483,7 @@
                       ]
                     },
                     {
-                      "group": "September",
+                      "group": "Septembre",
                       "pages": [
                         "fr/clickstack/demo-days/2026/2026-09-24",
                         "fr/clickstack/demo-days/2026/2026-09-17",
@@ -492,7 +492,7 @@
                       ]
                     },
                     {
-                      "group": "August",
+                      "group": "Août",
                       "pages": [
                         "fr/clickstack/demo-days/2026/2026-08-28",
                         "fr/clickstack/demo-days/2026/2026-08-21",
@@ -501,7 +501,7 @@
                       ]
                     },
                     {
-                      "group": "July",
+                      "group": "Juillet",
                       "pages": [
                         "fr/clickstack/demo-days/2026/2026-07-31",
                         "fr/clickstack/demo-days/2026/2026-07-24",
@@ -511,7 +511,7 @@
                       ]
                     },
                     {
-                      "group": "June",
+                      "group": "Juin",
                       "pages": [
                         "fr/clickstack/demo-days/2026/2026-06-26",
                         "fr/clickstack/demo-days/2026/2026-06-18",
@@ -520,7 +520,7 @@
                       ]
                     },
                     {
-                      "group": "May",
+                      "group": "Mai",
                       "pages": [
                         "fr/clickstack/demo-days/2026/2026-05-29",
                         "fr/clickstack/demo-days/2026/2026-05-22",
@@ -529,7 +529,7 @@
                       ]
                     },
                     {
-                      "group": "April",
+                      "group": "Avril",
                       "pages": [
                         "fr/clickstack/demo-days/2026/2026-04-17",
                         "fr/clickstack/demo-days/2026/2026-04-10",
@@ -560,7 +560,7 @@
           "pages": [
             {
               "expanded": true,
-              "group": "Ingesting data",
+              "group": "Ingestion de données",
               "pages": [
                 "fr/clickstack/ingesting-data/overview",
                 "fr/clickstack/ingesting-data/opentelemetry",
@@ -570,7 +570,7 @@
                 "fr/clickstack/ingesting-data/schema/map-vs-json",
                 "fr/clickstack/ingesting-data/trace-sampling",
                 {
-                  "group": "Integrations",
+                  "group": "Intégrations",
                   "pages": [
                     "fr/clickstack/integration-examples/index",
                     "fr/clickstack/integration-examples/nginx-logs",
@@ -580,7 +580,7 @@
                     "fr/clickstack/integration-examples/cloudwatch",
                     "fr/clickstack/integration-examples/aws-lambda",
                     {
-                      "group": "Host logs",
+                      "group": "Journaux de l’hôte",
                       "pages": [
                         "fr/clickstack/integration-examples/host-logs",
                         "fr/clickstack/integration-examples/host-logs/ec2"
@@ -601,7 +601,7 @@
                   ]
                 },
                 {
-                  "group": "Language SDKs",
+                  "group": "SDK par langage",
                   "pages": [
                     "fr/clickstack/ingesting-data/sdks/index",
                     "fr/clickstack/ingesting-data/sdks/browser",
@@ -622,11 +622,11 @@
             },
             {
               "expanded": true,
-              "group": "Migration guides",
+              "group": "Guides de migration",
               "pages": [
                 "fr/clickstack/migration/index",
                 {
-                  "group": "Migrating from Elastic",
+                  "group": "Migration depuis Elastic",
                   "pages": [
                     "fr/clickstack/migration/elastic/index",
                     "fr/clickstack/migration/elastic/intro",
@@ -645,7 +645,7 @@
         },
         {
           "expanded": true,
-          "group": "Integration partners",
+          "group": "Partenaires d’intégration",
           "pages": [
             "fr/clickstack/integration-partners/index",
             "fr/clickstack/integration-partners/bindplane",
@@ -656,7 +656,7 @@
         },
         {
           "expanded": true,
-          "group": "API reference",
+          "group": "Référence de l’API",
           "openapi": {
             "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
             "directory": "fr/clickstack/api-reference"

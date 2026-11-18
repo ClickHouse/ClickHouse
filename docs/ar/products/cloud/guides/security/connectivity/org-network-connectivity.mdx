@@ -1,7 +1,7 @@
 ---
-title: 'الاتصال الشبكي الآمن على مستوى المؤسسة'
+title: 'اتصال شبكي آمن للمؤسسة'
 sidebarTitle: 'الاتصال الشبكي على مستوى المؤسسة'
-hidden: true
+hidden: false
 description: 'نفّذ استعلامات على خدمة ClickHouse Cloud من خدمة أخرى ضمن المؤسسة نفسها والمنطقة نفسها باستخدام remoteSecure() عبر الاتصال بالشبكات الخاصة في ClickHouse Cloud، حتى إذا كانت خدمة المصدر تستخدم PrivateLink أو قائمة وصول مقيّدة لعناوين IP'
 keywords: ['remoteSecure', 'service to service', 'cross service', 'private networking', 'privatelink', 'ip access list', 'named collection', 'organization network connectivity']
 doc_type: 'guide'
@@ -11,7 +11,7 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge />
 
-تتيح ميزة الاتصال الآمن بالشبكة على مستوى المؤسسة لإحدى خدمات ClickHouse Cloud الاستعلام عن خدمة أخرى ضمن المؤسسة والمنطقة نفسيهما باستخدام [`remoteSecure()`](/ar/reference/functions/table-functions/remote). وتظل حركة البيانات داخل الشبكة الخاصة لـ ClickHouse Cloud بدلاً من المرور عبر الإنترنت العام، ولذلك تعمل هذه الميزة حتى إذا كان الوصول إلى الخدمة التي تقرأ منها مقيّداً باستخدام [PrivateLink](/ar/products/cloud/guides/security/connectivity/private-networking/aws-privatelink) أو [قائمة الوصول لعناوين IP](/ar/products/cloud/guides/security/connectivity/setting-ip-filters).
+تتيح ميزة الاتصال الشبكي الآمن للمؤسسة لإحدى خدمات ClickHouse Cloud الاستعلام عن خدمة أخرى ضمن المؤسسة والمنطقة نفسيهما باستخدام [`remoteSecure()`](/ar/reference/functions/table-functions/remote). وتظل حركة البيانات داخل الشبكة الخاصة لـ ClickHouse Cloud بدلاً من المرور عبر الإنترنت العام، ولذلك تعمل هذه الميزة حتى إذا كان الوصول إلى الخدمة التي تقرأ منها مقيّداً باستخدام [PrivateLink](/ar/products/cloud/guides/security/connectivity/private-networking/aws-privatelink) أو [قائمة الوصول لعناوين IP](/ar/products/cloud/guides/security/connectivity/setting-ip-filters).
 
 استخدم هذه الميزة في الحالات التالية:
 

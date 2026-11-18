@@ -1,5 +1,5 @@
 {
-  "group": "Server Settings",
+  "group": "Configuración del servidor",
   "directory": "none",
   "pages": [
     "es/reference/settings/server-settings/settings",

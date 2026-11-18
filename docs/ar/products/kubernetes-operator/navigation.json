@@ -1,9 +1,9 @@
 {
-  "item": "Kubernetes Operator",
+  "item": "مشغّل Kubernetes",
   "pages": [
     "ar/products/kubernetes-operator/overview",
     {
-      "group": "Install",
+      "group": "تثبيت",
       "expanded": true,
       "pages": [
         "ar/products/kubernetes-operator/install/kubectl",
@@ -12,7 +12,7 @@
       ]
     },
     {
-      "group": "Guides",
+      "group": "أدلة إرشادية",
       "expanded": true,
       "pages": [
         "ar/products/kubernetes-operator/guides/introduction",
@@ -26,7 +26,7 @@
       ]
     },
     {
-      "group": "Reference",
+      "group": "المرجع",
       "expanded": true,
       "pages": [
         "ar/products/kubernetes-operator/reference/api-reference"

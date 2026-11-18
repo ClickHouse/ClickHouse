@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "Data sources",
+      "group": "مصادر البيانات",
       "pages": [
         "ar/integrations/connectors/data-sources/index",
         {
@@ -44,7 +44,7 @@
     },
     {
       "expanded": true,
-      "group": "Data visualization",
+      "group": "تصور البيانات",
       "pages": [
         "ar/integrations/connectors/data-visualization/index",
         {
@@ -78,7 +78,7 @@
         "ar/integrations/connectors/data-visualization/thoughtspot-and-clickhouse",
         {
           "expanded": false,
-          "group": "Community integrations",
+          "group": "تكاملات المجتمع",
           "pages": [
             "ar/integrations/connectors/data-visualization/community-integrations/arcodash-and-clickhouse",
             "ar/integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse",
@@ -102,7 +102,7 @@
     },
     {
       "expanded": true,
-      "group": "Data ingestion",
+      "group": "إدخال البيانات",
       "pages": [
         "ar/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
         {
@@ -147,7 +147,7 @@
             "ar/integrations/connectors/data-ingestion/GCP/google-dataflow/templates",
             {
               "expanded": false,
-              "group": "Dataflow templates",
+              "group": "قوالب Dataflow",
               "pages": [
                 "ar/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse",
                 "ar/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse"
@@ -188,7 +188,7 @@
         },
         {
           "expanded": false,
-          "group": "Community integrations",
+          "group": "تكاملات المجتمع",
           "pages": [
             "ar/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
             "ar/integrations/connectors/data-ingestion/community-integrations/erathos",
@@ -207,7 +207,7 @@
     },
     {
       "expanded": true,
-      "group": "Data integrations",
+      "group": "تكاملات البيانات",
       "pages": [
         "ar/integrations/connectors/tools/data-integration-index",
         "ar/integrations/connectors/data-integrations/integrations/retool",
@@ -220,7 +220,7 @@
     },
     {
       "expanded": true,
-      "group": "SQL-clients",
+      "group": "عملاء SQL",
       "pages": [
         "ar/integrations/connectors/sql-clients/index",
         "ar/integrations/connectors/sql-clients/sql-console",
@@ -237,7 +237,7 @@
     },
     {
       "expanded": true,
-      "group": "Tools",
+      "group": "الأدوات",
       "pages": [
         "ar/integrations/connectors/tools/index",
         "ar/integrations/connectors/tools/misc-index",
@@ -247,5 +247,5 @@
       ]
     }
   ],
-  "item": "Connectors"
+  "item": "الموصلات"
 }

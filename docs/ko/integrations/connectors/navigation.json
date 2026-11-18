@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "Data sources",
+      "group": "데이터 소스",
       "pages": [
         "ko/integrations/connectors/data-sources/index",
         {
@@ -44,7 +44,7 @@
     },
     {
       "expanded": true,
-      "group": "Data visualization",
+      "group": "데이터 시각화",
       "pages": [
         "ko/integrations/connectors/data-visualization/index",
         {
@@ -78,7 +78,7 @@
         "ko/integrations/connectors/data-visualization/thoughtspot-and-clickhouse",
         {
           "expanded": false,
-          "group": "Community integrations",
+          "group": "커뮤니티 통합",
           "pages": [
             "ko/integrations/connectors/data-visualization/community-integrations/arcodash-and-clickhouse",
             "ko/integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse",
@@ -102,7 +102,7 @@
     },
     {
       "expanded": true,
-      "group": "Data ingestion",
+      "group": "데이터 수집",
       "pages": [
         "ko/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
         {
@@ -147,7 +147,7 @@
             "ko/integrations/connectors/data-ingestion/GCP/google-dataflow/templates",
             {
               "expanded": false,
-              "group": "Dataflow templates",
+              "group": "Dataflow Template",
               "pages": [
                 "ko/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse",
                 "ko/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse"
@@ -188,7 +188,7 @@
         },
         {
           "expanded": false,
-          "group": "Community integrations",
+          "group": "커뮤니티 통합",
           "pages": [
             "ko/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
             "ko/integrations/connectors/data-ingestion/community-integrations/erathos",
@@ -207,7 +207,7 @@
     },
     {
       "expanded": true,
-      "group": "Data integrations",
+      "group": "데이터 통합",
       "pages": [
         "ko/integrations/connectors/tools/data-integration-index",
         "ko/integrations/connectors/data-integrations/integrations/retool",
@@ -220,7 +220,7 @@
     },
     {
       "expanded": true,
-      "group": "SQL-clients",
+      "group": "SQL 클라이언트",
       "pages": [
         "ko/integrations/connectors/sql-clients/index",
         "ko/integrations/connectors/sql-clients/sql-console",
@@ -237,7 +237,7 @@
     },
     {
       "expanded": true,
-      "group": "Tools",
+      "group": "도구",
       "pages": [
         "ko/integrations/connectors/tools/index",
         "ko/integrations/connectors/tools/misc-index",
@@ -247,5 +247,5 @@
       ]
     }
   ],
-  "item": "Connectors"
+  "item": "커넥터"
 }

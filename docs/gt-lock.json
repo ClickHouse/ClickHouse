@@ -4,47 +4,47 @@
   "entries": [
     {
       "fileId": "b7b4169fa5b2e02aa17d40553a73c5d9520086753c501eeb926c63b162bb6d9e",
-      "versionId": "349556d4402ee1508effaf375c9bd86a6a92dbb374839742a3a0b8724a0a2dd5",
+      "versionId": "5e835e71fe06657e9deed58588c87e0e6544471ac60bac52fc538c7bdbc2e184",
       "translations": {
-        "es": {
-          "updatedAt": "2026-11-17T22:52:27.518Z",
+        "zh": {
+          "updatedAt": "2026-11-18T00:06:35.605Z",
           "fileName": "docs.json",
-          "postProcessHash": "0dd83355e988b7f33093d32836b313228ae7ef25d1303809bca6155471feb58a"
-        },
-        "ja": {
-          "updatedAt": "2026-11-17T22:52:27.580Z",
-          "fileName": "docs.json",
-          "postProcessHash": "0dd83355e988b7f33093d32836b313228ae7ef25d1303809bca6155471feb58a"
+          "postProcessHash": "97d2c0ef1208f21a8cf053699c4100d75b019cada4457fad51cf47196bad1edd"
         },
         "pt-BR": {
-          "updatedAt": "2026-11-17T22:52:27.698Z",
+          "updatedAt": "2026-11-18T00:06:35.717Z",
           "fileName": "docs.json",
-          "postProcessHash": "0dd83355e988b7f33093d32836b313228ae7ef25d1303809bca6155471feb58a"
+          "postProcessHash": "97d2c0ef1208f21a8cf053699c4100d75b019cada4457fad51cf47196bad1edd"
+        },
+        "ja": {
+          "updatedAt": "2026-11-18T00:06:35.828Z",
+          "fileName": "docs.json",
+          "postProcessHash": "97d2c0ef1208f21a8cf053699c4100d75b019cada4457fad51cf47196bad1edd"
         },
         "ru": {
-          "updatedAt": "2026-11-17T22:52:27.756Z",
+          "updatedAt": "2026-11-18T00:06:35.939Z",
           "fileName": "docs.json",
-          "postProcessHash": "0dd83355e988b7f33093d32836b313228ae7ef25d1303809bca6155471feb58a"
-        },
-        "zh": {
-          "updatedAt": "2026-11-17T22:52:27.814Z",
-          "fileName": "docs.json",
-          "postProcessHash": "0dd83355e988b7f33093d32836b313228ae7ef25d1303809bca6155471feb58a"
-        },
-        "ar": {
-          "updatedAt": "2026-11-17T22:52:27.869Z",
-          "fileName": "docs.json",
-          "postProcessHash": "0dd83355e988b7f33093d32836b313228ae7ef25d1303809bca6155471feb58a"
+          "postProcessHash": "97d2c0ef1208f21a8cf053699c4100d75b019cada4457fad51cf47196bad1edd"
         },
         "fr": {
-          "updatedAt": "2026-11-17T22:52:27.925Z",
+          "updatedAt": "2026-11-18T00:06:36.051Z",
           "fileName": "docs.json",
-          "postProcessHash": "0dd83355e988b7f33093d32836b313228ae7ef25d1303809bca6155471feb58a"
+          "postProcessHash": "97d2c0ef1208f21a8cf053699c4100d75b019cada4457fad51cf47196bad1edd"
+        },
+        "es": {
+          "updatedAt": "2026-11-18T00:06:36.166Z",
+          "fileName": "docs.json",
+          "postProcessHash": "97d2c0ef1208f21a8cf053699c4100d75b019cada4457fad51cf47196bad1edd"
+        },
+        "ar": {
+          "updatedAt": "2026-11-18T00:06:36.286Z",
+          "fileName": "docs.json",
+          "postProcessHash": "97d2c0ef1208f21a8cf053699c4100d75b019cada4457fad51cf47196bad1edd"
         },
         "ko": {
-          "updatedAt": "2026-11-17T22:52:27.638Z",
+          "updatedAt": "2026-11-18T00:06:36.444Z",
           "fileName": "docs.json",
-          "postProcessHash": "0dd83355e988b7f33093d32836b313228ae7ef25d1303809bca6155471feb58a"
+          "postProcessHash": "97d2c0ef1208f21a8cf053699c4100d75b019cada4457fad51cf47196bad1edd"
         }
       },
       "fileName": "docs.json"
@@ -150207,47 +150207,47 @@
     },
     {
       "fileId": "51fdf850ac4e575c009e95fcf223dd0f949457286851879e67b343ba2d555ea8",
-      "versionId": "72a9b03202c791147a9bfd2099b6e4f93803fc9cd31181c724742b862f3bb970",
+      "versionId": "f77ac1527310b5279285eb71b4e88e04e9b4de182077db3583fe06f781ae72ce",
       "translations": {
-        "es": {
-          "updatedAt": "2026-11-17T19:23:10.082Z",
-          "fileName": "es/products/cloud/guides/security/connectivity/org-network-connectivity.mdx",
-          "postProcessHash": "bffc924d6d0992bde7d84417b1eb31a98b71891f79bdf5dd1e4764d2fb9ee8c6"
-        },
-        "ja": {
-          "updatedAt": "2026-11-17T19:23:10.082Z",
-          "fileName": "ja/products/cloud/guides/security/connectivity/org-network-connectivity.mdx",
-          "postProcessHash": "34c53e231900f82b453fab90c8595fea51724e3f269dda54a5decca895dd0fb6"
-        },
-        "ko": {
-          "updatedAt": "2026-11-17T19:23:10.082Z",
-          "fileName": "ko/products/cloud/guides/security/connectivity/org-network-connectivity.mdx",
-          "postProcessHash": "2d2c916000c2733d274d271a811177918fb0b2c2adf73298bfeb8c8bc18371ff"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-11-17T19:23:10.082Z",
-          "fileName": "pt-BR/products/cloud/guides/security/connectivity/org-network-connectivity.mdx",
-          "postProcessHash": "5a98258e47aeaa5517ad7b544e715d75e40a31c8dc0f357ae9bd9fa511b75699"
-        },
         "ru": {
-          "updatedAt": "2026-11-17T19:23:10.083Z",
+          "updatedAt": "2026-11-18T00:06:35.483Z",
           "fileName": "ru/products/cloud/guides/security/connectivity/org-network-connectivity.mdx",
-          "postProcessHash": "8f5812b382e066b08af34acd37f5ad33a0819c75dad016fc3c3dcdee553c16bd"
+          "postProcessHash": "f9be3b997f0845d410f1d69328ad352cf385bdda986cc90b58f58c47b99ae96b"
         },
         "zh": {
-          "updatedAt": "2026-11-17T19:23:10.083Z",
+          "updatedAt": "2026-11-18T00:06:35.483Z",
           "fileName": "zh/products/cloud/guides/security/connectivity/org-network-connectivity.mdx",
-          "postProcessHash": "b2eff0ec804de49a61db505c2274a256fbbcd1cec6d92177489073b1cfd1353d"
+          "postProcessHash": "040f52a78352e3a43edf701d57c35da607b4e9bb682c2b510c96d2830f10b323"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-18T00:06:35.484Z",
+          "fileName": "pt-BR/products/cloud/guides/security/connectivity/org-network-connectivity.mdx",
+          "postProcessHash": "2b6d00fe9069373f740d6578d64fd4155abda100c4463132fe8e9e680fc95bfa"
+        },
+        "ja": {
+          "updatedAt": "2026-11-18T00:06:35.484Z",
+          "fileName": "ja/products/cloud/guides/security/connectivity/org-network-connectivity.mdx",
+          "postProcessHash": "c86910277b4cfed06116c84ff808ea74e727972c6aee62abc6733c5235811082"
         },
         "ar": {
-          "updatedAt": "2026-11-17T19:23:10.083Z",
+          "updatedAt": "2026-11-18T00:06:35.484Z",
           "fileName": "ar/products/cloud/guides/security/connectivity/org-network-connectivity.mdx",
-          "postProcessHash": "e174aed3cb3216594792ec0c3ab35d6e50823d764d8c8b3e1e2f84079111ae1f"
+          "postProcessHash": "be8976650e4d0c1e8a609a0dcfdf4ffb9242011813c8bb3b25985ccd417bf02b"
+        },
+        "ko": {
+          "updatedAt": "2026-11-18T00:06:35.485Z",
+          "fileName": "ko/products/cloud/guides/security/connectivity/org-network-connectivity.mdx",
+          "postProcessHash": "ce89d8ee4568973fdb2d1c54921b6abb563de0d1d7feabd84ddb9fe983ad3b5b"
         },
         "fr": {
-          "updatedAt": "2026-11-17T19:23:10.083Z",
+          "updatedAt": "2026-11-18T00:06:35.607Z",
           "fileName": "fr/products/cloud/guides/security/connectivity/org-network-connectivity.mdx",
-          "postProcessHash": "3b7525b4ffde1b705876c7fe321c5e98392f677ad13b70985b3d3dea50c89a82"
+          "postProcessHash": "51475287218b9cefd9c84dc57fbc14bbcae37d7a81ff1abca28eb872de335e72"
+        },
+        "es": {
+          "updatedAt": "2026-11-18T00:06:35.829Z",
+          "fileName": "es/products/cloud/guides/security/connectivity/org-network-connectivity.mdx",
+          "postProcessHash": "4bb5aa236c098f6d29c90ee3f6e9ca1d567eecdb3a30214480880b8882ecdcae"
         }
       },
       "fileName": "products/cloud/guides/security/connectivity/org-network-connectivity.mdx"
