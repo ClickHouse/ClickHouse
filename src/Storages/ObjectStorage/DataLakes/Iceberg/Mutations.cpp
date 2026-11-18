@@ -37,6 +37,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
@@ -170,8 +171,9 @@ static std::unique_ptr<WriteBuffer> writePositionDeleteFile(
     const std::optional<FormatSettings> & format_settings,
     PartitionFiles & partition_files)
 {
-    DeleteFileWriteResult result;
-    result.path = generator.generatePositionDeleteFile();
+    /// Registered before the object is created, so that a failed mutation removes it.
+    auto & result = partition_files.files.emplace_back(DeleteFileWriteResult{.path = generator.generatePositionDeleteFile()});
+    auto & statistics = partition_files.statistics.emplace_back(IcebergPositionDeleteTransform::getSchemaFields());
 
     auto write_buffer = object_storage->writeObject(
         StoredObject(path_resolver.resolve(result.path)),
@@ -193,7 +195,6 @@ static std::unique_ptr<WriteBuffer> writePositionDeleteFile(
     auto output_format = FormatFactory::instance().getOutputFormat(
         write_format, *write_buffer, delete_file_sample_block, context, format_settings, format_filter_info);
 
-    DataFileStatistics statistics(IcebergPositionDeleteTransform::getSchemaFields());
     const size_t max_block_size = context->getSettingsRef()[Setting::max_block_size];
     const auto & file_path_column_description = delete_file_sample_block.getByPosition(0);
     const auto & position_column_description = delete_file_sample_block.getByPosition(1);
@@ -205,6 +206,9 @@ static std::unique_ptr<WriteBuffer> writePositionDeleteFile(
     const auto end = positions.end();
     while (it != end)
     {
+        /// The read pipeline, which checks for a killed query or a timeout, has finished.
+        CurrentThread::checkIfNotCancelled();
+
         auto position_column = ColumnInt64::create();
         auto & position_data = position_column->getData();
         position_data.reserve(std::min<UInt64>(max_block_size, num_positions - written_positions));
@@ -241,9 +245,6 @@ static std::unique_ptr<WriteBuffer> writePositionDeleteFile(
     /// Take the size before `preFinalize`, after which a small file's buffer may report 0.
     result.total_bytes = write_buffer->count();
     write_buffer->preFinalize();
-
-    partition_files.files.push_back(std::move(result));
-    partition_files.statistics.push_back(std::move(statistics));
     return write_buffer;
 }
 
@@ -431,6 +432,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
             }
             for (auto & upload : pending_uploads)
                 finishDeleteFileUpload(upload, object_storage, path_resolver);
+            CurrentThread::checkIfNotCancelled();
         }
         catch (...)
         {
