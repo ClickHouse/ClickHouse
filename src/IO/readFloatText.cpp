@@ -1054,6 +1054,24 @@ template <typename T> bool tryReadFloatTextExtNoExponent(T & x, ReadBuffer & in,
 }
 
 
+template <typename T>
+bool tryParseFloatFromPaddedRange(T & x, PaddedRange range)
+{
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for tryParseFloatFromPaddedRange must be float or double");
+    if (range.begin() == range.end())
+        return false;
+    T value{};
+    /// A non-empty `PaddedRange` comes from storage whose type guarantees the padding.
+    auto res = parseFloatFromBuffer(value, range.begin(), range.end(), /* padded = */ true);
+    if ((res.ec != std::errc() && res.ec != std::errc::result_out_of_range) || res.ptr != range.end())
+        return false;
+    x = value;
+    return true;
+}
+
+template bool tryParseFloatFromPaddedRange<Float32>(Float32 &, PaddedRange);
+template bool tryParseFloatFromPaddedRange<Float64>(Float64 &, PaddedRange);
+
 template void readFloatTextPrecise<BFloat16>(BFloat16 &, ReadBuffer &);
 template void readFloatTextPrecise<Float32>(Float32 &, ReadBuffer &);
 template void readFloatTextPrecise<Float64>(Float64 &, ReadBuffer &);

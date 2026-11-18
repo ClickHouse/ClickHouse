@@ -69,6 +69,7 @@
 #include <Functions/toFixedString.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/readFloatText.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/parseDateTimeBestEffort.h>
 #include <Interpreters/Context.h>
@@ -1593,6 +1594,20 @@ struct ConvertThroughParsing
                 /// and `isAllRead` skips it.
                 trimRight(text, '\0');
             }
+            if constexpr (std::is_same_v<FromDataType, DataTypeString>
+                && (std::is_same_v<typename ToDataType::FieldType, Float32> || std::is_same_v<typename ToDataType::FieldType, Float64>))
+            {
+                /// A row that is exactly one number is parsed straight from the column; anything else takes the generic path below, which also reports errors.
+                if (settings.precise_float_parsing
+                    && tryParseFloatFromPaddedRange(vec_to[i], PaddedRange(*chars, current_offset, text.size())))
+                {
+                    if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
+                        (*vec_null_map_to)[i] = false;
+                    current_offset = next_offset;
+                    continue;
+                }
+            }
+
             ReadBufferFromMemory read_buffer(text);
             read_buffer.setPaddedStorage(*chars, current_offset, text.size());
 
