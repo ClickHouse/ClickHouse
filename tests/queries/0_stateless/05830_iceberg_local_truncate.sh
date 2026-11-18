@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 # Tag no-fasttest: requires `IcebergLocal` (USE_AVRO).
+# Tag no-replicated-database: IcebergLocal in non-replicated; TRUNCATE TABLE runs on every replica on the same table path.
 
 # `TRUNCATE` of an Iceberg table without a catalog adds one `DELETE` snapshot.
 # The earlier snapshots stay readable, and the next writer builds on the truncate snapshot.
