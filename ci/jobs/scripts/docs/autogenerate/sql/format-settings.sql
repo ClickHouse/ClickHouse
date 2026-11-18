@@ -88,7 +88,6 @@ WITH
 '---
 title: ''Format Settings''
 sidebar_label: ''Format Settings''
-slug: /operations/settings/formats
 toc_max_heading_level: 2
 description: ''Settings which control input and output formats.''
 doc_type: ''reference''

@@ -213,7 +213,6 @@ def load_cloud_changelogs(
         current_path,
         docs_root,
         {
-            "slug": "/whats-new/changelog/cloud",
             "sidebarTitle": str(current.year),
             "title": f"Cloud changelog - {current.year}",
             "description": (
@@ -246,7 +245,6 @@ def load_cloud_changelogs(
             path,
             docs_root,
             {
-                "slug": f"/whats-new/cloud/{year}",
                 "sidebarTitle": str(year),
                 "title": f"Cloud changelog - {year}",
                 "description": f"ClickHouse Cloud changelog for {year}",
@@ -435,7 +433,6 @@ def load_oss_changelog(
         target_path,
         docs_root,
         {
-            "slug": "/whats-new/changelog/",
             "sidebarTitle": str(year),
             "title": f"Changelog {year}",
             "description": f"Changelog for {year}",
@@ -459,7 +456,6 @@ def load_oss_changelog(
             path,
             docs_root,
             {
-                "slug": f"/whats-new/changelog/{archive_year}",
                 "sidebarTitle": str(archive_year),
                 "title": f"{archive_year} Changelog",
                 "description": f"Changelog for {archive_year}",

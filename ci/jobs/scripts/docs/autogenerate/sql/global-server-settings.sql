@@ -67,7 +67,6 @@ which cannot be changed at the session or query level.''
 keywords: [''global server settings'']
 sidebar_label: ''Server Settings''
 sidebar_position: 57
-slug: /operations/server-configuration-parameters/settings
 title: ''Server Settings''
 doc_type: ''reference''
 ---
