@@ -977,15 +977,17 @@ WRITE_KEYWORDS = {
     "CREATE", "DROP", "RENAME", "EXCHANGE", "ATTACH", "DETACH", "KILL",
     "BACKUP", "RESTORE",
 }
+
+
+def query_writes(q):
+    """Whether running a measured query can change what its next run reads."""
+    return q["kind"] != "sql" or any(first_keyword(s) in WRITE_KEYWORDS for s in q["statements"])
+
+
 stop_merges = (
     args.stop_merges
     and root.attrib.get("keep_merges_running", "0") in ("0", "false", "")
-    and all(
-        q["kind"] == "sql"
-        and not any(first_keyword(s) in WRITE_KEYWORDS for s in q["statements"])
-        for q in test_queries
-        if not q["disabled"]
-    )
+    and not any(query_writes(q) for q in test_queries if not q["disabled"])
 )
 
 reportStageEnd("before-connect")
@@ -1518,6 +1520,8 @@ for query_index in queries_to_run:
         query_display_name = f"{query_display_name[:1000]}...({query_index})"
 
     print(f"display-name\t{query_index}\t{tsv_escape(query_display_name)}")
+    if not query_writes(q_item):
+        print(f"read-only\t{query_index}")
 
     if coverage:
         def execute_coverage_query(run):
