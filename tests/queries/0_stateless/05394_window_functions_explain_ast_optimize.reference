@@ -1,0 +1,18 @@
+-- { echoOn }
+EXPLAIN AST optimize = 1 SELECT sum(number) OVER () FROM numbers(3);
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 2)
+   ExpressionList (children 1)
+    Function sum (alias sum(number) OVER ()) (children 2)
+     ExpressionList (children 1)
+      Identifier __table1.number
+     WindowDefinition
+   TablesInSelectQuery (children 1)
+    TablesInSelectQueryElement (children 1)
+     TableExpression (children 1)
+      Function numbers (alias __table1) (children 1)
+       ExpressionList (children 1)
+        Literal UInt64_3
+EXPLAIN SYNTAX INSERT INTO FUNCTION null('x UInt64') SELECT sum(number) OVER () FROM numbers(3);
+INSERT INTO FUNCTION `null`(\'x UInt64\') SELECT sum(number) OVER ()\nFROM numbers(3)

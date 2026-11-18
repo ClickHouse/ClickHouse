@@ -5,6 +5,7 @@
 #include <IO/parseHTTPDate.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/NetException.h>
 #include <Common/maskURIPassword.h>
 #include <Poco/Net/NetException.h>
@@ -68,6 +69,15 @@ bool isQueryTimeLimitReached()
             return !query_status->checkTimeLimit();
 
     return false;
+}
+
+/// The credentials that `prepareRequest` puts into the headers of a request, see `requestCredentialSecrets`.
+Strings headerCredentialSecrets(const HTTPHeaderEntries & entries)
+{
+    Poco::Net::HTTPRequest request;
+    for (const auto & [header, value] : entries)
+        request.set(header, value);
+    return requestCredentialSecrets(request);
 }
 
 }
@@ -307,7 +317,15 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
 
     ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPRequestsSent);
 
-    auto body_out = sendHTTPRequest(*session, request, buffer_size);
+    /// Without these limits, the response header gets the small defaults of `Poco`, for example 8 KiB for a field value.
+    const auto & http_settings = read_settings.http_settings;
+    auto to_limit = [](size_t value) { return static_cast<int>(std::min<size_t>(value, std::numeric_limits<int>::max())); };
+    const Poco::Net::HTTPHeaderLimits response_header_limits{
+        .fields = to_limit(http_settings.max_fields),
+        .name_length = to_limit(http_settings.max_field_name_size),
+        .value_length = to_limit(http_settings.max_field_value_size)};
+
+    auto body_out = sendHTTPRequest(*session, request, buffer_size, nullptr, nullptr, response_header_limits);
     if (out_stream_callback && with_request_body)
         out_stream_callback(*body_out);
     body_out->finalize();
@@ -316,7 +334,7 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
     /// buffer needs none of its own.
     auto response_body = receiveHTTPResponse(session, response, use_external_buffer ? 0 : buffer_size);
 
-    assertResponseIsOk(maskedURI(current_uri), response, *response_body, allow_redirects, requestCredentialSecrets(request));
+    assertResponseIsOk(current_uri.toString(), response, *response_body, allow_redirects, requestCredentialSecrets(request));
 
     return response_body;
 }
@@ -653,10 +671,11 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
                 /// it is retriable error
                 throw HTTPException(
                     ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-                    maskedURI(current_uri),
+                    current_uri.toString(),
                     Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
                     response.getReason(),
-                    explanation);
+                    explanation,
+                    headerCredentialSecrets(http_header_entries));
             }
             throw Exception(
                 ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
@@ -664,7 +683,7 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
                 getOffset(),
                 read_range.end ? toString(*read_range.end) : "-",
                 toString(response.getStatus()),
-                response.getReason());
+                scrubRequestCredentials(response.getReason(), current_uri.toString(), headerCredentialSecrets(http_header_entries)));
         }
         if (read_range.end)
         {
@@ -719,7 +738,7 @@ bool ReadWriteBufferFromHTTP::nextImpl()
                 }
                 else
                 {
-                    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+                    setWorkingBuffer(impl->buffer(), impl->offset());
                 }
             }
 
@@ -734,7 +753,7 @@ bool ReadWriteBufferFromHTTP::nextImpl()
 
             next_result = impl->next();
 
-            BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+            setWorkingBuffer(impl->buffer(), impl->offset());
 
             offset_from_begin_pos += working_buffer.size();
 
@@ -781,10 +800,11 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
 
                 throw HTTPException(
                     ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-                    maskedURI(current_uri),
+                    current_uri.toString(),
                     Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
                     response.getReason(),
-                    explanation);
+                    explanation,
+                    headerCredentialSecrets(http_header_entries));
             }
 
             copyFromReadBufferWithProgressCallback(*result, to, n, progress_callback, &bytes_copied, &is_canceled);
@@ -1048,6 +1068,9 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
     if (response.has("Last-Modified"))
         res.last_modified = tryParseHTTPDate(response.get("Last-Modified"));
 
+    if (response.has("Date"))
+        res.response_date = tryParseHTTPDate(response.get("Date"));
+
     return res;
 }
 
@@ -1110,7 +1133,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
     return ptr;
 }
 
-void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri)
+void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri, const HTTPHeaderFilter & header_filter)
 {
     credentials.clear();
 
@@ -1128,6 +1151,8 @@ void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const 
     {
         credentials.setUsername(user_info);
     }
+
+    header_filter.checkBasicCredentials(credentials);
 }
 
 }

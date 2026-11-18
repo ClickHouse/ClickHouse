@@ -32,7 +32,9 @@ def test_single_join_exceeding_limit_is_caught():
         settings={
             "max_threads": 256,
             "join_algorithm": "parallel_hash",
-            "max_memory_usage": "16Mi",
+            # One join's parallel layout is about 1 MiB, below the 4 MiB a thread may leave uncharged,
+            # so `max_untracked_memory` stays at its default.
+            "max_memory_usage": "512Ki",
         },
     )
     assert "MEMORY_LIMIT_EXCEEDED" in error

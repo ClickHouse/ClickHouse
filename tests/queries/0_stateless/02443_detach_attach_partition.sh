@@ -19,7 +19,7 @@ $CLICKHOUSE_CLIENT -q "
 
 function thread_detach()
 {
-    while true; do
+    while clickhouse_test_time_left; do
         # Randomly choose one of the two tables each time.
         { $CLICKHOUSE_CLIENT -m 2>/dev/null <<SQL
 ALTER TABLE alter_table$((RANDOM % 2)) DETACH PARTITION ID 'all' SETTINGS log_comment = 'threaded detach';
@@ -30,7 +30,7 @@ SQL
 }
 function thread_attach()
 {
-    while true; do
+    while clickhouse_test_time_left; do
         # Randomly choose one of the two tables each time.
         { $CLICKHOUSE_CLIENT -m 2>/dev/null <<SQL
 ALTER TABLE alter_table$((RANDOM % 2)) ATTACH PARTITION ID 'all' SETTINGS log_comment = 'threaded attach';

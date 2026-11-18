@@ -250,6 +250,47 @@ inline UInt128 sipHash128(const char * data, const size_t size)
     return sipHash128Keyed(0, 0, data, size);
 }
 
+/// The same as `sipHash128`, for data that is followed by at least 7 readable bytes, such as a value of a padded column
+/// (`PaddedPODArray`). The last partial word is read with one load and a mask, instead of a jump on its length to a
+/// load of every byte, which is mispredicted when the lengths of the strings vary.
+inline UInt128 sipHash128Padded(const char * data, const size_t size)
+{
+    UInt64 v0 = 0x736f6d6570736575ULL;
+    UInt64 v1 = 0x646f72616e646f6dULL;
+    UInt64 v2 = 0x6c7967656e657261ULL;
+    UInt64 v3 = 0x7465646279746573ULL;
+
+    const char * end = data + size;
+    for (; end - data >= 8; data += 8)
+    {
+        const UInt64 word = unalignedLoadLittleEndian<UInt64>(data);
+        v3 ^= word;
+        SIPROUND;
+        SIPROUND;
+        v0 ^= word;
+    }
+
+    /// The remaining bytes in the low bytes, and the size modulo 256 in the high byte, as in `SipHash::finalize`.
+    const size_t remaining = end - data;
+    UInt64 last = remaining ? unalignedLoadLittleEndian<UInt64>(data) & ((1ULL << (remaining * 8)) - 1) : 0;
+    last |= static_cast<UInt64>(static_cast<UInt8>(size)) << 56;
+    v3 ^= last;
+    SIPROUND;
+    SIPROUND;
+    v0 ^= last;
+
+    v2 ^= 0xff;
+    SIPROUND;
+    SIPROUND;
+    SIPROUND;
+    SIPROUND;
+
+    UInt128 res;
+    res.items[UInt128::_impl::little(0)] = v0 ^ v1;
+    res.items[UInt128::_impl::little(1)] = v2 ^ v3;
+    return res;
+}
+
 inline String sipHash128String(const char * data, const size_t size)
 {
     return getHexUIntLowercase(sipHash128(data, size));

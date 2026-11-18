@@ -4,7 +4,6 @@
 --
 -- The settings below are pinned for the same reason as in 05193_top_k_through_join_final_reverse_order.
 
-SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
 SET optimize_read_in_order = 1;
 SET query_plan_read_in_order_through_join = 1;

@@ -9,8 +9,6 @@ CREATE TABLE r (`x` LowCardinality(Nullable(UInt32)), `s` Nullable(String)) ENGI
 INSERT INTO r SELECT number, toString(number) FROM numbers(2, 8);
 INSERT INTO r VALUES (NULL, NULL);
 
-SET enable_analyzer = 1;
-
 SELECT x FROM t FULL JOIN r USING (x) ORDER BY ALL
 ;
 

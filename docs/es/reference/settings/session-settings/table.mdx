@@ -14,9 +14,7 @@ import { CloudOnlyBadge } from "/snippets/es/components/CloudOnlyBadge/CloudOnly
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="table_engine_read_through_distributed_cache">
-  ## table_engine_read_through_distributed_cache
-</div>
+## table_engine_read_through_distributed_cache {#table_engine_read_through_distributed_cache}
 
 <CloudOnlyBadge />
 
@@ -24,11 +22,9 @@ Estas configuraciones están disponibles en [system.settings](/es/reference/syst
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
 
-Solo tiene efecto en ClickHouse Cloud. Permite leer desde distributed cache mediante motores de tabla / funciones de tabla (s3, azure, etc.)
+Solo tiene efecto en ClickHouse Cloud. Permite leer desde distributed cache mediante motores de tabla / funciones de tabla (s3, azure, etc.). La caché usa como clave el ETag del objeto, de modo que un objeto sobrescrito en su misma ubicación no se sirva desactualizado. Los objetos cuyo ETag esté ausente o no sea un identificador de contenido fuerte se leen directamente desde el almacenamiento de objetos.
 
-<div id="table_function_remote_max_addresses">
-  ## table_function_remote_max_addresses
-</div>
+## table_function_remote_max_addresses {#table_function_remote_max_addresses}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
