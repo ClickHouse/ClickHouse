@@ -31,12 +31,12 @@ SELECT id FROM tab WHERE e['k'] = 'n' ORDER BY id;
 SELECT id FROM tab WHERE e['k'] IN ('n') ORDER BY id;
 SELECT id FROM tab WHERE e['k'] != 'm' ORDER BY id;
 SELECT id FROM tab WHERE e.key_k = 'n' ORDER BY id;
-SELECT id FROM tab WHERE e['k'] = 'm' ORDER BY id;
+SELECT id FROM tab WHERE e['k'] = 'm' ORDER BY id SETTINGS force_data_skipping_indices = 'idx_e';
 SELECT id FROM tab WHERE e['k'] = 'o' ORDER BY id SETTINGS force_data_skipping_indices = 'idx_e';
 SELECT id FROM tab WHERE t['k'].x = 'n' ORDER BY id;
 SELECT id FROM tab WHERE t['k'] = tuple('n') ORDER BY id;
 SELECT id FROM tab WHERE j['k'].x = 'n' ORDER BY id;
 SELECT id FROM tab WHERE d['k'] = toDate32('1970-01-01') ORDER BY id;
-SELECT id FROM tab WHERE d['k'] = toDate32('1900-01-01') ORDER BY id;
+SELECT id FROM tab WHERE d['k'] = toDate32('1900-01-01') ORDER BY id SETTINGS force_data_skipping_indices = 'idx_d';
 
 DROP TABLE tab;
