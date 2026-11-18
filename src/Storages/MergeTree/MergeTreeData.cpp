@@ -15973,11 +15973,16 @@ void MergeTreeData::clearVectorSimilarityIndexCache() const
     if (!vector_similarity_index_cache)
         return;
 
-    /// The cache is keyed by the paths of the parts. Take the parts in all states, not only the active ones: the entries of an
+    /// The cache is keyed by the paths of the parts. Take the parts in all states (except PreActive): the entries of an
     /// outdated part stay in the cache until the part is destroyed or the cleanup thread clears the caches of the part.
     std::unordered_set<String> paths_to_data_parts;
-    for (const auto & part : getAllDataPartsVector())
-        paths_to_data_parts.insert(part->getPathForCacheKey());
+    {
+        auto parts_lock = readLockParts();
+        for (const auto & part : data_parts_by_info)
+            /// Skip `PreActive` parts to avoid a race condition. Also, queries never read PreActive parts, so there can be no cache entries.
+            if (part->getState() != DataPartState::PreActive)
+                paths_to_data_parts.insert(part->getPathForCacheKey());
+    }
 
     vector_similarity_index_cache->removeEntriesFromCache(paths_to_data_parts);
 }
