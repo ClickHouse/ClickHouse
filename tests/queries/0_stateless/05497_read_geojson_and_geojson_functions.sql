@@ -74,6 +74,17 @@ SELECT
     variantElement(readGeoJSON(CAST(('Point', [0.1, 2]), 'Tuple(type String, coordinates Array(BFloat16))')), 'Point') = (toFloat64(toBFloat16(0.1)), 2),
     -- A number in a `JSON` value is read as its text, as in a `String`.
     variantElement(readGeoJSON('{"type":"Point","coordinates":[0.1,2]}'::JSON(coordinates Array(Float32))), 'Point') = (0.1, 2);
+-- Also in `Variant` and `Dynamic`, where the alternatives can collide after widening, and in an ignored member.
+SELECT
+    variantElement(readGeoJSON(CAST(('Point', [toFloat32(0.1), toFloat32(2)]), 'Tuple(type String, coordinates Array(Variant(Float32, Float64)))')), 'Point') = (toFloat64(toFloat32(0.1)), 2),
+    variantElement(readGeoJSON(CAST(('Point', [toFloat32(0.1), toFloat32(2)]), 'Tuple(type String, coordinates Array(Variant(Float32, String)))')), 'Point') = (toFloat64(toFloat32(0.1)), 2),
+    variantElement(readGeoJSON(CAST(('Point', [0.5, 2], ['x']), 'Tuple(type String, coordinates Array(Float64), bbox Array(Variant(Float32, String)))')), 'Point') = (0.5, 2),
+    variantElement(readGeoJSON(CAST(('Point', [toFloat32(0.1)::Dynamic, toFloat32(2)::Dynamic]), 'Tuple(type String, coordinates Array(Dynamic))')), 'Point') = (toFloat64(toFloat32(0.1)), 2),
+    variantElement(readGeoJSON(CAST(('Point', [toFloat32(0.1)::Dynamic(max_types = 0), toFloat32(2)::Dynamic(max_types = 0)]), 'Tuple(type String, coordinates Array(Dynamic(max_types = 0)))')), 'Point') = (toFloat64(toFloat32(0.1)), 2),
+    variantElement(readGeoJSON(CAST(('Point', [toFloat32(0.1), toFloat32(2)]::Dynamic), 'Tuple(type String, coordinates Dynamic)')), 'Point') = (toFloat64(toFloat32(0.1)), 2)
+SETTINGS allow_suspicious_variant_types = 1;
+SELECT variantElement(readGeoJSON(CAST(('Point', [0.1, 2]), 'Tuple(type String, coordinates Array(Variant(Float32, Float64)))')), 'Point') = (0.1, 2)
+SETTINGS allow_suspicious_variant_types = 1;
 -- A geometry object in a `JSON` column is a sub-object, not a path.
 SELECT readGeoJSON(j.geometry), readGeoJSON(j.^geometry) FROM (SELECT '{"geometry":{"type":"Point","coordinates":[1,2]}}'::JSON AS j);
 -- The type that schema inference gives for a geometry in JSON Lines.

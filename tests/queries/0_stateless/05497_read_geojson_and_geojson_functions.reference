@@ -43,6 +43,8 @@ Geometry	String	Nullable(String)
 (0.5,2)
 1	1
 1	1	1	1
+1	1	1	1	1	1
+1
 \N	(1,2)
 [[(0,0),(1,0),(1,1),(0,0)]]
 -- settings

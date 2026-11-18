@@ -1,22 +1,32 @@
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/SipHash.h>
+#include <Common/checkStackSize.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/transformTypesRecursively.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/geometry.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/writeJSONNumber.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/castColumn.h>
 #include <Processors/Formats/Impl/GeoJSONRowInputFormat.h>
 #include <Processors/Formats/Impl/GeoJSONRowOutputFormat.h>
 
@@ -30,6 +40,126 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Writes a `JSON` or `Tuple` value as text to be read as GeoJSON, with every floating-point number as `Float64`,
+/// at any depth, as a cast does: the shortest text of a `Float32` reads back as another `Float64`.
+/// Other values are written by their serialization. Typed paths of `JSON` are written as their text, as a cast
+/// between `JSON` types does.
+void writeValueAsJSON(const IColumn & column, const DataTypePtr & type, size_t row, WriteBuffer & out, const FormatSettings & settings)
+{
+    /// The nesting of `Dynamic` values is not limited by the type.
+    checkStackSize();
+
+    /// A type with its own text, such as `Bool`, is written as it is.
+    if (type->getCustomSerialization())
+    {
+        type->getDefaultSerialization()->serializeTextJSON(column, row, out, settings);
+    }
+    else if (const auto * float32 = typeid_cast<const ColumnFloat32 *>(&column))
+    {
+        writeJSONNumber(static_cast<Float64>(float32->getData()[row]), out, settings);
+    }
+    else if (const auto * bfloat16 = typeid_cast<const ColumnBFloat16 *>(&column))
+    {
+        writeJSONNumber(static_cast<Float64>(bfloat16->getData()[row]), out, settings);
+    }
+    else if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+    {
+        if (nullable->isNullAt(row))
+            writeCString("null", out);
+        else
+            writeValueAsJSON(nullable->getNestedColumn(), removeNullable(type), row, out, settings);
+    }
+    else if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
+    {
+        writeValueAsJSON(
+            *low_cardinality->getDictionary().getNestedColumn(),
+            assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType(),
+            low_cardinality->getIndexes().getUInt(row),
+            out,
+            settings);
+    }
+    else if (const auto * array = typeid_cast<const ColumnArray *>(&column))
+    {
+        const auto & nested_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
+        const auto & offsets = array->getOffsets();
+        writeChar('[', out);
+        for (size_t i = offsets[row - 1]; i < offsets[row]; ++i)
+        {
+            if (i != offsets[row - 1])
+                writeChar(',', out);
+            writeValueAsJSON(array->getData(), nested_type, i, out, settings);
+        }
+        writeChar(']', out);
+    }
+    else if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
+    {
+        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*type);
+        const bool as_object = tuple_type.hasExplicitNames();
+        writeChar(as_object ? '{' : '[', out);
+        for (size_t i = 0; i < tuple->tupleSize(); ++i)
+        {
+            if (i != 0)
+                writeChar(',', out);
+            if (as_object)
+            {
+                writeJSONString(tuple_type.getElementNames()[i], out, settings);
+                writeChar(':', out);
+            }
+            writeValueAsJSON(tuple->getColumn(i), tuple_type.getElement(i), row, out, settings);
+        }
+        writeChar(as_object ? '}' : ']', out);
+    }
+    else if (const auto * variant = typeid_cast<const ColumnVariant *>(&column))
+    {
+        const auto discriminator = variant->globalDiscriminatorAt(row);
+        if (discriminator == ColumnVariant::NULL_DISCRIMINATOR)
+            writeCString("null", out);
+        else
+            writeValueAsJSON(
+                variant->getVariantByGlobalDiscriminator(discriminator),
+                assert_cast<const DataTypeVariant &>(*type).getVariant(discriminator),
+                variant->offsetAt(row),
+                out,
+                settings);
+    }
+    else if (const auto * dynamic = typeid_cast<const ColumnDynamic *>(&column))
+    {
+        const auto & variant_column = dynamic->getVariantColumn();
+        const auto discriminator = variant_column.globalDiscriminatorAt(row);
+        if (discriminator == ColumnVariant::NULL_DISCRIMINATOR)
+        {
+            writeCString("null", out);
+        }
+        else if (discriminator == dynamic->getSharedVariantDiscriminator())
+        {
+            /// A value of a type beyond the limit of `Dynamic` is stored as its type and value in binary.
+            ReadBufferFromMemory in(dynamic->getSharedVariant().getDataAt(variant_column.offsetAt(row)));
+            const auto value_type = decodeDataType(in);
+            if (isNothing(value_type))
+            {
+                writeCString("null", out);
+                return;
+            }
+            auto value = value_type->createColumn();
+            value_type->getDefaultSerialization()->deserializeBinary(*value, in, FormatSettings{});
+            writeValueAsJSON(*value, value_type, 0, out, settings);
+        }
+        else
+        {
+            writeValueAsJSON(
+                variant_column.getVariantByGlobalDiscriminator(discriminator),
+                assert_cast<const DataTypeVariant &>(*dynamic->getVariantInfo().variant_type).getVariant(discriminator),
+                variant_column.offsetAt(row),
+                out,
+                settings);
+        }
+    }
+    else
+    {
+        type->getDefaultSerialization()->serializeTextJSON(column, row, out, settings);
+    }
+}
 
 /// The geometries are read and written by the code of the `GeoJSON` format, so they follow the same rules and settings.
 class FunctionReadGeoJSON final : public IFunction
@@ -95,7 +225,6 @@ public:
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
         const IColumn * column = arguments[0].column.get();
-        ColumnPtr materialized;
         const NullMap * null_map = nullptr;
         if (const auto * nullable = typeid_cast<const ColumnNullable *>(column))
         {
@@ -103,28 +232,8 @@ public:
             null_map = &nullable->getNullMapData();
         }
 
-        auto type = removeNullable(arguments[0].type);
+        const auto type = removeNullable(arguments[0].type);
         const bool is_string = isString(type);
-        if (!is_string)
-        {
-            /// The shortest text of a `Float32` reads back as another `Float64`, so widen it first, as a cast does.
-            /// Typed paths of `JSON` are not widened: a cast between `JSON` types goes through text.
-            const auto widened_type = replaceNestedTypesInPair(type, type, [](const DataTypePtr & leaf, const DataTypePtr &) -> DataTypePtr
-            {
-                const WhichDataType which(leaf);
-                if (which.isFloat32() || which.isBFloat16())
-                    return std::make_shared<DataTypeFloat64>();
-                return leaf;
-            });
-            chassert(widened_type);
-            if (widened_type.get() != type.get())
-            {
-                materialized = castColumn({column->getPtr(), type, ""}, widened_type);
-                column = materialized.get();
-                type = widened_type;
-            }
-        }
-        const auto serialization = type->getDefaultSerialization();
         const auto discriminators = getGeoJSONGeometryDiscriminators(result_type);
 
         auto result = result_type->createColumn();
@@ -147,7 +256,7 @@ public:
             else
             {
                 WriteBufferFromString out(serialized);
-                serialization->serializeTextJSON(*column, row, out, text_settings);
+                writeValueAsJSON(*column, type, row, out, text_settings);
                 out.finalize();
                 text = serialized;
 
