@@ -804,7 +804,9 @@ When reading an object from S3 (or an S3-compatible store such as GCS), check th
     DECLARE(Bool, azure_validate_etag_on_read, true, R"(
 When reading a blob from Azure Blob Storage through the `azureBlobStorage` / `azureBlobStorageCluster` table functions or the `AzureBlobStorage` table engine, pin every `GET` request to the generation of the blob that was observed when it was listed by sending its `ETag` in `If-Match`, and check the `ETag` of the response. A single file read issues many ranged `GET` requests; if the blob is overwritten in place between them (for example by an external writer rewriting a fixed key), the reads can otherwise be stitched together from two different generations of the blob and surface as a corrupted checksum or parse error. The size recorded at listing time is also used as the right bound of the read, so it is only correct for the generation it was recorded for. When a mismatch is detected the read fails with `AZURE_OBJECT_CHANGED_DURING_READ` instead of returning inconsistent data. Disable only for workloads that intentionally read blobs that are being overwritten and can tolerate inconsistent reads. Not applied to the files of Iceberg tables that are read without an object metadata request (manifests, and Parquet and ORC data files read through a table), which are never overwritten.
 )", 0, \
-        {"26.10", false, true, "New setting to detect concurrent in-place overwrites of Azure blobs during a read by pinning every `GET` to the listed `ETag` with `If-Match` and validating the `ETag` of the response, like `s3_validate_etag_on_read` does for S3. `compatibility` with versions before 26.10 restores the previous behavior (no validation)."}) \
+        {"26.10", false, true, "The validation is enabled by default again: 26.9 does not have it."}, \
+        {"26.9", true, false, "26.9 does not have this validation, which was backported to 26.7 and 26.8 but not to 26.9."}, \
+        {"26.7", false, true, "New setting to detect concurrent in-place overwrites of Azure blobs during a read by pinning every `GET` to the listed `ETag` with `If-Match` and validating the `ETag` of the response, like `s3_validate_etag_on_read` does for S3. `compatibility` with earlier versions restores the previous behavior (no validation)."}) \
     DECLARE(Bool, azure_check_objects_after_upload, false, R"(
 Check each uploaded object in azure blob storage to be sure that upload was successful
 )", 0, \
@@ -3570,13 +3572,15 @@ Maximum number of fields in HTTP request headers, query parameters, and form dat
 
 Also limits the number of fields in the headers of the HTTP responses that ClickHouse reads as a client, for example in the `url` table function.
 )", 0, \
-        {"26.4", 1000000, 1000, "Reduce default to limit pre-authentication memory usage by HTTP connections."}) \
+        {"26.4", 1000, 1000, "The change was backported to 26.1 and is recorded there."}, \
+        {"26.1", 1000000, 1000, "Reduce default to limit pre-authentication memory usage by HTTP connections."}) \
     DECLARE(UInt64, http_max_field_name_size, 4 * 1024, R"(
 Maximum length of a field name in HTTP request headers, query parameters, and form data.
 
 Also limits the length of a field name in the headers of the HTTP responses that ClickHouse reads as a client, for example in the `url` table function.
 )", 0, \
-        {"26.4", 131072, 4096, "Reduce default to limit pre-authentication memory usage by HTTP connections."}) \
+        {"26.4", 4096, 4096, "The change was backported to 26.1 and is recorded there."}, \
+        {"26.1", 131072, 4096, "Reduce default to limit pre-authentication memory usage by HTTP connections."}) \
     DECLARE(UInt64, http_max_field_value_size, 128 * 1024, R"(
 Maximum length of a field value in HTTP request headers, query parameters, and form data.
 
@@ -3585,11 +3589,13 @@ Also limits the length of a field value in the headers of the HTTP responses tha
     DECLARE(UInt64, http_max_request_header_size, 10 * 1024 * 1024, R"(
 Maximum total size of all HTTP request headers (names and values combined) in bytes.
 )", 0, \
-        {"26.4", 0, 10485760, "New setting to limit total HTTP request header size before authentication."}) \
+        {"26.4", 10485760, 10485760, "The change was backported to 26.1 and is recorded there."}, \
+        {"26.1", 0, 10485760, "New setting to limit total HTTP request header size before authentication."}) \
     DECLARE(Seconds, http_headers_read_timeout, 30, R"(
 Maximum time in seconds to read all HTTP request headers. This is a total deadline for the entire header parsing phase, not a per-read timeout. Protects against slowloris-style attacks where a client trickles header data slowly to hold connections open.
 )", 0, \
-        {"26.4", 0, 30, "New setting to limit total time for reading HTTP request headers, protecting against slowloris attacks."}) \
+        {"26.4", 30, 30, "The change was backported to 26.1 and is recorded there."}, \
+        {"26.1", 0, 30, "New setting to limit total time for reading HTTP request headers, protecting against slowloris attacks."}) \
     DECLARE(Bool, http_skip_not_found_url_for_globs, true, R"(
 Skip URLs for globs with HTTP_NOT_FOUND error
 )", 0) \
@@ -5082,7 +5088,8 @@ Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means
     DECLARE(UInt64, backup_s3_expired_token_retry_timeout_ms, 120000, R"(
 Maximum time in milliseconds to retry an S3 request whose response identifies `ExpiredToken` during backup or restore. Retries also stop at `backup_restore_s3_retry_attempts`. Zero disables these retries. AWS S3 `HEAD` responses expose only a generic HTTP status, so this retry does not cover `HEAD` metadata requests.
 )", 0, \
-        {"26.10", 0, 120000, "Retry S3 backup and restore requests after an expired token; 0 restores the previous behavior."}) \
+        {"26.10", 120000, 120000, "The change was backported to 26.8 and is recorded there."}, \
+        {"26.8", 0, 120000, "Retry S3 backup and restore requests after an expired token; 0 restores the previous behavior."}) \
     DECLARE(UInt64, backup_restore_s3_retry_initial_backoff_ms, 25, R"(
 Initial backoff delay in milliseconds before the first retry attempt during backup and restore. Each subsequent retry increases the delay exponentially, up to the maximum specified by `backup_restore_s3_retry_max_backoff_ms`
 )", 0, \
@@ -8877,7 +8884,10 @@ Wait time to lock cache for space reservation in filesystem cache
     DECLARE(UInt64, filesystem_cache_wait_for_concurrent_download_timeout_milliseconds, 1000, R"(
 Maximum time to wait for a file segment which is being downloaded to the filesystem cache by a concurrent query. When the timeout is reached, the read bypasses the filesystem cache for that range and reads directly from remote storage, while the concurrent download continues to fill the cache. Value `0` means do not wait at all: bypass the cache immediately if the needed range is not downloaded yet. Lowering this value bounds the tail latency of cache-hit reads which would otherwise wait for another query's download pace at the cost of additional requests to remote storage.
 )", 0, \
-        {"26.8", 60000, 1000, "New setting to bound how long a read waits for a file segment being downloaded to the filesystem cache by a concurrent query; on timeout the read bypasses the cache instead of waiting indefinitely. The previous value 60000 corresponds to the old behavior (one full 60 s wait cycle on the downloader)."}) \
+        {"26.8", 1000, 1000, "The change was backported to 26.3 and 26.5 and is recorded there."}, \
+        {"26.5", 60000, 1000, "The bounded wait is the default again: 26.4 does not have this setting."}, \
+        {"26.4", 1000, 60000, "26.4 does not have this setting, which was backported to 26.3 and 26.5 but not to 26.4."}, \
+        {"26.3", 60000, 1000, "New setting to bound how long a read waits for a file segment being downloaded to the filesystem cache by a concurrent query; on timeout the read bypasses the cache instead of waiting indefinitely. The previous value 60000 corresponds to the old behavior (one full 60 s wait cycle on the downloader)."}) \
     DECLARE(Bool, filesystem_cache_prefer_bigger_buffer_size, true, R"(
 Prefer bigger buffer size if filesystem cache is enabled to avoid writing small file segments which deteriorate cache performance. On the other hand, enabling this setting might increase memory usage.
 )", 0, \
@@ -9932,9 +9942,10 @@ If enabled and the schema-id of an Iceberg manifest file is already registered f
 
 The manifest header schema is only a copy of the table schema at the time the manifest was written, and some writers (e.g. AWS S3 Tables maintenance jobs) have been observed storing degraded copies there. Other query engines resolve schemas from metadata.json and ignore divergent header copies, so the default follows them. A conflict between two metadata.json schema definitions still always fails the query.
 )", 0, \
-        {"26.10", false, true, "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.10 restores the previous strict behavior."}) \
+        {"26.10", true, true, "The change was backported to 26.8 and is recorded there."}, \
+        {"26.8", false, true, "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.8 restores the previous strict behavior."}) \
     DECLARE(Bool, optimize_distinct_in_order, true, R"(
-Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement
+Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement. It is not applied to a `FINAL` read that uses vertical `FINAL` (see `enable_vertical_final`), unless a `LIMIT` lets the `DISTINCT` stop reading early or the read is already in order for another reason, such as `ORDER BY`.
 )", 0) \
     DECLARE(Bool, optimize_limit_by_in_order, true, R"(
 Optimize `SELECT ... LIMIT N BY <cols>` queries when `<cols>` (in any order) form a prefix of the table's sorting key, or become one after `WHERE col = const` fixes leading columns. With this enabled the source reads data in primary-key order, so rows with equal values of the `BY` columns arrive adjacent to each other within each stream. When the data arrives in a single sorted stream, `LIMIT BY` filters it in streaming mode with O(1) memory, instead of building a hash table of every distinct combination of `BY` columns seen. When the sorted data arrives in multiple streams and the same `BY` values can appear in more than one of them, each stream is first prefiltered in streaming mode down to at most `LIMIT + OFFSET` rows per group, then the streams are combined and a final hash-based `LIMIT BY` deduplicates groups that span several streams. That final pass still keeps an entry for every distinct combination of `BY` columns, but it only processes the prefiltered rows.
@@ -10006,6 +10017,12 @@ The total number of bytes to read is estimated based on the collected statistics
 )", 0, \
         {"26.1", 0, 1_MiB, "Better default value derived from testing results"}, \
         {"25.12", 0, 0, "New setting"}) \
+    DECLARE(Bool, automatic_parallel_replicas_ignore_thresholds, false, R"(
+For testing of the automatic parallel replicas cost model - ignore the cap on how many threads a read can usefully occupy (derived from `merge_tree_min_bytes_per_task_for_remote_reading`), which otherwise clamps both sides of the comparison to the same value for a read too small to occupy `max_threads`, so that the comparison collapses to `0 > output_bytes / replicas` and the query is decided before the cost model is consulted.
+
+It deliberately does NOT touch `automatic_parallel_replicas_min_bytes_per_replica`: set that to 0 to disable that gate, which is what it is for. Nor does it change read task sizing, or suppress the recollection of statistics that have drifted - a decision made on stale statistics is not a decision made by the cost model.
+)", 0, \
+        {"26.11", false, false, "New setting: for testing, ignore the reading-thread cap of the automatic parallel replicas cost model so that small reads are decided by the comparison rather than short-circuited by the cap."}) \
     DECLARE(NonZeroUInt64, max_parallel_replicas, 1000, R"(
 The maximum number of replicas for each shard when executing a query.
 
@@ -10918,6 +10935,12 @@ Minimum estimated size of a build-side `String` column, the estimated number of 
     \
     /* ####################################################### */ \
     /* AI function settings */ \
+    DECLARE_WITH_ALIAS(Bool, allow_ai_functions, true, R"(
+Allow the use of AI functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`, `aiEmbed`, `aiSimilarity`). If disabled, a query that uses them throws an exception.
+)", 0, allow_experimental_ai_functions, \
+        {"26.11", true, true, "Added an alias for setting `allow_experimental_ai_functions`."}, \
+        {"26.9", false, true, "AI functions are beta and enabled by default. At the time the setting was named `allow_experimental_ai_functions`, which is now an alias of it. Keep the default regardless of `compatibility`.", CompatibilitySetting::Ignore}, \
+        {"26.4", false, false, "New setting. At the time the setting was named `allow_experimental_ai_functions`, which is now an alias of it."}) \
     DECLARE(UInt64, ai_function_request_timeout_sec, 60, R"(
 Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
 )", BETA, \
@@ -10925,8 +10948,8 @@ Timeout in seconds for individual HTTP requests made by AI functions (AI chat co
     DECLARE(UInt64, ai_function_max_retries, 3, R"(
 Maximum number of retry attempts for transient errors per individual API request. Each retry uses exponential backoff starting from `ai_function_retry_initial_delay_ms`. At most 5.
 )", BETA, \
-        {"26.11", 1, 3, "Retry a transient API error up to three times by default, to reduce load on an overloaded rate-limited provider under concurrent requests."}, \
-        {"26.9", 0, 1, "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."}, \
+        {"26.11", 3, 3, "The change was backported to 26.8 and is recorded there."}, \
+        {"26.8", 0, 3, "Retry a transient API error up to three times by default, so a 429 or 5xx from the provider does not fail the query and an overloaded rate-limited provider is retried under concurrent requests."}, \
         {"26.4", 0, 0, "New setting"}) \
     DECLARE(UInt64, ai_function_retry_initial_delay_ms, 1000, R"(
 Initial delay in milliseconds before the first retry of a failed AI function API request. The delay doubles on each subsequent attempt (exponential backoff). For example, with default settings: 1000ms, 2000ms, 4000ms. At most 10000.
@@ -10941,19 +10964,21 @@ Maximum total input (prompt) tokens across all AI function API calls in a single
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). Providers that omit token usage (notably HuggingFace TEI) cause the counter to stay at 0 — use `ai_function_max_api_calls_per_query` instead to bound such calls.
 )", BETA, \
-        {"26.10", 1000000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."}, \
+        {"26.10", 0, 0, "The change was backported to 26.7 and is recorded there."}, \
+        {"26.7", 1000000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."}, \
         {"26.4", 1000000, 1000000, "New setting"}) \
     DECLARE(UInt64, ai_function_max_output_tokens_per_query, 0, R"(
 Maximum total output (completion) tokens across all AI function API calls in a single query. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of output tokens per in-flight request, since a call's output tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). It does not apply to the embedding functions (`aiEmbed`, `aiSimilarity`), which never produce output tokens.
 )", BETA, \
-        {"26.10", 500000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."}, \
+        {"26.10", 0, 0, "The change was backported to 26.7 and is recorded there."}, \
+        {"26.7", 500000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."}, \
         {"26.4", 500000, 500000, "New setting"}) \
     DECLARE(UInt64, ai_function_max_api_calls_per_query, 0, R"(
 Maximum number of HTTP requests that AI functions may dispatch per query. 0 (default) disables the limit. Enforced independently by each server and query fragment: within one execution context it is an exact cap shared by every AI function, block, and thread there, but a distributed query (across shards or parallel-replica fragments) may dispatch up to this many requests per shard/fragment. It must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 )", BETA, \
-        {"26.10", 1000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."}, \
+        {"26.10", 1000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit.", CompatibilitySetting::Ignore}, \
         {"26.8", 0, 1000, "Bound outbound AI function HTTP calls per query by default (previously 0 - unlimited)."}, \
         {"26.4", 0, 0, "New setting"}) \
     DECLARE(Bool, ai_function_throw_on_quota_exceeded, true, R"(
@@ -10976,7 +11001,8 @@ A value above `1` loosens two guarantees:
 
 `ai_function_max_api_calls_per_query` is unaffected and stays an exact cap, because a slot is reserved before each request is dispatched.
 )", BETA, \
-        {"26.11", 1, 8, "New setting"}) \
+        {"26.11", 8, 8, "The change was backported to 26.8 and is recorded there."}, \
+        {"26.8", 1, 8, "New setting"}) \
     DECLARE(String, ai_function_text_default_credentials, "", R"(
 Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint differs from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
 )", BETA, \
@@ -11209,7 +11235,8 @@ Using the text index header cache can significantly reduce latency and increase 
 Whether to cache deserialized text index posting lists in memory.
 Using the text index postings cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0, \
-        {"26.10", false, true, "Enabled the text index posting lists cache globally. Previously each query used a small private cache, which caused posting lists and phrase search results to be recomputed within a single query on large tables."}, \
+        {"26.10", true, true, "The change was backported to 26.9 and is recorded there."}, \
+        {"26.9", false, true, "Enabled the text index posting lists cache globally. Previously each query used a small private cache, which caused posting lists and phrase search results to be recomputed within a single query on large tables."}, \
         {"25.11", false, false, "New setting"}) \
     DECLARE(Bool, use_page_cache_lookahead_for_text_index, false, R"(
 Text index files that are read out of file order (dictionary, postings, positions) are, by default, read through the userspace page cache with a lookahead of one block, so that the remote connection can be reused after each read. Enable this setting to make those files use `page_cache_lookahead_blocks` like other files instead.
@@ -11797,9 +11824,6 @@ Enable table function `eval`.
     MAKE_OBSOLETE(M, String, function_implementation, "") \
     MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false, \
         {"26.6", false, false, "The setting is obsolete, the feature has been removed."}) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_ai_functions, false, \
-        {"26.9", false, false, "The setting is obsolete, AI functions are beta now and enabled by default."}, \
-        {"26.4", false, false, "New setting"}) \
     MAKE_OBSOLETE(M, Bool, query_condition_cache_store_conditions_as_plaintext, false, \
         {"25.4", false, false, "New setting"}) \
     MAKE_OBSOLETE(M, Bool, update_insert_deduplication_token_in_dependent_materialized_views, 0, \
