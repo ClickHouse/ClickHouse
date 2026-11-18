@@ -1,10 +1,10 @@
 #pragma once
 
-#include <GPU/GPUTypes.cuh>
 #include "config.h"
 
 #if USE_GPU
 
+#include <GPU/GPUTypes.cuh>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 
