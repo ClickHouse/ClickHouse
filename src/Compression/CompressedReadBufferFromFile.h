@@ -3,6 +3,7 @@
 #include <memory>
 #include <time.h>
 #include <Compression/CompressedReadBufferBase.h>
+#include <Compression/ZstdIncrementalDecompressor.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/LoggingHelpers.h>
 
@@ -17,12 +18,19 @@ class MMappedFileCache;
 class CompressedReadBufferFromFile final : public CompressedReadBufferBase, public BufferWithOwnMemory<ReadBuffer>
 {
 private:
-      /** At any time, one of two things is true:
+      /** At any time, one of three things is true:
       * a) size_compressed = 0 and working_buffer is empty
       * b)
       *  - `working_buffer` contains the entire block.
       *  - `file_in` points to the end of this block.
       *  - `size_compressed` contains the compressed size of this block.
+      * c) the block is partially decompressed (`partial_decompressor.inProgress()`):
+      *  - `working_buffer` contains the beginning of the block, up to the end of its decompressed part.
+      *  - `file_in` points to the end of this block, and is not read or seeked until the reader leaves the block.
+      *  - `size_compressed` contains the compressed size of this block.
+      *  - `partial_decompressor` reads the rest of the compressed block from `own_compressed_buffer` or from the
+      *    buffer of `file_in`. In the latter case, it is copied to `own_compressed_buffer` before a call to `file_in`
+      *    that may discard that buffer, see `detachPartialDecompressionSource`.
       */
     std::unique_ptr<ReadBufferFromFileBase> p_file_in;
     ReadBufferFromFileBase & file_in;
@@ -42,6 +50,21 @@ private:
     /// nextimpl_working_buffer_offset into account there as well.
     ///
     /* size_t nextimpl_working_buffer_offset; */
+
+    /// A block compressed with ZSTD is decompressed block of the frame by block of the frame when a read needs only its
+    /// beginning (for example, a PREWHERE step that reads the rows up to the last one that passed the previous steps).
+    /// The rest is decompressed if the following reads reach it, and is never decompressed if the buffer seeks to
+    /// another block. While a block is partially decompressed, `working_buffer` starts at the beginning of `memory`
+    /// and ends at the end of the decompressed part (state c above).
+    ZstdIncrementalDecompressor partial_decompressor;
+
+    bool startPartialDecompression(size_t size_decompressed, size_t size_compressed_without_checksum, size_t min_bytes);
+    void continuePartialDecompression(size_t min_bytes);
+    void resetPartialDecompression();
+    /// Called before `prefetch`, `setReadUntilPosition`, `setReadUntilEnd` and `setRequestMap` of `file_in`: copies the
+    /// compressed block in progress to `own_compressed_buffer` if it is in the buffer of `file_in`, unless `file_in` is
+    /// known to keep that buffer until it is read or seeked again (the local file buffers).
+    void detachPartialDecompressionSource();
 
     bool nextImpl() override;
 
@@ -64,11 +87,23 @@ public:
         file_in.setProfileCallback(profile_callback_, clock_type_);
     }
 
-    void setReadUntilPosition(size_t position) override { file_in.setReadUntilPosition(position); }
+    void setReadUntilPosition(size_t position) override
+    {
+        detachPartialDecompressionSource();
+        file_in.setReadUntilPosition(position);
+    }
 
-    void setReadUntilEnd() override { file_in.setReadUntilEnd(); }
+    void setReadUntilEnd() override
+    {
+        detachPartialDecompressionSource();
+        file_in.setReadUntilEnd();
+    }
 
-    void setRequestMap(ByteRangeSet ranges) override { file_in.setRequestMap(std::move(ranges)); }
+    void setRequestMap(ByteRangeSet ranges) override
+    {
+        detachPartialDecompressionSource();
+        file_in.setRequestMap(std::move(ranges));
+    }
 };
 
 }

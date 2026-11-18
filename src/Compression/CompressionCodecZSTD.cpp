@@ -1,8 +1,11 @@
 #include <Compression/CompressionCodecZSTD.h>
+#include <Compression/ZstdIncrementalDecompressor.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/registerCompressionCodecs.h>
 #include <zstd.h>
+#define ZSTD_STATIC_LINKING_ONLY
+#include <zstd.h> /// ZSTD_decompressBegin, ZSTD_decompressContinue
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTracker.h>
@@ -130,6 +133,43 @@ void chargeQuery(Int64 bytes)
     total_memory_tracker.adjustWithUntrackedMemory(-bytes);
 }
 
+/// Number of decompression contexts, in use or idle in the pools.
+std::atomic<size_t> num_decompression_contexts = 0;
+
+/// Number of frames in progress in `ZstdIncrementalDecompressor`, each holding a decompression context of about 100 KiB.
+/// Their number is bounded, so that many streams that each stop in the middle of a block (for example, a wide table read
+/// in small blocks) do not hold many contexts: beyond the bound, blocks are decompressed at once as before.
+std::atomic<size_t> num_incremental_frames = 0;
+
+/// The caller blocks the memory tracker of the query, as decompression contexts are not charged to queries, and
+/// `MEMORY_LIMIT_EXCEEDED` of the global one, as a context may be returned to its pool in a destructor.
+ContextPools<ZstdDCtxPtr>::Holder getDecompressionContext()
+{
+    return getPooledContext<ZstdDCtxPtr>([]
+    {
+        ZstdDCtxPtr ctx(ZSTD_createDCtx());
+        if (!ctx)
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ZSTD-encoded data: failed to create decompression context");
+        auto * context = new ZstdDCtxPtr(std::move(ctx));
+        ++num_decompression_contexts;
+        return context;
+    });
+}
+
+/// Same bound as for compression, so that a burst of concurrent reads does not stay resident in the pools. It applies to
+/// the contexts that frames in progress do not hold: a frame holds its context across many reads, and counting it would
+/// make the `doDecompressData` calls free and recreate their contexts while frames are in progress.
+void releaseDecompressionContext(ContextPools<ZstdDCtxPtr>::Holder & holder)
+{
+    if (num_decompression_contexts > 2 * getNumberOfCPUCoresToUse() + num_incremental_frames)
+    {
+        delete holder.release();
+        --num_decompression_contexts;
+    }
+    else
+        holder.reset();
+}
+
 }
 
 UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_size, char * dest) const
@@ -178,28 +218,137 @@ UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_s
 
 UInt32 CompressionCodecZSTD::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
-    static std::atomic<size_t> num_contexts = 0;
     MemoryTrackerBlockerInThread blocker;
     LockMemoryExceptionInThread lock(VariableContext::Global);
-    auto holder = getPooledContext<ZstdDCtxPtr>([]
-    {
-        ZstdDCtxPtr ctx(ZSTD_createDCtx());
-        if (!ctx)
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ZSTD-encoded data: failed to create decompression context");
-        ++num_contexts;
-        return new ZstdDCtxPtr(std::move(ctx));
-    });
+    auto holder = getDecompressionContext();
     size_t res = ZSTD_decompressDCtx(holder->get(), dest, uncompressed_size, source, source_size);
-    /// Same bound as for compression, so that a burst of concurrent reads does not stay resident in the pools.
-    if (num_contexts > 2 * getNumberOfCPUCoresToUse())
-    {
-        delete holder.release();
-        --num_contexts;
-    }
+    releaseDecompressionContext(holder);
 
     if (ZSTD_isError(res))
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ZSTD-encoded data: {}", std::string(ZSTD_getErrorName(res)));
     return static_cast<UInt32>(res);
+}
+
+struct ZstdIncrementalDecompressor::Impl
+{
+    ContextPools<ZstdDCtxPtr>::Holder context;
+    const char * source = nullptr;
+    size_t source_size = 0;
+    size_t source_pos = 0;
+    char * dest = nullptr;
+    size_t dest_size = 0;
+    size_t decompressed = 0;
+};
+
+ZstdIncrementalDecompressor::ZstdIncrementalDecompressor() : impl(std::make_unique<Impl>()) {}
+
+ZstdIncrementalDecompressor::~ZstdIncrementalDecompressor()
+{
+    reset();
+}
+
+bool ZstdIncrementalDecompressor::inProgress() const { return impl->context != nullptr; }
+size_t ZstdIncrementalDecompressor::decompressedBytes() const { return impl->decompressed; }
+const char * ZstdIncrementalDecompressor::source() const { return impl->source; }
+size_t ZstdIncrementalDecompressor::sourceSize() const { return impl->source_size; }
+void ZstdIncrementalDecompressor::relocateSource(const char * new_source) { impl->source = new_source; }
+
+size_t ZstdIncrementalDecompressor::reset()
+{
+    if (!impl->context)
+        return 0;
+
+    const size_t not_decompressed = impl->dest_size - impl->decompressed;
+    /// The frame no longer holds the context, so the bound of the pools applies to it.
+    --num_incremental_frames;
+    {
+        MemoryTrackerBlockerInThread blocker;
+        LockMemoryExceptionInThread lock(VariableContext::Global);
+        releaseDecompressionContext(impl->context);
+    }
+    return not_decompressed;
+}
+
+bool ZstdIncrementalDecompressor::start(const char * source, size_t source_size, char * dest, size_t dest_size)
+{
+    reset();
+
+    if (num_incremental_frames.fetch_add(1) >= 4 * getNumberOfCPUCoresToUse())
+    {
+        --num_incremental_frames;
+        return false;
+    }
+
+    try
+    {
+        MemoryTrackerBlockerInThread blocker;
+        LockMemoryExceptionInThread lock(VariableContext::Global);
+        impl->context = getDecompressionContext();
+    }
+    catch (...)
+    {
+        --num_incremental_frames;
+        throw;
+    }
+
+    impl->source = source;
+    impl->source_size = source_size;
+    impl->source_pos = 0;
+    impl->dest = dest;
+    impl->dest_size = dest_size;
+    impl->decompressed = 0;
+
+    /// Decode the frame header now, so that a frame this path does not handle is decompressed at once instead.
+    ZSTD_DCtx * dctx = impl->context->get();
+    bool ok = !ZSTD_isError(ZSTD_decompressBegin(dctx));
+    while (ok && ZSTD_nextInputType(dctx) == ZSTDnit_frameHeader)
+    {
+        const size_t src_size = ZSTD_nextSrcSizeToDecompress(dctx);
+        ok = src_size != 0 && src_size <= source_size - impl->source_pos
+            && ZSTD_decompressContinue(dctx, dest, dest_size, source + impl->source_pos, src_size) == 0;
+        impl->source_pos += src_size;
+    }
+
+    if (!ok || ZSTD_nextInputType(dctx) != ZSTDnit_blockHeader)
+    {
+        reset();
+        return false;
+    }
+    return true;
+}
+
+size_t ZstdIncrementalDecompressor::decompressAtLeast(size_t min_bytes)
+{
+    if (!impl->context)
+        return impl->decompressed;
+
+    ZSTD_DCtx * dctx = impl->context->get();
+    const size_t decompressed_before = impl->decompressed;
+    while (impl->decompressed < min_bytes || impl->decompressed == decompressed_before)
+    {
+        const size_t src_size = ZSTD_nextSrcSizeToDecompress(dctx);
+        if (src_size == 0)
+            break;
+        if (src_size > impl->source_size - impl->source_pos)
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ZSTD-encoded data: the frame is truncated");
+
+        const size_t res = ZSTD_decompressContinue(
+            dctx, impl->dest + impl->decompressed, impl->dest_size - impl->decompressed, impl->source + impl->source_pos, src_size);
+        if (ZSTD_isError(res))
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ZSTD-encoded data: {}", std::string(ZSTD_getErrorName(res)));
+
+        impl->source_pos += src_size;
+        impl->decompressed += res;
+    }
+
+    if (impl->decompressed == impl->dest_size)
+        reset();
+    else if (ZSTD_nextSrcSizeToDecompress(dctx) == 0)
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
+            "Cannot decompress ZSTD-encoded data: the size after decompression ({}) is different than the expected size ({})",
+            impl->decompressed, impl->dest_size);
+
+    return impl->decompressed;
 }
 
 CompressionCodecZSTD::CompressionCodecZSTD(int level_, int window_log_)
