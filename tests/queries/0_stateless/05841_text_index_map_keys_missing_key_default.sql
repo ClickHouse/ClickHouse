@@ -6,6 +6,7 @@ SET use_query_condition_cache = 0;
 SET optimize_functions_to_subcolumns = 1;
 
 DROP TABLE IF EXISTS tab;
+DROP TABLE IF EXISTS tab_nothing;
 
 CREATE TABLE tab
 (
@@ -42,3 +43,20 @@ SELECT id FROM tab WHERE d['k'] = toDate32('1970-01-01') ORDER BY id;
 SELECT id FROM tab WHERE d['k'] = toDate32('1900-01-01') ORDER BY id SETTINGS force_data_skipping_indices = 'idx_d';
 
 DROP TABLE tab;
+
+-- A `Nothing` element has no type default to probe with: the index is declined instead of failing the query.
+CREATE TABLE tab_nothing
+(
+    id UInt32,
+    m Map(String, Tuple(x Enum8('a' = 1, 'z' = 0), y Nothing)),
+    INDEX idx_m mapKeys(m) TYPE text(tokenizer = 'array')
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1, map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
+
+INSERT INTO tab_nothing (id) VALUES (1);
+
+SELECT id FROM tab_nothing WHERE m['k'].x = 'a' ORDER BY id;
+SELECT id FROM tab_nothing WHERE m['k'].x = 'z' ORDER BY id;
+
+DROP TABLE tab_nothing;
