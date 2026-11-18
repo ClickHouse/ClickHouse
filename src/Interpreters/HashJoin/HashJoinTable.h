@@ -709,11 +709,11 @@ public:
     /// row stops at its first match. The loop stops before a row once `offset` reaches `max_offset`, and returns the rows processed.
     /// It prefetches the first table. With `prefetch_later_maps` it also prefetches the two-level tables after the first, up to
     /// the first one that fits in the cache. With `stops_at_first_match` it prefetches only as many as `MultiMapLookupSampler` allows.
-    /// `lazy_row_filter` checks the NULL key and the mask of each row when the loop visits it, and builds no skip bytes for all
-    /// of `selector`. That is cheaper when a call visits few rows, as a join with a residual condition does, and costs two checks
-    /// per row otherwise. A key getter that builds its keys ahead (the `hashed` and packed `String` keys) still gets the skip
-    /// bytes of all of `selector`, as on master. It excludes `fast_path`, which has nothing to check, and `stops_at_first_match`,
-    /// whose sampler reads the prepared bytes. `TYPE` is the `type()` of every table.
+    /// `lazy_row_filter` checks the NULL key and the mask of each row when the loop visits it, instead of building skip bytes
+    /// for all of `selector`. That is cheaper when a call visits few rows, as a join with a residual condition does, and costs
+    /// two checks per row otherwise. A key getter that builds its keys ahead (the `hashed` and packed `String` keys) still gets
+    /// the skip bytes of all of `selector`. `lazy_row_filter` excludes `fast_path`, which has nothing to check, and
+    /// `stops_at_first_match`, whose sampler reads the prepared bytes. `TYPE` is the `type()` of every table.
     template <
         Type TYPE,
         typename Maps,
