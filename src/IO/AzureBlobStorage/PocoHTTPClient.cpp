@@ -10,6 +10,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
+#include <Common/FiberLocal.h>
 #include <Common/HTTPConnectionInfo.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -155,6 +156,57 @@ private:
 
 }
 
+namespace
+{
+
+constinit FiberLocal<PocoAzureHTTPClient::WriteAttemptsScope *, FiberLocalSlot::AZURE_WRITE_ATTEMPTS_SCOPE> current_write_attempts_scope;
+
+/// Only a known refusal proves that an attempt was not applied. No answer, a success, a server error, or any other answer
+/// may follow an applied attempt.
+bool attemptMayHaveBeenApplied(std::optional<Azure::Core::Http::HttpStatusCode> code)
+{
+    if (!code)
+        return true;
+    using Azure::Core::Http::HttpStatusCode;
+    switch (*code)
+    {
+        case HttpStatusCode::BadRequest:
+        case HttpStatusCode::Unauthorized:
+        case HttpStatusCode::Forbidden:
+        case HttpStatusCode::NotFound:
+        case HttpStatusCode::Conflict:
+        case HttpStatusCode::PreconditionFailed:
+        case HttpStatusCode::PayloadTooLarge:
+        case HttpStatusCode::TooManyRequests:
+            return false;
+        default:
+            return true;
+    }
+}
+
+}
+
+PocoAzureHTTPClient::WriteAttemptsScope::WriteAttemptsScope(AttemptsRecord & record_)
+    : record(record_)
+    , previous(current_write_attempts_scope)
+{
+    current_write_attempts_scope = this;
+}
+
+PocoAzureHTTPClient::WriteAttemptsScope::~WriteAttemptsScope()
+{
+    current_write_attempts_scope = previous;
+}
+
+/// Other requests of the scope, e.g. for a token of the credentials, do not publish the blob.
+void PocoAzureHTTPClient::recordWriteAttempt(
+    const Azure::Core::Http::Request & request, std::optional<Azure::Core::Http::HttpStatusCode> code)
+{
+    auto * scope = current_write_attempts_scope.get();
+    if (scope && request.GetMethod() == Azure::Core::Http::HttpMethod::Put && attemptMayHaveBeenApplied(code))
+        scope->record.may_have_been_applied = true;
+}
+
 std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::Send(
     Azure::Core::Http::Request & request,
     Azure::Core::Context const & context)
@@ -201,7 +253,18 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::Send(
 
     size_t redirects_left = max_redirects;
     // Just make a single request attempt, retries will be handled by the caller
-    return makeRequestInternalImpl(request, context, redirects_left);
+    std::unique_ptr<Azure::Core::Http::RawResponse> response;
+    try
+    {
+        response = makeRequestInternalImpl(request, context, redirects_left);
+    }
+    catch (...)
+    {
+        recordWriteAttempt(request, std::nullopt);
+        throw;
+    }
+    recordWriteAttempt(request, response->GetStatusCode());
+    return response;
 }
 
 void PocoAzureHTTPClient::addMetric(const std::string & method, AzureMetricType type, ProfileEvents::Count amount) const

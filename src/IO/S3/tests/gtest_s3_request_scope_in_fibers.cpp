@@ -14,7 +14,7 @@
 #include <thread>
 #include <vector>
 
-using DB::S3::AttemptsRecord;
+using DB::AttemptsRecord;
 using DB::S3::Client;
 
 /// Each fiber marks the record of its own scope while the other fibers hold theirs. There are more fibers than scheduler

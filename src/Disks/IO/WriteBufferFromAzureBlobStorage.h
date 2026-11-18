@@ -47,7 +47,7 @@ public:
     void preFinalize() override;
     std::string getFileName() const override { return blob_path; }
     void sync() override { next(); }
-    std::optional<WriteOutcome> getWriteOutcome() const override { return write_outcome; }
+    std::optional<WriteOutcome> getWriteOutcome() const override { return attempts_record.outcome(); }
 
 private:
     struct PartData;
@@ -62,10 +62,25 @@ private:
 
     void finalizeImpl() override;
     void execWithRetry(std::function<void(size_t)> func, size_t num_tries, size_t cost = 0);
-    /// `execWithRetry` of a call that publishes the blob, which records the outcome. It sees the attempts of
-    /// `execWithRetry`, but not the retries of the SDK inside them. So a 409 or 412 after a retry of the SDK can answer an
-    /// applied attempt of this write, and still counts as not applied: the blob has no idempotency id that could tell.
+    /// `execWithRetry` of a call that publishes the blob, which records the outcome. The transport records every attempt,
+    /// also the retries of the SDK. After a failure that an applied attempt may explain, the idempotency id in the metadata
+    /// of the blob proves the outcome. A write proven to be applied succeeds.
     void publishWithRetry(std::function<void(size_t)> func, size_t num_tries, size_t cost = 0);
+    AttemptsRecord::Proof proveFailedWrite(bool condition_failed) const;
+
+    /// Who wrote the blob, told by the idempotency id in its metadata.
+    enum class BlobWriter : uint8_t
+    {
+        ThisWrite,
+        AnotherWrite,
+        /// A failed `Get Blob Properties`, or no blob.
+        Unproven,
+    };
+    BlobWriter findBlobWriter() const;
+
+    /// The conditions and the idempotency id of a call that publishes the blob.
+    template <typename Options>
+    void setPublishOptions(Options & options) const;
     void uploadBlock(const char * data, size_t size);
 
     /// Returns true if not a single byte was written to the buffer
@@ -83,6 +98,8 @@ private:
     const size_t max_unexpected_write_error_retries;
     const std::string blob_path;
     const WriteSettings write_settings;
+    /// Stamped in the metadata of a conditional write. Empty for any other write.
+    const String idempotency_id;
 
     /// Track that prefinalize() is called only once
     bool is_prefinalized = false;
@@ -106,8 +123,8 @@ private:
     std::unique_ptr<TaskTracker> task_tracker;
     bool check_objects_after_upload = false;
 
-    /// Set by the call that publishes the blob, on the thread of `finalize`.
-    WriteOutcome write_outcome = WriteOutcome::NotApplied;
+    /// Of the call that publishes the blob, on the thread of `finalize`.
+    AttemptsRecord attempts_record;
 
     std::deque<PartData> detached_part_data;
 

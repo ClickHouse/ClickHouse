@@ -7,6 +7,7 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/ProxyConfiguration.h>
 #include <Common/HistogramMetrics.h>
+#include <Common/WriteOutcome.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/HTTPRequestThrottler.h>
@@ -73,10 +74,31 @@ public:
     /// caller (buffer) to this low-level class
     static const Azure::Core::Context::Key & getSDKContextKeyForBufferRetry();
 
+    /// Where the attempts of a call that publishes a blob are recorded. The SDK retries inside the call, out of sight of
+    /// the caller, so the transport records every `PUT` that the fiber of the scope sends. A fiber that waits for I/O lets
+    /// other fibers run on its thread, so the scope is fiber-local. Scopes nest.
+    class WriteAttemptsScope
+    {
+    public:
+        explicit WriteAttemptsScope(AttemptsRecord & record_);
+        ~WriteAttemptsScope();
+
+        WriteAttemptsScope(const WriteAttemptsScope &) = delete;
+        WriteAttemptsScope & operator=(const WriteAttemptsScope &) = delete;
+
+    private:
+        friend class PocoAzureHTTPClient;
+
+        AttemptsRecord & record;
+        WriteAttemptsScope * const previous;
+    };
+
     [[nodiscard]] ThrottlerPtr getThrottler() const { return request_throttler.get_throttler; }
     [[nodiscard]] ThrottlerPtr putThrottler() const { return request_throttler.put_throttler; }
 
 private:
+    static void recordWriteAttempt(const Azure::Core::Http::Request & request, std::optional<Azure::Core::Http::HttpStatusCode> code);
+
     enum class AzureMetricType : uint8_t
     {
         Microseconds,
