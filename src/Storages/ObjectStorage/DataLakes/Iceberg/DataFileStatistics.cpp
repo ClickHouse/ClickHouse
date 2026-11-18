@@ -5,7 +5,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Common/NaNUtils.h>
@@ -95,25 +94,12 @@ static void fixFloatSignedZeroExtremes(Field & min_val, Field & max_val, const I
         scan(col_f64->getData());
 }
 
-/// ORC stores the timestamps between -1 and 0 seconds as the epoch, so the upper bound must cover the epoch.
-static void raiseDateTime64MaxBeforeEpoch(Field & max_val, const IColumn & column)
-{
-    const auto * nullable_col = checkAndGetColumn<ColumnNullable>(&column);
-    const auto * col = checkAndGetColumn<ColumnDateTime64>(nullable_col ? &nullable_col->getNestedColumn() : &column);
-    if (!col || max_val.isNull())
-        return;
-    const Int64 max = max_val.safeGet<DecimalField<DateTime64>>().getValue().value;
-    if (max < 0 && max > -DecimalUtils::scaleMultiplier<Int64>(col->getScale()))
-        max_val = DecimalField<DateTime64>(0, col->getScale());
-}
-
 static Range getExtremeRangeFromColumn(const ColumnPtr & column)
 {
     Field min_val;
     Field max_val;
     column->getExtremes(min_val, max_val, 0, column->size());
     fixFloatSignedZeroExtremes(min_val, max_val, *column);
-    raiseDateTime64MaxBeforeEpoch(max_val, *column);
     return Range(min_val, true, max_val, true);
 }
 

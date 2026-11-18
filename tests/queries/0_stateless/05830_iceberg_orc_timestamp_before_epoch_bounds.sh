@@ -14,16 +14,24 @@ TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
 
 trap 'rm -rf "${TABLE_PATH:?}"' EXIT
 
-$CLICKHOUSE_CLIENT --session_timezone UTC -q "CREATE TABLE ${TABLE} (id Int64, ts DateTime64(6, 'UTC')) ENGINE = IcebergLocal('${TABLE_PATH}', 'ORC')"
-$CLICKHOUSE_CLIENT --session_timezone UTC --allow_insert_into_iceberg=1 -q "
-    INSERT INTO ${TABLE} VALUES (1, '1969-12-31 23:59:58.5'), (2, '1969-12-31 23:59:59.25'), (3, '1969-12-31 23:59:59.5')"
-
-$CLICKHOUSE_CLIENT --session_timezone UTC -q "SELECT id, ts FROM ${TABLE} ORDER BY id"
-for pruning in 1 0
+for partition_by in "" "PARTITION BY icebergDay(ts)"
 do
     $CLICKHOUSE_CLIENT --session_timezone UTC -q "
-        SELECT ${pruning}, groupArray(id) FROM (SELECT id FROM ${TABLE} WHERE ts >= '1970-01-01 00:00:00' ORDER BY id)
-        SETTINGS use_iceberg_partition_pruning = ${pruning}"
-done
+        CREATE TABLE ${TABLE} (id Int64, ts DateTime64(6, 'UTC')) ENGINE = IcebergLocal('${TABLE_PATH}', 'ORC') ${partition_by}"
+    $CLICKHOUSE_CLIENT --session_timezone UTC --allow_insert_into_iceberg=1 -q "
+        INSERT INTO ${TABLE} VALUES (1, '1969-12-31 23:59:58.5'), (2, '1969-12-31 23:59:59.25'), (3, '1969-12-31 23:59:59.5')"
 
-$CLICKHOUSE_CLIENT --session_timezone UTC -q "DROP TABLE ${TABLE}"
+    $CLICKHOUSE_CLIENT --session_timezone UTC -q "SELECT id, ts FROM ${TABLE} ORDER BY id"
+    for pruning in 1 0
+    do
+        $CLICKHOUSE_CLIENT --session_timezone UTC -q "
+            SELECT ${pruning}, groupArray(id) FROM (SELECT id FROM ${TABLE} WHERE ts >= '1970-01-01 00:00:00' ORDER BY id)
+            SETTINGS use_iceberg_partition_pruning = ${pruning}"
+        $CLICKHOUSE_CLIENT --session_timezone UTC -q "
+            SELECT ${pruning}, groupArray(id) FROM (SELECT id FROM ${TABLE} WHERE icebergDay(ts) = 0 ORDER BY id)
+            SETTINGS use_iceberg_partition_pruning = ${pruning}"
+    done
+
+    $CLICKHOUSE_CLIENT -q "DROP TABLE ${TABLE}"
+    rm -rf "${TABLE_PATH:?}"
+done

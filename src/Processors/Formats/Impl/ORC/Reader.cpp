@@ -530,7 +530,7 @@ bool RowReader::areTimestampsShifted(const DateLUTImpl & writer_timezone) const
 {
     /// The statistics are not comparable with the UTC literals unless both time zones are UTC, even if they
     /// are the same: the statistics of the files written in a local time zone are not UTC instants.
-    return !(isUTC(writer_timezone) && isUTC(reader_timezone));
+    return !(TimezoneOffset(writer_timezone).isUTC() && TimezoneOffset(reader_timezone).isUTC());
 }
 
 bool RowReader::evaluateStatistics(const VectorWithMemoryTracking<Proto::ColumnStatistics> & stats, bool timestamps_shifted) const

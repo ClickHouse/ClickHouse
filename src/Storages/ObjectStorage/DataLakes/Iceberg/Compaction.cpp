@@ -14,6 +14,7 @@
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/IRowOutputFormat.h>
+#include <Processors/Formats/Impl/ORC/Writer.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
@@ -33,6 +34,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
+#include <Poco/String.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/Logger.h>
@@ -369,6 +371,10 @@ static void writeDataFiles(
         }
     }
 
+    FormatSettings iceberg_format_settings = format_settings ? *format_settings : getFormatSettings(context);
+    Iceberg::useUTCForORCTimestamps(iceberg_format_settings);
+    const bool write_orc = Poco::toUpper(write_format) == "ORC";
+
     for (auto & [_, data_file] : initial_plan.path_to_data_file)
     {
         /// The transform requires `ChunkInfoRowNumbers` in every chunk even when it has nothing
@@ -382,7 +388,7 @@ static void writeDataFiles(
                 sample_block,
                 data_file->data_object_info,
                 object_storage,
-                format_settings,
+                iceberg_format_settings,
                 // todo make compaction using same FormatParserSharedResources
                 std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), 1),
                 context);
@@ -408,7 +414,7 @@ static void writeDataFiles(
             *sample_block,
             context,
             8192,
-            format_settings,
+            iceberg_format_settings,
             parser_shared_resources,
             input_format_filter_info,
             object_storage->isRemote(),
@@ -425,7 +431,7 @@ static void writeDataFiles(
         FormatFilterInfoPtr output_format_filter_info
             = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
         auto output_format = FormatFactory::instance().getOutputFormat(
-            write_format, *write_buffer, *sample_block, context, format_settings, output_format_filter_info);
+            write_format, *write_buffer, *sample_block, context, iceberg_format_settings, output_format_filter_info);
 
         while (true)
         {
@@ -433,6 +439,9 @@ static void writeDataFiles(
             if (chunk.empty())
                 break;
 
+            /// The bounds must describe the stored values.
+            if (write_orc)
+                ORC::replaceTimestampsStoredAsEpoch(chunk);
             data_file->manifest_list->statistics.update(chunk);
             if (delete_file_transform)
                 delete_file_transform->transform(chunk);

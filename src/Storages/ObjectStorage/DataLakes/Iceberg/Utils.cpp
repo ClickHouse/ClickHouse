@@ -44,6 +44,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IStoragePolicy.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/sortBlock.h>
@@ -134,6 +135,12 @@ static constexpr size_t MAX_LIST_RETRIES = 5;
 
 namespace DB::Iceberg
 {
+
+void useUTCForORCTimestamps(FormatSettings & settings)
+{
+    settings.orc.reader_time_zone_name = "UTC";
+    settings.orc.writer_time_zone_name = "UTC";
+}
 
 using namespace DB;
 

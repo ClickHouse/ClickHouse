@@ -25,4 +25,15 @@ do
     done
 done
 
+# A zone with a fixed offset since 1895 keeps the wall clock of its older offsets.
+$CLICKHOUSE_CLIENT -q "
+    INSERT INTO FUNCTION file('$file', ORC, 't DateTime64(0, \'UTC\')') SELECT toDateTime64('1885-01-01 00:00:00', 0, 'UTC')
+    SETTINGS output_format_orc_writer_time_zone_name = 'Pacific/Port_Moresby', engine_file_truncate_on_insert = 1"
+for reader in Pacific/Port_Moresby Etc/GMT-10
+do
+    $CLICKHOUSE_CLIENT -q "
+        SELECT '$reader', t FROM file('$file', ORC, 't DateTime64(0, \'UTC\')')
+        SETTINGS input_format_orc_reader_time_zone_name = '$reader'"
+done
+
 rm -f "${USER_FILES_PATH:?}/$file"

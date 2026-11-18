@@ -2050,6 +2050,7 @@ void IcebergMetadata::modifyFormatSettings(FormatSettings & format_settings, con
     /// The format settings of an engine table are not taken from the query, so a query's request for order is applied here.
     if (local_context.getSettingsRef()[Setting::input_format_parquet_preserve_order])
         format_settings.parquet.preserve_order = true;
+    Iceberg::useUTCForORCTimestamps(format_settings);
 }
 
 void IcebergMetadata::addDeleteTransformers(

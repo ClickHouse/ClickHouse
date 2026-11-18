@@ -32,6 +32,7 @@ class GenericDatum;
 namespace DB
 {
 struct StorageID;
+struct FormatSettings;
 }
 
 namespace DataLake
@@ -41,6 +42,10 @@ class ICatalog;
 
 namespace DB::Iceberg
 {
+
+/// The Iceberg timestamps are UTC instants: the reference implementation reads and writes ORC with `useUTCTimestamp`,
+/// so the ORC time zones of the query do not apply.
+void useUTCForORCTimestamps(FormatSettings & settings);
 
 void writeMessageToFile(
     const String & data,

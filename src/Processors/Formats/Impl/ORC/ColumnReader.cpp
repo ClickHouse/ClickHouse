@@ -366,11 +366,10 @@ public:
         : ColumnReader(type, stripe)
         , writer_timezone(is_instant ? DateLUT::instance("UTC") : stripe.getWriterTimezone())
         , reader_timezone(is_instant ? DateLUT::instance("UTC") : stripe.getReaderTimezone())
-        , same_timezone(&writer_timezone == &reader_timezone || writer_timezone.getTimeZone() == reader_timezone.getTimeZone()
-              || (writer_timezone.hasFixedOffset() && reader_timezone.hasFixedOffset()
-                  && writer_timezone.timezoneOffset(0) == reader_timezone.timezoneOffset(0)))
         , writer_offset_of(writer_timezone)
         , reader_offset_of(reader_timezone)
+        , same_timezone(&writer_timezone == &reader_timezone || writer_timezone.getTimeZone() == reader_timezone.getTimeZone()
+              || (writer_offset_of.fixedOffset() && writer_offset_of.fixedOffset() == reader_offset_of.fixedOffset()))
     {
         /// The base of the seconds is 2015-01-01 00:00:00 in the time zone of the writer.
         static constexpr Int64 UTC_2015_01_01 = 1420070400;
@@ -461,9 +460,9 @@ private:
 
     const DateLUTImpl & writer_timezone;
     const DateLUTImpl & reader_timezone;
-    const bool same_timezone;
     const TimezoneOffset writer_offset_of;
     const TimezoneOffset reader_offset_of;
+    const bool same_timezone;
     Int64 epoch_offset = 0;
     std::unique_ptr<IntRleDecoder> seconds_rle;
     std::unique_ptr<IntRleDecoder> nanos_rle;
