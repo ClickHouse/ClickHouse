@@ -1709,6 +1709,12 @@ bool IMergeTreeDataPart::areStatisticsCached(const NameSet & required_columns, c
     return true;
 }
 
+bool IMergeTreeDataPart::mayHaveStatistics(const String & column_name) const
+{
+    return getColumnPosition(column_name).has_value()
+        && (checksums.has(String(ColumnsStatistics::FILENAME)) || checksums.has(getStatisticsFilename(column_name)));
+}
+
 std::optional<ColumnsStatistics> IMergeTreeDataPart::tryLoadStatisticsFromCache(const NameSet & required_columns, StatisticsCache * cache) const
 {
     if (!cache || cleared_data_in_caches)

@@ -121,6 +121,11 @@ SELECT count() FROM nation_stats AS a JOIN nation_stats AS b ON a.n_nationkey = 
     ASOF JOIN customer ON c_nationkey = b.n_nationkey AND a.n_nationkey >= c_custkey JOIN orders ON o_custkey = c_custkey
 WHERE a.n_name = 'GERMANY' AND b.n_name = 'GERMANY'
 SETTINGS log_comment = 'asof_filtered_with_parent' FORMAT Null;
+-- A read below DISTINCT is only checked for an unestimated filter, which loads no statistics.
+SELECT DISTINCT n_nationkey FROM nation_stats WHERE n_name = 'GERMANY' SETTINGS log_comment = 'distinct_alone' FORMAT Null;
+SELECT count() FROM orders JOIN customer ON c_custkey = o_custkey
+    JOIN (SELECT DISTINCT n_nationkey FROM nation_stats WHERE n_name = 'GERMANY') AS d ON c_nationkey = d.n_nationkey
+SETTINGS log_comment = 'distinct_in_join' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['JoinBuildTableRowCount'] FROM system.query_log
@@ -138,3 +143,8 @@ SELECT sumIf(loaded, log_comment = 'asof_filtered_with_parent') = sumIf(loaded, 
 FROM (SELECT log_comment, ProfileEvents['LoadedStatistics'] AS loaded FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment IN ('asof_filtered_with_parent', 'asof_filtered_without_parent')
         AND type = 'QueryFinish');
+
+SELECT 'statistics below DISTINCT, filter on a column with statistics';
+SELECT sumIf(loaded, log_comment = 'distinct_in_join') = sumIf(loaded, log_comment = 'distinct_alone')
+FROM (SELECT log_comment, ProfileEvents['LoadedStatistics'] AS loaded FROM system.query_log
+    WHERE current_database = currentDatabase() AND log_comment IN ('distinct_in_join', 'distinct_alone') AND type = 'QueryFinish');

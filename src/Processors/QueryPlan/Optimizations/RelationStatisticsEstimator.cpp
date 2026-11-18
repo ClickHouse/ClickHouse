@@ -220,7 +220,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         const Names key_column_names = metadata->getColumnsRequiredForPrimaryKey();
         const NameSet key_columns(key_column_names.begin(), key_column_names.end());
         /// Only the filters index analysis composed for the read count (none without it), and a subcolumn counts as its column.
-        auto has_unestimated_filter = [&](const ConditionSelectivityEstimator * estimator)
+        auto has_filter_outside = [&](const auto & has_statistics)
         {
             const auto & composed_filter = reading->getFilterActionsDAG();
             if (!composed_filter)
@@ -229,15 +229,31 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             {
                 auto column = metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, input_name);
                 const String column_name = column ? column->getNameInStorage() : input_name;
-                return key_columns.contains(column_name) || (estimator && estimator->hasStatisticsForAllRows(metadata, column_name));
+                return key_columns.contains(column_name) || has_statistics(column_name);
             };
             return std::ranges::any_of(
                 composed_filter->getOutputs(), [&](const ActionsDAG::Node * output) { return readsColumnOutside(output, is_estimated); });
         };
+        auto has_unestimated_filter = [&](const ConditionSelectivityEstimator * estimator)
+        {
+            return has_filter_outside(
+                [&](const String & column_name) { return estimator && estimator->hasStatisticsForAllRows(metadata, column_name); });
+        };
 
-        /// Only a filter outside the primary key marks a read, so without one its statistics are not needed.
-        if (only_source && !has_unestimated_filter(nullptr))
-            return RelationStats{.table_name = table_display_name};
+        /// A walked read is judged from its parts' checksums, without the index analysis or its statistics.
+        if (only_source)
+        {
+            const bool use_statistics_files = reading->getContext()->getSettingsRef()[Setting::use_statistics];
+            const bool marked = has_filter_outside([&](const String & column_name)
+            {
+                const auto * column = metadata->getColumns().tryGet(column_name);
+                return use_statistics_files && column && !column->statistics.empty()
+                    && std::ranges::all_of(
+                        reading->getParts(), [&](const RangesInDataPart & part) { return part.data_part->mayHaveStatistics(column_name); });
+            });
+            return RelationStats{
+                .table_name = table_display_name, .source = marked ? RowEstimateSource::UnestimatedFilter : RowEstimateSource::NoSource};
+        }
 
         /// Analyze partition and primary-key ranges before estimating the relation so column
         /// statistics come only from parts that can satisfy the query. Reuse the result for

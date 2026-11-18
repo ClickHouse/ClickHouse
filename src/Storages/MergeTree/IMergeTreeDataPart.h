@@ -276,6 +276,9 @@ public:
     /// Whether `loadStatistics(required_columns, cache)` would not read anything from disk,
     /// because the statistics of these columns are cached or the part has none for them.
     bool areStatisticsCached(const NameSet & required_columns, const StatisticsCache * cache) const;
+    /// Whether the part may have statistics of `column_name`, judged from its checksums without reading anything:
+    /// a packed archive is assumed to contain every column, as in `areStatisticsCached`.
+    bool mayHaveStatistics(const String & column_name) const;
     /// The result of `loadStatistics(required_columns, cache)` if every statistics file it would read is in the cache,
     /// otherwise `std::nullopt`. It never reads from disk.
     std::optional<ColumnsStatistics> tryLoadStatisticsFromCache(const NameSet & required_columns, StatisticsCache * cache) const;
