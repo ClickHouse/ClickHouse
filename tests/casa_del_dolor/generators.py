@@ -127,9 +127,9 @@ class BuzzHouseGenerator(Generator):
         if args.with_minio:
             buzz_config["minio"] = {
                 "database": cluster.minio_bucket,
-                "server_hostname": "minio",
+                "server_hostname": cluster.minio_host,
                 "client_hostname": cluster.minio_ip,
-                "port": 9000,
+                "port": cluster.minio_port,
                 "user": "minio",
                 "password": cluster.minio_access_key,
                 "secret": cluster.minio_secret_key,
@@ -201,6 +201,7 @@ class BuzzHouseGenerator(Generator):
             buzz_config["keeper_map_path_prefix"] = "/keeper_map_tables"
         # Set SMT disk only when property.py doesn't do it
         buzz_config["set_smt_disk"] = root.find("shared_merge_tree") is None
+        buzz_config["has_distributed_cache"] = args.with_distributed_cache
         # Dolor stops the servers itself and requires a graceful shutdown. A failpoint left enabled
         # can park a background task in a sleep, and shutdown waits on that task's mutex forever
         buzz_config["enable_failpoints"] = False

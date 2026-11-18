@@ -95,7 +95,7 @@ struct MergeTreeMutationEntry
     /// rewritten file is still readable by a binary without this feature.
     void upgradeFileWithResolvedPartitionScope(const WriteSettings & settings);
 
-    std::shared_ptr<const IBackupEntry> backup() const;
+    [[nodiscard]] std::shared_ptr<const IBackupEntry> backup() const;
 
     bool affectsPartition(const String & partition_id) const
     {
