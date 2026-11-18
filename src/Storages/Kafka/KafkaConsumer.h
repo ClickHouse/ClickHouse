@@ -5,6 +5,7 @@
 #include <Storages/Kafka/IKafkaExceptionInfoSink.h>
 #include <Storages/Kafka/StorageKafkaUtils.h>
 #include <boost/circular_buffer.hpp>
+#include <exception>
 #include <cppkafka/cppkafka.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DateLUT.h>
@@ -47,7 +48,7 @@ public:
     ConsumerPtr && moveConsumer();
 
     void commit(); // Commit all processed messages.
-    void subscribe(); // Subscribe internal consumer to topics.
+    void subscribe(bool commit_offsets); // Subscribe internal consumer to topics.
 
     // used during exception processing to restart the consumption from last committed offset
     // Notes: duplicates can appear if the some data were already flushed
@@ -78,7 +79,7 @@ public:
 
     void storeLastReadMessageOffset();
     void resetToLastCommitted(const char * msg);
-    void rewindTo(const cppkafka::TopicPartitionList & offsets);
+    bool finishBlockAfterPollBatch() const { return cooperative && intermediate_commit && !isStalled(); }
 
     /// Polls batch of messages from Kafka and returns read buffer containing the next message or
     /// nullptr when there are no messages to process.
@@ -139,6 +140,10 @@ private:
     const size_t skip_bytes = 0;
     size_t offsets_stored = 0;
     bool current_subscription_valid = false;
+    bool cooperative = false;
+    bool start_at_latest = false;
+    bool can_commit_offsets = false;
+    std::exception_ptr assignment_exception;
 
     StalledStatus stalled_status = NO_MESSAGES_RETURNED;
 
@@ -175,6 +180,8 @@ private:
     /// Last used time (for TTL)
     std::atomic<UInt64> last_used_usec = 0;
 
+    void initializeMissingOffsets(const cppkafka::TopicPartitionList & partitions);
+    void rewindTo(const cppkafka::TopicPartitionList & offsets);
     void doPoll();
     void cleanUnprocessed();
     void cleanAssignment();

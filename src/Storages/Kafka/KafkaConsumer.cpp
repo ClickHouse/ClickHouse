@@ -1,9 +1,11 @@
 #include <Storages/Kafka/KafkaConsumer.h>
 
 #include <algorithm>
+#include <set>
 #include <IO/ReadBufferFromMemory.h>
 #include <Storages/Kafka/StorageKafkaUtils.h>
 #include <base/defines.h>
+#include <base/scope_guard.h>
 #include <boost/algorithm/string/join.hpp>
 #include <cppkafka/cppkafka.h>
 #include <fmt/ranges.h>
@@ -79,6 +81,8 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
             setRDKafkaStat(stat_json);
         });
     }
+    /// The canonical spelling of `latest` returned by `librdkafka` is `largest`.
+    start_at_latest = consumer_config.get("auto.offset.reset") == "largest";
     consumer = std::make_shared<cppkafka::Consumer>(std::move(consumer_config));
     consumer->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
 
@@ -86,6 +90,21 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
     // The cooperative protocol (always used by `group.protocol=consumer`, KIP-848) passes only the added partitions.
     consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
     {
+        cooperative = consumer->get_rebalance_protocol() == "COOPERATIVE";
+        if (cooperative && start_at_latest && can_commit_offsets && !topic_partitions.empty())
+        {
+            try
+            {
+                initializeMissingOffsets(topic_partitions);
+            }
+            catch (...)
+            {
+                /// A `cppkafka` callback cannot propagate an exception through the C poll API.
+                /// Discard the poll and leave this assignment before delivering any of its records.
+                assignment_exception = std::current_exception();
+            }
+        }
+
         CurrentMetrics::add(CurrentMetrics::KafkaAssignedPartitions, topic_partitions.size());
         ProfileEvents::increment(ProfileEvents::KafkaRebalanceAssignments);
 
@@ -131,7 +150,8 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
 
         if (assignment.has_value() && topic_partitions.size() < assignment->size())
         {
-            auto revoked = std::erase_if(*assignment, [&](const auto & assigned) { return std::ranges::find(topic_partitions, assigned) != topic_partitions.end(); });
+            std::set<cppkafka::TopicPartition> revoked_partitions(topic_partitions.begin(), topic_partitions.end());
+            auto revoked = std::erase_if(*assignment, [&](const auto & assigned) { return revoked_partitions.contains(assigned); });
             CurrentMetrics::sub(CurrentMetrics::KafkaAssignedPartitions, revoked);
         }
         else
@@ -285,7 +305,7 @@ void KafkaConsumer::commit()
     offsets_stored = 0;
 }
 
-void KafkaConsumer::subscribe()
+void KafkaConsumer::subscribe(bool commit_offsets)
 {
     cleanUnprocessed();
 
@@ -294,6 +314,14 @@ void KafkaConsumer::subscribe()
         stalled_status = NO_MESSAGES_RETURNED;
 
     auto subscription = consumer->get_subscription();
+    if (!subscription.empty() && (assignment_exception || (cooperative && start_at_latest && commit_offsets && !can_commit_offsets)))
+    {
+        /// A writer needs a durable starting position even if this consumer was first used by a read-only `SELECT`.
+        consumer->unsubscribe();
+        subscription.clear();
+    }
+    assignment_exception = {};
+    can_commit_offsets = commit_offsets;
 
     if (!subscription.empty())
     {
@@ -308,7 +336,7 @@ void KafkaConsumer::subscribe()
             return;
 
         /// Re-subscribing under the cooperative protocol keeps the assignment and the fetch positions.
-        if (consumer->get_rebalance_protocol() == "COOPERATIVE")
+        if (cooperative)
             resetToLastCommitted("Rewinding dirty consumer.");
     }
 
@@ -400,6 +428,66 @@ void KafkaConsumer::markDirty()
     current_subscription_valid = false;
 }
 
+static void fetchLatestOffsets(const cppkafka::Consumer & consumer, cppkafka::TopicPartitionList & partitions)
+{
+    auto * handle = consumer.get_handle();
+    const auto timeout_ms = static_cast<int>(consumer.get_timeout().count());
+    auto * options = rd_kafka_AdminOptions_new(handle, RD_KAFKA_ADMIN_OP_LISTOFFSETS);
+    SCOPE_EXIT(rd_kafka_AdminOptions_destroy(options));
+    if (auto error = rd_kafka_AdminOptions_set_request_timeout(options, timeout_ms, nullptr, 0))
+        throw cppkafka::HandleException(error);
+
+    /// Match the consumer's end offset. An open transaction can put the last stable offset below the high watermark.
+    const auto isolation = consumer.get_configuration().get("isolation.level") == "read_committed"
+        ? RD_KAFKA_ISOLATION_LEVEL_READ_COMMITTED : RD_KAFKA_ISOLATION_LEVEL_READ_UNCOMMITTED;
+    if (auto * error = rd_kafka_AdminOptions_set_isolation_level(options, isolation))
+    {
+        SCOPE_EXIT(rd_kafka_error_destroy(error));
+        throw cppkafka::HandleException(rd_kafka_error_code(error));
+    }
+
+    for (auto & tp : partitions)
+        tp.set_offset(RD_KAFKA_OFFSET_SPEC_LATEST);
+    auto request = cppkafka::convert(partitions);
+    cppkafka::Queue queue(rd_kafka_queue_new(handle));
+    rd_kafka_ListOffsets(handle, request.get(), options, queue.get_handle());
+
+    auto * reply = rd_kafka_queue_poll(queue.get_handle(), timeout_ms);
+    cppkafka::Event event(reply);
+    if (!event)
+        throw cppkafka::HandleException(RD_KAFKA_RESP_ERR__TIMED_OUT);
+    if (auto error = event.get_error())
+        throw cppkafka::HandleException(error);
+
+    size_t count = 0;
+    const auto ** infos = rd_kafka_ListOffsets_result_infos(rd_kafka_event_ListOffsets_result(reply), &count);
+    if (count != partitions.size())
+        throw Exception(ErrorCodes::CANNOT_COMMIT_OFFSET, "Expected {} end offsets from Kafka, received {}", partitions.size(), count);
+    partitions.clear();
+    for (size_t i = 0; i < count; ++i)
+    {
+        const auto * tp = rd_kafka_ListOffsetsResultInfo_topic_partition(infos[i]);
+        if (tp->err)
+            throw cppkafka::HandleException(tp->err);
+        if (tp->offset < 0)
+            throw Exception(ErrorCodes::CANNOT_COMMIT_OFFSET, "Missing end offset for Kafka topic {} partition {}", tp->topic, tp->partition);
+        partitions.emplace_back(tp->topic, tp->partition, tp->offset);
+    }
+}
+
+void KafkaConsumer::initializeMissingOffsets(const cppkafka::TopicPartitionList & partitions)
+{
+    /// With `auto.offset.reset=latest`, repeating the initial offset lookup on rollback or on a new
+    /// owner would skip the unfinished block. Establish the group checkpoint before fetching starts.
+    auto missing = consumer->get_offsets_committed(partitions);
+    std::erase_if(missing, [](const auto & tp) { return tp.get_offset() != cppkafka::TopicPartition::OFFSET_INVALID; });
+    if (missing.empty())
+        return;
+
+    fetchLatestOffsets(*consumer, missing);
+    consumer->commit(missing, consumer->get_timeout());
+}
+
 void KafkaConsumer::resetToLastCommitted(const char * msg)
 {
     if (!assignment.has_value() || assignment->empty())
@@ -418,7 +506,7 @@ void KafkaConsumer::resetToLastCommitted(const char * msg)
 /// next commit would persist, so reset them too.
 void KafkaConsumer::rewindTo(const cppkafka::TopicPartitionList & offsets)
 {
-    if (consumer->get_rebalance_protocol() != "COOPERATIVE")
+    if (!cooperative)
     {
         consumer->assign(offsets);
         return;
@@ -430,9 +518,9 @@ void KafkaConsumer::rewindTo(const cppkafka::TopicPartitionList & offsets)
         if (positions[i].get_offset() >= 0)
             read_from.push_back(offsets[i]);
 
+    consumer->store_offsets(offsets);
     if (!read_from.empty())
         consumer->seek(read_from, SEEK_TIMEOUT_MS);
-    consumer->store_offsets(offsets);
 }
 
 void KafkaConsumer::rewindToLastCommitted()
@@ -496,6 +584,8 @@ void KafkaConsumer::doPoll()
         /// Don't drop old messages immediately, since we may need them for virtual columns.
         auto new_messages = consumer->poll_batch(batch_size,
                             std::chrono::milliseconds(actual_poll_timeout_ms));
+        if (assignment_exception)
+            std::rethrow_exception(assignment_exception);
         last_poll_timestamp = timeInSeconds(std::chrono::system_clock::now());
 
         // Remove messages with errors and log any exceptions.
@@ -583,7 +673,7 @@ ReadBufferPtr KafkaConsumer::consume()
     if (hasMorePolledMessages())
         return getNextMessage();
 
-    if (intermediate_commit)
+    if (intermediate_commit && !cooperative)
         commit();
 
     doPoll();

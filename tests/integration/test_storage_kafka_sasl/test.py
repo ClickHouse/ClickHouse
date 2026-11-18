@@ -1,5 +1,7 @@
+import json
 import logging
 import time
+import uuid
 
 from kafka import KafkaProducer
 import pytest
@@ -146,7 +148,6 @@ def test_dead_letter_segfault(kafka_cluster):
     assert "The table system.dead_letter_queue is not configured on the server" in res
 
 
-
 def kafka_cli(kafka_cluster, tool, *args):
     config = "/tmp/kip848_client.properties"
     properties = (
@@ -164,149 +165,132 @@ def kafka_cli(kafka_cluster, tool, *args):
     )
 
 
-# `group_protocol = consumer` (KIP-848) is set for the topics in configs/kip848.xml.
-def create_kip848_table(name, topic, flush_interval_ms):
+@pytest.fixture
+def kip848_topic(kafka_cluster):
+    topic = f"kip848_{uuid.uuid4().hex}"
+    kafka_cli(kafka_cluster, "kafka-topics", "--create", "--topic", topic, "--partitions", "2")
+    producer = get_kafka_producer(kafka_cluster.kafka_sasl_port)
+
+    def produce(*ids):
+        for i in ids:
+            producer.send(topic, value=f'{{"id":{i}}}', partition=i % 2).get(timeout=15)
+
+    try:
+        # Both partitions have history that a new group using `latest` must skip.
+        produce(0, 1)
+        instance.query(
+            "CREATE TABLE test.messages (id UInt64, owner String) ENGINE=Memory;"
+            "CREATE TABLE test.fail_inserts (x UInt8) ENGINE=Memory"
+        )
+        yield topic, produce
+    finally:
+        producer.close()
+
+
+def create_kip848_member(name, topic, flush_interval_ms=500, commit_every_batch=0):
     instance.query(
         f"""
         CREATE TABLE test.{name} (id UInt64)
-            ENGINE = Kafka
+            ENGINE = Kafka(kip848)
             SETTINGS kafka_broker_list = 'kafka_sasl:19092',
                      kafka_security_protocol = 'sasl_plaintext',
                      kafka_sasl_mechanism = 'PLAIN',
                      kafka_sasl_username = '{kafka_sasl_user}',
                      kafka_sasl_password = '{kafka_sasl_pass}',
                      kafka_flush_interval_ms = {flush_interval_ms},
+                     kafka_poll_max_batch_size = 1,
+                     kafka_commit_every_batch = {commit_every_batch},
                      kafka_topic_list = '{topic}',
                      kafka_group_name = '{topic}',
                      kafka_format = 'JSONEachRow';
-        CREATE MATERIALIZED VIEW test.{name}_mv TO test.messages AS SELECT id FROM test.{name}
-            WHERE NOT throwIf((SELECT count() FROM test.fail_inserts) > 0);
+        CREATE MATERIALIZED VIEW test.{name}_mv TO test.messages AS
+            SELECT id, '{name}' AS owner FROM test.{name}
+            WHERE NOT throwIf(id = 10 AND (SELECT count() FROM test.fail_inserts) > 0);
         """
     )
 
 
-def wait_kafka_consumer(name, condition):
+def wait_assigned_partitions(name, count):
     assert_eq_with_retry(
         instance,
-        f"SELECT {condition} FROM system.kafka_consumers WHERE table = '{name}'",
-        "1",
-        retry_count=120,
-        sleep_time=0.5,
+        f"SELECT length(assignments.partition_id) FROM system.kafka_consumers WHERE database='test' AND table='{name}'",
+        str(count), retry_count=120, sleep_time=0.5,
     )
 
 
-def wait_assigned_partitions(name, condition):
-    wait_kafka_consumer(name, f"sum(length(assignments.partition_id)) {condition}")
+def wait_for_latest(topic):
+    # Assignment is visible before librdkafka resolves `latest`. Wait until both fetchers
+    # reached the end of the pre-existing records before producing anything to be delivered.
+    def positions():
+        value = instance.query("SELECT rdkafka_stat FROM system.kafka_consumers WHERE database='test' AND table='kafka1' FORMAT TSVRaw")
+        if not value.strip():
+            return []
+        partitions = json.loads(value)["topics"].get(topic, {}).get("partitions", {})
+        return [partitions[p]["next_offset"] for p in ("0", "1") if p in partitions]
+
+    wait_condition(positions, lambda offsets: offsets == [1, 1], max_attempts=120, delay=0.5)
 
 
-# The broker assigns the partitions, and every rebalance is incremental. Members joining and leaving the group
-# must not lose or stall messages.
-def test_kafka_kip848_consumer_group_protocol(kafka_cluster):
-    kafka_cli(kafka_cluster, "kafka-topics", "--create", "--topic", "kip848", "--partitions", "6")
+@pytest.mark.parametrize("commit_every_batch", [0, 1])
+def test_kafka_kip848_first_insert_failure(kip848_topic, commit_every_batch):
+    topic, produce = kip848_topic
+    instance.query("INSERT INTO test.fail_inserts VALUES (1)")
+    create_kip848_member("kafka1", topic, commit_every_batch=commit_every_batch)
+    wait_for_latest(topic)
 
-    def create_kafka_table(name):
-        create_kip848_table(name, "kip848", 500)
-
-    producer = get_kafka_producer(kafka_cluster.kafka_sasl_port)
-    produced = 0
-
-    def produce(count):
-        nonlocal produced
-        for i in range(produced, produced + count):
-            producer.send(topic="kip848", value=f'{{"id":{i}}}', partition=i % 6)
-        producer.flush()
-        produced += count
-
-    def produce_and_wait(count):
-        produce(count)
-        assert_eq_with_retry(
-            instance, "SELECT uniqExact(id) FROM test.messages", str(produced), retry_count=120, sleep_time=0.5
-        )
-
-    instance.query("CREATE TABLE test.messages (id UInt64) ENGINE = MergeTree ORDER BY id")
-    instance.query("CREATE TABLE test.fail_inserts (x UInt8) ENGINE = Memory")
-    create_kafka_table("kafka1")
-    produce_and_wait(1000)
-    wait_assigned_partitions("kafka1", "= 6")
-
-    # The new member takes a part of the partitions, the first one keeps the rest.
-    create_kafka_table("kafka2")
-    wait_assigned_partitions("kafka2", "> 0")
-    produce_and_wait(1000)
-
-    # And gets them back when the new member leaves.
-    instance.query("DROP TABLE test.kafka2_mv; DROP TABLE test.kafka2 SYNC")
-    wait_assigned_partitions("kafka1", "= 6")
-    produce_and_wait(1000)
-
-    # The messages of a failed insert are read again, not skipped.
     errors_query = "SELECT sum(value) FROM system.errors WHERE name = 'FUNCTION_THROW_IF_VALUE_IS_NON_ZERO'"
     errors = int(instance.query(errors_query))
-    instance.query("INSERT INTO test.fail_inserts VALUES (1)")
-    produce(1000)
+    produce(10)
     assert_eq_with_retry(instance, f"SELECT ({errors_query}) > {errors}", "1", retry_count=120, sleep_time=0.5)
+    assert instance.query("SELECT count() FROM test.messages") == "0\n"
+
     instance.query("TRUNCATE TABLE test.fail_inserts")
-    produce_and_wait(0)
-    producer.close()
-
-    assert instance.query("SELECT min(id), max(id) FROM test.messages") == f"0\t{produced - 1}\n"
-    assert int(instance.query("SELECT num_rebalance_revocations FROM system.kafka_consumers WHERE table = 'kafka1'")) > 0
-    assert "kip848" in kafka_cli(kafka_cluster, "kafka-groups", "--list", "--group-type", "consumer")
+    produce(12)
+    assert_eq_with_retry(instance, "SELECT arraySort(groupArray(id)) FROM test.messages", "[10,12]", retry_count=120)
 
 
-# A partial revocation drops the block being formed, including the rows already read from the partitions the
-# consumer keeps. Those partitions must be rewound, otherwise the rows are skipped and the next commit loses them.
-def test_kafka_kip848_partial_revocation_rewinds_unfinished_block(kafka_cluster):
-    topic = "kip848_rewind"
+def test_kafka_kip848_partial_revocation_rewinds_unfinished_block(kafka_cluster, kip848_topic):
+    topic, produce = kip848_topic
     failpoint = "kafka_consumer_pause_mid_block"
-    produced = 60
-    kafka_cli(kafka_cluster, "kafka-topics", "--create", "--topic", topic, "--partitions", "6")
-    instance.query("CREATE TABLE test.messages (id UInt64) ENGINE = MergeTree ORDER BY id")
-    instance.query("CREATE TABLE test.fail_inserts (x UInt8) ENGINE = Memory")
+    create_kip848_member("kafka1", topic, flush_interval_ms=60000)
+    wait_for_latest(topic)
 
-    producer = get_kafka_producer(kafka_cluster.kafka_sasl_port)
-    for i in range(produced):
-        producer.send(topic=topic, value=f'{{"id":{i}}}', partition=i % 6)
-    producer.flush()
-    producer.close()
-
-    def read_offsets():
-        return instance.query(
-            "SELECT sum(arraySum(assignments.current_offset)) FROM system.kafka_consumers WHERE table = 'kafka1'"
+    def block_holds_both_rows():
+        instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=30)
+        positions = instance.query(
+            "SELECT arraySort(assignments.current_offset) FROM system.kafka_consumers WHERE database='test' AND table='kafka1'"
         )
+        if positions == "[2,2]\n":
+            return True
+        instance.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+        return False
 
     def member_partitions():
         out = kafka_cli(kafka_cluster, "kafka-consumer-groups", "--describe", "--group", topic, "--members")
-        return [int(line.split()[-1]) for line in out.splitlines() if line.startswith(topic)]
+        return sorted(int(line.split()[-1]) for line in out.splitlines() if line.startswith(topic + " "))
 
-    rejected_query = "SELECT sum(value) FROM system.events WHERE name = 'KafkaRowsRejected'"
-    rejected = int(instance.query(rejected_query))
-
-    # The failpoint holds the block when a poll returns nothing; the long flush interval keeps it from ending meanwhile.
+    # Hold the two rows in one unfinished block until the coordinator requests a partial revocation.
     instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
     try:
-        create_kip848_table("kafka1", topic, 600000)
-        instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
-        # The block must hold the rows of all the partitions, so let it poll until it has read them all.
-        for _ in range(5):
-            if read_offsets() == f"{produced}\n":
-                break
-            instance.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
-            instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
-        assert read_offsets() == f"{produced}\n"
-
-        # The broker tells the first member to revoke a part of its partitions, it keeps the rest, and the new one
-        # gets nothing until the first member revokes them while polling.
-        create_kip848_table("kafka2", topic, 500)
-        wait_condition(member_partitions, lambda p: len(p) == 2 and max(p) < 6, max_attempts=120, delay=0.5)
+        produce(10, 11)
+        wait_condition(block_holds_both_rows, bool, max_attempts=8)
+        assert instance.query("SELECT count() FROM test.messages") == "0\n"
+        create_kip848_member("kafka2", topic)
+        wait_condition(member_partitions, lambda counts: counts == [0, 1], max_attempts=30, delay=0.5)
     finally:
         instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
 
-    # The next poll of the first member revokes the partitions, and the block is dropped.
+    # One row must be replayed by the original owner, the other by the new owner.
     assert_eq_with_retry(
-        instance, f"SELECT ({rejected_query}) >= {rejected + produced}", "1", retry_count=120, sleep_time=0.5
+        instance, "SELECT arraySort(groupArray(id)), uniqExact(owner) FROM test.messages", "[10,11]\t2",
+        retry_count=120, sleep_time=0.5,
     )
+    assert topic in kafka_cli(kafka_cluster, "kafka-groups", "--list", "--group-type", "consumer")
+
+    instance.query("DROP TABLE test.kafka2_mv; DROP TABLE test.kafka2 SYNC")
+    wait_assigned_partitions("kafka1", 2)
+    produce(20, 21)
     assert_eq_with_retry(
-        instance, "SELECT uniqExact(id) FROM test.messages", str(produced), retry_count=120, sleep_time=0.5
+        instance, "SELECT arraySort(groupArray(id)) FROM test.messages WHERE owner='kafka1' AND id >= 20",
+        "[20,21]", retry_count=120, sleep_time=0.5,
     )
-    assert instance.query("SELECT count(), min(id), max(id) FROM test.messages") == f"{produced}\t0\t{produced - 1}\n"

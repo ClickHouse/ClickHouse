@@ -52,7 +52,7 @@ KafkaSource::KafkaSource(
     const Names & columns,
     LoggerPtr log_,
     size_t max_block_size_,
-    bool commit_in_suffix_,
+    CommitMode commit_mode_,
     std::optional<UInt64> cancel_epoch_)
     : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns)))
     , storage(storage_)
@@ -61,7 +61,7 @@ KafkaSource::KafkaSource(
     , column_names(columns)
     , log(log_)
     , max_block_size(max_block_size_)
-    , commit_in_suffix(commit_in_suffix_)
+    , commit_mode(commit_mode_)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader))
     , handle_error_mode(storage.getStreamingHandleErrorMode())
@@ -104,7 +104,7 @@ Chunk KafkaSource::generateImpl()
         if (!consumer)
             return {};
 
-        consumer->subscribe();
+        consumer->subscribe(commit_mode != CommitMode::None);
 
         broken = true;
     }
@@ -335,8 +335,11 @@ Chunk KafkaSource::generateImpl()
                 consumer->currentOffset());
         }
 
+        /// A cooperative consumer may lose ownership in the next poll. Finish this batch's insert
+        /// before committing its offsets when `kafka_commit_every_batch` is enabled.
         if (!consumer->hasMorePolledMessages()
-            && (total_rows >= max_block_size || !checkTimeLimit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
+            && (consumer->finishBlockAfterPollBatch() || total_rows >= max_block_size || !checkTimeLimit()
+                || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
         {
             break;
         }
@@ -398,7 +401,7 @@ Chunk KafkaSource::generateImpl()
 Chunk KafkaSource::generate()
 {
     auto chunk = generateImpl();
-    if (!chunk && commit_in_suffix)
+    if (!chunk && commit_mode == CommitMode::OnSelect)
         commit();
 
     return chunk;
