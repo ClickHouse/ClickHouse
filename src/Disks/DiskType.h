@@ -53,16 +53,16 @@ struct DataSourceDescription
     String zookeeper_name;
 
     bool operator==(const DataSourceDescription & other) const;
-    bool sameKind(const DataSourceDescription & other) const;
+    [[nodiscard]] bool sameKind(const DataSourceDescription & other) const;
 
-    String name() const;
+    [[nodiscard]] String name() const;
 
     /// Whether `IDisk::getPath` of the disk is a directory on the local filesystem: for `local` disks,
     /// for object storage disks with local metadata, and for local object storage with plain metadata.
     bool isPathLocal() const;
 
     /// Returns a string with the name and all the fields of the DataSourceDescription
-    String toString() const;
+    [[nodiscard]] String toString() const;
 };
 
 class IDisk;
