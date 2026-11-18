@@ -1,8 +1,6 @@
 -- Bracket syntax `json['key']` on a `Nullable(JSON)` carrier, and the semantics of chained
 -- bracket access over a path that holds a scalar in some rows.
 
-SET enable_analyzer = 1;
-
 SELECT 'nullable_json_untyped';
 DROP TABLE IF EXISTS t_nullable_json;
 CREATE TABLE t_nullable_json (json Nullable(JSON)) ENGINE = MergeTree ORDER BY tuple();

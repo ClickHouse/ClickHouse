@@ -14,7 +14,6 @@
 -- Each scenario below must produce the same result with `optimize_redundant_comparisons` enabled
 -- and disabled.
 
-SET enable_analyzer = 1;
 SET optimize_and_compare_chain = 1;
 
 -- ---------------------------------------------------------------------------------------------------

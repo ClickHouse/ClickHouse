@@ -1,7 +1,9 @@
 #include <Interpreters/Set.h>
+#include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Planner/PlannerContext.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Processors/QueryPlan/Serialization.h>
 
 namespace DB
 {
@@ -27,9 +29,37 @@ bool SelectQueryInfo::isStream() const
     return table_expression_modifiers && table_expression_modifiers->hasStream();
 }
 
-std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNodeNameToInputNodeColumn() const
+/// With a query tree, every table expression carries its own modifiers, while the query AST holds
+/// only the `SAMPLE` of the left-most table. A table expression without modifiers is not sampled.
+std::optional<TableExpressionModifiers::Rational> SelectQueryInfo::getSampleSizeRatio() const
 {
-    std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
+    if (table_expression_modifiers)
+        return table_expression_modifiers->getSampleSizeRatio();
+
+    if (query_tree)
+        return {};
+
+    if (auto sample_size = query->as<ASTSelectQuery &>().sampleSize())
+        return sample_size->as<ASTSampleRatio &>().ratio;
+    return {};
+}
+
+std::optional<TableExpressionModifiers::Rational> SelectQueryInfo::getSampleOffsetRatio() const
+{
+    if (table_expression_modifiers)
+        return table_expression_modifiers->getSampleOffsetRatio();
+
+    if (query_tree)
+        return {};
+
+    if (auto sample_offset = query->as<ASTSelectQuery &>().sampleOffset())
+        return sample_offset->as<ASTSampleRatio &>().ratio;
+    return {};
+}
+
+UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNodeNameToInputNodeColumn() const
+{
+    UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
     if (planner_context)
     {
         auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
@@ -54,10 +84,12 @@ PrewhereInfo PrewhereInfo::clone() const
     prewhere_info.prewhere_column_name = prewhere_column_name;
     prewhere_info.remove_prewhere_column = remove_prewhere_column;
     prewhere_info.need_filter = need_filter;
+    prewhere_info.query_condition_cache_attribution = query_condition_cache_attribution;
 
     return prewhere_info;
 }
 
+/// `query_condition_cache_attribution` is not serialized: a deserialized plan does not attribute.
 void PrewhereInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
     prewhere_actions.serialize(ctx.out, ctx.registry);

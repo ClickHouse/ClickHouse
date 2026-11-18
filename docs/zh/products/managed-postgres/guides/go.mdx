@@ -1,0 +1,379 @@
+---
+slug: /cloud/managed-postgres/guides/go
+sidebarTitle: 'Go (pgx)'
+title: '将 Go (pgx) 与 ClickHouse Managed Postgres 结合使用'
+description: '使用 pgx 和 pgxpool 通过经过验证的 TLS 将 Go 服务连接到 ClickHouse Managed Postgres，借助 golang-migrate 执行迁移，并提供基于 net/http 的 CRUD API'
+keywords: ['managed postgres', 'go', 'golang', 'pgx', 'pgxpool', 'golang-migrate', 'net/http', 'pgbouncer', 'tls']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-go-beta" />
+
+[pgx](https://github.com/jackc/pgx) 是 Go 生态中使用最广泛的 PostgreSQL 驱动程序，`pgxpool` 则是它提供的连接池。在本指南中，您将通过经过证书验证的 TLS 连接，将 Go 服务接入 ClickHouse Managed Postgres，借助 [golang-migrate](https://github.com/golang-migrate/migrate) 迁移创建 `todos` 表，并由 `net/http` 服务器处理增删改查 (创建、读取、更新和删除) 请求。
+
+## 前置条件 {#prerequisites}
+
+* [Go](https://go.dev/dl/) 1.25 或更高版本。本指南已在 Go 1.27.1、pgx 5.11.0 和 golang-migrate 4.20.1 环境下测试通过。
+* 一个 ClickHouse Cloud 账户
+* [`psql`](https://www.postgresql.org/download/)，用于创建数据库。也可以在 [SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console)中运行 `CREATE DATABASE` 语句。
+
+## 创建 ClickHouse Managed Postgres 服务 {#create-service}
+
+在 ClickHouse Cloud 控制台中，点击 **New service**，然后选择 **Postgres**。实例会在几分钟内就绪。详细操作步骤请参阅[快速入门](/zh/products/managed-postgres/quickstart)。
+
+## 获取连接信息 {#connection-details}
+
+在服务的左侧边栏中点击 **Connect**。保持选中 **Directly**，并开启 **Use SSL**。此时 **url** 选项卡中的连接 URL 会使用端口 `5432`，并以 `sslmode=verify-full&sslrootcert=<service-name>-ca-certificate.pem` 结尾。点击 **Download CA certificate**。您也可以稍后在 **Settings → CA Certificate** 中下载。该证书为您的实例所独有，因此 pgx 可以用它来验证所连接的确实是您的服务器。
+
+本指南中，无论是执行迁移还是运行应用程序，都通过端口 `5432` **直接**连接 Postgres。Go 服务是长期运行的进程，`pgxpool` 已在进程内维护了连接池，因此无需再额外使用连接池器。如果您运行了该服务的多个实例，且所需的客户端连接数超出 Postgres 的上限，请让应用程序改用内置的 PgBouncer (**via PgBouncer**，端口 `6432`) 。具体请参阅[使用 PgBouncer](#pgbouncer)，该方式需要额外配置一项连接设置。
+
+## 搭建项目 {#project-setup}
+
+创建一个 Go 模块，添加 pgx，并安装带 pgx 驱动程序的 `migrate` 命令行客户端：
+
+```bash
+mkdir todo-api && cd todo-api
+go mod init example.com/todo-api
+go get github.com/jackc/pgx/v5
+go install -tags 'pgx5' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+```
+
+`-tags 'pgx5'` 标志会在编译 `migrate` 命令行客户端时启用其 pgx v5 驱动程序，该驱动程序使用 `pgx5://` URL 协议。`go install` 会将二进制文件安装到 `$GOBIN`；如果未设置 `GOBIN`，则安装到 `$(go env GOPATH)/bin`，因此请确保该目录已加入 `PATH`。
+
+<Tip>
+  **要集成到现有应用中？**
+
+  跳过 `mkdir` 和 `go mod init`。在你的模块中运行 `go get github.com/jackc/pgx/v5` 以及上面的 `go install` 命令，然后继续阅读[配置连接](#configure-connection)。如果你的代码使用 `database/sql`，可以通过 [`stdlib.OpenDBFromPool`](https://pkg.go.dev/github.com/jackc/pgx/v5/stdlib#OpenDBFromPool) 将同一个连接池封装为 `*sql.DB`，从而逐步迁移现有查询；迁移时请将 `?` 占位符改为 `$1`、`$2` 等形式。
+</Tip>
+
+## 配置连接 {#configure-connection}
+
+将下载的 CA 证书移至项目目录，并重命名为 `ca-certificate.pem`。
+
+为应用创建一个数据库。将 `<PASSWORD>` 和主机地址替换为 **Connect** 弹窗中显示的值：
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_go;"
+```
+
+```text
+CREATE DATABASE
+```
+
+在 shell 中设置两个环境变量。二者指向同一个 `guide_go` 数据库，唯一的区别在于 URL 协议：应用程序读取 `DATABASE_URL`，而 `migrate` 命令行客户端使用 `MIGRATE_URL`：
+
+```bash
+export DATABASE_URL="postgres://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_go?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+export MIGRATE_URL="pgx5://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_go?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+```
+
+pgx 解析 URL 的方式与 `libpq` 相同。使用 `sslmode=verify-full` 时，pgx 会从 `sslrootcert` 加载 CA 文件，并同时校验证书链和主机名，因此无需编写任何 TLS 代码。`sslrootcert` 路径相对于运行命令时所在的目录进行解析。如果密码包含 `@`、`/` 或 `#` 等特殊字符，请对其进行 URL 编码。
+
+<Warning>
+  **务必设置 `sslmode=verify-full`**
+
+  如果未设置 `sslmode`，pgx 默认使用 `prefer`，此时即使设置了 `sslrootcert`，也不会校验服务器证书。设置 `sslmode=verify-full` 后，如果 CA 文件不正确，pgx 会报错 `x509: certificate signed by unknown authority`；如果该文件不存在，则会报错 `unable to read CA file`。如果使用 IP 地址而非主机名进行连接，则会报错 `x509: cannot validate certificate for <IP> because it doesn't contain any IP SANs`。
+</Warning>
+
+## 通过迁移创建 schema {#migrations}
+
+创建迁移文件：
+
+```bash
+migrate create -ext sql -dir migrations -seq create_todos
+```
+
+```text
+/Users/you/todo-api/migrations/000001_create_todos.up.sql
+/Users/you/todo-api/migrations/000001_create_todos.down.sql
+```
+
+编写 `up` 迁移的内容：
+
+```sql title="migrations/000001_create_todos.up.sql"
+CREATE TABLE todos (
+    id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    title      text NOT NULL,
+    done       boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+```
+
+以及用于撤销该变更的 `down` 迁移：
+
+```sql title="migrations/000001_create_todos.down.sql"
+DROP TABLE todos;
+```
+
+执行该迁移：
+
+```bash
+migrate -path migrations -database "$MIGRATE_URL" up
+```
+
+```text
+1/u create_todos (480.890916ms)
+```
+
+`migrate` 会在 `schema_migrations` 表中记录当前版本，之后再运行时只会应用更新的迁移。请将 `migrations` 目录与代码一同提交。
+
+<Note>
+  请始终通过直接连接 (端口 `5432`) 运行 `migrate`。它在运行期间会持有一个会话级咨询锁 (advisory lock) ，以防止两个部署同时执行迁移。如果经由 PgBouncer 连接，加锁和解锁可能会在不同的 Postgres 连接上执行，导致锁始终未被释放，之后再运行 `migrate` 时会挂起，或因 `timeout: can't acquire database lock` 报错而失败。
+</Note>
+
+## 查询数据库 {#query}
+
+创建 `db.go`。该文件基于 `DATABASE_URL` 创建连接池，并在启动时向 Postgres 查询当前会话使用的 TLS 版本，以此检查连接是否正常：
+
+```go title="db.go"
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// newPool creates a connection pool from DATABASE_URL and verifies that it can connect.
+func newPool(ctx context.Context) (*pgxpool.Pool, error) {
+	pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
+	if err != nil {
+		return nil, err
+	}
+
+	var tlsVersion string
+	err = pool.QueryRow(ctx,
+		"SELECT coalesce(version, 'none') FROM pg_stat_ssl WHERE pid = pg_backend_pid()",
+	).Scan(&tlsVersion)
+	if err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("connect to Postgres: %w", err)
+	}
+	log.Printf("Connected to Postgres (TLS: %s)", tlsVersion)
+	return pool, nil
+}
+```
+
+创建 `todos.go`，在其中编写 HTTP 处理程序。每个处理程序都会在连接池上执行一条参数化查询，再由 `pgx.CollectRows` 和 `pgx.CollectExactlyOneRow` 按列名将结果行扫描到 `Todo` 结构体中：
+
+```go title="todos.go"
+package main
+
+import (
+	"encoding/json"
+	"errors"
+	"log"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type Todo struct {
+	ID        int64     `json:"id" db:"id"`
+	Title     string    `json:"title" db:"title"`
+	Done      bool      `json:"done" db:"done"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+}
+
+const todoColumns = "id, title, done, created_at"
+
+// registerTodoRoutes adds the CRUD endpoints for todos to mux.
+func registerTodoRoutes(mux *http.ServeMux, pool *pgxpool.Pool) {
+	// Read
+	mux.HandleFunc("GET /todos", func(w http.ResponseWriter, r *http.Request) {
+		rows, _ := pool.Query(r.Context(), "SELECT "+todoColumns+" FROM todos ORDER BY id")
+		todos, err := pgx.CollectRows(rows, pgx.RowToStructByName[Todo])
+		writeJSON(w, http.StatusOK, todos, err)
+	})
+
+	// Create
+	mux.HandleFunc("POST /todos", func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ Title string }
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Title == "" {
+			http.Error(w, "expected a JSON body with a title", http.StatusBadRequest)
+			return
+		}
+		rows, _ := pool.Query(r.Context(),
+			"INSERT INTO todos (title) VALUES ($1) RETURNING "+todoColumns, in.Title)
+		todo, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Todo])
+		writeJSON(w, http.StatusCreated, todo, err)
+	})
+
+	// Update: toggle the done flag
+	mux.HandleFunc("PATCH /todos/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		rows, _ := pool.Query(r.Context(),
+			"UPDATE todos SET done = NOT done WHERE id = $1 RETURNING "+todoColumns, id)
+		todo, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Todo])
+		writeJSON(w, http.StatusOK, todo, err)
+	})
+
+	// Delete
+	mux.HandleFunc("DELETE /todos/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		tag, err := pool.Exec(r.Context(), "DELETE FROM todos WHERE id = $1", id)
+		if err == nil && tag.RowsAffected() == 0 {
+			err = pgx.ErrNoRows
+		}
+		writeJSON(w, http.StatusNoContent, nil, err)
+	})
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any, err error) {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		http.Error(w, "not found", http.StatusNotFound)
+	case err != nil:
+		log.Println(err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+	case status == http.StatusNoContent:
+		w.WriteHeader(status)
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		enc.Encode(body)
+	}
+}
+```
+
+以参数形式 (`$1`) 传递值，而不是将其拼接到 SQL 字符串中，可以防止 SQL 注入。pgx 会将这些值与查询文本分开发送。您无需单独检查 `pool.Query` 返回的错误，因为 `pgx.CollectRows` 和 `pgx.CollectExactlyOneRow` 会返回该错误。
+
+创建 `main.go`。该程序为整个进程创建一个连接池，在端口 `3114` 上提供上述路由，并在按下 <kbd>Ctrl</kbd>+<kbd>C</kbd> 时关闭连接池。如果是现有应用，则应在启动时调用一次 `newPool`，并在您的 `http.ServeMux` 上调用 `registerTodoRoutes`：
+
+```go title="main.go"
+package main
+
+import (
+	"context"
+	"errors"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+)
+
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := newPool(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer pool.Close()
+
+	mux := http.NewServeMux()
+	registerTodoRoutes(mux, pool)
+	srv := &http.Server{Addr: ":3114", Handler: mux}
+
+	go func() {
+		<-ctx.Done()
+		srv.Shutdown(context.Background())
+	}()
+
+	log.Println("Listening on http://localhost:3114/todos")
+	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+		log.Fatal(err)
+	}
+	log.Println("Shutting down")
+}
+```
+
+## 运行并验证 {#verify}
+
+将 `pgxpool` 的其余依赖项添加到 `go.mod` 和 `go.sum` 中，然后启动服务器：
+
+```bash
+go mod tidy
+go run .
+```
+
+```text
+2026/10/01 09:44:25 Connected to Postgres (TLS: TLSv1.3)
+2026/10/01 09:44:25 Listening on http://localhost:3114/todos
+```
+
+`TLSv1.3` 取自服务器上的 `pg_stat_ssl`，由此可以确认该会话已加密。如果将 `sslrootcert` 指向其他任意证书，服务器将无法启动，并在日志中输出 `x509: certificate signed by unknown authority`，这说明证书确实经过了校验。
+
+在另一个终端中，创建两个待办事项，将第一个标记为已完成，然后删除第二个：
+
+```bash
+curl -X POST localhost:3114/todos -d '{"title": "Try pgx"}'
+curl -X POST localhost:3114/todos -d '{"title": "Write a migration"}'
+curl -X PATCH localhost:3114/todos/1
+curl -X DELETE localhost:3114/todos/2
+```
+
+`PATCH` 请求会返回更新后的行：
+
+```json
+{
+  "id": 1,
+  "title": "Try pgx",
+  "done": true,
+  "created_at": "2026-10-01T09:44:25.896031-05:00"
+}
+```
+
+在浏览器中打开 `http://localhost:3114/todos`，即可列出剩余的待办事项。pgx 返回的 `timestamptz` 值采用本地时区。响应如下所示：
+
+```json
+[
+  {
+    "id": 1,
+    "title": "Try pgx",
+    "done": true,
+    "created_at": "2026-10-01T09:44:25.896031-05:00"
+  }
+]
+```
+
+按 <kbd>Ctrl</kbd>+<kbd>C</kbd> 停止服务器。服务器会在日志中输出 `Shutting down`，并关闭连接池。
+
+要在控制台中查看数据，请在服务的左侧边栏中打开 **SQL 控制台**，依次展开 `guide_go` 和 `public`，然后点击 `todos` 表。旁边的 `schema_migrations` 表记录了迁移版本。`todos` 表中仅剩下一行数据：
+
+| id | title   | done | created&#95;at                |
+| -- | ------- | ---- | ----------------------------- |
+| 1  | Try pgx | true | 2026-10-01 14:44:25.896031+00 |
+
+## 使用 PgBouncer {#pgbouncer}
+
+如需让应用的查询经由内置的 [PgBouncer](/zh/products/managed-postgres/connection#pgbouncer) 发送，请在 Connect 弹窗中选择 **via PgBouncer**，将 `DATABASE_URL` 中的端口改为 `6432`，并添加 `default_query_exec_mode=cache_describe`。`MIGRATE_URL` 仍使用端口 `5432`：
+
+```bash
+export DATABASE_URL="postgres://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/guide_go?sslmode=verify-full&sslrootcert=ca-certificate.pem&default_query_exec_mode=cache_describe"
+```
+
+pgx 会从 URL 中读取 `default_query_exec_mode`，但不会将其发送到服务器。无需修改代码，原有的 CA 证书也照常可用。启动日志现在会显示 `TLS: none`，这是因为 `pg_stat_ssl` 报告的是 PgBouncer 自身到 Postgres 的连接。应用到 PgBouncer 的连接仍会经过验证：如果 CA 证书不正确，连接同样会失败。
+
+<Warning>
+  **不要通过 PgBouncer 使用 pgx 的默认查询模式**
+
+  默认情况下，pgx 会在每个连接上将每条查询预处理为命名语句 (每个连接仅一次) ，并复用返回的列类型。PgBouncer 会在实际执行该查询的 Postgres 连接上预处理这些语句，并在客户端之间共享。如果迁移更改了某列的类型，或向以 `SELECT *` 查询的表中添加了列，经由 PgBouncer 的查询可能会持续报错 `cached plan must not change result type`，即使重启应用也无济于事；在 pgx 5.9 及更高版本中，甚至可能不报错却返回错误的值。例如，某列从 `bigint` 改为 `double precision` 后，返回的会是 `float64` 值的原始比特，如 `42.5` 会返回为 `4631178160564600832`。
+
+  `cache_describe` 只缓存参数类型和列类型，在单次往返中以未命名语句执行每条查询，并根据服务器随每个结果返回的列类型解码行，因此不受此问题影响。`exec` 同样可用。不要通过 PgBouncer 使用 `describe_exec`：它会将每条查询拆分为两次往返，而 PgBouncer 可能会把这两次往返发送到不同的 Postgres 连接。无需设置 `statement_cache_capacity=0`。
+</Warning>
+
+PgBouncer 以事务池化模式运行，因此每个事务都可能在不同的 Postgres 连接上执行：
+
+* 通过 `pool.Begin` 或 `pgx.BeginFunc` 使用事务不受影响，可照常工作。
+* 通过 `SET` 进行的会话设置不会保留在您的连接上，还可能泄漏给其他客户端。请改为在事务内使用 `SET LOCAL`。此外，如果连接 URL 中包含 `search_path`，PgBouncer 会拒绝连接并报错 `unsupported startup parameter: search_path`；请改用带 schema 限定的表名。
+* SQL 层面的 `PREPARE` 和 `EXECUTE`、`LISTEN` 以及会话级咨询锁均无法使用。
+
+## 后续步骤 {#next-steps}
+
+* [连接](/zh/products/managed-postgres/connection)：连接字符串、PgBouncer 和 TLS
+* [设置](/zh/products/managed-postgres/settings)：Postgres 和 PgBouncer 参数，例如 `max_connections`
+* [只读副本](/zh/products/managed-postgres/read-replicas)：使用第二个 `pgxpool.Pool` 将只读查询发送到副本
+* [安全](/zh/products/managed-postgres/security)：IP 访问列表和私有网络

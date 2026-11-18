@@ -149,6 +149,18 @@ StoragePtr DatabaseOverlay::detachTable(ContextPtr context_, const String & tabl
         getEngineName());
 }
 
+void DatabaseOverlay::waitDetachedTableNotInUse(const UUID & uuid, std::function<void()> throw_if_cancelled)
+{
+    for (auto & db : databases)
+        db->waitDetachedTableNotInUse(uuid, throw_if_cancelled);
+}
+
+void DatabaseOverlay::checkDetachedTableNotInUse(const UUID & uuid)
+{
+    for (auto & db : databases)
+        db->checkDetachedTableNotInUse(uuid);
+}
+
 DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOverlay::getDetachedTablesIterator(
     ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
 {
@@ -190,6 +202,8 @@ void DatabaseOverlay::renameTable(
 {
     for (auto & db : databases)
     {
+        /// A member database with the asynchronous loading attaches the table only in its load job.
+        db->waitTableStarted(name);
         if (db->isTableExist(name, current_context))
         {
             if (DatabaseOverlay * to_overlay_database = typeid_cast<DatabaseOverlay *>(&to_database))
@@ -356,12 +370,12 @@ void DatabaseOverlay::shutdown()
         db->shutdown();
 }
 
-DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool /*skip_not_loaded*/) const
+DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
 {
     Tables tables;
     for (const auto & db : databases)
     {
-        for (auto table_it = db->getTablesIterator(context_, filter_by_table_name); table_it->isValid(); table_it->next())
+        for (auto table_it = db->getTablesIterator(context_, filter_by_table_name, skip_not_loaded); table_it->isValid(); table_it->next())
             tables.insert({table_it->name(), table_it->table()});
     }
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
@@ -605,6 +619,18 @@ void DatabaseOverlay::checkMetadataFilenameAvailability(const String & table_nam
     }
 }
 
+bool DatabaseOverlay::canReattachTableWithFullDefinition() const
+{
+    /// `createTable` writes to the first writable member, so that member decides whether a detached name is reserved.
+    for (const auto & db : databases)
+    {
+        if (db->isReadOnly())
+            continue;
+        return db->canReattachTableWithFullDefinition();
+    }
+    return true;
+}
+
 void DatabaseOverlay::checkTableNameLength(const String & table_name) const
 {
     /// The limit belongs to the member createTable writes to, which owns the metadata file.
@@ -780,7 +806,7 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
         return std::make_shared<DatabaseOverlayReadOnly>(args.database_name, std::move(sources), args.context);
     };
 
-    factory.registerDatabase("Overlay", create_fn, {.supports_arguments = true}, Documentation{
+    factory.registerDatabase("Overlay", create_fn, SecretArgumentsSpec{}, {.supports_arguments = true}, Documentation{
         .description = R"DOCS_MD(
 The `Overlay` database engine exposes the union of the tables of several existing databases.
 

@@ -59,9 +59,9 @@ namespace S3AuthSetting
     extern const S3AuthSettingsBool no_sign_request;
     extern const S3AuthSettingsString region;
     extern const S3AuthSettingsUInt64 request_timeout_ms;
-    extern const S3AuthSettingsString secret_access_key;
-    extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
-    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsSecretString secret_access_key;
+    extern const S3AuthSettingsSecretString server_side_encryption_customer_key_base64;
+    extern const S3AuthSettingsSecretString session_token;
     extern const S3AuthSettingsBool use_adaptive_timeouts;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsBool use_insecure_imds_request;
@@ -75,8 +75,9 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString metadata_service;
     extern const S3AuthSettingsString request_token_path;
     extern const S3AuthSettingsString google_adc_client_id;
-    extern const S3AuthSettingsString google_adc_client_secret;
-    extern const S3AuthSettingsString google_adc_refresh_token;
+    extern const S3AuthSettingsSecretString google_adc_client_secret;
+    extern const S3AuthSettingsSecretString google_adc_refresh_token;
+    extern const S3AuthSettingsSecretString google_service_account_key;
 }
 
 namespace S3RequestSetting
@@ -152,14 +153,14 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     retry_strategy.max_delay_ms = static_cast<unsigned int>(request_settings[S3RequestSetting::retry_max_delay_ms]);
 
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-        auth_settings[S3AuthSetting::region],
+        auth_settings[S3AuthSetting::region].value,
         context->getRemoteHostFilter(),
         s3_max_redirects,
         retry_strategy,
         s3_slow_all_threads_after_network_error,
         /* s3_slow_all_threads_after_retryable_error = */ false,
         enable_s3_requests_logging,
-        for_disk_s3,
+        for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE,
         opt_disk_name,
         request_settings.request_throttler,
         url.uri.getScheme());
@@ -176,6 +177,7 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     client_configuration.google_adc_client_id = auth_settings[S3AuthSetting::google_adc_client_id];
     client_configuration.google_adc_client_secret = auth_settings[S3AuthSetting::google_adc_client_secret];
     client_configuration.google_adc_refresh_token = auth_settings[S3AuthSetting::google_adc_refresh_token];
+    client_configuration.google_service_account_key = auth_settings[S3AuthSetting::google_service_account_key];
 
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.s3_use_adaptive_timeouts = auth_settings[S3AuthSetting::use_adaptive_timeouts];
@@ -211,6 +213,19 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     /// server credentials. Server disks may; user dynamic S3 disks are handled earlier in getDiskConfigurationFromAST.
     credentials_configuration.forbid_implicit_credentials = !for_disk_s3 && context->shouldRestrictUserQueryS3Credentials();
 
+    /// A Google credential counts as explicit below only when the query, a named collection or a BigLake catalog supplied
+    /// it (see `S3AuthSettings::google_credentials_explicit`). One merged from the server `<s3>`/endpoint config, e.g.
+    /// kept by a table created with `s3_allow_server_credentials_in_user_queries = 1` or merged in again when the client
+    /// is rebuilt, is the server's: drop it, so that the `gcp_oauth` client is refused below as one asking for the
+    /// server's credentials.
+    if (credentials_configuration.forbid_implicit_credentials && !auth_settings.google_credentials_explicit)
+    {
+        client_configuration.google_adc_client_id.clear();
+        client_configuration.google_adc_client_secret.clear();
+        client_configuration.google_adc_refresh_token.clear();
+        client_configuration.google_service_account_key.clear();
+    }
+
     /// On metadata load, downgrade a now-restricted definition to anonymous (if allowed by the server setting)
     /// so the server starts with the table inaccessible instead of aborting. Also drop a `gcp_oauth` http client
     /// without an explicit ADC triple, else the downgrade would still mint a token with the server's GCP identity.
@@ -225,18 +240,19 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     {
         credentials_configuration.anonymous_fallback_for_server_credentials = true;
 
-        const bool has_explicit_gcp_adc = !client_configuration.google_adc_client_id.empty()
+        const bool has_explicit_gcp_adc = (!client_configuration.google_adc_client_id.empty()
             && !client_configuration.google_adc_client_secret.empty()
-            && !client_configuration.google_adc_refresh_token.empty();
+            && !client_configuration.google_adc_refresh_token.empty())
+            || !client_configuration.google_service_account_key.empty();
         if (boost::iequals(client_configuration.http_client, "gcp_oauth") && !has_explicit_gcp_adc)
             client_configuration.http_client.clear();
     }
 
     String access_key_id = auth_settings[S3AuthSetting::access_key_id];
-    String secret_access_key = auth_settings[S3AuthSetting::secret_access_key];
-    String session_token = auth_settings[S3AuthSetting::session_token];
+    SecretString secret_access_key = auth_settings[S3AuthSetting::secret_access_key];
+    SecretString session_token = auth_settings[S3AuthSetting::session_token];
     auto headers = auth_settings.getHeaders();
-    String server_side_encryption_customer_key_base64 = auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
+    SecretString server_side_encryption_customer_key_base64 = auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
     auto server_side_encryption_kms_config = auth_settings.server_side_encryption_kms_config;
 
     /// When a persistent S3-engine table is downgraded to anonymous on metadata load, drop the request-auth
@@ -267,7 +283,7 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
                 /// GCS Bearer token: replace the Authorization header with the refreshed token.
                 /// no_sign_request is already set from the initial configuration.
                 headers.eraseByName("Authorization");
-                headers.push_back({"Authorization", "Bearer " + gcs_creds->getToken()});
+                headers.push_back({"Authorization", fmt::format("Bearer {}", gcs_creds->getToken())});
             }
             else if (auto s3_creds = std::dynamic_pointer_cast<DataLake::S3Credentials>(updated_credentials))
             {
@@ -286,6 +302,13 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     }
 
     context->getHTTPHeaderFilter().checkHeaders(headers);
+
+    /// `gcp_oauth` adds an `Authorization` header to every request, so it must obey the same filter.
+    if (boost::iequals(client_configuration.http_client, "gcp_oauth"))
+    {
+        HTTPHeaderEntries gcp_oauth_headers{{"Authorization", "Bearer"}};
+        context->getHTTPHeaderFilter().checkHeaders(gcp_oauth_headers);
+    }
 
     auto shared_cache = S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(url.endpoint, url.bucket);
 

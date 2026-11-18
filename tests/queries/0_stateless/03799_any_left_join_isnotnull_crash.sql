@@ -1,4 +1,3 @@
-SET allow_experimental_analyzer = 1;
 
 DROP TABLE IF EXISTS AddedToCart;
 DROP TABLE IF EXISTS Session;

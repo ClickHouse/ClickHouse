@@ -279,19 +279,17 @@ bool isTupleFunction(const ASTPtr & ast)
     return function && function->name == "tuple";
 }
 
-size_t getTupleElementCount(const DataTypePtr & type, const ASTPtr & ast)
+/// The number of key columns that `IN` compares separately for the left operand, see `getInKeyColumnTypes`.
+/// Without a resolved type, a `tuple(...)` call has one key column per argument.
+size_t getInKeyColumnCount(const DataTypePtr & type, const ASTPtr & ast)
 {
     if (type)
-    {
-        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
-        if (tuple_type)
-            return tuple_type->getElements().size();
-    }
+        return getInKeyColumnTypes(type).size();
 
     if (const auto * function = ast->as<ASTFunction>(); function && function->name == "tuple")
         return function->arguments->children.size();
 
-    return 0;
+    return 1;
 }
 
 ASTPtr makeTupleHasNoNullElementsPredicate(const ASTPtr & tuple_value, size_t tuple_size)
@@ -409,7 +407,7 @@ ASTPtr makeNonConstantInReplacement(
     bool include_right_operand_tuple_value,
     const DataTypePtr & right_operand_type,
     bool left_operand_is_tuple,
-    size_t left_operand_tuple_size,
+    size_t left_operand_key_column_count,
     bool left_operand_is_always_null,
     const DataTypePtr & cast_elements_to)
 {
@@ -491,13 +489,14 @@ ASTPtr makeNonConstantInReplacement(
         left_operand->clone());
 
     ASTPtr result = has_function;
-    /// `has` treats tuple values with equal `NULL` elements as a match, while `IN`
-    /// with `transform_null_in = 0` skips such tuple values. Guard tuple LHS
-    /// elements to preserve `IN` semantics in the row-wise rewrite.
-    if (!inFunctionComparesNulls(node.name) && left_operand_tuple_size != 0)
+    /// `IN` compares the columns of a multi-column key separately, and with `transform_null_in = 0` a NULL
+    /// element never matches, while `has` compares the tuples as values, where equal NULL elements match.
+    /// Guard the elements to preserve the `IN` semantics; a single key needs no guard, its NULL fields are
+    /// values.
+    if (!inFunctionComparesNulls(node.name) && left_operand_key_column_count > 1)
         result = makeASTFunction(
             "and",
-            makeTupleHasNoNullElementsPredicate(left_operand, left_operand_tuple_size),
+            makeTupleHasNoNullElementsPredicate(left_operand, left_operand_key_column_count),
             std::move(result));
 
     if (!inFunctionComparesNulls(node.name))
@@ -585,7 +584,7 @@ public:
         index.push_back(node);
     }
 
-    const ActionsDAG::Node * tryGetNode(const std::string & name) const
+    [[nodiscard]] const ActionsDAG::Node * tryGetNode(const std::string & name) const
     {
         auto it = map.find(name);
         if (it == map.end())
@@ -594,7 +593,7 @@ public:
         return it->second;
     }
 
-    const ActionsDAG::Node & getNode(const std::string & name) const
+    [[nodiscard]] const ActionsDAG::Node & getNode(const std::string & name) const
     {
         const auto * node = tryGetNode(name);
         if (!node)
@@ -603,9 +602,9 @@ public:
         return *node;
     }
 
-    bool contains(const std::string & name) const { return map.contains(name); }
+    [[nodiscard]] bool contains(const std::string & name) const { return map.contains(name); }
 
-    std::vector<std::string_view> getAllNames() const
+    [[nodiscard]] std::vector<std::string_view> getAllNames() const
     {
         std::vector<std::string_view> result;
         result.reserve(map.size());
@@ -775,7 +774,7 @@ void ScopeStack::addFunction(
 
     {
         auto & mutable_node = const_cast<ActionsDAG::Node &>(node);
-        bool node_has_secret = FunctionSecretArgumentsFinderActionsDAG(node).getResult().hasSecrets();
+        bool node_has_secret = findSecretArguments(node).hasSecrets();
         bool child_has_secret = std::any_of(
             node.children.begin(), node.children.end(), [](const ActionsDAG::Node * child) { return child->is_masked_secret; });
         mutable_node.is_masked_secret = node_has_secret || (node.column && child_has_secret);
@@ -1159,12 +1158,11 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         if (nullable_left_tuple_type && rhs_tuple_all_null)
                         {
                             right_argument_tuple_function_is_set = true;
-                            /// Match the constant `Set` path: an explicit all-`NULL` tuple contributes
-                            /// top-level `NULL` set elements and, when representable, the tuple value too.
-                            include_right_argument_tuple_value = inFunctionComparesNulls(node.name)
-                                && right_argument_function->arguments->children.size() == nullable_left_tuple_type->getElements().size()
-                                && std::all_of(nullable_left_tuple_type->getElements().begin(), nullable_left_tuple_type->getElements().end(),
-                                    [](const auto & type) { return type->isNullable(); });
+                            /// An explicit all-`NULL` RHS tuple, such as `(NULL, NULL)`, is read as in the
+                            /// constant `Set` path: as top-level `NULL` set elements and, when the key can
+                            /// hold it, as the tuple value too (see `nullableTupleKeyCanHoldAllNullTuple`).
+                            include_right_argument_tuple_value = nullableTupleKeyCanHoldAllNullTuple(
+                                *nullable_left_tuple_type, right_argument_function->arguments->children.size());
                         }
                     }
                 }
@@ -1293,7 +1291,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         include_right_argument_tuple_value,
                         right_argument_type,
                         left_argument_is_tuple,
-                        getTupleElementCount(left_argument_type, node.arguments->children.at(0)),
+                        getInKeyColumnCount(left_argument_type, node.arguments->children.at(0)),
                         left_argument_type && left_argument_type->onlyNull(),
                         cast_elements_to);
                 }

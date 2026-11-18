@@ -1,0 +1,20 @@
+-- a String constant parsed into the stored type
+Date	1	1
+UInt64	1	1
+UInt64 has	1	1
+UUID	1	1
+Array	1	1
+-- a constant of another type converted to the stored type
+Date against DateTime	1	1
+Dynamic against DateTime	1	1
+Dynamic against DateTime, toString key	1	1
+Bool against UInt8	1	1
+signed zero	2	2
+-- Variant and JSON
+Variant constant	1	1
+JSON	1	1
+-- the key is still used when the query compares the key expression itself
+explicit CAST	1
+-- the other key columns are still used
+AND	2
+has	2

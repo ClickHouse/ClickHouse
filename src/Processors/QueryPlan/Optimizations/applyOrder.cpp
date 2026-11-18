@@ -5,14 +5,15 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitRangeStep.h>
-#include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
-#include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 
 #include <Functions/IFunction.h>
 #include <Interpreters/FullSortingMergeJoin.h>
@@ -154,8 +155,8 @@ static SortingProperty applyOrderToJoin(const JoinStep & join_step, const Sortin
 
 static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    if (const auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(parent->step.get()))
-        return {read_from_merge_tree->getSortDescription(), SortingProperty::SortScope::Stream};
+    if (const auto * source_step = dynamic_cast<const ISourceStep*>(parent->step.get()))
+        return {source_step->getSortDescription(), SortingProperty::SortScope::Stream};
 
     if (const auto * aggregating_step = typeid_cast<AggregatingStep *>(parent->step.get()))
     {

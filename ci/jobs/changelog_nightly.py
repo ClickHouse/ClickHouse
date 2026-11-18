@@ -1843,7 +1843,7 @@ def edit_raw_entries(version):
                 # runners): writable workspace, network for `gh pr view`.
                 ok = Shell.check(
                     f"CODEX_HOME={shlex.quote(codex_home)} codex exec "
-                    f"-m gpt-5.4 -c 'model_reasoning_effort=xhigh' "
+                    f"-m gpt-6.1-sol -c 'model_reasoning_effort=xhigh' "
                     f"-s workspace-write "
                     f"-c sandbox_workspace_write.network_access=true "
                     f"-c approval_policy=never "

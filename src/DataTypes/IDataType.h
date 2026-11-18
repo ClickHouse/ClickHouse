@@ -4,7 +4,10 @@
 #include <Core/TypeId.h>
 #include <Common/COW.h>
 #include <DataTypes/IDataType_fwd.h>
-#include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationSubstream.h>
+#include <Core/Types.h>
+#include <Common/typeid_cast.h>
+#include <base/demangle.h>
 
 #include <memory>
 #include <optional>
@@ -108,8 +111,8 @@ public:
 
     SerializationPtr getSubcolumnSerialization(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
 
-    using SubstreamData = ISerialization::SubstreamData;
-    using SubstreamPath = ISerialization::SubstreamPath;
+    using SubstreamData = SerializationSubstreamData;
+    using SubstreamPath = SerializationSubstreamPath;
 
     /// A resolved subcolumn: everything needed to read it, plus the path saying which substream it is.
     /// The name alone does not, because subcolumn names are flat and several substreams can claim one -
@@ -132,7 +135,15 @@ public:
 
     static void forEachSubcolumn(
         const SubcolumnCallback & callback,
-        const SubstreamData & data);
+        const SubstreamData & data,
+        size_t initial_array_level = 0);
+
+    /// Names of the subcolumns the type declares but resolves dynamically, which the stream enumeration does not
+    /// emit: the typed paths of JSON and the subcolumns under them. forEachSubcolumn asks every type it reaches,
+    /// at that type's array level, resolves each name as a query does and lists it with the static ones. A type
+    /// whose nested type is not a named subcolumn, Array or Nullable, delegates to it.
+    using SubcolumnNameCallback = std::function<void(const String &)>;
+    virtual void forEachKnownDynamicSubcolumnName(const SubcolumnNameCallback &, size_t /*array_level*/) const {}
 
     /// The number of types nested directly in this one. Zero for a type that has none.
     virtual size_t getNumberOfChildren() const { return 0; }
@@ -180,7 +191,7 @@ public:
 
     SerializationPtr getSerialization(const SerializationInfoSettings & settings) const;
 
-    SerializationPtr wrapSerializationBasedOnKindStack(SerializationPtr serialization, const ISerialization::KindStack & kind_stack, const SerializationInfoSettings & settings) const;
+    SerializationPtr wrapSerializationBasedOnKindStack(SerializationPtr serialization, const SerializationKindStack & kind_stack, const SerializationInfoSettings & settings) const;
 
     /// Chooses between subcolumn serialization and regular serialization according to @column.
     /// This method typically should be used to get serialization for reading column or subcolumn.
@@ -436,84 +447,84 @@ struct WhichDataType
     // shared ptr -> is non-constexpr in gcc
     WhichDataType(const DataTypePtr & data_type) : idx(data_type->getTypeId()) {} /// NOLINT
 
-    constexpr bool isUInt8() const { return idx == TypeIndex::UInt8; }
-    constexpr bool isUInt16() const { return idx == TypeIndex::UInt16; }
-    constexpr bool isUInt32() const { return idx == TypeIndex::UInt32; }
-    constexpr bool isUInt64() const { return idx == TypeIndex::UInt64; }
-    constexpr bool isUInt128() const { return idx == TypeIndex::UInt128; }
-    constexpr bool isUInt256() const { return idx == TypeIndex::UInt256; }
-    constexpr bool isNativeUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64(); }
-    constexpr bool isUInt() const { return isNativeUInt() || isUInt128() || isUInt256(); }
+    [[nodiscard]] constexpr bool isUInt8() const { return idx == TypeIndex::UInt8; }
+    [[nodiscard]] constexpr bool isUInt16() const { return idx == TypeIndex::UInt16; }
+    [[nodiscard]] constexpr bool isUInt32() const { return idx == TypeIndex::UInt32; }
+    [[nodiscard]] constexpr bool isUInt64() const { return idx == TypeIndex::UInt64; }
+    [[nodiscard]] constexpr bool isUInt128() const { return idx == TypeIndex::UInt128; }
+    [[nodiscard]] constexpr bool isUInt256() const { return idx == TypeIndex::UInt256; }
+    [[nodiscard]] constexpr bool isNativeUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64(); }
+    [[nodiscard]] constexpr bool isUInt() const { return isNativeUInt() || isUInt128() || isUInt256(); }
 
-    constexpr bool isInt8() const { return idx == TypeIndex::Int8; }
-    constexpr bool isInt16() const { return idx == TypeIndex::Int16; }
-    constexpr bool isInt32() const { return idx == TypeIndex::Int32; }
-    constexpr bool isInt64() const { return idx == TypeIndex::Int64; }
-    constexpr bool isInt128() const { return idx == TypeIndex::Int128; }
-    constexpr bool isInt256() const { return idx == TypeIndex::Int256; }
-    constexpr bool isNativeInt() const { return isInt8() || isInt16() || isInt32() || isInt64(); }
-    constexpr bool isInt() const { return isNativeInt() || isInt128() || isInt256(); }
+    [[nodiscard]] constexpr bool isInt8() const { return idx == TypeIndex::Int8; }
+    [[nodiscard]] constexpr bool isInt16() const { return idx == TypeIndex::Int16; }
+    [[nodiscard]] constexpr bool isInt32() const { return idx == TypeIndex::Int32; }
+    [[nodiscard]] constexpr bool isInt64() const { return idx == TypeIndex::Int64; }
+    [[nodiscard]] constexpr bool isInt128() const { return idx == TypeIndex::Int128; }
+    [[nodiscard]] constexpr bool isInt256() const { return idx == TypeIndex::Int256; }
+    [[nodiscard]] constexpr bool isNativeInt() const { return isInt8() || isInt16() || isInt32() || isInt64(); }
+    [[nodiscard]] constexpr bool isInt() const { return isNativeInt() || isInt128() || isInt256(); }
 
-    constexpr bool isNativeInteger() const { return isNativeInt() || isNativeUInt(); }
-    constexpr bool isInteger() const { return isInt() || isUInt(); }
+    [[nodiscard]] constexpr bool isNativeInteger() const { return isNativeInt() || isNativeUInt(); }
+    [[nodiscard]] constexpr bool isInteger() const { return isInt() || isUInt(); }
 
-    constexpr bool isDecimal32() const { return idx == TypeIndex::Decimal32; }
-    constexpr bool isDecimal64() const { return idx == TypeIndex::Decimal64; }
-    constexpr bool isDecimal128() const { return idx == TypeIndex::Decimal128; }
-    constexpr bool isDecimal256() const { return idx == TypeIndex::Decimal256; }
-    constexpr bool isDecimal() const { return isDecimal32() || isDecimal64() || isDecimal128() || isDecimal256(); }
+    [[nodiscard]] constexpr bool isDecimal32() const { return idx == TypeIndex::Decimal32; }
+    [[nodiscard]] constexpr bool isDecimal64() const { return idx == TypeIndex::Decimal64; }
+    [[nodiscard]] constexpr bool isDecimal128() const { return idx == TypeIndex::Decimal128; }
+    [[nodiscard]] constexpr bool isDecimal256() const { return idx == TypeIndex::Decimal256; }
+    [[nodiscard]] constexpr bool isDecimal() const { return isDecimal32() || isDecimal64() || isDecimal128() || isDecimal256(); }
 
-    constexpr bool isBFloat16() const { return idx == TypeIndex::BFloat16; }
-    constexpr bool isFloat32() const { return idx == TypeIndex::Float32; }
-    constexpr bool isFloat64() const { return idx == TypeIndex::Float64; }
-    constexpr bool isNativeFloat() const { return isFloat32() || isFloat64(); }
-    constexpr bool isFloat() const { return isNativeFloat() || isBFloat16(); }
+    [[nodiscard]] constexpr bool isBFloat16() const { return idx == TypeIndex::BFloat16; }
+    [[nodiscard]] constexpr bool isFloat32() const { return idx == TypeIndex::Float32; }
+    [[nodiscard]] constexpr bool isFloat64() const { return idx == TypeIndex::Float64; }
+    [[nodiscard]] constexpr bool isNativeFloat() const { return isFloat32() || isFloat64(); }
+    [[nodiscard]] constexpr bool isFloat() const { return isNativeFloat() || isBFloat16(); }
 
-    constexpr bool isIntegerOrDecimal() const { return isInteger() || isDecimal(); }
-    constexpr bool isNativeNumber() const { return isNativeInteger() || isNativeFloat(); }
-    constexpr bool isNumber() const { return isInteger() || isFloat() || isDecimal(); }
+    [[nodiscard]] constexpr bool isIntegerOrDecimal() const { return isInteger() || isDecimal(); }
+    [[nodiscard]] constexpr bool isNativeNumber() const { return isNativeInteger() || isNativeFloat(); }
+    [[nodiscard]] constexpr bool isNumber() const { return isInteger() || isFloat() || isDecimal(); }
 
-    constexpr bool isEnum8() const { return idx == TypeIndex::Enum8; }
-    constexpr bool isEnum16() const { return idx == TypeIndex::Enum16; }
-    constexpr bool isEnum() const { return isEnum8() || isEnum16(); }
+    [[nodiscard]] constexpr bool isEnum8() const { return idx == TypeIndex::Enum8; }
+    [[nodiscard]] constexpr bool isEnum16() const { return idx == TypeIndex::Enum16; }
+    [[nodiscard]] constexpr bool isEnum() const { return isEnum8() || isEnum16(); }
 
-    constexpr bool isDate() const { return idx == TypeIndex::Date; }
-    constexpr bool isDate32() const { return idx == TypeIndex::Date32; }
-    constexpr bool isDateOrDate32() const { return isDate() || isDate32(); }
-    constexpr bool isDateTime() const { return idx == TypeIndex::DateTime; }
-    constexpr bool isDateTime64() const { return idx == TypeIndex::DateTime64; }
-    constexpr bool isDateTimeOrDateTime64() const { return isDateTime() || isDateTime64(); }
-    constexpr bool isDateOrDate32OrDateTimeOrDateTime64() const { return isDateOrDate32() || isDateTimeOrDateTime64(); }
-    constexpr bool isTime() const { return idx == TypeIndex::Time; }
-    constexpr bool isTime64() const { return idx == TypeIndex::Time64; }
-    constexpr bool isTimeOrTime64() const { return isTime() || isTime64(); }
-    constexpr bool isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64() const { return isDateOrDate32() || isTimeOrTime64() || isDateTimeOrDateTime64(); }
+    [[nodiscard]] constexpr bool isDate() const { return idx == TypeIndex::Date; }
+    [[nodiscard]] constexpr bool isDate32() const { return idx == TypeIndex::Date32; }
+    [[nodiscard]] constexpr bool isDateOrDate32() const { return isDate() || isDate32(); }
+    [[nodiscard]] constexpr bool isDateTime() const { return idx == TypeIndex::DateTime; }
+    [[nodiscard]] constexpr bool isDateTime64() const { return idx == TypeIndex::DateTime64; }
+    [[nodiscard]] constexpr bool isDateTimeOrDateTime64() const { return isDateTime() || isDateTime64(); }
+    [[nodiscard]] constexpr bool isDateOrDate32OrDateTimeOrDateTime64() const { return isDateOrDate32() || isDateTimeOrDateTime64(); }
+    [[nodiscard]] constexpr bool isTime() const { return idx == TypeIndex::Time; }
+    [[nodiscard]] constexpr bool isTime64() const { return idx == TypeIndex::Time64; }
+    [[nodiscard]] constexpr bool isTimeOrTime64() const { return isTime() || isTime64(); }
+    [[nodiscard]] constexpr bool isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64() const { return isDateOrDate32() || isTimeOrTime64() || isDateTimeOrDateTime64(); }
 
-    constexpr bool isString() const { return idx == TypeIndex::String; }
-    constexpr bool isFixedString() const { return idx == TypeIndex::FixedString; }
-    constexpr bool isStringOrFixedString() const { return isString() || isFixedString(); }
+    [[nodiscard]] constexpr bool isString() const { return idx == TypeIndex::String; }
+    [[nodiscard]] constexpr bool isFixedString() const { return idx == TypeIndex::FixedString; }
+    [[nodiscard]] constexpr bool isStringOrFixedString() const { return isString() || isFixedString(); }
 
-    constexpr bool isUUID() const { return idx == TypeIndex::UUID; }
-    constexpr bool isIPv4() const { return idx == TypeIndex::IPv4; }
-    constexpr bool isIPv6() const { return idx == TypeIndex::IPv6; }
-    constexpr bool isArray() const { return idx == TypeIndex::Array; }
-    constexpr bool isTuple() const { return idx == TypeIndex::Tuple; }
-    constexpr bool isQBit() const { return idx == TypeIndex::QBit; }
-    constexpr bool isMap() const {return idx == TypeIndex::Map; }
-    constexpr bool isSet() const { return idx == TypeIndex::Set; }
-    constexpr bool isInterval() const { return idx == TypeIndex::Interval; }
+    [[nodiscard]] constexpr bool isUUID() const { return idx == TypeIndex::UUID; }
+    [[nodiscard]] constexpr bool isIPv4() const { return idx == TypeIndex::IPv4; }
+    [[nodiscard]] constexpr bool isIPv6() const { return idx == TypeIndex::IPv6; }
+    [[nodiscard]] constexpr bool isArray() const { return idx == TypeIndex::Array; }
+    [[nodiscard]] constexpr bool isTuple() const { return idx == TypeIndex::Tuple; }
+    [[nodiscard]] constexpr bool isQBit() const { return idx == TypeIndex::QBit; }
+    [[nodiscard]] constexpr bool isMap() const {return idx == TypeIndex::Map; }
+    [[nodiscard]] constexpr bool isSet() const { return idx == TypeIndex::Set; }
+    [[nodiscard]] constexpr bool isInterval() const { return idx == TypeIndex::Interval; }
 
-    constexpr bool isNothing() const { return idx == TypeIndex::Nothing; }
-    constexpr bool isNullable() const { return idx == TypeIndex::Nullable; }
-    constexpr bool isFunction() const { return idx == TypeIndex::Function; }
-    constexpr bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
-    constexpr bool isSimple() const  { return isInt() || isUInt() || isFloat() || isString(); }
+    [[nodiscard]] constexpr bool isNothing() const { return idx == TypeIndex::Nothing; }
+    [[nodiscard]] constexpr bool isNullable() const { return idx == TypeIndex::Nullable; }
+    [[nodiscard]] constexpr bool isFunction() const { return idx == TypeIndex::Function; }
+    [[nodiscard]] constexpr bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
+    [[nodiscard]] constexpr bool isSimple() const  { return isInt() || isUInt() || isFloat() || isString(); }
 
-    constexpr bool isLowCardinality() const { return idx == TypeIndex::LowCardinality; }
+    [[nodiscard]] constexpr bool isLowCardinality() const { return idx == TypeIndex::LowCardinality; }
 
-    constexpr bool isVariant() const { return idx == TypeIndex::Variant; }
-    constexpr bool isDynamic() const { return idx == TypeIndex::Dynamic; }
-    constexpr bool isObject() const { return idx == TypeIndex::Object; }
+    [[nodiscard]] constexpr bool isVariant() const { return idx == TypeIndex::Variant; }
+    [[nodiscard]] constexpr bool isDynamic() const { return idx == TypeIndex::Dynamic; }
+    [[nodiscard]] constexpr bool isObject() const { return idx == TypeIndex::Object; }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
@@ -618,6 +629,13 @@ inline bool isBool(const DataTypePtr & data_type)
 inline bool isNullableOrLowCardinalityNullable(const DataTypePtr & data_type)
 {
     return data_type->isNullable() || data_type->isLowCardinalityNullable();
+}
+
+/// A type that holds no value other than NULL. onlyNull() alone is not enough:
+/// it is true for Nullable(Nothing) but false for bare Nothing.
+inline bool isNothingOrNullableNothing(const DataTypePtr & data_type)
+{
+    return isNothing(data_type) || data_type->onlyNull();
 }
 
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
