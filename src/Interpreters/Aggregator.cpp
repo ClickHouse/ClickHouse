@@ -1,6 +1,7 @@
 #include <numeric>
 #include <optional>
 #include <unordered_map>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/ListWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <IO/NullWriteBuffer.h>
