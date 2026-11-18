@@ -347,7 +347,9 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
 ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view, const ASTPtr & view_query)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
-    if (context->hasQueryContext())
+    /// `view_query` is null when the context is built only to hash the view's dependencies
+    /// (`getModificationHash`): the body is not executed then, so it is not logged as a child row.
+    if (view_query && context->hasQueryContext())
         context->getQueryContext()->addSQLSecurityOverriddenBody(view->getStorageID(), view_context, view_query);
 
     Settings view_settings = view_context->getSettingsCopy();
@@ -912,7 +914,7 @@ std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr
         /// a profile value that the stored query overrides does not change a row, and a source view reached
         /// from here reads under these settings too. `RefreshTask` hashes the sources of a refresh the same way.
         /// `view_context` is kept alive: under `SQL SECURITY DEFINER` / `NONE` it can be the query context of the copy.
-        const auto view_context = getViewContext(query_context, storage_snapshot, this);
+        const auto view_context = getViewContext(query_context, storage_snapshot, this, /*view_query=*/ nullptr);
         auto effective_context = Context::createCopy(view_context);
         InterpreterSetQuery::applySettingsFromQuery(inner_query->clone(), effective_context);
 
