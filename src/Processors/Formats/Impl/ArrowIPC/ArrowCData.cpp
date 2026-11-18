@@ -396,7 +396,10 @@ private:
         const char * data = body->data() + buffer.offset();
         if (reinterpret_cast<uintptr_t>(data) % 16 == 0)
             return data;
-        auto & copy = exported.aligned_copies.emplace_back(static_cast<size_t>(buffer.length()));
+        /// A small allocation is aligned only to its size (8 bytes for an 8-byte buffer), so ask for the alignment.
+        auto & copy = exported.aligned_copies.emplace_back();
+        copy.reserve_exact(static_cast<size_t>(buffer.length()), 16);
+        copy.resize(static_cast<size_t>(buffer.length()));
         memcpy(copy.data(), data, copy.size());
         chassert(reinterpret_cast<uintptr_t>(copy.data()) % 16 == 0);
         return copy.data();
