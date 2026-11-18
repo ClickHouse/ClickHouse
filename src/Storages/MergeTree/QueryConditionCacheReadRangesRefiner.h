@@ -38,7 +38,7 @@ class QueryConditionCacheReadRangesRefiner : public IMergeTreeReadRangesRefiner
 public:
     QueryConditionCacheReadRangesRefiner(QueryConditionCacheReadRangesPtr read_ranges_, MergeTreeReadRangesRefinerPtr inner_);
 
-    MarkRanges refine(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const override;
+    [[nodiscard]] MarkRanges refine(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const override;
 
 private:
     const QueryConditionCacheReadRangesPtr read_ranges;

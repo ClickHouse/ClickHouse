@@ -69,8 +69,6 @@ MarkRanges QueryConditionCacheReadRangesRefiner::refine(const MergeTreeReadTaskI
                     result.emplace_back(begin, end);
             }
         }
-
-
         ranges = std::move(result);
     }
 
