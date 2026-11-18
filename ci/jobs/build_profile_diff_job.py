@@ -48,9 +48,10 @@ Notes on data coverage:
     events only for translation units that were actually recompiled. Per-TU
     compile times are therefore compared against the most recent warmup build
     that recompiled the same TU.
-  * The ThinLTO link runs on every linking build, so per-function OptFunction
-    events are present on both sides for every final binary that is actually
-    linked (clickhouse-keeper has none when built as a symlink to clickhouse).
+  * The ThinLTO link runs on every linking build, so its trace (at least the
+    `Total OptFunction` row; per-function OptFunction events from 50 ms) is
+    present on both sides for every final binary that is actually linked
+    (clickhouse-keeper has none when built as a symlink to clickhouse).
   * `binary_sizes` is complete on both sides; `binary_symbols` is complete on
     the PR side and on master builds since this check was introduced.
   * The warmup build builds every object-file target ninja knows about while a
@@ -1116,16 +1117,14 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     """
     section = Section(title="Slowest function optimization changes (ThinLTO)")
     trace_where = "name = 'OptFunction' AND dur >= 50000"
-    # Per-binary trace presence must be judged on unfiltered OptFunction rows:
-    # a binary whose complete link trace stays below the 50 ms reporting
-    # cutoff on one side (realistic for clickhouse-keeper) is an intact
-    # upload, not a lost one. The count-only aggregation is cheap; the cutoff
-    # applies only to the expensive diff aggregations below.
+    # Presence is judged on `Total OptFunction`, which lld writes for every ThinLTO
+    # link however many events `--time-trace-granularity` (50 ms) dropped: a binary
+    # none of whose functions reaches the cutoff is an intact upload, not a lost one.
     sides = db.query(
         f"""SELECT file,
             countIf(side = 'pr') AS pr_count,
             countIf(side = 'base') AS base_count
-        FROM {both_sides("build_time_trace", "file", pr_side, base_side, f"file IN ({in_list(FINAL_BINARIES)}) AND name = 'OptFunction'")}
+        FROM {both_sides("build_time_trace", "file", pr_side, base_side, f"file IN ({in_list(FINAL_BINARIES)}) AND name = 'Total OptFunction'")}
         GROUP BY file"""
     )
     comparable = [row["file"] for row in sides if int(row["pr_count"]) and int(row["base_count"])]

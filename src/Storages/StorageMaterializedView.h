@@ -53,6 +53,7 @@ public:
     bool supportsOptimizationToSubcolumns() const override { return getTargetTable()->supportsOptimizationToSubcolumns(); }
     bool supportsOptimizationToTupleElementSubcolumns() const override { return getTargetTable()->supportsOptimizationToTupleElementSubcolumns(); }
     bool supportsSubcolumnOptimizationWithFinal() const override { return getTargetTable()->supportsSubcolumnOptimizationWithFinal(); }
+    bool hasBucketedMapSerialization() const override { return getTargetTable()->hasBucketedMapSerialization(); }
     bool supportsColumnsWithDynamicStructure() const override;
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
 

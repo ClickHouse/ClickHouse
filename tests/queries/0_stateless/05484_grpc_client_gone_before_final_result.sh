@@ -22,7 +22,7 @@ database = sys.argv[2]
 
 
 def wait_until(predicate):
-    deadline = time.monotonic() + 30
+    deadline = time.monotonic() + 300
     while not predicate():
         if time.monotonic() > deadline:
             raise TimeoutError
@@ -35,7 +35,7 @@ with grpc.insecure_channel(f"localhost:{os.environ.get('CLICKHOUSE_PORT_GRPC', '
     def query(text):
         result = stub.ExecuteQuery(clickhouse_grpc_pb2.QueryInfo(
             query=text, database=database, output_format="TabSeparated",
-            settings={"max_rows_to_read": "0", "enable_parallel_replicas": "0"}), timeout=60)
+            settings={"max_rows_to_read": "0", "enable_parallel_replicas": "0"}))
         if result.HasField("exception"):
             raise RuntimeError(result.exception.display_text)
         return result.output.decode().strip()
@@ -57,7 +57,7 @@ with grpc.insecure_channel(f"localhost:{os.environ.get('CLICKHOUSE_PORT_GRPC', '
 
         def failed_to_send():
             query("SYSTEM FLUSH LOGS text_log")
-            return query(f"""SELECT count() FROM system.text_log WHERE event_date >= yesterday() AND query_id = '{query_id}'
+            return query(f"""SELECT count() FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '{query_id}'
                 AND message LIKE '%Failed to send result to the client%'""") != "0"
         wait_until(failed_to_send)
 

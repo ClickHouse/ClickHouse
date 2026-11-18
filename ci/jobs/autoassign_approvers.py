@@ -23,7 +23,7 @@ from ci.praktika.utils import Shell, Utils
 CAN_BE_TESTED = "can be tested"
 
 # GitHub logins of the automated agents whose PRs always get the `can be tested` label.
-AGENT_AUTHORS = ["groeneai", "clickgapai"]
+AGENT_AUTHORS = ["groeneai", "clickgapai", "actueleai"]
 
 PR_FIELDS = "number,title,assignees,author,labels,isCrossRepository"
 
@@ -31,37 +31,25 @@ PR_FIELDS = "number,title,assignees,author,labels,isCrossRepository"
 TRUSTED_CONTRIBUTORS_CONFIG = Path(__file__).parents[1] / "defs" / "trusted_contributors.json"
 
 
-def fetch_org_contributors(org: str = "ClickHouse", limit: int = 1000) -> set:
+def fetch_org_contributors(org: str = "ClickHouse") -> set:
     """
-    Fetch organization members using gh CLI.
+    Fetch the complete list of organization members using gh CLI.
 
-    Args:
-        org: Organization name (default: ClickHouse)
-        limit: Maximum number of members to fetch (default: 1000)
+    The list must be complete: an author missing from it is treated as an external
+    contributor, and their approved PR gets the `can be tested` label, which reruns
+    the whole CI. So a failure of any page is an error, and the output is not truncated.
 
-    Returns:
-        Set of organization member usernames
+    Raises on failure.
     """
-    print(f"Fetching up to {limit} organization members from {org}...")
-
-    try:
-        contributors = set()
-
-        # Fetch org members only (not external contributors)
-        cmd = f"gh api orgs/{org}/members --paginate --jq '.[].login' | head -n {limit}"
-        output = Shell.get_output(cmd, verbose=True)
-        if output and output.strip():
-            members = [
-                line.strip() for line in output.strip().split("\n") if line.strip()
-            ]
-            contributors.update(members)
-            print(f"  Found {len(members)} organization members")
-
-        return contributors
-
-    except Exception as e:
-        print(f"ERROR: Failed to fetch organization members: {e}")
-        return set()
+    print(f"Fetching organization members of {org}...")
+    output = Shell.get_output_or_raise(
+        f"gh api orgs/{org}/members --paginate --jq '.[].login'", verbose=True
+    )
+    members = {line.strip() for line in output.splitlines() if line.strip()}
+    if not members:
+        raise RuntimeError(f"No organization members of {org} were returned")
+    print(f"  Found {len(members)} organization members")
+    return members
 
 
 def has_label(pr: dict, label: str) -> bool:
@@ -431,7 +419,7 @@ if __name__ == "__main__":
 
     def fetch_contributors():
         global org_contributors
-        org_contributors = fetch_org_contributors(org="ClickHouse", limit=1000)
+        org_contributors = fetch_org_contributors(org="ClickHouse")
         return len(org_contributors) > 0
 
     results.append(

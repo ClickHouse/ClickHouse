@@ -54,7 +54,7 @@ public:
         size_t rows = 0;  /// The number of rows in the block.
         size_t bytes = 0; /// The number of (uncompressed) bytes in the block.
 
-        std::string toString() const;
+        [[nodiscard]] std::string toString() const;
     };
 
     /** num_shards - the level of internal parallelism (the number of independent buffers)
@@ -138,6 +138,7 @@ public:
     bool supportsOptimizationToSubcolumns() const override;
     bool supportsOptimizationToTupleElementSubcolumns() const override;
     bool supportsSubcolumnOptimizationWithFinal() const override;
+    bool hasBucketedMapSerialization() const override;
     bool supportsFinal() const override { return true; }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
@@ -208,7 +209,8 @@ private:
     bool checkThresholdsImpl(bool direct, size_t rows, size_t bytes, time_t time_passed) const;
 
     /// `table` argument is passed, as it is sometimes evaluated beforehand. It must match the `destination`.
-    void writeBlockToDestination(const Block & block, StoragePtr table);
+    /// `query_context` is the context of the `INSERT` that writes the block directly, or `nullptr` for a flush.
+    void writeBlockToDestination(const Block & block, StoragePtr table, const Context * query_context = nullptr);
 
     void backgroundFlush();
     void reschedule(size_t min_delay);
