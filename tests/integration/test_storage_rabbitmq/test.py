@@ -4336,10 +4336,11 @@ def test_rabbitmq_insert_into_missing_exchange(rabbitmq_cluster, db, unique):
     assert "FUNCTION_THROW_IF_VALUE_IS_NON_ZERO" in error, error
 
 
-@pytest.mark.parametrize("async_insert", [0, 1])
-def test_rabbitmq_kill_insert(rabbitmq_cluster, db, unique, async_insert):
+@pytest.mark.parametrize("async_insert, rows", [(0, 1), (1, 1), (0, 100000)])
+def test_rabbitmq_kill_insert(rabbitmq_cluster, db, unique, async_insert, rows):
     # The queue rejects every message, so the producer republishes until the query is killed.
-    exchange = f"{unique}_full_{async_insert}"
+    # 100000 messages do not fit in the producer's queue, so that INSERT is killed while it waits for room in it.
+    exchange = f"{unique}_full_{async_insert}_{rows}"
     credentials = pika.PlainCredentials("root", "clickhouse")
     connection = pika.BlockingConnection(
         pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials)
@@ -4369,6 +4370,7 @@ def test_rabbitmq_kill_insert(rabbitmq_cluster, db, unique, async_insert):
     )
 
     query_id = f"{unique}_{uuid.uuid4().hex}"
+    source = "VALUES (1)" if rows == 1 else f"SELECT number FROM numbers({rows})"
     # An asynchronous insert is published by its flush, a query of its own.
     if async_insert:
         producing_query = f"query_kind = 'AsyncInsertFlush' AND query LIKE '%{db}.rabbitmq%'"
@@ -4378,7 +4380,7 @@ def test_rabbitmq_kill_insert(rabbitmq_cluster, db, unique, async_insert):
     insert = threading.Thread(
         target=lambda: errors.append(
             instance.query_and_get_error(
-                f"INSERT INTO {db}.rabbitmq VALUES (1)",
+                f"INSERT INTO {db}.rabbitmq {source}",
                 query_id=query_id,
                 settings={"async_insert": async_insert},
                 timeout=120,
