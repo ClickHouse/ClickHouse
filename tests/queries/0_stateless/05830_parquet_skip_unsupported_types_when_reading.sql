@@ -16,6 +16,7 @@ DESCRIBE file(currentDatabase() || '_05830_wide.parquet');
 SELECT * FROM file(currentDatabase() || '_05830_wide.parquet') ORDER BY x;
 SELECT w, x FROM file(currentDatabase() || '_05830_wide.parquet', Parquet, 'w Int256, x UInt64') ORDER BY x;
 SELECT w, x FROM file(currentDatabase() || '_05830_wide.parquet', Parquet, 'w Int64, x UInt64'); -- { serverError INCORRECT_DATA }
+SELECT sum(w) FROM file(currentDatabase() || '_05830_{int64,wide}.parquet') SETTINGS schema_inference_mode = 'union'; -- { serverError INCORRECT_DATA }
 
 -- An array whose requested elements are not in the file takes its sizes from a leaf under it. The only leaf here gets a
 -- FIXED_LEN_BYTE_ARRAY length of 0 in the footer (compact protocol: `type_length` 3 -> 0), so no leaf can be read.
