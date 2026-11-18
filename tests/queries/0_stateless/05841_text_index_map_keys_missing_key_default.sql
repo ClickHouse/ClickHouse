@@ -57,6 +57,7 @@ SETTINGS index_granularity = 1, map_serialization_version = 'with_buckets', map_
 INSERT INTO tab_nothing (id) VALUES (1);
 
 SELECT id FROM tab_nothing WHERE m['k'].x = 'a' ORDER BY id;
+SELECT id FROM tab_nothing WHERE m['k'].x = 'a' ORDER BY id SETTINGS force_data_skipping_indices = 'idx_m'; -- { serverError INDEX_NOT_USED }
 SELECT id FROM tab_nothing WHERE m['k'].x = 'z' ORDER BY id;
 
 DROP TABLE tab_nothing;
