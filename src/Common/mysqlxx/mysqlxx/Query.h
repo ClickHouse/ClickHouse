@@ -47,7 +47,7 @@ public:
     UInt64 insert_id() { return insertID(); }
 
     /// Get query text (for example, to output it to the log). See also operator<< below.
-    std::string str() const
+    [[nodiscard]] std::string str() const
     {
         return query;
     }

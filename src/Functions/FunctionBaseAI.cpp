@@ -40,6 +40,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_ai_functions;
     extern const SettingsUInt64 ai_function_request_timeout_sec;
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsNonZeroUInt64 ai_function_max_concurrent_requests_per_thread;
@@ -58,6 +59,8 @@ namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -299,7 +302,17 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
     if (params.collection.endpoint.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", credentials);
 
-    const Poco::URI endpoint_uri(params.collection.endpoint);
+    /// The endpoint can carry a secret, so the error below names only the collection.
+    Poco::URI endpoint_uri;
+    try
+    {
+        endpoint_uri = Poco::URI(params.collection.endpoint);
+    }
+    catch (const Poco::SyntaxException &)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' has a malformed endpoint", credentials);
+    }
+
     context->getRemoteHostFilter().checkURL(endpoint_uri);
 
     /// Refuse to send prompts and API keys over an unencrypted connection to a remote host.
@@ -308,10 +321,10 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
         && !isLoopbackHost(endpoint_uri.getHost())
         && !context->getSettingsRef()[Setting::ai_function_allow_insecure_endpoint])
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "AI named collection '{}' uses an insecure endpoint '{}': prompts and the API key would be sent to a "
+            "AI named collection '{}' uses an insecure endpoint: prompts and the API key would be sent to a "
             "remote host over an unencrypted connection. Use an 'https://' endpoint, or set "
             "'ai_function_allow_insecure_endpoint' to allow plaintext requests to remote hosts.",
-            credentials, params.collection.endpoint);
+            credentials);
 
     /// A function that does not declare `model` (i.e. `aiEmbed`, which takes it as an argument) must
     /// not silently ignore a `model` defined in the named collection: reject it instead.
@@ -368,6 +381,35 @@ AIRequestPolicy FunctionBaseAI::makeRequestPolicy(const ContextPtr & context)
 void FunctionBaseAI::insertProcessedResult(IColumn & column, const String & processed) const
 {
     column.insertData(processed.data(), processed.size());
+}
+
+void FunctionBaseAI::checkHasUser(const ContextPtr & context)
+{
+    if (context->getUserID())
+        return;
+
+    /// A background operation is retried, and its failure is visible only in the logs and system tables.
+    context->addOrUpdateWarningMessage(
+        Context::WarningType::AI_FUNCTION_IN_BACKGROUND_OPERATION,
+        PreformattedMessage::create(
+            "A background operation (merge, mutation or `Buffer` flush) failed because it evaluates an AI function, "
+            "which is executed only in queries run by a user. {}Remove the AI function from the table's keys, TTL, "
+            "skip indexes, projections, `DEFAULT` and `MATERIALIZED` columns and constraints.",
+            context->getCurrentQueryId().empty() ? "" : fmt::format("Last failed task: {}. ", context->getCurrentQueryId())));
+
+    throw Exception(ErrorCodes::ACCESS_DENIED,
+        "AI functions cannot be executed without a user, e.g. in background merges, mutations or `Buffer` flushes");
+}
+
+void FunctionBaseAI::throwIfNotAllowed(const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::allow_ai_functions])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "AI functions are disabled. Set `allow_ai_functions` to enable them");
+
+    if (context->isAnalyzingBackgroundExpressions())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "AI functions cannot be used in expressions executed in the background: mutations, keys, TTL, skip indexes "
+            "and projections. Use a lightweight `UPDATE` or `INSERT ... SELECT` instead");
 }
 
 AIParamSpecs FunctionBaseAI::embeddingParams()
@@ -471,6 +513,9 @@ void FunctionBaseAI::embedTexts(
 
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    /// Before resolving the credentials: their validation errors must not reveal a named collection.
+    checkHasUser(getContext());
+
     const auto & settings = getContext()->getSettingsRef();
     auto params = resolveAIParams(getContext(), arguments, allParams(), settings[Setting::ai_function_text_default_credentials]);
 
