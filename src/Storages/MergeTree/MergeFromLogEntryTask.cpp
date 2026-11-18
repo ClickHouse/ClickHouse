@@ -410,7 +410,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
 bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
-    part = merge_task->getFuture().get();
+    part = merge_task->takeResultPart();
     auto cached_marks = merge_task->releaseCachedMarks();
     auto cached_index_marks = merge_task->releaseCachedIndexMarks();
     projections_merge_time = merge_task->grabProjectionsMergeTime();
@@ -423,7 +423,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     /// Why we reset task here? Because it holds shared pointer to part and tryRemovePartImmediately will
     /// not able to remove the part and will throw an exception (because someone holds the pointer).
     ///
-    /// Why we cannot reset task right after obtaining part from getFuture()? Because it holds RAII wrapper for
+    /// Why we cannot reset task right after obtaining part from takeResultPart()? Because it holds RAII wrapper for
     /// temp directories which guards temporary dir from background removal. So it's right place to reset the task
     /// and it's really needed.
     merge_task.reset();

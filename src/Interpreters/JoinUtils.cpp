@@ -262,21 +262,6 @@ static bool hasOnlyIntegerLeaves(const DataTypePtr & type)
     return isInteger(removeNullable(type));
 }
 
-/// An `accurateCastOrNull` of a `LowCardinality(Nullable(T))` Tuple element to a non-Nullable element throws
-/// instead of reporting the NULL in the null map of the whole Tuple. Only the elements are converted
-/// element-wise, so a `LowCardinality` or `Nullable` wrapper around the whole key is not affected.
-static bool hasNullableLowCardinalityTupleElement(const DataTypePtr & type)
-{
-    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
-    if (!tuple_type)
-        return false;
-
-    return std::ranges::any_of(
-        tuple_type->getElements(),
-        [](const auto & element)
-        { return element->isLowCardinalityNullable() || hasNullableLowCardinalityTupleElement(element); });
-}
-
 DataTypePtr compareBoolKeysAsUInt8(DataTypePtr type, const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
     for (const auto & key_type : {left_type, right_type})
@@ -302,9 +287,6 @@ DataTypePtr compareBoolKeysAsUInt8(DataTypePtr type, const DataTypePtr & left_ty
 DataTypePtr tryGetCommonSubtypeForJoinKeys(
     const DataTypePtr & left_type, const DataTypePtr & right_type, bool force_support_conversion)
 {
-    if (hasNullableLowCardinalityTupleElement(left_type) || hasNullableLowCardinalityTupleElement(right_type))
-        return nullptr;
-
     DataTypes types{
         removeNullable(recursiveRemoveLowCardinality(left_type)),
         removeNullable(recursiveRemoveLowCardinality(right_type))};
@@ -919,26 +901,8 @@ ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter,
                 mut_column->insertFrom(*default_row, 0);
         }
     }
-    else if (inverse_filter)
-    {
-        for (size_t row = 0; row < filter.size(); ++row)
-        {
-            if (filter[row])
-                mut_column->insertDefault();
-            else
-                mut_column->insertFrom(*column, row);
-        }
-    }
     else
-    {
-        for (size_t row = 0; row < filter.size(); ++row)
-        {
-            if (filter[row])
-                mut_column->insertFrom(*column, row);
-            else
-                mut_column->insertDefault();
-        }
-    }
+        mut_column->insertFromOrDefaults(*column, filter, inverse_filter);
 
     return mut_column;
 }

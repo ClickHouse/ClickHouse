@@ -21,6 +21,7 @@
 #include <Common/EventNotifier.h>
 #include <Common/FailPoint.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
 #include <base/getMemoryAmount.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
@@ -86,6 +87,7 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
@@ -388,7 +390,9 @@ namespace Setting
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsUInt64 prefetch_buffer_size;
+    extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
+    extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_cache_temporarily;
     extern const SettingsBool read_from_page_cache_if_exists_otherwise_bypass_cache;
     extern const SettingsUInt64 page_cache_block_size;
     extern const SettingsUInt64 page_cache_lookahead_blocks;
@@ -1724,12 +1728,15 @@ ContextData::ContextData(const ContextData &o) :
     is_sql_security_overridden_body(o.is_sql_security_overridden_body),
     join_analyze_mode(o.join_analyze_mode),
     is_automatic_parallel_replicas_probe(o.is_automatic_parallel_replicas_probe),
+    totals_without_storage_access(o.totals_without_storage_access),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
+    is_metadata_query(o.is_metadata_query),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
     runtime_filter_lookup(o.runtime_filter_lookup),
     columns_cache_write_budget(o.columns_cache_write_budget),
+    query_max_threads_snapshot(o.query_max_threads_snapshot),
     kitchen_sink(o.kitchen_sink),
     query_parameters(o.query_parameters),
     host_context(o.host_context),
@@ -2769,8 +2776,13 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
         /// If setUserID() was never called then this must be the global context with the full access.
         bool full_access = !user_id;
 
+        /// The row policies of the initial user are added to the row policies of the current user. The initiator of
+        /// a secondary query also forwards the current roles of the initial user (after `SET ROLE`); if the initial user
+        /// is the current user, the query still runs with the default roles of the user on a connection without
+        /// an interserver secret, so the row policies of the forwarded roles are needed then too.
         std::optional<UUID> initial_user_id;
-        if (client_info.initial_user != client_info.current_user)
+        if (client_info.initial_user != client_info.current_user
+            || (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && client_info.current_roles.has_value()))
             initial_user_id = getAccessControl().find<User>(client_info.initial_user);
 
         return ContextAccessParams{
@@ -2943,6 +2955,20 @@ ResourceManagerPtr Context::getResourceManager() const
     return shared->resource_manager;
 }
 
+namespace
+{
+    /// Maps every resource to an empty ResourceLink, so a query using it is exempt from all workload
+    /// scheduling (query-slot and memory-reservation admission, CPU and IO) and never throws on an
+    /// unknown workload. Stateless, so a single shared instance serves every exempt query.
+    class ExemptClassifier : public IClassifier
+    {
+    public:
+        bool has(const String &) override { return false; }
+        ResourceLink get(const String &) override { return {}; }
+        [[nodiscard]] WorkloadSettings getWorkloadSettings(const String &) const override { return {}; }
+    };
+}
+
 ClassifierPtr Context::getWorkloadClassifier() const
 {
     const auto & query_settings = getSettingsRef();
@@ -2961,8 +2987,22 @@ ClassifierPtr Context::getWorkloadClassifier() const
     std::lock_guard lock(mutex);
     // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
     if (!classifier)
-        classifier = getResourceManager()->acquire(query_settings[Setting::workload], settings);
+    {
+        if (is_metadata_query)
+        {
+            static const ClassifierPtr metadata_exempt_classifier = std::make_shared<ExemptClassifier>();
+            classifier = metadata_exempt_classifier;
+        }
+        else
+            classifier = getResourceManager()->acquire(query_settings[Setting::workload], settings);
+    }
     return classifier;
+}
+
+void Context::setMetadataQuery()
+{
+    std::lock_guard lock(mutex);
+    is_metadata_query = true;
 }
 
 void Context::releaseQuerySlot() const
@@ -4630,6 +4670,7 @@ void Context::makeQueryContext()
     query_execution_counters = std::make_shared<QueryExecutionCounters>();
     runtime_filter_lookup = createRuntimeFilterLookup();
     columns_cache_write_budget = std::make_shared<ColumnsCacheWriteBudget>();
+    query_max_threads_snapshot = std::make_shared<QueryMaxThreadsSnapshot>();
     /// A new query must classify under its own workload and scheduling settings. The ContextData
     /// copy-ctor copies `classifier`, which now carries this query's scheduling identity (weight,
     /// priority, and its per-query `ResourceSchedulingContext`), so a query context created from
@@ -6334,6 +6375,10 @@ void Context::clearQueryResultCache(const std::optional<String> & tag) const
 
 void Context::clearCaches() const
 {
+    /// These take the context mutex themselves.
+    clearPageCache();
+    clearColumnsCache();
+
     std::lock_guard lock(shared->mutex);
 
     /// Each cache is null-checked because some `Context` users intentionally do
@@ -7054,7 +7099,7 @@ public:
     }
 
 private:
-    std::chrono::steady_clock::duration nextStep() const
+    [[nodiscard]] std::chrono::steady_clock::duration nextStep() const
     {
         std::chrono::steady_clock::duration step = std::chrono::milliseconds(100);
         if (deadline)
@@ -8898,7 +8943,8 @@ const S3SettingsByEndpoint & Context::getStorageS3Settings() const
     if (!shared->storage_s3_settings)
     {
         const auto & config = shared->getConfigRefWithLock(lock);
-        shared->storage_s3_settings.emplace().loadFromConfig(config, "s3", getSettingsRef());
+        /// Shared by all queries, so built from the server settings, as on a config reload.
+        shared->storage_s3_settings.emplace().loadFromConfig(config, "s3", getGlobalContext()->getSettingsRef());
     }
 
     return *shared->storage_s3_settings;
@@ -9478,6 +9524,9 @@ void Context::setCurrentAddress(const Poco::Net::SocketAddress & current_address
 
 void Context::setInitialUserName(const String & initial_user_name)
 {
+    /// The forwarded current roles are the roles of the initial user, so they cannot be kept for another user.
+    if (client_info.initial_user != initial_user_name)
+        client_info.current_roles.reset();
     client_info.initial_user = initial_user_name;
     need_recalculate_access = true;
 }
@@ -10166,8 +10215,12 @@ ReadSettings Context::getReadSettings() const
     res.remote_fs_settings.max_backoff_ms = settings_ref[Setting::remote_fs_read_max_backoff_ms];
     res.remote_fs_settings.max_retries = settings_ref[Setting::remote_fs_read_backoff_max_tries];
     res.enable_filesystem_cache = settings_ref[Setting::enable_filesystem_cache];
+    const bool bypass_filesystem_cache = settings_ref[Setting::read_from_filesystem_cache_if_exists_otherwise_bypass_cache];
+    /// A variant of the bypass: readers without the temporary mode bypass the cache. The plain bypass wins.
+    res.filesystem_cache_settings.cache_temporarily
+        = !bypass_filesystem_cache && settings_ref[Setting::read_from_filesystem_cache_if_exists_otherwise_cache_temporarily];
     res.filesystem_cache_settings.read_if_exists_otherwise_bypass
-        = settings_ref[Setting::read_from_filesystem_cache_if_exists_otherwise_bypass_cache];
+        = bypass_filesystem_cache || res.filesystem_cache_settings.cache_temporarily;
     res.filesystem_cache_settings.enable_log = settings_ref[Setting::enable_filesystem_cache_log];
     res.filesystem_cache_settings.verbose_logging = settings_ref[Setting::filesystem_cache_verbose_logging];
     res.filesystem_cache_settings.segments_batch_size = settings_ref[Setting::filesystem_cache_segments_batch_size];
@@ -10217,6 +10270,11 @@ ReadSettings Context::getReadSettings() const
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "Invalid value {} for reader_executor_plan_look_ahead: must be at least reader_executor_block_size ({} bytes)",
             res.reader_executor.plan_look_ahead, res.reader_executor.block_size);
+    /// The plan refills once half of it is left, so twice the window keeps a whole fetch resolved ahead.
+    if (res.reader_executor.plan_look_ahead < 2 * res.reader_executor.window_size)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Invalid value {} for reader_executor_plan_look_ahead: must be at least twice reader_executor_window_size ({} bytes)",
+            res.reader_executor.plan_look_ahead, res.reader_executor.window_size);
     res.reader_executor.min_bytes_for_seek = settings_ref[Setting::reader_executor_min_bytes_for_seek];
     res.reader_executor.max_tail_for_drain = settings_ref[Setting::reader_executor_max_tail_for_drain];
     res.page_cache_settings.read_if_exists_otherwise_bypass
@@ -10249,6 +10307,9 @@ ReadSettings Context::getReadSettings() const
     res.http_settings.retry_max_backoff_ms = settings_ref[Setting::http_retry_max_backoff_ms];
     res.http_settings.skip_not_found_url_for_globs = settings_ref[Setting::http_skip_not_found_url_for_globs];
     res.http_settings.make_head_request = settings_ref[Setting::http_make_head_request];
+    res.http_settings.max_fields = settings_ref[Setting::http_max_fields];
+    res.http_settings.max_field_name_size = settings_ref[Setting::http_max_field_name_size];
+    res.http_settings.max_field_value_size = settings_ref[Setting::http_max_field_value_size];
 
     res.remote_fs_settings.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
     res.remote_fs_settings.enable_blob_storage_log = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
@@ -10535,6 +10596,17 @@ ColumnsCacheWriteBudgetPtr Context::getColumnsCacheWriteBudget() const
     return columns_cache_write_budget;
 }
 
+const QueryMaxThreadsSnapshotPtr & Context::getQueryMaxThreadsSnapshot() const
+{
+    return query_max_threads_snapshot;
+}
+
+void Context::shareQueryMaxThreadsSnapshot(const Context & from)
+{
+    if (from.query_max_threads_snapshot)
+        query_max_threads_snapshot = from.query_max_threads_snapshot;
+}
+
 UInt64 Context::getClientProtocolVersion() const
 {
     return client_protocol_version;
@@ -10577,6 +10649,19 @@ StorageSnapshotPtr Context::getPinnedStorageSnapshot(const UUID & table_uuid) co
 const ServerSettings & Context::getServerSettings() const
 {
     return shared->server_settings;
+}
+
+void Context::enablePlanLogCapture()
+{
+    query_plan_log_capture = std::make_shared<QueryPlanLogCapture>();
+    setJoinAnalyzeMode(JoinAnalyzeMode::Derived);
+}
+
+QueryPlanLogCapturePtr Context::getPlanLogCapture() const
+{
+    if (!hasQueryContext())
+        return nullptr;
+    return getQueryContext()->query_plan_log_capture;
 }
 
 ServerSettings Context::getServerSettingsCopy() const
