@@ -76,3 +76,17 @@ Description: Projection has been analyzed and will be applied during reading
 -- a patch restores a row that the rebuilt projection omits
 5
 5
+-- warm query condition cache, then a patch delete of the top rows
+0
+1
+0
+1
+1000
+1001
+-- warm query condition cache, then a mutation on the fly deleting the top rows
+0
+1
+0
+1
+1000
+1001

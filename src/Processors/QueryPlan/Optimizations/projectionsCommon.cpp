@@ -699,6 +699,12 @@ void filterPartsAndCollectProjectionCandidates(
     /// Always request `_parent_part_offset` for projection analysis, even if the column does not exist. This does not
     /// affect the analysis itself. Later code will not use it as an index if the column is missing.
     static Names required_column_names = {"_parent_part_offset"};
+    /// The result filters the parts of the actual read, so keep the read's own cache gate. The projection parts are
+    /// analyzed with `empty_mutations_snapshot`, which bypasses the gate on data changes on the fly in
+    /// `filterPartsByQueryConditionCache`, so apply it here: an entry recorded before a patch part or a mutation was
+    /// added still matches the unchanged part names, and a TopK entry excludes granules that hold none of the top
+    /// rows of that time, which a delete can make the new top rows.
+    const bool has_data_changes_on_fly = hasDataChangesOnFly(reading);
     auto projection_result_ptr = reader.estimateNumMarksToRead(
         std::move(projection_parts),
         empty_mutations_snapshot,
@@ -709,9 +715,8 @@ void filterPartsAndCollectProjectionCandidates(
         getContextForProjectionAnalysis(context),
         context->getSettingsRef()[Setting::max_threads],
         /*max_block_numbers_to_read=*/nullptr,
-        /// The result filters the parts of the actual read, so keep the read's own cache gate.
-        reading.isQueryConditionCacheAllowed(),
-        reading.isTopKPrewhereQueryConditionCacheAllowed());
+        reading.isQueryConditionCacheAllowed() && !has_data_changes_on_fly,
+        reading.isTopKPrewhereQueryConditionCacheAllowed() && !has_data_changes_on_fly);
 
     /// Projection has no filtering effect, skip it
     if (projection_result_ptr->selected_marks == projection_marks_to_read)

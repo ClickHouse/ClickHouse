@@ -220,3 +220,53 @@ SELECT id FROM t_lw_proj_patch WHERE k = 5;
 SELECT id FROM t_lw_proj_patch WHERE k = 5 SETTINGS optimize_use_projections = 0;
 
 DROP TABLE t_lw_proj_patch;
+
+-- The query condition cache must not be consulted for the projection parts while the table has data changes on the fly:
+-- a TopK entry recorded before a delete excludes the granules of the rows that become the new top rows.
+SET optimize_read_in_order = 0;
+SET use_query_condition_cache = 1;
+SET use_query_condition_cache_for_top_k = 1;
+
+CREATE TABLE t_lw_proj_patch
+(
+    id UInt64,
+    k UInt64,
+    PROJECTION p_k INDEX k TYPE basic
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS
+    enable_block_number_column = 1,
+    enable_block_offset_column = 1,
+    lightweight_mutation_projection_mode = 'rebuild',
+    index_granularity = 16;
+
+SYSTEM STOP MERGES t_lw_proj_patch;
+INSERT INTO t_lw_proj_patch SELECT number, 9999 - number FROM numbers(10000) SETTINGS max_block_size = 10000;
+
+SELECT '-- warm query condition cache, then a patch delete of the top rows';
+SELECT k FROM t_lw_proj_patch WHERE k < 5000 ORDER BY k LIMIT 2 SETTINGS max_threads = 1, max_block_size = 16;
+SELECT k FROM t_lw_proj_patch WHERE k < 5000 ORDER BY k LIMIT 2 SETTINGS max_threads = 1, max_block_size = 16;
+DELETE FROM t_lw_proj_patch WHERE k < 1000 SETTINGS optimize_use_projections = 0;
+SELECT k FROM t_lw_proj_patch WHERE k < 5000 ORDER BY k LIMIT 2 SETTINGS max_threads = 1, max_block_size = 16;
+
+DROP TABLE t_lw_proj_patch;
+
+CREATE TABLE t_lw_proj_patch
+(
+    id UInt64,
+    k UInt64,
+    PROJECTION p_k INDEX k TYPE basic
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 16;
+
+SYSTEM STOP MERGES t_lw_proj_patch;
+INSERT INTO t_lw_proj_patch SELECT number, 9999 - number FROM numbers(10000) SETTINGS max_block_size = 10000;
+
+SELECT '-- warm query condition cache, then a mutation on the fly deleting the top rows';
+SELECT k FROM t_lw_proj_patch WHERE k < 5000 ORDER BY k LIMIT 2 SETTINGS max_threads = 1, max_block_size = 16, apply_mutations_on_fly = 1;
+SELECT k FROM t_lw_proj_patch WHERE k < 5000 ORDER BY k LIMIT 2 SETTINGS max_threads = 1, max_block_size = 16, apply_mutations_on_fly = 1;
+ALTER TABLE t_lw_proj_patch DELETE WHERE k < 1000 SETTINGS mutations_sync = 0;
+SELECT k FROM t_lw_proj_patch WHERE k < 5000 ORDER BY k LIMIT 2 SETTINGS max_threads = 1, max_block_size = 16, apply_mutations_on_fly = 1;
+
+DROP TABLE t_lw_proj_patch;
