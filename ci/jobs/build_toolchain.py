@@ -32,8 +32,9 @@ OUTPUT_DIR = f"{Utils.cwd()}/ci/tmp"
 # BOLT profile collection is time-limited to avoid filling disk with fdata files
 # (~15 MB per clang process). It runs at full parallelism: the limit is on the
 # number of profiles, so idle cores would only stretch the same work out in time.
-# Four jobs for 20 minutes collected ~1500 profiles; this collects about as many.
-BOLT_PROFILE_TIMEOUT = 150
+# Four jobs for 20 minutes collected ~1600 profiles on amd64; 150 seconds at full
+# parallelism collected 755 on amd64 and 1248 on aarch64, so this collects about as many.
+BOLT_PROFILE_TIMEOUT = 300
 
 # LLVM projects for the final toolchain (note: "all" doesn't work with cmake).
 # `bolt` is needed by the BOLT stage of this job and by the ClickHouse BOLT builds.
