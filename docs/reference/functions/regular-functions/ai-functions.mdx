@@ -32,7 +32,7 @@ All functions are sharing a common infrastructure that provides:
 
 ## Configuration {#configuration}
 
-AI functions reference a **named collection** that stores provider credentials and configuration. Different named collections can be created and used for different functions or functions calls. For example you may want to define a different named collection to use with the text functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) vs the embedding functions (`aiEmbed`, `aiSimilarity`), which require different endpoints and usually use different models.
+AI functions require the `AI FUNCTIONS` grant (see [Access control](#access-control)) and reference a **named collection** that stores provider credentials and configuration. Different named collections can be created and used for different functions or functions calls. For example you may want to define a different named collection to use with the text functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) vs the embedding functions (`aiEmbed`, `aiSimilarity`), which require different endpoints and usually use different models.
 
 Example statement to create a named collection with provider credentials, one with a chat endpoint and another with an embedding endpoint:
 ```sql
@@ -49,6 +49,35 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/embeddings',
     api_key = 'sk-...';
+```
+
+### Access control {#access-control}
+
+Calling an AI function requires two privileges:
+
+- the function's privilege: either the per-function privilege (e.g. `aiGenerate`) or the `AI FUNCTIONS` group, see [`GRANT`](/reference/statements/grant#ai-functions);
+- the `NAMED COLLECTION` privilege on the selected credentials.
+
+```sql
+GRANT AI FUNCTIONS ON *.* TO ai_user_role;
+GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
+GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
+```
+
+AI functions are executed only in queries run by a user. They are rejected in mutations (`ALTER TABLE ... UPDATE`, `ALTER TABLE ... DELETE`) and in the keys, TTL, skip indexes and projections of a table, which are executed in the background, and `Buffer` flushes throw an exception when they evaluate an AI function. `DEFAULT` and `MATERIALIZED` columns are evaluated by the insert; when such a column is added with `ALTER TABLE`, the existing parts compute it in the background, where AI functions are not executed.
+
+To fill a column of existing rows, use a lightweight [`UPDATE`](/reference/statements/update), which is executed by the query and writes only the updated column:
+
+```sql
+UPDATE t SET y = aiEmbed(x, 'model') WHERE empty(y) SETTINGS enable_lightweight_update = 1;
+```
+
+For a table that does not meet the [lightweight update requirements](/reference/statements/update#lightweight-update-requirements), use `INSERT ... SELECT`, for example one partition at a time:
+
+```sql
+CREATE TABLE t_tmp AS t;
+INSERT INTO t_tmp SELECT x, aiEmbed(x, 'model') AS y FROM t WHERE _partition_id = '202610';
+ALTER TABLE t REPLACE PARTITION ID '202610' FROM t_tmp;
 ```
 
 ### Named collection parameters {#named-collection-parameters}

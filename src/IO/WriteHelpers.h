@@ -9,6 +9,7 @@
 #include <Common/FramePointers.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
+#include <Common/Exception.h>
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
 #include <Common/LocalTime.h>
@@ -34,6 +35,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ARGUMENT_OUT_OF_BOUND;
+}
 
 class Exception;
 
@@ -1410,8 +1416,13 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     }
 
     constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
-    chassert(scale <= max_digits);
-    chassert(fractional_length <= max_digits);
+    /// The digits go to a buffer on the stack, so this is checked in the release build as well: the scale
+    /// of a `DecimalField` is not tied to a data type, and a value that slipped through a boundary without
+    /// validation must not write past the buffer.
+    if (scale > max_digits || fractional_length > max_digits) [[unlikely]]
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "Cannot write a decimal with scale {} and {} fractional digits: at most {} digits are supported",
+            scale, fractional_length, max_digits);
     /// Rounding to a narrower field is the caller's job, because a carry out of the fractional part
     /// belongs to the whole part, which has already been written by then.
     chassert(!fixed_fractional_length || fractional_length >= scale);
@@ -1451,6 +1462,16 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
                bool fixed_fractional_length = false, UInt32 fractional_length = 0,
                bool force_decimal_point = false)
 {
+    /// The scale of a `DecimalField` is not tied to a data type, so check it in the release build before any
+    /// arithmetic that depends on it: a scale wider than the type overflows `scaleMultiplier` and the rounding
+    /// below, and a scale of 2^31 or more becomes a negative exponent, which gives a division by zero.
+    constexpr size_t max_scale = DecimalUtils::max_precision<Decimal<T>>;
+    constexpr size_t max_fractional_length = std::numeric_limits<UInt256>::digits10;
+    if (scale > max_scale || fractional_length > max_fractional_length) [[unlikely]]
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "Cannot write a decimal with scale {} and {} fractional digits: the maximum scale is {} and at most {} fractional digits are supported",
+            scale, fractional_length, max_scale, max_fractional_length);
+
     /// A fixed fractional length narrower than the scale rounds the value away from zero. Round the whole value
     /// before it is split, so that a carry out of the fractional part reaches the whole part: rounding the
     /// fractional part alone turns 9.995 into 9.00 instead of 10.00.

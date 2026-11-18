@@ -34,6 +34,8 @@ public:
         bool use_64_bit_indexes_for_dictionary = false;
         /// Output Date as UInt16 instead of Arrow DATE32 for backward compatibility.
         bool output_date_as_uint16 = false;
+        /// Upper bound on one record batch; a chunk holding more is written as several.
+        UInt64 output_max_record_batch_bytes = MAX_ARROW_BUFFER_SIZE;
         /// What to do with a type having no conversion: reject it, or write one serialized value per row
         /// into an Arrow `utf8`/`binary` column.
         FormatSettings::ArrowUnsupportedTypes output_unsupported_types = FormatSettings::ArrowUnsupportedTypes::THROW;

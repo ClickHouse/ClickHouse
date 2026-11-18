@@ -369,7 +369,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         /// argument that is `Nullable` but has no NULL in it keeps every regular path, including the
         /// numeric fast path below.
         const bool must_filter_null_rows
-            = !canBeExecutedOnDefaultArguments() && anyArgumentHasNullRows(args, input_rows_count);
+            = !canBeExecutedOnDefaultArguments(args) && anyArgumentHasNullRows(args, input_rows_count);
 
         bool all_columns_constant = true;
         bool all_numeric_types = true;
@@ -586,7 +586,7 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
         {
             ColumnsWithTypeAndName columns_without_low_cardinality = arguments;
 
-            bool can_be_executed_on_default_arguments = canBeExecutedOnDefaultArguments();
+            bool can_be_executed_on_default_arguments = canBeExecutedOnDefaultArguments(arguments);
 
             const auto & dictionary_type = res_low_cardinality_type->getDictionaryType();
 

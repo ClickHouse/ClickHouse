@@ -135,6 +135,9 @@ public:
             bool build_independent = false,
             const Block * input_header = nullptr,
             bool with_variable_size_constant_values = true) const;
+        /// What `updateHash` mixes in for this node itself, without its children.
+        void updateOwnHash(
+            SipHash & hash_state, bool build_independent, const Block * input_header, bool with_variable_size_constant_values) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -355,11 +358,17 @@ public:
     /// reaches, while the node holding it reports the `IFunctionBase` determinism defaults whatever the body
     /// does. True when a body hidden below `node`, at any lambda depth, has a function `is_unsafe` accepts.
     static bool hasUnsafeHiddenLambdaBody(const Node & node, const std::function<bool(const IFunctionBase &)> & is_unsafe);
+    /// Inputs below `root` (or `roots`, in one walk) read by a `!isDeterministic()` function, also through a lambda body: the result
+    /// may depend on their representation (e.g. constness). `outermost_readers`, if set, receives each node where such a read starts.
+    static std::unordered_set<const Node *> getInputsReadByRepresentation(const Node & root, NodeRawConstPtrs * outermost_readers = nullptr);
+    static std::unordered_set<const Node *> getInputsReadByRepresentation(const NodeRawConstPtrs & roots, NodeRawConstPtrs * outermost_readers = nullptr);
     /// A computed node reuses an input's name (`CAST(x, ...) AS x`). Names then can't identify carriers.
     bool hasInputNameShadowedByComputedNode() const;
 
 #if USE_EMBEDDED_COMPILER
     void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
+    /// The functions `compileExpressions` compiled into `function`, or nullptr if it is not a compiled expression.
+    static const std::vector<FunctionBasePtr> * getCompiledFunctions(const IFunctionBase & function);
 #endif
 
     using NodeMapping = std::unordered_map<const Node *, const Node *>;

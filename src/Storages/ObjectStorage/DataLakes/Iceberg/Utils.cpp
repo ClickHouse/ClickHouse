@@ -78,6 +78,9 @@ extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_METHOD;
+extern const int FILE_ALREADY_EXISTS;
+extern const int STALE_VERSION;
+extern const int S3_ERROR;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -351,6 +354,13 @@ void writeMessageToFile(
     }
 }
 
+bool isConditionalWriteConflict(const Exception & e)
+{
+    return e.code() == ErrorCodes::FILE_ALREADY_EXISTS
+        || e.code() == ErrorCodes::STALE_VERSION
+        || (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"));
+}
+
 bool writeMetadataFile(
     const IcebergPathResolver & resolver,
     const GeneratedMetadataFileWithInfo & metadata_file_info,
@@ -380,7 +390,11 @@ bool writeMetadataFile(
         /// Propagate instead; every other failure (including a genuinely lost CAS) stays retryable.
         if (e.code() == ErrorCodes::UNSUPPORTED_METHOD)
             throw;
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        if (isConditionalWriteConflict(e))
+            LOG_DEBUG(
+                getLogger("IcebergWrites"), "Metadata file {} was written by a concurrent commit: {}", storage_metadata_path, e.message());
+        else
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         return false;
     }
     catch (...)
@@ -467,6 +481,17 @@ bool tryWriteVersionHintFile(
 
             if (!assert_version_exactly)
                 return true;
+        }
+        catch (const Exception & e)
+        {
+            if (isConditionalWriteConflict(e))
+                LOG_DEBUG(
+                    getLogger("IcebergWrites"),
+                    "Version hint {} was changed by a concurrent writer: {}",
+                    storage_version_hint_path,
+                    e.message());
+            else
+                tryLogCurrentException(__PRETTY_FUNCTION__);
         }
         catch (...)
         {

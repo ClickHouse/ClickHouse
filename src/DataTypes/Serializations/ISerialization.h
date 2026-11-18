@@ -124,11 +124,10 @@ public:
     virtual KindStack getKindStack() const { return {Kind::DEFAULT}; }
     SerializationPtr getPtr() const { return shared_from_this(); }
 
-    /// Wrap the base (`type->createColumn()`) column into the column layout this serialization deserializes
-    /// into. Each layer composes on top of the nested one, so this reproduces the serialization's kind stack
-    /// (Sparse/Replicated/Detached) and any custom wrapping (e.g. a per-part value broadcast as a ColumnConst).
-    /// Default: identity.
-    virtual MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const { return column; }
+    /// Create an empty column of `type` in the layout this serialization deserializes into. Each layer composes on
+    /// top of the nested one, so this reproduces the serialization's kind stack (Sparse/Replicated/Detached) and any
+    /// custom layout (e.g. a per-part value broadcast as a `ColumnConst`). Default: `type.createColumn()`.
+    virtual MutableColumnPtr createColumnForDeserialization(const IDataType & type) const;
 
     static KindStack getKindStack(const IColumn & column);
     static String kindToString(Kind kind);
@@ -400,13 +399,7 @@ public:
         virtual ~ISubstreamsCacheElement() = default;
     };
 
-    /// Keys of the substreams caches are hashes of the substream paths, see `getSubstreamsCacheKeyForStream`.
-    struct SubstreamsCacheKeyHash
-    {
-        size_t operator()(const UInt128 & key) const { return static_cast<size_t>(key.items[0]); }
-    };
-
-    using SubstreamsCache = std::unordered_map<UInt128, std::unique_ptr<ISubstreamsCacheElement>, SubstreamsCacheKeyHash>;
+    using SubstreamsCache = std::unordered_map<String, std::unique_ptr<ISubstreamsCacheElement>>;
 
     using StreamCallback = std::function<void(const SubstreamPath &)>;
 
@@ -655,7 +648,7 @@ public:
         SerializeBinaryBulkSettings & /*settings*/,
         SerializeBinaryBulkStatePtr & /*state*/) const {}
 
-    using SubstreamsDeserializeStatesCache = std::unordered_map<UInt128, DeserializeBinaryBulkStatePtr, SubstreamsCacheKeyHash>;
+    using SubstreamsDeserializeStatesCache = std::unordered_map<String, DeserializeBinaryBulkStatePtr>;
 
     /// Call before before deserializeBinaryBulkWithMultipleStreams chain to get DeserializeBinaryBulkStatePtr.
     virtual void deserializeBinaryBulkStatePrefix(
@@ -808,7 +801,7 @@ public:
     static String getSubcolumnNameForStream(const SubstreamPath & path, bool) = delete;
 
     /// Key of a stream in SubstreamsCache and SubstreamsDeserializeStatesCache.
-    static UInt128 getSubstreamsCacheKeyForStream(const SubstreamPath & path);
+    static String getSubstreamsCacheKeyForStream(const SubstreamPath & path);
 
     static void addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows);
     static std::optional<std::pair<ColumnPtr, size_t>> getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);

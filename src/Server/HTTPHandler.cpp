@@ -853,8 +853,6 @@ void HTTPHandler::processQuery(
         chooseCompressionMethod({}, http_request_compression_method_str),
         zstd_window_log_max,
         snappy_mode);
-    LOG_DEBUG(getLogger("HTTPServerRequest"), "creating in_post id {}", size_t(in_post.get()));
-
 
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
@@ -1061,11 +1059,13 @@ void HTTPHandler::processQuery(
 
     if (!settings[Setting::run_query_in_background] && settings[Setting::readonly] > 0 && settings[Setting::cancel_http_readonly_queries_on_client_close])
     {
-        append_callback([&context, &request](const Progress &)
+        /// Assume that at the point this method is called no one is reading data from the socket any more:
+        /// should be true for read-only queries.
+        auto client_connected = [&request] { return request.checkPeerConnected(); };
+        context->setClientConnectedCallback(client_connected);
+        append_callback([&context, client_connected](const Progress &)
         {
-            /// Assume that at the point this method is called no one is reading data from the socket any more:
-            /// should be true for read-only queries.
-            if (!request.checkPeerConnected())
+            if (!client_connected())
                 context->killCurrentQuery();
         });
     }

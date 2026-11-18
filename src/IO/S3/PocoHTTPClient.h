@@ -53,6 +53,9 @@ bool isS3WrongSigningRegionBadRequest(int status_code, const Poco::Net::HTTPMess
 /// Printing that as a number is confusing, and casting it to an unsigned type turns it into 18446744073709551615.
 String httpResponseCodeToString(Aws::Http::HttpResponseCode response_code);
 
+/// Percent-encodes a request path exactly as `PocoHTTPClient` writes it into the request line.
+String encodeRequestPath(const String & path);
+
 /// Bounds only the response wait of a credential-acquisition round trip; the connect timeout stays
 /// as the caller set it. An already tighter wait is kept, a non-positive one is unbounded downstream
 /// and so takes the cap.

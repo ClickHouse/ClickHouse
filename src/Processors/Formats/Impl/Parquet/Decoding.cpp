@@ -470,8 +470,9 @@ struct PlainStringDecoder : public PageDecoder
     {
         for (size_t i = 0; i < num_values; ++i)
         {
+            requireRemainingBytes(4);
             UInt32 x = 0;
-            memcpy(&x, data, 4); /// omitting range check because input is padded
+            memcpy(&x, data, 4);
             size_t len = 4 + size_t(x);
             requireRemainingBytes(len);
             data += len;
@@ -498,8 +499,9 @@ struct PlainStringDecoder : public PageDecoder
 
             for (size_t i = 0; i < num_values; ++i)
             {
+                requireRemainingBytes(4);
                 UInt32 x = 0;
-                memcpy(&x, data, 4); /// omitting range check because input is padded
+                memcpy(&x, data, 4);
                 size_t len = 4 + size_t(x);
                 requireRemainingBytes(len);
                 if (!filter || filter[filter_offset + i])
@@ -551,12 +553,7 @@ struct PlainStringDecoder : public PageDecoder
                     num_pass += filter[filter_offset + i];
                 if (num_pass == 0)
                 {
-                    for (size_t i = 0; i < num_values; ++i)
-                    {
-                        UInt32 x = 0;
-                        memcpy(&x, data, 4);
-                        data += 4 + size_t(x);
-                    }
+                    skip(num_values);
                     return;
                 }
                 chars_buf.reserve(num_pass * 32); // rough estimate
@@ -564,6 +561,7 @@ struct PlainStringDecoder : public PageDecoder
                 size_t offset = 0;
                 for (size_t i = 0; i < num_values; ++i)
                 {
+                    requireRemainingBytes(4);
                     UInt32 x = 0;
                     memcpy(&x, data, 4);
                     size_t len = 4 + size_t(x);
@@ -586,8 +584,9 @@ struct PlainStringDecoder : public PageDecoder
             size_t offset = 0;
             for (size_t i = 0; i < num_values; ++i)
             {
+                requireRemainingBytes(4);
                 UInt32 x = 0;
-                memcpy(&x, data, 4); /// omitting range check because input is padded
+                memcpy(&x, data, 4);
                 size_t len = 4 + size_t(x);
                 requireRemainingBytes(len);
                 offset += len;

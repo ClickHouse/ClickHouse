@@ -17,6 +17,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDummy.h>
@@ -37,6 +38,8 @@ namespace Setting
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsBool parallel_replicas_plan_based;
+    extern const SettingsBool query_plan_enable_optimizations;
+    extern const SettingsBool query_plan_remove_redundant_sorting;
 }
 
 namespace ErrorCodes
@@ -513,13 +516,20 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     Planner planner(updated_query_tree, options, std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
     planner.buildQueryPlanIfNeeded();
 
+    /// A sorting the query plan optimization removes does not have to be finished on the initiator, so it must not
+    /// stop the whole subquery from going to the replicas: an `ORDER BY` in a subquery whose order nobody uses would
+    /// otherwise leave the replicas sorting what the initiator then aggregates.
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::query_plan_enable_optimizations] && settings[Setting::query_plan_remove_redundant_sorting])
+        QueryPlanOptimizations::tryRemoveRedundantSorting(planner.getQueryPlan().getRootNode());
+
     /// This part is a bit clumsy.
     /// We updated a query_tree with dummy storages, and mapping is using updated_query_tree now.
     /// But QueryNode result should be taken from initial query tree.
     /// So that we build a list of candidates again, and call findQueryForParallelReplicas for it.
     auto new_stack = getSupportingParallelReplicasQueries(updated_query_tree.get(), context);
     const auto & mapping = planner.getQueryNodeToPlanStepMapping();
-    const auto * res = findQueryForParallelReplicas(new_stack, mapping, context->getSettingsRef());
+    const auto * res = findQueryForParallelReplicas(new_stack, mapping, settings);
 
     if (res)
     {

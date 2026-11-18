@@ -168,7 +168,7 @@ static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
 {
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     const auto minmax_names = MergeTreeData::getMinMaxColumns(
-        metadata_snapshot->getPartitionKey(), data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).getNames();
+        *metadata_snapshot, data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).getNames();
 
     std::vector<std::optional<size_t>> mapping(primary_key.column_names.size());
     for (size_t i = 0; i < primary_key.column_names.size(); ++i)
@@ -722,7 +722,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     DataTypes minmax_columns_types;
 
     if (minmax_idx_condition)
-        minmax_columns_types = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data.getSettings()).getTypes();
+        minmax_columns_types = MergeTreeData::getMinMaxColumns(*metadata_snapshot, data.getSettings()).getTypes();
 
     if (check_index_usage && metadata_snapshot->hasPartitionKey() && settings[Setting::force_index_by_date]
         && (!minmax_idx_condition || minmax_idx_condition->generateUnsubstituted().alwaysUnknownOrTrue())
@@ -952,6 +952,33 @@ static bool partHasStaleTopKIndex(
     return false;
 }
 
+void MergeTreeDataSelectExecutor::checkForcedSkipIndexes(const UsefulSkipIndexes & skip_indexes, const Settings & settings)
+{
+    if (!settings[Setting::force_data_skipping_indexes].changed)
+        return;
+
+    const auto & indices_str = settings[Setting::force_data_skipping_indexes].toString();
+    auto forced_indices = parseIdentifiersOrStringLiterals(indices_str, settings);
+
+    if (forced_indices.empty())
+        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "No indices parsed from force_data_skipping_indices ('{}')", indices_str);
+
+    std::unordered_set<std::string> useful_indices_names;
+    for (const auto & useful_index : skip_indexes.useful_indices)
+        useful_indices_names.insert(useful_index.index->index.name);
+
+    for (const auto & index_name : forced_indices)
+    {
+        if (!useful_indices_names.contains(index_name))
+        {
+            throw Exception(
+                ErrorCodes::INDEX_NOT_USED,
+                "Index {} is not used and setting 'force_data_skipping_indices' contains it",
+                backQuote(index_name));
+        }
+    }
+}
+
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats)
 {
     auto & metadata_snapshot = filter_context.metadata_snapshot;
@@ -979,29 +1006,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const auto original_num_parts = parts_with_ranges.size();
     const Settings & settings = context->getSettingsRef();
 
-    if (use_skip_indexes && settings[Setting::force_data_skipping_indexes].changed)
-    {
-        const auto & indices_str = settings[Setting::force_data_skipping_indexes].toString();
-        auto forced_indices = parseIdentifiersOrStringLiterals(indices_str, settings);
-
-        if (forced_indices.empty())
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "No indices parsed from force_data_skipping_indices ('{}')", indices_str);
-
-        std::unordered_set<std::string> useful_indices_names;
-        for (const auto & useful_index : skip_indexes.useful_indices)
-            useful_indices_names.insert(useful_index.index->index.name);
-
-        for (const auto & index_name : forced_indices)
-        {
-            if (!useful_indices_names.contains(index_name))
-            {
-                throw Exception(
-                    ErrorCodes::INDEX_NOT_USED,
-                    "Index {} is not used and setting 'force_data_skipping_indices' contains it",
-                    backQuote(index_name));
-            }
-        }
-    }
+    if (use_skip_indexes)
+        checkForcedSkipIndexes(skip_indexes, settings);
 
     struct IndexStat
     {
@@ -2109,7 +2115,8 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         use_query_condition_cache,
         allow_top_k_prewhere_query_condition_cache,
         /*supports_skip_indexes_on_data_read*/false,
-        /*check_row_limits=*/true);
+        /*check_row_limits=*/true,
+        /*skip_ranges_analysis=*/false);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
@@ -2341,6 +2348,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     std::vector<FieldRef> sparse_key_right;
     DataTypes sparse_key_types;
     std::vector<UInt8> equal_boundaries_mask;
+    bool sparse_condition_can_be_true = true;
 
     if (use_sparse_pk_representation)
     {
@@ -2417,6 +2425,14 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         /// marks are the same or not to properly construct all hyperrectangles. However, this is extremely fast because
         /// for intermediate columns we never create `Range`, `FieldRef`, or `Field` in `KeyCondition`.
         equal_boundaries_mask.resize(num_used_prefix_key_columns_loaded_in_memory);
+
+        if (sparse_keys_size == 0 && key_condition_useful)
+        {
+            const BoolMask mask = key_condition.checkInRange(
+                used_key_indices, sparse_key_left.data(), sparse_key_right.data(), sparse_key_types,
+                /*equal_boundaries_mask=*/ {}, /*initial_mask=*/ {}, /*key_bounds=*/ nullptr);
+            sparse_condition_can_be_true = mask.can_be_true;
+        }
     }
     else
     {
@@ -2544,9 +2560,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
             if (use_sparse_pk_representation)
             {
-                /// Nothing can be inferred from empty ranges
+                /// No analysed key column: the mask does not depend on the range.
                 if (sparse_keys_size == 0)
-                    return BoolMask(true, true);
+                    return BoolMask(sparse_condition_can_be_true, true);
 
                 if (range.end == marks_count)
                 {

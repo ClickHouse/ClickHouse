@@ -807,7 +807,8 @@ def test_table_function_url_access_rights():
         "DESCRIBE TABLE url('http://nginx:80/test_1', 'TSV')", user="u1"
     )
 
-    node1.query("GRANT READ ON URL TO u1")
+    # Like `SELECT`, `DESCRIBE` of a table function also needs `CREATE TEMPORARY TABLE`.
+    node1.query("GRANT READ ON URL, CREATE TEMPORARY TABLE ON *.* TO u1")
     assert node1.query(
         "DESCRIBE TABLE url('http://nginx:80/test_1', 'TSV')",
         user="u1",

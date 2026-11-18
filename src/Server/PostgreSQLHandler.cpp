@@ -1237,8 +1237,8 @@ void PostgreSQLHandler::cancelRequest()
 inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQLHandler::receiveStartupMessage(int payload_size)
 {
     /// The declared size is read from the wire before any authentication, and the message is read
-    /// into memory in full, so it has to be bounded. PostgreSQL uses the same limit.
-    static constexpr Int32 max_startup_message_size = 10000;
+    /// into memory in full, so it has to be bounded (`max_unauthenticated_message_size`).
+    static constexpr Int32 max_startup_message_size = PostgreSQLProtocol::Messaging::max_unauthenticated_message_size;
 
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> message;
     try

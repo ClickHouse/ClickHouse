@@ -247,6 +247,10 @@ public:
     SerializationPtr getSerialization(const String & column_name) const;
     SerializationPtr tryGetSerialization(const String & column_name) const;
 
+    /// A static subcolumn's serialization from the part's shared serializations;
+    /// see `PartSerializations::tryGetSubcolumnSerialization` for when it returns nothing.
+    SerializationPtr tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const;
+
     void remove();
 
     /// The statistics of the part's columns; an empty `required_columns` means all columns.

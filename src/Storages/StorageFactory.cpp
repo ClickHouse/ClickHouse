@@ -1,6 +1,7 @@
 #include <Storages/StorageFactory.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/Context.h>
+#include <Disks/DiskFromAST.h>
 #include <Interpreters/DDLTask.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -104,6 +105,22 @@ ContextMutablePtr StorageFactory::Arguments::getLocalContext() const
     if (!ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Context has expired");
     return ptr;
+}
+
+DiskPtr StorageFactory::Arguments::getDisk(const String & name) const
+{
+    auto disk = getContext()->getDisk(name);
+    if (!isLoadingFromExistingMetadata(mode))
+        DiskFromAST::ensureDiskIsAllowed(disk, getLocalContext());
+    return disk;
+}
+
+StoragePolicyPtr StorageFactory::Arguments::getStoragePolicy(const String & name) const
+{
+    auto storage_policy = getContext()->getStoragePolicy(name);
+    if (!isLoadingFromExistingMetadata(mode))
+        DiskFromAST::ensureStoragePolicyIsAllowed(name, getLocalContext());
+    return storage_policy;
 }
 
 

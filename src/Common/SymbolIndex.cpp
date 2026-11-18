@@ -303,6 +303,27 @@ String getBuildIDFromProgramHeaders(DynamicLinkingProgramHeaderInfo * info)
 }
 #endif
 
+/// The end of the address range occupied by the loadable segments of the object, relative to its load address.
+/// It is taken from the program headers of the loaded object rather than from the size of its file,
+/// because the file we read symbols from may be a separate debug file, which can be smaller than the code
+/// (e.g. when its debug sections are compressed).
+uintptr_t getLoadedSegmentsEnd(DynamicLinkingProgramHeaderInfo * info)
+{
+    __msan_unpoison(&info->phnum, sizeof(info->phnum));
+    __msan_unpoison(&info->phdr, sizeof(info->phdr));
+    uintptr_t end = 0;
+    for (size_t header_index = 0; header_index < info->phnum; ++header_index)
+    {
+        const ElfProgramHeader & phdr = info->phdr[header_index];
+        __msan_unpoison(&phdr, sizeof(phdr));
+        if (phdr.type != ProgramHeaderType::LOAD)
+            continue;
+
+        end = std::max<uintptr_t>(end, phdr.vaddr + phdr.memsz);
+    }
+    return end;
+}
+
 
 void collectSymbolsFromELFSymbolTable(
     const Elf & elf,
@@ -484,7 +505,7 @@ void searchAndCollectSymbolsFromGNUDebugData(SymbolIndex::Object & object, std::
 }
 
 
-void collectSymbolsFromELF(
+bool collectSymbolsFromELF(
     DynamicLinkingProgramHeaderInfo * info,
     std::vector<SymbolIndex::Symbol> & symbols,
     std::vector<SymbolIndex::Object> & objects,
@@ -527,7 +548,7 @@ void collectSymbolsFromELF(
     std::filesystem::path canonical_path = std::filesystem::canonical(object_name, ec);
 
     if (ec)
-        return;
+        return is_main_executable;
 
     /// Debug info and symbol table sections may be split to separate binary.
     std::filesystem::path local_debug_info_path = canonical_path.parent_path() / canonical_path.stem();
@@ -593,14 +614,14 @@ void collectSymbolsFromELF(
             /// But it can still be outdated, for example, if executable file was deleted from filesystem and replaced by another file.
             file_build_id = object.elf->getBuildID();
             if (build_id != file_build_id)
-                return;
+                return is_main_executable;
         }
         else
-            return;
+            return is_main_executable;
     }
 
     object.address_begin = reinterpret_cast<const void *>(info->addr);
-    object.address_end = reinterpret_cast<const void *>(info->addr + object.elf->size());
+    object.address_end = reinterpret_cast<const void *>(info->addr + getLoadedSegmentsEnd(info));
     object.name = object_name;
     objects.push_back(std::move(object));
 
@@ -616,6 +637,8 @@ void collectSymbolsFromELF(
 #if defined USE_MUSL
     searchAndCollectSymbolsFromELFSymbolTable(*objects.back().elf, SectionHeaderType::DYNSYM, ".dynstr", symbols);
 #endif
+
+    return is_main_executable;
 }
 
 
@@ -627,8 +650,17 @@ int collectSymbols(DynamicLinkingProgramHeaderInfo * info, size_t, void * data_p
 {
     SymbolIndex::Data & data = *reinterpret_cast<SymbolIndex::Data *>(data_ptr);
 
+    const size_t initial_symbol_count = data.symbols.size();
+    const size_t initial_object_count = data.objects.size();
+
     collectSymbolsFromProgramHeaders(info, data.symbols);
-    collectSymbolsFromELF(info, data.symbols, data.objects, data.self_build_id);
+    if (!collectSymbolsFromELF(info, data.symbols, data.objects, data.self_build_id))
+    {
+        /// Offsets of different objects overlap, and only offsets inside the main executable are published.
+        if (data.objects.size() > initial_object_count)
+            data.objects.back().symbols.assign(data.symbols.begin() + initial_symbol_count, data.symbols.end());
+        data.symbols.resize(initial_symbol_count);
+    }
 
     /* Continue iterations */
     return 0;
@@ -863,44 +895,48 @@ void SymbolIndex::load()
 #endif
 
     ::sort(data.objects.begin(), data.objects.end(), [](const Object & a, const Object & b) { return a.address_begin < b.address_begin; });
-    ::sort(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b) { return a.offset_begin < b.offset_begin; });
 
     /// We found symbols both from loaded program headers and from ELF symbol tables.
-    data.symbols.erase(std::unique(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b)
+    auto sort_and_deduplicate = [](std::vector<Symbol> & symbols)
     {
-        return a.offset_begin == b.offset_begin && a.offset_end == b.offset_end;
-    }), data.symbols.end());
+        ::sort(symbols.begin(), symbols.end(), [](const Symbol & a, const Symbol & b) { return a.offset_begin < b.offset_begin; });
+        symbols.erase(std::unique(symbols.begin(), symbols.end(), [](const Symbol & a, const Symbol & b)
+        {
+            return a.offset_begin == b.offset_begin && a.offset_end == b.offset_end;
+        }), symbols.end());
+    };
+
+    sort_and_deduplicate(data.symbols);
+#if defined(__ELF__)
+    for (auto & object : data.objects)
+        sort_and_deduplicate(object.symbols);
+#endif
 }
 
-const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * address) const
+const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * offset) const
 {
-    /// On ELF: Symbols are stored as file offsets (relative to object base).
-    /// Callers may pass either absolute runtime addresses OR file offsets.
-    /// - Coverage passes absolute addresses
-    /// - system.stack_trace (after PR #82809) already stores file offsets
-    ///
-    /// Strategy: Try to find containing object. If found, input is absolute address → convert.
-    /// If not found, assume input is already a file offset → use directly.
-    ///
-    /// On macOS: Symbols are stored as absolute virtual addresses to avoid
-    /// overlap between different objects. No conversion is needed.
+#if defined(__ELF__)
+    if (!offset)
+        return nullptr;
+#endif
+    return find(offset, data.symbols);
+}
 
-    const void * offset = address;
-
+const SymbolIndex::Symbol * SymbolIndex::findSymbolByAddress(const void * address) const
+{
 #if defined(__ELF__)
     const Object * object = findObject(address);
+    if (!object)
+        return nullptr;
 
-    if (object)
-    {
-        /// Input is an absolute address, convert to file offset
-        offset = reinterpret_cast<const void *>(
-            reinterpret_cast<uintptr_t>(address) - reinterpret_cast<uintptr_t>(object->address_begin));
-    }
-    /// else: input is likely already a file offset, use it directly
+    const void * offset = reinterpret_cast<const void *>(
+        reinterpret_cast<uintptr_t>(address) - reinterpret_cast<uintptr_t>(object->address_begin));
+    if (object == thisObject())
+        return find(offset, data.symbols);
+    return find(offset, object->symbols);
+#else
+    return find(address, data.symbols);
 #endif
-    /// On macOS, symbols use absolute virtual addresses, so search directly.
-
-    return find(offset, data.symbols);
 }
 
 const SymbolIndex::Object * SymbolIndex::findObject(const void * address) const

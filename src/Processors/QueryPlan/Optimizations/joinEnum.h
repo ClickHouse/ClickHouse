@@ -67,7 +67,7 @@ class EnumCcpSub
     using Graph = TQueryGraph;
     using UInt = TDPTable::Key;
 public:
-    EnumCcpSub(UInt64 nr_relations_, UInt64 budget_, LoggerPtr log_);
+    EnumCcpSub(UInt64 nr_relations_, LoggerPtr log_);
     UInt64 n() const { return nr_relations; }
     void initDPTable(Dptable & dp_table, const Graph & query_graph);
     bool isConnected(const Dptable & dp_table, UInt S1, UInt S2) const;
@@ -75,15 +75,13 @@ public:
     void enumerate(Consumer & consumer, const Graph & query_graph);
 private:
     UInt64 nr_relations{0};
-    UInt64 budget{0}; // budget cap on # of ccps enumerated by DPsub
     LoggerPtr log;
 };
 
 
 template <class TConsumer, class TDPTable, class TQueryGraph>
-EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::EnumCcpSub(UInt64 nr_relations_, UInt64 budget_, LoggerPtr log_)
+EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::EnumCcpSub(UInt64 nr_relations_, LoggerPtr log_)
     : nr_relations(nr_relations_)
-    , budget(budget_)
     , log(log_)
 {
 }
@@ -126,57 +124,51 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::initDPTable(TDPTable & dp_tab
         dp_table[right_mask].column_stats = query_graph.relation_stats[relations[1]].column_stats;
     }
 
+    /// Link two base relations as neighbors, as a join of selectivity 1.
+    auto link_relations = [&](size_t left_relation, size_t right_relation)
+    {
+        const UInt left_mask = static_cast<UInt>(1) << left_relation;
+        const UInt right_mask = static_cast<UInt>(1) << right_relation;
+
+        dp_table[left_mask].neighbor |= right_mask;
+        dp_table[left_mask].estimated_rows = query_graph.relation_stats[left_relation].estimated_rows;
+        dp_table[left_mask].sel = 1.0;
+        dp_table[left_mask].column_stats = query_graph.relation_stats[left_relation].column_stats;
+
+        dp_table[right_mask].neighbor |= left_mask;
+        dp_table[right_mask].estimated_rows = query_graph.relation_stats[right_relation].estimated_rows;
+        dp_table[right_mask].sel = 1.0;
+        dp_table[right_mask].column_stats = query_graph.relation_stats[right_relation].column_stats;
+    };
+
+    /// A cross product links its two sides (see `QueryGraph::cross_product_links`): it joins on
+    /// nothing, so it is an inner join of selectivity 1 that may go anywhere an inner join may, and
+    /// the validity check still gates every ordering. Seeded whatever the conflict detector, so a
+    /// graph that cross products hold together is connected for DPsub. One relation of each side
+    /// stands for the whole side.
+    for (const auto & [left, right] : query_graph.cross_product_links)
+    {
+        if (left.none() || right.none())
+            continue;
+        link_relations(*left.begin(), *right.begin());
+    }
+
     /// A join whose ON clause references only one input side (or none -- a cross product) adds no
     /// binary edge, so its two subtrees are never linked and DPsub cannot assemble the full set.
     /// Seed one connectivity link per such operator so its relation set is reachable; the validity
     /// check still gates every ordering (and rejects a split no operator legitimately spans).
     ///
     /// Only the conflict-detector path carries the per-operator subtree sets needed to keep these
-    /// reachable cross-product orderings correct; the per-relation baseline leaves them disconnected.
+    /// reachable cross-product orderings correct. The per-relation baseline leaves them disconnected.
     /// This runs once, outside the per-csg-cmp hot loop.
     if (query_graph.conflict_detector == JoinOrderConflictDetector::NONE)
         return;
 
     for (const auto & op : query_graph.conflict_ops)
     {
-        UInt left = 0;
-        UInt right = 0;
-        UInt nel = 0;
-        std::optional<size_t> rep_left;
-        std::optional<size_t> rep_right;
-        for (auto b : op.left)
-        {
-            left |= (static_cast<UInt>(1) << b);
-            if (!rep_left)
-                rep_left = b;
-        }
-        for (auto b : op.right)
-        {
-            right |= (static_cast<UInt>(1) << b);
-            if (!rep_right)
-                rep_right = b;
-        }
-        for (auto b : op.nel)
-            nel |= (static_cast<UInt>(1) << b);
-
-        if (!rep_left || !rep_right)
+        if (op.left.none() || op.right.none())
             continue;
-        /// Non-degenerate: the predicate already spans both sides, so a binary edge connects them.
-        if ((nel & left) && (nel & right))
-            continue;
-
-        const UInt left_mask = static_cast<UInt>(1) << *rep_left;
-        const UInt right_mask = static_cast<UInt>(1) << *rep_right;
-
-        dp_table[left_mask].neighbor |= right_mask;
-        dp_table[left_mask].estimated_rows = query_graph.relation_stats[*rep_left].estimated_rows;
-        dp_table[left_mask].sel = 1.0;
-        dp_table[left_mask].column_stats = query_graph.relation_stats[*rep_left].column_stats;
-
-        dp_table[right_mask].neighbor |= left_mask;
-        dp_table[right_mask].estimated_rows = query_graph.relation_stats[*rep_right].estimated_rows;
-        dp_table[right_mask].sel = 1.0;
-        dp_table[right_mask].column_stats = query_graph.relation_stats[*rep_right].column_stats;
+        link_relations(*op.left.begin(), *op.right.begin());
     }
 }
 
@@ -214,9 +206,6 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::enumerate(TConsumer & consume
             continue;
 
         auto & dp_table = consumer.getDPTable();
-        // If the query is large/complex break out of the optimization early
-        if (dp_table.noCCP() > budget)
-            return;
 
         NonEmptySubmasks<UInt> subsets(s);
         for (auto s_iter : subsets)
