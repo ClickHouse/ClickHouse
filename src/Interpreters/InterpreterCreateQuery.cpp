@@ -3097,10 +3097,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         {
             try
             {
-                /// A transaction carrying no task path is not an entry of the DDL log.
+                /// A transaction carrying no task path is not an entry of the DDL log. A commit that was never
+                /// attempted published nothing; after an attempt, only Keeper tells a rejected one from a lost reply.
                 const String task_path = txn->getTaskZooKeeperPath();
                 if (txn->isInitialQuery() && !task_path.empty())
-                    published = txn->getZooKeeper()->exists(fs::path(task_path) / "committed");
+                    published = txn->isExecuted() && txn->getZooKeeper()->exists(fs::path(task_path) / "committed");
             }
             catch (...)
             {
