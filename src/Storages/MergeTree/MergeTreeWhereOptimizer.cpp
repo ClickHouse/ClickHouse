@@ -66,8 +66,7 @@ NameToIndexMap fillNamesPositions(const Names & names)
 constexpr double default_bytes_per_string_value = 64;
 constexpr double default_bytes_per_complex_value = 128;
 
-/// Uncompressed, unlike the stored column sizes, so it over-charges - the safe direction for a
-/// column whose real cost is unknown.
+/// Decoded bytes per value, the same unit as the measured column sizes.
 double approximateBytesPerValueForType(const IDataType & type)
 {
     if (type.haveMaximumSizeOfValue())
@@ -75,6 +74,38 @@ double approximateBytesPerValueForType(const IDataType & type)
     if (WhichDataType(type).isString())
         return default_bytes_per_string_value;
     return default_bytes_per_complex_value;
+}
+
+/// Adds the bytes per row produced by the functions in `node` that depend on a column, each node once.
+/// A function returning `LowCardinality` runs on the dictionary and produces only an index per row.
+bool addBytesPerRowOfFunctions(
+    const ActionsDAG::Node & node, UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool> & visited, double & bytes)
+{
+    if (auto it = visited.find(&node); it != visited.end())
+        return it->second;
+
+    bool depends_on_column = node.type == ActionsDAG::ActionType::INPUT;
+    /// A constant is computed once.
+    if (!node.column)
+        for (const auto * child : node.children)
+            if (addBytesPerRowOfFunctions(*child, visited, bytes))
+                depends_on_column = true;
+
+    if (depends_on_column && node.type == ActionsDAG::ActionType::FUNCTION)
+        bytes += node.result_type->lowCardinality() ? 1 : approximateBytesPerValueForType(*node.result_type);
+
+    visited.emplace(&node, depends_on_column);
+    return depends_on_column;
+}
+
+double approximateBytesPerRowOfFunctions(const std::vector<RPNBuilderTreeNode> & nodes)
+{
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool> visited;
+    double bytes = 0;
+    for (const auto & node : nodes)
+        if (const auto * dag_node = node.getDAGNode())
+            addBytesPerRowOfFunctions(*dag_node, visited, bytes);
+    return bytes;
 }
 
 /// Find minimal position of any of the column in primary key.
@@ -669,11 +700,11 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
                         pk_positions.emplace(findMinPosition(infos[idx].columns, primary_key_names_positions));
             }
 
-            /// Combine I/O cost with selectivity using the classic conjunctive filter ordering rule:
-            /// sort by cost / (1 - selectivity), i.e. cost per rejected row.
+            /// Combine the cost per row - decoded bytes read plus bytes the functions produce - with selectivity using the classic
+            /// conjunctive filter ordering rule: sort by cost / (1 - selectivity), i.e. cost per rejected row.
             const double rejected_rows = static_cast<double>(total_rows) - static_cast<double>(cond.estimated_row_count);
             if (total_rows == 0)
-                /// No statistics: fall back to pure I/O cost.
+                /// No statistics: fall back to the decoded size of the columns.
                 cond.bytes_per_rejected_row = static_cast<double>(cond.columns_size);
             else if (rejected_rows <= 0)
                 /// Rejects no rows, so it is useless in PREWHERE regardless of its cost: schedule it last.
@@ -683,7 +714,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
                 /// selectivity, e.g. `Nullable(Int64)` would beat `Int64` on the null byte.
                 cond.bytes_per_rejected_row = static_cast<double>(cond.estimated_row_count);
             else
-                cond.bytes_per_rejected_row = approximateBytesPerRow(cond.table_columns) * static_cast<double>(total_rows) / rejected_rows;
+                cond.bytes_per_rejected_row = (approximateBytesPerRow(cond.table_columns) + approximateBytesPerRowOfFunctions(cond.nodes))
+                    * static_cast<double>(total_rows) / rejected_rows;
 
             res.emplace_back(std::move(cond));
         }

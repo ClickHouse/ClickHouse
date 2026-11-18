@@ -50,7 +50,7 @@ SELECT multiIf(
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(text, 'alpha') AND text = concat('x', toString(v)))
 WHERE explain LIKE '%Prewhere filter column%';
 
-SELECT '-- a selective predicate on a narrow column costs less, so it goes first';
+SELECT '-- the index condition decodes one byte per row, less than a selective predicate on a UInt64 column';
 SELECT multiIf(
         position(explain, '__text_index') = 0 OR position(explain, 'equals(') = 0, 'unexpected plan: ' || explain,
         position(explain, '__text_index') < position(explain, 'equals('), 'index condition first',

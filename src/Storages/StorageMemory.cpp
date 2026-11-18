@@ -820,10 +820,8 @@ IStorage::ColumnSizeByName StorageMemory::getColumnSizes() const
     {
         for (const auto & elem : block)
         {
-            /// For a table with `compress = true` the stored columns are `ColumnCompressed`,
-            /// whose `byteSize` is the compressed size - the amount of data a read of the
-            /// column has to decompress, which is exactly the weight the WHERE -> PREWHERE
-            /// optimization orders conditions by.
+            /// For a table with `compress = true` the stored columns are `ColumnCompressed`, whose `byteSize`
+            /// is the compressed size, the only size known without decompressing them.
             column_sizes[elem.name].data_compressed += elem.column->byteSize();
         }
     }

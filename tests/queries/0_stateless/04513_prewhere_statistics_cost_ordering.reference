@@ -3,3 +3,21 @@
 -- correctness: result is the same regardless of ordering
 0
 0
+-- a well-compressed wide string is not cheaper than a selective fixed-size column
+1
+-- the same without statistics
+1
+0
+0
+-- a conversion chain over a narrow column is charged for the strings it produces
+1
+0
+0
+-- a sparse JSON path behind a cast runs after a selective LowCardinality filter
+1
+0
+0
+-- a function over LowCardinality runs on the dictionary, so it stays cheap
+1
+0
+0
