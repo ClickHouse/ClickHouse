@@ -1812,7 +1812,8 @@ private:
         const AggregateColumnsConstData & aggregate_columns_data,
         std::atomic<bool> & is_cancelled,
         Arena * arena_for_keys,
-        DeferredMerges * deferred = nullptr) const;
+        DeferredMerges * deferred = nullptr,
+        bool sources_are_shared = false) const;
 
     /// A set method has no aggregate states: merging a block back only re-registers its keys.
     template <typename State, typename Table>
@@ -1828,13 +1829,16 @@ private:
         const AggregateColumnsConstData & aggregate_columns_data,
         std::atomic<bool> & is_cancelled,
         Arena * arena_for_keys,
-        DeferredMerges * deferred = nullptr) const;
+        DeferredMerges * deferred = nullptr,
+        bool sources_are_shared = false) const;
 
     /// `arena_for_keys` used to store serialized aggregation keys (in methods like `serialized`) to save some space.
     /// If not provided, aggregates_pool is used instead. Refer to mergeBlocks() for an usage example.
     /// If `deferred` is not null, pairs of large states are collected there instead of being merged at the end of
     /// the block, so that the caller can merge them together with the large states of other blocks via
     /// `mergeDeferredLargeStates`; the caller must keep the block's columns alive until then.
+    /// `sources_are_shared`: see `mergeOnBlock`. Shared sources are never deferred, because the multi-way merge of the
+    /// deferred states (`IAggregateFunction::parallelizeMergeMulti`) may convert the sources in place.
     template <typename Method, typename Table>
     void mergeStreamsImpl(
         const Columns & columns,
@@ -1847,7 +1851,8 @@ private:
         bool no_more_keys,
         std::atomic<bool> & is_cancelled,
         Arena * arena_for_keys = nullptr,
-        DeferredMerges * deferred = nullptr) const;
+        DeferredMerges * deferred = nullptr,
+        bool sources_are_shared = false) const;
 
     /// `for_sub_range` as in `executeImpl`, for `mergeOnBlockSmall`.
     template <bool for_sub_range, typename Method, typename Table>
@@ -1864,7 +1869,8 @@ private:
         const ColumnRawPtrs & key_columns,
         std::atomic<bool> & is_cancelled,
         Arena * arena_for_keys,
-        DeferredMerges * deferred = nullptr) const;
+        DeferredMerges * deferred = nullptr,
+        bool sources_are_shared = false) const;
 
     void mergeBlockWithoutKeyStreamsImpl(
         const Columns & columns,
