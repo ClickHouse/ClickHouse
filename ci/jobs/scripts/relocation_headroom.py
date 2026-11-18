@@ -117,8 +117,13 @@ def check(build_dir, info):
     lines.append(f"Lowest: {lowest / MIB:.2f} MiB ({binary}, {name}); warns below {WARN_HEADROOM_MIB} MiB")
     if lowest < WARN_HEADROOM_MIB * MIB:
         info.add_workflow_warning(
-            f"The relocation headroom of {binary} ({name}) is {lowest / MIB:.2f} MiB, below {WARN_HEADROOM_MIB} MiB:"
-            " shrink the code or the data before the link fails, see #126314"
+            f"The relocation headroom of {binary} ({name}) is {lowest / MIB:.2f} MiB, below {WARN_HEADROOM_MIB} MiB."
+            " Shrink the code or the data before the link fails, or switch x86-64 MSan to the large code model:"
+            " add -mcmodel=large to MSAN_FLAGS in cmake/sanitize.cmake and to the compiler-rt runtime in"
+            " contrib/compiler-rt-cmake/CMakeLists.txt (it filters the inherited flags), add -C code-model=large to the"
+            " MSan RUSTFLAGS in contrib/corrosion-cmake/CMakeLists.txt, and rework or drop this check"
+            " (ci/jobs/build_clickhouse.py), which measures the limits of the small code model."
+            " See https://github.com/ClickHouse/ClickHouse/issues/126314"
         )
     status, allowed = Result.Status.OK, False
     if decreases and max(decreases)[0] > MAX_DECREASE_MIB * MIB:

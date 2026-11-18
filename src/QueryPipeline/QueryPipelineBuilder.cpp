@@ -197,7 +197,10 @@ void QueryPipelineBuilder::addDefaultTotals()
         }
 
         auto column = elem.type->createColumn();
-        column->insertDefault();
+        if (elem.type->isDefaultInsertTrivial())
+            column->insertDefault();
+        else
+            elem.type->insertDefaultInto(*column);
         columns.emplace_back(std::move(column));
     }
 
@@ -1090,6 +1093,7 @@ QueryPipeline QueryPipelineBuilder::getPipeline(QueryPipelineBuilder builder)
     res.setConcurrencyControl(builder.getConcurrencyControl());
     res.setProcessListElement(builder.process_list_element);
     res.setProgressCallback(builder.progress_callback);
+    res.setStepProfiler(std::move(builder.step_profiler));
     return res;
 }
 
