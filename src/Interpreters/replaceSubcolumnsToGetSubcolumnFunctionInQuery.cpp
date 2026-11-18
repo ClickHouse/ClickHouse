@@ -15,12 +15,21 @@ void replaceSubcolumnsToGetSubcolumnFunctionInQuery(ASTPtr & ast, const NamesAnd
         if (columns.contains(identifier->getColumnName()))
             return;
 
-        auto [column_name, subcolumn_name] = Nested::splitName(identifier->getColumnName());
-        auto column = columns.tryGetByName(column_name);
-        if (!column || !column->type->hasSubcolumn(subcolumn_name))
-            return;
+        /// A column name can itself contain dots (e.g. a Nested column `a.b`), so try every split
+        /// point of the identifier and take the first whose left part is a stored column that has
+        /// the remainder as a subcolumn, like Block::findSubcolumnByName.
+        for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(identifier->getColumnName()))
+        {
+            auto column = columns.tryGetByName(String(column_name));
+            if (!column || !column->type->hasSubcolumn(String(subcolumn_name)))
+                continue;
 
-        ast = makeASTFunction("getSubcolumn", make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(subcolumn_name));
+            ast = makeASTFunction(
+                "getSubcolumn",
+                make_intrusive<ASTIdentifier>(String(column_name)),
+                make_intrusive<ASTLiteral>(String(subcolumn_name)));
+            return;
+        }
     }
     else if (auto * node = ast->as<ASTFunction>())
     {

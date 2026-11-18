@@ -239,7 +239,7 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
 /// Expression that recalculates a MATERIALIZED column: ALIAS columns are substituted (an ALIAS is not
 /// stored in a part) and subcolumns are read via getSubcolumn from the whole column, which an earlier
 /// stage may have just updated.
-static ASTPtr makeMaterializedColumnExpression(
+ASTPtr makeMaterializedColumnExpression(
     const ColumnDescription & column,
     const ColumnsDescription & columns,
     const NamesAndTypesList & all_columns,
