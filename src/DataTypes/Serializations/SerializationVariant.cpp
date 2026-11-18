@@ -926,6 +926,10 @@ void SerializationVariant::serializeForHashCalculation(const IColumn & column, s
 namespace
 {
 
+/// Neighbouring types in the list below are this far apart, so a type can be ranked between two of them
+/// without changing the other scores, which Tuple and Map priorities sum.
+constexpr size_t text_deserialize_priority_step = 4;
+
 const std::unordered_map<TypeIndex, size_t> & getTypesTextDeserializePriorityMap()
 {
     static std::unordered_map<TypeIndex, size_t> priority_map = []
@@ -992,7 +996,14 @@ const std::unordered_map<TypeIndex, size_t> & getTypesTextDeserializePriorityMap
 
         pm.reserve(priorities.size());
         for (size_t i = 0; i != priorities.size(); ++i)
-            pm[priorities[i]] = priorities.size() - i;
+            pm[priorities[i]] = (priorities.size() - i) * text_deserialize_priority_step;
+
+        /// Smaller floats first, as in the list.
+        pm[TypeIndex::BFloat16] = pm.at(TypeIndex::Float32) + 1;
+        /// Times go before Dates: they reject any text with a date part,
+        /// while DateTimes parsed with best_effort also accept a time alone.
+        pm[TypeIndex::Time] = pm.at(TypeIndex::Date) + 2;
+        pm[TypeIndex::Time64] = pm.at(TypeIndex::Date) + 1;
         return pm;
     }();
 
@@ -1066,7 +1077,7 @@ std::tuple<size_t, size_t, size_t> getTypeTextDeserializePriority(const DataType
 
     /// Bool type should have priority higher then all integers.
     if (isBool(type))
-        return {nested_depth, priority_map.at(TypeIndex::Int8) + 1, simple_nested_depth};
+        return {nested_depth, priority_map.at(TypeIndex::Int8) + text_deserialize_priority_step, simple_nested_depth};
 
     auto it = priority_map.find(type->getTypeId());
     return {nested_depth, it == priority_map.end() ? 0 : it->second, simple_nested_depth};
