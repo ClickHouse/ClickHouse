@@ -1356,10 +1356,10 @@ def test_url_reconnect_in_the_middle(started_cluster):
     instance = started_cluster.instances["dummy"]
     table_format = "column1 Int64, column2 Int64, column3 Int64, column4 Int64"
     query_id = uuid.uuid4().hex
-    # Each response of the mock ends after at most 1.3 MB, so every 2 MiB range is resumed mid-way.
+    # The mock cuts every response after at most 1.3 MB and a cut range resumes only in whole MiB, hence 2 MiB ranges and 30 tries.
     result = instance.query(
         f"SELECT count(), sum(column3), sum(column4) FROM url('http://resolver:8081/{started_cluster.minio_bucket}/test.csv', 'CSV', '{table_format}') "
-        "SETTINGS http_max_tries = 10, max_download_threads = 4, max_download_buffer_size = 2097152 FORMAT CSV",
+        "SETTINGS http_max_tries = 30, http_retry_max_backoff_ms = 2000, max_download_threads = 4, max_download_buffer_size = 2097152 FORMAT CSV",
         query_id=query_id,
     )
     assert result.splitlines() == ["500001,500000,0"]
