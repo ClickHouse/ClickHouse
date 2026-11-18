@@ -143,7 +143,8 @@ public:
         std::function<void(FileProgress)> file_progress_callback = {},
         bool ignore_archive_globs = false,
         bool skip_object_metadata = false,
-        bool with_tags = false);
+        bool with_tags = false,
+        const std::optional<FormatSettings> & format_settings = std::nullopt);
 
     /// For a data lake configuration, returns the metadata with `datalake_table_state` set: the given
     /// one if it already has the state, otherwise a copy with the current snapshot of the table.
@@ -224,7 +225,7 @@ protected:
         PullingPipelineExecutor * operator->() { return reader.get(); }
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
 
-        ObjectInfoPtr getObjectInfo() const { return object_info; }
+        [[nodiscard]] ObjectInfoPtr getObjectInfo() const { return object_info; }
 
         /// Whether the file is read as a whole (not as a bucket the iterator split it into), so it may
         /// consult and populate `top_k_query_condition_cache_key`.
@@ -232,8 +233,8 @@ protected:
         /// Whether the entries under `top_k_query_condition_cache_key` made the file skip row groups that
         /// the entries of the predicate alone did not.
         bool skipped_row_groups_by_top_k_entry = false;
-        const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
-        ReadBuffer * readBuffer() const { return read_buf.get(); }
+        [[nodiscard]] const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
+        [[nodiscard]] ReadBuffer * readBuffer() const { return read_buf.get(); }
 
     private:
         ObjectInfoPtr object_info;
@@ -335,7 +336,8 @@ public:
         bool throw_on_zero_files_match_,
         bool skip_hidden_files_,
         bool with_tags,
-        std::function<void(FileProgress)> file_progress_callback_ = {});
+        std::function<void(FileProgress)> file_progress_callback_ = {},
+        const std::optional<FormatSettings> & format_settings_ = std::nullopt);
 
     ~GlobIterator() override = default;
 
@@ -352,6 +354,7 @@ private:
     const StorageObjectStorageConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
     const NamesAndTypesList hive_columns;
+    const std::optional<FormatSettings> format_settings;
     const bool throw_on_zero_files_match;
     /// Skip objects with a path segment starting with '_' or '.' (and not containing '=') below
     /// the non-glob prefix, the way every other reader of Hive-layout data does (Hive, Spark, Trino):
@@ -404,7 +407,8 @@ public:
         NamesAndTypesList hive_columns_ = {},
         String object_namespace_ = {},
         ContextPtr context_ = {},
-        String archive_member_path_ = {});
+        String archive_member_path_ = {},
+        std::optional<FormatSettings> format_settings_ = std::nullopt);
 
     ~KeysIterator() override = default;
 
@@ -427,6 +431,7 @@ private:
     /// already runs and the set is ready, before the object metadata is fetched.
     const ExpressionActionsPtr deferred_filter_actions;
     const NamesAndTypesList hive_columns;
+    const std::optional<FormatSettings> format_settings;
     const String object_namespace;
     const ContextPtr context;
     /// A known archive member is part of the user-visible `_path` / `_file` value, although the
@@ -475,28 +480,28 @@ public:
             IArchiveReader::FileInfo && file_info_,
             std::optional<size_t> archive_entry_index_);
 
-        std::unique_ptr<ReadBufferFromFileBase> readFile() const;
+        [[nodiscard]] std::unique_ptr<ReadBufferFromFileBase> readFile() const;
 
-        std::string getFileName() const override
+        [[nodiscard]] std::string getFileName() const override
         {
             return path_in_archive;
         }
 
-        std::string getPath() const override
+        [[nodiscard]] std::string getPath() const override
         {
             return archive_object->getPath() + "::" + path_in_archive;
         }
 
-        std::string getPathToArchive() const override
+        [[nodiscard]] std::string getPathToArchive() const override
         {
             return archive_object->getPath();
         }
 
-        bool isArchive() const override { return true; }
+        [[nodiscard]] bool isArchive() const override { return true; }
 
-        size_t fileSizeInArchive() const override { return file_info.uncompressed_size; }
+        [[nodiscard]] size_t fileSizeInArchive() const override { return file_info.uncompressed_size; }
 
-        std::shared_ptr<ObjectInfo> clone() const override { return std::make_shared<ObjectInfoInArchive>(*this); }
+        [[nodiscard]] std::shared_ptr<ObjectInfo> clone() const override { return std::make_shared<ObjectInfoInArchive>(*this); }
 
         const ObjectInfoPtr archive_object;
         const std::string path_in_archive;

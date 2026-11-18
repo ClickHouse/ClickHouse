@@ -412,6 +412,17 @@ if (ARCH_AMD64 AND NOT SANITIZE)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
 endif()
 
+if (OS_LINUX AND ARCH_AARCH64 AND NOT SANITIZE)
+    # Sign return addresses, so that overwriting one on the stack cannot redirect control flow.
+    # `paciasp` and `autiasp` are no-ops on cores without `FEAT_PAuth` (before ARMv8.3), so the
+    # binary still runs there. Code must not be compiled for ARMv8.3 or later (by `-march` or a
+    # `target` attribute), because then the compiler emits `retaa`, which raises SIGILL on those
+    # cores; the compatibility check guards against it.
+    # Sanitizer builds are excluded, because the sanitizer runtimes do not strip the signature
+    # when they unwind, so their reports would show garbage frames.
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbranch-protection=pac-ret")
+endif()
+
 # Puts a canary between the locals and the return address and checks it before returning, so that an
 # overflow of a local buffer aborts instead of returning to an address the attacker wrote. 'strong'
 # instruments only the functions that can be overflowed - a local array, an address-taken local, an

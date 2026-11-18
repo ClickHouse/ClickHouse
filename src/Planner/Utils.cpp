@@ -34,8 +34,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <WindowFunctions/IGeneralWindowFunction.h>
-
 #include <Analyzer/Utils.h>
 #include <Analyzer/traverseQueryTree.h>
 #include <Analyzer/ConstantNode.h>
@@ -50,7 +48,6 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
-#include <Analyzer/WindowNode.h>
 
 #include <Core/Settings.h>
 
@@ -61,6 +58,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -154,7 +152,7 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
 }
 
 void addConvertingToCommonHeaderActionsIfNeeded(
-    std::vector<std::unique_ptr<QueryPlan>> & query_plans,
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> & query_plans,
     const Block & union_common_header,
     SharedHeaders & query_plans_headers,
     ContextPtr context)
@@ -907,20 +905,6 @@ void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets)
             }
         }
     }
-}
-
-std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node)
-{
-    if (!node.isWindowFunction())
-        return {};
-    auto & window_node = node.getWindowNode()->as<WindowNode &>();
-    const auto & window_frame = window_node.getWindowFrame();
-    if (!window_frame.is_default)
-        return window_frame;
-    if (const auto general = asGeneralWindowFunction(node.getAggregateFunction()))
-        return general->getDefaultFrame();
-
-    return {};
 }
 
 ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate)

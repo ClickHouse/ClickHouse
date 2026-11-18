@@ -10,6 +10,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
@@ -90,7 +91,7 @@ static std::vector<std::pair<size_t, std::string>> getOrCreateCustomDisk(
     bool restriction_exempt = false;
     {
         DynamicS3DiskCredentialInfo s3_disk_info;
-        auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context, attach, &s3_disk_info, for_system_database);
+        auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context, attach, &s3_disk_info, for_system_database, stored_definition);
         config = resolveDiskConfiguration(xml_document, context, attach);
 
         /// Applied after `processIncludes`. If the pre-resolution check already decided the disk must load
@@ -516,6 +517,17 @@ void DiskFromAST::ensureDiskIsNotCustom(const std::string & disk_name, ContextPt
             "Disk name `{}` is a custom disk that is used in other table. "
             "That disk could not be used by a reference by other tables. The custom disk should be fully specified with a disk function.",
             disk_name);
+}
+
+void DiskFromAST::ensureDiskIsNotInline(const Field & value)
+{
+    CustomType custom;
+    if (value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST")
+        && isDiskFunction(dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "An inline disk definition in the `disk` setting is supported only by the MergeTree family table engines "
+            "and the Atomic and Ordinary database engines, use a disk name instead");
 }
 
 }

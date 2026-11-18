@@ -21,6 +21,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryConsumedObjectSets.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/RenameColumnVisitor.h>
+#include <Storages/AlterCommands.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -227,6 +229,12 @@ StorageObjectStorage::StorageObjectStorage(
     , background_operations_assignee(*this, table_id_, BackgroundJobsAssignee::Type::DataProcessing, Context::getGlobalContextInstance())
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
+
+    if (configuration->isDataLakeConfiguration() && !is_table_function)
+    {
+        data_lake_partition_by = partition_by_ ? partition_by_->clone() : nullptr;
+        data_lake_order_by = order_by_ ? order_by_->clone() : nullptr;
+    }
 
     /// Validate the configuration (RemoteHostFilter / HTTPHeaderFilter / format) before any remote access.
     configuration->check(context);
@@ -1255,7 +1263,9 @@ SinkToStoragePtr StorageObjectStorage::write(
         configuration->update(object_storage, local_context);
     }
 
-    return createSink(configuration, object_storage, storage_id, format_settings, catalog, metadata_snapshot, local_context);
+    return createSink(
+        configuration, object_storage, storage_id, format_settings, catalog, metadata_snapshot, local_context,
+        getPartitionedWriteAccessCheck());
 }
 
 SinkToStoragePtr StorageObjectStorage::createSink(
@@ -1265,7 +1275,8 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     const std::optional<FormatSettings> & format_settings,
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const StorageMetadataPtr & metadata_snapshot,
-    const ContextPtr & local_context)
+    const ContextPtr & local_context,
+    const PartitionedWriteAccessCheck & write_access_check)
 {
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
     const auto & settings = configuration->getQuerySettings(local_context);
@@ -1296,13 +1307,26 @@ SinkToStoragePtr StorageObjectStorage::createSink(
 
     if (configuration->partition_strategy)
     {
-        return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
+        return std::make_shared<PartitionedStorageObjectStorageSink>(
+            object_storage, configuration, format_settings, sample_block, local_context, write_access_check);
     }
 
     const auto paths = configuration->getPaths();
     /// Unless the insert truncates, the probe below checks the first path, which is written when it is free.
     auto write_path = settings.truncate_on_insert ? paths.back().path : paths.front().path;
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().path, paths.size()))
+
+    /// The written key can differ from the typed URI that the source access check covered, e.g. after `{_schema_hash}`
+    /// is expanded, so it is checked before it is probed or written.
+    if (write_access_check)
+        write_access_check(local_context, configuration->getURIForAccessCheck(write_path));
+
+    /// A key renamed by `s3_create_new_file_on_insert` can be outside the grant, e.g. `data.1.tsv` for `data.tsv`.
+    std::function<void(const String &)> check_new_key;
+    if (write_access_check)
+        check_new_key = [&](const String & new_key) { write_access_check(local_context, configuration->getURIForAccessCheck(new_key)); };
+
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
+            *object_storage, *configuration, settings, paths.front().path, paths.size(), check_new_key))
     {
         configuration->addPath({*new_key});
         write_path = *new_key;
@@ -1615,8 +1639,33 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
 
+    /// The stored definition of a data lake table gets its `PARTITION BY` and `ORDER BY` with the renamed columns.
+    auto rename_columns = [&](const ASTPtr & ast) -> ASTPtr
+    {
+        if (!ast)
+            return nullptr;
+        auto renamed = ast->clone();
+        for (const auto & command : params)
+        {
+            if (command.type != AlterCommand::RENAME_COLUMN)
+                continue;
+            RenameColumnData rename_data{command.column_name, command.rename_to, /*rename_subcolumns=*/true, &new_metadata.columns};
+            RenameColumnVisitor(rename_data).visit(renamed);
+        }
+        return renamed;
+    };
+    ASTPtr new_data_lake_partition_by = rename_columns(data_lake_partition_by);
+    ASTPtr new_data_lake_order_by = rename_columns(data_lake_order_by);
+    StorageInMemoryMetadata metadata_to_store = new_metadata;
+    if (new_data_lake_partition_by && !metadata_to_store.isPartitionKeyDefined())
+        metadata_to_store.partition_key = KeyDescription::getKeyFromAST(
+            new_data_lake_partition_by, metadata_to_store.columns, metadata_to_store.virtuals, context);
+    if (new_data_lake_order_by && !metadata_to_store.isSortingKeyDefined())
+        metadata_to_store.sorting_key = KeyDescription::getKeyFromAST(
+            new_data_lake_order_by, metadata_to_store.columns, metadata_to_store.virtuals, context);
+
     /// Check that the resulting metadata does not exceed max_query_size before mutating external state.
-    checkMetadataDoesNotExceedMaxQuerySize(storage_id, new_metadata, context);
+    checkMetadataDoesNotExceedMaxQuerySize(storage_id, metadata_to_store, context);
 
     if (params.isSettingsAlter())
     {
@@ -1631,7 +1680,9 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
 
     DatabaseCatalog::instance()
         .getDatabase(storage_id.database_name)
-        ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
+        ->alterTable(context, storage_id, metadata_to_store, /*validate_new_create_query=*/true);
+    data_lake_partition_by = new_data_lake_partition_by;
+    data_lake_order_by = new_data_lake_order_by;
     setInMemoryMetadata(new_metadata);
 }
 void StorageObjectStorage::alterSettings(const StorageInMemoryMetadata & new_metadata, ContextPtr context)

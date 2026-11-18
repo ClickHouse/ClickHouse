@@ -21,22 +21,22 @@ class DataTypeNumber final : public DataTypeNumberBase<T>
 public:
     DataTypeNumber() = default;
 
-    bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
+    [[nodiscard]] bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
 
-    bool canBeUsedAsVersion() const override { return true; }
-    bool isSummable() const override { return true; }
-    bool canBeUsedInBitOperations() const override { return true; }
-    bool canBeUsedInBooleanContext() const override { return WhichDataType(TypeToTypeIndex<T>).isNativeNumber(); }
-    bool canBeInsideNullable() const override { return true; }
+    [[nodiscard]] bool canBeUsedAsVersion() const override { return true; }
+    [[nodiscard]] bool isSummable() const override { return true; }
+    [[nodiscard]] bool canBeUsedInBitOperations() const override { return true; }
+    [[nodiscard]] bool canBeUsedInBooleanContext() const override { return WhichDataType(TypeToTypeIndex<T>).isNativeNumber(); }
+    [[nodiscard]] bool canBeInsideNullable() const override { return true; }
 
-    bool canBePromoted() const override { return true; }
-    DataTypePtr promoteNumericType() const override
+    [[nodiscard]] bool canBePromoted() const override { return true; }
+    [[nodiscard]] DataTypePtr promoteNumericType() const override
     {
         using PromotedType = DataTypeNumber<NearestFieldType<T>>;
         return std::make_shared<PromotedType>();
     }
 
-    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override
+    [[nodiscard]] SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override
     {
         return SerializationNumber<T>::create();
     }
@@ -50,7 +50,7 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeNumber constructor with bool argument should not be used with signed integers");
     }
 
-    bool canUnsignedBeSigned() const { return unsigned_can_be_signed; }
+    [[nodiscard]] bool canUnsignedBeSigned() const { return unsigned_can_be_signed; }
 
 private:
     bool unsigned_can_be_signed = false;

@@ -344,9 +344,12 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
   */
-ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
+ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view, const ASTPtr & view_query)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
+    if (context->hasQueryContext())
+        context->getQueryContext()->addSQLSecurityOverriddenBody(view->getStorageID(), view_context, view_query);
+
     Settings view_settings = view_context->getSettingsCopy();
 
     /// With plan-based parallel replicas we always build local, so there is no need to disable parallel replicas
@@ -416,6 +419,12 @@ public:
             return {};
         return {&view_plan};
     }
+
+    /// `getBuiltChildPlans` is deliberately left at the base implementation, which reports no child plans.
+    /// It is what the query plan captured into `system.query_log` walks, and that table is readable beyond
+    /// the user who ran the query, so returning `view_plan` here would write a sealed view's internals into
+    /// the log for readers that `show_plan` is meant to keep them from. The cost is that a sealed view is an
+    /// opaque leaf of the captured plan.
 
     void describePipeline(FormatSettings & settings) const override
     {
@@ -780,7 +789,7 @@ void StorageView::readImpl(
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
     const bool sealed = isSealed(*storage_snapshot->metadata, context) && !isReadByDefiner(*storage_snapshot->metadata, context);
-    auto view_context = getViewContext(context, storage_snapshot, this);
+    auto view_context = getViewContext(context, storage_snapshot, this, current_inner_query);
     {
         /// The outer filter is used only to analyze the indexes of the inner tables,
         /// but for a sealed view it would skip data by the values of the rows the view hides.
@@ -788,6 +797,8 @@ void StorageView::readImpl(
             current_inner_query, view_context, options, column_names, sealed ? nullptr : query_info.filter_actions_dag.get());
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
+        /// The plan owns the body's query context: its steps hold it only weakly, and the optimizer records projections into it.
+        query_plan.addInterpreterContext(view_context);
     }
 
     /// And also convert to expected structure.

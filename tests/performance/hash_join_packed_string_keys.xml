@@ -1,0 +1,80 @@
+<test>
+    <settings>
+        <join_algorithm>parallel_hash</join_algorithm>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+        <query_plan_join_swap_table>false</query_plan_join_swap_table>
+        <enable_join_runtime_filters>0</enable_join_runtime_filters>
+    </settings>
+
+    <!--
+        Hash joins on a single String key; the right table is the build side. The build key of row `id` is made
+        from `id`. A probe row hits when `cityHash64(number) % 2 = 0` and then takes `id = intHash64(number + 1) % build_rows`;
+        a miss takes a larger `id`. Every `id` is a UInt64 on both sides, so `sipHash128` hashes the same type.
+    -->
+
+    <create_query>CREATE TABLE psk_build (k_short String, k_long String, k_mixed String, v UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE psk_build_1m (k String, v UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE psk_build_dup (k String, v UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE psk_build_100k (k_256 String, k_20 String, v UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE psk_probe (k_short String, k_long String, k_long_1m String, k_long_miss String, k_long_skew String, k_mixed String, k_long_dup String) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE psk_probe_256 (k String) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE psk_probe_20 (k String) ENGINE = Memory</create_query>
+
+    <!-- Keys of 1 to 7 bytes, 36 bytes, and 2 to 40 bytes. -->
+    <fill_query>INSERT INTO psk_build SELECT toString(number), UUIDNumToString(sipHash128(number)), concat(toString(number), ':', substring(hex(sipHash128(number)), 1, number % 33)), number FROM numbers_mt(8000000)</fill_query>
+    <fill_query>INSERT INTO psk_build_1m SELECT UUIDNumToString(sipHash128(number)), number FROM numbers_mt(1000000)</fill_query>
+    <!-- 4M distinct keys, 2 rows each. -->
+    <fill_query>INSERT INTO psk_build_dup SELECT UUIDNumToString(sipHash128(toUInt64(number % 4000000))), number FROM numbers_mt(8000000)</fill_query>
+    <fill_query>INSERT INTO psk_build_100k SELECT substring(repeat(hex(sipHash128(number)), 8), 1, 256), substring(hex(sipHash128(number)), 1, 20), number FROM numbers_mt(100000)</fill_query>
+    <!-- A miss of `psk_build` takes an id below 10M, so the short and the mixed probe keys keep the lengths of the build side. -->
+    <fill_query>
+        INSERT INTO psk_probe
+        SELECT
+            toString(id_8m),
+            UUIDNumToString(sipHash128(id_8m)),
+            UUIDNumToString(sipHash128(id_1m)),
+            UUIDNumToString(sipHash128(toUInt64(8000000 + number))),
+            UUIDNumToString(sipHash128(toUInt64(pow(intHash64(number) / 18446744073709551615., 3) * 8000000))),
+            concat(toString(id_8m), ':', substring(hex(sipHash128(id_8m)), 1, id_8m % 33)),
+            UUIDNumToString(sipHash128(id_4m))
+        FROM
+        (
+            SELECT
+                number,
+                cityHash64(number) % 2 = 0 AS hit,
+                toUInt64(if(hit, intHash64(number + 1) % 8000000, 8000000 + number % 2000000)) AS id_8m,
+                toUInt64(if(hit, intHash64(number + 1) % 1000000, 1000000 + number)) AS id_1m,
+                toUInt64(if(hit, intHash64(number + 1) % 4000000, 4000000 + number)) AS id_4m
+            FROM numbers_mt(20000000)
+        )
+    </fill_query>
+    <fill_query>INSERT INTO psk_probe_256 SELECT substring(repeat(hex(sipHash128(id)), 8), 1, 256) FROM (SELECT toUInt64(if(cityHash64(number) % 2 = 0, intHash64(number + 1) % 100000, 100000 + number)) AS id FROM numbers_mt(2500000))</fill_query>
+    <fill_query>INSERT INTO psk_probe_20 SELECT substring(hex(sipHash128(id)), 1, 20) FROM (SELECT toUInt64(if(cityHash64(number) % 2 = 0, intHash64(number + 1) % 100000, 100000 + number)) AS id FROM numbers_mt(8000000))</fill_query>
+
+    <!-- 1. Short keys. -->
+    <query>SELECT count(), sum(r.v) FROM psk_probe AS l INNER JOIN psk_build AS r ON l.k_short = r.k_short FORMAT Null</query>
+    <!-- 2. Long keys. -->
+    <query>SELECT count(), sum(r.v) FROM psk_probe AS l INNER JOIN psk_build AS r ON l.k_long = r.k_long FORMAT Null</query>
+    <!-- 3. Long keys, 1M build keys. -->
+    <query>SELECT count(), sum(r.v) FROM psk_probe AS l INNER JOIN psk_build_1m AS r ON l.k_long_1m = r.k FORMAT Null</query>
+    <!-- 4. Long keys, no probe row hits. -->
+    <query>SELECT count(), sum(r.v) FROM psk_probe AS l INNER JOIN psk_build AS r ON l.k_long_miss = r.k_long FORMAT Null</query>
+    <!-- 5. Long keys, every probe row hits, and 1% of the build keys get 21% of the probe rows. -->
+    <query>SELECT count(), sum(r.v) FROM psk_probe AS l INNER JOIN psk_build AS r ON l.k_long_skew = r.k_long FORMAT Null</query>
+    <!-- 6. Mixed lengths, a quarter of the keys are 15 bytes or less. -->
+    <query>SELECT count(), sum(r.v) FROM psk_probe AS l INNER JOIN psk_build AS r ON l.k_mixed = r.k_mixed FORMAT Null</query>
+    <!-- 7. Long keys, a hit matches 2 build rows. -->
+    <query>SELECT count(), sum(r.v) FROM psk_probe AS l INNER JOIN psk_build_dup AS r ON l.k_long_dup = r.k FORMAT Null</query>
+    <!-- 8. 256-byte keys, 100K build rows. -->
+    <query>SELECT count(), sum(r.v) FROM (SELECT k FROM psk_probe_256 UNION ALL SELECT k FROM psk_probe_256 UNION ALL SELECT k FROM psk_probe_256 UNION ALL SELECT k FROM psk_probe_256 UNION ALL SELECT k FROM psk_probe_256 UNION ALL SELECT k FROM psk_probe_256) AS l INNER JOIN psk_build_100k AS r ON l.k = r.k_256 FORMAT Null</query>
+    <!-- 9. 20-byte keys, 100K build rows. -->
+    <query>SELECT count(), sum(r.v) FROM (SELECT k FROM psk_probe_20 UNION ALL SELECT k FROM psk_probe_20 UNION ALL SELECT k FROM psk_probe_20 UNION ALL SELECT k FROM psk_probe_20) AS l INNER JOIN psk_build_100k AS r ON l.k = r.k_20 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS psk_build</drop_query>
+    <drop_query>DROP TABLE IF EXISTS psk_build_1m</drop_query>
+    <drop_query>DROP TABLE IF EXISTS psk_build_dup</drop_query>
+    <drop_query>DROP TABLE IF EXISTS psk_build_100k</drop_query>
+    <drop_query>DROP TABLE IF EXISTS psk_probe</drop_query>
+    <drop_query>DROP TABLE IF EXISTS psk_probe_256</drop_query>
+    <drop_query>DROP TABLE IF EXISTS psk_probe_20</drop_query>
+</test>
