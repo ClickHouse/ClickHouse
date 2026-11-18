@@ -57,10 +57,11 @@
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
-#include <Common/SilkFiberScheduler.h>
+#include <Common/Silk/FiberScheduler.h>
 #include <Common/getMappedArea.h>
 #include <Common/SignalHandlers.h>
 #include <Common/remapExecutable.h>
+#include <Common/FilesystemIsolation.h>
 #include <Common/SeccompFilter.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
@@ -130,6 +131,7 @@
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Common/ReplicasReconnector.h>
+#include <FilesystemIsolationPaths.h>
 #include <MetricsTransmitter.h>
 #include <Common/StatusFile.h>
 #include <Server/TCPHandlerFactory.h>
@@ -272,6 +274,12 @@ namespace ServerSetting
     extern const ServerSettingsBool enable_write_through_distributed_cache;
     extern const ServerSettingsDistributedCachePoolBehaviourOnLimit distributed_cache_temporary_data_pool_behaviour_on_limit;
     extern const ServerSettingsUInt64 distributed_cache_temporary_data_max_connections_bypassing_pool;
+    extern const ServerSettingsUInt64 amber_connections_soft_limit;
+    extern const ServerSettingsUInt64 amber_connections_warn_limit;
+    extern const ServerSettingsUInt64 amber_connections_store_limit;
+    extern const ServerSettingsUInt64 amber_connections_hard_limit;
+    extern const ServerSettingsUInt64 amber_connections_rcvbuf;
+    extern const ServerSettingsUInt64 amber_connections_sndbuf;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
@@ -505,8 +513,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 oom_canary_max_backoff_seconds;
     extern const ServerSettingsBool remap_executable;
     extern const ServerSettingsBool mlock_executable;
+    extern const ServerSettingsBool quick_startup;
     extern const ServerSettingsUInt64 mlock_executable_min_total_memory_amount_bytes;
     extern const ServerSettingsSeccompMode seccomp;
+    extern const ServerSettingsFilesystemIsolationMode filesystem_isolation;
     extern const ServerSettingsUInt32 listen_backlog;
     extern const ServerSettingsBool listen_reuse_port;
     extern const ServerSettingsBool listen_try;
@@ -854,6 +864,29 @@ void setOOMScore(int value, LoggerRawPtr log)
 #endif
 
 
+void Server::beforeStartingThreads()
+{
+    /// From the configuration as it is before a `from_zk` value arrives: the isolation can only be done while the
+    /// process has a single thread, and connecting to ZooKeeper takes several. Only this one setting is read here, and
+    /// the others are loaded and validated in `main` as usual.
+    ServerSettings server_settings;
+    if (config().has("filesystem_isolation"))
+        server_settings.set("filesystem_isolation", config().getString("filesystem_isolation"));
+    const FilesystemIsolationMode mode = server_settings[ServerSetting::filesystem_isolation];
+    if (mode == FilesystemIsolationMode::Disabled)
+    {
+        isolateFilesystem(mode, {});
+        return;
+    }
+#if USE_JEMALLOC
+    /// The only threads by now are the background threads of jemalloc, which `background_thread:true` in its
+    /// compiled-in configuration starts at the first allocation. Disabling them joins them, and `Jemalloc::setup`,
+    /// right after this, starts them again.
+    Jemalloc::setBackgroundThreads(false);
+#endif
+    isolateFilesystem(mode, [&] { return collectFilesystemIsolationPaths(config(), config_path, original_working_directory, fs::current_path().string()); });
+}
+
 void Server::uninitialize()
 {
     logger().information("shutting down");
@@ -1163,10 +1196,14 @@ try
     };
     validate_insert_deduplication_version(server_settings);
 
+    const bool quick_startup = server_settings[ServerSetting::quick_startup];
+    if (quick_startup)
+        LOG_INFO(log, "Quick startup (`quick_startup`): skipping mlock and remapping of the executable, its integrity check, and the checks of the environment");
+
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
     /// Remap before creating other threads to prevent crashes
-    if (server_settings[ServerSetting::remap_executable])
+    if (server_settings[ServerSetting::remap_executable] && !quick_startup)
     {
         LOG_DEBUG(log, "Will remap executable in memory.");
         /// remapExecutable rewrites the whole code segment in place; any other thread executing code during
@@ -1253,7 +1290,7 @@ try
         LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(remapped_size));
     }
 
-    if (server_settings[ServerSetting::mlock_executable])
+    if (server_settings[ServerSetting::mlock_executable] && !quick_startup)
     {
         size_t min_physical_server_memory_to_mlock = server_settings[ServerSetting::mlock_executable_min_total_memory_amount_bytes];
         if (physical_server_memory >= min_physical_server_memory_to_mlock)
@@ -1905,6 +1942,31 @@ try
     JemallocMergeTreeArena::initialize(server_settings[ServerSetting::jemalloc_merge_tree_arenas]);
     addMergeTreeArenaPoolWarnings(global_context);
 
+    /// The filesystem was isolated in `beforeStartingThreads`, before the logger existed.
+    if (const auto filesystem_isolation = getFilesystemIsolationStatus())
+    {
+        if (filesystem_isolation->isolated)
+        {
+            LOG_INFO(
+                log,
+                "Isolated the filesystem of this process{}. Only these paths are visible: {}",
+                filesystem_isolation->created_user_namespace ? " in a new user and mount namespace" : " in a new mount namespace",
+                fmt::join(filesystem_isolation->visible_paths, ", "));
+            if (!filesystem_isolation->lost_capabilities.empty())
+                LOG_WARNING(
+                    log,
+                    "The process had to create a user namespace to isolate its filesystem, because it does not have `CAP_SYS_ADMIN`, "
+                    "and lost its capabilities {}. Grant it `CAP_SYS_ADMIN`, which it drops right after the isolation, to keep them",
+                    fmt::join(filesystem_isolation->lost_capabilities, ", "));
+        }
+        else if (!filesystem_isolation->not_isolated_reason.empty())
+            LOG_WARNING(
+                log,
+                "The `filesystem_isolation` server setting is set to `best_effort`, but the filesystem cannot be isolated: {}. "
+                "The server is running without the isolation",
+                filesystem_isolation->not_isolated_reason);
+    }
+
     /// Restrict the server to the system calls it is known to use, as early in the startup as the
     /// configuration allows. That is after the ZooKeeper-include reload above, not before it: a
     /// filter cannot be removed or relaxed afterwards, so one installed from the configuration as it
@@ -1941,7 +2003,7 @@ try
     {
         LOG_WARNING(log, "Binary checksum checks disabled due to skip_binary_checksum_checks - not recommended for production deployments");
     }
-    else if (!executable_path.empty())
+    else if (!executable_path.empty() && !quick_startup)
     {
         /// Integrity check based on checksum of the executable code.
         /// Note: it is not intended to protect from malicious party,
@@ -2645,10 +2707,12 @@ try
         command_line_skip_check = command_line_config->getBool("skip_check_for_incorrect_settings", false);
     }
 
+    /// The preprocessed configuration goes into `path` as it is used everywhere else: without the whitespace around it,
+    /// and relative to the original working directory rather than to the current one, which differs with `--daemon`.
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
-        server_settings[ServerSetting::path],
+        path_str,
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
         [&](ConfigurationPtr loaded_config, bool initial_loading)
@@ -2727,6 +2791,16 @@ try
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
             ConnectionRegistry::instance().setEnabled(new_server_settings[ServerSetting::collect_connection_metrics]);
+
+            if (const auto requested_filesystem_isolation_mode = getRequestedFilesystemIsolationMode();
+                requested_filesystem_isolation_mode
+                && *requested_filesystem_isolation_mode != new_server_settings[ServerSetting::filesystem_isolation].value)
+                LOG_WARNING(
+                    log,
+                    "The `filesystem_isolation` server setting was changed from `{}` to `{}` in the configuration, but it takes effect only "
+                    "after a restart: the filesystem of a running process is isolated once, at startup",
+                    SettingFieldFilesystemIsolationMode(*requested_filesystem_isolation_mode).toString(),
+                    new_server_settings[ServerSetting::filesystem_isolation].toString());
 
             /// The seccomp filter cannot be changed once installed; `system.server_settings` keeps showing the mode in force.
             if (const auto requested_seccomp_mode = getRequestedSeccompMode();
@@ -3128,6 +3202,12 @@ try
                     new_server_settings[ServerSetting::http_connections_warn_limit],
                     new_server_settings[ServerSetting::http_connections_store_limit],
                     new_server_settings[ServerSetting::http_connections_hard_limit],
+                },
+                HTTPConnectionPools::Limits{
+                    new_server_settings[ServerSetting::amber_connections_soft_limit],
+                    new_server_settings[ServerSetting::amber_connections_warn_limit],
+                    new_server_settings[ServerSetting::amber_connections_store_limit],
+                    new_server_settings[ServerSetting::amber_connections_hard_limit],
                 });
 
             HTTPConnectionPools::instance().setSocketBufferSizes(
@@ -3142,6 +3222,10 @@ try
                 HTTPConnectionPools::SocketBufferSizes{
                     new_server_settings[ServerSetting::http_connections_rcvbuf],
                     new_server_settings[ServerSetting::http_connections_sndbuf],
+                },
+                HTTPConnectionPools::SocketBufferSizes{
+                    new_server_settings[ServerSetting::amber_connections_rcvbuf],
+                    new_server_settings[ServerSetting::amber_connections_sndbuf],
                 });
 
             StreamingExchangeProtocol::setSocketBufferSizes(
@@ -3533,7 +3617,8 @@ try
     /// NOTE: Do sanity checks after we loaded all possible substitutions (for the configuration) from ZK
     /// Additionally, making the check after the default profile is initialized.
     /// It is important to initialize MergeTreeSettings after Settings, to support compatibility for MergeTreeSettings.
-    addEnvironmentWarnings(global_context, logger(), path_str, server_settings[ServerSetting::logger_log]);
+    if (!quick_startup)
+        addEnvironmentWarnings(global_context, logger(), path_str, server_settings[ServerSetting::logger_log]);
 
     /// Check sanity of MergeTreeSettings on server startup
     {
@@ -4851,7 +4936,7 @@ void Server::createServers(
             {
                 try
                 {
-                    handler_factory = createIcebergRESTCatalogHandlerFactory(*this, config);
+                    handler_factory = createIcebergRESTCatalogHandlerFactory(*this);
                 }
                 catch (...)
                 {

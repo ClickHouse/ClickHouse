@@ -3,9 +3,12 @@
 #include <Common/DateLUT.h>
 #include <Common/IntervalKind.h>
 #include <Common/quoteString.h>
+#include <Core/ConstantValue.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -245,16 +248,13 @@ namespace
     }
 
     template <is_decimal T>
-    T getFromField(const Field & field, const DataTypePtr & field_data_type, UInt32 scale)
+    T getFromField(const Field & field, UInt32 scale)
     {
         switch (field.getType())
         {
             case Field::Types::Int64:
             {
-                if (const auto * interval_type = typeid_cast<const DataTypeInterval *>(field_data_type.get()))
-                    return getFromIntervalKind<T>(field.safeGet<Int64>(), interval_type->getKind(), scale);
-                else
-                    return getFromInt<T>(field.safeGet<Int64>(), scale);
+                return getFromInt<T>(field.safeGet<Int64>(), scale);
             }
             case Field::Types::UInt64:
             {
@@ -292,6 +292,53 @@ namespace
             }
         }
     }
+
+    /// Same as `getFromField`, reading the value straight from the constant column by its exact type. The types
+    /// accepted are the ones whose values `getFromField` accepts, except `Bool`, which is rejected whether it comes
+    /// from a literal or an expression (it is not a time).
+    template <is_decimal T>
+    T getFromConstant(const ConstantValue & value, UInt32 scale)
+    {
+        const auto & type = value.getType();
+        const auto data_type = removeLowCardinalityAndNullable(type);
+        const WhichDataType which(data_type);
+
+        if (value.isNull())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot extract a {} from NULL", getTypeName<T>());
+
+        if (isBool(data_type))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot extract a {} from a value of type {}", getTypeName<T>(), type->getName());
+
+        if (const auto * interval_type = typeid_cast<const DataTypeInterval *>(data_type.get()))
+            return getFromIntervalKind<T>(value.getInt(), interval_type->getKind(), scale);
+
+        if (which.isNativeInt() || which.isDate32() || which.isEnum() || which.isTime())
+            return getFromInt<T>(value.getInt(), scale);
+
+        if (which.isNativeUInt() || which.isDate() || which.isDateTime())
+        {
+            const UInt64 uint_value = value.getUInt();
+            if (uint_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Cannot convert {} to {}: Overflow, the number is too big",
+                                uint_value, getTypeName<T>());
+            }
+            return getFromInt<T>(static_cast<Int64>(uint_value), scale);
+        }
+
+        if (which.isFloat())
+            return getFromFloat<T>(value.getFloat64(), scale);
+
+        /// `DateTime64` and `Time64` are stored as `Decimal64`.
+        if (which.isDecimal32() || which.isDecimal64() || which.isDateTime64() || which.isTime64())
+            return getFromDecimal<T>(value.getInt(), getDecimalScale(*data_type), scale);
+
+        if (which.isStringOrFixedString())
+            return parseFromString<T>(value.getDataAt(), scale);
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot extract a {} from a value of type {}", getTypeName<T>(), type->getName());
+    }
 }
 
 DateTime64 parseTimeSeriesTimestamp(const String & str, UInt32 timestamp_scale)
@@ -301,12 +348,7 @@ DateTime64 parseTimeSeriesTimestamp(const String & str, UInt32 timestamp_scale)
 
 DateTime64 parseTimeSeriesTimestamp(const Field & field, UInt32 timestamp_scale)
 {
-    return getFromField<DateTime64>(field, nullptr, timestamp_scale);
-}
-
-DateTime64 parseTimeSeriesTimestamp(const Field & field, const DataTypePtr & field_data_type, UInt32 timestamp_scale)
-{
-    return getFromField<DateTime64>(field, field_data_type, timestamp_scale);
+    return getFromField<DateTime64>(field, timestamp_scale);
 }
 
 Decimal64 parseTimeSeriesDuration(const String & str, UInt32 duration_scale)
@@ -316,12 +358,17 @@ Decimal64 parseTimeSeriesDuration(const String & str, UInt32 duration_scale)
 
 Decimal64 parseTimeSeriesDuration(const Field & field, UInt32 duration_scale)
 {
-    return getFromField<Decimal64>(field, nullptr, duration_scale);
+    return getFromField<Decimal64>(field, duration_scale);
 }
 
-Decimal64 parseTimeSeriesDuration(const Field & field, const DataTypePtr & field_data_type, UInt32 duration_scale)
+DateTime64 parseTimeSeriesTimestamp(const ConstantValue & value, UInt32 timestamp_scale)
 {
-    return getFromField<Decimal64>(field, field_data_type, duration_scale);
+    return getFromConstant<DateTime64>(value, timestamp_scale);
+}
+
+Decimal64 parseTimeSeriesDuration(const ConstantValue & value, UInt32 duration_scale)
+{
+    return getFromConstant<Decimal64>(value, duration_scale);
 }
 
 }

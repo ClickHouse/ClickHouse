@@ -21,7 +21,7 @@ SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_blo
 
 INSERT INTO t_stream_text_index SELECT number, map('env', if(number < 3, 'prod', 'staging')) FROM numbers(100);
 
-SELECT id FROM (SELECT id FROM t_stream_text_index STREAM PREWHERE ('prod') IN (map[materialize('env')]) LIMIT 3) ORDER BY id
+SELECT id FROM (SELECT id FROM t_stream_text_index STREAM BOUNDED PREWHERE ('prod') IN (map[materialize('env')]) LIMIT 3) ORDER BY id
 SETTINGS log_comment = '04235_streaming_queries_text_index_direct_read';
 
 SYSTEM FLUSH LOGS query_log;

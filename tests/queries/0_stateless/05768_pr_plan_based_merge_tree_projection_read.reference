@@ -1,0 +1,21 @@
+--- the rows of the projection, not of the table
+10000	499950000	0
+--- a column only the projection has
+30000	30000
+30000
+--- an IN set built from the projection
+10000
+90000
+30000
+--- a nested IN set built from the projection
+10000
+10000
+--- a nested IN set in LIMIT AFTER, LIMIT UNTIL and INTERPOLATE
+145
+45
+9905
+--- a view over the projection
+10000	499950000
+10000
+10000
+10000
