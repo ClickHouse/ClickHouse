@@ -5,10 +5,14 @@
 98000
 99000
 99000
+99000
+98000
 key Nullable(String)	100000	98000	0
 key Nullable(String) LowCardinality	100000	98000	0
 key String	100000	99000	0
 key String LowCardinality	100000	99000	0
 key String constant	100000	100000	0
+key String replicated	100000	99000	0
+key Tuple of sparse and LowCardinality	100000	98000	0
 key UInt64	100000	99000	0
 key UInt64 sparse	100000	99000	0

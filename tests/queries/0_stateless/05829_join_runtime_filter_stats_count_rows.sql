@@ -1,6 +1,6 @@
 -- The statistics of a JOIN runtime filter count the probe rows, whatever form the key column is in. A `LowCardinality`,
--- sparse or constant key is looked up by the values that it stores, each once, and counts the same rows as the plain
--- key with the same data. The statistics decide whether the filter is worth evaluating, see
+-- sparse, constant or lazily replicated key is looked up by the values that it stores, each once, and counts the same
+-- rows as the plain key with the same data. The statistics decide whether the filter is worth evaluating, see
 -- `join_runtime_filter_pass_ratio_threshold_for_disabling`.
 
 SET enable_analyzer = 1, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
@@ -20,6 +20,10 @@ DROP TABLE IF EXISTS t_build_low_cardinality;
 DROP TABLE IF EXISTS t_probe_full;
 DROP TABLE IF EXISTS t_probe_sparse;
 DROP TABLE IF EXISTS t_build_uint64;
+DROP TABLE IF EXISTS t_left;
+DROP TABLE IF EXISTS t_right;
+DROP TABLE IF EXISTS t_probe_tuple;
+DROP TABLE IF EXISTS t_build_tuple;
 
 CREATE TABLE t_probe_string (k String) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_probe_low_cardinality (k LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple();
@@ -31,6 +35,11 @@ CREATE TABLE t_probe_full (k UInt64) ENGINE = MergeTree ORDER BY tuple() SETTING
 CREATE TABLE t_probe_sparse (k UInt64) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5, min_bytes_for_wide_part = 0;
 CREATE TABLE t_build_uint64 (k UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_left (id UInt64, k String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_right (id UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_probe_tuple (k Tuple(a UInt64, b LowCardinality(String))) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5, min_bytes_for_wide_part = 0;
+CREATE TABLE t_build_tuple (k Tuple(a UInt64, b LowCardinality(String))) ENGINE = MergeTree ORDER BY tuple();
 
 -- A skewed key: 99% of the rows have one value, which passes.
 INSERT INTO t_probe_string SELECT if(number % 100 = 0, 'miss', 'hit') FROM numbers(100000);
@@ -43,6 +52,12 @@ INSERT INTO t_build_low_cardinality VALUES ('hit'), ('other');
 INSERT INTO t_probe_full SELECT if(number % 100 = 0, number + 1, 0) FROM numbers(100000);
 INSERT INTO t_probe_sparse SELECT k FROM t_probe_full;
 INSERT INTO t_build_uint64 VALUES (0), (7);
+-- Each row of `t_left` joins 100 rows of `t_right`, so that join replicates its `k` lazily, which is the key of the next join.
+INSERT INTO t_left SELECT number, if(number % 100 = 0, 'miss', 'hit') FROM numbers(1000);
+INSERT INTO t_right SELECT number % 1000 FROM numbers(100000);
+-- A sparse and a `LowCardinality` element inside the key: 98% of the rows have the tuple that passes.
+INSERT INTO t_probe_tuple SELECT (if(number % 100 = 0, number + 1, 0), if(number % 100 = 1, 'miss', 'hit')) FROM numbers(100000);
+INSERT INTO t_build_tuple VALUES ((0, 'hit')), ((7, 'other'));
 
 SELECT count() FROM t_probe_string AS p INNER JOIN t_build_string AS b ON p.k = b.k
 SETTINGS log_comment = 'key String';
@@ -58,6 +73,10 @@ SELECT count() FROM t_probe_full AS p INNER JOIN t_build_uint64 AS b ON p.k = b.
 SETTINGS log_comment = 'key UInt64';
 SELECT count() FROM t_probe_sparse AS p INNER JOIN t_build_uint64 AS b ON p.k = b.k
 SETTINGS log_comment = 'key UInt64 sparse';
+SELECT count() FROM (SELECT l.k AS k FROM t_left AS l FULL JOIN t_right AS r ON l.id = r.id) AS p INNER JOIN t_build_string AS b ON p.k = b.k
+SETTINGS enable_lazy_columns_replication = 1, log_comment = 'key String replicated';
+SELECT count() FROM t_probe_tuple AS p INNER JOIN t_build_tuple AS b ON p.k = b.k
+SETTINGS log_comment = 'key Tuple of sparse and LowCardinality';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -80,3 +99,7 @@ DROP TABLE t_build_low_cardinality;
 DROP TABLE t_probe_full;
 DROP TABLE t_probe_sparse;
 DROP TABLE t_build_uint64;
+DROP TABLE t_left;
+DROP TABLE t_right;
+DROP TABLE t_probe_tuple;
+DROP TABLE t_build_tuple;
