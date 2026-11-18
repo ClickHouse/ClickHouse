@@ -1,0 +1,91 @@
+#!/usr/bin/expect -f
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+send -- "SELECT 1\r"
+expect "1"
+expect ":) "
+
+# Recall the query (Ctrl-P) and make it longer than the history entry.
+send -- "\x10"
+expect "SELECT 1"
+send -- "23"
+expect "SELECT 123"
+
+# A forward search (Ctrl-S) that finds nothing, left with Ctrl-F, must keep the edited line and the cursor in it.
+send -- "\x13"
+expect "(i-search)"
+send -- "\""
+expect "(i-search)`\"'"
+send -- "\x06"
+expect ":) "
+send -- "+4\r"
+expect -re {\s127\s}
+expect ":) "
+
+# Paste a query with a tab, then start a search seeded with the line (Meta-R), which copies the tab into the search prompt.
+send -- "\033\[200~SELECT\t40 + 2\033\[201~"
+expect "SELECT    40 + 2"
+send -- "\033r"
+expect "(reverse-i-search)"
+send -- "\x07"
+expect ":) "
+send -- "\r"
+expect -re {\s42\s}
+expect ":) "
+
+send -- "\4"
+expect eof
+
+# Leave a history search with a prompt that contains a double-width character.
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file --prompt '日 :) '"
+expect "日 :) "
+send -- "\x14"
+expect "(reverse-i-search)"
+send -- "x"
+send -- "\x07"
+expect "日 :) "
+send -- "SELECT 50 - 8\r"
+expect -re {\s42\s}
+expect "日 :) "
+send -- "\4"
+expect eof
+
+# Ctrl-W and Alt-. must keep U+10FFFF inside a word, sent as raw UTF-8 bytes (Tcl 8.6 needs a binary channel for that).
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+fconfigure $spawn_id -encoding binary
+expect ":) "
+send -- "SELECT 'a\xf4\x8f\xbf\xbfz"
+send -- "\x17"
+send -- "41 + 1 AS `b\xf4\x8f\xbf\xbf`\r"
+expect -re {\s42\s}
+expect ":) "
+send -- "SELECT 6 * 7 AS "
+send -- "\033."
+send -- "\r"
+expect -re {\s42\s}
+expect ":) "
+send -- "\4"
+expect eof

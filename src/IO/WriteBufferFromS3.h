@@ -81,7 +81,7 @@ private:
     S3::PutObjectRequest getPutRequest(PartData & data);
     void makeSinglepartUpload(PartData && data);
 
-    /// `object_metadata` with `idempotency_id` merged in.
+    /// `object_metadata` with `idempotency_id` merged in, if it is not empty.
     ObjectAttributes metadataWithIdempotencyId() const;
 
     /// Returns true if not a single byte was written to the buffer
@@ -94,6 +94,7 @@ private:
     const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<ObjectAttributes> object_metadata;
     /// Unique identifier of this write, stamped on the object it creates so a replay can recognise it.
+    /// Empty if disabled by the `use_idempotency_id` request setting.
     const String idempotency_id;
     LoggerPtr log = getLogger("WriteBufferFromS3");
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
@@ -104,7 +105,7 @@ private:
     /// We initiate upload, then upload each part and get ETag as a response, and then finalizeImpl() upload with listing all our parts.
     String multipart_upload_id;
     DequeWithMemoryTracking<String> multipart_tags;
-    DequeWithMemoryTracking<String> multipart_checksums; // if enabled
+    DequeWithMemoryTracking<Aws::String> multipart_checksums; // if enabled
     bool multipart_upload_finished = false;
 
     /// Track that prefinalize() is called only once

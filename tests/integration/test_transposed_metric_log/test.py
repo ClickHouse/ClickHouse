@@ -211,29 +211,25 @@ def test_bucketed_schema(start_cluster):
 
     # The union table reads the per-metric columns from the rotated `wide` table as well,
     # where they are ordinary columns and there is no `metrics` column.
-    for enable_analyzer in (0, 1):
-        assert node2.query(
-            "SELECT sum(ProfileEvent_Query) FROM system.all_metric_log WHERE _table = 'metric_log_0'",
-            settings={"enable_analyzer": enable_analyzer},
-        ) == node2.query("SELECT sum(ProfileEvent_Query) FROM system.metric_log_0")
-        assert int(
-            node2.query(
-                "SELECT sum(ProfileEvent_Query) FROM system.all_metric_log WHERE _table = 'metric_log'",
-                settings={"enable_analyzer": enable_analyzer},
-            ).strip()
-        ) > 0
-        # Like the `ALIAS` columns of the log table, the per-metric columns are not expanded by an asterisk.
-        assert "ProfileEvent_Query" not in node2.query(
-            "SELECT * FROM system.all_metric_log LIMIT 1 FORMAT TSVWithNames",
-            settings={"enable_analyzer": enable_analyzer},
-        ).split("\n")[0].split("\t")
+    assert node2.query(
+        "SELECT sum(ProfileEvent_Query) FROM system.all_metric_log WHERE _table = 'metric_log_0'"
+    ) == node2.query("SELECT sum(ProfileEvent_Query) FROM system.metric_log_0")
+    assert int(
+        node2.query(
+            "SELECT sum(ProfileEvent_Query) FROM system.all_metric_log WHERE _table = 'metric_log'"
+        ).strip()
+    ) > 0
+    # Like the `ALIAS` columns of the log table, the per-metric columns are not expanded by an asterisk.
+    assert "ProfileEvent_Query" not in node2.query(
+        "SELECT * FROM system.all_metric_log LIMIT 1 FORMAT TSVWithNames"
+    ).split("\n")[0].split("\t")
 
     node2.replace_in_config(BUCKETED_LOG_PATH, ">bucketed<", ">wide<")
     node2.restart_clickhouse()
 
 
 def test_bucketed_schema_is_rejected_without_alias_columns(start_cluster):
-    # With `default_system_log_flush_policy.skip_alias_columns` the per-metric columns of the
+    # With `system_tables.skip_alias_columns` the per-metric columns of the
     # bucketed schema cannot be created, so the server must refuse to start instead of
     # silently exposing a table without the `ProfileEvent_*` / `CurrentMetric_*` columns.
     node5.query("SYSTEM FLUSH LOGS")

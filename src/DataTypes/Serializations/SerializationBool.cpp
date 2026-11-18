@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationBool.h>
 
 #include <Columns/ColumnsNumber.h>
