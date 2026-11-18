@@ -12,6 +12,7 @@
 #include <Core/Settings.h>
 
 #include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -25,6 +26,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/PartitionPruner.h>
@@ -32,6 +34,11 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ExpressionVisitor.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
+#include <arrow/array.h>
+#include <arrow/c/bridge.h>
+#include <arrow/record_batch.h>
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
 #include <roaring/roaring.hh>
@@ -40,6 +47,8 @@ namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DELTA_KERNEL_ERROR;
+    extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_EXCEPTION;
 }
 
 namespace DB::Setting
@@ -217,27 +226,12 @@ public:
 
     void initScanState()
     {
-        if (filter.has_value() && enable_engine_predicate)
-        {
-            auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception, getContext());
-            scan = KernelUtils::unwrapResult(
-                ffi::scan(
-                    kernel_snapshot_state->snapshot.get(),
-                    kernel_snapshot_state->engine.get(),
-                    predicate.get(),
-                    /* schema */nullptr),
-                "scan");
-        }
-        else
-        {
-            scan = KernelUtils::unwrapResult(
-                ffi::scan(
-                    kernel_snapshot_state->snapshot.get(),
-                    kernel_snapshot_state->engine.get(),
-                    /* predicate */nullptr,
-                    /* schema */nullptr),
-                "scan");
-        }
+        scan = createScan(
+            *kernel_snapshot_state,
+            filter.has_value() ? &filter.value() : nullptr,
+            enable_engine_predicate,
+            engine_predicate_exception,
+            getContext());
 
         scan_data_iterator = KernelUtils::unwrapResult(
             ffi::scan_metadata_iter_init(kernel_snapshot_state->engine.get(), scan.get()),
@@ -995,6 +989,218 @@ TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & he
     scan = KernelUtils::unwrapResult(
         ffi::scan(snapshot.get(), engine.get(), /* predicate */{}, /* engine_schema */nullptr),
         "scan");
+}
+
+TableSnapshot::KernelScan TableSnapshot::createScan(
+    const KernelSnapshotState & state,
+    const DB::ActionsDAG * filter,
+    bool enable_engine_predicate,
+    std::exception_ptr & engine_predicate_exception,
+    DB::ContextPtr context)
+{
+    if (filter && enable_engine_predicate)
+    {
+        auto predicate = getEnginePredicate(*filter, engine_predicate_exception, context);
+        return KernelScan(KernelUtils::unwrapResult(
+            ffi::scan(state.snapshot.get(), state.engine.get(), predicate.get(), /* schema */nullptr),
+            "scan"));
+    }
+    return KernelScan(KernelUtils::unwrapResult(
+        ffi::scan(state.snapshot.get(), state.engine.get(), /* predicate */nullptr, /* schema */nullptr),
+        "scan"));
+}
+
+/// The parts of `SchemaInfo` a scan needs, with the names that the transforms of the data files use.
+struct TableSnapshot::ScanSchema
+{
+    ReadSchema read_schema;
+    /// The table schema with physical names.
+    TableSchema expression_schema;
+    /// With logical names, for `PartitionPruner`.
+    TableSchema table_schema;
+    DB::Names partition_columns;
+    DB::Names physical_partition_columns;
+    DB::NameToNameMap physical_names_map;
+};
+
+bool TableSnapshot::visitDataFileStatistics(
+    const DB::ActionsDAG * filter_dag, DB::ContextPtr context, const DataFileStatisticsVisitor & visitor)
+{
+    std::shared_ptr<KernelSnapshotState> state;
+    ScanSchema scan_schema;
+    DB::UInt128 credentials_fingerprint;
+    {
+        std::lock_guard lock(mutex);
+        initOrUpdateSchemaIfChanged();
+        state = getKernelSnapshotState();
+        credentials_fingerprint = kernel_state_credentials_fingerprint;
+
+        scan_schema.read_schema = schema->read_schema;
+        scan_schema.table_schema = schema->table_schema;
+        scan_schema.expression_schema = schema->table_schema;
+        scan_schema.partition_columns = schema->partition_columns;
+        scan_schema.physical_partition_columns = schema->partition_columns;
+        scan_schema.physical_names_map = schema->physical_names_map;
+    }
+
+    if (!scan_schema.physical_names_map.empty())
+    {
+        for (auto & [name, type] : scan_schema.expression_schema)
+            name = getPhysicalName(appendToLogicalPath({}, name), scan_schema.physical_names_map);
+        for (auto & name : scan_schema.physical_partition_columns)
+            name = getPhysicalName(appendToLogicalPath({}, name), scan_schema.physical_names_map);
+    }
+
+    size_t visited_files = 0;
+    try
+    {
+        return visitDataFileStatisticsImpl(*state, scan_schema, filter_dag, context, visitor, visited_files);
+    }
+    catch (const DB::Exception & e)
+    {
+        /// As in `Iterator`: a retry after visited files would visit them twice.
+        if (visited_files)
+            throw;
+        {
+            std::lock_guard lock(mutex);
+            if (!tryRefreshAfterStaleTokenError(e, credentials_fingerprint, "statistics scan"))
+                throw;
+        }
+        state = std::make_shared<KernelSnapshotState>(*helper, std::optional<size_t>(state->snapshot_version));
+    }
+    return visitDataFileStatisticsImpl(*state, scan_schema, filter_dag, context, visitor, visited_files);
+}
+
+namespace
+{
+
+std::optional<std::string_view> getArrowString(const arrow::Array & array, int64_t row)
+{
+    if (array.IsNull(row))
+        return std::nullopt;
+    switch (array.type_id())
+    {
+        case arrow::Type::STRING:
+            return assert_cast<const arrow::StringArray &>(array).GetView(row);
+        case arrow::Type::LARGE_STRING:
+            return assert_cast<const arrow::LargeStringArray &>(array).GetView(row);
+        default:
+            throw DB::Exception(
+                DB::ErrorCodes::LOGICAL_ERROR, "Unexpected Arrow type {} of the stats of a scan file", array.type()->ToString());
+    }
+}
+
+std::shared_ptr<arrow::Array> getArrowColumn(const arrow::RecordBatch & batch, const std::string & name, arrow::Type::type type)
+{
+    auto column = batch.GetColumnByName(name);
+    if (!column)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Scan metadata has no column {}", name);
+    if (type != arrow::Type::NA && column->type_id() != type)
+        throw DB::Exception(
+            DB::ErrorCodes::LOGICAL_ERROR, "Unexpected Arrow type {} of the column {} of scan metadata", column->type()->ToString(), name);
+    return column;
+}
+
+}
+
+bool TableSnapshot::visitDataFileStatisticsImpl(
+    const KernelSnapshotState & state,
+    const ScanSchema & scan_schema,
+    const DB::ActionsDAG * filter_dag,
+    DB::ContextPtr context,
+    const DataFileStatisticsVisitor & visitor,
+    size_t & visited_files) const
+{
+    const auto & settings = context->getSettingsRef();
+
+    std::optional<PartitionPruner> pruner;
+    if (filter_dag)
+        pruner.emplace(
+            *filter_dag,
+            scan_schema.table_schema,
+            scan_schema.partition_columns,
+            scan_schema.physical_names_map,
+            DB::Context::getGlobalContextInstance());
+
+    std::exception_ptr engine_predicate_exception;
+    auto scan = createScan(
+        state, filter_dag, settings[DB::Setting::delta_lake_enable_engine_predicate], engine_predicate_exception, context);
+    if (engine_predicate_exception && settings[DB::Setting::delta_lake_throw_on_engine_predicate_error])
+        std::rethrow_exception(engine_predicate_exception);
+
+    KernelScanMetadataIterator scan_metadata_iterator(KernelUtils::unwrapResult(
+        ffi::scan_metadata_iter_init(state.engine.get(), scan.get()),
+        "scan_metadata_iter_init"));
+
+    const auto query_status = context->getProcessListElement();
+    bool pruned_by_partition = false;
+    while (true)
+    {
+        /// The scan runs during planning, before any pipeline, so it checks `KILL QUERY` and the time limit itself.
+        if (query_status)
+            query_status->checkTimeLimit();
+
+        auto * scan_metadata = KernelUtils::unwrapResult(
+            ffi::scan_metadata_next_arrow(scan_metadata_iterator.get(), state.engine.get()),
+            "scan_metadata_next_arrow");
+        if (!scan_metadata)
+            break;
+        SCOPE_EXIT({ ffi::free_scan_metadata_arrow_result(scan_metadata); });
+
+        if (scan_metadata->arrow_data.array.length == 0)
+            continue;
+
+        auto imported_batch = arrow::ImportRecordBatch(
+            reinterpret_cast<ArrowArray *>(&scan_metadata->arrow_data.array),
+            reinterpret_cast<ArrowSchema *>(&scan_metadata->arrow_data.schema));
+        if (!imported_batch.ok())
+            DB::throwFromArrowStatus(imported_batch.status(), DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to import scan metadata");
+        const auto & batch = **imported_batch;
+        DB::ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(batch);
+
+        const auto stats = getArrowColumn(batch, "stats", arrow::Type::NA);
+        const auto deletion_vectors = getArrowColumn(batch, "deletionVector", arrow::Type::STRUCT);
+        const auto cardinalities = assert_cast<const arrow::StructArray &>(*deletion_vectors).GetFieldByName("cardinality");
+        if (!cardinalities || cardinalities->type_id() != arrow::Type::INT64)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Scan metadata has no cardinality of deletion vectors");
+
+        const auto & selection_vector = scan_metadata->selection_vector;
+        for (int64_t row = 0; row < batch.num_rows(); ++row)
+        {
+            if (static_cast<size_t>(row) >= selection_vector.len || !selection_vector.ptr[row])
+                continue;
+
+            DataFileStatistics file;
+            const auto transform = ffi::get_transform_for_row(static_cast<size_t>(row), scan_metadata->transforms);
+            if (transform.tag == ffi::OptionalValue<ffi::SharedExpression *>::Tag::Some)
+            {
+                KernelExpression transform_handle(transform.some._0);
+                if (!scan_schema.partition_columns.empty())
+                {
+                    const auto schema_transform = visitScanCallbackExpression(
+                        transform_handle.get(),
+                        scan_schema.read_schema,
+                        scan_schema.expression_schema,
+                        settings[DB::Setting::delta_lake_enable_expression_visitor_logging]);
+                    if (pruner && pruner->canBePruned(*schema_transform))
+                    {
+                        pruned_by_partition = true;
+                        continue;
+                    }
+                    file.partition_values = getConstValuesFromExpression(scan_schema.physical_partition_columns, *schema_transform);
+                }
+            }
+
+            file.stats = getArrowString(*stats, row);
+            if (!deletion_vectors->IsNull(row) && !cardinalities->IsNull(row))
+                file.deleted_rows = assert_cast<const arrow::Int64Array &>(*cardinalities).Value(row);
+
+            ++visited_files;
+            if (!visitor(file))
+                return pruned_by_partition;
+        }
+    }
+    return pruned_by_partition;
 }
 
 DB::ObjectIterator TableSnapshot::iterate(

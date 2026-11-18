@@ -90,6 +90,9 @@ public:
 
     std::optional<size_t> totalBytes(ContextPtr) const override;
 
+    std::optional<DataLakeReadEstimate>
+    estimateRead(StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, const Names & column_names, ContextPtr context) const override;
+
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
