@@ -103,7 +103,7 @@ SETTINGS rewrite_in_to_join = 1;
 
 -- Keys of the same type as their columns that the set still compares unlike `equals`: it converts a key of a
 -- `Bool` column, so the byte 2 is `true`, and it compares floating-point values by their bits, so a NaN matches
--- itself and `-0.0` does not match `0.0`, also inside an `Array`.
+-- itself. Only `-0.0` is canonicalized, so it matches `0.0`, also inside an `Array`, as with `equals`.
 SELECT (b, 1) IN (SELECT true, 1), (b, 1) NOT IN (SELECT true, 1), f IN (SELECT nan), [z] IN (SELECT [0.])
 FROM (SELECT materialize(toUInt8(2)) AS b, materialize(nan) AS f, materialize(-0.) AS z)
 SETTINGS rewrite_in_to_join = 0;
