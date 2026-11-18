@@ -76,19 +76,69 @@ namespace
     return (isFloat(left) && isDecimal(right)) || (isDecimal(left) && isFloat(right));
 }
 
-[[nodiscard]] bool accurateEqualsCompoundFields(const Field & left, const Field & right)
+[[nodiscard]] bool accurateEqualsCompoundFields(
+    const Field & left, const Field & right, const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
-    const auto compare_elements = [](const auto & left_elements, const auto & right_elements)
+    const auto left_bare = removeNullable(removeLowCardinality(left_type));
+    const auto right_bare = removeNullable(removeLowCardinality(right_type));
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left_bare.get()))
     {
-        return left_elements.size() == right_elements.size()
-            && std::equal(left_elements.begin(), left_elements.end(), right_elements.begin(), accurateEqualsCompoundFields);
-    };
-    if (left.getType() == Field::Types::Array && right.getType() == Field::Types::Array)
-        return compare_elements(left.safeGet<Array>(), right.safeGet<Array>());
-    if (left.getType() == Field::Types::Tuple && right.getType() == Field::Types::Tuple)
-        return compare_elements(left.safeGet<Tuple>(), right.safeGet<Tuple>());
-    if (left.getType() == Field::Types::Map && right.getType() == Field::Types::Map)
-        return compare_elements(left.safeGet<Map>(), right.safeGet<Map>());
+        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right_bare.get()))
+        {
+            const auto & left_elements = left.safeGet<Array>();
+            const auto & right_elements = right.safeGet<Array>();
+            return left_elements.size() == right_elements.size()
+                && std::equal(left_elements.begin(), left_elements.end(), right_elements.begin(), [&](const auto & l, const auto & r)
+                {
+                    return accurateEqualsCompoundFields(l, r, left_array->getNestedType(), right_array->getNestedType());
+                });
+        }
+    }
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left_bare.get()))
+    {
+        if (const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right_bare.get());
+            right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        {
+            const auto & left_elements = left.safeGet<Tuple>();
+            const auto & right_elements = right.safeGet<Tuple>();
+            if (left_elements.size() != right_elements.size())
+                return false;
+            for (size_t i = 0; i < left_elements.size(); ++i)
+                if (!accurateEqualsCompoundFields(
+                        left_elements[i], right_elements[i], left_tuple->getElements()[i], right_tuple->getElements()[i]))
+                    return false;
+            return true;
+        }
+    }
+    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left_bare.get()))
+    {
+        if (const auto * right_map = typeid_cast<const DataTypeMap *>(right_bare.get()))
+        {
+            const auto & left_entries = left.safeGet<Map>();
+            const auto & right_entries = right.safeGet<Map>();
+            if (left_entries.size() != right_entries.size())
+                return false;
+            for (size_t i = 0; i < left_entries.size(); ++i)
+            {
+                const auto & left_pair = left_entries[i].safeGet<Tuple>();
+                const auto & right_pair = right_entries[i].safeGet<Tuple>();
+                if (!accurateEqualsCompoundFields(left_pair[0], right_pair[0], left_map->getKeyType(), right_map->getKeyType())
+                    || !accurateEqualsCompoundFields(left_pair[1], right_pair[1], left_map->getValueType(), right_map->getValueType()))
+                    return false;
+            }
+            return true;
+        }
+    }
+    if (isFloat(left_bare) && isDecimal(right_bare))
+    {
+        const auto converted = tryConvertFieldToType(left, *right_bare, left_bare.get(), {}, /*strict=*/true);
+        return !converted.isNull() && accurateEquals(converted, right);
+    }
+    if (isDecimal(left_bare) && isFloat(right_bare))
+    {
+        const auto converted = tryConvertFieldToType(right, *left_bare, right_bare.get(), {}, /*strict=*/true);
+        return !converted.isNull() && accurateEquals(left, converted);
+    }
     return accurateEquals(left, right);
 }
 
@@ -322,7 +372,7 @@ public:
                 auto extracted_source = tryConvertColumnToTypeOrNull(
                     *source_row, source_type, active_type, {}, /*strict=*/true);
                 values[row] = extracted_source
-                    && accurateEqualsCompoundFields((*left_row)[0], (*extracted_source)[0]);
+                    && accurateEqualsCompoundFields((*left_row)[0], (*extracted_source)[0], left_type, active_type);
             }
             else
             {
