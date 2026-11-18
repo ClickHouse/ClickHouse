@@ -4,7 +4,6 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/WriteBufferFromFileBase.h>
-#include <Storages/MergeTree/rewriteRowsSources.h>
 #include <Common/CurrentMetrics.h>
 
 namespace CurrentMetrics
@@ -62,19 +61,6 @@ size_t RowsSourcesOnTemporaryDisk::finalizeWriting()
     finalized = true;
     final_size = stat.uncompressed_size;
     return final_size;
-}
-
-size_t RowsSourcesOnTemporaryDisk::rewrite(
-    std::vector<QueryPipeline> row_exists_per_part,
-    TemporaryDataBuffer * ttl_kept_rows,
-    const MergeTask::GlobalRuntimeContext & global_ctx)
-{
-    auto rewritten = std::make_unique<TemporaryDataBuffer>(temporary_data_on_disk);
-    const size_t num_kept_row_sources = rewriteRowsSources(
-        *getTemporaryFileForReading(FILE_ID), *rewritten, std::move(row_exists_per_part), ttl_kept_rows, global_ctx);
-    final_size = rewritten->finishWriting().uncompressed_size;
-    tmp_data_buffer = std::move(rewritten);
-    return num_kept_row_sources;
 }
 
 RowsSourcesInPart::RowsSourcesInPart(MutableDataPartStoragePtr part_storage_, String file_name_, ReadSettings read_settings_)

@@ -1,6 +1,13 @@
--- A vertical merge of patch parts written by lightweight deletes keeps every row: rows with `_row_exists = 0` are
--- payload. Counting them as deleted rows aborts the merge with LOGICAL_ERROR "past its last row".
+#!/usr/bin/env bash
 
+# A vertical merge of patch parts written by lightweight deletes keeps every row: rows with `_row_exists = 0` are
+# payload. Counting them as deleted rows aborts the merge with LOGICAL_ERROR "past its last row".
+
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
+
+$CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS t_lwd_vertical_patch;
 
 CREATE TABLE t_lwd_vertical_patch
@@ -28,8 +35,14 @@ INSERT INTO t_lwd_vertical_patch SELECT number, toString(number) FROM numbers(10
 
 DELETE FROM t_lwd_vertical_patch WHERE id IN (0, 1);
 DELETE FROM t_lwd_vertical_patch WHERE id IN (2, 3);
+"
 
-OPTIMIZE TABLE t_lwd_vertical_patch PARTITION ID 'patch-9d3c00135c25f28efda622e6c7308f8a-all' FINAL;
+patch_partition_id=$($CLICKHOUSE_CLIENT -q "
+SELECT DISTINCT partition_id FROM system.parts
+WHERE database = currentDatabase() AND table = 't_lwd_vertical_patch' AND active AND startsWith(partition_id, 'patch')")
+
+$CLICKHOUSE_CLIENT -q "
+OPTIMIZE TABLE t_lwd_vertical_patch PARTITION ID '$patch_partition_id' FINAL;
 
 SELECT 'patch parts', count(), sum(rows)
 FROM system.parts
@@ -43,3 +56,4 @@ FROM system.part_log
 WHERE database = currentDatabase() AND table = 't_lwd_vertical_patch' AND event_type = 'MergeParts';
 
 DROP TABLE t_lwd_vertical_patch;
+"

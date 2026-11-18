@@ -1,6 +1,6 @@
--- `vertical_merge_optimize_lightweight_delete = 0` keeps a merge of parts with lightweight deletes vertical, the deleted
--- rows filtered on read. Test 1: it keeps exactly the rows not deleted. Test 2: a merge by a rows TTL beside a
--- lightweight delete stays vertical too and keeps exactly the rows neither deleted nor expired.
+-- `vertical_merge_optimize_lightweight_delete = 0` keeps a lightweight-delete merge vertical, deleted rows filtered on
+-- read. Test 1: a lightweight delete alone keeps exactly the rows not deleted. Test 2: a rows TTL beside a lightweight
+-- delete, with the setting off, stays vertical and keeps exactly the rows neither deleted nor expired.
 -- `max_bytes_to_merge_at_max_space_in_pool = 1` keeps background merges away.
 
 DROP TABLE IF EXISTS t_lwd_optimize_off;

@@ -30,9 +30,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-/// Base name of the column in which `consume` stores each row's position in the chunk when it records kept rows.
+/// Base name of the column in which `consume` stores each row's position in the chunk when it records kept flags.
 /// `consume` prefixes it with `_` until no column of the block has that name; `reorderColumns` drops it.
-static constexpr auto ROW_POSITION_COLUMN_NAME = "__ttl_row_position";
+static constexpr auto TTL_ROW_POSITION_COLUMN_NAME = "__ttl_row_position";
 
 static TTLExpressions getExpressions(const TTLDescription & ttl_descr, PreparedSets::Subqueries & subqueries_for_sets, const ContextPtr & context)
 {
@@ -157,9 +157,9 @@ TTLTransform::TTLTransform(
     const NamesAndTypesList & expired_columns_,
     time_t current_time_,
     bool force_,
-    WriteBuffer * ttl_kept_rows_)
+    WriteBuffer * ttl_kept_flags_)
     : IAccumulatingTransform(header_, addExpiredColumnsToBlock(header_, expired_columns_))
-    , ttl_kept_rows(ttl_kept_rows_)
+    , ttl_kept_flags(ttl_kept_flags_)
     , data_part(data_part_)
     , expired_columns(expired_columns_)
     , log(getLogger(storage_.getLogName() + " (TTLTransform)"))
@@ -357,8 +357,8 @@ void TTLTransform::consume(Chunk chunk)
     if (all_data_dropped)
     {
         /// The gather stage needs one kept flag per input row, so keep reading and record each row as dropped.
-        if (ttl_kept_rows)
-            writeChar(0, chunk.getNumRows(), *ttl_kept_rows);
+        if (ttl_kept_flags)
+            writeChar(0, chunk.getNumRows(), *ttl_kept_flags);
         else
             finishConsume();
         return;
@@ -387,28 +387,35 @@ void TTLTransform::consume(Chunk chunk)
     }
 
     const size_t num_input_rows = block.rows();
-    String position_column_name = ROW_POSITION_COLUMN_NAME;
+    String ttl_row_position_column_name = TTL_ROW_POSITION_COLUMN_NAME;
     /// In a vertical merge, tag every row with its position in the chunk. The TTL algorithms filter the block,
-    /// tag included, so the positions left afterwards are the kept rows; they go into `ttl_kept_rows`
+    /// tag included, so the positions left afterwards are the kept rows; they go into `ttl_kept_flags` as flags
     /// for the gather stage.
-    if (ttl_kept_rows)
+    if (ttl_kept_flags)
     {
-        while (block.has(position_column_name))
-            position_column_name = "_" + position_column_name;
+        while (block.has(ttl_row_position_column_name))
+            ttl_row_position_column_name = "_" + ttl_row_position_column_name;
         auto positions = ColumnUInt32::create(num_input_rows);
         iota(positions->getData().data(), num_input_rows, UInt32(0));
-        block.insert(ColumnWithTypeAndName(std::move(positions), std::make_shared<DataTypeUInt32>(), position_column_name));
+        block.insert(ColumnWithTypeAndName(std::move(positions), std::make_shared<DataTypeUInt32>(), ttl_row_position_column_name));
     }
 
     executeAlgorithms(block);
 
-    if (ttl_kept_rows)
+    if (ttl_kept_flags)
     {
-        IColumn::Filter kept(num_input_rows, 0);
-        const auto & kept_positions = assert_cast<const ColumnUInt32 &>(*block.getByName(position_column_name).column).getData();
+        const auto & kept_positions = assert_cast<const ColumnUInt32 &>(*block.getByName(ttl_row_position_column_name).column).getData();
+        /// The TTL algorithms filter rows in order, so the kept positions ascend and each gap is a run of dropped rows.
+        size_t next_position = 0;
         for (const UInt32 position : kept_positions)
-            kept[position] = 1;
-        ttl_kept_rows->write(reinterpret_cast<const char *>(kept.data()), kept.size());
+        {
+            chassert(position >= next_position && position < num_input_rows,
+                fmt::format("Kept row position {} is not in [{}, {})", position, next_position, num_input_rows));
+            writeChar(0, position - next_position, *ttl_kept_flags);
+            writeChar(1, *ttl_kept_flags);
+            next_position = position + 1;
+        }
+        writeChar(0, num_input_rows - next_position, *ttl_kept_flags);
     }
 
     if (block.empty())

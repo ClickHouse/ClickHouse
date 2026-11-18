@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/rewriteRowsSources.h>
+#include <Storages/MergeTree/MergeTask.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Core/Defines.h>
@@ -67,14 +67,14 @@ private:
 
 }
 
-size_t rewriteRowsSources(
+size_t MergeTask::rewriteRowsSources(
     ReadBuffer & in,
     WriteBuffer & out,
     std::vector<QueryPipeline> row_exists_per_part,
-    TemporaryDataBuffer * ttl_kept_rows,
+    TemporaryDataBuffer * ttl_kept_flags,
     const MergeTask::GlobalRuntimeContext & global_ctx)
 {
-    const auto ttl_kept_rows_in = ttl_kept_rows ? ttl_kept_rows->read() : nullptr;
+    const auto ttl_kept_flags_in = ttl_kept_flags ? ttl_kept_flags->read() : nullptr;
 
     std::vector<std::unique_ptr<PartRowExists>> parts;
     for (auto & pipeline : row_exists_per_part)
@@ -115,14 +115,14 @@ size_t rewriteRowsSources(
             part.nextRow();
         }
 
-        if (ttl_kept_rows_in && !row_source.getSkipFlag())
+        if (ttl_kept_flags_in && !row_source.getSkipFlag())
         {
-            if (ttl_kept_rows_in->eof())
+            if (ttl_kept_flags_in->eof())
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "rows_sources of a vertical merge holds more emitted rows than TTLTransform emitted");
 
             UInt8 kept = 0;
-            readBinary(kept, *ttl_kept_rows_in);
+            readBinary(kept, *ttl_kept_flags_in);
             row_source.setSkipFlag(!kept);
         }
 
@@ -139,7 +139,7 @@ size_t rewriteRowsSources(
                 parts[part_index]->cursor, part_index);
     }
 
-    if (ttl_kept_rows_in && !ttl_kept_rows_in->eof())
+    if (ttl_kept_flags_in && !ttl_kept_flags_in->eof())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "rows_sources of a vertical merge holds fewer emitted rows than TTLTransform emitted");
 

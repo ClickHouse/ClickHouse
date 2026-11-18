@@ -4,9 +4,7 @@
 #include <IO/ReadSettings.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/QueryPlan/TemporaryFiles.h>
-#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <Storages/MergeTree/MergeTask.h>
 
 namespace DB
 {
@@ -33,12 +31,6 @@ public:
     WriteBuffer & getTemporaryFileForWriting(const String & name) override;
     std::unique_ptr<ReadBuffer> getTemporaryFileForReading(const String & name) override;
     size_t finalizeWriting() override;
-
-    /// Replaces the finalized file with its `rewriteRowsSources` rewrite; returns the number of row sources written without the skip flag.
-    size_t rewrite(
-        std::vector<QueryPipeline> row_exists_per_part,
-        TemporaryDataBuffer * ttl_kept_rows,
-        const MergeTask::GlobalRuntimeContext & global_ctx);
 
 private:
     std::unique_ptr<TemporaryDataBuffer> tmp_data_buffer;

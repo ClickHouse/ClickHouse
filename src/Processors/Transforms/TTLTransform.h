@@ -26,7 +26,7 @@ public:
         const NamesAndTypesList & expired_columns_,
         time_t current_time,
         bool force_,
-        WriteBuffer * ttl_kept_rows_ = nullptr
+        WriteBuffer * ttl_kept_flags_ = nullptr
     );
 
     String getName() const override { return "TTL"; }
@@ -49,7 +49,7 @@ private:
     const TTLDeleteAlgorithm * delete_algorithm = nullptr;
     bool all_data_dropped = false;
     /// If set, `consume` writes one byte per input row to it: 1 if kept, 0 if dropped.
-    WriteBuffer * const ttl_kept_rows;
+    WriteBuffer * const ttl_kept_flags;
 
     PreparedSets::Subqueries subqueries_for_sets;
 

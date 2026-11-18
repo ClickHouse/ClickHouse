@@ -287,7 +287,9 @@ private:
         /// If lightweight delete mask is present then some input rows are filtered out right after reading.
         std::shared_ptr<std::atomic<size_t>> input_rows_filtered{std::make_shared<std::atomic<size_t>>(0)};
         /// For a vertical merge with TTL: which of the rows the merging algorithm emits `TTLTransform` keeps.
-        std::unique_ptr<TemporaryDataBuffer> ttl_kept_rows;
+        std::unique_ptr<TemporaryDataBuffer> ttl_kept_flags;
+        /// Whether the vertical stage rewrites `rows_sources` before gathering. False for a resumed merge: its file is rewritten.
+        bool rewrites_rows_sources{false};
         size_t rows_written{0};
         UInt64 watch_prev_elapsed{0};
 
@@ -327,14 +329,6 @@ private:
     };
 
     using GlobalRuntimeContextPtr = std::shared_ptr<GlobalRuntimeContext>;
-
-    friend class RowsSourcesOnTemporaryDisk;
-    friend size_t rewriteRowsSources(
-        ReadBuffer & in,
-        WriteBuffer & out,
-        std::vector<QueryPipeline> row_exists_per_part,
-        TemporaryDataBuffer * ttl_kept_rows,
-        const GlobalRuntimeContext & global_ctx);
 
     /// By default this context is uninitialized, but some variables has to be set after construction,
     /// some variables are used in a process of execution
@@ -418,6 +412,8 @@ private:
 
         [[nodiscard]] MergeAlgorithm chooseMergeAlgorithm() const;
         [[nodiscard]] bool canCheckpointVerticalMerge() const;
+        /// Whether `TTLTransform` writes `ttl_kept_flags` for the rewrite of `rows_sources`.
+        [[nodiscard]] bool recordsTTLKeptFlags() const;
 
         struct SavedCheckpointLoadResult
         {
@@ -658,6 +654,13 @@ private:
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
     static bool canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx);
     static MergeCheckpointIdentity makeMergeCheckpointIdentity(const GlobalRuntimeContext & global_ctx);
+    /// Copies `rows_sources` from `in` to `out`, skipping the rows dropped outside the merging algorithm; returns the kept row count.
+    static size_t rewriteRowsSources(
+        ReadBuffer & in,
+        WriteBuffer & out,
+        std::vector<QueryPipeline> row_exists_per_part,
+        TemporaryDataBuffer * ttl_kept_flags,
+        const GlobalRuntimeContext & global_ctx);
     static void addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx);
     static void addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
     static void mergeBuiltStatistics(BuildStatisticsTransformMap && build_statistics_transforms, const GlobalRuntimeContextPtr & global_ctx);

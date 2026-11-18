@@ -1,6 +1,6 @@
--- Tests 1-3: a vertical merge that drops rows by lightweight delete and rows TTL returns exactly the rows of a
--- horizontal one, gathered columns included. Keys interleave across the parts, so a gathered row taken from the wrong
--- part changes the result. Test 4: a merge by a rows TTL alone runs `Vertical` and keeps the expected number of rows.
+-- Tests 1-3: a vertical merge dropping rows by lightweight delete and rows TTL returns the rows of a horizontal one,
+-- gathered columns included; keys interleave across parts, so a row gathered from the wrong part changes the result.
+-- Test 4: a user column named `__ttl_row_position` doesn't collide with the internal column a vertical TTL merge adds.
 -- `max_bytes_to_merge_at_max_space_in_pool` keeps background merges away.
 
 SET alter_sync = 2;
