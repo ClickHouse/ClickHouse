@@ -236,7 +236,7 @@ FunctionBasePtr JoinGetOverloadResolver::buildImpl(const ColumnsWithTypeAndName 
     }
 
     bool effective_or_null = or_null || storage_join->useNulls();
-    auto return_type = storage_join->joinGetCheckAndGetReturnType(data_types, attr_name, effective_or_null);
+    auto return_type = storage_join->joinGetCheckAndGetReturnType(data_types, attr_name, effective_or_null, getContext());
     auto table_lock = storage_join->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     const char * effective_name = effective_or_null ? "joinGetOrNull" : "joinGet";

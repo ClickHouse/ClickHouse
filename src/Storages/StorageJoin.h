@@ -61,7 +61,8 @@ public:
     HashJoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, String query_id, std::chrono::milliseconds acquire_timeout, const Names & required_columns_names) const;
 
     /// Get result type for function "joinGet(OrNull)"
-    DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
+    /// Takes `rwlock` for read: `join` can be replaced concurrently.
+    DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null, ContextPtr context) const;
 
     /// Execute function "joinGet(OrNull)" on data block.
     /// Takes rwlock for read to prevent parallel StorageJoin updates during processing data block

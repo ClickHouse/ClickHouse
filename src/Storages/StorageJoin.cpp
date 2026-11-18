@@ -765,8 +765,12 @@ std::optional<UInt64> StorageJoin::totalBytes(ContextPtr query_context) const
     return join->getTotalByteCount();
 }
 
-DataTypePtr StorageJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const
+DataTypePtr StorageJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null, ContextPtr context) const
 {
+    /// A failed persistent `INSERT`, a mutation or `TRUNCATE` replaces `join` under the write lock and
+    /// may destroy the old `HashJoin`, so reading it without the lock is a use-after-free. The checked
+    /// key and column types do not depend on the data, so a lost live state does not matter here.
+    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
     return join->joinGetCheckAndGetReturnType(data_types, column_name, or_null);
 }
 
