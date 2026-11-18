@@ -4,6 +4,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Core/AccurateComparison.h>
 #include <Core/callOnTypeIndex.h>
 #include <Core/DecimalFunctions.h>
 #include <Columns/ColumnVector.h>
@@ -494,20 +495,20 @@ public:
 };
 
 /// Select the appropriate processing algorithm depending on the scale.
-inline void validateScale(Int64 scale64)
+template <typename ScaleType>
+inline void validateScale(ScaleType scale)
 {
-    if (scale64 > std::numeric_limits<Scale>::max() || scale64 < std::numeric_limits<Scale>::min())
+    if (accurate::greaterOp(scale, std::numeric_limits<Scale>::max()) || accurate::lessOp(scale, std::numeric_limits<Scale>::min()))
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale argument for rounding function is too large");
 }
 
+template <typename ScaleType>
 inline Scale getScaleArg(const ColumnConst* scale_col)
 {
-    const auto & scale_field = scale_col->getField();
+    ScaleType scale = scale_col->getValue<ScaleType>();
+    validateScale(scale);
 
-    Int64 scale64 = scale_field.safeGet<Int64>();
-    validateScale(scale64);
-
-    return static_cast<Scale>(scale64);
+    return static_cast<Scale>(scale);
 }
 
 /// Generic dispatcher
@@ -536,7 +537,7 @@ struct Dispatcher
                 // Const scale argument:
                 if (scale_col == nullptr || isColumnConst(*scale_col))
                 {
-                    auto scale_arg = (scale_col == nullptr) ? 0 : getScaleArg(checkAndGetColumnConst<ColumnVector<ScaleType>>(scale_col));
+                    auto scale_arg = (scale_col == nullptr) ? 0 : getScaleArg<ScaleType>(checkAndGetColumnConst<ColumnVector<ScaleType>>(scale_col));
                     if (scale_arg == 0)
                         FunctionRoundingImpl<ScaleMode::Zero>::apply(value_col_typed->getData(), 0, vec_res);
                     else if (scale_arg > 0)
@@ -553,9 +554,8 @@ struct Dispatcher
 
                     for (size_t i = 0; i < rows; ++i)
                     {
-                        Int64 scale64 = static_cast<Int64>(scale_data[i]);
-                        validateScale(scale64);
-                        Scale raw_scale = static_cast<Scale>(scale64);
+                        validateScale(scale_data[i]);
+                        Scale raw_scale = static_cast<Scale>(scale_data[i]);
 
                         if (raw_scale == 0)
                             FunctionRoundingImpl<ScaleMode::Zero>::applyOne(value_data[i], 0, vec_res[i]);
@@ -602,7 +602,7 @@ public:
                 /// Const scale argument:
                 if (scale_col == nullptr || isColumnConst(*scale_col))
                 {
-                    auto scale_arg = scale_col == nullptr ? 0 : getScaleArg(checkAndGetColumnConst<ColumnVector<ScaleType>>(scale_col));
+                    auto scale_arg = scale_col == nullptr ? 0 : getScaleArg<ScaleType>(checkAndGetColumnConst<ColumnVector<ScaleType>>(scale_col));
                     DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::apply(vec_src, value_col_typed->getScale(), vec_res, static_cast<Scale>(scale_arg));
                 }
                 /// Non-const scale argument:
@@ -613,9 +613,8 @@ public:
 
                     for (size_t i = 0; i < rows; ++i)
                     {
-                        Int64 scale64 = static_cast<Int64>(scale[i]);
-                        validateScale(scale64);
-                        Scale raw_scale = static_cast<Scale>(scale64);
+                        validateScale(scale[i]);
+                        Scale raw_scale = static_cast<Scale>(scale[i]);
 
                         DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::applyOne(value_col_typed->getElement(i), value_col_typed->getScale(),
                             reinterpret_cast<typename ColumnDecimal<T>::NativeT&>(col_res->getElement(i)), raw_scale);
