@@ -689,8 +689,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
         fiu_do_on(FailPoints::s3_read_inject_etag_mismatch, { response_etag = "<injected-etag-mismatch>"; });
 
         /// Defense-in-depth for backends that ignore If-Match and return the new bytes with 200: reject
-        /// on ETag drift. Skip ?versionId= reads (pinned to an immutable version that expected_etag,
-        /// taken from the current version, would falsely mismatch) and empty response ETags.
+        /// on ETag drift. Skip ?versionId= reads (pinned to an immutable version) and empty response ETags.
         if (version_id.empty() && !expected_etag.empty() && !response_etag.empty() && response_etag != expected_etag)
             throw Exception(
                 ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,

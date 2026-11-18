@@ -1549,7 +1549,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             {
                 auto metadata = tryGetObjectMetadataForRead(*object_storage, metadata_object, with_tags);
                 if (!metadata)
-                    return {};
+                    continue;
 
                 object_info->setObjectMetadata(metadata.value());
             }
