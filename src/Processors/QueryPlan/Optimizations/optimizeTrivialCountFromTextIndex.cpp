@@ -250,8 +250,11 @@ bool guardsHold(const ReadFromMergeTree & reading)
     if (!reading.getStorageID().hasDatabase() || getEffectiveRowPolicyFilter(reading.getMergeTreeData(), context))
         return false;
 
+    /// A pending DROP COLUMN (a metadata mutation) makes the reader return defaults, so the cardinalities are stale.
     if (const auto & mutations = reading.getMutationsSnapshot();
-        mutations && (mutations->hasDataMutations() || mutations->hasPatchParts() || mutations->hasLightweightDeletedMask()))
+        mutations
+        && (mutations->hasDataMutations() || mutations->hasMetadataMutations() || mutations->hasPatchParts()
+            || mutations->hasLightweightDeletedMask()))
         return false;
 
     if (reading.getStorageMetadata()->hasUniqueKey())
@@ -273,15 +276,15 @@ std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & readin
     for (const auto & [index_name, task] : reading.getIndexReadTasks())
     {
         /// Only the task that produced this virtual column can resolve it.
-        bool owns_column = std::ranges::any_of(task.columns, [&column_name](const auto & column) { return column.name == column_name; });
-        if (!owns_column || !task.index.condition_template)
+        auto task_column_it = std::ranges::find(task.columns, column_name, &IndexReadTask::Column::name);
+        if (task_column_it == task.columns.end() || !task.index.condition_template)
             continue;
 
         auto condition = std::dynamic_pointer_cast<MergeTreeIndexConditionText>(task.index.condition_template->generateUnsubstituted());
         if (!condition)
             continue;
 
-        auto query = condition->getSearchQueryForVirtualColumn(column_name);
+        auto query = task_column_it->search_query;
 
         /// Hint mode keeps the original predicate, so only Exact is answerable from the index alone.
         if (query->getDirectReadMode() != TextIndexDirectReadMode::Exact)
@@ -335,6 +338,12 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
     /// `applyParallelReplicas` runs first and builds such fragments around the `ReadFromMergeTree` we would
     /// replace, so bail and let the reader be distributed across replicas as before.
     if (settings.make_distributed_plan || settings.enable_parallel_replicas)
+        return false;
+
+    /// The plan for automatic parallel replicas has no index analysis of its reads, so analyzing here would run it
+    /// over the filter `processAndOptimizeTextIndexFunctions` already rewrote. There is nothing to gain either:
+    /// when the single-node plan made this replacement, automatic parallel replicas does not consider the query.
+    if (settings.find_single_node_read)
         return false;
 
     auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
@@ -417,6 +426,10 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
     }
 
     String description = makeStepDescription(*search_query);
+
+    if (!matched->reading->getQueryInfo().is_internal && matched->reading->getContext()->hasQueryContext())
+        matched->reading->getContext()->getQueryContext()->addUsedDataSkippingIndex(
+            matched->reading->getMergeTreeData().getStorageID(), search_query->index.index->index.name);
 
     auto & source_node = nodes.emplace_back();
     source_node.step = std::make_unique<ReadFromTextIndexCount>(

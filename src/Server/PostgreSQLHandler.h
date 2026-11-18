@@ -111,7 +111,7 @@ private:
     void cancelRequest();
 
     /// The query id the current statement runs under, which a cancel request resolves to.
-    String currentQueryId() const;
+    [[nodiscard]] String currentQueryId() const;
     static String queryIdFor(Int32 connection_id_, UInt32 query_id_token_);
 
     /// Give the statement that is about to run its own query id, and point cancellation at it.
@@ -161,7 +161,6 @@ private:
         ContextMutablePtr query_context,
         PostgreSQLProtocol::Messaging::CommandComplete::Command command);
 
-    static bool isEmptyQuery(const String & query);
     /// Transaction-control statements (BEGIN [READ ONLY], START TRANSACTION, COMMIT, ROLLBACK, ...) that
     /// ClickHouse does not implement but that libpq/pqxx clients send around every statement. They are
     /// acknowledged without execution so that such clients (including ClickHouse's own `postgresql` table

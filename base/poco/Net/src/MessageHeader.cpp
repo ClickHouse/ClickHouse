@@ -67,6 +67,20 @@ void MessageHeader::write(std::ostream& ostr) const
 }
 
 
+void MessageHeader::write(std::string& out) const
+{
+	NameValueCollection::ConstIterator it = begin();
+	while (it != end())
+	{
+		out.append(it->first);
+		out.append(": ", 2);
+		out.append(it->second);
+		out.append("\r\n", 2);
+		++it;
+	}
+}
+
+
 void MessageHeader::read(std::istream& istr)
 {
 	static const int eof = std::char_traits<char>::eof();
@@ -81,15 +95,18 @@ void MessageHeader::read(std::istream& istr)
 	while (ch != eof && ch != '\r' && ch != '\n')
 	{
 		if (_fieldLimit > 0 && fields == _fieldLimit)
-			throw MessageException("Too many header fields");
+			throw HTTPHeaderLimitException("Too many header fields");
 		name.clear();
 		value.clear();
 		while (ch != eof && ch != ':' && ch != '\n' && name.length() < _nameLengthLimit) { name += ch; ch = buf.sbumpc(); }
 		if (ch == '\n') { ch = buf.sbumpc(); continue; } // ignore invalid header lines
+		// Any other character stops the name only at the limit.
+		if (ch != ':' && ch != eof) throw HTTPHeaderLimitException("Field name too long");
 		if (ch != ':') throw MessageException("Field name too long/no colon found");
 		if (ch != eof) ch = buf.sbumpc(); // ':'
 		while (ch != eof && Poco::Ascii::isSpace(ch) && ch != '\r' && ch != '\n') ch = buf.sbumpc();
 		while (ch != eof && ch != '\r' && ch != '\n' && value.length() < _valueLengthLimit) { value += ch; ch = buf.sbumpc(); }
+		if (ch != eof && ch != '\r' && ch != '\n') throw HTTPHeaderLimitException("Field value too long");
 		if (ch == '\r') ch = buf.sbumpc();
 		if (ch == '\n')
 			ch = buf.sbumpc();
@@ -98,6 +115,7 @@ void MessageHeader::read(std::istream& istr)
 		while (ch == ' ' || ch == '\t') // folding
 		{
 			while (ch != eof && ch != '\r' && ch != '\n' && value.length() < _valueLengthLimit) { value += ch; ch = buf.sbumpc(); }
+			if (ch != eof && ch != '\r' && ch != '\n') throw HTTPHeaderLimitException("Folded field value too long");
 			if (ch == '\r') ch = buf.sbumpc();
 			if (ch == '\n')
 				ch = buf.sbumpc();

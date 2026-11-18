@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-msan, no-fasttest
+# no-fasttest: Too slow for fast test (~14s), covered by regular stateless runs.
 # In a FileLog directory, a file that cannot be opened and a file with lines that do not parse
 # (default handle_error_mode) must not stop the table: both are logged and the other rows still arrive.
 
@@ -129,32 +131,33 @@ for _ in {1..4}; do echo 'not json'; done > "${skip_dir}/x2.jsonl"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_skip (a UInt64) ENGINE = FileLog('${skip_dir}/', 'JSONEachRow') SETTINGS max_threads = 1"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst_skip (a UInt64) ENGINE = MergeTree ORDER BY a"
 ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv_skip TO dst_skip AS SELECT a FROM file_log_skip"
+# `system.text_log` can be bigger than the `max_rows_to_read` limit of the test profile.
 skipped="SELECT extract(message, 'of file ([^ ]+) that') AS file, sum(toUInt64OrZero(extract(message, 'Skipped ([0-9]+) records'))) AS n
     FROM system.text_log
-    WHERE event_date >= yesterday() AND logger_name LIKE concat('StorageFileLog (%', currentDatabase(), '%.file_log_skip)')
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name LIKE concat('StorageFileLog (%', currentDatabase(), '%.file_log_skip)')
         AND message LIKE 'Skipped % records of file %'
     GROUP BY file ORDER BY file"
 for _ in {1..120}; do
     ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
-    [ "$(${CLICKHOUSE_CLIENT} -q "SELECT sum(n) FROM (${skipped})")" -ge 7 ] && break
+    [ "$(${CLICKHOUSE_CLIENT} --max_rows_to_read 0 -q "SELECT sum(n) FROM (${skipped})")" -ge 7 ] && break
     sleep 0.5
 done
-${CLICKHOUSE_CLIENT} -q "${skipped}"
+${CLICKHOUSE_CLIENT} --max_rows_to_read 0 -q "${skipped}"
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0, countIf(c = 0) FROM dst_count"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
-${CLICKHOUSE_CLIENT} -q "
+${CLICKHOUSE_CLIENT} --max_rows_to_read 0 -q "
     SELECT countIf(message LIKE 'Cannot open file %broken.jsonl%') > 0,
            sumIf(toUInt64OrZero(extract(message, 'Skipped ([0-9]+) records')), message LIKE 'Skipped % of file bad.jsonl%'),
            countIf(message LIKE 'Skipped % of file bad.jsonl%') BETWEEN 1 AND 49,
            maxIf(toUInt64OrZero(extract(message, 'Skipped ([0-9]+) records')), message LIKE 'Skipped % of file bad.jsonl%') <= 10
     FROM system.text_log
-    WHERE event_date >= yesterday() AND logger_name LIKE concat('StorageFileLog (%', currentDatabase(), '%.file_log)')"
-${CLICKHOUSE_CLIENT} -q "
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name LIKE concat('StorageFileLog (%', currentDatabase(), '%.file_log)')"
+${CLICKHOUSE_CLIENT} --max_rows_to_read 0 -q "
     SELECT countIf(message LIKE 'Cannot open file %link.jsonl%')
     FROM system.text_log
-    WHERE event_date >= yesterday() AND logger_name LIKE concat('StorageFileLog (%', currentDatabase(), '%.file_log_sel)')"
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name LIKE concat('StorageFileLog (%', currentDatabase(), '%.file_log_sel)')"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE mv"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_count"

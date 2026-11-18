@@ -142,9 +142,8 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
     if (bytes_read)
     {
         /// Adjust the working buffer so that it ignores `offset` bytes.
-        internal_buffer = Buffer(result.buf, result.buf + result.size);
-        working_buffer = Buffer(result.buf + result.offset, result.buf + result.size);
-        pos = working_buffer.begin();
+        chassert(result.buf == memory.data());
+        BufferBase::setPaddedStorage(memory, result.offset, bytes_read, 0);
     }
 
     file_offset_of_buffer_end = result.file_offset_of_buffer_end;
@@ -229,8 +228,7 @@ AsynchronousReadBufferFromHDFS::~AsynchronousReadBufferFromHDFS()
 {
     LOG_TEST(
         log,
-        "object:{} next_times:{} seek_times:{} interval:{}|{} duration:{}|{} wait:{}|{}",
-        reinterpret_cast<std::uintptr_t>(this),
+        "next_times:{} seek_times:{} interval:{}|{} duration:{}|{} wait:{}|{}",
         next_times,
         seek_times,
         sum_interval,

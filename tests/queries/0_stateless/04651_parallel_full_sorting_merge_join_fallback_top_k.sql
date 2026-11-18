@@ -14,7 +14,6 @@
 -- `hash,full_sorting_merge` (both inject the extra `Sort + Limit`), so adding the new algorithm
 -- as a fallback introduces no divergence relative to master, while plain `hash` still defers.
 
-SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
 
 DROP TABLE IF EXISTS pfsmj_topk_left;
