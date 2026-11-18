@@ -68,6 +68,8 @@ protected:
 
     void initialize(Application & self) override;
 
+    void beforeStartingThreads() override;
+
     void uninitialize() override;
 
     int main(const std::vector<std::string> & args) override;
