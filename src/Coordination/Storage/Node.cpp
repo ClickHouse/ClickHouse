@@ -32,6 +32,12 @@ namespace
     ///    u64 base_time
     ///    base_path (base_path_len bytes)
     constexpr size_t BLOCK_HEADER_SCALARS_SIZE = sizeof(uint32_t) * 3 + sizeof(uint64_t) * 2;
+
+    /// Zeroed bytes allocated after `capacity`, so that `readNodeImpl` stays inside the allocation
+    /// even for a corrupted record: before its bounds checks, it reads at most the action byte, the
+    /// varints size byte and four group varints (each decode reads at most MAX_SIZE bytes) from the
+    /// record start, and a record always starts before `capacity`.
+    constexpr size_t READ_PADDING = 2 + 3 * DB::GroupVarint4x32::MAX_SIZE + DB::GroupVarint8x64::MAX_SIZE;
 }
 
 std::optional<NodeAction> combineActions(std::optional<NodeAction> first, NodeAction second, bool strict)
@@ -135,9 +141,10 @@ BlockPtr BlockData::create(size_t capacity_)
     /// pointer to chase. The buffer isn't allowed to grow anyway because NodeRef-s must stay valid.
     /// (The control block is allocated separately so that a lingering BlockWeakPtr keeps only the
     /// small control block alive, not the whole BlockData+buffer.)
-    void * raw = ::operator new(sizeof(BlockData) + capacity_);
+    void * raw = ::operator new(sizeof(BlockData) + capacity_ + READ_PADDING);
     BlockData * block = new (raw) BlockData();
     block->capacity = static_cast<uint32_t>(capacity_);
+    memset(block->data() + capacity_, 0, READ_PADDING);
 
     try
     {
@@ -510,11 +517,9 @@ inline void ALWAYS_INLINE readNodeImpl(
         }
 
         /// We do this range check only after doing the reads, instead of expensively pre-checking
-        /// before each varint decode. So when deserializing a corrupted file we may read memory
-        /// past end of buffer. This is ok; possible outcomes are:
-        ///  * one of the bad reads segfaults (unlikely; if undesired, we could pad the buffer on allocation),
-        ///  * we get here, fail this check, and discard all results of the bad reads.
-        /// Both are fine.
+        /// before each varint decode. So when deserializing a corrupted file we may read past
+        /// `capacity`, but never past `READ_PADDING` zeroed bytes allocated after it (see
+        /// `BlockData::create`); we get here, fail this check, and discard all results of the bad reads.
         if (varints > path_suffix)
             throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA, "Node has incorrect varints_size");
 
