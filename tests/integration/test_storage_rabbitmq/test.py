@@ -895,10 +895,18 @@ def test_rabbitmq_insert_reuses_producer_connection(rabbitmq_cluster, db, unique
     # With rabbitmq_max_idle_producer_connections an insert publishes over the connection and channel of a previous
     # insert instead of connecting to RabbitMQ again. A dedicated vhost isolates the connections of this table.
     def rabbitmqctl(*args):
-        return rabbitmq_cluster.exec_in_container(
-            rabbitmq_cluster.rabbitmq_docker_id,
-            ["env", f"RABBITMQ_ERLANG_COOKIE={rabbitmq_cluster.rabbitmq_cookie}", "rabbitmqctl", *args],
-        )
+        # A rabbitmqctl call occasionally never returns, so give up on it and run it again.
+        for attempt in range(3):
+            try:
+                return rabbitmq_cluster.exec_in_container(
+                    rabbitmq_cluster.rabbitmq_docker_id,
+                    ["env", f"RABBITMQ_ERLANG_COOKIE={rabbitmq_cluster.rabbitmq_cookie}", "rabbitmqctl", *args],
+                    timeout=30,
+                )
+            except Exception as e:
+                if attempt == 2 or not isinstance(e.__cause__, subprocess.TimeoutExpired):
+                    raise
+                logging.warning(f"rabbitmqctl {' '.join(args)} did not return within 30 s, running it again")
 
     def list_in_vhost(command, *columns):
         # The vhost is the first column and the name, which contains spaces, the last one.
