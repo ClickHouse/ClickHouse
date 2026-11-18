@@ -1,4 +1,5 @@
 #include <Core/ProtocolDefines.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <memory>
 #include <optional>
 #include <Analyzer/QueryNode.h>
@@ -372,6 +373,9 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     if (is_remote_function)
     {
         const auto & address = cluster.getShardsAddresses().front().front();
+        /// The forwarded current roles are the roles of the initial user, so they cannot be passed on for another user.
+        if (new_client_info.initial_user != address.user)
+            new_client_info.current_roles.reset();
         new_client_info.initial_user = address.user;
     }
 
@@ -588,7 +592,7 @@ void executeQuery(
 
     const ClusterPtr & not_optimized_cluster = query_info.cluster;
 
-    std::vector<QueryPlanPtr> plans;
+    QueryPlanPtrs plans;
     SelectStreamFactory::Shards remote_shards;
 
     auto cluster = query_info.getCluster();
@@ -911,13 +915,8 @@ static std::pair<ClusterPtr, size_t> prepareClusterForParallelReplicas(const Log
     return {new_cluster, shard_num};
 }
 
-/// Returns per-replica liveness for the parallel replicas cluster, aligned with the cluster's replica order
-/// (the same `is_active` signal that is reported in `system.clusters`). Returns an empty vector when the
-/// liveness is unknown - in that case all replicas are considered usable, which preserves the previous behaviour.
-static std::vector<bool> getActiveReplicasForParallelReplicas(const ContextPtr & context, const ClusterPtr & cluster)
+std::vector<bool> getReplicasLiveness(const String & cluster_name, const ClusterPtr & cluster)
 {
-    const String cluster_name = context->getSettingsRef()[Setting::cluster_for_parallel_replicas];
-
     ReplicasInfo replicas_info;
 #if CLICKHOUSE_CLOUD
     /// The shared catalog cluster is exposed in `system.clusters` both under its plain name and under the
@@ -948,11 +947,11 @@ static std::vector<bool> getActiveReplicasForParallelReplicas(const ContextPtr &
         if (auto database = DatabaseCatalog::instance().tryGetDatabase(database_name))
             if (const auto * replicated = typeid_cast<const DatabaseReplicated *>(database.get()))
             {
-                /// `cluster_for_parallel_replicas` is resolved by `Context::getCluster`, which prefers a
+                /// The cluster name is resolved by `Context::getCluster`, which prefers a
                 /// configured or discovered cluster over a `Replicated` database of the same name. When such a
                 /// cluster shadows the database, the resolved `cluster` is not the database's own cluster: its
                 /// replica names do not match the database's ZooKeeper nodes, so `tryGetReplicasInfo` would
-                /// report every replica inactive and the coordinator would collapse onto the local replica.
+                /// report every replica inactive and the caller would collapse onto the local replica.
                 /// Only trust the database liveness when the resolved cluster really is this database's own
                 /// cluster (`system.clusters` likewise reports such configured clusters with unknown `is_active`).
                 const ClusterPtr database_cluster = all_groups ? replicated->tryGetAllGroupsCluster() : replicated->tryGetCluster();
@@ -968,7 +967,7 @@ static std::vector<bool> getActiveReplicasForParallelReplicas(const ContextPtr &
     return is_active;
 }
 
-static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
+static std::pair<VectorWithMemoryTracking<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -978,7 +977,7 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
     /// The reading coordinator distributes mark segments by hashing over the number of replicas, so counting
     /// replicas that never participate leaves "phantom" segments that only the source replica picks up, which
     /// produces a severe work-distribution skew. See `is_active` in `system.clusters`.
-    std::vector<bool> is_active = getActiveReplicasForParallelReplicas(context, cluster);
+    std::vector<bool> is_active = getReplicasLiveness(settings[Setting::cluster_for_parallel_replicas], cluster);
     if (!is_active.empty() && is_active.size() != shard.getAllNodeCount())
         is_active.clear(); /// Liveness does not match the cluster definition; fall back to using all replicas.
 
@@ -1081,7 +1080,7 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
         shuffled_pool = shard.pool->getShuffledPools(settings, priority_func);
     }
 
-    std::vector<ConnectionPoolPtr> pools_to_use;
+    VectorWithMemoryTracking<ConnectionPoolPtr> pools_to_use;
     pools_to_use.reserve(shuffled_pool.size());
     for (auto & pool : shuffled_pool)
     {
@@ -1094,7 +1093,7 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
     return {pools_to_use, max_replicas_to_use};
 }
 
-static size_t findLocalReplicaIndexAndUpdatePools(std::vector<ConnectionPoolPtr> & pools, size_t max_replicas_to_use, const ClusterPtr & cluster)
+static size_t findLocalReplicaIndexAndUpdatePools(VectorWithMemoryTracking<ConnectionPoolPtr> & pools, size_t max_replicas_to_use, const ClusterPtr & cluster)
 {
     const auto & shard = cluster->getShardsInfo().at(0);
 
@@ -1256,7 +1255,7 @@ void executeQueryWithParallelReplicas(
         input_headers.emplace_back(stub_local_plan->getCurrentHeader());
         input_headers.emplace_back(remote_plan->getCurrentHeader());
 
-        std::vector<QueryPlanPtr> plans;
+        QueryPlanPtrs plans;
         plans.emplace_back(std::move(stub_local_plan));
         plans.emplace_back(std::move(remote_plan));
 
@@ -1331,7 +1330,7 @@ QueryPlanPtr createParallelReplicasPlan(QueryPlanPtr plan_fragment, ContextPtr c
         input_headers.emplace_back(local_plan->getCurrentHeader());
         input_headers.emplace_back(remote_plan->getCurrentHeader());
 
-        std::vector<QueryPlanPtr> plans;
+        QueryPlanPtrs plans;
         plans.emplace_back(std::move(local_plan));
         plans.emplace_back(std::move(remote_plan));
 
@@ -1594,7 +1593,7 @@ bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const 
 /// find and remove ReadFromParallelRemoteReplicasStep in query plan,
 /// also returns the parallel replicas coordinator, connection pools and local replica index
 /// stored in ReadFromParallelRemoteReplicasStep, so the remote-pool pass can reuse them.
-LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan)
+std::optional<LocalPlanParallelReplicasInfo> dropReadFromRemoteInPlan(QueryPlan & query_plan)
 {
     struct Frame
     {
@@ -1617,6 +1616,10 @@ LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan)
             const auto * step = frame.node->step.get();
             if (const auto * read_from_remote = typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step))
             {
+                /// Without a local replica this step is the plan's only reading step.
+                if (!read_from_remote->getExcludePoolIndex())
+                    return {};
+
                 auto & children = frame.parent->children;
                 for (auto it = begin(children); it != end(children); ++it)
                 {
@@ -1678,7 +1681,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     const ContextPtr & context,
     std::optional<QueryPipeline> local_pipeline,
     std::optional<ParallelReplicasReadingCoordinatorPtr> coordinator,
-    std::vector<ConnectionPoolPtr> reused_connection_pools,
+    VectorWithMemoryTracking<ConnectionPoolPtr> reused_connection_pools,
     std::optional<size_t> reused_local_replica_index)
 {
     auto logger = getLogger("executeInsertSelectWithParallelReplicas");
@@ -1689,7 +1692,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
 
-    std::vector<ConnectionPoolPtr> connection_pools;
+    VectorWithMemoryTracking<ConnectionPoolPtr> connection_pools;
     size_t max_replicas_to_use = 0;
     std::optional<size_t> local_replica_index;
 
