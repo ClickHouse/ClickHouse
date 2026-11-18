@@ -71,7 +71,7 @@ CREATE TABLE results (name String, run String, rows UInt64, checksum UInt64) ENG
     ('residual, left anti, disjuncts', left_row, 'LEFT ANTI JOIN r ON (' ~ or2 ~ ') AND l.t < r.t', ''),
 ] -%}
 
-{% for block, limit in [(1000, 0), (8191, 0), (8192, 0), (8193, 0), (20001, 0), (20001, 7), (20001, 1000)] -%}
+{% for block, limit in [(1000, 65409), (8191, 65409), (8192, 65409), (8193, 65409), (20001, 65409), (20001, 7), (20001, 1000)] -%}
 SET max_block_size = {{ block }}, max_joined_block_size_rows = {{ limit }};
 {% for name, columns, join, settings in cases -%}
 INSERT INTO results SELECT '{{ name }}', '{{ block }}/{{ limit }}', {{ columns }} FROM {{ l }} {{ join }}{{ ' SETTINGS ' ~ settings if settings else '' }};
