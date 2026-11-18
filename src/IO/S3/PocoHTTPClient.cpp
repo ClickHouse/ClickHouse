@@ -6,6 +6,7 @@
 
 #if USE_AWS_S3
 
+#include <IO/S3/Client.h>
 #include <IO/S3/PocoHTTPClient.h>
 #include <IO/S3/Requests.h>
 
@@ -17,7 +18,6 @@
 #include <Common/HTTPConnectionInfo.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
-#include <Common/WriteOutcomeTracker.h>
 #include <Common/re2.h>
 #include <Common/Silk/FiberScheduler.h>
 #include <base/sleep.h>
@@ -484,23 +484,13 @@ void PocoHTTPClient::makeRequestInternal(
     Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
-    /// The client decides a tracked write from the answers to all its attempts, which reach its tracker through the
-    /// thread that sends them. An attempt sent under another tracker, or under none, would lose its answer, and the
-    /// write could be taken for not applied.
-    auto * tracker = WriteOutcomeTracker::currentRaw();
-    const auto tracked_write = getClickHouseTrackedWrite(request);
-    if (tracked_write && (!tracker || tracker->getId() != *tracked_write))
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "An attempt of a tracked write to {} is sent on a thread without its tracker",
-            request.GetUri().GetURIString());
-
-    /// Only the answers to all attempts of a write with a precondition can prove its outcome.
+    /// The client decides a failed write from the answers to all its attempts, which it records on the thread of the
+    /// call. A conditional attempt sent elsewhere would lose its answer, and the write could be taken for not applied.
     const bool is_write = request.GetMethod() == Aws::Http::HttpMethod::HTTP_PUT || request.GetMethod() == Aws::Http::HttpMethod::HTTP_POST;
-    if (is_write && (request.HasHeader("if-none-match") || request.HasHeader("if-match")) && !tracked_write)
+    if (is_write && (request.HasHeader("if-none-match") || request.HasHeader("if-match")) && !S3::isRecordingWriteAttempts())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "An attempt of a conditional write to {} does not track its outcome",
+            "An attempt of a conditional write to {} is sent without the record of its attempts",
             request.GetUri().GetURIString());
 
     try
@@ -510,8 +500,7 @@ void PocoHTTPClient::makeRequestInternal(
     catch (...)
     {
         /// The body may have been sent before the exception, so the attempt may have been applied.
-        if (tracked_write)
-            tracker->markMayHaveBeenApplied();
+        S3::recordWriteAttemptMayHaveBeenApplied();
         throw;
     }
 }

@@ -165,26 +165,67 @@ bool attemptMayHaveBeenApplied(Aws::Http::HttpResponseCode code, const Aws::Stri
 namespace
 {
 
-/// Records a failed attempt of the write that the current thread sends, if the write tracks its outcome. The SDK reports
-/// every attempt to the retry strategy on the thread that sends it, but all requests of the client share the strategy,
-/// so the strategy finds the tracker through the thread (`WriteOutcomeTracker::Scope`). Another request of the same
-/// thread inside the scope, e.g. of a credentials provider, is recorded too. That can only make the decision more careful.
-template <typename ErrorType>
-void recordFailedAttempt(const Aws::Client::AWSError<ErrorType> & error)
+/// Records the attempts of the write that the current thread sends. The SDK reports every attempt to the retry strategy
+/// on the thread that sends it, but all requests of the client share the strategy, so it finds the request through the
+/// thread. That works while every attempt runs on the thread of the call, as with the synchronous calls of the SDK.
+/// Another request of the same thread inside the scope, e.g. of a credentials provider, is recorded too. That can only
+/// make the decision more careful.
+class WriteAttemptsRecord
 {
-    auto * tracker = WriteOutcomeTracker::currentRaw();
-    if (tracker && attemptMayHaveBeenApplied(error.GetResponseCode(), error.GetExceptionName()))
-        tracker->markMayHaveBeenApplied();
+public:
+    explicit WriteAttemptsRecord(RequestWithIdempotencyId & request_)
+        : request(request_)
+        , previous(current)
+    {
+        current = this;
+    }
+
+    ~WriteAttemptsRecord() { current = previous; }
+
+    WriteAttemptsRecord(const WriteAttemptsRecord &) = delete;
+    WriteAttemptsRecord & operator=(const WriteAttemptsRecord &) = delete;
+
+    static bool isActive() { return current != nullptr; }
+
+    static void markMayHaveBeenApplied()
+    {
+        if (current)
+            current->request.markMayHaveBeenApplied();
+    }
+
+    template <typename ErrorType>
+    static void recordFailedAttempt(const Aws::Client::AWSError<ErrorType> & error)
+    {
+        if (attemptMayHaveBeenApplied(error.GetResponseCode(), error.GetExceptionName()))
+            markMayHaveBeenApplied();
+    }
+
+private:
+    RequestWithIdempotencyId & request;
+    WriteAttemptsRecord * const previous;
+    static thread_local WriteAttemptsRecord * current;
+};
+
+thread_local WriteAttemptsRecord * WriteAttemptsRecord::current = nullptr;
+
+/// Each call decides anew, and the attempts of earlier calls with the request stay in its history. At an exit without
+/// an outcome, e.g. by an exception, the outcome is unknown after an attempt that may have been applied.
+void decideAtExit(RequestWithIdempotencyId & request)
+{
+    if (!request.getOutcome())
+        request.setOutcome(request.mayHaveBeenApplied() ? WriteOutcome::Unknown : WriteOutcome::NotApplied);
 }
 
-/// Only the answers to all attempts of a write with a precondition can prove its outcome.
-template <typename RequestType>
-void checkConditionalWriteIsTracked(const RequestType & request)
-{
-    if (isConditionalWrite(request) && !request.getOutcomeTracker())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The conditional write of {} does not track its outcome", request.GetKey());
 }
 
+bool isRecordingWriteAttempts()
+{
+    return WriteAttemptsRecord::isActive();
+}
+
+void recordWriteAttemptMayHaveBeenApplied()
+{
+    WriteAttemptsRecord::markMayHaveBeenApplied();
 }
 
 Client::RetryStrategy::RetryStrategy(const PocoHTTPClientConfiguration::RetryStrategy & config_)
@@ -254,7 +295,7 @@ void Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOu
     if (!httpResponseOutcome.IsSuccess())
     {
         const auto & error = httpResponseOutcome.GetError();
-        recordFailedAttempt(error);
+        WriteAttemptsRecord::recordFailedAttempt(error);
         if (error.ShouldRetry())
             LOG_TRACE(
                 log,
@@ -699,22 +740,16 @@ Client::ObjectWriter Client::findObjectWriter(
 template <typename RequestType, typename OutcomeType>
 bool Client::resolveFailedWrite(RequestType & request, const OutcomeType & outcome, bool warn_if_unproven) const
 {
-    const auto & tracker = request.getOutcomeTracker();
-    const auto set_outcome = [&](WriteOutcome value)
-    {
-        if (tracker)
-            tracker->setOutcome(value);
-    };
-    /// Only a tracked write knows its attempts.
-    const bool may_have_been_applied = tracker && tracker->mayHaveBeenApplied();
+    const bool may_have_been_applied = request.mayHaveBeenApplied();
 
     const auto & error = outcome.GetError();
     /// A replay of a landed write fails its own precondition, and a replayed completion finds its upload id consumed.
     const bool may_be_replay
         = error.GetExceptionName() == "PreconditionFailed" || error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD;
-    if (!may_be_replay && !may_have_been_applied)
+    /// After another answer only a conditional write asks for the id, so that an unconditional write costs no request.
+    if (!may_be_replay && !(may_have_been_applied && isConditionalWrite(request)))
     {
-        set_outcome(WriteOutcome::NotApplied);
+        request.setOutcome(may_have_been_applied ? WriteOutcome::Unknown : WriteOutcome::NotApplied);
         return false;
     }
 
@@ -727,7 +762,7 @@ bool Client::resolveFailedWrite(RequestType & request, const OutcomeType & outco
             /// applied later. Without it a later write can replace the object of this one.
             if (request.IfNoneMatchHasBeenSet())
             {
-                set_outcome(WriteOutcome::NotApplied);
+                request.setOutcome(WriteOutcome::NotApplied);
                 return false;
             }
             break;
@@ -736,22 +771,17 @@ bool Client::resolveFailedWrite(RequestType & request, const OutcomeType & outco
     }
 
     /// Without an attempt that may have been applied, nothing of this write can be at the key.
-    set_outcome(may_have_been_applied ? WriteOutcome::Unknown : WriteOutcome::NotApplied);
+    request.setOutcome(may_have_been_applied ? WriteOutcome::Unknown : WriteOutcome::NotApplied);
     return false;
 }
 
 Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const
 {
-    checkConditionalWriteIsTracked(request);
-    const auto & tracker = request.getOutcomeTracker();
-    WriteOutcomeTracker::ExitGuard outcome_guard(tracker);
-    if (tracker)
-        setClickHouseTrackedWrite(request, tracker->getId());
+    request.setOutcome(std::nullopt);
+    SCOPE_EXIT(decideAtExit(request));
     auto outcome = [&]
     {
-        std::optional<WriteOutcomeTracker::Scope> attempts;
-        if (tracker)
-            attempts.emplace(tracker);
+        WriteAttemptsRecord attempts(request);
 
         return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
             request, [this](Model::CompleteMultipartUploadRequest & req) { return CompleteMultipartUpload(req); });
@@ -778,7 +808,7 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
     }
 
     if (outcome.IsSuccess())
-        outcome_guard.set(WriteOutcome::Applied);
+        request.setOutcome(WriteOutcome::Applied);
 
     if (outcome.IsSuccess() && provider_type == ProviderType::GCS && client_settings.gcs_issue_compose_request)
     {
@@ -813,16 +843,11 @@ Model::CopyObjectOutcome Client::CopyObject(CopyObjectRequest & request) const
 
 Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
 {
-    checkConditionalWriteIsTracked(request);
-    const auto & tracker = request.getOutcomeTracker();
-    WriteOutcomeTracker::ExitGuard outcome_guard(tracker);
-    if (tracker)
-        setClickHouseTrackedWrite(request, tracker->getId());
+    request.setOutcome(std::nullopt);
+    SCOPE_EXIT(decideAtExit(request));
     auto outcome = [&]
     {
-        std::optional<WriteOutcomeTracker::Scope> attempts;
-        if (tracker)
-            attempts.emplace(tracker);
+        WriteAttemptsRecord attempts(request);
 
         return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
             request,
@@ -845,7 +870,7 @@ Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
     }
 
     if (outcome.IsSuccess())
-        outcome_guard.set(WriteOutcome::Applied);
+        request.setOutcome(WriteOutcome::Applied);
     return outcome;
 }
 
@@ -1090,7 +1115,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 /*name*/ "",
                 /*message*/ fmt::format("All {} retry attempts failed. Last exception: {}", max_attempts, getCurrentExceptionMessage(false)),
                 /*retryable*/ true);
-            recordFailedAttempt(outcome.GetError());
+            WriteAttemptsRecord::recordFailedAttempt(outcome.GetError());
 
             // network exceptions are always retryable, we could just return true here
             // but we have to check cancellation points for query, ShouldRetry method does it already
@@ -1129,7 +1154,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                     break;
 
                 /// The SDK reported its attempts already. A client without the SDK loop (e.g. in tests) reports here.
-                recordFailedAttempt(outcome.GetError());
+                WriteAttemptsRecord::recordFailedAttempt(outcome.GetError());
 
                 // do not increment S3ReadRequestsErrors/S3WriteRequestsErrors here, it has been accounted in IO/S3/PocoHTTPClient.cpp
 

@@ -252,20 +252,26 @@ static constexpr size_t IDEMPOTENCY_ID_LENGTH = 22;
 /// The id the writer stamped in the object's metadata. Set it and the client accepts a failure whose
 /// object carries it. Left empty, the client asks nothing.
 ///
-/// A write that tracks its outcome also carries the tracker. The retry loops of the writer send the request
-/// again, so the tracker covers all calls with it.
+/// The request of a write that publishes an object also keeps what the attempts of the write told, and the outcome
+/// of its last call. The retry loops of the writer send the request again, so the history covers all calls with it.
 class RequestWithIdempotencyId
 {
 public:
     void setIdempotencyId(Aws::String value) { idempotency_id = std::move(value); }
     [[nodiscard]] const Aws::String & getIdempotencyId() const { return idempotency_id; }
 
-    void setOutcomeTracker(std::shared_ptr<WriteOutcomeTracker> value) { outcome_tracker = std::move(value); }
-    [[nodiscard]] const std::shared_ptr<WriteOutcomeTracker> & getOutcomeTracker() const { return outcome_tracker; }
+    /// An attempt got no answer that proves that it was not applied.
+    void markMayHaveBeenApplied() { may_have_been_applied = true; }
+    [[nodiscard]] bool mayHaveBeenApplied() const { return may_have_been_applied; }
+
+    /// Set by the client at the end of each call, also on an exception.
+    void setOutcome(std::optional<WriteOutcome> value) { outcome = value; }
+    [[nodiscard]] std::optional<WriteOutcome> getOutcome() const { return outcome; }
 
 private:
     Aws::String idempotency_id;
-    std::shared_ptr<WriteOutcomeTracker> outcome_tracker;
+    bool may_have_been_applied = false;
+    std::optional<WriteOutcome> outcome;
 };
 
 class PutObjectRequest : public ExtendedRequest<Model::PutObjectRequest>, public RequestWithIdempotencyId

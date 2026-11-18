@@ -21,6 +21,7 @@
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/HTTPConnectionInfo.h>
+#include <base/scope_guard.h>
 #include <Common/WriteOutcomeTracker.h>
 
 #include <utility>
@@ -89,6 +90,13 @@ struct WriteBufferFromS3::PartData
         return data_size == 0;
     }
 };
+
+/// Tells the tracker of the caller what the client decided about the request that publishes the object.
+static void reportOutcome(const WriteSettings & write_settings, const S3::RequestWithIdempotencyId & request)
+{
+    if (const auto & tracker = write_settings.write_outcome_tracker; tracker && request.getOutcome())
+        tracker->setOutcome(*request.getOutcome());
+}
 
 static BufferAllocationPolicyPtr createBufferAllocationPolicy(const S3::S3RequestSettings & settings)
 {
@@ -684,7 +692,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
     req.SetKey(key);
     req.SetUploadId(multipart_upload_id);
     req.setIdempotencyId(idempotency_id);
-    req.setOutcomeTracker(write_settings.write_outcome_tracker);
+    SCOPE_EXIT(reportOutcome(write_settings, req));
 
     /// GCS evaluates no precondition on a multipart upload: it ignores `If-None-Match`
     /// and rejects its `x-goog-if-generation-match` translation.
@@ -772,7 +780,6 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     req.SetBody(data.createAwsBuffer());
     req.SetMetadata(metadataWithIdempotencyId());
     req.setIdempotencyId(idempotency_id);
-    req.setOutcomeTracker(write_settings.write_outcome_tracker);
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(S3::getStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 
@@ -814,6 +821,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
 
         auto & request = std::get<0>(*worker_data);
         size_t content_length = request.GetContentLength();
+        SCOPE_EXIT(reportOutcome(write_settings, request));
 
         size_t max_retry = std::max<UInt64>(request_settings[S3RequestSetting::max_unexpected_write_error_retries].value, 1UL);
         for (size_t i = 0; i < max_retry; ++i)

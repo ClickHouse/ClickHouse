@@ -101,6 +101,12 @@ bool isS3ExpressEndpoint(const std::string & endpoint);
 /// applied proves that it was not. Any other answer, or no answer, proves nothing.
 bool attemptMayHaveBeenApplied(Aws::Http::HttpResponseCode code, const Aws::String & exception_name);
 
+/// Whether the current thread records the attempts of a write that publishes an object (`Client::PutObject`,
+/// `Client::CompleteMultipartUpload`). `PocoHTTPClient` refuses a conditional attempt on a thread without the record.
+bool isRecordingWriteAttempts();
+/// Records that an attempt of the write of the current thread may have been applied, e.g. after an exception inside it.
+void recordWriteAttemptMayHaveBeenApplied();
+
 struct ClientSettings
 {
     bool use_virtual_addressing = false;
