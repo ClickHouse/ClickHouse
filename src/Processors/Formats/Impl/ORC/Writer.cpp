@@ -189,7 +189,7 @@ public:
         stripe_statistics.reset();
     }
 
-    virtual size_t estimateSize() const
+    [[nodiscard]] virtual size_t estimateSize() const
     {
         return present_stream.estimateSize();
     }
@@ -379,7 +379,7 @@ public:
             child->mergeStripeStatsIntoFileStats();
     }
 
-    size_t estimateSize() const override
+    [[nodiscard]] size_t estimateSize() const override
     {
         size_t size = ColumnWriter::estimateSize() + estimateOwnSize();
         for (const auto & child : children)
@@ -400,7 +400,7 @@ protected:
     {
         encodings.push_back({Proto::ColumnEncodingKind::DIRECT, 0, {}});
     }
-    virtual size_t estimateOwnSize() const { return 0; }
+    [[nodiscard]] virtual size_t estimateOwnSize() const { return 0; }
 
     VectorWithMemoryTracking<std::unique_ptr<ColumnWriter>> children;
 };
@@ -522,7 +522,7 @@ protected:
         encodings.push_back({Proto::ColumnEncodingKind::DIRECT_V2, 0, {}});
     }
 
-    size_t estimateOwnSize() const override { return length_stream.estimateSize(); }
+    [[nodiscard]] size_t estimateOwnSize() const override { return length_stream.estimateSize(); }
 
 private:
     OutputByteStream length_stream;
@@ -608,7 +608,7 @@ protected:
         streams.push_back({Proto::StreamKind::DATA, static_cast<UInt32>(column_id), tag_stream.getOutput()});
     }
 
-    size_t estimateOwnSize() const override { return tag_stream.estimateSize(); }
+    [[nodiscard]] size_t estimateOwnSize() const override { return tag_stream.estimateSize(); }
 
 private:
     OutputByteStream tag_stream;
@@ -665,7 +665,7 @@ public:
         streams.push_back({Proto::StreamKind::DATA, static_cast<UInt32>(column_id), data_stream.getOutput()});
     }
 
-    size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
+    [[nodiscard]] size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
 
 protected:
     void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override { encoder.recordPosition(positions); }
@@ -710,7 +710,7 @@ public:
         streams.push_back({Proto::StreamKind::DATA, static_cast<UInt32>(column_id), data_stream.getOutput()});
     }
 
-    size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
+    [[nodiscard]] size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
 
 protected:
     void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override { encoder.recordPosition(positions); }
@@ -769,7 +769,7 @@ public:
         streams.push_back({Proto::StreamKind::DATA, static_cast<UInt32>(column_id), data_stream.getOutput()});
     }
 
-    size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
+    [[nodiscard]] size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
 
 protected:
     void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override { encoder.recordPosition(positions); }
@@ -825,7 +825,7 @@ public:
         streams.push_back({Proto::StreamKind::DATA, static_cast<UInt32>(column_id), data_stream.getOutput()});
     }
 
-    size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
+    [[nodiscard]] size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
 
 protected:
     void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override { data_stream.recordPosition(positions); }
@@ -939,7 +939,7 @@ public:
         }
     }
 
-    size_t estimateSize() const override
+    [[nodiscard]] size_t estimateSize() const override
     {
         return ColumnWriter::estimateSize() + blob.size() + value_ends.size() * sizeof(UInt64);
     }
@@ -963,7 +963,7 @@ protected:
     }
 
 private:
-    std::string_view getValue(size_t i) const
+    [[nodiscard]] std::string_view getValue(size_t i) const
     {
         size_t begin = i ? value_ends[i - 1] : 0;
         return std::string_view(blob.data() + begin, value_ends[i] - begin);
@@ -1142,7 +1142,7 @@ public:
         streams.push_back({Proto::StreamKind::SECONDARY, static_cast<UInt32>(column_id), nanos_stream.getOutput()});
     }
 
-    size_t estimateSize() const override
+    [[nodiscard]] size_t estimateSize() const override
     {
         return ColumnWriter::estimateSize() + seconds_stream.estimateSize() + nanos_stream.estimateSize();
     }
@@ -1249,7 +1249,7 @@ public:
         streams.push_back({Proto::StreamKind::SECONDARY, static_cast<UInt32>(column_id), scale_stream.getOutput()});
     }
 
-    size_t estimateSize() const override
+    [[nodiscard]] size_t estimateSize() const override
     {
         return ColumnWriter::estimateSize() + value_stream.estimateSize() + scale_stream.estimateSize();
     }
