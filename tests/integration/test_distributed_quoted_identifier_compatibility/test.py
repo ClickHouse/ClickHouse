@@ -21,9 +21,9 @@ legacy = cluster.add_instance(
     with_installed_binary=True,
 )
 
-# One column per spelling that writeProbablyQuotedStringImpl quotes: a dot, the six words it treats
-# as keywords, a non-word character and a leading digit. `group`/`order`/`where`/`join`/`union` are
-# NOT quoted and serve as controls.
+# One column per spelling that writeProbablyQuotedStringImpl quotes: a dot, six of the words it
+# quotes as keywords, a non-word character and a leading digit. `group`/`order`/`where`/`join`/
+# `union` are NOT quoted and serve as controls.
 COLUMNS = [
     "a.b",
     "null",
@@ -236,7 +236,7 @@ def test_stage_after_aggregation(start_cluster, initiator):
 
 
 def test_same_version_is_unaffected(start_cluster):
-    # Every arm above, run without crossing the boundary. A same-version peer must keep taking the
+    # Every case above, run without crossing the boundary. A same-version peer must keep taking the
     # existing exact-name path. `prefer_localhost_replica = 0` is what makes this a real TCP hop:
     # with the default the initiator serves both shards as local plans, so no packet is exchanged
     # and nothing about the transported header would be exercised.
@@ -279,13 +279,13 @@ def test_colliding_legacy_spelling_is_refused(start_cluster, initiator):
 
 def test_file_cluster_over_version_boundary(start_cluster):
     # `IStorageCluster` computes a current-format header and then receives intermediate blocks from
-    # its workers, so it breaks the same way as `remote()`. One arm exercises the shared
+    # its workers, so it breaks the same way as `remote()`. One case exercises the shared
     # read/ReadFromCluster seam that serves StorageFileCluster, StorageURLCluster and
     # StorageObjectStorageCluster; it does not prove each subclass separately.
     #
     # The worker set is a single legacy node, so the one read task cannot be served without
     # crossing the boundary. Over `mixed_versions` the current worker may take the task alone and
-    # the arm would then pass with the legacy path never entered.
+    # the case would then pass with the legacy path never entered.
     #
     # The initiator resolves the path and sends it, so the file is written on both nodes even
     # though only the legacy worker reads it.

@@ -57,9 +57,9 @@ public:
 
     void addAmbiguous(const String & current_name);
 
-    Lookup getLegacyName(const String & current_name) const;
+    [[nodiscard]] Lookup getLegacyName(const String & current_name) const;
 
-    bool hasNoCandidates() const { return current_to_legacy.empty(); }
+    [[nodiscard]] bool hasNoCandidates() const { return current_to_legacy.empty(); }
 
 private:
     /// A name mapped to itself is Unchanged; an empty optional is Ambiguous.
@@ -124,7 +124,7 @@ public:
     size_t nextUniqueId() { return next_unique_id++; }
 
     LegacyActionNodeNames & getLegacyActionNodeNames() noexcept { return legacy_action_node_names; }
-    const LegacyActionNodeNames & getLegacyActionNodeNames() const noexcept { return legacy_action_node_names; }
+    [[nodiscard]] const LegacyActionNodeNames & getLegacyActionNodeNames() const noexcept { return legacy_action_node_names; }
 
 private:
     std::unordered_set<ColumnIdentifier> column_identifiers;

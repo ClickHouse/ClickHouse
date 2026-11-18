@@ -19,7 +19,7 @@ struct LegacyHeaderNames
     /// Entries with no single legacy spelling. A caller must refuse them, never pass them unchanged.
     NameSet ambiguous;
 
-    bool empty() const { return current_to_legacy.empty() && ambiguous.empty(); }
+    [[nodiscard]] bool empty() const { return current_to_legacy.empty() && ambiguous.empty(); }
 };
 
 }
