@@ -551,6 +551,18 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     if (settings[Setting::make_distributed_plan])
         set_settings.disableSpilling();
 
+    /// Reuse a set already in the shared cache. `CreatingSetsTransform` sees it only after the subquery's first block.
+    if (auto prepared_sets_cache = context->getPreparedSetsCache();
+        prepared_sets_cache && !set_and_key->external_table && !settings[Setting::make_distributed_plan])
+    {
+        if (auto built_set = prepared_sets_cache->findBuilt(set_and_key->key); built_set && built_set->hasExplicitSetElements())
+        {
+            LOG_TRACE(getLogger("FutureSetFromSubquery"), "Using the ordered set built for another subquery, key: {}", set_and_key->key);
+            set_and_key->set = std::move(built_set);
+            return set_and_key->set;
+        }
+    }
+
     /// This is a *speculative* build, run during primary key / skip index analysis so that index
     /// analysis can use the set. Prefer a build that does not destroy the canonical `source` plan: if
     /// the in-place pipeline stops without creating the set (e.g. a subquery timeout with
@@ -899,9 +911,14 @@ std::variant<std::promise<SetPtr>, SharedSet> PreparedSetsCache::findOrPromiseTo
     auto it = cache.find(key);
     if (it != cache.end() && it->second.future.valid())
     {
-        /// If the set is still being built, return its future so the caller can wait for it.
+        /// If the set is still being built, return its future so the caller can wait for it,
+        /// or a promise to build it once more, which leaves the entry to the task building it.
         if (it->second.future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+        {
+            if (!wait_for_sets_being_built)
+                return std::promise<SetPtr>{};
             return it->second.future;
+        }
 
         /// The build has finished. Reuse it only if it produced a set: a null set (an abandoned build)
         /// and a stored exception are both dropped below, handing this caller a fresh promise.
@@ -921,6 +938,25 @@ std::variant<std::promise<SetPtr>, SharedSet> PreparedSetsCache::findOrPromiseTo
     Entry & entry = cache[key];
     entry.future = promise_to_fill_set.get_future();
     return promise_to_fill_set;
+}
+
+SetPtr PreparedSetsCache::findBuilt(const String & key)
+{
+    std::lock_guard lock(cache_mutex);
+
+    auto it = cache.find(key);
+    if (it == cache.end() || !it->second.future.valid()
+        || it->second.future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+        return nullptr;
+
+    try
+    {
+        return it->second.future.get();
+    }
+    catch (...) // Ok: a failed build is not reusable, the caller builds its own set
+    {
+        return nullptr;
+    }
 }
 
 };
