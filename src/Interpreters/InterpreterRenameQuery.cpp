@@ -13,6 +13,9 @@
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 
+#include <set>
+#include <vector>
+
 
 namespace DB
 {
@@ -26,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int UNFINISHED;
 }
 
 InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_)
@@ -73,6 +77,33 @@ BlockIO InterpreterRenameQuery::execute()
     }
 
     auto & database_catalog = DatabaseCatalog::instance();
+
+    /// A RENAME or EXCHANGE between two databases moves a table out of its database. DROP DATABASE holds
+    /// this lock exclusively while it prepares its tables for shutdown and drops them, so refuse such a
+    /// move while a drop runs (and make the drop wait for moves in progress). Otherwise the drop could
+    /// shut down a table that has already moved to another database and survives there, read-only.
+    /// A rename inside one database does not remove tables from it, so it is not affected.
+    std::vector<std::shared_lock<SharedMutex>> drop_database_locks;
+    if (!rename.database)
+    {
+        std::set<String> databases_losing_tables;
+        for (const auto & description : descriptions)
+        {
+            if (description.from_database_name != description.to_database_name)
+            {
+                databases_losing_tables.insert(description.from_database_name);
+                databases_losing_tables.insert(description.to_database_name);
+            }
+        }
+
+        for (const auto & database_name : databases_losing_tables)
+        {
+            auto lock = database_catalog.tryGetLockForRestartReplica(database_name);
+            if (!lock)
+                throw Exception(ErrorCodes::UNFINISHED, "Cannot move tables between databases: database {} is being dropped", backQuoteIfNeed(database_name));
+            drop_database_locks.push_back(std::move(*lock));
+        }
+    }
 
     /// Must do it in consistent order.
     for (auto & table_guard : table_guards)
@@ -146,7 +177,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             UniqueTableName to(elem.to_database_name, elem.to_table_name);
             ddl_guards[from]->releaseTableLock();
             ddl_guards[to]->releaseTableLock();
-            return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(ddl_guards[from]));
+            return database->tryEnqueueReplicatedDDL(query_ptr->clone(), getContext(), {}, std::move(ddl_guards[from]));
         }
 
         StorageID from_table_id{elem.from_database_name, elem.from_table_name};
