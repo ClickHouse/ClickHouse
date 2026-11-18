@@ -39,6 +39,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageDummy.h>
@@ -760,6 +761,10 @@ static VectorWithMemoryTracking<StatisticsAggregate> getStatisticsAggregates(
                 column = columns.tryGet(null_map->result_name.substr(0, null_map->result_name.size() - null_map_suffix.size()));
                 if (!column || !column->type->isNullable())
                     return {};
+                /// The type reserves the name: a tuple element cannot be named `null` (see `DataTypeTuple`), and no
+                /// other type with named subcolumns can be inside `Nullable`.
+                chassert(column->type->tryGetSubcolumnInfo("null")
+                    && SerializationNullable::isNullMapSubcolumn(column->type->tryGetSubcolumnInfo("null")->substreams_path));
                 kind = StatisticsAggregate::Kind::Count;
                 counts_null_map = true;
             }
