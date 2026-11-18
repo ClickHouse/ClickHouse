@@ -701,6 +701,10 @@ This setting can be modified at runtime and will take effect immediately.
 <Note>
 This setting can be modified at runtime and will take effect immediately.
 </Note>
+
+<Note>
+In ClickHouse Cloud, the maximum cache size depends on the pod size. The exact size can be checked in `system.server_settings`. As server settings cannot be changed from SQL or the console, contact support to configure a bigger size.
+</Note>
 )", 0) \
     DECLARE(UInt64, vector_similarity_index_cache_max_entries, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_ENTRIES, "Size of cache for vector similarity index in entries. Zero means disabled.", 0) \
     DECLARE(Double, vector_similarity_index_cache_size_ratio, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the vector similarity index cache relative to the cache's total size.", 0) \
