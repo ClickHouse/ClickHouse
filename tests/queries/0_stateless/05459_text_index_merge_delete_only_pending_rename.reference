@@ -1,0 +1,25 @@
+1
+1
+renamed shadowing columns
+1000	7000
+1000	0
+500
+500
+500
+500
+renamed shadowing columns: text indexes rebuilt
+t_renamed_index	0	1
+t_renamed_offset	0	1
+pending drop and re-add
+['fresh']
+['fresh','fresh']
+['fresh','fresh']
+0	1	0	1
+pending redefinition
+['upper']
+2
+2
+17	-17
+17	-17
+t_pending_index_redefine	0	1	0	0
+t_pending_projection_redefine	0	0	0	1

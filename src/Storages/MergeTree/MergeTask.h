@@ -205,6 +205,18 @@ private:
         virtual ~IStage() = default;
     };
 
+    /// How the merge may reduce the number of rows.
+    enum class RowsReduction : uint8_t
+    {
+        /// The merge keeps all source rows.
+        None,
+        /// The merge may drop source rows, but never changes values of the surviving rows or their relative order within one part.
+        /// Text indexes and projections with `_parent_part_offset` can be merged, with `MergedPartOffsets` recording the dropped rows.
+        OnlyDrops,
+        /// The merge may drop, aggregate or rewrite rows.
+        Any,
+    };
+
     /// By default this context is uninitialized, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
@@ -314,8 +326,8 @@ private:
 
         UInt64 prev_elapsed_ms{0};
 
-        /// Current merge may or may not reduce number of rows. It's not known until the horizontal stage is finished.
-        bool merge_may_reduce_rows{false};
+        /// Whether the merge actually reduces rows is not known until the horizontal stage is finished.
+        RowsReduction rows_reduction{RowsReduction::None};
 
         /// Text indexes are rebuilt for the resulting part instead of being merged.
         bool rebuild_text_indexes{false};
@@ -643,6 +655,8 @@ private:
     static void addMergingColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
     static bool hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part);
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
+    static RowsReduction getRowsReduction(const GlobalRuntimeContext & global_ctx, const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx, bool has_due_ttl);
+    static bool needRebuildTextIndexes(const GlobalRuntimeContext & global_ctx);
     static bool canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx);
     static MergeCheckpointIdentity makeMergeCheckpointIdentity(const GlobalRuntimeContext & global_ctx);
     static bool isVerticalTTLDelete(const GlobalRuntimeContext & global_ctx, const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx);
