@@ -85,9 +85,32 @@ GROUP BY
 └─────────────┴──────────┴─────────┘
 ```
 
-<div id="important-note">
-  ### Buena práctica
-</div>
+### Orden de las filas {#row-order}
+
+Para cada fila de origen, `arrayJoin` devuelve los elementos en el mismo orden en que aparecen en el array.
+
+Si una consulta contiene más de una llamada a `arrayJoin` con argumentos distintos, el resultado incluye una fila por cada combinación de los elementos. El orden de estas filas no está garantizado, ya que depende del plan de consulta. Por ejemplo, si la cláusula `WHERE` utiliza una de las llamadas, la consulta puede expandir esa llamada en primer lugar. Para obtener un orden predecible, utilice `ORDER BY`:
+
+```sql title="Query"
+SELECT arrayJoin(['a', 'b']) AS x, arrayJoin([1, 2]) AS y
+WHERE y > 0
+ORDER BY x, y
+```
+
+```text title="Response"
+┌─x─┬─y─┐
+│ a │ 1 │
+│ a │ 2 │
+│ b │ 1 │
+│ b │ 2 │
+└───┴───┘
+```
+
+Sin `ORDER BY`, esta consulta puede devolver las filas en el orden `('a', 1)`, `('b', 1)`, `('a', 2)`, `('b', 2)`.
+
+Sin `ORDER BY`, no se garantiza el orden de las filas de origen. Para obtener un orden estable y para paginar con `LIMIT` y `OFFSET`, consulte la sección &quot;Orden de filas y paginación&quot; de la cláusula [`ARRAY JOIN`](/es/reference/statements/select/array-join). Las reglas de `ORDER BY` descritas en esa sección también se aplican a `arrayJoin`.
+
+### Buena práctica {#important-note}
 
 Usar varios `arrayJoin` con la misma expresión puede no producir los resultados esperados debido a la eliminación de subexpresiones comunes.
 En esos casos, considere modificar las expresiones de array que se repiten con operaciones adicionales que no afecten al resultado del JOIN. Por ejemplo, `arrayJoin(arraySort(arr))`, `arrayJoin(arrayConcat(arr, []))`

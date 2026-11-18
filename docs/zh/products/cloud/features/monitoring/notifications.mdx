@@ -7,8 +7,6 @@ sidebarTitle: '通知'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickHouse Cloud 会发送与您的 service 或组织相关的关键事件通知。要了解通知的发送方式和配置方式，需要先了解以下几个概念：
 
 1. **通知类别**：指一类通知，例如 计费通知、与 service 相关的通知等。每个类别下都包含多种通知，并且可以分别配置其传递方式。
@@ -21,9 +19,25 @@ ClickHouse Cloud 会发送与您的 service 或组织相关的关键事件通知
 
 可通过多种渠道接收通知。ClickHouse Cloud 支持通过电子邮件、ClickHouse Cloud UI 和 Slack 接收通知。您可以点击左上角菜单中的铃铛图标查看当前通知，这会打开一个弹出面板。点击弹出面板底部的 **View All** 按钮，即可进入显示所有通知活动日志的页面。
 
-<Image img="/images/cloud/manage/notifications-1.webp" size="md" alt="ClickHouse Cloud 通知弹出面板" border />
+<div className="ch-image-md">
 
-<Image img="/images/cloud/manage/notifications-2.webp" size="md" alt="ClickHouse Cloud 通知活动日志" border />
+<Frame>
+
+![ClickHouse Cloud 通知弹出面板](/images/cloud/manage/notifications-1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud 通知活动日志](/images/cloud/manage/notifications-2.webp)
+
+</Frame>
+
+</div>
 
 <div id="customizing-notifications">
   ## 自定义通知
@@ -35,9 +49,25 @@ ClickHouse Cloud 会发送与您的 service 或组织相关的关键事件通知
 
 要为特定通知配置投递方式，请点击铅笔图标以修改通知投递渠道。
 
-<Image img="/images/cloud/manage/notifications-3.webp" size="md" alt="ClickHouse Cloud 通知设置界面" border />
+<div className="ch-image-md">
 
-<Image img="/images/cloud/manage/notifications-4.webp" size="md" alt="ClickHouse Cloud 通知投递设置" border />
+<Frame>
+
+![ClickHouse Cloud 通知设置界面](/images/cloud/manage/notifications-3.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud 通知投递设置](/images/cloud/manage/notifications-4.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   某些**必需**通知 (例如 **Payment failed**) 无法配置。

@@ -19,7 +19,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
 }
@@ -232,44 +231,38 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<EncodeToBinaryRepresentation>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        WhichDataType which(arguments[0]);
-
-        if (!which.isStringOrFixedString() &&
-            !which.isDate() &&
-            !which.isDateTime() &&
-            !which.isDateTime64() &&
-            !which.isUInt() &&
-            !which.isInt() &&
-            !which.isFloat() &&
-            !which.isDecimal() &&
-            !which.isUUID() &&
-            !which.isIPv4() &&
-            !which.isIPv6() &&
-            !which.isAggregateFunction())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[0]->getName(), getName());
-
-        return std::make_shared<DataTypeString>();
+        /// Mirrors the set of types the legacy `getReturnTypeImpl` accepted on
+        /// master. Date / DateTime / DateTime64 are not handled explicitly in
+        /// `executeImpl`, but their columns are dispatched through
+        /// `tryExecuteUIntOrInt` (Date = `ColumnVector<UInt16>`, DateTime =
+        /// `ColumnVector<UInt32>`) and `tryExecuteDecimal` (DateTime64).
+        return "(Number) -> String"
+               " OR (StringOrFixedString) -> String"
+               " OR (DateOrDateTime) -> String"
+               " OR (UUID) -> String"
+               " OR (IPv4) -> String"
+               " OR (IPv6) -> String"
+               " OR (AggregateFunction) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const IColumn * column = arguments[0].column.get();
         ColumnPtr res_column;
@@ -641,33 +634,25 @@ public:
     static constexpr size_t word_size = Impl::word_size;
     static FunctionPtr create(ContextPtr) { return std::make_shared<DecodeFromBinaryRepresentation>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
     /// Not injective: decoding is deliberately tolerant. It is case-insensitive, and an incomplete leading
     /// group is padded, so `unhex('0a')`, `unhex('0A')` and `unhex('a')` all decode to the same byte.
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        WhichDataType which(arguments[0]);
-        if (!which.isStringOrFixedString())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[0]->getName(), getName());
+    [[nodiscard]] String getSignatureString() const override { return "(StringOrFixedString) -> String"; }
 
-        return std::make_shared<DataTypeString>();
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & column = arguments[0].column;
 
@@ -991,6 +976,8 @@ the result is undefined (no exception is thrown).
     factory.registerFunction<DecodeFromBinaryRepresentation<UnhexImpl>>(unhex_documentation, FunctionFactory::Case::Insensitive);
     factory.registerFunction<EncodeToBinaryRepresentation<BinImpl>>(bin_documentation, FunctionFactory::Case::Insensitive);
     factory.registerFunction<DecodeFromBinaryRepresentation<UnbinImpl>>(unbin_documentation, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("to_hex", "hex", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("from_hex", "unhex", FunctionFactory::Case::Insensitive);
 }
 
 }
