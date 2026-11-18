@@ -4,8 +4,6 @@
 
 #include <Common/Exception.h>
 
-#include <base/types.h>
-
 #include <Poco/Exception.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/StreamSocket.h>
@@ -118,6 +116,13 @@ int FiberStreamSocketImpl::waitForSendOrReceive(Poco::Timespan & timeout, int mo
         throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR, "Silk::FiberStreamSocketImpl::waitForSendOrReceive needs SELECT_READ, SELECT_WRITE or both");
 
+    /// A fiber poll can complete after a zero timeout even when the socket is ready.
+    const Poco::Timestamp::TimeDiff timeout_us = timeout.totalMicroseconds();
+    if (timeout_us == 0)
+        return StreamSocketImpl::waitForSendOrReceive(timeout, mode);
+    if (sockfd() == POCO_INVALID_SOCKET)
+        throw Poco::Net::InvalidSocketException();
+
     uint32_t events = 0;
     if (mode & SELECT_READ)
         events |= POLLIN;
@@ -125,52 +130,34 @@ int FiberStreamSocketImpl::waitForSendOrReceive(Poco::Timespan & timeout, int mo
         events |= POLLOUT;
 
     uint64_t triggered = 0;
-    const Poco::Timestamp::TimeDiff timeout_us = timeout.totalMicroseconds();
-    if (timeout_us == 0)
+    silk::FiberScheduler::IoFuture poll_future;
+    silk::FiberScheduler::poll(sockfd(), events, &triggered, &poll_future);
+
+    const Poco::Timestamp started;
+    int r = 0;
+    if (timeout_us > 0)
     {
-        /// A fiber poll can complete after a zero timeout even when the socket is ready.
-        pollfd fd{.fd = sockfd(), .events = static_cast<Int16>(events), .revents = 0};
-        int r = 0;
-        do
+        r = silk::FiberFuture::waitWithTimeout(&poll_future, static_cast<uint64_t>(timeout_us) * 1000);
+        if (r == ETIMEDOUT)
         {
-            r = ::poll(&fd, 1, 0);
-        } while (r < 0 && errno == EINTR);
-        if (r < 0)
-            error(errno, "poll");
-        if (r > 0)
-            triggered = static_cast<uint16_t>(fd.revents);
+            poll_future.cancel();
+            /// The poll can complete between the timeout and the cancel: then its events count.
+            r = poll_future.wait();
+            if (r != 0 || triggered == 0)
+            {
+                timeout = 0;
+                return 0;
+            }
+        }
+        const Poco::Timespan elapsed = Poco::Timestamp() - started;
+        timeout = (elapsed < timeout) ? (timeout - elapsed) : Poco::Timespan(0);
     }
     else
     {
-        silk::FiberScheduler::IoFuture poll_future;
-        silk::FiberScheduler::poll(sockfd(), events, &triggered, &poll_future);
-
-        const Poco::Timestamp started;
-        int r = 0;
-        if (timeout_us > 0)
-        {
-            r = silk::FiberFuture::waitWithTimeout(&poll_future, static_cast<uint64_t>(timeout_us) * 1000);
-            if (r == ETIMEDOUT)
-            {
-                poll_future.cancel();
-                /// The poll can complete between the timeout and the cancel: then its events count.
-                r = poll_future.wait();
-                if (r != 0 || triggered == 0)
-                {
-                    timeout = 0;
-                    return 0;
-                }
-            }
-            const Poco::Timespan elapsed = Poco::Timestamp() - started;
-            timeout = (elapsed < timeout) ? (timeout - elapsed) : Poco::Timespan(0);
-        }
-        else
-        {
-            r = poll_future.wait();
-        }
-        if (r)
-            error(r, "poll");
+        r = poll_future.wait();
     }
+    if (r)
+        error(r, "poll");
 
     if (triggered & POLLNVAL)
         throw Poco::Net::InvalidSocketException();
