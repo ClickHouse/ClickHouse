@@ -34,6 +34,7 @@
 #include <base/scope_guard.h>
 #include <base/unaligned.h>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <algorithm>
 #include <limits>
@@ -451,13 +452,25 @@ FieldDictionaryValues dictionaryValuesFor(const ArrowField & field, const Dictio
 /// layers does not describe this field: no hint.
 DataTypePtr resolveHint(
     const DataTypePtr & parent_hint, const String & path, size_t list_depth,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * types)
+    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * types, bool case_insensitive)
 {
     if (parent_hint)
         return parent_hint;
     if (!types)
         return nullptr;
     auto it = types->find(path);
+    if (it == types->end() && case_insensitive)
+    {
+        /// A path that no requested name spells takes the type of the only requested name that differs from it only by case.
+        for (auto candidate = types->begin(); candidate != types->end(); ++candidate)
+        {
+            if (!boost::iequals(candidate->first, path))
+                continue;
+            if (it != types->end())
+                return nullptr;
+            it = candidate;
+        }
+    }
     if (it == types->end())
         return nullptr;
     DataTypePtr hint = it->second;
@@ -2327,17 +2340,16 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
     for (const ArrowField & field : schema.fields)
     {
         expectNextNodeLength(static_cast<size_t>(batch.length()), fmt::format("column '{}'", field.name));
-        const String normalized_name = normalizedName(field.name);
-        if (keep_top_level_fields && !keep_top_level_fields->contains(normalized_name))
+        if (keep_top_level_fields && !keep_top_level_fields->contains(normalizedName(field.name)))
         {
             /// Skip unrequested values after validating the column's root row count.
             advanceField(field);
             continue;
         }
-        /// `normalized_name` seeds the requested-type lookup in `target_types`.
+        /// The field name seeds the requested-type lookup in `target_types`.
         /// Nested fields derive their hints through `decodeField` and `decodeInner`.
         result.push_back(
-            decodeBatchColumn(field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, /*read_undeclared_nulls=*/true));
+            decodeBatchColumn(field, /*target_hint=*/nullptr, field.name, /*list_depth=*/0, /*read_undeclared_nulls=*/true));
     }
 
     finishBatch();
@@ -2494,8 +2506,7 @@ String RecordBatchDecoder::normalizedName(const String & name) const
 
 String RecordBatchDecoder::childPath(const String & path, const String & child_name) const
 {
-    const String seg = normalizedName(child_name);
-    return path.empty() ? seg : path + "." + seg;
+    return path.empty() ? child_name : path + "." + child_name;
 }
 
 DataTypes RecordBatchDecoder::structFieldHints(const DataTypePtr & hint, const ArrowType & type) const
@@ -2818,7 +2829,7 @@ void RecordBatchDecoder::validateBatchLayout(const flatbuf::RecordBatch & batch,
 
 DataTypePtr RecordBatchDecoder::resolveTargetHint(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const
 {
-    return resolveHint(parent_hint, path, list_depth, target_types);
+    return resolveHint(parent_hint, path, list_depth, target_types, settings.arrow.case_insensitive_column_matching);
 }
 
 UnorderedMapWithMemoryTracking<Int64, DictionaryUses> RecordBatchDecoder::collectDictionaryUses(
@@ -2829,10 +2840,9 @@ UnorderedMapWithMemoryTracking<Int64, DictionaryUses> RecordBatchDecoder::collec
     for (const ArrowField & field : schema.fields)
     {
         /// The same kept-field test and starting position as `decodeBatch`.
-        const String normalized_name = normalizedName(field.name);
-        if (keep_top_level_fields && !keep_top_level_fields->contains(normalized_name))
+        if (keep_top_level_fields && !keep_top_level_fields->contains(normalizedName(field.name)))
             continue;
-        collectDictionaryUses(field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, target_types_, uses);
+        collectDictionaryUses(field, /*target_hint=*/nullptr, field.name, /*list_depth=*/0, target_types_, uses);
     }
     return uses;
 }
@@ -2842,11 +2852,12 @@ void RecordBatchDecoder::collectDictionaryUses(
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * lookup_types,
     UnorderedMapWithMemoryTracking<Int64, DictionaryUses> & uses) const
 {
-    const DataTypePtr effective_hint = resolveHint(target_hint, path, list_depth, lookup_types);
+    const DataTypePtr effective_hint
+        = resolveHint(target_hint, path, list_depth, lookup_types, settings.arrow.case_insensitive_column_matching);
     if (field.dictionary)
     {
-        /// Fields share a position below unions, which drop the path, and when their names differ only in case:
-        /// the latter can resolve different hints, so each needs its own decoding.
+        /// Fields share a position below unions, which drop the path, and can resolve different hints there, so each
+        /// needs its own decoding.
         const DictionaryUse use{FieldPosition{path, list_depth}, effective_hint};
         DictionaryUses & id_uses = uses[field.dictionary->id];
         if (std::ranges::none_of(id_uses, [&](const DictionaryUse & other) { return other.key() == use.key(); }))

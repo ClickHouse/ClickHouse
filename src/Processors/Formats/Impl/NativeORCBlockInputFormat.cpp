@@ -1095,6 +1095,7 @@ traverseDownORCTypeByName(const std::string & target, const ORC::Type * orc_type
             if (fold)
                 boost::to_lower(target_copy);
 
+            std::optional<size_t> match;
             for (size_t i = 0; i < type_->getSubtypeCount(); ++i)
             {
                 auto field_name = type_->getFieldName(i);
@@ -1103,15 +1104,21 @@ traverseDownORCTypeByName(const std::string & target, const ORC::Type * orc_type
 
                 if (startsWith(target_copy, field_name) && (target_copy.size() == field_name.size() || target_copy[field_name.size()] == '.'))
                 {
-                    return {target_copy.size() == field_name.size() ? "" : target_.substr(field_name.size() + 1), type_->getSubtype(i)};
+                    if (!fold)
+                        return {target_copy.size() == field_name.size() ? "" : target_.substr(field_name.size() + 1), type_->getSubtype(i)};
+                    if (match)
+                        DataTypeTuple::throwAmbiguousCaseInsensitiveName(target_, type_->getFieldName(*match), type_->getFieldName(i));
+                    match = i;
                 }
             }
-            return {"", nullptr};
+            if (!match)
+                return {"", nullptr};
+            const size_t length = type_->getFieldName(*match).size();
+            return {target_.size() == length ? "" : target_.substr(length + 1), type_->getSubtype(*match)};
         };
 
         /// A field spelled exactly like the request always wins: a struct may hold several fields
-        /// whose names differ only by case, and case-folding first binds the request to whichever
-        /// of them the file lists first.
+        /// whose names differ only by case.
         auto exact_match = search_pass(/*fold=*/false);
         if (exact_match.second || !ignore_case)
             return exact_match;

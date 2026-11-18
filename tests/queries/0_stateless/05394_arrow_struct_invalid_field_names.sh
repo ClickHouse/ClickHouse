@@ -96,6 +96,8 @@ $CLICKHOUSE_LOCAL -q "
     SELECT s FROM file('$DATA_DIR/shared_out_of_range.arrows', ArrowStream, 's Tuple(Int64, Date32)'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
     SELECT s FROM file('$DATA_DIR/shared_case.arrows', ArrowStream, 's Tuple(A DateTime(''UTC''), a Int32)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1, date_time_overflow_behavior = 'saturate';
     SELECT s FROM file('$DATA_DIR/shared_case.arrows', ArrowStream, 's Tuple(a Int32, A DateTime(''UTC''))') SETTINGS input_format_arrow_case_insensitive_column_matching = 1, date_time_overflow_behavior = 'saturate';
+    SELECT * FROM file('$DATA_DIR/shared_case.arrows', ArrowStream, '\`s.a\` Int32, \`s.A\` DateTime(''UTC'')') SETTINGS input_format_arrow_case_insensitive_column_matching = 1, date_time_overflow_behavior = 'saturate';
+    SELECT * FROM file('$DATA_DIR/shared_case.arrows', ArrowStream, '\`s.A\` DateTime(''UTC''), \`s.a\` Int32') SETTINGS input_format_arrow_case_insensitive_column_matching = 1, date_time_overflow_behavior = 'saturate';
 "
 
 # Case-insensitive matching still applies to named structs nested in such a struct, which is matched by position.

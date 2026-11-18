@@ -188,8 +188,8 @@ public:
 
     /// Decodes requested fields from a record batch, validating every root node's row count. When
     /// `keep_top_level_fields` is set, only the named fields have their values decoded; other fields are
-    /// skipped. Names are normalized according to the reader's case-insensitive matching setting.
-    /// `target_types` maps normalized column names, including dotted subcolumn names, to requested types.
+    /// skipped; their names are normalized according to the reader's case-insensitive matching setting.
+    /// `target_types` maps the requested column names, including dotted subcolumn names, to requested types.
     /// These hints guide numeric `date32` decoding, raw-byte reinterpretation, and struct nullability at
     /// every nesting level, following the same rules as the Apache Arrow library reader.
     /// `reachable_buffers`, when set, is a 0/1 mask (see `reachableTopLevelBuffers`) marking the buffers the
@@ -373,10 +373,10 @@ private:
     void finishBatch();
 
     /// A field name as the reader matches it against the header: lower-cased when column matching is
-    /// case-insensitive. The keys of `keep_top_level_fields` and `target_types` use the same normalization.
+    /// case-insensitive. The keys of `keep_top_level_fields` use the same normalization.
     [[nodiscard]] String normalizedName(const String & name) const;
     /// The dotted name of a struct child for the requested-type lookups (`resolveTargetHint`): the child's
-    /// normalized name appended to its parent's path.
+    /// name appended to its parent's path.
     [[nodiscard]] String childPath(const String & path, const String & child_name) const;
     /// The requested type hints of the fields of a struct and the path of its `i`-th field: by name, or by position (the path
     /// then uses the 1-based element number, as for an unnamed `Tuple`) when the struct has `positional_fields`.
@@ -390,7 +390,7 @@ private:
 
     /// State valid only during a single decode call.
     const flatbuf::RecordBatch * current_batch = nullptr;
-    /// Requested column types by normalized (dotted) name, for the recursive `date32` numeric type hint;
+    /// Requested column types by requested (dotted) name, for the recursive `date32` numeric type hint;
     /// null when the caller did not provide them. Points at the caller's map for the call's duration.
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr;
     /// The buffers to decode from: either views into the message body, or into `decompressed_body`.

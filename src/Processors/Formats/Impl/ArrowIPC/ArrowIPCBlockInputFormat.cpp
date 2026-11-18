@@ -154,11 +154,11 @@ void ArrowIPCBlockInputFormat::prepareReader()
     {
         requested_top_level_fields.insert(normalize(header_column.name));
         requested_top_level_fields.insert(normalize(Nested::extractTableName(header_column.name)));
-        /// Record each requested column's target type by (normalized) name so the decoder can read a
+        /// Record each requested column's target type by name so the decoder can read a
         /// `date32` mapped to a numeric target as the raw day number — recursively for a `date32` nested in
         /// an Array/Tuple/Map, and for one addressed as a subcolumn (e.g. `t.d`). Mirrors the Apache Arrow
         /// library reader's recursive numeric type-hint handling.
-        requested_field_target_types[normalize(header_column.name)] = header_column.type;
+        requested_field_target_types[header_column.name] = header_column.type;
     }
 
     if (stream)
@@ -690,26 +690,36 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
 {
     const Block & header = getPort().getHeader();
 
-    /// Map decoded column name -> index (lower-cased when case-insensitive matching is on).
     const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
     BlockMissingValues * block_missing_values_ptr
         = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
     UnorderedMapWithMemoryTracking<String, size_t> name_to_index;
+    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<size_t>> lowercase_name_to_indices;
     name_to_index.reserve(decoded.size());
     for (size_t i = 0; i < decoded.size(); ++i)
     {
-        String key = decoded[i].name;
+        name_to_index.emplace(decoded[i].name, i);
         if (case_insensitive)
-            boost::to_lower(key);
-        /// With case-insensitive matching, names like `A` and `a` fold to the same key. Keep the last
-        /// occurrence (`insert_or_assign`, not `emplace`) so the native reader selects the same column the
-        /// Apache Arrow library path did for the same schema and setting.
-        name_to_index.insert_or_assign(std::move(key), i);
+            lowercase_name_to_indices[boost::to_lower_copy(decoded[i].name)].push_back(i);
     }
+    /// The decoded column spelled like `name`, else, with case-insensitive matching, the only one that differs from it only by case.
+    auto find_decoded = [&](const String & name) -> std::optional<size_t>
+    {
+        if (auto it = name_to_index.find(name); it != name_to_index.end())
+            return it->second;
+        if (!case_insensitive)
+            return {};
+        auto it = lowercase_name_to_indices.find(boost::to_lower_copy(name));
+        if (it == lowercase_name_to_indices.end())
+            return {};
+        if (it->second.size() > 1)
+            DataTypeTuple::throwAmbiguousCaseInsensitiveName(name, decoded[it->second[0]].name, decoded[it->second[1]].name);
+        return it->second.front();
+    };
 
-    /// Cache of `Nested`/struct table extractors keyed by the (possibly lower-cased) nested table name.
+    /// Cache of `Nested`/struct table extractors keyed by the decoded column of the nested table.
     /// The backing block must outlive the extractor (it holds a reference into it), so keep both.
-    UnorderedMapWithMemoryTracking<String, std::pair<std::shared_ptr<Block>, std::shared_ptr<NestedColumnExtractHelper>>> nested_extractors;
+    UnorderedMapWithMemoryTracking<size_t, std::pair<std::shared_ptr<Block>, std::shared_ptr<NestedColumnExtractHelper>>> nested_extractors;
 
     const RequestedTypeCastSettings cast_settings{
         .null_as_default = format_settings.null_as_default,
@@ -722,37 +732,29 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
     for (size_t i = 0; i < header.columns(); ++i)
     {
         const ColumnWithTypeAndName & header_column = header.getByPosition(i);
-        String search_name = header_column.name;
-        if (case_insensitive)
-            boost::to_lower(search_name);
 
         ColumnWithTypeAndName column;
         /// Set only for a column taken whole from the batch. A column extracted out of a flattened Nested
         /// table below is a piece of another field, so it has no field of its own to read metadata from.
         const ArrowIPC::ArrowField * src_field = nullptr;
-        auto it = name_to_index.find(search_name);
-        if (it == name_to_index.end())
+        const auto decoded_index = find_decoded(header_column.name);
+        if (!decoded_index)
         {
             bool read_from_nested = false;
 
             /// A subcolumn of a `Nested`/struct field: `table.a` is extracted from the Arrow field `table`.
             const String nested_table_name = Nested::extractTableName(header_column.name);
-            String search_nested = nested_table_name;
-            if (case_insensitive)
-                boost::to_lower(search_nested);
-
-            auto nested_it = name_to_index.find(search_nested);
-            if (nested_it != name_to_index.end())
+            if (const auto nested_index = find_decoded(nested_table_name))
             {
-                auto extractor_it = nested_extractors.find(search_nested);
+                auto extractor_it = nested_extractors.find(*nested_index);
                 if (extractor_it == nested_extractors.end())
                 {
-                    auto & src = decoded[nested_it->second];
+                    auto & src = decoded[*nested_index];
                     ColumnWithTypeAndName nested_column(src.column, src.type, nested_table_name);
 
                     auto block = std::make_shared<Block>(Block({std::move(nested_column)}));
                     auto helper = std::make_shared<NestedColumnExtractHelper>(*block, case_insensitive);
-                    extractor_it = nested_extractors.emplace(search_nested, std::make_pair(block, helper)).first;
+                    extractor_it = nested_extractors.emplace(*nested_index, std::make_pair(block, helper)).first;
                 }
                 /// The requested spelling, not the lower-cased one: the helper matches names
                 /// case-insensitively itself, and an exact element name outranks a folded match.
@@ -774,7 +776,7 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
         }
         else
         {
-            auto & src = decoded[it->second];
+            auto & src = decoded[*decoded_index];
             column = ColumnWithTypeAndName(src.column, src.type, src.name);
             src_field = src.field;
         }

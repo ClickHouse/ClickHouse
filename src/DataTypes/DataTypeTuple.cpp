@@ -30,6 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int BAD_ARGUMENTS;
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
@@ -344,16 +345,32 @@ VectorWithMemoryTracking<std::optional<size_t>> DataTypeTuple::matchElementsByNa
 
     for (size_t i = 0; i < to_names.size(); ++i)
     {
-        for (size_t j = 0; j < from_names.size() && !positions[i]; ++j)
+        if (positions[i])
+            continue;
+        std::optional<size_t> match;
+        for (size_t j = 0; j < from_names.size(); ++j)
         {
-            if (!taken[j] && boost::iequals(from_names[j], to_names[i]))
-            {
-                positions[i] = j;
-                taken[j] = true;
-            }
+            if (!boost::iequals(from_names[j], to_names[i]))
+                continue;
+            if (match)
+                throwAmbiguousCaseInsensitiveName(to_names[i], from_names[*match], from_names[j]);
+            match = j;
+        }
+        if (match && !taken[*match])
+        {
+            positions[i] = match;
+            taken[*match] = true;
         }
     }
     return positions;
+}
+
+void DataTypeTuple::throwAmbiguousCaseInsensitiveName(std::string_view name, std::string_view first, std::string_view second)
+{
+    throw Exception(
+        ErrorCodes::AMBIGUOUS_COLUMN_NAME,
+        "Name '{}' matches both '{}' and '{}' case-insensitively, and neither is spelled the same",
+        name, first, second);
 }
 
 String DataTypeTuple::getNameByPosition(size_t i) const
