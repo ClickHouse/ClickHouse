@@ -843,6 +843,19 @@ static Block logicalDefaultInputs(
         }
     }
 
+    /// With no physical inputs, `logical.rows()` is 0. Establish the saved row count before alias evaluation.
+    /// The name has to miss every real column: a user column may itself be called `_dummy`.
+    if (logical.columns() == 0)
+    {
+        String placeholder = "_dummy";
+        while (stored.has(placeholder) || columns.has(placeholder))
+            placeholder.push_back('_');
+        logical.insert({
+            ColumnConst::create(ColumnUInt8::create(1, static_cast<UInt8>(0)), rows),
+            std::make_shared<DataTypeUInt8>(),
+            placeholder});
+    }
+
     if (!to_convert.empty())
         performRequiredConversions(logical, to_convert, context, columns.getDefaults());
 
@@ -905,7 +918,7 @@ static Block logicalDefaultInputs(
     return logical;
 }
 
-/// Materialize columns this statement freed or cleared. Leave other missing columns for the read path.
+/// Materialize replaced columns and preserve row counts when no stored columns remain.
 static void applyStoredColumnIdentity(
     Block & block,
     const AlterCommands & commands,
@@ -918,6 +931,7 @@ static void applyStoredColumnIdentity(
     NameSet exact_cleared;
     NameSet group_freed;
     NameSet group_cleared;
+    NameSet added;
 
     for (const auto & command : commands)
     {
@@ -933,6 +947,26 @@ static void applyStoredColumnIdentity(
             renameStoredColumn(block, command.column_name, command.rename_to);
             if (retired)
                 exact_freed.insert(command.rename_to);
+
+            NameSet renamed;
+            const String nested_prefix = command.column_name + '.';
+            for (const auto & name : added)
+            {
+                if (name == command.column_name)
+                    renamed.insert(command.rename_to);
+                else if (name.starts_with(nested_prefix))
+                    renamed.insert(command.rename_to + name.substr(command.column_name.size()));
+                else
+                    renamed.insert(name);
+            }
+            added = std::move(renamed);
+        }
+        else if (command.type == AlterCommand::ADD_COLUMN)
+        {
+            Block added_block;
+            added_block.insert({command.data_type->createColumn(), command.data_type, command.column_name});
+            for (const auto & column : Nested::flattenNested(added_block))
+                added.insert(column.name);
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
@@ -984,12 +1018,29 @@ static void applyStoredColumnIdentity(
             requireColumn(column.name, column.type);
     }
 
-    /// Dropping or clearing the last stored column leaves a zero-column block, whose row count is 0.
-    /// Materialize whatever physical columns remain so the saved row count survives.
+    /// Dropping the last stored column leaves a zero-column block, whose row count is 0.
+    /// Columns added by this statement still need their defaults.
     if (block.columns() == 0 && rows > 0)
     {
         for (const auto & column : metadata.columns.getAllPhysical())
-            requireColumn(column.name, column.type);
+        {
+            if (added.contains(column.name))
+                requireColumn(column.name, column.type);
+        }
+    }
+
+    /// Otherwise keep one untouched missing column with the same value the read path would return.
+    if (block.columns() == 0 && rows > 0 && !materialize)
+    {
+        const auto & physical = metadata.columns.getAllPhysical();
+        if (!physical.empty())
+        {
+            const auto & column = physical.front();
+            auto value = column.type->createColumnConstWithDefaultValue(rows)->convertToFullColumnIfConst();
+            if (compress)
+                value = value->compress(true);
+            block.insert({std::move(value), column.type, column.name});
+        }
     }
 
     if (!materialize || rows == 0)
@@ -997,19 +1048,6 @@ static void applyStoredColumnIdentity(
 
     /// Evaluate on a copy. Stored columns keep the bytes the read path already converts.
     Block logical = logicalDefaultInputs(block, metadata.columns, materialized, rows, context);
-
-    /// With no physical inputs, `logical.rows()` is 0. One placeholder keeps `rows`.
-    /// The name has to miss every real column: a user column may itself be called `_dummy`.
-    if (logical.columns() == 0)
-    {
-        String placeholder = "_dummy";
-        while (block.has(placeholder) || metadata.columns.has(placeholder))
-            placeholder.push_back('_');
-        logical.insert({
-            ColumnConst::create(ColumnUInt8::create(1, static_cast<UInt8>(0)), rows),
-            std::make_shared<DataTypeUInt8>(),
-            placeholder});
-    }
 
     /// One column at a time, so a default can read a subcolumn of a column this same statement recreates.
     /// A single actions DAG extracts that subcolumn before the parent exists and stores zero rows.
