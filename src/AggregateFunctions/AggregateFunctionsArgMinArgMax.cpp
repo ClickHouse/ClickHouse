@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
 
@@ -110,7 +109,8 @@ NO_INLINE void validateArgMinMaxValueType(const DataTypePtr & type_val, const St
                 function_name,
                 getNumericVariantSupertypeHint(type.getPtr()));
     };
-    forEachInTypeTree(*type_val, check_not_dynamic_or_variant);
+    check_not_dynamic_or_variant(*type_val);
+    type_val->forEachChild(check_not_dynamic_or_variant);
 }
 
 [[noreturn]] NO_INLINE void throwArgMinMaxInvalidDeserializedState(const String & function_name, bool has_value, bool has_result)
@@ -472,7 +472,7 @@ AggregateFunctionPtr createAggregateFunctionArgMinMax(
 void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::AllExceptFirst};
+    AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
 
     FunctionDocumentation::Description description_argMin = R"(
 Calculates the `arg` value for a minimum `val` value. If there are multiple rows with equal `val` being the maximum, which of the associated `arg` is returned is not deterministic.

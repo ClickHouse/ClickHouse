@@ -4,7 +4,6 @@
 #include <Core/Names.h>
 #include <base/types.h>
 
-#include <functional>
 #include <optional>
 #include <utility>
 
@@ -24,16 +23,16 @@ void extractKeyValueFromMap(
     size_t start,
     size_t end);
 
-/// Tells whether the table has a real column (or a subcolumn of one) with the given name.
-using IsShadowingColumn = std::function<bool(const String &)>;
+/// Whether the name has the `map.key_<serialized_key>` shape used for a single Map key subcolumn.
+bool looksLikeMapSubcolumnName(const String & column_name);
 
 /// Try to parse a Map subcolumn reference like `map.key_<serialized_key>`.
 /// Returns {map_column_name, serialized_key} if the column name has the expected format.
 ///
 /// Dots are legal in column names, so a real column `m.key_x` may exist beside a Map `m`. It shadows
-/// the subcolumn: a predicate reads that column, not the map, so `is_shadowing_column` must answer
-/// true for such names and the shape is refused. It is asked only about names of that shape.
+/// the subcolumn: a predicate reads that column, not the map, so pass such names in
+/// `shadowing_columns` and the shape is refused.
 std::optional<std::pair<String, String>> tryParseMapSubcolumnName(
-    const String & column_name, const IsShadowingColumn & is_shadowing_column);
+    const String & column_name, const NameSet & shadowing_columns);
 
 }

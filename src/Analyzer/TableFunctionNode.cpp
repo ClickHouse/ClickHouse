@@ -1,4 +1,5 @@
 #include <Analyzer/TableFunctionNode.h>
+
 #include <Analyzer/Identifier.h>
 
 #include <Common/assert_cast.h>
@@ -11,8 +12,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageView.h>
 
-#include <TableFunctions/ITableFunction.h>
-
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 
@@ -24,23 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-
-/// An unqualified parameterized-view name re-resolves against the receiving server's default
-/// database, so it is sent qualified. Only a 2-part result is resolvable as a parameterized view,
-/// so a dotted database name is left alone.
-bool isSentQualified(const TableFunctionNode & node)
-{
-    if (!node.isParameterizedView() || node.getTableFunctionName().contains('.'))
-        return false;
-
-    const auto & storage_id = node.getStorageID();
-    return storage_id.hasDatabase() && !storage_id.getDatabaseName().contains('.');
-}
-
 }
 
 TableFunctionNode::TableFunctionNode(String table_function_name_)
@@ -56,9 +38,6 @@ void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePt
     table_function = std::move(table_function_value);
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
-    /// A parameterized view is resolved as a table function node but has no `ITableFunction` object
-    /// (see `QueryAnalyzer::resolveTableFunction`), and it cannot be the coordinated read itself.
-    parallel_replicas_read_id = table_function ? table_function->getParallelReplicasReadID() : std::nullopt;
     unresolved_arguments_indexes = std::move(unresolved_arguments_indexes_);
 
     const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
@@ -131,14 +110,11 @@ void TableFunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_
 bool TableFunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const TableFunctionNode &>(rhs);
-
-    /// A parameterized view is identified by its storage, whether it is spelled `pv` or `db.pv`.
-    const bool both_parameterized_views = isParameterizedView() && rhs_typed.isParameterizedView();
-    if (!both_parameterized_views && table_function_name != rhs_typed.table_function_name)
+    if (table_function_name != rhs_typed.table_function_name)
         return false;
 
-    if (storage && rhs_typed.storage && storage_id != rhs_typed.storage_id)
-        return false;
+    if (storage && rhs_typed.storage)
+        return storage_id == rhs_typed.storage_id;
 
     if (settings_changes != rhs_typed.settings_changes)
         return false;
@@ -148,15 +124,12 @@ bool TableFunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) 
 
 void TableFunctionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
-    const auto full_name = storage ? storage_id.getFullNameNotQuoted() : String{};
-
-    /// Hash the name `toASTImpl` sends to other servers: `IN` set names derive from this hash.
-    const auto & name = isSentQualified(*this) ? full_name : table_function_name;
-    state.update(name.size());
-    state.update(name);
+    state.update(table_function_name.size());
+    state.update(table_function_name);
 
     if (storage)
     {
+        auto full_name = storage_id.getFullNameNotQuoted();
         state.update(full_name.size());
         state.update(full_name);
     }
@@ -183,7 +156,6 @@ QueryTreeNodePtr TableFunctionNode::cloneImpl() const
 
     result->storage = storage;
     result->storage_id = storage_id;
-    result->parallel_replicas_read_id = parallel_replicas_read_id;
     result->storage_snapshot = storage_snapshot;
     result->table_expression_modifiers = table_expression_modifiers;
     result->settings_changes = settings_changes;
@@ -196,10 +168,18 @@ ASTPtr TableFunctionNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto table_function_ast = make_intrusive<ASTFunction>();
 
-    table_function_ast->name = isSentQualified(*this) ? storage_id.getFullNameNotQuoted() : table_function_name;
-    /// The analyzer reads a two-part parameterized view name as `db.view`.
-    if (isParameterizedView() && Identifier{table_function_ast->name}.getPartsSize() == 2)
-        table_function_ast->setIsCompoundName(true);
+    table_function_ast->name = table_function_name;
+
+    /// An unqualified parameterized-view name re-resolves against the receiving server's default
+    /// database, so qualify it from `storage_id`. Only a 2-part result is resolvable as a
+    /// parameterized view, so a dotted database name is left alone.
+    if (isParameterizedView() && storage_id.hasDatabase()
+        && Identifier{table_function_name}.getPartsSize() == 1)
+    {
+        const auto database_name = storage_id.getDatabaseName();
+        if (Identifier{database_name}.getPartsSize() == 1)
+            table_function_ast->name = database_name + "." + storage_id.getTableName();
+    }
 
     const auto & arguments = getArguments();
     table_function_ast->children.push_back(arguments.toAST(options));
