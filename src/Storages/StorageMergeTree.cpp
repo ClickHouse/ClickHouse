@@ -1142,6 +1142,21 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
         throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for merging parts");
     }
 
+    tagParts(is_mutation);
+}
+
+CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
+    FutureMergedMutatedPartPtr future_part_, ReservationSharedPtr reservation, StorageMergeTree & storage_)
+    : future_part(future_part_), reserved_space(std::move(reservation)), storage(storage_)
+{
+    /// Assume mutex is already locked, because this method is called from mergeTask.
+    chassert(reserved_space);
+
+    tagParts(/*is_mutation=*/ true);
+}
+
+void CurrentlyMergingPartsTagger::tagParts(bool is_mutation)
+{
     future_part->updatePath(storage, reserved_space.get());
 
     for (const auto & part : future_part->parts)
@@ -1153,25 +1168,6 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
 
     if (is_mutation)
         storage.currently_mutating_part_future_versions[future_part->parts[0]] = future_part->part_info.mutation;
-}
-
-CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
-    FutureMergedMutatedPartPtr future_part_, ReservationSharedPtr reservation, StorageMergeTree & storage_)
-    : future_part(future_part_), reserved_space(std::move(reservation)), storage(storage_)
-{
-    /// Assume mutex is already locked, because this method is called from mergeTask.
-    chassert(reserved_space);
-
-    future_part->updatePath(storage, reserved_space.get());
-
-    for (const auto & part : future_part->parts)
-    {
-        if (storage.currently_merging_mutating_parts.contains(part))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tagging already tagged part {}. This is a bug.", part->name);
-    }
-    storage.currently_merging_mutating_parts.insert(future_part->parts.begin(), future_part->parts.end());
-
-    storage.currently_mutating_part_future_versions[future_part->parts[0]] = future_part->part_info.mutation;
 }
 
 
@@ -2618,9 +2614,9 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         {
             /// Now that the commands are final, decide on the whole set: coalescing may have turned a
             /// mutation that only drops secondary objects into one that rewrites the part. As above, no
-            /// rename can be outside this set.
-            const bool hardlink_only
-                = MutationHelpers::isHardlinkOnlyMutation(*this, part, *commands, /*has_pending_rename=*/ false);
+            /// rename can be outside this set. A part within budget keeps its usual reservation.
+            const bool hardlink_only = exceeds_max_source_part_size
+                && MutationHelpers::isHardlinkOnlyMutation(*this, part, *commands, /*has_pending_rename=*/ false);
 
             /// A mutation that only hardlinks needs space for a little metadata, not for a copy of the
             /// part, so ask for the smallest reservation the storage grants and on the part's own disk

@@ -237,11 +237,10 @@ private:
     void removeProcessedEntry(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
 
     /// What shouldExecuteLogEntry learned about a MUTATE_PART entry it admitted, so that its caller can
-    /// act on it. Both members stay unset for every other entry type.
+    /// act on it. Both members stay unset unless the entry was admitted as hardlink-only.
     struct ExecuteDecision
     {
-        /// The local source part, when it exists. A missing part is legitimate: the entry then falls
-        /// back to fetching the result instead of mutating.
+        /// The local source part.
         MergeTreeData::DataPartPtr mutation_source_part;
         /// Whether the mutation only hardlinks the files it does not touch, so it needs a small
         /// reservation rather than one covering the whole source part.
@@ -487,9 +486,11 @@ public:
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
                                          Strings & mutation_ids) const;
 
-    /// Same, for callers that already hold the state_mutex (it is not recursive).
+    /// Same, for callers that already hold the state_mutex (it is not recursive). `log_missing_mutation`
+    /// = false skips the warnings about a mutation that cannot be found.
     MutationCommands getMutationCommandsLocked(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
-                                               Strings & mutation_ids, std::unique_lock<SharedMutex> & /* state_mutex lock */) const;
+                                               Strings & mutation_ids, std::unique_lock<SharedMutex> & /* state_mutex lock */,
+                                               bool log_missing_mutation = true) const;
 
     /// Whether a rename that still applies to `part` is queued up to `desired_mutation_version`. Renames
     /// are selected by the part's metadata version, so a mutation can be handed one it does not list.

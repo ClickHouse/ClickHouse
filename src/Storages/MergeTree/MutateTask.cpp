@@ -522,13 +522,31 @@ bool mutationRequiresFullPartRewrite(const MergeTreeData::DataPartPtr & part, co
         || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage());
 }
 
+bool partAllowsHardlinkOnlyMutation(const MergeTreeData & data, const MergeTreeData::DataPartPtr & part)
+{
+    if (!isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
+        return false;
+
+    /// Copying instead of hardlinking rewrites every retained file. If the setting is already on, the
+    /// mutation is knowably not free, so refuse admission instead of admitting it and failing later
+    /// on every retry. It can still be switched on afterwards, which the write-side checks catch.
+    if ((*data.getSettings())[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
+        return false;
+
+    /// The packed skip-index archive is rebuilt entry by entry, copying an unbounded amount of data, so
+    /// require it to be absent. Read from the in-memory checksums so the predicate does no IO.
+    /// Statistics need no such condition: DROP INDEX and DROP PROJECTION cannot change which ones the
+    /// part holds, so processStatisticsChanges hardlinks their archive instead of rewriting it.
+    return !part->checksums.files.contains(String(SKIP_INDICES_PACKED_FILENAME));
+}
+
 bool isHardlinkOnlyMutation(
     const MergeTreeData & data,
     const MergeTreeData::DataPartPtr & part,
     const MutationCommands & commands,
     bool has_pending_rename)
 {
-    if (commands.empty())
+    if (commands.empty() || !partAllowsHardlinkOnlyMutation(data, part))
         return false;
 
     /// The partial route is only taken for a Wide part in full (non-packed) storage without dynamic
@@ -555,25 +573,9 @@ bool isHardlinkOnlyMutation(
     if (has_pending_rename)
         return false;
 
-    /// Copying instead of hardlinking rewrites every retained file. If the setting is already on, the
-    /// mutation is knowably not free, so refuse admission instead of admitting it and failing later
-    /// on every retry. It can still be switched on afterwards, which the write-side checks catch.
-    if ((*data.getSettings())[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
-        return false;
-
     /// A patch part in the part's partition makes MutateTask append a READ_COLUMN per patched column,
     /// which does build a mutation pipeline. Selection-time check only, re-validated on the write side.
-    if (!data.getPatchPartsVectorForPartition(part->info.getPartitionId()).empty())
-        return false;
-
-    /// The packed skip-index archive is rebuilt entry by entry, copying an unbounded amount of data, so
-    /// require it to be absent. Read from the in-memory checksums so the predicate does no IO.
-    /// Statistics need no such condition: the commands above cannot change which ones the part holds, so
-    /// processStatisticsChanges hardlinks their archive instead of rewriting it.
-    if (part->checksums.files.contains(String(SKIP_INDICES_PACKED_FILENAME)))
-        return false;
-
-    return true;
+    return data.getPatchPartsVectorForPartition(part->info.getPartitionId()).empty();
 }
 
 /// True when the mutation re-reads and rewrites every column of the part through the interpreter
@@ -4653,16 +4655,11 @@ bool MutateTask::prepare()
             .keep_metadata_version = true,
         };
 
-        /// This path returns before the route validation below, so a mutation admitted as
-        /// hardlink-only is validated here instead: cloning with copy_instead_of_hardlink copies the
-        /// whole part, which the small reservation does not cover. Note that copying just
-        /// checksums.txt for zero-copy replication (above) is a single small file and is fine.
-        /// No pending rename here: this path copies nothing extra for one, and a rename re-derived on
-        /// every retry could never clear.
-        if (ctx->future_part->hardlink_only
-            && (clone_params.copy_instead_of_hardlink
-                || !MutationHelpers::isHardlinkOnlyMutation(
-                    *ctx->data, ctx->source_part, ctx->commands_for_part, /*has_pending_rename=*/ false)))
+        /// This path returns before the route validation below. A hardlink clone is covered by the small
+        /// reservation of a mutation admitted as hardlink-only whatever the commands are (they may be
+        /// empty after KILL MUTATION), and so is the single checksums.txt copied above for zero-copy;
+        /// only copying instead of hardlinking clones the whole part.
+        if (ctx->future_part->hardlink_only && clone_params.copy_instead_of_hardlink)
             throw Exception(
                 ErrorCodes::NOT_ENOUGH_SPACE,
                 "Mutation of part {} was admitted as hardlink-only and reserved only {}, but cloning it would copy the "

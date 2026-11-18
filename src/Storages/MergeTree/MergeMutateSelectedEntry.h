@@ -42,6 +42,10 @@ struct CurrentlyMergingPartsTagger
     /// This might take a lot of time and it's important not to do it in the destructor.
     void finalize();
     ~CurrentlyMergingPartsTagger();
+
+private:
+    /// Shared by both constructors once `reserved_space` is set.
+    void tagParts(bool is_mutation);
 };
 
 using CurrentlyMergingPartsTaggerPtr = std::unique_ptr<CurrentlyMergingPartsTagger>;

@@ -29,6 +29,10 @@ namespace MutationHelpers
 /// isHardlinkOnlyMutation below, so the shape conditions cannot drift apart between them.
 bool mutationRequiresFullPartRewrite(const MergeTreeData::DataPartPtr & part, const MutationCommands & commands);
 
+/// The conditions of isHardlinkOnlyMutation that need neither the commands nor a lock, so a caller can
+/// skip looking the commands up for a part that cannot qualify. Necessary, not sufficient.
+bool partAllowsHardlinkOnlyMutation(const MergeTreeData & data, const MergeTreeData::DataPartPtr & part);
+
 /// True iff mutating `part` with `commands` is guaranteed to take the partial route (hardlink every
 /// untouched file, unlink the dropped ones) AND to write none of the data-copying outputs that route
 /// can otherwise produce. Such a mutation needs almost no free space, so the selection guards may

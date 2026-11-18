@@ -17,6 +17,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/StringUtils.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/formatReadable.h>
 #include <Storages/MutationCommands.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -55,6 +56,11 @@ namespace ErrorCodes
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int ABORTED;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace FailPoints
+{
+    extern const char rmt_merge_selecting_task_max_part_size[];
 }
 
 
@@ -1853,6 +1859,12 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             ? CompactionStatistics::getMaxSourcePartsBytesForMerge(
                 data, /*respect_min_unreserved_space=*/!entry.bypass_min_unreserved_space)
             : CompactionStatistics::getMaxSourcePartBytesForMutation(data);
+        /// The same 1 byte mutation budget the failpoint sets at assignment, without lifting a throttle.
+        fiu_do_on(FailPoints::rmt_merge_selecting_task_max_part_size,
+        {
+            if (entry.type == LogEntry::MUTATE_PART)
+                max_source_parts_size = std::min<UInt64>(max_source_parts_size, 1);
+        });
         /** If there are enough free threads in background pool to do large merges (maximal size of merge is allowed),
           * then ignore value returned by getMaxSourcePartsBytesForMerge() and execute merge of any size,
           * because it may be ordered by OPTIMIZE or early with different settings.
@@ -1897,35 +1909,33 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
 
         /// A mutation that only hardlinks the files it does not touch needs almost no space, so the size
-        /// of its source part is the wrong requirement for it. Classify once, here, where the coalesced
-        /// commands can be read under the lock we already hold, and use the answer twice: to not refuse
-        /// the entry on size alone, and to tell the caller what it has to reserve for it.
-        ///
-        /// Only for a MUTATE_PART with a source part that exists locally: a missing part is legitimate
-        /// (the entry then falls back to fetching the result), and dereferencing it here would crash.
-        /// And only for a nonzero budget: unlike the two selection guards, this guard has no separate
-        /// zero-budget check above it, so a zero budget - meaning all mutations are throttled off - is
-        /// rejected here only through this very comparison. A zero therefore has three unrelated
-        /// meanings at this site (the throttle, a deliberately missing part, and this exemption) and
-        /// conflating any two of them is a bug.
-        if (entry.type == LogEntry::MUTATE_PART && mutation_source_part)
+        /// of its source part is the wrong requirement for it. Classified only for a part that would be
+        /// refused on size, so a part within budget keeps its usual reservation. A zero budget means
+        /// mutations are throttled off and is rejected only by the comparison below, so it is never
+        /// exempt. A missing source part is legitimate (the entry then fetches the result).
+        if (entry.type == LogEntry::MUTATE_PART && mutation_source_part && max_source_parts_size != 0
+            && sum_parts_size_in_bytes > max_source_parts_size
+            && MutationHelpers::partAllowsHardlinkOnlyMutation(data, mutation_source_part))
         {
             const auto mutation_version = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version).mutation;
             Strings mutation_ids;
-            auto commands = getMutationCommandsLocked(mutation_source_part, mutation_version, mutation_ids, state_lock);
+            /// Quiet: a killed mutation would otherwise log a warning on every scan of the queue.
+            auto commands = getMutationCommandsLocked(
+                mutation_source_part, mutation_version, mutation_ids, state_lock, /*log_missing_mutation=*/ false);
             const bool hardlink_only = MutationHelpers::isHardlinkOnlyMutation(
                 data,
                 mutation_source_part,
                 commands,
                 hasPendingRenameForPartLocked(mutation_source_part, mutation_version, state_lock));
 
-            if (hardlink_only && max_source_parts_size != 0)
-                sum_parts_size_in_bytes = 0;
-
-            if (out_decision)
+            if (hardlink_only)
             {
-                out_decision->mutation_source_part = mutation_source_part;
-                out_decision->hardlink_only = hardlink_only;
+                sum_parts_size_in_bytes = 0;
+                if (out_decision)
+                {
+                    out_decision->mutation_source_part = mutation_source_part;
+                    out_decision->hardlink_only = true;
+                }
             }
         }
 
@@ -2617,18 +2627,20 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
 
 MutationCommands ReplicatedMergeTreeQueue::getMutationCommandsLocked(
     const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version, Strings & mutation_ids,
-    std::unique_lock<SharedMutex> & /* state_lock */) const
+    std::unique_lock<SharedMutex> & /* state_lock */, bool log_missing_mutation) const
 {
     if (part->info.getDataVersion() > desired_mutation_version)
     {
-        LOG_WARNING(log, "Data version of part {} is already greater than desired mutation version {}", part->name, desired_mutation_version);
+        if (log_missing_mutation)
+            LOG_WARNING(log, "Data version of part {} is already greater than desired mutation version {}", part->name, desired_mutation_version);
         return MutationCommands{};
     }
 
     auto in_partition = mutations_by_partition.find(part->info.getPartitionId());
     if (in_partition == mutations_by_partition.end())
     {
-        LOG_WARNING(log, "There are no mutations for partition ID {} (trying to mutate part {} to {})", part->info.getPartitionId(), part->name, toString(desired_mutation_version));
+        if (log_missing_mutation)
+            LOG_WARNING(log, "There are no mutations for partition ID {} (trying to mutate part {} to {})", part->info.getPartitionId(), part->name, toString(desired_mutation_version));
         return MutationCommands{};
     }
 
@@ -2636,11 +2648,14 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommandsLocked(
 
     auto end = in_partition->second.lower_bound(desired_mutation_version);
     if (end == in_partition->second.end() || end->first != desired_mutation_version)
-        LOG_WARNING(log,
-            "Mutation with version {} not found in partition ID {} (trying to mutate part {})",
-            desired_mutation_version,
-            part->info.getPartitionId(),
-            part->name);
+    {
+        if (log_missing_mutation)
+            LOG_WARNING(log,
+                "Mutation with version {} not found in partition ID {} (trying to mutate part {})",
+                desired_mutation_version,
+                part->info.getPartitionId(),
+                part->name);
+    }
     else
         ++end;
 
