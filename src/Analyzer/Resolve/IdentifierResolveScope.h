@@ -151,6 +151,9 @@ struct IdentifierResolveScope
     /// The inlined call is a SQL UDF call, or a SQL UDF call was inlined while resolving within this scope.
     bool inlines_sql_udf = false;
 
+    /// The inlined call is a SQL UDF call made from the function's name (`arrayMap(f, arr)`, `APPLY(f)`), not written as a call.
+    bool inlines_sql_udf_by_name = false;
+
     /** Names from `expression_argument_name_to_node` that are temporarily invisible.
       * Set while an expression bound to an alias of an outer scope is resolved through this
       * lambda scope, so that a lambda argument does not capture an identifier of an expression

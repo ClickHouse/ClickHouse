@@ -57,6 +57,19 @@ tupleElement((x), \'1\')
 11
 l(__projection_name_placeholder, [1])
 [2]
+-- a SQL UDF passed by name keeps the names too: CREATE substitutes only SQL UDF calls
+tupleElement((arrayMap(lambda(tuple(__function_ref_arg_0), identity_05813(__function_ref_arg_0)), [x])), \'1\')
+[11]
+tupleElement((arrayMap(lambda(tuple(__function_ref_arg_0), wrap_identity_05813(__function_ref_arg_0)), [x])), \'1\')
+[11]
+tupleElement((arrayMap(lambda(tuple(__composed_arg_1), toString(identity_05813(__composed_arg_1))), [x])), \'1\')
+['11']
+l(__projection_name_placeholder, [1])
+[2]
+tupleElement((number), \'1\')
+0
+[11]
+[22]
 -- an alias still names the columns
 a.1	b.1
 11	22

@@ -3061,12 +3061,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
 
         bool inlines_sql_udf = false;
+        bool inlines_sql_udf_by_name = false;
         if (!lambda_expression_untyped && user_defined_function)
         {
             /// Try to substitute user defined SQL expression
             lambda_expression_untyped = tryGetLambdaFromUserDefinedSQLFunctions(user_defined_function, scope.context);
-            inlines_sql_udf = lambda_expression_untyped != nullptr;
-            for (auto * current_scope = &scope; inlines_sql_udf && current_scope; current_scope = current_scope->parent_scope)
+            inlines_sql_udf_by_name = lambda_expression_untyped && !function_node.hasOriginalAST();
+            inlines_sql_udf = lambda_expression_untyped && !inlines_sql_udf_by_name;
+            for (auto * current_scope = &scope; inlines_sql_udf && current_scope && !current_scope->inlines_sql_udf_by_name;
+                 current_scope = current_scope->parent_scope)
                 if (current_scope->inlined_call_arguments_projection_names)
                     current_scope->inlines_sql_udf = true;
         }
@@ -3101,10 +3104,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             IdentifierResolveScope & lambda_scope = createIdentifierResolveScope(lambda_expression_clone, &scope /*parent_scope*/);
             lambda_scope.inlined_call_arguments_projection_names = arguments_projection_names;
             lambda_scope.inlines_sql_udf = inlines_sql_udf;
+            lambda_scope.inlines_sql_udf_by_name = inlines_sql_udf_by_name;
             ProjectionNames lambda_projection_names = resolveLambda(lambda_expression_untyped, lambda_expression_clone, function_arguments, lambda_scope);
 
-            /// Stored view definitions keep `WITH` lambdas, and their columns depend on these names. SQL UDF calls are
-            /// substituted at `CREATE`, so an inlined call that inlines a SQL UDF call may be renamed.
+            /// Stored view definitions keep `WITH` lambdas and SQL UDF names, and their columns depend on these names. SQL UDF
+            /// calls are substituted at `CREATE`, so an inlined call that inlines a SQL UDF call may be renamed.
             if (lambda_scope.inlines_sql_udf)
                 result_projection_names = { calculateInlinedCallProjectionName(node, arguments_projection_names, scope) };
 

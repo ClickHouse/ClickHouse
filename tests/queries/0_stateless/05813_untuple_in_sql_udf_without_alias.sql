@@ -8,6 +8,8 @@ DROP FUNCTION IF EXISTS untuple_map_05813;
 DROP FUNCTION IF EXISTS map_05813;
 DROP FUNCTION IF EXISTS apply_lambda_05813;
 DROP FUNCTION IF EXISTS wrap_apply_lambda_05813;
+DROP FUNCTION IF EXISTS wrap_identity_05813;
+DROP FUNCTION IF EXISTS identity_05813;
 
 CREATE FUNCTION untuple_value_05813 AS (x) -> untuple(tuple(x));
 CREATE FUNCTION untuple_value_nested_05813 AS (y) -> untuple_value_05813(y);
@@ -16,6 +18,8 @@ CREATE FUNCTION untuple_map_05813 AS (fn, xs) -> untuple(tuple(arrayMap(fn, xs))
 CREATE FUNCTION map_05813 AS (fn, xs) -> arrayMap(fn, xs);
 CREATE FUNCTION apply_lambda_05813 AS (fn, x) -> fn(x);
 CREATE FUNCTION wrap_apply_lambda_05813 AS (x) -> apply_lambda_05813(y -> untuple(tuple(y)), x);
+CREATE FUNCTION identity_05813 AS (x) -> x;
+CREATE FUNCTION wrap_identity_05813 AS (x) -> identity_05813(x);
 
 SELECT '-- https://github.com/ClickHouse/ClickHouse/issues/131545';
 SELECT * FROM (SELECT untuple_value_05813(11), untuple_value_05813(22)) FORMAT TSVWithNames;
@@ -51,6 +55,20 @@ SELECT * FROM (WITH (fn, v) -> plus(fn(v), 0) AS l SELECT l(x -> x + 1, 1)) FORM
 SELECT * FROM (WITH x -> untuple(tuple(x)) AS l SELECT l(11)) FORMAT TSVWithNames;
 SELECT * FROM (WITH x -> untuple(tuple(x)) AS l, y -> l(y) AS k SELECT k(11)) FORMAT TSVWithNames;
 SELECT * FROM (WITH (fn, xs) -> arrayMap(fn, xs) AS l SELECT l(x -> x + 1, [1])) FORMAT TSVWithNames;
+SELECT '-- a SQL UDF passed by name keeps the names too: CREATE substitutes only SQL UDF calls';
+SELECT * FROM (WITH x -> untuple(tuple(arrayMap(identity_05813, [x]))) AS l SELECT l(11)) FORMAT TSVWithNames;
+SELECT * FROM (WITH x -> untuple(tuple(arrayMap(wrap_identity_05813, [x]))) AS l SELECT l(11)) FORMAT TSVWithNames;
+SELECT * FROM (WITH x -> untuple(tuple(arrayMap(identity_05813 | toString, [x]))) AS l SELECT l(11)) FORMAT TSVWithNames;
+SELECT * FROM (WITH (fn, xs) -> arrayMap(fn, arrayMap(identity_05813, xs)) AS l SELECT l(x -> x + 1, [1])) FORMAT TSVWithNames;
+SELECT * FROM (SELECT * APPLY(untuple_value_05813) FROM numbers(1)) FORMAT TSVWithNames;
+CREATE VIEW v_by_name (`tupleElement((arrayMap(lambda(tuple(__function_ref_arg_0), identity_05813(__function_ref_arg_0)), [x])), '1')` Array(UInt8))
+AS WITH x -> untuple(tuple(arrayMap(identity_05813, [x]))) AS l SELECT l(11);
+SELECT * FROM v_by_name;
+CREATE TABLE src_05813 (x UInt8) ENGINE = Memory;
+CREATE TABLE dst_05813 (`tupleElement((arrayMap(lambda(tuple(__function_ref_arg_0), identity_05813(__function_ref_arg_0)), [x])), '1')` Array(UInt8)) ENGINE = Memory;
+CREATE MATERIALIZED VIEW mv_05813 TO dst_05813 AS WITH x -> untuple(tuple(arrayMap(identity_05813, [x]))) AS l SELECT l(x) FROM src_05813;
+INSERT INTO src_05813 VALUES (22);
+SELECT * FROM dst_05813;
 SELECT '-- an alias still names the columns';
 SELECT * FROM (SELECT untuple_value_05813(11) AS a, untuple_value_05813(22) AS b) FORMAT TSVWithNames;
 SELECT '-- views: CREATE substitutes SQL UDFs';
@@ -66,6 +84,10 @@ SELECT format_row_05813(number) FROM numbers(1);
 
 DROP VIEW v;
 DROP VIEW v_with;
+DROP VIEW v_by_name;
+DROP TABLE mv_05813;
+DROP TABLE dst_05813;
+DROP TABLE src_05813;
 DROP FUNCTION untuple_value_nested_05813;
 DROP FUNCTION untuple_value_05813;
 DROP FUNCTION format_row_05813;
@@ -73,3 +95,5 @@ DROP FUNCTION untuple_map_05813;
 DROP FUNCTION map_05813;
 DROP FUNCTION wrap_apply_lambda_05813;
 DROP FUNCTION apply_lambda_05813;
+DROP FUNCTION wrap_identity_05813;
+DROP FUNCTION identity_05813;
