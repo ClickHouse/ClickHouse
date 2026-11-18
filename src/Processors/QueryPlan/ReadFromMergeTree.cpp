@@ -3986,8 +3986,11 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
         /// The coordinator assigns ranges from the analysis of one replica, so this replica's cache has to be
         /// applied to them again at read time (see `QueryConditionCacheReadRangesRefiner`). A replica that skips
-        /// its own analysis keeps announcing whole parts: a part dropped from the announcement would move its
-        /// segments to other replicas, whose caches know nothing of it.
+        /// its own analysis keeps whole parts, and the refiner alone applies the filtered ranges:
+        /// - the coordinator takes only the part names from its announcement, and a part dropped from it would
+        ///   move its segments to other replicas, whose caches know nothing of it;
+        /// - the remaining marks of `MergeTreeIndexBuildContext` are counted from these parts and must cover every
+        ///   mark the coordinator may assign from the initiator's analysis, which the cache here may have excluded.
         if (is_parallel_reading_from_replicas_)
         {
             RangesInDataParts filtered_parts = res_parts;
