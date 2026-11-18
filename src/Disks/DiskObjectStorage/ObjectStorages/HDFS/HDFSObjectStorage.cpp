@@ -8,10 +8,13 @@
 #include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/ObjectStorageKeyGenerator.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/Stopwatch.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/BlobStorageLog.h>
+
+#include <Poco/URI.h>
 
 
 #if USE_HDFS
@@ -43,6 +46,11 @@ namespace ErrorCodes
 /// it keyed the Parquet metadata / filesystem / page caches it could serve stale
 /// data. To use these caches with HDFS, libhdfs3 must be extended to expose the
 /// millisecond modification time (or a real version token).
+void HDFSObjectStorage::checkRemoteHostFilter(const RemoteHostFilter & filter) const
+{
+    filter.checkURL(Poco::URI(url));
+}
+
 std::string HDFSObjectStorage::makeETag(Int64 last_modified, Int64 size)
 {
     return fmt::format("{}_{}", last_modified, size);

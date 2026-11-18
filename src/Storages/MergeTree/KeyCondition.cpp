@@ -8093,15 +8093,15 @@ namespace
 /// answers a definite value for a nested `NULL` and orders a nested `NaN` exactly where the index does.
 bool keyTypeMayHoldNestedNullOrNaN(const DataTypePtr & key_type)
 {
-    const auto * tuple = typeid_cast<const DataTypeTuple *>(removeNullable(removeLowCardinality(key_type)).get());
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(&removeNullable(removeLowCardinality(*key_type)));
     if (!tuple)
         return false;
 
     for (const auto & element : tuple->getElements())
     {
-        const auto unwrapped = removeLowCardinality(element);
-        if (unwrapped->isNullable() || WhichDataType(removeNullable(unwrapped)).isFloat()
-            || keyTypeMayHoldNestedNullOrNaN(unwrapped))
+        const IDataType & unwrapped = removeLowCardinality(*element);
+        if (unwrapped.isNullable() || WhichDataType(removeNullable(unwrapped)).isFloat()
+            || keyTypeMayHoldNestedNullOrNaN(element))
             return true;
     }
     return false;
