@@ -14,16 +14,22 @@ DROP TABLE IF EXISTS t_probe;
 DROP TABLE IF EXISTS t_build;
 DROP TABLE IF EXISTS t_probe_nullable;
 DROP TABLE IF EXISTS t_build_nullable;
+DROP TABLE IF EXISTS t_probe_uint16;
+DROP TABLE IF EXISTS t_build_uint16;
 
 CREATE TABLE t_probe (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_build (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_probe_nullable (k Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_build_nullable (k Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_probe_uint16 (k UInt16) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_build_uint16 (k UInt16) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO t_probe SELECT number FROM numbers(100000);
 INSERT INTO t_build SELECT number * 7 FROM numbers(1000);
 INSERT INTO t_probe_nullable SELECT number FROM numbers(100000);
 INSERT INTO t_build_nullable SELECT number * 7 FROM numbers(1000);
+INSERT INTO t_probe_uint16 SELECT number FROM numbers(65536);
+INSERT INTO t_build_uint16 SELECT number * 7 FROM numbers(1000);
 
 SELECT 'exact set';
 SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ' · (size|set bits) [^·]*[^ ·]', '')
@@ -33,6 +39,12 @@ WHERE explain LIKE '%Runtime filter:%';
 SELECT 'bloom filter';
 SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ' · (size|set bits) [^·]*[^ ·]', '')
 FROM (EXPLAIN ANALYZE SELECT count() FROM t_probe AS p INNER JOIN t_build AS b ON p.k = b.k SETTINGS join_runtime_filter_exact_values_limit = 100)
+WHERE explain LIKE '%Runtime filter:%';
+
+-- A (U)Int8 or (U)Int16 key whose exact set overflows gets a dense bitset instead of a Bloom filter.
+SELECT 'dense bitset';
+SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ' · (size|set bits) [^·]*[^ ·]', '')
+FROM (EXPLAIN ANALYZE SELECT count() FROM t_probe_uint16 AS p INNER JOIN t_build_uint16 AS b ON p.k = b.k SETTINGS join_runtime_filter_exact_values_limit = 100)
 WHERE explain LIKE '%Runtime filter:%';
 
 -- A Bloom filter with any bit set is too full. Whether it is dropped after it was built, or not built because the
@@ -84,3 +96,5 @@ DROP TABLE t_probe;
 DROP TABLE t_build;
 DROP TABLE t_probe_nullable;
 DROP TABLE t_build_nullable;
+DROP TABLE t_probe_uint16;
+DROP TABLE t_build_uint16;

@@ -240,6 +240,14 @@ void checkDenseBitsetFindsExactlyTheKeys()
     destination->finishInsert();
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt] - bitsets_before, 3);
 
+    const auto description = destination->describe();
+    EXPECT_EQ(description.kind, RuntimeFilterKind::DenseBitset);
+    ASSERT_TRUE(description.keys.has_value());
+    /// For an unsigned type, `min + 1` is the key 1.
+    EXPECT_EQ(*description.keys, std::is_signed_v<T> ? 8 : 7);
+    ASSERT_TRUE(description.bytes.has_value());
+    EXPECT_EQ(*description.bytes, (1ULL << (8 * sizeof(T))) / 8);
+
     auto probe = ColumnVector<T>::create();
     for (Int64 key = min; key <= max; ++key)
         probe->insertValue(static_cast<T>(key));

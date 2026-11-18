@@ -2,6 +2,8 @@ exact set
 Runtime filter: type exact set · unique keys 1.00 thousand
 bloom filter
 Runtime filter: type bloom filter
+dense bitset
+Runtime filter: type dense bitset · unique keys 1.00 thousand
 disabled bloom filter
 1	1
 nullable key
