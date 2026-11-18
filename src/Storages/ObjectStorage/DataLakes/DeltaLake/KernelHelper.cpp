@@ -34,11 +34,13 @@
 #include <azure/identity/managed_identity_credential.hpp>
 #endif
 
+extern "C" bool ch_delta_kernel_disable_redirects();
 
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace DB::S3AuthSetting
@@ -56,6 +58,13 @@ namespace DeltaLake
 
 namespace
 {
+
+void disableKernelRedirects()
+{
+    static const bool disabled = ch_delta_kernel_disable_redirects();
+    if (!disabled)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Failed to disable HTTP redirects in delta-kernel-rs");
+}
 
 /// Forwards to `ffi::set_builder_option`, translating a kernel error into a `DB::Exception`.
 /// The Rust FFI decodes the `(ptr, len)` slices as `&str`. Validate the value up front so a
@@ -186,6 +195,7 @@ public:
 
     [[nodiscard]] ffi::EngineBuilder * createBuilder() const override
     {
+        disableKernelRedirects();
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
             ffi::get_engine_builder(
                 KernelUtils::toDeltaString(table_location),
@@ -542,6 +552,7 @@ public:
 
     [[nodiscard]] ffi::EngineBuilder * createBuilder() const override
     {
+        disableKernelRedirects();
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
             ffi::get_engine_builder(
                 KernelUtils::toDeltaString(table_location),
@@ -640,6 +651,7 @@ public:
 
     [[nodiscard]] ffi::EngineBuilder * createBuilder() const override
     {
+        disableKernelRedirects();
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
             ffi::get_engine_builder(
                 KernelUtils::toDeltaString(table_location),

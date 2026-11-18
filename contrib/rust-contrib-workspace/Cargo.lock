@@ -13,7 +13,11 @@ dependencies = [
 name = "_ch_rust_delta_kernel"
 version = "0.1.0"
 dependencies = [
+ "delta_kernel",
  "delta_kernel_ffi",
+ "humantime",
+ "reqwest 0.12.28",
+ "url",
 ]
 
 [[package]]

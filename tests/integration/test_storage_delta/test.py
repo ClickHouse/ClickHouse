@@ -42,6 +42,7 @@ from pyspark.sql.window import Window
 
 from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 from helpers.config_cluster import minio_access_key, minio_secret_key
+from helpers.mock_servers import start_mock_servers
 from helpers.network import PartitionManager
 from helpers.s3_tools import (
     AzureUploader,
@@ -6898,3 +6899,93 @@ def test_writes_timestamp_ntz_annotation_partition_column(started_cluster):
     assert str(rows[0]["p"]["ts"]) == "2024-06-01 12:00:00", rows
 
     instance.query(f"DROP TABLE {table_name}")
+
+
+def start_redirect_server(cluster):
+    start_mock_servers(
+        cluster,
+        os.path.join(os.path.dirname(os.path.realpath(__file__)), "mock_servers"),
+        [("redirect.py", "resolver", 8080)],
+    )
+
+
+def redirect_hits(cluster):
+    source, target = cluster.exec_in_container(
+        cluster.get_container_id("resolver"),
+        ["curl", "-s", "http://localhost:8080/hits"],
+    ).split()
+    return int(source), int(target)
+
+
+def test_kernel_does_not_follow_redirects(started_cluster):
+    instance = started_cluster.instances["node1"]
+    start_redirect_server(started_cluster)
+
+    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+    for table_function in [
+        "deltaLake('http://resolver:8080/bucket/table/', NOSIGN)",
+        f"deltaLakeAzure('http://resolver:8080/devstoreaccount1', 'container', 'table/', 'devstoreaccount1', '{account_key}')",
+    ]:
+        source_before, target_before = redirect_hits(started_cluster)
+        instance.query_and_get_error(
+            f"SELECT * FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs = 1"
+        )
+        source_after, target_after = redirect_hits(started_cluster)
+        assert source_after > source_before, table_function
+        assert target_after == target_before, table_function
+
+
+def test_kernel_does_not_follow_redirects_of_presigned_deletion_vector(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    table_name = randomize_table_name("test_presigned_dv_redirect")
+    path = f"/{table_name}"
+    start_redirect_server(started_cluster)
+
+    (
+        DeltaTable.create(spark)
+        .tableName(table_name)
+        .location(path)
+        .addColumn("a", "INT")
+        .property("delta.enableDeletionVectors", "true")
+        .execute()
+    )
+    spark.range(10).selectExpr("CAST(id AS INT) AS a").write.format("delta").mode(
+        "append"
+    ).save(path)
+    spark.sql(f"DELETE FROM {table_name} WHERE a = 0")
+
+    rewritten = 0
+    log_dir = os.path.join(path, "_delta_log")
+    for name in sorted(os.listdir(log_dir)):
+        if not name.endswith(".json"):
+            continue
+        with open(os.path.join(log_dir, name)) as f:
+            actions = [json.loads(line) for line in f if line.strip()]
+        for action in actions:
+            dv = action.get("add", {}).get("deletionVector")
+            if dv:
+                dv["storageType"] = "p"
+                dv["pathOrInlineDv"] = "http://resolver:8080/dv?X-Amz-Signature=x"
+                rewritten += 1
+        with open(os.path.join(log_dir, name), "w") as f:
+            f.write("".join(json.dumps(action) + "\n" for action in actions))
+    assert rewritten == 1
+
+    upload_directory(minio_client, bucket, path, "")
+
+    source_before, target_before = redirect_hits(started_cluster)
+    instance.query_and_get_error(
+        f"""
+        SELECT * FROM deltaLake(
+            'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{table_name}/',
+            '{minio_access_key}',
+            '{minio_secret_key}')
+        SETTINGS allow_experimental_delta_kernel_rs = 1
+        """
+    )
+    source_after, target_after = redirect_hits(started_cluster)
+    assert source_after > source_before
+    assert target_after == target_before
