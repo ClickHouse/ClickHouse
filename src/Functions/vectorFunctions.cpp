@@ -65,11 +65,6 @@ struct PositiveModuloName { static constexpr auto name = "positiveModulo"; };
 struct IntDivName { static constexpr auto name = "intDiv"; };
 struct IntDivOrZeroName { static constexpr auto name = "intDivOrZero"; };
 
-/// `intDiv`, `modulo` and `positiveModulo` throw on a zero divisor, and so does `divide` on decimals.
-template <class FuncName>
-constexpr bool throws_on_zero_divisor = std::is_same_v<FuncName, DivideName> || std::is_same_v<FuncName, ModuloName>
-    || std::is_same_v<FuncName, PositiveModuloName> || std::is_same_v<FuncName, IntDivName>;
-
 struct L1Label { static constexpr auto name = "1"; };
 struct L2Label { static constexpr auto name = "2"; };
 struct L2SquaredLabel { static constexpr auto name = "2Squared"; };
@@ -97,11 +92,6 @@ public:
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return !throws_on_zero_divisor<FuncName>; }
-    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override
-    {
-        return throws_on_zero_divisor<FuncName> ? std::optional<bool>(true) : std::nullopt;
-    }
 
     /// Documentation-only — element-wise binary op applied to each pair of
     /// tuple elements; the result is a tuple whose i-th element type follows
@@ -312,11 +302,6 @@ public:
     [[nodiscard]] String getName() const override { return name; }
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
-    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return !throws_on_zero_divisor<FuncName>; }
-    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override
-    {
-        return throws_on_zero_divisor<FuncName> ? std::optional<bool>(true) : std::nullopt;
-    }
 
     /// Documentation-only — applies the scalar op to each tuple element with
     /// the same right-hand operand; the result tuple's i-th element type
@@ -1574,6 +1559,10 @@ public:
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return array_function->getArgumentsThatAreAlwaysConstant(); }
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// Both implementations throw for some values (arrays of different sizes, a decimal overflow, a zero norm).
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Documentation-only — `Traits` may expose a `signature` constant describing
     /// the shape accepted by both the tuple- and array-path. The actual return

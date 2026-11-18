@@ -44,6 +44,8 @@ SELECT clamp(5, 1, x), widthBucket(10.15, -8.6, 23, x), regexpPosition('aXbXcXd'
 SELECT tupleIntDivByNumber((15, 10), x), tupleModuloByNumber((15, 10), x), tuplePositiveModuloByNumber((15, 10), x) FROM (SELECT arrayJoin([4, NULL]) AS x) ORDER BY ALL;
 SELECT tupleIntDiv((15, 10), x), tupleModulo((15, 10), x) FROM (SELECT arrayJoin([(4, 3), NULL]) AS x) ORDER BY ALL;
 SELECT tupleDivideByNumber((toDecimal32(15, 1), toDecimal32(10, 1)), x) FROM (SELECT arrayJoin([toDecimal32(2, 1), NULL]) AS x) ORDER BY ALL;
+SELECT tuplePlus(x, tuple(toIntervalDay(1))), x - tuple(toIntervalDay(1)) FROM (SELECT arrayJoin([tuple('2026-01-02 00:00:00'), NULL]) AS x) ORDER BY ALL;
+SELECT L1Normalize(x) FROM (SELECT arrayJoin([(toDecimal32(3, 2), toDecimal32(1, 2)), NULL]) AS x) ORDER BY ALL;
 SELECT hop(x, INTERVAL 1 DAY, INTERVAL 2 DAY), hopStart(x, INTERVAL 1 DAY, INTERVAL 2 DAY), hopEnd(x, INTERVAL 1 DAY, INTERVAL 2 DAY) FROM (SELECT arrayJoin([toDateTime('2026-01-02 03:04:05', 'UTC'), NULL]) AS x) ORDER BY ALL;
 SELECT s2ToGeo(x) FROM (SELECT arrayJoin([toUInt64(4704772434919038107), NULL]) AS x) ORDER BY ALL;
 SELECT s2CapUnion(x, 1.0, 1157347770437378819, 1.0) FROM (SELECT arrayJoin([toUInt64(1157339245694594829), NULL]) AS x) ORDER BY ALL;
@@ -58,6 +60,10 @@ FROM values('d Tuple(UInt128, UInt128), n UInt128, b String, c Nullable(UInt64),
     ((0, 0), 0, '', 0, '', toDecimal256('1e70', 0), []), ((3, 2), 4, 'z', 4704772434919038107, 'default', 2, [1]))
 ARRAY JOIN arr
 SETTINGS enable_lazy_columns_replication = 1, query_plan_lift_up_array_join = 0;
+SELECT tupleMultiplyByNumber(t, 1000), tupleMultiply(t, t), dotProduct(t, t)
+FROM values('t Tuple(Decimal(18, 0), Decimal(18, 0)), arr Array(UInt8)', ((100000000000000000, 100000000000000000), []), ((2, 2), [1]))
+ARRAY JOIN arr
+SETTINGS enable_lazy_columns_replication = 1, query_plan_lift_up_array_join = 0, decimal_check_overflow = 1;
 
 SELECT 'invalid values are still reported';
 SELECT prettyPrintJSON(materialize(toLowCardinality('not json'))); -- { serverError BAD_ARGUMENTS }
