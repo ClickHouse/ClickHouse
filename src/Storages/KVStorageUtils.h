@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Formats/FormatSettings.h>
 #include <Core/Field.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>

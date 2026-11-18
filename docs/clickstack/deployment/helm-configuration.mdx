@@ -44,7 +44,7 @@ hyperdx:
   tasks:          # K8s CronJob specs
 ```
 
-All environment variables flow through two static-named resources shared by the ClickStack UI Deployment **and** the OTEL Collector via `envFrom`:
+All environment variables flow through two static-named resources shared by the HyperDX Deployment **and** the OTEL Collector via `envFrom`:
 
 - **`clickstack-config`** ConfigMap — populated from `hyperdx.config`
 - **`clickstack-secret`** Secret — populated from `hyperdx.secrets`
@@ -55,8 +55,8 @@ There is no longer a separate OTEL-specific ConfigMap. Both workloads read from 
 
 After successfully deploying ClickStack, configure the API key to enable telemetry data collection:
 
-1. **Access your ClickStack UI instance** via the configured ingress or service endpoint
-2. **Log into the ClickStack UI dashboard** and navigate to Team settings to generate or retrieve your API key
+1. **Access your HyperDX instance** via the configured ingress or service endpoint
+2. **Log into the HyperDX dashboard** and navigate to Team settings to generate or retrieve your API key
 3. **Update your deployment** with the API key using one of the following methods:
 
 ### Method 1: Update via Helm upgrade with values file {#api-key-values-file}
@@ -73,7 +73,7 @@ Then upgrade your deployment:
 helm upgrade my-clickstack clickstack/clickstack -f values.yaml
 ```
 
-### Method 2: Update via Helm upgrade with `--set` flag {#api-key-set-flag}
+### Method 2: Update via Helm upgrade with --set flag {#api-key-set-flag}
 ```shell
 helm upgrade my-clickstack clickstack/clickstack \
   --set hyperdx.secrets.HYPERDX_API_KEY="your-api-key-here"
@@ -128,7 +128,7 @@ hyperdx:
 
 ## Ingress setup {#ingress-setup}
 
-To expose the ClickStack UI and API via a domain name, enable ingress in your `values.yaml`.
+To expose the HyperDX UI and API via a domain name, enable ingress in your `values.yaml`.
 
 ### General ingress configuration {#general-ingress-configuration}
 ```yaml
