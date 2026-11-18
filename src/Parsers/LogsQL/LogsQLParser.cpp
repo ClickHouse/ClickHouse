@@ -1496,8 +1496,8 @@ ASTPtr LogsQLParser::parseFilterStream()
             if (!checked_regexp.ok())
                 throwSyntaxError(fmt::format("invalid regexp {} for the stream label {}: {}", value, label, checked_regexp.error()));
 
-            /// Stream label regexps are anchored, like in PromQL.
-            condition = makeASTFunction("match", columnExpr(label), make_intrusive<ASTLiteral>(Field("^(?:" + value + ")$")));
+            /// Stream label regexps are anchored, like in PromQL, which is what `fullMatch` does.
+            condition = makeASTFunction("fullMatch", columnExpr(label), make_intrusive<ASTLiteral>(Field(value)));
             if (negative)
                 condition = makeNot(condition);
         }

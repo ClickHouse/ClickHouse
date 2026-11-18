@@ -2,7 +2,6 @@
 
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
-#include <Common/RegexpUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Columns/IColumn.h>
@@ -370,7 +369,7 @@ namespace
     ASTPtr matcherToAST(const PrometheusQueryTree::Matcher & matcher, const std::unordered_map<String, String> & column_name_by_tag_name)
     {
         std::string_view function_name;
-        bool add_anchors = false;
+        bool is_regexp = false;
         bool add_not = false;
 
         auto matcher_type = matcher.matcher_type;
@@ -378,14 +377,16 @@ namespace
         {
             case PrometheusQueryTree::MatcherType::EQ:  function_name = "equals"; break;
             case PrometheusQueryTree::MatcherType::NE:  function_name = "notEquals"; break;
-            case PrometheusQueryTree::MatcherType::RE:  function_name = "match"; add_anchors = true; break;
-            case PrometheusQueryTree::MatcherType::NRE: function_name = "match"; add_anchors = true; add_not = true; break;
+            /// A regular expression of a PromQL matcher must match only whole values, as in Prometheus,
+            /// which is what `fullMatch` does.
+            case PrometheusQueryTree::MatcherType::RE:  function_name = "fullMatch"; is_regexp = true; break;
+            case PrometheusQueryTree::MatcherType::NRE: function_name = "fullMatch"; is_regexp = true; add_not = true; break;
         }
 
         String value = matcher.label_value;
-        if (add_anchors)
+        if (is_regexp)
         {
-            /// `IN` matches exactly what the fully anchored regex matches, and the primary key can filter by it.
+            /// `IN` matches exactly what the whole-value regex matches, and the primary key can filter by it.
             if (auto terms = tryGetLiteralAlternatives(value))
             {
                 /// A single term is an equality, which the text index on tags can serve too.
@@ -399,9 +400,6 @@ namespace
                 return makeASTFunction(add_not ? "notIn" : "in",
                     tagNameToAST(matcher.label_name, column_name_by_tag_name), makeASTFunction("tuple", std::move(literals)));
             }
-
-            /// A regular expression of a PromQL matcher must match only whole values, as in Prometheus.
-            value = anchorRegexpToMatchWholeString(value);
         }
         ASTPtr res = makeASTFunction(function_name, tagNameToAST(matcher.label_name, column_name_by_tag_name), make_intrusive<ASTLiteral>(value));
         if (add_not)
