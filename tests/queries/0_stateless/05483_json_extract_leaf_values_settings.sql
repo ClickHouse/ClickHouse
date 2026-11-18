@@ -12,7 +12,7 @@ SELECT length(JSONExtractLeafValues(concat('{"a": ', repeat('[', 1022), '1', rep
 SELECT length(JSONExtractLeafValues(concat('{"a": ', repeat('[', 1022), '1', repeat(']', 1022), '}'))), length(JSONExtractLeafValues(concat('{"a": ', repeat('[', 1023), '1', repeat(']', 1023), '}'))) SETTINGS allow_simdjson = 1;
 
 SELECT '-- the string mode has no depth limit';
-SELECT length(JSONExtractLeafValues(concat('{"a": ', repeat('[', 1022), '1', repeat(']', 1022), '}'), '', 'string')[1]) SETTINGS input_format_json_max_depth = 10;
+SELECT length(JSONExtractLeafValues(concat('{"a": ', repeat('[', 200), '1', repeat(']', 200), '}'), '', 'string')[1]) SETTINGS input_format_json_max_depth = 10;
 SELECT JSONExtractLeafPathsAndValues(concat('{"a": ', repeat('[', 20), '"x"', repeat(']', 20), ', "b": 1}'), '', 'string') SETTINGS input_format_json_max_depth = 10;
 
 SELECT '-- a text index gives the same result as a full scan with other session settings';

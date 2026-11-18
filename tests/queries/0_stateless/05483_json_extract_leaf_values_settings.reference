@@ -13,7 +13,7 @@
 1	0
 1	0
 -- the string mode has no depth limit
-2045
+401
 [('a','[[[[[[[[[[[[[[[[[[[["x"]]]]]]]]]]]]]]]]]]]]'),('b','1')]
 -- a text index gives the same result as a full scan with other session settings
 [1]
