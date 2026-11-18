@@ -184,7 +184,7 @@ struct FormatSettings : FormatSettingsEnums
 
     DateTimeOverflowBehavior date_time_overflow_behavior = DateTimeOverflowBehavior::Ignore;
 
-    bool throwOnDateTimeOverflow() const { return date_time_overflow_behavior == DateTimeOverflowBehavior::Throw; }
+    [[nodiscard]] bool throwOnDateTimeOverflow() const { return date_time_overflow_behavior == DateTimeOverflowBehavior::Throw; }
 
     bool input_format_ipv4_default_on_conversion_error = false;
     bool input_format_ipv6_default_on_conversion_error = false;
@@ -284,6 +284,14 @@ struct FormatSettings : FormatSettingsEnums
         UInt64 output_rows_in_file = 1;
         String output_confluent_subject;
     } avro{};
+
+    struct
+    {
+        String output_blob_type = "deletion-vector-v1";
+        String output_field_ids;
+        Int64 output_snapshot_id = -1;
+        Int64 output_sequence_number = -1;
+    } puffin{};
 
     String bool_true_representation = "true";
     String bool_false_representation = "false";

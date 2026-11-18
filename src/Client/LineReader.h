@@ -102,7 +102,7 @@ public:
     /// want to recall one with the history navigation and edit it into their own query.
     virtual void addQueryToHistory(const String &) {}
 
-    bool hasInputData() const;
+    [[nodiscard]] bool hasInputData() const;
 
 protected:
     enum InputStatus

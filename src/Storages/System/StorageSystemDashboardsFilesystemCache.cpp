@@ -282,6 +282,7 @@ const std::vector<Chart> & getCharts()
             "Priority updates skipped on lock contention (per second)",
             {
                 {"FailToIncreasePriority", "sum(ProfileEvent_FileSegmentFailToIncreasePriority)"},
+                {"SkippedBusyPriorityLock", "sum(ProfileEvent_FilesystemCacheSkippedBusyPriorityLock)"},
             },
         },
         {
