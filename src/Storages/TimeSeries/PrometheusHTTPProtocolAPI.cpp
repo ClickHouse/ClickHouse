@@ -545,6 +545,9 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
     const String & start_param,
     const String & end_param)
 {
+    /// Reads the inner tables directly, so refuses a row policy or a table filter on the source, like the selector.
+    checkTimeSeriesSelectorSource(time_series_storage->getStorageID(), getContext());
+
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     const auto time_series_table = storagePtrToTimeSeries(time_series_storage);
     const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_version);
