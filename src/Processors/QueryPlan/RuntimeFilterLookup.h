@@ -246,7 +246,7 @@ public:
     void mergeFrom(const DenseBitsetRuntimeFilter & source);
     /// Sets `rows_passed`.
     ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
-    ColumnPtr getValuesColumn() const;
+    [[nodiscard]] ColumnPtr getValuesColumn() const;
 
 private:
     const DataTypePtr filter_column_target_type;
