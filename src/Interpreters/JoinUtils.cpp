@@ -10,6 +10,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/FilterDescription.h>
 
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -264,13 +265,14 @@ static bool hasOnlyIntegerLeaves(const DataTypePtr & type)
 
 DataTypePtr compareBoolKeysAsUInt8(DataTypePtr type, const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
+    auto is_bool = [](const DataTypePtr & t) { return isBool(t) || isSimpleAggregateFunctionOfBool(*t); };
     for (const auto & key_type : {left_type, right_type})
     {
         bool replaced = false;
         auto result = replaceNestedTypesInPair(type, key_type,
             [&](const DataTypePtr & leaf, const DataTypePtr & key_leaf) -> DataTypePtr
             {
-                if (isBool(leaf) && !isBool(key_leaf) && leaf->equals(*key_leaf))
+                if (is_bool(leaf) && !is_bool(key_leaf) && leaf->equals(*key_leaf))
                 {
                     replaced = true;
                     return std::make_shared<DataTypeUInt8>();
@@ -722,6 +724,19 @@ bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
     DataTypePtr left_type_strict = removeNullable(removeLowCardinality(left_type));
     DataTypePtr right_type_strict = removeNullable(removeLowCardinality(right_type));
     return left_type_strict->equals(*right_type_strict);
+}
+
+bool isExactJoinKeyEquality(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    auto left = removeLowCardinalityAndNullable(left_type);
+    auto right = removeLowCardinalityAndNullable(right_type);
+    if (left->equals(*right))
+        return true;
+    if (isNumber(left) && isNumber(right))
+        return true;
+    if (isDateOrDate32OrDateTimeOrDateTime64(left) && isDateOrDate32OrDateTimeOrDateTime64(right))
+        return true;
+    return isFixedString(left) && isFixedString(right);
 }
 
 static ColumnPtr castToBoolColumn(ColumnPtr column)
