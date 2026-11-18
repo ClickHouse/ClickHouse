@@ -2,6 +2,15 @@
 insert denied:              OK
 nothing buffered:           0
 written once allowed:       ['dist']
+## The local shard of a Distributed destination naming its table without a database
+insert denied:              OK
+nothing buffered:           0
+written once allowed:       ['nodb']
+## A Distributed destination whose write selects only a remote shard
+insert accepted:            OK
+buffered:                   1
+local shard selected:       OK
+written once allowed:       ['remote']
 ## A materialized view on the destination writes with the rights of its definer
 written by the view:        ['mv']
 direct insert denied:       OK

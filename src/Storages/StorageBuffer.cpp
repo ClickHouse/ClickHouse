@@ -74,6 +74,7 @@
 
 #include <Poco/Net/SocketAddress.h>
 
+#include <span>
 #include <tuple>
 
 
@@ -107,6 +108,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool insert_allow_materialized_columns;
+    extern const SettingsUInt64 insert_shard_id;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool materialized_views_ignore_errors;
     extern const SettingsBool prefer_localhost_replica;
@@ -386,14 +388,19 @@ void checkForwardedInsertAccess(const StoragePtr & table, const ContextPtr & con
     }
     else if (const auto * distributed = table->as<StorageDistributed>())
     {
-        /// A shard with a local replica is written here, by a nested `INSERT` into its table under this identity.
-        const auto & remote_database = distributed->getRemoteDatabaseName();
+        /// A shard with a local replica among those the write selects (as `DistributedSink` selects them) is written here,
+        /// by a nested `INSERT` into its table under this identity, which resolves an empty database name as it does.
+        const auto & settings = context->getSettingsRef();
         const auto & remote_table = distributed->getRemoteTableName();
-        if (context->getSettingsRef()[Setting::prefer_localhost_replica] && !remote_database.empty() && !remote_table.empty())
+        if (settings[Setting::prefer_localhost_replica] && !remote_table.empty())
         {
             const auto cluster = distributed->getCluster();
-            if (std::ranges::any_of(cluster->getShardsInfo(), [](const auto & shard) { return shard.isLocal(); }))
-                next = catalog.tryGetTable(StorageID(remote_database, remote_table), context);
+            auto shards = std::span(cluster->getShardsInfo());
+            if (const UInt64 insert_shard_id = settings[Setting::insert_shard_id])
+                shards = insert_shard_id <= shards.size() ? shards.subspan(insert_shard_id - 1, 1) : shards.last(0);
+            if (std::ranges::any_of(shards, [](const auto & shard) { return shard.isLocal(); }))
+                next = catalog.tryGetTable(
+                    context->resolveStorageID(StorageID(distributed->getRemoteDatabaseName(), remote_table)), context);
         }
     }
 

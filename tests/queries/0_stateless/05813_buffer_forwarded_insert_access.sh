@@ -15,21 +15,26 @@ protected_db="protected_05813_${CLICKHOUSE_DATABASE}"
 user="u_05813_${CLICKHOUSE_DATABASE}"
 definer_ok="u_05813_definer_ok_${CLICKHOUSE_DATABASE}"
 definer_no="u_05813_definer_no_${CLICKHOUSE_DATABASE}"
+shard_user="u_05813_shard_${CLICKHOUSE_DATABASE}"
 nc="nc_05813_${CLICKHOUSE_DATABASE}"
 
 run_user() { ${CLICKHOUSE_CLIENT} --user "${user}" "$@"; }
+run_shard_user() { ${CLICKHOUSE_CLIENT} --user "${shard_user}" "$@"; }
 denied() { if "$@" 2>&1 | grep -q "ACCESS_DENIED"; then echo "OK"; else echo "UNEXPECTED"; fi; }
 
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
 DROP DATABASE IF EXISTS ${protected_db};
 CREATE DATABASE ${protected_db};
 CREATE TABLE ${protected_db}.t (s String) ENGINE = MergeTree ORDER BY s;
-DROP USER IF EXISTS ${user}, ${definer_ok}, ${definer_no};
+DROP USER IF EXISTS ${user}, ${definer_ok}, ${definer_no}, ${shard_user};
 -- The flush writes the shard of a Distributed table with a local replica here, as the user, if the user's profile says
 -- so; the insert checks it the same way.
 CREATE USER ${user} SETTINGS prefer_localhost_replica = 1;
 CREATE USER ${definer_ok}, ${definer_no};
 GRANT INSERT, SELECT, OPTIMIZE ON ${db}.* TO ${user};
+-- The flush runs in the default database of the user, where a table named without a database is.
+CREATE USER ${shard_user} DEFAULT DATABASE ${protected_db} SETTINGS prefer_localhost_replica = 1;
+GRANT INSERT ON ${db}.* TO ${shard_user};
 EOF
 
 echo "## The local shard of a Distributed destination"
@@ -45,6 +50,41 @@ run_user --query "INSERT INTO ${db}.dist_buf SETTINGS async_insert = 0 VALUES ('
 ${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE ${db}.dist_buf"
 echo -n "written once allowed:       "; ${CLICKHOUSE_CLIENT} --query "SELECT groupArray(s) FROM ${protected_db}.t"
 ${CLICKHOUSE_CLIENT} --query "REVOKE INSERT ON ${protected_db}.t FROM ${user}"
+
+echo "## The local shard of a Distributed destination naming its table without a database"
+${CLICKHOUSE_CLIENT} --multiquery <<EOF
+CREATE TABLE ${db}.dist_nodb (s String) ENGINE = Distributed(test_shard_localhost, '', t);
+CREATE TABLE ${db}.dist_nodb_buf (s String) ENGINE = Buffer(${db}, dist_nodb, 1, 3600, 3600, 1000000, 1000000, 1000000000, 1000000000);
+EOF
+echo -n "insert denied:              "
+denied run_shard_user --query "INSERT INTO ${db}.dist_nodb_buf SETTINGS async_insert = 0 VALUES ('nodb')"
+# A read of a buffer reads its destination too; `total_rows` counts only the rows buffered in it.
+echo -n "nothing buffered:           "
+${CLICKHOUSE_CLIENT} --query "SELECT total_rows FROM system.tables WHERE database = '${db}' AND name = 'dist_nodb_buf'"
+${CLICKHOUSE_CLIENT} --query "GRANT INSERT ON ${protected_db}.t TO ${shard_user}"
+run_shard_user --query "INSERT INTO ${db}.dist_nodb_buf SETTINGS async_insert = 0 VALUES ('nodb')"
+${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE ${db}.dist_nodb_buf"
+echo -n "written once allowed:       "; ${CLICKHOUSE_CLIENT} --query "SELECT groupArray(s) FROM ${protected_db}.t WHERE s = 'nodb'"
+${CLICKHOUSE_CLIENT} --query "REVOKE INSERT ON ${protected_db}.t FROM ${shard_user}"
+
+echo "## A Distributed destination whose write selects only a remote shard"
+# Shard 1 of test_unavailable_shard is local and shard 2 is not; `insert_shard_id` selects the shard the write goes to.
+${CLICKHOUSE_CLIENT} --multiquery <<EOF
+CREATE TABLE ${db}.dist_remote (s String) ENGINE = Distributed(test_unavailable_shard, ${protected_db}, t);
+CREATE TABLE ${db}.dist_remote_buf (s String) ENGINE = Buffer(${db}, dist_remote, 1, 3600, 3600, 1000000, 1000000, 1000000000, 1000000000);
+ALTER USER ${shard_user} SETTINGS prefer_localhost_replica = 1, insert_shard_id = 2;
+EOF
+echo -n "insert accepted:            "
+if run_shard_user --query "INSERT INTO ${db}.dist_remote_buf SETTINGS async_insert = 0 VALUES ('remote')"; then echo "OK"; fi
+echo -n "buffered:                   "
+${CLICKHOUSE_CLIENT} --query "SELECT total_rows FROM system.tables WHERE database = '${db}' AND name = 'dist_remote_buf'"
+${CLICKHOUSE_CLIENT} --query "ALTER USER ${shard_user} SETTINGS prefer_localhost_replica = 1, insert_shard_id = 1"
+echo -n "local shard selected:       "
+denied run_shard_user --query "INSERT INTO ${db}.dist_remote_buf SETTINGS async_insert = 0 VALUES ('local')"
+# Flushed to the local shard, which the profile of the user selects now.
+${CLICKHOUSE_CLIENT} --query "GRANT INSERT ON ${protected_db}.t TO ${shard_user}"
+${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE ${db}.dist_remote_buf"
+echo -n "written once allowed:       "; ${CLICKHOUSE_CLIENT} --query "SELECT groupArray(s) FROM ${protected_db}.t WHERE s IN ('remote', 'local')"
 
 echo "## A materialized view on the destination writes with the rights of its definer"
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
@@ -116,7 +156,7 @@ echo -n "written once allowed:       "; ${CLICKHOUSE_CLIENT} --query "SELECT gro
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
 DROP TABLE ${db}.mv_ok;
 DROP TABLE ${db}.mv_no;
-DROP USER ${user}, ${definer_ok}, ${definer_no}, ${ignore_user};
+DROP USER ${user}, ${definer_ok}, ${definer_no}, ${ignore_user}, ${shard_user};
 DROP NAMED COLLECTION ${nc};
 DROP DATABASE ${protected_db};
 EOF
