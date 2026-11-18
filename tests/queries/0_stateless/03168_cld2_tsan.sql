@@ -7,4 +7,4 @@ GROUP BY
     GROUPING SETS (
         ('a', toUInt256(1)),
         (stringToH3(toFixedString(toFixedString('85283473ffffff', 14), 14))))
-SETTINGS allow_experimental_nlp_functions = 1;
+SETTINGS allow_nlp_functions = 1;

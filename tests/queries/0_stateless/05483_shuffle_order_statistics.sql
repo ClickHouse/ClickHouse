@@ -1,4 +1,4 @@
-SET allow_experimental_shuffle_query = 1;
+SET allow_shuffle_query = 1;
 SET query_plan_use_shuffle_for_order_by_rand = 1;
 SET max_rows_to_sort = 0, max_bytes_to_sort = 0;
 SET max_bytes_before_external_sort = 0, max_bytes_ratio_before_external_sort = 0;

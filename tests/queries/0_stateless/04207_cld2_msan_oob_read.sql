@@ -3,7 +3,7 @@
 
 -- https://github.com/ClickHouse/ClickHouse/issues/103765
 
-SET allow_experimental_nlp_functions = 1;
+SET allow_nlp_functions = 1;
 
 SELECT detectLanguageMixed(materialize('abcdα'));
 SELECT detectLanguageMixed(materialize('abcdℵ'));

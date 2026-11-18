@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e -o pipefail
 
-SETTINGS="allow_experimental_shuffle_query = 1, query_plan_use_shuffle_for_order_by_rand = 1, exact_rows_before_limit = 1, max_rows_to_sort = 0, max_bytes_to_sort = 0, max_bytes_before_external_sort = 0, max_bytes_ratio_before_external_sort = 0, max_block_size = 1000, enable_parallel_replicas = 0"
+SETTINGS="allow_shuffle_query = 1, query_plan_use_shuffle_for_order_by_rand = 1, exact_rows_before_limit = 1, max_rows_to_sort = 0, max_bytes_to_sort = 0, max_bytes_before_external_sort = 0, max_bytes_ratio_before_external_sort = 0, max_block_size = 1000, enable_parallel_replicas = 0"
 
 for threads in 1 4; do
     for clause in "SHUFFLE" "ORDER BY rand()"; do

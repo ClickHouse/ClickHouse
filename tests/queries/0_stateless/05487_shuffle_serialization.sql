@@ -1,4 +1,4 @@
-SET allow_experimental_shuffle_query = 1;
+SET allow_shuffle_query = 1;
 SET serialize_query_plan = 1, enable_parallel_replicas = 0, prefer_localhost_replica = 0;
 SET make_distributed_plan = 0;
 SET max_threads = 2, max_block_size = 17;
