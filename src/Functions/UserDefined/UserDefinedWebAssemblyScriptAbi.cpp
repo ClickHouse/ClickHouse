@@ -229,7 +229,7 @@ public:
     }
 
     /// `__new(payload_size, class_id)`. Returns a pointer to the payload.
-    WasmPtr allocateObject(WasmSizeT payload_size, uint32_t class_id) const
+    [[nodiscard]] WasmPtr allocateObject(WasmSizeT payload_size, uint32_t class_id) const
     {
         return compartment->invoke<WasmPtr>(
             new_function_name, {payload_size, class_id}, stop_token);
@@ -246,7 +246,7 @@ public:
     }
 
     /// Read `(rtId, rtSize)` from the object header at `ptr - 8`.
-    std::pair<uint32_t, uint32_t> readObjectHeader(WasmPtr ptr) const
+    [[nodiscard]] std::pair<uint32_t, uint32_t> readObjectHeader(WasmPtr ptr) const
     {
         if (ptr == 0)
             throw Exception(ErrorCodes::WASM_ERROR, "AssemblyScript pointer is null");
@@ -264,7 +264,7 @@ public:
     /// (each input byte ≤ one surrogate pair = 4 bytes), transcodes UTF-8 → UTF-16
     /// directly into compartment memory, then patches `rtSize` to the actual byte length.
     /// Avoids an intermediate host-side vector at the cost of some over-allocation.
-    WasmPtr createString(std::string_view utf8) const
+    [[nodiscard]] WasmPtr createString(std::string_view utf8) const
     {
         size_t max_bytes = utf8.size() * 4;
         if (max_bytes > std::numeric_limits<WasmSizeT>::max())
@@ -372,7 +372,7 @@ public:
     /// A numeric-only signature under a cap too small for that memory is therefore refused by the
     /// instantiation, which names the module's own requirement, rather than by the preflight that
     /// guards an input this function never places there.
-    bool requiresGuestLinearMemory() const override
+    [[nodiscard]] bool requiresGuestLinearMemory() const override
     {
         if (result_type && typeid_cast<const DataTypeString *>(result_type.get()))
             return true;
@@ -384,7 +384,7 @@ public:
 
     /// A row's `String` arguments become separate AssemblyScript objects, built one row at a time
     /// by `createString`; no block is serialized and `serialization_format` is never read.
-    bool serializesInputBlockToGuestMemory() const override { return false; }
+    [[nodiscard]] bool serializesInputBlockToGuestMemory() const override { return false; }
 
     void checkSignature() const
     {

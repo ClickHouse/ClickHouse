@@ -4,6 +4,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <azure/storage/blobs.hpp>
+#include <azure/core/etag.hpp>
 #include <azure/core/response.hpp>
 #include <azure/storage/blobs/blob_client.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
@@ -71,7 +72,7 @@ struct Endpoint
     std::optional<bool> container_already_exists;
     std::optional<bool> add_account_name_to_url;
 
-    String getContainerEndpoint() const
+    [[nodiscard]] String getContainerEndpoint() const
     {
         String url = storage_account_url;
         if (url.ends_with('/'))
@@ -92,7 +93,7 @@ struct Endpoint
         return url;
     }
 
-    String getServiceEndpoint() const
+    [[nodiscard]] String getServiceEndpoint() const
     {
         String url = storage_account_url;
 
@@ -131,15 +132,15 @@ class ContainerClientWrapper
 public:
     ContainerClientWrapper(RawContainerClient client_, String blob_prefix_);
 
-    bool IsClientForDisk() const;
-    BlobClient GetBlobClient(const String & blob_name) const;
-    BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
-    BlobContainerPropertiesRespones GetProperties() const;
-    ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
+    [[nodiscard]] bool IsClientForDisk() const;
+    [[nodiscard]] BlobClient GetBlobClient(const String & blob_name) const;
+    [[nodiscard]] BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
+    [[nodiscard]] BlobContainerPropertiesRespones GetProperties() const;
+    [[nodiscard]] ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
 
-    BlobContainerBatch CreateBatch() const;
-    BlobBatchResultResponse SubmitBatch(const BlobContainerBatch & batch) const;
-    String GetBlobPath(const String & blob_name) const;
+    [[nodiscard]] BlobContainerBatch CreateBatch() const;
+    BlobBatchResultResponse SubmitBatch(const BlobContainerBatch & batch) const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
+    [[nodiscard]] String GetBlobPath(const String & blob_name) const;
 
 private:
     RawContainerClient client;
@@ -166,22 +167,28 @@ struct ConnectionParams
     /// table on a disk, whose configuration comes from the server.
     bool follows_session_restriction = false;
 
-    String getContainer() const { return endpoint.container_name; }
-    String getConnectionURL() const;
-    /// Without the query, which can be a SAS, for where the url only names the endpoint (logs, errors, cache keys).
-    String getConnectionURLWithoutQuery() const;
+    /// `client_id` and `tenant_id` of a `WorkloadIdentityCredential` in `auth_method` given in `extra_credentials`,
+    /// which the credential does not expose. Empty when the credential takes them from the environment
+    /// (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`). Used to pass the same identity to `delta-kernel-rs`.
+    String workload_identity_client_id;
+    String workload_identity_tenant_id;
 
-    std::unique_ptr<ServiceClient> createForService() const;
-    std::unique_ptr<ContainerClient> createForContainer() const;
+    [[nodiscard]] String getContainer() const { return endpoint.container_name; }
+    [[nodiscard]] String getConnectionURL() const;
+    /// Without the query, which can be a SAS, for where the url only names the endpoint (logs, errors, cache keys).
+    [[nodiscard]] String getConnectionURLWithoutQuery() const;
+
+    [[nodiscard]] std::unique_ptr<ServiceClient> createForService() const;
+    [[nodiscard]] std::unique_ptr<ContainerClient> createForContainer() const;
 
     /// Throws `ACCESS_DENIED` when the credential is off limits and the anonymous fallback is not allowed.
-    bool checkOrDropServerManagedCredentials() const;
+    bool checkOrDropServerManagedCredentials() const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
 
     /// Whether requests would authenticate with the server's own identity: no SAS token and a server-managed `auth_method`.
-    bool usesServerManagedCredentials() const;
+    [[nodiscard]] bool usesServerManagedCredentials() const;
 
     /// `auth_method` for a caller that obtains tokens from it directly; throws `ACCESS_DENIED` if it is off limits.
-    AuthMethod getPermittedAuthMethod() const;
+    [[nodiscard]] AuthMethod getPermittedAuthMethod() const;
 
     /// Throws `ACCESS_DENIED` if a storage defined in user SQL uses the server's own identity and the accessing session
     /// is restricted. Does not change the parameters, so a client kept for others is not affected.
@@ -215,8 +222,14 @@ AuthConfig readAuthConfig(const Poco::Util::AbstractConfiguration & config, cons
 AuthMethod getAuthMethod(const AuthConfig & auth_config);
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
-/// `ETag` is an optional response header, and `Azure::ETag::ToString` aborts the process when the tag is absent
-/// (also in release builds). Use this function instead: it throws an exception when the endpoint did not send the tag.
+/// `ETag` is an optional response header, and `Azure::ETag::ToString` aborts the process when the
+/// tag is absent - in release builds too, because `AZURE_ASSERT_MSG` expands to a bare `std::abort`
+/// under `NDEBUG`. Never call it directly on a value that comes from a remote endpoint; use this
+/// function instead.
+///
+/// Azure Blob Storage and every known compatible implementation send a non-empty header in every
+/// `GetProperties`, `ListBlobs` and `Download` answer, so an absent or empty header means the endpoint
+/// is not behaving correctly.
 String getETag(const Azure::ETag & etag, const String & blob_path);
 
 #endif

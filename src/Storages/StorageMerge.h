@@ -62,6 +62,7 @@ public:
     /// initiator rewrite functions to subcolumns, or a skip index on the shard would be missed.
     bool supportsOptimizationToSubcolumns() const override;
     bool supportsOptimizationToTupleElementSubcolumns() const override;
+    bool hasBucketedMapSerialization() const override;
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsPrewhere() const override;
     std::optional<NameSet> supportedPrewhereColumns() const override;
@@ -107,6 +108,8 @@ public:
     /// `View`, `ObjectStorageCluster`, etc.) at the top level.
     bool hasChildTable(std::function<bool(const StoragePtr &)> predicate) const;
 
+    const String & getSourceDatabaseNameOrRegexp() const { return database_name_or_regexp.source_database_name_or_regexp; }
+
     static ColumnsDescription getColumnsDescriptionFromSourceTables(
         const ContextPtr & query_context,
         const String & source_database_name_or_regexp,
@@ -115,8 +118,10 @@ public:
         size_t max_tables_to_look);
 
 private:
-    /// (Database, Table, Lock, TableName)
-    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
+    /// (Database, Table, Lock, TableName, Metadata). The metadata is the snapshot the column-level access check
+    /// resolved subcolumns against, so the read uses it too and both see the same schema. It is null when the check
+    /// did not need it, then the read takes the snapshot itself.
+    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String, StorageMetadataPtr>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
 
     struct DatabaseNameOrRegexp
@@ -135,9 +140,9 @@ private:
             std::optional<OptimizedRegularExpression> source_table_regexp_,
             std::optional<DBToTableSetMap> source_databases_and_tables_);
 
-        DatabaseTablesIteratorPtr getDatabaseIterator(const String & database_name, ContextPtr context) const;
+        [[nodiscard]] DatabaseTablesIteratorPtr getDatabaseIterator(const String & database_name, ContextPtr context) const;
 
-        DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
+        [[nodiscard]] DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
     };
 
     DatabaseNameOrRegexp database_name_or_regexp;
@@ -160,6 +165,9 @@ private:
     StoragePtr traverseTablesUntil(F && predicate) const;
 
     template <typename F>
+    StoragePtr traverseVisibleTablesUntil(const ContextPtr & query_context, F && predicate) const;
+
+    template <typename F>
     void forEachTable(F && func) const;
 
     template <typename F>
@@ -176,7 +184,7 @@ private:
     ColumnSizeByName getColumnSizes() const override;
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
-    std::optional<ColumnSizeByName> tryGetColumnSizes() const override;
+    std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & query_context) const override;
 
     ColumnsDescription getColumnsDescriptionFromSourceTables(const ContextPtr & context, SourceMetadata * source_metadata) const;
 
@@ -185,7 +193,7 @@ private:
     bool tableSupportsPrewhere() const;
 
     template <typename F>
-    std::optional<UInt64> totalRowsOrBytes(F && func) const;
+    std::optional<UInt64> totalRowsOrBytes(const ContextPtr & query_context, F && func) const;
 
     friend class ReadFromMerge;
 };
@@ -194,9 +202,9 @@ class ReadFromMerge final : public SourceStepWithFilter
 {
 public:
     static constexpr auto name = "ReadFromMerge";
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
+    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String, StorageMetadataPtr>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
 
@@ -217,15 +225,16 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
-    /// Whether `requestReadingInOrder` accepts `order_info_`: every reading step of every child plan has to be a `ReadFromMergeTree`
-    /// that reads in its direction (see `ReadFromMergeTree::canReadInReverseOrder`) and is sorted like its table on the prefix.
+    /// Whether `requestReadingInOrder` accepts `order_info_`: no child plan runs distributed, and every reading step of every
+    /// child plan has to be a `ReadFromMergeTree` that reads in its direction (see `ReadFromMergeTree::canReadInReverseOrder`)
+    /// and is sorted like its table on the prefix.
     /// With `allow_shorter_read_key`, a read whose sorting key is shorter than the prefix passes: it refuses the request itself.
     /// Creates the child plans.
     bool canReadInOrder(const InputOrderInfo & order_info_, bool allow_shorter_read_key = false);
-    const InputOrderInfoPtr & getInputOrder() const { return order_info; }
+    [[nodiscard]] const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
     /// Whether the child plans have been created (`filterTablesAndCreateChildrenPlans`).
-    bool hasChildPlans() const { return child_plans.has_value(); }
+    [[nodiscard]] bool hasChildPlans() const { return child_plans.has_value(); }
     /// Drops the child plans, so that they are created again when they are needed next. For a first-pass
     /// optimization which probes the children before the filters are applied to this step (`applyFilters`):
     /// children created then would miss the filter on `_database` and `_table` (`getSelectedTables`), and
@@ -235,6 +244,7 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
+    QueryPlanRawPtrs getBuiltChildPlans() override;
 
     /// Returns child plans aligned 1:1 with `getSelectedTables()`. Entries for uninitialized
     /// plans are returned as `nullptr` so that callers can pair tables with their plans.
@@ -316,7 +326,7 @@ private:
         void addFilterTransform(QueryPlan &, ContextPtr) const;
 
         /// The policy AND-ed with `forwarded`, as the row-level filter of the `storage` read; null if it cannot evaluate it.
-        FilterDAGInfoPtr makeRowLevelFilter(const IStorage & storage, const FilterDAGInfoPtr & forwarded, ContextPtr) const;
+        [[nodiscard]] FilterDAGInfoPtr makeRowLevelFilter(const IStorage & storage, const FilterDAGInfoPtr & forwarded, ContextPtr) const;
 
         void addCreatingSetsStep(QueryPlan &, ContextPtr) const;
 
@@ -390,8 +400,11 @@ private:
         bool is_smallest_column_requested,
         const Names & column_names_read);
 
-    StorageMerge::StorageListWithLocks getSelectedTables(
+    [[nodiscard]] StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context) const;
+
+    /// The metadata snapshot of a child table to read with. It may refresh the metadata of a data lake child, which can be slow.
+    [[nodiscard]] StorageMetadataPtr getChildMetadataSnapshot(const StoragePtr & storage, const ContextPtr & query_context) const;
 };
 
 }
