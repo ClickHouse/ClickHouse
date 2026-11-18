@@ -266,10 +266,6 @@ size_t IStatistics::fieldAllocatedBytes(const Field & field)
 namespace
 {
 
-/// The bit of `stat_types_mask` reserved for the statistics of the paths of a `JSON` column, so no statistics type may
-/// use it. A reader that does not know it skips it like an unknown type.
-constexpr size_t PATH_STATISTICS_MASK_BIT = static_cast<size_t>(StatisticsType::Max) - 1;
-
 DataTypePtr getPathType(const DataTypeObject & object_type, const String & path)
 {
     const auto & typed_paths = object_type.getTypedPaths();
@@ -744,7 +740,7 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
     ///       UInt64  stat_size
     ///       <stat_size> bytes of per-statistics payload
     /// The per-stat size prefix lets a reader skip statistics types it doesn't recognize.
-    /// Bit `PATH_STATISTICS_MASK_BIT` is the statistics of the paths of a `JSON` column:
+    /// Bit `StatisticsType::JSONPaths` is the statistics of the paths of a `JSON` column:
     ///   UInt64  path_types_mask, VarUInt number of paths, then for each path its name and its statistics in this layout.
     writeIntBinary(StatisticsFileVersion::V4, buf);
 
@@ -752,7 +748,7 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
     for (const auto & [type, _] : stats)
         stat_types_mask |= 1ULL << static_cast<UInt8>(type);
     if (!path_types.empty())
-        stat_types_mask |= 1ULL << PATH_STATISTICS_MASK_BIT;
+        stat_types_mask |= 1ULL << static_cast<UInt8>(StatisticsType::JSONPaths);
 
     writeIntBinary(stat_types_mask, buf);
     writeStringBinary(stats_desc.data_type->getName(), buf);
@@ -909,7 +905,7 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
                 continue;
             }
 
-            if (i == PATH_STATISTICS_MASK_BIT)
+            if (type == StatisticsType::JSONPaths)
             {
                 String payload(stat_size, '\0');
                 buf.readStrict(payload.data(), stat_size);

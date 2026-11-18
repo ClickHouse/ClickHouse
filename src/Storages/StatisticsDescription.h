@@ -19,6 +19,9 @@ enum class StatisticsType : UInt8
     Basic = 4,
     UniqV2 = 5,
 
+    /// The statistics of the paths of a `JSON` column. Not a type that can be declared.
+    JSONPaths = 62,
+
     Max = 63,
 };
 
