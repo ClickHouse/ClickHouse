@@ -693,7 +693,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// Remove algorithms that are not compatible with runtime filters
     std::erase_if(join_algorithms, [&](auto join_algorithm) { return !supports_runtime_filter(join_algorithm); });
 
-    join_step->setRuntimeFilterAdded();
+    /// A `LEFT ANTI` filter drops the rows with a match, so every row it passes is a miss. Only a filter that keeps the
+    /// rows that can match removes the probes that the packed long keys would hash for nothing.
+    if (!check_left_does_not_contain)
+        join_step->setRuntimeFilterAdded();
     return true;
 }
 

@@ -3,7 +3,7 @@
 -- A hash join on a single `String` key packs the keys (see `enable_packed_string_keys_in_hash_join`) or compares them exactly.
 -- Without the `basic` statistics of the right key, `min_rows_for_packed_string_keys_in_hash_join` decides. With them, the keys are
 -- packed only when the hash table with exact keys is larger than the L2 cache. Long keys also need that many rows, unless the join
--- has a runtime filter, which an `INNER` join gets and a `LEFT` join does not.
+-- has a runtime filter that keeps the rows which can match, which an `INNER` join gets and a `LEFT` join does not.
 -- The cache size differs between machines, so the right sides are far from it: 1000 rows take 35 to 65 KB, 1000000 rows 38 to 65 MB.
 -- A join with packed keys counts the keys it inserts in `JoinPackedStringKeysInline` and `JoinPackedStringKeysHashed`,
 -- a join with exact keys counts none.
@@ -81,6 +81,14 @@ SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l INNER J
 FORMAT Null SETTINGS min_rows_for_packed_string_keys_in_hash_join = 100000000, enable_join_runtime_filters = 0, log_comment = '05814:long_big_stats:no_filter:min_rows_large';
 SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l LEFT JOIN long_big_stats AS r ON l.k = r.k
 FORMAT Null SETTINGS min_rows_for_packed_string_keys_in_hash_join = 0, log_comment = '05814:long_big_stats:left:min_rows_0';
+-- A `LEFT SEMI` join keeps the rows that can match and has the filter. The filter of a `LEFT ANTI` join removes the rows with a match,
+-- so the rows left all miss, and it does not count.
+SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l LEFT SEMI JOIN long_big_stats AS r ON l.k = r.k
+FORMAT Null SETTINGS min_rows_for_packed_string_keys_in_hash_join = 100000000, log_comment = '05814:long_big_stats:left_semi:min_rows_large';
+SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l LEFT ANTI JOIN long_big_stats AS r ON l.k = r.k
+FORMAT Null SETTINGS min_rows_for_packed_string_keys_in_hash_join = 100000000, log_comment = '05814:long_big_stats:left_anti:min_rows_large';
+SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l LEFT ANTI JOIN long_big_stats AS r ON l.k = r.k
+FORMAT Null SETTINGS min_rows_for_packed_string_keys_in_hash_join = 0, log_comment = '05814:long_big_stats:left_anti:min_rows_0';
 SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l INNER JOIN long_big_stats AS r ON l.k = r.k
 FORMAT Null SETTINGS min_rows_for_packed_string_keys_in_hash_join = 0, log_comment = '05814:long_big_stats:inner:min_rows_0';
 SELECT count() FROM (SELECT toString(number) AS k FROM numbers(10)) AS l INNER JOIN long_big_plain AS r ON l.k = r.k

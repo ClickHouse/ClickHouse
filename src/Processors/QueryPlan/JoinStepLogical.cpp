@@ -3110,9 +3110,12 @@ void JoinStepLogical::serialize(Serialization & ctx) const
         /// Only `full_sorting_merge` is ever planned.
         if (planned_algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
             optimizer_flags |= 4;
-        /// `min_rows_for_packed_string_keys_in_hash_join` compares against the right side's estimate.
-        if (join_settings.enable_packed_string_keys_in_hash_join && right_relation.estimated_rows
-            && *right_relation.estimated_rows < join_settings.min_rows_for_packed_string_keys_in_hash_join)
+        /// `min_rows_for_packed_string_keys_in_hash_join` compares against the right side's estimate. A step that came
+        /// over the wire has no estimate, so it passes on the bit it received.
+        if (join_settings.enable_packed_string_keys_in_hash_join
+            && (sender_estimated_small_right_side
+                || (right_relation.estimated_rows
+                    && *right_relation.estimated_rows < join_settings.min_rows_for_packed_string_keys_in_hash_join)))
             optimizer_flags |= 8;
         writeIntBinary(optimizer_flags, ctx.out);
     }

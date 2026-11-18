@@ -14,6 +14,9 @@ long_big_stats:inner:min_rows_large	0	1
 long_big_stats:left:min_rows_large	0	0
 long_big_stats:no_filter:min_rows_large	0	0
 long_big_stats:left:min_rows_0	0	1
+long_big_stats:left_semi:min_rows_large	0	1
+long_big_stats:left_anti:min_rows_large	0	0
+long_big_stats:left_anti:min_rows_0	0	1
 long_big_stats:inner:min_rows_0	0	1
 long_big_plain:min_rows_large	0	0
 long_big_plain:default	0	1
