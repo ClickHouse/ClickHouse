@@ -4,7 +4,8 @@
 SET use_hash_table_stats_for_join_reordering = 0, enable_join_runtime_filters = 0, query_plan_optimize_join_order_randomize = 0,
     max_bytes_ratio_before_external_join = 0, query_plan_optimize_join_order_limit = 10, query_plan_join_swap_table = 'auto',
     enable_join_transitive_predicates = 0, use_statistics = 1, min_marks_per_part_to_load_statistics = 0,
-    optimize_functions_to_subcolumns = 1, explain_query_plan_default = 'legacy', enable_parallel_replicas = 0;
+    optimize_functions_to_subcolumns = 1, optimize_empty_string_comparisons = 1, explain_query_plan_default = 'legacy',
+    enable_parallel_replicas = 0;
 
 CREATE TABLE orders (o_orderkey Int32, o_custkey Int32, o_totalprice Decimal(15, 2))
 ENGINE = MergeTree ORDER BY o_orderkey SETTINGS auto_statistics_types = '', index_granularity = 8192;
