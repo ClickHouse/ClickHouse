@@ -34,10 +34,24 @@ void updateJoinKeyDistinctCounts(
     }
 
     const UInt64 minimum = std::min(left_stats.num_distinct_values, right_stats.num_distinct_values);
+    /// When both are equal, either may be the estimate from metadata; keep the flag then, as it only makes the
+    /// estimate of a join on this key more conservative.
+    bool minimum_from_metadata = false;
+    if (left_stats.num_distinct_values == minimum)
+        minimum_from_metadata |= left_stats.num_distinct_values_from_metadata;
+    if (right_stats.num_distinct_values == minimum)
+        minimum_from_metadata |= right_stats.num_distinct_values_from_metadata;
+
     if (update_left)
+    {
         left_stats.num_distinct_values = minimum;
+        left_stats.num_distinct_values_from_metadata = minimum_from_metadata;
+    }
     if (update_right)
+    {
         right_stats.num_distinct_values = minimum;
+        right_stats.num_distinct_values_from_metadata = minimum_from_metadata;
+    }
 }
 
 void remapColumnStats(UnorderedMapWithMemoryTracking<String, ColumnStats> & mapped, const ActionsDAG & actions)
