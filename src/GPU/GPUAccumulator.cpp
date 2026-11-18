@@ -232,14 +232,13 @@ GPUGroupingLane::GPUGroupingLane(
     const DataTypes & value_types,
     std::vector<GPUGroupByAggregate> aggregates_,
     std::optional<CompiledGPUExpression> where_,
-    std::shared_ptr<GPUGroupingDecision> decision_)
+    size_t num_parts)
     : group_keys(groupByKeysOrThrow(key_types))
     , values(valueTypesOrThrow(value_types))
     , aggregates(aggregatesOrThrow(values.size(), std::move(aggregates_)))
     , where(std::move(where_))
-    , decision(std::move(decision_))
     , stream(createStream())
-    , group_by(createCudfGroupBy(group_keys, values, aggregates, cuda::stream_ref{stream.get()}))
+    , group_by(createCudfGroupBy(group_keys, values, aggregates, num_parts, cuda::stream_ref{stream.get()}))
     , kept(cuda::stream_ref{stream.get()})
 {
     if (where && where->expression.result != GPUExpressionResult::Bitmask)
@@ -279,70 +278,17 @@ void GPUGroupingLane::add(GPUDeviceBatch batch)
         mask = reinterpret_cast<const uint32_t *>(bits);
     }
 
-    if (decided)
-    {
-        group_by->addBatch(keys, batch_values, mask);
-    }
-    else
-    {
-        /// The lanes reduce their batches alike, so that they merge: as the first batch with rows decided.
-        std::unique_lock lock(decision->mutex);
-        if (decision->reduce_runs)
-        {
-            group_by->reduceRuns(*decision->reduce_runs);
-            decided = true;
-            lock.unlock();
-            group_by->addBatch(keys, batch_values, mask);
-        }
-        else
-        {
-            group_by->addBatch(keys, batch_values, mask);
-            if (group_by->decided())
-            {
-                decision->reduce_runs = group_by->reducesRuns();
-                decided = true;
-            }
-        }
-    }
+    group_by->addBatch(keys, batch_values, mask);
 
     ProfileEvents::increment(ProfileEvents::GPUAggregationRows, batch.rows());
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
 }
 
-size_t GPUGroupingLane::partition(size_t num_parts)
-{
-    Stopwatch watch;
-    const size_t groups = group_by->partition(num_parts);
-    ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
-    return groups;
-}
-
 void GPUGroupingLane::absorbPart(const GPUGroupingLane & other, size_t part)
 {
     Stopwatch watch;
     group_by->absorbPart(*other.group_by, part);
-    ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
-}
-
-std::optional<size_t> GPUGroupingLane::numGroups() const
-{
-    if (group_by->reducesRuns())
-        return std::nullopt;
-    return group_by->numGroups();
-}
-
-void GPUGroupingLane::reserveGroups(size_t groups)
-{
-    Stopwatch watch;
-    group_by->reserveGroups(groups);
-    ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
-}
-
-void GPUGroupingLane::absorb(GPUGroupingLane & other)
-{
-    Stopwatch watch;
-    group_by->absorb(*other.group_by);
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
 }
 

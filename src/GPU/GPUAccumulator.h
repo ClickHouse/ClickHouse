@@ -17,7 +17,6 @@
 #include <DataTypes/IDataType.h>
 
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <vector>
 
@@ -27,7 +26,7 @@
 ///     GPUBatchUploader    columns of the host -> pinned memory -> the device, a CUDA stream per uploader
 ///     GPUDeviceBatch      the columns of a batch on the device, handed from an uploader's stream to a lane's
 ///     GPUGroupingLane     a CUDA stream and a `CudfGroupBy`: the groups of the batches it took; several lanes, merged
-///                         at the end by parts of the keys (`partition`, `absorbPart`) or into one (`absorb`)
+///                         at the end by parts of the keys (`absorbPart`)
 ///     GPUAccumulator      without `GROUP BY`: reductions of the batches
 ///
 /// No thread waits for another's stream: a stream waits for an event of another, see `GPUDeviceBatch::moveTo`.
@@ -102,14 +101,6 @@ private:
     std::vector<ColumnUploadPipe> pipes;
 };
 
-/// How all the lanes of a `GROUP BY` reduce their batches, so that they merge: decided by the first batch any of them
-/// groups, see `CudfGroupBy::decided`.
-struct GPUGroupingDecision
-{
-    std::mutex mutex;
-    std::optional<bool> reduce_runs;
-};
-
 /// A lane of a `GROUP BY` on the device: a CUDA stream and the groups of the batches it took, through a `CudfGroupBy`.
 /// Without keys, the aggregates are of every row, as one group, which there is none of where no row is grouped.
 ///
@@ -123,7 +114,7 @@ public:
         const DataTypes & value_types,
         std::vector<GPUGroupByAggregate> aggregates_,
         std::optional<CompiledGPUExpression> where_,
-        std::shared_ptr<GPUGroupingDecision> decision_);
+        size_t num_parts);
 
     GPUGroupingLane(const GPUGroupingLane &) = delete;
     GPUGroupingLane & operator=(const GPUGroupingLane &) = delete;
@@ -131,21 +122,8 @@ public:
     /// The columns of a batch: the keys, the values, then the columns of `where`.
     void add(GPUDeviceBatch batch);
 
-    /// Before the first batch: reduces each batch into partial results split by the keys into `num_parts` parts, see
-    /// `CudfGroupBy::splitIntoParts`.
-    void splitIntoParts(size_t num_parts) { group_by->splitIntoParts(num_parts); }
-    /// Instead of `finalize`: closes the groups as parts by the keys. Returns about the number of groups.
-    size_t partition(size_t num_parts);
-    /// Of a lane that took no batch: takes part `part` of `other`, to merge at `finalize`.
+    /// Of a lane of one part, which took no batch: takes part `part` of `other`, which takes no more.
     void absorbPart(const GPUGroupingLane & other, size_t part);
-
-    /// How many groups the lane holds so far, of a lane that groups through `streaming_groupby`; nothing of one that
-    /// reduces the runs of sorted keys. Waits for the device.
-    std::optional<size_t> numGroups() const;
-    /// Makes room for `groups` in all at once, see `CudfGroupBy::reserveGroups`.
-    void reserveGroups(size_t groups);
-    /// Merges the groups of `other` into this lane's.
-    void absorb(GPUGroupingLane & other);
 
     /// Returns the number of groups.
     size_t finalize();
@@ -165,14 +143,11 @@ private:
     const std::vector<GPUGroupByAggregate> aggregates;
     /// Before the stream, which is synchronized when it goes, as the kernel of the predicate must stay until then.
     const std::optional<CompiledGPUExpression> where;
-    const std::shared_ptr<GPUGroupingDecision> decision;
 
     StreamPtr stream;
     std::unique_ptr<CudfGroupBy> group_by;
     /// The bits of the rows of a batch, or of the groups, that a predicate keeps.
     DeviceBuffer kept;
-    /// Whether this lane reduces its batches as `decision` says.
-    bool decided = false;
 
     std::optional<size_t> num_groups;
 };

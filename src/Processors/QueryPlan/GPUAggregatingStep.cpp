@@ -14,7 +14,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <numeric>
 #include <string_view>
 
 namespace DB
@@ -73,8 +72,7 @@ namespace
 ///
 /// A stream of the pipeline before is uploaded by one `GPUUpload`, the lanes take the batches of any stream, as the
 /// resize hands them over, and each lane splits its groups by the keys into P parts, which are merged each on its own.
-/// With an `avg`, whose partial results do not combine, the lanes are merged into one by `GPUMergeGroups` instead, and
-/// without keys the batches are reduced by `GPUReduce`. The chunks between them have no columns: they carry a chunk
+/// Without keys the batches are reduced by `GPUReduce`. The chunks between them have no columns: they carry a chunk
 /// info, a batch on the device or the groups of a lane.
 
 /// The lanes that group the batches, at most: as Sirius runs 4 to 8 tasks on a device at once, enough that one waiting
@@ -106,10 +104,8 @@ struct Plan
     size_t num_aggregates = 0;
     size_t batch_bytes = 0;
 
-    /// Whether the lanes merge by parts of the keys, into as many parts.
-    bool merge_by_parts = false;
+    /// The parts the lanes split their groups into by the keys, each merged on its own.
     size_t num_parts = 1;
-    std::shared_ptr<GPU::GPUGroupingDecision> decision = std::make_shared<GPU::GPUGroupingDecision>();
 
     DataTypes uploadTypes() const
     {
@@ -186,15 +182,12 @@ std::shared_ptr<Plan> planOf(const Block & input_header, const Aggregator::Param
         });
     }
 
-    /// The partial results of an `avg` do not combine: then the lanes are merged into one.
-    plan->merge_by_parts = std::ranges::none_of(
-        plan->aggregates, [](const GPU::GPUGroupByAggregate & aggregate) { return aggregate.aggregation == GPU::GPUAggregationKind::Mean; });
     return plan;
 }
 
-std::shared_ptr<GPU::GPUGroupingLane> makeLane(const Plan & plan, std::shared_ptr<GPU::GPUGroupingDecision> decision)
+std::shared_ptr<GPU::GPUGroupingLane> makeLane(const Plan & plan, size_t num_parts)
 {
-    return std::make_shared<GPU::GPUGroupingLane>(plan.key_types, plan.argument_types, plan.aggregates, std::nullopt, std::move(decision));
+    return std::make_shared<GPU::GPUGroupingLane>(plan.key_types, plan.argument_types, plan.aggregates, std::nullopt, num_parts);
 }
 
 struct DeviceBatchInfo : public ChunkInfoCloneable<DeviceBatchInfo>
@@ -314,10 +307,8 @@ class GPUGroupingTransform : public IAccumulatingTransform
 {
 public:
     explicit GPUGroupingTransform(PlanPtr plan_)
-        : IAccumulatingTransform(emptyHeader(), emptyHeader()), plan(std::move(plan_)), lane(makeLane(*plan, plan->decision))
+        : IAccumulatingTransform(emptyHeader(), emptyHeader()), plan(std::move(plan_)), lane(makeLane(*plan, plan->num_parts))
     {
-        if (plan->merge_by_parts)
-            lane->splitIntoParts(plan->num_parts);
     }
 
     String getName() const override { return "GPUGrouping"; }
@@ -330,9 +321,6 @@ protected:
         if (generated)
             return {};
         generated = true;
-
-        if (plan->merge_by_parts)
-            lane->partition(plan->num_parts);
 
         Chunk chunk(Columns{}, 1);
         chunk.getChunkInfos().add(std::make_shared<LaneGroupsInfo>(lane));
@@ -392,7 +380,7 @@ protected:
     void consume(Chunk chunk) override
     {
         const auto info = infoOrThrow<LanePartInfo>(chunk, getName());
-        const auto merged = makeLane(*plan, std::make_shared<GPU::GPUGroupingDecision>());
+        const auto merged = makeLane(*plan, 1);
         for (const auto & lane : *info->lanes)
             merged->absorbPart(*lane, info->part);
         if (Chunk groups = chunkOfGroups(*plan, getOutputPort().getHeader(), *merged, merged->finalize()))
@@ -403,54 +391,6 @@ protected:
 
 private:
     const PlanPtr plan;
-};
-
-/// Merges the groups of the lanes into one, and sends them to the host.
-class GPUMergeGroupsTransform : public IAccumulatingTransform
-{
-public:
-    GPUMergeGroupsTransform(PlanPtr plan_, SharedHeader output_header)
-        : IAccumulatingTransform(emptyHeader(), std::move(output_header)), plan(std::move(plan_))
-    {
-    }
-
-    String getName() const override { return "GPUMergeGroups"; }
-
-protected:
-    void consume(Chunk chunk) override { lanes.push_back(infoOrThrow<LaneGroupsInfo>(chunk, getName())->lane); }
-
-    Chunk generate() override
-    {
-        if (generated)
-            return {};
-        generated = true;
-
-        if (lanes.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation without lanes");
-
-        /// Into the lane with the most groups, grown once for the groups of all: one grown for each lane merged into it
-        /// would insert the groups so far again each time.
-        std::vector<size_t> groups(lanes.size(), 0);
-        for (size_t i = 0; i < lanes.size(); ++i)
-            groups[i] = lanes[i]->numGroups().value_or(0);
-        const size_t largest = static_cast<size_t>(std::ranges::max_element(groups) - groups.begin());
-        std::swap(lanes.front(), lanes[largest]);
-        std::swap(groups.front(), groups[largest]);
-        if (groups.front() != 0)
-            lanes.front()->reserveGroups(std::accumulate(groups.begin(), groups.end(), size_t{0}));
-
-        GPU::GPUGroupingLane & first = *lanes.front();
-        for (size_t i = 1; i < lanes.size(); ++i)
-            first.absorb(*lanes[i]);
-        lanes.resize(1);
-
-        return chunkOfGroups(*plan, getOutputPort().getHeader(), first, first.finalize());
-    }
-
-private:
-    const PlanPtr plan;
-    Lanes lanes;
-    bool generated = false;
 };
 
 /// Without keys: reduces the batches of every stream, and emits the result of each aggregate.
@@ -603,16 +543,9 @@ void GPUAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, cons
     pipeline.resize(num_lanes);
     pipeline.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUGroupingTransform>(plan); });
     pipeline.resize(1);
-    if (plan->merge_by_parts)
-    {
-        pipeline.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUSplitLanesTransform>(plan); });
-        pipeline.resize(plan->num_parts);
-        pipeline.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUMergePartTransform>(plan, getOutputHeader()); });
-    }
-    else
-    {
-        pipeline.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUMergeGroupsTransform>(plan, getOutputHeader()); });
-    }
+    pipeline.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUSplitLanesTransform>(plan); });
+    pipeline.resize(plan->num_parts);
+    pipeline.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUMergePartTransform>(plan, getOutputHeader()); });
 }
 
 void GPUAggregatingStep::describeActions(FormatSettings & settings) const

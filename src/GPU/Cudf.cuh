@@ -5,9 +5,12 @@
 
 #include <cudf/column/column.hpp>
 #include <cudf/column/column_view.hpp>
+#include <cudf/table/table.hpp>
+#include <cudf/table/table_view.hpp>
 #include <cudf/types.hpp>
 #include <cudf/utilities/error.hpp>
 
+#include <rmm/device_buffer.hpp>
 #include <rmm/error.hpp>
 
 #include <cuda/stream_ref>
@@ -88,6 +91,14 @@ __host__ cudf::column_view columnViewOf(const DeviceVariableColumn & column);
 __host__ void checkNoNulls(const cudf::column_view & column);
 
 __host__ DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUElementType expected_type);
+
+/// A column of a fixed width as `type`, by its bits, checked to be as wide: cuDF sums unsigned integers into signed ones.
+__host__ DeviceFixedColumn deviceViewByBits(const cudf::column_view & column, GPUElementType type);
+
+/// The rows of `table` that `mask`, a bit per row, keeps, of which it leaves out `left_out`. `all_true` is filled with as
+/// many `true` bytes as there are rows.
+__host__ std::unique_ptr<cudf::table> keptRows(
+    const cudf::table_view & table, const cudf::bitmask_type * mask, cudf::size_type left_out, rmm::device_buffer & all_true, cuda::stream_ref stream);
 
 struct DeviceVariableColumnOfCudf
 {

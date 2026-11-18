@@ -1,5 +1,6 @@
 #include <GPU/Cudf.cuh>
 
+#include <cudf/stream_compaction.hpp>
 #include <cudf/strings/strings_column_view.hpp>
 #include <cudf/unary.hpp>
 
@@ -135,6 +136,35 @@ __host__ DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUEle
             + ", expected element type " + std::to_string(static_cast<int>(expected_type))).c_str());
 
     return {.element_type = expected_type, .data = column.head<char>(), .rows = static_cast<size_t>(column.size())};
+}
+
+__host__ DeviceFixedColumn deviceViewByBits(const cudf::column_view & column, GPUElementType type)
+{
+    checkNoNulls(column);
+    if (column.offset() != 0)
+        throwGPUError(("cuDF returned a column as a slice at offset " + std::to_string(column.offset())).c_str());
+    if (cudf::size_of(column.type()) != sizeOf(type))
+        throwGPUError(
+            ("cuDF returned a column of type " + std::to_string(static_cast<int32_t>(column.type().id()))
+            + ", which is not as wide as element type " + std::to_string(static_cast<int>(type))).c_str());
+    return {.element_type = type, .data = column.head<char>(), .rows = static_cast<size_t>(column.size())};
+}
+
+__host__ std::unique_ptr<cudf::table> keptRows(
+    const cudf::table_view & table, const cudf::bitmask_type * mask, cudf::size_type left_out, rmm::device_buffer & all_true, cuda::stream_ref stream)
+{
+    const auto rows = static_cast<size_t>(table.num_rows());
+    if (all_true.size() < rows)
+    {
+        all_true.resize(rows, stream);
+        checkCuda(cudaMemsetAsync(all_true.data(), 1, rows, stream.get()), "Cannot fill a mask of the device");
+    }
+
+    const cudf::column_view kept(cudf::data_type{cudf::type_id::BOOL8}, table.num_rows(), all_true.data(), mask, left_out);
+    return guarded("compacting " + std::to_string(rows) + " rows to those a filter keeps", [&]
+    {
+        return cudf::apply_retention_mask(table, kept, stream);
+    });
 }
 
 __host__ DeviceVariableColumnOfCudf deviceViewOfVariable(const cudf::column_view & column, cuda::stream_ref stream)

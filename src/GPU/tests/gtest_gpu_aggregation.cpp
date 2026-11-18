@@ -139,16 +139,12 @@ public:
         , values(value_types)
         , aggregates(std::move(aggregates_))
         , where(std::move(where_))
-        , by_parts(!keys.empty() && std::ranges::none_of(aggregates, [](const auto & aggregate) { return aggregate.aggregation == GPUAggregationKind::Mean; }))
         , uploader(uploadTypes(), batch_bytes)
     {
-        const auto decision = std::make_shared<GPUGroupingDecision>();
+        /// Without keys, the one group is one part.
+        num_parts = keys.empty() ? 1 : num_lanes;
         for (size_t i = 0; i < num_lanes; ++i)
-        {
-            lanes.push_back(std::make_unique<GPUGroupingLane>(keys, values, aggregates, where, decision));
-            if (by_parts)
-                lanes.back()->splitIntoParts(num_lanes);
-        }
+            lanes.push_back(std::make_unique<GPUGroupingLane>(keys, values, aggregates, where, num_parts));
     }
 
     void add(const Columns & key_columns, const Columns & value_columns, const Columns & where_columns = {})
@@ -161,33 +157,18 @@ public:
         uploader.add(columns);
     }
 
-    /// The lanes that hold the groups, once merged, and how many each holds.
+    /// The lanes that hold the groups, once merged by parts, and how many each holds.
     std::vector<std::pair<GPUGroupingLane *, size_t>> finish()
     {
         send();
         std::vector<std::pair<GPUGroupingLane *, size_t>> result;
-        if (by_parts)
+        for (size_t part = 0; part < num_parts; ++part)
         {
-            for (auto & lane : lanes)
-                lane->partition(lanes.size());
-            for (size_t part = 0; part < lanes.size(); ++part)
-            {
-                merged.push_back(std::make_unique<GPUGroupingLane>(keys, values, aggregates, where, std::make_shared<GPUGroupingDecision>()));
-                for (const auto & lane : lanes)
-                    merged.back()->absorbPart(*lane, part);
-                result.emplace_back(merged.back().get(), merged.back()->finalize());
-            }
-            return result;
+            merged.push_back(std::make_unique<GPUGroupingLane>(keys, values, aggregates, where, 1));
+            for (const auto & lane : lanes)
+                merged.back()->absorbPart(*lane, part);
+            result.emplace_back(merged.back().get(), merged.back()->finalize());
         }
-
-        size_t groups = 0;
-        for (const auto & lane : lanes)
-            groups += lane->numGroups().value_or(0);
-        if (lanes.front()->numGroups().value_or(0) != 0)
-            lanes.front()->reserveGroups(groups);
-        for (size_t i = 1; i < lanes.size(); ++i)
-            lanes.front()->absorb(*lanes[i]);
-        result.emplace_back(lanes.front().get(), lanes.front()->finalize());
         return result;
     }
 
@@ -212,7 +193,7 @@ private:
     const DataTypes values;
     const std::vector<GPUGroupByAggregate> aggregates;
     const std::optional<CompiledGPUExpression> where;
-    const bool by_parts;
+    size_t num_parts = 1;
 
     std::vector<std::unique_ptr<GPUGroupingLane>> lanes;
     std::vector<std::unique_ptr<GPUGroupingLane>> merged;
