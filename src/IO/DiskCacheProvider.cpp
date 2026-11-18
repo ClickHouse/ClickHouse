@@ -317,6 +317,9 @@ size_t DiskCacheWriter::write(ChainedBuffers data, const FillRole & role)
     if (!written_ok)
         return 0;
 
+    /// Only the last run: the executor serves a filled window from the cache before it fills the next one. So when
+    /// a run starts, the earlier runs are served already, and a later read of them (after a seek back) is a reuse.
+    /// A run starts again after a gap at `write_offset`: another writer appended there, and its bytes are a reuse too.
     if (own_fill.size == 0 || own_fill.end() != write_offset)
         own_fill = ByteRange{write_offset, contiguous};
     else
