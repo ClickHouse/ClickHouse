@@ -35,8 +35,8 @@ struct FutureMergedMutatedPart
     /// not price. Unset for mutations and for merges that resolve their codec at execution time.
     std::optional<MergeTreeData::PartCompressionCodec> merged_part_codec;
 
-    const MergeTreePartition & getPartition() const { return parts.front()->partition; }
-    bool isResultPatch() const { return !parts.empty() && parts.front()->info.isPatch();}
+    [[nodiscard]] const MergeTreePartition & getPartition() const { return parts.front()->partition; }
+    [[nodiscard]] bool isResultPatch() const { return !parts.empty() && parts.front()->info.isPatch();}
 
     /// `base_settings`, when set, replaces the live table settings in the part-format decision - a merge
     /// freezes the settings it runs with at selection time (see `MergeTreeData::choosePartFormat`).

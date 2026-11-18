@@ -175,14 +175,14 @@ public:
         return nullptr;
     }
 
-    PlainMarksByName releaseCachedMarks() const
+    [[nodiscard]] PlainMarksByName releaseCachedMarks() const
     {
         PlainMarksByName res;
         std::swap(global_ctx->cached_marks, res);
         return res;
     }
 
-    PlainMarksByName releaseCachedIndexMarks() const
+    [[nodiscard]] PlainMarksByName releaseCachedIndexMarks() const
     {
         PlainMarksByName res;
         std::swap(global_ctx->cached_index_marks, res);
@@ -211,7 +211,7 @@ private:
     {
         virtual void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) = 0;
         virtual StageRuntimeContextPtr getContextForNextStage() = 0;
-        virtual ProfileEvents::Event getTotalTimeProfileEvent() const = 0;
+        [[nodiscard]] virtual ProfileEvents::Event getTotalTimeProfileEvent() const = 0;
         virtual bool execute() = 0;
         virtual void cancel() noexcept = 0;
         virtual ~IStage() = default;
@@ -402,8 +402,8 @@ private:
         bool execute() override;
         void cancel() noexcept override;
 
-        bool prepare() const;
-        bool executeImpl() const;
+        [[nodiscard]] bool prepare() const;
+        [[nodiscard]] bool executeImpl() const;
         void finalize() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
@@ -423,10 +423,10 @@ private:
         void calculateProjectionForBlock(size_t projection_idx, const Block & block, UInt64 starting_offset) const;
         void finalizeProjections() const;
         void constructTaskForProjectionPartsMerge() const;
-        bool executeMergeProjections() const;
+        [[nodiscard]] bool executeMergeProjections() const;
 
-        MergeAlgorithm chooseMergeAlgorithm() const;
-        bool canCheckpointVerticalMerge() const;
+        [[nodiscard]] MergeAlgorithm chooseMergeAlgorithm() const;
+        [[nodiscard]] bool canCheckpointVerticalMerge() const;
 
         struct SavedCheckpointLoadResult
         {
@@ -434,7 +434,7 @@ private:
             MergedBlockOutputStream::FinishedColumns finished_columns;
         };
         /// Read and check the saved checkpoint, or discard it and throw.
-        SavedCheckpointLoadResult readSavedCheckpoint() const;
+        [[nodiscard]] SavedCheckpointLoadResult readSavedCheckpoint() const;
 
         void createMergedStream() const;
         void extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const;
@@ -446,7 +446,7 @@ private:
         }
 
         StageRuntimeContextPtr getContextForNextStage() override;
-        ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeHorizontalStageTotalMilliseconds; }
+        [[nodiscard]] ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeHorizontalStageTotalMilliseconds; }
 
         ExecuteAndFinalizeHorizontalPartRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
@@ -510,11 +510,11 @@ private:
             global_ctx = static_pointer_cast<GlobalRuntimeContext>(global);
         }
         StageRuntimeContextPtr getContextForNextStage() override;
-        ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeVerticalStageTotalMilliseconds; }
+        [[nodiscard]] ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeVerticalStageTotalMilliseconds; }
 
-        bool prepareVerticalMergeForAllColumns() const;
-        bool executeVerticalMergeForAllColumns() const;
-        bool finalizeVerticalMergeForAllColumns() const;
+        [[nodiscard]] bool prepareVerticalMergeForAllColumns() const;
+        [[nodiscard]] bool executeVerticalMergeForAllColumns() const;
+        [[nodiscard]] bool finalizeVerticalMergeForAllColumns() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
         using VerticalMergeStageSubtasks = std::array<bool(VerticalMergeStage::*)()const, 3>;
@@ -529,11 +529,11 @@ private:
         VerticalMergeStageSubtasks::const_iterator subtasks_iterator = subtasks.begin();
 
         void prepareVerticalMergeForOneColumn() const;
-        bool executeVerticalMergeForOneColumn() const;
+        [[nodiscard]] bool executeVerticalMergeForOneColumn() const;
         void finalizeVerticalMergeForOneColumn() const;
         void saveCheckpoint() const;
 
-        VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
+        [[nodiscard]] VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
 
         VerticalMergeRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
@@ -560,11 +560,11 @@ private:
         }
 
         StageRuntimeContextPtr getContextForNextStage() override;
-        ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeTextIndexStageTotalMilliseconds; }
+        [[nodiscard]] ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeTextIndexStageTotalMilliseconds; }
 
-        bool prepare() const;
-        bool execute() const;
-        bool finalize() const;
+        [[nodiscard]] bool prepare() const;
+        [[nodiscard]] bool execute() const;
+        [[nodiscard]] bool finalize() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
         using MergeTextIndexStageSubtasks = std::array<bool(MergeTextIndexStage::*)()const, 3>;
@@ -580,7 +580,7 @@ private:
         MergeTextIndexRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
 
-        std::vector<TextIndexSegment> getTextIndexSegments(const String & part_name, const String & index_name, size_t part_idx) const;
+        [[nodiscard]] std::vector<TextIndexSegment> getTextIndexSegments(const String & part_name, const String & index_name, size_t part_idx) const;
     };
 
     /// By default this context is uninitialized, but some variables has to be set after construction,
@@ -623,11 +623,11 @@ private:
         }
 
         StageRuntimeContextPtr getContextForNextStage() override;
-        ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeProjectionStageTotalMilliseconds; }
+        [[nodiscard]] ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeProjectionStageTotalMilliseconds; }
 
-        bool prepareProjections() const;
-        bool executeProjections() const;
-        bool finalizeProjectionsAndWholeMerge() const;
+        [[nodiscard]] bool prepareProjections() const;
+        [[nodiscard]] bool executeProjections() const;
+        [[nodiscard]] bool finalizeProjectionsAndWholeMerge() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
         using MergeProjectionsStageSubtasks = std::array<bool(MergeProjectionsStage::*)()const, 3>;

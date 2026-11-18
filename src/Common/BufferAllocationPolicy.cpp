@@ -24,9 +24,9 @@ public:
         chassert(buffer_size > 0);
     }
 
-    size_t getBufferNumber() const override { return buffer_number; }
+    [[nodiscard]] size_t getBufferNumber() const override { return buffer_number; }
 
-    size_t getBufferSize() const override
+    [[nodiscard]] size_t getBufferSize() const override
     {
         chassert(buffer_number > 0);
         return buffer_size;
@@ -72,9 +72,9 @@ public:
         chassert(max_size > 0);
     }
 
-    size_t getBufferNumber() const override { return buffer_number; }
+    [[nodiscard]] size_t getBufferNumber() const override { return buffer_number; }
 
-    size_t getBufferSize() const override
+    [[nodiscard]] size_t getBufferSize() const override
     {
         chassert(buffer_number > 0);
         return current_size;

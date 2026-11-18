@@ -9,7 +9,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
-#include <Common/ProfileEventsScope.h>
+#include <Common/ThreadStatus.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
@@ -76,6 +76,14 @@ MergeFromLogEntryTask::~MergeFromLogEntryTask()
 }
 
 
+ContextMutablePtr MergeFromLogEntryTask::createTaskContext() const
+{
+    auto context = Context::createCopy(storage.getContext()->getBackgroundContext());
+    context->makeQueryContextForMerge(*storage.getSettings());
+    context->setCurrentQueryId(getQueryId());
+    return context;
+}
+
 ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 {
     LOG_TRACE(log, "Executing log entry to merge parts {} to {}",
@@ -93,7 +101,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     stopwatch_ptr = std::make_unique<Stopwatch>();
     auto part_log_writer = [this, stopwatch = *stopwatch_ptr](const ExecutionStatus & execution_status)
     {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
+        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
             PartLogElement::MERGE_PARTS, execution_status, stopwatch.elapsed(),
             entry.new_part_name, part, parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot),
@@ -435,7 +443,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_merged_part,
-        task_context);
+        task_context,
+        thread_group);
 
     storage.writePartLog(
         PartLogElement::MERGE_PARTS_START, {}, 0,
