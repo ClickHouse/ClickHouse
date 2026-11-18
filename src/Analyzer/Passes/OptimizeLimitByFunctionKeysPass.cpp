@@ -3,6 +3,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/Utils.h>
 #include <Core/Settings.h>
 
 namespace DB
@@ -39,9 +40,10 @@ public:
         const QueryTreeNodePtrWithHashSet all_keys(keys.begin(), keys.end());
         removeKeysThatAreFunctionsOfOtherKeys(keys, has_subtotals ? getGroupByKeys(*query) : QueryTreeNodes{});
 
+        /// A positional argument keeps the aliases that the projection loses, so a remote server can find different definitions of them.
         for (auto & key : keys)
             if (has_subtotals && isExpressionFunctionOfKeys(key, all_keys))
-                key = cloneWithoutAliases(key);
+                removeAliasesRecursive(key);
     }
 };
 
