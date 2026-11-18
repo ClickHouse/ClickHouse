@@ -12,6 +12,9 @@ trap '$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT restart_replica_pause_afte
 # Drops table $1.$3 while `SYSTEM RESTART REPLICA` holds its inner table $1.$2 detached, then counts the inner tables left in $1.
 function drop_during_restart()
 {
+    # Without the inner table nothing reaches the failpoint, and waiting for it would hang.
+    [ -n "$2" ] || { echo "No inner table of $1.$3"; exit 1; }
+
     $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT restart_replica_pause_after_detach"
     $CLICKHOUSE_CLIENT -q "SYSTEM RESTART REPLICA $1.\`$2\`" &
     local restart_pid=$!
@@ -41,7 +44,7 @@ drop_during_restart "$CLICKHOUSE_DATABASE" "$(inner_table_name "$CLICKHOUSE_DATA
 
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "
     CREATE TABLE ts ENGINE = TimeSeries
-        SAMPLES ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ts', 'r1') ORDER BY (id, timestamp);
+        SAMPLES ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ts', 'r1');
 "
 drop_during_restart "$CLICKHOUSE_DATABASE" "$(inner_table_name "$CLICKHOUSE_DATABASE" '.inner_id.samples.%')" ts
 
