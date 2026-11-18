@@ -1257,7 +1257,9 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(
         }
 
         const auto & from_element_type = from_element_types[*source_positions[i]];
-        if (reports_failures && conversion_types[i]->lowCardinality() && !from_element_type->equals(*conversion_types[i]))
+        /// A `T` or `LowCardinality(T)` source converts by identity and cannot fail.
+        if (reports_failures && conversion_types[i]->lowCardinality()
+            && !removeLowCardinality(from_element_type)->equals(*removeLowCardinality(conversion_types[i])))
             conversion_types[i] = makeNullableOrLowCardinalityNullable(conversion_types[i]);
 
         element_wrappers.emplace_back(prepareUnpackDictionaries(from_element_type, conversion_types[i], reports_failures));

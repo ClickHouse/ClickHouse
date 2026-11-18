@@ -14,6 +14,8 @@ SELECT accurateCastOrNull(tuple(toLowCardinality(materialize('abc'))), 'Nullable
 -- Rows, a second element, and the declared non-nullable dictionary of the result.
 SELECT x, accurateCastOrNull(tuple(x, x), 'Nullable(Tuple(LowCardinality(FixedString(2)), LowCardinality(String)))')
 FROM (SELECT arrayJoin(['ab', 'abc', NULL, 'cd'])::LowCardinality(Nullable(String)) AS x);
+SELECT s, accurateCastOrNull(tuple(s, toLowCardinality(s), s), 'Nullable(Tuple(LowCardinality(String), LowCardinality(String), LowCardinality(FixedString(2))))')
+FROM (SELECT arrayJoin(['ab', 'abc']) AS s);
 SELECT accurateCastOrNull(tuple('ab'), 'Nullable(Tuple(LowCardinality(FixedString(2))))');
 SELECT dumpColumnStructure(accurateCastOrNull(tuple(materialize('ab')), 'Nullable(Tuple(LowCardinality(FixedString(2))))'));
 
