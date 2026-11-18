@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
@@ -61,9 +60,9 @@ public:
         /// Columns with which values should not be aggregated.
         ColumnNumbers column_numbers_not_to_aggregate;
         /// Columns which should be aggregated.
-        VectorWithMemoryTracking<AggregateDescription> columns_to_aggregate;
+        std::vector<AggregateDescription> columns_to_aggregate;
         /// Mapping for nested columns.
-        VectorWithMemoryTracking<MapDescription> maps_to_sum;
+        std::vector<MapDescription> maps_to_sum;
 
         /// Names of columns from header.
         Names column_names;
@@ -73,7 +72,7 @@ public:
 
         /// Per-column flag: true for Float32/Float64 columns that need bit-exact
         /// copy via insertFrom() to avoid SNaN→QNaN conversion in Field roundtrip.
-        VectorWithMemoryTracking<bool> columns_need_exact_copy;
+        std::vector<bool> columns_need_exact_copy;
 
         /// Record the origin header before tuple flattening.
         SharedHeader origin_header;

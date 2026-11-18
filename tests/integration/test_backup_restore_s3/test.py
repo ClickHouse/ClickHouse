@@ -290,7 +290,6 @@ def check_system_tables(cluster, backup_query_id=None):
         ("default", "Local", "None", "None"),
         ("disk_s3", "ObjectStorage", "S3", "Local"),
         ("disk_s3_cache", "ObjectStorage", "S3", "Local"),
-        ("disk_s3_encrypted", "ObjectStorage", "S3", "Local"),
         ("disk_s3_other_bucket", "ObjectStorage", "S3", "Local"),
         ("disk_s3_plain", "ObjectStorage", "S3", "Plain"),
         ("disk_s3_plain_rewritable", "ObjectStorage", "S3", "PlainRewritable"),
@@ -344,95 +343,6 @@ def test_backup_to_disk(cluster, storage_policy, to_disk):
     backup_name = new_backup_name()
     backup_destination = f"Disk('{to_disk}', '{backup_name}')"
     check_backup_and_restore(cluster, storage_policy, backup_destination)
-
-
-def test_backup_to_s3_disk_fsyncs_local_metadata(cluster):
-    # disk_s3 keeps its metadata in local files (metadata_type = local, the default for an s3 disk),
-    # and a backup on it is reached only through them: after a power loss the uploaded objects can
-    # survive while the metadata pointing at them is gone. fsync_backup_files must therefore fsync
-    # the metadata file of every written backup file plus the .backup manifest, and their directories.
-    node = cluster.instances["node"]
-
-    # The oracle is exact rather than a lower bound: a plain backup writes one data file per entry it
-    # actually stored plus the .backup manifest, so FileSync must equal num_entries + 1, which fails if
-    # any single metadata file is left unsynced. num_entries, not num_files: num_files also counts the
-    # entries that were skipped (e.g. as empty), and a file that is never written is never synced.
-    def assert_every_file_synced(backup_events):
-        num_entries = int(
-            node.query(
-                f"SELECT num_entries FROM system.backups"
-                f" WHERE query_id = '{backup_events['query_id']}'"
-            ).strip()
-        )
-        assert backup_events["FileSync"] == num_entries + 1, (num_entries, backup_events)
-        # The directory count follows the part layout, so it is only bounded here; the archive arm
-        # below pins an exact count.
-        assert backup_events["DirectorySync"] >= 1, backup_events
-
-    # An archive (`.tar`: zip is rejected on object storage) is packed into one file written directly
-    # into the disk root, so exactly one metadata file and one metadata directory are synced.
-    def assert_archive_synced(backup_events):
-        assert backup_events["FileSync"] == 1, backup_events
-        assert backup_events["DirectorySync"] == 1, backup_events
-
-    backup_events, _ = check_backup_and_restore(
-        cluster,
-        "default",
-        f"Disk('disk_s3', '{new_backup_name()}')",
-        backup_settings={"fsync_backup_files": 1},
-    )
-    assert_every_file_synced(backup_events)
-
-    backup_events, _ = check_backup_and_restore(
-        cluster,
-        "default",
-        f"Disk('disk_s3', '{new_backup_name()}.tar')",
-        backup_settings={"fsync_backup_files": 1},
-    )
-    assert_archive_synced(backup_events)
-
-    # The opt-out issues no sync of either kind, so the counts above are attributable to the setting.
-    backup_events, _ = check_backup_and_restore(
-        cluster,
-        "default",
-        f"Disk('disk_s3', '{new_backup_name()}')",
-        backup_settings={"fsync_backup_files": 0},
-    )
-    assert backup_events.get("FileSync", 0) == 0, backup_events
-    assert backup_events.get("DirectorySync", 0) == 0, backup_events
-
-    # A plain-rewritable disk keeps its metadata in the object storage too, so there is no local file
-    # to sync and the setting is a no-op there.
-    backup_events, _ = check_backup_and_restore(
-        cluster,
-        "default",
-        f"Disk('disk_s3_plain_rewritable', '{new_backup_name()}')",
-        backup_settings={"fsync_backup_files": 1},
-    )
-    assert backup_events.get("FileSync", 0) == 0, backup_events
-    assert backup_events.get("DirectorySync", 0) == 0, backup_events
-
-    # An encrypting wrapper is the only disk whose metadata root is not the path it reports itself: it
-    # is the delegate's root with the wrapper's prefix re-applied. Addressing it like an unwrapped disk
-    # names metadata files that do not exist, so the backup fails instead of skipping the syncs.
-    backup_events, _ = check_backup_and_restore(
-        cluster,
-        "default",
-        f"Disk('disk_s3_encrypted', '{new_backup_name()}')",
-        backup_settings={"fsync_backup_files": 1},
-    )
-    assert_every_file_synced(backup_events)
-
-    # That wrapper keeps its files under `encrypted/` inside disk_s3 but leaves a path that already
-    # starts with that prefix alone, so a backup named `encrypted/...` must not have the prefix
-    # applied a second time, neither for the metadata files nor for the directories holding them.
-    backup_events, _ = check_backup_and_restore(
-        cluster,
-        "default",
-        f"Disk('disk_s3_encrypted', 'encrypted/{new_backup_name()}')",
-        backup_settings={"fsync_backup_files": 1},
-    )
-    assert_every_file_synced(backup_events)
 
 
 @pytest.mark.parametrize(
@@ -1444,31 +1354,17 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
     err = instance.query_and_get_error(f"BACKUP TABLE sample PARTITIONS 0 TO {new_backup_destination()}")
     assert "CANNOT_BACKUP_TABLE" in err and "Cannot backup specific partitions" in err, err
 
-    # The inner tables of a materialized view and a `TimeSeries` table on such a policy are not supported: the flag is
-    # ignored for them with a warning, and they are backed up as usual.
+    # The inner tables of a materialized view and a `TimeSeries` table on such a policy are not supported: the flag
+    # is ignored for them and they are backed up as usual. Master also warns, naming the inner table that carries
+    # the flag; that warning is left out on this branch, so only the backup itself is asserted here.
     instance.query(
         f"""
         CREATE TABLE src (key Int) ENGINE = Null;
         CREATE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY key SETTINGS storage_policy = '{policy}' AS SELECT key FROM src;
         """
     )
-    instance.query(
-        f"""
-        CREATE TABLE ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0
-        DATA INNER ENGINE = MergeTree SETTINGS storage_policy = '{policy}'
-        TAGS INNER ENGINE = Memory
-        METRICS INNER ENGINE = ReplacingMergeTree SETTINGS storage_policy = '{policy}'
-        """,
-        settings={"allow_experimental_time_series_table": 1},
-    )
-    for table, kind in [("mv", "materialized view"), ("ts", "TimeSeries table")]:
-        instance.query(f"BACKUP TABLE {table} TO {new_backup_destination()}")
-        assert instance.contains_in_log(
-            f"default.{table} (" + get_uuid(table)
-        ), f"no warning for {table}"
-        assert instance.contains_in_log(f"but it is a {kind} with the inner table"), f"no warning for {table}"
+    instance.query(f"BACKUP TABLE mv TO {new_backup_destination()}")
 
-    instance.query("DROP TABLE ts SYNC")
     instance.query("DROP TABLE mv SYNC")
     instance.query("DROP TABLE src SYNC")
 

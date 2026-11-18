@@ -9,11 +9,18 @@ Endpoints:
       `Authorization` header is omitted when the named collection has no `api_key`).
       Header names are lower-cased for case-insensitive lookup.
   GET  /concurrency                  — returns JSON `{"requests": N, "max_concurrency": M}` describing
-      the requests the slow endpoint below has served since the last `/reset-concurrency`, where
-      `max_concurrency` is the highest number that were ever being served at the same moment.
+      the requests the slow endpoints below have served since the last `/reset-concurrency`, where
+      `max_concurrency` is the highest number that were ever being served at the same moment. Used
+      to assert that `ai_function_max_concurrent_requests_per_thread` controls how many requests are in flight.
   GET  /reset-concurrency            — zeroes the counters above
   POST /v1/chat/slow                 — like `/v1/chat/completions`, but sleeps SLOW_RESPONSE_SECONDS
-      before answering.
+      before answering, so overlapping requests are observable in `/concurrency`.
+  POST /v1/embeddings_slow           — like `/v1/embeddings`, but slow in the same way.
+  POST /v1/chat/hang                 — like `/v1/chat/slow`, but sleeps HANG_RESPONSE_SECONDS, so a
+      request is still in flight when the server shuts down.
+  POST /v1/chat/jitter               — like `/v1/chat/completions` without a schema (echoes the user
+      message), but sleeps a random 0 to JITTER_MAX_SECONDS first, so concurrent requests complete out
+      of order.
   GET  /set-flaky?count=N            — arm the flaky endpoints below to fail their next N requests
       with a simulated transient network error (used to exercise retries). `count=0` disarms.
   POST /v1/chat/flaky                — like `/v1/chat/completions`, but drops the connection without
@@ -21,15 +28,11 @@ Endpoints:
   POST /v1/embeddings_flaky          — like `/v1/embeddings`, but flaky in the same way as above.
   POST /v1/chat/completions          — returns response based on request content:
       - If response_format with json_schema is present, returns JSON matching the schema
-        with values derived from the user message (boolean properties are set from the
-        same true/false heuristic used for the `aiFilter` fallback below).
+        with values derived from the user message.
+      - If the system prompt looks like an `aiFilter` boolean filter, returns plain
+        `true` or `false` based on the user message.
       - Otherwise echoes the user message as plain text.
       Fixed tokens: 10 input, 5 output.
-  POST /v1/chat/completions_no_structured_output — like `/v1/chat/completions`, but ignores
-      `response_format` even when present, simulating a model/gateway that doesn't support
-      structured output: for an `aiFilter` boolean-filter system prompt, returns plain `true` or
-      `false`, or an unrecognized reply (`"gibberish"`) when the user message asks for it;
-      otherwise echoes the user message as plain text.
   POST /v1/embeddings                — returns one deterministic embedding per input.
       Honors `dimensions` if provided, otherwise returns DEFAULT_EMBED_DIM floats.
       `prompt_tokens` = sum of input character lengths.
@@ -59,6 +62,7 @@ Endpoints:
       the opposite of the `max_tokens` case.
   POST /v1/anthropic/tool_use        — Anthropic-shaped HTTP 200 with `stop_reason="tool_use"`, a
       successful structured-output (forced tool call) response that must NOT be rejected.
+  POST /v1/rate_limited              — always returns HTTP 429, a provider rate limit.
   POST /v1/error                     — always returns HTTP 500, a transient/server-side error that
       the url table function (and so the AI functions) retries.
   POST /v1/bad_request               — always returns HTTP 400, a deterministic client error that
@@ -68,6 +72,7 @@ Endpoints:
 
 import http.server
 import json
+import random
 import threading
 import time
 from urllib.parse import urlparse, parse_qs
@@ -85,10 +90,17 @@ LAST_REQUEST = {"path": None, "body": None, "headers": {}}
 # Set via `GET /set-flaky?count=N`. Used to exercise the network-error retry path.
 FLAKY = {"fails_remaining": 0}
 
-# How long the slow endpoint takes to answer.
+# How long the slow endpoints take to answer. Long enough that concurrent requests overlap
+# observably, short enough not to slow the test down.
 SLOW_RESPONSE_SECONDS = 0.5
 
-# Requests the slow endpoint has served, and the high-water mark of how many it was serving
+# How long `/v1/chat/hang` takes to answer.
+HANG_RESPONSE_SECONDS = 5
+
+# Upper bound of the random delay of `/v1/chat/jitter`.
+JITTER_MAX_SECONDS = 0.3
+
+# Requests the slow endpoints have served, and the high-water mark of how many they were serving
 # simultaneously, since the last `/reset-concurrency`. Guarded by `_LOCK`.
 CONCURRENCY = {"requests": 0, "in_flight": 0, "max_concurrency": 0}
 
@@ -117,13 +129,8 @@ def is_filter_request(body):
 
 
 def filter_match_response(user_message):
-    """Return plain true/false for `aiFilter`. False when the user message signals an obvious
-    negative. A message asking for "gibberish" gets a reply that is neither, exercising
-    `aiFilter`'s fail-closed handling of unrecognized text from a model that ignores the requested
-    boolean output entirely."""
+    """Return plain true/false for `aiFilter`. False when the user message signals an obvious negative."""
     lowered = user_message.lower()
-    if "gibberish" in lowered:
-        return "gibberish"
     if any(token in lowered for token in ("false", "no match", "does not match")):
         return "false"
     return "true"
@@ -148,9 +155,6 @@ def build_structured_response(json_schema, user_message):
         if "enum" in prop:
             # For classification: return the first enum value
             result[key] = prop["enum"][0]
-        elif prop.get("type") == "boolean":
-            # For aiFilter: same true/false heuristic as the plain-text fallback below.
-            result[key] = filter_match_response(user_message) == "true"
         else:
             result[key] = user_message
 
@@ -308,6 +312,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._serve_slowly(lambda: make_success_response(extract_user_message(body)))
             return
 
+        if parsed.path == "/v1/embeddings_slow":
+            self._serve_slowly(lambda: make_embeddings_response(body))
+            return
+
+        if parsed.path == "/v1/chat/hang":
+            self._serve_slowly(lambda: make_success_response(extract_user_message(body)), HANG_RESPONSE_SECONDS)
+            return
+
+        if parsed.path == "/v1/chat/jitter":
+            time.sleep(random.uniform(0, JITTER_MAX_SECONDS))
+            self._send_json(200, make_success_response(extract_user_message(body)))
+            return
+
         if parsed.path in ("/v1/chat/flaky", "/v1/embeddings_flaky"):
             with _LOCK:
                 should_fail = FLAKY["fails_remaining"] > 0
@@ -332,43 +349,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
             if json_schema:
                 content = build_structured_response(json_schema, user_msg)
-            else:
-                content = user_msg
-
-            self._send_json(200, make_success_response(content))
-            return
-
-        if parsed.path == "/v1/chat/completions_no_structured_output":
-            # Ignores `response_format` on purpose, as a model/gateway that doesn't support
-            # structured output would: replies with bare text for an `aiFilter` boolean-filter
-            # system prompt, otherwise echoes the user message like `/v1/chat/completions` does.
-            user_msg = extract_user_message(body)
-            if is_filter_request(body):
+            elif is_filter_request(body):
                 content = filter_match_response(user_msg)
             else:
                 content = user_msg
+
             self._send_json(200, make_success_response(content))
-            return
-
-        if parsed.path == "/v1/chat/no_choices":
-            # A `200` the provider bills for, whose body then fails validation.
-            self._send_json(200, {
-                "id": "chatcmpl-no-choices",
-                "object": "chat.completion",
-                "choices": [],
-                "usage": {"prompt_tokens": 7, "completion_tokens": 0, "total_tokens": 7},
-            })
-            return
-
-        if parsed.path == "/v1/anthropic/no_content":
-            # A `200` the provider bills for, whose body then fails validation. Anthropic reports usage
-            # under different keys than OpenAI.
-            self._send_json(200, {
-                "id": "msg-no-content",
-                "type": "message",
-                "stop_reason": "end_turn",
-                "usage": {"input_tokens": 9, "output_tokens": 0},
-            })
             return
 
         if parsed.path == "/v1/chat/truncated":
@@ -447,6 +433,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json(200, make_anthropic_tool_use_response(body))
             return
 
+        if parsed.path == "/v1/rate_limited":
+            self._send_json(429, make_error_response("rate limit exceeded", error_type="rate_limit_error"))
+            return
+
         if parsed.path == "/v1/error":
             self._send_json(500, make_error_response("permanent failure"))
             return
@@ -493,8 +483,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_response(404)
         self.end_headers()
 
-    def _serve_slowly(self, make_response):
-        """Sleep, then answer, counting the request as in flight for the duration of the sleep."""
+    def _serve_slowly(self, make_response, seconds=SLOW_RESPONSE_SECONDS):
+        """Sleep, then answer, counting the request as in flight for the duration of the sleep.
+        The window closes before the response is written, so a handler that has already answered
+        can never overlap in `max_concurrency` with the request that answer unblocks."""
         with _LOCK:
             CONCURRENCY["requests"] += 1
             CONCURRENCY["in_flight"] += 1
@@ -502,7 +494,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 CONCURRENCY["max_concurrency"], CONCURRENCY["in_flight"]
             )
         try:
-            time.sleep(SLOW_RESPONSE_SECONDS)
+            time.sleep(seconds)
             response = make_response()
         finally:
             with _LOCK:

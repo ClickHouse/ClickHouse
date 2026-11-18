@@ -31,7 +31,7 @@ function kill_mutation_thread
         # find any mutation and kill it
         mutation_id=$($CLICKHOUSE_CLIENT --query "SELECT mutation_id FROM system.mutations WHERE is_done=0 and database='${CLICKHOUSE_DATABASE}' and table='concurrent_mutate_kill' LIMIT 1")
         if [ ! -z "$mutation_id" ]; then
-            $CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='$mutation_id' and table='concurrent_mutate_kill' and database='${CLICKHOUSE_DATABASE}' SETTINGS kill_throw_if_noop = false" 1> /dev/null
+            $CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='$mutation_id' and table='concurrent_mutate_kill' and database='${CLICKHOUSE_DATABASE}'" 1> /dev/null
             sleep 1
         fi
     done
@@ -50,7 +50,7 @@ $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_mutate_kill"
 # with timeout alter query can be not finished yet, so to execute new alter
 # we use retries
 counter=0
-while clickhouse_test_time_left; do
+while true; do
     if $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_mutate_kill MODIFY COLUMN value Int64 SETTINGS replication_alter_partitions_sync=2" 2> /dev/null ; then
         break
     fi

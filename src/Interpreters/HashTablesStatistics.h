@@ -37,12 +37,6 @@ struct StatsCollectingParams
     const size_t max_size_to_preallocate = 0;
 };
 
-struct HashJoinStatsCollectingParams
-{
-    StatsCollectingParams build;
-    StatsCollectingParams match;
-};
-
 struct AggregationEntry
 {
     bool shouldBeUpdated(const AggregationEntry & new_entry) const
@@ -70,60 +64,12 @@ struct AggregationEntry
 
 struct HashJoinEntry
 {
-    /// A stored size is kept until a run finds less than this fraction of it, so a hint may overstate the current size up to this factor.
-    static constexpr size_t MAX_OVERESTIMATION_FACTOR = 2;
-
-    bool shouldBeUpdated(const HashJoinEntry & new_entry) const
-    {
-        return new_entry.ht_size < ht_size / MAX_OVERESTIMATION_FACTOR || ht_size < new_entry.ht_size;
-    }
+    bool shouldBeUpdated(const HashJoinEntry & new_entry) const { return new_entry.ht_size < ht_size / 2 || ht_size < new_entry.ht_size; }
 
     std::string dump() const { return fmt::format("ht_size={}", ht_size); }
 
     size_t ht_size; // the size of the shared hash table
     size_t source_rows; // the number of rows in the source table
-};
-
-struct HashJoinMatchEntry
-{
-    bool shouldBeUpdated(const HashJoinMatchEntry & new_entry) const { return new_entry.matches * 2 < matches || new_entry.matches > matches * 2; }
-
-    std::string dump() const { return fmt::format("matches={}", matches); }
-
-    size_t matches; // number of hash-table matches for a specific hash join.
-};
-
-/// The statistics of the radix partitioned `uniqExact` (see `RadixUniqExactTransform.h`).
-struct RadixUniqExactEntry
-{
-    bool shouldBeUpdated(const RadixUniqExactEntry & new_entry) const
-    {
-        auto differs = [](size_t lhs, size_t rhs) { return lhs < rhs / 2 || rhs < lhs / 2; };
-        return num_streams != new_entry.num_streams || differs(num_distinct, new_entry.num_distinct)
-            || differs(stream_distinct, new_entry.stream_distinct) || differs(stream_keys, new_entry.stream_keys)
-            || streams_ended_in_set != new_entry.streams_ended_in_set;
-    }
-
-    std::string dump() const
-    {
-        return fmt::format(
-            "num_distinct={}, stream_distinct={}, stream_keys={}, num_streams={}, streams_ended_in_set={}",
-            num_distinct,
-            stream_distinct,
-            stream_keys,
-            num_streams,
-            streams_ended_in_set);
-    }
-
-    /// The result.
-    size_t num_distinct = 0;
-    /// The median over the streams of the number of distinct keys of a stream (estimated for some of them).
-    size_t stream_distinct = 0;
-    /// The median over the streams of the number of keys of a stream, without NULLs and consecutive duplicates.
-    size_t stream_keys = 0;
-    size_t num_streams = 0;
-    /// Whether most streams ended inserting their keys into a local set rather than routing them.
-    bool streams_ended_in_set = false;
 };
 
 /** Collects observed HashTable-s sizes to avoid redundant intermediate resizes.
@@ -164,5 +110,4 @@ std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics();
 
 std::optional<AggregationEntry> getSizeHint(const DB::StatsCollectingParams & stats_collecting_params, size_t tables_cnt);
 std::optional<HashJoinEntry> getSizeHint(const DB::StatsCollectingParams & stats_collecting_params);
-std::optional<HashJoinMatchEntry> getHashJoinMatchHint(const DB::StatsCollectingParams & stats_collecting_params);
 }

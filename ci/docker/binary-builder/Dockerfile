@@ -1,7 +1,5 @@
 # docker build -t clickhouse/binary-builder .
-ARG CCTOOLS_TAG
 ARG FROM_TAG
-FROM clickhouse/cctools:${CCTOOLS_TAG} AS cctools
 FROM clickhouse/fasttest:$FROM_TAG
 ARG TARGETARCH
 ENV CC=clang-${LLVM_VERSION}
@@ -9,10 +7,11 @@ ENV CXX=clang++-${LLVM_VERSION}
 
 #non-functional change
 
-COPY --from=cctools /cctools /cctools
+# If the cctools is updated, then first build it in the CI, then update here in a different commit
+COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /cctools /cctools
 
 # We need OpenSSL FIPS in permissive mode for build on MasterCI
-COPY --from=cctools \
+COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
   /opt/openssl-fips/openssl.cnf \
   /opt/openssl-fips/fipsmodule.cnf \
   /opt/openssl-fips/fips.so \
@@ -47,17 +46,13 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
 
 # Optional PGO+BOLT optimized toolchain override
 ARG TOOLCHAIN_COMMIT=bbbf2c95d11bed6a3dbabcc9cb2a65d02cfda55e
-# S3 directory of that commit's artifacts. Praktika owns the prefix layout and
-# has changed it, so the location is pinned next to the commit instead of being
-# spelled from it; update_toolchain_dockerfile.py rewrites both lines together.
-ARG TOOLCHAIN_S3_DIR=REFs/master/${TOOLCHAIN_COMMIT}
 RUN if [ "$TOOLCHAIN_COMMIT" != "none" ]; then \
     arch=${TARGETARCH:-amd64} && \
     case $arch in \
         amd64) tarch=amd64 ;; \
         arm64) tarch=aarch64 ;; \
     esac && \
-    curl -fsSL "https://clickhouse-builds.s3.amazonaws.com/${TOOLCHAIN_S3_DIR}/build_toolchain_pgo_bolt_${tarch}/clang-pgo-bolt.tar.zst" \
+    curl -fsSL "https://clickhouse-builds.s3.amazonaws.com/REFs/master/${TOOLCHAIN_COMMIT}/build_toolchain_pgo_bolt_${tarch}/clang-pgo-bolt.tar.zst" \
       | zstd -d | tar -xf - -C /usr/local/ && \
     echo "Installed PGO+BOLT toolchain from commit ${TOOLCHAIN_COMMIT}" \
     ; fi
@@ -74,7 +69,7 @@ RUN if [ "$CLICKHOUSE_PROFILES_COMMIT" != "none" ]; then \
     esac && \
     mkdir -p /opt/clickhouse-profiles && \
     for profile in clickhouse-pgo.profdata.zst clickhouse-bolt.fdata.zst; do \
-        url="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${CLICKHOUSE_PROFILES_COMMIT}/optimizeclickhouse/collect_clickhouse_profiles_pgo_bolt_${tarch}/${profile}" && \
+        url="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${CLICKHOUSE_PROFILES_COMMIT}/collect_clickhouse_profiles_pgo_bolt_${tarch}/${profile}" && \
         if curl -fsSL -o "/opt/clickhouse-profiles/${profile}" "$url"; then \
             zstd -d --rm "/opt/clickhouse-profiles/${profile}" && \
             echo "Downloaded ${profile}" ; \
@@ -159,7 +154,7 @@ RUN case "${TARGETARCH}" in \
 # cmake/target.cmake plus the RelWithDebInfo optimization flags.
 RUN echo 'int main() { return 0; }' > /tmp/em_prewarm.cpp \
   && em++ -O3 -sMEMORY64=1 -fwasm-exceptions -pthread \
-      -sSTACK_SIZE=8388608 -sINITIAL_MEMORY=2147483648 -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=17179869184 \
+      -sSTACK_SIZE=8388608 -sINITIAL_MEMORY=268435456 -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=17179869184 \
       -g0 -sPROXY_TO_PTHREAD=1 -sEXIT_RUNTIME=1 \
       /tmp/em_prewarm.cpp -o /tmp/em_prewarm.js \
   && rm -f /tmp/em_prewarm.*

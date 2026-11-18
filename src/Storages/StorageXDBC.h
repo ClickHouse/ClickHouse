@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Interpreters/SecretArgumentsSpec.h>
 #include <Storages/StorageURL.h>
 #include <BridgeHelper/XDBCBridgeHelper.h>
 
@@ -60,7 +59,7 @@ private:
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const override;
 
-    std::function<void(WriteBuffer &)> getReadPOSTDataCallback(
+    std::function<void(std::ostream &)> getReadPOSTDataCallback(
         const Names & column_names,
         const ColumnsDescription & columns_description,
         const SelectQueryInfo & query_info,
@@ -72,8 +71,5 @@ private:
 
     bool supportsSubsetOfColumns(const ContextPtr &) const override;
 };
-
-/// The `SecretArgumentsSpec` of `jdbc`, `odbc` and the `JDBC`/`ODBC` table engines.
-SecretArgumentsSpec xdbcSecretArguments();
 
 }
