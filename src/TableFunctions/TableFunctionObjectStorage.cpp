@@ -47,6 +47,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -80,6 +81,14 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                 : "";
             if (!disk_name.empty())
             {
+                /// Only Iceberg and Delta Lake support the `disk` setting; other data lakes (Paimon, Hudi)
+                /// have no configuration over a disk.
+                const std::string_view function_name = Definition::name;
+                const bool is_iceberg = function_name.starts_with("iceberg");
+                const bool is_delta_lake = function_name.starts_with("deltaLake");
+                if (!is_iceberg && !is_delta_lake)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `disk` is not supported by table function {}", function_name);
+
                 auto disk = context->getDisk(disk_name);
                 switch (disk->getObjectStorage()->getType())
                 {
@@ -88,10 +97,10 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                     if (Definition::object_storage_type != "s3")
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
-                    if (std::string_view(Definition::name).starts_with("iceberg"))
+                    if (is_iceberg)
                         configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
-                    else
+                    else if (is_delta_lake)
                         configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(settings);
 #endif
                     break;
@@ -105,10 +114,10 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         Definition::object_storage_type != "azure")
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
-                    if (std::string_view(Definition::name).starts_with("iceberg"))
+                    if (is_iceberg)
                         configuration = std::make_shared<StorageAzureIcebergConfiguration>(settings);
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
-                    else
+                    else if (is_delta_lake)
                         configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(settings);
 #endif
                     break;
@@ -121,10 +130,10 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         Definition::name != "deltaLakeCluster" &&
                         Definition::object_storage_type != "local")
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
-                    if (std::string_view(Definition::name).starts_with("iceberg"))
+                    if (is_iceberg)
                         configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
-                    else
+                    else if (is_delta_lake)
                         configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(settings);
 #endif
                     break;
@@ -132,6 +141,9 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                 default:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for iceberg {}", disk->getObjectStorage()->getType());
                 }
+
+                if (!configuration)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "No configuration over disk {} was created for table function {}", disk_name, function_name);
             }
             else
                 configuration = std::make_shared<Configuration>(settings);
@@ -320,9 +332,6 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionObjectStorage<S3Definition, StorageS3Configuration>>(
         {.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 Provides a table-like interface to select/insert files in [Amazon S3](https://aws.amazon.com/s3/) and [Google Cloud Storage](https://cloud.google.com/storage/). This table function is similar to the [hdfs function](/reference/functions/table-functions/hdfs), but provides S3-specific features.
 
 If you have multiple replicas in your cluster, you can use the [s3Cluster function](/reference/functions/table-functions/s3Cluster) instead to parallelize inserts.
@@ -1014,9 +1023,6 @@ As a result, the data is written into three files in different buckets: `my_buck
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionObjectStorage<AzureDefinition, StorageAzureConfiguration>>(
         {.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 Provides a table-like interface to select/insert files in [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs). This table function is similar to the [s3 function](/reference/functions/table-functions/s3).
 
 ## Syntax {#syntax}
@@ -1290,9 +1296,6 @@ FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st
 #if USE_HDFS
     factory.registerFunction<TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>>(
         {.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 Creates a table from files in HDFS. This table function is similar to the [url](/reference/functions/table-functions/url) and [file](/reference/functions/table-functions/file) table functions.
 
 ## Syntax {#syntax}
@@ -2274,8 +2277,6 @@ void registerTableFunctionPaimon(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionPaimon>(
          {.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-
 <ExperimentalBadge />
 
 Provides a read-only table-like interface to Apache [Paimon](https://paimon.apache.org/) tables in Amazon S3, Azure, HDFS or locally stored.
