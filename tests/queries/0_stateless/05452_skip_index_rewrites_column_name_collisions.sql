@@ -117,6 +117,47 @@ DROP TABLE t_lambda_pk;
 DROP TABLE t_lambda_idx;
 DROP TABLE t_lambda_part;
 
+-- A rewritten expression named as a subcolumn of another column: the `Tuple` column ``if(greater(a``
+-- has the element ``b, 0), a.b, 0)``, so the filter on ``if(greater(a.b, 0), a.b, 0)`` reads that element.
+SET optimize_functions_to_subcolumns = 0;
+SET optimize_multiif_to_if = 1;
+
+DROP TABLE IF EXISTS t_subcolumn_pk;
+DROP TABLE IF EXISTS t_subcolumn_idx;
+DROP TABLE IF EXISTS t_subcolumn_part;
+
+CREATE TABLE t_subcolumn_pk (`a.b` Int32, `if(greater(a` Tuple(`b, 0), a.b, 0)` Int32))
+ENGINE = MergeTree ORDER BY multiIf(`a.b` > 0, `a.b`, 0)
+SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_subcolumn_pk SELECT 100 + number, tuple(toInt32(number)) FROM numbers(100);
+
+SELECT count() FROM t_subcolumn_pk WHERE `if(greater(a.b, 0), a.b, 0)` = 99;
+SELECT count() FROM t_subcolumn_pk WHERE `if(greater(a.b, 0), a.b, 0)` = 99 SETTINGS use_primary_key = 0;
+
+CREATE TABLE t_subcolumn_idx (`a.b` Int32, `if(greater(a` Tuple(`b, 0), a.b, 0)` Int32), INDEX idx multiIf(`a.b` > 0, `a.b`, 0) TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_subcolumn_idx SELECT 100 + number, tuple(toInt32(number)) FROM numbers(100);
+
+SELECT count() FROM t_subcolumn_idx WHERE `if(greater(a.b, 0), a.b, 0)` = 99;
+SELECT count() FROM t_subcolumn_idx WHERE `if(greater(a.b, 0), a.b, 0)` = 99 SETTINGS use_skip_indexes = 0;
+
+CREATE TABLE t_subcolumn_part (`a.b` Int32, `if(greater(a` Tuple(`b, 0), a.b, 0)` Int32))
+ENGINE = MergeTree PARTITION BY multiIf(`a.b` > 0, `a.b`, 0) ORDER BY tuple()
+SETTINGS add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_subcolumn_part SELECT 100 + number, tuple(toInt32(number)) FROM numbers(10);
+
+SELECT count() FROM t_subcolumn_part WHERE `if(greater(a.b, 0), a.b, 0)` = 9;
+SELECT count() FROM t_subcolumn_part WHERE `if(greater(a.b, 0), a.b, 0)` = 9 SETTINGS use_partition_pruning = 0;
+
+-- Partition pruning of a mutation.
+ALTER TABLE t_subcolumn_part DELETE WHERE `if(greater(a.b, 0), a.b, 0)` = 9 SETTINGS mutations_sync = 2;
+SELECT count() FROM t_subcolumn_part WHERE `if(greater(a.b, 0), a.b, 0)` = 9 SETTINGS use_partition_pruning = 0;
+
+DROP TABLE t_subcolumn_pk;
+DROP TABLE t_subcolumn_idx;
+DROP TABLE t_subcolumn_part;
+
 -- Without the colliding column, the rewritten filter still uses the key.
 DROP TABLE IF EXISTS t_no_collision;
 CREATE TABLE t_no_collision (v Int32)

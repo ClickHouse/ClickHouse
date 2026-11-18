@@ -582,7 +582,8 @@ bool subcolumnResolvesAsInReplay(
 ///   `if(greater(v, 0), v, 0)` while the key is `multiIf(v > 0, v, 0)`), and the filter on that column
 ///   would be matched with the key by name. The name index analysis reconstructs for a node can differ
 ///   from the node's name (e.g. `arraySum(arrayMap(lambda(tuple(x), ...), a))` for a lambda), so all of
-///   them are checked, see `AlternativeKeyExpression::computed_names`.
+///   them are checked, see `AlternativeKeyExpression::computed_names`. They are checked as names of
+///   columns and of subcolumns, because a subcolumn of another column can have such a name too.
 /// This does not depend on the settings, so it is checked for every table rather than cached.
 bool collidesWithOtherTableColumn(
     const AlternativeKeyExpression & alternative_key,
@@ -595,9 +596,11 @@ bool collidesWithOtherTableColumn(
     const ColumnsDescription key_source_columns_description(expression->getRequiredColumnsWithTypes());
 
     /// Check every name a filter expression can be matched by, not only the names of the nodes:
-    /// the names index analysis reconstructs can differ from them (e.g. for lambdas).
+    /// the names index analysis reconstructs can differ from them (e.g. for lambdas). The name can
+    /// also be a subcolumn of another column (e.g. the element ``b, 0), a.b, 0)`` of a `Tuple` column
+    /// ``if(greater(a``), including a dynamic subcolumn, which the filter reads as an input.
     for (const auto & name : alternative_key.computed_names)
-        if (table_columns.has(name))
+        if (table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
             return true;
 
     for (const auto & node : alternative_key.expression->getActionsDAG().getNodes())
