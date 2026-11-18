@@ -2152,7 +2152,6 @@ DataTypePtr getPromotedTypeForDynamicImpl(const DataTypePtr & type, const Format
     switch (id)
     {
         case TypeIndex::Int64:
-        case TypeIndex::UInt64:
         case TypeIndex::Float64:
         case TypeIndex::String:
             return type; /// Already canonical.
@@ -2163,12 +2162,14 @@ DataTypePtr getPromotedTypeForDynamicImpl(const DataTypePtr & type, const Format
                 return type;
             return std::make_shared<DataTypeInt64>();
         }
-        /// The parser infers Int64 for every integer that fits it.
+        /// The parser infers Int64 for every integer that fits it, and UInt64 only above Int64 range, so a
+        /// UInt64 is promoted to Int64 when its values fit (see uint64ValuesFitInt64).
         case TypeIndex::Int8: [[fallthrough]];
         case TypeIndex::Int16: [[fallthrough]];
         case TypeIndex::Int32: [[fallthrough]];
         case TypeIndex::UInt16: [[fallthrough]];
-        case TypeIndex::UInt32:
+        case TypeIndex::UInt32: [[fallthrough]];
+        case TypeIndex::UInt64:
             return std::make_shared<DataTypeInt64>();
         /// Not Float32: the parser reads its shortest text, which differs from the Float64 a CAST widens it to.
         case TypeIndex::Decimal32: [[fallthrough]];
@@ -2347,6 +2348,49 @@ bool hasNonFiniteFloats(const IColumn & column, const IDataType & type, size_t b
 bool hasNonFiniteFloats(const IColumn & column, const IDataType & type)
 {
     return hasNonFiniteFloats(column, type, 0, column.size());
+}
+
+/// True if the UInt64 values in rows [begin, end) fit Int64, the type their promotion casts to. The parser
+/// infers UInt64 for a larger value. Expects no LowCardinality, see recursiveRemoveLowCardinality.
+bool uint64ValuesFitInt64(const IColumn & column, const IDataType & type, size_t begin, size_t end, const NullMap * null_map = nullptr)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+    {
+        const auto & column_nullable = assert_cast<const ColumnNullable &>(column);
+        return uint64ValuesFitInt64(column_nullable.getNestedColumn(), *nullable_type->getNestedType(), begin, end, &column_nullable.getNullMapData());
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
+    {
+        const auto & column_array = assert_cast<const ColumnArray &>(column);
+        const auto & offsets = column_array.getOffsets();
+        for (size_t row = begin; row < end; ++row)
+        {
+            if (null_map && (*null_map)[row])
+                continue;
+            if (!uint64ValuesFitInt64(column_array.getData(), *array_type->getNestedType(), offsets[row - 1], offsets[row]))
+                return false;
+        }
+        return true;
+    }
+
+    if (!isUInt64(type))
+        return true;
+
+    const auto & data = assert_cast<const ColumnUInt64 &>(column).getData();
+    for (size_t i = begin; i < end; ++i)
+    {
+        if (null_map && (*null_map)[i])
+            continue;
+        if (data[i] > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            return false;
+    }
+    return true;
+}
+
+bool uint64ValuesFitInt64(const IColumn & column, const IDataType & type)
+{
+    return uint64ValuesFitInt64(column, type, 0, column.size());
 }
 
 /// With read_datetime_number_as_raw_value the parser reads an integer as raw DateTime64 ticks and
@@ -3389,7 +3433,8 @@ ColumnPtr convertObjectColumns(
         {
             auto full_column = recursiveRemoveLowCardinality(it_col->second);
             auto full_type = recursiveRemoveLowCardinality(it_type->second);
-            if (!fitsIntoMaxScaleDateTime64(*full_column, *full_type) || hasNonFiniteFloats(*full_column, *full_type))
+            if (!fitsIntoMaxScaleDateTime64(*full_column, *full_type) || hasNonFiniteFloats(*full_column, *full_type)
+                || !uint64ValuesFitInt64(*full_column, *full_type))
                 promoted = nullptr;
         }
         if (promoted)

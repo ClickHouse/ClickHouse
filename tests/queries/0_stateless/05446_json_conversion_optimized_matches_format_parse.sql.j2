@@ -80,10 +80,16 @@ SETTINGS json_use_optimized_type_conversion = {{ optimized }}{{ ', ' ~ settings 
 {{ check('removed ' ~ type, 'JSON(a ' ~ type ~ ')', 'JSON', rows, 'allow_suspicious_low_cardinality_types = 1') }}
 {% endfor %}
 
+-- The parser infers Int64 for an integer that fits it and UInt64 only above that range.
+{{ check('removed UInt64 that fits Int64', 'JSON(a UInt64)', 'JSON', ['{"a": 5}', '{"a": 9223372036854775807}', '{}']) }}
+{{ check('removed UInt64 that fits Int64 to shared data', 'JSON(max_dynamic_paths = 0, a UInt64)', 'JSON(max_dynamic_paths = 0)', ['{"a": 5}']) }}
+{{ check('removed UInt64 above Int64', 'JSON(a UInt64)', 'JSON', ['{"a": 5}', '{"a": 18446744073709551615}']) }}
+{{ check('removed Nullable(UInt64)', 'JSON(a Nullable(UInt64))', 'JSON', ['{"a": 5}', '{"a": null}']) }}
+{{ check('removed Array(UInt64)', 'JSON(a Array(UInt64))', 'JSON', ['{"a": [1, 2]}', '{"a": [18446744073709551615]}']) }}
+
 -- Accepted differences: the parser infers a type per value from its text, the optimized path keeps one type for the path.
 {{ check('accepted: removed Float64 whole number', 'JSON(a Float64)', 'JSON', ['{"a": 5}']) }}
 {{ check('accepted: removed Decimal32 whole number', 'JSON(a Decimal32(2))', 'JSON', ['{"a": 5}']) }}
-{{ check('accepted: removed UInt64', 'JSON(a UInt64)', 'JSON', ['{"a": 5}', '{"a": 18446744073709551615}']) }}
 {{ check('accepted: removed DateTime64(0)', 'JSON(a DateTime64(0))', 'JSON', ['{"a": "2024-01-15 12:30:00"}']) }}
 {{ check('accepted: removed String holding a date', 'JSON(a String)', 'JSON', ['{"a": "2024-01-15"}']) }}
 {{ check('accepted: removed empty Array', 'JSON(a Array(Int8))', 'JSON', ['{"a": []}']) }}
