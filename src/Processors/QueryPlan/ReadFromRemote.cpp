@@ -9,6 +9,7 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
+#include <Planner/CollectLegacyActionNodeNames.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -524,6 +525,20 @@ ASTPtr tryBuildAdditionalFilterAST(
     return node_to_ast[dag.getOutputs().front()];
 }
 
+/// Tell `executor` how a peer older than `legacy_quoted_identifiers_version` spells the plan column
+/// identifiers of the header it expects. Shared by every executor that can receive an intermediate
+/// stage, so all of them resolve such a header the same way.
+static void setLegacyHeaderNames(
+    RemoteQueryExecutor & executor,
+    const Block & header,
+    const PlannerContextPtr & planner_context,
+    QueryProcessingStage::Enum stage)
+{
+    auto legacy_header_names = buildLegacyHeaderNames(header, planner_context, stage);
+    if (!legacy_header_names.empty())
+        executor.setLegacyHeaderNames(std::move(legacy_header_names));
+}
+
 /// Splices `pushed_down_filters` into `query_ast` and says whether it did. `context` is the one the rewrite
 /// mutates (external tables for GLOBAL IN); `rewrite_context` is the one whose settings decide whether the
 /// rewrite happens at all.
@@ -846,6 +861,7 @@ void ReadFromRemote::addLazyPipe(
         remote_query_executor->setShardScope({.cluster = my_cluster_name, .shard_num = my_shard.shard_info.shard_num});
         remote_query_executor->setQueryPlanFallbackStage(my_stage);
         remote_query_executor->setDistributedFanout(my_distributed_fanout);
+        setLegacyHeaderNames(*remote_query_executor, *header, my_shard.planner_context, stage_to_use);
         /// Attach the shared tracker so exception-based shard skips on the lazy path are also bounded by
         /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`, like the non-lazy path.
         remote_query_executor->setUnavailableShardTracker(my_unavailable_shard_tracker);
@@ -943,6 +959,7 @@ void ReadFromRemote::addPipe(
             remote_query_executor->setQueryPlanFallbackStage(stage);
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
             remote_query_executor->setDistributedFanout(shards.size() * shard.shard_info.per_replica_pools.size());
+            setLegacyHeaderNames(*remote_query_executor, *shard.header, shard.planner_context, stage_to_use);
             remote_query_executor->setUnavailableShardTracker(tracker);
 
             if (!table_func_ptr)
@@ -975,6 +992,7 @@ void ReadFromRemote::addPipe(
         remote_query_executor->setShardScope({.cluster = cluster_name, .shard_num = shard.shard_info.shard_num});
         remote_query_executor->setQueryPlanFallbackStage(stage);
         remote_query_executor->setDistributedFanout(shards.size());
+        setLegacyHeaderNames(*remote_query_executor, *shard.header, shard.planner_context, stage_to_use);
         remote_query_executor->setUnavailableShardTracker(tracker);
 
         // Several connections to a shard are correct only when every replica reads its own part of the data,
@@ -1343,6 +1361,8 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
     remote_query_executor->setLogger(log);
     remote_query_executor->setMainTable(storage_id);
     remote_query_executor->setDistributedFanout(pools_to_use.size() - (exclude_pool_index.has_value() ? 1 : 0));
+    setLegacyHeaderNames(
+        *remote_query_executor, *out_header, planner_context, query_plan ? QueryProcessingStage::QueryPlan : stage);
 
     Pipe pipe
         = createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);

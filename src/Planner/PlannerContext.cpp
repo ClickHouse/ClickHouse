@@ -30,6 +30,30 @@ static bool mayShipPlanFragmentToParallelReplicas(const ContextPtr & context)
     return context->getSettingsRef()[Setting::parallel_replicas_plan_based] && context->canUseParallelReplicasOnInitiator();
 }
 
+void LegacyActionNodeNames::add(const String & current_name, const String & legacy_name)
+{
+    auto [it, inserted] = current_to_legacy.emplace(current_name, legacy_name);
+    if (!inserted && it->second != legacy_name)
+        it->second.reset();
+}
+
+void LegacyActionNodeNames::addAmbiguous(const String & current_name)
+{
+    current_to_legacy.insert_or_assign(current_name, std::nullopt);
+}
+
+LegacyActionNodeNames::Lookup LegacyActionNodeNames::getLegacyName(const String & current_name) const
+{
+    auto it = current_to_legacy.find(current_name);
+    if (it == current_to_legacy.end())
+        return {};
+    if (!it->second.has_value())
+        return {.state = State::Ambiguous, .legacy_name = {}};
+    if (*it->second == current_name)
+        return {.state = State::Unchanged, .legacy_name = {}};
+    return {.state = State::Unique, .legacy_name = *it->second};
+}
+
 const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const QueryTreeNodePtr & column_node)
 {
     const auto & column_node_typed = column_node->as<ColumnNode &>();

@@ -18,6 +18,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/FieldToDataType.h>
 
+#include <base/scope_guard.h>
+
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
 
@@ -113,19 +115,49 @@ class ActionNodeNameHelper
 public:
     ActionNodeNameHelper(QueryTreeNodeToName & node_to_name_,
         const PlannerContext & planner_context_,
-        bool use_column_identifier_as_action_node_name_)
+        bool use_column_identifier_as_action_node_name_,
+        ColumnIdentifierConvention column_identifier_convention_ = ColumnIdentifierConvention::Current,
+        QueryTreeNodeSet * unrenderable_identifier_nodes_ = nullptr)
         : node_to_name(node_to_name_)
         , planner_context(planner_context_)
         , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
+        , column_identifier_convention(column_identifier_convention_)
+        , unrenderable_identifier_nodes(unrenderable_identifier_nodes_)
     {
     }
 
+    /// A name is untrustworthy if it, or any part it was built from, spells a column that has a
+    /// registered plan column identifier by its bare column name. The verdict is remembered per
+    /// node because the name cache is consulted before anything is rendered.
     String calculateActionNodeName(const QueryTreeNodePtr & node)
     {
-        auto it = node_to_name.find(node);
-        if (it != node_to_name.end())
-            return it->second;
+        bool subtree_unrenderable = false;
+        bool * enclosing = std::exchange(unrenderable_in_current_subtree, &subtree_unrenderable);
+        SCOPE_EXIT({ unrenderable_in_current_subtree = enclosing; });
 
+        String result;
+        if (auto it = node_to_name.find(node); it != node_to_name.end())
+        {
+            result = it->second;
+            subtree_unrenderable = unrenderable_identifier_nodes && unrenderable_identifier_nodes->contains(node);
+        }
+        else
+        {
+            result = calculateActionNodeNameImpl(node, subtree_unrenderable);
+            if (subtree_unrenderable && unrenderable_identifier_nodes)
+                unrenderable_identifier_nodes->insert(node);
+        }
+
+        if (subtree_unrenderable && enclosing)
+            *enclosing = true;
+
+        return result;
+    }
+
+    /// `unrenderable` is set if `node` itself is a column named by its bare name despite having a
+    /// registered identifier. Parts of a composite name report through the enclosing slot instead.
+    String calculateActionNodeNameImpl(const QueryTreeNodePtr & node, bool & unrenderable)
+    {
         String result;
         auto node_type = node->getNodeType();
 
@@ -133,16 +165,19 @@ public:
         {
             case QueryTreeNodeType::COLUMN:
             {
-                const ColumnIdentifier * column_identifier = nullptr;
+                RenderedColumnIdentifier column_identifier;
                 if (use_column_identifier_as_action_node_name)
-                    column_identifier = planner_context.getColumnNodeIdentifierOrNull(node);
+                    column_identifier = renderColumnNodeIdentifier(node, planner_context, column_identifier_convention);
 
-                if (column_identifier)
+                if (column_identifier.state == RenderedColumnIdentifier::State::Rendered)
                 {
-                    result = *column_identifier;
+                    result = std::move(column_identifier.name);
                 }
                 else
                 {
+                    if (column_identifier.state == RenderedColumnIdentifier::State::Unrenderable)
+                        unrenderable = true;
+
                     const auto & column_node = node->as<ColumnNode &>();
                     result = column_node.getColumnName();
                 }
@@ -534,6 +569,12 @@ private:
     std::unordered_map<QueryTreeNodePtr, std::string> & node_to_name;
     const PlannerContext & planner_context;
     bool use_column_identifier_as_action_node_name = true;
+    ColumnIdentifierConvention column_identifier_convention = ColumnIdentifierConvention::Current;
+    /// Nodes whose name does not identify the column it names. Owned by the caller and outlives one
+    /// name request, so it stays valid for as long as `node_to_name`.
+    QueryTreeNodeSet * unrenderable_identifier_nodes = nullptr;
+    /// Verdict slot of the name currently being rendered; each nested request substitutes its own.
+    bool * unrenderable_in_current_subtree = nullptr;
 };
 
 class ActionsScopeNode
@@ -1523,19 +1564,58 @@ std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> PlannerActionsVisito
     return actions_visitor_impl.visit(expression_node);
 }
 
+RenderedColumnIdentifier renderColumnNodeIdentifier(const QueryTreeNodePtr & column_node,
+    const PlannerContext & planner_context,
+    ColumnIdentifierConvention convention)
+{
+    using State = RenderedColumnIdentifier::State;
+
+    const auto * column_identifier = planner_context.getColumnNodeIdentifierOrNull(column_node);
+    if (!column_identifier)
+        return {.state = State::NoIdentifier, .name = {}};
+
+    if (convention == ColumnIdentifierConvention::Current)
+        return {.state = State::Rendered, .name = *column_identifier};
+
+    /// A column whose source has no alias is identified by its bare name under both conventions.
+    const auto & column_node_typed = column_node->as<const ColumnNode &>();
+    auto column_source = column_node_typed.getColumnSourceOrNull();
+    if (!column_source)
+        return {.state = State::Rendered, .name = *column_identifier};
+
+    const auto & source_alias = column_source->getAlias();
+    if (source_alias.empty())
+        return {.state = State::Rendered, .name = *column_identifier};
+
+    const auto & column_name = column_node_typed.getColumnName();
+    /// Regenerate the current spelling from the same parts and require it to match the registered
+    /// identifier. Anything else means the parts are not the ones this identifier was built from,
+    /// so this node's spelling under the other convention cannot be derived from them.
+    if (backQuoteIfNeed(source_alias) + "." + backQuoteIfNeed(column_name) != *column_identifier)
+        return {.state = State::Unrenderable, .name = {}};
+
+    return {.state = State::Rendered, .name = source_alias + "." + column_name};
+}
+
 String calculateActionNodeName(const QueryTreeNodePtr & node,
     const PlannerContext & planner_context,
     QueryTreeNodeToName & node_to_name,
-    bool use_column_identifier_as_action_node_name)
+    bool use_column_identifier_as_action_node_name,
+    ColumnIdentifierConvention column_identifier_convention,
+    QueryTreeNodeSet * unrenderable_identifier_nodes)
 {
-    ActionNodeNameHelper helper(node_to_name, planner_context, use_column_identifier_as_action_node_name);
+    ActionNodeNameHelper helper(node_to_name, planner_context, use_column_identifier_as_action_node_name,
+        column_identifier_convention, unrenderable_identifier_nodes);
     return helper.calculateActionNodeName(node);
 }
 
-String calculateActionNodeName(const QueryTreeNodePtr & node, const PlannerContext & planner_context, bool use_column_identifier_as_action_node_name)
+String calculateActionNodeName(const QueryTreeNodePtr & node,
+    const PlannerContext & planner_context,
+    bool use_column_identifier_as_action_node_name,
+    ColumnIdentifierConvention column_identifier_convention)
 {
     QueryTreeNodeToName empty_map;
-    ActionNodeNameHelper helper(empty_map, planner_context, use_column_identifier_as_action_node_name);
+    ActionNodeNameHelper helper(empty_map, planner_context, use_column_identifier_as_action_node_name, column_identifier_convention);
     return helper.calculateActionNodeName(node);
 }
 

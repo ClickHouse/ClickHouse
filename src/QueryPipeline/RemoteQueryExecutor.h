@@ -5,6 +5,7 @@
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/UniqueLock.h>
+#include <Core/LegacyHeaderNames.h>
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
 #include <Interpreters/ClientInfo.h>
@@ -242,6 +243,16 @@ public:
 
     void setDistributedFanout(size_t total_connections) { distributed_fanout = total_connections; }
 
+    /** How a peer older than `legacy_quoted_identifiers_version` spells the plan column identifiers
+      * of the expected header. Must be set before the query is sent. Packets from a newer peer take
+      * the plain path regardless.
+      */
+    void setLegacyHeaderNames(LegacyHeaderNames legacy_header_names_)
+    {
+        chassert(!sent_query);
+        legacy_header_names = std::move(legacy_header_names_);
+    }
+
     const Block & getHeader() const { return *header; }
     const SharedHeader & getSharedHeader() const { return header; }
 
@@ -279,9 +290,17 @@ private:
         std::optional<Extension> extension_,
         GetPriorityForLoadBalancing::Func priority_func = {});
 
+    /** Names to read for each header entry in a block from a pre-26.5 peer, or nullptr when the
+      * packet's peer spells identifiers as this server does. Built on first such packet.
+      */
+    const Names * getLegacySourceNames(const Packet & packet);
+
     SharedHeader header;
     Block totals;
     Block extremes;
+
+    LegacyHeaderNames legacy_header_names;
+    std::optional<Names> legacy_source_names;
 
     std::function<std::unique_ptr<IConnections>(AsyncCallback)> create_connections;
     std::unique_ptr<IConnections> connections;

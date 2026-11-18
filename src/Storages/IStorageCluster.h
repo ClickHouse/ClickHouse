@@ -121,7 +121,8 @@ public:
         ASTPtr query_to_send_,
         QueryProcessingStage::Enum processed_stage_,
         ClusterPtr cluster_,
-        LoggerPtr log_)
+        LoggerPtr log_,
+        PlannerContextPtr planner_context_ = nullptr)
         : SourceStepWithFilter(
             std::move(sample_block),
             column_names_,
@@ -133,6 +134,7 @@ public:
         , processed_stage(processed_stage_)
         , cluster(std::move(cluster_))
         , log(log_)
+        , planner_context(std::move(planner_context_))
     {
     }
 
@@ -143,6 +145,9 @@ private:
     QueryProcessingStage::Enum processed_stage;
     ClusterPtr cluster;
     LoggerPtr log;
+    /// Context that produced the output header, kept so a worker older than this server can be told
+    /// which of its plan column identifiers it spells differently.
+    PlannerContextPtr planner_context;
 
     std::optional<RemoteQueryExecutor::Extension> extension;
 

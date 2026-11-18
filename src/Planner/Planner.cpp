@@ -92,6 +92,7 @@
 #include <Analyzer/traverseQueryTree.h>
 
 #include <Planner/CollectColumnIdentifiers.h>
+#include <Planner/CollectLegacyActionNodeNames.h>
 #include <Planner/CollectMaterializedCTE.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
@@ -1009,6 +1010,12 @@ void Planner::buildPlanForQueryNode()
         QueryProcessingStage::toString(from_stage),
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
+
+    /// Runs here, before the FetchColumns early return, because this context owns the table
+    /// expression data the legacy spelling is generated from and a UNION branch destroys its own.
+    if (select_query_options.to_stage != QueryProcessingStage::Complete
+        && select_query_options.to_stage != QueryProcessingStage::QueryPlan)
+        collectLegacyActionNodeNames(query_tree, planner_context);
 
     auto useful_sets = std::move(join_tree_query_plan.useful_sets);
 

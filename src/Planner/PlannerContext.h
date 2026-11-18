@@ -34,6 +34,51 @@ using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
 using RawTableExpressionDataMap = std::unordered_map<QueryTreeNodePtr, TableExpressionData *>;
 
+/** Spellings that a pre-26.5 server would have given to action node names of this query.
+  *
+  * Populated while planning each (possibly per-UNION-branch) query node, and read once the whole
+  * plan is built.
+  */
+class LegacyActionNodeNames
+{
+public:
+    enum class State : uint8_t
+    {
+        /// No candidate was collected for the name.
+        Absent,
+        /// Both conventions spell the name identically.
+        Unchanged,
+        /// Exactly one legacy spelling was collected.
+        Unique,
+        /// Several different legacy spellings were collected, so the name's owner cannot be
+        /// determined. Distinct from Absent: a caller may keep an absent name as it is, but must
+        /// refuse an ambiguous one.
+        Ambiguous,
+    };
+
+    struct Lookup
+    {
+        State state = State::Absent;
+        /// Set for State::Unique only.
+        String legacy_name;
+    };
+
+    /// Both spellings of one action node name.
+    void add(const String & current_name, const String & legacy_name);
+
+    /// Record that `current_name` has no derivable legacy spelling, so it must be refused.
+    void addAmbiguous(const String & current_name);
+
+    Lookup getLegacyName(const String & current_name) const;
+
+    bool hasNoCandidates() const { return current_to_legacy.empty(); }
+
+private:
+    /// A name mapped to itself is Unchanged; an empty optional is Ambiguous. Equal spellings are
+    /// kept so Unchanged is provable rather than inferred from a missing key.
+    std::unordered_map<String, std::optional<String>> current_to_legacy;
+};
+
 class GlobalPlannerContext
 {
 public:
@@ -91,12 +136,18 @@ public:
     /// Generate a unique integer id, used to disambiguate temporary table expressions
     size_t nextUniqueId() { return next_unique_id++; }
 
+    /// Shared by every (per-UNION-branch) planner of the query, so it outlives the branch contexts.
+    LegacyActionNodeNames & getLegacyActionNodeNames() noexcept { return legacy_action_node_names; }
+    const LegacyActionNodeNames & getLegacyActionNodeNames() const noexcept { return legacy_action_node_names; }
+
 private:
     std::unordered_set<ColumnIdentifier> column_identifiers;
     size_t next_unique_id = 0;
 
     /// Planner contexts that own the data `shared_table_expression_data` points to.
     std::vector<PlannerContextPtr> shared_table_expression_data_owners;
+
+    LegacyActionNodeNames legacy_action_node_names;
 
     /// Table expression node to data map for correlated columns sources
     RawTableExpressionDataMap shared_table_expression_data;
