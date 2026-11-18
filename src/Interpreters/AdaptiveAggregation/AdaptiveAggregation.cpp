@@ -326,9 +326,23 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> max_count_per_bucket_storage{};
     auto * const max_count_per_bucket = !count_bins && adaptiveTopKPrunesWithoutFreeze() ? &max_count_per_bucket_storage : nullptr;
 
+    /// A descending top-K takes a floor from the producer's own table: the threshold of the table's own ranks, the
+    /// worst of its `bucket_top_k` best. The rank of a group in the table counts only what this producer aggregated
+    /// into it, so the group's final rank is at least that, and `bucket_top_k` groups reach the table's threshold.
+    /// For example, with a top 10 by `count`, a table whose tenth largest count is 500 proves that ten groups have
+    /// 500 rows or more. The merge's threshold starts from the largest floor of the producers instead of zero, so the
+    /// units that every merge task merges first, before any unit is converted, already skip the count bins bounded
+    /// below it. A table with fewer than `bucket_top_k` groups leaves its threshold at zero, which is no floor.
+    std::optional<AdaptiveTopKThreshold> table_threshold;
+    if (params.adaptiveTopKPrunes())
+        table_threshold.emplace(params.bucket_top_k, /*ascending_=*/false, /*best_possible_rank_=*/std::nullopt);
+
     size_t estimated_merge_work = adaptive.total_staged_records * adaptive_parallel_merge_indices.size();
-    if (count_bins || max_count_per_bucket || !adaptive_parallel_merge_indices.empty())
-        estimated_merge_work += collectAdaptiveTableStatistics(local_variants, count_bins, max_count_per_bucket);
+    if (count_bins || max_count_per_bucket || table_threshold || !adaptive_parallel_merge_indices.empty())
+        estimated_merge_work += collectAdaptiveTableStatistics(
+            local_variants, count_bins, max_count_per_bucket, table_threshold ? &*table_threshold : nullptr);
+
+    const UInt64 top_k_floor = table_threshold ? table_threshold->current() : 0;
 
     std::optional<AdaptiveTopKPruning::ProducerBins> bins;
     if (count_bins)
@@ -347,10 +361,15 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     if (local_variants.isConvertibleToTwoLevel())
         local_variants.indexCells(shared.layout.numPartitions(), [&](UInt64 hash) { return shared.layout.partitionOf(hash); });
 
+    /// The producer stages nothing more, so it frees the arrays of its misses here, in its own thread. The transform
+    /// that owns the producer lives until the pipeline is destroyed, which one thread does for every transform.
+    adaptive.misses = {};
+
     std::lock_guard lock(shared.producer_buffers_mutex);
     shared.estimated_merge_work += estimated_merge_work;
     ++shared.finished_producers;
     shared.table_cells += local_variants.sizeWithoutOverflowRow();
+    shared.top_k_floor = std::max(shared.top_k_floor, top_k_floor);
     if (froze)
     {
         ++shared.frozen_producers;
@@ -392,8 +411,8 @@ void Aggregator::prepareAdaptiveTopK(
     std::optional<UInt64> best_possible_rank;
     if (params.bucket_top_k_ascending && !collects_statistics)
         best_possible_rank = bucket_top_k_min_rank;
-    shared.top_k_threshold
-        = std::make_unique<AdaptiveTopKThreshold>(params.bucket_top_k, params.bucket_top_k_ascending, best_possible_rank);
+    shared.top_k_threshold = std::make_unique<AdaptiveTopKThreshold>(
+        params.bucket_top_k, params.bucket_top_k_ascending, best_possible_rank, shared.top_k_floor);
 }
 
 bool Aggregator::mergePrunesByTopK(

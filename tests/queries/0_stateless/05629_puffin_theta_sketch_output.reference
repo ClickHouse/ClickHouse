@@ -1,0 +1,49 @@
+--- one blob per column, exact ndv for small inputs ---
+apache-datasketches-theta-v1	123	7	[1]		{'ndv':'2'}
+apache-datasketches-theta-v1	123	7	[2]		{'ndv':'100'}
+apache-datasketches-theta-v1	123	7	[3]		{'ndv':'300'}
+apache-datasketches-theta-v1	123	7	[4]		{'ndv':'1000'}
+apache-datasketches-theta-v1	123	7	[5]		{'ndv':'400'}
+apache-datasketches-theta-v1	123	7	[6]		{'ndv':'600'}
+apache-datasketches-theta-v1	123	7	[7]		{'ndv':'50'}
+apache-datasketches-theta-v1	123	7	[8]		{'ndv':'70'}
+apache-datasketches-theta-v1	123	7	[9]		{'ndv':'30'}
+apache-datasketches-theta-v1	123	7	[10]		{'ndv':'40'}
+apache-datasketches-theta-v1	123	7	[11]		{'ndv':'90'}
+apache-datasketches-theta-v1	123	7	[12]		{'ndv':'110'}
+apache-datasketches-theta-v1	123	7	[13]		{'ndv':'120'}
+apache-datasketches-theta-v1	123	7	[14]		{'ndv':'10'}
+apache-datasketches-theta-v1	123	7	[15]		{'ndv':'130'}
+apache-datasketches-theta-v1	123	7	[16]		{'ndv':'140'}
+apache-datasketches-theta-v1	123	7	[17]		{'ndv':'150'}
+apache-datasketches-theta-v1	123	7	[18]		{'ndv':'160'}
+apache-datasketches-theta-v1	123	7	[19]		{'ndv':'170'}
+apache-datasketches-theta-v1	123	7	[20]		{'ndv':'135'}
+--- NULLs and empty strings are skipped, empty inputs give empty sketches ---
+[1]	5
+[2]	0
+[1]	8	0
+--- the same values give the same sketch for all integer types of Iceberg int, and another one for long ---
+[1,2,3]
+[4]
+--- estimation mode ---
+1
+--- field ids ---
+[5]	3
+[3]	3
+--- reading: Puffin skips Theta sketch blobs ---
+0
+0
+--- reading: blobs of unknown types are listed by PuffinMetadata and skipped by Puffin ---
+some-future-blob	[1]	4	3	zstd	{}
+0
+--- errors ---
+Unknown Puffin blob type 'unknown'
+has 1 field ids, but 2 columns are written
+contains field id 1 twice
+must be a comma-separated list of positive integers
+the type has no Iceberg single-value serialization
+cast the column to DateTime64(6)
+Setting `output_format_puffin_field_ids` must be set
+Setting `output_format_puffin_snapshot_id` must be set
+Setting `output_format_puffin_sequence_number` must be set
