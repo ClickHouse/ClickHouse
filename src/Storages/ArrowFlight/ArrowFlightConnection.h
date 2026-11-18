@@ -3,12 +3,14 @@
 #include "config.h"
 
 #if USE_ARROWFLIGHT
-
+#include <Common/SecretString.h>
 #include <Storages/StorageArrowFlight.h>
 
 #include <arrow/flight/Flight.grpc.pb.h>
 #include <grpcpp/channel.h>
 #include <grpcpp/client_context.h>
+
+#include <optional>
 
 
 namespace DB
@@ -50,14 +52,14 @@ private:
     int port;
     const bool use_basic_authentication;
     const String username;
-    const String password;
+    const SecretString password;
     const bool enable_ssl;
     const String ssl_ca;
     const String ssl_override_hostname;
 
     mutable std::shared_ptr<Stub> stub TSA_GUARDED_BY(mutex);
     /// The value of the `authorization` header of the calls: the token the server gave in the handshake.
-    mutable String authorization TSA_GUARDED_BY(mutex);
+    mutable SecretString authorization TSA_GUARDED_BY(mutex);
     mutable std::mutex mutex;
 };
 

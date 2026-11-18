@@ -125,7 +125,7 @@ void ArrowFlightConnection::prepareCall(grpc::ClientContext & context, UInt64 ti
     setDeadline(context, timeout_sec);
     std::lock_guard lock{mutex};
     if (!authorization.empty())
-        context.AddMetadata("authorization", authorization);
+        context.AddMetadata("authorization", String(authorization));
 }
 
 void ArrowFlightConnection::connect(UInt64 timeout_sec) const
@@ -168,7 +168,7 @@ void ArrowFlightConnection::connect(UInt64 timeout_sec) const
         /// which the server answers with the token in the `authorization` header.
         grpc::ClientContext context;
         setDeadline(context, timeout_sec);
-        context.AddMetadata("authorization", "Basic " + base64Encode(username + ":" + password));
+        context.AddMetadata("authorization", "Basic " + base64Encode(username + ":" + String(password)));
         auto stream = new_stub->Handshake(&context);
         stream->WritesDone();
         arrow::flight::protocol::HandshakeResponse response;

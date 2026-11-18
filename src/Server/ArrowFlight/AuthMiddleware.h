@@ -7,6 +7,9 @@
 #include <Interpreters/Session.h>
 #include <Server/IServer.h>
 #include <Server/ArrowFlight/FlightStatus.h>
+#include <Common/SecretString.h>
+#include <Common/StringHashForHeterogeneousLookup.h>
+
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <grpcpp/server_context.h>
@@ -43,10 +46,10 @@ public:
     {
     }
 
-    const std::string & getUsername() const { return username; }
-    const std::shared_ptr<Session> & getSession() const { return session; }
-    const std::string & getSessionId() const { return session_id; }
-    std::chrono::steady_clock::duration getSessionTimeout() const { return session_timeout; }
+    [[nodiscard]] const std::string & getUsername() const { return username; }
+    [[nodiscard]] const std::shared_ptr<Session> & getSession() const { return session; }
+    [[nodiscard]] const std::string & getSessionId() const { return session_id; }
+    [[nodiscard]] std::chrono::steady_clock::duration getSessionTimeout() const { return session_timeout; }
 
     /// Adds the headers of the response: the token a client authenticated with a password uses afterwards.
     void sendingHeaders(grpc::ServerContext & context) const;
@@ -83,12 +86,13 @@ class AuthMiddlewareFactory
     private:
         void cleanupExpiredTokens() TSA_REQUIRES(token_mutex);
 
-        using TokenExpirationList = std::multimap<std::chrono::steady_clock::time_point, std::string>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        using TokenExpirationList = std::multimap<std::chrono::steady_clock::time_point, SecretString>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
         std::mutex token_mutex;
         TokenExpirationList token_expiration_list TSA_GUARDED_BY(token_mutex);
-        std::unordered_map<std::string, TokenExpirationList::iterator> token_expiration_list_index TSA_GUARDED_BY(token_mutex); // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        std::unordered_map<std::string, std::pair<std::string, std::string>> token_to_credentials TSA_GUARDED_BY(token_mutex); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::unordered_map<SecretString, TokenExpirationList::iterator, StringHashForHeterogeneousLookup, std::equal_to<>> token_expiration_list_index TSA_GUARDED_BY(token_mutex); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::unordered_map<SecretString, std::pair<std::string, SecretString>, StringHashForHeterogeneousLookup, std::equal_to<>> token_to_credentials TSA_GUARDED_BY(token_mutex); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
         const Poco::Util::AbstractConfiguration & config;
     };
 
