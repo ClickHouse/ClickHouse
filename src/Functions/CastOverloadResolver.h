@@ -48,6 +48,10 @@ std::optional<bool> getCastFixedStringToStringStripTrailingZeros(const IFunction
 /// (see `IFunctionWithFixedStringToStringMode`), or nullopt if the result of `function` does not depend on it.
 std::optional<bool> getFixedStringToStringStripTrailingZeros(const IFunctionBase & function);
 
+/// The same for the functions that `resolver` builds: a resolver that implements `IFunctionWithFixedStringToStringMode`
+/// itself (such as one delegating to a function created from the context), or the generic adaptor of such a function.
+std::optional<bool> getFixedStringToStringStripTrailingZeros(const IFunctionOverloadResolver & resolver);
+
 /// Whether CastType::accurateOrNull accepts this target. Failure is reported by wrapping the target in
 /// Nullable, so the target itself must be able to be inside Nullable; a nested type is also accepted
 /// when it can carry a NULL of its own, as Dynamic and Variant do.

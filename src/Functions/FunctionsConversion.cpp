@@ -3523,27 +3523,31 @@ std::optional<bool> getFixedStringToStringStripTrailingZeros(const IFunctionBase
 {
     if (auto cast_mode = getCastFixedStringToStringStripTrailingZeros(function))
         return cast_mode;
-    const IFunction * wrapped_function = nullptr;
     if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(&function))
     {
-        wrapped_function = adaptor->getFunction().get();
+        if (const auto * function_with_mode = dynamic_cast<const IFunctionWithFixedStringToStringMode *>(adaptor->getFunction().get()))
+            return function_with_mode->getFixedStringToStringStripTrailingZeros();
+        return {};
     }
-    else
+
+    /// A function with a `Dynamic` or `Variant` argument is wrapped into an adaptor that rebuilds it for each
+    /// alternative from its overload resolver, so the mode is the one captured by the resolver.
+    if (const auto * dynamic_adaptor = typeid_cast<const FunctionBaseDynamicAdaptor *>(&function))
+        return getFixedStringToStringStripTrailingZeros(dynamic_adaptor->getFunctionOverloadResolver());
+    if (const auto * variant_adaptor = typeid_cast<const FunctionBaseVariantAdaptor *>(&function))
+        return getFixedStringToStringStripTrailingZeros(variant_adaptor->getFunctionOverloadResolver());
+    return {};
+}
+
+std::optional<bool> getFixedStringToStringStripTrailingZeros(const IFunctionOverloadResolver & resolver)
+{
+    if (const auto * resolver_with_mode = dynamic_cast<const IFunctionWithFixedStringToStringMode *>(&resolver))
+        return resolver_with_mode->getFixedStringToStringStripTrailingZeros();
+    if (const auto * resolver_adaptor = typeid_cast<const FunctionToOverloadResolverAdaptor *>(&resolver))
     {
-        /// A function with a `Dynamic` or `Variant` argument is wrapped into an adaptor that rebuilds it for each
-        /// alternative from its overload resolver, so the mode is the one captured by the function of the resolver.
-        const IFunctionOverloadResolver * resolver = nullptr;
-        if (const auto * dynamic_adaptor = typeid_cast<const FunctionBaseDynamicAdaptor *>(&function))
-            resolver = &dynamic_adaptor->getFunctionOverloadResolver();
-        else if (const auto * variant_adaptor = typeid_cast<const FunctionBaseVariantAdaptor *>(&function))
-            resolver = &variant_adaptor->getFunctionOverloadResolver();
-
-        if (const auto * resolver_adaptor = typeid_cast<const FunctionToOverloadResolverAdaptor *>(resolver))
-            wrapped_function = resolver_adaptor->getFunction();
+        if (const auto * function_with_mode = dynamic_cast<const IFunctionWithFixedStringToStringMode *>(resolver_adaptor->getFunction()))
+            return function_with_mode->getFixedStringToStringStripTrailingZeros();
     }
-
-    if (const auto * function_with_mode = dynamic_cast<const IFunctionWithFixedStringToStringMode *>(wrapped_function))
-        return function_with_mode->getFixedStringToStringStripTrailingZeros();
     return {};
 }
 
