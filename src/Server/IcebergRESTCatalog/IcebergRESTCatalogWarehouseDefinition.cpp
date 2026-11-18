@@ -24,6 +24,7 @@ constexpr Int64 FORMAT_VERSION = 3;
 
 constexpr size_t MAX_WAREHOUSE_NAME_LENGTH = 64;
 constexpr auto HIDDEN = "[HIDDEN]";
+constexpr std::string_view S3_SCHEME = "s3://";
 
 String getRequiredString(const Poco::JSON::Object & json, const String & key)
 {
@@ -38,6 +39,31 @@ String getOptionalString(const Poco::JSON::Object & json, const String & key)
     return getRequiredString(json, key);
 }
 
+}
+
+IcebergRESTCatalogS3Location IcebergRESTCatalogS3Location::parse(const String & location)
+{
+    /// TODO: support s3a:// and s3n://
+    if (!location.starts_with(S3_SCHEME))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Location {} is not an s3:// URI", location);
+    const auto slash = location.find('/', S3_SCHEME.size());
+    if (slash == String::npos)
+        return {.bucket = location.substr(S3_SCHEME.size()), .key = ""};
+    return {.bucket = location.substr(S3_SCHEME.size(), slash - S3_SCHEME.size()), .key = location.substr(slash + 1)};
+}
+
+String IcebergRESTCatalogWarehouseCredential::getPartition() const
+{
+    static constexpr std::string_view arn_prefix = "arn:";
+    const auto end = role_arn.find(':', arn_prefix.size());
+    if (!role_arn.starts_with(arn_prefix) || end == String::npos || end == arn_prefix.size())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Role {} is not an ARN", role_arn);
+    return role_arn.substr(arn_prefix.size(), end - arn_prefix.size());
+}
+
+String IcebergRESTCatalogWarehouseCredential::getSessionName() const
+{
+    return role_session_name.empty() ? "ClickHouseSession" : role_session_name;
 }
 
 IcebergRESTCatalogWarehouseCredential IcebergRESTCatalogWarehouseCredential::fromJSON(const Poco::JSON::Object & json)

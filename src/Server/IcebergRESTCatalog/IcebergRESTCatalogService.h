@@ -25,6 +25,8 @@ struct IcebergRESTRequest
     String uri;
     /// JSON text.
     String body;
+    /// The client asked for storage credentials with the `X-Iceberg-Access-Delegation` header.
+    bool vend_credentials = false;
 };
 
 struct IcebergRESTResponse
@@ -58,6 +60,7 @@ private:
         const Poco::URI & uri;
         const String & body;
         const Context & user_context;
+        bool vend_credentials = false;
 
         /// Names from the URL path: `/v1/{prefix}/namespaces/{namespace}/tables/{table}`.
         [[nodiscard]] IcebergNamespaceName namespaceFromURL() const;
@@ -101,6 +104,14 @@ private:
 
     /// Reads the specified `metadata.json` file from object storage.
     [[nodiscard]] Poco::JSON::Object::Ptr readTableMetadata(const IcebergRESTCatalogWarehouse & warehouse, const IcebergTablePointer & pointer) const;
+
+    /// Vends when the client asked for credentials with the `X-Iceberg-Access-Delegation` header.
+    [[nodiscard]] std::optional<IcebergRESTCatalog::VendedCredentials> vendTableCredentials(
+        const RoutedRequest & request,
+        const IcebergNamespaceName & ns,
+        const String & table,
+        const String & location,
+        IcebergRESTCatalog::VendedAccessLevel access) const;
 
     /// Writes the first metadata file and registers the table. Removes the file if the table is not registered.
     [[nodiscard]] IcebergRESTCatalogWarehouse::CreateTableResult writeAndRegisterTable(

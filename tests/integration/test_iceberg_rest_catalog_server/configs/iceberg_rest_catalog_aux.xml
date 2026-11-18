@@ -3,5 +3,7 @@
     <iceberg_rest_catalog>
         <port>8182</port>
         <zookeeper_path>aux:/clickhouse/iceberg_rest_catalog</zookeeper_path>
+        <!-- The S3 endpoint that clients get with vended credentials. -->
+        <vended_s3_endpoint>http://minio1:9001</vended_s3_endpoint>
     </iceberg_rest_catalog>
 </clickhouse>

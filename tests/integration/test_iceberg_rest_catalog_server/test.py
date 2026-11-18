@@ -253,10 +253,10 @@ def tables_url(ns, table=None):
     return url
 
 
-def create_table(ns, name, schema=DEFAULT_SCHEMA, expected_code=200, auth=None, **extra):
+def create_table(ns, name, schema=DEFAULT_SCHEMA, expected_code=200, auth=None, headers=None, **extra):
     body = {"name": name, "schema": schema, **extra}
     return catalog_request(
-        "POST", tables_url(ns), json=body, expected_code=expected_code, auth=auth
+        "POST", tables_url(ns), json=body, expected_code=expected_code, auth=auth, headers=headers
     )
 
 
@@ -302,13 +302,14 @@ def list_metadata_files(location):
     ]
 
 
-def commit_table(ns, table, requirements, updates, expected_code=200, auth=None):
+def commit_table(ns, table, requirements, updates, expected_code=200, auth=None, headers=None):
     return catalog_request(
         "POST",
         tables_url(ns, table),
         json={"requirements": requirements, "updates": updates},
         expected_code=expected_code,
         auth=auth,
+        headers=headers,
     )
 
 
@@ -359,12 +360,14 @@ def commit_transaction(changes, expected_code=204, auth=None):
     )
 
 
-def load_table(ns, table):
-    return catalog_request("GET", tables_url(ns, table)).json()
+def load_table(ns, table, auth=None, headers=None):
+    return catalog_request("GET", tables_url(ns, table), auth=auth, headers=headers).json()
 
 
-def stage_create_table(ns, name, schema=DEFAULT_SCHEMA, expected_code=200, **extra):
-    return create_table(ns, name, schema=schema, expected_code=expected_code, **{"stage-create": True, **extra})
+def stage_create_table(ns, name, schema=DEFAULT_SCHEMA, expected_code=200, headers=None, **extra):
+    return create_table(
+        ns, name, schema=schema, expected_code=expected_code, headers=headers, **{"stage-create": True, **extra}
+    )
 
 
 # The updates a client sends to finish a staged create.
@@ -401,6 +404,7 @@ def load_pyiceberg_catalog():
     )
 
 
+# `vended_credentials = 0` is needed to avoid logging the MinIO password on debug builds.
 def create_database_query():
     token = base64.b64encode(":".join(DEFAULT_AUTH).encode()).decode()
     return f"""
@@ -409,7 +413,7 @@ def create_database_query():
         CREATE DATABASE rest_tables_db
         ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
         SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
-            storage_endpoint = 'http://minio1:9001/{BUCKET}',
+            storage_endpoint = 'http://minio1:9001/{BUCKET}', vended_credentials = 0,
             auth_header = 'Authorization: Basic {token}'
         """
 
@@ -850,7 +854,7 @@ def test_clickhouse_rest_catalog_client(started_cluster):
         CREATE DATABASE rest_client_db
         ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
         SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
-            storage_endpoint = 'http://minio1:9001/{BUCKET}'
+            storage_endpoint = 'http://minio1:9001/{BUCKET}', vended_credentials = 0
         """)
     try:
         tables = node.query("SHOW TABLES FROM rest_client_db").splitlines()
@@ -889,7 +893,7 @@ def test_clickhouse_rest_catalog_client_location_not_a_uri(started_cluster):
         CREATE DATABASE rest_client_location_db
         ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
         SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
-            storage_endpoint = 'http://minio1:9001/{BUCKET}'
+            storage_endpoint = 'http://minio1:9001/{BUCKET}', vended_credentials = 0
         """)
     try:
         for ns in directories:
@@ -912,7 +916,7 @@ def test_clickhouse_client_creates_table(started_cluster):
         CREATE DATABASE {db}
         ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
         SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
-            storage_endpoint = 'http://minio1:9001/{BUCKET}'
+            storage_endpoint = 'http://minio1:9001/{BUCKET}', vended_credentials = 0
         """)
 
     def create_query(table, if_not_exists=False):
@@ -2147,3 +2151,81 @@ def test_pyiceberg_create_table_transaction(started_cluster):
         assert node.query(f"SELECT id, name FROM rest_tables_db.`{ns}.events` ORDER BY id") == "1\ta\n2\tb\n"
     finally:
         node.query("DROP DATABASE IF EXISTS rest_tables_db")
+
+
+VENDING_HEADERS = {"X-Iceberg-Access-Delegation": "vended-credentials"}
+
+
+def assert_vended_credentials(result):
+    config = result["config"]
+    # The mock STS hands out the MinIO keys.
+    assert config["s3.access-key-id"] == minio_access_key
+    assert config["s3.secret-access-key"] == minio_secret_key
+    current_time_ms = time.time() * 1000
+    assert int(config["s3.session-token-expires-at-ms"]) > current_time_ms
+    # The credentials are for the table location.
+    assert result["storage-credentials"] == [{"prefix": result["metadata"]["location"], "config": config}]
+
+
+def assert_no_credentials(result):
+    assert result["config"] == {}
+    assert "storage-credentials" not in result
+
+
+# The mock STS ignores the session policy, so this test does not check the table scope.
+def test_vended_credentials(started_cluster):
+    ns = f"vended_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+
+    # Create, stage-create and load give credentials.
+    assert_vended_credentials(create_table(ns, "events", headers=VENDING_HEADERS).json())
+    assert_vended_credentials(stage_create_table(ns, "staged", headers=VENDING_HEADERS).json())
+    assert_vended_credentials(load_table(ns, "events", headers=VENDING_HEADERS))
+
+    # The header can list several mechanisms.
+    headers = {"X-Iceberg-Access-Delegation": "remote-signing, vended-credentials"}
+    assert_vended_credentials(load_table(ns, "events", headers=headers))
+
+    # A commit response has no credentials.
+    committed = commit_table(ns, "events", [], [], headers=VENDING_HEADERS).json()
+    assert "config" not in committed
+    assert "storage-credentials" not in committed
+
+
+def test_vended_credentials_need_header(started_cluster):
+    ns = f"vended_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+
+    assert_no_credentials(create_table(ns, "events").json())
+    assert_no_credentials(stage_create_table(ns, "staged").json())
+    assert_no_credentials(load_table(ns, "events"))
+
+
+def test_vended_credentials_readonly_user(started_cluster):
+    ns = f"vended_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_table(ns, "events")
+    readonly_auth = ("readonly_user", "")
+
+    # A user who cannot write gets credentials on load.
+    assert_vended_credentials(load_table(ns, "events", auth=readonly_auth, headers=VENDING_HEADERS))
+
+    response = create_table(ns, "forbidden", auth=readonly_auth, headers=VENDING_HEADERS, expected_code=403)
+    assert_error_shape(response, "ForbiddenException")
+
+
+def test_vended_credentials_s3_endpoint(started_cluster):
+    ns = f"vended_{uuid.uuid4().hex[:8]}"
+    body = {"name": "events", "schema": DEFAULT_SCHEMA}
+
+    # `node` has no `vended_s3_endpoint`, so the client keeps its own endpoint.
+    create_namespace([ns])
+    config = create_table(ns, "events", headers=VENDING_HEADERS).json()["config"]
+    assert "s3.endpoint" not in config
+    assert "s3.path-style-access" not in config
+
+    # `node_aux` has `vended_s3_endpoint`. Its clients get the endpoint with the credentials.
+    catalog_request("POST", "/v1/my_warehouse/namespaces", json={"namespace": [ns]}, instance=node_aux)
+    config = catalog_request("POST", tables_url(ns), json=body, headers=VENDING_HEADERS, instance=node_aux).json()["config"]
+    assert config["s3.endpoint"] == "http://minio1:9001"
+    assert config["s3.path-style-access"] == "true"
