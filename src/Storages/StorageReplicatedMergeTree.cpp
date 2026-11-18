@@ -735,8 +735,7 @@ void StorageReplicatedMergeTree::tryRemoveOwnReplicaFromZooKeeper()
 
         /// Remove the registration only if it is the one this statement created. `creator_info` is
         /// written atomically with the replica nodes and pins them to this table UUID and this server,
-        /// so a leftover of another statement, table or server never matches and is kept for
-        /// SYSTEM DROP REPLICA.
+        /// so a leftover of another table or server never matches and is kept for SYSTEM DROP REPLICA.
         String creator_info;
         if (!zookeeper->tryGet(replica_path + "/creator_info", creator_info)
             || creator_info != toString(getStorageID().uuid) + "|" + toString(ServerUUID::get()))
@@ -745,6 +744,16 @@ void StorageReplicatedMergeTree::tryRemoveOwnReplicaFromZooKeeper()
         /// This replica is only started up after the constructor returns, so an active node here belongs
         /// to something else and the registration is not ours to remove.
         if (zookeeper->exists(replica_path + "/is_active"))
+            return;
+
+        /// An earlier table with the same explicit UUID on this server has the same `creator_info`. Like the
+        /// reuse check in createReplicaAttempt, only a replica that never started is taken: a started one has
+        /// a non-empty `host`, and a missing node means the replica is partly dropped.
+        auto never_started = zookeeper->tryGet(Strings{replica_path + "/host", replica_path + "/log_pointer", replica_path + "/parts"});
+        for (size_t i = 0; i < never_started.size(); ++i)
+            if (never_started[i].error != Coordination::Error::ZOK || !never_started[i].data.empty())
+                return;
+        if (never_started[2].stat.numChildren != 0)
             return;
 
         /// The zero-copy lock roots live outside the table subtree dropReplica removes, so they are
