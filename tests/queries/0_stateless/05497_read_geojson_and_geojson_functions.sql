@@ -60,6 +60,20 @@ FROM
 SELECT readGeoJSON(j.geometry), toTypeName(readGeoJSON(j.geometry)) FROM (SELECT '{"geometry":"{\\"type\\":\\"Point\\",\\"coordinates\\":[1,2]}"}'::JSON AS j);
 SELECT readGeoJSON(d) FROM (SELECT arrayJoin(['{"type":"Point","coordinates":[1,2]}'::Dynamic, NULL::Dynamic, '{"type":"Point","coordinates":[3,4]}'::JSON::Dynamic]) AS d);
 SELECT readGeoJSON(CAST(('Point', [0.5, 2]), 'Tuple(type String, coordinates Array(Decimal(10, 3)))')) SETTINGS output_format_json_quote_decimals = 1;
+-- A `JSON` or `Tuple` value is converted to text without loss: output settings don't apply, and `Float32` in a `Tuple` is widened as a cast does.
+WITH '{"type":"Point","coordinates":[1.2345,2.3456]}' AS s
+SELECT
+    variantElement(readGeoJSON(s::JSON), 'Point') = (1.2345, 2.3456),
+    variantElement(readGeoJSON(CAST(('Point', [1.2345, 2.3456]), 'Tuple(type String, coordinates Array(Float64))')), 'Point') = (1.2345, 2.3456)
+SETTINGS output_format_float_precision = 2, output_format_json_quote_64bit_floats = 1, output_format_json_quote_64bit_integers = 1,
+    output_format_json_quote_decimals = 1, output_format_json_quote_denormals = 1, output_format_decimal_trailing_zeros = 1,
+    output_format_json_named_tuples_as_objects = 0, output_format_json_escape_forward_slashes = 0;
+SELECT
+    variantElement(readGeoJSON(CAST(('Point', [0.1, 2]), 'Tuple(type String, coordinates Array(Float32))')), 'Point') = (toFloat64(toFloat32(0.1)), 2),
+    variantElement(readGeoJSON(CAST(('Point', [0.1, 2]), 'Tuple(type String, coordinates Array(Nullable(Float32)))')), 'Point') = (toFloat64(toFloat32(0.1)), 2),
+    variantElement(readGeoJSON(CAST(('Point', [0.1, 2]), 'Tuple(type String, coordinates Array(BFloat16))')), 'Point') = (toFloat64(toBFloat16(0.1)), 2),
+    -- A number in a `JSON` value is read as its text, as in a `String`.
+    variantElement(readGeoJSON('{"type":"Point","coordinates":[0.1,2]}'::JSON(coordinates Array(Float32))), 'Point') = (0.1, 2);
 -- A geometry object in a `JSON` column is a sub-object, not a path.
 SELECT readGeoJSON(j.geometry), readGeoJSON(j.^geometry) FROM (SELECT '{"geometry":{"type":"Point","coordinates":[1,2]}}'::JSON AS j);
 -- The type that schema inference gives for a geometry in JSON Lines.

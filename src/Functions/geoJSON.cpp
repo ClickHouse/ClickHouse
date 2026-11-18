@@ -2,9 +2,11 @@
 #include <Columns/ColumnString.h>
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/transformTypesRecursively.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -14,6 +16,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 #include <Processors/Formats/Impl/GeoJSONRowInputFormat.h>
 #include <Processors/Formats/Impl/GeoJSONRowOutputFormat.h>
 
@@ -41,10 +44,12 @@ public:
         , format_settings_hash(getFormatSettingsHash(context->getSettingsRef()))
     {
         /// A `JSON` or `Tuple` value is converted to text to be read, as an object with numbers for coordinates.
-        format_settings.json.quote_64bit_integers = false;
-        format_settings.json.quote_64bit_floats = false;
-        format_settings.json.quote_decimals = false;
-        format_settings.json.write_named_tuples_as_objects = true;
+        /// The conversion must not lose anything, so it does not use the settings of the session, which are meant
+        /// for output, such as `output_format_float_precision`.
+        text_settings.json.quote_64bit_integers = false;
+        text_settings.json.quote_64bit_floats = false;
+        text_settings.json.quote_decimals = false;
+        text_settings.json.write_named_tuples_as_objects = true;
     }
 
     [[nodiscard]] String getName() const override { return name; }
@@ -90,6 +95,7 @@ public:
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
         const IColumn * column = arguments[0].column.get();
+        ColumnPtr materialized;
         const NullMap * null_map = nullptr;
         if (const auto * nullable = typeid_cast<const ColumnNullable *>(column))
         {
@@ -97,8 +103,27 @@ public:
             null_map = &nullable->getNullMapData();
         }
 
-        const auto type = removeNullable(arguments[0].type);
+        auto type = removeNullable(arguments[0].type);
         const bool is_string = isString(type);
+        if (!is_string)
+        {
+            /// The shortest text of a `Float32` reads back as another `Float64`, so widen it first, as a cast does.
+            /// Typed paths of `JSON` are not widened: a cast between `JSON` types goes through text.
+            const auto widened_type = replaceNestedTypesInPair(type, type, [](const DataTypePtr & leaf, const DataTypePtr &) -> DataTypePtr
+            {
+                const WhichDataType which(leaf);
+                if (which.isFloat32() || which.isBFloat16())
+                    return std::make_shared<DataTypeFloat64>();
+                return leaf;
+            });
+            chassert(widened_type);
+            if (widened_type.get() != type.get())
+            {
+                materialized = castColumn({column->getPtr(), type, ""}, widened_type);
+                column = materialized.get();
+                type = widened_type;
+            }
+        }
         const auto serialization = type->getDefaultSerialization();
         const auto discriminators = getGeoJSONGeometryDiscriminators(result_type);
 
@@ -122,7 +147,7 @@ public:
             else
             {
                 WriteBufferFromString out(serialized);
-                serialization->serializeTextJSON(*column, row, out, format_settings);
+                serialization->serializeTextJSON(*column, row, out, text_settings);
                 out.finalize();
                 text = serialized;
 
@@ -144,9 +169,12 @@ public:
     }
 
 private:
-    FormatSettings format_settings;
+    /// The settings of the session, used to read the geometry.
+    const FormatSettings format_settings;
     /// The hash of the session settings `format_settings` was derived from (see `getFormatSettingsHash`).
     const UInt64 format_settings_hash;
+    /// The settings to convert a `JSON` or `Tuple` value to text.
+    FormatSettings text_settings;
 };
 
 class FunctionGeoJSON final : public IFunction
