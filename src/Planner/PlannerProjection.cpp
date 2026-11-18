@@ -34,6 +34,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace Setting
 {
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
@@ -72,7 +77,7 @@ String getPlannerName(const QueryTreeNodePtr & node, const PlannerContext & plan
 }
 
 /// the name that a projection part stores the expression under: the name of the expression as the query writes it
-String getStoredName(const QueryTreeNodePtr & node, const PlannerContext & planner_context)
+String getStoredName(const QueryTreeNodePtr & node)
 {
     /// a constant folded from an expression takes the name of that expression
     const auto * constant_node = node->as<ConstantNode>();
@@ -81,9 +86,12 @@ String getStoredName(const QueryTreeNodePtr & node, const PlannerContext & plann
     /// the analysis makes a new node for a column; a function and a literal keep the expression that the query writes
     if (const auto * column_node = written_node->as<ColumnNode>())
         return column_node->getColumnName();
-    if ((written_node->as<FunctionNode>() || written_node->as<ConstantNode>()) && written_node->hasOriginalAST())
-        return written_node->getOriginalAST()->getColumnName();
-    return getPlannerName(node, planner_context);
+
+    if (!written_node->hasOriginalAST())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Expression {} of a projection has no original AST", written_node->formatASTForErrorMessage());
+
+    return written_node->getOriginalAST()->getColumnName();
 }
 
 
@@ -164,7 +172,7 @@ ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDesc
     NameSet unique_aggregation_keys;
     for (const auto & key_node : query_node.getGroupBy().getNodes())
     {
-        auto key_name = getStoredName(key_node, *planner_context);
+        auto key_name = getStoredName(key_node);
         if (!unique_aggregation_keys.emplace(key_name).second)
             continue;
 
@@ -176,7 +184,7 @@ ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDesc
     for (const auto & aggregate_function_node : collectAggregateFunctionNodes(query_tree))
     {
         auto aggregate = extractAggregateDescriptions({aggregate_function_node}, *planner_context, /*use_column_identifier_as_action_node_name=*/false).front();
-        aggregate.column_name = getStoredName(aggregate_function_node, *planner_context);
+        aggregate.column_name = getStoredName(aggregate_function_node);
         if (unique_aggregate_names.emplace(aggregate.column_name).second)
             aggregates.push_back(std::move(aggregate));
     }
@@ -259,7 +267,7 @@ QueryPlan ProjectionPlanner::buildPlanForNormalProjection(Block source)
     NameSet stored_names;
     for (const auto & expression : stored_expressions)
     {
-        auto stored_name = getStoredName(expression, *planner_context);
+        auto stored_name = getStoredName(expression);
         if (stored_names.emplace(stored_name).second)
             stored_columns.emplace_back(getPlannerName(expression, *planner_context), std::move(stored_name));
     }
