@@ -24,6 +24,14 @@ SETTINGS max_bytes_before_external_sort = 0, log_comment = '05835_wide_in_memory
 SELECT cityHash64(number) AS k, randomPrintableASCII(1000) AS s FROM numbers_mt(300000) ORDER BY k FORMAT Null
 SETTINGS max_bytes_before_external_sort = 16777216, log_comment = '05835_wide_spilled';
 
+-- The merge of the temporary files sizes its blocks by the sort key as sorted, not as replicated by ARRAY JOIN.
+CREATE TABLE replicated_block_sizes (bs UInt64) ENGINE = Memory;
+INSERT INTO replicated_block_sizes SELECT blockSize() FROM (
+    SELECT s, a FROM (SELECT concat(repeat('x', 1000), toString(number % 10)) AS s, arrayMap(x -> x * 100 + number, range(200)) AS arr FROM numbers(100))
+    ARRAY JOIN arr AS a ORDER BY s, a)
+SETTINGS max_threads = 1, enable_lazy_columns_replication = 1, query_plan_remove_redundant_sorting = 0,
+    prefer_external_sort_block_bytes = 1048576, max_bytes_before_external_sort = 50000, log_comment = '05835_replicated';
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT 'tiny threshold spills', min(ProfileEvents['ExternalSortWritePart']) > 0
@@ -39,3 +47,10 @@ SELECT 'wide spilled sort uses less memory',
     AND maxIf(memory_usage, log_comment = '05835_wide_spilled') < minIf(memory_usage, log_comment = '05835_wide_in_memory')
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05835_wide_in_memory', '05835_wide_spilled');
+
+SELECT 'replicated sort key merge block size',
+    min(ProfileEvents['ExternalSortWritePart']) > 0 AND (SELECT max(bs) FROM replicated_block_sizes) <= 2048
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05835_replicated';
+
+DROP TABLE replicated_block_sizes;

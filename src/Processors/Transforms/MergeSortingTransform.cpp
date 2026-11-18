@@ -215,8 +215,9 @@ std::shared_ptr<BufferingToFileSink> MergeSortingTransform::prepareSpill()
     if (!external_merging_sorted)
     {
         bool have_all_inputs = false;
-        const size_t merged_block_size = sum_rows_in_blocks
-            ? MergeSorter::calculateMaxMergedBlockSize(max_merged_block_size, max_block_bytes, sum_rows_in_blocks, sum_bytes_in_blocks)
+        const size_t merged_block_size = merge_sorter->getInputRows()
+            ? MergeSorter::calculateMaxMergedBlockSize(
+                max_merged_block_size, max_block_bytes, merge_sorter->getInputRows(), merge_sorter->getInputBytes())
             : max_merged_block_size;
 
         if (merge_mode == MergeSorter::Mode::MergeUniqueChunks)
