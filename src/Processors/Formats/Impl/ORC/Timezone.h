@@ -18,7 +18,7 @@ public:
     Int64 operator()(Int64 t) const { return t < first_transition ? ancient_offset : lut.timezoneOffset(t); }
 
     /// The offset if the zone has no transitions at all. Not `hasFixedOffset`, which only covers the years 1900-2299.
-    std::optional<Int64> fixedOffset() const
+    [[nodiscard]] std::optional<Int64> fixedOffset() const
     {
         if (first_transition != std::numeric_limits<Int64>::min())
             return std::nullopt;
@@ -26,7 +26,7 @@ public:
     }
 
     /// UTC under any name: `UTC`, `Etc/UTC`, `Zulu`, `Etc/GMT+0`, `Fixed/UTC+00:00:00`.
-    bool isUTC() const { return fixedOffset() == 0; }
+    [[nodiscard]] bool isUTC() const { return fixedOffset() == 0; }
 
 private:
     const DateLUTImpl & lut;
