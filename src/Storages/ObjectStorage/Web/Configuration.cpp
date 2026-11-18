@@ -158,11 +158,11 @@ void StorageWebConfiguration::addStructureAndFormatToArgsIfNeeded(
     const String & format_,
     ContextPtr context,
     bool with_structure,
-    bool skip_not_overridable)
+    bool replace_not_overridable)
 {
     if (auto collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, nullptr, is_replayed_definition))
     {
-        addInferredFormatAndStructureToNamedCollectionArgs(args, *collection, format_, structure_, with_structure, skip_not_overridable);
+        addInferredFormatAndStructureToNamedCollectionArgs(args, *collection, format_, structure_, with_structure, replace_not_overridable);
         return;
     }
 

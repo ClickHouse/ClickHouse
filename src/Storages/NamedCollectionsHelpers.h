@@ -50,14 +50,14 @@ bool isSecondaryQueryAuthenticatedByClusterSecret(const ContextPtr & context);
 bool sendNotOverridableAutoToCluster(const ContextPtr & context, const String & cluster_name);
 
 /// Appends `format = '<format>'` and, if `with_structure`, `structure = '<structure>'` to the arguments of a named collection,
-/// for each of these keys whose value in `collection` is `'auto'` or absent. If `skip_not_overridable`, skips a `NOT OVERRIDABLE` key.
+/// for each of these keys whose value in `collection` is `'auto'` or absent. Skips a `NOT OVERRIDABLE` key unless `replace_not_overridable`.
 void addInferredFormatAndStructureToNamedCollectionArgs(
     ASTs & args,
     const NamedCollection & collection,
     const String & format,
     const String & structure,
     bool with_structure,
-    bool skip_not_overridable);
+    bool replace_not_overridable);
 
 /// Checks the overrides of the stored keys in the source of a dictionary at its creation, attachment or restore.
 /// `config_prefix` is the source configuration "<dict_root>.source.<type>" (e.g. "dictionary.source.clickhouse").

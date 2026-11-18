@@ -37,7 +37,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
     const bool is_secondary_query = client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     const bool send_not_overridable
         = !is_secondary_query && sendNotOverridableAutoToCluster(context, ITableFunctionCluster<Base>::cluster_name);
-    const bool infer_locked_structure = !is_secondary_query && !is_insert_query && configuration->structure_not_overridable
+    const bool infer_locked_structure = !is_secondary_query && !is_insert_query && configuration->is_structure_not_overridable
         && !send_not_overridable;
 
     ColumnsDescription columns;

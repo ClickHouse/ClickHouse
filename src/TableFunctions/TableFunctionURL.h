@@ -60,7 +60,7 @@ public:
             /// In case of named collection, just add key-value pairs "format='...', structure='...'"
             /// at the end of arguments to override existed format and structure with "auto" values.
             addInferredFormatAndStructureToNamedCollectionArgs(
-                args, *collection, format_, structure_, with_structure, /* skip_not_overridable= */ !replace_not_overridable);
+                args, *collection, format_, structure_, with_structure, replace_not_overridable);
         }
         else
         {

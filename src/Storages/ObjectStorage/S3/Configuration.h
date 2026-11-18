@@ -146,7 +146,7 @@ public:
         const String & format,
         ContextPtr context,
         bool with_structure,
-        bool skip_not_overridable) override;
+        bool replace_not_overridable) override;
 
     static bool collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context);
 

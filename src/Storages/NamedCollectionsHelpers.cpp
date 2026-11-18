@@ -259,12 +259,12 @@ void addInferredFormatAndStructureToNamedCollectionArgs(
     const String & format,
     const String & structure,
     bool with_structure,
-    bool skip_not_overridable)
+    bool replace_not_overridable)
 {
     const auto add = [&](const String & key, const String & value)
     {
         if (collection.getOrDefault<String>(key, "auto") != "auto"
-            || (skip_not_overridable && !collection.isOverridable(key, /* default_value= */ true)))
+            || (!replace_not_overridable && !collection.isOverridable(key, /* default_value= */ true)))
             return;
         ASTs equal_func_args = {make_intrusive<ASTIdentifier>(key), make_intrusive<ASTLiteral>(value)};
         args.push_back(makeASTOperator("equals", std::move(equal_func_args)));

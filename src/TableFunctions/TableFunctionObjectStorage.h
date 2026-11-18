@@ -75,11 +75,11 @@ public:
                 configuration.format = "Parquet"; /// Default format of data lakes.
 
             configuration.addStructureAndFormatToArgsIfNeeded(
-                args, structure, format, context, /*with_structure=*/true, /*skip_not_overridable=*/false);
+                args, structure, format, context, /*with_structure=*/true, /*replace_not_overridable=*/true);
         }
         else
             Configuration().addStructureAndFormatToArgsIfNeeded(
-                args, structure, format, context, /*with_structure=*/true, /*skip_not_overridable=*/false);
+                args, structure, format, context, /*with_structure=*/true, /*replace_not_overridable=*/true);
     }
 
 protected:

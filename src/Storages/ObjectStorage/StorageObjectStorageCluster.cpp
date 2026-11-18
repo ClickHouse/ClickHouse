@@ -464,7 +464,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         if (add_structure_and_format)
             configuration->addStructureAndFormatToArgsIfNeeded(
                 args, structure, configuration->format, context, /*with_structure=*/true,
-                /*skip_not_overridable=*/!send_not_overridable);
+                /*replace_not_overridable=*/send_not_overridable);
 
         /// When a non-cluster table function (e.g. `s3`) was auto-converted to cluster mode
         /// by the `parallel_replicas_for_cluster_engines` setting, rename it to the Cluster variant
@@ -493,7 +493,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         if (add_structure_and_format)
             configuration->addStructureAndFormatToArgsIfNeeded(
                 args, structure, configuration->format, context, /*with_structure=*/true,
-                /*skip_not_overridable=*/!send_not_overridable);
+                /*replace_not_overridable=*/send_not_overridable);
         if (!target_cluster_name.empty())
             cluster_name_arg = make_intrusive<ASTLiteral>(target_cluster_name);
         args.insert(args.begin(), std::move(cluster_name_arg));

@@ -938,13 +938,13 @@ static void addStructureAndFormatToArgsIfNeededS3(
     bool with_structure,
     size_t max_number_of_arguments,
     bool is_replayed_definition,
-    bool skip_not_overridable)
+    bool replace_not_overridable)
 {
     if (auto collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, nullptr, is_replayed_definition))
     {
         /// In case of named collection, just add key-value pairs "format='...', structure='...'"
         /// at the end of arguments to override existed format and structure with "auto" values.
-        addInferredFormatAndStructureToNamedCollectionArgs(args, *collection, format_, structure_, with_structure, skip_not_overridable);
+        addInferredFormatAndStructureToNamedCollectionArgs(args, *collection, format_, structure_, with_structure, replace_not_overridable);
     }
     else
     {
@@ -1276,7 +1276,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
 }
 
 void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
-    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure, bool skip_not_overridable)
+    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure, bool replace_not_overridable)
 {
     addStructureAndFormatToArgsIfNeededS3(
         args,
@@ -1286,7 +1286,7 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
         with_structure,
         S3StorageParsedArguments::getMaxNumberOfArguments(with_structure),
         is_replayed_definition,
-        skip_not_overridable);
+        replace_not_overridable);
 }
 }
 
