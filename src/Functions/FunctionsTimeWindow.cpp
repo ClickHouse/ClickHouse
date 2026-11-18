@@ -419,7 +419,13 @@ struct TimeWindowImpl<HOP>
         if constexpr (kind == IntervalKind::Kind::Month)
             result = time_zone.addMonths(ExtendedDayNum(static_cast<Int32>(value)), delta);
         else if constexpr (kind == IntervalKind::Kind::Quarter)
-            result = time_zone.addQuarters(ExtendedDayNum(static_cast<Int32>(value)), delta);
+        {
+            /// `addQuarters` multiplies by 3 with wraparound, so count the months here and check the multiplication.
+            Int64 months = 0;
+            overflow = common::mulOverflow(delta, static_cast<Int64>(3), months);
+            if (!overflow)
+                result = time_zone.addMonths(ExtendedDayNum(static_cast<Int32>(value)), months);
+        }
         else if constexpr (kind == IntervalKind::Kind::Year)
             result = time_zone.addYears(ExtendedDayNum(static_cast<Int32>(value)), delta);
         else

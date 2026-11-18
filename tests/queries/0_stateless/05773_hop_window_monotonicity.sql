@@ -39,3 +39,7 @@ SELECT hop(toDateTime('2026-01-01 00:00:00', 'UTC'), INTERVAL 1 SECOND, INTERVAL
 SELECT hop(toDateTime('2026-01-01 00:00:00', 'UTC'), INTERVAL 1 WEEK, INTERVAL 9363 WEEK, 'UTC'); -- { serverError BAD_ARGUMENTS }
 SELECT hop(toDateTime('2026-01-01 00:00:00', 'UTC'), INTERVAL 1 WEEK, INTERVAL 9362 WEEK, 'UTC'); -- { serverError BAD_ARGUMENTS }
 SELECT hop(toDateTime('2026-01-01 00:00:00', 'UTC'), INTERVAL 1 WEEK, INTERVAL 2900 WEEK, 'UTC');
+-- The number of months in a huge window of quarters must not wrap around.
+SELECT hop(toDateTime('2026-01-01 00:00:00', 'UTC'), INTERVAL 1 QUARTER, toIntervalQuarter(toInt64(6148914691236517205)), 'UTC'); -- { serverError BAD_ARGUMENTS }
+SELECT hop(toDateTime('2026-01-01 00:00:00', 'UTC'), INTERVAL 1 QUARTER, toIntervalQuarter(toInt64(6148914691236517206)), 'UTC'); -- { serverError BAD_ARGUMENTS }
+SELECT hop(toDateTime('2026-01-01 00:00:00', 'UTC'), INTERVAL 1 QUARTER, INTERVAL 2 QUARTER, 'UTC');
