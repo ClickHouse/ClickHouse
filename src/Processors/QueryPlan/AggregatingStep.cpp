@@ -86,6 +86,8 @@ namespace Setting
 {
     extern const SettingsBool use_aggregation_memory_tracker;
     extern const SettingsUInt64 min_bytes_before_external_group_by;
+    extern const SettingsUInt64 max_bytes_before_external_group_by;
+    extern const SettingsDouble max_bytes_ratio_before_external_group_by;
     extern const SettingsString temporary_files_codec;
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
@@ -1660,6 +1662,14 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         tmp_data_scope = tmp_data_scope->childScope(
             /* metrics */ {}, query_settings[Setting::temporary_files_buffer_size], query_settings[Setting::temporary_files_codec]);
 
+    /// The planner derives the threshold from the memory available at planning time
+    /// (`max_bytes_ratio_before_external_group_by`). A plan from the query plan cache was built by an earlier
+    /// query, so the threshold is computed again for the current memory state, as the planner would do.
+    size_t max_bytes_before_external_group_by = ctx.for_query_plan_cache
+        ? Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
+            query_settings[Setting::max_bytes_before_external_group_by], query_settings[Setting::max_bytes_ratio_before_external_group_by])
+        : size_t(ctx.settings[QueryPlanSerializationSetting::max_bytes_before_external_group_by]);
+
     Aggregator::Params params{
         keys,
         aggregates,
@@ -1668,7 +1678,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::group_by_overflow_mode],
         ctx.settings[QueryPlanSerializationSetting::group_by_two_level_threshold],
         ctx.settings[QueryPlanSerializationSetting::group_by_two_level_threshold_bytes],
-        ctx.settings[QueryPlanSerializationSetting::max_bytes_before_external_group_by],
+        max_bytes_before_external_group_by,
         ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_BEFORE_EXTERNAL_GROUP_BY
             ? size_t(ctx.settings[QueryPlanSerializationSetting::min_bytes_before_external_group_by])
             : size_t(ctx.context->getSettingsRef()[Setting::min_bytes_before_external_group_by]),
