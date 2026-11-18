@@ -219,7 +219,12 @@ std::pair<ColumnPtr, DataTypePtr> ArrowIPCBlockOutputFormat::encodeDictionaryCol
     /// LowCardinality dictionary to a global index, extending the accumulated dictionary with any new
     /// values (emitted as a delta). The null placeholder maps to -1 (marked via the index validity bitmap,
     /// never referenced from the Arrow dictionary).
-    const auto & low_cardinality = assert_cast<const ColumnLowCardinality &>(*low_cardinality_column);
+    /// Export only the dictionary values that the rows reference. A dictionary can hold values of rows that were
+    /// filtered out, e.g. by a row policy: a `MergeTree` part dictionary that the reader shares with the column, or
+    /// a dictionary that `filter` left unchanged. The accumulated Arrow dictionary would otherwise disclose them.
+    const auto & source_low_cardinality = assert_cast<const ColumnLowCardinality &>(*low_cardinality_column);
+    const auto compacted_column = source_low_cardinality.cutAndCompact(0, source_low_cardinality.size());
+    const auto & low_cardinality = *compacted_column;
     const ColumnPtr & batch_dictionary = low_cardinality.getDictionary().getNestedColumn();
     const size_t dict_size = batch_dictionary->size();
     const size_t rows = low_cardinality.size();
