@@ -717,7 +717,9 @@ bool parseISO8601Cell(std::string_view text, bool date1904, Cell & cell)
         if (!readDigits(text, pos, 4, year) || !skip_char('-') || !readDigits(text, pos, 2, month) || !skip_char('-')
             || !readDigits(text, pos, 2, day))
             throw malformed();
-        if (month < 1 || month > 12 || day < 1 || day > 31)
+        static constexpr UInt32 days_in_month[] = {31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+        bool leap_year = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+        if (month < 1 || month > 12 || day < 1 || day > days_in_month[month - 1] || (month == 2 && day == 29 && !leap_year))
             throw malformed();
         has_date = true;
     }

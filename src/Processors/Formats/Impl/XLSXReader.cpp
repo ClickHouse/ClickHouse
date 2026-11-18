@@ -139,46 +139,85 @@ void appendUTF8(UInt32 code, String & out)
     }
 }
 
-/// Converts UTF-16 to UTF-8. Unpaired surrogates and a trailing odd byte are replaced with U+FFFD.
-String utf16ToUTF8(std::string_view data, bool big_endian)
+/// Converts UTF-16 to UTF-8 incrementally, so that a large UTF-16 part is not materialized in memory.
+/// Unpaired surrogates and a trailing odd byte are replaced with U+FFFD.
+class UTF16ToUTF8ReadBuffer : public ReadBuffer
 {
+public:
+    UTF16ToUTF8ReadBuffer(std::unique_ptr<ReadBuffer> in_, bool big_endian_)
+        : ReadBuffer(nullptr, 0)
+        , in(std::move(in_))
+        , big_endian(big_endian_)
+    {
+    }
+
+private:
     static constexpr UInt32 replacement = 0xFFFD;
-    String result;
-    result.reserve(data.size());
-    auto unit_at = [&](size_t pos) -> UInt32
+    /// The number of UTF-16 code units converted at once.
+    static constexpr size_t units_per_chunk = 32768;
+
+    std::unique_ptr<ReadBuffer> in;
+    bool big_endian;
+    String converted;
+    /// A code unit that was read after a high surrogate but turned out not to be a low surrogate.
+    std::optional<UInt32> lookahead;
+    bool finished = false;
+
+    /// Reads the next code unit. At the end of data, returns nothing and appends the replacement for a trailing odd byte.
+    std::optional<UInt32> readUnit()
     {
-        auto first = static_cast<UInt8>(data[pos]);
-        auto second = static_cast<UInt8>(data[pos + 1]);
-        return big_endian ? (first << 8 | second) : (second << 8 | first);
-    };
-    size_t pos = 0;
-    while (pos + 2 <= data.size())
-    {
-        UInt32 unit = unit_at(pos);
-        pos += 2;
-        if (unit >= 0xD800 && unit < 0xDC00)
+        if (lookahead)
         {
-            if (pos + 2 <= data.size())
+            auto unit = *lookahead;
+            lookahead.reset();
+            return unit;
+        }
+        if (finished)
+            return {};
+        char bytes[2];
+        size_t size = in->read(bytes, 2);
+        if (size < 2)
+        {
+            finished = true;
+            if (size == 1)
+                appendUTF8(replacement, converted);
+            return {};
+        }
+        auto first = static_cast<UInt8>(bytes[0]);
+        auto second = static_cast<UInt8>(bytes[1]);
+        return big_endian ? (first << 8 | second) : (second << 8 | first);
+    }
+
+    bool nextImpl() override
+    {
+        converted.clear();
+        for (size_t i = 0; i < units_per_chunk; ++i)
+        {
+            auto unit = readUnit();
+            if (!unit)
+                break;
+            if (*unit >= 0xD800 && *unit < 0xDC00)
             {
-                UInt32 low = unit_at(pos);
-                if (low >= 0xDC00 && low < 0xE000)
+                auto low = readUnit();
+                if (low && *low >= 0xDC00 && *low < 0xE000)
                 {
-                    pos += 2;
-                    appendUTF8(0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00), result);
+                    appendUTF8(0x10000 + ((*unit - 0xD800) << 10) + (*low - 0xDC00), converted);
                     continue;
                 }
+                appendUTF8(replacement, converted);
+                lookahead = low;
             }
-            appendUTF8(replacement, result);
+            else if (*unit >= 0xDC00 && *unit < 0xE000)
+                appendUTF8(replacement, converted);
+            else
+                appendUTF8(*unit, converted);
         }
-        else if (unit >= 0xDC00 && unit < 0xE000)
-            appendUTF8(replacement, result);
-        else
-            appendUTF8(unit, result);
+        if (converted.empty())
+            return false;
+        set(converted.data(), converted.size(), 0);
+        return true;
     }
-    if (pos < data.size())
-        appendUTF8(replacement, result);
-    return result;
-}
+};
 
 /// The parts of an Office Open XML package are encoded in UTF-8 or UTF-16 (ECMA-376 Part 2, section 6.2.5). `XMLPullParser` works
 /// with UTF-8, so a UTF-16 part is detected by its byte order mark or by its first character `<` (a NUL byte cannot appear in
@@ -217,22 +256,20 @@ std::unique_ptr<ReadBuffer> decodeXMLPart(std::unique_ptr<ReadBuffer> in)
         skip = 3;
     }
 
+    auto result = std::make_unique<ConcatReadBuffer>(std::make_unique<ReadBufferFromOwnString>(prefix.substr(skip)), std::move(in));
     if (utf16)
-    {
-        String rest;
-        readStringUntilEOF(rest, *in);
-        String data = prefix.substr(skip) + rest;
-        return std::make_unique<ReadBufferFromOwnString>(utf16ToUTF8(data, big_endian));
-    }
-
-    return std::make_unique<ConcatReadBuffer>(std::make_unique<ReadBufferFromOwnString>(prefix.substr(skip)), std::move(in));
+        return std::make_unique<UTF16ToUTF8ReadBuffer>(std::move(result), big_endian);
+    return result;
 }
 
 /// Reads the text of a rich text element (`<si>` of the shared strings or `<is>` of an inline string):
 /// the text of the `<t>` elements, including the ones in the rich text runs `<r>`, but not in the phonetic runs `<rPh>`.
 /// The runs are traversed iteratively (the loop simply descends into them), so that deep nesting cannot exhaust the stack.
+/// The escape sequences `_xHHHH_` are decoded in each `<t>` separately, so that a literal text split between runs
+/// cannot form an escape sequence.
 void readRichText(XMLPullParser & parser, String & out)
 {
+    String run;
     size_t target_depth = parser.depth() - 1;
     while (parser.depth() > target_depth)
     {
@@ -242,7 +279,12 @@ void readRichText(XMLPullParser & parser, String & out)
         if (event != Event::StartElement)
             continue;
         if (parser.name() == "t")
-            parser.readElementText(out);
+        {
+            run.clear();
+            parser.readElementText(run);
+            decodeOOXMLEscapes(run);
+            out += run;
+        }
         else if (parser.name() == "r")
             continue; /// The children of the run are read by this loop.
         else
@@ -392,7 +434,6 @@ std::shared_ptr<const VectorWithMemoryTracking<String>> XLSXWorkbook::readShared
         {
             String & str = result->emplace_back();
             readRichText(parser, str);
-            decodeOOXMLEscapes(str);
         }
         else
             parser.skipElement();
@@ -592,6 +633,8 @@ void XLSXSheetReader::readCell(Cell & cell, UInt32 & column)
             style = 0;
 
     bool has_value = false;
+    /// The text of `<is>` is decoded by `readRichText`, the text of `<v>` is not.
+    bool value_is_rich_text = false;
     value.clear();
     forEachChildElement(parser, [&]
     {
@@ -604,6 +647,7 @@ void XLSXSheetReader::readCell(Cell & cell, UInt32 & column)
         {
             readRichText(parser, value);
             has_value = true;
+            value_is_rich_text = true;
         }
         else
             parser.skipElement();
@@ -624,7 +668,8 @@ void XLSXSheetReader::readCell(Cell & cell, UInt32 & column)
     {
         cell.type = CellType::String;
         cell.text = std::move(value);
-        decodeOOXMLEscapes(cell.text);
+        if (!value_is_rich_text)
+            decodeOOXMLEscapes(cell.text);
     }
     else if (cell_type == "b")
     {
