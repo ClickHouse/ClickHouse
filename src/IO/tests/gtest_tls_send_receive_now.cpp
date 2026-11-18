@@ -98,17 +98,23 @@ struct TLSLoopbackPair
         }
     }
 
-    /// Fills the socket with data that the server does not read. Returns the number of plaintext
-    /// bytes that `sendNow` accepted.
+    /// Fills the socket and the receive window of the server, which does not read. Returns the number
+    /// of plaintext bytes that `sendNow` accepted. The kernel moves the send buffer to the server
+    /// while the window is open, so the socket is full only when it stays unwritable.
     size_t fill()
     {
         const std::string data(64 * 1024, 'x');
         size_t total = 0;
-        int sent = 0;
-        while ((sent = socket().sendNow(data.data(), static_cast<int>(data.size()))) > 0)
-            total += static_cast<size_t>(sent);
-        EXPECT_EQ(sent, 0);
-        return total;
+        while (true)
+        {
+            int sent = 0;
+            while ((sent = socket().sendNow(data.data(), static_cast<int>(data.size()))) > 0)
+                total += static_cast<size_t>(sent);
+            EXPECT_EQ(sent, 0);
+            Poco::Timespan timeout(0, 200'000);
+            if (socket().waitForSendOrReceive(timeout, select_write) == 0)
+                return total;
+        }
     }
 };
 
@@ -234,6 +240,90 @@ TEST(TLSSendReceiveNow, BlockingReceiveSendsTheQueuedBytesFirst)
 
     char answer[16];
     const int length = pair.client.receiveBytes(answer, static_cast<int>(sizeof(answer)));
+    server_thread.join();
+    if (server_exception)
+        std::rethrow_exception(server_exception);
+    ASSERT_EQ(length, 4);
+    EXPECT_EQ(std::string(answer, 4), "done");
+    EXPECT_EQ(pair.queued(), 0U);
+}
+
+
+/// The server answers and resets the connection while encrypted bytes of the body are queued. A
+/// blocking receive gets the answer: the reset does not reach OpenSSL as a failed write.
+TEST(TLSSendReceiveNow, BlockingReceiveGetsTheAnswerBeforeAReset)
+{
+    TLSLoopbackPair pair;
+    pair.client.setSendBufferSize(4096);
+    pair.fill();
+    ASSERT_GT(pair.queued(), 0U);
+
+    const std::string answer = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+    pair.server.sendBytes(answer.data(), static_cast<int>(answer.size()));
+    pair.server.setLinger(true, 0);
+    pair.server.close();
+    pollfd fd{.fd = pair.client.impl()->sockfd(), .events = 0, .revents = 0};
+    ASSERT_EQ(::poll(&fd, 1, 5000), 1);
+
+    std::string received(answer.size() + 16, '\0');
+    const int length = pair.client.receiveBytes(received.data(), static_cast<int>(received.size()));
+    ASSERT_GT(length, 0);
+    EXPECT_EQ(received.substr(0, static_cast<size_t>(length)), answer);
+}
+
+
+/// The server answers and does not read the rest of the body. A blocking receive gets the answer
+/// without waiting for the queued bytes to leave.
+TEST(TLSSendReceiveNow, BlockingReceiveGetsTheAnswerOfAPeerThatDoesNotRead)
+{
+    TLSLoopbackPair pair;
+    pair.client.setSendBufferSize(4096);
+    pair.fill();
+    ASSERT_GT(pair.queued(), 0U);
+
+    const std::string answer = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+    pair.server.sendBytes(answer.data(), static_cast<int>(answer.size()));
+
+    std::string received(answer.size() + 16, '\0');
+    const int length = pair.client.receiveBytes(received.data(), static_cast<int>(received.size()));
+    ASSERT_GT(length, 0);
+    EXPECT_EQ(received.substr(0, static_cast<size_t>(length)), answer);
+}
+
+
+/// A wait for data alone sends the queued bytes: the server waits for the whole body before it
+/// answers.
+TEST(TLSSendReceiveNow, WaitForDataSendsTheQueuedBytes)
+{
+    TLSLoopbackPair pair;
+    pair.client.setSendBufferSize(4096);
+    const size_t body_size = pair.fill();
+    ASSERT_GT(pair.queued(), 0U);
+
+    std::exception_ptr server_exception;
+    std::jthread server_thread([&]
+    {
+        try
+        {
+            std::string buffer(64 * 1024, '\0');
+            size_t received = 0;
+            while (received < body_size)
+            {
+                const int length = pair.server.receiveBytes(buffer.data(), static_cast<int>(buffer.size()));
+                if (length <= 0)
+                    throw Poco::Net::NetException("The body ended early");
+                received += static_cast<size_t>(length);
+            }
+            pair.server.sendBytes("done", 4);
+        }
+        catch (...)
+        {
+            server_exception = std::current_exception();
+        }
+    });
+
+    char answer[16];
+    const int length = pair.receiveSome(answer, static_cast<int>(sizeof(answer)));
     server_thread.join();
     if (server_exception)
         std::rethrow_exception(server_exception);

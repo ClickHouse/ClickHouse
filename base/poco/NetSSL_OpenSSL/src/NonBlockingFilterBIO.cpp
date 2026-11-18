@@ -142,10 +142,7 @@ int NonBlockingFilterBIO::read(BIO* bio, char* data, int length)
 	if (filter.nonBlocking)
 		return filter.readNonBlocking(bio, data, length);
 
-	/// With the retry flags of a failed write, `SSL_read` reports `SSL_ERROR_WANT_WRITE`.
-	const int queued = filter.writeQueuedToNext(bio);
-	if (queued <= 0)
-		return queued;
+	/// `SecureSocketImpl` sends the queued bytes outside OpenSSL while it waits for data.
 	const int rc = BIO_read(BIO_next(bio), data, length);
 	BIO_copy_next_retry(bio);
 	return rc;

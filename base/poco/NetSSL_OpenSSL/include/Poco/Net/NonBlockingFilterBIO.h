@@ -21,8 +21,8 @@ namespace Net
     /// (`SSL_get_error(3)`). In the non-blocking mode, the filter sends what the socket accepts now,
     /// queues the rest, and drops the bytes after a send error, which the socket holds: OpenSSL never
     /// sees a pending or a failed write. It never waits, also not for the throttler: a fiber must not
-    /// suspend inside an OpenSSL call. In the blocking mode, it passes everything to the next BIO,
-    /// after the queued bytes. Owned by its BIO; used under the mutex of the TLS socket.
+    /// suspend inside an OpenSSL call. In the blocking mode, it passes everything to the next BIO;
+    /// a write sends the queued bytes first. Owned by its BIO; used under the mutex of the TLS socket.
     {
     public:
         static NonBlockingFilterBIO & install(SSL * ssl, SocketImpl & socket);
