@@ -839,7 +839,9 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         /// outer glob happens to match the full entry string). Archives keep `GlobIterator`, and the
         /// entry-level predicate is applied after `ArchiveIterator` has created entry object infos.
         std::optional<Strings> paths;
-        if (!match_web_paths_only && !is_archive && filter_actions_dag && local_context->getSettingsRef()[Setting::s3_path_filter_limit])
+        /// Not when a data column named `_path` shadows the virtual one.
+        if (!match_web_paths_only && !is_archive && filter_actions_dag && virtual_columns.contains("_path")
+            && local_context->getSettingsRef()[Setting::s3_path_filter_limit])
             paths = VirtualColumnUtils::extractPathValuesFromFilter(
                 filter_actions_dag, local_context, local_context->getSettingsRef()[Setting::s3_path_filter_limit]);
 
@@ -1922,6 +1924,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             ColumnMapperPtr column_mapper = format_filter_info->column_mapper;
             if (!column_mapper)
                 column_mapper = configuration->getColumnMapperForObject(object_info);
+            else if (std::any_of(
+                         identity_partition_columns.begin(),
+                         identity_partition_columns.end(),
+                         [&](const auto & column) { return column_mapper->getIcebergInitialDefault(column.first) != nullptr; }))
+            {
+                if (auto per_file_mapper = configuration->getColumnMapperForObject(object_info))
+                    column_mapper = per_file_mapper;
+            }
 
             if (!format_supports_prewhere)
             {
