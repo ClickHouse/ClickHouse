@@ -12,7 +12,7 @@ DROP TABLE IF EXISTS tab1;
 DROP TABLE IF EXISTS tab2;
 DROP TABLE IF EXISTS tab_outdated;
 DROP TABLE IF EXISTS tab_memory;
-DROP USER IF EXISTS user_05508;
+DROP USER IF EXISTS user_02354_drop_cache_for_table;
 
 SELECT '-- Formatting';
 
@@ -172,20 +172,20 @@ SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab_memory;
 SELECT '-- Access';
 
 -- With `FOR TABLE`, the statement requires the privilege on that table, so the privilege can be granted on a table.
-CREATE USER user_05508;
-GRANT SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON tab1 TO user_05508;
-EXECUTE AS user_05508 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab1;
-EXECUTE AS user_05508 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab2; -- { serverError ACCESS_DENIED }
+CREATE USER user_02354_drop_cache_for_table;
+GRANT SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON tab1 TO user_02354_drop_cache_for_table;
+EXECUTE AS user_02354_drop_cache_for_table SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab1;
+EXECUTE AS user_02354_drop_cache_for_table SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab2; -- { serverError ACCESS_DENIED }
 
 -- The access is checked before the table is looked up, so that the user can't learn whether a table exists.
-EXECUTE AS user_05508 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE does_not_exist; -- { serverError ACCESS_DENIED }
+EXECUTE AS user_02354_drop_cache_for_table SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE does_not_exist; -- { serverError ACCESS_DENIED }
 
 -- Without a table, the statement clears the entries of all tables, so it requires the privilege on all tables.
-EXECUTE AS user_05508 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE; -- { serverError ACCESS_DENIED }
-GRANT SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON *.* TO user_05508;
-EXECUTE AS user_05508 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE;
+EXECUTE AS user_02354_drop_cache_for_table SYSTEM DROP VECTOR SIMILARITY INDEX CACHE; -- { serverError ACCESS_DENIED }
+GRANT SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON *.* TO user_02354_drop_cache_for_table;
+EXECUTE AS user_02354_drop_cache_for_table SYSTEM DROP VECTOR SIMILARITY INDEX CACHE;
 
-DROP USER user_05508;
+DROP USER user_02354_drop_cache_for_table;
 DROP TABLE tab1;
 DROP TABLE tab2;
 DROP TABLE tab_outdated;

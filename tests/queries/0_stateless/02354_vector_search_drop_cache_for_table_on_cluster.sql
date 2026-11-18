@@ -13,13 +13,13 @@
 
 SET distributed_ddl_output_mode = 'none';
 
-DROP TABLE IF EXISTS tab_05510;
-DROP TABLE IF EXISTS default.tab_05510;
-DROP USER IF EXISTS user_05510;
+DROP TABLE IF EXISTS tab_02354_drop_cache_on_cluster;
+DROP TABLE IF EXISTS default.tab_02354_drop_cache_on_cluster;
+DROP USER IF EXISTS user_02354_drop_cache_on_cluster;
 
 -- Two tables with the same name, one in the current database and one in `default`. Each has a single part with a single index
 -- granule in it, so each search below looks up exactly one cache entry: a hit if the entry is cached, and a miss otherwise.
-CREATE TABLE tab_05510
+CREATE TABLE tab_02354_drop_cache_on_cluster
 (
     id Int32,
     vec Array(Float32),
@@ -28,7 +28,7 @@ CREATE TABLE tab_05510
 ENGINE = MergeTree
 ORDER BY id;
 
-CREATE TABLE default.tab_05510
+CREATE TABLE default.tab_02354_drop_cache_on_cluster
 (
     id Int32,
     vec Array(Float32),
@@ -37,37 +37,37 @@ CREATE TABLE default.tab_05510
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO tab_05510 VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [0.0, 2.0]), (4, [0.0, 2.1]), (5, [0.0, 2.2]);
-INSERT INTO default.tab_05510 VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [0.0, 2.0]), (4, [0.0, 2.1]), (5, [0.0, 2.2]);
+INSERT INTO tab_02354_drop_cache_on_cluster VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [0.0, 2.0]), (4, [0.0, 2.1]), (5, [0.0, 2.2]);
+INSERT INTO default.tab_02354_drop_cache_on_cluster VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [0.0, 2.0]), (4, [0.0, 2.1]), (5, [0.0, 2.2]);
 
 -- The user may drop the cache entries of the table in the current database only.
-CREATE USER user_05510;
-GRANT CLUSTER ON *.* TO user_05510;
-GRANT SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON tab_05510 TO user_05510;
+CREATE USER user_02354_drop_cache_on_cluster;
+GRANT CLUSTER ON *.* TO user_02354_drop_cache_on_cluster;
+GRANT SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON tab_02354_drop_cache_on_cluster TO user_02354_drop_cache_on_cluster;
 
 -- Start with an empty cache: both searches miss, and cache their entries.
 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE;
-SELECT id FROM tab_05510 ORDER BY L2Distance(vec, [0.0, 2.0]) LIMIT 3 FORMAT Null
+SELECT id FROM tab_02354_drop_cache_on_cluster ORDER BY L2Distance(vec, [0.0, 2.0]) LIMIT 3 FORMAT Null
     SETTINGS log_comment = 'empty cache: current database';
-SELECT id FROM default.tab_05510 ORDER BY L2Distance(vec, [0.0, 2.0]) LIMIT 3 FORMAT Null
+SELECT id FROM default.tab_02354_drop_cache_on_cluster ORDER BY L2Distance(vec, [0.0, 2.0]) LIMIT 3 FORMAT Null
     SETTINGS log_comment = 'empty cache: default';
 
 -- The bare name means the table in the current database, which the user has the privilege on. Evicts its entry only.
-EXECUTE AS user_05510 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON CLUSTER test_shard_localhost FOR TABLE tab_05510;
-SELECT id FROM tab_05510 ORDER BY L2Distance(vec, [0.0, 2.0]) LIMIT 3 FORMAT Null
+EXECUTE AS user_02354_drop_cache_on_cluster SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON CLUSTER test_shard_localhost FOR TABLE tab_02354_drop_cache_on_cluster;
+SELECT id FROM tab_02354_drop_cache_on_cluster ORDER BY L2Distance(vec, [0.0, 2.0]) LIMIT 3 FORMAT Null
     SETTINGS log_comment = 'after bare name: current database';
-SELECT id FROM default.tab_05510 ORDER BY L2Distance(vec, [0.0, 2.0]) LIMIT 3 FORMAT Null
+SELECT id FROM default.tab_02354_drop_cache_on_cluster ORDER BY L2Distance(vec, [0.0, 2.0]) LIMIT 3 FORMAT Null
     SETTINGS log_comment = 'after bare name: default';
 
 -- The user has no privilege on the table in `default`.
-EXECUTE AS user_05510 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON CLUSTER test_shard_localhost FOR TABLE default.tab_05510; -- { serverError ACCESS_DENIED }
+EXECUTE AS user_02354_drop_cache_on_cluster SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON CLUSTER test_shard_localhost FOR TABLE default.tab_02354_drop_cache_on_cluster; -- { serverError ACCESS_DENIED }
 
 -- An explicit database is kept in the queued query. Evicts the entry of the table in `default` only.
-SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON CLUSTER test_shard_localhost FOR TABLE default.tab_05510;
-SELECT id FROM tab_05510 ORDER BY L2Distance(vec, [0.0, 2.0]) LIMIT 3 FORMAT Null
-    SETTINGS log_comment = 'after default.tab_05510: current database';
-SELECT id FROM default.tab_05510 ORDER BY L2Distance(vec, [0.0, 2.0]) LIMIT 3 FORMAT Null
-    SETTINGS log_comment = 'after default.tab_05510: default';
+SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON CLUSTER test_shard_localhost FOR TABLE default.tab_02354_drop_cache_on_cluster;
+SELECT id FROM tab_02354_drop_cache_on_cluster ORDER BY L2Distance(vec, [0.0, 2.0]) LIMIT 3 FORMAT Null
+    SETTINGS log_comment = 'after default.tab_02354_drop_cache_on_cluster: current database';
+SELECT id FROM default.tab_02354_drop_cache_on_cluster ORDER BY L2Distance(vec, [0.0, 2.0]) LIMIT 3 FORMAT Null
+    SETTINGS log_comment = 'after default.tab_02354_drop_cache_on_cluster: default';
 
 SELECT '-- Cache hits and misses (left is hits, right is misses)';
 
@@ -84,6 +84,6 @@ WHERE event_date >= yesterday()
     AND query LIKE '%ORDER BY L2Distance%'
 ORDER BY event_time_microseconds;
 
-DROP USER user_05510;
-DROP TABLE tab_05510;
-DROP TABLE default.tab_05510;
+DROP USER user_02354_drop_cache_on_cluster;
+DROP TABLE tab_02354_drop_cache_on_cluster;
+DROP TABLE default.tab_02354_drop_cache_on_cluster;
