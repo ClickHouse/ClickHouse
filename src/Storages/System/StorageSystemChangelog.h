@@ -20,6 +20,8 @@ public:
         return "SystemChangelog";
     }
 
+    bool isSystemStorage() const override { return true; }
+
     static ColumnsDescription getColumnsDescription();
 };
 

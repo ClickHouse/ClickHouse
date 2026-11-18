@@ -6,3 +6,6 @@ https://storage.azure.com
 # The page is reachable, but CI runners get exactly this error for it: HTTP 520 from Cloudflare.
 https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
 https://oauth2.googleapis.com/token
+# The `system.changelog` dataset is published together with the documentation from `docs/resources/changelogs/`,
+# so the link becomes reachable only after the pull request adding it is merged and the docs are deployed.
+https://clickhouse.com/docs/resources/changelogs/changelog.csv.zst
