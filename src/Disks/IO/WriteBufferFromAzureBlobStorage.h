@@ -47,6 +47,7 @@ public:
     void preFinalize() override;
     std::string getFileName() const override { return blob_path; }
     void sync() override { next(); }
+    std::optional<WriteOutcome> getWriteOutcome() const override { return write_outcome; }
 
 private:
     struct PartData;
@@ -61,6 +62,8 @@ private:
 
     void finalizeImpl() override;
     void execWithRetry(std::function<void(size_t)> func, size_t num_tries, size_t cost = 0);
+    /// `execWithRetry` of a call that publishes the blob, which records the outcome of the write.
+    void publishWithRetry(std::function<void(size_t)> func, size_t num_tries, size_t cost = 0);
     void uploadBlock(const char * data, size_t size);
 
     /// Returns true if not a single byte was written to the buffer
@@ -100,6 +103,10 @@ private:
 
     std::unique_ptr<TaskTracker> task_tracker;
     bool check_objects_after_upload = false;
+
+    /// The outcome of the call that publishes the blob. Without such a call nothing is published. The call runs on the
+    /// thread of `finalize`.
+    WriteOutcome write_outcome = WriteOutcome::NotApplied;
 
     std::deque<PartData> detached_part_data;
 

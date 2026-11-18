@@ -451,8 +451,9 @@ bool isCommitOutcomeUnknown()
 }
 
 /// Decides a failed write of the metadata file by the outcome that the storage reports. Returns true when the file is
-/// published, false after a lost race, and rethrows the exception being handled when nothing was published.
-static bool decideByWriteOutcome(WriteOutcome outcome, const Exception * e, const String & storage_metadata_path)
+/// published, false after a lost race (`is_conflict`), and rethrows the exception being handled when nothing was
+/// published.
+static bool decideByWriteOutcome(WriteOutcome outcome, bool is_conflict, const String & storage_metadata_path)
 {
     switch (outcome)
     {
@@ -463,10 +464,13 @@ static bool decideByWriteOutcome(WriteOutcome outcome, const Exception * e, cons
                 LogsLevel::warning);
             return true;
         case WriteOutcome::NotApplied:
-            if (e && isConditionalWriteConflict(*e))
+            if (is_conflict)
             {
                 LOG_DEBUG(
-                    getLogger("IcebergWrites"), "Metadata file {} was written by a concurrent commit: {}", storage_metadata_path, e->message());
+                    getLogger("IcebergWrites"),
+                    "Metadata file {} was written by a concurrent commit: {}",
+                    storage_metadata_path,
+                    getCurrentExceptionMessage(false));
                 return false;
             }
             /// The commit fails, and the caller rolls it back.
@@ -508,7 +512,7 @@ bool writeMetadataFile(
     catch (const Exception & e)
     {
         if (write_attempted && write_outcome)
-            return decideByWriteOutcome(*write_outcome, &e, storage_metadata_path);
+            return decideByWriteOutcome(*write_outcome, isConditionalWriteConflict(e), storage_metadata_path);
         if (isConditionalWriteConflict(e))
         {
             LOG_DEBUG(
@@ -529,8 +533,11 @@ bool writeMetadataFile(
     {
         /// Azure answers 409 `BlobAlreadyExists` to `If-None-Match: *` over an existing blob, and 412 `ConditionNotMet`
         /// to a failed `If-Match`.
-        if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
-            || e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed)
+        const bool is_conflict = e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
+            || e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed;
+        if (write_attempted && write_outcome)
+            return decideByWriteOutcome(*write_outcome, is_conflict, storage_metadata_path);
+        if (is_conflict)
         {
             LOG_DEBUG(
                 getLogger("IcebergWrites"), "Metadata file {} was written by a concurrent commit: {}", storage_metadata_path, e.what());
@@ -545,7 +552,7 @@ bool writeMetadataFile(
     catch (...)
     {
         if (write_attempted && write_outcome)
-            return decideByWriteOutcome(*write_outcome, nullptr, storage_metadata_path);
+            return decideByWriteOutcome(*write_outcome, /* is_conflict= */ false, storage_metadata_path);
         if (write_attempted)
             throwCommitOutcomeUnknown(storage_metadata_path);
         tryLogCurrentException(__PRETTY_FUNCTION__);

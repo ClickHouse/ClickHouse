@@ -43,6 +43,7 @@ namespace DB::FailPoints
     extern const char azure_inject_poco_timeout_once[];
     extern const char azure_inject_poco_network_error[];
     extern const char azure_inject_poco_network_error_once[];
+    extern const char azure_inject_lost_response_of_conditional_write_once[];
     extern const char azure_inject_bad_request[];
 }
 
@@ -518,6 +519,15 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
         auto response_body = receiveHTTPResponse(session, poco_response, DBMS_DEFAULT_BUFFER_SIZE);
 
         int status = static_cast<int>(poco_response.getStatus());
+
+        /// Test-only: lose the answer to a conditional write that the server applied, as a connection broken after the
+        /// answer does. The condition is checked first, so that another request does not use up the failpoint.
+        if (status < 300 && method == Poco::Net::HTTPRequest::HTTP_PUT
+            && (poco_request.has("If-None-Match") || poco_request.has("If-Match")))
+        {
+            fiu_do_on(DB::FailPoints::azure_inject_lost_response_of_conditional_write_once,
+                { throw Poco::Net::ConnectionResetException("connection reset after the answer (injected by failpoint)"); });
+        }
 
         auto response = std::make_unique<Azure::Core::Http::RawResponse>(
             1, 1, // HTTP/1.1

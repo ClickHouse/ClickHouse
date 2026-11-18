@@ -42,6 +42,29 @@ struct WriteBufferFromAzureBlobStorage::PartData
     size_t data_size = 0;
 };
 
+/// Only a known answer that refuses a request before it is applied proves that an attempt was not applied: of the request,
+/// of the credentials, of a missing container, of an existing blob, of the precondition, of the size, or of the request
+/// rate. No answer (`HttpStatusCode::None`, e.g. of a broken connection), a server error, or any other answer may follow
+/// an applied attempt.
+static bool attemptMayHaveBeenApplied(Azure::Core::Http::HttpStatusCode code)
+{
+    using Azure::Core::Http::HttpStatusCode;
+    switch (code)
+    {
+        case HttpStatusCode::BadRequest:
+        case HttpStatusCode::Unauthorized:
+        case HttpStatusCode::Forbidden:
+        case HttpStatusCode::NotFound:
+        case HttpStatusCode::Conflict:
+        case HttpStatusCode::PreconditionFailed:
+        case HttpStatusCode::PayloadTooLarge:
+        case HttpStatusCode::TooManyRequests:
+            return false;
+        default:
+            return true;
+    }
+}
+
 static BufferAllocationPolicyPtr createBufferAllocationPolicy(const AzureBlobStorage::RequestSettings & settings)
 {
     /// Validate the multipart upload settings here rather than in `getRequestSettings`: this is the
@@ -159,6 +182,43 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void(size_t)> 
     }
 }
 
+void WriteBufferFromAzureBlobStorage::publishWithRetry(std::function<void(size_t)> func, size_t num_tries, size_t cost)
+{
+    /// Only the attempts of `execWithRetry` are seen here, not the retries of the SDK inside one of them. So a 409 or 412
+    /// after a retry of the SDK can be the answer to an applied attempt of this write, and still counts as not applied.
+    /// Unlike S3, the blob carries no idempotency id that could tell.
+    bool may_have_been_applied = false;
+    try
+    {
+        execWithRetry(
+            [&](size_t attempt)
+            {
+                try
+                {
+                    func(attempt);
+                }
+                catch (const Azure::Core::RequestFailedException & e)
+                {
+                    may_have_been_applied = may_have_been_applied || attemptMayHaveBeenApplied(e.StatusCode);
+                    throw;
+                }
+                catch (...)
+                {
+                    may_have_been_applied = true;
+                    throw;
+                }
+            },
+            num_tries,
+            cost);
+    }
+    catch (...)
+    {
+        write_outcome = may_have_been_applied ? WriteOutcome::Unknown : WriteOutcome::NotApplied;
+        throw;
+    }
+    write_outcome = WriteOutcome::Applied;
+}
+
 void WriteBufferFromAzureBlobStorage::preFinalize()
 {
     if (is_prefinalized)
@@ -199,7 +259,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             String error_message;
             try
             {
-                execWithRetry(
+                publishWithRetry(
                     [&](size_t retry_attempt)
                     {
                         Azure::Storage::Blobs::UploadBlockBlobOptions options;
@@ -266,7 +326,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             String error_message;
             try
             {
-                execWithRetry(
+                publishWithRetry(
                     [&](size_t retry_attempt)
                     {
                         Azure::Storage::Blobs::UploadBlockBlobOptions options;
@@ -352,7 +412,7 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
         String error_message;
         try
         {
-            execWithRetry(
+            publishWithRetry(
                 [&](size_t retry_attetmpt)
                 {
                     Azure::Storage::Blobs::CommitBlockListOptions options;

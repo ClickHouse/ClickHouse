@@ -116,6 +116,7 @@ static struct InitFiu
     ONCE(azure_inject_poco_timeout_once) \
     REGULAR(azure_inject_poco_network_error) \
     ONCE(azure_inject_poco_network_error_once) \
+    ONCE(azure_inject_lost_response_of_conditional_write_once) \
     REGULAR(azure_inject_bad_request) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
