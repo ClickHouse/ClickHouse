@@ -2605,10 +2605,43 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
         /// chassert(mutation_pointer < it->second->entry->znode_name);
         mutation_ids.push_back(it->second->entry->znode_name);
         const auto & commands_from_entry = it->second->entry->commands;
-        commands.insert(commands.end(), commands_from_entry.begin(), commands_from_entry.end());
+        /// The number of the znode identifies the mutation: unlike the block number, it is the same in all partitions.
+        const UInt64 mutation_znode_number = parse<UInt64>(it->second->entry->znode_name);
+        for (size_t command_index = 0; command_index < commands_from_entry.size(); ++command_index)
+        {
+            auto & command = commands.emplace_back(commands_from_entry[command_index]);
+            command.command_identifier = MutationCommandIdentifier{mutation_znode_number, command_index};
+        }
     }
 
     return commands;
+}
+
+void ReplicatedMergeTreeQueue::addAffectedRowsToMutations(const AffectedRowsByMutationCommandsMap & affected_rows)
+{
+    if (affected_rows.empty())
+        return;
+
+    std::lock_guard lock(state_mutex);
+    for (const auto & [mutation_znode_number, rows_by_command] : affected_rows)
+    {
+        /// A mutation killed while the part was mutated is already removed from `mutations_by_znode`, its rows are skipped.
+        const String znode_name = zkutil::getSequentialNodeName("", mutation_znode_number);
+        const auto it = mutations_by_znode.find(znode_name);
+        if (it == mutations_by_znode.end())
+            continue;
+
+        auto & status = it->second;
+        /// The part is already committed, so the mutation must not fail because of the counts.
+        if (rows_by_command.size() > status.affected_rows_by_command.size())
+        {
+            LOG_WARNING(log, "Command index for mutation {} is out of bounds: mutation has {} commands, but rows are affected by the command {}",znode_name, status.affected_rows_by_command.size(), rows_by_command.size() - 1);
+            continue;
+        }
+
+        for (size_t command_index = 0; command_index < rows_by_command.size(); ++command_index)
+            status.affected_rows_by_command[command_index] += rows_by_command[command_index];
+    }
 }
 
 
@@ -2878,8 +2911,9 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
             }
         }
 
-        for (const MutationCommand & command : entry.commands)
+        for (size_t command_index = 0; command_index < entry.commands.size(); ++command_index)
         {
+            const MutationCommand & command = entry.commands[command_index];
             result.push_back(MergeTreeMutationStatus
             {
                 entry.znode_name,
@@ -2895,6 +2929,8 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
                 status.latest_fail_time,
                 status.latest_fail_reason,
                 status.latest_fail_error_code_name,
+                /* is_killed = */ false,
+                status.affected_rows_by_command[command_index],
             });
         }
     }

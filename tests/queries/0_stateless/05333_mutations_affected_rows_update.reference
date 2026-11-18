@@ -1,0 +1,37 @@
+-- one mutation
+3
+-- no match
+0
+-- several columns
+3
+-- value unchanged
+4
+-- null condition
+3
+-- in partition
+3
+-- several parts
+3
+-- many blocks
+7
+-- same update twice
+5
+5
+-- two commands
+3
+5
+-- batch
+3
+5
+0
+-- batch earlier update
+3
+3
+0
+-- separate earlier update
+3
+3
+-- materialized column
+3
+-- subquery exists
+3

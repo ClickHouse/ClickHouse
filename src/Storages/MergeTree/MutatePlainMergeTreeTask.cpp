@@ -156,6 +156,9 @@ bool MutatePlainMergeTreeTask::executeStep()
 
                 mutate_task->updateProfileEvents();
 
+                /// Add the rows affected by each mutation command in this part to the mutation entries.
+                storage.addAffectedRowsToMutationEntries(mutate_task->getAffectedRows());
+
                 /// Write the part log entry before reporting the mutation as done, otherwise a
                 /// synchronous mutation (mutations_sync) may return to the client before the
                 /// MutatePart row is queued, so a subsequent SYSTEM FLUSH LOGS misses it.

@@ -1,0 +1,90 @@
+-- one mutation
+3
+-- several parts
+3
+-- batch disjoint
+2
+2
+0
+-- batch overlap
+4
+0
+0
+-- two commands
+0
+4
+-- batch of three
+2
+2
+0
+0
+-- already deleted
+3
+0
+-- null condition
+1
+rows left	2
+-- after lightweight delete
+3
+-- in partition
+3
+-- many blocks
+7
+-- part types
+t_compact	Compact
+t_wide	Wide
+t_compact	3
+t_wide	3
+-- all rows batch
+0
+0
+0
+empty part	1
+-- constant batch
+(DELETE WHERE 1)	10
+(DELETE WHERE 0)	0
+-- constant separate
+(DELETE WHERE 1)	10
+(DELETE WHERE 0)	0
+-- all rows lightweight
+(UPDATE _row_exists = 0 WHERE id < 3)	3
+(DELETE WHERE id < 6)	3
+(DELETE WHERE id >= 4)	4
+empty part	0
+-- lightweight by key
+(UPDATE _row_exists = 0 WHERE id < 5)	5
+(DELETE WHERE id < 7)	0
+(DELETE WHERE id >= 0)	0
+empty part	1
+-- same condition
+(DELETE WHERE id < 3)	3
+(DELETE WHERE id < 3)	0
+(DELETE WHERE id = 5)	1
+(DELETE WHERE 0)	0
+-- nondeterministic
+0	1
+-- subquery exists
+(DELETE WHERE id < 3)	0
+(DELETE WHERE exists((SELECT * FROM system.one)))	0
+(DELETE WHERE 0)	0
+0
+-- non-key conditions
+(DELETE WHERE v = 0)	0
+(DELETE WHERE v = 1)	0
+(DELETE WHERE v = 2)	0
+(DELETE WHERE v = 0)	0
+(DELETE WHERE 1)	0
+(DELETE WHERE 0)	0
+empty part	1
+0
+-- not a literal
+(DELETE WHERE materialize(1))	10
+(DELETE WHERE 0)	0
+(DELETE WHERE materialize(1))	0
+0
+-- first true literal
+(DELETE WHERE 0)	0
+(DELETE WHERE 1)	10
+(DELETE WHERE 1)	0
+(DELETE WHERE id = 5)	0
+0

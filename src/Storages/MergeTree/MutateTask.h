@@ -48,6 +48,9 @@ public:
 
     [[nodiscard]] const HardlinkedFiles & getHardlinkedFiles() const;
 
+    /// Get the number of affected rows by each `DELETE` and `UPDATE` command.
+    [[nodiscard]] AffectedRowsByMutationCommandsMap getAffectedRows() const;
+
 private:
 
     bool prepare();

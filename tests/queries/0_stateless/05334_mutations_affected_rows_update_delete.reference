@@ -1,0 +1,46 @@
+-- delete then update
+3
+2
+-- update then delete
+5
+5
+-- several parts
+3
+3
+-- shared stage
+2
+1
+4
+-- batch delete update
+3
+2
+0
+-- separate delete update
+3
+2
+-- batch update delete
+5
+5
+0
+-- batch shared stage
+2
+1
+4
+0
+-- lightweight then update
+4
+6
+-- lightweight twice
+3
+2
+-- maybe coalesced
+5	4	3	0
+-- patch part delete
+6
+-- lightweight then delete
+3
+2
+0
+-- constant delete limitation
+(UPDATE v = 1 WHERE id < 4)	0
+(DELETE WHERE 1)	0

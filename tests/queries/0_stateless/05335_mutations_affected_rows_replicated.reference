@@ -1,0 +1,24 @@
+-- delete
+r1	3
+r2	3
+-- update
+r1	4
+r2	4
+-- delete then update
+r1	3
+r1	2
+r2	3
+r2	2
+-- batch delete update
+r1	3
+r1	2
+r1	0
+r2	3
+r2	2
+r2	0
+-- fetched part
+r1	3
+r2	0
+-- reloaded table
+r1	0
+r2	3
