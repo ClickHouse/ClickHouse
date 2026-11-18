@@ -532,6 +532,7 @@ public:
             columns = rhs.columns;
             partitions = rhs.partitions;
             projections = rhs.projections;
+            data_skipping_indices = rhs.data_skipping_indices;
             views = rhs.views;
             row_policies = rhs.row_policies;
         }
@@ -553,6 +554,7 @@ public:
             std::swap(columns, rhs.columns);
             std::swap(partitions, rhs.partitions);
             std::swap(projections, rhs.projections);
+            std::swap(data_skipping_indices, rhs.data_skipping_indices);
             std::swap(views, rhs.views);
             std::swap(row_policies, rhs.row_policies);
             std::swap(sql_security_overridden_bodies, rhs.sql_security_overridden_bodies);
@@ -565,6 +567,7 @@ public:
         std::set<std::string> columns TSA_GUARDED_BY(mutex){};
         std::set<std::string> partitions TSA_GUARDED_BY(mutex){};
         std::set<std::string> projections TSA_GUARDED_BY(mutex){};
+        std::set<std::string> data_skipping_indices TSA_GUARDED_BY(mutex){};
         std::set<std::string> views TSA_GUARDED_BY(mutex){};
         std::set<std::string> row_policies TSA_GUARDED_BY(mutex){};
         /// Child rows of the query, see `Context::addSQLSecurityOverriddenBody`. Not copied by the copy constructor.
@@ -1253,6 +1256,7 @@ public:
     void removeQueryAccessInfoTable(const String & full_quoted_table_name);
 
     void addQueryAccessInfo(const Names & partition_names);
+    void addUsedDataSkippingIndex(const StorageID & storage_id, const String & index_name);
     void addViewAccessInfo(const String & view_name);
     /// The body `body_query` of the view `view_id`, run in `body_context` under the view's identity, is logged as a child row of this query.
     /// No-op unless `body_context` has a query context other than this one.
