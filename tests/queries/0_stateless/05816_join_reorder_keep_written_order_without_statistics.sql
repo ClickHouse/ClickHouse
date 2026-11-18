@@ -104,7 +104,20 @@ SELECT replaceRegexpAll(trimLeft(explain), '\\[[^]]*\\]', '') FROM (EXPLAIN keep
         ON c_nationkey = u.n_nationkey)
 WHERE explain ILIKE '%Join: %';
 
+-- Only the outer join estimates the ASOF join below it, which must not load the statistics of the inner join's reads again.
+SELECT count() FROM nation_stats AS a JOIN nation_partial AS b ON a.n_nationkey = b.n_nationkey
+    ASOF JOIN customer ON c_nationkey = b.n_nationkey AND a.n_nationkey >= c_custkey
+SETTINGS log_comment = 'asof_without_parent' FORMAT Null;
+SELECT count() FROM nation_stats AS a JOIN nation_partial AS b ON a.n_nationkey = b.n_nationkey
+    ASOF JOIN customer ON c_nationkey = b.n_nationkey AND a.n_nationkey >= c_custkey JOIN orders ON o_custkey = c_custkey
+SETTINGS log_comment = 'asof_with_parent' FORMAT Null;
+
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['JoinBuildTableRowCount'] FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment IN ('build_rows_empty', 'build_rows_one_nation') AND type = 'QueryFinish'
 ORDER BY log_comment;
+
+SELECT 'statistics below an ASOF join';
+SELECT sumIf(loaded, log_comment = 'asof_with_parent') = sumIf(loaded, log_comment = 'asof_without_parent'), sumIf(loaded, log_comment = 'asof_without_parent') > 0
+FROM (SELECT log_comment, ProfileEvents['LoadedStatistics'] AS loaded FROM system.query_log
+    WHERE current_database = currentDatabase() AND log_comment IN ('asof_with_parent', 'asof_without_parent') AND type = 'QueryFinish');
