@@ -13,6 +13,8 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/logger_useful.h>
+#include <Common/maskSensitiveQueryParameters.h>
+#include <Common/maskURIPassword.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -32,6 +34,13 @@ namespace ErrorCodes
 }
 
 static const UInt64 max_block_size = 8192;
+
+/// Hides the credentials a url can carry: the password in the userinfo and sensitive query parameters.
+static String maskURLCredentials(String url)
+{
+    maskURIPassword(&url);
+    return maskSensitiveQueryParametersInURI(url);
+}
 
 static const std::unordered_set<std::string_view> optional_configuration_keys = { // STYLE_CHECK_ALLOW_STD_CONTAINERS
     "url",
@@ -149,7 +158,7 @@ BlockIO HTTPDictionarySource::loadUpdatedAll()
     checkCredentials();
     Poco::URI uri(configuration.url);
     getUpdateFieldAndDate(uri);
-    LOG_TRACE(log, "loadUpdatedAll {}", uri.toString());
+    LOG_TRACE(log, "loadUpdatedAll {}", maskURLCredentials(uri.toString()));
 
     auto buf = BuilderRWBufferFromHTTP(uri)
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
@@ -250,8 +259,8 @@ DictionarySourcePtr HTTPDictionarySource::clone() const
 
 std::string HTTPDictionarySource::toString() const
 {
-    Poco::URI uri(configuration.url);
-    return uri.toString();
+    /// Shown in `system.dictionaries` and in the logs.
+    return maskURLCredentials(Poco::URI(configuration.url).toString());
 }
 
 void registerDictionarySourceHTTP(DictionarySourceFactory & factory);

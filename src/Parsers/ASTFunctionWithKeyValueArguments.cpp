@@ -3,6 +3,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Poco/String.h>
 #include <Common/SipHash.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/maskURIPassword.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -30,6 +31,33 @@ namespace
             || key == "ssl_ca_pem" || key == "ssl_cert_pem" || key == "ssl_key_pem"
             || key == "sslrootcert_pem" || key == "sslcert_pem" || key == "sslkey_pem"
             || key == "headers" || key == "header";
+    }
+
+    /// Masks the secret part of a value that is partly secret: the password in the `uri` of the `MongoDB` source,
+    /// and the password and the sensitive query parameters in the `url` or `endpoint` of the `HTTP` source.
+    /// `value` is the formatted value. Returns whether anything was masked.
+    bool maskPartlySecretValue(const String & key, String & value)
+    {
+        if (key == "uri")
+            return maskURIPassword(&value);
+
+        if (key != "url" && key != "endpoint")
+            return false;
+
+        /// A value that is no string literal can carry the secret in pieces: hide it whole.
+        if (value.size() < 2 || value.front() != '\'' || value.back() != '\'')
+        {
+            value = "'[HIDDEN]'";
+            return true;
+        }
+
+        String url = value.substr(1, value.size() - 2);
+        bool masked = maskURIPassword(&url);
+        String without_parameters = maskSensitiveQueryParametersInURI(url);
+        masked |= without_parameters != url;
+        if (masked)
+            value = "'" + without_parameters + "'";
+        return masked;
     }
 }
 
@@ -87,20 +115,24 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
         /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
         ostr << "'[HIDDEN]'";
     }
-    else if (!settings.show_secrets && (first == "uri"))
-    {
-        // Hide password from URI in the defention of a dictionary
-        WriteBufferFromOwnString temp_buf;
-        FormatSettings tmp_settings(settings.one_line);
-        FormatState tmp_state;
-        second->format(temp_buf, tmp_settings, tmp_state, frame);
-
-        maskURIPassword(&temp_buf.str());
-        ostr << temp_buf.str();
-    }
     else
     {
-        second->format(ostr, settings, state, frame);
+        String masked;
+        if (!settings.show_secrets)
+        {
+            WriteBufferFromOwnString temp_buf;
+            FormatSettings tmp_settings(settings.one_line);
+            FormatState tmp_state;
+            second->format(temp_buf, tmp_settings, tmp_state, frame);
+            masked = temp_buf.str();
+            if (!maskPartlySecretValue(first, masked))
+                masked.clear();
+        }
+
+        if (!masked.empty())
+            ostr << masked;
+        else
+            second->format(ostr, settings, state, frame);
     }
 
     if (second_with_brackets)
@@ -110,7 +142,12 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
 
 bool ASTPair::hasSecretParts() const
 {
-    return isSecretKey(first) || second->hasSecretParts();
+    if (isSecretKey(first))
+        return true;
+    String value = second->formatWithSecretsOneLine();
+    if (maskPartlySecretValue(first, value))
+        return true;
+    return second->hasSecretParts();
 }
 
 
