@@ -268,7 +268,7 @@ struct AttemptsRecord
     /// What the last call proved. Each call starts without a proof.
     Proof proof = Proof::None;
 
-    WriteOutcome outcome() const
+    [[nodiscard]] WriteOutcome outcome() const
     {
         switch (proof)
         {
