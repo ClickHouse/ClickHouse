@@ -635,7 +635,7 @@ static size_t addChildQueryGraph(
     }
 
     /// Joins below the leaf (in a subquery, below a set operation or below a join that is not reordered) are not added to the graph.
-    /// Optimize them first, so the estimate of the leaf uses their result instead of estimating their reads again.
+    /// Optimize them first, so the estimate of the leaf uses their result.
     optimizeJoinsBelow(*node, nodes, graph.context->optimization_settings);
 
     graph.inputs.push_back(node);

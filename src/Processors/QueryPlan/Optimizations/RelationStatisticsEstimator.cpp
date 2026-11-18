@@ -240,7 +240,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 [&](const String & column_name) { return estimator && estimator->hasStatisticsForAllRows(metadata, column_name); });
         };
 
-        /// A walked read is judged from its parts' checksums, without the index analysis or its statistics.
         if (only_source)
         {
             const bool use_statistics_files = reading->getContext()->getSettingsRef()[Setting::use_statistics];
