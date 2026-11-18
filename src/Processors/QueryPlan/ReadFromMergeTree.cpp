@@ -687,14 +687,12 @@ static MergeTreeReadRangesRefinerPtr createIndexReadRangesRefiner(
 
 /// A parallel replicas read pool reads what the coordinator assigns: let this replica's query condition cache narrow it.
 static MergeTreeReadRangesRefinerPtr addQueryConditionCacheReadRangesRefiner(
-    const QueryConditionCacheReadRangesPtr & query_condition_cache_read_ranges,
-    const MergeTreeIndexBuildContextPtr & index_build_context,
-    MergeTreeReadRangesRefinerPtr refiner)
+    const QueryConditionCacheReadRangesPtr & query_condition_cache_read_ranges, MergeTreeReadRangesRefinerPtr refiner)
 {
     if (!query_condition_cache_read_ranges)
         return refiner;
 
-    return std::make_shared<QueryConditionCacheReadRangesRefiner>(query_condition_cache_read_ranges, index_build_context, std::move(refiner));
+    return std::make_shared<QueryConditionCacheReadRangesRefiner>(query_condition_cache_read_ranges, std::move(refiner));
 }
 
 /// A replica that skipped its own index analysis would evaluate skip indexes at read time over whole parts. Narrow them
@@ -763,7 +761,6 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
 
     pool->setReadRangesRefiner(addQueryConditionCacheReadRangesRefiner(
         query_condition_cache_read_ranges,
-        index_build_context,
         createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef())));
 
     /// Default mode needs the announcement response only for the analyzed ranges, so it is requested only by a follower
@@ -1152,7 +1149,6 @@ Pipe ReadFromMergeTree::readInOrder(
 
         in_order_pool->setReadRangesRefiner(addQueryConditionCacheReadRangesRefiner(
             query_condition_cache_read_ranges,
-            index_build_context,
             createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef())));
 
         /// The response tells us exactly which parts this stream owns: phantom parts are skipped
@@ -3986,17 +3982,15 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
         /// The coordinator assigns ranges from the analysis of one replica, so this replica's cache has to be
         /// applied to them again at read time (see `QueryConditionCacheReadRangesRefiner`). A replica that skips
-        /// its own analysis keeps whole parts, and the refiner alone applies the filtered ranges:
-        /// - the coordinator takes only the part names from its announcement, and a part dropped from it would
-        ///   move its segments to other replicas, whose caches know nothing of it;
-        /// - the remaining marks of `MergeTreeIndexBuildContext` are counted from these parts and must cover every
-        ///   mark the coordinator may assign from the initiator's analysis, which the cache here may have excluded.
+        /// its own analysis keeps whole parts, and only the refiner applies the filtered ranges: the coordinator takes
+        /// only the part names from its announcement, and a part dropped from it would move its segments to other
+        /// replicas, whose caches know nothing of it.
         if (is_parallel_reading_from_replicas_)
         {
             RangesInDataParts filtered_parts = res_parts;
             filter_by_query_condition_cache(filtered_parts);
             result.query_condition_cache_read_ranges
-                = QueryConditionCacheReadRanges::create(res_parts, filtered_parts, /*dropped_marks_are_counted=*/skip_index_analysis);
+                = QueryConditionCacheReadRanges::create(res_parts, filtered_parts);
             if (!skip_index_analysis)
                 res_parts = std::move(filtered_parts);
         }
