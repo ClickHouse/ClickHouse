@@ -4,7 +4,7 @@
 # It is the LLVM release that the build docs install with llvm.sh, from the same commit, built with PGO and BOLT
 # by ci/jobs/build_toolchain.py. The build is pinned by TOOLCHAIN_COMMIT in ci/docker/binary-builder/Dockerfile,
 # and CI compiles with it only while it is the compiler that ToolSet in ci/defs/defs.py names.
-# As in CI, the build keeps using the installed lld and LLVM tools. The compiler needs glibc 2.38 or newer.
+# Only the compiler is kept, so the build uses the installed lld and LLVM tools. The compiler needs glibc 2.38 or newer.
 #
 # Usage: eval "$(utils/download-ci-toolchain.sh [CACHE_DIRECTORY])"
 # The compiler is kept in CACHE_DIRECTORY/<commit>-<arch>, by default in ~/.cache/clickhouse-ci-toolchain.
