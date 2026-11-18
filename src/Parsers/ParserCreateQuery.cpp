@@ -2622,7 +2622,7 @@ Please note that temporary tables are not replicated. As a result, there is no g
 ClickHouse supports temporary tables which have the following characteristics:
 
 - Temporary tables disappear when the session ends, including if the connection is lost.
-- A temporary table uses the Memory table engine when engine is not specified and it may use any table engine except Replicated and `KeeperMap` engines.
+- A temporary table uses the `Memory` table engine when engine is not specified. Only lightweight engines may back a temporary table: `Memory`, the non-replicated `MergeTree` family, `Log`, `TinyLog`, `StripeLog`, `File`, `URL`, `Null`, `Join` and `Set`. With `cloud_mode` enabled, the engines that store data on the local disk are forbidden as well.
 - The DB can't be specified for a temporary table. It is created outside of databases.
 - Impossible to create a temporary table with distributed DDL query on all cluster servers (by using `ON CLUSTER`): this table exists only in the current session.
 - If a temporary table has the same name as another one and a query specifies the table name without specifying the DB, the temporary table will be used.
@@ -2837,10 +2837,6 @@ SELECT * FROM base.t1;
     documentation["CODEC"] =
     {
         .description = R"DOCS_MD(
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-
 By default, ClickHouse applies `lz4` compression in the self-managed version, and `zstd` in ClickHouse Cloud.
 
 For `MergeTree`-engine family you can change the default compression method in the [compression](/reference/settings/server-settings/settings/other#compression) section of a server configuration.
@@ -2909,14 +2905,14 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 
 ### ZXC {#zxc}
 
-<ExperimentalBadge/>
+<BetaBadge/>
 
 `ZXC[(level)]` — asymmetric [`zxc` compression algorithm](https://github.com/hellobertrand/zxc) with configurable `level`. Possible levels: \[1, 7\]. Default level: 3.
 
 `ZXC` trades slow compression for very fast decompression, at a compression ratio between `LZ4` and `ZSTD`. It is a good fit for the compress-once, decompress-many pattern, and decompresses fastest on modern ARM cores. Higher levels mean better compression and slower compression, while decompression stays fast.
 
 <Note>
-This codec is experimental and requires `SET enable_zxc_codec = 1` to use.
+This codec is in beta and requires `SET enable_zxc_codec = 1` to use.
 </Note>
 
 ### GDeflate {#gdeflate}
@@ -3200,8 +3196,6 @@ column_name type CODEC(codec1[(arguments)][, codec2[(arguments)], ...])
     documentation["CREATE VIEW"] =
     {
         .description = R"DOCS_MD(
-import { DeprecatedBadge } from "/snippets/components/DeprecatedBadge/DeprecatedBadge.jsx";
-
 Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), and [refreshable materialized](#refreshable-materialized-view).
 
 ## Normal View {#normal-view}
@@ -3782,9 +3776,6 @@ AS SELECT ...
     documentation["CREATE DICTIONARY"] =
     {
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import { CloudSupportedBadge } from "/snippets/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
-
 A dictionary is a mapping (`key -> attributes`) that is convenient for various types of reference lists.
 ClickHouse supports special functions for working with dictionaries that can be used in queries. It is easier and more efficient to use dictionaries with functions than a `JOIN` with reference tables.
 
