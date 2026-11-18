@@ -158,10 +158,6 @@ bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
     if (read.hasPinnedBlockNumbers())
         return false;
 
-    /// `createParallelReplicasPlan` checks the read's context, where the planner may have disabled parallel replicas.
-    if (!ClusterProxy::canUseParallelReplicasOnInitiator(read.getContext()))
-        return false;
-
     /// A non-replicated table can hold different data on each replica, so reading it remotely is opt-in.
     return mergetree_data.supportsReplication()
         || read.getContext()->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
@@ -169,6 +165,14 @@ bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
 
 /// The broadcast side of a shipped join is executed in full by every replica, so its MergeTree reads must
 /// pass the same rules as the coordinated ones - otherwise each replica would join against its own data.
+static bool mergeTreeReadCanBeCoordinated(const ReadFromMergeTree & read)
+{
+    /// `createParallelReplicasPlan` checks the read's context, where the planner may have disabled parallel replicas.
+    /// Only a coordinated read has to pass it: a read which is only shipped, like the broadcast side of a join or the
+    /// read of an `IN` set, is executed whole by every replica.
+    return mergeTreeReadCanBeShipped(read) && ClusterProxy::canUseParallelReplicasOnInitiator(read.getContext());
+}
+
 static bool subtreeHasUnshippableRead(const QueryPlan::Node * node)
 {
     if (!node)
@@ -827,7 +831,7 @@ static std::vector<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * 
 
     if (auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get()))
     {
-        if (!mergeTreeReadCanBeShipped(*read))
+        if (!mergeTreeReadCanBeCoordinated(*read))
             return {};
         return {{node, read->getMergeTreeData().getStorageID()}};
     }
@@ -841,6 +845,10 @@ static std::vector<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * 
         if (auto * merge = typeid_cast<ReadFromMerge *>(node->step.get()))
         {
             if (!merge->getContext()->getSettingsRef()[Setting::parallel_replicas_allow_merge_tables])
+                return {};
+
+            /// The reads of the underlying tables do not exist yet, so ask the context of the `Merge` read itself.
+            if (!ClusterProxy::canUseParallelReplicasOnInitiator(merge->getContext()))
                 return {};
 
             const auto & storage_ids = merge->getExpandableReads(mergeTreeReadCanBeShipped);

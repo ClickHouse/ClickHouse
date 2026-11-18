@@ -2,9 +2,12 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/128539
 
 DROP TABLE IF EXISTS t_pr_no_split;
+DROP TABLE IF EXISTS t_pr_no_split_dim;
 
 CREATE TABLE t_pr_no_split (x UInt32, y UInt32) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t_pr_no_split SELECT number, number FROM numbers(100000);
+CREATE TABLE t_pr_no_split_dim (x UInt32) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_pr_no_split_dim SELECT number * 2 FROM numbers(1000);
 
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
@@ -28,4 +31,15 @@ SELECT countIf(explain LIKE '%MergingAggregated%'), countIf(explain LIKE '%Paral
 FROM (EXPLAIN SELECT * FROM (SELECT x, sum(y) FROM remote('127.0.0.{1,2}', currentDatabase(), t_pr_no_split) GROUP BY x) WHERE x = 42
     SETTINGS prefer_localhost_replica = 1);
 
+-- A read which is only shipped does not need parallel replicas in its own context: the broadcast side of a join
+-- and the read of an `IN` set are executed whole by every replica.
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%'), countIf(explain LIKE '%JoinLogical%')
+FROM (EXPLAIN SELECT sum(t.y) FROM t_pr_no_split AS t INNER JOIN (SELECT x FROM t_pr_no_split_dim SETTINGS enable_parallel_replicas = 0) AS d ON t.x = d.x
+    SETTINGS parallel_replicas_min_number_of_rows_per_replica = 0, query_plan_join_swap_table = 'false');
+
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%')
+FROM (EXPLAIN SELECT sum(y) FROM t_pr_no_split WHERE x IN (SELECT x FROM t_pr_no_split_dim SETTINGS enable_parallel_replicas = 0)
+    SETTINGS parallel_replicas_min_number_of_rows_per_replica = 0);
+
 DROP TABLE t_pr_no_split;
+DROP TABLE t_pr_no_split_dim;
