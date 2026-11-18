@@ -24,8 +24,6 @@ ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), loc
 
 INSERT INTO local_tf_arg (x) VALUES (7);
 
-SET enable_analyzer = 1;
-
 -- The duplicate ALIAS columns a1/a2 collapse to a single shard column, triggering the
 -- shard-collapse reconstruction. The right side GLOBAL-joins a table function whose arguments
 -- contain a `filename = '...'` named-collection override (an unresolved identifier). The wildcard

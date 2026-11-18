@@ -99,7 +99,9 @@ SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS fo
 
 يعمل مع الجداول في عائلة MergeTree.
 
-إذا كانت `force_primary_key=1`، فإن ClickHouse يتحقق مما إذا كان الاستعلام يحتوي على شرط على المفتاح الأساسي يمكن استخدامه لتقييد نطاقات البيانات. وإذا لم يكن هناك شرط مناسب، فسيؤدي ذلك إلى طرح استثناء. ومع ذلك، فهو لا يتحقق مما إذا كان هذا الشرط يقلّل كمية البيانات المطلوب قراءتها. لمزيد من المعلومات حول نطاقات البيانات في جداول MergeTree، راجع [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
+إذا كانت `force_primary_key=1`، فإن ClickHouse يتحقق مما إذا كان الاستعلام يحتوي على شرط على المفتاح الأساسي يمكن استخدامه لتقييد نطاقات البيانات. وإذا لم يكن هناك شرط مناسب، فسيؤدي ذلك إلى رفع استثناء. ومع ذلك، فهو لا يتحقق مما إذا كان هذا الشرط يقلّل كمية البيانات المطلوب قراءتها. لمزيد من المعلومات حول نطاقات البيانات في جداول MergeTree، راجع [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
+
+ينطبق هذا الفحص على المفتاح الأساسي للجدول نفسه. ولا يُستخدم الإسقاط لخدمة الاستعلام إلا إذا كان الاستعلام يقيّد نطاقات البيانات أيضًا بمفتاح ذلك الإسقاط نفسه؛ وإلا فيُتجاهَل الإسقاط ويُقرأ الجدول بدلًا منه. وإذا فُرض إسقاط باستخدام [force&#95;optimize&#95;projection](/ar/reference/settings/session-settings/force-optimize#force_optimize_projection) دون أن يُستخدم مفتاحه، فإن الاستعلام يرفع استثناءً.
 
 ## force_read_through_distributed_cache {#force_read_through_distributed_cache}
 

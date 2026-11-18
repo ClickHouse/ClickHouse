@@ -7,7 +7,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ar/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -21,7 +20,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 على Kubernetes، ينشر مخطط Helm المسمّى `clicklink-connector` الخدمات الخفية في مساحة أسماء تختارها (الافتراضية `clicklink`). والمنفّذ هو Deployment بنسخة واحدة يحتفظ بحالة أوامره على وحدة تخزين دائمة. أما على جهاز افتراضي يعمل بنظام Linux، فتعمل الخدمات الخفية كوحدات systemd باسم `clicklink-scraper` و`clicklink-troubleshooter` و`clicklink-executor` ضمن مستخدم نظام غير مميّز الصلاحيات هو `clicklink`.
 
-<Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="ClickHouse Connector معمارية" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse Connector معمارية](/images/cloud/reference/byoc-connector-architecture.svg)
+
+</Frame>
+
+</div>
 
 ## الاتصالات {#connections}
 
@@ -57,7 +64,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 ## تدفق البيانات {#data-flow}
 
-<Image img="/images/cloud/reference/byoc-connector-data-flow.svg" size="lg" alt="تدفق البيانات في ClickHouse Connector" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![تدفق البيانات في ClickHouse Connector](/images/cloud/reference/byoc-connector-data-flow.svg)
+
+</Frame>
+
+</div>
 
 ### ما الذي يغادر بيئتك {#what-leaves}
 

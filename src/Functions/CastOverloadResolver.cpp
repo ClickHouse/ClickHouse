@@ -1,4 +1,5 @@
 #include <Functions/FunctionFactory.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -9,6 +10,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnString.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
@@ -24,6 +26,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TYPE_MISMATCH;
 }
 
 /// accurateCastOrNull wraps the result in Nullable to represent conversion failures.
@@ -62,6 +65,57 @@ bool canBeAccurateCastOrNullTarget(const DataTypePtr & type)
         return false;
 
     return findUnsupportedTypeForAccurateCastOrNull(type) == nullptr;
+}
+
+std::optional<VectorWithMemoryTracking<std::optional<size_t>>> tryGetTupleCastElementPositions(
+    const DataTypeTuple & from, const DataTypeTuple & to)
+{
+    VectorWithMemoryTracking<std::optional<size_t>> positions;
+    positions.reserve(to.getElements().size());
+
+    if (from.hasExplicitNames() && to.hasExplicitNames())
+    {
+        const auto & from_names = from.getElementNames();
+        const auto & to_names = to.getElementNames();
+        UnorderedMapWithMemoryTracking<String, size_t> from_positions;
+        from_positions.reserve(from_names.size());
+        for (size_t i = 0; i < from_names.size(); ++i)
+            from_positions.emplace(from_names[i], i);
+
+        bool has_common_name = false;
+        for (const auto & name : to_names)
+        {
+            auto it = from_positions.find(name);
+            if (it == from_positions.end())
+                positions.emplace_back();
+            else
+            {
+                positions.emplace_back(it->second);
+                has_common_name = true;
+            }
+        }
+
+        if (has_common_name)
+            return positions;
+        positions.clear();
+    }
+
+    if (from.getElements().size() != to.getElements().size())
+        return std::nullopt;
+
+    for (size_t i = 0; i < to.getElements().size(); ++i)
+        positions.emplace_back(i);
+    return positions;
+}
+
+VectorWithMemoryTracking<std::optional<size_t>> getTupleCastElementPositions(const DataTypeTuple & from, const DataTypeTuple & to)
+{
+    auto positions = tryGetTupleCastElementPositions(from, to);
+    if (!positions)
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple types "
+                        "with the same number of elements or from String.\nLeft type: {}, right type: {}",
+                        from.getName(), to.getName());
+    return std::move(*positions);
 }
 
 static void validateNestedTypesForAccurateCastOrNull(const DataTypePtr & type)
@@ -173,6 +227,30 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
+    /// Documentation-only, and intentionally so: CAST is where a declarative signature stops being
+    /// a reasonable fit. Its result type is parsed from the const type-name argument
+    /// (`typeFromString`), but `getReturnTypeImpl` then applies rules that are not type-level:
+    ///   - `validateDataType` rejects "suspicious" target types based on query settings
+    ///     (`allow_suspicious_low_cardinality_types`, fixed-string sizes, ...) — a settings-driven
+    ///     validation, not a type computation;
+    ///   - three cast-type variants (plain / accurate / accurateOrNull) plus the internal `_CAST`
+    ///     differ in Nullable behavior, with `accurateOrNull` wrapping only when the target cannot
+    ///     already contain NULL (and an extra nested-type validation);
+    ///   - `cast_keep_nullable` wraps the result in Nullable depending on the source's nullability;
+    ///   - the source time zone is substituted into a tz-less DateTime/DateTime64 target.
+    /// Expressing this would require moving the settings-driven validations into the signature
+    /// machinery (they cannot be), so the legacy `getReturnTypeImpl` stays authoritative and the
+    /// signature is never applied by the framework. The signature string is therefore purely
+    /// descriptive; we still make it as informative as possible — `(Any, const t String) ->
+    /// typeFromString(t)` documents that the result type is the one named by the const second
+    /// argument. It is only rendered (e.g. in `system.functions`), never evaluated, so it does not
+    /// matter that CAST-as-overload-resolver would reach type deduction through the types-only path
+    /// where the const value is unavailable.
+    String getSignatureString() const override
+    {
+        return "(Any, const t String) -> typeFromString(t)";
+    }
 
     explicit CastOverloadResolverImpl(ContextPtr context_, CastType cast_type_, bool internal_, std::optional<CastDiagnostic> diagnostic_, bool keep_nullable_, const DataTypeValidationSettings & data_type_validation_settings_)
         : cast_type(cast_type_)
@@ -310,6 +388,51 @@ REGISTER_FUNCTION(CastOverloadResolvers)
 Converts a value to a specified data type.
 Unlike the reinterpret function, CAST tries to generate the same value in the target type.
 If that is not possible, an exception is raised.
+
+`CAST` removes the `LowCardinality` wrapper. In contrast, `to<Type>` functions retain it.
+`to<Type>` functions also retain the `Nullable` wrapper. `CAST` removes `Nullable` by default, but
+retains it when the [`cast_keep_nullable`](/reference/settings/session-settings/cast#cast_keep_nullable)
+setting is enabled.
+
+```sql title="Query"
+SELECT
+    toTypeName(toLowCardinality('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+```
+
+```text title="Response"
+┌─source_type────────────┬─to_type_result_type────┬─cast_result_type─┐
+│ LowCardinality(String) │ LowCardinality(String) │ String           │
+└────────────────────────┴────────────────────────┴──────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+```
+
+```text title="Response"
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ String           │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+SETTINGS cast_keep_nullable = 1
+```
+
+```text title="Response"
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ Nullable(String) │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
 
 When `x` is written as a number and `T` is a `Decimal` or an integer wider than 64 bits, the digits
 of the number are read directly with `T`, so no precision is lost on the way. Without this,

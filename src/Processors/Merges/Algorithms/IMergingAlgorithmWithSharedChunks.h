@@ -19,7 +19,7 @@ public:
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
 
-    MergedStats getMergedStats() const override { return merged_data->getMergedStats(); }
+    [[nodiscard]] MergedStats getMergedStats() const override { return merged_data->getMergedStats(); }
 
     size_t prev_unequal_column = 0;
 
@@ -57,11 +57,15 @@ protected:
     /// runs (e.g. parts that each hold every key once) the detection is pure overhead.
     bool uses_runs_of_equal_keys = false;
 
+    /// Set by a derived algorithm whose merges keep at most one row per sort key: then two rows of one source
+    /// with a non-zero part level always have different keys (see `rowsHaveDifferentSortColumns`).
+    bool nonzero_level_parts_have_unique_keys = false;
+
     /// Whether some source (with a zero part level, read without a permutation) starts with
     /// enough runs of equal sort keys for skipping them to be cheaper than merging them row by
     /// row. A single duplicate is not enough: the probe for the end of a run runs on the rows
     /// outside runs too.
-    bool sourcesHaveRunsWorthSkipping() const;
+    [[nodiscard]] bool sourcesHaveRunsWorthSkipping() const;
 
     /// Whether the queue detects batches longer than one row (decided in `initialize`).
     /// A batch of more than one row is not by itself evidence that the detection ran: with a
@@ -79,12 +83,13 @@ protected:
 
     using RowRef = detail::RowRefWithOwnedChunk;
     void setRowRef(RowRef & row, SortCursor & cursor) { row.set(cursor, sources[cursor.impl->order].chunk); }
-    bool skipLastRowFor(size_t input_number) const { return sources[input_number].skip_last_row; }
+    [[nodiscard]] bool skipLastRowFor(size_t input_number) const { return sources[input_number].skip_last_row; }
     bool rowsHaveDifferentSortColumns(const RowRef & lhs, const RowRef & rhs)
     {
         /// By the time this method is called, `sources_origin_merge_tree_part_level[lhs.source_stream_index]` must have been
         /// initialized in either `initialize` or `consume`
-        if (lhs.source_stream_index == rhs.source_stream_index && sources_origin_merge_tree_part_level[lhs.source_stream_index] > 0)
+        if (nonzero_level_parts_have_unique_keys && lhs.source_stream_index == rhs.source_stream_index
+            && sources_origin_merge_tree_part_level[lhs.source_stream_index] > 0)
             return true;
 
         auto first_non_equal = lhs.firstNonEqualSortColumnsWith(prev_unequal_column, rhs);

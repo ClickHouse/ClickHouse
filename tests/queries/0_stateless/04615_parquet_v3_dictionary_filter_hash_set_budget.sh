@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: needs the Parquet format which is not built in fasttest.
 
 # The value-set reservation in `hashDictionaryValues` must track what the pruning path really
 # allocates: the vector of dictionary-value hashes (sorted in place; exactly 8 bytes per entry),

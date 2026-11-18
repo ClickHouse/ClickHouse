@@ -21,3 +21,13 @@ SELECT count() FROM (SELECT count() FROM numbers(2) GROUP BY CAST([number], 'Arr
 SELECT count() FROM (SELECT count() FROM numbers(2) GROUP BY CAST([toString(number)], 'Array(LowCardinality(String))'));
 SELECT count() FROM (SELECT count() FROM numbers(2) GROUP BY CAST(map(number, [number]), 'Map(UInt64, Array(Nullable(UInt64)))'));
 SELECT count() FROM (SELECT count() FROM numbers(2) GROUP BY CAST([concat('{"a":', toString(number), '}')], 'Array(JSON)'));
+
+-- Pinning the current aggregate state version into a declared column type reaches a state in a `Map`
+-- value as well, so the stored states merge to the same value as a single state over all the rows.
+DROP TABLE IF EXISTS t_map_state_version;
+CREATE TABLE t_map_state_version (m Map(String, AggregateFunction(medianDeterministic, UInt64, UInt64))) ENGINE = MergeTree ORDER BY tuple();
+SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_map_state_version' AND name = 'm';
+INSERT INTO t_map_state_version SELECT map('k', medianDeterministicState(number, number)) FROM numbers(990000);
+INSERT INTO t_map_state_version SELECT map('k', medianDeterministicState(number, number)) FROM numbers(990000, 10000);
+SELECT medianDeterministicMerge(m['k']) FROM t_map_state_version;
+DROP TABLE t_map_state_version;

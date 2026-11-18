@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -26,7 +24,15 @@ Para obtener una visión general rápida de todas las opciones, puedes consultar
 
 Pantalla de configuración de ejemplo:
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_common.webp" alt="Ejemplo de configuración nativa segura" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Ejemplo de configuración nativa segura](/images/integrations/data-visualization/grafana/config_common.webp)
+
+</Frame>
+
+</div>
 
 Ejemplo de configuración YAML para la configuración común:
 
@@ -58,7 +64,15 @@ Ten en cuenta que se añade una propiedad `version` cuando la configuración se 
 
 Si eliges conectarte mediante el protocolo HTTP, se mostrarán más opciones de configuración.
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="Opciones adicionales de configuración HTTP" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Opciones adicionales de configuración HTTP](/images/integrations/data-visualization/grafana/config_http.webp)
+
+</Frame>
+
+</div>
 
 <div id="http-path">
   #### Ruta HTTP
@@ -106,7 +120,15 @@ secureJsonData:
 
 Estos ajustes adicionales son opcionales.
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_additional.webp" alt="Ejemplo de ajustes adicionales" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Ejemplo de ajustes adicionales](/images/integrations/data-visualization/grafana/config_additional.webp)
+
+</Frame>
+
+</div>
 
 YAML de ejemplo:
 
@@ -141,7 +163,15 @@ Aunque OpenTelemetry no es obligatorio para los logs, usar un único conjunto de
 
 Ejemplo de pantalla de configuración de logs:
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_logs.webp" alt="Configuración de logs" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Configuración de logs](/images/integrations/data-visualization/grafana/config_logs.webp)
+
+</Frame>
+
+</div>
 
 Ejemplo de YAML de configuración de logs:
 
@@ -179,7 +209,15 @@ Aunque OpenTelemetry no es obligatorio, esta función funciona mejor cuando se u
 
 Pantalla de ejemplo de configuración de trazas:
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_traces.webp" alt="Configuración de trazas" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Configuración de trazas](/images/integrations/data-visualization/grafana/config_traces.webp)
+
+</Frame>
+
+</div>
 
 YAML de ejemplo de configuración de trazas:
 
@@ -282,11 +320,27 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 
 Luego podemos configurar esta tabla para usarla en Grafana. Ten en cuenta que el nombre puede ser cualquiera, o incluso definirse en una base de datos independiente:
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_config_example.webp" alt="Ejemplo de configuración de una tabla de alias" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Ejemplo de configuración de una tabla de alias](/images/integrations/data-visualization/grafana/alias_table_config_example.webp)
+
+</Frame>
+
+</div>
 
 Ahora Grafana verá los resultados de la tabla de alias en lugar de los resultados de `DESC example_table`:
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_select_example.webp" alt="Ejemplo de selección de una tabla de alias" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Ejemplo de selección de una tabla de alias](/images/integrations/data-visualization/grafana/alias_table_select_example.webp)
+
+</Frame>
+
+</div>
 
 Ambos tipos de alias pueden usarse para realizar conversiones de tipos complejas o extraer campos JSON.
 

@@ -51,7 +51,10 @@ Minimum time of delay between 2 background compaction operations.
 Max bytes of an iceberg parquet data file produced by compaction.
 
 The default mirrors the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB),
-see https://iceberg.apache.org/docs/1.5.2/configuration/. Keep it above
+see https://iceberg.apache.org/docs/1.5.2/configuration/. The limit is compared against the size of the file
+written so far, that is, the compressed size, the same measure as `iceberg_data_file_size_lower_threshold_compaction`,
+so a file can exceed it by what the writer still buffers, such as incomplete Parquet row groups and the ones being
+encoded. Keep it above
 `iceberg_data_file_size_lower_threshold_compaction`, otherwise every output file stays below the lower threshold
 and is selected for compaction again.
 

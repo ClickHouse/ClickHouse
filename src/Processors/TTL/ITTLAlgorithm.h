@@ -32,8 +32,8 @@ public:
     /// Updates TTL metadata of the data_part.
     virtual void finalize(const MutableDataPartPtr & data_part) const = 0;
 
-    bool isMinTTLExpired() const { return force || isTTLExpired(old_ttl_info.min); }
-    bool isMaxTTLExpired() const { return isTTLExpired(old_ttl_info.max); }
+    [[nodiscard]] bool isMinTTLExpired() const { return force || isTTLExpired(old_ttl_info.min); }
+    [[nodiscard]] bool isMaxTTLExpired() const { return isTTLExpired(old_ttl_info.max); }
 
     /** This function is needed to avoid a conflict between already calculated columns and columns that needed to execute TTL.
       * If result column is absent in block, all required columns are copied to new block and expression is executed on new block.
@@ -42,7 +42,7 @@ public:
         const ExpressionActionsPtr & expression, const Block & block, const String & result_column);
 
 protected:
-    bool isTTLExpired(time_t ttl) const;
+    [[nodiscard]] bool isTTLExpired(time_t ttl) const;
 
     /// Fill `timestamps` from `column` using this algorithm's time zone. Call it once per block,
     /// then index `timestamps` in the row loop. The buffer stays owned by the caller: the transforms

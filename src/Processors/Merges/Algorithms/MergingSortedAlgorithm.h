@@ -31,13 +31,13 @@ public:
 
     void addInput();
 
-    const char * getName() const override { return "MergingSortedAlgorithm"; }
+    [[nodiscard]] const char * getName() const override { return "MergingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
     void onSourceExhausted(size_t source_num) override;
 
-    MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
+    [[nodiscard]] MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
 
 private:
     SharedHeader header;
