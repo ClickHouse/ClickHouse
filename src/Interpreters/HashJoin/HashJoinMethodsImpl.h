@@ -53,12 +53,10 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
 
     std::vector<JoinOnKeyColumns> join_on_keys;
-    const auto & onexprs = join.table_join->getClauses();
-    for (size_t i = 0; i < onexprs.size(); ++i)
+    for (const auto & onexpr : join.table_join->getClauses())
     {
-        const auto & key_names = !is_join_get ? onexprs[i].key_names_left : onexprs[i].key_names_right;
-        join_on_keys.emplace_back(
-            block, key_names, onexprs[i].condColumnNames().first, HashJoin::isLowCardinalityType(join.keyType()));
+        const auto & key_names = !is_join_get ? onexpr.key_names_left : onexpr.key_names_right;
+        join_on_keys.emplace_back(block, key_names, onexpr.condColumnNames().first, HashJoin::isLowCardinalityType(join.keyType()));
     }
 
     /// Only MapsAll keeps every right row of a key, so only there do the recorded words resolve to
