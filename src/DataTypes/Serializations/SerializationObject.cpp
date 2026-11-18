@@ -15,6 +15,9 @@
 #include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/DataTypesCache.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -1416,7 +1419,54 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
 
     size_t number_of_paths = 0;
     readVarUInt(number_of_paths, istr);
-    std::vector<std::pair<String, String>> paths_and_values_for_shared_data;
+    /// Values of paths that go to shared data are read with the column decoder and kept encoded like the values in the
+    /// shared variant of `Dynamic`; an empty value is a null. Skipped values are read the same way and dropped.
+    ColumnString::MutablePtr values_of_row;
+    /// Per value type: its serialization and a column reused by the type's later values in this row (at most one row,
+    /// popped after encoding). A column with dynamic structure is not reused: the paths and variants of earlier values
+    /// would change how a later value is read.
+    std::unordered_map<String, std::pair<SerializationPtr, MutableColumnPtr>> value_columns;
+    auto read_value = [&](bool keep)
+    {
+        checkStackSize();
+        if (keep && !values_of_row)
+            values_of_row = ColumnString::create();
+
+        auto type = decodeDataType(istr, settings.binary.max_binary_type_complexity);
+        if (isNothing(type))
+        {
+            if (keep)
+                values_of_row->insertDefault();
+            return;
+        }
+        /// A value in shared data must be readable into any `Dynamic`, so its type must be allowed inside `Variant`.
+        if (keep)
+            DataTypeVariant::checkAllowedInsideVariant(type);
+
+        auto type_name = type->getName();
+        auto it = value_columns.find(type_name);
+        if (it == value_columns.end())
+        {
+            /// Bound the columns kept for a row with many distinct value types.
+            if (value_columns.size() >= 256)
+                value_columns.clear();
+            MutableColumnPtr column_to_reuse;
+            if (!type->hasDynamicStructure())
+                column_to_reuse = type->createColumn();
+            it = value_columns.emplace(type_name, std::pair{getDataTypesCache().getSerialization(type_name, type), std::move(column_to_reuse)}).first;
+        }
+        auto & [serialization, reused_column] = it->second;
+
+        MutableColumnPtr fresh_column;
+        IColumn & column = reused_column ? *reused_column : *(fresh_column = type->createColumn());
+        serialization->deserializeBinary(column, istr, settings);
+        if (keep)
+            ColumnDynamic::serializeValueIntoSharedVariant(*values_of_row, column, type, serialization, column.size() - 1);
+        if (reused_column)
+            reused_column->popBack(1);
+    };
+    /// Pairs (path, row of its value in values_of_row).
+    std::vector<std::pair<String, size_t>> paths_and_values_for_shared_data;
     size_t prev_size = column_object.size();
     try
     {
@@ -1472,20 +1522,15 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
                 /// Otherwise this path should go to shared data.
                 else
                 {
-                    String value;
-                    Field field;
-                    readParsedValueIntoString(value, istr, [&](ReadBuffer & buf){ dynamic_serialization->deserializeBinary(field, buf, settings); });
-                    /// Keep nulls as empty values, so a later duplicate of this path is skipped too.
-                    if (field.isNull())
-                        value.clear();
-                    paths_and_values_for_shared_data.emplace_back(std::move(path), std::move(value));
+                    /// A null is kept as an empty value too, so a later duplicate of this path is skipped.
+                    read_value(true);
+                    paths_and_values_for_shared_data.emplace_back(std::move(path), values_of_row->size() - 1);
                 }
             }
             else
             {
                 /// Skip value of this path.
-                Field tmp;
-                dynamic_serialization->deserializeBinary(tmp, istr, settings);
+                read_value(false);
             }
         }
 
@@ -1496,14 +1541,14 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
             [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
         for (size_t i = 0; i != paths_and_values_for_shared_data.size(); ++i)
         {
-            const auto & [path, value] = paths_and_values_for_shared_data[i];
+            const auto & [path, value_row] = paths_and_values_for_shared_data[i];
             if (i != 0 && path == paths_and_values_for_shared_data[i - 1].first)
             {
                 if (!settings.json.type_json_skip_duplicated_paths)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Found duplicated path during binary deserialization of JSON type: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
             }
             /// Don't write nulls into shared data.
-            else if (!value.empty())
+            else if (auto value = values_of_row->getDataAt(value_row); !value.empty())
             {
                 shared_data_paths->insertData(path.data(), path.size());
                 shared_data_values->insertData(value.data(), value.size());

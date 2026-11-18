@@ -37,6 +37,9 @@ public:
     /// Used to maintain backward compatibility for variant discriminators.
     DataTypeVariant(const DataTypes & variants_, FixedDiscriminatorOrder);
 
+    /// Throws if the type cannot be a variant: Nullable(...), LowCardinality(Nullable(...)), Variant(...) or Dynamic.
+    static void checkAllowedInsideVariant(const DataTypePtr & type);
+
     TypeIndex getTypeId() const override { return TypeIndex::Variant; }
     const char * getFamilyName() const override { return "Variant"; }
 
