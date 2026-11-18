@@ -242,7 +242,7 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
 }
 
 StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(
-    const ASTCreateQuery & create_query, bool replicated_defaults, bool create_custom_disk) const
+    const ASTCreateQuery & create_query, bool replicated_defaults, bool create_custom_disk, ContextPtr query_context) const
 {
     /// The `convert_to_replicated` flag is looked up on the first disk of the storage policy the table has as a
     /// `MergeTree`, and both phases of the conversion have to resolve it identically. The policy is taken from the
@@ -277,11 +277,14 @@ StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(
 
                 /// The disk is cached by its definition and reused when the table is loaded, so it has to be
                 /// created exactly as `registerStorageMergeTree` creates it, with the exemption of `system` tables.
+                /// A user query passes its `query_context`, so the user's `dynamic_disk_allow_*` restrictions apply
+                /// as for a short `ATTACH`, before any side effect of the conversion.
                 MergeTreeSettings::resolveDiskSetting(
                     resolved,
-                    getContext(),
-                    /* is_loading_from_existing_metadata = */ true,
-                    /* for_system_database = */ getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
+                    query_context ? query_context : getContext(),
+                    /* is_loading_from_existing_metadata = */ !query_context,
+                    /* for_system_database = */ getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE,
+                    /* stored_definition = */ query_context != nullptr);
             }
             settings.set(resolved.name, resolved.value);
         }
@@ -327,9 +330,10 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
 
     auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(create_query);
 
+    /// A broken disk is not read, as the table does not load parts from it either.
     auto storage_disks = policy->getDisks();
     auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
-    if (!checking_disk->existsFile(convert_to_replicated_flag_path))
+    if (checking_disk->isBroken() || !checking_disk->existsFile(convert_to_replicated_flag_path))
         return;
 
     LOG_INFO(log, "Found {} flag for table {}. Will try to change it's engine in metadata to replicated.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(qualified_name.getFullName()));
@@ -829,8 +833,9 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
         checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
     }
 
+    /// A broken disk is not read, as the table does not load parts from it either; a flag on it is kept for a later start.
     auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table);
-    if (!checking_disk->existsFile(convert_to_replicated_flag_path))
+    if (checking_disk->isBroken() || !checking_disk->existsFile(convert_to_replicated_flag_path))
         return;
 
     auto rmt = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load);

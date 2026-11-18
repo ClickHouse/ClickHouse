@@ -4602,7 +4602,7 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     {
         String table_data_path = database->getTableDataPath(create);
         auto storage_policy = dynamic_cast<const DatabaseOrdinary &>(*database).getStoragePolicyFromCreateQuery(
-            create, /* replicated_defaults = */ false, /* create_custom_disk = */ true);
+            create, /* replicated_defaults = */ false, /* create_custom_disk = */ true, getContext());
         clearTransactionMetadata(table_data_path, storage_policy, getContext());
     }
 

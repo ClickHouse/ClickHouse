@@ -123,7 +123,8 @@ public:
     /// table before their side effects.
     static bool isTableReadonlyAsReplicated(const ASTCreateQuery & create_query, ContextPtr local_context);
 
-    StoragePolicyPtr getStoragePolicyFromCreateQuery(const ASTCreateQuery & create_query, bool replicated_defaults, bool create_custom_disk) const;
+    StoragePolicyPtr getStoragePolicyFromCreateQuery(
+        const ASTCreateQuery & create_query, bool replicated_defaults, bool create_custom_disk, ContextPtr query_context = nullptr) const;
 
 protected:
     /// Erase pending async load/startup task references for a table. Must hold `mutex`.

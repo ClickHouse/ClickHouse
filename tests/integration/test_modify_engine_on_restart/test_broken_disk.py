@@ -15,6 +15,7 @@ ch1 = cluster.add_instance(
     ],
     with_zookeeper=True,
     macros={"replica": "node1"},
+    env_variables={"INLINE_DISK_PATH": "/var/lib/clickhouse/custom_disks/inline_env/"},
     stay_alive=True,
 )
 
@@ -22,6 +23,7 @@ database_name = "modify_engine_broken_disk"
 
 LOOPED_DISK_XML = """<clickhouse>
     <local_disk_check_period_ms>1000</local_disk_check_period_ms>
+    <custom_local_disks_base_directory>/var/lib/clickhouse/custom_disks/</custom_local_disks_base_directory>
     <storage_configuration>
         <disks>
             <looped>
@@ -320,3 +322,72 @@ def test_flag_found_with_different_replicated_defaults(
         ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
         ch1.exec_in_container(["rm", "-f", defaults_path])
         ch1.restart_clickhouse()
+
+
+LOOPED_DEFAULTS_XML = """<clickhouse>
+    <merge_tree><storage_policy>looped_first</storage_policy></merge_tree>
+    <replicated_merge_tree><storage_policy>with_looped</storage_policy></replicated_merge_tree>
+</clickhouse>"""
+
+
+@pytest.mark.parametrize("lazy_load_tables", [0, 1])
+def test_broken_secondary_disk_of_existing_replica(started_cluster, lazy_load_tables):
+    # An existing replicated table with no conversion pending starts although a disk of its
+    # policy, the first one of the `merge_tree` defaults policy, is broken.
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+    ch1.query(
+        f"CREATE DATABASE {database_name} ENGINE = Atomic SETTINGS lazy_load_tables = {lazy_load_tables}"
+    )
+    q(
+        "CREATE TABLE replicated ( A Int64 ) "
+        "ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/replicated', '{replica}') ORDER BY A"
+    )
+    q("INSERT INTO replicated SELECT number FROM numbers(10)")
+
+    defaults_path = "/etc/clickhouse-server/config.d/looped_defaults.xml"
+    try:
+        ch1.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"cat > {defaults_path} << 'EOF'\n{LOOPED_DEFAULTS_XML}\nEOF",
+            ]
+        )
+        ch1.restart_clickhouse()
+        assert engine_of("replicated") == "ReplicatedMergeTree"
+        q("INSERT INTO replicated SELECT number FROM numbers(10, 10)")
+        assert q("SELECT count() FROM replicated").strip() == "20"
+    finally:
+        ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+        ch1.exec_in_container(["rm", "-f", defaults_path])
+        ch1.restart_clickhouse()
+
+
+def test_attach_as_replicated_checks_dynamic_disk_restrictions(started_cluster):
+    # `ATTACH TABLE ... AS REPLICATED` creates an inline disk with the restrictions of the user
+    # who runs it, and a refused query leaves the table definition unchanged.
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+    ch1.query(f"CREATE DATABASE {database_name}")
+
+    allowed = {"dynamic_disk_allow_from_env": 1}
+    ch1.query(
+        "CREATE TABLE inline_env ( A Int64 ) ENGINE = MergeTree ORDER BY A "
+        "SETTINGS disk = disk(type = local, path = 'from_env INLINE_DISK_PATH')",
+        database=database_name,
+        settings=allowed,
+    )
+    q("INSERT INTO inline_env SELECT number FROM numbers(10)")
+    q("DETACH TABLE inline_env")
+
+    error = ch1.query_and_get_error(
+        "ATTACH TABLE inline_env AS REPLICATED",
+        database=database_name,
+        settings={"dynamic_disk_allow_from_env": 0},
+    )
+    assert "ACCESS_DENIED" in error and "dynamic_disk_allow_from_env" in error, error
+
+    ch1.query("ATTACH TABLE inline_env", database=database_name, settings=allowed)
+    assert engine_of("inline_env") == "MergeTree"
+    assert q("SELECT count() FROM inline_env").strip() == "10"
+
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
