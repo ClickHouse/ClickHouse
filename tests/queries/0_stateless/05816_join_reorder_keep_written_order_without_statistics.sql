@@ -97,6 +97,13 @@ SELECT replaceRegexpAll(trimLeft(explain), '\\[[^]]*\\]', '') FROM (EXPLAIN keep
     JOIN (SELECT DISTINCT n_nationkey FROM nation WHERE n_name = 'GERMANY') AS d ON c_nationkey = d.n_nationkey)
 WHERE explain ILIKE '%Join: %';
 
+SELECT 'filter below UNION ALL';
+SELECT replaceRegexpAll(trimLeft(explain), '\\[[^]]*\\]', '') FROM (EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT count() FROM orders JOIN customer ON c_custkey = o_custkey
+    JOIN (SELECT n_nationkey FROM nation WHERE n_name = 'GERMANY' UNION ALL SELECT n_nationkey FROM nation WHERE n_name = 'FRANCE') AS u
+        ON c_nationkey = u.n_nationkey)
+WHERE explain ILIKE '%Join: %';
+
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['JoinBuildTableRowCount'] FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment IN ('build_rows_empty', 'build_rows_one_nation') AND type = 'QueryFinish'

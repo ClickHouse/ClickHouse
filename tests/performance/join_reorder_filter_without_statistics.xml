@@ -2,6 +2,11 @@
     <!-- A filtered join input without statistics, as in https://github.com/ClickHouse/ClickHouse/issues/129254:
          the filter on `nation` must not make the large `orders` the build side. -->
 
+    <!-- Plan from the estimates on every run, not from the hash table sizes of the previous run. -->
+    <settings>
+        <use_hash_table_stats_for_join_reordering>0</use_hash_table_stats_for_join_reordering>
+    </settings>
+
     <create_query>
         CREATE TABLE orders_129254 (o_orderkey UInt32, o_custkey UInt32, o_totalprice Decimal(15, 2))
         ENGINE = MergeTree ORDER BY o_orderkey SETTINGS auto_statistics_types = ''

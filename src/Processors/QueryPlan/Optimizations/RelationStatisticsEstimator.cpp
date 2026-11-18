@@ -191,6 +191,21 @@ std::vector<RPNBuilderTreeNode> getConditionsToEstimate(const SourceStepWithFilt
     return conditions;
 }
 
+/// Whether a read below one of the inputs of `node` has an unestimated filter.
+bool hasUnestimatedFilterBelow(QueryPlan::Node & node)
+{
+    return std::ranges::any_of(node.children, [](QueryPlan::Node * child)
+        { return estimateReadRowsCount(*child).source == RowEstimateSource::UnestimatedFilter; });
+}
+
+/// The rows of a step the estimator does not model are unknown, but an unestimated filter below it still reaches the join graph.
+RelationStats unknownRowsOf(QueryPlan::Node & node, bool for_runtime_filter_transport)
+{
+    if (!for_runtime_filter_transport && hasUnestimatedFilterBelow(node))
+        return RelationStats{.table_name = {}, .source = RowEstimateSource::UnestimatedFilter};
+    return {};
+}
+
 }
 
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter, bool for_runtime_filter_transport)
@@ -438,8 +453,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             if (auto recorded = join_step->hasUnestimatedFilter())
                 unestimated_filter = *recorded;
             else
-                unestimated_filter = std::ranges::any_of(node.children, [](QueryPlan::Node * child)
-                    { return estimateReadRowsCount(*child).source == RowEstimateSource::UnestimatedFilter; });
+                unestimated_filter = hasUnestimatedFilterBelow(node);
         }
         const auto source = unestimated_filter ? RowEstimateSource::UnestimatedFilter : RowEstimateSource::NoSource;
 
@@ -460,7 +474,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     }
 
     if (node.children.size() != 1)
-        return {};
+        return unknownRowsOf(node, for_runtime_filter_transport);
 
     if (const auto * limit_step = typeid_cast<const LimitStep *>(step))
     {
@@ -547,16 +561,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (dynamic_cast<LogicalExchangeStep *>(step))
         return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
 
-    if (const auto * transform = dynamic_cast<const ITransformingStep *>(step))
-    {
-        if (transform->getTransformTraits().preserves_number_of_rows)
-            return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
-        /// The rows of such a step are unknown, but an unestimated filter below it still reaches the join graph.
-        if (!for_runtime_filter_transport && estimateReadRowsCount(*node.children.front()).source == RowEstimateSource::UnestimatedFilter)
-            return RelationStats{.table_name = {}, .source = RowEstimateSource::UnestimatedFilter};
-    }
+    if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
+        transform && transform->getTransformTraits().preserves_number_of_rows)
+        return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
 
-    return {};
+    return unknownRowsOf(node, for_runtime_filter_transport);
 }
 
 }
