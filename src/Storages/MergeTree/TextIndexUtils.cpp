@@ -435,7 +435,7 @@ void MergeTextIndexesTask::PositionsMerge::start()
 
 void MergeTextIndexesTask::PositionsMerge::append(size_t source_idx, size_t count)
 {
-    constexpr size_t block_docs = TextIndexBlockedPositionsCodec::BLOCK_DOCS;
+    constexpr size_t block_size = TextIndexBlockedPositionsCodec::BLOCK_SIZE;
     auto & reader = readers[source_idx];
 
     if (!reader.in || reader.next_rank + count > reader.directory.num_docs)
@@ -444,12 +444,12 @@ void MergeTextIndexesTask::PositionsMerge::append(size_t source_idx, size_t coun
 
     for (; count > 0; --count, ++reader.next_rank)
     {
-        const size_t local_rank = reader.next_rank % block_docs;
+        const size_t local_rank = reader.next_rank % block_size;
 
         /// Blocks follow the directory back to back, so the stream is at the next block.
         if (local_rank == 0)
         {
-            const size_t block_idx = reader.next_rank / block_docs;
+            const size_t block_idx = reader.next_rank / block_size;
             block_ranks.resize(reader.directory.docsInBlock(block_idx));
             std::iota(block_ranks.begin(), block_ranks.end(), UInt32{0});
 

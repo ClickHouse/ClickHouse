@@ -92,10 +92,10 @@ TEST(BlockedPositionsCodec, SingleDocManyPositions)
 
 TEST(BlockedPositionsCodec, ExactBlockBoundaries)
 {
-    for (size_t num_docs : {TextIndexBlockedPositionsCodec::BLOCK_DOCS - 1,
-                            TextIndexBlockedPositionsCodec::BLOCK_DOCS,
-                            TextIndexBlockedPositionsCodec::BLOCK_DOCS + 1,
-                            3 * TextIndexBlockedPositionsCodec::BLOCK_DOCS})
+    for (size_t num_docs : {TextIndexBlockedPositionsCodec::BLOCK_SIZE - 1,
+                            TextIndexBlockedPositionsCodec::BLOCK_SIZE,
+                            TextIndexBlockedPositionsCodec::BLOCK_SIZE + 1,
+                            3 * TextIndexBlockedPositionsCodec::BLOCK_SIZE})
         expectRoundTrip(randomDocs(num_docs, 3, num_docs));
 }
 
@@ -138,8 +138,8 @@ TEST(BlockedPositionsCodec, CandidateBlockDecodeMatchesFullDecode)
     {
         std::vector<uint32_t> local_ranks;
         for (uint32_t r : ranks)
-            if (r / TextIndexBlockedPositionsCodec::BLOCK_DOCS == b)
-                local_ranks.push_back(r % TextIndexBlockedPositionsCodec::BLOCK_DOCS);
+            if (r / TextIndexBlockedPositionsCodec::BLOCK_SIZE == b)
+                local_ranks.push_back(r % TextIndexBlockedPositionsCodec::BLOCK_SIZE);
         if (local_ranks.empty())
             continue;
 
@@ -149,7 +149,7 @@ TEST(BlockedPositionsCodec, CandidateBlockDecodeMatchesFullDecode)
 
         for (uint32_t r : ranks)
         {
-            if (r / TextIndexBlockedPositionsCodec::BLOCK_DOCS != b)
+            if (r / TextIndexBlockedPositionsCodec::BLOCK_SIZE != b)
                 continue;
             const std::vector<uint32_t> expected(ref_positions.begin() + ref_offsets[r], ref_positions.begin() + ref_offsets[r + 1]);
             const uint32_t begin = emitted == 0 ? 0 : offsets[emitted - 1];

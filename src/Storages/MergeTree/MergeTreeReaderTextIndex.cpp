@@ -1046,13 +1046,13 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const TextS
         size_t previous_block = std::numeric_limits<size_t>::max();
         for (size_t idx = lo; idx < hi;)
         {
-            const size_t block_idx = ranks[idx] / TextIndexBlockedPositionsCodec::BLOCK_DOCS;
+            const size_t block_idx = ranks[idx] / TextIndexBlockedPositionsCodec::BLOCK_SIZE;
             block_local_ranks.clear();
-            block_local_ranks.push_back(static_cast<UInt32>(ranks[idx] % TextIndexBlockedPositionsCodec::BLOCK_DOCS));
+            block_local_ranks.push_back(static_cast<UInt32>(ranks[idx] % TextIndexBlockedPositionsCodec::BLOCK_SIZE));
             ++idx;
-            while (idx < hi && ranks[idx] / TextIndexBlockedPositionsCodec::BLOCK_DOCS == block_idx)
+            while (idx < hi && ranks[idx] / TextIndexBlockedPositionsCodec::BLOCK_SIZE == block_idx)
             {
-                block_local_ranks.push_back(static_cast<UInt32>(ranks[idx] % TextIndexBlockedPositionsCodec::BLOCK_DOCS));
+                block_local_ranks.push_back(static_cast<UInt32>(ranks[idx] % TextIndexBlockedPositionsCodec::BLOCK_SIZE));
                 ++idx;
             }
             if (previous_block == std::numeric_limits<size_t>::max() || block_idx != previous_block + 1)

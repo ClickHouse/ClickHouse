@@ -13,18 +13,18 @@ namespace DB
 
 /// Blocked candidate-driven positions codec (the text index positions layout).
 ///
-/// One token's positions as per-document lists, chunked into blocks of BLOCK_DOCS consecutive
+/// One token's positions as per-document lists, chunked into blocks of BLOCK_SIZE consecutive
 /// posting ranks. No doc ids and no freq lane in the stream: block b covers postings entries
-/// [b*BLOCK_DOCS, (b+1)*BLOCK_DOCS), so a posting cursor's rank addresses a document directly and a
+/// [b*BLOCK_SIZE, (b+1)*BLOCK_SIZE), so a posting cursor's rank addresses a document directly and a
 /// phrase query fetches only the blocks covering its candidate rows.
 ///
 /// Per-token stream layout (at token_info.position_offset in the .pos substream):
 ///     [VarUInt: num_docs]
-///     [VarUInt: num_blocks]                        (must equal ceil(num_docs / BLOCK_DOCS))
+///     [VarUInt: num_blocks]                        (must equal ceil(num_docs / BLOCK_SIZE))
 ///     num_blocks x [VarUInt: payload_bytes]        (directory; one contiguous read, offsets by prefix sum)
 ///     num_blocks x payload, back to back
 ///
-/// Block payload (docs_in_block = min(BLOCK_DOCS, num_docs - b*BLOCK_DOCS)):
+/// Block payload (docs_in_block = min(BLOCK_SIZE, num_docs - b*BLOCK_SIZE)):
 ///     [VarUInt: num_exceptions]
 ///     num_exceptions x [VarUInt: local_rank][VarUInt: freq]   (ascending local_rank; freq >= 2;
 ///                                                              a document's freq defaults to 1)
@@ -36,8 +36,8 @@ namespace DB
 class TextIndexBlockedPositionsCodec
 {
 public:
-    /// Posting ranks per block; baked into the format (changing it needs a version bump).
-    static constexpr size_t BLOCK_DOCS = 128;
+    /// Posting ranks per block. Persisted in the text index header as `positions_block_size`; only this value is supported yet.
+    static constexpr size_t BLOCK_SIZE = 128;
 
     /// Parsed per-token directory; block_offsets are absolute in the .pos stream (seek-ready).
     struct Directory
@@ -49,8 +49,8 @@ public:
         size_t numBlocks() const { return block_offsets.empty() ? 0 : block_offsets.size() - 1; }
         size_t docsInBlock(size_t block_idx) const
         {
-            const UInt64 begin = block_idx * BLOCK_DOCS;
-            return static_cast<size_t>(std::min<UInt64>(BLOCK_DOCS, num_docs - begin));
+            const UInt64 begin = block_idx * BLOCK_SIZE;
+            return static_cast<size_t>(std::min<UInt64>(BLOCK_SIZE, num_docs - begin));
         }
     };
 
