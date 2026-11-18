@@ -3890,7 +3890,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
     if (column_info.levels_only_arrays)
     {
-        /// Nothing takes the values, and the row subgroup keeps its columns until the end of the read.
+        /// Nothing takes the values: free them now instead of when the row subgroup is delivered.
         subchunk.column.reset();
         subchunk.null_map.reset();
         subchunk.arrays_offsets.resize(column_info.levels_only_arrays);

@@ -401,7 +401,6 @@ struct Reader
         bool decode_dictionary_for_top_k = false;
 
         /// Prefetches.
-        /// TODO [parquet]: Check that all handles and tokens are reset after correct stages.
         PrefetchHandle bloom_filter_header_prefetch;
         PrefetchHandle bloom_filter_data_prefetch;
         /// Length of bloom_filter_data_prefetch, i.e. how many bytes of bloom filter (header +
@@ -450,7 +449,7 @@ struct Reader
 
         VectorWithMemoryTracking<std::pair</*start*/ size_t, /*end*/ size_t>> row_ranges_after_column_index;
 
-        PageState page; // TODO [parquet]: deallocate when column chunk is done (and check other fields too)
+        PageState page;
         /// Offset from the start of `data_pages_prefetch`, if not using offset index (`data_pages` is empty).
         size_t next_page_offset = 0;
         size_t data_pages_idx = 0; // corresponding to `page`
