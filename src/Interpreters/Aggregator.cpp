@@ -6123,7 +6123,8 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     const AggregateColumnsConstData &,
     std::atomic<bool> &,
     Arena * arena_for_keys,
-    DeferredMerges *) const
+    DeferredMerges *,
+    bool) const
 {
     /// With `no_more_keys` the keys that are not already there are dropped, so there is nothing to insert.
     if (no_more_keys)
@@ -6149,7 +6150,8 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     const AggregateColumnsConstData & aggregate_columns_data,
     std::atomic<bool> & is_cancelled,
     Arena * arena_for_keys,
-    DeferredMerges * external_deferred) const
+    DeferredMerges * external_deferred,
+    bool sources_are_shared) const
 {
     chassert(!is_simple_count);
 
@@ -6196,8 +6198,11 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     /// collected and merged with all their sources in one parallel pass: below for the sources of this block,
     /// or by the caller for the sources of all its blocks if it passed `external_deferred`. The sources
     /// stay owned by the aggregate columns and are not destroyed.
+    /// Shared sources (e.g. the states of the partial aggregate cache, which concurrent queries read) are merged
+    /// row by row: the multi-way merge of the deferred states may convert the sources in place.
+    chassert(!(sources_are_shared && external_deferred));
     DeferredMerges local_deferred;
-    if (!external_deferred && worthDeferringLargeMerges())
+    if (!external_deferred && !sources_are_shared && worthDeferringLargeMerges())
         local_deferred.resize(params.aggregates_size);
     DeferredMerges * deferred_ptr = external_deferred ? external_deferred : (local_deferred.empty() ? nullptr : &local_deferred);
 
@@ -6242,7 +6247,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     bool no_more_keys,
     std::atomic<bool> & is_cancelled,
     Arena * arena_for_keys,
-    DeferredMerges * deferred) const
+    DeferredMerges * deferred,
+    bool sources_are_shared) const
 {
     const AggregateColumnsConstData & aggregate_columns_data = makeAggregateColumnsData(columns, params.keys_size, params.aggregates_size);
 
@@ -6265,7 +6271,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         key_columns,
         is_cancelled,
         arena_for_keys,
-        deferred);
+        deferred,
+        sources_are_shared);
 }
 
 template <bool for_sub_range, typename Method, typename Table>
@@ -6282,7 +6289,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     const ColumnRawPtrs & key_columns,
     std::atomic<bool> & is_cancelled,
     Arena * arena_for_keys,
-    DeferredMerges * deferred) const
+    DeferredMerges * deferred,
+    bool sources_are_shared) const
 {
     UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
     double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
@@ -6351,7 +6359,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
                 aggregate_columns_data,
                 is_cancelled,
                 arena_for_keys,
-                deferred);
+                deferred,
+                sources_are_shared);
         }
 
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
@@ -6380,7 +6389,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
                 aggregate_columns_data,
                 is_cancelled,
                 arena_for_keys,
-                deferred);
+                deferred,
+                sources_are_shared);
         }
     }
 }
@@ -6490,7 +6500,10 @@ bool Aggregator::mergeOnBlock(
         result.without_key, \
         result.consecutive_keys_cache_stats, \
         no_more_keys, \
-        is_cancelled);
+        is_cancelled, \
+        /*arena_for_keys=*/ nullptr, \
+        /*deferred=*/ nullptr, \
+        sources_are_shared);
 
     APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M
