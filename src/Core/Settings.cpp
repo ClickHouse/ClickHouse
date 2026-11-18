@@ -8766,6 +8766,12 @@ Whether to use only prewhere columns size to determine reading task size.
 Hard lower limit on the task size (even when the number of granules is low and the number of available threads is high we won't allocate smaller tasks
 )", 0, \
         {"24.10", 8, 8, "New setting"}) \
+    DECLARE(UInt64, merge_tree_read_end_tasks_per_stream, 32, R"(
+Makes the tasks at the end of a `MergeTree` read 1/N of one thread's share of the data (not smaller than
+`merge_tree_min_read_task_size`), so that all threads finish at about the same time. Larger values balance the
+threads better but add per-task overhead. 0 disables it.
+)", 0, \
+        {"26.11", 0, 32, "New setting: the tasks at the end of a `MergeTree` read are smaller, so that all threads finish at about the same time."}) \
     DECLARE(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, R"(
 Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
 )", 0) \

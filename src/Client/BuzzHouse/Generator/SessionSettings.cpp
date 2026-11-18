@@ -1652,6 +1652,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(1, 128)); }, {}, false)},
     {"merge_tree_determine_task_size_by_prewhere_columns", trueOrFalseSetting},
     {"merge_tree_generic_exclusion_search_max_steps", CHSetting(highRange, {}, false)},
+    {"merge_tree_read_end_tasks_per_stream",
+     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 128)); }, {"0", "1", "32", "128"}, false)},
     {"merge_tree_use_const_size_tasks_for_remote_reading", trueOrFalseSettingNoOracle},
     {"merge_tree_use_v1_object_and_dynamic_serialization", trueOrFalseSettingNoOracle},
     {"metrics_perf_events_enabled", trueOrFalseSettingNoOracle},
