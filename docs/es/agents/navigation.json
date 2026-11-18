@@ -1,8 +1,8 @@
 {
-  "item": "Agentes",
+  "item": "Agents",
   "pages": [
     {
-      "group": "Primeros pasos",
+      "group": "Get started",
       "pages": [
         "es/agents/index",
         "es/agents/quickstart",
@@ -10,7 +10,7 @@
       ]
     },
     {
-      "group": "Constructor de Agentes",
+      "group": "Agent Builder",
       "pages": [
         "es/agents/builder/index",
         "es/agents/builder/model-parameters",
@@ -24,7 +24,7 @@
       ]
     },
     {
-      "group": "Gestionar agentes",
+      "group": "Manage agents",
       "pages": [
         "es/agents/prompts",
         "es/agents/memory",

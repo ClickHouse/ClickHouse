@@ -1,8 +1,8 @@
 {
-  "item": "Агенты",
+  "item": "Agents",
   "pages": [
     {
-      "group": "Начало работы",
+      "group": "Get started",
       "pages": [
         "ru/agents/index",
         "ru/agents/quickstart",
@@ -10,7 +10,7 @@
       ]
     },
     {
-      "group": "Конструктор агентов",
+      "group": "Agent Builder",
       "pages": [
         "ru/agents/builder/index",
         "ru/agents/builder/model-parameters",
@@ -24,7 +24,7 @@
       ]
     },
     {
-      "group": "Управление агентами",
+      "group": "Manage agents",
       "pages": [
         "ru/agents/prompts",
         "ru/agents/memory",
