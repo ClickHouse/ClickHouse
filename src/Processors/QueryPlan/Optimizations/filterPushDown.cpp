@@ -24,6 +24,7 @@
 #include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -34,6 +35,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -1229,6 +1231,40 @@ static bool mayFixColumn(const ActionsDAG::Node * conjunct)
     });
 }
 
+/// a subtotal row has the default value in a removed key, so a filter that rejects this value also applies to the rows below the step
+template <typename Step>
+static size_t tryCopyKeyFilterBelowRollupOrCube(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
+{
+    QueryPlan::Node * child_node = parent_node->children.front();
+    auto * step = typeid_cast<Step *>(child_node->step.get());
+    /// a filter below the step changes the totals
+    if (!step || step->isFilterPushedDown() || canProduceTotals(*child_node))
+        return 0;
+
+    const auto & filter = assert_cast<const FilterStep &>(*parent_node->step);
+    const auto & input_header = *step->getInputHeaders().front();
+
+    Names keys;
+    for (const auto & key : step->getParams().keys)
+    {
+        const auto & column = step->getOutputHeader()->getByName(key);
+        /// `group_by_use_nulls` changes the type of a key
+        if (column.type->equals(*input_header.getByName(key).type)
+            && filterResultForNotMatchedRows(filter.getExpression(), filter.getFilterColumnName(), Block{column}, /*allow_unknown_function_arguments=*/ true) == FilterResult::FALSE)
+            keys.push_back(key);
+    }
+    if (keys.empty())
+        return 0;
+
+    auto key_filter = tryToExtractPartialPredicate(filter.getExpression(), filter.getFilterColumnName(), keys);
+    if (!key_filter)
+        return 0;
+
+    addFilterOnTop(*child_node, 0, nodes, std::move(*key_filter));
+    step->setFilterPushedDown();
+    return 3;
+}
+
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
@@ -1417,10 +1453,11 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     // {
     // }
 
-    /// Same reason for Cube
-    // if (auto * cube = typeid_cast<CubeStep *>(child.get()))
-    // {
-    // }
+    if (auto updated_steps = tryCopyKeyFilterBelowRollupOrCube<RollupStep>(parent_node, nodes))
+        return updated_steps;
+
+    if (auto updated_steps = tryCopyKeyFilterBelowRollupOrCube<CubeStep>(parent_node, nodes))
+        return updated_steps;
 
     if (typeid_cast<SortingStep *>(child.get()))
     {

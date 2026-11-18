@@ -23,6 +23,10 @@ public:
 
     [[nodiscard]] QueryPlanStepPtr clone() const override;
 
+    /// the filter push-down copies a filter below the step only one time
+    [[nodiscard]] bool isFilterPushedDown() const { return filter_pushed_down; }
+    void setFilterPushedDown() { filter_pushed_down = true; }
+
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
@@ -34,6 +38,7 @@ private:
     Aggregator::Params params;
     bool final;
     bool use_nulls;
+    bool filter_pushed_down = false;
 };
 
 }
