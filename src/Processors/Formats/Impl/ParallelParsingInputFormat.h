@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Processors/Formats/IInputFormat.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Formats/FormatFactory.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
@@ -22,6 +24,11 @@ namespace ErrorCodes
 }
 
 class Context;
+
+/// True if the current thread is a parallel-parsing segmentator whose format has finished parsing; false on
+/// any other thread. A `FileSegmentationEngine` that reads far past `min_bytes` in a single call (Avro reads
+/// a whole OCF block) polls it to stop mid-read.
+bool isSegmentatorParsingFinished();
 
 /**
  * ORDER-PRESERVING parallel parsing of data formats.
@@ -126,6 +133,11 @@ public:
         serialization_hints = hints;
     }
 
+    void setColumnMapper(const ColumnMapperPtr & column_mapper_) override
+    {
+        column_mapper = column_mapper_;
+    }
+
     size_t getApproxBytesReadForChunk() const override { return last_approx_bytes_read_for_chunk; }
 
     String getName() const final { return "ParallelParsingBlockInputFormat"; }
@@ -205,6 +217,8 @@ private:
     const InternalParserCreator internal_parser_creator;
     /// Function to segment the file. Then "parsers" will parse that segments.
     FormatFactory::FileSegmentationEngineCreator file_segmentation_engine_creator;
+    /// Created once per stream: an engine may keep state across segments (e.g. Avro caches the file header).
+    FormatFactory::FileSegmentationEngine file_segmentation_engine;
     const String format_name;
     const FormatSettings format_settings;
     const size_t min_chunk_bytes;
@@ -213,6 +227,7 @@ private:
     BlockMissingValues last_block_missing_values;
     size_t last_approx_bytes_read_for_chunk = 0;
     SerializationInfoByName serialization_hints{{}};
+    ColumnMapperPtr column_mapper;
 
     /// Non-atomic because it is used in one thread.
     std::optional<size_t> next_block_in_current_unit;
@@ -254,9 +269,9 @@ private:
 
     struct ChunkExt
     {
-        std::vector<Chunk> chunk;
-        std::vector<BlockMissingValues> block_missing_values;
-        std::vector<size_t> approx_chunk_sizes;
+        Chunks chunk;
+        VectorWithMemoryTracking<BlockMissingValues> block_missing_values;
+        VectorWithMemoryTracking<size_t> approx_chunk_sizes;
     };
 
     struct ProcessingUnit
@@ -279,7 +294,7 @@ private:
 
     /// We use deque instead of vector, because it does not require a move
     /// constructor, which is absent for atomics that are inside ProcessingUnit.
-    std::deque<ProcessingUnit> processing_units;
+    DequeWithMemoryTracking<ProcessingUnit> processing_units;
 
     /// Compute it to have a more understandable error message.
     size_t successfully_read_rows_count{0};

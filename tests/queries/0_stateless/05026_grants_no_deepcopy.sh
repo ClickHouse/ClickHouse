@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-sanitizers
+# Tags: no-sanitizers
 # Regression test: GRANT / SHOW GRANTS / REVOKE keep working as expected
 # when a user holds many per-table grants. This is a functional regression
 # test covering the change in getGrantQueriesImpl to avoid deep-copying the
@@ -10,8 +10,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-TEST_USER=test_grants_no_deepcopy
-TEST_DB=test_db_grants_no_deepcopy
+TEST_USER=test_grants_no_deepcopy_${CLICKHOUSE_DATABASE}
+TEST_DB=test_db_grants_no_deepcopy_${CLICKHOUSE_DATABASE}
 
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $TEST_USER"
 $CLICKHOUSE_CLIENT -q "CREATE USER $TEST_USER"

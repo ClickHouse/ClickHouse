@@ -13,11 +13,13 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HashTablesStatistics.h>
+#include <Interpreters/JoinUtils.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
@@ -110,8 +112,9 @@ static String runtimeFilterName(UInt64 structural_hash)
 /// per-granule result that a later execution with a different key would read as stale — `__applyFilter`
 /// is non-deterministic too, so `Node::isDeterministic` reports the whole filter expression as such).
 ///
-/// It is additionally marked `is_runtime_filter_id=true`,
-/// which makes `Node::updateHash` skip its VALUE while still hashing its stable NAME.
+/// It is additionally marked `is_runtime_filter_id=true`, which makes `Node::updateHash` skip its VALUE
+/// while still hashing its stable NAME - in an exact hash; a build-independent hash drops derived names
+/// altogether, so there two carriers are told apart by the DAG around them.
 static const ActionsDAG::Node & addRuntimeFilterLabelColumn(ActionsDAG & actions_dag, const RuntimeFilterId & id)
 {
     auto string_type = std::make_shared<DataTypeString>();
@@ -150,6 +153,7 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
     const ColumnWithTypeAndName & join_key_build_side,
     const DataTypePtr & common_type,
     const QueryPlanOptimizationSettings & optimization_settings,
+    const RuntimeFilterGeometry & filter_geometry,
     bool check_left_does_not_contain,
     std::optional<UInt64> distinct_keys_hint,
     bool distinct_keys_hint_matches_filter_key)
@@ -173,17 +177,11 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
         id.name,
         id.key,
         RuntimeFilterBuildOptions{
-            .exact_values_limit = optimization_settings.join_runtime_filter_exact_values_limit,
-            .bloom = RuntimeBloomFilterParameters{
-                optimization_settings.join_runtime_bloom_filter_bytes,
-                optimization_settings.join_runtime_bloom_filter_hash_functions},
-            .max_ratio_of_set_bits = optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
+            .geometry = filter_geometry,
             .polarity = check_left_does_not_contain ? RuntimeFilterPolarity::NotContains : RuntimeFilterPolarity::Contains,
             .track_key_range = optimization_settings.enable_join_runtime_filters_index_analysis,
             .distinct_keys_hint = distinct_keys_hint,
-            .distinct_keys_hint_matches_filter_key = distinct_keys_hint_matches_filter_key},
-        optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
-        optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling);
+            .distinct_keys_hint_matches_filter_key = distinct_keys_hint_matches_filter_key});
     new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
     new_build_filter_node->children = {build_filter_node};
     build_filter_node = new_build_filter_node;
@@ -204,13 +202,16 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
     return filter_condition;
 }
 
-static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm)
+static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm, bool can_run_grace_hash, JoinStrictness join_strictness)
 {
     /// Runtime filter can only be applied to join algorithms that first read the right side and only after that read the left side.
+    /// A `grace_hash` that the join pickers pass over for lack of a spill threshold does not count: the list is cut down to
+    /// these algorithms below, and `grace_hash` left alone in it is no longer passed over but refused.
+    /// `GraceHashJoin` never executes an `ASOF` join (see `GraceHashJoin::isSupported`), so it must not be treated as a viable
+    /// runtime-filter target for one: keeping it would let this pass prune away the algorithms that could actually run the join.
     return
         join_algorithm == JoinAlgorithm::HASH ||
-        join_algorithm == JoinAlgorithm::PARALLEL_HASH ||
-        join_algorithm == JoinAlgorithm::GRACE_HASH;
+        (join_algorithm == JoinAlgorithm::GRACE_HASH && can_run_grace_hash && join_strictness != JoinStrictness::Asof);
 }
 
 /// Deterministic structural fingerprint of this join's runtime filters. Unlike a random name, it is
@@ -269,6 +270,23 @@ static std::optional<UInt64> getBuildSideDistinctKeys(const JoinStepLogical & jo
     return hint->ht_size;
 }
 
+/// Number of key columns of the join hash table, whose distinct count `getBuildSideDistinctKeys` returns.
+/// Mirrors `addJoinPredicatesToTableJoin`: every `Equals` and `NullSafeEquals` pair between the two sides is a hash table key,
+/// while runtime filters are built only from the `Equals` pairs (see `JoinStepLogical::preCalculateKeys`).
+static size_t countHashTableKeys(const JoinStepLogical & join_step)
+{
+    size_t count = 0;
+    for (const auto & condition : join_step.getJoinOperator().expression)
+    {
+        auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
+        if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
+            continue;
+        if ((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft()))
+            ++count;
+    }
+    return count;
+}
+
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this a join step?
@@ -293,16 +311,25 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     /// Check if join can do runtime filtering on left table
     const auto & join_operator = join_step->getJoinOperator();
-    auto & join_algorithms = join_step->getJoinSettings().join_algorithms;
+    auto & join_settings = join_step->getJoinSettings();
+    auto & join_algorithms = join_settings.join_algorithms;
+    /// Decided on the list as the user gave it, before it is cut down below.
+    const bool can_run_grace_hash = join_settings.canRunGraceHash();
+    const auto supports_runtime_filter = [can_run_grace_hash, join_strictness = join_operator.strictness](JoinAlgorithm join_algorithm)
+    {
+        return supportsRuntimeFilter(join_algorithm, can_run_grace_hash, join_strictness);
+    };
     const bool can_use_runtime_filter =
         (
-            (join_operator.kind == JoinKind::Inner && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any))
+            (join_operator.kind == JoinKind::Inner && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any || join_operator.strictness == JoinStrictness::Asof))
             || ((join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Right) && join_operator.strictness == JoinStrictness::Semi)
             || ((join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Right) && join_operator.strictness == JoinStrictness::Anti)
             || (join_operator.kind == JoinKind::Right && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any))
         ) &&
         (join_operator.locality == JoinLocality::Unspecified || join_operator.locality == JoinLocality::Local) &&
-        std::find_if(join_algorithms.begin(), join_algorithms.end(), supportsRuntimeFilter) != join_algorithms.end();
+        /// A runtime filter would drop `full_sorting_merge`, which the join order optimizer chose for sorted inputs.
+        join_step->getPlannedAlgorithm() != JoinAlgorithm::FULL_SORTING_MERGE &&
+        std::ranges::any_of(join_algorithms, supports_runtime_filter);
 
     if (!can_use_runtime_filter)
         return false;
@@ -312,6 +339,25 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// be attached, and the algorithm list must not be pinned to hash-family ones below.
     if (isIEJoinPreferred(join_operator, join_step->getJoinSettings()))
         return false;
+
+    /// For `ASOF`, pruning `join_algorithms` below would force `hash` even if the user picked
+    /// `full_sorting_merge`: unlike other strictnesses, `HashJoin` can't run every `ASOF` join (narrower column
+    /// types, no spill). Skip the filter if pruning would change the algorithm actually chosen; the algorithms
+    /// excluded below never run `ASOF`, so they fall through regardless of list order.
+    if (join_operator.strictness == JoinStrictness::Asof)
+    {
+        const auto first_candidate = std::ranges::find_if(
+            join_algorithms,
+            [](JoinAlgorithm algorithm)
+            {
+                return algorithm != JoinAlgorithm::DIRECT && algorithm != JoinAlgorithm::IE_JOIN
+                    && algorithm != JoinAlgorithm::GRACE_HASH && algorithm != JoinAlgorithm::PARTIAL_MERGE
+                    && algorithm != JoinAlgorithm::PREFER_PARTIAL_MERGE && algorithm != JoinAlgorithm::DEFAULT;
+            });
+        if (first_candidate == join_algorithms.end()
+            || *first_candidate != JoinAlgorithm::HASH)
+            return false;
+    }
 
     /// Sometimes cross join can be represented by inner join without expressions
     if (join_operator.expression.empty())
@@ -471,6 +517,15 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         return RuntimeFilterId{.name = runtimeFilterName(structural_hash), .key = random_key};
     };
 
+    const RuntimeFilterGeometry filter_geometry{
+        .exact_values_limit = optimization_settings.join_runtime_filter_exact_values_limit,
+        .bloom_filter_bytes = optimization_settings.join_runtime_bloom_filter_bytes,
+        .bloom_filter_hash_functions = optimization_settings.join_runtime_bloom_filter_hash_functions,
+        .pass_ratio_threshold_for_disabling = optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
+        .blocks_to_skip_before_reenabling = optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
+        .max_ratio_of_set_bits_in_bloom_filter = optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
+    };
+
     /// Compute common types for each key pair
     DataTypes common_types;
     common_types.reserve(join_keys_build_side.size());
@@ -498,7 +553,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 /// (`04669_join_key_no_supertype` asserts this for `LEFT ANTI`, where it would change results).
                 return false;
             }
-            common_types.push_back(std::move(common_type));
+            common_types.push_back(JoinCommon::compareBoolKeysAsUInt8(std::move(common_type), join_key_build_side.type, join_key_probe_side.type));
         }
         else
         {
@@ -507,6 +562,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     }
 
     const auto distinct_keys_hint = getBuildSideDistinctKeys(*join_step, optimization_settings);
+    const size_t hash_table_keys_count = countHashTableKeys(*join_step);
 
     /// For LEFT ANTI JOIN with multiple keys, per-column NOT IN filters combined with AND are incorrect:
     /// NOT_IN(a, set_a) AND NOT_IN(b, set_b) would incorrectly drop rows where one key is in its per-column set
@@ -548,17 +604,11 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 filter_name,
                 id.key,
                 RuntimeFilterBuildOptions{
-                    .exact_values_limit = optimization_settings.join_runtime_filter_exact_values_limit,
-                    .bloom = RuntimeBloomFilterParameters{
-                        optimization_settings.join_runtime_bloom_filter_bytes,
-                        optimization_settings.join_runtime_bloom_filter_hash_functions},
-                    .max_ratio_of_set_bits = optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
+                    .geometry = filter_geometry,
                     .polarity = RuntimeFilterPolarity::NotContains,
                     .track_key_range = optimization_settings.enable_join_runtime_filters_index_analysis,
                     .distinct_keys_hint = distinct_keys_hint,
-                    .distinct_keys_hint_matches_filter_key = true},
-                optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
-                optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling);
+                    .distinct_keys_hint_matches_filter_key = join_keys_build_side.size() == hash_table_keys_count});
             new_build_filter_node->step->setStepDescription("Build runtime join filter on key tuple", 200);
             new_build_filter_node->children = {build_filter_node};
             build_filter_node = new_build_filter_node;
@@ -607,9 +657,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 join_key_build_side,
                 common_type,
                 optimization_settings,
+                filter_geometry,
                 check_left_does_not_contain,
                 distinct_keys_hint,
-                /*distinct_keys_hint_matches_filter_key=*/join_keys_build_side.size() == 1);
+                /*distinct_keys_hint_matches_filter_key=*/hash_table_keys_count == 1);
             all_filter_conditions.push_back(
                 check_left_does_not_contain ? addNullBypassForAntiJoin(filter_dag, &filter_condition, {join_key_probe_side})
                                             : &filter_condition);
@@ -640,7 +691,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     node.children = {apply_filter_node, build_filter_node};
 
     /// Remove algorithms that are not compatible with runtime filters
-    std::erase_if(join_algorithms, [](auto join_algorithm) { return !supportsRuntimeFilter(join_algorithm); });
+    std::erase_if(join_algorithms, [&](auto join_algorithm) { return !supports_runtime_filter(join_algorithm); });
 
     return true;
 }
@@ -650,7 +701,8 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
     const auto & frame = stack.back();
 
     auto * read_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
-    if (!read_step)
+    auto * object_storage_read_step = typeid_cast<ReadFromObjectStorageStep *>(frame.node->step.get());
+    if (!read_step && !object_storage_read_step)
         return;
 
     /// Walk up from the reading step composing the filters through the expression steps,
@@ -669,7 +721,14 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
                 filter_dag = ActionsDAG::merge((*it)->clone(), std::move(filter_dag));
 
             for (const auto & descr : findAppliedRuntimeFilters(filter_dag, filter_step->getFilterColumnName()))
-                read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type);
+            {
+                if (read_step)
+                    read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(
+                        descr.filter_id, descr.key_column_name, descr.key_column_type, descr.is_global_row_index);
+                else if (object_storage_read_step && !descr.is_global_row_index)
+                    object_storage_read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(
+                        descr.filter_id, descr.key_column_name, descr.key_column_type);
+            }
         }
         else if (const auto * expression_step = typeid_cast<ExpressionStep *>(iter->node->step.get()))
         {

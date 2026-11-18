@@ -119,9 +119,11 @@ SELECT count() FROM hits_web_1;
 DROP TABLE hits_web_1;
 
 SET cloud_mode=1;
-SET cloud_mode_engine=1;
+SET cloud_mode_engine=3;
+-- CREATE TABLE with a UUID needs this in a Replicated database
+SET database_replicated_allow_explicit_uuid=1;
 
-ATTACH TABLE hits_web_2 UUID 'c449dfbf-ba06-4d13-abec-8396559eb955'
+CREATE TABLE hits_web_2 UUID 'c449dfbf-ba06-4d13-abec-8396559eb955'
 (
     WatchID BIGINT NOT NULL,
     JavaEnable SMALLINT NOT NULL,
@@ -236,9 +238,9 @@ SETTINGS disk = disk(type = web, endpoint = 'https://clickhouse-public-datasets.
 SELECT count() FROM hits_web_2;
 DROP TABLE hits_web_2;
 
-SET cloud_mode_engine=2;
+SET cloud_mode_engine=4;
 
-ATTACH TABLE hits_web_3 UUID 'c449dfbf-ba06-4d13-abec-8396559eb955'
+CREATE TABLE hits_web_3 UUID 'c449dfbf-ba06-4d13-abec-8396559eb955'
 (
     WatchID BIGINT NOT NULL,
     JavaEnable SMALLINT NOT NULL,

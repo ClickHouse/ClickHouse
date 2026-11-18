@@ -111,17 +111,18 @@ public:
 
     static void addNewPart(const StoragePtr & storage, const DataPartPtr & new_part, MergeTreeTransaction * txn);
 
-    /// When `txn` is null the part is not removed right away: it is only locked into
-    /// `removal_locks`, and the caller stamps the whole batch with `NonTransactionalRemovalLocks::store`.
+    /// With a null `txn` and a `removal_locks` batch, the part is not removed right away: it is only
+    /// locked into the batch, and the caller stamps the whole batch with
+    /// `NonTransactionalRemovalLocks::store`. Pass no batch to remove it inline, as before.
     static void removeOldPart(
         const StoragePtr & storage, const DataPartPtr & part_to_remove, MergeTreeTransaction * txn,
-        LockKind kind, NonTransactionalRemovalLocks & removal_locks);
+        LockKind kind, NonTransactionalRemovalLocks * removal_locks = nullptr);
 
-    /// Same deferral as `removeOldPart` above: with a null `txn` the covered parts are only locked
-    /// into `removal_locks`.
+    /// Same deferral as `removeOldPart` above: with a null `txn` and a batch, the covered parts are
+    /// only locked into it.
     static void addNewPartAndRemoveCovered(
         const StoragePtr & storage, const DataPartPtr & new_part, const DataPartsVector & covered_parts,
-        MergeTreeTransaction * txn, LockKind kind, NonTransactionalRemovalLocks & removal_locks);
+        MergeTreeTransaction * txn, LockKind kind, NonTransactionalRemovalLocks * removal_locks = nullptr);
 
     bool isReadOnly() const;
 

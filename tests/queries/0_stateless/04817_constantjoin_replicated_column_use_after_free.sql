@@ -7,8 +7,6 @@
 -- rewrites a true constant `ON` to `CROSS` (which stores all right rows) and rejects a
 -- runtime-constant `ON` outright, so no query shape covers the defect there.
 
-SET enable_analyzer = 1;
-
 SELECT 'witness: reporter repro, SEMI LEFT, Nullable(UInt8) right column';
 SELECT l, r
 FROM (SELECT 1::UInt8 AS l) AS t1

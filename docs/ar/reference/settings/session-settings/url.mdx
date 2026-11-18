@@ -13,19 +13,17 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="url_base">
-  ## url_base
-</div>
+## url_base {#url_base}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": ""},{"label": "إعداد جديد لتحديد عنوان URL الأساسي المستخدم في resolving عناوين URL نسبية ضمن دالة الجدول [url] ومحرك الجدول URL."}]}]} />
 
 عنوان URL الأساسي المستخدم في resolving عناوين URL نسبية ضمن دالة الجدول [url](/ar/reference/functions/table-functions/url) ومحرك الجدول [URL](/ar/reference/engines/table-engines/special/url).
 
-عند تعيينه، تُفسَّر عناوين URL النسبية على النحو التالي:
+عند تعيينه، تُفسَّر عناوين URL النسبية على النحو التالي:
 
-* عنوان URL نسبي للمسار (مثل `data.csv`): يُدمج مع مسار عنوان URL الأساسي وفقًا للمواصفة RFC 3986. ويُستبدل كل ما بعد آخر `/` في المسار الأساسي بعنوان URL النسبي، لذا فوجود الشرطة المائلة الختامية مهم: `https://example.com/dir/` + `data.csv` = `https://example.com/dir/data.csv`، بينما `https://example.com/dir` + `data.csv` = `https://example.com/data.csv`. وإذا لم يكن للعنوان الأساسي مسار (مثل `https://example.com`)، فستُدرج `/`: `https://example.com/data.csv`. كما تُطبَّع مقاطع النقطة (`./` و `../`) في عنوان URL النسبي: `https://example.com/dir/` + `../a.csv` = `https://example.com/a.csv`.
-* عنوان URL نسبي للمضيف (مثل `/test/data.csv`): يُفسَّر استنادًا إلى scheme والمضيف في عنوان URL الأساسي.
-* عنوان URL نسبي للمخطط (مثل `//other.com/test/data.csv`): يُفسَّر باستخدام scheme الخاص بعنوان URL الأساسي.
+* عنوان URL نسبي للمسار (مثل `data.csv`): يُدمج مع مسار عنوان URL الأساسي وفقًا للمواصفة RFC 3986. ويُستبدل كل ما بعد آخر `/` في المسار الأساسي بعنوان URL النسبي، لذا فوجود الشرطة المائلة الختامية مهم: `https://example.com/dir/` + `data.csv` = `https://example.com/dir/data.csv`، بينما `https://example.com/dir` + `data.csv` = `https://example.com/data.csv`. وإذا لم يكن للعنوان الأساسي مسار (مثل `https://example.com`)، فستُدرج `/`: `https://example.com/data.csv`. كما تُطبَّع مقاطع النقطة (`./` و `../`) في عنوان URL النسبي: `https://example.com/dir/` + `../a.csv` = `https://example.com/a.csv`.
+* عنوان URL نسبي للمضيف (مثل `/test/data.csv`): يُفسَّر استنادًا إلى scheme والمضيف في عنوان URL الأساسي.
+* عنوان URL نسبي للمخطط (مثل `//other.com/test/data.csv`): يُفسَّر باستخدام scheme الخاص بعنوان URL الأساسي.
 * مرجع يقتصر على query string (مثل `?x=1`): يُلحَق بمسار عنوان URL الأساسي (مع استبدال أي query string/جزء موجود).
 * مرجع يقتصر على الجزء (مثل `#frag`): يُلحَق بعنوان URL الأساسي، مع الحفاظ على query string إن وجد (مع استبدال أي جزء موجود).
 * مرجع فارغ: يعيد عنوان URL الأساسي بدون جزء.
@@ -33,13 +31,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 على سبيل المثال، إذا كانت قيمة `url_base` هي `https://example.com/def/`، فسيكون الناتج كما يلي:
 
-* `data.csv` يُفسَّر إلى `https://example.com/def/data.csv`
-* `/test/data.csv` يُفسَّر إلى `https://example.com/test/data.csv`
-* `//other.com/test/data.csv` يُفسَّر إلى `https://other.com/test/data.csv`
+* `data.csv` يُفسَّر إلى `https://example.com/def/data.csv`
+* `/test/data.csv` يُفسَّر إلى `https://example.com/test/data.csv`
+* `//other.com/test/data.csv` يُفسَّر إلى `https://other.com/test/data.csv`
 
-<div id="url_wildcard_max_directories_to_read">
-  ## url_wildcard_max_directories_to_read
-</div>
+إذا كان عنوان URL النسبي مأخوذًا من [مجموعة مُسمّاة (named collection)](/ar/concepts/features/configuration/server-config/named-collections)، فإن تفسيره يُعَدّ تجاوزًا (override) للمفتاح `url` في تلك المجموعة، ويستلزم امتلاك امتياز `SHOW NAMED COLLECTIONS SECRETS` عليها.
+
+## url_wildcard_max_directories_to_read {#url_wildcard_max_directories_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 

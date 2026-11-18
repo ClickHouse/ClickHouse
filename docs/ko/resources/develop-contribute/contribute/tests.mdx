@@ -356,7 +356,7 @@ $ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
 성능 테스트를 사용하면 합성 쿼리에서 ClickHouse의 특정한 독립 영역에 대한 성능을 측정하고 비교할 수 있습니다.
 성능 테스트는 `tests/performance/`에 있습니다.
 각 테스트는 테스트 케이스 설명이 포함된 `.xml` 파일로 구성됩니다.
-테스트는 `docker/test/performance-comparison` 도구로 실행됩니다. 실행 방법은 readme 파일을 참조하십시오.
+테스트는 `ci/docker/performance-comparison` image에서 `ci/jobs/performance_tests.py` CI 작업으로 실행됩니다.
 
 각 테스트는 하나 이상의 쿼리(매개변수 조합을 포함할 수 있음)를 루프에서 실행합니다.
 
@@ -367,7 +367,7 @@ $ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
 ## 테스트 도구와 스크립트 {#test-tools-and-scripts}
 
 `tests` 디렉터리의 일부 프로그램은 미리 준비된 테스트가 아니라 테스트 도구입니다.
-예를 들어 `Lexer`에는 stdin을 토큰화한 뒤 결과를 색상 적용된 형태로 stdout에 출력하는 `src/Parsers/tests/lexer` 도구가 있습니다.
+예를 들어 `Lexer`에는 stdin을 토큰화한 뒤 결과를 색상 적용된 형태로 stdout에 출력하는 `src/Parsers/examples/lexer.cpp` 도구가 있습니다.
 이런 도구는 코드 예시로 활용할 수 있을 뿐 아니라, 기능을 살펴보거나 수동으로 테스트할 때도 사용할 수 있습니다.
 
 ## 기타 테스트 {#miscellaneous-tests}
@@ -508,9 +508,9 @@ libFuzzer 전용 구성, dictionaries, corpus는 `tests/fuzz`에 저장됩니다
 퍼저를 빌드하려면 `-DENABLE_FUZZING=1` 및 `-DENABLE_TESTS=1` 옵션을 모두 설정해야 합니다.
 퍼저를 빌드할 때는 Jemalloc을 비활성화하는 것을 권장합니다.
 ClickHouse 퍼징을
-Google OSS-Fuzz에 통합하는 데 사용하는 구성은 `docker/fuzz`에서 확인할 수 있습니다.
+Google OSS-Fuzz에 통합하는 데 사용하는 구성은 `tests/fuzz`에서 확인할 수 있습니다.
 
-또한 무작위 SQL 쿼리를 생성하고, 이를 실행해도 server가 종료되지 않는지 확인하는 간단한 퍼즈 테스트도 사용합니다.
+또한 무작위 SQL 쿼리를 생성하고, 이를 실행해도 서버가 종료되지 않는지 확인하는 간단한 퍼즈 테스트도 사용합니다.
 이는 `00746_sql_fuzzy.python`에서 확인할 수 있습니다.
 이 테스트는 지속적으로(하룻밤 이상 장시간) 실행해야 합니다.
 
@@ -591,7 +591,7 @@ ClickHouse는 운영 엔지니어가 결함이 있는 하드웨어를 찾아내�
 
 코드 스타일 규칙은 [여기](/ko/resources/develop-contribute/contribute/style)에 설명되어 있습니다.
 
-일반적인 스타일 위반 사항 몇 가지를 확인하려면 `utils/check-style` 스크립트를 사용할 수 있습니다.
+일반적인 스타일 위반 사항 몇 가지를 확인하려면 `ci/jobs/scripts/check_style/check_cpp.sh` 스크립트를 사용하거나, `python -m ci.praktika run "Style check"` 명령으로 전체 스타일 검사를 로컬에서 실행할 수 있습니다.
 
 코드 스타일을 올바르게 적용하려면 `clang-format`을 사용할 수 있습니다.
 `.clang-format` 파일은 소스 루트에 있습니다.

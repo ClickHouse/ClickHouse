@@ -585,6 +585,12 @@ static bool isSubcolumnOfAvailableColumn(
     return requested_columns.contains(parent_name) || additional_available_columns.contains(parent_name);
 }
 
+bool mayLeaveColumnToMissingDefaults(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column)
+{
+    /// A superset of the two cases in which `fillMissingColumns` leaves a column unfilled.
+    return hasDefault(storage_snapshot, column) || (storage_snapshot && column.isSubcolumn());
+}
+
 static String removeTupleElementsFromSubcolumn(String subcolumn_name, const Names & tuple_elements)
 {
     /// Add a dot to the end of name for convenience.
@@ -691,6 +697,35 @@ void fillMissingColumns(
             /// name does not resolve, so a mismatched pair yields a column of the wrong type.
             auto column_in_storage = tryGetColumnInStorage(storage_snapshot, *requested_column);
             const auto & column_for_type = column_in_storage ? *column_in_storage : *requested_column;
+
+            /// Subcolumn names count arrays from the root of the column (`sizeN`, a JSON path below an array),
+            /// so a subcolumn is taken from the whole column when the shared offsets are its outer arrays.
+            const auto & type_in_storage = column_for_type.getTypeInStorage();
+            const auto * array_in_storage = typeid_cast<const DataTypeArray *>(type_in_storage.get());
+            if (column_for_type.isSubcolumn() && array_in_storage
+                && array_in_storage->getNumberOfDimensions() >= current_offsets.size())
+            {
+                DataTypePtr element_type = type_in_storage;
+                for (size_t level = 0; level < current_offsets.size(); ++level)
+                    element_type = assert_cast<const DataTypeArray &>(*element_type).getNestedType();
+
+                /// Every element is the default, so the subcolumn of one element is replicated.
+                ColumnPtr column = createColumnWithDefaultValue(*element_type, "", 1);
+                for (size_t level = 0; level < current_offsets.size(); ++level)
+                    column = ColumnArray::create(column, ColumnUInt64::create(1, 1));
+
+                column = type_in_storage->getSubcolumn(column_for_type.getSubcolumnName(), column);
+                for (size_t level = 0; level < current_offsets.size(); ++level)
+                    column = assert_cast<const ColumnArray &>(*column).getDataPtr();
+
+                size_t data_size = assert_cast<const ColumnUInt64 &>(*current_offsets.back()).getData().back();
+                column = ColumnConst::create(column, data_size)->convertToFullColumnIfConst();
+                for (auto it = current_offsets.rbegin(); it != current_offsets.rend(); ++it)
+                    column = ColumnArray::create(column, *it);
+
+                res_columns[i] = std::move(column);
+                continue;
+            }
 
             Names tuple_elements;
             SerializationPtr serialization = IDataType::getSerialization(column_for_type);

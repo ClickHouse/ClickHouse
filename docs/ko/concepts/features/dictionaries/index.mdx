@@ -6,8 +6,6 @@ description: '딕셔너리는 빠른 조회를 위해 데이터를 키-값 형�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickHouse의 딕셔너리는 다양한 [내부 및 외부 소스](/ko/reference/statements/create/dictionary/sources/overview#dictionary-sources)의 데이터를 메모리 내 [키-값](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) 형태로 표현하며, 매우 짧은 지연 시간의 조회 쿼리에 최적화되어 있습니다.
 
 딕셔너리는 다음과 같은 용도에 유용합니다:
@@ -15,15 +13,29 @@ ClickHouse의 딕셔너리는 다양한 [내부 및 외부 소스](/ko/reference
 * 특히 `JOIN`과 함께 사용할 때 쿼리 성능 향상
 * 수집 프로세스의 속도를 저하시키지 않으면서 수집된 데이터를 실시간으로 보강
 
-<Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="ClickHouse 딕셔너리의 사용 사례" />
+<div className="ch-image-lg">
 
-<div id="speeding-up-joins-using-a-dictionary">
-  ## 딕셔너리를 사용해 조인 속도 높이기
+<Frame>
+
+![ClickHouse 딕셔너리의 사용 사례](/images/dictionary/dictionary-use-cases.webp)
+
+</Frame>
+
 </div>
+
+## 딕셔너리를 사용해 조인 속도 높이기 {#speeding-up-joins-using-a-dictionary}
 
 딕셔너리는 특정 유형의 `JOIN` 속도를 높이는 데 사용할 수 있습니다. 여기서 말하는 유형은 조인 키가 기반 키-값 저장소의 키 속성과 일치해야 하는 [`LEFT ANY` 유형](/ko/reference/statements/select/join#supported-types-of-join)입니다.
 
-<Image img="/images/dictionary/dictionary-left-any-join.webp" size="sm" alt="딕셔너리를 사용한 LEFT ANY JOIN" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![딕셔너리를 사용한 LEFT ANY JOIN](/images/dictionary/dictionary-left-any-join.webp)
+
+</Frame>
+
+</div>
 
 이 경우 ClickHouse는 딕셔너리를 활용해 [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join)을 수행할 수 있습니다. 이는 ClickHouse에서 가장 빠른 조인 알고리즘이며, 오른쪽 테이블의 기반 [테이블 엔진](/ko/reference/engines/table-engines/index)이 지연 시간이 짧은 키-값 요청을 지원할 때 적용할 수 있습니다. ClickHouse는 이를 지원하는 3개의 테이블 엔진을 제공합니다. [Join](/ko/reference/engines/table-engines/special/join)(기본적으로 미리 계산된 해시 테이블), [EmbeddedRocksDB](/ko/reference/engines/table-engines/integrations/embedded-rocksdb), [Dictionary](/ko/reference/engines/table-engines/special/dictionary)입니다. 여기서는 딕셔너리 기반 접근 방식을 설명하지만, 동작 원리는 세 엔진 모두 동일합니다.
 
@@ -266,11 +278,13 @@ LIMIT 5
 Peak memory usage: 248.84 MiB.
 ```
 
-<div id="index-time-enrichment">
-  ## 인덱싱 시점 보강
-</div>
+## 인덱싱 시점 보강 {#index-time-enrichment}
 
-위 예시에서는 쿼리 시점에 딕셔너리를 사용해 join을 제거했습니다. 딕셔너리는 삽입 시점에 행을 보강하는 데에도 사용할 수 있습니다. 일반적으로 이 방식은 보강 값이 바뀌지 않고, 딕셔너리를 채우는 데 사용할 수 있는 외부 소스에 해당 값이 존재할 때 적합합니다. 이 경우 삽입 시점에 행을 보강하면 쿼리 시점에 딕셔너리를 조회하지 않아도 됩니다.
+위 예시에서는 쿼리 시점에 딕셔너리를 사용해 조인을 제거했습니다. 딕셔너리는 삽입 시점에 행을 보강하는 데에도 사용할 수 있습니다. 일반적으로 이 방식은 보강 값이 바뀌지 않고, 딕셔너리를 채우는 데 사용할 수 있는 외부 소스에 해당 값이 존재할 때 적합합니다. 이 경우 삽입 시점에 행을 보강하면 쿼리 시점에 딕셔너리를 조회하지 않아도 됩니다.
+
+<Note>
+  예측 가능한 지연 시간과 소스 가용성이 중요하다면 삽입 시점 보강에 캐시 기반 딕셔너리 레이아웃을 사용하지 마십시오. 각 서버는 독립적인 로컬 캐시를 유지하므로, 서버가 재시작되거나 대체되면 캐시가 비게 되어 삽입이 딕셔너리 소스에 대한 콜드 캐시 조회에 의존하게 됩니다. ClickHouse Cloud에서는 자동 스케일링과 관리형 노드 대체로 인해 이러한 상황이 발생할 가능성이 더 높습니다. 각 서버에 전체 딕셔너리를 로드하는 레이아웃을 선택하십시오. 자세한 내용은 [수집 경로의 캐시 딕셔너리](/ko/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path)를 참조하십시오.
+</Note>
 
 Stack Overflow에서 사용자의 `Location`은 절대 바뀌지 않는다고 가정해 보겠습니다(실제로는 바뀝니다). 구체적으로는 `users` 테이블의 `Location` 컬럼입니다. 위치별로 `posts` 테이블에 대한 분석 쿼리를 수행하려고 한다고 가정해 보겠습니다. 이 테이블에는 `UserId`가 포함되어 있습니다.
 
@@ -362,9 +376,7 @@ ClickHouse 및 Postgres와 같은 데이터베이스 소스의 경우, 주기적
 
 ClickHouse는 [Hierarchical](/ko/reference/statements/create/dictionary/layouts/hierarchical), [Polygon](/ko/reference/statements/create/dictionary/layouts/polygon), [Regular Expression](/ko/reference/statements/create/dictionary/layouts/regexp-tree) 딕셔너리도 지원합니다.
 
-<div id="more-reading">
-  ### 더 읽어보기
-</div>
+### 더 읽어보기 {#more-reading}
 
 * [딕셔너리 모범 사례](/ko/concepts/features/dictionaries/best-practices) — 레이아웃 선택, 딕셔너리와 조인의 비교, 모니터링
 * [딕셔너리를 활용한 쿼리 가속화](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

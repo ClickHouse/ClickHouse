@@ -7,6 +7,7 @@
 
 #include <Common/Logger.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -20,6 +21,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <boost/algorithm/string.hpp>
@@ -75,7 +77,7 @@ bool DatabaseS3::checkUrl(const std::string & url, ContextPtr context_, bool thr
     try
     {
         S3::URI uri(url);
-        context_->getGlobalContext()->getRemoteHostFilter().checkURL(uri.uri);
+        uri.checkRemoteHostFilter(context_->getGlobalContext()->getRemoteHostFilter());
     }
     catch (...)
     {
@@ -112,7 +114,7 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
     else if (config.access_key_id.has_value() && config.secret_access_key.has_value())
     {
         function->arguments->children.push_back(make_intrusive<ASTLiteral>(config.access_key_id.value()));
-        function->arguments->children.push_back(make_intrusive<ASTLiteral>(config.secret_access_key.value()));
+        function->arguments->children.push_back(make_intrusive<ASTLiteral>(String(*config.secret_access_key)));
     }
     else if (config.use_environment_credentials)
     {
@@ -180,11 +182,11 @@ ASTPtr DatabaseS3::getCreateDatabaseQueryImpl() const
     ParserCreateQuery parser;
 
     std::string creation_args;
-    creation_args += fmt::format("'{}'", config.url_prefix);
+    creation_args += quoteString(config.url_prefix);
     if (config.no_sign_request)
         creation_args += ", 'NOSIGN'";
     else if (config.access_key_id.has_value() && config.secret_access_key.has_value())
-        creation_args += fmt::format(", '{}', '{}'", config.access_key_id.value(), config.secret_access_key.value());
+        creation_args += fmt::format(", {}, {}", quoteString(config.access_key_id.value()), quoteString(config.secret_access_key.value()));
     else if (config.use_environment_credentials)
         creation_args += ", use_environment_credentials = 1";
 
@@ -220,13 +222,13 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
         result.use_environment_credentials = collection.getOrDefault<bool>("use_environment_credentials", false);
 
         auto key_id = collection.getOrDefault<String>("access_key_id", "");
-        auto secret_key = collection.getOrDefault<String>("secret_access_key", "");
+        auto secret_key = collection.getOrDefault<SecretString>("secret_access_key");
 
         if (!key_id.empty())
             result.access_key_id = key_id;
 
         if (!secret_key.empty())
-            result.secret_access_key = secret_key;
+            result.secret_access_key = std::move(secret_key);
 
         /// A URL-only collection is anonymous; record it as NOSIGN so `getTableImpl` does not flatten it to
         /// the positional `s3(url)` form, whose built-in `use_environment_credentials = 1` default would
@@ -299,7 +301,7 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
                 throw Exception::createRuntime(ErrorCodes::BAD_ARGUMENTS, error_message.c_str());
 
             result.access_key_id = key_id;
-            result.secret_access_key = secret_key;
+            result.secret_access_key.emplace(secret_key);
         }
     }
 
@@ -342,7 +344,7 @@ void registerDatabaseS3(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseS3>(args.database_name, config, args.context);
     };
-    factory.registerDatabase("S3", create_fn, {
+    factory.registerDatabase("S3", create_fn, s3DatabaseSecretArguments(), {
         .supports_arguments = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::S3,

@@ -25,40 +25,23 @@ extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_COLUMN;
 }
 
-namespace
-{
-
-bool isStringOrFixedStringOrNativeNumber(const IDataType & arg)
-{
-    return isStringOrFixedString(arg) || isNativeNumber(arg);
-}
-
-}
-
 class FunctionConv final : public IFunction
 {
 public:
     static constexpr auto name = "conv";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConv>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 3; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"number", &isStringOrFixedStringOrNativeNumber, nullptr, "String, FixedString or Number"},
-            {"from_base", &isNativeInteger, nullptr, "Integer"},
-            {"to_base", &isNativeInteger, nullptr, "Integer"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-        return std::make_shared<DataTypeString>();
+        return "(String | FixedString | NativeNumber, NativeInteger, NativeInteger) -> String";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr number_column = arguments[0].column;
         if (!isString(arguments[0].type))
@@ -86,7 +69,7 @@ public:
                 number_str = number_const_col->getValue<String>();
             const Int64 from_base = from_base_column->getInt(i);
             const Int64 to_base = to_base_column->getInt(i);
-            std::string result = convertNumber(number_str, static_cast<int>(from_base), static_cast<int>(to_base));
+            std::string result = convertNumber(number_str, from_base, to_base);
             result_column->insertData(result.data(), result.size());
         }
 
@@ -94,7 +77,7 @@ public:
     }
 
 private:
-    static std::string convertNumber(const std::string & number, const int from_base, const int to_base)
+    static std::string convertNumber(const std::string & number, const Int64 from_base, const Int64 to_base)
     {
         if (from_base < 2 || from_base > 36 || to_base < 2 || to_base > 36)
             throw Exception(
@@ -131,12 +114,12 @@ private:
 
         try
         {
-            UInt64 value = parseFromBase(clean_number, from_base);
+            UInt64 value = parseFromBase(clean_number, static_cast<int>(from_base));
             if (is_negative)
             {
                 value = 0ULL - value;
             }
-            return formatToBase(value, to_base);
+            return formatToBase(value, static_cast<int>(to_base));
         }
         catch (...)
         {

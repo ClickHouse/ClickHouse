@@ -9,6 +9,7 @@
 #include <base/unit.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_context.h>
@@ -17,9 +18,15 @@
 #include <array>
 #include <barrier>
 #include <initializer_list>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <thread>
+
+namespace ProfileEvents
+{
+extern const Event RuntimeFilterDenseBitsetsBuilt;
+}
 
 namespace DB
 {
@@ -67,6 +74,22 @@ RuntimeFilterConfig makeRuntimeFilterConfig()
 {
     return RuntimeFilterConfig{/*pass_ratio_threshold_for_disabling=*/1.0,
                                /*blocks_to_skip_before_reenabling=*/30};
+}
+
+/// `bytes_limit` sets both the exact-phase byte budget and the bloom filter size, as for a locally
+/// built filter. `gtest_runtime_filter_serialization` covers geometries where the two differ.
+RuntimeFilterGeometry makeGeometry(
+    UInt64 bytes_limit, UInt64 exact_values_limit, UInt64 bloom_filter_hash_functions, Float64 max_ratio_of_set_bits_in_bloom_filter)
+{
+    return RuntimeFilterGeometry{
+        .exact_values_limit = exact_values_limit,
+        .exact_bytes_limit = bytes_limit,
+        .bloom_filter_bytes = bytes_limit,
+        .bloom_filter_hash_functions = bloom_filter_hash_functions,
+        .pass_ratio_threshold_for_disabling = 1.0,
+        .blocks_to_skip_before_reenabling = 30,
+        .max_ratio_of_set_bits_in_bloom_filter = max_ratio_of_set_bits_in_bloom_filter,
+    };
 }
 
 }
@@ -119,10 +142,7 @@ TEST(RuntimeFilterLookup, ApproximateRuntimeFilterQueriesBloomFilter)
         makeRuntimeFilterConfig(),
         RuntimeFilter::Adaptive(
             type,
-            /*bytes_limit_=*/1_MiB,
-            /*exact_values_limit_=*/1,
-            /*bloom_filter_hash_functions_=*/3,
-            /*max_ratio_of_set_bits_in_bloom_filter_=*/1.0,
+            makeGeometry(1_MiB, 1, 3, 1.0),
             /*distinct_keys_hint=*/std::nullopt,
             /*distinct_keys_hint_matches_filter_key_=*/false));
 
@@ -151,10 +171,7 @@ TEST(RuntimeFilterLookup, PredictedBloomSaturationDropsKeySetAndPreservesMergedR
         makeRuntimeFilterConfig(),
         RuntimeFilter::Adaptive(
             type,
-            /*bytes_limit_=*/1_KiB,
-            /*exact_values_limit_=*/1,
-            /*bloom_filter_hash_functions_=*/3,
-            /*max_ratio_of_set_bits_in_bloom_filter_=*/0.05,
+            makeGeometry(1_KiB, 1, 3, 0.05),
             /*distinct_keys_hint_=*/2'000'000,
             /*distinct_keys_hint_matches_filter_key_=*/true));
     destination.enableIndexAnalysis();
@@ -165,10 +182,7 @@ TEST(RuntimeFilterLookup, PredictedBloomSaturationDropsKeySetAndPreservesMergedR
         makeRuntimeFilterConfig(),
         RuntimeFilter::Adaptive(
             type,
-            /*bytes_limit_=*/1_KiB,
-            /*exact_values_limit_=*/1,
-            /*bloom_filter_hash_functions_=*/3,
-            /*max_ratio_of_set_bits_in_bloom_filter_=*/0.05,
+            makeGeometry(1_KiB, 1, 3, 0.05),
             /*distinct_keys_hint_=*/2'000'000,
             /*distinct_keys_hint_matches_filter_key_=*/true));
     source.enableIndexAnalysis();
@@ -186,6 +200,62 @@ TEST(RuntimeFilterLookup, PredictedBloomSaturationDropsKeySetAndPreservesMergedR
     expectMask(destination.find(makeUInt64ColumnWithType({2, 4}, type)), {1, 1});
     EXPECT_EQ(destination.getStats().rows_checked.load(), 0);
     EXPECT_EQ(destination.getStats().rows_skipped.load(), 2);
+}
+
+template <typename T>
+void checkDenseBitsetFindsExactlyTheKeys()
+{
+    const auto type = std::make_shared<DataTypeNumber<T>>();
+    auto make_filter = [&](size_t filters_to_merge)
+    {
+        return std::make_unique<RuntimeFilter>(
+            filters_to_merge,
+            makeRuntimeFilterConfig(),
+            RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false));
+    };
+    auto make_keys = [](std::initializer_list<T> keys)
+    {
+        auto column = ColumnVector<T>::create();
+        for (const T key : keys)
+            column->insertValue(key);
+        return column;
+    };
+    const Int64 min = std::numeric_limits<T>::min();
+    const Int64 max = std::numeric_limits<T>::max();
+    const ProfileEvents::Count bitsets_before = ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt];
+
+    /// The sources overflow their exact sets, and the first one receives one more block as a bitset. The destination
+    /// overflows its exact set when the first source is merged into it, and merges the second source into its bitset.
+    auto first_source = make_filter(0);
+    first_source->insert(make_keys({static_cast<T>(min), static_cast<T>(max), 1}));
+    first_source->insert(make_keys({3}));
+    first_source->finishInsert();
+    auto second_source = make_filter(0);
+    second_source->insert(make_keys({static_cast<T>(min + 1), 5, 9}));
+    second_source->finishInsert();
+    auto destination = make_filter(2);
+    destination->insert(make_keys({7}));
+    destination->merge(*first_source);
+    destination->merge(*second_source);
+    destination->finishInsert();
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt] - bitsets_before, 3);
+
+    auto probe = ColumnVector<T>::create();
+    for (Int64 key = min; key <= max; ++key)
+        probe->insertValue(static_cast<T>(key));
+    const auto mask = destination->find(ColumnWithTypeAndName(std::move(probe), type, "k"));
+    ASSERT_EQ(mask->size(), static_cast<size_t>(max - min + 1));
+    for (Int64 key = min; key <= max; ++key)
+        EXPECT_EQ(mask->getBool(static_cast<size_t>(key - min)), key == min || key == min + 1 || key == max || key == 1 || key == 3 || key == 5 || key == 7 || key == 9) << key;
+}
+
+TEST(RuntimeFilterLookup, DenseBitsetFindsExactlyTheKeys)
+{
+    tryRegisterFunctions();
+    checkDenseBitsetFindsExactlyTheKeys<UInt8>();
+    checkDenseBitsetFindsExactlyTheKeys<Int8>();
+    checkDenseBitsetFindsExactlyTheKeys<UInt16>();
+    checkDenseBitsetFindsExactlyTheKeys<Int16>();
 }
 
 TEST(RuntimeFilterLookup, LookupMergesExactContainsFilters)
@@ -472,14 +542,14 @@ TEST(RuntimeFilterLookup, IndexAnalysisRecordsExactValuesAndMergedRange)
     RuntimeFilter destination(
         /*filters_to_merge_=*/1,
         makeRuntimeFilterConfig(),
-        RuntimeFilter::Adaptive(type, 1_MiB, 100, 3, 1.0, std::nullopt, false));
+        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, 100, 3, 1.0), std::nullopt, false));
     destination.enableIndexAnalysis();
     destination.insert(makeUInt64Column({3, 7}));
 
     RuntimeFilter source(
         /*filters_to_merge_=*/0,
         makeRuntimeFilterConfig(),
-        RuntimeFilter::Adaptive(type, 1_MiB, 100, 3, 1.0, std::nullopt, false));
+        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, 100, 3, 1.0), std::nullopt, false));
     source.enableIndexAnalysis();
     source.insert(makeUInt64Column({1, 9}));
     source.finishInsert();
