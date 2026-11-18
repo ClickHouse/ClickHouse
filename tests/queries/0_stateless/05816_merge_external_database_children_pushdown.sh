@@ -36,6 +36,10 @@ CREATE TABLE t_q (id Nullable(Int64), v Nullable(String)) ENGINE = SQLite('${DB_
 CREATE TABLE m (id Nullable(Int64), v Nullable(String)) ENGINE = Merge(currentDatabase(), '^t_(l|s)$');
 CREATE TABLE t_n (id Nullable(Int64), v Nullable(String)) ENGINE = SQLite('${DB_PATH}', 'wide');
 CREATE TABLE m_n (id Nullable(UInt8), v Nullable(String)) ENGINE = Merge(currentDatabase(), '^t_(l|n)$');
+CREATE TABLE t_na (id Nullable(Int64), v Nullable(String), a Nullable(Int64) ALIAS id) ENGINE = SQLite('${DB_PATH}', 'wide');
+CREATE TABLE m_na (a Nullable(UInt8), v Nullable(String)) ENGINE = Merge(currentDatabase(), '^t_(l|na)$');
+CREATE TABLE b_n (id Nullable(UInt8), v Nullable(String)) ENGINE = Buffer(currentDatabase(), t_n, 1, 1000000, 1000000, 1000000000, 1000000000, 1000000000000, 1000000000000);
+CREATE TABLE m_lc (id Nullable(Int64), v LowCardinality(Nullable(String))) ENGINE = Merge(currentDatabase(), '^t_s$');
 "
 
 echo 'MergeTree and SQLite:'
@@ -75,6 +79,24 @@ ${CLICKHOUSE_LOCAL} --query="${TABLES}
 SELECT id, v FROM m_n WHERE id = 0 SETTINGS external_table_strict_query = 1;
 " 2>&1 | grep -c 'INCORRECT_QUERY'
 
+echo 'An ALIAS column of the SQLite table under a narrower Merge column:'
+${CLICKHOUSE_LOCAL} --query="${TABLES}
+SELECT a, v FROM m_na WHERE a = 0 ORDER BY v;
+"
+${CLICKHOUSE_LOCAL} --query="${TABLES}
+SELECT a, v FROM m_na WHERE a = 0 SETTINGS external_table_strict_query = 1;
+" 2>&1 | grep -c 'INCORRECT_QUERY'
+
+echo 'A Buffer column narrower than the SQLite column:'
+${CLICKHOUSE_LOCAL} --query="${TABLES}
+SELECT id, v FROM b_n WHERE id = 0 ORDER BY v;
+"
+
+echo 'A LowCardinality Merge column:'
+${CLICKHOUSE_LOCAL} --send_logs_level=trace --query="${TABLES}
+SELECT id, v FROM m_lc WHERE v = 's5' FORMAT Null;
+" 2>&1 | grep -oE 'Query: SELECT .* FROM `src`.*$'
+
 ${CLICKHOUSE_CLIENT} --multiquery --query "
 CREATE TABLE t_l (id Nullable(Int64), v Nullable(String)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_l VALUES (1, 'l1'), (5, 'l5');
@@ -89,11 +111,17 @@ GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO pg_self_${CLICKHOUSE_DATABASE};
 CREATE TABLE t_pg (id Nullable(Int64), v Nullable(String))
     ENGINE = PostgreSQL('localhost:${CLICKHOUSE_PORT_POSTGRESQL}', '${CLICKHOUSE_DATABASE}', 't_l', 'pg_self_${CLICKHOUSE_DATABASE}', 'pgpass');
 CREATE TABLE m_pg (id Nullable(Int64), v Nullable(String)) ENGINE = Merge(currentDatabase(), '^t_(l|pg)\$');
+CREATE TABLE t_pgn (id Int64, v String)
+    ENGINE = PostgreSQL('localhost:${CLICKHOUSE_PORT_POSTGRESQL}', '${CLICKHOUSE_DATABASE}', 't_l', 'pg_self_${CLICKHOUSE_DATABASE}', 'pgpass');
+CREATE TABLE m_pgn (id Nullable(Int64), v Nullable(String)) ENGINE = Merge(currentDatabase(), '^t_pgn\$');
 CREATE TABLE t_q (id Nullable(Int64), v Nullable(String)) ENGINE = SQLite('${DB_PATH}', query('SELECT id, v FROM src'));
 CREATE TABLE m_s (id Nullable(Int64), v Nullable(String)) ENGINE = Merge(currentDatabase(), '^t_s\$');
 DROP USER IF EXISTS strict_${CLICKHOUSE_DATABASE};
 CREATE USER strict_${CLICKHOUSE_DATABASE} IDENTIFIED WITH plaintext_password BY 'strictpass' SETTINGS external_table_strict_query = 1;
 GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO strict_${CLICKHOUSE_DATABASE};
+CREATE TABLE r_s (id Nullable(Int64), v Nullable(String))
+    AS remote('127.0.0.2', currentDatabase(), t_s, 'strict_${CLICKHOUSE_DATABASE}', 'strictpass');
+CREATE TABLE r_d (id Nullable(Int64), v Nullable(String)) AS remote('127.0.0.2', currentDatabase(), t_s);
 "
 
 echo 'MergeTree and MySQL:'
@@ -104,6 +132,11 @@ SELECT id, v FROM m_my WHERE id = 5 FORMAT Null;
 echo 'MergeTree and PostgreSQL:'
 ${CLICKHOUSE_CLIENT} --send_logs_level=trace --query "
 SELECT id, v FROM m_pg WHERE id = 5 FORMAT Null;
+" 2>&1 | grep -oE 'Query: SELECT .* FROM "t_l".*$'
+
+echo 'A Nullable Merge column over a PostgreSQL column:'
+${CLICKHOUSE_CLIENT} --send_logs_level=trace --query "
+SELECT id, v FROM m_pgn WHERE id = 5 FORMAT Null;
 " 2>&1 | grep -oE 'Query: SELECT .* FROM "t_l".*$'
 
 # The receiving side of a serialized query plan has no query tree until it analyzes the read itself.
@@ -119,12 +152,11 @@ SELECT id, v FROM remote('127.0.0.2', currentDatabase(), t_s) WHERE v LIKE 's%'
 SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0, external_table_strict_query = 1;
 " 2>&1 | grep -c 'INCORRECT_QUERY'
 
-# Strict mode on the initiator sends the query text, so the filter is pushed down.
 echo 'Serialized query plan, strict mode, a filter SQLite evaluates:'
-${CLICKHOUSE_CLIENT} --query "
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "
 SELECT id, v FROM remote('127.0.0.2', currentDatabase(), t_s) WHERE id = 5
 SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0, external_table_strict_query = 1;
-"
+" 2>&1 | grep -c 'INCORRECT_QUERY'
 
 echo 'Serialized query plan, strict mode of the remote user:'
 for t in t_s t_q m_s; do
@@ -134,11 +166,24 @@ for t in t_s t_q m_s; do
     " 2>&1 | grep -c 'INCORRECT_QUERY'
 done
 
+# A received plan may have left the filter on an earlier server, so strict mode rejects any external read from one.
 echo 'Serialized query plan, strict mode of the remote user, no filter:'
-${CLICKHOUSE_CLIENT} --query "
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "
 SELECT id, v FROM remote('127.0.0.2', currentDatabase(), m_s, 'strict_${CLICKHOUSE_DATABASE}', 'strictpass') ORDER BY id
 SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0;
-"
+" 2>&1 | grep -c 'INCORRECT_QUERY'
+
+echo 'Serialized query plan through two servers, strict mode of the last user:'
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "
+SELECT id, v FROM remote('127.0.0.2', currentDatabase(), r_s) WHERE v LIKE 's%'
+SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0;
+" 2>&1 | grep -c 'INCORRECT_QUERY'
+
+echo 'Serialized query plan through two servers, strict mode of the first user:'
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "
+SELECT id, v FROM remote('127.0.0.2', currentDatabase(), r_d, 'strict_${CLICKHOUSE_DATABASE}', 'strictpass') WHERE v LIKE 's%'
+SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0, allow_push_predicate_ast_for_distributed_subqueries = 0;
+" 2>&1 | grep -c 'INCORRECT_QUERY'
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS pg_self_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS strict_${CLICKHOUSE_DATABASE}"

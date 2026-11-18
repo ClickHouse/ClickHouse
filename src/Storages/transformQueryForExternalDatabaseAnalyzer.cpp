@@ -14,6 +14,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 
+#include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -31,9 +32,6 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/SetUtils.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Analyzer/TableNode.h>
-#include <Storages/StorageSnapshot.h>
 
 
 namespace DB
@@ -173,30 +171,29 @@ bool holdsEnumConstant(const QueryTreeNodePtr & node)
     return false;
 }
 
-/// Whether `node` reads a column of `table_expression` under another type than the table has, as a `Merge` table
-/// reads its children: the external database would evaluate a filter over it on the stored values.
-bool readsColumnUnderOtherType(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression)
+/// Whether `node` reads a column of `table_expression` under another type than the external table has, as a `Merge`
+/// or `Buffer` table reads it: the external database would evaluate a filter over it on the stored values.
+bool readsColumnUnderOtherType(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, const NamesAndTypesList & available_columns)
 {
     if (const auto * column_node = node->as<ColumnNode>())
     {
         if (column_node->getColumnSourceOrNull() != table_expression)
             return false;
 
-        StorageSnapshotPtr storage_snapshot;
-        if (const auto * table_node = table_expression->as<TableNode>())
-            storage_snapshot = table_node->getStorageSnapshot();
-        else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
-            storage_snapshot = table_function_node->getStorageSnapshot();
-        if (!storage_snapshot)
+        auto stored_column = available_columns.tryGetByName(column_node->getColumnName());
+        if (!stored_column)
             return false;
 
-        auto stored_column = storage_snapshot->tryGetColumn(
-            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_node->getColumnName());
-        return stored_column && !stored_column->type->equals(*column_node->getColumnType());
+        /// `LowCardinality`, and `Nullable` over a non-`Nullable` stored type, keep every stored value.
+        auto stored_type = removeLowCardinality(stored_column->type);
+        auto read_type = removeLowCardinality(column_node->getColumnType());
+        if (!stored_type->isNullable())
+            read_type = removeNullable(read_type);
+        return !stored_type->equals(*read_type);
     }
 
     for (const auto & child : node->getChildren())
-        if (child && readsColumnUnderOtherType(child, table_expression))
+        if (child && readsColumnUnderOtherType(child, table_expression, available_columns))
             return true;
     return false;
 }
@@ -205,7 +202,8 @@ bool readsColumnUnderOtherType(const QueryTreeNodePtr & node, const QueryTreeNod
 /// database as its number) or reads a column under another type than the table has.
 /// Returns whether anything was removed: the external database then returns rows that the local filter drops,
 /// so the `LIMIT` must not be pushed down.
-bool removeConjunctsThatCannotBePushedDown(QueryTreeNodePtr & filter, const QueryTreeNodePtr & table_expression, const ContextPtr & context)
+bool removeConjunctsThatCannotBePushedDown(
+    QueryTreeNodePtr & filter, const QueryTreeNodePtr & table_expression, const NamesAndTypesList & available_columns, const ContextPtr & context)
 {
     auto throw_if_strict = [&]
     {
@@ -215,7 +213,7 @@ bool removeConjunctsThatCannotBePushedDown(QueryTreeNodePtr & filter, const Quer
 
     auto cannot_be_pushed_down = [&](const QueryTreeNodePtr & node)
     {
-        return holdsEnumConstant(node) || readsColumnUnderOtherType(node, table_expression);
+        return holdsEnumConstant(node) || readsColumnUnderOtherType(node, table_expression, available_columns);
     };
 
     auto * function = filter->as<FunctionNode>();
@@ -376,7 +374,8 @@ private:
 
 }
 
-ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTreeNodePtr & query_tree, const TableExpressionNodePtr & table_expression)
+ASTPtr getASTForExternalDatabaseFromQueryTree(
+    ContextPtr context, const QueryTreeNodePtr & query_tree, const TableExpressionNodePtr & table_expression, const NamesAndTypesList & available_columns)
 {
     auto replacement_table_expression = table_expression->clone();
     auto new_tree = query_tree->cloneAndReplace(table_expression, static_pointer_cast<ITableExpressionNode>(replacement_table_expression));
@@ -413,7 +412,7 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
                 allow_limit = false;
             removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), replacement_table_expression, context);
         }
-        if (query_node->hasPrewhere() && removeConjunctsThatCannotBePushedDown(query_node->getPrewhere(), replacement_table_expression, context))
+        if (query_node->hasPrewhere() && removeConjunctsThatCannotBePushedDown(query_node->getPrewhere(), replacement_table_expression, available_columns, context))
             allow_limit = false;
         if (query_node->hasWhere())
         {
@@ -421,7 +420,7 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
                 allow_limit = false;
             removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
         }
-        if (query_node->hasWhere() && removeConjunctsThatCannotBePushedDown(query_node->getWhere(), replacement_table_expression, context))
+        if (query_node->hasWhere() && removeConjunctsThatCannotBePushedDown(query_node->getWhere(), replacement_table_expression, available_columns, context))
             allow_limit = false;
     }
 

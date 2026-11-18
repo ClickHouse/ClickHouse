@@ -460,8 +460,8 @@ protected:
 
     InsertionTableInfo insertion_table_info;  /// Saved information about insertion table in query context
     bool is_distributed = false;  /// Whether the current context it used for distributed query
-    /// A read of a received query plan that the plan filters afterwards: the filter is not in the query of the read.
-    bool read_filtered_by_query_plan = false;
+    /// A read synthesized from a received query plan: its query has none of the plan's filters.
+    bool read_from_received_query_plan = false;
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
@@ -1358,8 +1358,8 @@ public:
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
 
-    void setReadFilteredByQueryPlan() { read_filtered_by_query_plan = true; }
-    bool isReadFilteredByQueryPlan() const { return read_filtered_by_query_plan; }
+    void setReadFromReceivedQueryPlan() { read_from_received_query_plan = true; }
+    bool isReadFromReceivedQueryPlan() const { return read_from_received_query_plan; }
 
     bool isUnderRestore() const { return is_under_restore; }
     void setUnderRestore(bool under_restore) { is_under_restore = under_restore; }

@@ -1247,9 +1247,9 @@ bool hasLocalFilterAppliedBeforeLimit(const SelectQueryInfo & query_info, const 
     return false;
 }
 
-void rejectReadFilteredByQueryPlanIfStrict(const ContextPtr & context)
+void rejectReadFromReceivedQueryPlanIfStrict(const ContextPtr & context)
 {
-    if (context->getSettingsRef()[Setting::external_table_strict_query] && context->isReadFilteredByQueryPlan())
+    if (context->getSettingsRef()[Setting::external_table_strict_query] && context->isReadFromReceivedQueryPlan())
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
             "A query received as a serialized query plan does not push its filters down to the external database "
@@ -1274,7 +1274,7 @@ String transformQueryForExternalDatabase(
     bool require_dialect_neutral_literals,
     bool allow_limit_push_down)
 {
-    rejectReadFilteredByQueryPlanIfStrict(context);
+    rejectReadFromReceivedQueryPlanIfStrict(context);
 
     allow_limit_push_down = allow_limit_push_down && !hasLocalFilterAppliedBeforeLimit(query_info, context);
 
@@ -1291,7 +1291,7 @@ String transformQueryForExternalDatabase(
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "No column names for query '{}' to external table '{}.{}'",
                             query_info.query_tree->formatASTForErrorMessage(), database, table);
 
-        auto clone_query = getASTForExternalDatabaseFromQueryTree(context, query_info.query_tree, query_info.table_expression);
+        auto clone_query = getASTForExternalDatabaseFromQueryTree(context, query_info.query_tree, query_info.table_expression, available_columns);
 
         return transformQueryForExternalDatabaseImpl(
             clone_query,
@@ -1338,7 +1338,7 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
     if (!context->getSettingsRef()[Setting::external_table_strict_query])
         return;
 
-    rejectReadFilteredByQueryPlanIfStrict(context);
+    rejectReadFromReceivedQueryPlanIfStrict(context);
 
     /// Reconstruct the outer query the same way `transformQueryForExternalDatabase` does, and check whether it
     /// carries a filter on the source. For a query-backed source the user's query is passed to the external
@@ -1350,7 +1350,7 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
         /// The analyzer has not produced an AST yet; nothing to inspect if the query tree is unavailable.
         if (!query_info.query_tree || !query_info.table_expression)
             return;
-        clone_query = getASTForExternalDatabaseFromQueryTree(context, query_info.query_tree, query_info.table_expression);
+        clone_query = getASTForExternalDatabaseFromQueryTree(context, query_info.query_tree, query_info.table_expression, available_columns);
     }
     else if (query_info.query)
     {

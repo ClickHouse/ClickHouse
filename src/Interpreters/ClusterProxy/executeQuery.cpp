@@ -120,7 +120,6 @@ namespace Setting
     extern const SettingsOverflowMode timeout_overflow_mode_leaf;
     extern const SettingsBool use_hedged_requests;
     extern const SettingsBool serialize_query_plan;
-    extern const SettingsBool external_table_strict_query;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -515,10 +514,6 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     /// disable plan serialization for sample and custom key modes
     /// until filter generation for these modes are done on query plan level
     if (context->canUseOffsetParallelReplicas())
-        new_settings[Setting::serialize_query_plan] = false;
-
-    /// A shard reading a serialized plan sends no WHERE to an external database, so strict mode needs the query text.
-    if (settings[Setting::external_table_strict_query])
         new_settings[Setting::serialize_query_plan] = false;
 
     auto new_context = Context::createCopy(context);

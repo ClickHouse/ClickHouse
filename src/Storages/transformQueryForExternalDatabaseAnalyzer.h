@@ -9,7 +9,10 @@
 namespace DB
 {
 
-ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTreeNodePtr & query_tree, const TableExpressionNodePtr & table_expression);
+class NamesAndTypesList;
+
+ASTPtr getASTForExternalDatabaseFromQueryTree(
+    ContextPtr context, const QueryTreeNodePtr & query_tree, const TableExpressionNodePtr & table_expression, const NamesAndTypesList & available_columns);
 
 /// Whether the size-1 `column` holds an `Enum` value, also inside a `Nullable`, `Variant`, `Dynamic` or `Tuple`.
 /// `Array` and `Map` are not searched.
