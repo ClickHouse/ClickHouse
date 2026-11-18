@@ -750,6 +750,124 @@ __host__ size_t CudfGroupBy::finalize()
     return static_cast<size_t>(state->groups->num_rows());
 }
 
+__host__ bool CudfGroupBy::decided() const
+{
+    return state->reduce_runs.has_value();
+}
+
+__host__ bool CudfGroupBy::reducesRuns() const
+{
+    return state->reduce_runs.value_or(false);
+}
+
+__host__ void CudfGroupBy::reduceRuns(bool reduce)
+{
+    if (state->reduce_runs.has_value() && *state->reduce_runs != reduce)
+        throwGPUError("a `GROUP BY` told how to reduce its batches after it decided otherwise");
+    state->reduce_runs = reduce;
+}
+
+namespace
+{
+
+/// Makes `waiting` wait for what `stream` has so far.
+__host__ void waitFor(cuda::stream_ref waiting, cuda::stream_ref stream)
+{
+    cudaEvent_t event = nullptr;
+    checkCuda(cudaEventCreateWithFlags(&event, cudaEventDisableTiming), "Cannot create a CUDA event");
+    const cudaError_t recorded = cudaEventRecord(event, stream.get());
+    const cudaError_t waited = recorded == cudaSuccess ? cudaStreamWaitEvent(waiting.get(), event, 0) : recorded;
+    cudaEventDestroy(event);
+    checkCuda(waited, "Cannot make a stream wait for another");
+}
+
+}
+
+__host__ void CudfGroupBy::absorb(CudfGroupBy & other)
+{
+    if (state->finalized || other.state->finalized)
+        throwGPUError("the groups of a `GROUP BY` absorbed after they were closed");
+    if (state->collect != other.state->collect || state->keyless != other.state->keyless || state->keys.size() != other.state->keys.size()
+        || state->aggregates.size() != other.state->aggregates.size())
+        throwGPUError("a `GROUP BY` absorbed into one of other keys or aggregates");
+    if (other.state->reduce_runs.has_value() && state->reduce_runs.has_value() && *other.state->reduce_runs != *state->reduce_runs)
+        throwGPUError("a `GROUP BY` absorbed into one that reduces its batches otherwise");
+
+    /// What `other` made is in the order of its stream, which these read in the order of theirs.
+    waitFor(state->stream, other.state->stream);
+
+    /// The tables of `other` are freed in the order of its stream, which does not wait for this one's: copies of them,
+    /// made in the order of this one's, are kept instead, and the originals freed once it has made them.
+    const auto take = [&](std::vector<std::unique_ptr<cudf::table>> & tables)
+    {
+        std::vector<std::unique_ptr<cudf::table>> copies;
+        copies.reserve(tables.size());
+        for (const auto & table : tables)
+            copies.push_back(guarded("copying the groups of a `GROUP BY`", [&]
+            {
+                return std::make_unique<cudf::table>(table->view(), state->stream);
+            }));
+        return copies;
+    };
+
+    if (state->collect)
+    {
+        for (auto & table : take(other.state->collected))
+            state->collected.push_back(std::move(table));
+        waitFor(other.state->stream, state->stream);
+        other.state->collected.clear();
+        return;
+    }
+
+    if (!state->reduce_runs.has_value())
+        state->reduce_runs = other.state->reduce_runs;
+
+    if (!other.state->reduced_runs.empty())
+    {
+        std::vector<std::unique_ptr<cudf::table>> runs = take(other.state->reduced_runs);
+        waitFor(other.state->stream, state->stream);
+        other.state->reduced_runs.clear();
+        other.state->reduced_rows = 0;
+        other.state->reduced_bytes = 0;
+        for (auto & table : runs)
+            state->gatherRuns(std::move(table));
+    }
+
+    if (!other.state->grouping)
+        return;
+
+    const size_t theirs = static_cast<size_t>(other.state->grouping->distinct_keys());
+    const size_t ours = state->grouping ? static_cast<size_t>(state->grouping->distinct_keys()) : 0;
+    if (state->capacity < ours + theirs)
+    {
+        /// Grown as `group` grows it, for the groups of both.
+        const size_t new_capacity = std::max({state->capacity + state->capacity / 2, (ours + theirs) + (ours + theirs) / 4, min_capacity});
+        if (new_capacity > max_capacity)
+            throwGPUError(("a `GROUP BY` of more than " + std::to_string(max_capacity) + " groups").c_str());
+        cudf::groupby::streaming_groupby grown = state->make(new_capacity);
+        guarded("merging the groups of two `GROUP BY`s into a grown `streaming_groupby`", [&]
+        {
+            if (state->grouping)
+                grown.merge(*state->grouping, state->stream);
+            grown.merge(*other.state->grouping, state->stream);
+            return 0;
+        });
+        state->grouping.emplace(std::move(grown));
+        state->capacity = new_capacity;
+    }
+    else
+    {
+        guarded("merging the groups of two `GROUP BY`s", [&] { state->grouping->merge(*other.state->grouping, state->stream); return 0; });
+    }
+    state->max_groups = ours + theirs;
+
+    /// Freed in the order of `other`'s stream, once this one has merged it.
+    waitFor(other.state->stream, state->stream);
+    other.state->grouping.reset();
+    other.state->capacity = 0;
+    other.state->max_groups = 0;
+}
+
 __host__ size_t CudfGroupBy::collectedRows() const
 {
     size_t rows = 0;

@@ -410,6 +410,11 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
     size_t at = 0;
     for (const CompressedPiece & piece : pieces)
     {
+        if (piece.destination)
+        {
+            destination = piece.destination;
+            at = 0;
+        }
         size_t next_pack = 0;
         for (size_t i = 0; i < piece.blocks.size(); ++i)
         {

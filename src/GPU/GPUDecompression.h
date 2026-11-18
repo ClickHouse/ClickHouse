@@ -65,6 +65,9 @@ struct CompressedPiece
     std::span<const CompressedBlock> blocks;
     std::span<const BitPackingBlock> packed;
     cudaEvent_t uploaded = nullptr;
+    /// Where the piece expands to, the bytes of its blocks one after another; without it, after the piece before, from
+    /// the destination of the call.
+    char * destination = nullptr;
 };
 
 /// One batched nvcomp call on the decompression stream, shared by both decompressors. Only the codecs of `GPUCodec`

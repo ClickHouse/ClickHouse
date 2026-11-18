@@ -233,7 +233,6 @@ public:
               argumentTypesOf(state->columns),
               groupByAggregatesOf(state->columns, state->derived, state->aggregates),
               state->batch_bytes,
-              /*compressed=*/true,
               num_readers,
               typesOf(filterColumnsOf(*state)),
               state->filter ? std::optional(state->filter->expression) : std::nullopt,
@@ -584,7 +583,7 @@ private:
     const size_t num_readers;
     /// Of a collecting read: the chunks handed over, which `generate` takes. Before `accumulator`, which pushes into it.
     std::unique_ptr<ConcurrentBoundedQueue<Chunk>> output_queue;
-    GPU::GroupByGPUAccumulator accumulator;
+    GPU::GPUCompressedGroupBy accumulator;
     /// Only under `gpu_aggregation_decompression = 'auto'`.
     bool generated = false;
 

@@ -54,6 +54,16 @@ public:
 
     __host__ size_t finalize();
 
+    /// Whether the batches are reduced over their runs of equal keys, once the first batch with rows decided it. A
+    /// `CudfGroupBy` told so before its first batch reduces as it is told, so that several of them can be merged.
+    __host__ bool decided() const;
+    __host__ bool reducesRuns() const;
+    __host__ void reduceRuns(bool reduce);
+
+    /// Before `finalize`, of the same keys, values and aggregates: takes the groups of `other`, or the rows it collected,
+    /// into these, in the order of the stream of each; `other` has none left.
+    __host__ void absorb(CudfGroupBy & other);
+
     /// Of rows collected rather than grouped: how many are collected and not taken yet, and makes them what `value`
     /// views, until the next call, returning how many. Before `finalize` as well.
     __host__ size_t collectedRows() const;
