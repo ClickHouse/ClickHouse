@@ -547,9 +547,14 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (dynamic_cast<LogicalExchangeStep *>(step))
         return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
 
-    if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
-        transform && transform->getTransformTraits().preserves_number_of_rows)
-        return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
+    if (const auto * transform = dynamic_cast<const ITransformingStep *>(step))
+    {
+        if (transform->getTransformTraits().preserves_number_of_rows)
+            return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
+        /// The rows of such a step are unknown, but an unestimated filter below it still reaches the join graph.
+        if (!for_runtime_filter_transport && estimateReadRowsCount(*node.children.front()).source == RowEstimateSource::UnestimatedFilter)
+            return RelationStats{.table_name = {}, .source = RowEstimateSource::UnestimatedFilter};
+    }
 
     return {};
 }
