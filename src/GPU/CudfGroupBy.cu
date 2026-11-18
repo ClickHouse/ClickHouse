@@ -104,6 +104,12 @@ struct CudfGroupBy::State
     /// what a `WHERE` leaves out.
     rmm::device_buffer all_true;
 
+    /// A row of the first slice grouped, whose first key `starting_row_null` makes null: `streaming_groupby` leaves it
+    /// out, as it does the rows a `WHERE` leaves out. A `streaming_groupby` takes others to merge only once it has taken
+    /// a batch, and this is the batch that one grown by `absorb` takes, which has none of its own.
+    std::unique_ptr<cudf::table> starting_row;
+    rmm::device_buffer starting_row_null;
+
     /// Of each derived value, its values over the rows of the batch.
     std::vector<rmm::device_buffer> derived_values;
 
@@ -160,6 +166,7 @@ struct CudfGroupBy::State
         , keyless_key(0, stream_)
         , filter_mask(0, stream_)
         , all_true(0, stream_)
+        , starting_row_null(0, stream_)
     {
         key_indices.resize(numKeyColumns());
         for (size_t i = 0; i < key_indices.size(); ++i)
@@ -220,6 +227,26 @@ struct CudfGroupBy::State
         });
     }
 
+    /// Keeps the first row of `table` as `starting_row`.
+    __host__ void keepStartingRow(const cudf::table_view & table)
+    {
+        starting_row = guarded("copying a row to start a `streaming_groupby` with", [&]
+        {
+            return std::make_unique<cudf::table>(cudf::slice(table, {0, 1}).front(), stream);
+        });
+        starting_row_null.resize(cudf::bitmask_allocation_size_bytes(1), stream);
+        checkCuda(cudaMemsetAsync(starting_row_null.data(), 0, starting_row_null.size(), stream.get()), "Cannot clear a null mask");
+    }
+
+    /// `starting_row`, with its first key null.
+    __host__ cudf::table_view startingRow() const
+    {
+        const cudf::table_view row = starting_row->view();
+        std::vector<cudf::column_view> columns(row.begin(), row.end());
+        columns[0] = withNullMask(columns[0], static_cast<const cudf::bitmask_type *>(starting_row_null.data()), 1);
+        return cudf::table_view(columns);
+    }
+
     /// The keys, then the values, as cuDF returned them, checked to be as wide as what they are taken as.
     __host__ std::unique_ptr<cudf::table> tableOf(std::unique_ptr<cudf::table> group_keys, std::vector<cudf::groupby::aggregation_result> results) const
     {
@@ -270,6 +297,8 @@ struct CudfGroupBy::State
                 if (new_capacity + slice_rows > max_capacity)
                     throwGPUError(("a `GROUP BY` of more than " + std::to_string(max_capacity - slice_rows) + " groups").c_str());
 
+                if (!starting_row)
+                    keepStartingRow(slice);
                 cudf::groupby::streaming_groupby grown = make(new_capacity);
                 guarded("grouping " + std::to_string(slice_rows) + " rows into a grown `streaming_groupby`", [&]
                 {
@@ -844,9 +873,12 @@ __host__ void CudfGroupBy::absorb(CudfGroupBy & other)
         const size_t new_capacity = std::max({state->capacity + state->capacity / 2, (ours + theirs) + (ours + theirs) / 4, min_capacity});
         if (new_capacity > max_capacity)
             throwGPUError(("a `GROUP BY` of more than " + std::to_string(max_capacity) + " groups").c_str());
+        /// `other` has a starting row, as it has groups; this one may have none, where it has grouped no batch itself.
+        const State & starting = state->starting_row ? *state : *other.state;
         cudf::groupby::streaming_groupby grown = state->make(new_capacity);
         guarded("merging the groups of two `GROUP BY`s into a grown `streaming_groupby`", [&]
         {
+            grown.aggregate(starting.startingRow(), state->stream);
             if (state->grouping)
                 grown.merge(*state->grouping, state->stream);
             grown.merge(*other.state->grouping, state->stream);
