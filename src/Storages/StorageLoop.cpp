@@ -1,5 +1,6 @@
 #include <Storages/StorageLoop.h>
 #include <Storages/StorageFactory.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLoopStep.h>
 #include <Common/CurrentThread.h>
@@ -33,7 +34,14 @@ namespace DB
 
     bool StorageLoop::mayReadViewSource(const ContextPtr & query_context) const
     {
-        return inner_storage && inner_storage->mayReadViewSource(query_context);
+        if (!inner_storage)
+            return false;
+
+        auto view_source = query_context->getViewSource();
+        if (view_source && view_source->getStorageID().getFullNameNotQuoted() == inner_storage->getStorageID().getFullNameNotQuoted())
+            return true;
+
+        return inner_storage->mayReadViewSource(query_context);
     }
 
     void StorageLoop::read(

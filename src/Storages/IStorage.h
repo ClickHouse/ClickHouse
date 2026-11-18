@@ -146,8 +146,8 @@ public:
     /// each row, which is not necessarily the name of this storage.
     virtual bool readsFromOtherTables() const { return false; }
 
-    /// Returns true if a read of this storage may apply a row policy or `additional_table_filters` entry with a subquery that is
-    /// not in the reading query, e.g. of a `Merge` child. Under a materialized view the subquery may read the inserted block.
+    /// Returns true if a read of this storage may read the block inserted into the view source of `query_context`: through a query
+    /// the read plans, or a row policy or `additional_table_filters` entry with a subquery that is not in the reading query.
     virtual bool mayReadViewSource(const ContextPtr & /*query_context*/) const { return false; }
 
     /// Storages whose rows this storage returns as its own on read, e.g. the target of `Alias`.
