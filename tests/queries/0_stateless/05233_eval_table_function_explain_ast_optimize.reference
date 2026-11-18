@@ -1,5 +1,5 @@
-0	1
-0	1
-0	1
-0	1
-INSERT INTO t_05233 SELECT x\nFROM eval(\'SELECT 5 AS x\')
+1	0
+1	0
+1	0
+1	0
+INSERT INTO t_05233 SELECT __table1.x AS x\nFROM eval(\'SELECT 5 AS x\') AS __table1

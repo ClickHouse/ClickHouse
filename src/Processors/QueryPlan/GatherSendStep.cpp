@@ -6,7 +6,6 @@
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/Merges/MergingSortedTransform.h>
-#include <Columns/IColumn.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 #include <IO/WriteHelpers.h>
@@ -22,19 +21,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
-}
-
-/// True when every key of `description` is constant in `header`, so all rows compare equal under it.
-static bool sortDescriptionIsAllConstant(const SortDescription & description, const Block & header)
-{
-    for (const auto & column_description : description)
-    {
-        const auto * column = header.findByName(column_description.column_name);
-        if (!column || !column->column || !isColumnConst(*column->column))
-            return false;
-    }
-
-    return true;
 }
 
 QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
@@ -82,7 +68,7 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
     pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType stream_type) -> ProcessorPtr
     {
         chassert(stream_type == Pipe::StreamType::Main);
-        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, bucket, "0"));
+        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, bucket, "0"), /*advisory*/ false);
     });
 
     return std::move(pipelines.front());

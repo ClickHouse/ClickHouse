@@ -39,8 +39,8 @@
     else window.addEventListener('galaxy:ready', track, { once: true });
   }
 
-  // Wait briefly for Kapa to mount (it's loaded async), then open. Passing a
-  // page query prefills context without submitting a synthetic question.
+  // Load Kapa if needed and wait for it to mount, then open. Passing a page
+  // query prefills context without submitting a synthetic question.
   function clearKapaQuery() {
     var widgetContainer = document.getElementById('kapa-widget-container');
     var input = widgetContainer && widgetContainer.shadowRoot
@@ -73,6 +73,7 @@
       opts.query = query;
       opts.submit = Boolean(submit);
     }
+    if (typeof window.chLoadKapa === 'function') window.chLoadKapa();
     var attempts = 0;
     var iv = setInterval(function () {
       attempts++;
@@ -85,7 +86,7 @@
           var complete = query ? focusKapaQueryEnd() : clearKapaQuery();
           if (complete || inputAttempts > 20) clearInterval(prepareInput);
         }, 50);
-      } else if (attempts > 60) {
+      } else if (attempts > 200) {
         clearInterval(iv);
       }
     }, 50);
@@ -157,14 +158,18 @@
     var row = document.createElement('div');
     row.id = ROW_ID;
     row.appendChild(makeButton(BTN_ID, 'Ask AI <small>· docs assistant</small><kbd>⌘I</kbd>', 'sidebar', ''));
-    host.appendChild(row);
+    // Keep the assistant directly after search, above the product selector.
+    var searchRow = searchBar;
+    while (searchRow.parentNode !== host) searchRow = searchRow.parentNode;
+    host.insertBefore(row, searchRow.nextSibling);
     return true;
   }
 
   function injectPageButton() {
     // The homepage has its own full-width assistant entry point. The page
     // action is meaningful only when a documentation page supplies context.
-    if (window.location.pathname === '/' || document.getElementById('home-assistant-entry')) return true;
+    if (window.location.pathname === '/' || document.title === 'Page Not Found'
+      || document.getElementById('home-assistant-entry')) return true;
 
     var main = document.querySelector('main');
     var title = main && main.querySelector('h1');
@@ -237,11 +242,17 @@
     bindTaggedEntries();
     bindShortcut();
 
+    var scheduled = false;
     var observer = new MutationObserver(function () {
-      injectSidebarButton();
-      injectPageButton();
-      enhanceHomeButton();
-      injectMobileButton();
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(function () {
+        scheduled = false;
+        injectSidebarButton();
+        injectPageButton();
+        enhanceHomeButton();
+        injectMobileButton();
+      });
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
   }

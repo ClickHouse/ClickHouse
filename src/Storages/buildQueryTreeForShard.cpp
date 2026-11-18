@@ -248,7 +248,7 @@ public:
         }
     };
 
-    const std::unordered_map<QueryTreeNodePtr, Columns> & getColumnSourceToColumns() const
+    [[nodiscard]] const std::unordered_map<QueryTreeNodePtr, Columns> & getColumnSourceToColumns() const
     {
         return column_source_to_columns;
     }
@@ -316,12 +316,12 @@ public:
         size_t subquery_depth = 0;
     };
 
-    const IQueryTreeNode::ReplacementMap & getReplacementMap() const
+    [[nodiscard]] const IQueryTreeNode::ReplacementMap & getReplacementMap() const
     {
         return replacement_map;
     }
 
-    const std::vector<InFunctionOrJoin> & getGlobalInOrJoinNodes() const
+    [[nodiscard]] const std::vector<InFunctionOrJoin> & getGlobalInOrJoinNodes() const
     {
         return global_in_or_join_nodes;
     }
@@ -1139,6 +1139,19 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     // are written into the query context and will be sent by the query pipeline.
     if (auto * query_node = query_tree_to_modify->as<QueryNode>())
         query_node->clearSettingsChanges();
+    else if (auto * union_node = query_tree_to_modify->as<UnionNode>())
+    {
+        union_node->clearSettingsChanges();
+        /// `UnionNode::toASTImpl` does not serialize the union's query-level clause: it is carried by
+        /// the last arm's `QueryNode` (where the parser leaves a trailing clause and `QueryTreeBuilder`
+        /// reads it back from), so that arm's clause has to be dropped as well.
+        auto & union_queries = union_node->getQueries().getNodes();
+        if (!union_queries.empty())
+        {
+            if (auto * last_query_node = union_queries.back()->as<QueryNode>())
+                last_query_node->clearSettingsChanges();
+        }
+    }
 
     auto max_const_name_size = planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size];
     if (max_const_name_size >= 0)

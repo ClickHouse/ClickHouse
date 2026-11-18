@@ -30,6 +30,8 @@
 namespace DB
 {
 
+class HTTPHeaderFilter;
+
 /// Identifies an exception produced by stopping one HTTP request after its owner was cancelled.
 /// This marker belongs to the request, not to every reader sharing its Cancellation.
 class ReadInterruptedException final : public Exception
@@ -62,6 +64,8 @@ public:
         // nullopt if the server doesn't report it.
         std::optional<size_t> file_size;
         std::optional<time_t> last_modified;
+        /// The `Date` of the response: the time by the clock of the server that reported `last_modified`.
+        std::optional<time_t> response_date;
         bool seekable = false;
     };
 
@@ -297,6 +301,10 @@ public:
 
     std::optional<time_t> tryGetLastModificationTime();
 
+    /// The `Date` of the response which the file metadata came from, if the metadata is already known.
+    /// Does not send any request.
+    std::optional<time_t> tryGetResponseDateOfFileInfo() const { return file_info ? file_info->response_date : std::nullopt; }
+
     bool hasNotFoundURL() const { return has_not_found_url; }
 
     HTTPFileInfo getFileInfo();
@@ -365,17 +373,21 @@ public:
     /// Authenticate with HTTP Basic credentials (no header is sent when they are empty).
     ReadWriteBufferFromHTTPPtr create(const Poco::Net::HTTPBasicCredentials & credentials_);
 
+    /// Same, with the credentials given as strings (no header is sent when the user is empty).
+    ReadWriteBufferFromHTTPPtr createWithBasicCredentials(std::string_view user_, std::string_view password_);
+
     /// Authenticate with a bearer token (`Authorization: Bearer <token>`; no header when empty).
-    ReadWriteBufferFromHTTPPtr createWithBearerToken(const std::string & bearer_token_);
+    ReadWriteBufferFromHTTPPtr createWithBearerToken(std::string_view bearer_token_);
 
     /// Authenticate with the bearer token when it is non-empty, otherwise with the Basic
     /// credentials: both occupy the `Authorization` header, so a request carries one or the
     /// other, never both.
     ReadWriteBufferFromHTTPPtr createWithBearerToken(
-        const std::string & bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_);
+        std::string_view bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_);
 };
 
 /// Fills `credentials` from the userinfo component of `uri` (e.g. `http://user:pass@host`).
-void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri);
+/// Throws if `header_filter` forbids the `Authorization` header, which sends them, and the userinfo has a username.
+void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri, const HTTPHeaderFilter & header_filter);
 
 }

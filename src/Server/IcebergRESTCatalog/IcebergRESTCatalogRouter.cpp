@@ -22,7 +22,7 @@ const std::vector<IcebergRESTRoute> & getIcebergRESTRoutes()
         {HTTPRequest::HTTP_GET, {"v1", "config"}, IcebergRESTOperation::GetConfig, true},
         {HTTPRequest::HTTP_POST, {"v1", "oauth", "tokens"}, IcebergRESTOperation::GetToken, false},
 
-        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "tables", "rename"}, IcebergRESTOperation::RenameTable, false},
+        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "tables", "rename"}, IcebergRESTOperation::RenameTable, true},
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "transactions", "commit"}, IcebergRESTOperation::CommitTransaction, false},
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "views", "rename"}, IcebergRESTOperation::RenameView, false},
 
@@ -32,19 +32,19 @@ const std::vector<IcebergRESTRoute> & getIcebergRESTRoutes()
         {HTTPRequest::HTTP_GET, {"v1", "{prefix}", "namespaces", "{namespace}"}, IcebergRESTOperation::LoadNamespace, true},
         {HTTPRequest::HTTP_HEAD, {"v1", "{prefix}", "namespaces", "{namespace}"}, IcebergRESTOperation::NamespaceExists, true},
         {HTTPRequest::HTTP_DELETE, {"v1", "{prefix}", "namespaces", "{namespace}"}, IcebergRESTOperation::DropNamespace, false},
-        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "properties"}, IcebergRESTOperation::UpdateNamespaceProperties, false},
+        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "properties"}, IcebergRESTOperation::UpdateNamespaceProperties, true},
 
         {HTTPRequest::HTTP_GET, {"v1", "{prefix}", "namespaces", "{namespace}", "tables"}, IcebergRESTOperation::ListTables, true},
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables"}, IcebergRESTOperation::CreateTable, true},
 
         {HTTPRequest::HTTP_GET, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}"}, IcebergRESTOperation::LoadTable, true},
         {HTTPRequest::HTTP_HEAD, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}"}, IcebergRESTOperation::TableExists, true},
-        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}"}, IcebergRESTOperation::UpdateTable, false},
+        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}"}, IcebergRESTOperation::UpdateTable, true},
         {HTTPRequest::HTTP_DELETE, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}"}, IcebergRESTOperation::DropTable, true},
 
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "register"}, IcebergRESTOperation::RegisterTable, false},
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}", "unregister"}, IcebergRESTOperation::UnregisterTable, false},
-        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}", "metrics"}, IcebergRESTOperation::ReportMetrics, false},
+        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}", "metrics"}, IcebergRESTOperation::ReportMetrics, true},
         {HTTPRequest::HTTP_GET, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}", "credentials"}, IcebergRESTOperation::LoadCredentials, false},
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}", "sign"}, IcebergRESTOperation::SignRequest, false},
 
@@ -67,9 +67,29 @@ const std::vector<IcebergRESTRoute> & getIcebergRESTRoutes()
     return routes;
 }
 
-std::optional<IcebergRESTRouteMatch> matchIcebergRESTRoute(const std::string & method, const std::vector<std::string> & segments)
+namespace
 {
-    for (const auto & route : getIcebergRESTRoutes())
+
+/// Routes under `/management/v1`, served on the same port.
+const std::vector<IcebergRESTRoute> & getManagementRoutes()
+{
+    using Poco::Net::HTTPRequest;
+
+    static const std::vector<IcebergRESTRoute> routes =
+    {
+        {HTTPRequest::HTTP_POST, {"management", "v1", "warehouses"}, IcebergRESTOperation::CreateWarehouse, true},
+        {HTTPRequest::HTTP_GET, {"management", "v1", "warehouses"}, IcebergRESTOperation::ListWarehouses, true},
+        {HTTPRequest::HTTP_GET, {"management", "v1", "warehouses", "{warehouse}"}, IcebergRESTOperation::GetWarehouse, true},
+        {HTTPRequest::HTTP_PUT, {"management", "v1", "warehouses", "{warehouse}", "credential"}, IcebergRESTOperation::ReplaceWarehouseCredential, true},
+        {HTTPRequest::HTTP_DELETE, {"management", "v1", "warehouses", "{warehouse}"}, IcebergRESTOperation::DeleteWarehouse, true},
+    };
+    return routes;
+}
+
+std::optional<IcebergRESTRouteMatch> matchRoutes(
+    const std::vector<IcebergRESTRoute> & routes, const std::string & method, const std::vector<std::string> & segments)
+{
+    for (const auto & route : routes)
     {
         if (method != route.method || segments.size() != route.pattern.size())
             continue;
@@ -96,6 +116,15 @@ std::optional<IcebergRESTRouteMatch> matchIcebergRESTRoute(const std::string & m
             return match;
     }
     return std::nullopt;
+}
+
+}
+
+std::optional<IcebergRESTRouteMatch> matchIcebergRESTRoute(const std::string & method, const std::vector<std::string> & segments)
+{
+    if (auto match = matchRoutes(getIcebergRESTRoutes(), method, segments))
+        return match;
+    return matchRoutes(getManagementRoutes(), method, segments);
 }
 
 }
