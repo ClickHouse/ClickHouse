@@ -55,13 +55,13 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionScalarCarrierValueEqualsForIn>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto left_type = removeNullable(removeLowCardinality(arguments[0]));
         if (!isNumber(left_type) && !isBool(left_type) && !isStringOrFixedString(left_type))
@@ -77,7 +77,7 @@ public:
         return result_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto left_type = removeNullable(removeLowCardinality(arguments[0].type));
         const auto source_type = removeNullable(removeLowCardinality(arguments[1].type));
@@ -122,13 +122,13 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapValueEqualsForIn>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isMap(removeNullable(removeLowCardinality(arguments[0]))))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -143,7 +143,7 @@ public:
         return result_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto map_type = removeNullable(removeLowCardinality(arguments[0].type));
         auto maps = arguments[0].column->convertToFullColumnIfConst();
@@ -181,13 +181,13 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayValueEqualsForIn>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isArray(removeNullable(removeLowCardinality(arguments[0]))))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -202,7 +202,7 @@ public:
         return result_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto left_type = removeNullable(removeLowCardinality(arguments[0].type));
         const auto & left_array_type = assert_cast<const DataTypeArray &>(*left_type);
@@ -643,7 +643,7 @@ public:
     }
 
 private:
-    ColumnPtr createResultColumn(size_t size, bool value) const
+    [[nodiscard]] ColumnPtr createResultColumn(size_t size, bool value) const
     {
         auto result = ColumnUInt8::create(size, static_cast<UInt8>(value));
         if (!in_null_as_unknown)
@@ -652,7 +652,7 @@ private:
         return ColumnNullable::create(std::move(result), ColumnUInt8::create(size, UInt8{0}));
     }
 
-    ColumnPtr applyStandardNullSemantics(const IColumn & membership, const IColumn & left, bool set_has_null) const
+    [[nodiscard]] ColumnPtr applyStandardNullSemantics(const IColumn & membership, const IColumn & left, bool set_has_null) const
     {
         const size_t size = membership.size();
         auto result = ColumnUInt8::create(size);
@@ -685,7 +685,7 @@ private:
     /// and never mutated afterwards. Under standard semantics, use the original input size because
     /// type conversion can discard values. A storage-backed set is the live set of an `ENGINE = Set`
     /// table and grows on INSERT, and a subquery set is still consulted for index analysis.
-    bool isImmutableEmptySet(const FutureSet & future_set) const
+    [[nodiscard]] bool isImmutableEmptySet(const FutureSet & future_set) const
     {
         const auto * tuple_set = typeid_cast<const FutureSetFromTuple *>(&future_set);
         if (!tuple_set)

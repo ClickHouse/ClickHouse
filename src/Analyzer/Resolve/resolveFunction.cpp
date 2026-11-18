@@ -3772,6 +3772,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         if (is_not_in)
                             result = createNotWrapper(std::move(result));
 
+                        /// A nonempty source set leaves a null probe unknown, even when
+                        /// every candidate is a non-null scalar carrier.
+                        auto left_is_null_fn = std::make_shared<FunctionNode>("isNull");
+                        left_is_null_fn->getArguments().getNodes().push_back(
+                            std::make_shared<IdentifierNode>(Identifier{argument_names.front()}));
+                        auto null_probe_result = std::make_shared<FunctionNode>("if");
+                        null_probe_result->getArguments().getNodes() = {
+                            std::move(left_is_null_fn),
+                            std::make_shared<ConstantNode>(Field{}, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())),
+                            std::move(result)};
+                        result = std::move(null_probe_result);
+
                         auto lambda = std::make_shared<LambdaNode>(
                             std::make_shared<LambdaArgumentsNode>(argument_names), std::move(result), false /*is_operator*/);
                         auto mapped = std::make_shared<FunctionNode>("arrayMap");
