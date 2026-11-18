@@ -1096,11 +1096,11 @@ using FindAggregateFunctionVisitor = InDepthNodeVisitor<FindAggregateFunctionFin
 /// `Tuple`, `Array`, and `Map` carriers. A TTL expression can refer to a nested temporal
 /// value while its syntax-level source column is the enclosing carrier, so widening only
 /// top-level source types would leave that value in the 16/32-bit domain.
-DataTypePtr widenTemporalType(const DataTypePtr & type)
+DataTypePtr widenTemporalType(const DataTypePtr & type, bool keep_implicit_time_zone)
 {
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
     {
-        auto widened_nested = widenTemporalType(nullable_type->getNestedType());
+        auto widened_nested = widenTemporalType(nullable_type->getNestedType(), keep_implicit_time_zone);
         if (!nullable_type->getNestedType()->equals(*widened_nested))
             return std::make_shared<DataTypeNullable>(std::move(widened_nested));
 
@@ -1115,7 +1115,7 @@ DataTypePtr widenTemporalType(const DataTypePtr & type)
 
         for (const auto & element : tuple_type->getElements())
         {
-            auto widened_element = widenTemporalType(element);
+            auto widened_element = widenTemporalType(element, keep_implicit_time_zone);
             widened_any |= !element->equals(*widened_element);
             widened_elements.push_back(std::move(widened_element));
         }
@@ -1128,7 +1128,7 @@ DataTypePtr widenTemporalType(const DataTypePtr & type)
 
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
     {
-        auto widened_nested = widenTemporalType(array_type->getNestedType());
+        auto widened_nested = widenTemporalType(array_type->getNestedType(), keep_implicit_time_zone);
         if (!array_type->getNestedType()->equals(*widened_nested))
             return std::make_shared<DataTypeArray>(std::move(widened_nested));
 
@@ -1137,8 +1137,8 @@ DataTypePtr widenTemporalType(const DataTypePtr & type)
 
     if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
     {
-        auto widened_key = widenTemporalType(map_type->getKeyType());
-        auto widened_value = widenTemporalType(map_type->getValueType());
+        auto widened_key = widenTemporalType(map_type->getKeyType(), keep_implicit_time_zone);
+        auto widened_value = widenTemporalType(map_type->getValueType(), keep_implicit_time_zone);
         if (!map_type->getKeyType()->equals(*widened_key) || !map_type->getValueType()->equals(*widened_value))
             return std::make_shared<DataTypeMap>(std::move(widened_key), std::move(widened_value));
 
@@ -1154,8 +1154,15 @@ DataTypePtr widenTemporalType(const DataTypePtr & type)
     else if (isDateTime(inner))
     {
         const auto & dt = typeid_cast<const DataTypeDateTime &>(*inner);
-        const String & tz = dt.getTimeZone().getTimeZone();
-        widened = std::make_shared<DataTypeDateTime64>(0, tz);
+        if (keep_implicit_time_zone && !dt.hasExplicitTimeZone())
+        {
+            widened = std::make_shared<DataTypeDateTime64>(0);
+        }
+        else
+        {
+            const String & tz = dt.getTimeZone().getTimeZone();
+            widened = std::make_shared<DataTypeDateTime64>(0, tz);
+        }
     }
     else
     {
@@ -1182,16 +1189,21 @@ DataTypePtr widenTemporalType(const DataTypePtr & type)
 /// `LowCardinality` is dropped because `LowCardinality(DateTime64)` is not allowed
 /// in the type system; the runtime cast in `ITTLAlgorithm::executeExpressionAndGetColumn`
 /// converts the original `LC` column to the widened type.
-NamesAndTypesList widenTemporalColumns(const NamesAndTypesList & columns)
+NamesAndTypesList widenTemporalColumns(const NamesAndTypesList & columns, bool keep_implicit_time_zone = false)
 {
     NamesAndTypesList result;
     for (const auto & col : columns)
     {
-        result.emplace_back(col.name, widenTemporalType(col.type));
+        result.emplace_back(col.name, widenTemporalType(col.type, keep_implicit_time_zone));
     }
     return result;
 }
 
+}
+
+NamesAndTypesList widenTemporalColumnsForTTLAnalysis(const NamesAndTypesList & columns)
+{
+    return widenTemporalColumns(columns, /*keep_implicit_time_zone=*/ true);
 }
 
 ContextPtr getTTLExpressionContext(const ContextPtr & context)

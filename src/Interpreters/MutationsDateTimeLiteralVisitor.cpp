@@ -664,26 +664,43 @@ DataTypePtr tryGetColumnType(const String & name, const ColumnsDescription & col
     return column ? column->type : nullptr;
 }
 
-/// Adds the expressions of the `TTL` elements in `ast` to `expressions`: the expression of the `TTL`, its `WHERE`, and the values
-/// of the assignments of its `GROUP BY`. The keys of the `GROUP BY` are a prefix of the primary key, which has no literal to convert,
-/// and the validation of the `TTL` reports a wrong one.
-void collectTTLExpressions(const ASTPtr & ast, const ColumnsDescription & columns, std::vector<Expression> & expressions)
+/// Adds the expressions of the `TTL` elements in `ast`: the expression of each `TTL` to `time_expressions`, and its `WHERE` and the
+/// values of the assignments of its `GROUP BY` to `expressions`. The keys of the `GROUP BY` are a prefix of the primary key, which
+/// has no literal to convert, and the validation of the `TTL` reports a wrong one.
+void collectTTLExpressions(
+    const ASTPtr & ast, const ColumnsDescription & columns, std::vector<ASTPtr> & time_expressions, std::vector<Expression> & expressions)
 {
     const auto * ttl_element = ast->as<ASTTTLElement>();
     if (!ttl_element)
     {
         for (const auto & child : ast->children)
-            collectTTLExpressions(child, columns, expressions);
+            collectTTLExpressions(child, columns, time_expressions, expressions);
         return;
     }
 
     if (auto ttl = ttl_element->ttl())
-        expressions.push_back({ttl});
+        time_expressions.push_back(ttl);
     if (auto where = ttl_element->where())
         expressions.push_back({where});
     for (const auto & assignment_ast : ttl_element->group_by_assignments)
         if (const auto * assignment = assignment_ast->as<ASTAssignment>())
             expressions.push_back({assignment->expression(), tryGetColumnType(assignment->column_name, columns)});
+}
+
+/// `columns` with the types that the expression of a `TTL` is analyzed with (see `widenTemporalColumnsForTTLAnalysis`).
+ColumnsDescription widenTemporalColumnsOfTTL(const ColumnsDescription & columns)
+{
+    const auto physical = columns.getAllPhysical();
+    const auto widened = widenTemporalColumnsForTTLAnalysis(physical);
+    ColumnsDescription result = columns;
+    auto widened_it = widened.begin();
+    for (const auto & column : physical)
+    {
+        const auto & widened_type = (widened_it++)->type;
+        if (!widened_type->equals(*column.type))
+            result.modify(column.name, [&](ColumnDescription & description) { description.type = widened_type; });
+    }
+    return result;
 }
 
 }
@@ -781,21 +798,48 @@ bool rewriteDateTimeLiteralsWithTimezone(
     if (session_timezone.empty() || !expression)
         return false;
 
+    std::vector<ASTPtr> time_expressions;
     std::vector<Expression> expressions;
-    collectTTLExpressions(expression, columns, expressions);
-    if (expressions.empty())
+    collectTTLExpressions(expression, columns, time_expressions, expressions);
+    if (time_expressions.empty() && expressions.empty())
         return false;
 
     /// The `TTL` is analyzed with the server settings, as its validation and the merges analyze it, so a setting of the query
     /// that changes the types, such as `enable_extended_results_for_datetime_functions`, neither rejects it nor changes what
     /// the identifiers are bound to, also by the settings of name resolution, which are those of the merges.
     auto execution_context = Context::createCopy(getTTLExpressionContext(context));
-    const auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, columns);
-    const auto table_node = std::make_shared<TableNode>(storage, execution_context);
-    const auto uses = tryCollectLiteralUses(expressions, table_node, execution_context);
-    if (!uses)
-        return false;
-    const auto conversions = getConversions(*uses, {});
+    const auto make_table_node = [&](const ColumnsDescription & table_columns) -> TableExpressionNodePtr
+    {
+        const auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, table_columns);
+        return std::make_shared<TableNode>(storage, execution_context);
+    };
+    const auto table_node = make_table_node(columns);
+
+    LiteralUses uses;
+    if (!expressions.empty())
+    {
+        auto expressions_uses = tryCollectLiteralUses(expressions, table_node, execution_context);
+        if (!expressions_uses)
+            return false;
+        uses = std::move(*expressions_uses);
+    }
+
+    /// The expression of each `TTL` is analyzed alone, as `TTLDescription` analyzes it: with `Date` and `DateTime` widened to
+    /// `Date32` and `DateTime64(0)`, so a literal compared with a `DateTime` column there is read as a `DateTime64(0)`, also before
+    /// 1970, or with the original columns if a function there does not accept the widened types.
+    const auto widened_columns = widenTemporalColumnsOfTTL(columns);
+    const bool widened_any = widened_columns != columns;
+    const auto widened_table_node = widened_any ? make_table_node(widened_columns) : table_node;
+    for (const auto & time_expression : time_expressions)
+    {
+        auto time_expression_uses = tryCollectLiteralUses({{time_expression}}, widened_table_node, execution_context);
+        if (!time_expression_uses && widened_any)
+            time_expression_uses = tryCollectLiteralUses({{time_expression}}, table_node, execution_context);
+        if (!time_expression_uses)
+            return false;
+        uses.merge(*time_expression_uses);
+    }
+    const auto conversions = getConversions(uses, {});
 
     /// The visitor replaces only the arguments of the functions and the values of the assignments, so the root of the
     /// expression stays the same.

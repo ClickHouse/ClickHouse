@@ -200,4 +200,11 @@ struct TTLTableDescription
 /// caller's context, so the caller's user and current database still apply.
 ContextPtr getTTLExpressionContext(const ContextPtr & context);
 
+/// Returns `columns` with the types that the expression of a `TTL`, which merges evaluate to get the time, is analyzed with (see
+/// `buildExpressionAndSets`): `Date` and `DateTime`, also inside `Tuple`, `Array` and `Map`, widened to `Date32` and `DateTime64(0)`.
+/// Unlike there, a `DateTime` without an explicit time zone becomes a `DateTime64(0)` without one, which reads values in the time
+/// zone of the server, as the `DateTime64(0)` with the time zone of the server there does. If the expression cannot be analyzed
+/// with these types, it is analyzed with the original ones, as are its `WHERE` and the assignments of its `GROUP BY`.
+NamesAndTypesList widenTemporalColumnsForTTLAnalysis(const NamesAndTypesList & columns);
+
 }
