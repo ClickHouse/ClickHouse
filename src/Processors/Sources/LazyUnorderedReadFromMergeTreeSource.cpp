@@ -84,7 +84,7 @@ IProcessor::Status LazyUnorderedReadFromMergeTreeSource::prepare()
     return Status::NeedData;
 }
 
-IProcessor::PipelineUpdate LazyUnorderedReadFromMergeTreeSource::updatePipeline()
+void LazyUnorderedReadFromMergeTreeSource::updatePipeline(PipelineUpdate & update)
 {
     if (!lazy_materializing_rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "LazyUnorderedReadFromMergeTreeSource: No lazy materializing rows");
@@ -103,7 +103,7 @@ IProcessor::PipelineUpdate LazyUnorderedReadFromMergeTreeSource::updatePipeline(
     for (size_t i = 0; i < pipe.numOutputPorts(); ++i)
         pipe_outputs.push_back(pipe.getOutputPort(i));
 
-    auto processors = Pipe::detachProcessors(std::move(pipe));
+    update.to_add = Pipe::detachProcessors(std::move(pipe));
 
     for (auto * proc_output : pipe_outputs)
     {
@@ -111,8 +111,6 @@ IProcessor::PipelineUpdate LazyUnorderedReadFromMergeTreeSource::updatePipeline(
         connect(*proc_output, inputs.back());
         inputs.back().setNeeded();
     }
-
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 
 Pipe LazyUnorderedReadFromMergeTreeSource::buildPipe()

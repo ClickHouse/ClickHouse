@@ -210,7 +210,7 @@ IProcessor::Status LazyReadFromObjectStorageSource::prepare()
     return Status::PortFull;
 }
 
-IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
+void LazyReadFromObjectStorageSource::updatePipeline(PipelineUpdate & update)
 {
     if (!lazy_materializing_rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "LazyReadFromObjectStorageSource: no lazy materializing rows");
@@ -219,7 +219,7 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
     lazy_materializing_rows.reset();
 
     if (rows->rows_in_files.empty())
-        return {};
+        return;
 
     const auto & settings = context->getSettingsRef();
     const bool etag_validated_on_read
@@ -261,12 +261,11 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
         format_filter_info,
         /*need_only_count_=*/ false);
 
+    update.to_add.push_back(source);
     auto & source_output = source->getOutputs().front();
     inputs.emplace_back(source_output.getHeader(), this);
     connect(source_output, inputs.back());
     inputs.back().setNeeded();
-
-    return PipelineUpdate{.to_add = {source}, .to_remove = {}};
 }
 
 }

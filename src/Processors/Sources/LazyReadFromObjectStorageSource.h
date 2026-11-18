@@ -30,7 +30,7 @@ public:
 
     String getName() const override { return "LazyReadFromObjectStorageSource"; }
     Status prepare() override;
-    PipelineUpdate updatePipeline() override;
+    void updatePipeline(PipelineUpdate & update) override;
 
 private:
     StorageID storage_id;

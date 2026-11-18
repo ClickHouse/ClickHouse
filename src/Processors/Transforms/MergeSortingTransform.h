@@ -64,7 +64,7 @@ protected:
     void serialize() override;
     void generate() override;
 
-    PipelineUpdate updatePipeline() override;
+    void updatePipeline(PipelineUpdate & update) override;
 
 private:
     SpillableAdapter<MergeSortingTransform> spillable{*this};

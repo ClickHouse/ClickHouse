@@ -1090,9 +1090,9 @@ void ExternalDistinctTransform::connectMerge(PreparedMerge & prepared, Processor
     processors.emplace_back(prepared.merger);
     for (const auto & processor : prepared.order_restoration)
     {
+        processors.emplace_back(processor);
         connect(*output, processor->getInputs().front());
         output = &processor->getOutputs().front();
-        processors.emplace_back(processor);
     }
 
     inputs.emplace_back(*spill_layout->getMergedHeader(), this);
@@ -1107,29 +1107,29 @@ void ExternalDistinctTransform::connectRunSource(PreparedRun & prepared, Process
 
     chassert(merge_registration);
     auto & merger = *merge_registration->merger;
+    processors.emplace_back(prepared.source);
     merger.addInput(prepared.source->getPort().getHeader());
     connect(prepared.source->getPort(), merger.getInputs().back());
-    processors.emplace_back(prepared.source);
 }
 
 OutputPort & ExternalDistinctTransform::connectRun(PreparedRun & prepared, Processors & processors)
 {
     connectRunSource(prepared, processors);
+    processors.emplace_back(prepared.sink);
     outputs.emplace_back(prepared.sink->getPort().getHeader(), this);
     connect(outputs.back(), prepared.sink->getPort());
-    processors.emplace_back(prepared.sink);
     return outputs.back();
 }
 
-IProcessor::PipelineUpdate ExternalDistinctTransform::updatePipeline()
+void ExternalDistinctTransform::updatePipeline(PipelineUpdate & update)
 {
-    Processors processors;
+    auto & processors = update.to_add;
     if (!spilled_runs.empty())
     {
         for (auto & run : spilled_runs)
             connectRunSource(run, processors);
         spilled_runs.clear();
-        return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+        return;
     }
 
     std::visit([this, &processors]<typename Phase>(Phase & phase)
@@ -1171,20 +1171,18 @@ IProcessor::PipelineUpdate ExternalDistinctTransform::updatePipeline()
         {
             chassert(merge_registration);
             auto source = std::move(phase.source);
+            processors.emplace_back(source);
             auto & merger = *merge_registration->merger;
             merger.addInput(*spill_layout->getInputRunHeader());
             connect(source->getPort(), merger.getInputs().back());
             merger.setHaveAllInputs();
             auto & input = merge_registration->input;
             merge_registration.reset();
-            processors.emplace_back(std::move(source));
             state.emplace<Merging>(input, Chunk{});
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "External DISTINCT has no pipeline update in state {}", state.index());
     }, state);
-
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 
 }

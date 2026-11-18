@@ -38,11 +38,15 @@ SharedHeader makeHeader()
 }
 
 /// One output, not connected at first. On its first `prepare` it asks for an expansion, connects the
-/// output to a new sink and hands the sink to the graph; afterwards it is finished.
+/// output to a new sink and hands the sink to the graph; afterwards it is finished. With `throw_after_connect`
+/// it fails on the memory limit after connecting, before `updatePipeline` returns.
 class Expander final : public IProcessor
 {
 public:
-    explicit Expander(SharedHeader header) : IProcessor({}, OutputPorts(1, header)) {}
+    explicit Expander(SharedHeader header, bool throw_after_connect_ = false)
+        : IProcessor({}, OutputPorts(1, header)), throw_after_connect(throw_after_connect_)
+    {
+    }
 
     String getName() const override { return "Expander"; }
 
@@ -51,16 +55,17 @@ public:
         return expanded ? Status::Finished : Status::UpdatePipeline;
     }
 
-    PipelineUpdate updatePipeline() override
+    void updatePipeline(PipelineUpdate & update) override
     {
         expanded = true;
         auto sink = std::make_shared<NullSink>(outputs.front().getSharedHeader());
+        update.to_add.push_back(sink);
         connect(outputs.front(), sink->getPort());
-        PipelineUpdate update;
-        update.to_add.push_back(std::move(sink));
-        return update;
+        if (throw_after_connect)
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Allocation failure after connecting");
     }
 
+    const bool throw_after_connect;
     bool expanded = false;
 };
 
@@ -101,6 +106,45 @@ TEST(ExecutingGraphFailedExpansion, LaterExpansionBailsOutInsteadOfLogicalError)
     auto & not_expanded = first->expanded ? *second : *first;
 
     /// The other expansion must not walk the inconsistent graph; the query is being cancelled anyway.
+    EXPECT_EQ(graph.updateNode(not_expanded, queue, async_queue, buffers), ExecutingGraph::UpdateNodeStatus::Cancelled);
+    EXPECT_TRUE(queue.empty());
+}
+
+/// The same, but the processor itself fails after connecting its output to the new sink. The sink must stay
+/// alive, because the output of the processor points at it, and the graph must refuse further expansions.
+TEST(ExecutingGraphFailedExpansion, ProcessorThrowsAfterConnecting)
+{
+    auto header = makeHeader();
+    auto first = std::make_shared<Expander>(header, /*throw_after_connect_=*/ true);
+    auto second = std::make_shared<Expander>(header, /*throw_after_connect_=*/ true);
+
+    auto processors = std::make_shared<Processors>();
+    processors->push_back(first);
+    processors->push_back(second);
+
+    ExecutingGraph graph(processors, /*profile_processors_=*/ false, /*memory_reservation_=*/ nullptr);
+    ExecutingGraph::Queue queue;
+    ExecutingGraph::Queue async_queue;
+    ExecutingGraph::UpdateNodeBuffers buffers;
+
+    try
+    {
+        graph.initializeExecution(queue, async_queue);
+        FAIL() << "the failure in updatePipeline did not propagate";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+    }
+
+    ASSERT_NE(first->expanded, second->expanded);
+    auto & expanded = first->expanded ? *first : *second;
+    auto & not_expanded = first->expanded ? *second : *first;
+
+    /// The sink is kept with the pipeline's processors; reading it through the port is not a use after free.
+    EXPECT_EQ(processors->size(), 3);
+    EXPECT_EQ(expanded.getOutputs().front().getInputPort().getProcessor().getName(), "NullSink");
+
     EXPECT_EQ(graph.updateNode(not_expanded, queue, async_queue, buffers), ExecutingGraph::UpdateNodeStatus::Cancelled);
     EXPECT_TRUE(queue.empty());
 }

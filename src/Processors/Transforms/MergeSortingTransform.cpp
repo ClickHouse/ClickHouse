@@ -53,7 +53,7 @@ MergeSortingTransform::MergeSortingTransform(
     chassert(merge_mode == MergeSorter::Mode::PreserveRows || limit_ == 0);
 }
 
-IProcessor::PipelineUpdate MergeSortingTransform::updatePipeline()
+void MergeSortingTransform::updatePipeline(PipelineUpdate & update)
 {
     if (inputs.size() == 1)
     {
@@ -88,7 +88,7 @@ IProcessor::PipelineUpdate MergeSortingTransform::updatePipeline()
     if (stage == Stage::Generate)
         external_merging_sorted->setHaveAllInputs();
 
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+    update.to_add = std::move(processors);
 }
 
 void MergeSortingTransform::consume(Chunk chunk)

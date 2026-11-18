@@ -149,7 +149,7 @@ void DelayedSource::work()
     synchronizePorts(extremes_output, extremes, header, processors);
 }
 
-IProcessor::PipelineUpdate DelayedSource::updatePipeline()
+void DelayedSource::updatePipeline(PipelineUpdate & update)
 {
     /// Add new inputs. They must have the same header as output.
     for (const auto & output : {main_output, totals_output, extremes_output})
@@ -166,7 +166,7 @@ IProcessor::PipelineUpdate DelayedSource::updatePipeline()
     }
 
     /// Executor will check that all processors are connected.
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+    update.to_add = std::move(processors);
 }
 
 Pipe createDelayedPipe(SharedHeader header, DelayedSource::Creator processors_creator, bool add_totals_port, bool add_extremes_port)

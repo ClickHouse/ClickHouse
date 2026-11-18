@@ -60,7 +60,7 @@ public:
     Status prepare() override;
     void work() override;
     std::tuple<int, uint32_t, Int64> scheduleForEvent() override;
-    PipelineUpdate updatePipeline() override;
+    void updatePipeline(PipelineUpdate & update) override;
 
     void onUpdatePorts() override;
     void onCancel() noexcept override;
