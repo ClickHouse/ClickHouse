@@ -186,9 +186,11 @@ SQLQueryPiece applyLimitAggregationOperator(
     auto res = vector_arg;
     res.node = operator_node;
 
-    /// The aggregate functions identify a series by a UInt64 key, so the series are numbered in the order of their tags:
+    /// The aggregate functions identify a series by a UInt64 key, so the series are numbered in the order of their tags within
+    /// partitions by a hash of the tags (the window function runs in parallel over the partitions):
     ///
-    ///   SELECT tags, values, row_number() OVER (ORDER BY tags) AS series_key FROM <vector_arg>
+    ///   SELECT tags, values, row_number() OVER (PARTITION BY cityHash64(tags) % 64 ORDER BY tags) * 64 + cityHash64(tags) % 64 AS series_key
+    ///   FROM <vector_arg>
     ///
     /// This query becomes a named subquery because Steps 1 and 3 both read it: Step 1 aggregates it to choose which series to keep,
     /// and Step 3 joins it with the chosen series to build the result rows.
@@ -201,7 +203,16 @@ SQLQueryPiece applyLimitAggregationOperator(
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
 
-        /// row_number() OVER (ORDER BY tags)
+        static constexpr UInt64 num_partitions = 64;
+        auto partition = []
+        {
+            return makeASTFunction(
+                "modulo", makeASTFunction("cityHash64", make_intrusive<ASTIdentifier>(ColumnNames::Tags)), make_intrusive<ASTLiteral>(num_partitions));
+        };
+
+        auto partition_by = make_intrusive<ASTExpressionList>();
+        partition_by->children.push_back(partition());
+
         auto order_by = make_intrusive<ASTExpressionList>();
         auto order_by_element = make_intrusive<ASTOrderByElement>();
         order_by_element->children.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
@@ -210,15 +221,20 @@ SQLQueryPiece applyLimitAggregationOperator(
         order_by->children.push_back(std::move(order_by_element));
 
         auto window_definition = make_intrusive<ASTWindowDefinition>();
+        window_definition->partition_by = partition_by;
+        window_definition->children.push_back(std::move(partition_by));
         window_definition->order_by = order_by;
         window_definition->children.push_back(std::move(order_by));
 
-        auto series_key = makeASTFunction("row_number");
-        series_key->setIsWindowFunction(true);
-        series_key->setKind(ASTFunction::Kind::WINDOW_FUNCTION);
-        series_key->window_definition = window_definition;
-        series_key->children.push_back(std::move(window_definition));
-        builder.select_list.push_back(std::move(series_key));
+        auto row_number = makeASTFunction("row_number");
+        row_number->setIsWindowFunction(true);
+        row_number->setKind(ASTFunction::Kind::WINDOW_FUNCTION);
+        row_number->window_definition = window_definition;
+        row_number->children.push_back(std::move(window_definition));
+
+        /// Unique: the partition is the remainder of the key.
+        builder.select_list.push_back(makeASTFunction(
+            "plus", makeASTFunction("multiply", std::move(row_number), make_intrusive<ASTLiteral>(num_partitions)), partition()));
         builder.select_list.back()->setAlias(ColumnNames::SeriesKey);
 
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), builder.getSelectQuery(), SQLSubqueryType::MATERIALIZED_TABLE});
