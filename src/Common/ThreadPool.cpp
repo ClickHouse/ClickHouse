@@ -4,7 +4,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
-#include <Common/WriteOutcomeTracker.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
@@ -243,10 +242,6 @@ public:
     /// Propagated like the tracing context: a job scheduled under `QueryCancellationBlocker` runs under one.
     bool query_cancellation_blocked = false;
 
-    /// Propagated the same way: a job scheduled under a `WriteOutcomeTracker::Scope` runs under the same tracker, so
-    /// that the attempts it sends reach the tracker of their write.
-    std::shared_ptr<DB::WriteOutcomeTracker> write_outcome_tracker;
-
     /// Call stacks of all jobs' schedulings leading to this one
     std::vector<FramePointers> frame_pointers;
     bool enable_job_stack_trace = false;
@@ -263,12 +258,10 @@ public:
     JobWithPriority(
         Job job_, Priority priority_, CurrentMetrics::Metric metric,
         const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_, bool query_cancellation_blocked_,
-        std::shared_ptr<DB::WriteOutcomeTracker> write_outcome_tracker_,
         bool capture_frame_pointers, ScopedDecrement available_threads_decrement_)
         : job(std::move(job_)), priority(priority_), metric_increment(metric),
         available_threads_decrement(std::move(available_threads_decrement_)),
         thread_trace_context(thread_trace_context_), query_cancellation_blocked(query_cancellation_blocked_),
-        write_outcome_tracker(std::move(write_outcome_tracker_)),
         enable_job_stack_trace(capture_frame_pointers)
     {
         if (!capture_frame_pointers)
@@ -571,7 +564,6 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                     propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
                     /// Not for pool worker threads (created without propagation), which outlive the scheduling scope
                     propagate_opentelemetry_tracing_context && DB::ThreadStatus::QueryCancellationBlocker::isActive(),
-                    propagate_opentelemetry_tracing_context ? DB::WriteOutcomeTracker::current() : nullptr,
                     /// capture_frame_pointers
                     DB::Exception::enable_job_stack_trace,
                     std::move(available_threads_decrement));
@@ -1148,10 +1140,6 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
         std::optional<DB::ThreadStatus::QueryCancellationBlocker> cancellation_blocker;
         if (job_data->query_cancellation_blocked)
             cancellation_blocker.emplace();
-
-        std::optional<DB::WriteOutcomeTracker::Scope> write_outcome_scope;
-        if (job_data->write_outcome_tracker)
-            write_outcome_scope.emplace(job_data->write_outcome_tracker);
 
         DB::Exception::enable_job_stack_trace = job_data->enable_job_stack_trace;
         if (DB::Exception::enable_job_stack_trace)
