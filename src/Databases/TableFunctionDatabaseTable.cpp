@@ -69,12 +69,14 @@ public:
     ///   columns);
     /// * `supportsTrivialCountOptimization` defaults to `false`, while the delegates return `true`,
     ///   so `SELECT count()` would parse the external data instead of using the optimized count path.
+    /// * `prefersLargeBlocks` defaults to `true`, and `InterpreterInsertQuery` picks the squashing of an `INSERT` from it.
     std::optional<NameSet> supportedPrewhereColumns() const override { return nested->supportedPrewhereColumns(); }
     bool canMoveConditionsToPrewhere() const override { return nested->canMoveConditionsToPrewhere(); }
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override
     {
         return nested->supportsTrivialCountOptimization(storage_snapshot, query_context);
     }
+    bool prefersLargeBlocks() const override { return nested->prefersLargeBlocks(); }
 
     /// Read through a snapshot of the nested storage (like `StorageTableFunctionProxy` does):
     /// the storage may downcast `storage_snapshot->storage` to its own type.

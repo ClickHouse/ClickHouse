@@ -11,3 +11,7 @@ grant WRITE ON S3
 3
 --- READ and WRITE ON S3
 5
+6
+--- WRITE ON S3 for f.csv only
+grant WRITE ON S3
+0

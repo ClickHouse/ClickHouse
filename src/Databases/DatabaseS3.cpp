@@ -373,7 +373,7 @@ void registerDatabaseS3(DatabaseFactory & factory)
         .source_access_type = AccessTypeObjects::Source::S3,
     }, Documentation{
         .description = R"DOCS_MD(
-The `S3` database engine exposes objects in Amazon S3 and S3-compatible object storage as read-only tables. A table name is resolved as an object URL through the [`s3`](/reference/functions/table-functions/s3) table function.
+The `S3` database engine exposes objects in Amazon S3 and S3-compatible object storage as tables. A table name is resolved as an object URL through the [`s3`](/reference/functions/table-functions/s3) table function.
 
 ## Creating a database {#creating-a-database}
 
@@ -395,7 +395,7 @@ ENGINE = S3('https://bucket.s3.amazonaws.com/data/', 'NOSIGN');
 SELECT * FROM s3_data.`events.parquet`;
 ```
 
-Without a base URL, use the full object URL as the table name. The schema and format are inferred in the same way as for the `s3` table function. The database owns no table definitions and does not support table DDL or writes.
+Without a base URL, use the full object URL as the table name. The schema and format are inferred in the same way as for the `s3` table function. The database owns no table definitions and does not support table DDL.
 
 ## Access control {#access-control}
 
@@ -405,7 +405,7 @@ S3 URLs are checked against the server's remote-host filter. Creating this datab
 GRANT READ, WRITE ON S3 TO user_name;
 ```
 
-Reading a table also requires the `READ` source grant on `S3`.
+Reading a table also requires the `READ` source grant on `S3`; writing to it (`INSERT`, `TRUNCATE`) requires both `READ` and `WRITE`.
 
 See the [`SOURCES` privileges](/reference/statements/grant#sources) for version and compatibility details.
 
