@@ -212,8 +212,8 @@ constexpr bool hasNonJoinedBlocks(JoinKind kind, JoinStrictness strictness)
 }
 
 /// Whether joining each part of a split left input with the whole right input gives the join of the whole input.
-/// RIGHT and FULL emit unmatched right rows from every part, INNER ANY uses each right row at most once over the
-/// whole left input, and PASTE pairs rows by position.
+/// Not for RIGHT and FULL (unmatched right rows), INNER ANY and RIGHT SEMI (each right row used at most once), which
+/// depend on the whole left input, nor for PASTE, which pairs rows by position.
 constexpr bool canSplitLeftInput(JoinKind kind, JoinStrictness strictness)
 {
     if (isLeft(kind) || isCrossOrComma(kind))
