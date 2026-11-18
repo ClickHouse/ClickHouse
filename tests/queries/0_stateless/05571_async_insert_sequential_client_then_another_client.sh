@@ -12,19 +12,17 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_sequential_then_another (n UInt64) ENGINE = MergeTree ORDER BY n;
     SYSTEM STOP MERGES t_sequential_then_another;"
 
-# A large maximum busy timeout, so that an insert is never flushed at once because the previous one was longer than it ago.
-# Other tests leave busy timeouts of up to 600000 ms in the queue shards. The huge decrease rate drops such a timeout to
-# the minimum at the first insert.
+# The busy timeout of the queue shard is shared with other tests, which can raise it to the maximum, so the maximum is
+# kept moderate. It is still longer than any pause between the inserts, so none of them is flushed at once because the
+# previous one was longer than the maximum ago.
 function insert()
 {
     ${CLICKHOUSE_CLIENT} --async_insert 1 --wait_for_async_insert 1 --async_insert_use_adaptive_busy_timeout 1 \
-        --async_insert_busy_timeout_min_ms 3000 --async_insert_busy_timeout_max_ms 100000 \
-        --async_insert_busy_timeout_decrease_rate 1000000000 \
+        --async_insert_busy_timeout_min_ms 3000 --async_insert_busy_timeout_max_ms 20000 \
         --query_id "${CLICKHOUSE_DATABASE}_$1" --query "INSERT INTO t_sequential_then_another VALUES ($2)"
 }
 
-# The first insert can be flushed at once when the queue shard was idle for long. The second one comes right after it,
-# so it waits for its deadline alone, and the key does not get batched.
+# The key is not batched once an insert waited for its deadline alone.
 insert w1 0
 insert w2 1
 
@@ -40,12 +38,15 @@ rm -f "${STOP_FILE}"
 ) &
 pid_a=$!
 
-# An insert that waits in the queue. Inserts flushed at once never show up there.
+# An insert of the first client that waits for its busy timeout. An insert flushed at once can be seen in the queue too,
+# until the deadline thread takes it, but its deadline is not in the future. `first_update` is the deadline of a batch.
 waiting=0
 while kill -0 $pid_a 2>/dev/null; do
     if [[ $(${CLICKHOUSE_CLIENT} --query "
         SELECT count() FROM system.asynchronous_inserts
-        WHERE database = currentDatabase() AND table = 't_sequential_then_another'") != 0 ]]; then
+        WHERE database = currentDatabase() AND table = 't_sequential_then_another'
+            AND arrayExists(query_id -> startsWith(query_id, '${CLICKHOUSE_DATABASE}_a_'), entries.query_id)
+            AND first_update > now64(6) + INTERVAL 1 SECOND") != 0 ]]; then
         waiting=1
         break
     fi
@@ -58,7 +59,13 @@ touch "${STOP_FILE}"
 insert b 100
 wait
 
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} --query "
+    -- Inserts of the first client were flushed at once before one waited.
+    SELECT countIf(ProfileEvents['AsyncInsertFlushedWithoutBatching'] = 1) > 0
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish'
+        AND startsWith(query_id, '${CLICKHOUSE_DATABASE}_a_');
     SELECT max(rows) FROM system.parts
     WHERE database = currentDatabase() AND table = 't_sequential_then_another' AND active;"
 

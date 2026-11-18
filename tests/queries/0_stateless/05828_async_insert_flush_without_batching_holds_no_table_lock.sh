@@ -16,19 +16,18 @@ trap '${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FAILPOINT}"' EXIT
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_flush_lock (n UInt64) ENGINE = MergeTree ORDER BY n"
 
-# A large maximum busy timeout, so that an insert is never flushed at once because the previous one was longer than it ago.
-# Other tests leave busy timeouts of up to 600000 ms in the queue shards. The huge decrease rate drops such a timeout to
-# the minimum at the first insert.
+# The busy timeout of the queue shard is shared with other tests, which can raise it to the maximum, so the maximum is
+# kept moderate. It is still longer than any pause between the inserts, so none of them is flushed at once because the
+# previous one was longer than the maximum ago.
 function insert()
 {
     ${CLICKHOUSE_CLIENT} --async_insert 1 --wait_for_async_insert 1 --async_insert_select_as_async_insert 1 \
         --async_insert_use_adaptive_busy_timeout 1 --async_insert_busy_timeout_min_ms 500 \
-        --async_insert_busy_timeout_max_ms 100000 --async_insert_busy_timeout_decrease_rate 1000000000 \
+        --async_insert_busy_timeout_max_ms 20000 \
         --query_id "${CLICKHOUSE_DATABASE}_$1" --query "INSERT INTO t_flush_lock SELECT 1"
 }
 
-# The first insert can be flushed at once when the queue shard was idle for long. The second one comes right after it,
-# so it waits for its deadline alone, and the key does not get batched.
+# The key is not batched once an insert waited for its deadline alone.
 insert w1
 insert w2
 
@@ -47,4 +46,9 @@ ${CLICKHOUSE_CLIENT} --lock_acquire_timeout 5 --materialized_views_populate_atom
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FAILPOINT}"
 wait
 
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t_flush_lock"
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT ProfileEvents['AsyncInsertFlushedWithoutBatching'] FROM system.query_log
+    WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish'
+        AND query_id = '${CLICKHOUSE_DATABASE}_c';
+    SELECT count() FROM t_flush_lock;"

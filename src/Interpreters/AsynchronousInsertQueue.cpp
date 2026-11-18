@@ -75,6 +75,7 @@ namespace ProfileEvents
     extern const Event AsyncInsertBytes;
     extern const Event AsyncInsertRows;
     extern const Event AsyncInsertFlush;
+    extern const Event AsyncInsertFlushedWithoutBatching;
     extern const Event FailedAsyncInsertQuery;
 }
 
@@ -927,6 +928,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
             /// a query waiting for them may need: an insert of a single client must not wait for the pool with them.
             LOG_TRACE(log, "Handing async insert over to the deadline thread because {}", flush_reason);
             ++key_state->second.flushes_without_batching;
+            ProfileEvents::increment(ProfileEvents::AsyncInsertFlushedWithoutBatching);
             data->flushed_without_batching = true;
             data->timeout_ms = Milliseconds::zero();
 
