@@ -97,8 +97,8 @@ bool statementRequiresMutatingMethod(const IAST & statement)
     if (const auto * create = statement.as<ASTCreateQuery>(); create && create->isTemporary())
         return false;
     /// `EXECUTE AS <user>` - bare or wrapping a statement - checks the `IMPERSONATE` privilege, which belongs
-    /// to `ACCESS_MANAGEMENT` and is therefore denied under any `readonly` (it is not one of the access
-    /// types `ContextAccess` permits under `readonly`). So impersonation can never run over a safe method
+    /// to `ACCESS_MANAGEMENT` and is therefore denied under any `readonly` (see `ContextAccess`,
+    /// not on its `readonly` allow-list). So impersonation can never run over a safe method
     /// and requires a mutating one, whatever the wrapped statement is. The session-visible effect of the bare
     /// form is additionally fenced off by `statementHasSideEffectsUnderReadonly`.
     if (statement.as<ASTExecuteAsQuery>())

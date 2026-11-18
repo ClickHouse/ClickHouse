@@ -84,7 +84,6 @@ namespace
         return filtered;
     }
 
-    /// The access types a query may need under `readonly`; any other one, including any new one, is refused.
     bool isAllowedInReadonlyMode(const AccessFlags & flags, UInt64 readonly)
     {
         /// Leaf types only: a group would also admit the children added to it later.

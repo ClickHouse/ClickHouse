@@ -132,7 +132,6 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
         return nullptr;
 
     /// TableFunctionS3 throws exceptions, if table cannot be created.
-    /// A read-only session cannot insert, so the table is resolved for reading (`READ`, not `WRITE`, on the source).
     const bool is_insert_query = !context_->getSettingsRef()[Setting::readonly];
     /// The table is referenced by an identifier, which cannot be sent to replicas as a `-Cluster` table function.
     ContextMutablePtr context_copy = Context::createCopy(context_);
