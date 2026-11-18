@@ -214,7 +214,7 @@ private:
         }
         if (converted.empty())
             return false;
-        set(converted.data(), converted.size(), 0);
+        BufferBase::set(converted.data(), converted.size(), 0);
         return true;
     }
 };
