@@ -1,4 +1,5 @@
 #include <Server/MySQLHandler.h>
+#include <Server/MySQLHandlerFactory.h>
 
 #include <algorithm>
 #include <array>
@@ -638,6 +639,7 @@ void MySQLHandler::run()
         }
 
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
+        handshake_response.auth_response = {};
 
         in->clearHandshakeTimeout();
 
@@ -1192,7 +1194,7 @@ MySQLHandlerSSL::MySQLHandlerSSL(
     bool secure_required_,
     uint32_t connection_id_,
     std::optional<String> default_session_user_,
-    KeyPair & private_key_,
+    MySQLKeyPairHolder & private_key_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, secure_required_, connection_id_, std::move(default_session_user_), read_event_, write_event_)
@@ -1201,7 +1203,7 @@ MySQLHandlerSSL::MySQLHandlerSSL(
 
 void MySQLHandlerSSL::authPluginSSL()
 {
-    auth_plugin = std::make_unique<MySQLProtocol::Authentication::Sha256Password>(private_key, log);
+    auth_plugin = std::make_unique<MySQLProtocol::Authentication::Sha256Password>(private_key.get(), log);
 }
 
 void MySQLHandlerSSL::finishHandshakeSSL(

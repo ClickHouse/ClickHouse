@@ -29,10 +29,12 @@ void ASTShowGrantsQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_al
 ASTPtr ASTShowGrantsQuery::clone() const
 {
     auto res = make_intrusive<ASTShowGrantsQuery>(*this);
+    res->children.clear();
 
     if (for_roles)
         res->for_roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(for_roles->clone());
 
+    cloneOutputOptions(*res);
     return res;
 }
 

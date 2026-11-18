@@ -1,3 +1,20 @@
+# The debug sections of the separate files are compressed: nfpm cannot package files over 4 GiB into rpm.
+# zlib is the fallback for an objcopy built without zstd.
+if (SPLIT_DEBUG_SYMBOLS)
+    set (SPLIT_DEBUG_COMPRESSION_PROBE "${CMAKE_CURRENT_BINARY_DIR}/objcopy_zstd_probe")
+    execute_process (
+        COMMAND "${OBJCOPY_PATH}" --compress-debug-sections=zstd "${OBJCOPY_PATH}" "${SPLIT_DEBUG_COMPRESSION_PROBE}"
+        RESULT_VARIABLE OBJCOPY_ZSTD_RESULT
+        OUTPUT_QUIET ERROR_QUIET)
+    file (REMOVE "${SPLIT_DEBUG_COMPRESSION_PROBE}")
+    if (OBJCOPY_ZSTD_RESULT EQUAL 0)
+        set (SPLIT_DEBUG_COMPRESSION "zstd")
+    else ()
+        set (SPLIT_DEBUG_COMPRESSION "zlib")
+    endif ()
+    message (STATUS "Compressing debug sections of split debug symbols with ${SPLIT_DEBUG_COMPRESSION}")
+endif ()
+
 # Generates a separate file with debug symbols while stripping it from the main binary.
 # This is needed for Debian packages.
 macro(clickhouse_split_debug_symbols)
@@ -19,10 +36,11 @@ macro(clickhouse_split_debug_symbols)
 
    set(COMPACT_SYMBOLS_COMMANDS)
    if (SYMBOL_SECTIONS STREQUAL "compact")
+       # Use the native-build tool only when actually cross-compiling (host != target), matching the
+       # native-build guard in the root CMakeLists.txt and utils/compact-symbols/CMakeLists.txt.
        if (NOT(
            CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
            AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
-           AND NOT USE_MUSL
        ))
            set(COMPACT_SYMBOLS_TOOL "${PROJECT_BINARY_DIR}/native/utils/compact-symbols/compact-symbols")
        else()
@@ -65,8 +83,8 @@ macro(clickhouse_split_debug_symbols)
    add_custom_command(TARGET ${STRIP_TARGET} POST_BUILD
        COMMAND mkdir -p "${STRIP_DESTINATION_DIR}/lib/debug/bin"
        COMMAND mkdir -p "${STRIP_DESTINATION_DIR}/bin"
-       # Splits debug symbols into separate file, leaves the binary untouched:
-       COMMAND "${OBJCOPY_PATH}" --only-keep-debug "${STRIP_BINARY_PATH}" "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug"
+       # Splits debug symbols into separate file, leaves the binary untouched.
+       COMMAND "${OBJCOPY_PATH}" --only-keep-debug "--compress-debug-sections=${SPLIT_DEBUG_COMPRESSION}" "${STRIP_BINARY_PATH}" "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug"
        COMMAND chmod 0644 "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug"
        # Strips binary, sections '.note' & '.comment' are removed in line with Debian's stripping policy: www.debian.org/doc/debian-policy/ch-files.html, section '.clickhouse.hash' is needed for integrity check.
        # Also, after we disabled the export of symbols for dynamic linking, we still to keep a static symbol table for good stack traces.

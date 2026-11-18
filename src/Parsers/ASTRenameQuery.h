@@ -23,14 +23,14 @@ public:
         ASTPtr database;
         ASTPtr table;
 
-        String getDatabase() const
+        [[nodiscard]] String getDatabase() const
         {
             String name;
             tryGetIdentifierNameInto(database, name);
             return name;
         }
 
-        String getTable() const
+        [[nodiscard]] String getTable() const
         {
             String name;
             tryGetIdentifierNameInto(table, name);
@@ -84,6 +84,16 @@ public:
                 elem.to.database = make_intrusive<ASTIdentifier>(database_name);
                 children.push_back(elem.to.database);
             }
+        }
+    }
+
+    void resetDatabases()
+    {
+        chassert(!database);
+        for (auto & elem : elements)
+        {
+            reset(elem.from.database);
+            reset(elem.to.database);
         }
     }
 

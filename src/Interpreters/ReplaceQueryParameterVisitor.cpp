@@ -1,6 +1,8 @@
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/TypeTree.h>
 #include <Formats/FormatSettings.h>
@@ -246,6 +248,13 @@ bool needCastFromString(const DataTypePtr & type)
     return anyInTypeTree(*type, [](const IDataType & t) { return isVariant(t) || isDynamic(t) || isObject(t); });
 }
 
+/// Return true if the text of a `Field` of this type is not cast back from `String` to the same value:
+/// a `DateTime64` / `Time64` value is printed as a decimal, which a cast from `String` parses as date-time text.
+bool needExactLiteral(const DataTypePtr & type)
+{
+    return !needCastFromString(type) && anyInTypeTree(*type, [](const IDataType & t) { return isDateTime64(t) || isTime64(t); });
+}
+
 /// Build an AST literal for a query parameter, optionally wrapping it in a CAST.
 /// String literals don't need CAST to support substitutions in simple queries
 /// that don't support expressions (such as CREATE USER).
@@ -253,6 +262,25 @@ ASTPtr makeASTForQueryParameter(const Field & literal, const String & type_name,
 {
     if (typeid_cast<const DataTypeString *>(data_type.get()))
         return make_intrusive<ASTLiteral>(literal);
+    if (needExactLiteral(data_type))
+    {
+        /// The printed decimal of each `DateTime64` / `Time64` is cast back exactly through `Decimal128` of the same scale.
+        auto carrier_type = rewriteTypeTree(
+            data_type,
+            [](const DataTypePtr & type) -> DataTypePtr
+            {
+                if (isDateTime64(type) || isTime64(type))
+                    return std::make_shared<DataTypeDecimal<Decimal128>>(DecimalUtils::max_precision<Decimal128>, getDecimalScale(*type));
+                /// Parsing the name checks the aggregate function's argument types, which may reject the decimals,
+                /// e.g. `SimpleAggregateFunction(timeSeriesGroupArray, ...)`.
+                if (typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName()))
+                    return type->cloneWithChildren(type->getChildren());
+                return type;
+            },
+            CustomizationPolicy::Refuse);
+        if (carrier_type)
+            return addTypeConversionToAST(addTypeConversionToAST(make_intrusive<ASTLiteral>(literal), carrier_type->getName()), type_name);
+    }
     auto cast = addTypeConversionToAST(make_intrusive<ASTLiteral>(literal), type_name);
     /// Mark the wrapper as parameter substitution so consumers that need to see through it
     /// (the rewrite-rule matcher) can distinguish it from a user-written `_CAST(...)` call.

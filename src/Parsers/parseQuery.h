@@ -74,6 +74,8 @@ ASTPtr parseQuery(
     size_t max_parser_depth,
     size_t max_parser_backtracks);
 
+ASTPtr parseQueryFromText(IParser & parser, std::string_view query);
+
 
 /** Split queries separated by ; on to list of single queries
   * Returns pointer to the end of last successfully parsed query (first), and true if all queries are successfully parsed (second)

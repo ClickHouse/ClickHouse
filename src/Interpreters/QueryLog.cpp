@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Interpreters/QueryLog.h>
 
 #include <Columns/ColumnArray.h>
@@ -17,9 +18,12 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Formats/FormatSettings.h>
 #include <IO/AsyncReadCounters.h>
+#include <IO/ReadBufferFromString.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <base/getFQDNOrHostName.h>
@@ -93,6 +97,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"columns", array_low_cardinality_string, "Names of the columns present in the query."},
         {"partitions", array_low_cardinality_string, "Names of the partitions present in the query."},
         {"projections", array_low_cardinality_string, "Names of the projections used during the query execution."},
+        {"used_data_skipping_indices", array_low_cardinality_string, "Names of the data skipping indexes that excluded granules from the read, in the form `database.table.index`."},
         {"views", array_low_cardinality_string, "Names of the (materialized or live) views present in the query."},
         {"exception_code", std::make_shared<DataTypeInt32>(), "Code of an exception."},
         {"exception", std::make_shared<DataTypeString>(), "Exception message."},
@@ -175,6 +180,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"is_internal", std::make_shared<DataTypeUInt8>(), "Indicates whether it is an auxiliary query executed internally."},
 
         {"applied_rules", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of the query rewrite rules (see system.query_rules) that were applied to the query, in the order they were applied. Empty if no rule matched."},
+        {"query_plan", std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON), "The query plan of the query this row describes, serialized as JSON, with per-step runtime statistics. Only filled when the `log_query_plans` setting is enabled, and empty for `QueryStart` rows, because no plan exists yet at that point. On a row for a query that threw, the plan is the one the query had built when it threw, and it carries no statistics: a query that failed while running had its plan executed in part, and one that failed before running never executed it at all."},
     };
 }
 
@@ -233,6 +239,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_columns = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_partitions = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_projections = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_data_skipping_indices = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_views = typeid_cast<ColumnArray &>(*columns[i++]);
 
         auto fill_column = [](const std::set<String> & data, ColumnArray & column)
@@ -254,6 +261,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(query_columns, column_columns);
         fill_column(query_partitions, column_partitions);
         fill_column(query_projections, column_projections);
+        fill_column(used_data_skipping_indices, column_data_skipping_indices);
         fill_column(query_views, column_views);
     }
 
@@ -403,6 +411,39 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
             column_applied_rules_data.insertData(rule_name.data(), rule_name.size());
         auto & offsets = column_applied_rules.getOffsets();
         offsets.push_back(offsets.back() + applied_rules.size());
+    }
+
+    {
+        auto & query_plan_column = *columns[i++];
+        const size_t row_before_plan = query_plan_column.size();
+        if (query_plan.empty())
+        {
+            query_plan_column.insertDefault();
+        }
+        else
+        {
+            /// A `SerializationJSON` carries mutable per-use caches, so one cannot be shared
+            /// across queries.
+            const auto plan_type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
+            const auto plan_serialization = plan_type->getDefaultSerialization();
+
+            try
+            {
+                ReadBufferFromString plan_buffer(query_plan);
+                plan_serialization->deserializeWholeText(query_plan_column, plan_buffer, FormatSettings{});
+            }
+            catch (...)
+            {
+                tryLogCurrentException(
+                    "QueryLog",
+                    "Could not parse the query plan of query " + client_info.current_query_id + ", storing it empty");
+
+                if (query_plan_column.size() > row_before_plan)
+                    query_plan_column.popBack(query_plan_column.size() - row_before_plan);
+
+                query_plan_column.insertDefault();
+            }
+        }
     }
 }
 

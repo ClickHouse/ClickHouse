@@ -35,7 +35,13 @@ public:
     /// equality, does not over-match e.g. `SHOW ROW POLICIES p1` and `SHOW ROW POLICIES p2`.
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
-    ASTPtr clone() const override { return make_intrusive<ASTShowAccessEntitiesQuery>(*this); }
+    ASTPtr clone() const override
+    {
+        auto res = make_intrusive<ASTShowAccessEntitiesQuery>(*this);
+        res->children.clear();
+        cloneOutputOptions(*res);
+        return res;
+    }
 
     void replaceEmptyDatabase(const String & current_database);
 
