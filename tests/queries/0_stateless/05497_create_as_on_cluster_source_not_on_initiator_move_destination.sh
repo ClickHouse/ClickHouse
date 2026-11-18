@@ -21,7 +21,7 @@ ${CLICKHOUSE_CLIENT} -q "
     GRANT CREATE TABLE ON ${db}.* TO ${user};
     GRANT CLUSTER ON *.* TO ${user};
     GRANT SHOW COLUMNS, SELECT ON ${src} TO ${user};
-    GRANT TABLE ENGINE ON * TO ${user};
+    GRANT TABLE ENGINE ON *, dictGet ON *.* TO ${user};
 "
 
 # Prints whether the query misses WRITE on S3, or the error of the worker once the initiator lets the query through.

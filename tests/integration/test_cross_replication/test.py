@@ -188,6 +188,36 @@ def test_create_table_as_source_on_other_shards_engine_grant(started_cluster):
     node1.query("DROP USER as_copier")
 
 
+def test_create_table_as_source_on_other_shards_text_index_transform(started_cluster):
+    # The legacy formats run the query on node2 and node3 with no user, so a text index transform that
+    # they copy from their source was never authorized. node1 does not hold the source to refuse it.
+    for node in (node2, node3):
+        node.query(
+            "CREATE TABLE shard_1.as_transform_source(id UInt32, val String, "
+            "INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val))) "
+            "ENGINE = MergeTree ORDER BY id",
+            settings={"allow_introspection_functions": 1},
+        )
+
+    settings = {
+        "distributed_ddl_entry_format_version": 2,
+        "distributed_ddl_output_mode": "throw",
+    }
+    for table, engine in (
+        ("as_transform_inherited", ""),
+        ("as_transform_own", " ENGINE = MergeTree ORDER BY id"),
+    ):
+        error = node1.query_and_get_error(
+            "CREATE TABLE shard_1.{} ON CLUSTER shard_1_hosts AS shard_1.as_transform_source{}".format(
+                table, engine
+            ),
+            settings=settings,
+        )
+        assert "distributed_ddl_use_initial_user_and_roles" in error
+        for node in (node2, node3):
+            assert node.query("EXISTS TABLE shard_1.{}".format(table)) == "0\n"
+
+
 if __name__ == "__main__":
     with contextmanager(started_cluster)() as cluster:
         for name, instance in list(cluster.instances.items()):

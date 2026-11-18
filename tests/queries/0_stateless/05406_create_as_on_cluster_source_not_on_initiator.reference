@@ -12,6 +12,8 @@ UNKNOWN_DATABASE
 necessary to have the grants SELECT ON db_absent.src, TABLE ENGINE ON *
 -- copy_with_select:
 necessary to have the grants SELECT ON db_absent.src, TABLE ENGINE ON *
+-- copy_without_dict_get:
+dictGet ON *.*
 -- copy_with_every_grant:
 UNKNOWN_DATABASE
 -- copy_without_select:

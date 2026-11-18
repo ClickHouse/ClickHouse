@@ -4,8 +4,8 @@
 
 # An entry format before NORMALIZE_CREATE_ON_INITIATOR_VERSION holds the query as written, and the worker
 # builds AS src with no user, so every such query needs SHOW COLUMNS on the source. An initiator that does not
-# hold the source cannot check what the new table inherits, so it also requires SELECT on the source and
-# TABLE ENGINE on every engine, unless the query gives its own engine.
+# hold the source cannot check what the new table inherits, so it also requires SELECT on the source,
+# TABLE ENGINE on every engine and dictGet on every dictionary, unless the query gives its own engine.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -58,6 +58,14 @@ try_copy copy_with_select "${src}"
 
 # The move destination an engine inherits needs WRITE on its source, see 05497.
 ${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON *, WRITE ON S3, WRITE ON AZURE TO ${user}"
+
+# A Dictionary engine that the worker may inherit loads its dictionary with no user.
+echo "-- copy_without_dict_get:"
+${CLICKHOUSE_CLIENT} --user "${user}" --distributed_ddl_output_mode throw --distributed_ddl_entry_format_version 2 \
+    -q "CREATE TABLE ${db}.copy_without_dict_get ON CLUSTER test_shard_localhost AS ${src}" 2>&1 \
+    | grep -oE "dictGet ON \*\.\*|UNKNOWN_DATABASE" | head -n 1
+
+${CLICKHOUSE_CLIENT} -q "GRANT dictGet ON *.* TO ${user}"
 try_copy copy_with_every_grant "${src}"
 
 ${CLICKHOUSE_CLIENT} -q "REVOKE SELECT ON ${src} FROM ${user}"

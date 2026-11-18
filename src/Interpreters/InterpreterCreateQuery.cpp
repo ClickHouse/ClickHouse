@@ -1197,10 +1197,19 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         {
             /// Copy secondary indexes but only the ones which were not implicitly created. These will be re-generated later again and need
             /// not be copied.
+            /// Only a legacy `ON CLUSTER` entry still holds `AS src` when a worker runs it, and with no user,
+            /// so a transform copied here was not authorized. The initiator checks its own copy of the source,
+            /// but it may not hold one.
+            const bool replay_without_user = getContext()->isDDLOrOnClusterInternal() && !getContext()->getUserID();
             const auto & indices = as_storage_metadata->getSecondaryIndices();
             for (const auto & index : indices)
-                if (!index.isImplicitlyCreated())
-                    properties.indices.push_back(index);
+            {
+                if (index.isImplicitlyCreated())
+                    continue;
+                if (replay_without_user)
+                    rejectTextIndexTransformWithoutInitiatorUser(index);
+                properties.indices.push_back(index);
+            }
 
             /// Copy projections.
             properties.projections = as_storage_metadata->getProjections().clone();
@@ -4260,7 +4269,8 @@ BlockIO InterpreterCreateQuery::execute()
                     checkDictionaryEngineAccess(inherited);
 
                     /// A worker copies the source's indices with no user, so declare their transforms here.
-                    /// A query with its own engine may name a source this server does not hold.
+                    /// A query with its own engine may name a source this server does not hold, and then the
+                    /// worker refuses a copied transform itself.
                     if (inherited.storage && inherited.storage->engine && endsWith(inherited.storage->engine->name, "MergeTree"))
                     {
                         if (StoragePtr as_storage = DatabaseCatalog::instance().tryGetTable({create.as_database, create.as_table}, getContext()))
@@ -4291,11 +4301,13 @@ BlockIO InterpreterCreateQuery::execute()
                 else
                 {
                     /// The initiator cannot see the definition the worker inherits, so require `SELECT` on the
-                    /// source, `TABLE ENGINE` on every engine and the grants of any move destination, which
-                    /// covers any source.
+                    /// source, `TABLE ENGINE` on every engine, `dictGet` on every dictionary and the grants of
+                    /// any move destination, which covers any source. The worker refuses a copied text index
+                    /// transform itself.
                     AccessRightsElements required_access;
                     required_access.emplace_back(AccessType::SELECT, create.as_database, create.as_table);
                     required_access.emplace_back(AccessType::TABLE_ENGINE);
+                    required_access.emplace_back(AccessType::dictGet);
                     required_access.append_range(StorageFactory::instance().getExportAccessOfUnknownDefinition());
                     if (!getContext()->getAccess()->isGranted(required_access))
                     {
