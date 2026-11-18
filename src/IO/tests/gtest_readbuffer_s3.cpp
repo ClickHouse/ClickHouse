@@ -1,8 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <iterator>
+#include <limits>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -16,7 +19,10 @@
 
 #include <Core/ServerUUID.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <IO/ParallelReadBuffer.h>
 #include <IO/ReadBufferFromS3.h>
+#include <IO/ReadHelpers.h>
+#include <IO/SharedThreadPools.h>
 #include <IO/StdStreamFromReadBuffer.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -29,6 +35,8 @@
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/Priority.h>
+#include <Common/ProfileEvents.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Poco/ConsoleChannel.h>
 #include <Core/Settings.h>
 
@@ -38,11 +46,23 @@ static std::string cache_base_path = caches_dir / "cache1" / "";
 
 namespace DB::Setting
 {
+    extern const SettingsUInt64 max_download_buffer_size;
     extern const SettingsUInt64 max_read_buffer_size_remote_fs;
     extern const SettingsString filesystem_cache_name;
     extern const SettingsBool filesystem_cache_prefer_bigger_buffer_size;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     extern const SettingsUInt64 remote_read_min_bytes_for_seek;
+}
+
+namespace DB::ErrorCodes
+{
+    extern const int UNEXPECTED_END_OF_FILE;
+    extern const int HTTP_RANGE_NOT_SATISFIABLE;
+}
+
+namespace ProfileEvents
+{
+    extern const Event ReadBufferFromS3RequestsErrors;
 }
 
 namespace DB::FileCacheSetting
@@ -268,10 +288,14 @@ struct ClientFake : DB::S3::Client
         };
     }
 
-    /// Serves `object` honoring the `Range` header as S3 does: `bytes=a-b` (inclusive) or `bytes=a-`.
-    void setGetObjectRanges(std::string object)
+    /// Serves `object` honoring the `Range` header as S3 does: `bytes=a-b` (inclusive) or `bytes=a-`, with a `Content-Range`.
+    /// A response carries at most `max_response_size` bytes. With `ignore_range` every request is answered with the object
+    /// from byte 0 and no `Content-Range`, as a `200 OK`. The start offset of every request is recorded in `getObjectOffsets`.
+    void setGetObjectRanges(std::string object, size_t max_response_size = std::numeric_limits<size_t>::max(), bool ignore_range = false)
     {
-        getObjectImpl = [body = std::move(object)](const Aws::S3::Model::GetObjectRequest & request) -> Aws::S3::Model::GetObjectOutcome
+        object_size = object.size();
+        getObjectImpl = [this, body = std::move(object), max_response_size, ignore_range](
+                            const Aws::S3::Model::GetObjectRequest & request) -> Aws::S3::Model::GetObjectOutcome
         {
             size_t begin = 0;
             size_t end = body.size();
@@ -284,15 +308,50 @@ struct ClientFake : DB::S3::Client
                 if (dash + 1 < range.size())
                     end = std::min<size_t>(end, std::stoull(range.substr(dash + 1)) + 1);
             }
+            const size_t requested_begin = begin;
+
+            if (ignore_range)
+            {
+                begin = 0;
+                end = body.size();
+            }
+            begin = std::min(begin, body.size());
+            end = std::min(std::max(begin, end), begin + std::min(max_response_size, body.size() - begin));
             const size_t size = end - begin;
+
+            Aws::Http::HeaderValueCollection headers{{"content-length", std::to_string(size)}};
+            if (!ignore_range && request.RangeHasBeenSet())
+                headers.emplace("content-range", fmt::format("bytes {}-{}/{}", begin, end > begin ? end - 1 : begin, body.size()));
+
+            {
+                std::lock_guard lock(get_object_offsets_mutex);
+                get_object_offsets.push_back(requested_begin);
+            }
             auto response_stream = Aws::Utils::Stream::ResponseStream(Aws::New<DB::StdStreamFromReadBuffer>(
                 "test response stream",
                 std::make_unique<FakeResponseBody>(body.substr(begin, size), std::make_shared<CountedSession>()),
                 size));
-            Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(
-                std::move(response_stream), Aws::Http::HeaderValueCollection{{"content-length", std::to_string(size)}});
+            Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(std::move(response_stream), std::move(headers));
             return DB::S3::Model::GetObjectOutcome(DB::S3::Model::GetObjectResult(std::move(aws_result)));
         };
+    }
+
+    std::vector<size_t> getObjectOffsets() const
+    {
+        std::lock_guard lock(get_object_offsets_mutex);
+        return get_object_offsets;
+    }
+
+    /// Answers with the size of the object given to `setGetObjectRanges`, so that nothing goes to the network.
+    Aws::S3::Model::HeadObjectOutcome HeadObject(const Aws::S3::Model::HeadObjectRequest &) const override
+    {
+        if (!object_size)
+            return Aws::S3::Model::HeadObjectOutcome(
+                Aws::Client::AWSError<Aws::S3::S3Errors>(Aws::S3::S3Errors::NO_SUCH_KEY, "NoSuchKey", "No object is set in the fake", false));
+
+        Aws::S3::Model::HeadObjectResult result;
+        result.SetContentLength(*object_size);
+        return result;
     }
 
     Aws::S3::Model::GetObjectOutcome GetObject([[maybe_unused]] const Aws::S3::Model::GetObjectRequest & request) const override
@@ -316,6 +375,11 @@ struct ClientFake : DB::S3::Client
         result.SetIsTruncated(false);
         return Aws::S3::Model::ListObjectsV2Outcome(std::move(result));
     }
+
+private:
+    std::optional<size_t> object_size;
+    mutable std::mutex get_object_offsets_mutex;
+    std::vector<size_t> get_object_offsets;
 };
 
 static void readAndAssert(DB::ReadBuffer & buf, const char * str)
@@ -710,10 +774,8 @@ TEST_F(ReadBufferFromS3Test, HavingZeroBytes)
     /// Configure the fake GET stub before createReadBuffer: for a small object it issues the
     /// initial prefetch eagerly (also over the filesystem cache), so the data must already be
     /// servable when that background read runs.
-    auto session = std::make_shared<CountedSession>();
-
     auto storage_client = object_storage->getS3StorageClient();
-    dynamic_cast<ClientFake *>(const_cast<DB::S3::Client *>(storage_client.get()))->setGetObjectSuccess(session, data);
+    dynamic_cast<ClientFake *>(const_cast<DB::S3::Client *>(storage_client.get()))->setGetObjectRanges(data);
 
     auto buf = DB::createReadBuffer(relative_path_with_metadata, object_storage, query_context, log);
 
@@ -740,5 +802,467 @@ TEST_F(ReadBufferFromS3Test, HavingZeroBytes)
     ASSERT_EQ(async_buf->available(), 0);
 
     DB::FileCacheFactory::instance().clear();
+}
+namespace
+{
+
+std::string makeObject(size_t size)
+{
+    std::string data(size, '\0');
+    for (size_t i = 0; i < size; ++i)
+        data[i] = static_cast<char>('a' + i % 26);
+    return data;
+}
+
+struct BoundedReadResult
+{
+    std::string data;
+    std::optional<int> error_code;
+};
+
+/// Reads the whole buffer and keeps the bytes handed out before an exception, if there is one.
+BoundedReadResult readToEnd(DB::ReadBuffer & buf)
+{
+    BoundedReadResult result;
+    try
+    {
+        while (!buf.eof())
+        {
+            result.data.append(buf.position(), buf.available());
+            buf.position() = buf.buffer().end();
+        }
+    }
+    catch (const DB::Exception & e)
+    {
+        result.error_code = e.code();
+    }
+    return result;
+}
+
+BoundedReadResult readWithRightBound(const std::shared_ptr<ClientFake> & client, size_t read_until_position, size_t buffer_size, size_t offset = 0)
+{
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = buffer_size;
+    DB::ReadBufferFromS3 buf(client, "test_bucket", "test_key", "", DB::S3::S3RequestSettings(), read_settings);
+    if (read_until_position)
+        buf.setReadUntilPosition(read_until_position);
+    if (offset)
+        buf.seek(offset, SEEK_SET);
+    return readToEnd(buf);
+}
+
+DB::ContextMutablePtr createQueryContext()
+{
+    DB::ServerUUID::setRandomForUnitTests();
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("query_id");
+    return query_context;
+}
+
+void setSetting(const DB::ContextMutablePtr & context, const auto & setting, auto value)
+{
+    const_cast<DB::Settings &>(context->getSettingsRef())[setting] = value;
+}
+
+/// The read buffer of an `s3()` source for an object whose size from HEAD is `size_from_head`.
+std::unique_ptr<DB::ReadBufferFromFileBase> createSourceReadBuffer(
+    std::unique_ptr<ClientFake> client, size_t size_from_head, const DB::ContextMutablePtr & query_context)
+{
+    DB::S3::URI uri;
+    uri.bucket = "test_bucket";
+    auto object_storage = std::make_shared<DB::S3ObjectStorage>(
+        std::move(client), std::make_unique<DB::S3Settings>(), std::move(uri), DB::S3Capabilities{}, DB::ObjectStorageKeyGeneratorPtr{}, "s3");
+
+    DB::ObjectMetadata object_metadata;
+    object_metadata.size_bytes = size_from_head;
+    object_metadata.etag = "tag1";
+    DB::RelativePathWithMetadata relative_path_with_metadata("test_key", object_metadata);
+    return DB::createReadBuffer(relative_path_with_metadata, object_storage, query_context, getLogger("test"));
+}
+
+UInt64 readErrors()
+{
+    return ProfileEvents::global_counters[ProfileEvents::ReadBufferFromS3RequestsErrors];
+}
+
+}
+
+TEST_F(ReadBufferFromS3Test, CappedResponsesAreReassembled)
+{
+    const auto data = makeObject(100);
+    const auto client = std::make_shared<ClientFake>();
+    client->setGetObjectRanges(data, /*max_response_size=*/40);
+
+    const auto errors_before = readErrors();
+    const auto result = readWithRightBound(client, /*read_until_position=*/100, /*buffer_size=*/64);
+
+    ASSERT_FALSE(result.error_code.has_value()) << *result.error_code;
+    EXPECT_EQ(result.data, data);
+    EXPECT_EQ(client->getObjectOffsets(), (std::vector<size_t>{0, 40, 80}));
+    EXPECT_EQ(readErrors(), errors_before);
+}
+
+TEST_F(ReadBufferFromS3Test, CappedResponsesEndingOnAFillBoundaryAreReassembled)
+{
+    const auto data = makeObject(100);
+    const auto client = std::make_shared<ClientFake>();
+    client->setGetObjectRanges(data, /*max_response_size=*/40);
+
+    const auto errors_before = readErrors();
+    const auto result = readWithRightBound(client, /*read_until_position=*/100, /*buffer_size=*/20);
+
+    ASSERT_FALSE(result.error_code.has_value()) << *result.error_code;
+    EXPECT_EQ(result.data, data);
+    EXPECT_EQ(client->getObjectOffsets(), (std::vector<size_t>{0, 40, 80}));
+    EXPECT_EQ(readErrors(), errors_before);
+}
+
+TEST_F(ReadBufferFromS3Test, ResponsesThatStopBeforeTheRightBoundAreAnError)
+{
+    /// With a buffer of 64 the response ends inside a fill, with 20 on a fill boundary.
+    for (const size_t buffer_size : {64, 20})
+    {
+        const auto client = std::make_shared<ClientFake>();
+        client->setGetObjectRanges(makeObject(40));
+
+        const auto errors_before = readErrors();
+        const auto result = readWithRightBound(client, /*read_until_position=*/100, buffer_size);
+
+        ASSERT_TRUE(result.error_code.has_value()) << buffer_size;
+        EXPECT_EQ(*result.error_code, DB::ErrorCodes::UNEXPECTED_END_OF_FILE) << buffer_size;
+        /// The request that continues the read gets the whole `max_single_read_retries` budget of 4 attempts.
+        EXPECT_EQ(client->getObjectOffsets(), (std::vector<size_t>{0, 40, 40, 40, 40})) << buffer_size;
+        EXPECT_GT(readErrors(), errors_before) << buffer_size;
+    }
+}
+
+TEST_F(ReadBufferFromS3Test, ExactResponseAndUnboundedReadAreNotReopened)
+{
+    const auto data = makeObject(100);
+    {
+        const auto client = std::make_shared<ClientFake>();
+        client->setGetObjectRanges(data);
+        const auto result = readWithRightBound(client, /*read_until_position=*/100, /*buffer_size=*/64);
+
+        ASSERT_FALSE(result.error_code.has_value()) << *result.error_code;
+        EXPECT_EQ(result.data, data);
+        EXPECT_EQ(client->getObjectOffsets(), (std::vector<size_t>{0}));
+    }
+    {
+        const auto client = std::make_shared<ClientFake>();
+        client->setGetObjectRanges(data, /*max_response_size=*/40);
+        const auto result = readWithRightBound(client, /*read_until_position=*/0, /*buffer_size=*/64);
+
+        ASSERT_FALSE(result.error_code.has_value()) << *result.error_code;
+        EXPECT_EQ(result.data, data.substr(0, 40));
+        EXPECT_EQ(client->getObjectOffsets(), (std::vector<size_t>{0}));
+    }
+}
+
+TEST_F(ReadBufferFromS3Test, RangeIgnoringEndpointIsRejectedOnReopen)
+{
+    const auto data = makeObject(100);
+    const auto client = std::make_shared<ClientFake>();
+    client->setGetObjectRanges(data, /*max_response_size=*/50, /*ignore_range=*/true);
+
+    const auto result = readWithRightBound(client, /*read_until_position=*/100, /*buffer_size=*/64);
+
+    ASSERT_TRUE(result.error_code.has_value());
+    EXPECT_EQ(*result.error_code, DB::ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE);
+    EXPECT_EQ(result.data, data.substr(0, 50));
+}
+
+TEST_F(ReadBufferFromS3Test, RangeIgnoringEndpointIsRejectedAtANonzeroOffset)
+{
+    const auto data = makeObject(100);
+    {
+        const auto client = std::make_shared<ClientFake>();
+        client->setGetObjectRanges(data, std::numeric_limits<size_t>::max(), /*ignore_range=*/true);
+        const auto result = readWithRightBound(client, /*read_until_position=*/100, /*buffer_size=*/64, /*offset=*/40);
+
+        ASSERT_TRUE(result.error_code.has_value());
+        EXPECT_EQ(*result.error_code, DB::ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE);
+        EXPECT_TRUE(result.data.empty());
+        EXPECT_EQ(client->getObjectOffsets(), (std::vector<size_t>{40, 40, 40, 40}));
+    }
+    {
+        const auto client = std::make_shared<ClientFake>();
+        client->setGetObjectRanges(data, /*max_response_size=*/40);
+        const auto result = readWithRightBound(client, /*read_until_position=*/100, /*buffer_size=*/64, /*offset=*/40);
+
+        ASSERT_FALSE(result.error_code.has_value()) << *result.error_code;
+        EXPECT_EQ(result.data, data.substr(40));
+        EXPECT_EQ(client->getObjectOffsets(), (std::vector<size_t>{40, 80}));
+    }
+}
+
+TEST_F(ReadBufferFromS3Test, LongerResponseIsCutAtTheRightBound)
+{
+    const auto data = makeObject(100);
+    const auto client = std::make_shared<ClientFake>();
+    client->setGetObjectRanges(data, /*max_response_size=*/std::numeric_limits<size_t>::max(), /*ignore_range=*/true);
+
+    const auto result = readWithRightBound(client, /*read_until_position=*/60, /*buffer_size=*/64);
+
+    ASSERT_FALSE(result.error_code.has_value()) << *result.error_code;
+    EXPECT_EQ(result.data, data.substr(0, 60));
+    EXPECT_EQ(client->getObjectOffsets(), (std::vector<size_t>{0}));
+}
+
+TEST_F(ReadBufferFromS3Test, PositionedReadChecksTheReturnedRangeStart)
+{
+    const auto data = makeObject(100);
+    auto read_at = [&](bool ignore_range, size_t range_begin) -> BoundedReadResult
+    {
+        const auto client = std::make_shared<ClientFake>();
+        client->setGetObjectRanges(data, std::numeric_limits<size_t>::max(), ignore_range);
+        DB::ReadBufferFromS3 buf(client, "test_bucket", "test_key", "", DB::S3::S3RequestSettings(), DB::ReadSettings{});
+
+        BoundedReadResult result;
+        result.data.resize(16);
+        try
+        {
+            result.data.resize(buf.readBigAt(result.data.data(), result.data.size(), range_begin, {}));
+        }
+        catch (const DB::Exception & e)
+        {
+            result.error_code = e.code();
+        }
+        return result;
+    };
+
+    /// A `Range`-ignoring endpoint answers with the object from byte 0, which is a correct answer only at offset 0.
+    const auto refused = read_at(/*ignore_range=*/true, /*range_begin=*/40);
+    ASSERT_TRUE(refused.error_code.has_value());
+    EXPECT_EQ(*refused.error_code, DB::ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE);
+
+    const auto at_zero = read_at(/*ignore_range=*/true, /*range_begin=*/0);
+    ASSERT_FALSE(at_zero.error_code.has_value()) << *at_zero.error_code;
+    EXPECT_EQ(at_zero.data, data.substr(0, 16));
+
+    const auto ranged = read_at(/*ignore_range=*/false, /*range_begin=*/40);
+    ASSERT_FALSE(ranged.error_code.has_value()) << *ranged.error_code;
+    EXPECT_EQ(ranged.data, data.substr(40, 16));
+}
+
+TEST_F(ReadBufferFromS3Test, UnboundedReadAfterASeekChecksTheReturnedRangeStart)
+{
+    const auto data = makeObject(100);
+    {
+        const auto client = std::make_shared<ClientFake>();
+        client->setGetObjectRanges(data, std::numeric_limits<size_t>::max(), /*ignore_range=*/true);
+        const auto result = readWithRightBound(client, /*read_until_position=*/0, /*buffer_size=*/64, /*offset=*/40);
+
+        ASSERT_TRUE(result.error_code.has_value());
+        EXPECT_EQ(*result.error_code, DB::ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE);
+        EXPECT_TRUE(result.data.empty());
+    }
+    {
+        const auto client = std::make_shared<ClientFake>();
+        client->setGetObjectRanges(data);
+        const auto result = readWithRightBound(client, /*read_until_position=*/0, /*buffer_size=*/64, /*offset=*/40);
+
+        ASSERT_FALSE(result.error_code.has_value()) << *result.error_code;
+        EXPECT_EQ(result.data, data.substr(40));
+        EXPECT_EQ(client->getObjectOffsets(), (std::vector<size_t>{40}));
+    }
+}
+
+TEST_F(ReadBufferFromS3Test, ContentRangeHeaderIsParsed)
+{
+    const auto data = makeObject(100);
+    /// Every request is answered with the 16 bytes at `body_begin` and the given `Content-Range`.
+    auto read_at = [&](size_t range_begin, size_t body_begin, const std::string & content_range) -> BoundedReadResult
+    {
+        const auto client = std::make_shared<ClientFake>();
+        client->getObjectImpl = [&](const Aws::S3::Model::GetObjectRequest &) -> Aws::S3::Model::GetObjectOutcome
+        {
+            std::string body = data.substr(body_begin, 16);
+            Aws::Http::HeaderValueCollection headers{{"content-length", std::to_string(body.size())}, {"content-range", content_range}};
+            const size_t size = body.size();
+            auto response_stream = Aws::Utils::Stream::ResponseStream(Aws::New<DB::StdStreamFromReadBuffer>(
+                "test response stream", std::make_unique<FakeResponseBody>(std::move(body), std::make_shared<CountedSession>()), size));
+            Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(std::move(response_stream), std::move(headers));
+            return DB::S3::Model::GetObjectOutcome(DB::S3::Model::GetObjectResult(std::move(aws_result)));
+        };
+        DB::ReadBufferFromS3 buf(client, "test_bucket", "test_key", "", DB::S3::S3RequestSettings(), DB::ReadSettings{});
+
+        BoundedReadResult result;
+        result.data.resize(16);
+        try
+        {
+            result.data.resize(buf.readBigAt(result.data.data(), result.data.size(), range_begin, {}));
+        }
+        catch (const DB::Exception & e)
+        {
+            result.error_code = e.code();
+        }
+        return result;
+    };
+
+    /// The range unit is case-insensitive.
+    const auto mixed_case = read_at(/*range_begin=*/40, /*body_begin=*/40, "Bytes 40-55/100");
+    ASSERT_FALSE(mixed_case.error_code.has_value()) << *mixed_case.error_code;
+    EXPECT_EQ(mixed_case.data, data.substr(40, 16));
+
+    /// A header that does not parse is not taken as a range starting at 0.
+    const auto malformed = read_at(/*range_begin=*/0, /*body_begin=*/40, "bytes=40-55/100");
+    ASSERT_TRUE(malformed.error_code.has_value()) << malformed.data;
+    EXPECT_EQ(*malformed.error_code, DB::ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE);
+}
+
+TEST_F(ReadBufferFromS3Test, PositionedReadOfEmptyResponsesIsAnError)
+{
+    const auto data = makeObject(100);
+    auto read_at = [&](size_t max_response_size) -> std::pair<BoundedReadResult, std::vector<size_t>>
+    {
+        const auto client = std::make_shared<ClientFake>();
+        client->setGetObjectRanges(data, max_response_size);
+        /// Stops a reader that would not stop on its own.
+        auto serve = *client->getObjectImpl;
+        client->getObjectImpl = [serve, fake = client.get()](const Aws::S3::Model::GetObjectRequest & request) -> Aws::S3::Model::GetObjectOutcome
+        {
+            if (fake->getObjectOffsets().size() >= 10)
+                return Aws::S3::Model::GetObjectOutcome(Aws::Client::AWSError<Aws::S3::S3Errors>(
+                    Aws::S3::S3Errors::NO_SUCH_KEY, "NoSuchKey", "Too many requests", false));
+            return serve(request);
+        };
+        DB::ReadBufferFromS3 buf(client, "test_bucket", "test_key", "", DB::S3::S3RequestSettings(), DB::ReadSettings{});
+
+        BoundedReadResult result;
+        result.data.resize(16);
+        try
+        {
+            result.data.resize(buf.readBigAt(result.data.data(), result.data.size(), /*range_begin=*/40, {}));
+        }
+        catch (const DB::Exception & e)
+        {
+            result.error_code = e.code();
+        }
+        return {result, client->getObjectOffsets()};
+    };
+
+    const auto [empty, empty_offsets] = read_at(/*max_response_size=*/0);
+    ASSERT_TRUE(empty.error_code.has_value());
+    EXPECT_EQ(*empty.error_code, DB::ErrorCodes::UNEXPECTED_END_OF_FILE);
+    EXPECT_EQ(empty_offsets, (std::vector<size_t>{40, 40, 40, 40}));
+
+    const auto [capped, capped_offsets] = read_at(/*max_response_size=*/8);
+    ASSERT_FALSE(capped.error_code.has_value()) << *capped.error_code;
+    EXPECT_EQ(capped.data, data.substr(40, 16));
+    EXPECT_EQ(capped_offsets, (std::vector<size_t>{40, 48}));
+}
+
+TEST_F(ReadBufferFromS3Test, CappedResponsesAreReassembledThroughFilesystemCache)
+{
+    auto query_context = createQueryContext();
+    setSetting(query_context, DB::Setting::max_read_buffer_size_remote_fs, 64);
+    setSetting(query_context, DB::Setting::filesystem_cache_name, "cache_capped_responses");
+    setSetting(query_context, DB::Setting::filesystem_cache_prefer_bigger_buffer_size, false);
+
+    DB::FileCacheSettings cache_settings;
+    cache_settings[DB::FileCacheSetting::path] = fs::path(cache_base_path) / "capped_responses" / "";
+    cache_settings[DB::FileCacheSetting::max_size] = 1000;
+    cache_settings[DB::FileCacheSetting::max_elements] = 10;
+    cache_settings[DB::FileCacheSetting::boundary_alignment] = 5;
+    cache_settings[DB::FileCacheSetting::max_file_segment_size] = 100;
+    cache_settings[DB::FileCacheSetting::background_download_threads] = 0;
+    auto cache = DB::FileCacheFactory::instance().getOrCreate("cache_capped_responses", cache_settings, "");
+    cache->initialize();
+    cache.reset();
+
+    const auto data = makeObject(100);
+    auto client = std::make_unique<ClientFake>();
+    client->setGetObjectRanges(data, /*max_response_size=*/40);
+
+    auto buf = createSourceReadBuffer(std::move(client), data.size(), query_context);
+    auto * async_buf = dynamic_cast<DB::AsynchronousBoundedReadBuffer *>(buf.get());
+    ASSERT_TRUE(async_buf);
+    ASSERT_TRUE(dynamic_cast<DB::CachedOnDiskReadBufferFromFile *>(async_buf->getImpl().get()));
+
+    std::string read_data;
+    DB::readStringUntilEOF(read_data, *buf);
+    EXPECT_EQ(read_data, data);
+
+    DB::FileCacheFactory::instance().clear();
+}
+
+/// The `s3()` source reads an object smaller than `2 * max_download_buffer_size` with a prefetch on the threadpool reader.
+TEST_F(ReadBufferFromS3Test, CappedResponsesAreReassembledByThreadpoolPrefetch)
+{
+    /// With a buffer of 64 a response ends inside a fill, with 20 on a fill boundary.
+    for (const size_t buffer_size : {64, 20})
+    {
+        auto query_context = createQueryContext();
+        setSetting(query_context, DB::Setting::max_read_buffer_size_remote_fs, buffer_size);
+        const auto data = makeObject(100);
+        auto client = std::make_unique<ClientFake>();
+        client->setGetObjectRanges(data, /*max_response_size=*/40);
+        const auto * fake = client.get();
+
+        auto buf = createSourceReadBuffer(std::move(client), data.size(), query_context);
+        auto * async_buf = dynamic_cast<DB::AsynchronousBoundedReadBuffer *>(buf.get());
+        ASSERT_TRUE(async_buf && dynamic_cast<DB::ReadBufferFromS3 *>(async_buf->getImpl().get())) << buffer_size;
+
+        const auto result = readToEnd(*buf);
+        ASSERT_FALSE(result.error_code.has_value()) << *result.error_code;
+        EXPECT_EQ(result.data, data) << buffer_size;
+        EXPECT_EQ(fake->getObjectOffsets(), (std::vector<size_t>{0, 40, 80})) << buffer_size;
+    }
+}
+
+TEST_F(ReadBufferFromS3Test, ObjectShorterThanItsHeadIsAnErrorForThreadpoolPrefetch)
+{
+    auto query_context = createQueryContext();
+    setSetting(query_context, DB::Setting::max_read_buffer_size_remote_fs, 64);
+    const auto data = makeObject(100);
+    auto client = std::make_unique<ClientFake>();
+    client->setGetObjectRanges(data);
+    const auto * fake = client.get();
+
+    auto buf = createSourceReadBuffer(std::move(client), /*size_from_head=*/1000, query_context);
+    ASSERT_TRUE(dynamic_cast<DB::AsynchronousBoundedReadBuffer *>(buf.get()));
+
+    const auto result = readToEnd(*buf);
+    ASSERT_TRUE(result.error_code.has_value()) << result.data.size();
+    EXPECT_EQ(*result.error_code, DB::ErrorCodes::UNEXPECTED_END_OF_FILE);
+    EXPECT_EQ(fake->getObjectOffsets(), (std::vector<size_t>{0, 100, 100, 100, 100}));
+}
+
+/// The `s3()` source reads an object of at least `2 * max_download_buffer_size` with `ParallelReadBuffer` (`readBigAt`).
+TEST_F(ReadBufferFromS3Test, ObjectShorterThanItsHeadIsAnErrorForParallelRead)
+{
+    DB::getIOThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+    auto query_context = createQueryContext();
+    setSetting(query_context, DB::Setting::max_download_buffer_size, 20);
+    const auto data = makeObject(100);
+    auto client = std::make_unique<ClientFake>();
+    client->setGetObjectRanges(data);
+    /// Stops a reader that would not stop on its own.
+    auto serve = *client->getObjectImpl;
+    client->getObjectImpl = [serve, fake = client.get()](const Aws::S3::Model::GetObjectRequest & request) -> Aws::S3::Model::GetObjectOutcome
+    {
+        if (fake->getObjectOffsets().size() >= 50)
+            return Aws::S3::Model::GetObjectOutcome(Aws::Client::AWSError<Aws::S3::S3Errors>(
+                Aws::S3::S3Errors::NO_SUCH_KEY, "NoSuchKey", "Too many requests", false));
+        return serve(request);
+    };
+    const auto * fake = client.get();
+
+    const size_t size_from_head = 120;
+    auto buf = createSourceReadBuffer(std::move(client), size_from_head, query_context);
+    ASSERT_TRUE(dynamic_cast<DB::ReadBufferFromS3 *>(buf.get()));
+    auto parallel_buf = DB::wrapInParallelReadBufferIfSupported(
+        *buf, DB::threadPoolCallbackRunnerUnsafe<void>(DB::getIOThreadPool().get(), DB::ThreadName::PARALLEL_READ),
+        /*max_working_readers=*/4, /*range_step=*/20, size_from_head);
+    ASSERT_TRUE(parallel_buf);
+
+    const auto result = readToEnd(*parallel_buf);
+    ASSERT_TRUE(result.error_code.has_value()) << result.data.size();
+    EXPECT_EQ(*result.error_code, DB::ErrorCodes::UNEXPECTED_END_OF_FILE);
+    auto offsets = fake->getObjectOffsets();
+    std::ranges::sort(offsets);
+    EXPECT_EQ(offsets, (std::vector<size_t>{0, 20, 40, 60, 80, 100, 100, 100, 100}));
 }
 #endif
