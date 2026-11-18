@@ -5,6 +5,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -86,10 +87,6 @@ ASTPtr wrapWithTimezone(const ASTPtr & literal_ast, const DataTypePtr & datetime
 
 const std::unordered_set<String> comparison_functions = {
     "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
-};
-
-const std::unordered_set<String> in_functions = {
-    "in", "notIn", "globalIn", "globalNotIn",
 };
 
 /// How one evaluation of a string literal of the expression reads the string.
@@ -187,7 +184,7 @@ public:
             {
                 const auto & name = function->getFunctionName();
                 if ((comparison_functions.contains(name) && collectComparison(*function))
-                    || (in_functions.contains(name) && collectIn(*function)) || (name == "has" && collectInAsHas(*function))
+                    || (isNameOfInFunction(name) && collectIn(*function)) || (name == "has" && collectInAsHas(*function))
                     || (name == "CAST" && collectInElementCast(*function)))
                     return;
             }
@@ -261,7 +258,8 @@ private:
         return true;
     }
 
-    /// `event IN tuple('...', ...)`. A tuple of literals only, which the parser folds into one literal, is left as it is.
+    /// `event IN tuple('...', ...)`, also as another function of `IN`, such as `nullIn`, which the analyzer resolves `in` to with
+    /// `transform_null_in = 1`. A tuple of literals only, which the parser folds into one literal, is left as it is.
     bool collectIn(const FunctionNode & function)
     {
         const auto & arguments = function.getArguments().getNodes();
@@ -379,7 +377,7 @@ const IAST * tryGetIdentifierOfInWithElement(const IAST * literal, const std::un
     if (!tuple || tuple->name != "tuple")
         return nullptr;
     const auto * in = tryGetFunctionOfArgument(tuple, parents);
-    if (!in || !in_functions.contains(in->name) || in->arguments->children.size() != 2)
+    if (!in || !isNameOfInFunction(in->name) || in->arguments->children.size() != 2)
         return nullptr;
     const auto & left = in->arguments->children[0];
     if (!left->as<ASTIdentifier>() || in->arguments->children[1].get() != tuple)
