@@ -114,7 +114,7 @@ Tuple(\n    a String,\n    b UInt16)	8
 9	57
 9
 8	42
--- arrays are compared after the cast to the common type, by the operator and by the join
-4	4
-4
-4
+-- arrays are compared element by element, zero-padded like the scalars, by the operator and by the join
+8	8
+8
+8

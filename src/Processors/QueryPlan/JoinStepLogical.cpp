@@ -2983,7 +2983,14 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
                 operand = JoinActionRef::transform({operand}, [&](ActionsDAG & dag, auto && nodes)
                 {
                     const auto * node = addTrimZeroBytes(dag, nodes.at(0), other_type);
-                    return node->result_type->equals(*common_type) ? node : &dag.addCast(*node, common_type, {}, nullptr);
+                    if (node->result_type->equals(*common_type))
+                        return node;
+                    /// The `FixedString` keys are converted as in `predicateOperandsToCommonType`: without the trailing zero
+                    /// bytes, whatever `cast_fixed_string_to_string_strip_trailing_zeros` is, and under a distinct name.
+                    String result_name;
+                    if (anyInTypeTree(*node->result_type, [](const IDataType & type) { return isFixedString(type); }))
+                        result_name = fmt::format("_CAST_strip_trailing_zeros({}, '{}')", node->result_name, common_type->getName());
+                    return &dag.addCast(*node, common_type, std::move(result_name), nullptr, /* fixed_string_to_string_strip_trailing_zeros= */ true);
                 });
             };
             normalize(lhs, rhs_type);
