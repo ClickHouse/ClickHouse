@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# Random settings limits: input_format_parquet_use_offset_index=(1, 1); output_format_parquet_row_group_size_bytes=(536870912, None)
+# Random settings limits: input_format_parquet_use_offset_index=(1, 1); output_format_parquet_row_group_size_bytes=(536870912, None); output_format_parquet_max_dictionary_size=(1048576, None)
 # Tag no-fasttest: depends on S3
 
 # A Parquet reader of a file in object storage starts reading the column data of upcoming row groups

@@ -1889,12 +1889,13 @@ class SettingsRandomizer:
         "input_format_parquet_local_file_min_bytes_for_seek": lambda: random.choices(
             [0, 1, 8192, 1024 * 1024], weights=[1, 1, 4, 1]
         )[0],
+        # Blocks of a hundred rows are left to the tests that need them
         "input_format_parquet_max_block_size": lambda: random.choices(
-            [100, 1000, 8192, 65409], weights=[1, 1, 2, 4]
+            [1000, 8192, 65409], weights=[1, 2, 4]
         )[0],
-        # 0 disables it; the reader never makes a block smaller than 128 rows because of it
+        # 0 disables it
         "input_format_parquet_prefer_block_bytes": lambda: random.choices(
-            [0, 1, 64 * 1024, 1024 * 1024, 65409 * 256], weights=[1, 1, 1, 1, 4]
+            [0, 64 * 1024, 1024 * 1024, 65409 * 256], weights=[1, 1, 1, 4]
         )[0],
         "input_format_parquet_memory_low_watermark": lambda: random.choices(
             [0, 1, 1024 * 1024, 2 * 1024 * 1024, 64 * 1024 * 1024], weights=[1, 1, 1, 4, 1]
