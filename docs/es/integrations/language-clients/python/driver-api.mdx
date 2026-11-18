@@ -153,6 +153,10 @@ De forma predeterminada, se usa una base de datos en memoria. Pase `path="/data/
 
 Tanto los Clients HTTP síncronos como los asíncronos reintentan las lecturas aptas tras determinados cierres remotos de la conexión y ante respuestas HTTP 429, 503 o 504. Para `query`, sus métodos de consulta especializados, `raw_query` y `raw_stream`, `query_retries` define el número de intentos adicionales. Las lecturas aptas admiten al menos un reintento tras un cierre remoto, incluso con `query_retries=0`. Una lectura enviada mediante `command` puede reintentarse una vez tras un cierre remoto, pero no consume el presupuesto de `query_retries` ni se reintenta ante esos códigos de estado HTTP.
 
+Antes de reintentar ante una respuesta HTTP 429, 503 o 504, ambos clients esperan `0.1 * attempt` segundos, donde `attempt` empieza en 1, y cierran la respuesta fallida.
+
+Una conexión que se cierra después de la línea de estado HTTP o de los encabezados de progreso, antes de que ClickHouse envíe los encabezados de respuesta finales, sigue la misma política de cierre remoto.
+
 El Client reconoce sentencias de lectura como `SELECT`, `SHOW`, `DESCRIBE` y `EXISTS`, incluidas las formas compatibles de `WITH` y `EXPLAIN`. Las sentencias SQL que no reconoce como lecturas no se reintentan tras estos fallos. También quedan excluidas las sentencias con `PARALLEL WITH` o `INTO OUTFILE`, así como las que contienen varias sentencias.
 
 Las escrituras SQL, las sentencias DDL y las mutaciones enviadas mediante `command`, `query`, `raw_query` o `raw_stream` no se vuelven a ejecutar tras estos fallos. Lo mismo ocurre cuando DB-API o SQLAlchemy ejecutan SQL a través de esos métodos. Un error de conexión no indica si una escritura llegó a confirmarse (committed). Compruebe el resultado antes de reintentarla desde su aplicación.

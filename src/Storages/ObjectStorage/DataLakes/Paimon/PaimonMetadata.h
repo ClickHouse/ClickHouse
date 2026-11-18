@@ -4,9 +4,9 @@
 #if USE_AVRO
 
 #include <atomic>
+#include <map>
 #include <mutex>
 #include <optional>
-#include <set>
 #include <vector>
 #include <Disks/IStoragePolicy.h>
 #include <Interpreters/Context_fwd.h>
@@ -91,6 +91,9 @@ public:
     /// Check if incremental read mode is enabled
     bool isIncrementalReadEnabled() const;
 
+    /// The columns of a data file that has a schema transform, under the names the file was written with.
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override;
+
 private:
     enum class ManifestKind : UInt8
     {
@@ -99,14 +102,31 @@ private:
         Both,
     };
 
-    Strings collectDataFilesFromManifests(
+    /// Which files of a primary-key table Paimon's batch scan reads without merging.
+    struct PrimaryKeyRead
+    {
+        bool skip_level_zero = false;
+        /// A bucket whose files are all above level 0 needs no merge even when they are in several levels.
+        bool allow_several_levels = false;
+    };
+
+    /// `schema_transforms[i]` is the schema transform of `paths[i]`, nullptr if the file is read by column name.
+    struct DataFilesToRead
+    {
+        Strings paths;
+        std::vector<std::shared_ptr<ActionsDAG>> schema_transforms;
+    };
+
+    /// With `primary_key_read`, throws if a bucket needs merge-on-read.
+    DataFilesToRead collectDataFilesFromManifests(
         const std::vector<PaimonTableStatePtr> & snapshots,
         const PaimonTableSchema & read_schema,
         ManifestKind kind,
         const std::optional<Paimon::PartitionPruner> & partition_pruner,
         bool deduplicate,
         bool track_deletes,
-        std::optional<Int64> incremental_cursor = {}) const;
+        std::optional<Int64> incremental_cursor = {},
+        const std::optional<PrimaryKeyRead> & primary_key_read = {}) const;
 
     /// Lock-free read of current state
     PaimonTableStatePtr getCurrentState() const;
@@ -120,29 +140,43 @@ private:
     /// Throws if the snapshot's index manifest lists deletion vectors. Pass the cursor of an incremental read for its recovery hint.
     void checkNoDeletionVectors(const PaimonTableState & state, std::optional<Int64> incremental_cursor = {}) const;
 
-    /// Throws if a data file written with schema `file_schema_id` cannot be read by column name with `read_schema`.
-    void checkDataFileSchema(
+    /// The transform from the columns of a data file written with schema `file_schema_id` to the columns of `read_schema`,
+    /// matched by field id. nullptr if reading the file by column name gives the same columns. Throws if a field inside
+    /// a ROW column would be bound to another field id. Pass the cursor of an incremental read for its recovery hint.
+    std::shared_ptr<ActionsDAG> getDataFileSchemaTransform(
         const String & file_path,
         Int64 file_schema_id,
         const PaimonTableSchema & read_schema,
         std::optional<Int64> incremental_cursor) const;
+
+    /// `transform` is the result of `getDataFileSchemaTransform`. `in_file` and `in_read_schema` are empty if the file
+    /// can be read, else they name the field inside a ROW column that makes it unreadable.
+    struct FileSchemaMapping
+    {
+        std::shared_ptr<ActionsDAG> transform;
+        String in_file;
+        String in_read_schema;
+    };
+
+    FileSchemaMapping getDataFileSchemaMapping(Int64 file_schema_id, const PaimonTableSchema & read_schema) const;
 
     /// Load state for a specific snapshot ID
     PaimonTableStatePtr loadStateForSnapshot(Int64 snapshot_id) const;
 
     /// Get snapshots between from_snapshot (exclusive) and to_snapshot (inclusive).
     /// If max_snapshots_to_load > 0, stop loading once the limit is reached.
-    /// If skip_compact is true, snapshots with commit_kind == "COMPACT" are excluded
-    /// (used by incremental read to avoid re-processing compacted data).
+    /// If append_only is true, only APPEND snapshots are returned (and OVERWRITE ones with
+    /// paimon_incremental_read_append_overwrite): COMPACT, OVERWRITE and ANALYZE ones are skipped
+    /// (after checking them for deletion vectors), and any other commit kind throws.
     /// last_scanned_snapshot_id is set to the highest snapshot_id actually visited
-    /// (including skipped compact / missing ones), so the caller can advance the watermark
+    /// (including skipped / missing ones), so the caller can advance the watermark
     /// past gaps that produced no data files. last_scanned_state is its state, or nullptr
     /// when that id was expired.
     std::vector<PaimonTableStatePtr> getSnapshotsBetween(
         Int64 from_snapshot_id,
         Int64 to_snapshot_id,
         UInt64 max_snapshots_to_load,
-        bool skip_compact,
+        bool append_only,
         std::optional<Int64> & last_scanned_snapshot_id,
         PaimonTableStatePtr & last_scanned_state) const;
 
@@ -163,7 +197,7 @@ private:
 
     /// Collect data files for incremental read (from committed snapshot to current).
     /// `committed` is the watermark observed under the processing lock.
-    Strings collectIncrementalDataFiles(
+    DataFilesToRead collectIncrementalDataFiles(
         const PaimonTableStatePtr & state,
         const PaimonTableSchema & read_schema,
         const std::optional<Paimon::PartitionPruner> & partition_pruner,
@@ -176,13 +210,13 @@ private:
     void checkCursorSnapshotUnchanged(Int64 snapshot_id, const PaimonSnapshotIdentity & consumed) const;
 
     /// Collect data files for a specific snapshot delta (session-level targeted read)
-    Strings collectDeltaFilesForSnapshot(
+    DataFilesToRead collectDeltaFilesForSnapshot(
         const PaimonTableStatePtr & state,
         const PaimonTableSchema & read_schema,
         const std::optional<Paimon::PartitionPruner> & partition_pruner) const;
 
     /// Collect data files for full scan
-    Strings collectFullScanDataFiles(
+    DataFilesToRead collectFullScanDataFiles(
         const PaimonTableStatePtr & state,
         const PaimonTableSchema & read_schema,
         const std::optional<Paimon::PartitionPruner> & partition_pruner) const;
@@ -197,9 +231,9 @@ private:
     /// Update mutex: only held briefly during state replacement
     mutable std::mutex update_mutex;
 
-    /// (file schema id, read schema id) pairs `checkDataFileSchema` found compatible. A schema never changes once written.
-    mutable std::mutex checked_file_schemas_mutex;
-    mutable std::set<std::pair<Int64, Int64>> checked_file_schemas TSA_GUARDED_BY(checked_file_schemas_mutex);
+    /// `getDataFileSchemaMapping` by (file schema id, read schema id). A schema never changes once written.
+    mutable std::mutex file_schema_transforms_mutex;
+    mutable std::map<std::pair<Int64, Int64>, FileSchemaMapping> file_schema_transforms TSA_GUARDED_BY(file_schema_transforms_mutex);
 
     /// Persistent components: thread-safe or immutable
     PaimonPersistentComponents persistent_components;

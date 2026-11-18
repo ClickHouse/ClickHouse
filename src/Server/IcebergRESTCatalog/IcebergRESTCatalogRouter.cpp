@@ -22,7 +22,7 @@ const std::vector<IcebergRESTRoute> & getIcebergRESTRoutes()
         {HTTPRequest::HTTP_GET, {"v1", "config"}, IcebergRESTOperation::GetConfig, true},
         {HTTPRequest::HTTP_POST, {"v1", "oauth", "tokens"}, IcebergRESTOperation::GetToken, false},
 
-        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "tables", "rename"}, IcebergRESTOperation::RenameTable, false},
+        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "tables", "rename"}, IcebergRESTOperation::RenameTable, true},
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "transactions", "commit"}, IcebergRESTOperation::CommitTransaction, false},
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "views", "rename"}, IcebergRESTOperation::RenameView, false},
 
@@ -44,7 +44,7 @@ const std::vector<IcebergRESTRoute> & getIcebergRESTRoutes()
 
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "register"}, IcebergRESTOperation::RegisterTable, false},
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}", "unregister"}, IcebergRESTOperation::UnregisterTable, false},
-        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}", "metrics"}, IcebergRESTOperation::ReportMetrics, false},
+        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}", "metrics"}, IcebergRESTOperation::ReportMetrics, true},
         {HTTPRequest::HTTP_GET, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}", "credentials"}, IcebergRESTOperation::LoadCredentials, false},
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}", "sign"}, IcebergRESTOperation::SignRequest, false},
 
