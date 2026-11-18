@@ -9,6 +9,7 @@ CREATE TABLE t_tup (a Tuple(x Int64), k Int64) ENGINE = MergeTree ORDER BY tuple
 INSERT INTO t_tup SELECT tuple(-number), number FROM numbers(1000);
 CREATE TABLE t_dotted (`a.x` Int64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_dotted SELECT -number FROM numbers(1000);
+SET allow_reserved_column_names = 1;
 -- The physical `_part` shadows the virtual column of the same name.
 CREATE TABLE t_part (x UInt8, `_part` UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_part SELECT 0, number + 1 FROM numbers(1000);
