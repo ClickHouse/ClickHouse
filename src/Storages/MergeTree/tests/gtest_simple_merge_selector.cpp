@@ -1261,3 +1261,40 @@ TEST(SimpleMergeSelector, DoesNotRemoveSmallPartsAtRightWhenHeuristicDisabled)
     ASSERT_EQ(selected.size(), 1);
     EXPECT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1), partName(2)}));
 }
+
+/// A stochastic sliding sample 4 sigma or more away from the mean must still start the window
+/// inside the range, so the only mergeable pair, at the end of the range, is always selected.
+TEST(SimpleMergeSelector, StochasticSlidingTailSamplesStayInsideRange)
+{
+    SimpleMergeSelector::Settings settings;
+    settings.base = 2.0;
+    settings.enable_heuristic_to_align_parts = false;
+    settings.enable_heuristic_to_lower_max_parts_to_merge_at_once = false;
+    settings.window_size = 2;
+
+    std::vector<size_t> sizes(32, 1000 * MiB);
+    sizes[30] = sizes[31] = MiB;
+    const PartsRanges ranges{makePartsRange(sizes, /*age=*/0)};
+    const std::vector<MergeConstraint> constraints{{100 * MiB, 1000}};
+    const std::vector<std::string> expected{partName(30), partName(31)};
+
+    {
+        SimpleMergeSelector selector(settings);
+        auto selected = selector.select(ranges, constraints, nullptr);
+        ASSERT_EQ(selected.size(), 1);
+        ASSERT_EQ(partNames(selected[0]), expected);
+    }
+
+    settings.enable_stochastic_sliding = true;
+    SimpleMergeSelector selector(settings);
+
+    constexpr size_t iterations = 500'000;
+    size_t misses = 0;
+    for (size_t i = 0; i < iterations; ++i)
+    {
+        auto selected = selector.select(ranges, constraints, nullptr);
+        if (selected.size() != 1 || partNames(selected[0]) != expected)
+            ++misses;
+    }
+    EXPECT_EQ(misses, 0) << misses << " of " << iterations << " selections missed the mergeable pair";
+}
