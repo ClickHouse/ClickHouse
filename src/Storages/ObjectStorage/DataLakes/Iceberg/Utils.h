@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/WriteOutcomeTracker.h>
+#include <Common/WriteOutcome.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -43,7 +43,8 @@ class ICatalog;
 namespace DB::Iceberg
 {
 
-/// A write with a precondition tracks its outcome in `outcome_tracker`, or in a tracker of its own if it is null.
+/// Sets `write_outcome`, if given, to the outcome that the storage reports for the write, also on an exception. It
+/// stays empty for a storage that does not track the outcome, or when the write did not start.
 void writeMessageToFile(
     const String & data,
     const String & filename,
@@ -52,7 +53,7 @@ void writeMessageToFile(
     const std::string & write_if_none_match,
     const std::string & write_if_match = "",
     DB::CompressionMethod compression_method = DB::CompressionMethod::None,
-    std::shared_ptr<DB::WriteOutcomeTracker> outcome_tracker = nullptr);
+    std::optional<DB::WriteOutcome> * write_outcome = nullptr);
 
 /// Whether a conditional write failed because another writer created or changed the object first.
 bool isConditionalWriteConflict(const DB::Exception & e);

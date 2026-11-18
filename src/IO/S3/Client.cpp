@@ -58,7 +58,7 @@
 #include <base/sleep.h>
 
 #include <Common/thread_local_rng.h>
-#include <Common/WriteOutcomeTracker.h>
+#include <Common/WriteOutcome.h>
 #include <random>
 
 

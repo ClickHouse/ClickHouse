@@ -8,7 +8,7 @@
 #include <IO/S3/URI.h>
 #include <IO/S3/ProviderType.h>
 #include <IO/S3/ChecksumAlgorithm.h>
-#include <Common/WriteOutcomeTracker.h>
+#include <Common/WriteOutcome.h>
 
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/core/http/HttpRequest.h>

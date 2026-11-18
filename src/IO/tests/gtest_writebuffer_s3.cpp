@@ -42,7 +42,6 @@
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 
 #include <Common/filesystemHelpers.h>
-#include <Common/WriteOutcomeTracker.h>
 #include <Common/Crypto/OpenSSLInitializer.h>
 #include <Core/Settings.h>
 
@@ -1015,7 +1014,6 @@ public:
     {
         WriteSettings write_settings;
         write_settings.object_storage_write_if_none_match = "*";
-        write_settings.write_outcome_tracker = std::make_shared<WriteOutcomeTracker>();
         return write_settings;
     }
 
@@ -1024,7 +1022,6 @@ public:
     {
         WriteSettings write_settings;
         write_settings.object_storage_write_if_match = "some-etag";
-        write_settings.write_outcome_tracker = std::make_shared<WriteOutcomeTracker>();
         return write_settings;
     }
 
@@ -1623,6 +1620,7 @@ TEST_P(SyncAsync, SinglepartConditionalPutRetryAfterLostResponse) {
 
     getAsyncPolicy().setAutoExecute(true);
     buffer->finalize();
+    EXPECT_EQ(buffer->getWriteOutcome(), WriteOutcome::Applied);
 
     /// One PUT attempt and one HEAD that verified our own write token.
     EXPECT_EQ(client->counters.putObject, 1u);
@@ -1652,9 +1650,9 @@ TEST_P(SyncAsync, SinglepartConditionalPutDoesNotMaskForeignObject) {
     auto injection = std::make_shared<MockS3::PutObjectPreconditionFailedInjection>();
     setInjectionModel(injection);
 
+    auto buffer = getWriteBuffer("conditional_put_foreign", conditionalCreateWriteSettings());
     EXPECT_THROW({
         try {
-            auto buffer = getWriteBuffer("conditional_put_foreign", conditionalCreateWriteSettings());
             buffer->write('1');
 
             getAsyncPolicy().setAutoExecute(true);
@@ -1668,6 +1666,9 @@ TEST_P(SyncAsync, SinglepartConditionalPutDoesNotMaskForeignObject) {
             throw;
         }
       }, DB::S3Exception);
+
+    /// Another writer's object under `If-None-Match` proves that this write was not applied.
+    EXPECT_EQ(buffer->getWriteOutcome(), WriteOutcome::NotApplied);
 
     /// The foreign object is untouched, and the PUT really was conditional on absence.
     EXPECT_EQ(bStore.objects["conditional_put_foreign"], "1");

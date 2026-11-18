@@ -41,7 +41,7 @@
 #include <Common/ErrnoException.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadStatus.h>
-#include <Common/WriteOutcomeTracker.h>
+#include <base/scope_guard.h>
 #include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -350,17 +350,20 @@ void writeMessageToFile(
     const std::string & write_if_none_match,
     const std::string & write_if_match,
     CompressionMethod compression_method,
-    std::shared_ptr<WriteOutcomeTracker> outcome_tracker)
+    std::optional<WriteOutcome> * write_outcome)
 {
     auto write_settings = context->getWriteSettings();
     write_settings.object_storage_write_if_none_match = write_if_none_match;
     write_settings.object_storage_write_if_match = write_if_match;
-    if (outcome_tracker)
-        write_settings.write_outcome_tracker = std::move(outcome_tracker);
-    else if (!write_if_none_match.empty() || !write_if_match.empty())
-        write_settings.write_outcome_tracker = std::make_shared<WriteOutcomeTracker>();
     auto buffer_metadata = object_storage->writeObject(
         StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
+    /// The buffer of the storage lives as long as the buffer that wraps it, so each branch reports before its end.
+    const auto * storage_buffer = buffer_metadata.get();
+    const auto report_outcome = [&]
+    {
+        if (write_outcome)
+            *write_outcome = storage_buffer->getWriteOutcome();
+    };
     if (compression_method != CompressionMethod::None)
     {
         auto settings = context->getSettingsRef();
@@ -380,11 +383,13 @@ void writeMessageToFile(
             /*zstd_window_log=*/ 0,
             SnappyMode::Basic,
             buf_size);
+        SCOPE_EXIT(report_outcome());
         compressed_buffer_metadata->write(data.data(), data.size());
         compressed_buffer_metadata->finalize();
     }
     else
     {
+        SCOPE_EXIT(report_outcome());
         buffer_metadata->write(data.data(), data.size());
         buffer_metadata->finalize();
     }
@@ -447,12 +452,11 @@ bool isCommitOutcomeUnknown()
     return getCurrentExceptionCode() == ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
-/// Decides a failed write of the metadata file by the outcome that the storage tracked. Returns true when the file is
+/// Decides a failed write of the metadata file by the outcome that the storage reports. Returns true when the file is
 /// published, false after a lost race, and rethrows the exception being handled when nothing was published.
-static bool decideByTrackedOutcome(const WriteOutcomeTracker & tracker, const Exception * e, const String & storage_metadata_path)
+static bool decideByWriteOutcome(WriteOutcome outcome, const Exception * e, const String & storage_metadata_path)
 {
-    /// Not set: the request that publishes the file never started, e.g. after a failed upload of a part.
-    switch (tracker.getOutcome().value_or(WriteOutcome::NotApplied))
+    switch (outcome)
     {
         case WriteOutcome::Applied:
             tryLogCurrentException(
@@ -483,9 +487,9 @@ bool writeMetadataFile(
     DB::ContextPtr context)
 {
     auto storage_metadata_path = resolver.resolve(metadata_file_info.path);
-    /// A storage that tracks the outcome of the upload, e.g. S3, attaches to it, so a failure tells whether the new
-    /// version is published. For any other storage the outcome follows from the error.
-    auto outcome_tracker = std::make_shared<WriteOutcomeTracker>();
+    /// A storage that tracks the outcome of the upload, e.g. S3, reports it, so a failure tells whether the new version
+    /// is published. For any other storage the outcome follows from the error.
+    std::optional<WriteOutcome> write_outcome;
     bool write_attempted = false;
     try
     {
@@ -501,12 +505,12 @@ bool writeMetadataFile(
             /* write-if-none-match */ "*",
             "",
             metadata_file_info.compression_method,
-            outcome_tracker);
+            &write_outcome);
     }
     catch (const Exception & e)
     {
-        if (write_attempted && outcome_tracker->isAttached())
-            return decideByTrackedOutcome(*outcome_tracker, &e, storage_metadata_path);
+        if (write_attempted && write_outcome)
+            return decideByWriteOutcome(*write_outcome, &e, storage_metadata_path);
         if (isConditionalWriteConflict(e))
         {
             LOG_DEBUG(
@@ -542,8 +546,8 @@ bool writeMetadataFile(
 #endif
     catch (...)
     {
-        if (write_attempted && outcome_tracker->isAttached())
-            return decideByTrackedOutcome(*outcome_tracker, nullptr, storage_metadata_path);
+        if (write_attempted && write_outcome)
+            return decideByWriteOutcome(*write_outcome, nullptr, storage_metadata_path);
         if (write_attempted)
             throwCommitOutcomeUnknown(storage_metadata_path);
         tryLogCurrentException(__PRETTY_FUNCTION__);

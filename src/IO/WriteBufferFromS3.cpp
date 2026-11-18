@@ -22,7 +22,6 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/HTTPConnectionInfo.h>
 #include <base/scope_guard.h>
-#include <Common/WriteOutcomeTracker.h>
 
 #include <utility>
 
@@ -91,13 +90,6 @@ struct WriteBufferFromS3::PartData
     }
 };
 
-/// Tells the tracker of the caller what the client decided about the request that publishes the object.
-static void reportOutcome(const WriteSettings & write_settings, const S3::RequestWithIdempotencyId & request)
-{
-    if (const auto & tracker = write_settings.write_outcome_tracker; tracker && request.getOutcome())
-        tracker->setOutcome(*request.getOutcome());
-}
-
 static BufferAllocationPolicyPtr createBufferAllocationPolicy(const S3::S3RequestSettings & settings)
 {
     BufferAllocationPolicy::Settings allocation_settings;
@@ -139,10 +131,6 @@ WriteBufferFromS3::WriteBufferFromS3(
     , blob_log(std::move(blob_log_))
 {
     LOG_TRACE(limited_log, "Create WriteBufferFromS3, {}", getShortLogDetails());
-
-    /// The requests that publish the object track its outcome.
-    if (write_settings.write_outcome_tracker)
-        write_settings.write_outcome_tracker->attach();
 
     allocateBuffer();
 }
@@ -692,7 +680,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
     req.SetKey(key);
     req.SetUploadId(multipart_upload_id);
     req.setIdempotencyId(idempotency_id);
-    SCOPE_EXIT(reportOutcome(write_settings, req));
+    SCOPE_EXIT(reportOutcome(req));
 
     /// GCS evaluates no precondition on a multipart upload: it ignores `If-None-Match`
     /// and rejects its `x-goog-if-generation-match` translation.
@@ -768,6 +756,20 @@ bool WriteBufferFromS3::completeMultipartUpload()
         last_error_details, max_retry, key, bucket);
 }
 
+void WriteBufferFromS3::reportOutcome(const S3::RequestWithIdempotencyId & request)
+{
+    if (const auto outcome = request.getOutcome())
+        write_outcome.store(static_cast<int>(*outcome));
+}
+
+std::optional<WriteOutcome> WriteBufferFromS3::getWriteOutcome() const
+{
+    const auto value = write_outcome.load();
+    if (value < 0)
+        return WriteOutcome::NotApplied;
+    return static_cast<WriteOutcome>(value);
+}
+
 S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
 {
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, data.data_size);
@@ -821,7 +823,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
 
         auto & request = std::get<0>(*worker_data);
         size_t content_length = request.GetContentLength();
-        SCOPE_EXIT(reportOutcome(write_settings, request));
+        SCOPE_EXIT(reportOutcome(request));
 
         size_t max_retry = std::max<UInt64>(request_settings[S3RequestSetting::max_unexpected_write_error_retries].value, 1UL);
         for (size_t i = 0; i < max_retry; ++i)

@@ -17,6 +17,8 @@ public:
 
     std::string getFileName() const override;
 
+    std::optional<WriteOutcome> getWriteOutcome() const override;
+
     void preFinalize() override;
 
     const WriteBuffer & getImpl() const { return *impl; }

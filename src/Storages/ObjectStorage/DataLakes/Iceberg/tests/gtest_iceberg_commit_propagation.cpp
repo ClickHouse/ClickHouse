@@ -9,7 +9,8 @@
 
 #include <Common/ErrnoException.h>
 #include <Common/Exception.h>
-#include <Common/WriteOutcomeTracker.h>
+#include <Common/WriteOutcome.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/CompressionMethod.h>
@@ -39,8 +40,33 @@ namespace
 
 using WriteErrorThrower = std::function<void(const std::string & path)>;
 using ExistsAnswer = std::function<bool(size_t call)>;
-/// What a storage that tracks the outcome of the write, as S3 does, puts into the tracker before the error.
-using TrackerAction = std::function<void(WriteOutcomeTracker & tracker)>;
+/// The outcome that a storage that tracks it, as S3 does, reports for the failed write. Empty: the storage does not track
+/// it, and its `writeObject` fails at once.
+using StorageOutcome = std::optional<WriteOutcome>;
+
+/// The buffer of a storage that tracks the outcome: its write fails with the error that the test supplies.
+class FailingWriteBuffer : public WriteBufferFromFileBase
+{
+public:
+    FailingWriteBuffer(WriteErrorThrower throw_write_error_, std::string path_, WriteOutcome outcome_)
+        : WriteBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0)
+        , throw_write_error(std::move(throw_write_error_))
+        , path(std::move(path_))
+        , outcome(outcome_)
+    {
+    }
+
+    void sync() override { }
+    std::string getFileName() const override { return path; }
+    std::optional<WriteOutcome> getWriteOutcome() const override { return outcome; }
+
+private:
+    void nextImpl() override { throw_write_error(path); }
+
+    WriteErrorThrower throw_write_error;
+    std::string path;
+    WriteOutcome outcome;
+};
 
 /// `writeMetadataFileAndVersionHint` reports a commit that published nothing as `false`, which every caller reads as
 /// a lost compare-and-swap and retries after removing the files of the attempt. A write the storage refused (it cannot
@@ -53,10 +79,10 @@ using TrackerAction = std::function<void(WriteOutcomeTracker & tracker)>;
 class ThrowingObjectStorage : public IObjectStorage
 {
 public:
-    ThrowingObjectStorage(WriteErrorThrower throw_write_error_, ExistsAnswer exists_answer_, TrackerAction tracker_action_)
+    ThrowingObjectStorage(WriteErrorThrower throw_write_error_, ExistsAnswer exists_answer_, StorageOutcome storage_outcome_)
         : throw_write_error(std::move(throw_write_error_))
         , exists_answer(std::move(exists_answer_))
-        , tracker_action(std::move(tracker_action_))
+        , storage_outcome(storage_outcome_)
     {
     }
 
@@ -74,10 +100,8 @@ public:
         EXPECT_EQ(write_settings.object_storage_write_if_none_match, "*");
         EXPECT_TRUE(write_settings.object_storage_write_if_match.empty());
 
-        /// The commit passes a tracker, so that a storage that tracks the outcome can tell it.
-        EXPECT_TRUE(write_settings.write_outcome_tracker);
-        if (tracker_action && write_settings.write_outcome_tracker)
-            tracker_action(*write_settings.write_outcome_tracker);
+        if (storage_outcome)
+            return std::make_unique<FailingWriteBuffer>(throw_write_error, object.remote_path, *storage_outcome);
 
         throw_write_error(object.remote_path);
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The stub must throw");
@@ -132,13 +156,13 @@ private:
 
     WriteErrorThrower throw_write_error;
     ExistsAnswer exists_answer;
-    TrackerAction tracker_action;
+    StorageOutcome storage_outcome;
     mutable size_t exists_calls = 0;
 };
 
 /// Drives the real commit against a stub whose write fails with whatever `throw_write_error` throws.
 bool commitWithFailingWrite(
-    WriteErrorThrower throw_write_error, ExistsAnswer exists_answer = [](size_t) { return false; }, TrackerAction tracker_action = {})
+    WriteErrorThrower throw_write_error, ExistsAnswer exists_answer = [](size_t) { return false; }, StorageOutcome storage_outcome = {})
 {
     Iceberg::IcebergPathResolver resolver(
         "/table",
@@ -155,7 +179,7 @@ bool commitWithFailingWrite(
         metadata_file_info,
         "{}",
         Iceberg::IcebergPathFromMetadata::deserialize("/table/metadata/version-hint.text"),
-        std::make_shared<ThrowingObjectStorage>(std::move(throw_write_error), std::move(exists_answer), std::move(tracker_action)),
+        std::make_shared<ThrowingObjectStorage>(std::move(throw_write_error), std::move(exists_answer), storage_outcome),
         getContext().context,
         /*try_write_version_hint=*/ false);
 }
@@ -171,11 +195,11 @@ bool commitWithFailingWrite(int write_error_code)
 
 /// Expects the commit to report that its outcome is unknown.
 void expectUnknownOutcome(
-    WriteErrorThrower throw_write_error, ExistsAnswer exists_answer = [](size_t) { return false; }, TrackerAction tracker_action = {})
+    WriteErrorThrower throw_write_error, ExistsAnswer exists_answer = [](size_t) { return false; }, StorageOutcome storage_outcome = {})
 {
     try
     {
-        bool committed = commitWithFailingWrite(std::move(throw_write_error), std::move(exists_answer), std::move(tracker_action));
+        bool committed = commitWithFailingWrite(std::move(throw_write_error), std::move(exists_answer), storage_outcome);
         FAIL() << "Expected an unknown outcome, got " << committed;
     }
     catch (const Exception & e)
@@ -184,29 +208,17 @@ void expectUnknownOutcome(
     }
 }
 
-/// The storage attaches to the tracker and decides the outcome, or leaves it not set when the request that publishes
-/// the file never ran.
-TrackerAction trackedAs(std::optional<WriteOutcome> outcome)
-{
-    return [outcome](WriteOutcomeTracker & tracker)
-    {
-        tracker.attach();
-        if (outcome)
-            tracker.setOutcome(*outcome);
-    };
-}
-
 void throwStorageError(const std::string & path)
 {
     throw Exception(ErrorCodes::S3_ERROR, "Write of {} failed in the test stub", path);
 }
 
 /// Expects the error of the storage to propagate, so that the commit rolls back.
-void expectStorageErrorToPropagate(TrackerAction tracker_action)
+void expectStorageErrorToPropagate(StorageOutcome storage_outcome)
 {
     try
     {
-        bool committed = commitWithFailingWrite(throwStorageError, [](size_t) { return false; }, std::move(tracker_action));
+        bool committed = commitWithFailingWrite(throwStorageError, [](size_t) { return false; }, storage_outcome);
         FAIL() << "Expected the error of the storage to propagate, got " << committed;
     }
     catch (const Exception & e)
@@ -220,25 +232,19 @@ void expectStorageErrorToPropagate(TrackerAction tracker_action)
 TEST(IcebergCommitPropagation, TrackedWriteThatMayHaveBeenAppliedIsNotRetried)
 {
     /// The storage could not prove whether an attempt of the upload was applied.
-    expectUnknownOutcome(throwStorageError, [](size_t) { return false; }, trackedAs(WriteOutcome::Unknown));
+    expectUnknownOutcome(throwStorageError, [](size_t) { return false; }, WriteOutcome::Unknown);
 
     /// The tracked outcome wins over the error: the conflict may be the answer to a replay of this write.
     expectUnknownOutcome(
         [](const std::string & path) { throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "{} exists in the test stub", path); },
         [](size_t) { return false; },
-        trackedAs(WriteOutcome::Unknown));
+        WriteOutcome::Unknown);
 }
 
 TEST(IcebergCommitPropagation, TrackedWriteThatWasNotAppliedPropagates)
 {
     /// Every attempt of the upload got an answer that refuses it, so nothing was published.
-    expectStorageErrorToPropagate(trackedAs(WriteOutcome::NotApplied));
-}
-
-TEST(IcebergCommitPropagation, TrackedWriteWhoseUploadNeverStartedPropagates)
-{
-    /// The request that publishes the file never ran, e.g. after a failed upload of a part.
-    expectStorageErrorToPropagate(trackedAs(std::nullopt));
+    expectStorageErrorToPropagate(WriteOutcome::NotApplied);
 }
 
 TEST(IcebergCommitPropagation, TrackedLostRaceStaysRetryable)
@@ -247,13 +253,13 @@ TEST(IcebergCommitPropagation, TrackedLostRaceStaysRetryable)
     EXPECT_FALSE(commitWithFailingWrite(
         [](const std::string & path) { throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "{} exists in the test stub", path); },
         [](size_t) { return false; },
-        trackedAs(WriteOutcome::NotApplied)));
+        WriteOutcome::NotApplied));
 }
 
 TEST(IcebergCommitPropagation, TrackedWriteThatWasAppliedIsPublished)
 {
     /// The upload succeeded, and a later step of the write failed, e.g. the check after the upload.
-    EXPECT_TRUE(commitWithFailingWrite(throwStorageError, [](size_t) { return false; }, trackedAs(WriteOutcome::Applied)));
+    EXPECT_TRUE(commitWithFailingWrite(throwStorageError, [](size_t) { return false; }, WriteOutcome::Applied));
 }
 
 TEST(IcebergCommitPropagation, RefusedConditionalWriteIsNotReportedAsALostRace)
