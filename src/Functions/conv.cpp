@@ -46,7 +46,11 @@ public:
         ColumnPtr number_column = arguments[0].column;
         if (!isString(arguments[0].type))
         {
-            ColumnWithTypeAndName string_arg = {number_column, arguments[0].type, arguments[0].name};
+            /// Bool storage (Bool, SimpleAggregateFunction over Bool) prints as 'true'/'false'; convert the stored value.
+            DataTypePtr number_type = arguments[0].type;
+            if (isUInt8(number_type) && number_type->getCustomSerialization())
+                number_type = std::make_shared<DataTypeUInt8>();
+            ColumnWithTypeAndName string_arg = {number_column, number_type, arguments[0].name};
             number_column = castColumn(string_arg, std::make_shared<DataTypeString>());
         }
         const auto * number_col = checkAndGetColumn<ColumnString>(number_column.get());
