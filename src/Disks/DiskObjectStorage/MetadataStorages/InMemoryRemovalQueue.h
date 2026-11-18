@@ -16,11 +16,11 @@ public:
 
     void submitForRemoval(const StoredObjects & blobs) override;
 
-    StoredObjects takeFirst(int64_t max_count) const override;
+    [[nodiscard]] StoredObjects takeFirst(int64_t max_count) const override;
 
     int64_t markAsRemoved(const StoredObjects & blobs) override;
 
-    size_t size() const override { return index.size(); }
+    [[nodiscard]] size_t size() const override { return index.size(); }
 
 private:
     int64_t next_slot = 0;

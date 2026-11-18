@@ -196,6 +196,9 @@ std::map<String, Documentation> ParserExplainQuery::getDocumentation() const
     documentation["EXPLAIN"] =
     {
         .description = String(R"DOCS_MD(
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
 Shows the execution plan of a statement.
 
 <div class='vimeo-container'>
@@ -219,6 +222,8 @@ EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABL
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
     ]
     [FORMAT ...]
+
+EXPLAIN CURRENT TRANSACTION [FORMAT ...]
 ```
 
 Example:
@@ -257,6 +262,7 @@ Union
 - `ANALYZE` — Executes the query and annotates the execution plan with measured runtime metrics.
 - `ESTIMATE` — Estimated number of rows, marks and parts to be read from the tables while processing the query.
 - `TABLE OVERRIDE` — Validated result of a table override on a table-function schema.
+- `CURRENT TRANSACTION` - The transaction of the current session.
 
 ### EXPLAIN AST {#explain-ast}
 
@@ -1252,14 +1258,15 @@ For a join step `EXPLAIN ANALYZE` prints lines comparing the join-order optimize
 The per-side lines share the same shape:
 
 ```txt
-Left:  rows estimated <estimated_left_rows>  · rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
-Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
+Left:  rows estimated <estimated_left_rows>  · rows <left_rows>  · q-error <ratio> · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · q-error <ratio> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
 ```
 
 For each side `EXPLAIN ANALYZE` reports:
 
 - `rows estimated <estimated_rows>` — the join-order optimizer's estimate of that side's rows, printed for comparison with the actual `rows` next to it; `no stats` when the optimizer produced no estimate (see [Estimated vs. actual join metrics](#explain-analyze-join-estimation)).
 - `rows <rows>` — the total number of rows of that side that passed through the join.
+- `q-error <ratio>`: `max(<estimated_rows> / <rows>, <rows> / <estimated_rows>)` of that side, as for `Output rows`; printed when both are non-zero. For a side that is a filtered table read, it is the q-error of the filter estimate. Join runtime filters remove rows from the side they apply to, and no estimate accounts for that; set `enable_join_runtime_filters = 0` to compare the estimate alone.
 - `matched <matched_rows>` — the number of rows of that side that found at least one join partner on the other side. This counts *rows*, not keys: if a key occurs three times on the right and matches, all three right rows count as matched.
 - `match rate <match_rate>%` — the percentage of that side's rows that matched, computed as `100 * <matched_rows> / <rows>`.
 - `fanout <fanout>` — how many output rows an average matched row of that side produced.
@@ -1294,8 +1301,8 @@ Join (JOIN FillRightFirst)
 │  Cost: estimated 100.00 · actual 100.00
 │  Selectivity: estimated (NDV) 0.01 · actual (cartesian) 0.01
 │  Output rows: estimated 100.00 · actual 100.00 · q-error 1.00
-│  Left: rows estimated 100.00 · rows 100.00 · matched 100.00 · match rate 100.00% · fanout 1.00
-│  Right: rows estimated 100.00 · rows 100.00 · matched not collected · match rate not collected · fanout not collected
+│  Left: rows estimated 100.00 · rows 100.00 · q-error 1.00 · matched 100.00 · match rate 100.00% · fanout 1.00
+│  Right: rows estimated 100.00 · rows 100.00 · q-error 1.00 · matched not collected · match rate not collected · fanout not collected
 │  Hash table: unique keys 100.00 · memory 6.27 KB
 │  Input (left): id, value
 │  Input (right): id, value
@@ -1408,7 +1415,7 @@ Spill: yes · left spilled <left_spilled_bytes> · right spilled <right_spilled_
 For `partial_merge` join the `Right:` line carries extra information about how the right table was buffered and sorted, and the sorting time is shown on the `Stage (build)` and `Stage (probe)` lines:
 
 ```txt
-Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · q-error <ratio> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
   Stage (build): time <t> (<share>%) · parallelism <avg>/<max> · sort time <build_sort_time> · sort share <build_sort_share>%
   Stage (probe): time <t> (<share>%) · parallelism <avg>/<max> · sort time <probe_sort_time> · sort share <probe_sort_share>%
 ```
@@ -1687,6 +1694,48 @@ Estimation:
 
 `marks` and `rows` are what the projection read itself would touch, not a share of the base-table read, because a projection granule holds different rows than a base granule. `read_ratio` is those marks over the base-table marks, so `0.02x` is fifty times less work and `15x` is fifteen times more. `verdict` applies the optimizer's own rule — fewer marks than the base table, or the same number when the projection serves the query's `ORDER BY` — so a candidate can be `applicable` and still not be chosen.
 
+### EXPLAIN CURRENT TRANSACTION {#explain-current-transaction}
+
+Introduced in: v22.4.0
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+<Note>
+This statement is part of an experimental feature set.
+Enable experimental transaction support by adding this setting to your [configuration](/concepts/features/configuration/server-config/configuration-files):
+
+```xml
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
+
+For more information see the page [Transactional (ACID) support](/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+</Note>
+
+Shows the [transaction](/reference/statements/transactions) of the current session: its identifier, state and snapshot.
+A read-only transaction is marked `readonly`. For a transaction that changed data, the output lists per table the parts that the transaction creates and removes, and its mutations.
+Outside a transaction, the output is `<no current transaction>`.
+`EXPLAIN CURRENT TRANSACTION` also works after a query of the transaction failed, and then shows the state `ROLLED_BACK`.
+Settings are not supported and throw an `UNKNOWN_SETTING` exception.
+
+**Example**
+
+```sql title="Query"
+SET async_insert = 0;
+BEGIN TRANSACTION;
+INSERT INTO t VALUES (1);
+EXPLAIN CURRENT TRANSACTION FORMAT TSVRaw;
+```
+
+```text title="Response"
+(105, 33, 42343455-b083-479e-b5d5-d50cf2ec2f58, 3) state: RUNNING, snapshot: 105, affects 1 tables:
+	default.t (95eb57a8-1f63-45f7-81f8-74436fc9d63a):
+		creating parts:
+			all_1_1_0
+```
+
 ### EXPLAIN TABLE OVERRIDE {#explain-table-override}
 
 Shows the result of a table override on a table schema accessed through a table function.
@@ -1725,8 +1774,9 @@ EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABL
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
     ]
     [FORMAT ...]
+EXPLAIN CURRENT TRANSACTION [FORMAT ...]
 )",
-        .related = {"SELECT", "HYPOTHETICAL INDEX", "ALTER TABLE ... STATISTICS"},
+        .related = {"SELECT", "HYPOTHETICAL INDEX", "ALTER TABLE ... STATISTICS", "BEGIN TRANSACTION"},
     };
 
     return documentation;

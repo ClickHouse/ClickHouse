@@ -18,11 +18,11 @@ public:
 
     void submitForRemoval(const StoredObjects & blobs) override;
 
-    StoredObjects takeFirst(int64_t max_count) const override { return queue.takeFirst(max_count); }
+    [[nodiscard]] StoredObjects takeFirst(int64_t max_count) const override { return queue.takeFirst(max_count); }
 
     int64_t markAsRemoved(const StoredObjects & blobs) override;
 
-    size_t size() const override { return queue.size(); }
+    [[nodiscard]] size_t size() const override { return queue.size(); }
 
 private:
     enum Version : UInt32
