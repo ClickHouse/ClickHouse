@@ -103,7 +103,7 @@ class GlueRetryStrategy : public Aws::Client::DefaultRetryStrategy
 {
 public:
     /// NOLINTNEXTLINE(google-runtime-int)
-    bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors> & error, long attempted_retries) const override
+    [[nodiscard]] bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors> & error, long attempted_retries) const override
     {
         if (attempted_retries >= m_maxRetries)
             return false;
@@ -174,7 +174,7 @@ GlueCatalog::GlueCatalog(
         s3_slow_all_threads_after_network_error,
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
-        /* for_disk_s3 = */ false,
+        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {});
 
