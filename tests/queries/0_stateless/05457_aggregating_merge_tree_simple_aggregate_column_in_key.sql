@@ -34,6 +34,10 @@ DROP TABLE IF EXISTS t_unused_default;
 DROP TABLE IF EXISTS t_unused_default_alter;
 DROP TABLE IF EXISTS t_unused_default_tuple;
 DROP TABLE IF EXISTS t_used_default;
+DROP TABLE IF EXISTS t_unused_default_array;
+DROP TABLE IF EXISTS t_unused_default_array_alter;
+DROP TABLE IF EXISTS t_unused_default_nullable;
+DROP TABLE IF EXISTS t_unused_default_nullable_alter;
 DROP TABLE IF EXISTS t_unused_default_subcolumn;
 DROP TABLE IF EXISTS t_unused_default_element;
 DROP TABLE IF EXISTS t_tuple_sorting_key;
@@ -199,6 +203,29 @@ OPTIMIZE TABLE t_unused_default FINAL;
 SELECT 'unused default', _partition_id, k, c FROM t_unused_default WHERE tupleElement(tuple(k), 1, c) = 1;
 CREATE TABLE t_used_default (k UInt64, c SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree
 PARTITION BY tupleElement(tuple(k), 2, c) ORDER BY k; -- { serverError BAD_ARGUMENTS }
+
+-- So when the tuple is in an array or in `Nullable`, which `tupleElement` peels before it selects the element. The element of such a
+-- tuple is computed from all of it.
+CREATE TABLE t_unused_default_array (k UInt64, c SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY tupleElement([tuple(k)], 1, [c]) ORDER BY k;
+CREATE TABLE t_unused_default_array_alter (k UInt64, c UInt64) ENGINE = AggregatingMergeTree
+PARTITION BY tupleElement([tuple(k)], 1, [c]) ORDER BY k;
+ALTER TABLE t_unused_default_array_alter MODIFY COLUMN c SimpleAggregateFunction(sum, UInt64);
+CREATE TABLE t_unused_default_nullable (k UInt64, c SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY tupleElement(toNullable(tuple(k)), 1, c) ORDER BY k SETTINGS allow_nullable_key = 1;
+CREATE TABLE t_unused_default_nullable_alter (k UInt64, c UInt64) ENGINE = AggregatingMergeTree
+PARTITION BY tupleElement(toNullable(tuple(k)), 1, c) ORDER BY k SETTINGS allow_nullable_key = 1;
+ALTER TABLE t_unused_default_nullable_alter MODIFY COLUMN c SimpleAggregateFunction(sum, UInt64);
+INSERT INTO t_unused_default_array VALUES (1, 2);
+INSERT INTO t_unused_default_array VALUES (1, 3);
+OPTIMIZE TABLE t_unused_default_array FINAL;
+SELECT 'unused default in an array', _partition_id, k, c FROM t_unused_default_array WHERE tupleElement([tuple(k)], 1, [c]) = [1];
+CREATE TABLE t_used_default_array (k UInt64, c SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY tupleElement([tuple(k)], 2, [c]) ORDER BY k; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_used_default_nullable (k UInt64, c SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY tupleElement(toNullable(tuple(k)), 2, c) ORDER BY k SETTINGS allow_nullable_key = 1; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_element_in_array (k UInt64, c SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY tupleElement([tuple(c, k)], 2) ORDER BY k; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_unused_default_subcolumn (k UInt64, a SimpleAggregateFunction(groupArrayArray, Array(UInt64)))
 ENGINE = AggregatingMergeTree PARTITION BY tupleElement(tuple(k), 1, a.size0) ORDER BY k;
 CREATE TABLE t_unused_default_element (k UInt64, x Tuple(a SimpleAggregateFunction(groupArrayArray, Array(UInt64)), b UInt64))
@@ -308,6 +335,10 @@ DROP TABLE t_aggregated_tuple;
 DROP TABLE t_subcolumn_in_sorting_key;
 DROP TABLE t_element_subcolumn_in_sorting_key;
 DROP TABLE t_unused_default;
+DROP TABLE t_unused_default_array;
+DROP TABLE t_unused_default_array_alter;
+DROP TABLE t_unused_default_nullable;
+DROP TABLE t_unused_default_nullable_alter;
 DROP TABLE t_unused_default_alter;
 DROP TABLE t_unused_default_tuple;
 DROP TABLE t_unused_default_subcolumn;

@@ -47,6 +47,7 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -2575,6 +2576,9 @@ struct TupleElementSelection
     Kind kind;
     /// The name of the element, for `Element`.
     String name;
+    /// Whether the tuple is in an array or in `Nullable`, which `tupleElement` peels before it selects the element, so that it
+    /// returns the element of each tuple of the array, or `Nullable`, rather than an element of its first argument.
+    bool wrapped = false;
 };
 
 TupleElementSelection getTupleElementSelection(const DataTypeTuple & tuple, const ActionsDAG::Node & selector)
@@ -2624,10 +2628,24 @@ std::optional<TupleElementSelection> tryGetTupleElementSelection(const ActionsDA
         return std::nullopt;
 
     using Kind = TupleElementSelection::Kind;
-    const auto * tuple = typeid_cast<const DataTypeTuple *>(node.children[0]->result_type.get());
+    /// As `tupleElement` reads its first argument: the tuple may be in arrays, and then in `Nullable`.
+    const IDataType * type = node.children[0]->result_type.get();
+    bool wrapped = false;
+    while (const auto * array = typeid_cast<const DataTypeArray *>(type))
+    {
+        type = array->getNestedType().get();
+        wrapped = true;
+    }
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type))
+    {
+        type = nullable->getNestedType().get();
+        wrapped = true;
+    }
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(type);
     if (!tuple)
         return TupleElementSelection{Kind::Unknown, {}};
     auto selection = getTupleElementSelection(*tuple, *node.children[1]);
+    selection.wrapped = wrapped;
     /// Without the default, `tupleElement` throws for a missing element.
     if (selection.kind == Kind::Default && node.children.size() != 3)
         selection.kind = Kind::Unknown;
@@ -2676,7 +2694,8 @@ String getSubcolumnName(const ActionsDAG::Node & get_subcolumn)
 /// Finds the aggregated values that a key reads through an input of its expression: it follows the value of the input from node to
 /// node up to the columns of the key. Only a part of the input may reach the key:
 /// - `tupleElement` with a constant selector returns its first argument (an element of it) only when the element exists, and its
-///   third argument, the default, only when it does not, so `c` in `tupleElement(tuple(k), 1, c)` is not read;
+///   third argument, the default, only when it does not, so `c` in `tupleElement(tuple(k), 1, c)` is not read, also when the tuple
+///   is in an array or `Nullable`, as in `tupleElement([tuple(k)], 1, [c])`; the element of such a tuple is computed from it;
 /// - of a tuple constructed by `tuple` around the value, a selection of another element does not read it, as `c` in
 ///   `tupleElement(tuple(c, k), 2)` or `getSubcolumn(tuple(c, k), '2')`;
 /// - with `allow_tuple_element_aggregation`, merges flatten a tuple and aggregate its aggregated elements one by one, so a selection
@@ -2786,7 +2805,9 @@ private:
         {
             /// The node is the tuple, the default (the third argument), or both, as in `tupleElement(x, 'missing', x)`.
             using Kind = TupleElementSelection::Kind;
-            if (selection->kind == Kind::Element && parent.children[0] == &node)
+            if (selection->kind == Kind::Element && parent.children[0] == &node && selection->wrapped)
+                visitComputed(parent, value);
+            else if (selection->kind == Kind::Element && parent.children[0] == &node)
                 visitElement(parent, fields, value, selection->name);
             else if (selection->kind == Kind::Default && parent.children[2] == &node)
                 visit(parent, fields, value);
