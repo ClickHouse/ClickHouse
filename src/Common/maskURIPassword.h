@@ -10,6 +10,8 @@
 #include <utility>
 #include <vector>
 
+#include "regex"
+
 
 namespace DB
 {
@@ -115,7 +117,7 @@ static constexpr bool isURIHostAndPort(const std::string& authority, const size_
 }
 
 /// Where RFC 3986, section 3.2, ends the authority of a URI. `Poco::URI` ends it there too.
-inline constexpr std::string_view URI_AUTHORITY_TERMINATORS = "/?#";
+inline constexpr auto URI_AUTHORITY_TERMINATORS = R"(/?#)";
 
 static constexpr std::string_view SCHEMA_SEPARATOR = "://";
 
@@ -179,22 +181,45 @@ inline bool maskURIPassword(std::string & uri, std::string_view authority_termin
     {
         const size_t initial_offset = offset;
         size_t last_at = std::string_view::npos;
+        size_t last_pipe = std::string_view::npos;
         size_t first_colon = std::string_view::npos;
         while (offset < original_size)
         {
             if (const char c = uri[offset]; c == '@')
                 last_at = offset;
+            else if (c == '|')
+                last_pipe = offset;
             else if (c == ':' && first_colon == std::string_view::npos)
                 first_colon = offset;
             else if (authority_terminators.contains(c))
             {
-                if (first_colon == std::string_view::npos
-                    || (last_at != std::string::npos && (first_colon < last_at || isURIHostAndPort(uri, last_at + 1, offset)))
-                    || isURIHostAndPort(uri, initial_offset, offset))
+                if (first_colon == std::string_view::npos || isURIHostAndPort(uri, last_at < offset ? last_at + 1 : initial_offset, offset - 1))
+                {
+                    --offset;
                     break;
+                }
+                if (c == '/' && first_colon != std::string_view::npos && last_pipe != std::string_view::npos && last_at < last_pipe
+                    && first_colon > last_at && offset > 3
+                    && last_pipe > initial_offset && offset + 1 < original_size && uri[offset - 1] == ':' && uri[offset + 1] != '/'
+                    && isURIHostAndPort(uri, last_at + 1, last_pipe - 1))
+                {
+                    size_t i = offset - 2;
+                    for (; i >= initial_offset + 2; --i)
+                    {
+                        if (is_letter(uri[i]))
+                        {
+                            first_colon = std::string_view::npos;
+                            offset = i;
+                            break;
+                        }
+                        if (!is_digit(uri[i]) && !(uri[i] == '+' || uri[i] == '.' || uri[i] == '-'))
+                        {
+                            break;
+                        }
+                    }
+                    break;
+                }
             }
-            else if (c == '|' && first_colon == std::string_view::npos)
-                break;
             offset++;
         }
         if (last_at != std::string_view::npos)
@@ -213,7 +238,7 @@ inline bool maskURIPassword(std::string & uri, std::string_view authority_termin
             return parse_userinfo_and_authority(offset + 2);
         while (offset < original_size - 3)
         {
-            const size_t next_offset = offset > 0 ? uri.find_first_of("|@:", offset) : uri.find_first_of("@:", offset);
+            const size_t next_offset = uri.find_first_of(std::string{authority_terminators}.append(offset > 0 ? "|@:" : "@:"), offset);
             if (next_offset == std::string_view::npos)
             {
                 // nothing interesting left to parse
@@ -233,7 +258,7 @@ inline bool maskURIPassword(std::string & uri, std::string_view authority_termin
             {
                 if (next_offset >= offset && next_offset < original_size - 3 && uri.compare(next_offset + 1, 2, "//") == 0)
                 {
-                    if (next_offset == 0 || authority_begin == next_offset - 1 || authority_begin == 0)
+                    if (next_offset == 0 || authority_begin == next_offset - 1 || authority_begin == 0 || authority_begin == std::string_view::npos)
                         return parse_userinfo_and_authority(next_offset + 3);
                     for (size_t i = next_offset - 1; i >=offset; --i)
                     {
@@ -241,17 +266,21 @@ inline bool maskURIPassword(std::string & uri, std::string_view authority_termin
                             return parse_userinfo_and_authority(next_offset + 3);
                         if (!is_digit(uri[i]) && !(uri[i] == '+' || uri[i] == '.' || uri[i] == '-'))
                         {
-                            offset = next_offset + 1;
                             break;
                         }
                     }
+                    offset = next_offset + 2;
                 }
                 else
                     offset = next_offset + 1;
             } else if (c == '|' && authority_begin == std::string_view::npos)
             {
-                authority_begin = next_offset;
-                offset = authority_begin + 1;
+                authority_begin = next_offset + 1;
+                offset = authority_begin;
+            } else
+            {
+                authority_begin = std::string_view::npos;
+                offset = next_offset + 1;
             }
         }
         return original_size;
