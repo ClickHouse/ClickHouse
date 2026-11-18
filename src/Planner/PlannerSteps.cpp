@@ -130,6 +130,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
+    extern const SettingsBool enable_fixed_and_packed_string_keys_in_aggregation;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
     extern const SettingsBool make_distributed_plan;
     extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
@@ -975,7 +976,8 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         settings[Setting::max_block_size],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         settings[Setting::serialize_string_in_memory_with_zero_byte],
-        settings[Setting::enable_packed_string_keys_in_aggregation]);
+        settings[Setting::enable_packed_string_keys_in_aggregation],
+        settings[Setting::enable_fixed_and_packed_string_keys_in_aggregation]);
 
     bool is_remote_storage = false;
     bool parallel_replicas_from_merge_tree = false;

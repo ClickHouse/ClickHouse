@@ -22,6 +22,7 @@ namespace Setting
     extern const SettingsBool compile_aggregate_expressions;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_adaptive_aggregator;
+    extern const SettingsBool enable_fixed_and_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_parallel_single_level_merge;
     extern const SettingsBool enable_parallel_single_level_merge_by_index;
@@ -141,6 +142,7 @@ Aggregator::Params getAggregatorParams(const ContextPtr & query_context, const N
         settings[Setting::enable_parallel_single_level_merge],
         settings[Setting::enable_parallel_single_level_merge_by_index],
         settings[Setting::enable_packed_string_keys_in_aggregation],
+        settings[Setting::enable_fixed_and_packed_string_keys_in_aggregation],
         settings[Setting::enable_adaptive_aggregator],
         settings[Setting::adaptive_aggregator_freeze_threshold],
         settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
