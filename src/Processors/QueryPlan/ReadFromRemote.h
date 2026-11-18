@@ -59,7 +59,7 @@ public:
 
     bool hasSerializedPlan() const;
 
-    bool hasTotals() const;
+    [[nodiscard]] bool hasTotals() const;
 
     void setDistributedTopKCoordination(UInt64 limit_, SortDescription sort_description);
 
@@ -137,7 +137,7 @@ public:
         ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr,
         std::shared_ptr<const QueryPlan> query_plan_ = nullptr);
 
-    String getName() const override { return "ReadFromRemoteParallelReplicas"; }
+    [[nodiscard]] String getName() const override { return "ReadFromRemoteParallelReplicas"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
@@ -147,14 +147,14 @@ public:
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder(const SortDescription & sort_description);
 
-    StorageID getStorageID() const { return storage_id; }
-    ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }
+    [[nodiscard]] StorageID getStorageID() const { return storage_id; }
+    [[nodiscard]] ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }
 
     /// The connection pools (sized to the coordinator's replica count) and the local replica's index
     /// within them. Captured before this step is dropped from the local INSERT SELECT plan so the
     /// remote-pool pass can reuse the exact same replica set the coordinator was created with.
-    const VectorWithMemoryTracking<ConnectionPoolPtr> & getPools() const { return pools_to_use; }
-    std::optional<size_t> getExcludePoolIndex() const { return exclude_pool_index; }
+    [[nodiscard]] const VectorWithMemoryTracking<ConnectionPoolPtr> & getPools() const { return pools_to_use; }
+    [[nodiscard]] std::optional<size_t> getExcludePoolIndex() const { return exclude_pool_index; }
 
 private:
     Pipes addPipes(ASTPtr ast, const SharedHeader & out_header);
