@@ -65,6 +65,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsString disk;
     extern const MergeTreeSettingsString storage_policy;
     extern const MergeTreeSettingsBool table_readonly;
 }
@@ -245,47 +246,46 @@ StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(const ASTCrea
     /// The `convert_to_replicated` flag is looked up on the first disk of the table's storage policy, and
     /// both phases of the conversion have to resolve it identically. The policy is taken from the CREATE
     /// query rather than from the storage object, because a lazily loaded table has no storage object yet.
-    /// The resolution mirrors `MergeTreeData::getStoragePolicy`: a `disk` setting takes precedence over
-    /// `storage_policy`.
+    /// The resolution mirrors `MergeTreeData::getStoragePolicy`: a `disk` setting, from the query or the
+    /// `merge_tree` config, takes precedence over `storage_policy`.
     ///
     /// An inline `disk(...)` definition is resolved only with `create_custom_disk`, because resolving it
     /// instantiates the custom disk. Without `lazy_load_tables` the table is loaded right after the metadata
     /// scan, which creates the same disk anyway, so it costs nothing. With `lazy_load_tables` it would create
     /// the disk (and fail on an unavailable `include` or `from_zk`) for a table that is otherwise deferred
     /// until first access, so nullptr is returned instead and the flag is not looked for.
-    if (create_query.storage)
+    MergeTreeSettings settings = getContext()->getMergeTreeSettings();
+    if (create_query.storage && create_query.storage->settings)
     {
-        if (auto * query_settings = create_query.storage->settings)
+        /// Applied in order, so the last assignment wins, as in `MergeTreeSettings::loadFromQuery`.
+        for (const auto & change : create_query.storage->settings->changes)
         {
-            if (const Field * disk_setting = query_settings->changes.tryGet("disk"))
+            if (change.name != "disk" && change.name != "storage_policy")
+                continue;
+
+            SettingChange resolved = change;
+            CustomType custom;
+            if (change.name == "disk" && change.value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST")
+                && isDiskFunction(dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast))
             {
-                CustomType custom;
-                if (disk_setting->tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST")
-                    && isDiskFunction(dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast))
-                {
-                    if (!create_custom_disk)
-                        return nullptr;
+                if (!create_custom_disk)
+                    return nullptr;
 
-                    /// The disk is cached by its definition and reused when the table is loaded, so it has to be
-                    /// created exactly as `registerStorageMergeTree` creates it, with the exemption of `system` tables.
-                    SettingChange change{"disk", *disk_setting};
-                    MergeTreeSettings::resolveDiskSetting(
-                        change,
-                        getContext(),
-                        /* is_loading_from_existing_metadata = */ true,
-                        /* for_system_database = */ getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
-                    return getContext()->getStoragePolicyFromDisk(change.value.safeGet<String>());
-                }
-                return getContext()->getStoragePolicyFromDisk(disk_setting->safeGet<String>());
+                /// The disk is cached by its definition and reused when the table is loaded, so it has to be
+                /// created exactly as `registerStorageMergeTree` creates it, with the exemption of `system` tables.
+                MergeTreeSettings::resolveDiskSetting(
+                    resolved,
+                    getContext(),
+                    /* is_loading_from_existing_metadata = */ true,
+                    /* for_system_database = */ getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
             }
-
-            if (const Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
-                return getContext()->getStoragePolicy(policy_setting->safeGet<String>());
+            settings.set(resolved.name, resolved.value);
         }
     }
 
-    MergeTreeSettings default_settings = getContext()->getMergeTreeSettings();
-    return getContext()->getStoragePolicy(default_settings[MergeTreeSetting::storage_policy]);
+    if (settings[MergeTreeSetting::disk].changed)
+        return getContext()->getStoragePolicyFromDisk(settings[MergeTreeSetting::disk].value);
+    return getContext()->getStoragePolicy(settings[MergeTreeSetting::storage_policy].value);
 }
 
 String DatabaseOrdinary::getConvertToReplicatedFlagPath(const ASTCreateQuery & create_query)

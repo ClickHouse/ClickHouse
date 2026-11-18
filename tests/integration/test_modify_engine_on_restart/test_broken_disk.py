@@ -119,4 +119,23 @@ def test_broken_disk_in_storage_policy(started_cluster):
     assert engine_of("on_looped") == "MergeTree"
     assert q("SELECT count() FROM on_looped").strip() == "10"
 
+    # The last `storage_policy` assignment is the one the table uses.
+    q(
+        "CREATE TABLE on_looped_last ( A Int64 ) ENGINE = MergeTree ORDER BY A "
+        "SETTINGS storage_policy = 'default', storage_policy = 'with_looped'"
+    )
+    assert (
+        q(
+            f"SELECT storage_policy FROM system.tables WHERE database = '{database_name}' AND name = 'on_looped_last'"
+        ).strip()
+        == "with_looped"
+    )
+    q("INSERT INTO on_looped_last SELECT number FROM numbers(10)")
+    q("DETACH TABLE on_looped_last")
+    assert "CANNOT_RESTORE_TABLE" in ch1.query_and_get_error(
+        "ATTACH TABLE on_looped_last AS REPLICATED", database=database_name
+    )
+    q("ATTACH TABLE on_looped_last")
+    assert engine_of("on_looped_last") == "MergeTree"
+
     ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
