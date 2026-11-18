@@ -14,6 +14,7 @@ which is included in upstream 2.15.1 and was dropped together with its `Fix styl
 - Fix data race in rd_kafka_broker_fetch_toppars - https://github.com/confluentinc/librdkafka/pull/5266 (https://github.com/ClickHouse/librdkafka/pull/14)
 - Fix lock-order-inversion in queue refcount operations - https://github.com/confluentinc/librdkafka/pull/5445 (https://github.com/ClickHouse/librdkafka/pull/15)
 - Fix lock-order-inversion in rd_kafka_q_concat0 and rd_kafka_q_prepend0 - https://github.com/confluentinc/librdkafka/pull/5446 (https://github.com/ClickHouse/librdkafka/pull/16)
+- Do not return NULL from rd_kafka_new while its threads run - https://github.com/confluentinc/librdkafka/pull/4112 (https://github.com/ClickHouse/librdkafka/pull/28)
 
 ## ClickHouse only fixes
 
