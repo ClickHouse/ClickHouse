@@ -944,9 +944,12 @@ def main():
                 Shell.check(
                     "python3 -m ci.jobs.scripts.test_selection_smoke", strict=True
                 )
-            # In the merge queue the flaky check already reruns the changed tests.
+            # Always rerun the PR's changed/new tests, including in the merge
+            # queue: run against the merge group state they catch a changed test
+            # that a `master` commit landing after the PR's last CI run broke.
+            # (The merge queue used to leave this to a separate flaky check.)
             tests, selection_result = targeter.get_all_relevant_tests_with_info(
-                include_changed_tests=not info.is_merge_queue_event
+                include_changed_tests=True
             )
             SELECTION_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
             SELECTION_MANIFEST.write_text(
