@@ -31,6 +31,12 @@ namespace DB
 
 using StorageActionBlockType = size_t;
 
+/// The function checks that the user may write to the destination of a partition of `INSERT INTO FUNCTION ... PARTITION BY`,
+/// and throws otherwise. The table function checks only the URI template, but a partition id comes from the inserted data
+/// and can point outside the granted path: with `WRITE ON URL('^http://host/allowed/.*$')`, the partition id
+/// `../protected/x` writes to `http://host/protected/x`.
+using PartitionedWriteAccessCheck = std::function<void(const ContextPtr & context, const String & uri)>;
+
 class ASTCreateQuery;
 class ASTInsertQuery;
 
@@ -122,6 +128,13 @@ public:
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
+    /// A storage that reads this table over the replicas of `cluster_for_parallel_replicas` for the query of `context`,
+    /// or nullptr to read the table itself.
+    virtual StoragePtr getStorageForParallelReplicasRead(const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) const
+    {
+        return nullptr;
+    }
+
     /// Returns true if `read` is known to require an analyzed query (an AST or a query tree) in
     /// `SelectQueryInfo`, which not every caller of `read` has: a remote read always does, and so does a
     /// read that rewrites the query per underlying table. Wrappers answer for the table they forward to.
@@ -207,12 +220,17 @@ public:
 
     /// Returns true if the storage supports reading of subcolumns of complex types.
     virtual bool supportsSubcolumns() const { return false; }
+    /// Returns true if the storage compresses each stream of a column with its own codec, so codecs can be declared for subcolumns.
+    virtual bool supportsSubcolumnCodecs() const { return false; }
     /// Returns true if storage supports optimizations of functions by reading subcolumns.
     virtual bool supportsOptimizationToSubcolumns() const { return supportsSubcolumns(); }
     /// Same, but restricted to tuple element access (`tupleElement(t, 'x')` -> reading `t.x`).
     /// A storage that cannot serve synthesised subcolumns such as `.null`/`.size0` as standalone
     /// inputs may enable this while keeping supportsOptimizationToSubcolumns() false.
     virtual bool supportsOptimizationToTupleElementSubcolumns() const { return supportsOptimizationToSubcolumns(); }
+    /// Returns true if the storage writes `Map` columns with the bucketed serialization, where a single key
+    /// can be read without reading the whole column. Gates the `m['key']` -> `m.key_<key>` rewrite.
+    virtual bool hasBucketedMapSerialization() const { return false; }
 
     /// Returns true if the storage supports transactions for SELECT, INSERT and ALTER queries.
     /// Storage may throw an exception later if some query kind is not fully supported.
@@ -262,8 +280,9 @@ public:
     /// The default implementation falls back to the parameterless version.
     virtual ColumnSizeByName getColumnSizes(const Names & /*columns*/, bool /*calculate_subcolumn_sizes*/) const { return getColumnSizes(); }
 
-    /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias
-    virtual std::optional<ColumnSizeByName> tryGetColumnSizes() const { return getColumnSizes(); }
+    /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias,
+    /// and covers only the data visible to the user of `query_context`.
+    virtual std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & /*query_context*/) const { return getColumnSizes(); }
 
     /// Optional size information of each secondary index.
     /// Valid only for MergeTree family.
@@ -289,6 +308,12 @@ public:
     void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_)
     {
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
+    }
+
+    /// Same as above, but publishes an already built object instead of deep-copying it.
+    void setInMemoryMetadata(std::unique_ptr<const StorageInMemoryMetadata> && metadata_)
+    {
+        metadata.set(std::move(metadata_));
     }
 
     void setInMemoryMetadataComment(const String & comment)
@@ -750,7 +775,7 @@ public:
     {
         /// Number of entries left to check.
         /// It decreases after each call to checkDataNext().
-        virtual size_t size() const = 0;
+        [[nodiscard]] virtual size_t size() const = 0;
         virtual ~DataValidationTasksBase() = default;
     };
 
@@ -833,6 +858,11 @@ public:
     /// Passed context pointer must not be `nullptr`.
     virtual std::optional<UInt64> totalRows(ContextPtr) const { return {}; }
 
+    virtual std::optional<UInt64> totalRowsInSnapshot(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr query_context) const
+    {
+        return totalRows(query_context);
+    }
+
     /// Same as above but also take partition predicate into account.
     /// Passed context pointer must not be `nullptr`.
     virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG &, ContextPtr) const { return {}; }
@@ -914,6 +944,19 @@ public:
         ContextPtr context,
         std::shared_ptr<IStorage> storage_);
 
+    /// The class lets only table functions set the partitioned write access check:
+    /// the setter requires the key, and only `ITableFunction` can create one.
+    class PartitionedWriteAccessKey
+    {
+        friend class ITableFunction;
+        PartitionedWriteAccessKey() = default;
+    };
+
+    void setPartitionedWriteAccessCheck(PartitionedWriteAccessCheck check, const PartitionedWriteAccessKey &)
+    {
+        partitioned_write_access_check = std::move(check);
+    }
+
 private:
     /// Lock required for alter queries (lockForAlter).
     /// Allows to execute only one simultaneous alter query.
@@ -924,6 +967,13 @@ private:
     /// DROP-like queries take this lock for write (lockExclusively), to be sure
     /// that all table threads finished.
     mutable RWLock drop_lock = RWLockImpl::create();
+
+    /// The write access check for each partition of `INSERT INTO FUNCTION ... PARTITION BY`. It is kept in the storage
+    /// because the destinations of partitions are known only when the storage writes. Only table functions set it.
+    PartitionedWriteAccessCheck partitioned_write_access_check;
+
+protected:
+    [[nodiscard]] const PartitionedWriteAccessCheck & getPartitionedWriteAccessCheck() const { return partitioned_write_access_check; }
 };
 
 }

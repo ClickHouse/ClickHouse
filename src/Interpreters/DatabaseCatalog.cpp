@@ -118,7 +118,7 @@ public:
         : database_catalog(database_catalog_)
     {}
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
         auto context = CurrentThread::tryGetQueryContext();
         if (!context)
@@ -1128,6 +1128,22 @@ void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database,
     prev_table = std::move(table);
 }
 
+bool DatabaseCatalog::replaceUnusedTableInUUIDMapping(const UUID & uuid, const StoragePtr & old_table, StoragePtr new_table)
+{
+    chassert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    chassert(old_table && new_table);
+    UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
+    std::lock_guard lock{map_part.mutex};
+    auto it = map_part.map.find(uuid);
+    if (it == map_part.map.end() || it->second.second != old_table)
+        return false;
+    /// The mapping and the caller.
+    if (old_table.use_count() != 2)
+        return false;
+    it->second.second = std::move(new_table);
+    return true;
+}
+
 bool DatabaseCatalog::hasUUIDMapping(const UUID & uuid)
 {
     chassert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
@@ -1439,6 +1455,16 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
         metadata_disk_list.insert(std::move(db_disk));
     }
 
+    /// Startup may already have dropped tables, e.g. `SystemLog::prepareUnionTable` replaces union tables.
+    /// They are queued with their storage and their UUID mapping is still registered, so only drops of previous runs are loaded here.
+    auto is_drop_queued = [this](const DiskPtr & disk, const String & metadata_path)
+    {
+        std::lock_guard lock(tables_marked_dropped_mutex);
+        return std::ranges::any_of(tables_marked_dropped, [&](const TableMarkedAsDropped & dropped)
+        {
+            return dropped.metadata_path == metadata_path && dropped.db_disk->getName() == disk->getName();
+        });
+    };
 
     /// /clickhouse_root/metadata_dropped/ contains files with metadata of tables,
     /// which where marked as dropped by Atomic databases.
@@ -1479,6 +1505,12 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
             dropped_id.uuid = parse<UUID>(sub_path_filename.substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
 
             String full_path = path + sub_path_filename;
+            if (is_drop_queued(db_disk, full_path))
+            {
+                LOG_DEBUG(log, "Table {} was dropped during this startup and is already queued for removal", dropped_id.getNameForLogs());
+                continue;
+            }
+
             dropped_metadata.emplace(std::move(full_path), std::pair{std::move(dropped_id), db_disk});
         }
     }
@@ -1626,7 +1658,9 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
         for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end(); ++it)
         {
             auto storage_ptr = it->table;
-            if (it->table_id.uuid == table_id.uuid)
+            if (it->table_id.uuid == table_id.uuid &&
+                it->table_id.database_name == table_id.database_name &&
+                it->table_id.table_name == table_id.table_name)
             {
                 it_dropped_table = it;
                 dropped_table = *it;
@@ -1887,7 +1921,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     ///   or it is better to bypass it e.g. to avoid interactions with a remote storage
     auto is_disk_eligible_for_search = [](DiskPtr disk, std::shared_ptr<MergeTreeData> storage)
     {
-        bool is_disk_eligible = !disk->isReadOnly();
+        bool is_disk_eligible = !disk->isBroken() && !disk->isReadOnly();
 
         /// Disk is not actually used by MergeTree table
         if (is_disk_eligible && storage && !storage->getStoragePolicy()->tryGetVolumeIndexByDiskName(disk->getName()).has_value())
