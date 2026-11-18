@@ -1,0 +1,38 @@
+-- { echo }
+-- A correlated subquery over a Nullable column whose `isNull` is also an outer GROUP BY key.
+
+SELECT a, (SELECT isNull(a))
+FROM (SELECT toNullable(number) AS a FROM numbers(2)) AS o
+GROUP BY a, isNull(a) WITH ROLLUP
+ORDER BY a NULLS LAST
+SETTINGS group_by_use_nulls = 1;
+
+SELECT a, isNull(a), (SELECT isNull(a))
+FROM (SELECT toNullable(number) AS a FROM numbers(2)) AS o
+GROUP BY a, isNull(a) WITH CUBE
+ORDER BY a NULLS LAST, isNull(a) NULLS LAST
+SETTINGS group_by_use_nulls = 1, optimize_redundant_functions_in_order_by = 0;
+
+SELECT a, isNull(a), (SELECT isNull(a))
+FROM (SELECT toNullable(number) AS a FROM numbers(2)) AS o
+GROUP BY GROUPING SETS ((a, isNull(a)), (a), ())
+ORDER BY a NULLS LAST, isNull(a) NULLS LAST
+SETTINGS group_by_use_nulls = 1, optimize_redundant_functions_in_order_by = 0;
+
+SELECT a, isNull(a), (SELECT isNull(a))
+FROM (SELECT toNullable(number) AS a FROM numbers(2)) AS o
+GROUP BY a, isNull(a) WITH ROLLUP
+ORDER BY a NULLS LAST, isNull(a) NULLS LAST
+SETTINGS group_by_use_nulls = 0, optimize_redundant_functions_in_order_by = 0;
+
+SELECT a, isNull(a), EXISTS (SELECT 1 WHERE a IS NULL)
+FROM (SELECT toNullable(number) AS a FROM numbers(2)) AS o
+GROUP BY a, isNull(a) WITH ROLLUP
+ORDER BY a NULLS LAST, isNull(a) NULLS LAST
+SETTINGS group_by_use_nulls = 1, optimize_redundant_functions_in_order_by = 0;
+
+SELECT a, (SELECT isNull(a))
+FROM (SELECT toNullable(number) AS a FROM numbers(2)) AS o
+GROUP BY a, isNull(a) WITH ROLLUP
+ORDER BY a NULLS LAST
+SETTINGS group_by_use_nulls = 1, correlated_subqueries_default_join_kind = 'left', correlated_subqueries_use_in_memory_buffer = 0;

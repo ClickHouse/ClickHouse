@@ -1107,13 +1107,39 @@ static void preferNullableRightKey(
     }
 }
 
+/// The name of a key expression the join adds itself: `name`, unless an input already has it. An input can hold any
+/// expression, e.g. the outer `GROUP BY` key `isNull(x)` of a decorrelated subquery, and joins look keys up by name.
+static String getKeyNameDistinctFromInputs(const ActionsDAG & dag, const String & name)
+{
+    auto is_input_name = [&](const String & candidate)
+    {
+        return std::ranges::any_of(dag.getInputs(), [&](const auto * input) { return input->result_name == candidate; });
+    };
+    if (!is_input_name(name))
+        return name;
+    for (size_t i = 0;; ++i)
+    {
+        String candidate = fmt::format("{}_{}", name, i);
+        if (!is_input_name(candidate))
+            return candidate;
+    }
+}
+
 /// A null-safe key `a` as two plain keys, `isNull(a)` and `if(isNull(a), d, assumeNotNull(a))`, with `d` the default value
 /// of the nested type. NULL matches NULL through the `isNull` key, and the value key is not nullable, so the join skips
 /// no row for it, and a fixed-width key stays fixed-width instead of being serialized in a tuple.
 static std::pair<JoinActionRef, JoinActionRef> splitNullSafeKey(const JoinActionRef & key)
 {
     const auto value_type = removeLowCardinalityAndNullable(key.getType());
-    auto is_null = JoinActionRef::transform({key}, JoinActionRef::AddFunction(FunctionFactory::instance().get("isNull", nullptr)));
+    auto is_null = JoinActionRef::transform(
+        {key},
+        [](ActionsDAG & dag, ActionsDAG::NodeRawConstPtrs nodes)
+        {
+            return &dag.addFunction(
+                FunctionFactory::instance().get("isNull", nullptr),
+                {nodes[0]},
+                getKeyNameDistinctFromInputs(dag, "isNull(" + nodes[0]->result_name + ")"));
+        });
     auto value = JoinActionRef::transform(
         {is_null, key},
         [&value_type](ActionsDAG & dag, ActionsDAG::NodeRawConstPtrs nodes)
@@ -1124,7 +1150,8 @@ static std::pair<JoinActionRef, JoinActionRef> splitNullSafeKey(const JoinAction
             return &dag.addFunction(
                 createInternalFunctionIfOverloadResolver(/*use_variant_as_common_type=*/ false, /*allow_lossy_numeric_supertype=*/ false, /*use_low_cardinality_optimisation=*/ false),
                 {nodes[0], &default_value, &not_null},
-                {});
+                getKeyNameDistinctFromInputs(
+                    dag, fmt::format("if({}, {}, {})", nodes[0]->result_name, default_value.result_name, not_null.result_name)));
         });
     return {std::move(is_null), std::move(value)};
 }
@@ -1250,7 +1277,12 @@ static bool addJoinPredicatesToTableJoin(VectorWithMemoryTracking<JoinActionRef>
                 *   SELECT * FROM t1 JOIN t2 ON tuple(t1.a) == tuple(t2.b)
                 */
 
-            JoinActionRef::AddFunction wrap_nullsafe_function(std::make_shared<FunctionTuple>());
+            auto wrap_nullsafe_function = [](ActionsDAG & dag, ActionsDAG::NodeRawConstPtrs nodes)
+            {
+                return &dag.addFunction(
+                    std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>()), {nodes[0]},
+                    getKeyNameDistinctFromInputs(dag, "tuple(" + nodes[0]->result_name + ")"));
+            };
             lhs = JoinActionRef::transform({lhs}, wrap_nullsafe_function);
             rhs = JoinActionRef::transform({rhs}, wrap_nullsafe_function);
         }
