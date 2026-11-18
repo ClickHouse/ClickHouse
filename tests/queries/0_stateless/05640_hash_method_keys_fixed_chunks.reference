@@ -44,5 +44,8 @@ set c32, b, c50	43842	12540028702331483818
 join hash c32, b, c	49934	12256474749404601006
 join parallel_hash c32, b, c	49934	12256474749404601006
 join parallel_hash 32 threads c32, b, c	49934	12256474749404601006
+join hash probe with 99% NULL keys a, b, c99	546	16268373142804558381
+join hash OR with 99% NULL keys a, b, c99	24971	3486953001664133291
+left join hash with an ON filter on the probe a, b, c	50000	9546249993452633248
 in order a, c32, b	42910	4098928778236334588
 distinct in order a, c32, b	42910	1691553983965318539

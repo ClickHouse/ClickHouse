@@ -890,6 +890,25 @@ TEST(ColumnsHashingPreparedKeys, KeysArePackedInChunksWhenRowsAreSkipped)
         {"Nullable(UInt32), UInt64, UInt64", {4, 8, 8}, /*nullable=*/ true, num_long_rows});
 }
 
+/// A caller that asks about few rows gets them packed one by one.
+TEST(ColumnsHashingPreparedKeys, KeysAreNotPackedInChunksForFewAskedRows)
+{
+    auto check = [&]<typename State, typename Key>(const FixedWidthKeyColumns & keys)
+    {
+        static_assert(State::packs_in_chunks);
+        SCOPED_TRACE(keys.name);
+        Arena arena;
+        State state(keys.columns, keys.sizes, nullptr, {.skips_rows = true, .asks_few_rows = true});
+        for (size_t row = 0; row < keys.rows; row += 7)
+            ASSERT_EQ(state.getKeyHolder(row, arena), keys.template expected<Key>(row)) << "row " << row;
+        ASSERT_EQ(state.prepared_keys.capacity(), 0);
+    };
+
+    check.template operator()<WholeBlockState256, UInt256>({"UInt64, UInt64, UInt64", {8, 8, 8}, /*nullable=*/ false, num_long_rows});
+    check.template operator()<NullableWholeBlockState256, UInt256>(
+        {"Nullable(UInt32), UInt64, UInt64", {4, 8, 8}, /*nullable=*/ true, num_long_rows});
+}
+
 TEST(ColumnsHashingPreparedKeys, SparseStateTypes)
 {
     using AggregationState256 = AggregationMethodKeysFixed<AggregatedDataWithKeys256>::State;

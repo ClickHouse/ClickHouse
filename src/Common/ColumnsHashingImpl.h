@@ -74,6 +74,9 @@ struct RowRange
     size_t end = std::numeric_limits<size_t>::max();
     /// Some rows of the range are never asked about (e.g. the rows with a NULL key), so no state hashes rows ahead of the asked ones.
     bool skips_rows = false;
+    /// Fewer than one row in `max_rows_per_asked_row` of the range is asked about, so a state that packs its keys in chunks packs
+    /// the asked rows one by one.
+    bool asks_few_rows = false;
 };
 
 /// The state type to build over a sub-range of a block. It differs from `State` only where `State` does
@@ -114,6 +117,11 @@ using SparseState = typename SparseStateOf<State>::Type;
 /// 3: 1.09, 4: 1.03, 6: 1.00, 8: 1.02).
 constexpr size_t max_rows_per_asked_row = 6;
 
+inline bool asksAboutFewRows(size_t asked_rows, size_t rows)
+{
+    return asked_rows < rows / max_rows_per_asked_row;
+}
+
 /// Calls `run(state)` with a state over `key_columns` for a caller that asks about the `rows` of its block, or, if
 /// it skips rows, about the `count_asked_rows()` of them: a `SparseState<State>` when that is fewer than one row in
 /// `max_rows_per_asked_row`, else a `State`.
@@ -128,7 +136,7 @@ ALWAYS_INLINE void withStateForAskedRows(
 {
     if constexpr (!std::is_same_v<SparseState<State>, State>)
     {
-        if (skips_rows && count_asked_rows() < rows / max_rows_per_asked_row)
+        if (skips_rows && asksAboutFewRows(count_asked_rows(), rows))
         {
             SparseState<State> state(key_columns, key_sizes, nullptr, {.skips_rows = true});
             run(state);

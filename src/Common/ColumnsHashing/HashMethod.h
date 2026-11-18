@@ -873,7 +873,7 @@ struct HashMethodKeysFixed
                 if constexpr (packs_in_chunks)
                 {
                     /// Nothing is packed until a row is asked for: a caller may start late in the block or stop early.
-                    chunks.rows_end = packed.end;
+                    chunks.rows_end = rows.asks_few_rows ? 0 : packed.end;
                     chunks.chunk_rows = maxBytesInKeyChunk() / sizeof(Key);
                     chunks.next_chunk_rows = std::min(chunks.chunk_rows, min_rows_to_batch_pack_sub_range);
                 }

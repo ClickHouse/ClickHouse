@@ -153,6 +153,16 @@ SETTINGS join_algorithm = 'parallel_hash', max_threads = 8;
 SELECT 'join parallel_hash 32 threads c32, b, c', count(), sum(cityHash64(toString((l.a, l.q, r.k)))) FROM t_keys_fixed_chunks AS l
 INNER JOIN (SELECT c32, b, c, a % 5 AS k FROM t_keys_fixed_chunks WHERE q = 1) AS r USING (c32, b, c)
 SETTINGS join_algorithm = 'parallel_hash', max_threads = 32;
+SELECT 'join hash probe with 99% NULL keys a, b, c99', count(), sum(cityHash64(toString((l.a, l.q, r.k)))) FROM t_keys_fixed_chunks AS l
+INNER JOIN (SELECT DISTINCT a, b, c, a % 5 AS k FROM t_keys_fixed_chunks WHERE q = 1) AS r ON l.a = r.a AND l.b = r.b AND l.c99 = r.c
+SETTINGS join_algorithm = 'hash';
+SELECT 'join hash OR with 99% NULL keys a, b, c99', count(), sum(cityHash64(toString((l.a, l.q, r.k)))) FROM t_keys_fixed_chunks AS l
+INNER JOIN (SELECT DISTINCT a, b, c, a % 5 AS k FROM t_keys_fixed_chunks WHERE q = 1) AS r
+ON (l.a = r.a AND l.b = r.b AND l.c99 = r.c) OR (l.a = r.a AND l.b = r.b AND l.c50 = r.c)
+SETTINGS join_algorithm = 'hash';
+SELECT 'left join hash with an ON filter on the probe a, b, c', count(), sum(cityHash64(toString((l.a, l.q, r.k)))) FROM t_keys_fixed_chunks AS l
+LEFT JOIN (SELECT DISTINCT a, b, c, a % 5 AS k FROM t_keys_fixed_chunks WHERE q = 1) AS r ON l.a = r.a AND l.b = r.b AND l.c = r.c AND l.a % 100 = 0
+SETTINGS join_algorithm = 'hash';
 SELECT 'in order a, c32, b', count(), sum(cityHash64(toString((a, c32, b, n)))) FROM
 (SELECT a, c32, b, count() AS n FROM t_keys_fixed_chunks_in_order GROUP BY a, c32, b)
 SETTINGS optimize_aggregation_in_order = 1, optimize_read_in_order = 1, max_threads = 1;
