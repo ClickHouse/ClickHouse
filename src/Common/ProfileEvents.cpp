@@ -156,8 +156,7 @@
     M(IcebergManifestFilesReadBytes, "Total size of Iceberg manifest files read from storage.", ValueType::Bytes) \
     M(IcebergManifestFilesReadMicroseconds, "Total time spent reading and decoding Iceberg manifest files from storage.", ValueType::Microseconds) \
     M(IcebergManifestFileIteratorCreateMicroseconds, "Total time spent preparing Iceberg manifest files for iteration: parsing their partition spec and schema headers and checking the schema against the table metadata. It is paid for every manifest file in every query, also when the manifest file is served from the Iceberg metadata cache.", ValueType::Microseconds) \
-    M(IcebergCompactionCleanupDeferredByReaders, "Number of times the removal of data files superseded by Iceberg compaction was postponed because a query on this or another replica was still reading a snapshot that references them.", ValueType::Number) \
-    M(IcebergCompactionCleanupDeferredBySnapshotLifetime, "Number of times the removal of data files superseded by Iceberg compaction was postponed because the compaction or a snapshot it superseded was fresher than `iceberg_outdated_snapshot_lifetime_seconds`.", ValueType::Number) \
+    M(IcebergCompactionCleanupDeferredByReaders, "Number of outdated snapshots that the cleanup of an Iceberg table kept until a later run, because a query on this or another replica was still reading them.", ValueType::Number) \
     M(ObjectStorageSharedLeasesAcquired, "Number of shared leases of keys, such as Iceberg snapshots being read, written to object storage when a query of this server acquired a key that was not leased by the server yet.", ValueType::Number) \
     M(ObjectStorageSharedLeasesRenewed, "Number of shared leases rewritten in object storage by the renewal task while the queries of this server held the key.", ValueType::Number) \
     M(ObjectStorageSharedLeasesRefused, "Number of attempts to lease a key in object storage refused because a cleaner condemned the key, such as an Iceberg snapshot about to be removed by the cleanup after a compaction.", ValueType::Number) \
@@ -861,6 +860,7 @@ The server successfully detected this situation and will download merged part fr
     M(ParallelReplicasNumRequests, "Number of requests to the initiator.", ValueType::Number) \
     M(CacheWarmerBytesDownloaded, "Amount of data fetched into filesystem cache by dedicated background threads.", ValueType::Bytes) \
     M(CacheWarmerDataPartsDownloaded, "Number of data parts that were fully fetched by CacheWarmer.", ValueType::Number) \
+    M(CacheWarmerDataPartsSkippedSameAvailabilityZone, "Number of data parts `CacheWarmer` did not fetch because the distributed cache was the only cache to warm and the part was produced in the current availability zone, so that cache already holds it.", ValueType::Number) \
     M(IgnoredColdParts, "See setting ignore_cold_parts_seconds. Number of times read queries ignored very new parts that weren't pulled into cache by CacheWarmer yet.", ValueType::Number) \
     M(PreferredWarmedUnmergedParts, "See setting prefer_warmed_unmerged_parts_seconds. Number of times read queries used outdated pre-merge parts that are in cache instead of merged part that wasn't pulled into cache by CacheWarmer yet.", ValueType::Number) \
     \
@@ -1449,7 +1449,9 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheReceivedErrorPackets, "Distributed Cache client event. Total number of received Error packets received from distributed cache", ValueType::Number) \
     M(DistrCacheReceivedCredentialsRefreshPackets, "Distributed Cache client event. Total number of received RefreshCredentials packets received from distributed cache", ValueType::Number) \
     M(DistrCacheReceivedStopPackets, "Distributed Cache client event. Total number of received Stop packets received from distributed cache", ValueType::Number) \
-    M(DistrCacheReceivedSlowDownPackets, "Distributed Cache client event. Total number of received SlowDown packets received from distributed cache (the server rejected a new connection because this client has too many open connections relative to its weight)", ValueType::Number) \
+    M(DistrCacheReceivedSlowDownPackets, "Distributed Cache client event. Total number of SlowDown packets received from distributed cache servers: either a new connection was rejected because this client has too many open connections relative to its weight, or too many of this client's requests are stuck on that server", ValueType::Number) \
+    M(DistrCacheSlowedDownServerSkipped, "Distributed Cache client event. Number of times a distributed cache server was passed over because it asked this client to slow down", ValueType::Number) \
+    M(DistrCachePooledConnectionsDroppedOnSlowDown, "Distributed Cache client event. Number of idle pooled connections closed because their server asked this client to slow down", ValueType::Number) \
     M(DistrCacheSentDataPackets, "Distributed Cache client event. Total number of data packets sent to distributed cache", ValueType::Number) \
     M(DistrCacheSentDataPacketsBytes, "Distributed Cache client event. The number of bytes in Data packets sent to distributed cache", ValueType::Bytes) \
     M(DistrCacheRequestsEndedOnRelease, "Distributed Cache client event. Number of open requests which the client had to end while releasing them (a retry which reconnected, a new request over an unfinished one, or the client going away) instead of the reader ending them explicitly", ValueType::Number) \
@@ -1524,6 +1526,9 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheServerStartRequestPackets, "Distributed Cache server event. Number of StartRequest packets in DistributedCacheServer", ValueType::Number) \
     M(DistrCacheServerContinueRequestPackets, "Distributed Cache server event. Number of ContinueRequest packets in DistributedCacheServer", ValueType::Number) \
     M(DistrCacheServerEndRequestPackets, "Distributed Cache server event. Number of EndRequest packets in DistributedCacheServer", ValueType::Number) \
+    M(DistrCacheServerClientDisconnectedMidRequest, "Distributed Cache server event. Number of `Read` requests the server stopped serving because the connection reached end of stream mid-request: the client closed it, or the registry shut the socket down", ValueType::Number) \
+    M(DistrCacheServerClientSlowDownWindowsOpened, "Distributed Cache server event. Number of times the stuck-request scan opened a client's slow-down window, because that client's stuck in-flight requests reached `distributed_cache_slow_down_min_stuck_requests` and a `distributed_cache_slow_down_stuck_requests_ratio` share", ValueType::Number) \
+    M(DistrCacheServerConnectionsClosedOnStuckRequest, "Distributed Cache server event. Number of connections shut down by the stuck-request scan because their in-flight request made no progress for at least `distributed_cache_stuck_request_no_progress_timeout_ms`, or ran past `distributed_cache_max_request_processing_time_ms`", ValueType::Number) \
     M(DistrCacheServerRequestsClosedWithoutEndRequest, "Distributed Cache server event. Number of requests whose client closed the connection without sending EndRequest (a killed client, a client whose socket was not writable, or an old client), so the server stopped serving them on EOF. Closes driven by this server (shutdown or connection eviction) are not counted", ValueType::Number) \
     M(DistrCacheServerReceivedCredentialsRefreshPackets, "Distributed Cache server event. Number of RefreshCredentials client packets in DistributedCacheServer", ValueType::Number) \
     M(DistrCacheServerAckRequestPackets, "Distributed Cache server event. Number of AckRequest packets in DistributedCacheServer", ValueType::Number) \
@@ -1539,9 +1544,11 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheServerSkipped, "Distributed Cache server event. The number of times distributed cache server was skipped because of previous failed connection attempts", ValueType::Number) \
     M(DistrCacheServerShutdownConnectionsMicroseconds, "Distributed Cache server event. Time spent in shutdownAllConnections waiting for active connections to finish (or be forcefully closed) during server shutdown", ValueType::Microseconds) \
     M(DistrCacheServerConnectionsDroppedOverLimit, "Distributed Cache server event. The number of connections closed because the number of connections exceeded the limit (closed from the client with the maximum number of connections relative to its weight)", ValueType::Number) \
+    M(DistrCacheServerSlowDownRequests, "Distributed Cache server event. The number of requests ended with a SlowDown packet while their client's slow-down window was open: at the start of a read or write request, or because the server had been processing one for longer than `distributed_cache_max_request_processing_time_ms`", ValueType::Number) \
+    M(DistrCacheServerRequestsEndedOnProcessingTime, "Distributed Cache server event. The number of in-flight requests ended because the server had been processing them for longer than `distributed_cache_max_request_processing_time_ms`: with an `Error` or a `Stop`, or with a `SlowDown` when the client is also asked to back off", ValueType::Number) \
     M(DistrCacheServerConnectionsRejectedOverLimit, "Distributed Cache server event. The number of new connections rejected with a SlowDown packet because the connecting client exceeded its share of connections", ValueType::Number) \
     M(DistrCacheServerConnectionRegistryLockWaitMicroseconds, "Distributed Cache server event. Time spent waiting for the global connection registry mutex on contention (identify, setClientWeight, eviction, and unregister when a reindex or bucket removal is due)", ValueType::Microseconds) \
-    M(DistrCacheServerConnectionRegistryClientLockWaitMicroseconds, "Distributed Cache server event. Time spent waiting for a per-client connection bucket mutex on contention (register/unregister/identify/eviction)", ValueType::Microseconds) \
+    M(DistrCacheServerConnectionRegistryClientLockWaitMicroseconds, "Distributed Cache server event. Time spent waiting for a per-client connection bucket mutex on contention (register/unregister/identify/eviction, the stuck-request scan, temporary-data holds, `system.distributed_cache_server_connections`)", ValueType::Microseconds) \
     M(DistrCacheServerCommittedTemporaryFilesLockWaitMicroseconds, "Distributed Cache server event. Time spent waiting for the committed temporary-files mutex on contention.", ValueType::Microseconds) \
     \
     M(LogTest, "Number of log messages with level Test", ValueType::Number) \
@@ -1602,6 +1609,7 @@ The server successfully detected this situation and will download merged part fr
     M(SharedMergeTreeVirtualPartsUpdatesForMergesOrStatus, "Virtual parts updates from non-default background job", ValueType::Number) \
     M(SharedMergeTreeVirtualPartsUpdatesLeaderFailedElection, "Virtual parts updates leader election failed", ValueType::Number) \
     M(SharedMergeTreeVirtualPartsUpdatesLeaderSuccessfulElection, "Virtual parts updates leader election successful", ValueType::Number) \
+    M(SharedMergeTreePartsUpdateLeaderElectionsSkippedByBudget, "Parts update leader elections that did not try to take a lock because this replica already holds its budget of leader locks", ValueType::Number) \
     M(SharedMergeTreeMergeMutationAssignmentAttempt, "How many times we tried to assign merge or mutation", ValueType::Number) \
     M(SharedMergeTreeMergeMutationAssignmentFailedWithNothingToDo, "How many times we tried to assign merge or mutation and failed because nothing to merge", ValueType::Number) \
     M(SharedMergeTreeMergeMutationAssignmentFailedWithConflict, "How many times we tried to assign merge or mutation and failed because of conflict in Keeper", ValueType::Number) \
