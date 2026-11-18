@@ -284,7 +284,7 @@ static const SQLType * leafType(const SQLType * tp)
 /// General-purpose compression codecs: work on any column type.
 static const DB::Strings kGeneralCodecs = {"LZ4", "LZ4HC", "ZSTD", "ZXC", "NONE", "AES_128_GCM_SIV", "AES_256_GCM_SIV"};
 
-String generateNextCodecStringForType(RandomGenerator & rg, const SQLType * tp)
+String generateNextCodecStringForType(RandomGenerator & rg, const SQLType * tp, const bool lossy)
 {
     /// Build the codec pool based on the leaf type class.
     const SQLType * leaf = leafType(tp);
@@ -315,7 +315,9 @@ String generateNextCodecStringForType(RandomGenerator & rg, const SQLType * tp)
             {
                 /// Gorilla, FPC, ALP support Float32 and Float64 but not BFloat16.
                 /// SZ3 is lossy and Float32/Float64-only (rejected on Map keys and untyped codec settings).
-                pool.insert(pool.end(), {"Gorilla", "FPC", "ALP", "SZ3"});
+                pool.insert(pool.end(), {"Gorilla", "FPC", "ALP"});
+                if (lossy)
+                    pool.emplace_back("SZ3");
             }
             break;
         case SQLTypeClass::DATE: pool.insert(pool.end(), {"Delta", "DoubleDelta", "T64", "PCO"}); break;
@@ -339,7 +341,7 @@ String generateNextCodecStringForType(RandomGenerator & rg, const SQLType * tp)
             /// The Quantized (vector quantization) codec applies only to Array(Float32/Float64/BFloat16),
             /// i.e. an array whose element is a bare Float (a Nullable/LowCardinality element is rejected).
             const auto * subtype = static_cast<const ArrayType *>(leaf)->subtype.get();
-            if (subtype && subtype->getTypeClass() == SQLTypeClass::FLOAT)
+            if (lossy && subtype && subtype->getTypeClass() == SQLTypeClass::FLOAT)
                 pool.emplace_back("Quantized");
             break;
         }

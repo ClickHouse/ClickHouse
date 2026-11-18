@@ -1330,7 +1330,7 @@ String StatementGenerator::nextStructureColumnType(
             }
             if (rg.nextSmallNumber() < 3)
             {
-                cd.set_codecs(generateNextCodecStringForType(rg, tp));
+                cd.set_codecs(generateNextCodecStringForType(rg, tp, !t || !t->isDeterministic()));
             }
             if (rg.nextSmallNumber() < 3)
             {
@@ -2144,7 +2144,7 @@ void StatementGenerator::addTableColumnInternal(
 
             if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_ALIAS) && rg.nextMediumNumber() < 16)
             {
-                cd->set_codecs(generateNextCodecStringForType(rg, col.tp.get()));
+                cd->set_codecs(generateNextCodecStringForType(rg, col.tp.get(), !t.isDeterministic()));
             }
             if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_EPHEMERAL) && !csettings.empty() && rg.nextMediumNumber() < 16)
             {
@@ -2598,7 +2598,7 @@ void StatementGenerator::addTableCodec(RandomGenerator & rg, const SQLTable & t,
     const ColumnPathChain & entry = rg.pickRandomly(this->entries);
 
     columnPathRef(entry, cc->mutable_col());
-    cc->set_codecs(generateNextCodecStringForType(rg, entry.getBottomType()));
+    cc->set_codecs(generateNextCodecStringForType(rg, entry.getBottomType(), !t.isDeterministic()));
     this->entries.clear();
 }
 

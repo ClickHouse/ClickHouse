@@ -25,9 +25,18 @@ class ClickHouseTable:
         self.table_name = _table_name
         self.table_engine = _table_engine
         self.first_hash = None
+        self.mutation_ids = set()
 
     def set_first_hash(self, _first_hash: Optional[str]):
         self.first_hash = _first_hash
+
+    def get_mutations(self, client: Client, rename=None) -> tuple[set[str], int]:
+        """Mutation ids of the table and how many of them are unfinished"""
+        res = client.query(
+            f"SELECT mutation_id, is_done FROM system.mutations WHERE database = '{self.schema_name}' AND table = '{rename if rename is not None else self.table_name}';"
+        )
+        rows = [line.split("\t") for line in res.split("\n") if line]
+        return {r[0] for r in rows}, sum(1 for r in rows if r[1] == "0")
 
     def get_sql_escaped_full_name(self, rename=None) -> str:
         return f"`{self.schema_name}`.`{rename if rename is not None else self.table_name}`"
@@ -74,7 +83,7 @@ class ElOraculoDeTablas:
             # Local engines only, without TTL; Summing/Aggregating FINAL depends on the part layout, and Collapsing
             # FINAL on the merge order of arbitrary signs. RENAME is local, so replicas outside a Replicated database
             # keep getting inserts under the old name, and materialized views keep writing into their targets and
-            # inner tables.
+            # inner tables. A merge recompresses lossy codecs, which may change the values.
             tables_str = client.query("""
                 SELECT database, name, engine
                 FROM system.tables
@@ -82,6 +91,7 @@ class ElOraculoDeTablas:
                 AND NOT is_temporary
                 AND match(engine, '^(Shared|Replicated)?(|Replacing|Coalescing)MergeTree$|^(Log|TinyLog|StripeLog)$')
                 AND position(create_table_query, ' TTL ') = 0
+                AND NOT match(create_table_query, '[^A-Za-z0-9_](SZ3|Quantized)[^A-Za-z0-9_]')
                 AND (NOT startsWith(engine, 'Replicated') OR database IN (SELECT name FROM system.databases WHERE engine = 'Replicated'))
                 AND NOT startsWith(name, '.inner')
                 AND NOT arrayExists(q -> position(q, name) > 0, (SELECT groupArray(create_table_query) FROM system.tables
@@ -116,6 +126,16 @@ class ElOraculoDeTablas:
                 client.query(
                     f"SYSTEM SYNC REPLICA {next_tbl.get_sql_escaped_full_name(self.get_current_table_name())};"
                 )
+            # A mutation finishing between the two hashes changes the data, and RENAME keeps the queued ones.
+            # A mutation submitted before the RENAME may still be registered later, the second hash checks for it.
+            next_tbl.mutation_ids, unfinished = next_tbl.get_mutations(
+                client, self.get_current_table_name()
+            )
+            if unfinished > 0:
+                logger.info(
+                    f"Skipping hash of table {next_tbl.get_sql_escaped_full_name()}: {unfinished} unfinished mutation(s)"
+                )
+                return next_tbl
             # Fetch table data and hash it
             logger.info(
                 f"Collecting table {next_tbl.get_sql_escaped_full_name()} hash from node {next_node.name} before shutdown"
@@ -147,9 +167,21 @@ class ElOraculoDeTablas:
                 )
                 try:
                     # Fetch table data and hash it
-                    next_hash = client.query(
+                    second_hash = client.query(
                         next_tbl.get_hash_query(self.get_current_table_name())
                     )
+                    new_mutations = (
+                        next_tbl.get_mutations(client, self.get_current_table_name())[
+                            0
+                        ]
+                        - next_tbl.mutation_ids
+                    )
+                    if new_mutations:
+                        logger.info(
+                            f"Skipping hash comparison of table {next_tbl.get_sql_escaped_full_name()}: mutation(s) {', '.join(sorted(new_mutations))} registered after the first hash"
+                        )
+                    else:
+                        next_hash = second_hash
                 except Exception as ex:
                     logger.warn(
                         f"Error occurred while hashing a table after restarting server: {ex}"
