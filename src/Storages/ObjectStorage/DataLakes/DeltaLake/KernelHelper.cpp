@@ -190,12 +190,24 @@ public:
         /// Re-fetch the live S3 client. `S3ObjectStorage::applyNewSettings` swaps the
         /// MultiVersion<S3::Client> when catalog / vended credentials rotate; a captured
         /// snapshot would keep returning the original session.
-        const auto & credentials = object_storage->getS3StorageClient()->getCredentials();
+        const auto client = object_storage->getS3StorageClient();
+        const auto & credentials = client->getCredentials();
 
         SipHash hash;
-        hash.update(credentials.GetAWSAccessKeyId());
-        hash.update(credentials.GetAWSSecretKey());
-        hash.update(credentials.GetSessionToken());
+        auto add = [&hash](std::string_view value)
+        {
+            hash.update(value.size());
+            hash.update(value);
+        };
+        add(credentials.GetAWSAccessKeyId());
+        add(credentials.GetAWSSecretKey());
+        add(credentials.GetSessionToken());
+        /// `createBuilder` also takes the SSE-C key and requester pays from these headers.
+        for (const auto & header : client->getClientConfiguration().extra_headers)
+        {
+            add(header.name);
+            add(header.value);
+        }
         auto fp = hash.get128();
         /// Simulates a credentials rotation between consecutive reads of the same cached
         /// snapshot. Deterministic XOR keeps the perturbed value stable while the failpoint

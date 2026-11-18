@@ -142,6 +142,9 @@ def started_cluster():
         )
         port = cluster.azurite_port
         conf_path = generate_cluster_def(user_files_path + "/", port, "mycontainer")
+        cluster.disks_config_path = (
+            f"/etc/clickhouse-server/config.d/{os.path.basename(conf_path)}"
+        )
         cluster.add_instance(
             "node1",
             main_configs=[conf_path, "configs/cluster.xml"],
@@ -489,4 +492,41 @@ def test_writes_azure_disk_with_endpoint_prefix(started_cluster, partitioned):
         instance.query(f"SELECT a, b FROM {table_name} ORDER BY a").strip() == expected
     )
 
+    instance.query(f"DROP TABLE {table_name}")
+
+
+def test_kernel_engine_follows_disk_sse_c_reload(started_cluster):
+    """An SSE-C key added to the disk by a config reload, with the credentials unchanged,
+    must reach the delta-kernel engine of a table on that disk, not only the S3 client
+    of ClickHouse."""
+    instance = started_cluster.instances["node1"]
+    table_name = f"test_sse_c_reload_{get_uuid_str()}"
+    settings = {"allow_delta_lake_create_table": 1, "allow_delta_lake_writes": 1}
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int64) ENGINE = DeltaLake(path = '{table_name}/') "
+        "SETTINGS disk = 'disk_s3_common'",
+        settings=settings,
+    )
+    instance.query(f"INSERT INTO {table_name} VALUES (1)", settings=settings)
+    assert instance.query(f"SELECT count() FROM {table_name}").strip() == "1"
+
+    anchor = "<no_sign_request>0</no_sign_request>"
+    with_key = (
+        anchor + "<server_side_encryption_customer_key_base64>"
+        "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="
+        "</server_side_encryption_customer_key_base64>"
+    )
+    try:
+        instance.replace_in_config(started_cluster.disks_config_path, anchor, with_key)
+        instance.query("SYSTEM RELOAD CONFIG")
+        # MinIO refuses SSE-C over HTTP, so the kernel's own read fails once its engine has the key.
+        error = instance.query_and_get_error(f"SELECT count() FROM {table_name}")
+        assert "DeltaLake kernel error" in error, error
+    finally:
+        instance.replace_in_config(started_cluster.disks_config_path, with_key, anchor)
+        # A reload does not remove a setting that was deleted from the disk's config.
+        instance.restart_clickhouse()
+
+    assert instance.query(f"SELECT count() FROM {table_name}").strip() == "1"
     instance.query(f"DROP TABLE {table_name}")

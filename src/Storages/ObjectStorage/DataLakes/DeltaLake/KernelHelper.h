@@ -72,7 +72,7 @@ public:
     /// own, and vended creds are static in the C++ client until this callback fires.
     virtual bool refreshCredentials() { return false; }
 
-    /// One engine (one connection pool) shared by all users of this helper; rebuilt when the credentials change.
+    /// One engine (one connection pool) shared by all users of this helper; rebuilt when `getCredentialsFingerprint` changes.
     KernelEnginePtr getEngine() const;
 
 private:
