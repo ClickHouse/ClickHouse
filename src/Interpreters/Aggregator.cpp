@@ -5072,7 +5072,7 @@ void Aggregator::mergeIntoQueryResultPreviewSnapshot(AggregatedDataVariants & pa
 
     if (snapshot.empty())
     {
-        snapshot.init(participant.type, participant.size());
+        snapshot.init(participant.type, AggregatedDataVariants::SizeHint{.keys = participant.size(), .keys_with_empty_string = participant.sizeWithEmptyString()});
         snapshot.keys_size = params.keys_size;
         snapshot.key_sizes = key_sizes;
         /// Own the states from now on: an exception in the middle of the merge must not leak them.
