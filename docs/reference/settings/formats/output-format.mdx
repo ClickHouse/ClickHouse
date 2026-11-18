@@ -1157,6 +1157,38 @@ Only takes effect when `output_format_pretty_grid_charset` is `UTF-8`.
 
 When serializing Nullable columns with Google wrappers, serialize default values as empty wrappers. If turned off, default and null values are not serialized
 
+## output_format_puffin_blob_type {#output_format_puffin_blob_type}
+
+<SettingsInfoBlock type="String" default_value="deletion-vector-v1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "deletion-vector-v1"},{"label": "New setting for the `Puffin` output format: the type of the written blobs."}]}]}/>
+
+Type of the blobs written by the `Puffin` output format. Possible values:
+- `deletion-vector-v1` - the input has two columns: the referenced data file and deleted row positions; one deletion vector blob is written per referenced data file.
+- `apache-datasketches-theta-v1` - every input column becomes one Apache DataSketches Theta sketch blob over its non-null values, with the `ndv` property set to the estimated number of distinct values, as Iceberg writes column statistics.
+
+## output_format_puffin_field_ids {#output_format_puffin_field_ids}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "New setting for the `Puffin` output format: Iceberg field ids of the columns for Theta sketch blobs."}]}]}/>
+
+Comma-separated Iceberg field ids of the input columns, written to the `fields` of `apache-datasketches-theta-v1` blobs by the `Puffin` output format. Required to write Theta sketches.
+
+## output_format_puffin_sequence_number {#output_format_puffin_sequence_number}
+
+<SettingsInfoBlock type="Int64" default_value="-1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "-1"},{"label": "New setting for the `Puffin` output format: the sequence number of Theta sketch blobs."}]}]}/>
+
+Iceberg sequence number written to `apache-datasketches-theta-v1` blobs by the `Puffin` output format: the sequence number of the snapshot the statistics were computed from. Required to write Theta sketches.
+
+## output_format_puffin_snapshot_id {#output_format_puffin_snapshot_id}
+
+<SettingsInfoBlock type="Int64" default_value="-1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "-1"},{"label": "New setting for the `Puffin` output format: the snapshot id of Theta sketch blobs."}]}]}/>
+
+Iceberg snapshot id written to `apache-datasketches-theta-v1` blobs by the `Puffin` output format: the snapshot the statistics were computed from. Required to write Theta sketches.
+
 ## output_format_schema {#output_format_schema}
 
 The path to the file where the automatically generated schema will be saved in [Cap'n Proto](/reference/formats/CapnProto) or [Protobuf](/reference/formats/Protobuf/Protobuf) formats.
