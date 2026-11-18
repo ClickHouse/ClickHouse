@@ -315,6 +315,7 @@ def build_tree(docs_root, dest):
     # tests that the target file exists, not its contents. This also avoids
     # copying the hundreds of MB of images and generated translations.
     checked = set(dump_inputs(docs_root))
+    index_pages = []
     for root, _dirs, files in os.walk(docs_root):
         rel_dir = os.path.relpath(root, docs_root)
         out_dir = dest if rel_dir == "." else os.path.join(dest, rel_dir)
@@ -366,6 +367,29 @@ def build_tree(docs_root, dest):
             else:
                 # Empty placeholder: only its existence matters to lychee.
                 open(dst, "w").close()
+            if (
+                name in ("index.md", "index.mdx")
+                and rel_dir != "."
+                and rel.split(os.sep)[0] not in LOCALE_DIRS
+            ):
+                index_pages.append((rel_dir, dst))
+    # Mintlify publishes a nested `index.mdx` at its directory route. Lychee
+    # only sees its on-disk `.../index.mdx` path, so materialize a matching
+    # anchor-only alias from the actual page route rather than frontmatter.
+    for rel_dir, page in index_pages:
+        alias = os.path.join(dest, rel_dir + ".mdx")
+        if os.path.normpath(alias) == os.path.normpath(page) or os.path.exists(alias):
+            continue
+        with open(page, encoding="utf-8", errors="replace") as f:
+            anchors = {
+                match.group(1) or match.group(2)
+                for match in ANCHOR_ID_RE.finditer(f.read())
+            }
+        os.makedirs(os.path.dirname(alias) or ".", exist_ok=True)
+        with open(alias, "w", encoding="utf-8") as f:
+            f.write(
+                "".join(f'<a id="{anchor}"></a>\n' for anchor in sorted(anchors))
+            )
     # Placeholders for redirect sources so links to redirected paths resolve.
     materialize_redirects(docs_root, dest)
     # lychee reads its configuration from the working directory.

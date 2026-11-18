@@ -133,6 +133,7 @@ FileSegment::FileSegment(
     , segment_kind(settings.kind)
     , is_unbound(settings.unbounded)
     , background_download_enabled(background_download_enabled_)
+    , is_temporary(settings.temporary)
     , size_in_filename(size_in_filename_)
     , download_state(download_state_)
     , key_metadata(key_metadata_)
@@ -522,8 +523,11 @@ void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
     download.remote_file_reader = remote_file_reader_;
 }
 
-void FileSegment::write(char * from, size_t size, size_t offset_in_file)
+void FileSegment::write(char * from, size_t size, size_t offset_in_file, bool keep_temporary)
 {
+    if (!keep_temporary)
+        is_temporary.store(false, std::memory_order_relaxed);
+
     /// Keeps the segment in DOWNLOADING state, for testing the concurrent download wait timeout.
     FailPointInjection::pauseFailPoint(FailPoints::file_segment_pause_before_write);
 
@@ -1147,7 +1151,7 @@ void FileSegment::complete(
     if (!file_segment)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is nullptr");
 
-    if (file_segment->isCompleted())
+    if (file_segment->isCompleted() && !file_segment->is_temporary)
         return;
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentCompleteMicroseconds);
@@ -1178,7 +1182,12 @@ void FileSegment::complete(
     auto segment_lock = lock();
 
     if (isCompleted(false))
+    {
+        /// A completed temporary segment also leaves the cache at its last release.
+        if (is_temporary && download_state == State::DOWNLOADED && locked_key->isLastOwnerOfFileSegment(offset()))
+            locked_key->removeFileSegment(offset(), segment_lock);
         return;
+    }
 
     const bool is_downloader = isDownloaderUnlocked(segment_lock);
     const bool is_last_holder = locked_key->isLastOwnerOfFileSegment(offset());
@@ -1205,7 +1214,7 @@ void FileSegment::complete(
         && sameLinks(download_data->reader_io_scheduling, holder_io_scheduling))
         setReaderIOSchedulingUnlocked(*download_data, {});
 
-    if (segment_kind == FileSegmentKind::Ephemeral && is_last_holder)
+    if ((segment_kind == FileSegmentKind::Ephemeral || is_temporary) && is_last_holder)
     {
         LOG_TEST(getLog(),"Removing temporary file segment: {}", getInfoForLogUnlocked(segment_lock));
         locked_key->removeFileSegment(offset(), segment_lock);
@@ -1607,6 +1616,8 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
 
 void FileSegment::increasePriority()
 {
+    is_temporary.store(false, std::memory_order_relaxed);
+
     if (!cache)
     {
         chassert(isDetached());

@@ -27,7 +27,7 @@ public:
 
     using SessionPtr = ssh_session_struct *;
     /// Get raw pointer from libssh to be able to pass it to other objects
-    SessionPtr getInternalPtr() const;
+    [[nodiscard]] SessionPtr getInternalPtr() const;
 
     /// Disable reading default libssh configuration
     void disableDefaultConfig();
