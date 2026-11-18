@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
-#include <Common/SipHash.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeSet.h>
@@ -19,6 +18,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Storages/StorageValues.h>
+#include <Common/SipHash.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -116,10 +116,7 @@ bool isIdentityTheSameAsEquality(const DataTypePtr & type)
     return type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion() && !hasTypeThatCanContainFloat(type);
 }
 
-DataTypePtr removeNullableAndLowCardinality(const DataTypePtr & type)
-{
-    return removeNullable(removeLowCardinality(type));
-}
+DataTypePtr removeNullableAndLowCardinality(const DataTypePtr & type) { return removeNullable(removeLowCardinality(type)); }
 
 bool filterSideByKeysOfBlock(QueryPlan::Node & join_node, size_t block_side, QueryPlan::Nodes & nodes, size_t max_rows_in_block)
 {
@@ -148,9 +145,11 @@ bool filterSideByKeysOfBlock(QueryPlan::Node & join_node, size_t block_side, Que
         if (block_key.getNode()->type != ActionsDAG::ActionType::INPUT || filtered_key.getNode()->type != ActionsDAG::ActionType::INPUT)
             continue;
 
-        const auto block_column = findSourceColumn(join_node, block_side, block_key.getColumnName(), /*through_joins=*/ true);
-        const auto * read_from_storage = block_column ? typeid_cast<const ReadFromStorageStep *>(block_column->node()->step.get()) : nullptr;
-        const auto * storage_values = read_from_storage ? typeid_cast<const StorageValues *>(read_from_storage->getStorage().get()) : nullptr;
+        const auto block_column = findSourceColumn(join_node, block_side, block_key.getColumnName(), /*through_joins=*/true);
+        const auto * read_from_storage
+            = block_column ? typeid_cast<const ReadFromStorageStep *>(block_column->node()->step.get()) : nullptr;
+        const auto * storage_values
+            = read_from_storage ? typeid_cast<const StorageValues *>(read_from_storage->getStorage().get()) : nullptr;
         const auto * key_block = storage_values ? storage_values->tryGetBlock() : nullptr;
         if (!key_block || key_block->rows() > max_rows_in_block)
             continue;
@@ -168,13 +167,15 @@ bool filterSideByKeysOfBlock(QueryPlan::Node & join_node, size_t block_side, Que
         if (!key_type->equals(*removeNullableAndLowCardinality(block_key_column->type)) || !isIdentityTheSameAsEquality(key_type))
             continue;
 
-        auto filtered_column = findSourceColumn(join_node, filtered_side, filtered_key.getColumnName(), /*through_joins=*/ false);
-        const auto * read_from_merge_tree = filtered_column ? typeid_cast<const ReadFromMergeTree *>(filtered_column->node()->step.get()) : nullptr;
+        auto filtered_column = findSourceColumn(join_node, filtered_side, filtered_key.getColumnName(), /*through_joins=*/false);
+        const auto * read_from_merge_tree
+            = filtered_column ? typeid_cast<const ReadFromMergeTree *>(filtered_column->node()->step.get()) : nullptr;
         if (!read_from_merge_tree)
             continue;
 
         const auto & primary_key_columns = read_from_merge_tree->getStorageMetadata()->getPrimaryKey().column_names;
-        if (!std::ranges::contains(primary_key_columns, filtered_column->name) || std::ranges::contains(filtered_keys, filtered_column->name))
+        if (!std::ranges::contains(primary_key_columns, filtered_column->name)
+            || std::ranges::contains(filtered_keys, filtered_column->name))
             continue;
 
         block = key_block;
@@ -196,7 +197,8 @@ bool filterSideByKeysOfBlock(QueryPlan::Node & join_node, size_t block_side, Que
     const auto set_hash = getSipHash128AsPair(hash);
 
     /// An equality of join keys is never true for NULL, and a set without `transform_null_in` skips the rows with NULL
-    auto future_set = std::make_shared<FutureSetFromTuple>(set_hash, nullptr, std::move(block_keys), /*transform_null_in_=*/ false, SizeLimits{});
+    auto future_set
+        = std::make_shared<FutureSetFromTuple>(set_hash, nullptr, std::move(block_keys), /*transform_null_in_=*/false, SizeLimits{});
 
     /// The filter is put right above the read, as a filter on the table written in the query would be after it is pushed down
     auto * read_node = filtered_read->node();
@@ -215,14 +217,17 @@ bool filterSideByKeysOfBlock(QueryPlan::Node & join_node, size_t block_side, Que
     }
 
     const auto & in_rhs_arg = filter_dag.addColumn(
-        ColumnConst::create(ColumnSet::create(1, std::move(future_set)), 0), std::make_shared<DataTypeSet>(), "__set_" + toString(set_hash));
+        ColumnConst::create(ColumnSet::create(1, std::move(future_set)), 0),
+        std::make_shared<DataTypeSet>(),
+        "__set_" + toString(set_hash));
 
     const auto & in_node = filter_dag.addFunction(FunctionFactory::instance().get("in", nullptr), {in_lhs_arg, &in_rhs_arg}, {});
     filter_dag.getOutputs().push_back(&in_node);
     auto filter_column_name = in_node.result_name;
 
     auto & filter_node = nodes.emplace_back();
-    filter_node.step = std::make_unique<FilterStep>(read_header, std::move(filter_dag), std::move(filter_column_name), /*remove_filter_column_=*/ true);
+    filter_node.step
+        = std::make_unique<FilterStep>(read_header, std::move(filter_dag), std::move(filter_column_name), /*remove_filter_column_=*/true);
     filter_node.step->setStepDescription("Filter by JOIN keys of the other side");
     filter_node.children = {read_node};
     filtered_read->parent->children[filtered_read->child_idx] = &filter_node;
@@ -247,9 +252,9 @@ bool tryFilterJoinByKeysOfBlock(QueryPlan::Node & node, QueryPlan::Nodes & nodes
     /// A side whose rows the join keeps without a match cannot be filtered
     bool filtered = false;
     if (isInnerOrLeft(join_operator.kind))
-        filtered |= filterSideByKeysOfBlock(node, /*block_side=*/ 0, nodes, max_rows_in_block);
+        filtered |= filterSideByKeysOfBlock(node, /*block_side=*/0, nodes, max_rows_in_block);
     if (isInnerOrRight(join_operator.kind))
-        filtered |= filterSideByKeysOfBlock(node, /*block_side=*/ 1, nodes, max_rows_in_block);
+        filtered |= filterSideByKeysOfBlock(node, /*block_side=*/1, nodes, max_rows_in_block);
     return filtered;
 }
 

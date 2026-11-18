@@ -41,6 +41,10 @@ Granules: 3/100
 ['(id in 5-element set)']
 4	12898136570186424076
 4	12898136570186424076
+-- inner any that keeps one row of the right table for a key
+['(id in 5-element set)']
+4	12898136570186424076
+4	12898136570186424076
 -- left anti: not filtered
 ['true']
 1	8530663858883713768
@@ -113,6 +117,26 @@ Granules: 3/100
 ['and((sub not in [1, 1]), (id in 5-element set))']
 5	10638068036180072492
 5	10638068036180072492
+-- view over the table
+['and((sub not in [2, 2]), (id in 5-element set))']
+5	5842566373548905897
+5	5842566373548905897
+-- arrayJoin over the table: not filtered
+['true']
+9	3310619245618212870
+9	3310619245618212870
+-- arrayJoin over the block: not filtered
+['true']
+8	6905276255131835128
+8	6905276255131835128
+-- table of another engine: not filtered
+[]
+5	5842566373548905897
+5	5842566373548905897
+-- table instead of the block: not filtered
+['true','true']
+1000	16879057947260059627
+1000	16879057947260059627
 -- aggregation over the table: not filtered
 ['true']
 5	12832665012431919364
@@ -121,6 +145,14 @@ Granules: 3/100
 ['(id in 2-element set)']
 4	6087671416120095735
 4	6087671416120095735
+-- NULL keys in the block and in the table
+['(id in 2-element set)']
+4	1554510890869290557
+4	1554510890869290557
+-- NULL keys in the table
+['(id in 3-element set)']
+1	17966642631287467530
+1	17966642631287467530
 -- NULL-safe comparison: not filtered
 ['true']
 4	6087671416120095735

@@ -13,6 +13,9 @@ DROP TABLE IF EXISTS dim2;
 DROP TABLE IF EXISTS dim_string;
 DROP TABLE IF EXISTS dim_float;
 DROP TABLE IF EXISTS dim_final;
+DROP TABLE IF EXISTS dim_nullable;
+DROP TABLE IF EXISTS dim_log;
+DROP VIEW IF EXISTS dim_view;
 
 CREATE TABLE dim (id UInt64, sub UInt64, ref UInt64, name String) ENGINE = MergeTree ORDER BY (id, sub)
 SETTINGS index_granularity = 10, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
@@ -29,6 +32,15 @@ INSERT INTO dim_string SELECT toString(number), number FROM numbers(1000);
 CREATE TABLE dim_float (f Float64, value UInt64) ENGINE = MergeTree ORDER BY f
 SETTINGS index_granularity = 10, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
 INSERT INTO dim_float SELECT number, number FROM numbers(1000);
+
+CREATE TABLE dim_nullable (id Nullable(UInt64), name String) ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 10, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0, allow_nullable_key = 1;
+INSERT INTO dim_nullable SELECT if(number % 10 = 0, NULL, number), 'name' || toString(number) FROM numbers(1000);
+
+CREATE TABLE dim_log (id UInt64, name String) ENGINE = Log;
+INSERT INTO dim_log SELECT number, 'name' || toString(number) FROM numbers(1000);
+
+CREATE VIEW dim_view AS SELECT id AS key, name AS title FROM dim WHERE sub != 2;
 
 -- Every fifth row has a newer version, which is deleted for odd keys.
 CREATE TABLE dim_final (id UInt64, name String, is_deleted UInt8, version UInt64) ENGINE = ReplacingMergeTree(version) ORDER BY id
@@ -71,6 +83,9 @@ WHERE line != '';
      'query': "SELECT * FROM " ~ block ~ " AS e LEFT ANY JOIN dim AS d ON e.id = d.id"},
     {'name': 'inner any',
      'query': "SELECT * FROM " ~ block ~ " AS e INNER ANY JOIN dim AS d ON e.id = d.id"},
+    {'name': 'inner any that keeps one row of the right table for a key',
+     'query': "SELECT * FROM " ~ block ~ " AS e INNER ANY JOIN dim AS d ON e.id = d.id",
+     'settings': "any_join_distinct_right_table_keys = 1"},
     {'name': 'left anti: not filtered',
      'query': "SELECT * FROM " ~ block ~ " AS e LEFT ANTI JOIN dim AS d ON e.id = d.id"},
     {'name': 'asof: not filtered',
@@ -107,10 +122,24 @@ WHERE line != '';
      'query': "SELECT * FROM (SELECT id, count() AS c FROM " ~ block ~ " GROUP BY id) AS e JOIN dim AS d ON e.id = d.id"},
     {'name': 'subquery with a filter over the table',
      'query': "SELECT * FROM " ~ block ~ " AS e LEFT JOIN (SELECT id AS key, name FROM dim WHERE sub != 1) AS d ON e.id = d.key"},
+    {'name': 'view over the table',
+     'query': "SELECT * FROM " ~ block ~ " AS e LEFT JOIN dim_view AS d ON e.id = d.key"},
+    {'name': 'arrayJoin over the table: not filtered',
+     'query': "SELECT * FROM " ~ block ~ " AS e LEFT JOIN (SELECT id, arrayJoin([1, 2]) AS x FROM dim) AS d ON e.id = d.id"},
+    {'name': 'arrayJoin over the block: not filtered',
+     'query': "SELECT * FROM (SELECT id, arrayJoin([1, 2]) AS x FROM " ~ block ~ ") AS e JOIN dim AS d ON e.id = d.id"},
+    {'name': 'table of another engine: not filtered',
+     'query': "SELECT * FROM " ~ block ~ " AS e LEFT JOIN dim_log AS d ON e.id = d.id"},
+    {'name': 'table instead of the block: not filtered',
+     'query': "SELECT * FROM dim2 AS e JOIN dim AS d ON e.id2 = d.id"},
     {'name': 'aggregation over the table: not filtered',
      'query': "SELECT * FROM " ~ block ~ " AS e LEFT JOIN (SELECT id, count() AS c FROM dim GROUP BY id) AS d ON e.id = d.id"},
     {'name': 'NULL keys in the block',
      'query': "SELECT * FROM " ~ nullable_block ~ " AS e LEFT JOIN dim AS d ON e.id = d.id"},
+    {'name': 'NULL keys in the block and in the table',
+     'query': "SELECT * FROM " ~ nullable_block ~ " AS e LEFT JOIN dim_nullable AS d ON e.id = d.id"},
+    {'name': 'NULL keys in the table',
+     'query': "SELECT * FROM values('id UInt64, v UInt64', (15, 1), (0, 2), (10, 3)) AS e JOIN dim_nullable AS d ON e.id = d.id"},
     {'name': 'NULL-safe comparison: not filtered',
      'query': "SELECT * FROM " ~ nullable_block ~ " AS e LEFT JOIN dim AS d ON e.id <=> d.id"},
     {'name': 'join_use_nulls',
@@ -167,3 +196,6 @@ DROP TABLE dim2;
 DROP TABLE dim_string;
 DROP TABLE dim_float;
 DROP TABLE dim_final;
+DROP TABLE dim_nullable;
+DROP TABLE dim_log;
+DROP VIEW dim_view;

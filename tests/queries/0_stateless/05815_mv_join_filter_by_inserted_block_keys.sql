@@ -51,6 +51,32 @@ INSERT INTO events SELECT number, if(number % 7 = 0, NULL, number * 35), number 
 SETTINGS query_plan_max_rows_in_block_to_filter_join_by_keys = 59, log_comment = 'block_above_limit';
 
 SELECT count(), sum(sipHash64(*)) FROM enriched;
+TRUNCATE TABLE enriched;
+
+-- Every block of an insert is joined on its own, with its own keys.
+INSERT INTO events SELECT number, number * 35, number * 100 FROM numbers(60)
+SETTINGS max_block_size = 20, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1, max_insert_threads = 1, log_comment = 'several_blocks';
+
+SELECT count(), sum(sipHash64(*)) FROM enriched;
+TRUNCATE TABLE enriched;
+
+INSERT INTO events SELECT number, number * 35, number * 100 FROM numbers(60)
+SETTINGS query_plan_max_rows_in_block_to_filter_join_by_keys = 0;
+
+SELECT count(), sum(sipHash64(*)) FROM enriched;
+TRUNCATE TABLE enriched;
+
+-- Other keys in the same granules: the filter of a block is not reused for another one, e.g. by the query condition cache.
+INSERT INTO events SELECT number, number * 35 + 1, number * 100 + 1 FROM numbers(60) SETTINGS use_query_condition_cache = 1;
+INSERT INTO events SELECT number, number * 35 + 2, number * 100 + 2 FROM numbers(60) SETTINGS use_query_condition_cache = 1;
+
+SELECT count(), sum(sipHash64(*)) FROM enriched;
+TRUNCATE TABLE enriched;
+
+INSERT INTO events SELECT number, number * 35 + 1, number * 100 + 1 FROM numbers(60) SETTINGS query_plan_max_rows_in_block_to_filter_join_by_keys = 0;
+INSERT INTO events SELECT number, number * 35 + 2, number * 100 + 2 FROM numbers(60) SETTINGS query_plan_max_rows_in_block_to_filter_join_by_keys = 0;
+
+SELECT count(), sum(sipHash64(*)) FROM enriched;
 
 SYSTEM FLUSH LOGS query_log;
 
