@@ -151,7 +151,7 @@ static size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before
     }
 }
 
-/// A stream spills only after holding at least the smaller of this and the threshold, as in external DISTINCT.
+/// A stream spills only after holding at least the smaller of this and the threshold.
 static constexpr size_t MIN_BYTES_IN_SPILLED_RUN = DEFAULT_BLOCK_SIZE * 256;
 
 SortingStep::Settings::Settings(const DB::Settings & settings)
