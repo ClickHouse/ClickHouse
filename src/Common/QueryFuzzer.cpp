@@ -6279,13 +6279,12 @@ static const std::vector<std::unordered_set<String>> & swapFuncs()
              "timeSeriesGroupToSamplingKey",
              "timeSeriesIdToGroup",
              "timeSeriesIdToTags",
-             "timeSeriesExtractTag",
              "timeSeriesTagsToGroup",
              "timeSeriesTagsGroupToTags",
              "timeSeriesIdToTagsGroup"},
-            /// Time-series tag removal (group, tag(s) → group)
-            {"timeSeriesRemoveTag", "timeSeriesRemoveTags", "timeSeriesRemoveAllTagsExcept"},
-            /// Time-series tag copying (dest_group, src_group, tag(s) → group)
+            /// Time-series tag removal and extraction (tags, tag(s) -> tags or tag value)
+            {"timeSeriesRemoveTag", "timeSeriesRemoveTags", "timeSeriesRemoveAllTagsExcept", "timeSeriesExtractTag"},
+            /// Time-series tag copying (dest_tags, src_tags, tag(s) -> tags)
             {"timeSeriesCopyTag", "timeSeriesCopyTags"},
             /// Time-series grid aggregates: all take the same four parameters (start_timestamp,
             /// end_timestamp, step, window) and the same samples arguments, so only the name differs.

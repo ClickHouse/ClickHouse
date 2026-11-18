@@ -11,6 +11,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/checkSharedSubqueriesAreMaterialized.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/joinSeriesTags.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForAggregationOperator.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
@@ -228,15 +229,12 @@ namespace
 
             case StoreMethod::VECTOR_GRID:
             {
-                /// SELECT timeSeriesGroupToTags(group) AS tags,
+                /// SELECT tags,
                 ///        <start_time> AS timestamp,
                 ///        assumeNotNull(values[1])::Float64 AS value
                 /// FROM <vector_grid>
                 /// WHERE isNotNull(values[1])
-
-                /// timeSeriesGroupToTags(group) AS tags
-                tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));
-                tags->setAlias(ColumnNames::Tags);
+                tags = make_intrusive<ASTIdentifier>(ColumnNames::Tags);
 
                 /// assumeNotNull(values[1]) AS value
                 value = timeSeriesScalarASTCast(
@@ -295,13 +293,13 @@ namespace
             if (result.store_method == StoreMethod::VECTOR_GRID && (aggregation->by || aggregation->without))
             {
                 bool metric_name_dropped = result.metric_name_dropped;
-                /// Group ids follow read order, so order by the bucket tags.
+                /// Order by the tags of the aggregation bucket first.
                 ASTPtr bucket_group = transformGroupASTForAggregationOperator(
                     aggregation,
-                    make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                    make_intrusive<ASTIdentifier>(ColumnNames::Tags),
                     /*drop_metric_name=*/true,
                     metric_name_dropped);
-                builder.order_by.push_back(makeASTFunction("timeSeriesGroupToTags", std::move(bucket_group)));
+                builder.order_by.push_back(std::move(bucket_group));
             }
             builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
             builder.order_direction = aggregation->operator_name == "topk" ? -1 : 1;
@@ -335,8 +333,6 @@ namespace
         ASTPtr time_series;
         ASTPtr values;
         ASTPtr where;
-        ASTs group_by;
-        ASTPtr having;
 
         switch (result.store_method)
         {
@@ -403,14 +399,11 @@ namespace
 
             case StoreMethod::VECTOR_GRID:
             {
-                /// SELECT timeSeriesGroupToTags(group) AS tags,
+                /// SELECT tags,
                 ///        timeSeriesFromGrid(<start_time>, <end_time>, <step>, values::Array(Nullable(Float64))) AS samples
                 /// FROM <vector_grid>
                 /// WHERE notEmpty(samples)
-
-                /// timeSeriesGroupToTags(group) AS tags
-                tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));
-                tags->setAlias(ColumnNames::Tags);
+                tags = make_intrusive<ASTIdentifier>(ColumnNames::Tags);
 
                 /// values::Array(Nullable(Float64))
                 values = makeASTFunction(
@@ -428,35 +421,31 @@ namespace
                 /// so in a single step `notEmpty(samples)` in HAVING would bind to the alias by default but to the input column
                 /// under prefer_column_name_to_alias, which is not allowed in HAVING.
 
-                /// Step 1: Merge the rows of each series into one array of samples.
+                /// Step 1: Merge the rows of each series into one array of samples, then add the tags (see joinSeriesTags).
                 ///
-                /// SELECT group, timeSeriesGroupArray(samples) AS samples
+                /// SELECT id, timeSeriesGroupArray(samples) AS samples
                 /// FROM <samples_data>
-                /// GROUP BY group
+                /// GROUP BY id
                 {
                     context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(result.select_query), SQLSubqueryType::TABLE});
 
                     SelectQueryBuilder builder;
                     builder.from_table = context.subqueries.back().name;
-                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::ID));
                     builder.select_list.push_back(makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(ColumnNames::Samples)));
                     builder.select_list.back()->setAlias(ColumnNames::Samples);
-                    builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                    builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::ID));
 
-                    result.select_query = builder.getSelectQuery();
+                    result.select_query = joinSeriesTags(builder.getSelectQuery(), result.series, {ColumnNames::Samples}, context);
                 }
 
-                /// Step 2: Convert the groups to tags, cast the samples and skip the series whose arrays became empty after
-                /// the stale markers were filtered out.
+                /// Step 2: Cast the samples and skip the series whose arrays became empty after the stale markers were filtered out.
                 ///
-                /// SELECT timeSeriesGroupToTags(group) AS tags,
+                /// SELECT tags,
                 ///        CAST(samples, 'Array(Tuple(result_timestamp_type, Float64))') AS samples
                 /// FROM <step1>
                 /// WHERE notEmpty(samples)
-
-                /// timeSeriesGroupToTags(group) AS tags
-                tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));
-                tags->setAlias(ColumnNames::Tags);
+                tags = make_intrusive<ASTIdentifier>(ColumnNames::Tags);
 
                 /// CAST(samples, 'Array(Tuple(result_timestamp_type, Float64))') AS samples
                 /// The values can be Float32 (see the comment for StoreMethod::SAMPLES),
@@ -474,28 +463,37 @@ namespace
 
             case StoreMethod::TIMESTAMP_AND_VALUE:
             {
-                /// SELECT timeSeriesGroupToTags(group) AS tags,
+                /// Step 1: Merge the rows of each series into one array of samples, then add the tags (see joinSeriesTags).
+                ///
+                /// SELECT id,
                 ///        CAST(timeSeriesGroupArray(timestamp, value), 'Array(Tuple(result_timestamp_type, Float64))') AS samples
                 /// FROM <samples_data>
-                /// GROUP BY group
+                /// GROUP BY id
                 /// HAVING notEmpty(samples)
+                {
+                    context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(result.select_query), SQLSubqueryType::TABLE});
 
-                /// timeSeriesGroupToTags(group) AS tags
-                tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));
-                tags->setAlias(ColumnNames::Tags);
+                    SelectQueryBuilder builder;
+                    builder.from_table = context.subqueries.back().name;
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::ID));
 
-                /// CAST(timeSeriesGroupArray(timestamp, value), 'Array(Tuple(result_timestamp_type, Float64))') AS samples
-                /// The column `value` can be Float32 (see the comment for StoreMethod::TIMESTAMP_AND_VALUE),
-                /// so we cast the aggregated arrays, which is cheaper than casting the samples before aggregation.
-                time_series = makeASTFunction(
-                    "CAST",
-                    makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), make_intrusive<ASTIdentifier>(ColumnNames::Value)),
-                    make_intrusive<ASTLiteral>(fmt::format("Array(Tuple({}, Float64))", context.result_timestamp_type->getName())));
-                time_series->setAlias(samples_outer_column_name);
+                    /// The column `value` can be Float32 (see the comment for StoreMethod::TIMESTAMP_AND_VALUE),
+                    /// so we cast the aggregated arrays, which is cheaper than casting the samples before aggregation.
+                    builder.select_list.push_back(makeASTFunction(
+                        "CAST",
+                        makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), make_intrusive<ASTIdentifier>(ColumnNames::Value)),
+                        make_intrusive<ASTLiteral>(fmt::format("Array(Tuple({}, Float64))", context.result_timestamp_type->getName()))));
+                    builder.select_list.back()->setAlias(samples_outer_column_name);
 
-                group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-                having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(samples_outer_column_name));
+                    builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::ID));
+                    builder.having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(samples_outer_column_name));
 
+                    result.select_query = joinSeriesTags(builder.getSelectQuery(), result.series, {samples_outer_column_name}, context);
+                }
+
+                /// Step 2: SELECT tags, samples FROM <step1>
+                tags = make_intrusive<ASTIdentifier>(ColumnNames::Tags);
+                time_series = make_intrusive<ASTIdentifier>(samples_outer_column_name);
                 break;
             }
 
@@ -535,8 +533,6 @@ namespace
         builder.select_list.push_back(std::move(time_series));
 
         builder.where = std::move(where);
-        builder.group_by = std::move(group_by);
-        builder.having = std::move(having);
 
         /// Data from range queries comes sorted alphabetically by tags.
         builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));

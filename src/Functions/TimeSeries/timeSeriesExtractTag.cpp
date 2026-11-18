@@ -5,8 +5,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/TimeSeries/TimeSeriesTagsFunctionHelpers.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ContextTimeSeriesTagsCollector.h>
 
 
 namespace DB
@@ -17,36 +15,29 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// Function timeSeriesExtractTag(group, tag_to_extract) returns a Nullable(String) containing either the value of a specified tag
-/// or NULL if there is no such tag in the specified group.
+/// Function timeSeriesExtractTag(tags, tag_to_extract) returns a Nullable(String) containing either the value of a specified tag
+/// or NULL if there is no such tag in the specified set of tags.
 class FunctionTimeSeriesExtractTag final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesExtractTag";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesExtractTag>(context); }
-    explicit FunctionTimeSeriesExtractTag(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimeSeriesExtractTag>(); }
 
     [[nodiscard]] String getName() const override { return name; }
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    /// Function timeSeriesExtractTag returns information stored in the query context, it's deterministic in the scope of the current query.
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return true; }
-
-    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
-    [[nodiscard]] bool isStateful() const override { return true; }
-
-    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
-    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
+    /// A NULL set of tags is treated as an empty set of tags.
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     [[nodiscard]] String getSignatureString() const override
     {
-        return "(UInt64, const String) -> Nullable(String)";
+        return "(Array(Tuple(String, String)), const String) -> Nullable(String)";
     }
 
     [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -60,42 +51,56 @@ public:
         if (arguments.size() != 2)
         {
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Function {} must be called with two arguments: {}(group, tag_to_extract)",
+                            "Function {} must be called with two arguments: {}(tags, tag_to_extract)",
                             name, name);
         }
-        TimeSeriesTagsFunctionHelpers::checkArgumentTypeForGroup(name, arguments, 0);
+        TimeSeriesTagsFunctionHelpers::checkArgumentTypeForTags(name, arguments, 0);
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForConstTagName(name, arguments, 1);
     }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
-        auto groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0);
+        auto tags_vector = TimeSeriesTagsFunctionHelpers::extractTagsFromArgument(name, arguments, 0);
         auto tag_to_extract = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 1);
+        chassert(tags_vector.size() == input_rows_count);
 
         auto tag_values = ColumnString::create();
         auto null_map = ColumnUInt8::create();
-        tags_collector->extractTag(groups, tag_to_extract, *tag_values, null_map->getData());
-        chassert(tag_values->size() == input_rows_count);
-        chassert(null_map->size() == input_rows_count);
+        tag_values->reserve(tags_vector.size());
+        auto & null_map_data = null_map->getData();
+        null_map_data.resize(tags_vector.size());
+
+        for (size_t i = 0; i != tags_vector.size(); ++i)
+        {
+            bool found = false;
+            for (const auto & [tag_name, tag_value] : *tags_vector[i])
+            {
+                if (tag_name == tag_to_extract)
+                {
+                    tag_values->insertData(tag_value.data(), tag_value.size());
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                tag_values->insertDefault();
+            null_map_data[i] = !found;
+        }
 
         return ColumnNullable::create(std::move(tag_values), std::move(null_map));
     }
-
-private:
-    std::shared_ptr<const ContextTimeSeriesTagsCollector> tags_collector;
 };
 
 
 REGISTER_FUNCTION(TimeSeriesExtractTag)
 {
     FunctionDocumentation::Description description = R"(
-Extracts the value of a specified tag from the group. Returns NULL if not found.
-See also function [timeSeriesGroupToTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags).
+Extracts the value of a specified tag from a set of tags. Returns NULL if not found.
     )";
-    FunctionDocumentation::Syntax syntax = "timeSeriesExtractTag(group)";
+    FunctionDocumentation::Syntax syntax = "timeSeriesExtractTag(tags, tag_to_extract)";
     FunctionDocumentation::Arguments arguments = {
-        {"group", "A group of tags.", {"UInt64"}},
-        {"tag_to_extract", "The name of a tag to extract from the group", {"String"}}
+        {"tags", "A set of tags.", {"Array(Tuple(String, String))"}},
+        {"tag_to_extract", "The name of a tag to extract from the set of tags.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
         "Returns the value of a specified tag.", {"Nullable(String)"}
@@ -104,15 +109,15 @@ See also function [timeSeriesGroupToTags()](/reference/functions/regular-functio
     {
         "Example",
         R"(
-SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS group,
-       timeSeriesExtractTag(group, '__name__'),
-       timeSeriesExtractTag(group, 'env'),
-       timeSeriesExtractTag(group, 'instance')
+WITH [('__name__', 'http_requests_count'), ('env', 'dev'), ('region', 'eu')] AS tags
+SELECT timeSeriesExtractTag(tags, '__name__'),
+       timeSeriesExtractTag(tags, 'env'),
+       timeSeriesExtractTag(tags, 'instance')
         )",
         R"(
-┌─group─┬─timeSeriesExtractTag(group, '__name__')─┬─timeSeriesExtractTag(group, 'env')─┬─timeSeriesExtractTag(group, 'instance')─┐
-│     1 │ http_requests_count                     │ dev                                │ ᴺᵁᴸᴸ                                    │
-└───────┴─────────────────────────────────────────┴────────────────────────────────────┴─────────────────────────────────────────┘
+┌─timeSeriesExtractTag(tags, '__name__')─┬─timeSeriesExtractTag(tags, 'env')─┬─timeSeriesExtractTag(tags, 'instance')─┐
+│ http_requests_count                    │ dev                               │ ᴺᵁᴸᴸ                                   │
+└────────────────────────────────────────┴───────────────────────────────────┴────────────────────────────────────────┘
         )"
     }
     };

@@ -18,9 +18,9 @@ ASTPtr transformGroupASTForAggregationOperator(
     if ((!operator_node->by && !operator_node->without)
         || (operator_node->by && operator_node->labels.empty()))
     {
-        /// No grouping labels: aggregate all series into one with no tags (group 0).
+        /// No grouping labels: aggregate all series into one with no tags.
         metric_name_dropped = true;
-        return timeSeriesNoTagsGroupToAST();
+        return timeSeriesNoTagsToAST();
     }
 
     if (operator_node->by)

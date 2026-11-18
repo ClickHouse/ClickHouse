@@ -37,6 +37,13 @@ VectorWithMemoryTracking<TagNamesAndValuesPtr> extractTagNamesAndValuesFromArgum
     const ColumnsWithTypeAndName & arguments,
     size_t start_argument_index);
 
+/// Checks the type of a function argument containing a set of tags Array(Tuple(String, String)).
+void checkArgumentTypeForTags(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
+
+/// Extracts a set of tags for each row from a function argument containing Array(Tuple(String, String)).
+/// Each set of tags is sorted by tag name, tags with empty values are removed.
+VectorWithMemoryTracking<TagNamesAndValuesPtr> extractTagsFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
+
 /// Checks the type of a function argument containing a group.
 /// Group is an integer (UInt64) which is used to identify a set of tags.
 void checkArgumentTypeForGroup(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);

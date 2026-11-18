@@ -110,5 +110,5 @@ rate(lim[30s]) / on(instance) rate(req{instance="i1"}[30s])
 lim
 req i1
 -- the two sides become the same, so they are read once
-1	0
 2	1
+4	3

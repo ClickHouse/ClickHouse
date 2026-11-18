@@ -594,7 +594,7 @@ namespace
     ///
     /// The join is a merge join over both tables read in the order of `id` (see StorageTimeSeriesSelector::applySettingsForSelectIDsQuery):
     /// no set is built, the reading stops as soon as the query has enough rows, and the expressions of the SELECT list see only
-    /// the time series passing the filter (`timeSeriesStoreTags` registers the tags of the time series it's applied to).
+    /// the time series passing the filter.
     /// With `metric_id_ranges` the time ranges table is read by its primary key over the ranges of the selected metrics, and the time series
     /// with identifiers outside the ranges (written with another id generator) are kept without filtering by time.
     void addTimeRangesTableJoin(
@@ -747,32 +747,26 @@ namespace
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
-        /// SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, tag_name1, tag_column1, ...)
-        ///        [, CAST(timeSeriesTagsToMap(tags, '__name__', metric_name, tag_name1, tag_column1, ...), 'Array(Tuple(String, String))') AS series_tags]
+        /// SELECT id [, CAST(timeSeriesTagsToMap(tags, '__name__', metric_name, tag_name1, tag_column1, ...), 'Array(Tuple(String, String))') AS series_tags]
         {
             auto select_list_exp = make_intrusive<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
 
-            ASTs tags_args;
-            tags_args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags));
-            tags_args.push_back(make_intrusive<ASTLiteral>(TimeSeriesTagNames::MetricName));
-            tags_args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
-
-            for (const auto & [tag_name, column_name] : column_name_by_tag_name)
-            {
-                tags_args.push_back(make_intrusive<ASTLiteral>(tag_name));
-                tags_args.push_back(make_intrusive<ASTIdentifier>(column_name));
-            }
-
-            ASTs args;
-            args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
-            for (const auto & arg : tags_args)
-                args.push_back(arg->clone());
-
-            select_list.push_back(makeASTFunction("timeSeriesStoreTags", std::move(args)));
+            select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
 
             if (select_tags)
             {
+                ASTs tags_args;
+                tags_args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags));
+                tags_args.push_back(make_intrusive<ASTLiteral>(TimeSeriesTagNames::MetricName));
+                tags_args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
+
+                for (const auto & [tag_name, column_name] : column_name_by_tag_name)
+                {
+                    tags_args.push_back(make_intrusive<ASTLiteral>(tag_name));
+                    tags_args.push_back(make_intrusive<ASTIdentifier>(column_name));
+                }
+
                 select_list.push_back(timeSeriesNormalizedTagsToAST(std::move(tags_args)));
                 select_list.back()->setAlias(SERIES_TAGS_COLUMN);
             }
@@ -983,7 +977,7 @@ namespace
         /// WHERE <time range conditions> AND (id IN <select_query_from_tags_table>)
         ///
         /// where <select_query_from_tags_table> is roughly:
-        ///   SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, ...) FROM tags_table WHERE <matchers>
+        ///   SELECT id FROM tags_table WHERE <matchers>
         /// with the time ranges table joined to filter the time series by time (see addTimeRangesTableJoin).
         {
             auto where_filter = makeWhereFilterForSamplesTable(
@@ -1343,7 +1337,7 @@ ASTPtr StorageTimeSeriesSelector::makeSelectIDsQuery(
             metric_id_ranges, table_timestamp_type, /* select_tags = */ true);
     }
 
-    /// Alias the returned expression (`timeSeriesStoreTags(...)`, which returns `id`) so callers can reference the column by a fixed name.
+    /// Alias the returned `id` so callers can reference the column by a fixed name.
     const auto & select_with_union = typeid_cast<const ASTSelectWithUnionQuery &>(*select_query);
     auto & select = typeid_cast<ASTSelectQuery &>(*select_with_union.list_of_selects->children.at(0));
     select.select()->children.at(0)->setAlias(SERIES_ID_COLUMN);

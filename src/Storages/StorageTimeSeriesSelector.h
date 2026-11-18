@@ -58,7 +58,7 @@ public:
     static VirtualColumnsDescription createVirtuals();
 
     /// Makes a SELECT query for the ids (`series_id`) and the tags (`series_tags`, of type `Array(Tuple(String, String))`)
-    /// of the series matching the matchers and optional time bounds, registering their tags for timeSeriesIdToTags().
+    /// of the series matching the matchers and optional time bounds.
     /// The time bounds have the scale `time_scale`; they are converted
     /// to the type of the timestamps in the table and applied to the stored time ranges of the series if the table
     /// stores them. The query reads from a `null` table (returns no ids) if no timestamp of the table is in the time range.

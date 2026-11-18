@@ -90,11 +90,11 @@ SQLQueryPiece applyUnaryOperator(
             /// FROM <scalar_grid>
             ///
             /// For vector grid:
-            /// SELECT group, arrayMap(x -> -x, values) AS values
+            /// SELECT tags, arrayMap(x -> -x, values) AS values
             /// FROM <vector_grid>
             SelectQueryBuilder builder;
             if (argument.store_method == StoreMethod::VECTOR_GRID)
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
 
             builder.select_list.push_back(makeASTFunction(
                 "arrayMap",

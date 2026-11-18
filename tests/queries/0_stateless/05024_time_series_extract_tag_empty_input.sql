@@ -1,4 +1,4 @@
 SELECT 'timeSeriesExtractTag empty input:';
 
-SELECT timeSeriesExtractTag(number, 'env')
+SELECT timeSeriesExtractTag([('env', toString(number))], 'env')
 FROM numbers(0);

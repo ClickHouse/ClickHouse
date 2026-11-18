@@ -20,9 +20,8 @@ ASTPtr timeSeriesDurationToAST(Decimal64 duration, const DataTypePtr & timestamp
 /// Converts a scalar value to SQL (a Float64 literal).
 ASTPtr timeSeriesScalarToAST(Float64 value);
 
-/// Converts the group of a time series without tags to SQL: `CAST(0, 'UInt64')`.
-/// Group 0 is reserved for an empty set of tags (see ContextTimeSeriesTagsCollector).
-ASTPtr timeSeriesNoTagsGroupToAST();
+/// Converts the tags of a time series without tags to SQL: `CAST([], 'Array(Tuple(String, String))')`.
+ASTPtr timeSeriesNoTagsToAST();
 
 /// Converts a set of tags to SQL: `CAST(timeSeriesTagsToMap(args...), 'Array(Tuple(String, String))')`.
 /// `args` are the arguments of timeSeriesTagsToMap(): an array of tags followed by pairs of a tag name and a tag value.

@@ -42,15 +42,14 @@ namespace
         const bool table_has_bucketed_samples = (context.time_series_version >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES);
         SQLQueryPiece res{node, ResultType::RANGE_VECTOR, table_has_bucketed_samples ? StoreMethod::SAMPLES : StoreMethod::TIMESTAMP_AND_VALUE};
 
-        /// SELECT timeSeriesIdToGroup(id) AS group, samples
+        /// SELECT id, samples
         /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>, 'samples')
         /// or
-        /// SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
+        /// SELECT id, timestamp, value
         /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>, 'timestamp_and_value')
         SelectQueryBuilder builder;
 
-        builder.select_list.push_back(makeASTFunction("timeSeriesIdToGroup", make_intrusive<ASTIdentifier>(ColumnNames::ID)));
-        builder.select_list.back()->setAlias(ColumnNames::Group);
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::ID));
 
         /// The samples keep the types they have in the table (see StoreMethod).
         /// Prometheus range selectors omit the dedicated stale-NaN payload while preserving ordinary NaN samples as data.
@@ -89,16 +88,30 @@ namespace
         TimestampType min_time = node_range.start_time - node_range.window + 1;
         TimestampType max_time = node_range.end_time;
 
-        builder.from_table_function = makeASTFunction(
-            "timeSeriesSelector",
-            make_intrusive<ASTLiteral>(context.time_series_storage_id.getDatabaseName()),
-            make_intrusive<ASTLiteral>(context.time_series_storage_id.getTableName()),
-            make_intrusive<ASTLiteral>(String{instant_selector_text}),
-            timeSeriesTimestampToAST(min_time, context.result_timestamp_type),
-            timeSeriesTimestampToAST(max_time, context.result_timestamp_type),
-            make_intrusive<ASTLiteral>(String{table_has_bucketed_samples ? "samples" : "timestamp_and_value"}));
+        auto make_selector = [&](const char * return_columns)
+        {
+            return makeASTFunction(
+                "timeSeriesSelector",
+                make_intrusive<ASTLiteral>(context.time_series_storage_id.getDatabaseName()),
+                make_intrusive<ASTLiteral>(context.time_series_storage_id.getTableName()),
+                make_intrusive<ASTLiteral>(String{instant_selector_text}),
+                timeSeriesTimestampToAST(min_time, context.result_timestamp_type),
+                timeSeriesTimestampToAST(max_time, context.result_timestamp_type),
+                make_intrusive<ASTLiteral>(String{return_columns}));
+        };
 
+        builder.from_table_function = make_selector(table_has_bucketed_samples ? "samples" : "timestamp_and_value");
         res.select_query = builder.getSelectQuery();
+
+        /// The tags of the same time series:
+        /// SELECT id, tags FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>, 'tags')
+        SelectQueryBuilder series_builder;
+        series_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::ID));
+        series_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
+        series_builder.from_table_function = make_selector("tags");
+        context.subqueries.emplace_back(context.subqueries.size(), series_builder.getSelectQuery(), SQLSubqueryType::TABLE);
+        res.series = context.subqueries.back().name;
+
         return res;
     }
 
@@ -111,7 +124,7 @@ namespace
         /// Once it is selected as the newest sample, turn it into absence before
         /// aggregations, vector matching, scalar(), absent(), or finalization see it.
         SelectQueryBuilder builder;
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
 
         const String iterator_name = "x";
         ASTPtr is_stale_marker = makeASTFunction(
@@ -153,7 +166,7 @@ namespace
             SQLSubqueryType::TABLE);
 
         SelectQueryBuilder filter_builder;
-        filter_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        filter_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
         filter_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
         filter_builder.from_table = context.subqueries.back().name;
 
@@ -196,14 +209,14 @@ SQLQueryPiece fromSelectorSampleTimestamps(const PrometheusQueryTree::InstantSel
     {
         case StoreMethod::SAMPLES:
         {
-            /// SELECT group,
+            /// SELECT id,
             ///        arrayMap(sample -> (sample.1, if(<sample.2 is a stale marker>, CAST(sample.2, 'Float64'), CAST(sample.1, 'Float64'))), samples) AS samples
             /// FROM <range_selector>
             context.subqueries.emplace_back(context.subqueries.size(), std::move(range_selector.select_query), SQLSubqueryType::TABLE);
 
             SelectQueryBuilder builder;
             builder.from_table = context.subqueries.back().name;
-            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::ID));
 
             const String iterator_name = "sample";
             auto sample_timestamp = [&] { return makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(iterator_name), make_intrusive<ASTLiteral>(UInt64{1})); };
@@ -231,14 +244,14 @@ SQLQueryPiece fromSelectorSampleTimestamps(const PrometheusQueryTree::InstantSel
 
         case StoreMethod::TIMESTAMP_AND_VALUE:
         {
-            /// SELECT group, timestamp,
+            /// SELECT id, timestamp,
             ///        if(<value is a stale marker>, CAST(value, 'Float64'), CAST(timestamp, 'Float64')) AS value
             /// FROM <range_selector>
             context.subqueries.emplace_back(context.subqueries.size(), std::move(range_selector.select_query), SQLSubqueryType::TABLE);
 
             SelectQueryBuilder builder;
             builder.from_table = context.subqueries.back().name;
-            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::ID));
             builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
 
             ASTPtr value = makeASTFunction(

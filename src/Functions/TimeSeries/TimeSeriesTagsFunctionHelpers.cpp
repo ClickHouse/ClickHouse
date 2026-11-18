@@ -364,6 +364,29 @@ VectorWithMemoryTracking<TagNamesAndValuesPtr> extractTagNamesAndValuesFromArgum
 }
 
 
+void checkArgumentTypeForTags(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+{
+    if (argument_index >= arguments.size())
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} can't be called with {} arguments", function_name, arguments.size());
+
+    checkTypeOfTagsArrayArgument(function_name, arguments[argument_index].type, argument_index);
+}
+
+
+VectorWithMemoryTracking<TagNamesAndValuesPtr> extractTagsFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+{
+    chassert(argument_index < arguments.size());
+    const auto & column_tags_array = *arguments[argument_index].column;
+
+    VectorWithMemoryTracking<TagNamesAndValues> tags_vector;
+    tags_vector.resize(column_tags_array.size());
+    extractTagsArrayFromColumn(function_name, argument_index, column_tags_array, tags_vector, /* num_extra_tags = */ 0);
+
+    sortTagsAndRemoveDuplicates(function_name, tags_vector);
+    return makeTagsPtrVector(std::move(tags_vector));
+}
+
+
 void checkArgumentTypeForGroup(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
 {
     if (argument_index >= arguments.size())

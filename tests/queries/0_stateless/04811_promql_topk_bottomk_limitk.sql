@@ -89,4 +89,10 @@ SELECT * FROM prometheusQuery('prometheus', 'topk(+Inf, m)', 130); -- { serverEr
 SELECT * FROM prometheusQuery('prometheus', 'topk(1 / 0, m)', 130); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
 SELECT * FROM prometheusQuery('prometheus', 'topk(scalar(count(m)) / 0, m)', 130); -- { serverError CANNOT_CONVERT_TYPE }
 
+SELECT '-- a tie goes to the series with the smaller tags';
+INSERT INTO prometheus (metric_name, tags, samples) VALUES ('t', map('host', 'h2'), [(toDateTime64(130, 3), 7)]);
+INSERT INTO prometheus (metric_name, tags, samples) VALUES ('t', map('host', 'h1'), [(toDateTime64(130, 3), 7)]);
+SELECT * FROM prometheusQuery('prometheus', 'topk(1, t)', 130);
+SELECT * FROM prometheusQuery('prometheus', 'bottomk(1, t)', 130);
+
 DROP TABLE prometheus;

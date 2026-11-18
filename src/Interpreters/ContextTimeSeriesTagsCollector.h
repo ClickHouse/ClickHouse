@@ -12,7 +12,6 @@
 
 namespace DB
 {
-class ColumnString;
 
 /// Mapping between identifiers and tags which are collected in the context of the currently executed query.
 ///
@@ -83,16 +82,6 @@ public:
     UInt64 getSamplingKeyByGroup(Group group) const;
     void getSamplingKeyByGroup(const VectorWithMemoryTracking<Group> & groups_, PaddedPODArray<UInt64> & res) const;
 
-    /// Extracts the value of a specified tag, or an empty string if there is no such tag in the group.
-    String extractTag(Group group, const String & tag_to_extract) const;
-    VectorWithMemoryTracking<String> extractTag(const VectorWithMemoryTracking<Group> & groups_, const String & tag_to_extract) const;
-    /// Fills `null_map` with 1 for groups without the specified tag.
-    void extractTag(
-        const VectorWithMemoryTracking<Group> & groups_,
-        const String & tag_to_extract,
-        ColumnString & out_column,
-        PaddedPODArray<UInt8> & null_map) const;
-
     /// Fills `res` with the groups assigned to the sets of tags which were added to the collector
     /// with identifiers from a column. Throws an exception if some identifier is unknown.
     /// `id_column` must not be Nullable. Any previous contents of `res` are discarded.
@@ -108,75 +97,7 @@ public:
     /// Dictionary-encoded identifiers are processed the same way as in getGroupByID.
     VectorWithMemoryTracking<TagNamesAndValuesPtr> getTagsByID(const ColumnPtr & id_column) const;
 
-    /// Removes a tag from a group and returns the result group.
-    /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
-    Group removeTag(Group group, const String & tag_to_remove);
-    VectorWithMemoryTracking<Group> removeTag(const VectorWithMemoryTracking<Group> & groups_, const String & tag_to_remove);
-
-    /// Removes multiple tags from a group and returns the result group.
-    /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
-    Group removeTags(Group group, const Strings & tags_to_remove);
-    VectorWithMemoryTracking<Group> removeTags(const VectorWithMemoryTracking<Group> & groups_, const Strings & tags_to_remove);
-
-    /// Removes all tags from a group except specified ones and returns the result group.
-    /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
-    Group removeAllTagsExcept(Group group, const Strings & tags_to_keep);
-    VectorWithMemoryTracking<Group> removeAllTagsExcept(const VectorWithMemoryTracking<Group> & groups_, const Strings & tags_to_keep);
-
-    /// Copies a specified tag from `src_group` to `dest_group`. The function replaces any previous value of the copied tag in `dest_group`.
-    /// If the copied tag doesn't present in `src_group` then the function will remove them in `dest_group` as well.
-    /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
-    Group copyTag(Group dest_group, Group src_group, const String & tag_to_copy);
-    VectorWithMemoryTracking<Group> copyTag(Group dest_group, const VectorWithMemoryTracking<Group> & src_groups, const String & tag_to_copy);
-    VectorWithMemoryTracking<Group> copyTag(const VectorWithMemoryTracking<Group> & dest_groups, Group src_group, const String & tag_to_copy);
-    VectorWithMemoryTracking<Group> copyTag(const VectorWithMemoryTracking<Group> & dest_groups, const VectorWithMemoryTracking<Group> & src_groups, const String & tag_to_copy);
-
-    /// Copies specified tags from `src_group` to `dest_group`. The function replaces any previous values of the copied tags in `dest_group`.
-    /// If some of the copied tags don't present in `src_group` then the function will remove them in `dest_group` as well.
-    /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
-    Group copyTags(Group dest_group, Group src_group, const Strings & tags_to_copy);
-    VectorWithMemoryTracking<Group> copyTags(Group dest_group, const VectorWithMemoryTracking<Group> & src_groups, const Strings & tags_to_copy);
-    VectorWithMemoryTracking<Group> copyTags(const VectorWithMemoryTracking<Group> & dest_groups, Group src_group, const Strings & tags_to_copy);
-    VectorWithMemoryTracking<Group> copyTags(const VectorWithMemoryTracking<Group> & dest_groups, const VectorWithMemoryTracking<Group> & src_groups, const Strings & tags_to_copy);
-
-    /// Joins all the values of all the `src_tags` using `separator` and returns a new group with the tag `dest_tag` set to the joined value.
-    /// This function implements the logic of promql function label_join().
-    Group joinTags(Group group, const String & dest_tag, const String & separator, const Strings & src_tags);
-    VectorWithMemoryTracking<Group> joinTags(const VectorWithMemoryTracking<Group> & groups, const String & dest_tag, const String & separator, const Strings & src_tags);
-
-    /// Matches the regular expression `regex` against the value of the tag `src_tag`.
-    /// If it matches, the value of the tag `dest_tag` in the returned group will be the expansion of `replacement`,
-    /// together with the original tags in the input.
-    /// Capturing groups in the regular expression can be referenced with $1, $2, etc.
-    /// Named capturing groups in the regular expression can be referenced with $name (where name is the capturing group name).
-    /// If the regular expression doesn't match then the original group is returned unchanged.
-    /// This function implements the logic of promql function label_replace().
-    Group replaceTag(Group group, const String & dest_tag, const String & replacement, const String & src_tag, const String & regex);
-    VectorWithMemoryTracking<Group> replaceTag(const VectorWithMemoryTracking<Group> & groups, const String & dest_tag, const String & replacement, const String & src_tag, const String & regex);
-
 private:
-    /// Transforms the set of tags assigned to a group using a one-argument function, returns the result group.
-    /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
-    template <typename TransformFunc>
-    Group transformTags(Group group, TransformFunc && transform_func);
-
-    template <typename TransformFunc>
-    VectorWithMemoryTracking<Group> transformTags(const VectorWithMemoryTracking<Group> & groups_, TransformFunc && transform_func);
-
-    /// Transforms the set of tags assigned to a group using a two-arguments function, returns the result group.
-    /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
-    template <typename TransformFunc2>
-    Group transformTags2(Group group1, Group group2, TransformFunc2 && transform_func);
-
-    template <typename TransformFunc2>
-    VectorWithMemoryTracking<Group> transformTags2(Group group1, const VectorWithMemoryTracking<Group> & groups2, TransformFunc2 && transform_func);
-
-    template <typename TransformFunc2>
-    VectorWithMemoryTracking<Group> transformTags2(const VectorWithMemoryTracking<Group> & groups1, Group group2, TransformFunc2 && transform_func);
-
-    template <typename TransformFunc2>
-    VectorWithMemoryTracking<Group> transformTags2(const VectorWithMemoryTracking<Group> & groups1, const VectorWithMemoryTracking<Group> & groups2, TransformFunc2 && transform_func);
-
     /// Key for `groups_for_tags`. The hash is computed once in the constructor.
     struct TagsKey
     {

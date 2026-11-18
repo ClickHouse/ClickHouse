@@ -83,9 +83,9 @@ ASTPtr timeSeriesScalarToAST(Float64 value)
 }
 
 
-ASTPtr timeSeriesNoTagsGroupToAST()
+ASTPtr timeSeriesNoTagsToAST()
 {
-    return makeASTFunction("CAST", make_intrusive<ASTLiteral>(0u), make_intrusive<ASTLiteral>("UInt64"));
+    return makeASTFunction("CAST", make_intrusive<ASTLiteral>(Array{}), make_intrusive<ASTLiteral>("Array(Tuple(String, String))"));
 }
 
 

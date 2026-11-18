@@ -10,7 +10,7 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    /// timeSeriesThrowDuplicateSeriesIf(has_duplicates, group) = 0
+    /// timeSeriesThrowDuplicateSeriesIf(has_duplicates, tags) = 0
     ASTPtr makeThrowDuplicateSeriesIf(ASTPtr has_duplicates, ASTPtr group)
     {
         return makeASTFunction(

@@ -9,16 +9,14 @@
 namespace DB::PrometheusQueryToSQL
 {
 
-bool isZeroGroupAST(const ASTPtr & group)
+bool isNoTagsAST(const ASTPtr & tags)
 {
-    if (const auto * literal = group->as<const ASTLiteral>())
-        return literal->value == Field{0u};
-    if (const auto * function = group->as<const ASTFunction>(); function && (function->name == "CAST") && function->arguments
+    if (const auto * function = tags->as<const ASTFunction>(); function && (function->name == "CAST") && function->arguments
         && (function->arguments->children.size() == 2))
     {
         const auto * value = function->arguments->children[0]->as<const ASTLiteral>();
         const auto * type = function->arguments->children[1]->as<const ASTLiteral>();
-        return value && type && (value->value == Field{0u}) && (type->value == Field{"UInt64"});
+        return value && type && (value->value == Field{Array{}}) && (type->value == Field{"Array(Tuple(String, String))"});
     }
     return false;
 }
@@ -29,8 +27,7 @@ ASTPtr transformGroupASTForBinaryOperator(
     bool drop_metric_name,
     bool & metric_name_dropped)
 {
-    /// Group #0 always means a group with no tags.
-    if (isZeroGroupAST(group))
+    if (isNoTagsAST(group))
     {
         metric_name_dropped = true;
         return std::move(group);
@@ -42,14 +39,14 @@ ASTPtr transformGroupASTForBinaryOperator(
         {
             /// on() means we ignore all tags.
             metric_name_dropped = true;
-            return timeSeriesNoTagsGroupToAST();
+            return timeSeriesNoTagsToAST();
         }
         else
         {
             /// on(tags) means we ignore all tags except the specified ones.
             /// If the metric name "__name__" is among the tags in on(tags) we don't remove it from the join group.
 
-            /// timeSeriesRemoveAllTagsExcept(group, on_tags)
+            /// timeSeriesRemoveAllTagsExcept(tags, on_tags)
             std::vector<std::string_view> tags_to_keep = {operator_node->labels.begin(), operator_node->labels.end()};
             std::sort(tags_to_keep.begin(), tags_to_keep.end());
             tags_to_keep.erase(std::unique(tags_to_keep.begin(), tags_to_keep.end()), tags_to_keep.end());
@@ -68,7 +65,7 @@ ASTPtr transformGroupASTForBinaryOperator(
     {
         /// ignoring(tags) means we ignore the specified tags, and also the metric name "__name__".
 
-        /// timeSeriesRemoveTags(group, ignoring_tags + ['__name__'])
+        /// timeSeriesRemoveTags(tags, ignoring_tags + ['__name__'])
         std::vector<std::string_view> tags_to_remove{operator_node->labels.begin(), operator_node->labels.end()};
 
         if (!metric_name_dropped && drop_metric_name)
