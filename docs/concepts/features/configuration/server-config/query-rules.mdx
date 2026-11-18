@@ -165,6 +165,8 @@ There are three access grants for query rewrite rules, each of these requires se
 2. `ALTER RULE`
 3. `DROP RULE`
 
+These grants form the `RULE ADMIN` privilege group; they are not part of the `CREATE`, `ALTER` and `DROP` privilege groups. A rule changes the queries of every user who activates it, and the rewritten query runs with that user's privileges, so holding `ALTER ON *.*` (or `CREATE` / `DROP ON *.*`) must not be enough to manage rules. Grant rule administration explicitly, e.g. `GRANT RULE ADMIN ON *.* TO admin`.
+
 ## Examples {#examples}
 
 Creation:
