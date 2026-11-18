@@ -664,7 +664,7 @@ private:
         return nullptr;
     }
 
-    ColumnPtr executeTuple(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeTuple(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         /// Calculate function for each corresponding elements of tuples.
 
@@ -720,7 +720,7 @@ private:
         return ColumnTuple::create(tuple_columns);
     }
 
-    ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         auto extract_kv_from_map = [](const ColumnMap * map)
         {
@@ -950,7 +950,7 @@ private:
         return result_column;
     }
 
-    ColumnPtr executeForConstAndNullableCondition(
+    [[nodiscard]] ColumnPtr executeForConstAndNullableCondition(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const
     {
         const ColumnWithTypeAndName & arg_cond = arguments[0];
@@ -1069,15 +1069,15 @@ private:
         return nullptr;
     }
 
-    ColumnPtr executeForNullableThenElse(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeForNullableThenElse(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         /// If result type is Variant/Dynamic, we don't need to remove Nullable.
         if (isVariant(result_type) || isDynamic(result_type))
             return nullptr;
 
         const ColumnWithTypeAndName & arg_cond = arguments[0];
-        const ColumnWithTypeAndName & arg_then = arguments[1];
-        const ColumnWithTypeAndName & arg_else = arguments[2];
+        const ColumnWithTypeAndName arg_then = castNullableEnumToResultType(arguments[1], result_type);
+        const ColumnWithTypeAndName arg_else = castNullableEnumToResultType(arguments[2], result_type);
 
         const bool then_is_nullable = arg_then.type->isNullable();
         const bool else_is_nullable = arg_else.type->isNullable();
@@ -1137,7 +1137,7 @@ private:
             materializeColumnIfConst(result_nested_column), materializeColumnIfConst(result_null_mask));
     }
 
-    ColumnPtr executeForNullThenElse(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeForNullThenElse(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         const ColumnWithTypeAndName & arg_cond = arguments[0];
         const ColumnWithTypeAndName & arg_then = arguments[1];
@@ -1289,15 +1289,15 @@ private:
     }
 
 public:
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 3; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
     bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
     {
         settings.arguments_with_disabled_lazy_execution.insert(0);
@@ -1305,14 +1305,14 @@ public:
         settings.force_enable_lazy_execution = false;
         return true;
     }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
-    bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
+    [[nodiscard]] bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
     /// `if(cond, then, else)` accepts UInt8 / Nullable(UInt8) / NULL for `cond`;
     /// the result is `leastSupertype{,OrVariant}(then, else)`. The Variant
     /// branch is selected by the `use_variant_when_no_common_type` setting.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if (use_variant_when_no_common_type)
             return "(MaybeNullable(UInt8) | Nothing, T1, T2) -> leastSupertypeOrVariant(T1, T2)";
@@ -1339,7 +1339,7 @@ public:
 
     /// Returns `LowCardinality(String)` or `LowCardinality(Nullable(String))` when both branches are constant strings
     /// (see `optimize_if_transform_const_strings_to_lowcardinality`), otherwise nullptr.
-    DataTypePtr tryGetLowCardinalityReturnType(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] DataTypePtr tryGetLowCardinalityReturnType(const ColumnsWithTypeAndName & arguments) const
     {
         if (!use_low_cardinality_optimisation)
             return nullptr;
@@ -1408,7 +1408,7 @@ public:
     /// type explicitly, mirroring the legacy implementation. Otherwise the signature stays authoritative.
     /// It also cannot express the `LowCardinality` result for constant string branches, which depends on
     /// the constness of the arguments.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// Validate the arguments in the same way regardless of the `LowCardinality` optimization.
         DataTypePtr common_type;
@@ -1432,7 +1432,7 @@ public:
     }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         checkConditionArgType(arguments[0]);
 
@@ -1442,7 +1442,7 @@ public:
         return getLeastSupertype(DataTypes{arguments[1], arguments[2]}, allow_lossy_numeric_supertype);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnsWithTypeAndName arguments = args;
         executeShortCircuitArguments(arguments);
@@ -1558,7 +1558,7 @@ public:
         return res;
     }
 
-    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    [[nodiscard]] ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
         const ColumnWithTypeAndName & arg_cond = arguments[0];
         if (!arg_cond.column || !isColumnConst(*arg_cond.column))

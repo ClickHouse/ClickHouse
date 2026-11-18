@@ -56,7 +56,7 @@ public:
     {
     }
 
-    std::string getName() const override
+    [[nodiscard]] std::string getName() const override
     {
         return name;
     }
@@ -64,12 +64,12 @@ public:
     /// The `multiIf` created from the context follows this setting for a `FixedString` argument converted to `String`.
     void updateHash(SipHash & hash) const override { hash.update(cast_fixed_string_to_string_strip_trailing_zeros); }
 
-    std::optional<bool> getFixedStringToStringStripTrailingZeros() const override { return cast_fixed_string_to_string_strip_trailing_zeros; }
+    [[nodiscard]] std::optional<bool> getFixedStringToStringStripTrailingZeros() const override { return cast_fixed_string_to_string_strip_trailing_zeros; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
     bool isShortCircuitForArgumentTypes(ShortCircuitSettings & settings, const DataTypes & arguments) const override
     {
@@ -102,7 +102,7 @@ public:
         return true;
     }
 
-    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
+    [[nodiscard]] ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
     {
         ColumnNumbers args;
         for (size_t i = 0; i + 1 < number_of_arguments; ++i)
@@ -110,9 +110,9 @@ public:
         return args;
     }
 
-    bool hasInformationAboutMonotonicity() const override { return true; }
+    [[nodiscard]] bool hasInformationAboutMonotonicity() const override { return true; }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & /*left*/, const Field & right) const override
+    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType & type, const Field & /*left*/, const Field & right) const override
     {
         /// coalesce() is identity when its first argument cannot be NULL, so it preserves ordering and thus monotonic.
         /// For Nullable types, coalesce() substitutes NULLs with other arguments and is not
@@ -126,7 +126,7 @@ public:
         return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !can_contain_null };
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// All non-last arguments are stripped of Nullable before computing the supertype,
         /// so the result is non-Nullable iff the last argument is non-Nullable.
@@ -150,7 +150,7 @@ public:
     /// `coalesce(non_nullable_int, incompatible_type)` previously type-checked (returning the
     /// int) but would otherwise fail during analysis. The `ColumnsWithTypeAndName` overload
     /// forwards to the `DataTypes` one so both analysis paths share this logic.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes types;
         types.reserve(arguments.size());
@@ -159,7 +159,7 @@ public:
         return getReturnTypeImpl(types);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
             return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
@@ -196,7 +196,7 @@ public:
             : getLeastSupertype(filtered_types, allow_lossy_numeric_supertype);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// coalesce(arg0, arg1, ..., argN) is essentially
         /// multiIf(isNotNull(arg0), assumeNotNull(arg0), isNotNull(arg1), assumeNotNull(arg1), ..., argN)
@@ -248,13 +248,13 @@ public:
             }
             else
             {
-                tmp_args[0] = filtered_args[i];
+                tmp_args[0] = castNullableEnumToResultType(filtered_args[i], result_type);
 
                 DataTypePtr cond_type = std::make_shared<DataTypeUInt8>();
                 ColumnPtr cond_column
                     = is_not_null->build(tmp_args)->execute(tmp_args, cond_type, input_rows_count, /* dry_run = */ false);
 
-                DataTypePtr val_type = removeNullable(filtered_args[i].type);
+                DataTypePtr val_type = removeNullable(tmp_args[0].type);
                 ColumnPtr val_column
                     = assume_not_null->build(tmp_args)->execute(tmp_args, val_type, input_rows_count, /* dry_run = */ false);
 

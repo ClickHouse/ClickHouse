@@ -31,8 +31,8 @@ struct GroupConcatData
     void checkAndUpdateSize(UInt64 add, Arena * arena);
     void insertChar(const char * str, UInt64 str_size, Arena * arena);
 
-    UInt64 getSize(size_t i) const;
-    UInt64 getString(size_t i) const;
+    [[nodiscard]] UInt64 getSize(size_t i) const;
+    [[nodiscard]] UInt64 getString(size_t i) const;
 
     /// Offsets and `num_rows` are needed only to apply the limit, so they are recorded only if `has_limit`.
     template <bool has_limit>
@@ -58,7 +58,7 @@ public:
     GroupConcatImpl(
         const DataTypePtr & data_type_, const Array & parameters_, UInt64 limit_, const String & delimiter_, bool strip_trailing_zeros_);
 
-    String getName() const override;
+    [[nodiscard]] String getName() const override;
 
     void updateHash(SipHash & hash) const override { hash.update(strip_trailing_zeros); }
 
@@ -76,7 +76,7 @@ public:
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override;
     void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override;
 
-    bool allocatesMemoryInArena() const override;
+    [[nodiscard]] bool allocatesMemoryInArena() const override;
 };
 
 }

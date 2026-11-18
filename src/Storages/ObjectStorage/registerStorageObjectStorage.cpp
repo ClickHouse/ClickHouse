@@ -25,6 +25,11 @@
 
 #include <algorithm>
 
+#include "config.h"
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedSystemDatabase.h>
+#endif
+
 namespace DB
 {
 
@@ -126,14 +131,12 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     /// `{_partition_id}` tables as wildcard (see `initPartitionStrategy`).
     configuration->is_create_query = args.mode == LoadingStrictnessLevel::CREATE;
 
-    /// Server-internal log-pipeline object storage tables live in the `system` database and are named
-    /// `<log>_s3` (the plain S3 engine sink) or `<log>_s3queue`. Users cannot create tables there, so this is a
-    /// safe internal marker. These tables must never abort server startup when server-managed credentials are
-    /// restricted: force the anonymous-load fallback in `getClient` even if the operator disabled
-    /// `s3_load_table_anonymously_if_credentials_restricted`. Their bootstrap re-credentials the client afterwards.
-    if (args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE
-        && (args.table_id.table_name.ends_with("_s3") || args.table_id.table_name.ends_with("_s3queue")))
+#if CLICKHOUSE_CLOUD
+    /// The tables of the system log pipeline must never abort the startup when server-managed credentials are
+    /// restricted. The catalog builds the current ones with the server credentials.
+    if (SharedSystemDatabase::isPipelineTable(args.table_id))
         configuration->force_anonymous_load_fallback = true;
+#endif
 
     auto storage = std::make_shared<StorageObjectStorage>(
         configuration,
@@ -158,7 +161,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     {
         auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
         auto metadata = *metadata_snapshot;
-        metadata.settings_changes = args.storage_def->settings->ptr();
+        metadata.setSettingsChanges(args.storage_def->settings->ptr());
         storage->setInMemoryMetadata(metadata);
     }
 
@@ -210,7 +213,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 - `blobpath` - file path. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
 - `account_name` - if storage_account_url is used, then account name can be specified here
 - `account_key` - if storage_account_url is used, then account key can be specified here
-- `format` — The [format](/reference/formats) of the file.
+- `format` — The [format](/reference/formats/index) of the file.
 - `compression` — Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. By default, it will autodetect compression by file extension. (same as setting to `auto`). For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).
 - `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `wildcard`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 - `partition_columns_in_data_file` - Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
@@ -367,7 +370,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 
 - `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings. For more information see [below](#wildcards-in-path).
 - `NOSIGN` - If this keyword is provided in place of credentials, all the requests will not be signed.
-- `format` — The [format](/reference/formats#formats-overview) of the file.
+- `format` — The [format](/reference/formats/index#formats-overview) of the file.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file. For more information see [Using S3 for Data Storage](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
 - `compression` — Compression type. Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. Parameter is optional. By default, it will auto-detect compression by file extension. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).
 - `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `wildcard`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
@@ -484,7 +487,7 @@ in subsets, hence partitioned writes.
 </Note>
 
 #### Create the table {#create-the-table}
-```sql
+```sql highlight={8}
 CREATE TABLE p
 (
     `column1` UInt32,
@@ -492,7 +495,6 @@ CREATE TABLE p
     `column3` UInt32
 )
 ENGINE = S3(
--- highlight-next-line
            'http://minio:10000/clickhouse//test_{_partition_id}.csv',
            'minioadmin',
            'minioadminpassword',
@@ -862,8 +864,6 @@ static void registerStorageHDFS(StorageFactory & factory)
     },
     Documentation{
         .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # HDFS table engine
 
 <CloudNotSupportedBadge/>
@@ -884,7 +884,7 @@ ENGINE = HDFS(URI, format)
 - `format` - specifies one of the available file formats. To perform
 `SELECT` queries, the format must be supported for input, and to perform
 `INSERT` queries – for output. The available formats are listed in the
-[Formats](/reference/formats#formats-overview) section.
+[Formats](/reference/formats/index#formats-overview) section.
 - [PARTITION BY expr]
 
 ### PARTITION BY {#partition-by}
@@ -955,8 +955,6 @@ Constructions with `{}` are similar to the [remote](/reference/functions/table-f
     - 'hdfs://hdfs1:9000/another_dir/some_file_3'
 
 1.  There are several ways to make a table consisting of all six files:
-
-<!-- -->
 
 ```sql
 CREATE TABLE table_with_range (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV')
@@ -2419,9 +2417,6 @@ void registerStorageDeltaLake(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-
 # DeltaLake table engine
 
 This engine provides an integration with existing [Delta Lake](https://github.com/delta-io/delta) tables in S3, GCP and Azure storage and supports both reads and writes (writes for S3 and GCS from v25.10, for Azure from v26.9).
@@ -2431,7 +2426,7 @@ This engine provides an integration with existing [Delta Lake](https://github.co
 By default the Delta Lake table must already exist in S3, GCP or Azure storage, and the commands below attach to it without DDL column definitions. With `allow_delta_lake_create_table = 1`, a `CREATE TABLE` with explicit columns against a location that has no `_delta_log` instead creates a new Delta Lake table by writing the initial commit through `delta-kernel-rs` (creating a partitioned table is not supported yet), and inside a Unity `DataLakeCatalog` database the table is also registered in the catalog.
 
 <Tabs>
-<TabItem value="S3" label="S3" default>
+<Tab title="S3">
 
 **Syntax**
 
@@ -2473,9 +2468,9 @@ Using named collections:
 CREATE TABLE deltalake
 ENGINE = DeltaLake(deltalake_conf, filename = 'test_table')
 ```
-</TabItem>
+</Tab>
 
-<TabItem value="GCP" label="GCP" default>
+<Tab title="GCP">
 
 **Syntax**
 
@@ -2510,9 +2505,9 @@ CREATE TABLE gcpDeltaLake
 ENGINE = DeltaLake(gcs_creds, url = 'https://storage.googleapis.com/<bucket>/<path>')
 ```
 
-</TabItem>
+</Tab>
 
-<TabItem value="Azure" label="Azure" default>
+<Tab title="Azure">
 
 **Syntax**
 
@@ -2530,7 +2525,7 @@ ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpa
 - `account_name` — Azure storage account name
 - `account_key` — Azure storage account key
 
-</TabItem>
+</Tab>
 </Tabs>
 
 ## Write data using a DeltaLake table {#insert-data}
