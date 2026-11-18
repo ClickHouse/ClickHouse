@@ -40,7 +40,14 @@ SELECT * FROM (WITH (fn, v) -> untuple_value_05813(fn(v)) AS l SELECT l(x -> x +
 SELECT * FROM (WITH (fn, xs) -> map_05813(fn, xs) AS l SELECT l(x -> x + 1, [1]), l(x -> x + 2, [1])) FORMAT TSVWithNames;
 WITH (fn, xs) -> map_05813(fn, xs) AS l SELECT l(x -> x + 1, [1]), l(x -> x + 2, [1]) FORMAT TSVWithNames;
 SELECT * FROM (WITH (fn, v) -> apply_lambda_05813(fn, v) AS l, (fn, v) -> l(fn, v) AS k SELECT k(x -> x + 1, 1), k(x -> x + 2, 1)) FORMAT TSVWithNames;
+SELECT '-- a SQL UDF called elsewhere in a WITH lambda body';
+SELECT * FROM (WITH map_05813(fn, xs) AS v, (fn, xs) -> v AS l SELECT l(x -> x + 1, [1]), l(x -> x + 2, [1])) FORMAT TSVWithNames;
+WITH map_05813(fn, xs) AS v, (fn, xs) -> v AS l SELECT l(x -> x + 1, [1]), l(x -> x + 2, [1]) FORMAT TSVWithNames;
+SELECT * FROM (WITH (fn, v) -> plus(apply_lambda_05813(fn, v), 0) AS l SELECT l(x -> x + 1, 1), l(x -> x + 2, 1)) FORMAT TSVWithNames;
+WITH (fn, v) -> plus(apply_lambda_05813(fn, v), 0) AS l SELECT l(x -> x + 1, 1), l(x -> x + 2, 1) FORMAT TSVWithNames;
+SELECT * FROM (WITH x -> untuple(tuple(map_05813(y -> y, [x]))) AS l SELECT l(11), l(22)) FORMAT TSVWithNames;
 SELECT '-- WITH lambdas without a SQL UDF call keep their names: stored view definitions keep WITH lambdas';
+SELECT * FROM (WITH (fn, v) -> plus(fn(v), 0) AS l SELECT l(x -> x + 1, 1)) FORMAT TSVWithNames;
 SELECT * FROM (WITH x -> untuple(tuple(x)) AS l SELECT l(11)) FORMAT TSVWithNames;
 SELECT * FROM (WITH x -> untuple(tuple(x)) AS l, y -> l(y) AS k SELECT k(11)) FORMAT TSVWithNames;
 SELECT * FROM (WITH (fn, xs) -> arrayMap(fn, xs) AS l SELECT l(x -> x + 1, [1])) FORMAT TSVWithNames;

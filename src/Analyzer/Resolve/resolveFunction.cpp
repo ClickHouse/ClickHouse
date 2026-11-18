@@ -3066,6 +3066,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// Try to substitute user defined SQL expression
             lambda_expression_untyped = tryGetLambdaFromUserDefinedSQLFunctions(user_defined_function, scope.context);
             inlines_sql_udf = lambda_expression_untyped != nullptr;
+            for (auto * current_scope = &scope; inlines_sql_udf && current_scope; current_scope = current_scope->parent_scope)
+                if (current_scope->inlined_call_arguments_projection_names)
+                    current_scope->inlines_sql_udf = true;
         }
 
         /** If function is resolved as lambda.
@@ -3101,14 +3104,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             ProjectionNames lambda_projection_names = resolveLambda(lambda_expression_untyped, lambda_expression_clone, function_arguments, lambda_scope);
 
             /// Stored view definitions keep `WITH` lambdas, and their columns depend on these names. SQL UDF calls are
-            /// substituted at `CREATE`, so a chain of inlined calls with a SQL UDF call may be renamed.
+            /// substituted at `CREATE`, so an inlined call that inlines a SQL UDF call may be renamed.
             if (lambda_scope.inlines_sql_udf)
-            {
                 result_projection_names = { calculateInlinedCallProjectionName(node, arguments_projection_names, scope) };
-                const auto * enclosing_lambda = scope.scope_node->as<LambdaNode>();
-                if (scope.inlined_call_arguments_projection_names && enclosing_lambda && enclosing_lambda->getExpression() == node)
-                    scope.inlines_sql_udf = true;
-            }
 
             auto & resolved_lambda = lambda_expression_clone->as<LambdaNode &>();
             node = resolved_lambda.getExpression();
@@ -3167,13 +3165,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// When `untuple` is the body of an inlined lambda (SQL UDF), the alias of the call it replaces applies to it
             /// and takes priority over an alias inside the body, as in the old analyzer. The call is the top of the parent
             /// scope's expression stack; nested calls are walked the same way, so the outermost alias wins.
-            /// Without an alias, the outermost call of the contiguous chain of inlined calls is used instead if the chain has
+            /// Without an alias, the outermost call of the contiguous chain of inlined calls is used instead if it inlines
             /// a SQL UDF call, which no stored view definition has.
             String untuple_alias = node->getAlias();
             QueryTreeNodePtr outermost_inlined_call;
             const IdentifierResolveScope * outermost_inlined_call_scope = nullptr;
             bool through_inlined_calls = true;
-            bool inlined_calls_include_sql_udf = false;
             const auto * current_scope = &scope;
             const auto * current_node = node.get();
             while (current_scope->parent_scope)
@@ -3198,13 +3195,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 {
                     outermost_inlined_call = call_node;
                     outermost_inlined_call_scope = current_scope;
-                    inlined_calls_include_sql_udf = inlined_calls_include_sql_udf || current_scope->inlines_sql_udf;
                 }
                 current_node = call_node.get();
                 current_scope = current_scope->parent_scope;
             }
 
-            if (untuple_alias.empty() && inlined_calls_include_sql_udf)
+            if (untuple_alias.empty() && outermost_inlined_call_scope && outermost_inlined_call_scope->inlines_sql_udf)
                 untuple_alias = calculateInlinedCallProjectionName(
                     outermost_inlined_call,
                     *outermost_inlined_call_scope->inlined_call_arguments_projection_names,
