@@ -57,7 +57,7 @@ private:
         bool throw_if_not_exists) override;
 
     /// Whether the server settings define an implicit entity of this kind and name, visible or shadowed
-    bool definesEntity(const String & entity_name, WorkloadEntityType entity_type) const;
+    [[nodiscard]] bool definesEntity(const String & entity_name, WorkloadEntityType entity_type) const;
 
     ImplicitWorkloadEntitiesConfig config; /// Guarded by the storage lock
 };

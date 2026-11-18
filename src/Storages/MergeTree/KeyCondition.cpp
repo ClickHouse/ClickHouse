@@ -4,6 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTime64.h>
@@ -2937,7 +2938,7 @@ static bool finalizeTransformedColumn(ColumnPtr & column, DataTypePtr & type)
 /// constant, and a conversion with a cancellation budget can hit `max_execution_time`.
 /// The cancellation exception stored by `checkTimeLimit` may carry `QUERY_WAS_CANCELLED_BY_CLIENT`,
 /// and an allocation failure below the memory tracker surfaces as `CANNOT_ALLOCATE_MEMORY`.
-static bool isQueryOuterGuardError(int code)
+bool isQueryOuterGuardError(int code)
 {
     return code == ErrorCodes::LOGICAL_ERROR
         || code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
@@ -7517,6 +7518,10 @@ static bool functionIsCastPreservingFieldRepresentation(
     if (from_type->isNullable() || to_type->isNullable())
         return false;
 
+    /// `Bool` and `SimpleAggregateFunction(f, Bool)` are stored as `UInt8`, yet a cast into them maps every nonzero value to 1.
+    if (isBool(to_type) || isSimpleAggregateFunctionOfBool(*to_type))
+        return false;
+
     WhichDataType from(from_type);
     WhichDataType to(to_type);
 
@@ -8088,15 +8093,15 @@ namespace
 /// answers a definite value for a nested `NULL` and orders a nested `NaN` exactly where the index does.
 bool keyTypeMayHoldNestedNullOrNaN(const DataTypePtr & key_type)
 {
-    const auto * tuple = typeid_cast<const DataTypeTuple *>(removeNullable(removeLowCardinality(key_type)).get());
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(&removeNullable(removeLowCardinality(*key_type)));
     if (!tuple)
         return false;
 
     for (const auto & element : tuple->getElements())
     {
-        const auto unwrapped = removeLowCardinality(element);
-        if (unwrapped->isNullable() || WhichDataType(removeNullable(unwrapped)).isFloat()
-            || keyTypeMayHoldNestedNullOrNaN(unwrapped))
+        const IDataType & unwrapped = removeLowCardinality(*element);
+        if (unwrapped.isNullable() || WhichDataType(removeNullable(unwrapped)).isFloat()
+            || keyTypeMayHoldNestedNullOrNaN(element))
             return true;
     }
     return false;

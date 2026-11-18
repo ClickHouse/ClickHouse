@@ -98,7 +98,7 @@ protected:
     void replaceOwnEntities(std::unique_lock<std::recursive_mutex> & lock, WorkloadEntities new_own_entities);
 
     /// Inner layer of the chain, if any.
-    IWorkloadEntityStorage * getNextStorage() const { return next_storage.get(); }
+    [[nodiscard]] IWorkloadEntityStorage * getNextStorage() const { return next_storage.get(); }
 
     /// Serialize own entities stored in memory plus one optional `change` into multiline string
     String serializeOwnEntities(std::optional<Event> change);
@@ -108,7 +108,7 @@ protected:
 
 private:
     /// Returns the visible entities for `own` and the current inherited entities
-    WorkloadEntities computeVisibleEntities(const WorkloadEntities & own) const;
+    [[nodiscard]] WorkloadEntities computeVisibleEntities(const WorkloadEntities & own) const;
 
     /// Recomputes visible entities from own and inherited entities and notifies subscribers about the
     /// difference with one transaction. Unlocks `lock`.
@@ -118,7 +118,7 @@ private:
     void updateRoleResources();
 
     /// Returns own or inherited entity, inherited one first (it is visible if both exist)
-    ASTPtr findKnownEntity(const WorkloadEntityKey & key, const WorkloadEntities & own) const;
+    [[nodiscard]] ASTPtr findKnownEntity(const WorkloadEntityKey & key, const WorkloadEntities & own) const;
 
     /// Throws if `entity` claims a role also claimed by another own or inherited resource
     void checkClaimConflicts(const WorkloadEntityKey & key, const ASTPtr & entity) const;
@@ -131,7 +131,7 @@ private:
     void unlockAndNotify(std::unique_lock<std::recursive_mutex> & lock, const std::vector<Event> & tx);
 
     /// Return true iff own and inherited entities have a reference path from `source` to `target`
-    bool isIndirectlyReferenced(const WorkloadEntityKey & target, const WorkloadEntityKey & source) const;
+    [[nodiscard]] bool isIndirectlyReferenced(const WorkloadEntityKey & target, const WorkloadEntityKey & source) const;
 
     /// Returns an ordered vector of `entities` with an optional `change` applied
     static std::vector<Event> orderEntities(const WorkloadEntities & entities, const std::optional<Event> & change = {});

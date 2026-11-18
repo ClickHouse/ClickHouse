@@ -502,7 +502,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                     }
                     catch (...)
                     {
-                        cancel(IProcessor::CancelReason::Exception);
+                        cancelWithException(std::current_exception());
                         throw;
                     }
                 }
