@@ -586,16 +586,13 @@ bool canComputeModificationHash(const ContextPtr & context, const String & datab
     if (access->isGranted(AccessType::SELECT, database, table))
         return true;
 
-    bool any_granted = false;
-    bool all_granted = true;
+    if (columns.empty())
+        return false;
+
     for (const auto & column : columns)
-    {
-        if (access->isGranted(AccessType::SELECT, database, table, column.name))
-            any_granted = true;
-        else
-            all_granted = false;
-    }
-    return isModificationHashIntrospection() ? any_granted && all_granted : any_granted;
+        if (!access->isGranted(AccessType::SELECT, database, table, column.name))
+            return false;
+    return true;
 }
 
 }

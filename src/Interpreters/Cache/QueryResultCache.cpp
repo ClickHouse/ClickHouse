@@ -538,8 +538,8 @@ std::optional<UInt128> computeTableModificationHashForConsistency(const StorageI
     /// credentialed I/O - an HTTP request, an object listing, a remote `system.tables` query. Only
     /// probe a table the current user is allowed to read; otherwise bail out so the cache is bypassed
     /// (fail closed) and the query is rejected later by the normal access check with the usual error.
-    /// SELECT access is granted when at least one column is readable, matching `InterpreterSelectQuery`
-    /// (every column for `system.tables.modification_hash`, see `canComputeModificationHash`).
+    /// It requires `SELECT` on every column, because a cache hit skips the column checks of the planner,
+    /// see `canComputeModificationHash`.
     /// "The current user" is the user of the context the read will actually run under: a view with
     /// `SQL SECURITY DEFINER` / `NONE` recurses into here with its own effective context, so the tables
     /// behind it are probed with the grants (and row policies) the read applies, not the invoker's. See
