@@ -137,14 +137,15 @@ struct Estimate
     std::optional<UInt64> estimated_cardinality;
     std::optional<Field> estimated_min;
     std::optional<Field> estimated_max;
+    std::optional<UInt64> estimated_null_count;
+    std::optional<UInt64> estimated_default_count;
+    std::optional<Field> estimated_sum;
+
     /// False when `estimated_min` and `estimated_max` can miss some non-NULL values, see
     /// `StatisticsBasic::minMaxCoversAllValues`.
     bool min_max_covers_all_values = true;
-    std::optional<UInt64> estimated_null_count;
     /// False when `estimated_null_count` can miss some NULLs, see `StatisticsBasic::nullCountCoversAllRows`.
     bool null_count_covers_all_rows = true;
-    std::optional<UInt64> estimated_default_count;
-    std::optional<Field> estimated_sum;
 };
 
 using Estimates = std::unordered_map<String, Estimate>;
