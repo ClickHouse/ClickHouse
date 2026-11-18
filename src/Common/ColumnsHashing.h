@@ -349,7 +349,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     /// Whether a row of the block may have the NULL key, which `isNullAt` tells row by row: a nullable
     /// dictionary may map any row to it. False means that no row has it.
-    ALWAYS_INLINE bool mayHaveNullRows() const { return is_nullable; }
+    [[nodiscard]] ALWAYS_INLINE bool mayHaveNullRows() const { return is_nullable; }
 
     template <typename Data>
     ALWAYS_INLINE FindResult findKey(Data & data, size_t row_, Arena & pool)
