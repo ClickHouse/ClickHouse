@@ -7,6 +7,7 @@
     <create_query>CREATE TABLE customer(c_custkey Int32, c_nationkey Int32) ENGINE MergeTree ORDER BY c_custkey</create_query>
     <create_query>CREATE TABLE nation(n_nationkey Int32, n_name String) ENGINE MergeTree ORDER BY n_nationkey</create_query>
     <create_query>CREATE TABLE customer_nullable(c_custkey Nullable(Int32), c_nationkey Int32) ENGINE MergeTree ORDER BY c_nationkey</create_query>
+    <create_query>CREATE TABLE customer_runs(c_custkey Int32) ENGINE MergeTree ORDER BY c_custkey</create_query>
 
     <fill_query>INSERT INTO orders SELECT number, number/10000, number%1000 FROM numbers(100000000)</fill_query>
     <fill_query>INSERT INTO customer SELECT number, 5 FROM numbers(1)</fill_query>
@@ -14,6 +15,7 @@
     <fill_query>INSERT INTO customer SELECT number+1000, 7 FROM numbers(10000)</fill_query>
     <fill_query>INSERT INTO nation VALUES (5,'ETHIOPIA'),(6,'FRANCE'),(7,'GERMANY'),(100,'UNKNOWN')</fill_query>
     <fill_query>INSERT INTO customer_nullable SELECT * FROM customer</fill_query>
+    <fill_query>INSERT INTO customer_runs SELECT number FROM numbers(10000) WHERE intDiv(number, 100) % 2 = 1</fill_query>
 
     <!-- 1 element in filter  -->
     <query>
@@ -214,8 +216,21 @@
         SETTINGS enable_join_runtime_filters=1
     </query>
 
+    <!-- Probe side sorted by the join key: o_custkey grows with o_orderkey, 10000 rows per key. The matching keys
+         come in runs of 100, so whole runs of about 15 blocks pass or fail in turn, while the filter drops half of
+         the rows overall. A passing block must not switch the filter off. The query reads a second probe column,
+         which the filter saves reading for the rows it drops. -->
+    <query>
+        SELECT sum(o_orderkey), avg(o_totalprice)
+        FROM orders
+        JOIN customer_runs
+        ON c_custkey = o_custkey
+        SETTINGS enable_join_runtime_filters=1
+    </query>
+
     <drop_query>DROP TABLE orders</drop_query>
     <drop_query>DROP TABLE customer</drop_query>
     <drop_query>DROP TABLE customer_nullable</drop_query>
+    <drop_query>DROP TABLE customer_runs</drop_query>
     <drop_query>DROP TABLE nation</drop_query>
 </test>
