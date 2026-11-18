@@ -286,7 +286,7 @@ def test_out_of_range_timestamp(timestamp_type, max_timestamp_ms, max_timestamp,
         assert "out of range" in response.text
 
     assert write(max_timestamp_ms).status_code == requests.codes.no_content
-    assert node.query("SELECT timestamp FROM timeSeriesSamples(prometheus)", settings={"session_timezone": "UTC"}) == f"{max_timestamp}\n"
+    assert node.query("SELECT arrayJoin(samples).1 FROM timeSeriesSamples(prometheus)", settings={"session_timezone": "UTC"}) == f"{max_timestamp}\n"
 
 
 # Checks that scalar values can be stored as `Float32` instead of the default `Float64`.
