@@ -1,14 +1,14 @@
 <!--
     1M rows of ~1 KB random strings, read from a Parquet file and from a MergeTree table.
     The first query is the one in the Parquet reader's TODO list (src/Processors/Formats/Impl/Parquet/Reader.h).
-    Each pair after it runs the same query on both tables, single-threaded, so that it compares the cost of reading
-    the two formats rather than how each one splits the work: a full scan, a PREWHERE that keeps scattered rows, and
-    a key range that the primary key and the Parquet statistics can skip to.
+    Each pair after it runs the same query on both tables, single-threaded: a full scan, a PREWHERE that keeps
+    scattered rows, and a key range that the primary key and the Parquet statistics can skip to.
+    Both tables use LZ4, so that a pair compares the two formats and not two codecs.
     The pairs use `SELECT *`: `length(v)` reads only the size stream of a MergeTree `String` column.
 -->
 <test>
-    <create_query>CREATE TABLE parquet_vs_mergetree_mt (k UInt64, v String) ENGINE = MergeTree ORDER BY k</create_query>
-    <create_query>CREATE TABLE parquet_vs_mergetree_pq (k UInt64, v String) ENGINE = File(Parquet)</create_query>
+    <create_query>CREATE TABLE parquet_vs_mergetree_mt (k UInt64 CODEC(LZ4), v String CODEC(LZ4)) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE parquet_vs_mergetree_pq (k UInt64, v String) ENGINE = File(Parquet) SETTINGS output_format_parquet_compression_method = 'lz4'</create_query>
 
     <fill_query>INSERT INTO parquet_vs_mergetree_mt SELECT number AS k, toString(number) || ':' || randomPrintableASCII(1000) AS v FROM numbers(1000000)</fill_query>
     <fill_query>OPTIMIZE TABLE parquet_vs_mergetree_mt FINAL</fill_query>
