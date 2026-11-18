@@ -2,6 +2,10 @@
 
 #include <Processors/Formats/Impl/OpenMetricsText.h>
 
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -153,7 +157,7 @@ String formatSampleValue(double value)
 /// Reads the `tags` column (either `Map` or `Array(Tuple)`) for one row into an ordered key/value
 /// list, validating label names and rejecting duplicate keys. The `__name__` tag is returned
 /// separately in `name_tag`.
-void extractTags(const IColumn & column, size_t row_num, std::vector<std::pair<String, String>> & out, std::optional<String> & name_tag)
+void extractTags(const IColumn & column, size_t row_num, VectorWithMemoryTracking<std::pair<String, String>> & out, std::optional<String> & name_tag)
 {
     const ColumnArray * col_array = nullptr;
     if (const ColumnMap * col_map = checkAndGetColumn<ColumnMap>(&column))
@@ -170,7 +174,7 @@ void extractTags(const IColumn & column, size_t row_num, std::vector<std::pair<S
     const size_t start = row_num == 0 ? 0 : offsets[row_num - 1];
     const size_t end = offsets[row_num];
 
-    std::set<String> seen;
+    SetWithMemoryTracking<String> seen;
     for (size_t j = start; j < end; ++j)
     {
         String key(keys.getDataAt(j));
@@ -191,7 +195,7 @@ void extractTags(const IColumn & column, size_t row_num, std::vector<std::pair<S
 }
 
 /// Reads the `samples` column for one row into an ordered list of (millisecond, value) points.
-void extractPoints(const IColumn & column, size_t row_num, UInt32 scale, std::vector<std::pair<Int64, double>> & out)
+void extractPoints(const IColumn & column, size_t row_num, UInt32 scale, VectorWithMemoryTracking<std::pair<Int64, double>> & out)
 {
     const auto & col_array = assert_cast<const ColumnArray &>(column);
     const auto & col_tuple = assert_cast<const ColumnTuple &>(col_array.getData());
@@ -305,11 +309,11 @@ void OpenMetricsTextOutputFormat::flushCurrentFamily()
     /// The canonical position of each series within the family, used below to order the samples.
     struct SortKey
     {
-        std::vector<std::pair<String, String>> labels; /// sorted labels of the metric point
+        VectorWithMemoryTracking<std::pair<String, String>> labels; /// sorted labels of the metric point
         size_t suffix_rank = 0;                        /// index of the suffix in `familySampleSuffixes`
         double boundary = 0;                           /// value of `le` / `quantile`, if required
     };
-    std::vector<SortKey> keys;
+    VectorWithMemoryTracking<SortKey> keys;
     keys.reserve(current_family.series.size());
 
     for (const auto & series : current_family.series)
@@ -394,11 +398,11 @@ void OpenMetricsTextOutputFormat::flushCurrentFamily()
     /// point together in the order the metric points first appear, so the output does not depend on how
     /// the query orders e.g. `le="+Inf"` and `le="1"`, and the fragments of one series that arrive in
     /// several rows (as `TimeSeries` returns one row per time bucket) are merged into one metric point.
-    std::map<std::vector<std::pair<String, String>>, size_t> label_set_rank;
+    MapWithMemoryTracking<VectorWithMemoryTracking<std::pair<String, String>>, size_t> label_set_rank;
     for (const auto & key : keys)
         label_set_rank.try_emplace(key.labels, label_set_rank.size());
 
-    std::vector<size_t> order(current_family.series.size());
+    VectorWithMemoryTracking<size_t> order(current_family.series.size());
     for (size_t i = 0; i < order.size(); ++i)
         order[i] = i;
     std::stable_sort(order.begin(), order.end(), [&](size_t lhs, size_t rhs)
@@ -410,8 +414,8 @@ void OpenMetricsTextOutputFormat::flushCurrentFamily()
     });
 
     /// `point_group[i]` identifies the metric point that the i-th sorted series belongs to.
-    std::vector<size_t> point_group(order.size());
-    std::vector<Series> sorted;
+    VectorWithMemoryTracking<size_t> point_group(order.size());
+    VectorWithMemoryTracking<Series> sorted;
     sorted.reserve(order.size());
     for (size_t k = 0; k < order.size(); ++k)
     {
@@ -478,9 +482,9 @@ void OpenMetricsTextOutputFormat::flushCurrentFamily()
     /// Each series keeps the order of its own points, so a single series is written as given. A min-heap
     /// of the series' cursors keeps the merge `O(points * log(series))`.
     using HeapEntry = std::pair<Int64, size_t>; /// (timestamp of the next point, series index)
-    std::vector<HeapEntry> heap;
-    std::vector<size_t> cursors(current_family.series.size(), 0);
-    const auto heap_greater = std::greater<HeapEntry>();
+    VectorWithMemoryTracking<HeapEntry> heap;
+    VectorWithMemoryTracking<size_t> cursors(current_family.series.size(), 0);
+    const auto heap_greater = std::greater<>();
     for (size_t group_begin = 0; group_begin < current_family.series.size();)
     {
         size_t group_end = group_begin + 1;

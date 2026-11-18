@@ -3,6 +3,8 @@
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -53,8 +55,8 @@ private:
     struct Series
     {
         String metric_name;
-        std::vector<std::pair<String, String>> tags;
-        std::vector<std::pair<Int64, double>> points;
+        VectorWithMemoryTracking<std::pair<String, String>> tags;
+        VectorWithMemoryTracking<std::pair<Int64, double>> points;
     };
 
     /// Series are grouped by metric family so a family's `# HELP`/`# TYPE`/`# UNIT` lines are emitted
@@ -67,7 +69,7 @@ private:
         String help;
         String type;
         String unit;
-        std::vector<Series> series;
+        VectorWithMemoryTracking<Series> series;
     };
 
     void write(const Columns & columns, size_t row_num) override;

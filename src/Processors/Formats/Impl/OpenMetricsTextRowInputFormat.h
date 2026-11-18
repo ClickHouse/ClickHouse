@@ -3,6 +3,9 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -72,8 +75,8 @@ private:
         String help;
         String type;
         String unit;
-        std::vector<std::pair<String, String>> tags;   /// sorted by label name
-        std::vector<std::pair<Int64, double>> points;   /// (millisecond timestamp, value)
+        VectorWithMemoryTracking<std::pair<String, String>> tags;   /// sorted by label name
+        VectorWithMemoryTracking<std::pair<Int64, double>> points;   /// (millisecond timestamp, value)
     };
 
     /// Reads the whole exposition, grouping samples into `output_rows`.
@@ -84,7 +87,7 @@ private:
 
     const FormatSettings format_settings;
 
-    std::unordered_map<String, FamilyMeta> family_meta;
+    UnorderedMapWithMemoryTracking<String, FamilyMeta> family_meta;
     bool saw_eof = false;
 
     ColumnLoc column_loc;
@@ -93,7 +96,7 @@ private:
     UInt32 timestamp_scale = 3;
 
     bool parsed = false;
-    std::vector<OutputSeries> output_rows;
+    VectorWithMemoryTracking<OutputSeries> output_rows;
     size_t next_output_row = 0;
 };
 

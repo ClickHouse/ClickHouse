@@ -84,13 +84,13 @@ inline String normalizeOpenMetricsType(std::string_view type)
 /// the OpenMetrics 1.0 MetricType rules. An empty suffix means the sample carries the family name
 /// itself (the quantile samples of a `summary`). Returns nullptr for the types without a suffix rule
 /// (`unknown`, `gauge`, `stateset`, and an absent type): their only sample name is the family name.
-inline const std::vector<std::string_view> * familySampleSuffixes(std::string_view type)
+inline const std::vector<std::string_view> * familySampleSuffixes(std::string_view type) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
-    static const std::vector<std::string_view> counter = {"_total", "_created"};
-    static const std::vector<std::string_view> histogram = {"_bucket", "_count", "_sum", "_created"};
-    static const std::vector<std::string_view> gaugehistogram = {"_bucket", "_gcount", "_gsum", "_created"};
-    static const std::vector<std::string_view> summary = {"", "_count", "_sum", "_created"};
-    static const std::vector<std::string_view> info = {"_info"};
+    static const std::vector<std::string_view> counter = {"_total", "_created"}; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+    static const std::vector<std::string_view> histogram = {"_bucket", "_count", "_sum", "_created"}; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+    static const std::vector<std::string_view> gaugehistogram = {"_bucket", "_gcount", "_gsum", "_created"}; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+    static const std::vector<std::string_view> summary = {"", "_count", "_sum", "_created"}; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+    static const std::vector<std::string_view> info = {"_info"}; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     if (type == "counter")
         return &counter;

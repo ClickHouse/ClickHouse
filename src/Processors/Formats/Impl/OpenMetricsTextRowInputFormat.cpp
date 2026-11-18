@@ -24,6 +24,11 @@
 #include <IO/ReadHelpers.h>
 #include <IO/readFloatText.h>
 
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -72,7 +77,7 @@ std::string_view readToken(std::string_view s, size_t & pos)
 }
 
 /// `pos` at `{`. Validates label names (no `:`), rejects duplicates, throws on malformed input.
-void parseLabelSet(std::string_view s, size_t & pos, std::map<String, String> & labels, const String & line)
+void parseLabelSet(std::string_view s, size_t & pos, MapWithMemoryTracking<String, String> & labels, const String & line)
 {
     if (pos >= s.size() || s[pos] != '{')
         throwIncorrect("Cannot parse labels", line);
@@ -108,7 +113,7 @@ void parseLabelSet(std::string_view s, size_t & pos, std::map<String, String> & 
 }
 
 /// Parses `<name>[{labels}]`. Rejects empty name, invalid identifiers, and whitespace before `{`.
-void parseMetricDescriptor(std::string_view s, size_t & pos, String & stem, std::map<String, String> & labels, const String & line)
+void parseMetricDescriptor(std::string_view s, size_t & pos, String & stem, MapWithMemoryTracking<String, String> & labels, const String & line)
 {
     const size_t name_start = pos;
     while (pos < s.size() && s[pos] != '{' && s[pos] != ' ' && s[pos] != '\t')
@@ -195,7 +200,7 @@ void parseExemplarSuffix(std::string_view s, size_t & pos, const String & line)
     if (pos >= s.size() || s[pos] != '{')
         throwIncorrect("Invalid exemplar", line);
 
-    std::map<String, String> exemplar_labels;
+    MapWithMemoryTracking<String, String> exemplar_labels;
     parseLabelSet(s, pos, exemplar_labels, line);
 
     if (pos >= s.size() || (s[pos] != ' ' && s[pos] != '\t'))
@@ -287,7 +292,7 @@ bool isSamplesColumnType(const DataTypePtr & type)
         && isDateTime64(type_tuple->getElement(0)) && WhichDataType(type_tuple->getElement(1)).isFloat64();
 }
 
-void insertTags(IColumn & column, const std::vector<std::pair<String, String>> & tags)
+void insertTags(IColumn & column, const VectorWithMemoryTracking<std::pair<String, String>> & tags)
 {
     if (checkAndGetColumn<ColumnMap>(&column))
     {
@@ -307,7 +312,7 @@ void insertTags(IColumn & column, const std::vector<std::pair<String, String>> &
     }
 }
 
-void insertPoints(IColumn & column, const std::vector<std::pair<Int64, double>> & points, UInt32 scale)
+void insertPoints(IColumn & column, const VectorWithMemoryTracking<std::pair<Int64, double>> & points, UInt32 scale)
 {
     auto & col_array = assert_cast<ColumnArray &>(column);
     auto & col_tuple = assert_cast<ColumnTuple &>(col_array.getData());
@@ -454,11 +459,11 @@ void OpenMetricsTextRowInputFormat::parseAll()
 
     /// Maps a series identity (metric_name + tags) to its row in `output_rows`, so repeated samples of
     /// the same series accumulate into one `samples` array.
-    std::unordered_map<String, size_t> series_index;
+    UnorderedMapWithMemoryTracking<String, size_t> series_index;
 
     /// Families in the order of their first `# HELP` / `# TYPE` / `# UNIT` descriptor, used to emit the
     /// families without samples as metadata-only rows after the whole exposition is read.
-    std::vector<String> declared_families;
+    VectorWithMemoryTracking<String> declared_families;
     const auto declare_family = [&](const String & family, const FamilyMeta & fm)
     {
         if (!fm.has_help && !fm.has_type && !fm.has_unit)
@@ -547,7 +552,7 @@ void OpenMetricsTextRowInputFormat::parseAll()
         std::string_view sv{line};
         size_t pos = 0;
         String stem;
-        std::map<String, String> labels;
+        MapWithMemoryTracking<String, String> labels;
         parseMetricDescriptor(sv, pos, stem, labels, line);
 
         if (pos >= sv.size() || (sv[pos] != ' ' && sv[pos] != '\t'))
@@ -618,7 +623,7 @@ void OpenMetricsTextRowInputFormat::parseAll()
         }
 
         /// `std::map` iterates in sorted label-name order, giving a deterministic, canonical tag order.
-        std::vector<std::pair<String, String>> tags(labels.begin(), labels.end());
+        VectorWithMemoryTracking<std::pair<String, String>> tags(labels.begin(), labels.end());
 
         String key = stem;
         key.push_back('\0');
@@ -656,10 +661,10 @@ void OpenMetricsTextRowInputFormat::parseAll()
     /// OpenMetrics permits a family without samples. Keep its descriptors as a metadata-only row (empty
     /// `metric_name`, `tags` and `samples`), the same shape `SELECT * FROM <TimeSeries table>` returns for
     /// a metric family and `FORMAT OpenMetrics` writes back as a family without samples.
-    std::unordered_set<std::string_view> families_with_samples;
+    UnorderedSetWithMemoryTracking<std::string_view> families_with_samples;
     for (const auto & row : output_rows)
         families_with_samples.insert(row.metric_family);
-    std::vector<OutputSeries> metadata_rows;
+    VectorWithMemoryTracking<OutputSeries> metadata_rows;
     for (const auto & family : declared_families)
     {
         if (families_with_samples.contains(family))
