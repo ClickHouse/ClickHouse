@@ -2,6 +2,11 @@
 
 SET use_uncompressed_cache=0;
 
+-- `apply_string_filters_during_scan` materializes the values that do not match a substring condition
+-- of PREWHERE as empty strings, so the in-memory size of the read block, which the estimation is based on,
+-- becomes much smaller than the amount of data actually read from disk.
+SET apply_string_filters_during_scan=0;
+
 -- The columns cache serves repeated reads from memory, which lowers `ReadCompressedBytes` below the
 -- estimate for every query after the first one.
 SET use_columns_cache=0;
@@ -12,7 +17,6 @@ SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_rep
 set max_threads=4, max_block_size=8192;
 
 -- For runs with the old analyzer
-SET enable_analyzer=1;
 
 -- Reading of aggregation states from disk will affect `ReadCompressedBytes`
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;

@@ -37,6 +37,7 @@ public:
         ContextPtr context_,
         SharedHeader sample_block_,
         const std::optional<FormatSettings> & format_settings_,
+        FormatFilterInfoPtr format_filter_info_,
         const String & write_format_,
         const String & write_compression_method_);
 
@@ -90,6 +91,7 @@ private:
     const Names partition_columns;
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
+    const FormatFilterInfoPtr format_filter_info;
     const size_t data_file_max_rows;
     const size_t data_file_max_bytes;
     const bool accurate_write_cast;

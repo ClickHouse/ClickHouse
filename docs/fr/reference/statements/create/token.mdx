@@ -38,7 +38,7 @@ authentifié par une clé matérielle ou un certificat peut s&#39;en servir pour
 compte. Ce même privilège autorise le statement équivalent
 `ALTER USER <current user> ADD IDENTIFIED ...`.
 
-## Résultat
+## Résultat {#result}
 
 La requête renvoie une ligne comportant deux colonnes :
 
@@ -57,7 +57,7 @@ Le secret comporte 32 caractères et est généré à partir d&#39;une source al
 [règles de complexité des mots de passe](/fr/reference/statements/create/user#identification) — celles-ci existent pour
 encadrer les mots de passe choisis par des humains.
 
-## Clauses VALID UNTIL et VALID FOR
+## Clauses VALID UNTIL et VALID FOR {#valid-until-clause}
 
 Elles limitent la durée de vie du token. Elles fonctionnent exactement comme les clauses correspondantes d&#39;une méthode d’authentification
 de [`CREATE USER`](/fr/reference/statements/create/user#valid-until-clause) : `VALID UNTIL` attend une date et une heure
@@ -75,7 +75,7 @@ Exemples :
 * `CREATE TOKEN VALID FOR INTERVAL 30 DAY`
 * `CREATE TOKEN VALID UNTIL 'infinity'`
 
-## Clause GRANTS
+## Clause GRANTS {#grants-clause}
 
 Limite les droits d&#39;accès des sessions authentifiées par le token à l&#39;intersection avec les privilèges
 listés. Cette clause fonctionne exactement comme la [clause `GRANTS` de `CREATE USER`](/fr/reference/statements/create/user#grants-clause),
@@ -92,31 +92,34 @@ Exemples :
 Ni cette restriction ni la limite temporelle ne s&#39;appliquent à ce que les sessions du token laissent derrière elles — voir
 [Considérations de sécurité](#security-considerations).
 
-## Gestion des tokens
+## Gestion des tokens {#managing-tokens}
 
 Un token est une méthode d&#39;authentification de l&#39;utilisateur ; il est donc répertorié par
 [`SHOW CREATE USER`](/fr/reference/statements/show#show-create-user) (avec ses clauses `VALID UNTIL` et `GRANTS`,
 mais sans le secret) ainsi que dans les colonnes `auth_type`, `auth_params` et `auth_grants` de la table
 [`system.users`](/fr/reference/system-tables/users).
 
-Il n&#39;existe aucune instruction permettant de supprimer un token isolé. Pour révoquer tous les tokens d&#39;un
+Il n&#39;existe aucun statement permettant de supprimer un token isolé. Pour révoquer tous les tokens d&#39;un
 utilisateur, remplacez ses méthodes d&#39;authentification, par exemple avec `ALTER USER <name> IDENTIFIED WITH ...`, ou
 utilisez `ALTER USER <name> RESET AUTHENTICATION METHODS TO NEW` pour ne conserver que la plus récemment
 ajoutée. Le nombre de méthodes d&#39;authentification qu&#39;un utilisateur peut posséder simultanément est limité par le
-paramètre serveur `max_authentication_methods_per_user`.
+paramètre serveur `max_authentication_methods_per_user`. Les tokens expirés ne restent pas longtemps décomptés de cette limite : comme
+tout `ALTER USER`, `CREATE TOKEN` supprime, avant d&#39;ajouter la nouvelle, les méthodes d&#39;authentification de l&#39;utilisateur dont l&#39;échéance est déjà
+dépassée ; les tokens dotés d&#39;une clause `VALID UNTIL` ou `VALID FOR` (ou du TTL par défaut)
+peuvent donc être créés indéfiniment. Voir [`VALID UNTIL`](/fr/reference/statements/create/user#valid-until-clause).
 
 Le secret est généré et stocké par la requête elle-même : ainsi, un `CREATE TOKEN` dont le résultat n&#39;atteint
 jamais le client — une connexion perdue pendant l&#39;envoi de la ligne, ou un `INTO OUTFILE` que le client ne peut
-pas ouvrir — laisse derrière lui une méthode d&#39;authentification que personne ne peut utiliser et qui est malgré tout
-décomptée de cette limite. Personne ne détient un tel secret : il n&#39;existe que pendant l&#39;exécution de la requête.
+pas ouvrir — laisse derrière lui une méthode d&#39;authentification que personne ne peut utiliser et qui reste décomptée
+de cette limite jusqu&#39;à son expiration. Personne ne détient un tel secret : il n&#39;existe que pendant l&#39;exécution de la requête.
 Une requête rejetée avant son exécution, y compris lorsque sa clause `FORMAT` désigne un format inutilisable,
 n&#39;ajoute rien.
 
 `CREATE TOKEN` ne prend pas en charge la clause `ON CLUSTER`. Utilisez un stockage des accès replicated (ou
-exécutez la requête sur chaque nœud avec l&#39;instruction équivalente `ALTER USER ... ADD IDENTIFIED WITH sha256_hash`)
+exécutez la requête sur chaque nœud avec le statement équivalent `ALTER USER ... ADD IDENTIFIED WITH sha256_hash`)
 pour qu&#39;un token fonctionne sur l&#39;ensemble d&#39;un cluster dont les entités d&#39;accès sont stockées localement.
 
-## Considérations de sécurité
+## Considérations de sécurité {#security-considerations}
 
 `VALID UNTIL` et `GRANTS` restreignent les sessions qui s&#39;authentifient avec le token. Ils ne restreignent pas
 ce que ces sessions laissent derrière elles :

@@ -79,6 +79,7 @@ class ThreadGroup
     /// - createForMaterializedView()
     /// - createForFlushAsyncInsertQueue()
     /// - createForExplainAnalyze()
+    /// - createForMergeMutate() of a merge that a query runs
     /// Required for raw pointers to memory_tracker/performance_counters
     ThreadGroupPtr parent;
 
@@ -87,12 +88,19 @@ public:
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
     ~ThreadGroup();
 
+    /// The group this one is nested in, if any (see `parent`).
+    ThreadGroupPtr getParent() const { return parent; }
+
     /// The first thread created this thread group
     const UInt64 master_thread_id;
 
     /// Set up at creation, no race when reading
     const ContextWeakPtr query_context;
     const ContextWeakPtr global_context;
+
+    /// False for a group from `createWithoutQueryContext` and the groups nested in it: attaching them does not set up
+    /// query profilers, so detaching keeps the profilers of the thread (e.g. the global profiler of a pool thread).
+    const bool with_query_context = true;
 
     const FatalErrorCallback fatal_error_callback;
 
@@ -143,7 +151,9 @@ public:
     static ThreadGroupPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
     /// NOTE: make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
-    static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
+    /// If the merge or mutation runs for a query, pass the thread group of the query: the query then gets the counters
+    /// of the group as they happen. The memory stays in the background memory tracker.
+    static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context, ThreadGroupPtr query_thread_group = nullptr);
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
     static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group);
@@ -152,6 +162,10 @@ public:
     /// For work a query only triggers but that outlives it (e.g. loading a dictionary): memory is accounted in the
     /// server total, in every thread of the group, unlike `MemoryTrackerBlockerInThread`.
     static ThreadGroupPtr createWithoutQueryMemoryTracker(ThreadGroupPtr parent);
+
+    /// For background work outside of any query (e.g. a system log flush): the threads of the group share its memory
+    /// tracker, but get no query context and so none of the query settings (e.g. the profilers).
+    static ThreadGroupPtr createWithoutQueryContext(ContextPtr global_context_);
 
     /// Nested groups charge memory through the group above them; only a top-level one is attached to a user.
     bool isNested() const { return parent != nullptr; }
@@ -185,6 +199,7 @@ private:
 
     explicit ThreadGroup(ThreadGroupPtr parent_thread_group, bool charge_memory_to_parent = true);
     ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group);
+    explicit ThreadGroup(const ContextWeakPtr & global_context_);
 };
 
 /** Encapsulates all per-thread info (ProfileEvents, MemoryTracker, query_id, query context, etc.).
@@ -213,6 +228,10 @@ public:
     VariableContext untracked_memory_blocker_level = VariableContext::Max;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
     Int64 untracked_memory_limit = 4 * 1024 * 1024;
+    /// Bytes flushed by `flushUntrackedMemory` without a limit check (e.g. by `~MemoryTrackerSwitcher`, which cannot throw).
+    /// Once it exceeds `untracked_memory_limit`, the next allocation checks the limits. Not reset by `MemoryTrackerSwitcher`,
+    /// so allocations split over many short scopes are still checked.
+    Int64 untracked_memory_flushed_unchecked = 0;
     /// Per-CPU untracked memory
     PerCPUMemoryThreadState per_cpu_untracked_memory;
 
@@ -254,12 +273,12 @@ protected:
     struct TimePoint
     {
         void setUp();
-        UInt64 nanoseconds() const;
-        UInt64 microseconds() const;
-        UInt64 seconds() const;
+        [[nodiscard]] UInt64 nanoseconds() const;
+        [[nodiscard]] UInt64 microseconds() const;
+        [[nodiscard]] UInt64 seconds() const;
 
-        UInt64 elapsedMilliseconds() const;
-        UInt64 elapsedMilliseconds(const TimePoint & current) const;
+        [[nodiscard]] UInt64 elapsedMilliseconds() const;
+        [[nodiscard]] UInt64 elapsedMilliseconds(const TimePoint & current) const;
 
         std::chrono::time_point<std::chrono::system_clock> point;
     };
@@ -295,7 +314,15 @@ public:
     explicit ThreadStatus(NoOSThreadTag);
     ~ThreadStatus();
 
+#if defined(OS_DARWIN)
+    /// The ThreadStatus of another OS thread, or nullptr. The lock keeps it alive; its fields are
+    /// only safe to read while that thread is stopped (StackTrace::SuspendedThread), since this is
+    /// how `system.stack_trace` reads them without signalling the thread.
+    static std::pair<std::unique_lock<std::mutex>, ThreadStatus *> findByThreadId(UInt64 thread_id);
+#endif
+
     ThreadGroupPtr getThreadGroup() const;
+    bool hasThreadGroup() const;
 
     void setQueryId(std::string && new_query_id) noexcept;
     void clearQueryId() noexcept;
@@ -337,6 +364,9 @@ public:
     public:
         QueryCancellationBlocker();
         ~QueryCancellationBlocker();
+
+        /// Whether a blocker is alive in the current thread. `ThreadPool` carries it into the jobs scheduled under it.
+        static bool isActive();
 
     private:
         bool previous;
