@@ -278,7 +278,7 @@ private:
 
     using SquashingProcessorsMap = std::unordered_map<
         StorageIDMaybeEmpty,
-        std::vector<std::list<ProcessorPtr>::const_iterator>,
+        std::vector<Processors::const_iterator>,
         StorageID::DatabaseAndTableNameHash,
         StorageID::DatabaseAndTableNameEqual>;
 

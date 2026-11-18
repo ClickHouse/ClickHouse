@@ -5,7 +5,7 @@
 #include <Common/Stopwatch.h>
 
 #include <atomic>
-#include <list>
+#include <Common/ListWithMemoryTracking.h>
 #include <memory>
 #include <span>
 #include <vector>
@@ -23,14 +23,14 @@ class IQueryPlanStep;
 class ISpillable;
 
 struct StorageLimits;
-using StorageLimitsList = std::list<StorageLimits>;
+using StorageLimitsList = ListWithMemoryTracking<StorageLimits>;
 
 class RowsBeforeStepCounter;
 using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>;
+using Processors = ListWithMemoryTracking<ProcessorPtr>;
 
 class StepWallClock;
 

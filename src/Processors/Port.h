@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/ListWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <atomic>
 #include <cstdint>
@@ -496,8 +497,8 @@ public:
 };
 
 
-using InputPorts = std::list<InputPort>;
-using OutputPorts = std::list<OutputPort>;
+using InputPorts = ListWithMemoryTracking<InputPort>;
+using OutputPorts = ListWithMemoryTracking<OutputPort>;
 
 
 void connect(OutputPort & output, InputPort & input, bool reconnect = false);

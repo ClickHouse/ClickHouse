@@ -1,7 +1,7 @@
 #pragma once
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/ExecutionSpeedLimits.h>
-#include <list>
+#include <Common/ListWithMemoryTracking.h>
 
 namespace DB
 {
@@ -43,6 +43,6 @@ struct StorageLimits
     SizeLimits leaf_limits;
 };
 
-using StorageLimitsList = std::list<StorageLimits>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+using StorageLimitsList = ListWithMemoryTracking<StorageLimits>;
 
 }

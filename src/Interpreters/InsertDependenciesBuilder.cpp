@@ -1187,7 +1187,7 @@ VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDepend
     ///     we will connect processors created in first chain using the input and output port
     ///     of shrink and expand processors.
     /// We can create the chains only after processing all other chains because all ports need to be connected.
-    std::vector<std::pair<std::list<ProcessorPtr>, QueryPlanResourceHolder>> result_data;
+    std::vector<std::pair<Processors, QueryPlanResourceHolder>> result_data;
     result_data.reserve(insert_chains.size());
 
     for (auto && [chain, squashing_processors_for_chain] : std::views::zip(insert_chains, squashing_processor_maps))
@@ -1198,7 +1198,7 @@ VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDepend
         for (const auto & [view_id, apply_squashing_processors] : squashing_processors_for_chain)
         {
             auto & squashing_context = views_to_squashing_context.at(view_id);
-            std::list<ProcessorPtr> squashing_processors_list;
+            Processors squashing_processors_list;
             /// First time we saw this destination table.
             /// Add required processors, connect it and store it's output and input port iterator so other
             /// chains with the same destination table can use it.
@@ -1913,7 +1913,7 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
     auto out = copying_data->getOutputs().begin();
     auto in = finalizing_views->getInputs().begin();
 
-    std::list<ProcessorPtr> processors;
+    Processors processors;
     QueryPlanResourceHolder resources;
     for (auto & chain : view_chains)
     {

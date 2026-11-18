@@ -1,6 +1,7 @@
 #pragma once
 
-#include <unordered_map>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
@@ -35,7 +36,7 @@ private:
     bool is_shard_limit = false;
 
     Chunk previous_row_chunk;  /// for WITH TIES, contains only sort columns
-    std::vector<size_t> sort_column_positions;
+    VectorWithMemoryTracking<size_t> sort_column_positions;
 
     UInt64 rows_read = 0; /// including the last read block
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
@@ -56,9 +57,9 @@ private:
         bool input_port_has_counter = false;
     };
 
-    std::vector<PortsData> ports_data;
-    std::unordered_map<const InputPort *, PortsData *> input_port_to_data;
-    std::unordered_map<const OutputPort *, PortsData *> output_port_to_data;
+    VectorWithMemoryTracking<PortsData> ports_data;
+    UnorderedMapWithMemoryTracking<const InputPort *, PortsData *> input_port_to_data;
+    UnorderedMapWithMemoryTracking<const OutputPort *, PortsData *> output_port_to_data;
     size_t num_finished_port_pairs = 0;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;

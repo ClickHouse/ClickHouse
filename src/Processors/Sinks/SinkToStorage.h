@@ -1,4 +1,5 @@
 #pragma once
+#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/TableLockHolder.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
 
@@ -27,8 +28,8 @@ protected:
     virtual void consume(Chunk & chunk) = 0;
 
 private:
-    std::vector<TableLockHolder> table_locks;
-    std::vector<std::shared_ptr<const Context>> interpreter_context;
+    VectorWithMemoryTracking<TableLockHolder> table_locks;
+    VectorWithMemoryTracking<std::shared_ptr<const Context>> interpreter_context;
 
     void onConsume(Chunk chunk) override;
     GenerateResult onGenerate() override;

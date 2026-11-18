@@ -1,5 +1,5 @@
 #pragma once
-#include <list>
+#include <Common/ListWithMemoryTracking.h>
 #include <memory>
 #include <vector>
 
@@ -16,7 +16,7 @@ using ExecutorPtr = std::shared_ptr<IExecutor>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+using Processors = ListWithMemoryTracking<ProcessorPtr>;
 
 /// Pushing executor for Chain of processors using several background threads.
 /// Typical usage is:

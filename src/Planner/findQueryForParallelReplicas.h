@@ -1,5 +1,5 @@
 #pragma once
-#include <list>
+#include <Common/ListWithMemoryTracking.h>
 #include <memory>
 
 namespace DB
@@ -78,7 +78,7 @@ class PlannerContext;
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
 struct StorageLimits;
-using StorageLimitsList = std::list<StorageLimits>;
+using StorageLimitsList = ListWithMemoryTracking<StorageLimits>;
 
 /// Execute QueryNode with parallel replicas up to WithMergableStage and return a plan.
 /// This method does not check that QueryNode is valid. Ideally it should be a result of findParallelReplicasQuery.

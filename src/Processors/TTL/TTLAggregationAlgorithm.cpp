@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/TTL/TTLAggregationAlgorithm.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -11,7 +12,7 @@
 
 #include <Core/Settings.h>
 
-#include <unordered_set>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -210,12 +211,12 @@ void TTLAggregationAlgorithm::execute(Block & block)
         extractTimestamps(ttl_column.get(), timestamps);
 
         /// Resolve columns by name once per block, not once per row.
-        std::vector<const IColumn *> key_columns_in_block;
+        VectorWithMemoryTracking<const IColumn *> key_columns_in_block;
         key_columns_in_block.reserve(description.group_by_keys.size());
         for (const auto & key_column : description.group_by_keys)
             key_columns_in_block.push_back(block.getByName(key_column).column.get());
 
-        std::vector<std::pair<const IColumn *, size_t>> columns_in_block_and_header;
+        VectorWithMemoryTracking<std::pair<const IColumn *, size_t>> columns_in_block_and_header;
         columns_in_block_and_header.reserve(column_names.size());
         for (const auto & name : column_names)
             columns_in_block_and_header.emplace_back(block.getByName(name).column.get(), header.getPositionByName(name));
@@ -357,7 +358,7 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
             /// Since there might be intersecting columns between GROUP BY and SET, we prioritize
             /// the SET values over the GROUP BY because doing it the other way causes unexpected
             /// results.
-            std::unordered_set<String> columns_added;
+            UnorderedSetWithMemoryTracking<String> columns_added;
             for (const auto & it : description.set_parts)
             {
                 const IColumn * values_column = agg_block.getByName(it.expression_result_column_name).column.get();

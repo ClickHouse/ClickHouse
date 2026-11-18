@@ -1,4 +1,5 @@
 #pragma once
+#include <Common/ListWithMemoryTracking.h>
 #include <Common/Stopwatch.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <IO/Progress.h>
@@ -13,7 +14,7 @@ using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 class EnabledQuota;
 
 struct StorageLimits;
-using StorageLimitsList = std::list<StorageLimits>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+using StorageLimitsList = ListWithMemoryTracking<StorageLimits>;
 
 
 class ReadProgressCallback
