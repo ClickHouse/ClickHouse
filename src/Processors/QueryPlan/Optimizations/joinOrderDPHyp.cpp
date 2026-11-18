@@ -250,7 +250,7 @@ void DPHypJoinOrderOptimizer::buildHyperedges()
 
     for (const auto & [member, equiv_class] : query_graph.column_equivalences.getMemberToClassMap())
     {
-        if (!equiv_class || !processed_classes.insert(equiv_class).second)
+        if (!equiv_class || !isClassOfOneType(*equiv_class) || !processed_classes.insert(equiv_class).second)
             continue;
 
         /// Collect all distinct relations in this equivalence class.

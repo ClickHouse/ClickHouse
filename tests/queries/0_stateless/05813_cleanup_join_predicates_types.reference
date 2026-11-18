@@ -12,3 +12,7 @@ dpsize	0
 dpsub	0
 greedy	0
 mixed integer keys	5000
+time zones, dpsub	1
+time zones, dphyp	1
+time zones, dpsize	1
+time zones, greedy	1

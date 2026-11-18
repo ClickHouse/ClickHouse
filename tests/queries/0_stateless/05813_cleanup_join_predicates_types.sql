@@ -107,8 +107,8 @@ FROM m_t JOIN m_zero ON kt = k0 AND t = e0 JOIN m_text ON kt = ks AND e0 = s JOI
 JOIN m_v ON kt = kv AND e1 = v
 SETTINGS query_plan_optimize_join_order_limit = 0;
 
--- `f.k` is `UInt64`, `a.k` and `b.k` are `UInt32`: no class connects `a` with `b`, so no join order joins them first
--- without a condition, with any algorithm.
+-- `f.k` is `UInt64`, `a.k` and `b.k` are `UInt32`: their class has two types, so it does not connect `a` with `b`, and no
+-- join order joins them first without a condition, with any algorithm.
 CREATE TABLE w_f (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE w_a (k UInt32) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE w_b (k UInt32) ENGINE = MergeTree ORDER BY tuple();
@@ -135,3 +135,23 @@ GROUP BY algorithm
 ORDER BY algorithm;
 
 SELECT 'mixed integer keys', count() FROM w_f JOIN w_a ON w_f.k = w_a.k JOIN w_b ON w_f.k = w_b.k;
+
+-- `Date` and `DateTime` in two time zones compare exactly, but not transitively: `x = y` and `y = z` hold, `x = z` does
+-- not, as the `Date` is midnight in UTC and not in Tokyo. With `d_x` and `d_z` small, no algorithm may join them first
+-- with an added `x = z`: the row matches.
+CREATE TABLE d_x (x Date) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
+CREATE TABLE d_y (y DateTime('UTC')) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
+CREATE TABLE d_z (z DateTime('Asia/Tokyo')) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
+INSERT INTO d_x VALUES ('2024-01-01');
+INSERT INTO d_y VALUES (toDateTime('2024-01-01 00:00:00', 'UTC'));
+INSERT INTO d_z VALUES (toDateTime('2024-01-01 00:00:00', 'UTC'));
+SET param__internal_join_table_stat_hints = '{"d_x": {"cardinality": 2, "distinct_keys": {"x": 2}}, "d_z": {"cardinality": 2, "distinct_keys": {"z": 2}}, "d_y": {"cardinality": 1000000000, "distinct_keys": {"y": 1000000000}}}';
+
+SELECT 'time zones, dpsub', count() FROM d_x JOIN d_y ON x = y JOIN d_z ON y = z
+SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 10;
+SELECT 'time zones, dphyp', count() FROM d_x JOIN d_y ON x = y JOIN d_z ON y = z
+SETTINGS query_plan_optimize_join_order_algorithm = 'dphyp', query_plan_optimize_join_order_limit = 10;
+SELECT 'time zones, dpsize', count() FROM d_x JOIN d_y ON x = y JOIN d_z ON y = z
+SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize', query_plan_optimize_join_order_limit = 10;
+SELECT 'time zones, greedy', count() FROM d_x JOIN d_y ON x = y JOIN d_z ON y = z
+SETTINGS query_plan_optimize_join_order_algorithm = 'greedy', query_plan_optimize_join_order_limit = 10;
