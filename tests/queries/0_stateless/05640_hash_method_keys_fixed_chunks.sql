@@ -170,6 +170,10 @@ SETTINGS join_algorithm = 'hash';
 SELECT 'left join hash with an ON filter on the probe a, b, c', count(), sum(cityHash64(toString((l.a, l.q, r.k)))) FROM t_keys_fixed_chunks AS l
 LEFT JOIN (SELECT DISTINCT a, b, c, a % 5 AS k FROM t_keys_fixed_chunks WHERE q = 1) AS r ON l.a = r.a AND l.b = r.b AND l.c = r.c AND l.a % 100 = 0
 SETTINGS join_algorithm = 'hash';
+-- A nullable key without NULLs, a residual condition and a build too small to prefetch: the probe is resumed many times.
+SELECT 'left join hash resumed with a residual condition a, b, toNullable(c)', count(), sum(cityHash64(toString((l.a, l.q, r.q)))) FROM t_keys_fixed_chunks AS l
+LEFT JOIN (SELECT a, b, c, q FROM t_keys_fixed_chunks WHERE a < 1000) AS r ON l.a = r.a AND l.b = r.b AND toNullable(l.c) = r.c AND l.q < r.q
+SETTINGS join_algorithm = 'hash', hash_join_layout = 'serial', max_joined_block_size_rows = 100;
 SELECT 'in order a, c32, b', count(), sum(cityHash64(toString((a, c32, b, n)))) FROM
 (SELECT a, c32, b, count() AS n FROM t_keys_fixed_chunks_in_order GROUP BY a, c32, b)
 SETTINGS optimize_aggregation_in_order = 1, optimize_read_in_order = 1, max_threads = 1;

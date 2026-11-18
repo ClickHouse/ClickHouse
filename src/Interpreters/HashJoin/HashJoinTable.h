@@ -265,24 +265,26 @@ ColumnsHashing::RowRange
 joinKeyRows(ConstNullMapPtr null_map, const JoinCommon::JoinMask & join_mask, const Selector & selector, bool prefetches)
 {
     ColumnsHashing::RowRange rows = joinKeyRows(selector);
-    rows.skips_rows = rows.skips_rows || join_mask.getKind() != JoinCommon::JoinMask::Kind::AllTrue
-        || (null_map && !memoryIsZero(null_map->data(), rows.begin, rows.end));
+    rows.skips_rows = rows.skips_rows || join_mask.getKind() != JoinCommon::JoinMask::Kind::AllTrue;
+    if constexpr (std::is_same_v<Selector, ScatteredBlock::Selector::Range>)
+    {
+        /// A probe resumed for the rest of its block, which it can be after every few rows, reads none of the rest here: a
+        /// nullable key counts as skipping rows, so a getter that packs in chunks and does not prefetch packs them one by one.
+        if (selector.first != 0)
+        {
+            rows.skips_rows = rows.skips_rows || null_map != nullptr;
+            if constexpr (requires { KeyGetter::packs_in_chunks; })
+                rows.asks_few_rows = KeyGetter::packs_in_chunks && rows.skips_rows && !prefetches;
+            return rows;
+        }
+    }
+    rows.skips_rows = rows.skips_rows || (null_map && !memoryIsZero(null_map->data(), rows.begin, rows.end));
     if constexpr (requires { KeyGetter::packs_in_chunks; })
     {
         if constexpr (KeyGetter::packs_in_chunks)
         {
             if (rows.skips_rows && !prefetches)
             {
-                /// A probe resumed for the rest of its block, which it can be after every few rows, packs per row rather
-                /// than count the rest again.
-                if constexpr (std::is_same_v<Selector, ScatteredBlock::Selector::Range>)
-                {
-                    if (selector.first != 0)
-                    {
-                        rows.asks_few_rows = true;
-                        return rows;
-                    }
-                }
                 size_t joined_rows = 0;
                 if constexpr (std::is_same_v<Selector, ScatteredBlock::Selector>)
                     joined_rows = selector.isContinuousRange() ? countJoinedRows(null_map, join_mask, selector.getRange())
