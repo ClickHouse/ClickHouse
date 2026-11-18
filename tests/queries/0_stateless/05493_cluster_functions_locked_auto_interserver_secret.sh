@@ -24,7 +24,7 @@ COLLECTIONS="url_structure url_structure_rev url_format s3_structure s3_format s
 function cleanup()
 {
     $CLICKHOUSE_CLIENT -q "DROP VIEW IF EXISTS v_url_05493; DROP VIEW IF EXISTS v_s3_05493; DROP VIEW IF EXISTS v_off_05493"
-    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS dst_05493"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS dst_05493; DROP TABLE IF EXISTS runner_05493"
     for nc in $COLLECTIONS; do
         $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS ${NC}_${nc}"
     done
@@ -190,6 +190,20 @@ expect_locked structure --query_kind secondary_query -q "SELECT * FROM urlCluste
 expect_locked structure --query_kind secondary_query -q "SELECT * FROM s3Cluster('${SECRET}', ${NC}_s3_structure, structure = 'id UInt32')"
 echo "--- in a secondary query that reports the interserver interface without the secret ---"
 python3 "$CUR_DIR"/05493_cluster_functions_locked_auto_interserver_secret.python "${SECRET}" "${NC}"
+echo "--- in an initial query sent with the secret ---"
+# A `QueryRunner` table of a cluster with a secret sends its jobs as initial queries over the authenticated connection.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE runner_05493 (query String) ENGINE = QueryRunner SETTINGS cluster = '${SECRET}', mode = 'synchronous'"
+RUN=$(random_str 8)
+for fn in url s3; do
+    $CLICKHOUSE_CLIENT -q "INSERT INTO runner_05493 VALUES
+        ('SELECT ''${RUN}'', * FROM ${fn}Cluster(''${SECRET}'', ${NC}_${fn}_structure, structure = ''id UInt32'') FORMAT Null')"
+done
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+$CLICKHOUSE_CLIENT -q "
+    SELECT type, exception LIKE '%Override not allowed for ''structure''%' FROM system.query_log
+    WHERE event_date >= yesterday() AND is_initial_query AND interface = 'TCP_Interserver' AND type != 'QueryStart'
+        AND query LIKE '%${RUN}%'
+    ORDER BY query"
 echo "--- in a function that is not a cluster function, forwarded with the secret ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE VIEW v_url_05493 AS SELECT * FROM url(${NC}_url_late, structure = 'id UInt32');
