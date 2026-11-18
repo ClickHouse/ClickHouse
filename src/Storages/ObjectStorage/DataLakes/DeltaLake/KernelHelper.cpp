@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <ranges>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -62,7 +63,7 @@ namespace
 /// `MD5(...)` bytes) is rejected with a clear `BAD_ARGUMENTS` naming the option, instead of the
 /// opaque `DELTA_KERNEL_ERROR` the FFI would otherwise return. The FFI also propagates the error
 /// (rather than aborting), so `unwrapResult` still guards keys and any future decode failure.
-void setBuilderOption(ffi::EngineBuilder * builder, const std::string & name, const std::string & value)
+void setBuilderOption(ffi::EngineBuilder * builder, const std::string & name, std::string_view value)
 {
     if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
         throw DB::Exception(
@@ -164,9 +165,9 @@ public:
         const auto & credentials = object_storage->getS3StorageClient()->getCredentials();
 
         SipHash hash;
-        hash.update(credentials.GetAWSAccessKeyId());
-        hash.update(credentials.GetAWSSecretKey());
-        hash.update(credentials.GetSessionToken());
+        hash.update(std::string_view(credentials.GetAWSAccessKeyId()));
+        hash.update(std::string_view(credentials.GetAWSSecretKey()));
+        hash.update(std::string_view(credentials.GetSessionToken()));
         auto fp = hash.get128();
         /// Simulates a credentials rotation between consecutive reads of the same cached
         /// snapshot. Deterministic XOR keeps the perturbed value stable while the failpoint
@@ -192,7 +193,7 @@ public:
             "get_engine_builder");
         BuilderGuard guard(builder);
 
-        auto set_option = [&](const std::string & name, const std::string & value)
+        auto set_option = [&](const std::string & name, std::string_view value)
         {
             setBuilderOption(builder, name, value);
         };
@@ -207,6 +208,9 @@ public:
         /// https://github.com/apache/arrow-rs-object-store/blob/main/src/aws/builder.rs#L446
         if (!access_key_id.empty())
             set_option("aws_access_key_id", access_key_id);
+        /// TODO(mstetsyuk): the kernel copies the value into an owned Rust `String` that `object_store`
+        /// keeps for the engine's lifetime, so the secret is dumpable here. Needs a credential callback
+        /// in the delta-kernel-rs FFI (`AmazonS3Builder::with_credentials`) to keep only per-request copies.
         if (!secret_access_key.empty())
             set_option("aws_secret_access_key", secret_access_key);
 
@@ -222,7 +226,7 @@ public:
 
         set_option("aws_bucket", url.bucket);
 
-        if (url.uri_str.starts_with("http"))
+        if (std::string_view(url.uri_str).starts_with("http"))
         {
             set_option("allow_http", "true");
             set_option("aws_endpoint", url.endpoint);
@@ -243,7 +247,7 @@ public:
                 set_option("aws_sse_customer_key_base64", header.value);
                 has_sse_customer_key = true;
             }
-            else if (boost::iequals(header.name, "x-amz-request-payer") && boost::iequals(header.value, "requester"))
+            else if (boost::iequals(header.name, "x-amz-request-payer") && boost::iequals(std::string_view(header.value), "requester"))
             {
                 set_option("aws_request_payer", "true");
                 request_payer = true;
@@ -501,6 +505,44 @@ public:
 
     [[nodiscard]] const std::string & getDataPath() const override { return data_path; }
 
+    /// The Azure object storage resolves a key inside the container and the endpoint prefix of the table. The table's
+    /// checks (the credentials, the source grant) cover the table's location only.
+    std::string resolveDataFilePath(const std::string & path, const DB::ContextPtr & context) const override
+    {
+        auto qualified = DB::trySplitFullyQualifiedObjectPath(path);
+        if (!qualified)
+            return IKernelHelper::resolveDataFilePath(path, context);
+
+        /// `<container>@<account>.<host>`, as Hadoop writes `abfss://` and `wasbs://` URIs.
+        const std::string_view authority = qualified->object_namespace;
+        const size_t at = authority.find('@');
+        const std::string_view container = authority.substr(0, at);
+        const std::string_view account
+            = at == std::string_view::npos ? "" : authority.substr(at + 1, authority.find('.', at) - at - 1);
+
+        std::string prefix = connection_params.endpoint.prefix;
+        if (!prefix.empty() && !prefix.ends_with('/'))
+            prefix += '/';
+        const std::string key = DB::unescapeForFileName(std::string(qualified->key));
+        /// Azure may resolve dot and empty segments on access.
+        const bool has_unsafe_segment = std::ranges::any_of(std::views::split(std::string_view(key), '/'), [](const auto & segment)
+        {
+            const std::string_view name(segment.begin(), segment.end());
+            return name.empty() || name == "." || name == "..";
+        });
+
+        const std::string_view scheme = qualified->scheme;
+        const bool is_own_scheme = scheme == "abfss" || scheme == "abfs" || scheme == "wasbs" || scheme == "wasb";
+        if (!is_own_scheme || container != connection_params.endpoint.container_name || account.empty()
+            || account != getAccountName() || !key.starts_with(prefix) || has_unsafe_segment)
+            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
+                "Data file `{}` of the Delta Lake table is not in the container `{}` of the table",
+                path, connection_params.endpoint.container_name);
+        context->getAccess()->checkAccessWithFilter(
+            DB::AccessType::READ, DB::AccessTypeObjects::toStringSource(DB::AccessTypeObjects::Source::AZURE), /* filter */ "");
+        return key.substr(prefix.size());
+    }
+
     [[nodiscard]] ffi::EngineBuilder * createBuilder() const override
     {
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
@@ -526,6 +568,21 @@ private:
     const std::string table_location;
     const std::string data_path;
     const LoggerPtr log = getLogger("AzureKernelHelper");
+
+    mutable std::once_flag account_name_once;
+    mutable std::string account_name;
+
+    /// The account the kernel reads the table from, empty when the configuration names none.
+    const std::string & getAccountName() const
+    {
+        std::call_once(account_name_once, [this]
+        {
+            for (const auto & [name, value] : getAzureBuilderOptions(connection_params))
+                if (name == "azure_storage_account_name")
+                    account_name = value;
+        });
+        return account_name;
+    }
 
     /// `blob_path` may carry a leading slash (e.g. from a disk-based configuration),
     /// which Azure would keep as a part of the blob name. Strip it so that the data
@@ -624,7 +681,7 @@ namespace DB
 namespace S3AuthSetting
 {
     extern const S3AuthSettingsString access_key_id;
-    extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsSecretString secret_access_key;
     extern const S3AuthSettingsString region;
 }
 
