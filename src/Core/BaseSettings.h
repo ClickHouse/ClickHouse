@@ -61,6 +61,8 @@ struct BaseSettingsHelpers
     [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name);
     [[noreturn]] static void throwValuelessSettingHasValue(std::string_view name);
     static void warningSettingNotFound(std::string_view name);
+    /// Returns true (and logs a warning) if `e` is `BAD_ARGUMENTS` or a parse error (`isParseError`); other errors are not skipped.
+    static bool skipInvalidSettingValue(std::string_view name, const Exception & e);
     static void flushWarnings();
 
     /// The value as it is echoed in the "while setting '<name>' to value <value>" context of a rejected value.
@@ -247,16 +249,16 @@ public:
     void setCustom(std::string_view name, const Field & value);
 
     /// Get the value of a setting
-    Field get(std::string_view name) const;
+    [[nodiscard]] Field get(std::string_view name) const;
 
     /// Try to get a setting value; returns false if setting doesn't exist
     bool tryGet(std::string_view name, Field & value) const;
 
     /// Check if a setting has been changed from its default value
-    bool isChanged(std::string_view name) const;
+    [[nodiscard]] bool isChanged(std::string_view name) const;
 
     /// Get all changed settings as a SettingsChanges struct
-    SettingsChanges changes() const;
+    [[nodiscard]] SettingsChanges changes() const;
 
     /// Apply a single setting change
     void applyChange(const SettingChange & change);
@@ -284,25 +286,25 @@ public:
     void markUnchanged(std::string_view name);
 
     /// Check if a setting exists (either built-in or custom)
-    bool has(std::string_view name) const { return hasBuiltin(name) || hasCustom(name); }
+    [[nodiscard]] bool has(std::string_view name) const { return hasBuiltin(name) || hasCustom(name); }
 
     /// Check if a built-in setting exists (excludes custom settings)
     static bool hasBuiltin(std::string_view name);
 
     /// Check if a custom setting exists
-    bool hasCustom(std::string_view name) const;
+    [[nodiscard]] bool hasCustom(std::string_view name) const;
 
     /// Get the type name of a setting (e.g., "UInt64", "String")
-    std::string_view getTypeName(std::string_view name) const;
+    [[nodiscard]] std::string_view getTypeName(std::string_view name) const;
 
     /// Get the default value of a setting as a string
-    String getDefaultValueString(std::string_view name) const;
+    [[nodiscard]] String getDefaultValueString(std::string_view name) const;
 
     /// Get the description of a setting
-    std::string_view getDescription(std::string_view name) const;
+    [[nodiscard]] std::string_view getDescription(std::string_view name) const;
 
     /// Get the tier (PRODUCTION/BETA/PRIVATE_PREVIEW/EXPERIMENTAL) of a setting
-    SettingsTierType getTier(std::string_view name) const;
+    [[nodiscard]] SettingsTierType getTier(std::string_view name) const;
 
     /// Tier of a built-in setting. Unlike `getTier`, ignores custom settings and returns nullopt instead of throwing when no setting exists.
     static std::optional<SettingsTierType> tryGetTierOfBuiltin(std::string_view name);
@@ -324,7 +326,8 @@ public:
     void write(WriteBuffer & out) const;
 
     /// Read settings written by `write`.
-    void read(ReadBuffer & in);
+    /// With `skip_invalid_values`, a non-important setting whose value is rejected keeps its default instead of failing the read.
+    void read(ReadBuffer & in, bool skip_invalid_values = false);
 
     /// Write only changed settings in binary format.
     /// Used for serialization of object storage settings (`S3Settings`, `DataLakeStorageSettings`),
@@ -342,27 +345,27 @@ public:
     /// Returns true if some setting with the AFFECTS_CLIENT flag is changed in `new_settings` and has a different value
     /// than in `this`. Mirrors the semantics of the `updateIfChanged` methods of the settings wrappers (only the settings
     /// changed in `new_settings` are applied): tells whether applying `new_settings` requires rebuilding the client.
-    bool hasChangesAffectingClient(const BaseSettings & new_settings) const;
+    [[nodiscard]] bool hasChangesAffectingClient(const BaseSettings & new_settings) const;
 
     /// Convert all settings to a human-readable string (for debugging)
-    std::string toString() const;
+    [[nodiscard]] std::string toString() const;
 
     /// Represents a reference to a setting field.
     class SettingFieldRef
     {
     public:
-        const String & getName() const;
-        std::string_view getPath() const;
-        Field getValue() const;
+        [[nodiscard]] const String & getName() const;
+        [[nodiscard]] std::string_view getPath() const;
+        [[nodiscard]] Field getValue() const;
         void setValue(const Field & value);
-        String getValueString(bool show_secrets) const;
-        String getDefaultValueString(bool show_secrets) const;
-        bool isValueChanged() const;
-        std::string_view getTypeName() const;
-        std::string_view getDescription() const;
-        bool isCustom() const;
-        SettingsTierType getTier() const;
-        bool isHotReload() const;
+        [[nodiscard]] String getValueString(bool show_secrets) const;
+        [[nodiscard]] String getDefaultValueString(bool show_secrets) const;
+        [[nodiscard]] bool isValueChanged() const;
+        [[nodiscard]] std::string_view getTypeName() const;
+        [[nodiscard]] std::string_view getDescription() const;
+        [[nodiscard]] bool isCustom() const;
+        [[nodiscard]] SettingsTierType getTier() const;
+        [[nodiscard]] bool isHotReload() const;
 
         bool operator==(const SettingFieldRef & other) const { return (getName() == other.getName()) && (getValue() == other.getValue()); }
         bool operator!=(const SettingFieldRef & other) const { return !(*this == other); }
@@ -411,8 +414,8 @@ public:
     {
     public:
         Range(BaseSettings & settings_, SkipFlags skip_flags_) : settings(settings_), accessor(Traits::Accessor::instance()), skip_flags(skip_flags_) {}
-        Iterator begin() const { return Iterator(settings, accessor, skip_flags); }
-        Iterator end() const { return Iterator(settings, accessor, SKIP_ALL); }
+        [[nodiscard]] Iterator begin() const { return Iterator(settings, accessor, skip_flags); }
+        [[nodiscard]] Iterator end() const { return Iterator(settings, accessor, SKIP_ALL); }
 
     private:
         BaseSettings & settings;
@@ -433,18 +436,18 @@ public:
         SkipFlags skip_flags;
     };
 
-    Range all(SkipFlags skip_flags = SKIP_NONE) const { return Range{const_cast<BaseSettings<Traits> &>(*this), skip_flags}; }
+    [[nodiscard]] Range all(SkipFlags skip_flags = SKIP_NONE) const { return Range{const_cast<BaseSettings<Traits> &>(*this), skip_flags}; }
     MutableRange allMutable(SkipFlags skip_flags = SKIP_NONE) { return MutableRange{*this, skip_flags}; }
-    Range allChanged() const { return all(SKIP_UNCHANGED); }
-    Range allUnchanged() const { return all(SKIP_CHANGED); }
+    [[nodiscard]] Range allChanged() const { return all(SKIP_UNCHANGED); }
+    [[nodiscard]] Range allUnchanged() const { return all(SKIP_CHANGED); }
 
-    Iterator begin() const { return allChanged().begin(); }
-    Iterator end() const { return allChanged().end(); }
+    [[nodiscard]] Iterator begin() const { return allChanged().begin(); }
+    [[nodiscard]] Iterator end() const { return allChanged().end(); }
 
 private:
     SettingFieldCustom & getCustomSetting(std::string_view name);
-    const SettingFieldCustom & getCustomSetting(std::string_view name) const;
-    const SettingFieldCustom * tryGetCustomSetting(std::string_view name) const;
+    [[nodiscard]] const SettingFieldCustom & getCustomSetting(std::string_view name) const;
+    [[nodiscard]] const SettingFieldCustom * tryGetCustomSetting(std::string_view name) const;
 
 protected:
     std::conditional_t<Traits::allow_custom_settings, CustomSettingMap, boost::blank> custom_settings_map;
@@ -836,7 +839,7 @@ void BaseSettings<TTraits>::readBinary(ReadBuffer & in)
 }
 
 template <typename TTraits>
-void BaseSettings<TTraits>::read(ReadBuffer & in)
+void BaseSettings<TTraits>::read(ReadBuffer & in, bool skip_invalid_values)
 {
     resetToDefault();
     const auto & accessor = Traits::Accessor::instance();
@@ -871,7 +874,20 @@ void BaseSettings<TTraits>::read(ReadBuffer & in)
                 accessor.setValue(*this, index, static_cast<Field>(temp));
             }
             else
-                accessor.setValueString(*this, index, BaseSettingsHelpers::readString(in));
+            {
+                String value = BaseSettingsHelpers::readString(in);
+                try
+                {
+                    accessor.setValueString(*this, index, value);
+                }
+                catch (const Exception & e)
+                {
+                    if (!skip_invalid_values || is_important || !BaseSettingsHelpers::skipInvalidSettingValue(name, e))
+                        throw;
+                    /// A failed parse may have assigned the field already.
+                    accessor.resetValueToDefault(*this, index);
+                }
+            }
         }
         else if (is_important)
         {
