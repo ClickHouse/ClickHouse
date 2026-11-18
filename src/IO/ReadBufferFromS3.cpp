@@ -629,10 +629,14 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     req.SetKey(key);
     if (!version_id.empty())
         req.SetVersionId(version_id);
+
+    /// A real version id pins the GET to an immutable generation; the null version does not: an upload
+    /// overwrites it in place in an unversioned or versioning-suspended bucket.
+    const bool pinned_by_version_id = !version_id.empty() && version_id != "null";
+
     /// Pin the GET to the generation seen at read setup via If-Match, so an in-place overwrite is
-    /// rejected with 412 instead of transferring torn cross-generation bytes. Only for non-versioned
-    /// reads with a known expected_etag.
-    else if (!expected_etag.empty())
+    /// rejected with 412 instead of transferring torn cross-generation bytes.
+    if (!pinned_by_version_id && !expected_etag.empty())
         req.SetIfMatch(expected_etag);
 
     S3::setClickHouseAttemptNumber(req, attempt);
@@ -689,9 +693,8 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
         fiu_do_on(FailPoints::s3_read_inject_etag_mismatch, { response_etag = "<injected-etag-mismatch>"; });
 
         /// Defense-in-depth for backends that ignore If-Match and return the new bytes with 200: reject
-        /// on ETag drift. Skip ?versionId= reads (pinned to an immutable version that expected_etag,
-        /// taken from the current version, would falsely mismatch) and empty response ETags.
-        if (version_id.empty() && !expected_etag.empty() && !response_etag.empty() && response_etag != expected_etag)
+        /// on ETag drift. Skip GETs pinned by their version id and empty response ETags.
+        if (!pinned_by_version_id && !expected_etag.empty() && !response_etag.empty() && response_etag != expected_etag)
             throw Exception(
                 ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
                 "S3 object {}/{} was replaced during read (etag changed from {} to {}); "
@@ -700,7 +703,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
 
         /// With only the hash there is no If-Match, so nothing else pins this GET: an empty response
         /// ETag fails too.
-        if (version_id.empty() && expected_etag_hash && getETagHash(response_etag) != expected_etag_hash)
+        if (!pinned_by_version_id && expected_etag_hash && getETagHash(response_etag) != expected_etag_hash)
             throw Exception(
                 ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
                 "S3 object {}/{} was replaced during read (expected etag hash {}, got etag {}); retry the query",
@@ -734,7 +737,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     /// Map the If-Match 412 to the same non-retryable S3_OBJECT_CHANGED_DURING_READ as the success-path
     /// comparison (a generic S3 error would be retried by processException). Must map here from the raw
     /// error: S3Exception keeps only the Aws S3Errors code, not the HTTP 412 status.
-    if (version_id.empty() && !expected_etag.empty()
+    if (!pinned_by_version_id && !expected_etag.empty()
         && error.GetResponseCode() == Aws::Http::HttpResponseCode::PRECONDITION_FAILED)
         throw Exception(
             ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
