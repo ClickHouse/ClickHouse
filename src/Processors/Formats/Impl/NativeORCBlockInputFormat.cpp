@@ -1095,15 +1095,15 @@ struct ORCRowGroupFilterColumn
     UInt64 orc_column_id;
     /// What the reader returns for NULL when it is not NULL (`input_format_null_as_default`).
     std::optional<Field> null_value;
-    std::vector<UInt64> ancestors;
+    VectorWithMemoryTracking<UInt64> ancestors;
 };
 
 }
 
 /// The ids of the columns strictly between `root` and its descendant `column`.
-static std::vector<UInt64> getORCAncestorColumnIds(const ORC::Type & root, const ORC::Type & column)
+static VectorWithMemoryTracking<UInt64> getORCAncestorColumnIds(const ORC::Type & root, const ORC::Type & column)
 {
-    std::vector<UInt64> ancestors;
+    VectorWithMemoryTracking<UInt64> ancestors;
     const ORC::Type * node = &root;
     while (node != &column)
     {
@@ -1166,7 +1166,7 @@ static ORC::RowGroupFilter buildORCRowGroupFilter(
         key_types[key_column] = key->type;
     }
 
-    std::vector<ORCRowGroupFilterColumn> columns;
+    VectorWithMemoryTracking<ORCRowGroupFilterColumn> columns;
     for (size_t key_column : key_condition->getUsedColumnsInOrder())
     {
         const String & name = key_names[key_column];
