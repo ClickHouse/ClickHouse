@@ -115,6 +115,9 @@ struct JoinSettings
     UInt64 max_size_to_preallocate_for_joins;
     UInt64 parallel_hash_join_threshold;
     HashJoinLayout hash_join_layout;
+    /// Local acceleration only: capture the query scope, but keep received plans on ordinary lookup.
+    /// This setting is not written to `QueryPlanSerializationSettings`.
+    UInt64 experimental_join_fingerprint_mode = 0;
     UInt64 join_output_by_rowlist_perkey_rows_threshold;
     bool allow_experimental_join_right_table_sorting;
     UInt64 join_to_sort_minimum_perkey_rows;

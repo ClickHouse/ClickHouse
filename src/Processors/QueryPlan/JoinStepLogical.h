@@ -153,6 +153,8 @@ public:
     /// `tryAddJoinRuntimeFilter`.
     [[nodiscard]] bool isRuntimeFilterDeclinedForSmallProbe() const { return runtime_filter_declined_small_probe; }
     void setRuntimeFilterDeclinedForSmallProbe() { runtime_filter_declined_small_probe = true; }
+    /// Planning only; retain this decision when physical join construction is deferred.
+    void invalidateAutoFingerprintProbeEstimate();
     [[nodiscard]] std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
     [[nodiscard]] std::optional<double> getEstimatedCost() const { return estimated_cost; }
     [[nodiscard]] std::optional<double> getEstimatedSelectivity() const { return estimated_selectivity; }
@@ -299,6 +301,9 @@ protected:
     bool runtime_filter_declined_small_probe = false;
 
     /// Runtime info, do not serialize
+
+    /// Reconstructed from actual filter and limit steps when a received plan is optimized.
+    bool auto_fingerprint_probe_estimate_disabled = false;
 
     std::optional<UInt64> result_rows_estimation = {};
     std::optional<double> estimated_cost = {};

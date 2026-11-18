@@ -1262,7 +1262,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         }
 
         return HashJoin::create(
-            table_join, right_table_expression_header, build_layout, params.join_any_take_last_row, stats_collecting_params);
+            table_join, right_table_expression_header, build_layout, params.join_any_take_last_row, stats_collecting_params, params.probe_rows_estimation);
     }
 
     /// `parallel_full_sorting_merge` uses the same `FullSortingMergeJoin`; the optimizer turns it into a

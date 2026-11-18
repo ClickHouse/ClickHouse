@@ -1,12 +1,20 @@
+#include <Functions/IFunction.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -64,6 +72,88 @@ extern const int PROJECTION_NOT_USED;
 
 namespace QueryPlanOptimizations
 {
+
+static bool containsRuntimeFilter(const ActionsDAG & actions)
+{
+    return std::ranges::any_of(actions.getNodes(), [](const auto & node)
+    {
+        return node.function_base && node.function_base->getName() == "__applyFilter";
+    });
+}
+
+static bool containsRuntimeFilter(const IQueryPlanStep & step)
+{
+    if (typeid_cast<const BuildRuntimeFilterStep *>(&step))
+        return true;
+    if (const auto * filter = typeid_cast<const FilterStep *>(&step))
+        return containsRuntimeFilter(filter->getExpression());
+    if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
+        return containsRuntimeFilter(expression->getExpression());
+    if (const auto * source = typeid_cast<const SourceStepWithFilterBase *>(&step))
+    {
+        if (const auto & filter = source->getFilterActionsDAG(); filter && containsRuntimeFilter(*filter))
+            return true;
+        if (const auto prewhere = source->getPrewhereInfo(); prewhere && containsRuntimeFilter(prewhere->prewhere_actions))
+            return true;
+        if (const auto filter = source->getRowLevelFilter(); filter && containsRuntimeFilter(filter->actions))
+            return true;
+    }
+    return false;
+}
+
+static bool containsFilterAffectingProbeBudget(const IQueryPlanStep & step)
+{
+    if (typeid_cast<const FilterStep *>(&step))
+        return true;
+    if (const auto * source = typeid_cast<const SourceStepWithFilterBase *>(&step))
+    {
+        if (const auto & filter = source->getFilterActionsDAG(); filter && !filter->getNodes().empty())
+            return true;
+        if (const auto prewhere = source->getPrewhereInfo(); prewhere && !prewhere->prewhere_actions.getNodes().empty())
+            return true;
+        if (const auto filter = source->getRowLevelFilter(); filter && !filter->actions.getNodes().empty())
+            return true;
+    }
+    return false;
+}
+
+static void invalidateAutoFingerprintProbeEstimates(QueryPlan::Node & root, bool runtime_filters_added)
+{
+    /// Nested queries can choose a different fingerprint mode from the outer query.
+    /// Inspect each join's captured settings instead of the thread's outer context.
+    Stack stack;
+    bool probe_budget_invalid = runtime_filters_added;
+    traverseQueryPlan(stack, root, [&](const auto & node)
+    {
+        probe_budget_invalid |= containsRuntimeFilter(*node.step)
+            || containsFilterAffectingProbeBudget(*node.step)
+            || typeid_cast<const LimitStep *>(node.step.get()) != nullptr;
+    });
+    if (!probe_budget_invalid)
+        return;
+
+    /// An ancestor's runtime filter can be pushed through an already physical child join.
+    /// Decline automatic lookup selection throughout this plan rather than treating a pre-filter
+    /// estimate as its remaining probe budget. Other planner and hash-table estimates are unchanged.
+    /// A `LimitStep` can likewise stop probing before an otherwise accurate input estimate is consumed.
+    /// Ordinary filters are also excluded: for example, the `Memory` row estimate can retain the
+    /// unfiltered storage row count, which does not establish enough probes to amortize index preparation.
+    traverseQueryPlan(stack, root, [](auto & node)
+    {
+        if (auto * logical = typeid_cast<JoinStepLogical *>(node.step.get()))
+        {
+            if (logical->getJoinSettings().experimental_join_fingerprint_mode == 4)
+                logical->invalidateAutoFingerprintProbeEstimate();
+        }
+        else if (const auto * physical = typeid_cast<const JoinStep *>(node.step.get()))
+        {
+            if (auto * hash_join = typeid_cast<HashJoin *>(physical->getJoin().get());
+                hash_join && hash_join->getTableJoin().getFingerprintMode() == 4)
+                hash_join->invalidateAutoFingerprintProbeEstimate();
+        }
+    });
+}
+
 
 /// A pass that runs an optimization has to hand it the query's real settings. A default-constructed
 /// `ExtraSettings` reads every field as zero, which silently turns the gated behaviour off - a filter that
@@ -449,6 +539,8 @@ void optimizeTreeSecondPass(
                 || optimization_settings.join_seal_gated_reading))
             traverseQueryPlan(stack, root, [&](auto &) { collectAppliedJoinRuntimeFilters(stack); });
     }
+
+    invalidateAutoFingerprintProbeEstimates(root, join_runtime_filters_were_added);
 
     /// The runtime `FilterStep`s added and pushed down just above are invisible to the
     /// `updateQueryConditionCache` walk at the beginning of this function, but they change the
@@ -1065,6 +1157,9 @@ void optimizeTreeSecondPass(
 
     /// Last: it reads the final consumers of every remote read.
     allowReadingShardsFromSeveralReplicas(root);
+
+    /// Later rewrites can add filters after physical join construction. Recheck the final probe budget.
+    invalidateAutoFingerprintProbeEstimates(root, join_runtime_filters_were_added);
 }
 
 void addStepsToBuildSets(

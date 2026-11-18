@@ -10882,6 +10882,12 @@ Enable converting the hash table to a flat array for joins when the key is a sin
 Use hash tables that store the join keys alone, without a reference to a right row, for joins whose result can never contain a value taken from a right row: `LEFT ANTI`, and `LEFT SEMI` when no right column is selected. Such a table has a smaller cell and lets the right blocks be dropped instead of stored.
 )", 0, \
         {"26.9", false, true, "New setting to store the join keys alone, without a reference to a right row, in the hash tables of joins whose result can never contain a value taken from a right row (`LEFT ANTI`, and `LEFT SEMI` when no right column is selected)."}) \
+    DECLARE(UInt64, experimental_join_fingerprint_mode, 4, R"(
+Experimental fingerprint lookup for single-key 64-bit numeric hash joins. `0` keeps ordinary lookup; `1` uses a scalar fingerprint index; `2` compares fingerprint tags with SIMD; `4` automatically selects SIMD fingerprints for eligible Arm `ALL INNER JOIN` and `LEFT SEMI JOIN` operations using an estimated probe-row count, actual table capacity and a bounded key-presence sample.
+
+All modes retain ordinary scalar construction and placement. Automatic mode preserves fixed-table conversion, requires enough estimated probes to amortize preparation, and stops using the index if subsequent block samples have many matches. It declines unsupported keys, layouts and ownership paths, and plans with filtering or early termination that invalidate the probe budget. The sample cannot guarantee that later input has similar presence or reuse; repeated absent keys and phase changes can make this mode slower. Value `3` is not supported.
+)", EXPERIMENTAL, \
+        {"26.11", 0, 4, "New setting. Enable automatic fingerprint lookup for experimental comparison."}) \
     DECLARE(Bool, enable_robin_hood_hash_for_joins, false, R"(
 Allow the hash tables of a hash join that splits its hash table into parts (see `hash_join_layout`) to switch to the Robin Hood mode when they become large, as the hash tables of aggregation do. A right table with more than about 8 million keys then takes up to two times less memory for its hash table, but the lookups of the join can be slower, depending on the keys.
 )", 0, \
