@@ -77,6 +77,30 @@ upload "gs/_delta_log/00000000000000000000.json" "$DIR/s3_gs/_delta_log/00000000
 $CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM deltaLake(s3_conn, filename = '$S3_DIR/gs/')" 2>&1 \
     | grep -o -m1 -E 'is not in the bucket|NOT_IMPLEMENTED'
 
+AZURE="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;"
+upload_azure()
+{
+    $CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION azureBlobStorage('$AZURE', 'cont', '$S3_DIR/$1', 'RawBLOB') SELECT * FROM file('$2', 'RawBLOB')"
+}
+# A clone named $1 whose data file is the source's, at the source directory URI $2.
+azure_clone()
+{
+    write_clone_log "$DIR/azure_$1" "$2/$PARQUET"
+    upload_azure "azure_$1/_delta_log/00000000000000000000.json" "$DIR/azure_$1/_delta_log/00000000000000000000.json"
+    $CLICKHOUSE_CLIENT -q "SELECT sum(value), count() FROM deltaLakeAzure('$AZURE', 'cont', '$S3_DIR/azure_$1/')" 2>&1 \
+        | grep -o -m1 -E '^[0-9]+[[:space:]][0-9]+$|is not in the container|NOT_IMPLEMENTED'
+}
+upload_azure "azure_src/$PARQUET" "$SRC/$PARQUET"
+echo '-- azure, abfss:// and wasbs:// URIs'
+azure_clone abfss "abfss://cont@devstoreaccount1.dfs.core.windows.net/$S3_DIR/azure_src"
+azure_clone wasbs "wasbs://cont@devstoreaccount1.blob.core.windows.net/$S3_DIR/azure_src"
+echo '-- azure, another container, another account, s3a:// scheme, a dot segment, an empty segment'
+azure_clone container "abfss://other@devstoreaccount1.dfs.core.windows.net/$S3_DIR/azure_src"
+azure_clone account "abfss://cont@other.dfs.core.windows.net/$S3_DIR/azure_src"
+azure_clone scheme "s3a://cont@devstoreaccount1.dfs.core.windows.net/$S3_DIR/azure_src"
+azure_clone dot "abfss://cont@devstoreaccount1.dfs.core.windows.net/$S3_DIR/x/../azure_src"
+azure_clone empty "abfss://cont@devstoreaccount1.dfs.core.windows.net/$S3_DIR//azure_src"
+
 echo '-- a user granted only the clone'
 user="u_05618_${CLICKHOUSE_DATABASE}"
 s3_clone="http://localhost:11111/test/$S3_DIR/clone/"
@@ -85,11 +109,12 @@ $CLICKHOUSE_CLIENT --multiquery -q "
 CREATE USER $user;
 GRANT CREATE TEMPORARY TABLE ON *.* TO $user;
 GRANT READ ON FILE('${USER_DIR}_clone.*') TO $user;
-GRANT READ ON S3('$s3_clone.*') TO $user;"
-for f in "deltaLakeLocal('${USER_DIR}_clone')" "deltaLake('$s3_clone', 'test', 'testtest')"; do
+GRANT READ ON S3('$s3_clone.*') TO $user;
+GRANT READ ON AZURE('$S3_DIR/azure_abfss.*') TO $user;"
+for f in "deltaLakeLocal('${USER_DIR}_clone')" "deltaLake('$s3_clone', 'test', 'testtest')" "deltaLakeAzure('$AZURE', 'cont', '$S3_DIR/azure_abfss/')"; do
     $CLICKHOUSE_CLIENT --user "$user" -q "DESCRIBE $f" | cut -f1
     $CLICKHOUSE_CLIENT --user "$user" -q "SELECT sum(value) FROM $f" 2>&1 \
-        | grep -o -m1 -E 'necessary to have the grant READ ON (FILE|S3)'
+        | grep -o -m1 -E 'necessary to have the grant READ ON (FILE|S3|AZURE)'
 done
 $CLICKHOUSE_CLIENT -q "DROP USER $user"
 

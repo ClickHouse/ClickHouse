@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <limits>
 #include <mutex>
 #include <Common/Throttler.h>
@@ -63,7 +64,6 @@ public:
     /// Without locking, because sendCancel() does not change this number.
     size_t size() const override { return replica_states.size(); }
 
-    /// Without locking, because sendCancel() does not change the state of the replicas.
     bool hasActiveConnections() const override { return active_connection_count > 0; }
 
     void setReplicaInfo(ReplicaInfo value) override { replica_info = value; }
@@ -99,7 +99,8 @@ private:
     const Settings & settings;
 
     /// The current number of valid connections to the replicas of this shard.
-    size_t active_connection_count = 0;
+    /// Atomic: `hasActiveConnections` reads it without `cancel_mutex` while `receivePacket` runs on another thread.
+    std::atomic<size_t> active_connection_count = 0;
 
     std::vector<ReplicaState> replica_states;
     std::unordered_map<int, size_t> fd_to_replica_state_idx;

@@ -8,6 +8,7 @@
     "reference/settings/server-settings/settings/ai-function",
     "reference/settings/server-settings/settings/allow",
     "reference/settings/server-settings/settings/allow-experimental",
+    "reference/settings/server-settings/settings/amber-connections",
     "reference/settings/server-settings/settings/async-insert",
     "reference/settings/server-settings/settings/async-load",
     "reference/settings/server-settings/settings/asynchronous",
