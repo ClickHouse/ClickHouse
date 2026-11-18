@@ -909,6 +909,44 @@ TEST(ColumnsHashingPreparedKeys, KeysAreNotPackedInChunksForFewAskedRows)
         {"Nullable(UInt32), UInt64, UInt64", {4, 8, 8}, /*nullable=*/ true, num_long_rows});
 }
 
+/// The chunked state of a set of 16-byte keys has the keys of the state that packs the whole block, in any
+/// order of the asked rows, and holds at most one chunk when the rows are asked for in ascending order.
+TEST(ColumnsHashingPreparedKeys, ChunkedStateHasTheKeysOfTheWholeBlockState)
+{
+    auto check = [&]<typename State, typename Key>(const FixedWidthKeyColumns & keys)
+    {
+        using Chunked = ColumnsHashing::ChunkedState<State>;
+        static_assert(Chunked::packs_in_chunks && !State::packs_in_chunks);
+        static_assert(std::is_same_v<ColumnsHashing::SparseState<Chunked>, State>);
+        SCOPED_TRACE(keys.name);
+        Arena arena;
+        State whole(keys.columns, keys.sizes, nullptr);
+        for (const auto & [order_name, order] : askOrders(keys.rows))
+        {
+            SCOPED_TRACE(order_name);
+            Chunked state(keys.columns, keys.sizes, nullptr);
+            for (const size_t row : order)
+                ASSERT_EQ(state.getKeyHolder(row, arena), whole.getKeyHolder(row, arena)) << "row " << row;
+            if (order_name == "ascending")
+                ASSERT_LE(state.prepared_keys.size(), ColumnsHashing::maxBytesInKeyChunk() / sizeof(Key));
+        }
+
+        Chunked few(keys.columns, keys.sizes, nullptr, {.skips_rows = true, .asks_few_rows = true});
+        for (size_t row = 0; row < keys.rows; row += 7)
+            ASSERT_EQ(few.getKeyHolder(row, arena), whole.getKeyHolder(row, arena)) << "row " << row;
+        ASSERT_EQ(few.prepared_keys.capacity(), 0);
+    };
+
+    const size_t rows = 3 * ColumnsHashing::maxBytesInKeyChunk() / sizeof(UInt64) + 100;
+    check.template operator()<WholeBlockState, UInt128>({"UInt32, UInt64", {4, 8}, /*nullable=*/ false, rows});
+    check.template operator()<WholeBlockState, UInt128>({"UInt64, UInt64", {8, 8}, /*nullable=*/ false, rows});
+    check.template operator()<WholeBlockState, UInt128>({"FixedString(3), UInt8", {3, 1}, /*nullable=*/ false, rows});
+    check.template operator()<NullableWholeBlockState128, UInt128>({"Nullable(UInt32), UInt64", {4, 8}, /*nullable=*/ true, rows});
+
+    static_assert(std::is_same_v<ColumnsHashing::ChunkedState<WholeBlockState64>, WholeBlockState64>);
+    static_assert(std::is_same_v<ColumnsHashing::ChunkedState<WholeBlockState256>, WholeBlockState256>);
+}
+
 TEST(ColumnsHashingPreparedKeys, SparseStateTypes)
 {
     using AggregationState256 = AggregationMethodKeysFixed<AggregatedDataWithKeys256>::State;

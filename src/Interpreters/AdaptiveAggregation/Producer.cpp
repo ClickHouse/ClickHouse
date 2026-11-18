@@ -123,20 +123,26 @@ void Aggregator::executeFrozen(
     /// The rows of the block are the base of the thaw's staged share (see `adaptiveStagingRepeats`).
     std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase).rows += row_end - row_begin;
 
+    const auto run = [&](auto & local_method, auto shared_method)
+    {
+        using FindState = typename std::decay_t<decltype(local_method)>::StateNoCache;
+        if constexpr (!std::is_same_v<ColumnsHashing::ChunkedState<FindState>, FindState>)
+        {
+            if (!all_keys_are_const && ColumnsHashing::keysOutgrowCache<FindState>(row_end))
+            {
+                executeFrozenImpl(local_method, shared_method, std::type_identity<ColumnsHashing::ChunkedState<FindState>>{},
+                    result.aggregates_pool, columns, row_begin, row_end, key_columns, aggregate_instructions, adaptive,
+                    all_keys_are_const, local_memory_tracker);
+                return;
+            }
+        }
+        executeFrozenImpl(local_method, shared_method, std::type_identity<FindState>{}, result.aggregates_pool, columns, row_begin,
+            row_end, key_columns, aggregate_instructions, adaptive, all_keys_are_const, local_memory_tracker);
+    };
+
 #define M(NAME) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
-        executeFrozenImpl( \
-            *result.NAME, \
-            std::type_identity<std::decay_t<decltype(*result.NAME##_two_level)>>{}, \
-            result.aggregates_pool, \
-            columns, \
-            row_begin, \
-            row_end, \
-            key_columns, \
-            aggregate_instructions, \
-            adaptive, \
-            all_keys_are_const, \
-            local_memory_tracker);
+        run(*result.NAME, std::type_identity<std::decay_t<decltype(*result.NAME##_two_level)>>{});
 
     if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
@@ -174,11 +180,12 @@ std::optional<UInt64> Aggregator::adaptiveLocalTopKCount(AggregatedDataVariants 
 /// The set counterpart of the frozen kernel. A `GROUP BY` without aggregate functions has no places to
 /// record and no states to advance, so a hit costs nothing beyond the probe and a miss stages the key
 /// alone - which is all a set has to carry.
-template <typename LocalMethod, typename SharedMethod>
+template <typename LocalMethod, typename SharedMethod, typename FindState>
 requires SetAggregationMethod<LocalMethod>
 void NO_INLINE Aggregator::executeFrozenImpl(
     LocalMethod & local_method,
     std::type_identity<SharedMethod>,
+    std::type_identity<FindState>,
     Arena *,
     const Columns & columns,
     size_t row_begin,
@@ -194,7 +201,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
 
     Arena scratch_pool;
 
-    typename LocalMethod::StateNoCache local_find_state(key_columns, key_sizes, aggregation_state_cache);
+    FindState local_find_state(key_columns, key_sizes, aggregation_state_cache);
     const auto keep_key_bytes = adaptiveMissesKeepKeyBytes<RecordKey>(local_find_state);
     /// The keys of the rows before `row_begin` (the part of the block aggregated before freezing) are not needed.
     /// If all keys are const, only row 0 is used.
@@ -453,11 +460,12 @@ size_t ALWAYS_INLINE Aggregator::collectCombinedMisses(
     return hits;
 }
 
-template <typename LocalMethod, typename SharedMethod>
+template <typename LocalMethod, typename SharedMethod, typename FindState>
 requires MapAggregationMethod<LocalMethod>
 void NO_INLINE Aggregator::executeFrozenImpl(
     LocalMethod & local_method,
     std::type_identity<SharedMethod>,
+    std::type_identity<FindState>,
     Arena * aggregates_pool,
     const Columns & columns,
     size_t row_begin,
@@ -473,7 +481,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
 
     Arena scratch_pool;
 
-    typename LocalMethod::StateNoCache local_find_state(key_columns, key_sizes, aggregation_state_cache);
+    FindState local_find_state(key_columns, key_sizes, aggregation_state_cache);
     const auto keep_key_bytes = adaptiveMissesKeepKeyBytes<RecordKey>(local_find_state);
     /// Routing needs only the two-level twin's TYPE: the hash is the local table's canonical
     /// hash (identical to the twin's by construction - the pairing in `executeFrozen` binds a
@@ -631,7 +639,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
                 has_missed_key = true;
             }
             keyHolderDiscardKey(key_holder);
-            if constexpr (adaptive_misses_may_keep_key_bytes<RecordKey, typename LocalMethod::StateNoCache>)
+            if constexpr (adaptive_misses_may_keep_key_bytes<RecordKey, FindState>)
             {
                 if (missBatchKeyBytesFull(misses, keep_key_bytes))
                     stage_misses();

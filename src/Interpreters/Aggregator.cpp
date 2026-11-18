@@ -1362,6 +1362,14 @@ void NO_INLINE Aggregator::executeImpl(
             return;
         }
     }
+    if constexpr (!for_sub_range && !std::is_same_v<ColumnsHashing::ChunkedState<State>, State>)
+    {
+        if (!all_keys_are_const && !rows.skips_rows && ColumnsHashing::keysOutgrowCache<State>(row_end - row_begin))
+        {
+            run.template operator()<ColumnsHashing::ChunkedState<State>, ColumnsHashing::ChunkedState<StateNoCache>>();
+            return;
+        }
+    }
     run.template operator()<State, StateNoCache>();
 }
 
@@ -1588,13 +1596,22 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
         /// The hashing state is constructed once and shared by all slices: for the serialized
         /// and fixed-key methods its constructor does whole-block work (batch key serialization
         /// or packing), which must not be repeated per slice.
-        if (use_cache)
+        const auto run = [&]<typename CacheState, typename NoCacheState>() -> size_t
         {
-            typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
-            return run_slices(state, [&](size_t rows) { cache_stats.update(rows, state.getCacheMissesSinceLastReset()); });
-        }
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
-        return run_slices(state, [](size_t) {});
+            if (use_cache)
+            {
+                CacheState state(key_columns, key_sizes, aggregation_state_cache);
+                return run_slices(state, [&](size_t rows) { cache_stats.update(rows, state.getCacheMissesSinceLastReset()); });
+            }
+            NoCacheState state(key_columns, key_sizes, aggregation_state_cache);
+            return run_slices(state, [](size_t) {});
+        };
+        using State = typename Method::State;
+        using StateNoCache = typename Method::StateNoCache;
+        if constexpr (!std::is_same_v<ColumnsHashing::ChunkedState<State>, State>)
+            if (ColumnsHashing::keysOutgrowCache<State>(row_end))
+                return run.template operator()<ColumnsHashing::ChunkedState<State>, ColumnsHashing::ChunkedState<StateNoCache>>();
+        return run.template operator()<State, StateNoCache>();
     };
 
     #define M(NAME) \

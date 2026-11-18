@@ -177,6 +177,17 @@ SELECT 'distinct in order a, c32, b', count(), sum(cityHash64(toString((a, c32, 
 (SELECT DISTINCT a, c32, b FROM t_keys_fixed_chunks_in_order)
 SETTINGS optimize_distinct_in_order = 1, optimize_read_in_order = 1, max_threads = 1;
 
+-- A block of 300000 keys128 keys outgrows the cache, so it is packed in chunks, in the layout of a whole block.
+SELECT 'group by keys128 big block', count(), sum(cityHash64(toString((k, c, n)))) FROM
+(SELECT toUInt32(number % 7) AS c, number % 20011 AS k, count() AS n FROM numbers(300000) GROUP BY c, k)
+SETTINGS max_block_size = 300000, enable_adaptive_aggregator = 0;
+SELECT 'group by keys128 big block adaptive', count(), sum(cityHash64(toString((k, c, n)))) FROM
+(SELECT toUInt32(number % 7) AS c, number % 20011 AS k, count() AS n FROM numbers(300000) GROUP BY c, k)
+SETTINGS max_block_size = 300000, enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 100;
+SELECT 'distinct keys128 big block', count(), sum(cityHash64(toString((k, c)))) FROM
+(SELECT DISTINCT toUInt32(number % 7) AS c, number % 20011 AS k FROM numbers(300000))
+SETTINGS max_block_size = 300000;
+
 DROP TABLE t_keys_fixed_chunks_fan_out;
 DROP TABLE t_keys_fixed_chunks_in_order;
 DROP TABLE t_keys_fixed_chunks;

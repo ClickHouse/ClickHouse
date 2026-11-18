@@ -112,6 +112,26 @@ struct SparseStateOf
 template <typename State>
 using SparseState = typename SparseStateOf<State>::Type;
 
+/// The state type that packs the keys of its block one cache-sized chunk at a time, for a state that packs the whole
+/// block at once. `key_bytes` is the size of a packed key.
+template <typename State>
+struct ChunkedStateOf
+{
+    using Type = State;
+    static constexpr size_t key_bytes = 0;
+};
+
+template <typename State>
+using ChunkedState = typename ChunkedStateOf<State>::Type;
+
+/// Whether the keys of `rows` rows that a `State` would pack at once take more than half the L2, so that its
+/// `ChunkedState` packs them.
+template <typename State>
+bool keysOutgrowCache(size_t rows)
+{
+    return rows * ChunkedStateOf<State>::key_bytes > getL2CacheSize() / 2;
+}
+
 /// A caller that asks about fewer than one row in this many of its block gets the asked rows packed one by one: a
 /// `SparseState`, or `RowRange::asks_few_rows`. Chosen from 2, 3, 4, 6 and 8 by the worst ratio of times to master
 /// over `IN` probes and set builds with 40% to 99% NULL keys (2: 1.07, 3: 1.09, 4: 1.03, 6: 1.00, 8: 1.02).
@@ -124,7 +144,7 @@ inline bool asksAboutFewRows(size_t asked_rows, size_t rows)
 
 /// Calls `run(state)` with a state over `key_columns` for a caller that asks about the `rows` of its block, or, if
 /// it skips rows, about the `count_asked_rows()` of them: a `SparseState<State>` when that is fewer than one row in
-/// `max_rows_per_asked_row`, else a `State`.
+/// `max_rows_per_asked_row`, a `ChunkedState<State>` when it is not and the keys outgrow the cache, else a `State`.
 template <typename State, typename KeyColumns, typename KeySizes, typename CountAskedRows, typename Run>
 ALWAYS_INLINE void withStateForAskedRows(
     const KeyColumns & key_columns,
@@ -139,6 +159,15 @@ ALWAYS_INLINE void withStateForAskedRows(
         if (skips_rows && asksAboutFewRows(count_asked_rows(), rows))
         {
             SparseState<State> state(key_columns, key_sizes, nullptr, {.skips_rows = true});
+            run(state);
+            return;
+        }
+    }
+    if constexpr (!std::is_same_v<ChunkedState<State>, State>)
+    {
+        if (keysOutgrowCache<State>(rows) && !(skips_rows && asksAboutFewRows(count_asked_rows(), rows)))
+        {
+            ChunkedState<State> state(key_columns, key_sizes, nullptr, {.skips_rows = skips_rows});
             run(state);
             return;
         }

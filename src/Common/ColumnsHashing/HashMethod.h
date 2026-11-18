@@ -753,19 +753,20 @@ template <
     bool use_cache = true,
     bool need_offset = false,
     /// Built over a sub-range of the block (see `SubRangeState`), so it packs only the rows of the range.
-    bool for_sub_range = false>
+    bool for_sub_range = false,
+    /// Packs the keys of the block one cache-sized chunk at a time (see `ChunkedState`).
+    bool in_chunks = (sizeof(Key) > 16)>
 struct HashMethodKeysFixed
     : private columns_hashing_impl::BaseStateKeysFixed<Key, has_nullable_keys_>
-    , public columns_hashing_impl::HashMethodBase<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset, for_sub_range>, Value, Mapped, use_cache, need_offset>
+    , public columns_hashing_impl::HashMethodBase<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset, for_sub_range, in_chunks>, Value, Mapped, use_cache, need_offset>
 {
-    using Self = HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset, for_sub_range>;
+    using Self = HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset, for_sub_range, in_chunks>;
     using BaseHashed = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
     using Base = columns_hashing_impl::BaseStateKeysFixed<Key, has_nullable_keys_>;
 
     static constexpr bool has_nullable_keys = has_nullable_keys_;
     static constexpr bool has_low_cardinality = has_low_cardinality_;
-    /// Keys wider than 16 bytes are packed one cache-sized chunk at a time.
-    static constexpr bool packs_in_chunks = sizeof(Key) > 16 && !has_low_cardinality && !for_sub_range;
+    static constexpr bool packs_in_chunks = in_chunks && !has_low_cardinality && !for_sub_range;
 
     static constexpr bool has_cheap_key_calculation = true;
     /// `packFixed` copies a few fixed-width fields into the key; no allocation.
@@ -888,7 +889,12 @@ struct HashMethodKeysFixed
             }
         }
 
-        if (usePreparedKeys(key_sizes))
+        if constexpr (packs_in_chunks)
+        {
+            /// The chunks keep the layout of the state that packs the whole block.
+            packs_longest_first = usePreparedKeys(key_sizes);
+        }
+        else if (usePreparedKeys(key_sizes))
         {
             packs_longest_first = true;
             const RowRange packed = rowsToBatchPack(key_columns, rows);
@@ -1087,6 +1093,8 @@ private:
         }
         if constexpr (has_nullable_keys)
             chunks.unprepared_key = packFixed<Key>(row, keys_size, Base::getActualColumns(), key_sizes, Base::createBitmap(row));
+        else if (packs_longest_first)
+            chunks.unprepared_key = packFixedLongestFirst<Key>(row, keys_size, Base::getActualColumns(), key_sizes);
         else
             chunks.unprepared_key = packFixed<Key>(row, keys_size, Base::getActualColumns(), key_sizes);
         return &chunks.unprepared_key;
@@ -1107,6 +1115,12 @@ private:
     {
         /// `packFixedBatchOrdered` zero-fills the keys again, because it writes no NULL bitmap.
         prepared_keys.clear();
+        if (packs_longest_first)
+        {
+            packFixedBatchRange(keys_size, Base::getActualColumns(), key_sizes, prepared_keys, begin, end);
+            prepared_keys_begin = begin;
+            return;
+        }
         packFixedBatchOrdered<Key>(
             keys_size, Base::getActualColumns(), key_sizes, has_nullable_keys ? std::tuple_size_v<KeysNullMap<Key>> : 0, prepared_keys,
             begin, end);
@@ -1166,18 +1180,32 @@ private:
     }
 };
 
-/// The sparse state of a state that packs in chunks is its sub-range variant, which packs no chunks: per row, or, for a
-/// nullable set of widths 1, 2, 4, 8 and 16 bytes, the whole block at once.
-template <typename Value, typename Key, typename Mapped, bool has_nullable_keys, bool use_cache, bool need_offset>
-struct SparseStateOf<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys, false, use_cache, need_offset, false>>
+/// The sparse state of a state that packs in chunks packs no chunks: for keys wider than 16 bytes it is the sub-range
+/// variant, which packs per row, or, for a nullable set of widths 1, 2, 4, 8 and 16 bytes, the whole block at once; for
+/// narrower keys it is the state that packs the whole block.
+template <typename Value, typename Key, typename Mapped, bool has_nullable_keys, bool use_cache, bool need_offset, bool in_chunks>
+struct SparseStateOf<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys, false, use_cache, need_offset, false, in_chunks>>
 {
-    using State = HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys, false, use_cache, need_offset, false>;
-    using Type = std::conditional_t<State::packs_in_chunks, HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys, false, use_cache, need_offset, true>, State>;
+    using State = HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys, false, use_cache, need_offset, false, in_chunks>;
+    using Type = std::conditional_t<
+        !State::packs_in_chunks,
+        State,
+        HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys, false, use_cache, need_offset, (sizeof(Key) > 16), (sizeof(Key) > 16)>>;
+};
+
+/// Keys of 16 bytes or less are packed for the whole block at once. A caller can pick this state for 16-byte keys, whose
+/// arrays outgrow the cache first.
+template <typename Value, typename Key, typename Mapped, bool has_nullable_keys, bool use_cache, bool need_offset>
+    requires(sizeof(Key) == 16)
+struct ChunkedStateOf<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys, false, use_cache, need_offset, false, false>>
+{
+    using Type = HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys, false, use_cache, need_offset, false, true>;
+    static constexpr size_t key_bytes = sizeof(Key);
 };
 
 /// A LowCardinality state packs every key on its own, so it has no sub-range variant.
-template <typename Value, typename Key, typename Mapped, bool has_nullable_keys, bool has_low_cardinality, bool use_cache, bool need_offset>
-struct SubRangeStateOf<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys, has_low_cardinality, use_cache, need_offset, false>>
+template <typename Value, typename Key, typename Mapped, bool has_nullable_keys, bool has_low_cardinality, bool use_cache, bool need_offset, bool in_chunks>
+struct SubRangeStateOf<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys, has_low_cardinality, use_cache, need_offset, false, in_chunks>>
 {
     using Type = HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys, has_low_cardinality, use_cache, need_offset, !has_low_cardinality>;
 };

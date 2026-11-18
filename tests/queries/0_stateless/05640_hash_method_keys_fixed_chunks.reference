@@ -50,3 +50,6 @@ join hash OR with 99% NULL keys a, b, c99	24971	3486953001664133291
 left join hash with an ON filter on the probe a, b, c	50000	9546249993452633248
 in order a, c32, b	42910	4098928778236334588
 distinct in order a, c32, b	42910	1691553983965318539
+group by keys128 big block	140077	10714584552246259540
+group by keys128 big block adaptive	140077	10714584552246259540
+distinct keys128 big block	140077	5599157140753392682
