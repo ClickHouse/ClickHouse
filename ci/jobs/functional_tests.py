@@ -275,6 +275,28 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "targeted": "--flaky-check --no-self-parallel",
 }
 
+
+AUTOPR_ARGUMENT = "--autopr"
+
+
+def parallel_replicas_job_runs_autopr(sha):
+    """Whether this run of a `ParallelReplicas` job swaps in the automatic parallel replicas profile.
+
+    `automatic_parallel_replicas_mode` = 1 is the only mode that runs the cost model and replaces the
+    plan with the parallel-replicas one. The settings randomizer only ever picks 0 or 2, and mode 2
+    collects statistics without ever switching, so nothing else gives the plan rewrite broad
+    coverage. The `ParallelReplicas` jobs therefore take the automatic mode every second run instead
+    of it getting jobs of its own.
+
+    Keyed off the commit rather than the clock so that a run is reproducible: the same commit always
+    picks the same mode, and which mode ran is reported in the job's own result line.
+    """
+    # `_Environment.from_env` sets the SHA to "TEST" when the job runs without a CI environment.
+    if not sha or sha == "TEST":
+        return False
+    return int(sha[:8], 16) % 2 == 1
+
+
 def allow_oversubscription(options, test_options, is_flaky_check, is_targeted_check):
     """Whether this job may run more test workers than the runner has cores.
 
@@ -561,7 +583,7 @@ def main():
             is_database_replicated = True
         if "SharedCatalog" in to:
             is_shared_catalog = True
-        if "ParallelReplicas" in to:
+        if to == "ParallelReplicas":
             is_parallel_replicas = True
 
     is_no_stateful = "--no-stateful" in runner_options
@@ -687,6 +709,21 @@ def main():
         # mode mid-session). See tests/config/users.d/coverage_fault_injection_seeds.xml.
         config_installs_args += " --llvm-coverage"
 
+    # The automatic profile replaces the plain one rather than joining it: both set
+    # `enable_parallel_replicas`, `max_parallel_replicas`, `cluster_for_parallel_replicas` and
+    # `parallel_replicas_for_non_replicated_merge_tree`, so installing both would leave the values to
+    # whichever file `users.d` happens to load second.
+    autopr_mode_note = ""
+    if is_parallel_replicas and parallel_replicas_job_runs_autopr(info.sha):
+        config_installs_args = config_installs_args.replace(OPTIONS_TO_INSTALL_ARGUMENTS["ParallelReplicas"], AUTOPR_ARGUMENT)
+        runner_options += f" {AUTOPR_ARGUMENT}"
+        # The loop above has already announced the plain option as enabled; say that it is gone.
+        print(
+            f"NOTE: Replaced config option [{OPTIONS_TO_INSTALL_ARGUMENTS['ParallelReplicas']}] with [{AUTOPR_ARGUMENT}]"
+        )
+        autopr_mode_note = "Ran with automatic parallel replicas (automatic_parallel_replicas_mode = 1)."
+        print(f"NOTE: {autopr_mode_note}")
+
     if is_shared_catalog or is_parallel_replicas:
         pass
     else:
@@ -724,7 +761,11 @@ def main():
 
     runner_options += f" --jobs {workers}"
 
-    if is_flaky_check or is_targeted_check:
+    if is_targeted_check and info.is_merge_queue_event:
+        # The merge queue is meant to fail fast: a few failures are enough to bounce
+        # the entry, and running the rest of the selection only delays the queue.
+        runner_options += " --max-failures 3"
+    elif is_flaky_check or is_targeted_check:
         # Stop after 5 total failures across all parallel workers (fast feedback on broken PRs).
         runner_options += " --max-failures 5"
 
@@ -739,11 +780,12 @@ def main():
         # by an interruptible exit-time dump (see integration_test_job.py).
         # It also releases the static counter section to the OS, and per-test coverage reads
         # that section in the server process, so the two modes are mutually exclusive.
-        profile_pattern = "%2m" if is_per_test_coverage else "%c%2m"
-        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-{profile_pattern}.profraw"
         if is_per_test_coverage:
+            # No .profraw of the per-test job is merged, so it writes none.
+            os.environ["LLVM_PROFILE_FILE"] = os.devnull
             runner_options += " --collect-per-test-coverage"
         else:
+            os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%c%2m.profraw"
             runner_options += " --no-random-settings --no-random-merge-tree-settings  --no-long"
 
     diagnostics_dir = f"{temp_dir}/random-settings-diagnostics"
@@ -782,6 +824,13 @@ def main():
         # condition, not the repeat count.  Tests run in parallel (--jobs N) with fresh
         # random settings per TestCase; --max-failures 5 stops early on broken PRs.
         rerun_count = 50
+    elif is_targeted_check and info.is_merge_queue_event:
+        # The merge-queue targeted check is a drift guard like the merge-queue
+        # flaky check: the PR CI already repeated the selection 50 times, and
+        # this run only needs to catch tests broken by the merged `master`
+        # state. A few repetitions still sample the randomized settings, and the
+        # run usually ends well before its time limit instead of filling it.
+        rerun_count = 3
     elif is_targeted_check:
         rerun_count = 50
 
@@ -944,8 +993,9 @@ def main():
                 Shell.check(
                     "python3 -m ci.jobs.scripts.test_selection_smoke", strict=True
                 )
+            # In the merge queue the flaky check already reruns the changed tests.
             tests, selection_result = targeter.get_all_relevant_tests_with_info(
-                include_changed_tests=True
+                include_changed_tests=not info.is_merge_queue_event
             )
             SELECTION_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
             SELECTION_MANIFEST.write_text(
@@ -1326,7 +1376,11 @@ def main():
             )
 
         elif is_targeted_check:
-            TARGETED_CHECK_TIME_LIMIT = 30 * 60  # 30 min
+            # The merge-queue run gets the same budget as the PR run, equal to the one
+            # of the merge-queue integration targeted check: its reduced rerun_count
+            # usually ends the run earlier anyway. Reaching the limit is not a failure
+            # (see `GLOBAL_TIME_LIMIT_EXIT_CODE` in `FTResultsProcessor`).
+            TARGETED_CHECK_TIME_LIMIT = 30 * 60
             global_time_limit = max(
                 TARGETED_CHECK_TIME_LIMIT - int(stop_watch.duration), 60
             )
@@ -1826,7 +1880,7 @@ def main():
         results=results,
         stopwatch=stop_watch,
         files=CH.logs + debug_files,
-        info=job_info,
+        info=" ".join(x for x in (autopr_mode_note, job_info) if x),
     )
 
     if bugfix_validation_no_repro:
@@ -1911,7 +1965,7 @@ def main():
 
             # Auto-detect available LLVM profdata tool
             llvm_profdata = None
-            for ver in ["22", "21", "20", "18", "19", "17", "16", ""]:
+            for ver in ["23", "22", "21", "20", "18", "19", "17", "16", ""]:
                 cmd = f"llvm-profdata{'-' + ver if ver else ''}"
                 if Shell.check(f"command -v {cmd}", verbose=False):
                     llvm_profdata = cmd

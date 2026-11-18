@@ -64,7 +64,7 @@ struct FileCacheReserveStat
             return *this;
         }
 
-        std::string toString() const;
+        [[nodiscard]] std::string toString() const;
     };
 
     Stat total_stat;
@@ -73,7 +73,7 @@ struct FileCacheReserveStat
     bool not_enough_space = false;
 
     Stat & getStatByKind(FileSegmentKind kind) { return stat_by_kind[static_cast<uint8_t>(kind)]; }
-    const Stat & getStatByKind(FileSegmentKind kind) const { return stat_by_kind[static_cast<uint8_t>(kind)]; }
+    [[nodiscard]] const Stat & getStatByKind(FileSegmentKind kind) const { return stat_by_kind[static_cast<uint8_t>(kind)]; }
 
     enum class State
     {
@@ -238,7 +238,7 @@ public:
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason);
 
-    bool tryIncreasePriority(FileSegment & file_segment);
+    bool tryIncreasePriority(Priority::Iterator & iterator, bool is_space_reservation_complete);
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const UserID & user_id);
 
@@ -357,7 +357,7 @@ private:
     /// `dynamic_resize_lock` gate on every reservation and priority increase.
     bool supports_dynamic_resize = false;
 
-    std::atomic<size_t> cache_reserve_active_threads = 0;
+    IFileCachePriority::SharedEvictionCursor reserve_cursor{IFileCachePriority::EvictionCursor::Reserve};
 
     std::mutex apply_settings_mutex;
 
@@ -406,9 +406,9 @@ private:
         size_t file_segments_limit,
         bool ignore_bypass_threshold = false) const;
 
-    /// Split range into subranges by max_file_segment_size,
-    /// each subrange size must be less or equal to max_file_segment_size.
-    std::vector<FileSegment::Range> splitRange(size_t offset, size_t size, size_t aligned_size);
+    /// Split range into subranges by max_size,
+    /// each subrange size must be less or equal to max_size.
+    std::vector<FileSegment::Range> splitRange(size_t offset, size_t size, size_t aligned_size, size_t max_size);
 
     FileSegments createFileSegmentsFromRanges(
         LockedKey & locked_key,
@@ -424,7 +424,8 @@ private:
         size_t non_aligned_right_offset,
         size_t file_segments_limit,
         bool fill_with_detached_file_segments,
-        const CreateFileSegmentSettings & settings);
+        const CreateFileSegmentSettings & settings,
+        size_t max_size);
 
     KeyMetadata::iterator addFileSegment(
         LockedKey & locked_key,

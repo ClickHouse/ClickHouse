@@ -99,7 +99,7 @@ void ThreadPoolCallbackRunnerFast::operator()(std::function<void()> f)
     }
 }
 
-void ThreadPoolCallbackRunnerFast::bulkSchedule(std::vector<std::function<void()>> fs)
+void ThreadPoolCallbackRunnerFast::bulkSchedule(VectorWithMemoryTracking<std::function<void()>> fs)
 {
     if (fs.empty())
         return;

@@ -8,5 +8,5 @@
 10	{"k":1}
 === a form-parsed parameter present in both the URL and the body still takes its value from the URL ===
 18	param_id=21
-=== _request_body supplied in the URL wins over the raw body, and form fields still bind ===
-42	url_wins
+=== _request_body cannot be supplied in the URL ===
+BAD_ARGUMENTS
