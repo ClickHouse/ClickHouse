@@ -98,8 +98,8 @@ public:
 
 private:
     /// Parses the `match[]` instant selectors and the optional `start` and `end` bounds of the metadata endpoints
-    /// and makes a UNION ALL query selecting the ids (`series_id`) of the series matched by any of the selectors,
-    /// with their tags registered for timeSeriesIdToTags.
+    /// and makes a UNION ALL query selecting the ids (`series_id`) and the tags (`series_tags`) of the series matched
+    /// by any of the selectors.
     ASTPtr makeSeriesIDsQuery(const Strings & match_params, const String & start_param, const String & end_param);
 
     /// Shared implementation of getLabels and getLabelValues: executes a query aggregating `array_expression`

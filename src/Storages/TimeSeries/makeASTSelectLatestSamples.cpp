@@ -19,28 +19,27 @@ namespace DB
 
 namespace
 {
-    constexpr const char * GROUP_COLUMN = "group";
     constexpr const char * LAST_VALUE_COLUMN = "last_value";
     constexpr const char * LAST_TIMESTAMP_COLUMN = "last_timestamp";
     constexpr UInt64 STALE_NAN_BITS = 0x7ff0000000000002ULL;
 
-    /// SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
-    /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>, 'timestamp_and_value')
+    /// SELECT <columns>
+    /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>, <return_columns>)
     /// UNION ALL ...
-    ASTPtr makeASTSelectSamplesOfSelectors(
+    ASTPtr makeASTSelectFromSelectors(
         const StorageID & time_series_storage_id,
         const Strings & selectors,
         const ASTPtr & min_time,
-        const ASTPtr & max_time)
+        const ASTPtr & max_time,
+        const String & return_columns,
+        const Strings & columns)
     {
         auto list_of_selects = make_intrusive<ASTExpressionList>();
         for (const auto & selector : selectors)
         {
             PrometheusQueryToSQL::SelectQueryBuilder builder;
-            builder.select_list.push_back(makeASTFunction("timeSeriesIdToGroup", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID)));
-            builder.select_list.back()->setAlias(GROUP_COLUMN);
-            builder.select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp));
-            builder.select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
+            for (const auto & column : columns)
+                builder.select_list.push_back(make_intrusive<ASTIdentifier>(column));
             builder.from_table_function = makeASTFunction(
                 "timeSeriesSelector",
                 make_intrusive<ASTLiteral>(time_series_storage_id.getDatabaseName()),
@@ -48,7 +47,7 @@ namespace
                 make_intrusive<ASTLiteral>(selector),
                 min_time->clone(),
                 max_time->clone(),
-                make_intrusive<ASTLiteral>(String{"timestamp_and_value"}));
+                make_intrusive<ASTLiteral>(return_columns));
 
             auto select = builder.getSelectQuery();
             list_of_selects->children.push_back(select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.at(0));
@@ -79,51 +78,99 @@ ASTPtr makeASTSelectLatestSamples(
     auto min_time_ast = timeSeriesTimestampToAST(DateTime64(time.value - lookback_delta.value + 1), time_type);
     auto max_time_ast = timeSeriesTimestampToAST(time, time_type);
 
-    PrometheusQueryToSQL::SelectQueryBuilder builder;
-    builder.with.emplace_back(
-        0,
-        makeASTSelectSamplesOfSelectors(time_series_storage_id, selectors, min_time_ast, max_time_ast),
+    PrometheusQueryToSQL::SQLSubqueries with;
+
+    /// WITH prometheus_query_step_1 AS (SELECT id, timestamp, value FROM timeSeriesSelector(..., 'timestamp_and_value') UNION ALL ...)
+    with.emplace_back(
+        with.size(),
+        makeASTSelectFromSelectors(
+            time_series_storage_id, selectors, min_time_ast, max_time_ast, "timestamp_and_value",
+            {TimeSeriesColumnNames::ID, TimeSeriesColumnNames::Timestamp, TimeSeriesColumnNames::Value}),
         PrometheusQueryToSQL::SQLSubqueryType::TABLE);
-    builder.from_table = builder.with.back().name;
+    const String samples_table = with.back().name;
 
-    /// The latest sample of a series is found on a grid of the single point `time`. If several samples have the same
-    /// timestamp, a real value beats a NaN, then the greatest wins (the rule of the instant query).
-    /// <function_name>(<time>, <time>, 0, <lookback_delta>)(timestamp, value)[1]
-    auto latest_sample_of = [&](const char * function_name)
+    /// prometheus_query_step_2 AS (SELECT id, tags FROM timeSeriesSelector(..., 'tags') UNION ALL ...)
+    with.emplace_back(
+        with.size(),
+        makeASTSelectFromSelectors(
+            time_series_storage_id, selectors, min_time_ast, max_time_ast, "tags",
+            {TimeSeriesColumnNames::ID, TimeSeriesColumnNames::Tags}),
+        PrometheusQueryToSQL::SQLSubqueryType::TABLE);
+    const String series_table = with.back().name;
+
+    /// prometheus_query_step_3 AS (SELECT id, <...> AS last_value, <...> AS last_timestamp FROM prometheus_query_step_1 GROUP BY id HAVING ...)
     {
-        auto aggregate = addParametersToAggregateFunction(
-            makeASTFunction(
-                function_name, make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp), make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)),
-            timeSeriesTimestampToAST(time, time_type),
-            timeSeriesTimestampToAST(time, time_type),
-            timeSeriesDurationToAST(Decimal64{0}, time_type),
-            timeSeriesDurationToAST(lookback_delta, time_type));
-        return makeASTFunction("arrayElement", std::move(aggregate), make_intrusive<ASTLiteral>(UInt64{1}));
-    };
+        PrometheusQueryToSQL::SelectQueryBuilder builder;
 
-    /// timeSeriesGroupToTags(group) AS tags
-    builder.select_list.push_back(makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(GROUP_COLUMN)));
+        /// The latest sample of a series is found on a grid of the single point `time`. If several samples have the same
+        /// timestamp, a real value beats a NaN, then the greatest wins (the rule of the instant query).
+        /// <function_name>(<time>, <time>, 0, <lookback_delta>)(timestamp, value)[1]
+        auto latest_sample_of = [&](const char * function_name)
+        {
+            auto aggregate = addParametersToAggregateFunction(
+                makeASTFunction(
+                    function_name, make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp), make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)),
+                timeSeriesTimestampToAST(time, time_type),
+                timeSeriesTimestampToAST(time, time_type),
+                timeSeriesDurationToAST(Decimal64{0}, time_type),
+                timeSeriesDurationToAST(lookback_delta, time_type));
+            return makeASTFunction("arrayElement", std::move(aggregate), make_intrusive<ASTLiteral>(UInt64{1}));
+        };
+
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+
+        /// timeSeriesLastToGrid(...)(timestamp, value)[1] AS last_value
+        builder.select_list.push_back(latest_sample_of("timeSeriesLastToGrid"));
+        builder.select_list.back()->setAlias(LAST_VALUE_COLUMN);
+
+        /// toDateTime64(timeSeriesTimestampOfLastToGrid(...)(timestamp, value)[1], 3) AS last_timestamp
+        builder.select_list.push_back(
+            makeASTFunction("toDateTime64", latest_sample_of("timeSeriesTimestampOfLastToGrid"), make_intrusive<ASTLiteral>(UInt64{3})));
+        builder.select_list.back()->setAlias(LAST_TIMESTAMP_COLUMN);
+
+        builder.from_table = samples_table;
+
+        /// A series matched by several selectors has its samples repeated, they are aggregated together.
+        builder.group_by.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+
+        /// Skips the series whose latest sample is a stale marker (and the ones without samples, whose value is NULL).
+        builder.having = makeASTFunction(
+            "notEquals",
+            makeASTFunction("reinterpretAsUInt64", makeASTFunction("toFloat64", make_intrusive<ASTIdentifier>(LAST_VALUE_COLUMN))),
+            make_intrusive<ASTLiteral>(STALE_NAN_BITS));
+
+        with.emplace_back(with.size(), builder.getSelectQuery(), PrometheusQueryToSQL::SQLSubqueryType::TABLE);
+    }
+    const String latest_samples_table = with.back().name;
+
+    /// SELECT prometheus_query_step_2.tags AS tags,
+    ///        prometheus_query_step_3.last_value AS last_value,
+    ///        prometheus_query_step_3.last_timestamp AS last_timestamp
+    /// FROM prometheus_query_step_3
+    /// ANY INNER JOIN prometheus_query_step_2 ON prometheus_query_step_3.id = prometheus_query_step_2.id
+    PrometheusQueryToSQL::SelectQueryBuilder builder;
+    builder.with = std::move(with);
+
+    builder.select_list.push_back(make_intrusive<ASTIdentifier>(Strings{series_table, TimeSeriesColumnNames::Tags}));
     builder.select_list.back()->setAlias(TimeSeriesColumnNames::Tags);
-
-    /// timeSeriesLastToGrid(...)(timestamp, value)[1] AS last_value
-    builder.select_list.push_back(latest_sample_of("timeSeriesLastToGrid"));
+    builder.select_list.push_back(make_intrusive<ASTIdentifier>(Strings{latest_samples_table, LAST_VALUE_COLUMN}));
     builder.select_list.back()->setAlias(LAST_VALUE_COLUMN);
-
-    /// toDateTime64(timeSeriesTimestampOfLastToGrid(...)(timestamp, value)[1], 3) AS last_timestamp
-    builder.select_list.push_back(
-        makeASTFunction("toDateTime64", latest_sample_of("timeSeriesTimestampOfLastToGrid"), make_intrusive<ASTLiteral>(UInt64{3})));
+    builder.select_list.push_back(make_intrusive<ASTIdentifier>(Strings{latest_samples_table, LAST_TIMESTAMP_COLUMN}));
     builder.select_list.back()->setAlias(LAST_TIMESTAMP_COLUMN);
 
-    /// The same tags can come from different identifiers (e.g. after a change of `id_generator`), they are one series.
-    builder.group_by.push_back(make_intrusive<ASTIdentifier>(GROUP_COLUMN));
+    builder.from_table = latest_samples_table;
 
-    /// Skips the series whose latest sample is a stale marker (and the ones without samples, whose value is NULL).
-    builder.having = makeASTFunction(
-        "notEquals",
-        makeASTFunction("reinterpretAsUInt64", makeASTFunction("toFloat64", make_intrusive<ASTIdentifier>(LAST_VALUE_COLUMN))),
-        make_intrusive<ASTLiteral>(STALE_NAN_BITS));
+    /// The tags of a series can be repeated (several selectors, unmerged parts of the tags table), ANY joins one of them.
+    builder.join_kind = JoinKind::Inner;
+    builder.join_strictness = JoinStrictness::Any;
+    builder.join_table = series_table;
+    builder.join_on = makeASTFunction(
+        "equals",
+        make_intrusive<ASTIdentifier>(Strings{latest_samples_table, TimeSeriesColumnNames::ID}),
+        make_intrusive<ASTIdentifier>(Strings{series_table, TimeSeriesColumnNames::ID}));
 
     /// ORDER BY arrayFirst(tag -> tag.1 = '__name__', tags).2, tags
+    /// `tags` resolves to `prometheus_query_step_2.tags` both as the alias of the SELECT list and as a column of the join.
     builder.order_by.push_back(makeASTFunction(
         "tupleElement",
         makeASTFunction(
