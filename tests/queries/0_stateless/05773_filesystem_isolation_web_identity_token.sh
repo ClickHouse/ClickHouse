@@ -5,12 +5,17 @@
 # A server with `filesystem_isolation` sees the token of the service account that Kubernetes projects into a pod for the
 # IAM roles of EKS, named by `AWS_WEB_IDENTITY_TOKEN_FILE`, also after the kubelet rotates it: the token is a link
 # `token -> ..data/token`, and the kubelet writes the new one into a new directory and points `..data` at it.
+# A credential file directly in `/tmp` is visible on its own: the `/tmp` of the host does not cover the private
+# writable one.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
 EXPECTED="token: first
+config in /tmp: profile
+unrelated file in /tmp: hidden
+/tmp is writable: yes
 rotated token: second"
 
 # The configuration of the tests enables the isolation only where the container allows the namespaces: see
@@ -26,6 +31,10 @@ mkdir -p "$DIR/conf" "$DIR/data" "$DIR/serviceaccount/..2026_01_01_00_00_00.1"
 echo first > "$DIR/serviceaccount/..2026_01_01_00_00_00.1/token"
 ln -s "..2026_01_01_00_00_00.1" "$DIR/serviceaccount/..data"
 ln -s "..data/token" "$DIR/serviceaccount/token"
+TMP_CONFIG="/tmp/${CLICKHOUSE_DATABASE}_filesystem_isolation_aws_config"
+TMP_UNRELATED="/tmp/${CLICKHOUSE_DATABASE}_filesystem_isolation_unrelated"
+echo profile > "$TMP_CONFIG"
+echo unrelated > "$TMP_UNRELATED"
 
 cat > "$DIR/conf/config.xml" <<EOF
 <clickhouse>
@@ -49,10 +58,11 @@ function finish()
 {
     [ -n "$PID" ] && kill "$PID" 2>/dev/null
     wait
+    rm -f "$TMP_CONFIG" "$TMP_UNRELATED"
 }
 trap finish EXIT
 
-AWS_WEB_IDENTITY_TOKEN_FILE="$DIR/serviceaccount/token" $CLICKHOUSE_BINARY server --config-file "$DIR/conf/config.xml" > "$DIR/server.out" 2>&1 &
+AWS_WEB_IDENTITY_TOKEN_FILE="$DIR/serviceaccount/token" AWS_CONFIG_FILE="$TMP_CONFIG" $CLICKHOUSE_BINARY server --config-file "$DIR/conf/config.xml" > "$DIR/server.out" 2>&1 &
 PID=$!
 
 for _ in {1..600}; do
@@ -68,6 +78,9 @@ if ! grep -q 'Ready for connections' "$DIR/data/server.log" 2>/dev/null || ! gre
 fi
 
 echo "token: $(cat "/proc/$PID/root$DIR/serviceaccount/token" 2>&1)"
+echo "config in /tmp: $(cat "/proc/$PID/root$TMP_CONFIG" 2>&1)"
+echo "unrelated file in /tmp: $([ -e "/proc/$PID/root$TMP_UNRELATED" ] && echo visible || echo hidden)"
+echo "/tmp is writable: $(touch "/proc/$PID/root/tmp/${CLICKHOUSE_DATABASE}_write" 2>/dev/null && echo yes || echo no)"
 
 # As the kubelet does it (`AtomicWriter`): the new token in a new directory, a new link to it renamed over `..data`,
 # and the old directory removed.

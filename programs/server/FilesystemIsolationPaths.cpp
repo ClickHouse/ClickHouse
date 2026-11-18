@@ -223,7 +223,11 @@ private:
     /// If the file is a symbolic link, the directories of the targets of the links in the chain as well: a
     /// certificate of Let's Encrypt in `live/<domain>` is a link to `../../archive/<domain>/fullchain<N>.pem`, and a
     /// renewal adds a new file next to the target and points the link at it.
-    void addLocation(const fs::path & path, Access access, const std::string & source)
+    ///
+    /// With `only_file_in_shared_directory`, a file directly in `/` or in `/tmp` is visible on its own instead of its
+    /// directory: the root directory cannot be visible, and the directory `/tmp` of the host would cover the private
+    /// writable `/tmp` and expose the temporary files of everything else on the host.
+    void addLocation(const fs::path & path, Access access, const std::string & source, bool only_file_in_shared_directory = false)
     {
         std::error_code error;
         /// The same limit on the number of links as in the kernel, against a loop.
@@ -248,7 +252,10 @@ private:
                     add(current, access, source);
                 return;
             }
-            add(current.parent_path(), access, source);
+            if (only_file_in_shared_directory && isSharedDirectory(current.parent_path()))
+                add(current, access, source);
+            else
+                add(current.parent_path(), access, source);
 
             if (i == max_links || !FS::isSymlinkNoThrow(current))
                 return;
@@ -261,6 +268,16 @@ private:
             /// it means the parent of the target of that link, which `resolvePath` follows as the kernel does.
             current = absolute(target.string(), "/");
         }
+    }
+
+    /// The root directory or `/tmp`, also through links, as `/var/tmp -> /tmp`.
+    static bool isSharedDirectory(const fs::path & directory)
+    {
+        std::error_code error;
+        const fs::path real_directory = fs::weakly_canonical(directory, error);
+        if (error)
+            return false;
+        return real_directory == "/" || real_directory == "/tmp";
     }
 
     /// For a system file that is a symbolic link, the directories of the targets of the links in the chain outside
@@ -852,13 +869,21 @@ private:
         {
             const char * value = std::getenv(name); // NOLINT(concurrency-mt-unsafe)
             if (value && *value)
-                addLocation(absolute(value, runtime_directory), Access::ReadOnly, fmt::format("the environment variable {}", name));
+                addLocation(absolute(value, runtime_directory), Access::ReadOnly, fmt::format("the environment variable {}", name),
+                    /* only_file_in_shared_directory = */ true);
         }
 
         /// The default location of the configuration and the credentials of the AWS SDK, `~/.aws/config` and
-        /// `~/.aws/credentials`, as `Aws::FileSystem::GetHomeDirectory` finds it.
+        /// `~/.aws/credentials`, as `Aws::FileSystem::GetHomeDirectory` finds it. Only if it is a directory that can
+        /// be accessed: the server can inherit the home directory of another user, as `HOME=/root` after
+        /// `clickhouse su` in the entrypoint of the Docker image, and it does not need it unless it uses S3.
         if (const char * home = std::getenv("HOME"); home && *home == '/') // NOLINT(concurrency-mt-unsafe)
-            add(absolute(home, "/") / ".aws", Access::ReadOnly, "the configuration of the AWS SDK in the home directory");
+        {
+            const fs::path aws_directory = absolute(home, "/") / ".aws";
+            std::error_code error;
+            if (fs::is_directory(aws_directory, error))
+                add(aws_directory, Access::ReadOnly, "the configuration of the AWS SDK in the home directory");
+        }
     }
 
     /// The profiles of Kerberos at the default paths of the bundled MIT Kerberos (`DEFAULT_PROFILE_PATH`), with the
