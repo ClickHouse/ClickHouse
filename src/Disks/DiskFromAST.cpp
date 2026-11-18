@@ -91,7 +91,8 @@ static ValidatedDiskConfig getValidatedDiskConfig(
     const std::string & serialization,
     ContextPtr context,
     bool attach,
-    bool for_system_database)
+    bool for_system_database,
+    bool stored_definition)
 {
     ValidatedDiskConfig result;
     auto & config = result.config;
@@ -146,7 +147,7 @@ static std::vector<std::pair<size_t, std::string>> getOrCreateCustomDisk(
     bool stored_definition)
 {
     auto [config, uses_server_credentials, restriction_exempt]
-        = getValidatedDiskConfig(disk_args, serializations[0], context, attach, for_system_database);
+        = getValidatedDiskConfig(disk_args, serializations[0], context, attach, for_system_database, stored_definition);
 
     const bool restricted = !attach && !restriction_exempt && context->shouldRestrictUserQueryS3Credentials();
 
@@ -592,7 +593,7 @@ static ValidatedDiskConfig getValidatedTransientDiskConfig(
     serialization = function->formatWithSecretsOneLine();
 
     auto validated = getValidatedDiskConfig(
-        disk_args, serialization, context, /* attach */ false, /* for_system_database */ false);
+        disk_args, serialization, context, /* attach */ false, /* for_system_database */ false, /* stored_definition */ false);
     auto & config = validated.config;
 
     /// A transient disk is not registered anywhere, so there is nothing a `name` could refer to later,
