@@ -45,6 +45,12 @@ LOOPED_DISK_XML = """<clickhouse>
                     <main><disk>flaky</disk></main>
                 </volumes>
             </with_flaky>
+            <looped_first>
+                <volumes>
+                    <broken><disk>looped</disk></broken>
+                    <main><disk>default</disk></main>
+                </volumes>
+            </looped_first>
         </policies>
     </storage_configuration>
 </clickhouse>"""
@@ -197,5 +203,44 @@ def test_broken_disk_with_readable_table_in_storage_policy(started_cluster):
     q("ATTACH TABLE on_flaky")
     assert engine_of("on_flaky") == "MergeTree"
     assert q("SELECT count() FROM on_flaky").strip() == "10"
+
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+
+
+DEFAULTS_XML = """<clickhouse>
+    <merge_tree><storage_policy>looped_first</storage_policy></merge_tree>
+    <replicated_merge_tree><storage_policy>default</storage_policy></replicated_merge_tree>
+</clickhouse>"""
+
+
+def test_broken_disk_in_merge_tree_defaults_only(started_cluster):
+    # A replicated table starts from the `replicated_merge_tree` defaults, so with `lazy_load_tables`
+    # a broken disk that only the `merge_tree` defaults use does not fail its startup.
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+    ch1.query(
+        f"CREATE DATABASE {database_name} ENGINE = Atomic SETTINGS lazy_load_tables = 1"
+    )
+
+    q(
+        "CREATE TABLE replicated ( A Int64 ) "
+        "ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/replicated', '{replica}') ORDER BY A"
+    )
+    q("INSERT INTO replicated SELECT number FROM numbers(10)")
+
+    defaults_path = "/etc/clickhouse-server/config.d/merge_tree_defaults.xml"
+    try:
+        ch1.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"cat > {defaults_path} << 'EOF'\n{DEFAULTS_XML}\nEOF",
+            ]
+        )
+        ch1.restart_clickhouse()
+        assert q("SELECT count() FROM replicated").strip() == "10"
+        assert engine_of("replicated") == "ReplicatedMergeTree"
+    finally:
+        ch1.exec_in_container(["rm", "-f", defaults_path])
+        ch1.restart_clickhouse()
 
     ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")

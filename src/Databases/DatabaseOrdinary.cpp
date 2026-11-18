@@ -247,14 +247,17 @@ StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(const ASTCrea
     /// both phases of the conversion have to resolve it identically. The policy is taken from the CREATE
     /// query rather than from the storage object, because a lazily loaded table has no storage object yet.
     /// The resolution mirrors `MergeTreeData::getStoragePolicy`: a `disk` setting, from the query or the
-    /// `merge_tree` config, takes precedence over `storage_policy`.
+    /// config defaults the engine starts from, takes precedence over `storage_policy`.
     ///
     /// An inline `disk(...)` definition is resolved only with `create_custom_disk`, because resolving it
     /// instantiates the custom disk. Without `lazy_load_tables` the table is loaded right after the metadata
     /// scan, which creates the same disk anyway, so it costs nothing. With `lazy_load_tables` it would create
     /// the disk (and fail on an unavailable `include` or `from_zk`) for a table that is otherwise deferred
     /// until first access, so nullptr is returned instead and the flag is not looked for.
-    MergeTreeSettings settings = getContext()->getMergeTreeSettings();
+    /// Same defaults as in `registerStorageMergeTree`.
+    const auto * engine = create_query.storage ? create_query.storage->engine : nullptr;
+    const bool replicated = engine && engine->name.starts_with("Replicated") && engine->name.ends_with("MergeTree");
+    MergeTreeSettings settings = replicated ? getContext()->getReplicatedMergeTreeSettings() : getContext()->getMergeTreeSettings();
     if (create_query.storage && create_query.storage->settings)
     {
         /// Applied in order, so the last assignment wins, as in `MergeTreeSettings::loadFromQuery`.
