@@ -1,5 +1,5 @@
 -- JSONExtractLeafValues and JSONExtractLeafPathsAndValues can be an index expression, which is computed with the server-level settings.
--- So the result must not depend on the session settings, except json_type_escape_dots_in_keys.
+-- So the result must not depend on the session settings.
 
 SELECT '-- the same result with allow_simdjson = 0 and 1';
 SELECT n, JSONExtractLeafValues(concat('{"a": ', n, '}')) FROM (SELECT arrayJoin(['18446744073709551616', '-9223372036854775809', '123456789012345678901234567890', '0.1']) AS n) SETTINGS allow_simdjson = 0;
@@ -41,7 +41,7 @@ SELECT count() FROM tab_leaf_session WHERE hasAllTokens(JSONExtractLeafValues(s,
 
 DROP TABLE tab_leaf_session;
 
-SELECT '-- json_type_escape_dots_in_keys of an insert does not reach the index';
+SELECT '-- json_type_escape_dots_in_keys of an insert or a query does not change the result, with and without the index';
 DROP TABLE IF EXISTS tab_leaf_dots;
 CREATE TABLE tab_leaf_dots
 (
@@ -55,8 +55,16 @@ SETTINGS index_granularity = 1;
 
 INSERT INTO tab_leaf_dots SETTINGS json_type_escape_dots_in_keys = 1
     VALUES (1, '{"a.b": "secret", "c": "x"}'), (2, '{"a": {"b": "secret"}}'), (3, '{"c": "secret"}');
+INSERT INTO tab_leaf_dots SETTINGS json_type_escape_dots_in_keys = 0
+    VALUES (4, '{"a.b": "secret", "c": "x"}'), (5, '{"c": "secret", "a.c": "hello"}');
 
-SELECT groupArray(id) FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'secret');
-SELECT groupArray(id) FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'secret') SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'secret') SETTINGS json_type_escape_dots_in_keys = 0;
+SELECT groupArray(id) FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'secret') SETTINGS json_type_escape_dots_in_keys = 0, use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'secret') SETTINGS json_type_escape_dots_in_keys = 1;
+SELECT groupArray(id) FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'secret') SETTINGS json_type_escape_dots_in_keys = 1, use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'hello') SETTINGS json_type_escape_dots_in_keys = 1;
+SELECT groupArray(id) FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'hello') SETTINGS json_type_escape_dots_in_keys = 1, use_skip_indexes = 0;
+SELECT count() FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'secret') SETTINGS json_type_escape_dots_in_keys = 1, query_plan_optimize_count_from_text_index = 1;
+SELECT count() FROM tab_leaf_dots WHERE hasAllTokens(JSONExtractLeafValues(s, '^a\\.b$'), 'secret') SETTINGS json_type_escape_dots_in_keys = 1, use_skip_indexes = 0;
 
 DROP TABLE tab_leaf_dots;

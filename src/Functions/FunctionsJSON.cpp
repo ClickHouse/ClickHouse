@@ -1684,10 +1684,9 @@ private:
             {
                 if (has_parent)
                     path += '.';
-                if (format_settings.json.json_type_escape_dots_in_keys && key.find('.') != std::string_view::npos)
-                    path += escapeDotInJSONKey(String(key));
-                else
-                    path.append(key);
+                /// Dots in keys are never escaped, unlike the `JSON` data type with `json_type_escape_dots_in_keys`.
+                /// A setting would make the paths, and so the `skip_regex` matches, differ between the index and the query.
+                path.append(key);
             }
 
             walkValue(value, path, dest, format_settings);
@@ -2555,10 +2554,10 @@ If the JSON is invalid, or its top level is not an object, the result is an empt
 If a key occurs several times, all its values are returned.
 
 The path of a value is formed by the keys joined with `.`, and `[i]` for the index of an array element, for example `a.b`, `a[0]`, `a[0].b`, `a[0][1]`.
-If a key contains a dot, it is escaped as `%2E` when the setting [`json_type_escape_dots_in_keys`](/reference/settings/formats/other#json_type_escape_dots_in_keys) is enabled, the same as in the `JSON` data type.
-No other character is escaped. With the setting disabled, a key `a.b` and a nested key `b` inside `a` give the same path.
+Keys are not escaped: a key `a.b` and a nested key `b` inside `a` give the same path `a.b`.
+Unlike the `JSON` data type, the setting [`json_type_escape_dots_in_keys`](/reference/settings/formats/other#json_type_escape_dots_in_keys) does not apply.
 
-The `skip_regex` is matched against every visited path (object members at any depth, members inside arrays, and array element paths such as `a[0]`) after the escaping.
+The `skip_regex` is matched against every visited path (object members at any depth, members inside arrays, and array element paths such as `a[0]`).
 A match skips the value and everything below it.
 A partial match is enough, as in [`match`](/reference/functions/regular-functions/string-search-functions#match): use `^` and `$` to match the full path.
 Unlike the `SKIP REGEXP` of the `JSON` data type, the setting [`type_json_use_partial_match_to_skip_paths_by_regexp`](/reference/settings/formats/type-json#type_json_use_partial_match_to_skip_paths_by_regexp) does not apply.
@@ -2566,10 +2565,8 @@ Unlike the `SKIP REGEXP` of the `JSON` data type, the setting [`type_json_use_pa
 In the `'string'` mode, an array is returned whole, with no depth limit.
 
 <Note>
-The paths, and so the `skip_regex` matches, depend on the setting `json_type_escape_dots_in_keys`.
-An index expression is computed at insert and at merge with the server-level settings: the settings of an `INSERT` query do not apply.
-If the function is used in an index expression, and `skip_regex` can match a dot or `%2E`, queries that use the index must keep the server-level value of this setting.
-Other settings, such as `allow_simdjson` and `input_format_json_max_depth`, do not change the result.
+The result does not depend on the settings, such as `allow_simdjson`, `input_format_json_max_depth` and `json_type_escape_dots_in_keys`.
+So an index over the function gives the same rows as a full scan.
 </Note>
 
 Use [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues) for columns of the `JSON` data type.
@@ -2629,13 +2626,11 @@ SELECT JSONExtractLeafValues('{"a": [1, 2], "b": "x"}', '', 'string') AS res;
     {
         FunctionDocumentation::Description description = R"(
 The same as [`JSONExtractLeafValues`](#JSONExtractLeafValues), but returns a tuple `(path, value)` for every scalar leaf.
-See the description of `JSONExtractLeafValues` for the rules of the paths, the escaping of dots in keys, and the arguments `skip_regex` and `arrays`.
+See the description of `JSONExtractLeafValues` for the rules of the paths and the arguments `skip_regex` and `arrays`.
 
 <Note>
-The paths, and so the `skip_regex` matches, depend on the setting `json_type_escape_dots_in_keys`.
-An index expression is computed at insert and at merge with the server-level settings: the settings of an `INSERT` query do not apply.
-If the function is used in an index expression, and `skip_regex` can match a dot or `%2E`, queries that use the index must keep the server-level value of this setting.
-Other settings, such as `allow_simdjson` and `input_format_json_max_depth`, do not change the result.
+The result does not depend on the settings, such as `allow_simdjson`, `input_format_json_max_depth` and `json_type_escape_dots_in_keys`.
+So an index over the function gives the same rows as a full scan.
 </Note>
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractLeafPathsAndValues(json[, skip_regex[, arrays]])";

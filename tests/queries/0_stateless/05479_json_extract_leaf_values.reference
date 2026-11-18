@@ -44,14 +44,12 @@ Array(String)	Array(Tuple(\n    path String,\n    value String))
 [('b','1'),('a','[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]')]
 [('y','[2]')]
 ['1','1']
--- dots in keys: json_type_escape_dots_in_keys on and off
-[('a%2Eb','1'),('a.b','2'),('a.c%2Ed.e%2Ef','3'),('g[0].h%2Ei','4')]
+-- dots in keys are not escaped, json_type_escape_dots_in_keys does not apply
 [('a.b','1'),('a.b','2'),('a.c.d.e.f','3'),('g[0].h.i','4')]
--- the regex is matched against the escaped path
-[('a.b','2')]
-[('a%2Eb','1')]
+[('a.b','1'),('a.b','2'),('a.c.d.e.f','3'),('g[0].h.i','4')]
 []
--- no other character is escaped
+[('a.b','1'),('a.b','2')]
+-- no character is escaped
 [('a%b','1'),('c[0]','2'),('d e','3')]
 -- an anchored regex gives the same result with all setting combinations
 ['1','4','5','6']

@@ -53,15 +53,13 @@ SELECT JSONExtractLeafValues(concat('{"a": ', repeat('[', 20), repeat(']', 20), 
 SELECT JSONExtractLeafPathsAndValues(s, '', 'string') FROM (SELECT arrayJoin(['{"x": 1}', concat('{"b": 1, "a": ', repeat('[', 20), repeat(']', 20), '}'), '{"y": [2]}']) AS s) SETTINGS input_format_json_max_depth = 10;
 SELECT JSONExtractLeafValues(concat('{"a": ', repeat('[', 20), '1', repeat(']', 20), ', "b": 1}'), '', 'elements') SETTINGS input_format_json_max_depth = 10;
 
-SELECT '-- dots in keys: json_type_escape_dots_in_keys on and off';
+SELECT '-- dots in keys are not escaped, json_type_escape_dots_in_keys does not apply';
 SELECT JSONExtractLeafPathsAndValues('{"a.b": 1, "a": {"b": 2, "c.d": {"e.f": 3}}, "g": [{"h.i": 4}]}') SETTINGS json_type_escape_dots_in_keys = 1;
 SELECT JSONExtractLeafPathsAndValues('{"a.b": 1, "a": {"b": 2, "c.d": {"e.f": 3}}, "g": [{"h.i": 4}]}') SETTINGS json_type_escape_dots_in_keys = 0;
-SELECT '-- the regex is matched against the escaped path';
-SELECT JSONExtractLeafPathsAndValues('{"a.b": 1, "a": {"b": 2}}', '^a%2Eb$') SETTINGS json_type_escape_dots_in_keys = 1;
 SELECT JSONExtractLeafPathsAndValues('{"a.b": 1, "a": {"b": 2}}', '^a\\.b$') SETTINGS json_type_escape_dots_in_keys = 1;
-SELECT JSONExtractLeafPathsAndValues('{"a.b": 1, "a": {"b": 2}}', '^a\\.b$') SETTINGS json_type_escape_dots_in_keys = 0;
-SELECT '-- no other character is escaped';
-SELECT JSONExtractLeafPathsAndValues('{"a%b": 1, "c[0]": 2, "d e": 3}') SETTINGS json_type_escape_dots_in_keys = 1;
+SELECT JSONExtractLeafPathsAndValues('{"a.b": 1, "a": {"b": 2}}', '^a%2Eb$') SETTINGS json_type_escape_dots_in_keys = 1;
+SELECT '-- no character is escaped';
+SELECT JSONExtractLeafPathsAndValues('{"a%b": 1, "c[0]": 2, "d e": 3}');
 
 SELECT '-- an anchored regex gives the same result with all setting combinations';
 WITH '{"a": 1, "b_noindex": {"c": 2}, "d": [{"e_noindex": 3, "f": 4}, 5], "g.h": 6, "i.j_noindex": 7}' AS j
