@@ -507,7 +507,7 @@ namespace FailPoints
     /// reschedules itself after such an error instead of stopping permanently.
     extern const char merge_tree_refresh_parts_throw_once[];
     /// Pauses `getColumnDefaultnessStats` before it consumes the parts of the query's storage snapshot, so a test can
-    /// complete or remove a pending metadata mutation before the defaultness stats of these parts are consumed.
+    /// complete or remove a pending mutation or a patch part before the defaultness stats of these parts are consumed.
     extern const char mt_column_defaultness_stats_pause_after_parts_snapshot[];
     /// Throws a retryable error (`MEMORY_LIMIT_EXCEEDED`) while loading every outdated part in the
     /// background. Used to test that the loading is retried later instead of terminating the server.
@@ -8843,6 +8843,10 @@ const char * MergeTreeData::columnDefaultnessStatsUnavailableReasonToString(Colu
 std::optional<IStorage::ColumnDefaultnessStats>
 MergeTreeData::getColumnDefaultnessStats(const String & column_name, const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
+    /// Before the live checks, so that a test can also change the live state that they check
+    /// (e.g. materialize and remove a patch part) after the query's storage snapshot was taken.
+    FailPointInjection::pauseFailPoint(FailPoints::mt_column_defaultness_stats_pause_after_parts_snapshot);
+
     auto unavailable_reason = getColumnDefaultnessStatsUnavailableReason(query_context);
     if (unavailable_reason != ColumnDefaultnessStatsUnavailableReason::None)
     {
@@ -8873,12 +8877,21 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, const Stora
         return std::nullopt;
     }
 
+    /// The live checks in `getColumnDefaultnessStatsUnavailableReason` are not enough: patch parts and on-the-fly
+    /// mutations captured by the snapshot are still applied to the reads of its parts after they are materialized
+    /// and removed from the table (e.g. `clearUnusedPatchParts` after `OPTIMIZE ... FINAL`), while the base parts
+    /// of the snapshot still have `num_defaults` of the data before the update.
+    const auto & snapshot_mutations = *snapshot_data.mutations_snapshot;
+    if (snapshot_mutations.hasPatchParts() || snapshot_mutations.hasDataMutations() || snapshot_mutations.hasAlterMutations())
+    {
+        LOG_DEBUG(log, "No defaultness stats for column {}: the storage snapshot has patch parts or mutations applied on the fly", column_name);
+        return std::nullopt;
+    }
+
     const auto & metadata_snapshot = storage_snapshot->metadata;
     auto column_in_metadata = metadata_snapshot->getColumns().tryGetPhysical(column_name);
     if (!column_in_metadata)
         return std::nullopt;
-
-    FailPointInjection::pauseFailPoint(FailPoints::mt_column_defaultness_stats_pause_after_parts_snapshot);
 
     DataPartsVector parts;
     parts.reserve(snapshot_data.parts->size());
