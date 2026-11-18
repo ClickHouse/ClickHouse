@@ -34,11 +34,16 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 
+#include <Storages/StorageLog.h>
 #include <Storages/StorageMerge.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -1273,9 +1278,11 @@ static bool isColumnSafeOnMoreRows(const QueryPlan::Node * node, const String & 
         node = node->children.front();
     }
 
-    /// these sources give a filter to their own plans, where it can go below a JOIN
-    return names.empty()
-        || (!typeid_cast<const ReadFromMerge *>(node->step.get()) && !typeid_cast<const ReadFromLocalParallelReplicaStep *>(node->step.get()));
+    /// other sources (e.g. `Merge` or remote tables) can give a filter to a plan that this walk does not see, where it can go below a JOIN
+    const auto * source = node->step.get();
+    return names.empty() || typeid_cast<const ReadFromMergeTree *>(source) || typeid_cast<const ReadFromMemoryStorageStep *>(source)
+        || typeid_cast<const ReadFromStorageLogStep *>(source) || typeid_cast<const ReadFromSystemNumbersStep *>(source)
+        || dynamic_cast<const ReadFromPreparedSource *>(source);
 }
 
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
