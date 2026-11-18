@@ -2106,6 +2106,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             "Temporary objects (tables/views) cannot be created ON CLUSTER. "
             "You should not specify a cluster for a temporary objects.");
 
+    /// The initiator normalizes the query, which drops the source, and the hosts would create an empty table.
+    if (create.is_clone_as && !create.cluster.empty())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "CREATE CLONE AS is not supported with ON CLUSTER. Consider using separate CREATE and INSERT queries.");
+
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
 
