@@ -722,11 +722,11 @@ def main():
             )
             res = results[-1].is_ok()
 
-    # Cross-compiled builds that nothing else in CI executes: start the server under QEMU,
-    # so a bug that only shows at run time is caught, e.g. #127366 on ppc64le.
-    if res and build_type in qemu_smoke.TARGETS:
-        results.append(qemu_smoke.check(build_dir, current_directory, temp_dir, build_type))
-        res = results[-1].is_ok()
+        # Cross-compiled builds that nothing else in CI executes: start the server under QEMU,
+        # so a bug that only shows at run time is caught, e.g. #127366 on ppc64le.
+        if res and build_type in qemu_smoke.TARGETS:
+            results.append(qemu_smoke.check(build_dir, current_directory, temp_dir, build_type))
+            res = results[-1].is_ok()
 
     if (
         res

@@ -26,9 +26,10 @@ from pathlib import Path
 
 from ci.defs.defs import BuildTypes
 from ci.praktika.result import Result
+from ci.praktika.utils import Utils
 
 NAME = "QEMU smoke test"
-STARTS = int(os.environ.get("QEMU_SMOKE_STARTS", "1"))
+STARTS = max(1, int(os.environ.get("QEMU_SMOKE_STARTS", "1")))
 
 HTTP_PORT = 18123
 TCP_PORT = 19000
@@ -60,7 +61,8 @@ class Target:
     empty_files: tuple = ()
 
 
-# Build types that are cross-compiled and then run here. Adding one is a line, given a toolchain in cmake/linux/.
+# Build types that are cross-compiled and then run here. Adding one takes an entry, a toolchain in cmake/linux/ and a sysroot;
+# the fields of Target cover the quirks of a sysroot.
 TARGETS = {
     BuildTypes.PPC64LE: Target(
         qemu="qemu-ppc64le-static",
@@ -141,8 +143,7 @@ def write_config(config_source, work):
     for name in ("config.xml", "users.xml"):
         shutil.copy(config_source / name, conf / name)
     (conf / "config.d").mkdir()
-    (conf / "config.d" / "zz_smoke.xml").write_text(
-        f"""<clickhouse>
+    (conf / "config.d" / "zz_smoke.xml").write_text(f"""<clickhouse>
     <logger>
         <level>information</level>
         <log>{work}/log/clickhouse-server.log</log>
@@ -164,8 +165,7 @@ def write_config(config_source, work):
     <tcp_port>{TCP_PORT}</tcp_port>
     <listen_host>127.0.0.1</listen_host>
 </clickhouse>
-"""
-    )
+""")
     return conf / "config.xml"
 
 
@@ -177,13 +177,13 @@ def start_once(target, sysroot, binary, config_file, work):
     (work / "data" / "protos").mkdir()  # the server resolves this path at start-up and fails if it is missing
     (work / "log").mkdir()
     stderr = work / "server.err"
-    with open(work / "server.out", "wb") as out, open(stderr, "wb") as err:
+    with open(stderr, "wb") as err:
         # The watchdog re-executes /proc/self/exe, which under QEMU is the emulator and not the ClickHouse binary.
-        proc = subprocess.Popen(
+        proc = subprocess.Popen(  # pylint: disable=consider-using-with
             qemu_command(target, sysroot, binary, "server", f"--config-file={config_file}"),
             cwd=work,
-            stdout=out,
-            stderr=err,
+            stdout=err,  # the guest loader and the server may write to either stream; keep both in one file
+            stderr=subprocess.STDOUT,
             # An empty TZ means UTC for ClickHouse. The guest cannot see the zoneinfo of the machine, and any other value
             # is looked up there and fails.
             env={**os.environ, "CLICKHOUSE_WATCHDOG_ENABLE": "0", "TZ": ""},
@@ -196,20 +196,27 @@ def start_once(target, sysroot, binary, config_file, work):
             if proc.poll() is not None:
                 why = f"the server exited with code {proc.returncode} before answering"
                 break
+            # Only the readiness probe is retried. Once the server answers, a failure of the round trip is a failed start.
             try:
-                if http("GET", "SELECT 1", 10) == "1":
+                ready = http("GET", "SELECT 1", 10) == "1"
+            except (urllib.error.URLError, OSError) as e:
+                why = f"no answer within {READY_TIMEOUT_S}s, last error: {e}"
+                ready = False
+            if ready:
+                try:
                     for statement in ROUND_TRIP:
                         http("POST", statement, QUERY_TIMEOUT_S)
                     got = http("GET", ROUND_TRIP_QUERY, QUERY_TIMEOUT_S)
-                    if got != EXPECTED:
-                        why = f"the round trip returned {got!r}, expected {EXPECTED!r}"
-                    elif proc.poll() is not None:
-                        why = f"the server exited with code {proc.returncode} after answering"
-                    else:
-                        return True, "", stderr
+                except (urllib.error.URLError, OSError) as e:
+                    why = f"the round trip failed: {e}"
                     break
-            except (urllib.error.URLError, OSError) as e:
-                why = f"no answer within {READY_TIMEOUT_S}s, last error: {e}"
+                if got != EXPECTED:
+                    why = f"the round trip returned {got!r}, expected {EXPECTED!r}"
+                elif proc.poll() is not None:
+                    why = f"the server exited with code {proc.returncode} after answering"
+                else:
+                    return True, "", stderr
+                break
             time.sleep(1)
         return False, why, stderr
     finally:
@@ -229,14 +236,17 @@ def server_errors(stderr, work):
 
 
 def check(build_dir, repo_dir, work_dir, build_type, starts=STARTS):
+    stopwatch = Utils.Stopwatch()
     target = TARGETS[build_type]
     repo, work = Path(repo_dir), Path(work_dir) / "qemu_smoke"
     binary = str(Path(build_dir) / "programs" / "clickhouse")
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
-    sysroot = overlay_sysroot(str(repo / target.sysroot), target.links, target.empty_files, work)
     if not shutil.which(target.qemu):
-        return Result(name=NAME, status=Result.Status.ERROR, info=f"{target.qemu} is not installed in the builder image")
+        return Result(
+            name=NAME, status=Result.Status.ERROR, info=f"{target.qemu} is not installed in the builder image"
+        )
+    sysroot = overlay_sysroot(str(repo / target.sysroot), target.links, target.empty_files, work)
 
     results = []
     config_file = write_config(repo / "programs" / "server", work)
@@ -254,7 +264,7 @@ def check(build_dir, repo_dir, work_dir, build_type, starts=STARTS):
             shutil.copy(stderr, saved)
             files.append(str(saved))
             info = f"{why}\n{errors[-3000:]}"
-        print(f"start {i}/{starts}: {'ok' if ok else 'FAILED: ' + why}")
+        print(f"start {i}/{starts}: {'ok' if ok else 'FAILED'}")
         if info:
             print(info)
         results.append(
@@ -263,7 +273,7 @@ def check(build_dir, repo_dir, work_dir, build_type, starts=STARTS):
 
     summary = f"failed starts: {failed} / {starts} ({empty_name} with '{EMPTY_NAME_ERROR}')"
     print(summary)
-    return Result.create_from(name=NAME, results=results, files=files, info=summary)
+    return Result.create_from(name=NAME, results=results, stopwatch=stopwatch, files=files, info=summary)
 
 
 if __name__ == "__main__":
