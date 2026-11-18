@@ -11,6 +11,10 @@ Strict mode, a table without STRICT:
 1
 Strict mode, a query-backed table:
 1
+A Merge column narrower than the SQLite column:
+0	n0
+0	n256
+1
 MergeTree and MySQL:
 Query: SELECT `id`, `v` FROM `default`.`t_l` WHERE `id` = 5
 MergeTree and PostgreSQL:

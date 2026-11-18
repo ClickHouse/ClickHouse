@@ -22,6 +22,8 @@ CREATE TABLE src2 (id INTEGER, v TEXT) STRICT;
 INSERT INTO src2 VALUES (5, 'q5'), (8, 'q8');
 CREATE TABLE loose (id INTEGER, v TEXT);
 INSERT INTO loose VALUES (5, 'w5');
+CREATE TABLE wide (id INTEGER, v TEXT) STRICT;
+INSERT INTO wide VALUES (0, 'n0'), (256, 'n256');
 "
 
 TABLES="
@@ -32,6 +34,8 @@ CREATE TABLE t_s2 (id Nullable(Int64), v Nullable(String)) ENGINE = SQLite('${DB
 CREATE TABLE t_w (id Nullable(Int64), v Nullable(String)) ENGINE = SQLite('${DB_PATH}', 'loose');
 CREATE TABLE t_q (id Nullable(Int64), v Nullable(String)) ENGINE = SQLite('${DB_PATH}', query('SELECT id, v FROM src'));
 CREATE TABLE m (id Nullable(Int64), v Nullable(String)) ENGINE = Merge(currentDatabase(), '^t_(l|s)$');
+CREATE TABLE t_n (id Nullable(Int64), v Nullable(String)) ENGINE = SQLite('${DB_PATH}', 'wide');
+CREATE TABLE m_n (id Nullable(UInt8), v Nullable(String)) ENGINE = Merge(currentDatabase(), '^t_(l|n)$');
 "
 
 echo 'MergeTree and SQLite:'
@@ -60,6 +64,15 @@ SELECT id, v FROM merge(currentDatabase(), '^t_(s|w)$') WHERE id = 5 SETTINGS ex
 echo 'Strict mode, a query-backed table:'
 ${CLICKHOUSE_LOCAL} --query="${TABLES}
 SELECT id, v FROM merge(currentDatabase(), '^t_(l|q)$') WHERE id = 5 SETTINGS external_table_strict_query = 1;
+" 2>&1 | grep -c 'INCORRECT_QUERY'
+
+# 256 is 0 as `UInt8`, so the filter over the `Merge` column cannot be evaluated by SQLite.
+echo 'A Merge column narrower than the SQLite column:'
+${CLICKHOUSE_LOCAL} --query="${TABLES}
+SELECT id, v FROM m_n WHERE id = 0 ORDER BY v;
+"
+${CLICKHOUSE_LOCAL} --query="${TABLES}
+SELECT id, v FROM m_n WHERE id = 0 SETTINGS external_table_strict_query = 1;
 " 2>&1 | grep -c 'INCORRECT_QUERY'
 
 ${CLICKHOUSE_CLIENT} --multiquery --query "

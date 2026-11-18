@@ -31,6 +31,9 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/SetUtils.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Storages/StorageSnapshot.h>
 
 
 namespace DB
@@ -170,10 +173,39 @@ bool holdsEnumConstant(const QueryTreeNodePtr & node)
     return false;
 }
 
-/// A constant that still holds an `Enum` value would reach the external database as its number; a conjunct with one is applied locally only.
+/// Whether `node` reads a column of `table_expression` under another type than the table has, as a `Merge` table
+/// reads its children: the external database would evaluate a filter over it on the stored values.
+bool readsColumnUnderOtherType(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression)
+{
+    if (const auto * column_node = node->as<ColumnNode>())
+    {
+        if (column_node->getColumnSourceOrNull() != table_expression)
+            return false;
+
+        StorageSnapshotPtr storage_snapshot;
+        if (const auto * table_node = table_expression->as<TableNode>())
+            storage_snapshot = table_node->getStorageSnapshot();
+        else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
+            storage_snapshot = table_function_node->getStorageSnapshot();
+        if (!storage_snapshot)
+            return false;
+
+        auto stored_column = storage_snapshot->tryGetColumn(
+            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_node->getColumnName());
+        return stored_column && !stored_column->type->equals(*column_node->getColumnType());
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child && readsColumnUnderOtherType(child, table_expression))
+            return true;
+    return false;
+}
+
+/// A conjunct is applied locally only if it holds a constant with an `Enum` value (it would reach the external
+/// database as its number) or reads a column under another type than the table has.
 /// Returns whether anything was removed: the external database then returns rows that the local filter drops,
 /// so the `LIMIT` must not be pushed down.
-bool removeConjunctsHoldingEnumConstants(QueryTreeNodePtr & filter, const ContextPtr & context)
+bool removeConjunctsThatCannotBePushedDown(QueryTreeNodePtr & filter, const QueryTreeNodePtr & table_expression, const ContextPtr & context)
 {
     auto throw_if_strict = [&]
     {
@@ -181,10 +213,15 @@ bool removeConjunctsHoldingEnumConstants(QueryTreeNodePtr & filter, const Contex
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Query contains expressions that cannot be pushed down (and external_table_strict_query=true)");
     };
 
+    auto cannot_be_pushed_down = [&](const QueryTreeNodePtr & node)
+    {
+        return holdsEnumConstant(node) || readsColumnUnderOtherType(node, table_expression);
+    };
+
     auto * function = filter->as<FunctionNode>();
     if (!function || function->getFunctionName() != "and")
     {
-        if (holdsEnumConstant(filter))
+        if (cannot_be_pushed_down(filter))
         {
             throw_if_strict();
             filter = {};
@@ -194,7 +231,7 @@ bool removeConjunctsHoldingEnumConstants(QueryTreeNodePtr & filter, const Contex
     }
 
     auto & conjuncts = function->getArguments().getNodes();
-    if (std::erase_if(conjuncts, holdsEnumConstant) == 0)
+    if (std::erase_if(conjuncts, cannot_be_pushed_down) == 0)
         return false;
     throw_if_strict();
 
@@ -376,7 +413,7 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
                 allow_limit = false;
             removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), replacement_table_expression, context);
         }
-        if (query_node->hasPrewhere() && removeConjunctsHoldingEnumConstants(query_node->getPrewhere(), context))
+        if (query_node->hasPrewhere() && removeConjunctsThatCannotBePushedDown(query_node->getPrewhere(), replacement_table_expression, context))
             allow_limit = false;
         if (query_node->hasWhere())
         {
@@ -384,7 +421,7 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
                 allow_limit = false;
             removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
         }
-        if (query_node->hasWhere() && removeConjunctsHoldingEnumConstants(query_node->getWhere(), context))
+        if (query_node->hasWhere() && removeConjunctsThatCannotBePushedDown(query_node->getWhere(), replacement_table_expression, context))
             allow_limit = false;
     }
 
