@@ -1693,31 +1693,38 @@ void FileSegment::markRead(size_t offset, size_t size)
         return;
 
     std::lock_guard lock(efficiency_mutex);
+    const Int64 reserved = accountReservedSize();
     if (!efficiency)
         efficiency = std::make_unique<FileSegmentEfficiency>(range().size());
-    efficiency->markRead(
-        cache_efficiency, ByteRange{range().left, range().size()}, ByteRange{offset, size}, static_cast<Int64>(reserved_size.load()),
-        size_class.large);
+    efficiency->markRead(cache_efficiency, ByteRange{range().left, range().size()}, ByteRange{offset, size}, reserved, size_class.large);
 }
 
 void FileSegment::addReservedSize(Int64 delta)
 {
     /// Unsigned addition wraps, so a negative `delta` subtracts.
+    reserved_size += static_cast<size_t>(delta);
     if (is_unbound)
-    {
-        reserved_size += static_cast<size_t>(delta);
         return;
-    }
     chassert(cache);
 
-    /// Under the lock with `markRead`, so that a window start counts `delta` exactly once: either in the reserved
-    /// bytes that `markRead` reads, or in the `addReservedBytes` call below.
     std::lock_guard lock(efficiency_mutex);
-    reserved_size += static_cast<size_t>(delta);
+    accountReservedSize();
+}
+
+Int64 FileSegment::accountReservedSize()
+{
+    /// Exactly once: a reservation that races with `markRead` is counted by the first of them to take the lock,
+    /// and the other one finds no difference.
+    const size_t reserved = reserved_size.load();
+    if (counted_in_segment_sizes ? reserved == reserved_size_accounted : reserved == 0)
+        return static_cast<Int64>(reserved);
+    const Int64 delta = static_cast<Int64>(reserved) - static_cast<Int64>(reserved_size_accounted);
     cache->getSegmentSizes().add(size_class, counted_in_segment_sizes ? 0 : 1, delta);
     if (efficiency)
         efficiency->addReservedBytes(cache->getEfficiency(), delta, size_class.large);
     counted_in_segment_sizes = true;
+    reserved_size_accounted = reserved;
+    return static_cast<Int64>(reserved);
 }
 
 void FileSegment::onLoadedIntoCache()
@@ -1727,8 +1734,7 @@ void FileSegment::onLoadedIntoCache()
     chassert(cache);
     std::lock_guard lock(efficiency_mutex);
     chassert(!counted_in_segment_sizes);
-    cache->getSegmentSizes().add(size_class, 1, static_cast<Int64>(reserved_size.load()));
-    counted_in_segment_sizes = true;
+    accountReservedSize();
 }
 
 void FileSegment::onRangeShrunk(size_t old_range_size)
@@ -1737,8 +1743,9 @@ void FileSegment::onRangeShrunk(size_t old_range_size)
         return;
     chassert(cache);
     std::lock_guard lock(efficiency_mutex);
+    accountReservedSize();
     const auto new_class = cache->getSegmentSizes().getClass(range().size());
-    const auto bytes = static_cast<Int64>(reserved_size.load());
+    const auto bytes = static_cast<Int64>(reserved_size_accounted);
     if (counted_in_segment_sizes)
     {
         cache->getSegmentSizes().add(size_class, -1, -bytes);
@@ -1755,10 +1762,12 @@ void FileSegment::onRemovedFromCache(const FileSegmentGuard::Lock &)
         return;
     chassert(cache);
     std::lock_guard lock(efficiency_mutex);
-    const auto bytes = static_cast<Int64>(reserved_size.load());
+    /// Subtracts what is counted: a reservation that is not counted yet was never added.
+    const auto bytes = static_cast<Int64>(reserved_size_accounted);
     if (counted_in_segment_sizes)
         cache->getSegmentSizes().add(size_class, -1, -bytes);
     counted_in_segment_sizes = false;
+    reserved_size_accounted = 0;
     if (efficiency)
         efficiency->remove(cache->getEfficiency(), range().size(), bytes, size_class.large);
 }

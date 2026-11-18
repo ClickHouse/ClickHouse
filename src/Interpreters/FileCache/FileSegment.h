@@ -307,6 +307,9 @@ private:
 
     /// The only way to change `reserved_size` after construction.
     void addReservedSize(Int64 delta);
+    /// Counts the change of `reserved_size` since the last call in `FileCacheSegmentSizes` and the efficiency
+    /// counters, and returns the counted `reserved_size`.
+    Int64 accountReservedSize() TSA_REQUIRES(efficiency_mutex);
 
     void onLoadedIntoCache();
     /// Only the last holder removes a file segment, so nothing counts it after this.
@@ -408,8 +411,10 @@ private:
     std::atomic_flag increasing_priority;
     /// A leaf lock for the fields below: only the rotation mutex of `FileCacheEfficiency` is taken under it.
     mutable ByteMutex efficiency_mutex;
-    /// Whether `reserved_size` is counted in `FileCacheSegmentSizes`.
+    /// Whether the file segment is counted in `FileCacheSegmentSizes`, and the `reserved_size` that it and the
+    /// efficiency counters hold. `reserved_size` changes without this lock, so `accountReservedSize` counts the difference.
     bool counted_in_segment_sizes TSA_GUARDED_BY(efficiency_mutex) = false;
+    size_t reserved_size_accounted TSA_GUARDED_BY(efficiency_mutex) = 0;
     FileCacheSegmentSizes::Class size_class TSA_GUARDED_BY(efficiency_mutex);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
