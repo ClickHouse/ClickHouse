@@ -1800,7 +1800,7 @@ Block Connection::receiveProfileTraces()
     if (!block_profile_traces_in)
     {
         initMaybeCompressedInput();
-        block_profile_traces_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision, format_settings);
+        block_profile_traces_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision, optionalFormatSettings());
     }
     return receiveDataImpl(*block_profile_traces_in);
 }
