@@ -190,12 +190,6 @@ std::unordered_map<std::string_view, MappedFunction> buildFunctionTable()
     add_function("startsWith", "starts_with", {{{"str", "str"}, "bool", string, {{"case_sensitivity", "CASE_SENSITIVE"}}}});
     add_function("endsWith", "ends_with", {{{"str", "str"}, "bool", string, {{"case_sensitivity", "CASE_SENSITIVE"}}}});
 
-    add_function(
-        "substring",
-        "substring",
-        {{{"str", "i32", "i32"}, "str", string, {{"negative_start", "WRAP_FROM_END"}}},
-         {{"str", "i32"}, "str", string, {{"negative_start", "WRAP_FROM_END"}}}});
-
     add_function("floor", "floor", {{{"fp32"}, "fp32", rounding}, {{"fp64"}, "fp64", rounding}});
     add_function("ceil", "ceil", {{{"fp32"}, "fp32", rounding}, {{"fp64"}, "fp64", rounding}});
 
