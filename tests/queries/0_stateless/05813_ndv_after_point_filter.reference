@@ -1,0 +1,17 @@
+T1
+t.g = 7: g: 1 s: 50
+t.g IN (1, 2, 3): g: 3 s: 50
+t.g = 7 AND t.s = '3': g: 1 s: 1
+t.g = 7 OR t.g = 8: g: 2 s: 50
+T2
+t.g < 10: g: 100 s: 50
+t.g = 7 OR t.s = '3': g: 100 s: 50
+t.g != 7: g: 100 s: 50
+T3
+setting 1: 50 rows
+setting 0: 100 rows
+T4
+t.g = 7: g: 100 s: 50
+t.g IN (1, 2, 3): g: 100 s: 50
+t.g = 7 AND t.s = '3': g: 2 s: 2
+t.g = 7 OR t.g = 8: g: 100 s: 50

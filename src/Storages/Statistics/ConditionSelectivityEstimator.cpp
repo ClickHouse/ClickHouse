@@ -1,5 +1,6 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
+#include <algorithm>
 #include <stack>
 #include <cmath>
 
@@ -41,6 +42,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsUInt64 statistics_max_set_size_for_exact_selectivity_estimation;
+    extern const SettingsBool query_plan_estimate_ndv_after_point_filter;
 }
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const
@@ -241,12 +243,34 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
     if (final_rows > 0)
         final_rows = std::max(1.0, std::round(final_rows));
     result.rows = static_cast<UInt64>(final_rows);
+
+    /// A column that the whole filter restricts to a set of values has at most that many distinct values left.
+    std::unordered_map<String, UInt64> point_counts;
+    const bool conjunctive = final_element->function == RPNElement::FUNCTION_AND || final_element->function == RPNElement::FUNCTION_IN_RANGE
+        || (final_element->function == RPNElement::FUNCTION_OR && final_element->column_ranges.size() == 1
+            && final_element->column_not_ranges.empty() && final_element->null_check_columns.empty()
+            && final_element->not_null_check_columns.empty());
+    if (conjunctive && getContext()->getSettingsRef()[Setting::query_plan_estimate_ndv_after_point_filter])
+    {
+        for (const auto & [column_name, ranges] : final_element->column_ranges)
+        {
+            const bool all_points = !ranges.ranges.empty() && std::ranges::all_of(ranges.ranges, [](const Range & range)
+            {
+                return range.left_included && range.right_included && Range::equals(range.left, range.right);
+            });
+            if (all_points)
+                point_counts[column_name] = ranges.ranges.size();
+        }
+    }
+
     for (const auto & [column_name, estimator] : column_estimators)
     {
         if (!isCompatibleStatistics(metadata, estimator.stats, column_name))
             continue;
 
         UInt64 cardinality = std::min(result.rows, estimator.estimateCardinality());
+        if (auto it = point_counts.find(column_name); it != point_counts.end())
+            cardinality = std::min(cardinality, it->second);
         result.column_stats.emplace(column_name, makeColumnStats(cardinality, estimator.stats));
     }
     return result;

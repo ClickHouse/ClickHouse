@@ -11167,6 +11167,10 @@ Allows using statistics to optimize queries
 Allows using statistics to optimize queries
 )", 0, allow_statistic_optimize, \
         {"26.1", true, true, "Enable this optimization by default."}) \
+    DECLARE(Bool, query_plan_estimate_ndv_after_point_filter, true, R"(
+In the statistics estimate of a filtered read, cap the number of distinct values of a column at the number of values the whole filter restricts it to (`=`, `IN`). For example, after `WHERE year = 2000` the column `year` has one distinct value left, which the estimate of a `GROUP BY` or a join on it then uses. When disabled, the column keeps the number of distinct values of the table, capped at the estimated rows.
+)", 0, \
+        {"26.11", false, true, "New setting to cap the number of distinct values of a column filtered to a set of values."}) \
     DECLARE_WITH_ALIAS(Bool, allow_statistics, true, R"(
 Allows defining columns with [statistics](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) and [manipulate statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics).
 )", 0, allow_experimental_statistics, \
