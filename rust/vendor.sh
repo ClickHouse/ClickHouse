@@ -37,7 +37,7 @@ cd "$CH_TOP_DIR"/contrib/delta-kernel-rs || exit 1
 cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 
 # chdig
-cd "$CH_TOP_DIR"/contrib/chdig || exit 1
+cd "$CH_TOP_DIR"/contrib/chdig-cmake || exit 1
 cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 
 # wasmtime
