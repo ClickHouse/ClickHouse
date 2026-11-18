@@ -29,6 +29,19 @@ public:
 
     const WriteBufferFromOwnString & out;
     const size_t width;
+
+    /// Display width and indentation of the current line of `out`.
+    /// Only the text written since the previous call is scanned, so the total cost is linear in the output size.
+    size_t column();
+    size_t lineIndent();
+
+private:
+    void update();
+
+    size_t scanned = 0;
+    size_t line_column = 0;
+    size_t line_indent = 0;
+    bool line_indent_complete = false;
 };
 
 /// Whether a construct written at the current position of `out` has to be wrapped,

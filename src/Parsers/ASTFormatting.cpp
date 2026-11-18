@@ -27,23 +27,43 @@ bool fitsWidth(std::string_view text, size_t column, size_t width)
     return true;
 }
 
-std::string_view currentLine(const IAST::FormatState & state)
-{
-    std::string_view written = state.formatting->out.stringView();
-    return written.substr(written.rfind('\n') + 1);
-}
-
-size_t lineIndent(const IAST::FormatState & state)
-{
-    std::string_view line = currentLine(state);
-    return std::min(line.find_first_not_of(' '), line.size()) / 4;
-}
-
 bool fitsOnLine(const IAST::FormatState & state, std::string_view text)
 {
-    return fitsWidth(text, displayWidth(currentLine(state)), state.formatting->width);
+    return fitsWidth(text, state.formatting->column(), state.formatting->width);
 }
 
+}
+
+void ASTFormatting::update()
+{
+    std::string_view added = out.stringView().substr(scanned);
+    scanned += added.size();
+    if (size_t newline = added.rfind('\n'); newline != std::string_view::npos)
+    {
+        added.remove_prefix(newline + 1);
+        line_column = 0;
+        line_indent = 0;
+        line_indent_complete = false;
+    }
+    if (!line_indent_complete)
+    {
+        size_t spaces = std::min(added.find_first_not_of(' '), added.size());
+        line_indent += spaces;
+        line_indent_complete = spaces < added.size();
+    }
+    line_column += displayWidth(added, line_column);
+}
+
+size_t ASTFormatting::column()
+{
+    update();
+    return line_column;
+}
+
+size_t ASTFormatting::lineIndent()
+{
+    update();
+    return line_indent / 4;
 }
 
 bool shouldWrapAST(
@@ -56,14 +76,15 @@ bool shouldWrapAST(
         return false;
     /// When the indentation alone takes the whole width, wrapping does not help
     /// and would only make the output grow quadratically with the nesting depth.
-    if (4 * (std::max<size_t>(frame.indent, lineIndent(state)) + 1) >= state.formatting->width)
+    const size_t width = state.formatting->width;
+    if (4 * (frame.indent + 1) >= width || 4 * (state.formatting->lineIndent() + 1) >= width)
         return false;
     return !fitsOnLine(state, flat_text());
 }
 
 UInt16 wrappedIndentAST(const IAST::FormatState & state, UInt16 min_indent)
 {
-    return static_cast<UInt16>(std::max<size_t>(lineIndent(state), min_indent) + 1);
+    return static_cast<UInt16>(std::max<size_t>(state.formatting->lineIndent(), min_indent) + 1);
 }
 
 String formatASTWithoutWrapping(const std::function<void(WriteBuffer &, IAST::FormatState &)> & format)
