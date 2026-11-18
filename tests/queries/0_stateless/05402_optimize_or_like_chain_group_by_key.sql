@@ -1,5 +1,8 @@
 -- Random settings limits: optimize_or_like_chain=(1, None)
 
+SET optimize_or_like_chain_min_patterns = 1;
+SET optimize_or_like_chain_min_substrings = 1;
+
 -- After GROUP BY, a branch of an OR chain that is itself a GROUP BY key is read from the aggregation result.
 
 SELECT 'substring keys';
