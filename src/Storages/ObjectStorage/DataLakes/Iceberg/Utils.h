@@ -113,9 +113,18 @@ Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str
 
 Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object);
 
+/// A named snapshot reference resolved from table metadata.
+struct ResolvedSnapshotRef
+{
+    Int64 snapshot_id;
+    /// Tags are read with the schema recorded on the snapshot.
+    /// Branches, including `main`, are read with the table's current schema.
+    bool is_tag = false;
+};
+
 /// Resolve an Iceberg snapshot reference (branch or tag) from table metadata.
 /// `main` falls back to `current-snapshot-id` when the `refs` map is absent.
-Int64 resolveSnapshotIdFromRef(const Poco::JSON::Object::Ptr & metadata, const String & ref_name);
+ResolvedSnapshotRef resolveSnapshotIdFromRef(const Poco::JSON::Object::Ptr & metadata, const String & ref_name);
 
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);

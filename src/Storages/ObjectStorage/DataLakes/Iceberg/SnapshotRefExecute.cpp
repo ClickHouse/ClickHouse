@@ -37,6 +37,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LIMIT_EXCEEDED;
 extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace DataLakeStorageSetting
@@ -52,13 +53,18 @@ namespace
 
 constexpr auto MAX_TRANSACTION_RETRIES = 1000;
 
-void validateRefName(const String & name, std::string_view command)
+void validateRefName(const String & name, std::string_view command, bool restrict_characters)
 {
     if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} requires a non-empty snapshot reference name", command);
 
     if (name == f_main)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} cannot target the reserved Iceberg reference 'main'", command);
+
+    /// Iceberg puts no constraint on names written by other engines. `drop_snapshot_ref` must accept them.
+    /// Names this command creates stay within letters, digits, '_', '-' and '.'.
+    if (!restrict_characters)
+        return;
 
     for (char c : name)
     {
@@ -70,6 +76,17 @@ void validateRefName(const String & name, std::string_view command)
                 command,
                 name);
     }
+}
+
+void throwIfCatalogCannotCommitRefs(const std::shared_ptr<DataLake::ICatalog> & catalog, std::string_view command)
+{
+    if (!catalog || catalog->isTransactional() || catalog->canPublishRewrittenMetadata())
+        return;
+
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "{} is not supported for this catalog; it does not publish rewritten Iceberg metadata",
+        command);
 }
 
 String normalizeRefType(const String & type, std::string_view command)
@@ -200,7 +217,7 @@ struct CreateOptions
 CreateOptions parseCreateOptions(const ASTPtr & args)
 {
     static constexpr std::string_view cmd = "create_snapshot_ref";
-    ExecuteCommandArgs schema(String(cmd));
+    ExecuteCommandArgs schema{String(cmd)};
     schema.addPositional("name", Field::Types::String);
     schema.addNamed("type", Field::Types::String);
     schema.addNamed("snapshot_id");
@@ -211,7 +228,7 @@ CreateOptions parseCreateOptions(const ASTPtr & args)
     auto parsed = schema.parse(args);
     CreateOptions options;
     options.name = parsed.getAs<String>("name");
-    validateRefName(options.name, cmd);
+    validateRefName(options.name, cmd, true);
     options.type = normalizeRefType(parsed.getAs<String>("type"), cmd);
     if (parsed.has("snapshot_id") && !parsed.get("snapshot_id").isNull())
         options.snapshot_id = fieldToInt64(parsed.get("snapshot_id"), cmd, "snapshot_id");
@@ -228,7 +245,7 @@ struct DropOptions
 DropOptions parseDropOptions(const ASTPtr & args)
 {
     static constexpr std::string_view cmd = "drop_snapshot_ref";
-    ExecuteCommandArgs schema(String(cmd));
+    ExecuteCommandArgs schema{String(cmd)};
     schema.addPositional("name", Field::Types::String);
     schema.addNamed("if_exists");
     schema.addDefault("if_exists", Field(UInt64(0)));
@@ -236,7 +253,7 @@ DropOptions parseDropOptions(const ASTPtr & args)
     auto parsed = schema.parse(args);
     DropOptions options;
     options.name = parsed.getAs<String>("name");
-    validateRefName(options.name, cmd);
+    validateRefName(options.name, cmd, false);
     options.if_exists = fieldToBool(parsed.get("if_exists"), cmd, "if_exists");
     return options;
 }
@@ -254,6 +271,7 @@ Pipe executeCreateSnapshotRef(
     const String & table_name)
 {
     auto options = parseCreateOptions(args);
+    throwIfCatalogCannotCommitRefs(catalog, "create_snapshot_ref");
     const bool catalog_commits_metadata = catalog && catalog->isTransactional();
     auto log = getLogger("IcebergSnapshotRef");
 
@@ -281,7 +299,14 @@ Pipe executeCreateSnapshotRef(
             compression_method,
             persistent_table_components.table_uuid));
 
-        Int64 snapshot_id = options.snapshot_id.value_or(currentSnapshotIdOrThrow(metadata, "create_snapshot_ref"));
+        /// Evaluate the current snapshot only when `snapshot_id` was omitted.
+        /// `optional::value_or` would call it even for an explicit id, and a table can have
+        /// snapshots with no current snapshot.
+        Int64 snapshot_id;
+        if (options.snapshot_id)
+            snapshot_id = *options.snapshot_id;
+        else
+            snapshot_id = currentSnapshotIdOrThrow(metadata, "create_snapshot_ref");
         if (!snapshotIdExists(metadata, snapshot_id))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "create_snapshot_ref snapshot id {} does not exist", snapshot_id);
 
@@ -354,6 +379,7 @@ Pipe executeDropSnapshotRef(
     const String & table_name)
 {
     auto options = parseDropOptions(args);
+    throwIfCatalogCannotCommitRefs(catalog, "drop_snapshot_ref");
     const bool catalog_commits_metadata = catalog && catalog->isTransactional();
     auto log = getLogger("IcebergSnapshotRef");
 

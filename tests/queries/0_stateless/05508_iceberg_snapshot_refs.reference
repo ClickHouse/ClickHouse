@@ -40,3 +40,28 @@ if_exists
 probe		1
 drop_missing
 BAD_ARGUMENTS
+phase3_schema
+schema_default
+x	y
+schema_main
+x	y
+schema_branch
+x	y
+schema_tag
+x
+optimize_manifest_with_ref
+NOT_IMPLEMENTED
+manifest_metadata_unchanged
+1
+create_rejects_slash
+BAD_ARGUMENTS
+read_external_name
+1
+drop_external_name
+feature/x	branch	0
+create_without_current
+from_id	branch	0
+if_not_exists_without_current
+from_id	branch	1
+create_requires_current
+BAD_ARGUMENTS

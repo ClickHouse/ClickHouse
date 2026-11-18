@@ -209,6 +209,16 @@ void throwIfIcebergRefSet(const Settings & settings, std::string_view operation)
             operation);
 }
 
+void throwIfExplicitIcebergSnapshot(const Settings & settings, std::string_view operation)
+{
+    if (settings[Setting::iceberg_snapshot_id].changed || settings[Setting::iceberg_timestamp_ms].changed
+        || settings[Setting::iceberg_ref].changed)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "{} is not supported with iceberg_snapshot_id, iceberg_timestamp_ms, or iceberg_ref",
+            operation);
+}
+
 }
 
 std::pair<Iceberg::PersistentTableComponents, Iceberg::MetadataFileWithInfo> IcebergMetadata::initializePersistentTableComponents(
@@ -555,11 +565,7 @@ bool IcebergMetadata::optimize(
     checkTableRootIsQueriedPath("OPTIMIZE");
 
     const auto & settings = context->getSettingsRef();
-    if (settings[Setting::iceberg_snapshot_id].changed || settings[Setting::iceberg_timestamp_ms].changed
-        || settings[Setting::iceberg_ref].changed)
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "OPTIMIZE is not supported with iceberg_snapshot_id, iceberg_timestamp_ms, or iceberg_ref");
+    throwIfExplicitIcebergSnapshot(settings, "OPTIMIZE");
 
     /// `iceberg_metadata_file_path` also carries the catalog's metadata pointer, so reject it only without a catalog.
     if (!catalog)
@@ -624,6 +630,7 @@ bool IcebergMetadata::optimizeManifestFiles(
        const StorageID & storage_id)
 {
     checkTableRootIsQueriedPath("OPTIMIZE TABLE ... MANIFEST");
+    throwIfExplicitIcebergSnapshot(context->getSettingsRef(), "OPTIMIZE TABLE ... MANIFEST");
 
     if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
     {
@@ -710,9 +717,15 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
     }
     else if (ref_changed)
     {
-        Int64 current_snapshot_id = resolveSnapshotIdFromRef(metadata_object, local_context->getSettingsRef()[Setting::iceberg_ref]);
-        auto data_snapshot = getIcebergDataSnapshot(metadata_object, current_snapshot_id, local_context);
-        return {data_snapshot, static_cast<Int32>(data_snapshot->schema_id_on_snapshot_commit)};
+        /// Iceberg reads a tag with the schema stored on its snapshot, and a branch (including `main`)
+        /// with the table's current schema. See `SnapshotUtil.schemaFor`.
+        auto resolved = resolveSnapshotIdFromRef(metadata_object, local_context->getSettingsRef()[Setting::iceberg_ref]);
+        auto data_snapshot = getIcebergDataSnapshot(metadata_object, resolved.snapshot_id, local_context);
+        if (resolved.is_tag)
+            return {data_snapshot, static_cast<Int32>(data_snapshot->schema_id_on_snapshot_commit)};
+
+        auto schema_id = parseTableSchema(metadata_object, *persistent_components.schema_processor);
+        return {data_snapshot, schema_id};
     }
     else
     {

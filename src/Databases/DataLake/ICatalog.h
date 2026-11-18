@@ -341,6 +341,11 @@ public:
     /// The Glue catalog does not support such operation.
     virtual bool isTransactional() const { return false; }
 
+    /// True when a non-transactional catalog can publish a metadata file the client has already written.
+    /// Glue stores a pointer to that file via `updateMetadata`. Catalogs that leave `updateMetadata`
+    /// unimplemented must be rejected before the file is written.
+    virtual bool canPublishRewrittenMetadata() const { return false; }
+
     virtual CredentialsRefreshCallback getCredentialsConfigurationCallback(
         const DB::StorageID & /*storage_id*/, const TableMetadata & /*table_metadata*/)
     {

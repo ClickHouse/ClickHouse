@@ -87,7 +87,7 @@ echo "drop_main"
 $CH --query "ALTER TABLE ${TABLE} EXECUTE drop_snapshot_ref(name = 'main')" 2>&1 | grep -o 'BAD_ARGUMENTS' | head -1
 
 echo "insert_with_ref"
-$CH --query "INSERT INTO ${TABLE} VALUES (9) SETTINGS iceberg_ref = 'probe'" 2>&1 | grep -o 'BAD_ARGUMENTS' | head -1
+$CH --query "INSERT INTO ${TABLE} SETTINGS iceberg_ref = 'probe' VALUES (9)" 2>&1 | grep -o 'BAD_ARGUMENTS' | head -1
 
 echo "execute_without_gate"
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --allow_experimental_iceberg_snapshot_refs=0 --query \
@@ -104,6 +104,72 @@ $CH --query "ALTER TABLE ${TABLE} EXECUTE drop_snapshot_ref(name = 'probe', if_e
 
 echo "drop_missing"
 $CH --query "ALTER TABLE ${TABLE} EXECUTE drop_snapshot_ref(name = 'probe')" 2>&1 | grep -o 'BAD_ARGUMENTS' | head -1
+
+$CH --query "DROP TABLE ${TABLE}"
+rm -rf "${TABLE_PATH}"
+
+echo "phase3_schema"
+$CH --query "CREATE TABLE ${TABLE} (x Int32) ENGINE = IcebergLocal('${TABLE_PATH}') SETTINGS allow_experimental_iceberg_compaction = 0"
+$CH --query "INSERT INTO ${TABLE} VALUES (1)"
+$CH --query "ALTER TABLE ${TABLE} EXECUTE create_snapshot_ref(name = 'br')" > /dev/null
+$CH --query "ALTER TABLE ${TABLE} EXECUTE create_snapshot_ref(name = 'tg', type = 'tag')" > /dev/null
+$CH --query "ALTER TABLE ${TABLE} ADD COLUMN y Nullable(Int32)"
+
+echo "schema_default"
+$CH --query "SELECT * FROM ${TABLE} FORMAT TSVWithNames" | head -1
+echo "schema_main"
+$CH --query "SELECT * FROM ${TABLE} SETTINGS iceberg_ref = 'main' FORMAT TSVWithNames" | head -1
+echo "schema_branch"
+$CH --query "SELECT * FROM ${TABLE} SETTINGS iceberg_ref = 'br' FORMAT TSVWithNames" | head -1
+echo "schema_tag"
+$CH --query "SELECT * FROM ${TABLE} SETTINGS iceberg_ref = 'tg' FORMAT TSVWithNames" | head -1
+
+metadata_versions()
+{
+    find "${TABLE_PATH}metadata" -name 'v*.metadata.json' | wc -l | tr -d ' '
+}
+
+versions_before="$(metadata_versions)"
+echo "optimize_manifest_with_ref"
+$CH --query "OPTIMIZE TABLE ${TABLE} MANIFEST SETTINGS iceberg_ref = 'br', allow_experimental_iceberg_compaction = 1" 2>&1 | grep -o 'NOT_IMPLEMENTED' | head -1
+echo "manifest_metadata_unchanged"
+if [ "$(metadata_versions)" = "${versions_before}" ]; then echo 1; else echo 0; fi
+
+echo "create_rejects_slash"
+$CH --query "ALTER TABLE ${TABLE} EXECUTE create_snapshot_ref(name = 'feature/y')" 2>&1 | grep -o 'BAD_ARGUMENTS' | head -1
+
+python3 - "${TABLE_PATH}metadata" <<'PY'
+import json, os, re, sys
+d = sys.argv[1]
+latest = max(int(m.group(1)) for f in os.listdir(d) if (m := re.fullmatch(r"v(\d+)\.metadata\.json", f)))
+meta = json.load(open(os.path.join(d, f"v{latest}.metadata.json")))
+meta.setdefault("refs", {})["feature/x"] = {"snapshot-id": meta["current-snapshot-id"], "type": "branch"}
+json.dump(meta, open(os.path.join(d, f"v{latest + 1}.metadata.json"), "w"))
+PY
+
+echo "read_external_name"
+$CH --query "SELECT count() FROM ${TABLE} SETTINGS iceberg_ref = 'feature/x'"
+echo "drop_external_name"
+$CH --query "ALTER TABLE ${TABLE} EXECUTE drop_snapshot_ref(name = 'feature/x')" | cut -f1,2,4
+
+snap_id="$(python3 - "${TABLE_PATH}metadata" <<'PY'
+import json, os, re, sys
+d = sys.argv[1]
+latest = max(int(m.group(1)) for f in os.listdir(d) if (m := re.fullmatch(r"v(\d+)\.metadata\.json", f)))
+meta = json.load(open(os.path.join(d, f"v{latest}.metadata.json")))
+snap = meta["snapshots"][-1]["snapshot-id"]
+meta["current-snapshot-id"] = None
+json.dump(meta, open(os.path.join(d, f"v{latest + 1}.metadata.json"), "w"))
+print(snap)
+PY
+)"
+
+echo "create_without_current"
+$CH --query "ALTER TABLE ${TABLE} EXECUTE create_snapshot_ref(name = 'from_id', snapshot_id = ${snap_id})" | cut -f1,2,4
+echo "if_not_exists_without_current"
+$CH --query "ALTER TABLE ${TABLE} EXECUTE create_snapshot_ref(name = 'from_id', snapshot_id = ${snap_id}, if_not_exists = 1)" | cut -f1,2,4
+echo "create_requires_current"
+$CH --query "ALTER TABLE ${TABLE} EXECUTE create_snapshot_ref(name = 'needs_current')" 2>&1 | grep -o 'BAD_ARGUMENTS' | head -1
 
 $CH --query "DROP TABLE ${TABLE}"
 rm -rf "${TABLE_PATH}"
