@@ -454,11 +454,11 @@ SELECT queries need to load vector similarity indexes into main memory to use th
 To avoid that the same vector similarity index is loaded repeatedly into main memory, ClickHouse provides a dedicated in-memory cache for such indexes.
 The bigger this cache is, the fewer unnecessary loads will happen.
 The maximum cache size can be configured using server setting [vector_similarity_index_cache_size](/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size).
-By default, the cache can grow up to 5 GB in size.
+In ClickHouse OSS, the cache can grow up to 5 GB in size by default.
 
-<Note>
-In ClickHouse Cloud, the cache size is derived from replica memory and follows vertical scaling, so it can be much smaller than 5 GB on small replicas. The setting can't be changed from SQL or the console; to use a different value, contact support. Like the other caches, the size is capped at `cache_size_to_ram_max_ratio` of replica memory.
-</Note>
+In ClickHouse Cloud, the maximum cache size depends on the pod size.
+The exact size can be checked in [system.server_settings](/reference/system-tables/server_settings).
+As server settings cannot be changed from SQL or the console, contact support to configure a bigger size.
 
 The following log messages (`system.text_log`) indicate that the vector similarity index is being loaded.
 If such messages appear repeatedly for different vector search queries, this indicates that the cache size is too low.
