@@ -1689,6 +1689,9 @@ class JobConfigs:
     # `arm_binary, parallel`/`sequential` stateless jobs already run the whole suite. The parallel
     # jobs use the same runner shape as the coverage jobs (16 vCPU, 64 GiB): with 32 vCPU and the
     # same memory, the stateful data load and the doubled test concurrency exceed the memory limits.
+    # The `ParallelReplicas` jobs use the `amd_debug` build instead: every second run they put the
+    # whole suite through the automatic parallel replicas optimization (see `functional_tests.py`),
+    # and only a debug build checks the invariants (`chassert`, abort on `LOGICAL_ERROR`) on the way.
     functional_tests_arm_binary_coverage_replacement_pr_jobs = common_ft_job_config.parametrize(
         *[
             Job.ParamSet(
@@ -1705,14 +1708,14 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
         Job.ParamSet(
-            parameter="arm_binary, ParallelReplicas, s3 storage, parallel",
-            runs_on=RunnerLabels.ARM_MEDIUM,
-            requires=[ArtifactNames.CH_ARM_BINARY],
+            parameter="amd_debug, ParallelReplicas, s3 storage, parallel",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
         Job.ParamSet(
-            parameter="arm_binary, ParallelReplicas, s3 storage, sequential",
-            runs_on=RunnerLabels.ARM_SMALL,
-            requires=[ArtifactNames.CH_ARM_BINARY],
+            parameter="amd_debug, ParallelReplicas, s3 storage, sequential",
+            runs_on=RunnerLabels.AMD_SMALL,
+            requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
         Job.ParamSet(
             parameter="arm_binary, AsyncInsert, s3 storage, parallel",
