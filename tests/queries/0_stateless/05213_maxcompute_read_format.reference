@@ -1,0 +1,11 @@
+inherit
+mc_format_column	1
+mc_format_default	0
+mc_format_raw	1
+row
+column
+mc_format_column	1	0
+mc_format_raw	0	1
+mc_format_column	1	0
+mc_format_raw	0	1
+0

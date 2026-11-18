@@ -1,0 +1,56 @@
+services:
+  maxcompute1:
+    image: ${MAXCOMPUTE_EMULATOR_IMAGE:-maxcompute/maxcompute-emulator:1.1.0@sha256:57d1d25757255a1f16d0a3c34ef8b99c24bf8615e1c14c13dfd5a41026dee2d3}
+    platform: linux/amd64
+    ports:
+      - "127.0.0.1:${MAXCOMPUTE_EXTERNAL_PORT}:8080"
+    volumes:
+      - ${MAXCOMPUTE_FIXTURES_PATH}:/fixtures.sql:ro
+    command:
+      - --listen
+      - 0.0.0.0:8080
+      - --seed
+      - /fixtures.sql
+      - --project
+      - test_project
+      - --test-mode
+      - --test-network
+      - --quotas
+      - named
+    stop_signal: SIGINT
+    stop_grace_period: 5s
+
+  maxcompute-strict:
+    image: ${MAXCOMPUTE_EMULATOR_IMAGE:-maxcompute/maxcompute-emulator:1.1.0@sha256:57d1d25757255a1f16d0a3c34ef8b99c24bf8615e1c14c13dfd5a41026dee2d3}
+    platform: linux/amd64
+    volumes:
+      - ${MAXCOMPUTE_FIXTURES_PATH}:/fixtures.sql:ro
+      - ${MAXCOMPUTE_AUTH_PATH}:/auth.json:ro
+    command:
+      - --listen
+      - 0.0.0.0:8080
+      - --seed
+      - /fixtures.sql
+      - --project
+      - test_project
+      - --auth-mode
+      - strict
+      - --auth-config
+      - /auth.json
+      - --quotas
+      - named
+    stop_signal: SIGINT
+    stop_grace_period: 5s
+
+  maxcompute-types:
+    image: ${MAXCOMPUTE_EMULATOR_IMAGE:-maxcompute/maxcompute-emulator:1.1.0@sha256:57d1d25757255a1f16d0a3c34ef8b99c24bf8615e1c14c13dfd5a41026dee2d3}
+    platform: linux/amd64
+    command:
+      - --listen
+      - 0.0.0.0:8080
+      - --seed
+      - /opt/emulator/types.sql
+      - --project
+      - test_project
+    stop_signal: SIGINT
+    stop_grace_period: 5s

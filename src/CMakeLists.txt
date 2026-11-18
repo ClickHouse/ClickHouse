@@ -1016,6 +1016,10 @@ if (TARGET ch_contrib::rapidjson)
     target_link_libraries(dbms PRIVATE ch_contrib::rapidjson)
 endif()
 
+if (TARGET ch_contrib::odps)
+    target_link_libraries(dbms PRIVATE ch_contrib::odps)
+endif()
+
 target_link_libraries(dbms PUBLIC ch_contrib::consistent_hashing)
 
 if (TARGET ch_contrib::usearch)
@@ -1135,6 +1139,10 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::yaml_cpp)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::yaml_cpp)
+    endif()
+
+    if (TARGET ch_contrib::odps)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::odps)
     endif()
 
     if (TARGET ch_rust::delta_kernel_rs)
