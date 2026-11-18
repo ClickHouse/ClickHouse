@@ -399,12 +399,12 @@ ColumnPtr getFilterByPathAndFileIndexes(
     const NameSet required = actions->getRequiredColumnsWithTypes().getNameSet();
 
     Block block;
-    /// Every column of the block except `_path`, `_file` and `_idx` is a Hive partition column.
+    /// Every column of the block except `_path` and `_file` is a Hive partition column.
     NamesAndTypesList partition_columns;
     auto add_column = [&](const NameAndTypePair & column)
     {
         block.insert({column.type->createColumn(), column.type, column.name});
-        if (column.name != "_path" && column.name != "_file" && column.name != "_idx")
+        if (column.name != "_path" && column.name != "_file")
             partition_columns.push_back(column);
     };
 
