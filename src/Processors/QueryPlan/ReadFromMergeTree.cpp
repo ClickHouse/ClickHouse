@@ -3411,7 +3411,7 @@ ConditionTemplate<KeyCondition>::Ptr ReadFromMergeTree::buildPrimaryKeyCondition
     /// is computed once, because the factory is invoked per part for constant folding, and not
     /// at all when there is no filter to analyze.
     auto alternative_primary_key = std::make_shared<LazyAlternativeKeyExpression>();
-    auto key_condition_factory = [query_context, metadata_snapshot, alternative_primary_key, filter_dag](const ActionsDAG *, const ActionsDAG::Node * predicate)
+    auto key_condition_factory = [query_context, metadata_snapshot, alternative_primary_key, filter_dag = filter.dag](const ActionsDAG *, const ActionsDAG::Node * predicate)
     {
         ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
         const bool skip_primary_key_analysis = !query_context->getSettingsRef()[Setting::use_primary_key];
