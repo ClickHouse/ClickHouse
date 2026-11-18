@@ -65,6 +65,11 @@ SELECT finalizeAggregation(CAST(unhex('0F000000000000803F'),
 SELECT finalizeAggregation(CAST(unhex('01080000000000000000'),
                                 'AggregateFunction(groupUniqArray, Tuple(String))')); -- { serverError INCORRECT_DATA }
 
+-- LowCardinality(String) interns through ColumnUnique. Its arena record has a trailing byte, so an
+-- encoded size of zero must be rejected instead of becoming SIZE_MAX at the hash input.
+SELECT finalizeAggregation(CAST(unhex('0109000000000000000000'),
+    'AggregateFunction(groupUniqArray, Tuple(Variant(LowCardinality(String))))')); -- { serverError INCORRECT_DATA }
+
 -- uniq stores skip_degree as the first byte and thins hashes by 2 ^ skip_degree. Thinning cannot
 -- raise the degree beyond one past its budget, so a larger one is rejected. The last accepted
 -- degree still admits a count that saturates the hash space, which size() reports as its maximum.
