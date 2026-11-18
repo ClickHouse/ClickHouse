@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
@@ -113,14 +114,14 @@ public:
         offsets.resize(input_rows_count);
 
         size_t total = 0;
-        size_t bytes_since_check = 0;
-        const QueryStatusPtr query_status = getQueryStatusOfExecutingQuery();
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        CancellationBudget budget(check_cancellation);
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             std::string_view query = col_query.getDataAt(i);
 
-            checkQueryCancellationThrottled(query_status, name, query.size(), bytes_since_check);
+            budget.chargeParsedBytes(query.size());
 
             Impl::processRow(query, data_begin, data_end, data_type, total, parser_settings);
 
