@@ -320,8 +320,8 @@ const SubstraitPlanSerializer::Verdict & SubstraitPlanSerializer::visit(const Qu
 
         if (frame.next_child < frame.node->children.size())
         {
-            stack.push_back({.node = frame.node->children[frame.next_child]});
-            ++frame.next_child;
+            const auto * child = frame.node->children[frame.next_child++];
+            stack.push_back({.node = child});
             continue;
         }
 
