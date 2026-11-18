@@ -178,29 +178,27 @@ void QueryGraph::buildColumnEquivalences()
             "Column equivalence: relation {} `{}` = relation {} `{}`",
             *lhs_rel, lhs_resolved->getColumnName(), *rhs_rel, rhs_resolved->getColumnName());
     }
+
+    connecting_class_relations.clear();
+    UnorderedSetWithMemoryTracking<const EquivalenceClasses<JoinActionRef>::Class *> visited;
+    for (const auto & [_, equiv_class] : column_equivalences.getMemberToClassMap())
+    {
+        if (!equiv_class || !visited.insert(equiv_class.get()).second || !isClassOfOneType(*equiv_class))
+            continue;
+
+        BitSet relations;
+        for (const auto & column : *equiv_class)
+            relations |= column.getSourceRelations();
+        connecting_class_relations.push_back(std::move(relations));
+    }
 }
 
 bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & right) const
 {
-    for (const auto & [member, _] : column_equivalences.getMemberToClassMap())
+    return std::ranges::any_of(connecting_class_relations, [&](const BitSet & relations)
     {
-        auto member_rel = member.getSourceRelations().getSingleBit();
-
-        if (!member_rel || !left.test(*member_rel))
-            continue;
-
-        auto equiv_class = column_equivalences.getClass(member);
-        if (!equiv_class || !isClassOfOneType(*equiv_class))
-            continue;
-
-        for (const auto & other : *equiv_class)
-        {
-            auto other_rel = other.getSourceRelations().getSingleBit();
-            if (other_rel && right.test(*other_rel))
-                return true;
-        }
-    }
-    return false;
+        return areIntersecting(relations, left) && areIntersecting(relations, right);
+    });
 }
 
 /// Post-process the join tree to remove redundant predicates and synthesize missing ones.

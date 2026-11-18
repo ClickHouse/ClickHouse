@@ -170,6 +170,9 @@ struct QueryGraph
     /// Stored as alias-resolved JoinActionRef-s pointing to INPUT nodes.
     EquivalenceClasses<JoinActionRef> column_equivalences;
 
+    /// The relations of each class in `column_equivalences` that has one type (see `isClassOfOneType`).
+    VectorWithMemoryTracking<BitSet> connecting_class_relations;
+
     /// Relations read through a prepared join storage (`Join` engine, key-value storage), which is
     /// looked up by a fixed key.
     BitSet prepared_storage_relations;
