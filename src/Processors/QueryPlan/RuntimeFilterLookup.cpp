@@ -815,19 +815,15 @@ void AdaptiveSetRuntimeFilter::finishInsert(RuntimeFilterEvaluationState & evalu
         filter);
 }
 
+/// `values` is a mask that `checkRowsMask` accepts.
 static size_t countPassedStats(ColumnPtr values)
 {
-    if (const auto * column_bool = typeid_cast<const ColumnUInt8 *>(values.get()))
-    {
-        return countBytesInFilter(column_bool->getData());
-    }
-    else if (const auto * column_const = typeid_cast<const ColumnConst *>(values.get()))
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(values.get()))
     {
         const bool all_true = column_const->getValue<UInt8>();
         return all_true ? values->size() : 0;
     }
-    /// If for some reason value column type is unexpected then just assume that all rows passed
-    return values->size();
+    return countBytesInFilter(assert_cast<const ColumnUInt8 &>(*values).getData());
 }
 
 ColumnPtr AdaptiveSetRuntimeFilter::find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const
@@ -1138,6 +1134,18 @@ RowsMask constantRowsMask(bool passed, size_t rows, size_t values_looked_up)
     return {DataTypeUInt8().createColumnConst(rows, passed), passed ? rows : 0, values_looked_up};
 }
 
+/// What every filter answers with, and what `RuntimeFilter::find` promises: a `UInt8` mask over the rows, or a constant
+/// of it. The statistics, the mapping onto the rows of a compact column and `__applyFilter` all rely on it.
+void checkRowsMask(const IColumn & mask, size_t rows)
+{
+    const IColumn * data = &mask;
+    if (const auto * mask_const = typeid_cast<const ColumnConst *>(data))
+        data = &mask_const->getDataColumn();
+
+    if (!typeid_cast<const ColumnUInt8 *>(data) || mask.size() != rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Runtime filter returned the mask {} for {} rows", mask.dumpStructure(), rows);
+}
+
 /// Maps `values_mask`, a mask over the values that a compact form of a column stores, onto the rows of the column.
 template <typename Expand>
 RowsMask expandRowsMask(const RowsMask & values_mask, size_t rows, Expand && expand)
@@ -1226,6 +1234,7 @@ ColumnPtr RuntimeFilter::find(const ColumnWithTypeAndName & values) const
                 {
                     std::optional<size_t> probed_rows_passed;
                     ColumnPtr probed_mask = filter.find(plain_values, probed_rows_passed);
+                    checkRowsMask(*probed_mask, plain_values.column->size());
                     const size_t passed = probed_rows_passed ? *probed_rows_passed : countPassedStats(probed_mask);
                     return RowsMask{std::move(probed_mask), passed, plain_values.column->size()};
                 });

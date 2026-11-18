@@ -49,18 +49,17 @@ ColumnPtr toResultType(const ColumnPtr & mask, const DataTypePtr & result_type)
     if (!mask_column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Runtime filter returned a mask of unexpected column {}", mask->getName());
 
-    /// The dictionary holds only false and true, so each row is indexed without a lookup.
+    /// The dictionary holds false at 0, where the default of the type is, and true at 1. Every filter writes zeros and
+    /// ones, so the mask is the column of indexes as it is.
     auto dictionary = DataTypeLowCardinality::createColumnUnique(*low_cardinality_type->getDictionaryType());
-    const auto index_of_false = static_cast<UInt8>(dictionary->uniqueInsert(Field(UInt64(0))));
-    const auto index_of_true = static_cast<UInt8>(dictionary->uniqueInsert(Field(UInt64(1))));
+    const size_t index_of_true = dictionary->uniqueInsert(Field(UInt64(1)));
+    chassert(index_of_true == 1);
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    for (const auto value : mask_column->getData())
+        chassert(value <= index_of_true);
+#endif
 
-    const auto & mask_data = mask_column->getData();
-    auto indexes = ColumnUInt8::create(mask_data.size());
-    auto & indexes_data = indexes->getData();
-    for (size_t row = 0; row < mask_data.size(); ++row)
-        indexes_data[row] = mask_data[row] ? index_of_true : index_of_false;
-
-    return ColumnLowCardinality::create(MutableColumnPtr(std::move(dictionary)), MutableColumnPtr(std::move(indexes)), /*is_shared=*/false);
+    return ColumnLowCardinality::create(ColumnPtr(std::move(dictionary)), mask, /*is_shared=*/false);
 }
 
 }
