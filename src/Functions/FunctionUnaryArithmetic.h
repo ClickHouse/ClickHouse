@@ -193,19 +193,19 @@ public:
 
     explicit FunctionUnaryArithmetic(ContextPtr context_) : context(context_) {}
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return is_injective; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return is_injective; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return false;
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     /// Per-Op opt-in to declarative signatures:
     /// - `Op<UInt8>::signature` (authoritative): the DSL drives type-checking
@@ -214,7 +214,7 @@ public:
     ///   `system.functions` but the long-form `getReturnTypeImpl(DataTypes)`
     ///   stays authoritative — used when the legacy dispatch isn't expressible
     ///   in the DSL (e.g. `negate` routing tuples to `tupleNegate`).
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (requires { Op<UInt8>::signature; })
             return Op<UInt8>::signature;
@@ -224,7 +224,7 @@ public:
             return {};
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// Like `BinaryArithmeticOverloadResolver`, only `signature` (authoritative)
         /// drives the DSL path; `signature_documentation` is bypassed so the legacy
@@ -238,7 +238,7 @@ public:
         return getReturnTypeImpl(data_types);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return getReturnTypeImplStatic(arguments, context);
     }
@@ -317,7 +317,7 @@ public:
         return result;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// Special case when the function is negate, argument is tuple.
         if (auto function_builder = getFunctionForTupleArithmetic(arguments[0].type, context))
@@ -460,7 +460,7 @@ public:
     }
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & result_type) const override
+    [[nodiscard]] bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & result_type) const override
     {
         if (1 != arguments.size())
             return false;
@@ -528,12 +528,12 @@ public:
     }
 #endif
 
-    bool hasInformationAboutMonotonicity() const override
+    [[nodiscard]] bool hasInformationAboutMonotonicity() const override
     {
         return FunctionUnaryArithmeticMonotonicity<Name>::has();
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
         return FunctionUnaryArithmeticMonotonicity<Name>::get(type, left, right);
     }

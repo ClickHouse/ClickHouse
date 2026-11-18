@@ -638,6 +638,7 @@ void MySQLHandler::run()
         }
 
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
+        handshake_response.auth_response = {};
 
         in->clearHandshakeTimeout();
 
