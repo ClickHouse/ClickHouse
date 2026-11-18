@@ -39,6 +39,7 @@ String substraitUserDefinedShortName(std::string_view type_name);
 std::string_view tryParseUserDefinedShortName(std::string_view short_name);
 
 bool substraitTypesIdentical(const substrait::Type & lhs, const substrait::Type & rhs);
+bool substraitTypesIdenticalIgnoringNullability(substrait::Type lhs, substrait::Type rhs);
 
 substrait::Type_Nullability substraitNullabilityOf(bool nullable);
 bool isSubstraitTypeNullable(const substrait::Type & type);

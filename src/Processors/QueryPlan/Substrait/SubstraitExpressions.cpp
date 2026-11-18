@@ -2,6 +2,7 @@
 
 #if USE_SUBSTRAIT
 
+#include <ranges>
 #include <Columns/ColumnConst.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Block.h>
@@ -712,7 +713,7 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
     }
     else if (mapping.coercion == Coercion::ToCommonType)
     {
-        /// ClickHouse compares mixed types natively, Substrait can't, so we invent casts to one common type and admit only value-preserving ones.
+        /// ClickHouse compares mixed types natively, Substrait can't, so we cast to one common type and admit only value-preserving ones.
         /// The pick is the widest type among the non-constant arguments.
         /// Constants do not participate as they can be casted to any type that holds their value, while a column needs a real cast.
         std::vector<String> non_constant_shorts;
@@ -740,6 +741,14 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
         for (auto & arg : args)
             if (auto coerced = coerceArgument(arg, coercion_target); !coerced)
                 return std::unexpected(std::move(coerced.error()));
+
+    /// The same short name is not yet the same type. `Decimal(9, 2)` and `Decimal(18, 4)` are both `dec`.
+    const auto has_common_type = [&](const auto & arg) { return substraitTypesIdenticalIgnoringNullability(arg.type, args.front().type); };
+    if (mapping.coercion == Coercion::ToCommonType && !std::ranges::all_of(args, has_common_type))
+    {
+        const auto type_names = args | std::views::transform([](const auto & arg) { return arg.node->result_type->getName(); });
+        return blocked(fmt::format("arguments of {} have different types ({})", name, fmt::join(type_names, ", ")));
+    }
 
     /// Select the overload and compose the function signature.
     std::vector<String> arg_shorts;

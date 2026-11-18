@@ -227,6 +227,13 @@ bool substraitTypesIdentical(const substrait::Type & lhs, const substrait::Type 
     return google::protobuf::util::MessageDifferencer::Equals(lhs, rhs);
 }
 
+bool substraitTypesIdenticalIgnoringNullability(substrait::Type lhs, substrait::Type rhs)
+{
+    setSubstraitTypeNullability(lhs, false);
+    setSubstraitTypeNullability(rhs, false);
+    return substraitTypesIdentical(lhs, rhs);
+}
+
 bool isSubstraitTypeNullable(const substrait::Type & type)
 {
     switch (type.kind_case())
