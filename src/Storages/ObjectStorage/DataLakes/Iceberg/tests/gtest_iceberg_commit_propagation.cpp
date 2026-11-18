@@ -40,8 +40,8 @@ namespace
 
 using WriteErrorThrower = std::function<void(const std::string & path)>;
 using ExistsAnswer = std::function<bool(size_t call)>;
-/// The outcome that a storage that tracks it, as S3 does, reports for the failed write. Empty: the storage does not track
-/// it, and its `writeObject` fails at once.
+/// The outcome that the storage reports for the failed write. Empty: its `writeObject` fails at once, so nothing is
+/// sent.
 using StorageOutcome = std::optional<WriteOutcome>;
 
 /// The buffer of a storage that tracks the outcome: its write fails with the error that the test supplies.
@@ -308,20 +308,18 @@ TEST(IcebergCommitPropagation, FailedCheckBeforeTheWriteStaysRetryable)
         [](size_t) -> bool { throw Exception(ErrorCodes::NETWORK_ERROR, "The existence check failed in the test stub"); }));
 }
 
-TEST(IcebergCommitPropagation, FailedWriteLeavesTheOutcomeUnknown)
+TEST(IcebergCommitPropagation, FailedCreationOfTheWriteIsNotApplied)
 {
-    /// The write was sent, and its response tells nothing: the storage may have stored the metadata file, which then
-    /// references the files that a rollback removes.
-    expectUnknownOutcome([](const std::string & path)
+    /// The storage could not create the buffer of the write, so nothing was sent, and the commit rolls back.
+    try
     {
-        throw Exception(ErrorCodes::NETWORK_ERROR, "Write of {} failed in the test stub", path);
-    });
-
-    /// An I/O error.
-    expectUnknownOutcome([](const std::string & path)
+        bool committed = commitWithFailingWrite(ErrorCodes::NETWORK_ERROR);
+        FAIL() << "Expected the error of the storage to propagate, got " << committed;
+    }
+    catch (const Exception & e)
     {
-        ErrnoException::throwFromPathWithErrno(ErrorCodes::CANNOT_OPEN_FILE, path, EIO, "Cannot open file {}", path);
-    });
+        EXPECT_EQ(e.code(), ErrorCodes::NETWORK_ERROR) << e.message();
+    }
 }
 
 TEST(IcebergCommitPropagation, PermissionErrorIsNotReportedAsALostRace)
@@ -344,26 +342,6 @@ TEST(IcebergCommitPropagation, PermissionErrorIsNotReportedAsALostRace)
             EXPECT_EQ(e.getErrno(), error) << e.message();
         }
     }
-}
-
-TEST(IcebergCommitPropagation, RefusalOfAWriteThatMayHaveLandedLeavesTheOutcomeUnknown)
-{
-    /// A refusal after the write was sent (e.g. of the check after an upload) is not proof that nothing was written.
-    auto refuse = [](const std::string & path)
-    {
-        ErrnoException::throwFromPathWithErrno(ErrorCodes::CANNOT_OPEN_FILE, path, EACCES, "Cannot open file {}", path);
-    };
-
-    /// The metadata file is there after the refusal.
-    expectUnknownOutcome(refuse, [](size_t call) { return call > 0; });
-
-    /// The check after the refusal fails, so nothing is known.
-    expectUnknownOutcome(refuse, [](size_t call) -> bool
-    {
-        if (call == 0)
-            return false;
-        throw Exception(ErrorCodes::NETWORK_ERROR, "The existence check failed in the test stub");
-    });
 }
 
 #if USE_AWS_S3

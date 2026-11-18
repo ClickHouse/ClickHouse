@@ -355,6 +355,9 @@ void writeMessageToFile(
     auto write_settings = context->getWriteSettings();
     write_settings.object_storage_write_if_none_match = write_if_none_match;
     write_settings.object_storage_write_if_match = write_if_match;
+    /// Nothing is sent until the storage creates the buffer of the write, e.g. when it refuses the condition.
+    if (write_outcome)
+        *write_outcome = WriteOutcome::NotApplied;
     auto buffer_metadata = object_storage->writeObject(
         StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     /// The compressing buffer does not own the buffer of the storage, so that the buffer of the storage outlives the
