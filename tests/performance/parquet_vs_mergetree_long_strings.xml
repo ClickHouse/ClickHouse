@@ -1,0 +1,30 @@
+<!--
+    1M rows of ~1 KB random strings, read from a Parquet file and from a MergeTree table.
+    The first query is the one in the Parquet reader's TODO list (src/Processors/Formats/Impl/Parquet/Reader.h).
+    Each pair after it runs the same query on both tables, single-threaded, so that it compares the cost of reading
+    the two formats rather than how each one splits the work: a full scan, a PREWHERE that keeps scattered rows, and
+    a key range that the primary key and the Parquet statistics can skip to.
+    The pairs use `SELECT *`: `length(v)` reads only the size stream of a MergeTree `String` column.
+-->
+<test>
+    <create_query>CREATE TABLE parquet_vs_mergetree_mt (k UInt64, v String) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE parquet_vs_mergetree_pq (k UInt64, v String) ENGINE = File(Parquet)</create_query>
+
+    <fill_query>INSERT INTO parquet_vs_mergetree_mt SELECT number AS k, toString(number) || ':' || randomPrintableASCII(1000) AS v FROM numbers(1000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE parquet_vs_mergetree_mt FINAL</fill_query>
+    <fill_query>INSERT INTO parquet_vs_mergetree_pq SELECT * FROM parquet_vs_mergetree_mt ORDER BY k</fill_query>
+
+    <query>SELECT count(), sum(length(v)) FROM parquet_vs_mergetree_pq FORMAT Null</query>
+
+    <query>SELECT * FROM parquet_vs_mergetree_pq SETTINGS max_threads = 1, max_parsing_threads = 1, max_download_threads = 1 FORMAT Null</query>
+    <query>SELECT * FROM parquet_vs_mergetree_mt SETTINGS max_threads = 1, max_parsing_threads = 1, max_download_threads = 1 FORMAT Null</query>
+
+    <query>SELECT * FROM parquet_vs_mergetree_pq PREWHERE k % 10 = 0 SETTINGS max_threads = 1, max_parsing_threads = 1, max_download_threads = 1 FORMAT Null</query>
+    <query>SELECT * FROM parquet_vs_mergetree_mt PREWHERE k % 10 = 0 SETTINGS max_threads = 1, max_parsing_threads = 1, max_download_threads = 1 FORMAT Null</query>
+
+    <query>SELECT * FROM parquet_vs_mergetree_pq WHERE k BETWEEN 300000 AND 699999 SETTINGS max_threads = 1, max_parsing_threads = 1, max_download_threads = 1 FORMAT Null</query>
+    <query>SELECT * FROM parquet_vs_mergetree_mt WHERE k BETWEEN 300000 AND 699999 SETTINGS max_threads = 1, max_parsing_threads = 1, max_download_threads = 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS parquet_vs_mergetree_mt</drop_query>
+    <drop_query>DROP TABLE IF EXISTS parquet_vs_mergetree_pq</drop_query>
+</test>
