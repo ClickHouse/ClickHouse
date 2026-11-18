@@ -1063,6 +1063,7 @@ struct PhraseSearchStats
 
 /// Decodes a chunk of candidates' positions per unique token, then runs the phrase adjacency match.
 /// Ranks ascend within a chunk, so blocks decode in ascending order and reseek only on a block gap.
+/// The candidates' positions are copied into a lane per token as stored in the blocks, and matching reads them there.
 /// Each token's last parsed block is kept, as the next chunk or window may need it again.
 class PhraseChunkMatcher
 {
@@ -1077,8 +1078,8 @@ public:
         , dirs(dirs_)
         , term_to_unique(term_to_unique_)
         , stats(stats_)
-        , offsets(dirs_.size())
-        , positions(dirs_.size())
+        , bounds(dirs_.size())
+        , lanes(dirs_.size())
         , scratches(dirs_.size())
         , parsed_blocks(dirs_.size(), std::numeric_limits<size_t>::max())
     {
@@ -1096,7 +1097,7 @@ public:
         stats.decode_us += decode_watch.elapsedMicroseconds();
 
         Stopwatch match_watch;
-        TextIndexPhraseSearch::matchCandidatePositions(candidates, offsets, positions, term_to_unique, matching);
+        TextIndexPhraseSearch::matchCandidatePositions(candidates, bounds, lanes, term_to_unique, matching);
         stats.match_us += match_watch.elapsedMicroseconds();
     }
 
@@ -1108,11 +1109,11 @@ private:
     void decodeToken(size_t u, std::span<const UInt64> ranks)
     {
         const auto & dir = dirs[u];
-        auto & token_offsets = offsets[u];
-        auto & token_positions = positions[u];
-        token_offsets.clear();
-        token_positions.clear();
-        token_offsets.push_back(0);
+        auto & token_bounds = bounds[u];
+        auto & lane = lanes[u];
+        token_bounds.clear();
+        token_bounds.reserve(2 * ranks.size());
+        lane.clear();
 
         size_t previous_read = std::numeric_limits<size_t>::max();
         for (size_t idx = 0; idx < ranks.size();)
@@ -1121,12 +1122,6 @@ private:
             if (block_idx >= dir.numBlocks())
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "Corrupt text index positions: rank {} is outside the token's {} blocks", ranks[idx], dir.numBlocks());
-            local_ranks.clear();
-            do
-            {
-                local_ranks.push_back(static_cast<UInt32>(ranks[idx] % TextIndexBlockedPositionsCodec::BLOCK_DOCS));
-                ++idx;
-            } while (idx < ranks.size() && ranks[idx] / TextIndexBlockedPositionsCodec::BLOCK_DOCS == block_idx);
 
             if (block_idx != parsed_blocks[u])
             {
@@ -1147,7 +1142,39 @@ private:
                 parsed_blocks[u] = block_idx;
                 ++stats.blocks_read;
             }
-            TextIndexBlockedPositionsCodec::emitRanks(scratches[u], local_ranks, token_offsets, token_positions);
+
+            const auto & doc_offsets = scratches[u].doc_offsets;
+            const auto & values = scratches[u].values;
+            size_t group_end = idx;
+            size_t needed = 0;
+            do
+            {
+                const size_t local_rank = ranks[group_end] % TextIndexBlockedPositionsCodec::BLOCK_DOCS;
+                needed += doc_offsets[local_rank + 1] - doc_offsets[local_rank];
+                ++group_end;
+            } while (group_end < ranks.size() && ranks[group_end] / TextIndexBlockedPositionsCodec::BLOCK_DOCS == block_idx);
+
+            /// Copy the whole block for many candidates and only their positions for few, so the lane stays within 4x of what the chunk needs.
+            if (4 * needed < doc_offsets.back())
+            {
+                for (; idx < group_end; ++idx)
+                {
+                    const size_t local_rank = ranks[idx] % TextIndexBlockedPositionsCodec::BLOCK_DOCS;
+                    token_bounds.push_back(lane.size());
+                    lane.insert(values.begin() + doc_offsets[local_rank], values.begin() + doc_offsets[local_rank + 1]);
+                    token_bounds.push_back(lane.size());
+                }
+                continue;
+            }
+
+            const size_t lane_begin = lane.size();
+            lane.insert(values.begin(), values.begin() + doc_offsets.back());
+            for (; idx < group_end; ++idx)
+            {
+                const size_t local_rank = ranks[idx] % TextIndexBlockedPositionsCodec::BLOCK_DOCS;
+                token_bounds.push_back(lane_begin + doc_offsets[local_rank]);
+                token_bounds.push_back(lane_begin + doc_offsets[local_rank + 1]);
+            }
         }
     }
 
@@ -1157,11 +1184,11 @@ private:
     const std::vector<size_t> & term_to_unique;
     PhraseSearchStats & stats;
 
-    std::vector<PaddedPODArray<UInt32>> offsets;
-    std::vector<PaddedPODArray<UInt32>> positions;
+    /// Per token: [begin, end) of every candidate's positions in `lanes`.
+    std::vector<PaddedPODArray<UInt64>> bounds;
+    std::vector<PaddedPODArray<UInt32>> lanes;
     std::vector<TextIndexBlockedPositionsCodec::DecodeScratch> scratches;
     std::vector<size_t> parsed_blocks;
-    std::vector<UInt32> local_ranks;
 };
 
 }
