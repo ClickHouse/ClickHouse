@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
+#include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -907,8 +908,11 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
 
             if (type == StatisticsType::JSONPaths)
             {
-                String payload(stat_size, '\0');
-                buf.readStrict(payload.data(), stat_size);
+                String payload;
+                {
+                    LimitReadBuffer payload_limit(buf, {.read_no_less = stat_size, .read_no_more = stat_size});
+                    readStringUntilEOF(payload, payload_limit);
+                }
                 const auto * object_type = typeid_cast<const DataTypeObject *>(data_type.get());
                 if (!object_type)
                     continue;
