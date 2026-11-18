@@ -37,10 +37,12 @@
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/misc.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -147,7 +149,40 @@ struct HasSubqueryMatcher
     static void visit(const DB::ASTPtr & node, Data & data)
     {
         if (node->as<DB::ASTSubquery>())
+        {
             data.has_subquery = true;
+            return;
+        }
+
+        /// `k IN dim` (and `NOT IN`, `GLOBAL IN`, ...) reads the table `dim` (or a `WITH` alias, or a table function)
+        /// without an `ASTSubquery`, and `joinGet` reads a `Join` table: their contents are not in the per-part key.
+        /// Fail-close: only a literal or a `tuple`/`array` of constants on the right side of `IN` is accepted.
+        const auto * function = node->as<DB::ASTFunction>();
+        if (!function)
+            return;
+
+        if (DB::functionIsJoinGet(function->name))
+        {
+            data.has_subquery = true;
+            return;
+        }
+
+        if (!DB::functionIsInOrGlobalInOperator(function->name))
+            return;
+
+        if (!function->arguments || function->arguments->children.size() != 2)
+        {
+            data.has_subquery = true;
+            return;
+        }
+
+        const auto & rhs = function->arguments->children[1];
+        if (rhs->as<DB::ASTLiteral>())
+            return;
+        if (const auto * rhs_function = rhs->as<DB::ASTFunction>(); rhs_function && (rhs_function->name == "tuple" || rhs_function->name == "array"))
+            return;
+
+        data.has_subquery = true;
     }
 };
 
