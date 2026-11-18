@@ -257,6 +257,9 @@ std::expected<ResolvedAggregate, SubstraitBlockingReason> mapAggregateFunction(
     };
 }
 
+/// With an overflow mode other than `throw` CH returns a part of the result once the limit is reached. No Substrait relation does that.
+bool truncatesResult(const SizeLimits & limits) { return limits.hasLimits() && limits.overflow_mode != OverflowMode::THROW; }
+
 /// True when rows leave the step in an order a sort below established.
 /// A sorting step starts it, the steps that destroy row order end it, and every other step is assumed to keep it.
 bool sortReachesOutput(const IQueryPlanStep & step, bool any_child_sorted)
@@ -549,6 +552,8 @@ SubstraitPlanSerializer::convertAggregation(const AggregatingStep & aggregating,
         return blocked("merging pre-aggregated states is not supported");
     if (params.keys.empty() && params.empty_result_for_aggregation_by_empty_set)
         return blocked("aggregation without keys that returns no rows over empty input is not supported");
+    if (truncatesResult({params.max_rows_to_group_by, 0, params.group_by_overflow_mode}))
+        return blocked("max_rows_to_group_by with group_by_overflow_mode = 'any' or 'break' is not supported");
 
     substrait::Rel aggregate_rel;
     auto * aggregate = aggregate_rel.mutable_aggregate();
@@ -611,6 +616,8 @@ SubstraitPlanSerializer::convertSorting(const SortingStep & sorting, NodeState &
     /// SortRel describes the result, not the algorithm, so first three serialize, while the latter does not.
     if (sorting.getType() == SortingStep::Type::PartitionedFinishSorting)
         return blocked("partitioned sorting produces separately sorted partitions, not one sorted stream");
+    if (truncatesResult(sorting.getSettings().size_limits))
+        return blocked("max_rows_to_sort or max_bytes_to_sort with sort_overflow_mode = 'break' is not supported");
     if (!std::in_range<Int64>(sorting.getLimit()))
         return blocked("LIMIT or OFFSET does not fit a Substrait i64");
 
@@ -714,6 +721,9 @@ SubstraitPlanSerializer::convertDistinct(const DistinctStep & distinct, NodeStat
 {
     NodeState out;
 
+    if (truncatesResult(distinct.getSettings().set_size_limits))
+        return blocked("max_rows_in_distinct or max_bytes_in_distinct with distinct_overflow_mode = 'break' is not supported");
+
     /// TODO: ClickHouse DISTINCT preserves the input order but Substrait AggregateRel does not.
     if (child.sort_reaches_output)
         return blocked("DISTINCT over sorted input preserves the order in ClickHouse, which AggregateRel cannot express");
@@ -752,6 +762,9 @@ SubstraitPlanSerializer::convertJoin(const JoinStepLogical & join, NodeState & l
         return blocked("GLOBAL JOIN is not supported");
     if (!join_operator.shared_runtime_filter_descriptors.empty())
         return blocked("joins with runtime filters are not supported");
+    const auto & join_settings = join.getSettings();
+    if (truncatesResult({join_settings.max_rows_in_join, join_settings.max_bytes_in_join, join_settings.join_overflow_mode}))
+        return blocked("max_rows_in_join or max_bytes_in_join with join_overflow_mode = 'break' is not supported");
 
     /// JoinRel direct output is all left fields then all right fields.
     SubstraitSchema combined = left.schema;
