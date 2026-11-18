@@ -68,7 +68,7 @@ public:
     {
     }
 
-    bool isCompressed() const { return compressed; }
+    [[nodiscard]] bool isCompressed() const { return compressed; }
     void setCompressed() { compressed = true; }
 
     void insert(T x)
@@ -298,7 +298,7 @@ public:
     }
 
 private:
-    QueryResult findApproxQuantile(size_t index, Int64 min_rank_at_index, double target_error, double percentile) const
+    [[nodiscard]] QueryResult findApproxQuantile(size_t index, Int64 min_rank_at_index, double target_error, double percentile) const
     {
         Stats curr_sample = sampled[index];
         Int64 rank = static_cast<Int64>(std::ceil(percentile * static_cast<Float64>(count)));
