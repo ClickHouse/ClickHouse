@@ -61,6 +61,37 @@ def test_config_with_hosts(start_cluster):
 
 
 @pytest.mark.parametrize(
+    "query, secret",
+    [
+        (
+            "SELECT * FROM url('http://leakuser:pw_userinfo_canary@host:123/', CSV, 'x UInt8')",
+            "pw_userinfo_canary",
+        ),
+        (
+            "SELECT * FROM url('http://host:123/v1/chat?access_token=pw_access_token_canary', CSV, 'x UInt8')",
+            "pw_access_token_canary",
+        ),
+        (
+            "SELECT * FROM url('http://host:123/pw_path_canary/f.csv', CSV, 'x UInt8')",
+            "pw_path_canary",
+        ),
+    ],
+    ids=["userinfo", "access_token", "secret_in_path"],
+)
+def test_rejected_url_credentials_masked(start_cluster, query, secret):
+    error = node1.query_and_get_error(query)
+    # The client echoes the submitted query after the exception, so only the exception line is checked.
+    rejections = [
+        line
+        for line in error.splitlines()
+        if "is not allowed in configuration file" in line
+    ]
+    assert len(rejections) == 1, error
+    assert 'URL "host:123"' in rejections[0], error
+    assert secret not in rejections[0], error
+
+
+@pytest.mark.parametrize(
     "query",
     [
         "CREATE TABLE azure_blocked_host (x UInt8) ENGINE = AzureBlobStorage("
