@@ -431,8 +431,30 @@ QueryPlanPtr createRemotePlanFragmentForParallelReplicas(
     /// on the query-tree-based path in `ClusterProxy::executeQueryWithParallelReplicas`.
     plan_fragment->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 
+    /// The limits of the read split across replicas, as the query-based implementation passes those of its table
+    /// expression. They are checked against the progress the remote replicas report.
+    std::shared_ptr<const StorageLimitsList> storage_limits;
+    VectorWithMemoryTracking<QueryPlan::Node *> reading_nodes;
+    collectReadFromMergeTreeSteps(plan_fragment->getRootNode(), reading_nodes);
+    for (auto * reading_node : reading_nodes)
+    {
+        const auto & reading = typeid_cast<const ReadFromMergeTree &>(*reading_node->step);
+        if (reading.isParallelReadingFromReplicas())
+        {
+            storage_limits = reading.getQueryInfo().storage_limits;
+            break;
+        }
+    }
+
     auto read_from_remote = std::make_unique<ReadFromParallelReplicasStep>(
-        std::move(plan_fragment), cluster, coordinator, context, connection_pools, exclude_pool_index, cluster->getShardsInfo().at(0).pool);
+        std::move(plan_fragment),
+        cluster,
+        coordinator,
+        context,
+        connection_pools,
+        std::move(storage_limits),
+        exclude_pool_index,
+        cluster->getShardsInfo().at(0).pool);
 
     auto query_plan = std::make_unique<QueryPlan>();
     query_plan->addStep(std::move(read_from_remote));

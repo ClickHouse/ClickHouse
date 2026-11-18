@@ -28,6 +28,7 @@ public:
         ParallelReplicasReadingCoordinatorPtr coordinator_,
         ContextPtr context_,
         VectorWithMemoryTracking<ConnectionPoolPtr> pools_to_use,
+        std::shared_ptr<const StorageLimitsList> storage_limits_,
         std::optional<size_t> exclude_pool_index_ = std::nullopt,
         ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr);
 
@@ -53,6 +54,9 @@ private:
     ClusterPtr cluster;
     ParallelReplicasReadingCoordinatorPtr coordinator;
     ContextPtr context;
+    /// Checked on the initiator against the progress that all remote replicas report, so a limit applies to the
+    /// total read and not only to the share of each replica, which checks its own read.
+    std::shared_ptr<const StorageLimitsList> storage_limits;
     LoggerPtr log;
     VectorWithMemoryTracking<ConnectionPoolPtr> pools_to_use;
     std::optional<size_t> exclude_pool_index;
