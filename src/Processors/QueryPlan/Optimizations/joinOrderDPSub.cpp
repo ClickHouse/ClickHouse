@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/JoinOperator.h>
+#include <Interpreters/JoinUtils.h>
 #include <Common/Exception.h>
 
 #include <algorithm>
@@ -220,7 +221,8 @@ private:
         UInt8 lhs_relation = 0;
         UInt8 rhs_relation = 0;
         bool raw = false;         /// the two columns have one type, so the join hashes their values as they are
-        bool hashable = false;    /// the two types have a common type to hash at, as `extractRoutingEquiKeys` requires
+        /// The JOIN compares the two types exactly and they have a common type to hash at, as `extractRoutingEquiKeys` requires.
+        bool hashable = false;
         UInt32 lhs_relations = 0; /// the relations of the two sides of the equality
         UInt32 rhs_relations = 0;
     };
@@ -1085,7 +1087,8 @@ void DPSubJoinOrderOptimizer::initShuffleKeys(
             continue;
         auto & key = dpsub_data.shuffle_keys[i];
         key.raw = lhs.getType()->equals(*rhs.getType());
-        key.hashable = key.raw || tryGetLeastSupertype(DataTypes{lhs.getType(), rhs.getType()});
+        key.hashable = JoinCommon::isExactJoinKeyEquality(lhs.getType(), rhs.getType())
+            && (key.raw || tryGetLeastSupertype(DataTypes{lhs.getType(), rhs.getType()}));
         key.lhs_relations = toMask(lhs.getSourceRelations());
         key.rhs_relations = toMask(rhs.getSourceRelations());
 
