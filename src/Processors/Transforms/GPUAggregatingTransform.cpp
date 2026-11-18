@@ -60,7 +60,7 @@ GPUAggregatingTransform::GPUAggregatingTransform(
     }
 
     DataTypes value_types;
-    std::vector<GPU::GPUGroupByAggregate> aggregates;
+    std::vector<GPU::GPUGroupByAggregate> aggregates; /// STYLE_CHECK_ALLOW_STD_CONTAINERS: what `GroupByGPUAccumulator` takes
     aggregates.reserve(params.aggregates.size());
     for (size_t i = 0; i < params.aggregates.size(); ++i)
     {
@@ -146,7 +146,7 @@ Chunk GPUAggregatingTransform::generate()
     if (total_rows == 0 && empty_result_for_empty_set)
         return {};
 
-    const std::vector<Field> results = accumulator->finalize();
+    const std::vector<Field> results = accumulator->finalize(); /// STYLE_CHECK_ALLOW_STD_CONTAINERS: what `GPUAccumulator` returns
 
     Columns columns;
     columns.reserve(results.size());

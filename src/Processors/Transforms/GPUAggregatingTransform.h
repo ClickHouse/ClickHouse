@@ -7,6 +7,7 @@
 #include <GPU/GPUAccumulator.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/IAccumulatingTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <optional>
 
@@ -29,9 +30,9 @@ private:
     Chunk generateGroups(const Block & header);
 
 private:
-    std::vector<size_t> key_positions;
+    VectorWithMemoryTracking<size_t> key_positions;
     /// Without keys: of the argument of each aggregate. With keys: of each column some aggregates are of, once.
-    std::vector<size_t> argument_positions;
+    VectorWithMemoryTracking<size_t> argument_positions;
     size_t num_aggregates = 0;
 
     std::optional<GPU::GPUAccumulator> accumulator;
