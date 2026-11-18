@@ -319,7 +319,7 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
         /// As for the `AzureBlobStorage` table engine, a connection string is described by its blob service URL.
         String description = std::holds_alternative<AzureBlobStorage::ConnectionString>(params.auth_method)
             ? params.getConnectionURLWithoutQuery()
-            : params.endpoint.getServiceEndpoint();
+            : params.endpoint.getServiceEndpoint().substr(0, params.endpoint.getServiceEndpoint().find_first_of("?#"));
 
         return std::make_shared<AzureObjectStorage>(
             name,
