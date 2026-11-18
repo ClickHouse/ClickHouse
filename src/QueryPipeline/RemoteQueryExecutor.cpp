@@ -423,6 +423,7 @@ static Names buildLegacySourceNames(const Block & header, const LegacyHeaderName
 {
     Names source_names;
     source_names.reserve(header.columns());
+    NameToNameMap source_to_entry_name;
 
     for (const auto & elem : header)
     {
@@ -433,15 +434,15 @@ static Names buildLegacySourceNames(const Block & header, const LegacyHeaderName
                 legacy_quoted_identifiers_version.toString());
 
         auto it = legacy_names.current_to_legacy.find(elem.name);
-        source_names.push_back(it == legacy_names.current_to_legacy.end() ? elem.name : it->second);
-    }
+        const auto & source_name = source_names.emplace_back(it == legacy_names.current_to_legacy.end() ? elem.name : it->second);
 
-    /// Two entries reading one received column would each get a value the other owns.
-    NameSet distinct_source_names(source_names.begin(), source_names.end());
-    if (distinct_source_names.size() != source_names.size())
-        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-            "Columns of a block received from a server older than {} do not map one to one onto the expected columns: {}",
-            legacy_quoted_identifiers_version.toString(), header.dumpNames());
+        /// Two differently named entries reading one received column would each get a value the other owns.
+        auto [claimed, inserted] = source_to_entry_name.emplace(source_name, elem.name);
+        if (!inserted && claimed->second != elem.name)
+            throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+                "Columns of a block received from a server older than {} do not map one to one onto the expected columns: {}",
+                legacy_quoted_identifiers_version.toString(), header.dumpNames());
+    }
 
     return source_names;
 }

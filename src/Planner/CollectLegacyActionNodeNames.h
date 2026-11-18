@@ -9,7 +9,6 @@ namespace DB
 {
 
 class Block;
-class Context;
 class QueryPlan;
 struct SelectQueryOptions;
 
@@ -42,6 +41,6 @@ LegacyHeaderNames buildLegacyHeaderNames(
   * Throws `AMBIGUOUS_COLUMN_NAME` when the legacy spellings do not stay distinct across the header.
   */
 void renameOutgoingHeaderForLegacyUpstream(
-    QueryPlan & query_plan, const PlannerContextPtr & planner_context, const SelectQueryOptions & select_query_options, const Context & context);
+    QueryPlan & query_plan, const PlannerContextPtr & planner_context, const SelectQueryOptions & select_query_options, const ContextPtr & context);
 
 }

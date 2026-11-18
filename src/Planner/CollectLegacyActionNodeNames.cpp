@@ -110,9 +110,9 @@ void renameOutgoingHeaderForLegacyUpstream(
     QueryPlan & query_plan,
     const PlannerContextPtr & planner_context,
     const SelectQueryOptions & select_query_options,
-    const Context & context)
+    const ContextPtr & context)
 {
-    const auto & client_info = context.getClientInfo();
+    const auto & client_info = context->getClientInfo();
     if (client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
         || select_query_options.is_local_plan_for_distributed_query)
         return;
@@ -131,28 +131,27 @@ void renameOutgoingHeaderForLegacyUpstream(
     if (legacy_names.empty())
         return;
 
-    NamesWithAliases renames;
-    renames.reserve(header.columns());
-    NameSet outgoing_names;
-    for (const auto & column : header)
+    auto renamed = header.getColumnsWithTypeAndName();
+    NameToNameMap outgoing_to_current_name;
+    for (auto & column : renamed)
     {
         auto it = legacy_names.current_to_legacy.find(column.name);
-        const bool is_renamed = it != legacy_names.current_to_legacy.end();
-        const auto & outgoing_name = is_renamed ? it->second : column.name;
+        String outgoing_name = it != legacy_names.current_to_legacy.end() ? it->second : column.name;
 
         /// The upstream resolves its header by name alone, so it must never receive a name whose
         /// owner it cannot determine.
-        if (legacy_names.ambiguous.contains(column.name) || !outgoing_names.emplace(outgoing_name).second)
+        auto [claimed, inserted] = outgoing_to_current_name.emplace(outgoing_name, column.name);
+        if (legacy_names.ambiguous.contains(column.name) || (!inserted && claimed->second != column.name))
             throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME,
                 "Cannot send column {} to a server older than {}: its plan column identifier has no unambiguous pre-{} "
                 "spelling among the columns of {}", column.name, legacy_quoted_identifiers_version.toString(),
                 legacy_quoted_identifiers_version.toString(), header.dumpNames());
 
-        renames.emplace_back(column.name, is_renamed ? outgoing_name : String{});
+        column.name = std::move(outgoing_name);
     }
 
-    ActionsDAG rename_dag(header.getColumnsWithTypeAndName());
-    rename_dag.project(renames);
+    auto rename_dag = ActionsDAG::makeConvertingActions(
+        header.getColumnsWithTypeAndName(), renamed, ActionsDAG::MatchColumnsMode::Position, context);
     auto rename_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(rename_dag));
     rename_step->setStepDescription("Rename plan column identifiers for a pre-26.5 upstream");
     query_plan.addStep(std::move(rename_step));

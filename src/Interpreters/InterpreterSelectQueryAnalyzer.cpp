@@ -656,7 +656,7 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     /// The outgoing header is final here and built exactly once, unlike inside the planner, which
     /// recurses per UNION branch before reconciling them. Only an intermediate-stage plan of a
     /// secondary query is renamed; every other plan built here keeps its own spelling.
-    renameOutgoingHeaderForLegacyUpstream(query_plan, planner.getPlannerContext(), select_query_options, *context);
+    renameOutgoingHeaderForLegacyUpstream(query_plan, planner.getPlannerContext(), select_query_options, context);
 
     ProfileEventTimeIncrement<Microseconds> pipeline_build_time_watch(ProfileEvents::QueryPipelineBuildMicroseconds);
     return std::move(*query_plan.buildQueryPipeline(

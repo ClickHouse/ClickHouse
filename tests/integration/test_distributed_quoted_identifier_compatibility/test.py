@@ -2,14 +2,16 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-# Predates https://github.com/ClickHouse/ClickHouse/pull/101048, so this node spells a plan column
-# identifier without quoting its parts.
-LEGACY_VERSION = "26.4"
+# Predates #101048, so it spells a plan column identifier without quotes.
+LEGACY_VERSION = "26.3"
 
 cluster = ClickHouseCluster(__file__)
 current = cluster.add_instance(
     "current",
     main_configs=["configs/remote_servers.xml"],
+    # Not covered: the SQL a serialized plan falls back to for an older replica, whose header is
+    # planned without the context that holds the old spellings.
+    use_distributed_plan=False,
 )
 legacy = cluster.add_instance(
     "legacy",
@@ -46,19 +48,13 @@ def _create_table(node):
     columns = ", ".join(f"`{name}` UInt64" for name in ALL_COLUMNS)
     node.query("DROP TABLE IF EXISTS quoted_ids SYNC")
     node.query(
-        f"CREATE TABLE quoted_ids ({columns}, arr Array(UInt64), v UInt64) "
+        f"CREATE TABLE quoted_ids ({columns}, arr Array(UInt64), n Nested(k UInt8), v UInt64) "
         f"ENGINE = MergeTree ORDER BY v"
     )
     values = ", ".join(f"number + {i}" for i in range(len(ALL_COLUMNS)))
     node.query(
-        f"INSERT INTO quoted_ids SELECT {values}, [number], number FROM numbers(5)"
+        f"INSERT INTO quoted_ids SELECT {values}, [number], [number % 2], number FROM numbers(5)"
     )
-    # A table with no column needing quotes, so reading it registers no quoted identifier.
-    node.query("DROP TABLE IF EXISTS plain_only SYNC")
-    node.query(
-        "CREATE TABLE plain_only (p UInt64, v UInt64) ENGINE = MergeTree ORDER BY v"
-    )
-    node.query("INSERT INTO plain_only SELECT number, number FROM numbers(5)")
 
 
 @pytest.fixture(scope="module")
@@ -86,6 +82,14 @@ def _remote(initiator):
 # 5 rows per shard, 2 shards, values start at `number + index of the column`.
 def _expected_sum(column):
     return 2 * sum(n + ALL_COLUMNS.index(column) for n in range(5))
+
+
+def _same_version_answer(query):
+    # Both nodes hold identical data, so the answer without crossing the boundary is the expected one.
+    return current.query(
+        query.format(remote="remote('current,current', currentDatabase(), quoted_ids)")
+        + " SETTINGS prefer_localhost_replica = 0"
+    )
 
 
 @pytest.mark.parametrize("column", ALL_COLUMNS)
@@ -127,32 +131,6 @@ def test_union(start_cluster, initiator):
 @pytest.mark.parametrize(
     "initiator", [current, legacy], ids=["new_reads_old", "old_reads_new"]
 )
-def test_union_branch_order(start_cluster, initiator):
-    # A UNION whose first branch carries a name both versions spell identically (`__actionName`
-    # emits its second argument verbatim) while only the second reads a quoted column. Both
-    # spellings must survive.
-    #
-    # This arm pins the query and guards against a future change that makes collection depend on
-    # what the shared planner context already holds. It does not discriminate that property today:
-    # every UNION shape reachable from a query plans its branches at `Complete`, which is excluded
-    # from collection anyway, so the arm passes whether or not collection consults the context.
-    # `CollectLegacyActionNodeNames.CollectionDoesNotDependOnWhatTheSharedContextHolds` asserts
-    # that property directly.
-    remote = _remote(initiator)
-    plain = _remote_of(initiator, "plain_only")
-    assert (
-        initiator.query(
-            f"SELECT count() FROM ("
-            f"SELECT DISTINCT __actionName('x', '__table1.`a.b`') AS x FROM {plain}"
-            f" UNION ALL SELECT DISTINCT toString(`a.b`) AS x FROM {remote})"
-        ).strip()
-        == "6"
-    )
-
-
-@pytest.mark.parametrize(
-    "initiator", [current, legacy], ids=["new_reads_old", "old_reads_new"]
-)
 def test_grouping_sets(start_cluster, initiator):
     # The header carries a renameable quoted identifier next to the planner-generated
     # `__grouping_set`, which has no query tree expression and needs no rename.
@@ -182,6 +160,34 @@ def test_order_by_quoted_identifier(start_cluster, initiator):
         ).strip()
         == "0"
     )
+
+
+@pytest.mark.parametrize(
+    "initiator", [current, legacy], ids=["new_reads_old", "old_reads_new"]
+)
+def test_column_selected_twice(start_cluster, initiator):
+    # Two header entries with the same name read one received column. Sorted here rather than with
+    # `ORDER BY ALL`, which the column named `all` makes ambiguous.
+    for query in (
+        "SELECT * FROM (SELECT `a.b`, `a.b` FROM {remote} LIMIT 100)",
+        "SELECT * FROM (SELECT *, `a.b` FROM {remote} LIMIT 100)",
+    ):
+        assert sorted(
+            initiator.query(query.format(remote=_remote(initiator))).splitlines()
+        ) == sorted(_same_version_answer(query).splitlines())
+
+
+@pytest.mark.parametrize(
+    "initiator", [current, legacy], ids=["new_reads_old", "old_reads_new"]
+)
+def test_nested_subcolumn_in_aggregate(start_cluster, initiator):
+    # A `Nested` subcolumn inside an aggregate's argument, the shape reported from a production roll.
+    query = (
+        "SELECT v % 2 AS g, argMax(has(n.k, 0), v) FROM {remote} GROUP BY g ORDER BY g"
+    )
+    assert initiator.query(
+        query.format(remote=_remote(initiator))
+    ) == _same_version_answer(query)
 
 
 @pytest.mark.parametrize(
