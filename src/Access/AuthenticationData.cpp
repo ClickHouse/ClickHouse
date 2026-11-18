@@ -84,7 +84,8 @@ AuthenticationData::Digest AuthenticationData::Util::encodeSHA1(std::string_view
 {
     Poco::SHA1Engine engine;
     engine.update(text.data(), text.size());
-    return engine.digest();
+    const auto & digest = engine.digest();
+    return Digest(digest.begin(), digest.end());
 }
 
 AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_view text [[maybe_unused]], int workfactor [[maybe_unused]])

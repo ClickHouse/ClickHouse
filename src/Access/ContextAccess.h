@@ -139,6 +139,9 @@ public:
     /// current session is limited by such a clause.
     void checkCanAdministerDefaultRoles() const;
 
+    /// Throws READONLY if the current session is in readonly mode and so cannot change grants.
+    void checkCanChangeGrants() const;
+
     /// Checks access of grants with parameter where a filter can be applied.
     /// For example, for `GRANT READ ON S3('s3://foo.*') TO user` calling `checkAccess(READ, "S3")` will throw an error
     /// because we are checking for `READ` permissions for all possible URLs.
@@ -349,6 +352,8 @@ public:
 
     /// Rejects changing users' default roles when the current session is limited by an authentication method's GRANTS clause.
     ALWAYS_INLINE void checkCanAdministerDefaultRoles() const { access->checkCanAdministerDefaultRoles(); }
+
+    ALWAYS_INLINE void checkCanChangeGrants() const { access->checkCanChangeGrants(); }
 
     /// Checks access of grants with parameter where a filter can be applied.
     ALWAYS_INLINE void checkAccessWithFilter(const AccessFlags & flags, std::string_view parameter, std::string_view filter) const { access->checkAccessWithFilter(context, flags, parameter, filter); }

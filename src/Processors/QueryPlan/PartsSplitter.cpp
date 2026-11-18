@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <list>
+#include <map>
 #include <ranges>
 
 #include <boost/functional/hash.hpp>
@@ -195,7 +196,7 @@ public:
             loaded_columns = std::min(loaded_columns, index->size());
     }
 
-    Values getValue(size_t part_idx, size_t mark) const
+    [[nodiscard]] Values getValue(size_t part_idx, size_t mark) const
     {
         const auto & index = indices[part_idx];
         chassert(index->size() >= loaded_columns);
@@ -209,7 +210,7 @@ public:
         return values;
     }
 
-    std::optional<size_t> findRightmostMarkLessThanValueInRange(
+    [[nodiscard]] std::optional<size_t> findRightmostMarkLessThanValueInRange(
         size_t part_index, Values value, size_t range_begin, size_t range_end, bool in_reverse_order) const
     {
         size_t left = range_begin;
@@ -231,13 +232,13 @@ public:
         return right - 1;
     }
 
-    std::optional<size_t>
+    [[nodiscard]] std::optional<size_t>
     findRightmostMarkLessThanValueInRange(size_t part_index, Values value, MarkRange mark_range, bool in_reverse_order) const
     {
         return findRightmostMarkLessThanValueInRange(part_index, value, mark_range.begin, mark_range.end, in_reverse_order);
     }
 
-    std::optional<size_t> findLeftmostMarkGreaterThanValueInRange(
+    [[nodiscard]] std::optional<size_t> findLeftmostMarkGreaterThanValueInRange(
         size_t part_index, Values value, size_t range_begin, size_t range_end, bool in_reverse_order) const
     {
         size_t left = range_begin;
@@ -259,13 +260,13 @@ public:
         return left;
     }
 
-    std::optional<size_t>
+    [[nodiscard]] std::optional<size_t>
     findLeftmostMarkGreaterThanValueInRange(size_t part_index, Values value, MarkRange mark_range, bool in_reverse_order) const
     {
         return findLeftmostMarkGreaterThanValueInRange(part_index, value, mark_range.begin, mark_range.end, in_reverse_order);
     }
 
-    size_t getMarkRows(size_t part_idx, size_t mark) const
+    [[nodiscard]] size_t getMarkRows(size_t part_idx, size_t mark) const
     {
         return parts[part_idx].data_part->index_granularity->getMarkRows(mark);
     }
@@ -379,7 +380,7 @@ struct PartsRangesIterator
         buffer << " value " << ::toString(value) << '\n';
     }
 
-    [[maybe_unused]] String toString() const
+    [[nodiscard]] [[maybe_unused]] String toString() const
     {
         WriteBufferFromOwnString buffer;
         dump(buffer);
@@ -1363,6 +1364,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndex(
     const KeyDescription & primary_key,
     const KeyDescription & sorting_key,
     RangesInDataParts & ranges_in_data_parts,
+    bool within_partition,
     const LoggerPtr & logger)
 {
     bool cannot_sort_primary_key = false;
@@ -1371,6 +1373,26 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndex(
         LOG_TRACE(logger, "Primary key is not sortable, using the ranges selected by the primary key due to exact_mode.");
         cannot_sort_primary_key = true;
     }
-    return findPKRangesForFinalAfterSkipIndexImpl(ranges_in_data_parts, cannot_sort_primary_key, logger);
+
+    if (!within_partition)
+        return findPKRangesForFinalAfterSkipIndexImpl(ranges_in_data_parts, cannot_sort_primary_key, logger);
+
+    std::map<String, RangesInDataParts> parts_by_partition;
+    for (auto & part : ranges_in_data_parts)
+        parts_by_partition[part.data_part->info.getPartitionId()].push_back(std::move(part));
+
+    RangesInDataParts result;
+    for (auto & [_, partition_parts] : parts_by_partition)
+    {
+        auto partition_result = findPKRangesForFinalAfterSkipIndexImpl(partition_parts, cannot_sort_primary_key, logger);
+        std::move(partition_result.begin(), partition_result.end(), std::back_inserter(result));
+    }
+
+    ::stableSort(
+        result.begin(),
+        result.end(),
+        [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
+
+    return result;
 }
 }

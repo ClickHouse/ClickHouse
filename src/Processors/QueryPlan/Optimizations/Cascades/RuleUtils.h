@@ -41,15 +41,15 @@ bool isDistributionPassthroughStep(const IQueryPlanStep & step);
 
 /// Builds the self-referential expression an enforcer inserts: it lives in the source
 /// expression's group and its single input points back to the same group with relaxed
-/// requirements, so the memo search recurses into the group to satisfy them. The enforced
-/// property marks the expression for the cycle-avoidance rules. Only constructs - the caller
-/// still calls `addPhysicalToMemo` with the original required properties.
+/// requirements, so the memo search recurses into the group to satisfy them. The expression
+/// records `required_properties`, the ones that the enforcer rule runs for. Only constructs -
+/// the caller still calls `addPhysicalToMemo` with the same required properties.
 GroupExpressionPtr makeEnforcerExpression(
     const GroupExpressionPtr & source,
     QueryPlanStepPtr step,
     ExpressionProperties input_required,
     ExpressionProperties output_properties,
-    EnforcedProperty enforced);
+    const ExpressionProperties & required_properties);
 
 /// Clones a read with its marks pinned into `target_buckets` coordinator-computed buckets and
 /// wraps it into a physical expression with the given strategy and output distribution. Returns
