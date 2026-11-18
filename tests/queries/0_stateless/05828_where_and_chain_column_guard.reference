@@ -1,0 +1,11 @@
+1
+true
+3
+-2
+0.5
+1
+1
+Sparse
+1
+AND column: g
+AND column: greater(intDiv(1_UInt8, __table1.x), 0_UInt8)
