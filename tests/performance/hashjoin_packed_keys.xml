@@ -53,6 +53,21 @@
     <query>SELECT l.u FROM u16u8_probe AS l INNER JOIN u16u8_build AS r ON l.w = r.w AND l.v = r.v AND l.u = r.u SETTINGS join_algorithm = 'hash', hash_join_layout = 'serial' FORMAT Null</query>
     <query>SELECT l.u FROM u16u8_probe AS l INNER JOIN u16u8_build AS r ON l.w = r.w AND l.v = r.v AND l.u = r.u SETTINGS join_algorithm = 'parallel_hash' FORMAT Null</query>
 
+    <!--
+        A UInt64, UInt64, UInt64 key (keys256): 5M build keys, every one matched by two of the 10M probe rows. `cn` is the
+        key `c` in 1% of the probe rows and NULL in the others.
+    -->
+    <create_query>CREATE TABLE keys256_build (a UInt64, b UInt64, c UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE keys256_probe (a UInt64, b UInt64, c UInt64, cn Nullable(UInt64)) ENGINE = Memory</create_query>
+
+    <fill_query>INSERT INTO keys256_build SELECT number, number * 7, number * 13 FROM numbers_mt(5000000)</fill_query>
+    <fill_query>INSERT INTO keys256_probe SELECT k, k * 7, k * 13, if(number % 100 = 0, k * 13, NULL) FROM (SELECT number, number % 5000000 AS k FROM numbers_mt(10000000))</fill_query>
+
+    <query>SELECT l.a FROM keys256_probe AS l INNER JOIN keys256_build AS r ON l.a = r.a AND l.b = r.b AND l.c = r.c SETTINGS join_algorithm = 'hash', hash_join_layout = 'serial' FORMAT Null</query>
+    <query>SELECT l.a FROM keys256_probe AS l INNER JOIN keys256_build AS r ON l.a = r.a AND l.b = r.b AND l.c = r.c SETTINGS join_algorithm = 'parallel_hash' FORMAT Null</query>
+    <!-- 99% of the probe keys are NULL: a 500K-row build, and a probe that looks up one row in a hundred -->
+    <query>SELECT l.a FROM keys256_probe AS l INNER JOIN (SELECT a, b, c FROM keys256_build WHERE a % 10 = 0) AS r ON l.a = r.a AND l.b = r.b AND l.cn = r.c SETTINGS join_algorithm = 'hash', hash_join_layout = 'serial' FORMAT Null</query>
+
     <drop_query>DROP TABLE IF EXISTS keys64_build</drop_query>
     <drop_query>DROP TABLE IF EXISTS keys64_probe</drop_query>
     <drop_query>DROP TABLE IF EXISTS keys32_build</drop_query>
@@ -61,4 +76,6 @@
     <drop_query>DROP TABLE IF EXISTS fs3_probe</drop_query>
     <drop_query>DROP TABLE IF EXISTS u16u8_build</drop_query>
     <drop_query>DROP TABLE IF EXISTS u16u8_probe</drop_query>
+    <drop_query>DROP TABLE IF EXISTS keys256_build</drop_query>
+    <drop_query>DROP TABLE IF EXISTS keys256_probe</drop_query>
 </test>

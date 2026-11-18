@@ -811,8 +811,6 @@ private:
     {
         using HashMap = JoinMapOf<TYPE, Maps>;
         using KeyGetter = typename KeyGetterForType<TYPE, HashMap>::Type;
-        [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename Maps::MappedType, RowRef>;
-        constexpr bool is_set = SetJoinMaps<Maps>;
         constexpr bool is_asof_join = std::is_same_v<Maps, HashJoin::MapsAsof>;
 
         HashMap & map = typedMap<TYPE, Maps>(*this);
@@ -841,13 +839,36 @@ private:
                 prebuilt_keys.size(),
                 rows.key_columns.at(0)->size());
 
-        /// One getter serves the passes of every slot, which skip the rows with a NULL key or filtered out by the ON section.
-        ColumnsHashing::RowRange key_rows
-            = per_slot.size() == 1 ? joinKeyRows(rows.null_map, rows.join_mask, per_slot[0]) : ColumnsHashing::RowRange{};
-        if (per_slot.size() > 1)
-            key_rows.skips_rows = rows.join_mask.getKind() != JoinCommon::JoinMask::Kind::AllTrue
-                || (rows.null_map && !memoryIsZero(rows.null_map->data(), 0, rows.null_map->size()));
-        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(rows.key_columns, key_sizes, {}, key_rows);
+        /// Each slot insert of a parallel build reads about one row in `slots.size()` of the block, so it packs the keys one by one.
+        if constexpr (!std::is_same_v<ColumnsHashing::SparseState<KeyGetter>, KeyGetter>)
+        {
+            if (per_slot.size() > 1)
+            {
+                auto key_getter = createJoinKeyGetter<ColumnsHashing::SparseState<KeyGetter>, is_asof_join>(
+                    rows.key_columns, key_sizes, {}, {.skips_rows = true});
+                return insertSlots<Maps>(settings, rows, arena, add_bytes, map, per_slot, prebuilt_keys, key_getter);
+            }
+        }
+        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(
+            rows.key_columns, key_sizes, {}, joinKeyRows(rows.null_map, rows.join_mask, rows.selector));
+        return insertSlots<Maps>(settings, rows, arena, add_bytes, map, per_slot, prebuilt_keys, key_getter);
+    }
+
+    /// Inserts the rows of every slot that `per_slot` gives rows to.
+    template <typename Maps, typename HashMap, typename KeyGetter>
+    BuildResult insertSlots(
+        const InsertSettings & settings,
+        const InsertRows & rows,
+        Arena & arena,
+        absl::FunctionRef<void(size_t)> add_bytes,
+        HashMap & map,
+        std::span<const ScatteredBlock::Selector> per_slot,
+        const PaddedPODArray<UInt128> & prebuilt_keys,
+        KeyGetter & key_getter)
+    {
+        [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename Maps::MappedType, RowRef>;
+        constexpr bool is_set = SetJoinMaps<Maps>;
+        constexpr bool is_asof_join = std::is_same_v<Maps, HashJoin::MapsAsof>;
 
         /// The skip bytes of the block, for the inserts of all slots.
         const UInt8 * skip = nullptr;
