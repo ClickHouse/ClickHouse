@@ -220,7 +220,6 @@ public:
     /// `DelayedCreatingSetStep` to another in automatic parallel replicas optimization.
     /// The `hash`, `ast` and other fields should be the identical for both `FutureSetFromSubquery` objects.
     void replaceSetAndKey(SetAndKeyPtr set);
-    SetAndKeyPtr detachSetAndKey();
     [[nodiscard]] const SetAndKeyPtr & getSetAndKey() const { return set_and_key; }
 
     [[nodiscard]] SetPtr get() const override;
@@ -371,9 +370,22 @@ using SharedSet = std::shared_future<SetPtr>;
 class PreparedSetsCache
 {
 public:
+    PreparedSetsCache() = default;
+
+    /// A cache for the sets of one task that shares them through `shared_cache_` with the other tasks,
+    /// e.g. a mutation of one part: see `findOrPromiseToBuild`.
+    explicit PreparedSetsCache(std::shared_ptr<PreparedSetsCache> shared_cache_);
+
     /// Lookup for set in the cache.
     /// If it is found, get the future to be able to wait for the set to be built.
     /// Otherwise create a promise, build the set and set the promise value.
+    ///
+    /// A mutation task runs its pipeline with one thread, so while it waits for a set, the sets it has promised
+    /// to build are not built. It could wait for a set that it builds itself (the same `IN` subquery inside two
+    /// set subqueries gives two sets with the same key), or two tasks could wait for each other (each builds
+    /// one set and waits for the set the other builds). So a task that has an unfinished build of its own does
+    /// not wait for a set that is not built yet: it gets a promise that is not in the cache, and builds the set
+    /// once more. A task waits only when it builds nothing, so the task it waits for is not waiting.
     std::variant<std::promise<SetPtr>, SharedSet> findOrPromiseToBuild(const String & key);
 
 private:
@@ -382,8 +394,16 @@ private:
         SharedSet future; /// Other tasks can wait for the set to be built.
     };
 
+    /// The same as `findOrPromiseToBuild` of a cache without `shared_cache`; with a promise,
+    /// `promised_future` is the future that the other tasks wait for.
+    std::variant<std::promise<SetPtr>, SharedSet> findOrPromiseToBuildImpl(const String & key, SharedSet & promised_future);
+
     std::mutex cache_mutex;
     std::unordered_map<String, Entry> cache;
+
+    /// If set, the sets are looked up there, and `own_builds` are the futures of the sets this task promised to build.
+    const std::shared_ptr<PreparedSetsCache> shared_cache;
+    std::vector<SharedSet> own_builds;
 };
 
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
