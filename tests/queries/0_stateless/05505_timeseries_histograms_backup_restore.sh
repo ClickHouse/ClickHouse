@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CLIENT="$CLICKHOUSE_CLIENT --enable_time_series_table=1 --session_timezone=UTC --ignore_drop_queries_probability=0"
 
-SAMPLES_QUERY="SELECT metric_name, samples, histograms.timestamp, histograms.flags, histograms.counter_reset_hint, histograms.schema, histograms.sum,
+SAMPLES_QUERY="SELECT metric_name, samples, histograms.timestamp, histograms.is_float, histograms.counter_reset_hint, histograms.schema, histograms.sum,
     histograms.count_int, histograms.positive_int, histograms.count_float, histograms.positive_float, histograms.custom_values"
 
 $CLIENT -q "CREATE TABLE ts ENGINE = TimeSeries SETTINGS samples_bucket_step_seconds = 60, recent_samples_ttl_seconds = 0"
@@ -17,7 +17,7 @@ $CLIENT -q "CREATE TABLE ts ENGINE = TimeSeries SETTINGS samples_bucket_step_sec
 $CLIENT -q "INSERT INTO ts (metric_name, tags, samples, histograms.timestamp, histograms.count_int, histograms.sum, histograms.positive_int) VALUES
     ('mixed', {'job': 'test'}, [(toDateTime64(130, 3), 1.5)], [toDateTime64(125, 3), toDateTime64(145, 3)], [1, 2], [0.5, 1.5], [[(0, 1)], [(0, 2)]])"
 $CLIENT -q "INSERT INTO ts (metric_name, tags, samples) VALUES ('floats_only', {'job': 'test'}, [(toDateTime64(100, 3), 1.)])"
-$CLIENT -q "INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.flags, histograms.counter_reset_hint, histograms.schema, histograms.sum,
+$CLIENT -q "INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.counter_reset_hint, histograms.schema, histograms.sum,
     histograms.count_float, histograms.positive_float, histograms.custom_values) VALUES
     ('float_custom', {'job': 'test'}, [toDateTime64(100, 3)], [1], [3], [-53], [3.25], [2.5], [[(0, 1.5), (1, 1.)]], [[1.]])"
 
@@ -27,7 +27,7 @@ $CLIENT -q "RESTORE TABLE ts AS ts_restored FROM Disk('backups', '$BACKUP_NAME')
 
 echo '--- both samples tables have the histograms column ---'
 $CLIENT -q "SELECT count() FROM system.columns WHERE database = currentDatabase() AND table LIKE '.inner\_id.samples.%' AND name = 'histograms'
-    AND type LIKE 'SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), flags UInt8, %'"
+    AND type LIKE 'SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), is_float Bool, %'"
 
 echo '--- the restored table has the same samples of both kinds ---'
 $CLIENT -q "$SAMPLES_QUERY FROM ts_restored ORDER BY ALL"

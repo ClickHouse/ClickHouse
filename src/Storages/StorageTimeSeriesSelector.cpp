@@ -938,7 +938,7 @@ namespace
     /// buckets of samples:
     ///
     /// SELECT _CAST(id, 'UInt64') AS id, _CAST(samples, 'Array(Tuple(DateTime64(3), Float64))') AS samples
-    ///        [, _CAST(histograms, 'Array(Tuple(timestamp DateTime64(3), flags UInt8, ...))') AS histograms]
+    ///        [, _CAST(histograms, 'Array(Tuple(timestamp DateTime64(3), is_float Bool, ...))') AS histograms]
     /// FROM (select_query_from_samples_table)
     /// WHERE notEmpty(samples) [OR notEmpty(histograms)]    -- if the time range is shorter than a bucket
     ///

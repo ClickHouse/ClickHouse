@@ -59,9 +59,9 @@ public:
     /// The read-only view of a mutable view. Explicit because it checks the columns again: a loop must not convert per row.
     explicit TimeSeriesHistogramPayloadColumnsViewImpl(const TimeSeriesHistogramPayloadColumnsViewImpl<!is_const> & other) requires is_const;
 
-    [[nodiscard]] size_t size() const { return flags.size(); }
+    [[nodiscard]] size_t size() const { return is_float.size(); }
 
-    Ref<ColumnUInt8> flags;
+    Ref<ColumnUInt8> is_float;
     Ref<ColumnInt8> counter_reset_hint;
     Ref<ColumnInt8> schema;
     Ref<ColumnFloat64> zero_threshold;
@@ -78,12 +78,11 @@ public:
 
     [[nodiscard]] Ref<IColumn> getPayloadColumn(TimeSeriesHistogramsColumn element) const;
 
-    /// The payload columns in the order of the stored tuple: `flags` first.
+    /// The payload columns in the order of the stored tuple: `is_float` first.
     using PayloadColumns = std::array<Ptr<IColumn>, NUM_PAYLOAD_COLUMNS>;
     [[nodiscard]] PayloadColumns getPayloadColumnsInStoredOrder() const;
 
-    /// Whether sample `row` is a float histogram (bit `IsFloat` of its flags), otherwise it is an integer one.
-    [[nodiscard]] bool isFloatAt(size_t row) const { return TimeSeriesHistogramFlags::isFloat(flags.getData()[row]); }
+    [[nodiscard]] bool isFloatAt(size_t row) const { return is_float.getData()[row] != 0; }
 
     /// The total count of the observations of sample `row` of either flavour, as `Float64`.
     [[nodiscard]] Float64 countAt(size_t row) const

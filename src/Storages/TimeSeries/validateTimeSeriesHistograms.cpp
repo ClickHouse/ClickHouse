@@ -70,12 +70,12 @@ namespace
 
     /// The rules, each applied to one row. `fail` is `InvalidHistogramThrower::fail` bound to the row.
 
-    /// Only the flavour bit may be set.
+    /// `is_float` is a value of its `Bool` type, which binary input formats don't check.
     template <typename Fail>
-    void checkFlags(UInt8 flags, const Fail & fail)
+    void checkIsFloat(UInt8 is_float, const Fail & fail)
     {
-        if (TimeSeriesHistogramFlags::hasReservedBits(flags))
-            fail("flags {} has reserved bits set, only bit 0 (a float histogram) may be set", static_cast<UInt32>(flags));
+        if (is_float > 1)
+            fail("is_float {} is out of the range 0..1", static_cast<int>(is_float));
     }
 
     /// The reset hint is a value of its `Enum8` type, which binary input formats and remote write don't check.
@@ -285,7 +285,7 @@ void validateTimeSeriesHistograms(const Block & histograms_block, UInt64 max_buc
     {
         const FailAtRow fail{thrower, row};
 
-        checkFlags(columns.flags.getData()[row], fail);
+        checkIsFloat(columns.is_float.getData()[row], fail);
         checkCounterResetHint(columns.counter_reset_hint.getData()[row], fail);
         checkSchema(schema[row], fail);
 

@@ -12,13 +12,13 @@ DROP TABLE IF EXISTS ts;
 CREATE TABLE stale_pairs
 (
     name String,
-    stale Array(Tuple(timestamp UInt32, flags UInt8, counter_reset_hint Enum8('unknown' = 0, 'reset' = 1, 'not_reset' = 2, 'gauge' = 3),
+    stale Array(Tuple(timestamp UInt32, is_float Bool, counter_reset_hint Enum8('unknown' = 0, 'reset' = 1, 'not_reset' = 2, 'gauge' = 3),
                       schema Int8, zero_threshold Float64,
                       sum Float64, count_int Int64, zero_count_int Int64, count_float Float64, zero_count_float Float64,
                       positive_int Array(Tuple(index Int32, count Int64)), negative_int Array(Tuple(index Int32, count Int64)),
                       positive_float Array(Tuple(index Int32, count Float64)), negative_float Array(Tuple(index Int32, count Float64)),
                       custom_values Array(Float64))),
-    other Array(Tuple(timestamp UInt32, flags UInt8, counter_reset_hint Enum8('unknown' = 0, 'reset' = 1, 'not_reset' = 2, 'gauge' = 3),
+    other Array(Tuple(timestamp UInt32, is_float Bool, counter_reset_hint Enum8('unknown' = 0, 'reset' = 1, 'not_reset' = 2, 'gauge' = 3),
                       schema Int8, zero_threshold Float64,
                       sum Float64, count_int Int64, zero_count_int Int64, count_float Float64, zero_count_float Float64,
                       positive_int Array(Tuple(index Int32, count Int64)), negative_int Array(Tuple(index Int32, count Int64)),

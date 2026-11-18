@@ -49,7 +49,7 @@ SELECT extract(create_table_query, 'histograms_max_buckets = (\d+)') FROM system
 SELECT '-- float samples are written and read as before, histogram samples are written and read through the histograms.* columns';
 INSERT INTO ts (metric_name, tags, samples) VALUES ('m', map(), [(toDateTime64(100, 3), 1.)]);
 SELECT metric_name, samples FROM ts;
-INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.flags, histograms.counter_reset_hint, histograms.schema, histograms.zero_threshold, histograms.sum,
+INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.counter_reset_hint, histograms.schema, histograms.zero_threshold, histograms.sum,
                 histograms.count_int, histograms.zero_count_int, histograms.count_float, histograms.zero_count_float,
                 histograms.positive_int, histograms.negative_int, histograms.positive_float, histograms.negative_float, histograms.custom_values)
     VALUES ('h', map(), [toDateTime64(100, 3)], [0], [0], [0], [0.], [1.], [1], [0], [0.], [0.], [[(0, 1)]], [[]], [[]], [[]], [[]]);

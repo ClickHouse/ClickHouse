@@ -17,14 +17,14 @@ DROP TABLE IF EXISTS ts_recent;
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS samples_bucket_step_seconds = 60, recent_samples_ttl_seconds = 0;
 
 SELECT '-- an integer histogram and a float histogram, stored as sent';
-INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.flags, histograms.counter_reset_hint, histograms.schema, histograms.zero_threshold, histograms.sum,
+INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.counter_reset_hint, histograms.schema, histograms.zero_threshold, histograms.sum,
                 histograms.count_int, histograms.zero_count_int, histograms.positive_int, histograms.negative_int)
     VALUES ('int_hist', map('job', 'api'), [toDateTime64(100, 3)], [0], [2], [3], [0.001], [12.5], [10], [2], [[(-2, 3), (-1, 2), (1, 3)]], [[(0, 0)]]);
-INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.flags, histograms.counter_reset_hint, histograms.schema, histograms.sum,
+INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.counter_reset_hint, histograms.schema, histograms.sum,
                 histograms.count_float, histograms.zero_count_float, histograms.positive_float, histograms.negative_float)
     VALUES ('float_hist', map('job', 'api'), [toDateTime64(100, 3)], [1], [3], [0], [3.25], [5.75], [0.5], [[(0, 2.5), (1, 2.5)]], [[(1, 0.25)]]);
 
-SELECT t.metric_name, toUnixTimestamp64Milli(h.timestamp) AS timestamp_ms, h.flags, h.counter_reset_hint, h.schema, h.zero_threshold, h.sum,
+SELECT t.metric_name, toUnixTimestamp64Milli(h.timestamp) AS timestamp_ms, h.is_float, h.counter_reset_hint, h.schema, h.zero_threshold, h.sum,
        h.count_int, h.zero_count_int, h.positive_int, h.negative_int, h.count_float, h.zero_count_float, h.positive_float, h.negative_float, h.custom_values,
        length(s.samples)
 FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS s ARRAY JOIN s.histograms AS h
@@ -56,7 +56,7 @@ ORDER BY s.bucket;
 SELECT '-- unsorted histograms are sorted; of duplicates by timestamp the greatest count wins (counts compared exactly across flavours, a NaN count loses), then the greatest sum, then the other elements; never the input order';
 -- Timestamp 20: equal counts, the greater sum comes first in the input. Timestamp 50: equal counts and sums, the pairs decide
 -- (the count of the bucket 0: 2 beats 1), again against the input order. See TimeSeriesDuplicateTimestampRule.
-INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.flags, histograms.count_int, histograms.count_float, histograms.sum, histograms.positive_int, histograms.positive_float)
+INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.count_int, histograms.count_float, histograms.sum, histograms.positive_int, histograms.positive_float)
     VALUES ('dups', map('job', 'api'),
             [toDateTime64(30, 3), toDateTime64(10, 3), toDateTime64(20, 3), toDateTime64(10, 3), toDateTime64(30, 3), toDateTime64(20, 3), toDateTime64(40, 3), toDateTime64(40, 3), toDateTime64(50, 3), toDateTime64(50, 3)],
             [0, 1, 0, 0, 0, 0, 0, 1, 0, 0],
@@ -66,7 +66,7 @@ INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.flags, histo
             [[(0, 5)], [], [(0, 7)], [(0, 5)], [(0, 4)], [(0, 7)], [(0, 1)], [], [(0, 2), (1, 1)], [(0, 1), (1, 2)]],
             [[], [(0, 4.5)], [], [], [], [], [], [], [], []]);
 
-SELECT t.metric_name, toUnixTimestamp64Milli(h.timestamp) AS timestamp_ms, h.flags, h.count_int, h.count_float, h.sum, h.positive_int, h.positive_float
+SELECT t.metric_name, toUnixTimestamp64Milli(h.timestamp) AS timestamp_ms, h.is_float, h.count_int, h.count_float, h.sum, h.positive_int, h.positive_float
 FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS s ARRAY JOIN s.histograms AS h
 JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) AS t ON s.id = t.id
 WHERE t.metric_name = 'dups'
@@ -86,7 +86,7 @@ SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) WHERE me
 SELECT '-- histograms.timestamp alone is a valid empty integer histogram: the other columns default to zeros and empty arrays aligned with the timestamps';
 INSERT INTO ts (metric_name, tags, histograms.timestamp) VALUES ('timestamps_only', map('job', 'api'), [toDateTime64(100, 3), toDateTime64(160, 3)]);
 
-SELECT t.metric_name, s.bucket, length(s.samples), s.histograms.timestamp, s.histograms.flags, s.histograms.count_int, s.histograms.positive_int
+SELECT t.metric_name, s.bucket, length(s.samples), s.histograms.timestamp, s.histograms.is_float, s.histograms.count_int, s.histograms.positive_int
 FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS s JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) AS t ON s.id = t.id
 WHERE t.metric_name = 'timestamps_only'
 ORDER BY s.bucket;
@@ -103,7 +103,7 @@ ORDER BY t.metric_name;
 SELECT '-- mixed integer and float counts above 2^53 choose the same winner in both input orders';
 -- A: integer count 2^53, sum 3; B: integer count 2^53 + 1, sum 1; C: float count 2^53, sum 2.
 -- Rounding the integer counts to `Float64` when comparing flavours makes B > A, A > C, C > B.
-INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.flags, histograms.sum,
+INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.sum,
                 histograms.count_int, histograms.zero_count_int, histograms.count_float, histograms.zero_count_float)
 WITH [toInt64(9007199254740992), toInt64(9007199254740993), toInt64(0)] AS int_counts,
      [0., 0., 9007199254740992.] AS float_counts
@@ -113,7 +113,7 @@ SELECT concat('mixed_counts_', ordering), map(), arrayMap(i -> toDateTime64(100,
        arrayMap(i -> float_counts[i], permutation), arrayMap(i -> float_counts[i], permutation)
 FROM values('ordering String, permutation Array(UInt8)', ('ABC', [1, 2, 3]), ('ACB', [1, 3, 2]));
 
-SELECT t.metric_name, h.flags, h.count_int, h.count_float, h.sum
+SELECT t.metric_name, h.is_float, h.count_int, h.count_float, h.sum
 FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS s ARRAY JOIN s.histograms AS h
 JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) AS t ON s.id = t.id
 WHERE t.metric_name IN ('mixed_counts_ABC', 'mixed_counts_ACB')

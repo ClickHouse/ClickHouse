@@ -144,7 +144,7 @@ namespace
 template <bool is_const>
 template <typename Source>
 TimeSeriesHistogramPayloadColumnsViewImpl<is_const>::TimeSeriesHistogramPayloadColumnsViewImpl(FromSource, const Source & source)
-    : flags(checkedElement<Ref<ColumnUInt8>>(source, Element::Flags))
+    : is_float(checkedElement<Ref<ColumnUInt8>>(source, Element::IsFloat))
     , counter_reset_hint(checkedElement<Ref<ColumnInt8>>(source, Element::CounterResetHint))
     , schema(checkedElement<Ref<ColumnInt8>>(source, Element::Schema))
     , zero_threshold(checkedElement<Ref<ColumnFloat64>>(source, Element::ZeroThreshold))
@@ -196,7 +196,7 @@ TimeSeriesHistogramPayloadColumnsViewImpl<is_const>::getPayloadColumn(Element el
 {
     switch (element)
     {
-        case Element::Flags: return flags;
+        case Element::IsFloat: return is_float;
         case Element::CounterResetHint: return counter_reset_hint;
         case Element::Schema: return schema;
         case Element::ZeroThreshold: return zero_threshold;

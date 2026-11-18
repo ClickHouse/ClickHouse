@@ -15,14 +15,14 @@ CREATE TABLE ts ENGINE = TimeSeries SETTINGS samples_bucket_step_seconds = 60, r
 SAMPLES INNER ENGINE = AggregatingMergeTree SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1;
 
 SELECT '-- an integer histogram and a float histogram: every element of the stored tuple is an outer array';
-INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.flags, histograms.counter_reset_hint, histograms.schema, histograms.zero_threshold, histograms.sum,
+INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.counter_reset_hint, histograms.schema, histograms.zero_threshold, histograms.sum,
                 histograms.count_int, histograms.zero_count_int, histograms.positive_int, histograms.negative_int)
     VALUES ('int_hist', map('job', 'api'), [toDateTime64(100, 3)], [0], [2], [3], [0.001], [12.5], [10], [2], [[(-2, 3), (-1, 2), (1, 3)]], [[(0, 0)]]);
-INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.flags, histograms.counter_reset_hint, histograms.schema, histograms.sum,
+INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.counter_reset_hint, histograms.schema, histograms.sum,
                 histograms.count_float, histograms.zero_count_float, histograms.positive_float, histograms.negative_float)
     VALUES ('float_hist', map('job', 'api'), [toDateTime64(100, 3)], [1], [3], [0], [3.25], [5.75], [0.5], [[(0, 2.5), (1, 2.5)]], [[(1, 0.25)]]);
 
-SELECT metric_name, tags, samples, histograms.timestamp, histograms.flags, histograms.counter_reset_hint, histograms.schema, histograms.zero_threshold, histograms.sum,
+SELECT metric_name, tags, samples, histograms.timestamp, histograms.is_float, histograms.counter_reset_hint, histograms.schema, histograms.zero_threshold, histograms.sum,
        histograms.count_int, histograms.zero_count_int, histograms.count_float, histograms.zero_count_float,
        histograms.positive_int, histograms.negative_int, histograms.positive_float, histograms.negative_float, histograms.custom_values
 FROM ts WHERE metric_name IN ('int_hist', 'float_hist') ORDER BY metric_name;

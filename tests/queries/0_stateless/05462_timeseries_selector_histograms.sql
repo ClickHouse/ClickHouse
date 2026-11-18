@@ -31,7 +31,7 @@ DESCRIBE timeSeriesSelector(ts, 'm', 0, 1, 'floats'); -- { serverError BAD_ARGUM
 -- A float-only series.
 INSERT INTO ts (metric_name, tags, samples) VALUES ('m_float', map('job', 'api'), [(toDateTime64(100, 3), 1.5), (toDateTime64(110, 3), 2.5)]);
 -- A histogram-only series: an integer histogram, then a float histogram, in one bucket.
-INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.flags, histograms.counter_reset_hint, histograms.schema, histograms.zero_threshold, histograms.sum,
+INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.counter_reset_hint, histograms.schema, histograms.zero_threshold, histograms.sum,
                 histograms.count_int, histograms.zero_count_int, histograms.positive_int, histograms.negative_int,
                 histograms.count_float, histograms.zero_count_float, histograms.positive_float, histograms.negative_float)
     VALUES ('m_hist', map('job', 'api'), [toDateTime64(100, 3), toDateTime64(110, 3)], [0, 1], [2, 3], [3, 0], [0.001, 0], [12.5, 3.25],

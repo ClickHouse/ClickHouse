@@ -10,7 +10,7 @@ DROP TABLE IF EXISTS histogram_arrays;
 CREATE TABLE histogram_arrays
 (
     name String,
-    h Array(Tuple(timestamp UInt32, flags UInt8, counter_reset_hint Enum8('unknown' = 0, 'reset' = 1, 'not_reset' = 2, 'gauge' = 3),
+    h Array(Tuple(timestamp UInt32, is_float Bool, counter_reset_hint Enum8('unknown' = 0, 'reset' = 1, 'not_reset' = 2, 'gauge' = 3),
                   schema Int8, zero_threshold Float64,
                   sum Float64, count_int Int64, zero_count_int Int64, count_float Float64, zero_count_float Float64,
                   positive_int Array(Tuple(index Int32, count Int64)), negative_int Array(Tuple(index Int32, count Int64)),

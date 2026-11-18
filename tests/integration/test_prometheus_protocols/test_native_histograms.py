@@ -36,7 +36,7 @@ TIMESTAMP_MS = 1724112000000  # 2024-08-20 00:00:00 UTC
 
 # The stored shape of a histogram sample: the elements of the `histograms` tuple after `timestamp` (see TimeSeriesHistogramsColumns).
 HISTOGRAMS_QUERY = """
-    SELECT toUnixTimestamp64Milli(h.timestamp), h.flags, h.counter_reset_hint, h.schema, h.zero_threshold, h.sum,
+    SELECT toUnixTimestamp64Milli(h.timestamp), h.is_float, h.counter_reset_hint, h.schema, h.zero_threshold, h.sum,
            h.count_int, h.zero_count_int, h.positive_int, h.negative_int,
            h.count_float, h.zero_count_float, h.positive_float, h.negative_float, h.custom_values
     FROM timeSeriesSamples(prometheus) ARRAY JOIN histograms AS h
@@ -149,12 +149,12 @@ def test_integer_histogram():
         timestamp=TIMESTAMP_MS,
     )
     check_histogram_round_trip(
-        histogram, f"{TIMESTAMP_MS}\t0\tnot_reset\t3\t0.001\t12.5\t10\t2\t[(-2,3),(-1,2),(1,3)]\t[(0,0)]\t0\t0\t[]\t[]\t[]"
+        histogram, f"{TIMESTAMP_MS}\tfalse\tnot_reset\t3\t0.001\t12.5\t10\t2\t[(-2,3),(-1,2),(1,3)]\t[(0,0)]\t0\t0\t[]\t[]\t[]"
     )
 
 
 def test_float_histogram():
-    # Float bucket counts are copied as sent into the float flavour (bit 0 of `flags`); the integer flavour stays at its defaults.
+    # Float bucket counts are copied as sent into the float flavour (`is_float`); the integer flavour stays at its defaults.
     histogram = types_pb2.Histogram(
         count_float=5.5,
         sum=3.25,
@@ -166,7 +166,7 @@ def test_float_histogram():
         reset_hint=types_pb2.Histogram.ResetHint.GAUGE,
         timestamp=TIMESTAMP_MS,
     )
-    check_histogram_round_trip(histogram, f"{TIMESTAMP_MS}\t1\tgauge\t0\t0\t3.25\t0\t0\t[]\t[]\t5.5\t0.5\t[(0,2.5),(1,2.5)]\t[]\t[]")
+    check_histogram_round_trip(histogram, f"{TIMESTAMP_MS}\ttrue\tgauge\t0\t0\t3.25\t0\t0\t[]\t[]\t5.5\t0.5\t[(0,2.5),(1,2.5)]\t[]\t[]")
 
 
 def test_custom_buckets_histogram():
@@ -182,14 +182,14 @@ def test_custom_buckets_histogram():
         positive_deltas=[2, 1, 1],
         timestamp=TIMESTAMP_MS,
     )
-    check_histogram_round_trip(histogram, f"{TIMESTAMP_MS}\t0\tunknown\t-53\t0\t4.2\t9\t0\t[(0,2),(1,3),(2,4)]\t[]\t0\t0\t[]\t[]\t[0.1,0.5,1]")
+    check_histogram_round_trip(histogram, f"{TIMESTAMP_MS}\tfalse\tunknown\t-53\t0\t4.2\t9\t0\t[(0,2),(1,3),(2,4)]\t[]\t0\t0\t[]\t[]\t[0.1,0.5,1]")
 
 
 def test_stale_marker_and_unset_count():
     # A stale marker is a histogram whose `sum` is the stale NaN; Prometheus sends nothing else. The NaN payload must survive
     # bit-exactly, that is how staleness is detected. A histogram without a `count` arm is an integer histogram with count 0.
     stale = types_pb2.Histogram(sum=STALE_NAN, timestamp=TIMESTAMP_MS)
-    check_histogram_round_trip(stale, f"{TIMESTAMP_MS}\t0\tunknown\t0\t0\tnan\t0\t0\t[]\t[]\t0\t0\t[]\t[]\t[]")
+    check_histogram_round_trip(stale, f"{TIMESTAMP_MS}\tfalse\tunknown\t0\t0\tnan\t0\t0\t[]\t[]\t0\t0\t[]\t[]\t[]")
     assert node.query("SELECT hex(reinterpretAsUInt64(h.sum)) FROM timeSeriesSamples(prometheus) ARRAY JOIN histograms AS h") == "7FF0000000000002\n"
 
 
@@ -484,7 +484,7 @@ def test_fields_of_the_other_flavour_are_ignored():
     send(make_write_request(({"__name__": "hist"}, [integer_histogram, float_histogram])))
 
     assert read_histograms() == (
-        f"{TIMESTAMP_MS}\t0\tunknown\t0\t0\t1\t3\t0\t[(0,3)]\t[]\t0\t0\t[]\t[]\t[]\n"
-        f"{TIMESTAMP_MS + 1000}\t1\tunknown\t0\t0\t2\t0\t0\t[]\t[]\t2.5\t0\t[(0,2.5)]\t[]\t[]\n"
+        f"{TIMESTAMP_MS}\tfalse\tunknown\t0\t0\t1\t3\t0\t[(0,3)]\t[]\t0\t0\t[]\t[]\t[]\n"
+        f"{TIMESTAMP_MS + 1000}\ttrue\tunknown\t0\t0\t2\t0\t0\t[]\t[]\t2.5\t0\t[(0,2.5)]\t[]\t[]\n"
     )
 

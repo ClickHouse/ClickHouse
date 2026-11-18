@@ -1133,7 +1133,7 @@ From [version](#schema-versioning) )DOCS_MD" + histograms_version + R"DOCS_MD( a
 with the same timestamp a stale marker loses to any histogram that isn't one, then the one with the greatest total count is kept, on ties
 the greatest sum, then the other elements decide).
 An integer histogram keeps its counts as `Int64` in the `*_int` elements, a float histogram as `Float64` in the `*_float` elements;
-bit 0 of `flags` tells the flavour. The readers ignore the elements of the other flavour: remote write leaves them 0 and empty,
+`is_float` tells the flavour. The readers ignore the elements of the other flavour: remote write leaves them 0 and empty,
 and an `INSERT` isn't validated for them.
 The buckets of a side are pairs of the bucket index and the count sorted by index.
 A row of a float-only series has an empty `histograms` array, a row of a histogram-only series has an empty `samples` array.
@@ -1166,7 +1166,7 @@ The _samples_ table must have columns:
 |---|---|---|---|---|
 | `id` | [x] | `Tuple(UInt64, LowCardinality(UUID))` | any | Identifies a combination of a metric names and tags |
 | `samples` | [x] | `SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64)))` | `SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(X), value Float32 or Float64)))`, the elements must be named `timestamp` and `value` | The samples of a time series within the bucket sorted by timestamp |
-| `histograms` | [x] from version )DOCS_MD" + histograms_version + R"DOCS_MD( | `SimpleAggregateFunction(timeSeriesGroupArray, )DOCS_MD" + histograms_type + R"DOCS_MD()` | the same with `DateTime64(X)` as the type of the timestamps | The native histogram samples of a time series within the bucket sorted by timestamp (see above). The elements after `timestamp` are the ones of the [outer columns](#outer-columns) `histograms.*`; the bits of `flags` other than bit 0 are reserved and are 0 |
+| `histograms` | [x] from version )DOCS_MD" + histograms_version + R"DOCS_MD( | `SimpleAggregateFunction(timeSeriesGroupArray, )DOCS_MD" + histograms_type + R"DOCS_MD()` | the same with `DateTime64(X)` as the type of the timestamps | The native histogram samples of a time series within the bucket sorted by timestamp (see above). The elements after `timestamp` are the ones of the [outer columns](#outer-columns) `histograms.*` |
 | `bucket` | [x] | `DateTime64(3)` | the type of the timestamps | The start of the bucket: the timestamps of the samples rounded down to a multiple of the bucket length |
 | `min_time` | [x] | `SimpleAggregateFunction(min, DateTime64(3))` | `SimpleAggregateFunction(min, ...)` of the type of the timestamps | The minimum timestamp of the samples in the row |
 | `max_time` | [x] | `SimpleAggregateFunction(max, DateTime64(3))` | `SimpleAggregateFunction(max, ...)` of the type of the timestamps | The maximum timestamp of the samples in the row |

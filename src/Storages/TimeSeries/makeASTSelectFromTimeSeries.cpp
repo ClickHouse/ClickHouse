@@ -324,14 +324,14 @@ namespace
 
     /// Builds a subquery to read from the "samples" table of a table with buckets of samples:
     /// (
-    ///     SELECT id, CAST(samples, 'Array(Tuple(...))') AS samples, `histograms.timestamp`, `histograms.flags`, ...
+    ///     SELECT id, CAST(samples, 'Array(Tuple(...))') AS samples, `histograms.timestamp`, `histograms.is_float`, ...
     ///     FROM <samples>
     /// ) AS __samples
     /// With `FINAL` the rows of the same bucket are merged, the same as a merge of the table does:
     /// (
     ///     SELECT id, CAST(timeSeriesGroupArray(samples), 'Array(Tuple(...))') AS samples,
     ///            timeSeriesGroupArray(histograms) AS __histograms,
-    ///            tupleElement(__histograms, 'timestamp') AS `histograms.timestamp`, tupleElement(__histograms, 'flags') AS `histograms.flags`, ...
+    ///            tupleElement(__histograms, 'timestamp') AS `histograms.timestamp`, tupleElement(__histograms, 'is_float') AS `histograms.is_float`, ...
     ///     FROM <samples>
     ///     GROUP BY id, bucket
     /// ) AS __samples
@@ -395,7 +395,7 @@ namespace
                 }
                 else
                 {
-                    /// `histograms.timestamp`, `histograms.flags`, ...: the subcolumns of the `histograms` column, named like the outer columns.
+                    /// `histograms.timestamp`, `histograms.is_float`, ...: the subcolumns of the `histograms` column, named like the outer columns.
                     for (const auto & outer_column_name : requested_histograms_columns)
                         select_list->children.push_back(make_intrusive<ASTIdentifier>(outer_column_name));
                 }
@@ -720,11 +720,11 @@ namespace
     /// Builds a query reading from multiple target tables. For example, when all the columns are requested:
     /// SELECT toString(ifNull(metric_name, '')) AS metric_name,
     ///        timeSeriesTagsToMap(tags, '__name__', metric_name) AS tags,
-    ///        samples, `histograms.timestamp`, `histograms.flags`, ...,
+    ///        samples, `histograms.timestamp`, `histograms.is_float`, ...,
     ///        metric_family, type, unit, help
     /// FROM
     /// (
-    ///     SELECT id, CAST(samples, 'Array(Tuple(...))') AS samples, `histograms.timestamp`, `histograms.flags`, ...
+    ///     SELECT id, CAST(samples, 'Array(Tuple(...))') AS samples, `histograms.timestamp`, `histograms.is_float`, ...
     ///     FROM <samples>
     /// ) AS __samples
     /// INNER JOIN (SELECT * FROM <tags> LIMIT 1 BY id) AS __tags USING (id)

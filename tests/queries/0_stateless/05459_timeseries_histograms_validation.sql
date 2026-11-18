@@ -1,8 +1,8 @@
 -- The validation of histogram samples inserted into a TimeSeries table (see validateTimeSeriesHistograms): the rules follow
--- Prometheus's `Histogram.Validate` plus the shape rules of the storage (the pairs of a side sorted by index, only the flavour bit
--- of `flags`). An INSERT with an invalid histogram is rejected as a whole before anything is written: no tags row, no time range,
--- no samples row. The columns of the `histograms` group which an INSERT doesn't mention get default values, so a valid histogram
--- needs only a timestamp.
+-- Prometheus's `Histogram.Validate` plus the shape rules of the storage (the pairs of a side sorted by index, `is_float` and
+-- `counter_reset_hint` within their types). An INSERT with an invalid histogram is rejected as a whole before anything is written:
+-- no tags row, no time range, no samples row. The columns of the `histograms` group which an INSERT doesn't mention get default
+-- values, so a valid histogram needs only a timestamp.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -14,10 +14,11 @@ DROP TABLE IF EXISTS ts_val;
 CREATE TABLE ts_val ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0
 SAMPLES INNER ENGINE = AggregatingMergeTree SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1;
 
-SELECT '-- only bit 0 of flags (a float histogram) may be set';
-INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.flags) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [2]); -- { serverError INCORRECT_DATA }
-INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.flags) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [3]); -- { serverError INCORRECT_DATA }
-INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.flags) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [128]); -- { serverError INCORRECT_DATA }
+SELECT '-- is_float is a value of its Bool type: text input is converted to it, binary input other than 0 and 1 is rejected by the validation';
+-- A binary format doesn't check the values of a Bool: the array [2] in RowBinary.
+INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.is_float)
+    SELECT 'm', map('job', 'api'), [toDateTime64(100, 3)], is_float
+    FROM format(RowBinary, 'is_float Array(Bool)', unhex('0102')); -- { serverError INCORRECT_DATA }
 
 SELECT '-- counter_reset_hint is a value of its Enum8 type: text input is rejected while parsing, binary input by the validation';
 INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.counter_reset_hint) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [4]); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
@@ -41,7 +42,7 @@ INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.count_in
     VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [2], [[(1, 1), (0, 1)]]); -- { serverError INCORRECT_DATA }
 INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.count_int, histograms.negative_int)
     VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [2], [[(2, 1), (1, 1)]]); -- { serverError INCORRECT_DATA }
-INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.flags, histograms.count_float, histograms.positive_float)
+INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.count_float, histograms.positive_float)
     VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [1], [2], [[(0, 1), (0, 1)]]); -- { serverError INCORRECT_DATA }
 
 SELECT '-- no count is negative';
@@ -49,9 +50,9 @@ SELECT '-- no count is negative';
 INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.count_int, histograms.positive_int)
     VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [-1], [[(0, -1)]]); -- { serverError INCORRECT_DATA }
 INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.count_int, histograms.zero_count_int) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [-1], [-1]); -- { serverError INCORRECT_DATA }
-INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.flags, histograms.count_float) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [1], [-1]); -- { serverError INCORRECT_DATA }
-INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.flags, histograms.zero_count_float) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [1], [-1]); -- { serverError INCORRECT_DATA }
-INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.flags, histograms.positive_float)
+INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.count_float) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [1], [-1]); -- { serverError INCORRECT_DATA }
+INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.zero_count_float) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [1], [-1]); -- { serverError INCORRECT_DATA }
+INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.positive_float)
     VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [1], [[(0, -1)]]); -- { serverError INCORRECT_DATA }
 
 SELECT '-- the buckets and the zero bucket of an integer histogram add up to count_int, or to at most count_int when sum is NaN';
@@ -105,7 +106,7 @@ INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.count_in
 INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.count_int, histograms.positive_int, histograms.negative_int)
     VALUES ('m', map('job', 'api'), [toDateTime64(108, 3)], [2], [[(-5, 1)]], [[(3, 1)]]);
 -- The total count of a float histogram is not checked against its buckets.
-INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.flags, histograms.count_float, histograms.positive_float)
+INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.count_float, histograms.positive_float)
     VALUES ('m', map('job', 'api'), [toDateTime64(109, 3)], [1], [100], [[(0, 1)]]);
 -- Three bounds define four custom buckets, the last one up to +Inf.
 INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.schema, histograms.count_int, histograms.positive_int, histograms.custom_values)
@@ -114,7 +115,7 @@ INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.schema, 
 INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.count_int, histograms.positive_int)
     VALUES ('m', map('job', 'api'), [toDateTime64(111, 3)], [9223372036854775807], [[(0, 9223372036854775807)]]);
 
-SELECT toUnixTimestamp64Milli(h.timestamp) AS timestamp_ms, h.flags, h.counter_reset_hint, h.schema, h.zero_threshold, h.sum,
+SELECT toUnixTimestamp64Milli(h.timestamp) AS timestamp_ms, h.is_float, h.counter_reset_hint, h.schema, h.zero_threshold, h.sum,
        h.count_int, h.zero_count_int, h.positive_int, h.negative_int, h.count_float, h.positive_float, h.custom_values
 FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts_val) ARRAY JOIN histograms AS h
 ORDER BY h.timestamp;

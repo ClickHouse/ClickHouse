@@ -135,7 +135,7 @@ INSERT INTO histogram_reset_cases (name, timestamps, hints, schemas, thresholds,
 CREATE TABLE ts_reset_detection ENGINE = TimeSeries
 SETTINGS samples_bucket_step_seconds = 60, recent_samples_bucket_step_seconds = 30, recent_samples_ttl_seconds = 315360000;
 INSERT INTO ts_reset_detection
-    (metric_name, tags, histograms.timestamp, histograms.flags, histograms.counter_reset_hint, histograms.schema,
+    (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.counter_reset_hint, histograms.schema,
      histograms.zero_threshold, histograms.sum, histograms.count_int, histograms.zero_count_int,
      histograms.positive_int, histograms.negative_int, histograms.count_float, histograms.zero_count_float,
      histograms.positive_float, histograms.negative_float, histograms.custom_values)
@@ -172,10 +172,10 @@ GROUP BY source ORDER BY source;
 -- Integer reset checks must not round counts to Float64; fractional float decreases must also be detected.
 INSERT INTO ts_reset_detection (metric_name, histograms.timestamp, histograms.count_int, histograms.zero_count_int, histograms.counter_reset_hint)
 VALUES ('large_integer_count', ['2026-01-01 00:01:40', '2026-01-01 00:01:41'], [9007199254740993, 9007199254740992], [9007199254740993, 9007199254740992], [0, 2]);
-INSERT INTO ts_reset_detection (metric_name, histograms.timestamp, histograms.flags, histograms.count_float, histograms.zero_count_float, histograms.counter_reset_hint)
+INSERT INTO ts_reset_detection (metric_name, histograms.timestamp, histograms.is_float, histograms.count_float, histograms.zero_count_float, histograms.counter_reset_hint)
 VALUES ('fractional_float_count', ['2026-01-01 00:01:40', '2026-01-01 00:01:41'], [1, 1], [1.5, 1.25], [1.5, 1.25], [0, 2]);
 -- A representation change starts a new history, even if the counts decrease.
-INSERT INTO ts_reset_detection (metric_name, histograms.timestamp, histograms.flags, histograms.count_int, histograms.zero_count_int,
+INSERT INTO ts_reset_detection (metric_name, histograms.timestamp, histograms.is_float, histograms.count_int, histograms.zero_count_int,
                                histograms.count_float, histograms.zero_count_float, histograms.counter_reset_hint)
 VALUES ('integer_to_float', ['2026-01-01 00:01:40', '2026-01-01 00:01:41'], [0, 1], [10, 0], [10, 0], [0, 1], [0, 1], [0, 2]),
        ('float_to_integer', ['2026-01-01 00:01:40', '2026-01-01 00:01:41'], [1, 0], [0, 1], [0, 1], [10, 0], [10, 0], [0, 2]);

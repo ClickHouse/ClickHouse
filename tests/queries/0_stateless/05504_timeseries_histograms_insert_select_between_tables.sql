@@ -14,7 +14,7 @@ CREATE TABLE ts_src ENGINE = TimeSeries SETTINGS samples_bucket_step_seconds = 6
 INSERT INTO ts_src (metric_name, tags, samples, histograms.timestamp, histograms.count_int, histograms.sum, histograms.positive_int)
     VALUES ('mixed', map('job', 'api'), [(toDateTime64(130, 3), 1.5)], [toDateTime64(125, 3), toDateTime64(145, 3)], [1, 2], [0.5, 1.5], [[(0, 1)], [(0, 2)]]);
 INSERT INTO ts_src (metric_name, tags, samples) VALUES ('floats_only', map('job', 'api'), [(toDateTime64(100, 3), 1.)]);
-INSERT INTO ts_src (metric_name, tags, histograms.timestamp, histograms.flags, histograms.counter_reset_hint, histograms.schema, histograms.sum,
+INSERT INTO ts_src (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.counter_reset_hint, histograms.schema, histograms.sum,
                     histograms.count_float, histograms.positive_float, histograms.custom_values)
     VALUES ('float_custom', map('job', 'api'), [toDateTime64(100, 3)], [1], [3], [-53], [3.25], [2.5], [[(0, 1.5), (1, 1.)]], [[1.]]);
 
@@ -22,7 +22,7 @@ CREATE TABLE ts_dst AS ts_src;
 INSERT INTO ts_dst SELECT * FROM ts_src;
 
 SELECT '-- the copy has the rows of the source';
-SELECT metric_name, samples, histograms.timestamp, histograms.flags, histograms.counter_reset_hint, histograms.schema, histograms.sum,
+SELECT metric_name, samples, histograms.timestamp, histograms.is_float, histograms.counter_reset_hint, histograms.schema, histograms.sum,
        histograms.count_int, histograms.positive_int, histograms.count_float, histograms.positive_float, histograms.custom_values
 FROM ts_dst ORDER BY ALL;
 

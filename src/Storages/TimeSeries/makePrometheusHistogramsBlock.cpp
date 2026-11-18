@@ -271,7 +271,7 @@ namespace
 
         const MutableView & view = columns.view;
         PrometheusTimestamps::insertInto(histogram.timestamp(), view.timestamps);
-        view.flags.insertValue(is_float ? TimeSeriesHistogramFlags::IsFloat : 0);
+        view.is_float.insertValue(is_float);
         view.counter_reset_hint.insertValue(narrow<Int8>(static_cast<Int32>(histogram.reset_hint()), histogram, "reset_hint"));
         view.schema.insertValue(narrow<Int8>(histogram.schema(), histogram, "schema"));
         view.zero_threshold.insertValue(histogram.zero_threshold());

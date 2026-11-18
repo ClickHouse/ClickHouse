@@ -15,9 +15,9 @@ INSERT INTO ts_limit (metric_name, tags, histograms.timestamp, histograms.count_
     VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [3], [[(0, 1), (1, 1)]], [[(0, 1)]]);
 INSERT INTO ts_limit (metric_name, tags, histograms.timestamp, histograms.count_int, histograms.positive_int, histograms.negative_int)
     VALUES ('m', map('job', 'api'), [toDateTime64(101, 3)], [4], [[(0, 1), (1, 1)]], [[(0, 1), (1, 1)]]); -- { serverError INCORRECT_DATA }
-INSERT INTO ts_limit (metric_name, tags, histograms.timestamp, histograms.flags, histograms.count_float, histograms.positive_float)
+INSERT INTO ts_limit (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.count_float, histograms.positive_float)
     VALUES ('m', map('job', 'api'), [toDateTime64(102, 3)], [1], [4], [[(0, 1), (1, 1), (2, 1), (3, 1)]]); -- { serverError INCORRECT_DATA }
-INSERT INTO ts_limit (metric_name, tags, histograms.timestamp, histograms.flags, histograms.count_float, histograms.positive_float)
+INSERT INTO ts_limit (metric_name, tags, histograms.timestamp, histograms.is_float, histograms.count_float, histograms.positive_float)
     VALUES ('m', map('job', 'api'), [toDateTime64(103, 3)], [1], [3], [[(0, 1), (1, 1), (2, 1)]]);
 
 SELECT '-- a rejected insert writes nothing, the accepted histograms are stored';

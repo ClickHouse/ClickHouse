@@ -16,11 +16,11 @@ class IColumn;
 /// The payload elements of a histogram sample, in the canonical order after `timestamp`: the elements of the tuples of the
 /// `histograms` column of the samples tables (see TimeSeriesColumnNames::Histograms). A histogram is stored as it was sent:
 /// an integer histogram keeps its counts in the `*_int` elements (`Int64`), a float histogram in the `*_float` elements (`Float64`),
-/// the other flavour's scalars are 0 and its arrays are empty; bit 0 of `flags` tells the flavour (see TimeSeriesHistogramFlags).
+/// the other flavour's scalars are 0 and its arrays are empty; `is_float` tells the flavour.
 /// The buckets of a side are pairs of the bucket index and the count sorted by index (see TimeSeriesHistogramsColumns).
 enum class TimeSeriesHistogramsColumn : uint8_t
 {
-    Flags,
+    IsFloat,
     CounterResetHint,
     Schema,
     ZeroThreshold,
@@ -34,21 +34,6 @@ enum class TimeSeriesHistogramsColumn : uint8_t
     PositiveFloat,
     NegativeFloat,
     CustomValues,
-};
-
-/// The bits of the `flags` element of a histogram sample. Only `IsFloat` is defined; the other bits are reserved and kept 0,
-/// so that a later version can give them a meaning per sample without a new version of the table.
-struct TimeSeriesHistogramFlags
-{
-    /// The histogram is a float histogram: its counts are in the `*_float` elements and the `*_int` elements are 0 and empty.
-    /// Clear for an integer histogram, with the opposite.
-    static constexpr UInt8 IsFloat = 1;
-
-    /// The bits a histogram may have outside the storage, e.g. in the outer column `histograms.flags` on insert.
-    static constexpr UInt8 OuterMask = IsFloat;
-
-    static constexpr bool isFloat(UInt8 flags) { return (flags & IsFloat) != 0; }
-    static constexpr bool hasReservedBits(UInt8 flags) { return (flags & ~OuterMask) != 0; }
 };
 
 /// The values of the `counter_reset_hint` element: the numbers of `ResetHint` of the Prometheus remote-write protocol, named as
@@ -92,8 +77,8 @@ struct TimeSeriesHistogramsCodecDeclaration
 /// (bucket k goes up to `custom_values[k]`, the last one to +Inf). The sides and the flavours are separate arrays so that each
 /// data stream keeps one type and one codec.
 ///
-/// The outer columns are the flattened form of `histograms Nested(timestamp <timestamp_type>, flags UInt8, ...)`:
-/// `histograms.timestamp Array(<timestamp_type>)`, `histograms.flags Array(UInt8)`, ... Element k of every array is sample k of the
+/// The outer columns are the flattened form of `histograms Nested(timestamp <timestamp_type>, is_float Bool, ...)`:
+/// `histograms.timestamp Array(<timestamp_type>)`, `histograms.is_float Array(Bool)`, ... Element k of every array is sample k of the
 /// row. The names mirror the elements of the stored tuple, so writing and reading map the columns by name.
 class TimeSeriesHistogramsColumns
 {
@@ -111,11 +96,10 @@ public:
     {
         switch (column)
         {
-            case TimeSeriesHistogramsColumn::Flags:
-                return {"flags", "UInt8", "CODEC(ZSTD(3))",
-                    "Bit 0: the histogram is a float histogram and its counts are in the `*_float` elements; an integer histogram has the bit clear "
-                    "and its counts in the `*_int` elements. The readers ignore the elements of the other flavour, which remote write leaves 0 and "
-                    "empty. The other bits are reserved and must be 0"};
+            case TimeSeriesHistogramsColumn::IsFloat:
+                return {"is_float", "Bool", "CODEC(ZSTD(3))",
+                    "Whether the histogram is a float histogram, with its counts in the `*_float` elements; an integer histogram has its counts "
+                    "in the `*_int` elements. The readers ignore the elements of the other flavour, which remote write leaves 0 and empty"};
             case TimeSeriesHistogramsColumn::CounterResetHint:
                 return {"counter_reset_hint", TimeSeriesHistogramCounterResetHint::getTypeName(), "CODEC(ZSTD(3))",
                     "The counter reset hint: `unknown`, `reset` (a counter reset happened), `not_reset` (no counter reset) or `gauge` "
@@ -215,7 +199,7 @@ public:
     static constexpr size_t getTuplePosition(TimeSeriesHistogramsColumn column) { return getTimestampPosition() + 1 + static_cast<size_t>(column); }
 
     /// The type of the `histograms` column of the samples tables (without the `SimpleAggregateFunction` wrapper) and of
-    /// `timeSeriesSelector`: `Array(Tuple(timestamp <timestamp_type>, flags UInt8, counter_reset_hint Enum8(...), ..., custom_values Array(Float64)))`.
+    /// `timeSeriesSelector`: `Array(Tuple(timestamp <timestamp_type>, is_float Bool, counter_reset_hint Enum8(...), ..., custom_values Array(Float64)))`.
     static DataTypePtr makeHistogramsArrayType(const DataTypePtr & timestamp_type);
 
     /// If `type` is `Array(Tuple(timestamp, <the payload elements>))` (optionally wrapped in `SimpleAggregateFunction`),
@@ -233,7 +217,7 @@ public:
     /// The outer column `histograms.timestamp`, whose type depends on the timestamp type of the table.
     static NameAndTypePair getOuterTimestampColumn(const DataTypePtr & timestamp_type);
 
-    /// The outer columns mirroring the payload elements, in the canonical order: `histograms.flags Array(UInt8)`, ...,
+    /// The outer columns mirroring the payload elements, in the canonical order: `histograms.is_float Array(Bool)`, ...,
     /// `histograms.custom_values Array(Array(Float64))`. Their types don't depend on the table, so the list is built once.
     static const NamesAndTypesList & getOuterPayloadColumns();
 
@@ -241,7 +225,7 @@ public:
     /// the names, the types, the codecs and the descriptions of the histogram columns are written once. `timestamp_type_text` is the
     /// type of the timestamps as the documentation writes it, e.g. `DateTime64(3)`.
 
-    /// The type of `makeHistogramsArrayType` as text: `Array(Tuple(timestamp <timestamp_type>, flags UInt8, ..., custom_values Array(Float64)))`.
+    /// The type of `makeHistogramsArrayType` as text: `Array(Tuple(timestamp <timestamp_type>, is_float Bool, ..., custom_values Array(Float64)))`.
     static String describeArrayTypeForDocs(std::string_view timestamp_type_text);
 
     /// The rows of the markdown table of the outer columns (name, type, description), one per `histograms.*` column, each ending with
@@ -254,7 +238,7 @@ public:
     static String describeOuterColumnsForCreateExample(std::string_view timestamp_type_text);
 
     /// The codec declarations of the `histograms` column grouped by codec, as text for the documentation:
-    /// "`Delta, T64, ZSTD(3)` for `timestamp`; `ZSTD(3)` for `flags`, ...; `T64, ZSTD(3)` for `count_int`, ...; `Delta, ZSTD(3)` for `positive_int.index`, ...".
+    /// "`Delta, T64, ZSTD(3)` for `timestamp`; `ZSTD(3)` for `is_float`, ...; `T64, ZSTD(3)` for `count_int`, ...; `Delta, ZSTD(3)` for `positive_int.index`, ...".
     static String describeInnerCodecsForDocs();
 
     /// The codec declarations of the `histograms` column as `SHOW CREATE TABLE` prints them at the end of the column list of a samples

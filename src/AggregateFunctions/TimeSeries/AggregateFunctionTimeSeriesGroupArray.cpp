@@ -116,14 +116,14 @@ The samples can be passed in one of four forms:
 - as two arguments `timestamp` and `value`, where each row holds a single sample;
 - as two arrays of timestamps and values, where each row holds a whole time series;
 - as a single array of `(timestamp, value)` tuples, where each row holds a whole time series. This form has the same type as the result, which allows using the function in the `SimpleAggregateFunction` data type;
-- as a single array of native histogram samples sorted by timestamp, where each row holds a whole time series. The array has the type of the `histograms` column of the samples tables of the `TimeSeries` table engine (`Array(Tuple(timestamp, flags, counter_reset_hint, schema, zero_threshold, sum, count_int, zero_count_int, count_float, zero_count_float, positive_int, negative_int, positive_float, negative_float, custom_values))`, see the documentation of the engine), which is also the type of the result, so this form can be used in the `SimpleAggregateFunction` data type too.
+- as a single array of native histogram samples sorted by timestamp, where each row holds a whole time series. The array has the type of the `histograms` column of the samples tables of the `TimeSeries` table engine (`Array(Tuple(timestamp, is_float, counter_reset_hint, schema, zero_threshold, sum, count_int, zero_count_int, count_float, zero_count_float, positive_int, negative_int, positive_float, negative_float, custom_values))`, see the documentation of the engine), which is also the type of the result, so this form can be used in the `SimpleAggregateFunction` data type too.
 
 If several float samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any number, so a NaN value is used only if all samples at this timestamp are NaN, and the Prometheus stale marker (the NaN with the bits `0x7FF0000000000002`) loses to any other NaN too.
 
 If several histogram samples have the same timestamp, only one of them is kept: a histogram whose `sum` is the Prometheus stale marker
 (the NaN with the bits `0x7FF0000000000002`) loses, whatever its other elements, to any histogram whose `sum` isn't; then the one with
 the greatest total count (`count_int` for an integer histogram, `count_float` for a float one; a NaN count loses to any other count)
-wins, on ties the one with the greatest `sum`, then the other elements decide in the order of the tuple, starting with `flags` (a float
+wins, on ties the one with the greatest `sum`, then the other elements decide in the order of the tuple, starting with `is_float` (a float
 histogram beats an integer one) and the gauge marker (a gauge histogram beats a counter one). The other counter reset hints don't decide
 which sample is kept: of samples that differ only in them, the kept one gets its hint detected again as described below or, if it is the
 first sample of the result, the common hint of these samples, or an unknown one if their hints differ.
@@ -192,14 +192,14 @@ SELECT timeSeriesGroupArray(timestamps, values);
         "Merging two arrays of integer histograms",
         R"(
 SELECT timeSeriesGroupArray(h)
-FROM values('h Array(Tuple(timestamp UInt32, flags UInt8, counter_reset_hint Enum8(''unknown'' = 0, ''reset'' = 1, ''not_reset'' = 2, ''gauge'' = 3), schema Int8, zero_threshold Float64, sum Float64, count_int Int64, zero_count_int Int64, count_float Float64, zero_count_float Float64, positive_int Array(Tuple(index Int32, count Int64)), negative_int Array(Tuple(index Int32, count Int64)), positive_float Array(Tuple(index Int32, count Float64)), negative_float Array(Tuple(index Int32, count Float64)), custom_values Array(Float64)))',
+FROM values('h Array(Tuple(timestamp UInt32, is_float Bool, counter_reset_hint Enum8(''unknown'' = 0, ''reset'' = 1, ''not_reset'' = 2, ''gauge'' = 3), schema Int8, zero_threshold Float64, sum Float64, count_int Int64, zero_count_int Int64, count_float Float64, zero_count_float Float64, positive_int Array(Tuple(index Int32, count Int64)), negative_int Array(Tuple(index Int32, count Int64)), positive_float Array(Tuple(index Int32, count Float64)), negative_float Array(Tuple(index Int32, count Float64)), custom_values Array(Float64)))',
     [(100, 0, 0, 0, 0., 1., 1, 0, 0., 0., [(0, 1)], [], [], [], []), (120, 0, 0, 0, 0., 3., 3, 0, 0., 0., [(0, 2), (1, 1)], [], [], [], [])],
     [(110, 0, 0, 0, 0., 2., 2, 0, 0., 0., [(0, 1), (1, 1)], [], [], [], []), (120, 0, 0, 0, 0., 7., 4, 0, 0., 0., [(0, 3), (1, 1)], [], [], [], [])]);
         )",
         R"(
-┌─timeSeriesGroupArray(h)───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ [(100,0,'unknown',0,0,1,1,0,0,0,[(0,1)],[],[],[],[]),(110,0,'not_reset',0,0,2,2,0,0,0,[(0,1),(1,1)],[],[],[],[]),(120,0,'not_reset',0,0,7,4,0,0,0,[(0,3),(1,1)],[],[],[],[])] │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─timeSeriesGroupArray(h)───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [(100,false,'unknown',0,0,1,1,0,0,0,[(0,1)],[],[],[],[]),(110,false,'not_reset',0,0,2,2,0,0,0,[(0,1),(1,1)],[],[],[],[]),(120,false,'not_reset',0,0,7,4,0,0,0,[(0,3),(1,1)],[],[],[],[])] │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

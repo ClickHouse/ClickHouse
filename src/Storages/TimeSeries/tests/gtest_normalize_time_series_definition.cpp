@@ -189,7 +189,7 @@ namespace
     String histogramsInnerType(const String & timestamp_type)
     {
         return "SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp " + timestamp_type
-            + ", flags UInt8, counter_reset_hint Enum8('unknown' = 0, 'reset' = 1, 'not_reset' = 2, 'gauge' = 3), schema Int8, zero_threshold Float64, "
+            + ", is_float Bool, counter_reset_hint Enum8('unknown' = 0, 'reset' = 1, 'not_reset' = 2, 'gauge' = 3), schema Int8, zero_threshold Float64, "
             "sum Float64, count_int Int64, zero_count_int Int64, "
             "count_float Float64, zero_count_float Float64, positive_int Array(Tuple(index Int32, count Int64)), "
             "negative_int Array(Tuple(index Int32, count Int64)), positive_float Array(Tuple(index Int32, count Float64)), "
@@ -198,7 +198,7 @@ namespace
 
     const String DEFAULT_HISTOGRAMS_TYPE = histogramsInnerType("DateTime64(3)");
     /// The codecs declared for the subcolumns of the generated `histograms` column, after the codecs of `samples`.
-    const String DEFAULT_HISTOGRAMS_CODECS = ", CODEC `histograms.timestamp` (Delta, T64, ZSTD(3)), CODEC `histograms.flags` (ZSTD(3)), "
+    const String DEFAULT_HISTOGRAMS_CODECS = ", CODEC `histograms.timestamp` (Delta, T64, ZSTD(3)), CODEC `histograms.is_float` (ZSTD(3)), "
         "CODEC `histograms.counter_reset_hint` (ZSTD(3)), CODEC `histograms.schema` (ZSTD(3)), CODEC `histograms.zero_threshold` (ZSTD(3)), "
         "CODEC `histograms.sum` (ZSTD(3)), CODEC `histograms.count_int` (T64, ZSTD(3)), CODEC `histograms.zero_count_int` (T64, ZSTD(3)), "
         "CODEC `histograms.count_float` (ZSTD(3)), CODEC `histograms.zero_count_float` (ZSTD(3)), "
