@@ -80,6 +80,8 @@ namespace ProfileEvents
     extern const Event FilesystemCachePromotedFileSegments;
     extern const Event FilesystemCacheEvictedFileSegments;
     extern const Event FilesystemCacheReserveAheadRetries;
+    extern const Event FilesystemCacheEvictionReusedIterator;
+    extern const Event FilesystemCacheSkippedBusyPriorityLock;
 }
 
 using namespace std::chrono_literals;
@@ -116,6 +118,7 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsUInt64 reserve_granularity;
     extern const FileCacheSettingsFileCachePolicy cache_policy;
     extern const FileCacheSettingsDouble slru_size_ratio;
+    extern const FileCacheSettingsDouble check_cache_probability;
     extern const FileCacheSettingsUInt64 background_download_threads;
     extern const FileCacheSettingsDouble keep_free_space_elements_ratio;
     extern const FileCacheSettingsNonZeroUInt64 load_metadata_threads;
@@ -4547,6 +4550,161 @@ TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtUnknownFileSize)
         for (size_t t = 0; t < num_threads; ++t)
             ASSERT_EQ(errors[t], "") << "thread " << t << ", iteration " << iteration;
     }
+}
+
+TEST_F(FileCacheTest, SLRUPromotionSkippedWhilePriorityGuardIsBusy)
+{
+    /// Making room in the protected queue walks it under the priority read lock. The walk is
+    /// best-effort: while a writer holds the guard the hit is not promoted and nothing blocks.
+    /// Before that, the promotion below waited for the lock held by this thread.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 20;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+    /// Protected: 50 bytes / 10 elements.
+    settings[FileCacheSetting::slru_size_ratio] = 0.5;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    /// The random correctness check takes the priority read lock, which this thread holds below.
+    settings[FileCacheSetting::check_cache_probability] = 0;
+
+    auto cache = std::make_shared<DB::FileCache>("slru_promotion_busy_guard", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    const size_t file_size = -1;
+    const auto key = DB::FileCacheKey::fromPath("promotion_busy_guard_key");
+
+    auto add_range = [&](size_t offset, size_t size)
+    {
+        auto holder = cache->getOrSet(key, offset, size, file_size, {}, 0, user);
+        download(holder);
+        return holder;
+    };
+    auto hit = [&](size_t offset, size_t size)
+    {
+        auto holder = cache->getOrSet(key, offset, size, file_size, {}, 0, user);
+        increasePriority(holder);
+        return holder;
+    };
+    const auto skipped_event = ProfileEvents::FilesystemCacheSkippedBusyPriorityLock;
+
+    auto first = add_range(0, 10);
+    auto & priority_guard = first->front().getQueueIterator()->getPriorityGuard();
+    /// Released, so that [0, 9] stays releasable for the downgrade at the end.
+    first = nullptr;
+
+    /// Fill protected to its 50-byte limit, so that the next promotion has to walk it.
+    add_range(10, 20);
+    add_range(30, 20);
+    hit(0, 10);
+    hit(10, 20);
+    hit(30, 20);
+    assertProtected(cache->dumpQueue(), { Range(0, 9), Range(10, 29), Range(30, 49) });
+
+    add_range(50, 10);
+    {
+        const auto skipped_before = ProfileEvents::global_counters[skipped_event];
+        auto busy_guard = priority_guard.writeLock();
+        hit(50, 10);
+        ASSERT_EQ(ProfileEvents::global_counters[skipped_event], skipped_before + 1);
+    }
+    assertProtected(cache->dumpQueue(), { Range(0, 9), Range(10, 29), Range(30, 49) });
+    assertProbationary(cache->dumpQueue(), { Range(50, 59) });
+
+    /// With the guard free the same hit downgrades [0, 9] and promotes.
+    hit(50, 10);
+    assertProtected(cache->dumpQueue(), { Range(10, 29), Range(30, 49), Range(50, 59) });
+    assertProbationary(cache->dumpQueue(), { Range(0, 9) });
+}
+
+TEST_F(FileCacheTest, SLRUConcurrentPromotionsResumeProtectedWalk)
+{
+    /// Concurrent promotions share the `Promotion` cursor over the protected queue: the second
+    /// one resumes after the in-use entries the first one skipped instead of rescanning the head.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 20;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+    /// Protected: 50 bytes / 10 elements.
+    settings[FileCacheSetting::slru_size_ratio] = 0.5;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+
+    auto cache = std::make_shared<DB::FileCache>("slru_promotion_cursor", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    const size_t file_size = -1;
+    const auto key = DB::FileCacheKey::fromPath("promotion_cursor_key");
+
+    auto add_range = [&](size_t offset, size_t size)
+    {
+        auto holder = cache->getOrSet(key, offset, size, file_size, {}, 0, user);
+        download(holder);
+    };
+    auto hit = [&](size_t offset, size_t size)
+    {
+        auto holder = cache->getOrSet(key, offset, size, file_size, {}, 0, user);
+        increasePriority(holder);
+        return holder;
+    };
+
+    /// Fill protected to its 50-byte limit. The holders keep [0, 19] and [30, 49] in use,
+    /// so every downgrade walk has to skip them.
+    add_range(0, 20);
+    add_range(20, 10);
+    add_range(30, 20);
+    auto held_head = hit(0, 20);
+    hit(20, 10);
+    auto held_third = hit(30, 20);
+    assertProtected(cache->dumpQueue(), { Range(0, 19), Range(20, 29), Range(30, 49) });
+
+    add_range(50, 10);
+    add_range(60, 10);
+    add_range(70, 10);
+    assertProbationary(cache->dumpQueue(), { Range(50, 59), Range(60, 69), Range(70, 79) });
+
+    const auto reused_before = ProfileEvents::global_counters[ProfileEvents::FilesystemCacheEvictionReusedIterator];
+
+    /// The first promoter parks inside the move, so the two promotions below count as concurrent.
+    const std::string pause_point = "file_cache_slru_pause_promotion_before_downgrade";
+    FailPointInjection::enableFailPoint(pause_point);
+    std::thread parked_promoter([&]
+    {
+        DB::ThreadStatus parked_thread_status;
+        hit(50, 10);
+    });
+    SCOPE_EXIT({
+        FailPointInjection::disableFailPoint(pause_point);
+        if (parked_promoter.joinable())
+            parked_promoter.join();
+    });
+    FailPointInjection::waitForPause(pause_point);
+
+    /// Walks from the head: skips [0, 19], downgrades [20, 29] and leaves the cursor on it.
+    hit(60, 10);
+    assertProtected(cache->dumpQueue(), { Range(0, 19), Range(30, 49), Range(60, 69) });
+    ASSERT_EQ(ProfileEvents::global_counters[ProfileEvents::FilesystemCacheEvictionReusedIterator], reused_before);
+
+    /// Resumes from the cursor: skips [30, 49] and downgrades [60, 69] without revisiting [0, 19].
+    hit(70, 10);
+    assertProtected(cache->dumpQueue(), { Range(0, 19), Range(30, 49), Range(70, 79) });
+    ASSERT_EQ(ProfileEvents::global_counters[ProfileEvents::FilesystemCacheEvictionReusedIterator], reused_before + 1);
+
+    /// Alone again, the parked promoter walks from the head and downgrades [70, 79].
+    FailPointInjection::disableFailPoint(pause_point);
+    parked_promoter.join();
+    assertProtected(cache->dumpQueue(), { Range(0, 19), Range(30, 49), Range(50, 59) });
+    ASSERT_EQ(ProfileEvents::global_counters[ProfileEvents::FilesystemCacheEvictionReusedIterator], reused_before + 1);
 }
 
 namespace
