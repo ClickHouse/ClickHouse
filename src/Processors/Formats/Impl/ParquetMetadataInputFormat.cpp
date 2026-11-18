@@ -269,7 +269,6 @@ static std::shared_ptr<arrow::io::RandomAccessFile> readFooter(arrow::io::Random
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read Parquet metadata: {}", file_size_or_error.status().ToString());
     const int64_t file_size = *file_size_or_error;
 
-    /// The size of the first read of Arrow, enough for most footers.
     const int64_t read_size = std::min(file_size, parquet::kDefaultFooterReadSize);
     std::shared_ptr<arrow::Buffer> buffer = read_size > 0
         ? readAt(file, file_size - read_size, read_size)
