@@ -145,6 +145,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
+    extern const SettingsBool enable_fixed_and_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_parallel_single_level_merge;
     extern const SettingsBool enable_parallel_single_level_merge_by_index;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
@@ -509,6 +510,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::enable_parallel_single_level_merge],
         settings[Setting::enable_parallel_single_level_merge_by_index],
         settings[Setting::enable_packed_string_keys_in_aggregation],
+        settings[Setting::enable_fixed_and_packed_string_keys_in_aggregation],
         settings[Setting::enable_adaptive_aggregator],
         settings[Setting::adaptive_aggregator_freeze_threshold],
         settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
@@ -1033,7 +1035,8 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         settings[Setting::max_block_size],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         settings[Setting::serialize_string_in_memory_with_zero_byte],
-        settings[Setting::enable_packed_string_keys_in_aggregation]);
+        settings[Setting::enable_packed_string_keys_in_aggregation],
+        settings[Setting::enable_fixed_and_packed_string_keys_in_aggregation]);
 
     bool is_remote_storage = false;
     bool parallel_replicas_from_merge_tree = false;
