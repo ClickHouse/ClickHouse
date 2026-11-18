@@ -163,8 +163,6 @@ bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
         || read.getContext()->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
 }
 
-/// The broadcast side of a shipped join is executed in full by every replica, so its MergeTree reads must
-/// pass the same rules as the coordinated ones - otherwise each replica would join against its own data.
 static bool mergeTreeReadCanBeCoordinated(const ReadFromMergeTree & read)
 {
     /// `createParallelReplicasPlan` checks the read's context, where the planner may have disabled parallel replicas.
@@ -173,6 +171,8 @@ static bool mergeTreeReadCanBeCoordinated(const ReadFromMergeTree & read)
     return mergeTreeReadCanBeShipped(read) && ClusterProxy::canUseParallelReplicasOnInitiator(read.getContext());
 }
 
+/// The broadcast side of a shipped join is executed in full by every replica, so its MergeTree reads must
+/// pass the same rules as the coordinated ones - otherwise each replica would join against its own data.
 static bool subtreeHasUnshippableRead(const QueryPlan::Node * node)
 {
     if (!node)
