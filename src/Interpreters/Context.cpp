@@ -8739,6 +8739,14 @@ DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator) const
 {
     /// Creating a disk can take long (it checks access to the remote endpoint), so `storage_policies_mutex`
     /// is held only to look the disk up and to register it, and not while `creator` runs.
+
+    /// Fast path: an existing disk is returned without waiting for a creation of another disk in progress.
+    {
+        std::lock_guard lock(shared->storage_policies_mutex);
+        if (auto existing_disk = getDiskSelector(lock)->tryGet(name))
+            return existing_disk;
+    }
+
     /// Creators are serialized by a separate mutex, so the same disk is never created twice at the same time.
     std::lock_guard creation_lock(shared->custom_disk_creation_mutex);
 
@@ -8746,9 +8754,9 @@ DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator) const
     {
         std::lock_guard lock(shared->storage_policies_mutex);
 
-        auto disk = getDiskSelector(lock)->tryGet(name);
-        if (disk)
-            return disk;
+        /// The disk may have been created while this thread was waiting for `custom_disk_creation_mutex`.
+        if (auto existing_disk = getDiskSelector(lock)->tryGet(name))
+            return existing_disk;
 
         disks_map = getDisksMap(lock);
     }
