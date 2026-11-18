@@ -54,8 +54,11 @@ FileCacheEfficiency::Window FileCacheEfficiency::currentWindow()
 
 void FileCacheEfficiency::WindowStats::add(Int64 active_delta, Int64 passive_delta)
 {
-    active.fetch_add(active_delta, std::memory_order_relaxed);
-    passive.fetch_add(passive_delta, std::memory_order_relaxed);
+    /// All readers of the cache share these counters, so a zero delta does not write them.
+    if (active_delta)
+        active.fetch_add(active_delta, std::memory_order_relaxed);
+    if (passive_delta)
+        passive.fetch_add(passive_delta, std::memory_order_relaxed);
 }
 
 void FileCacheEfficiency::rotateIfNeeded(Window now_window)
