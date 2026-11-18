@@ -1,0 +1,10 @@
+--- T1: negative record_count
+Join: m[1000] ⋈ t[no_stats~?]
+ResultRows: unknown
+--- fixture brk: manifest files deleted
+1
+--- T2: missing manifest file, EXPLAIN of the join
+FILE_DOESNT_EXIST
+--- T2: setting off
+Join: m[1000] ⋈ s
+ResultRows: unknown

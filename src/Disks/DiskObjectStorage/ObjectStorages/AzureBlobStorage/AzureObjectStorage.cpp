@@ -12,6 +12,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Common/getRandomASCIIString.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
@@ -27,6 +28,9 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIteratorAsync.h>
 #include <Interpreters/Context.h>
+#include <Common/RemoteHostFilter.h>
+
+#include <Poco/URI.h>
 
 
 namespace CurrentMetrics
@@ -61,6 +65,16 @@ namespace ErrorCodes
 namespace
 {
 
+/// An account with a hierarchical namespace lists each directory as an empty blob with
+/// `hdi_isfolder=true` metadata (the marker `DataLakePathClient::GetProperties` reads).
+bool isDirectoryEntry(const Azure::Storage::Blobs::Models::BlobItem & blob)
+{
+    if (blob.BlobSize != 0)
+        return false;
+    auto it = blob.Details.Metadata.find("hdi_isfolder");
+    return it != blob.Details.Metadata.end() && it->second == "true";
+}
+
 class AzureIteratorAsync final : public IObjectStorageIteratorAsync
 {
 public:
@@ -77,6 +91,7 @@ public:
     {
         options.Prefix = path_prefix;
         options.PageSizeHint = static_cast<int>(max_list_size);
+        options.Include = Azure::Storage::Blobs::Models::ListBlobsIncludeFlags::Metadata;
     }
 
     ~AzureIteratorAsync() override
@@ -99,6 +114,8 @@ private:
 
         for (const auto & blob : blobs_list)
         {
+            if (isDirectoryEntry(blob))
+                continue;
             batch.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 blob.Name,
                 ObjectMetadata{
@@ -106,7 +123,7 @@ private:
                     .last_modified = Poco::Timestamp::fromEpochTime(
                         std::chrono::duration_cast<std::chrono::seconds>(
                             static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
-                    .etag = blob.Details.ETag.ToString(),
+                    .etag = AzureBlobStorage::getETag(blob.Details.ETag, blob.Name),
                     .tags = {},
                     .attributes = {},
                 }));
@@ -211,6 +228,7 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
     Azure::Storage::Blobs::ListBlobsOptions options;
     options.Prefix = path;
+    options.Include = Azure::Storage::Blobs::Models::ListBlobsIncludeFlags::Metadata;
     if (max_keys)
         options.PageSizeHint = max_keys;
     else
@@ -228,6 +246,8 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
         for (const auto & blob : blob_list_response.Blobs)
         {
+            if (isDirectoryEntry(blob))
+                continue;
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 blob.Name,
                 ObjectMetadata{
@@ -235,7 +255,7 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
                     .last_modified = Poco::Timestamp::fromEpochTime(
                         std::chrono::duration_cast<std::chrono::seconds>(
                             static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
-                    .etag = blob.Details.ETag.ToString(),
+                    .etag = AzureBlobStorage::getETag(blob.Details.ETag, blob.Name),
                     .tags = {},
                     .attributes = {},
                 }));
@@ -338,6 +358,36 @@ SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetad
 }
 
 
+bool AzureObjectStorage::supportsAtomicWrite() const
+{
+    return !isAdlsGen2Endpoint(connection_params.get()->endpoint);
+}
+
+std::vector<Poco::URI> AzureObjectStorage::getURIsForRemoteHostFilter(const AzureBlobStorage::ConnectionParams & params)
+{
+    std::vector<String> urls{params.getConnectionURL()};
+    /// Writes to an ADLS Gen2 (OneLake) endpoint go to another host.
+    if (isAdlsGen2Endpoint(params.endpoint))
+        urls.push_back(getAdlsGen2Url(params.endpoint, params.auth_method));
+
+    std::vector<Poco::URI> uris;
+    uris.reserve(urls.size());
+    for (const auto & url : urls)
+    {
+        Poco::URI uri(url);
+        /// The query can carry a SAS token, which an error must not quote.
+        uri.setPathEtc("");
+        uris.push_back(std::move(uri));
+    }
+    return uris;
+}
+
+void AzureObjectStorage::checkRemoteHostFilter(const RemoteHostFilter & filter) const
+{
+    for (const auto & uri : getURIsForRemoteHostFilter(*connection_params.get()))
+        filter.checkURL(uri);
+}
+
 std::unique_ptr<Azure::Storage::Files::DataLake::DataLakeFileClient>
 AzureObjectStorage::buildDataLakeFileClient(const String & blob_path) const
 {
@@ -417,6 +467,7 @@ void AzureObjectStorage::removeObjectImpl(
 
     auto params = connection_params.get();
 
+    HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
     Stopwatch watch;
     Int32 error_code = 0;
     String error_message;
@@ -541,6 +592,7 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
         auto object_batch = rest_objects.first(std::min(rest_objects.size(), AZURE_BATCH_MAX_SUBREQUESTS));
         SCOPE_EXIT({ rest_objects = rest_objects.last(rest_objects.size() - object_batch.size()); });
 
+        HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
         Stopwatch watch;
         AzureBlobStorage::BlobContainerBatch requests = client_ptr->CreateBatch();
         std::vector<AzureBlobStorage::DeleteBlobResultDeferredResponse> responses;
@@ -704,7 +756,7 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, b
 
     ObjectMetadata result;
     result.size_bytes = properties.BlobSize;
-    result.etag = properties.ETag.ToString();
+    result.etag = AzureBlobStorage::getETag(properties.ETag, path);
     if (!properties.Metadata.empty())
     {
         result.attributes.emplace();
@@ -779,22 +831,22 @@ void AzureObjectStorage::applyNewSettings(
     };
     settings.set(std::move(new_settings));
 
-    /// The storage of a table is built from the query, not from a config section. As in `S3ObjectStorage::applyNewSettings`,
-    /// a client that uses the server's own identity follows the restriction of the accessing session, so a table created
-    /// with the opt-in serves no restricted session, and a table loaded restricted works again for a session that allows it.
+    /// The storage of a table is built from the query, not from a config section. The client is shared by all sessions
+    /// and a query uses it after this call, so, as in `S3ObjectStorage::applyNewSettings`, a session never switches it to
+    /// the server's own identity: a concurrent restricted query that already passed here would use it. A restricted
+    /// session is refused if the client uses that identity. Only a forced rebuild by the server follows the context.
     /// A disk, or a table on a disk, keeps its configuration from the server and goes on below.
     if (const auto params_snapshot = connection_params.get();
         params_snapshot->follows_session_restriction && params_snapshot->usesServerManagedCredentials())
     {
-        std::lock_guard lock(client_inputs_mutex);
-        const auto current_params = connection_params.get();
-
         const bool restrict_now = context->shouldRestrictUserQueryS3Credentials();
-        if (!options.force_client_rebuild && current_params->forbid_implicit_credentials == restrict_now)
+        params_snapshot->checkSessionMayUseServerIdentity(restrict_now);
+        if (!options.force_client_rebuild)
             return;
 
-        /// A restricted session fails with `ACCESS_DENIED`, as for S3; only loading a table falls back to no credentials.
-        auto params = std::make_unique<AzureBlobStorage::ConnectionParams>(*current_params);
+        std::lock_guard lock(client_inputs_mutex);
+        /// A restricted context fails with `ACCESS_DENIED`; only loading a table falls back to no credentials.
+        auto params = std::make_unique<AzureBlobStorage::ConnectionParams>(*connection_params.get());
         params->forbid_implicit_credentials = restrict_now;
         params->anonymous_fallback_for_server_credentials = false;
         client.set(AzureBlobStorage::getContainerClient(*params, /*readonly=*/ true));

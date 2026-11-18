@@ -16,11 +16,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# enable_analyzer = 1: the query condition cache only works with the analyzer (query_info has no
-# filter DAG without it), like in the other query_condition_cache tests.
 # move_all_conditions_to_prewhere = 0: move only the cheap `time` condition to PREWHERE, not the
 # condition on the large column `s` (wide parts: the column sizes are known per column).
-settings="use_query_condition_cache = true, use_query_condition_cache_for_time_conditions = true, enable_analyzer = 1,
+settings="use_query_condition_cache = true, use_query_condition_cache_for_time_conditions = true,
     optimize_move_to_prewhere = 1, move_all_conditions_to_prewhere = 0, use_top_k_dynamic_filtering = 0"
 
 # A single part with three kinds of granules: old rows (filtered by PREWHERE), recent rows not

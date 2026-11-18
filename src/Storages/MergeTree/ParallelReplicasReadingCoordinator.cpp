@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include <Common/SetWithMemoryTracking.h>
 
 #include <algorithm>
 #include <iterator>
@@ -108,7 +109,7 @@ struct Part
     mutable RangesInDataPartDescription description;
     // FIXME: This is needed to put this struct in set
     // and modify through iterator
-    mutable std::set<size_t> replicas;
+    mutable SetWithMemoryTracking<size_t> replicas;
 
     bool operator<(const Part & rhs) const { return description.info < rhs.description.info; }
 };
@@ -1275,6 +1276,8 @@ ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAl
     }
 
     const bool first_announcement_for_stream = !stream_to_coordinator.contains(announcement.stream_id);
+    /// A `Default` mode replica discards the parts list unless it asked for the analyzed ranges.
+    const bool needs_parts = announcement.mode != CoordinationMode::Default || announcement.wants_analyzed_ranges;
 
     auto coordinator = getOrCreateCoordinator(announcement.stream_id, announcement.mode);
 
@@ -1290,6 +1293,9 @@ ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAl
     /// of any future per-stream coordinator that may post-process its input.
     if (first_announcement_for_stream)
         stream_to_registered_parts[response.stream_id] = coordinator->getRegisteredParts();
+
+    if (!needs_parts)
+        return response;
 
     if (auto it = stream_to_registered_parts.find(response.stream_id); it != stream_to_registered_parts.end())
         response.parts = it->second;
@@ -1316,7 +1322,7 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
     if (is_reading_completed)
         return response;
 
-    std::set<size_t> replicas_to_exclude;
+    SetWithMemoryTracking<size_t> replicas_to_exclude;
     bool reading_assignment_has_been_completed = false;
     {
         std::lock_guard lock(mutex);
