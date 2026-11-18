@@ -191,14 +191,12 @@ std::vector<RPNBuilderTreeNode> getConditionsToEstimate(const SourceStepWithFilt
     return conditions;
 }
 
-/// Whether a read below one of the inputs of `node` has an unestimated filter.
 bool hasUnestimatedFilterBelow(QueryPlan::Node & node)
 {
     return std::ranges::any_of(node.children, [](QueryPlan::Node * child)
         { return estimateReadRowsCount(*child).source == RowEstimateSource::UnestimatedFilter; });
 }
 
-/// The rows of a step the estimator does not model are unknown, but an unestimated filter below it still reaches the join graph.
 RelationStats unknownRowsOf(QueryPlan::Node & node, bool for_runtime_filter_transport)
 {
     if (!for_runtime_filter_transport && hasUnestimatedFilterBelow(node))
@@ -348,7 +346,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 .imprecise_estimate = true,
                 .source = RowEstimateSource::NoStatistics};
 
-        /// A filter pushed down to storage that the index did not use leaves the row count unknown.
+        /// If any conditions are pushed down to storage but not used in the index,
+        /// we cannot precisely estimate the row count
         if (has_filter && !is_filtered_by_index)
             return RelationStats{
                 .estimated_rows = {},
@@ -445,8 +444,9 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     /// single-child check below, which a join, having two children, would never pass.
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step))
     {
-        /// The origin of a sub-join's estimate is not tracked (`NoSource`), except an unestimated filter below it, which the parent
-        /// graph must see; a join without a plan of its own takes it from its inputs.
+        /// The origin of a sub-join's estimate is not tracked (`NoSource`), so the parent graph does not
+        /// re-report its tables as missing statistics; `imprecise_estimate` still records reliability.
+        /// An unestimated filter below it is the exception: the parent graph must see it.
         bool unestimated_filter = false;
         if (!for_runtime_filter_transport)
         {
@@ -460,7 +460,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         if (!join_step->isOptimized())
             return RelationStats{.table_name = {}, .source = source};
 
-        /// `imprecise_estimate` records reliability. The name is already a chain of the sub-joins with their own estimates, so mark it composite
+        /// The name is already a chain of the sub-joins with their own estimates, so mark it composite
         /// to keep the parent from appending a second estimate to it.
         /// A filter above the join (`filter`, from the `FilterStep` branch) is not accounted for, so like
         /// a storage read with a filter it cannot use, the row count is then unknown.
