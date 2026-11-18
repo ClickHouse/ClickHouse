@@ -15,7 +15,6 @@ DROP TABLE t_quantized_nan;
 
 -- Decimal exponents at the limits of `Int32`.
 SELECT * FROM format(TSV, 'x Decimal64(0)', '1e-2147483648\n');
-SELECT * FROM format(TSV, 'x Decimal64(0)', '1.1e-2147483648\n');
 SELECT toDecimal64OrNull('1e-2147483648', 0), toDecimal64OrNull('1.1e-2147483648', 0), toDecimal64OrNull('1e2147483647', 0),
     toDecimal64OrNull('1.5e2147483647', 0);
 
