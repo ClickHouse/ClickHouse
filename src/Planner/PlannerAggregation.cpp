@@ -22,6 +22,7 @@ namespace Setting
     extern const SettingsBool compile_aggregate_expressions;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_adaptive_aggregator;
+    extern const SettingsBool enable_fixed_and_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_parallel_single_level_merge;
     extern const SettingsBool enable_parallel_single_level_merge_by_index;
@@ -51,24 +52,19 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
 }
 
-AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodes & aggregate_function_nodes, const PlannerContext & planner_context)
-{
-    QueryTreeNodeToName node_to_name;
-    return extractAggregateDescriptions(aggregate_function_nodes, planner_context, node_to_name);
-}
-
 AggregateDescriptions extractAggregateDescriptions(
     const QueryTreeNodes & aggregate_function_nodes,
     const PlannerContext & planner_context,
-    QueryTreeNodeToName & node_to_name)
+    bool use_column_identifier_as_action_node_name)
 {
+    QueryTreeNodeToName node_to_name;
     NameSet unique_aggregate_action_node_names;
     AggregateDescriptions aggregate_descriptions;
 
     for (const auto & aggregate_function_node : aggregate_function_nodes)
     {
         const auto & aggregate_function_node_typed = aggregate_function_node->as<FunctionNode &>();
-        String node_name = calculateActionNodeName(aggregate_function_node, planner_context, node_to_name);
+        String node_name = calculateActionNodeName(aggregate_function_node, planner_context, node_to_name, use_column_identifier_as_action_node_name);
         auto [_, inserted] = unique_aggregate_action_node_names.emplace(node_name);
         if (!inserted)
             continue;
@@ -90,7 +86,7 @@ AggregateDescriptions extractAggregateDescriptions(
 
         for (const auto & argument_node : arguments_nodes)
         {
-            String argument_node_name = calculateActionNodeName(argument_node, planner_context, node_to_name);
+            String argument_node_name = calculateActionNodeName(argument_node, planner_context, node_to_name, use_column_identifier_as_action_node_name);
             aggregate_description.argument_names.emplace_back(std::move(argument_node_name));
         }
 
@@ -146,6 +142,7 @@ Aggregator::Params getAggregatorParams(const ContextPtr & query_context, const N
         settings[Setting::enable_parallel_single_level_merge],
         settings[Setting::enable_parallel_single_level_merge_by_index],
         settings[Setting::enable_packed_string_keys_in_aggregation],
+        settings[Setting::enable_fixed_and_packed_string_keys_in_aggregation],
         settings[Setting::enable_adaptive_aggregator],
         settings[Setting::adaptive_aggregator_freeze_threshold],
         settings[Setting::adaptive_aggregator_freeze_threshold_bytes],

@@ -22,7 +22,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
 #include <Interpreters/ExpressionContainsArrayJoin.h>
-#include <Planner/PlannerProjections.h>
+#include <Planner/PlannerProjection.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
