@@ -13,6 +13,7 @@ static const auto FINISH_PRODUCER_NUM_TRIES = 50;
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int CANNOT_CONNECT_RABBITMQ;
     extern const int LOGICAL_ERROR;
 }
@@ -51,6 +52,8 @@ void RabbitMQProducer::finishImpl()
         publisher_pool->release(std::move(publisher));
     else
         publisher->disconnect();
+    if (stopped_by_shutdown)
+        throw Exception(ErrorCodes::ABORTED, "Table is detached");
     if (query_status)
         query_status->throwIfKilled();
     if (!publish_error.empty())
@@ -87,8 +90,14 @@ void RabbitMQProducer::startProducingTaskLoop()
 {
     LOG_TRACE(log, "Starting producer loop");
 
-    while ((!payloads.isFinishedAndEmpty() || publisher->hasPendingDeliveries()) && !shutdown_called.load())
+    while (!payloads.isFinishedAndEmpty() || publisher->hasPendingDeliveries())
     {
+        if (shutdown_called.load())
+        {
+            stopped_by_shutdown = true;
+            break;
+        }
+
         if (query_status && query_status->isKilled())
             break;
         publish_error = publisher->publishStep(payloads);
@@ -96,7 +105,7 @@ void RabbitMQProducer::startProducingTaskLoop()
             break;
     }
 
-    if (!publish_error.empty() || (query_status && query_status->isKilled()))
+    if (stopped_by_shutdown || !publish_error.empty() || (query_status && query_status->isKilled()))
     {
         /// Nothing pops `payloads` anymore, so `produce` must not wait for free space in it.
         /// The publisher is not reused: `can_reuse_publisher` stays false, so `finishImpl` disconnects it.

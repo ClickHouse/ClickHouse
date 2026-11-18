@@ -44,6 +44,7 @@ private:
 
     /// Written by the producing task, read in `finishImpl` after `deactivate` waited for the task.
     String publish_error;
+    bool stopped_by_shutdown = false;
 
     QueryStatusPtr query_status;
 
