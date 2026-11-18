@@ -248,6 +248,8 @@ public:
     /// The index of the input of `side`, which is also its index in the children of the plan node.
     static constexpr size_t getInputIndex(JoinTableSide side) { return side == JoinTableSide::Left ? 0 : 1; }
 
+    static bool isDummyResultColumn(const ActionsDAG::Node & node);
+
     [[nodiscard]] UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
 
@@ -349,6 +351,7 @@ public:
     String getName() const override { return "JoinStepLogicalLookup"; }
 
     QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
+    QueryPlanRawPtrs getBuiltChildPlans() override;
 
     PreparedJoinStorage & getPreparedJoinStorage() { return prepared_join_storage; }
 

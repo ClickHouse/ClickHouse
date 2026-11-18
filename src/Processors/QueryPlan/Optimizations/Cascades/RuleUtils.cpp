@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -72,6 +73,11 @@ std::vector<RoutingEquiKey> extractRoutingEquiKeys(const JoinStepLogical & join_
         if (left_node.fromRight() && right_node.fromLeft())
             std::swap(left_node, right_node);
         else if (!left_node.fromLeft() || !right_node.fromRight())
+            continue;
+
+        /// The shuffle hashes the keys after a cast. For a pair the JOIN does not compare exactly, such as `FixedString`
+        /// vs `String`, matching rows would hash differently (`'a'` vs `'a\0\0'`) and land on different nodes.
+        if (!JoinCommon::isExactJoinKeyEquality(left_node.getType(), right_node.getType()))
             continue;
 
         DataTypePtr hash_type;
@@ -165,13 +171,13 @@ GroupExpressionPtr makeEnforcerExpression(
     QueryPlanStepPtr step,
     ExpressionProperties input_required,
     ExpressionProperties output_properties,
-    EnforcedProperty enforced)
+    const ExpressionProperties & required_properties)
 {
     auto enforcer_expression = std::make_shared<GroupExpression>(std::move(step));
     enforcer_expression->group_id = source->group_id;
     enforcer_expression->inputs.push_back({.group_id = source->group_id, .required_properties = std::move(input_required)});
     enforcer_expression->properties = std::move(output_properties);
-    enforcer_expression->enforced_property = enforced;
+    enforcer_expression->enforced_for.push_back(required_properties);
     return enforcer_expression;
 }
 
