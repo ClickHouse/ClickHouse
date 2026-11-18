@@ -3,6 +3,7 @@
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -100,12 +101,12 @@ private:
         const parq::SchemaElement * element = nullptr;
         std::optional<size_t> output_idx; // index in output_columns
 
-        const String & getParquetName() const
+        [[nodiscard]] const String & getParquetName() const
         {
             return parquet_name.has_value() ? *parquet_name : name;
         }
 
-        String getNameForLogging() const
+        [[nodiscard]] String getNameForLogging() const
         {
             if (parquet_name.has_value() && *parquet_name != name)
                 return fmt::format("{} (mapped to {})", *parquet_name, name);
@@ -191,7 +192,7 @@ private:
     /// all its column chunks list the same single 2D geometry type, returns that type. If any of
     /// them lists a geometry type with Z and/or M coordinates (which cannot be parsed), returns
     /// `std::nullopt`. Otherwise returns `GeoType::Mixed`.
-    std::optional<GeoType> getGeoTypeFromGeospatialStatistics(size_t column_idx) const;
+    [[nodiscard]] std::optional<GeoType> getGeoTypeFromGeospatialStatistics(size_t column_idx) const;
 
     /// Returns element.name or a corresponding name from ColumnMapper.
     /// For nested tuple elements, returns just the element name like `x`, not the whole path like `t.x`.
@@ -199,6 +200,18 @@ private:
     /// column names with dots (e.g. `integer.col` in Iceberg).
     std::string_view useColumnMapperIfNeeded(
         const parq::SchemaElement & element, const String & current_path, bool & out_not_in_schema) const;
+
+    /// Whether the file proves the field at `path` of the ColumnMapper absent: all fields at its level of the file schema
+    /// have field ids and none of them is its id.
+    [[nodiscard]] bool isAbsentFromFile(const String & path) const;
+    /// The `initial-default` of the column or subcolumn `path` of the field `field` of the ColumnMapper as a value of `type`,
+    /// if the field is absent.
+    [[nodiscard]] std::optional<Field> getAbsentFieldDefault(const String & field, const String & path, const DataTypePtr & type) const;
+
+    /// The field ids of the top-level fields of the file, and of the fields of each of its structs by the path of the
+    /// struct; nullopt if one of them has no field id.
+    std::optional<UnorderedSetWithMemoryTracking<Int64>> top_level_field_ids;
+    UnorderedMapWithMemoryTracking<String, std::optional<UnorderedSetWithMemoryTracking<Int64>>> struct_field_ids;
 };
 
 }

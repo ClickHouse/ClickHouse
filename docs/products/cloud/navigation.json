@@ -177,7 +177,8 @@
                     "products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect",
                     "products/cloud/guides/security/connectivity/private-networking/azure-privatelink"
                   ]
-                }
+                },
+                "products/cloud/guides/security/connectivity/org-network-connectivity"
               ]
             },
             {
@@ -268,6 +269,7 @@
                 "products/cloud/features/ai-ml/mcp/remote-mcp"
               ]
             },
+            "products/cloud/features/ai-ml/linked-billing-claude-platform",
             "products/cloud/features/ai-ml/model-developer-terms"
           ]
         },
