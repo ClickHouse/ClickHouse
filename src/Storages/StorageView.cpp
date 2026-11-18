@@ -1,4 +1,7 @@
+#include <Access/AccessControl.h>
 #include <Access/DefinerDependencies.h>
+#include <Access/User.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -26,6 +29,7 @@
 
 #include <Common/CurrentThread.h>
 #include <IO/WriteBufferFromString.h>
+#include <base/sort.h>
 
 #include <ranges>
 
@@ -58,6 +62,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Planner/findQueryForParallelReplicas.h>
 
@@ -256,12 +261,12 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
         || select->group_by_with_totals || select->group_by_with_rollup
         || select->group_by_with_cube || select->group_by_with_grouping_sets
         || select->having() || select->qualify()
-        || select->orderBy() || select->order_by_all
+        || select->orderBy() || select->order_by_all || select->shuffle
         || select->limitLength() || select->limitOffset()
         || select->limitAfter() || select->limitUntil()
         || select->limitBy() || select->limit_by_all
         || select->limitByLength() || select->limitByOffset()
-        || select->distinct || select->arrayJoinExpressionList().first
+        || select->distinct
         || select->settings())
     {
         return nullptr;
@@ -295,6 +300,7 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
     }
 
     const auto * tables = select->tables().get();
+    /// Every JOIN and ARRAY JOIN clause is a separate element of this list.
     if (!tables || tables->children.size() != 1)
     {
         return nullptr;
@@ -333,14 +339,13 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
 
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
-  *
-  * The context is also marked as a view inner context so that the query analyzer
-  * resolves positional arguments inside the view even on remote/secondary nodes
-  * (views are expanded on remote nodes, unlike the outer query).
   */
-ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
+ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view, const ASTPtr & view_query)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
+    if (context->hasQueryContext())
+        context->getQueryContext()->addSQLSecurityOverriddenBody(view->getStorageID(), view_context, view_query);
+
     Settings view_settings = view_context->getSettingsCopy();
 
     /// With plan-based parallel replicas we always build local, so there is no need to disable parallel replicas
@@ -411,6 +416,12 @@ public:
         return {&view_plan};
     }
 
+    /// `getBuiltChildPlans` is deliberately left at the base implementation, which reports no child plans.
+    /// It is what the query plan captured into `system.query_log` walks, and that table is readable beyond
+    /// the user who ran the query, so returning `view_plan` here would write a sealed view's internals into
+    /// the log for readers that `show_plan` is meant to keep them from. The cost is that a sealed view is an
+    /// opaque leaf of the captured plan.
+
     void describePipeline(FormatSettings & settings) const override
     {
         if (!show_plan)
@@ -440,6 +451,30 @@ private:
     bool show_plan;
 };
 
+/// Whether the query runs with the identity the query of the view runs with: its definer, with the definer's default roles
+/// and without a limit from the authentication method. Such a query can read whatever the view reads.
+bool runsAsDefiner(const StorageInMemoryMetadata & metadata, const ContextPtr & context)
+{
+    if (metadata.sql_security_type != SQLSecurityType::DEFINER || !metadata.definer)
+        return false;
+
+    /// A secondary query runs as the user the initiator was authenticated as (or as the cluster user), without the limits of the
+    /// initiator's credential, so only an initial query is known to have the definer's full identity.
+    if (context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY || context->getAuthenticationGrants())
+        return false;
+
+    /// By ID: users of different storages may share a name.
+    const auto definer_id = context->getAccessControl().find<User>(*metadata.definer);
+    const auto user = context->getAccess()->tryGetUser();
+    if (!definer_id || !user || context->getUserID() != definer_id)
+        return false;
+
+    auto default_roles = user->granted_roles.findGranted(user->default_roles);
+    ::sort(default_roles.begin(), default_roles.end());
+    /// The current and external roles together, sorted.
+    return context->getCurrentRoles() == default_roles;
+}
+
 /// Whether the plan of the view, which runs with the view's privileges, holds nothing new to the user.
 /// That is the case for the definer, and for a user who could have created the same view: `SET DEFINER` on the
 /// definer (or `ALLOW SQL SECURITY NONE` for a `NONE` view) is not enough for that, because `CREATE VIEW` also
@@ -459,7 +494,7 @@ bool canSeeViewPlan(const StorageID & view_id, const StorageInMemoryMetadata & m
     {
         if (!metadata.definer)
             return false;
-        if (*metadata.definer == context->getUserName())
+        if (runsAsDefiner(metadata, context))
             return true;
         if (!access->isGranted(AccessType::SET_DEFINER, *metadata.definer))
             return false;
@@ -551,6 +586,9 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
         QueryTreePassManager pass_manager(context);
         addQueryTreePasses(pass_manager);
         pass_manager.runOnlyResolve(inner_query_tree);
+        /// Each replica would expand the body itself, and a decorrelated subquery reads the table again.
+        if (containsCorrelatedSubquery(inner_query_tree))
+            return nullptr;
     }
     catch (const Exception &)
     {
@@ -566,8 +604,12 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
     /// Recursively walk the resolved query tree to find the underlying MergeTree storage.
     /// For UNION nodes, all branches must be eligible.
     /// Returns nullptr if the view is not suitable for parallel replicas.
-    std::function<StoragePtr(const IQueryTreeNode *)> find_storage = [&](const IQueryTreeNode * node) -> StoragePtr
+    /// Eligibility is decided with the context of the enclosing (sub)query: a SETTINGS clause
+    /// inside the view body overrides the outer one and is what the replicas execute with.
+    std::function<StoragePtr(const IQueryTreeNode *, const ContextPtr &)> find_storage
+        = [&](const IQueryTreeNode * node, const ContextPtr & node_context) -> StoragePtr
     {
+        ContextPtr current_context = node_context;
         while (node)
         {
             switch (node->getNodeType())
@@ -579,7 +621,7 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                     /// result semantics when evaluated per-replica must disqualify the view.
                     if (query_node.hasGroupBy() || query_node.hasHaving()
                         || query_node.hasWindow() || query_node.hasQualify()
-                        || query_node.hasOrderBy() || query_node.isDistinct()
+                        || query_node.hasOrderBy() || query_node.isShuffle() || query_node.isDistinct()
                         || query_node.hasLimitByLimit() || query_node.hasLimitByOffset()
                         || query_node.hasLimitBy()
                         || query_node.hasLimit() || query_node.hasOffset()
@@ -587,6 +629,7 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                         || hasWindowFunctionNodes(query_node.getProjectionNode()))
                         return nullptr;
 
+                    current_context = query_node.getContext();
                     node = query_node.getJoinTreeNode().get();
                     break;
                 }
@@ -608,11 +651,13 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                     /// table appears in multiple branches, reject it —
                     /// we avoid supporting it, since it requires to complicate parallel replicas protocol
                     /// and considered as not very practical case
+                    const auto union_context = union_node.getContext();
+
                     StoragePtr result;
                     std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> seen_ids;
                     for (const auto & query : queries)
                     {
-                        auto branch_storage = find_storage(query.get());
+                        auto branch_storage = find_storage(query.get(), union_context);
                         if (!branch_storage)
                             return nullptr;
 
@@ -632,9 +677,17 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                     /// If the table is itself a view, recursively check its inner query.
                     const auto * nested_view = typeid_cast<const StorageView *>(storage.get());
                     if (nested_view)
-                        return nested_view->getUnderlyingMergeTreeStorageForParallelReplicas(context);
+                    {
+                        /// A view is a parallel-replicas carrier only while the (sub)query reading it
+                        /// allows a view over MergeTree: that same setting decides, per replica, whether
+                        /// the expansion of this view keeps reading a share of the table or all of it.
+                        if (!current_context->getSettingsRef()[Setting::parallel_replicas_allow_view_over_mergetree])
+                            return nullptr;
 
-                    if (!isTableNodeEligibleForParallelReplicas(table_node, storage, context))
+                        return nested_view->getUnderlyingMergeTreeStorageForParallelReplicas(current_context);
+                    }
+
+                    if (!isTableNodeEligibleForParallelReplicas(table_node, storage, current_context))
                         return nullptr;
 
                     return table_node.getStorage();
@@ -646,7 +699,7 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
         return nullptr;
     };
 
-    return find_storage(inner_query_tree.get());
+    return find_storage(inner_query_tree.get(), context);
 }
 
 bool StorageView::isSealed(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const
@@ -689,6 +742,12 @@ bool StorageView::isSealed(const StorageInMemoryMetadata & metadata, const Conte
     return getEffectiveRowPolicyFilter(*storage, metadata.getSQLSecurityOverriddenContext(context)) != nullptr;
 }
 
+bool StorageView::isReadByDefiner(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const
+{
+    /// A row policy on the view itself restricts even the definer, so the view stays sealed then.
+    return runsAsDefiner(metadata, context) && !getEffectiveRowPolicyFilter(*this, context);
+}
+
 StoragePtr StorageView::tryGetUnderlyingDistributed(const StorageSnapshotPtr & snapshot, ContextPtr context) const
 {
     if (is_parameterized_view || isSealed(*snapshot->metadata, context))
@@ -725,8 +784,8 @@ void StorageView::readImpl(
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
-    const bool sealed = isSealed(*storage_snapshot->metadata, context);
-    auto view_context = getViewContext(context, storage_snapshot, this);
+    const bool sealed = isSealed(*storage_snapshot->metadata, context) && !isReadByDefiner(*storage_snapshot->metadata, context);
+    auto view_context = getViewContext(context, storage_snapshot, this, current_inner_query);
     {
         /// The outer filter is used only to analyze the indexes of the inner tables,
         /// but for a sealed view it would skip data by the values of the rows the view hides.
@@ -734,6 +793,8 @@ void StorageView::readImpl(
             current_inner_query, view_context, options, column_names, sealed ? nullptr : query_info.filter_actions_dag.get());
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
+        /// The plan owns the body's query context: its steps hold it only weakly, and the optimizer records projections into it.
+        query_plan.addInterpreterContext(view_context);
     }
 
     /// And also convert to expected structure.
@@ -923,6 +984,7 @@ void registerStorageView(StorageFactory & factory)
 
         return std::make_shared<StorageView>(args.table_id, args.query, args.columns, args.comment);
     },
+    SecretArgumentsSpec{},
     {},
     Documentation{
         .description = R"DOCS_MD(

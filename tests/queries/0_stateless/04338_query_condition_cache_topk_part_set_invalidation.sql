@@ -16,7 +16,6 @@
 -- (`ReadFromMergeTree::setTopKColumn`); this test checks that changing the part
 -- set really invalidates the cached decisions.
 
-SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
 SET use_top_k_dynamic_filtering = 1;
 SET use_skip_indexes_for_top_k = 1;
