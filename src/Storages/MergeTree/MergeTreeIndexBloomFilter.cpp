@@ -1032,6 +1032,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
         auto key_type = key_node.getDAGNode()->result_type;
 
+        /// A missing JSON path yields a floating default of positive zero, which
+        /// matches a negative-zero set member with this setting enabled.
+        if (in_null_as_unknown && isFloat(removeLowCardinalityAndNullable(key_type)))
+            return false;
+
         /// Check safety: if key type is non-Nullable and the set contains the default value,
         /// we cannot skip granules where the path is absent.
         if (!canContainNull(*key_type))

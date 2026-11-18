@@ -1357,6 +1357,22 @@ static bool hasNestedCalendarDateInComparison(const DataTypePtr & left_type, con
         if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
             return hasNestedCalendarDateInComparison(left_array->getNestedType(), right_array->getNestedType());
     }
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
+    {
+        if (const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+            right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        {
+            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+                if (hasNestedCalendarDateInComparison(left_tuple->getElements()[i], right_tuple->getElements()[i]))
+                    return true;
+        }
+    }
+    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
+    {
+        if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
+            return hasNestedCalendarDateInComparison(left_map->getKeyType(), right_map->getKeyType())
+                || hasNestedCalendarDateInComparison(left_map->getValueType(), right_map->getValueType());
+    }
     return needsCalendarDateInCast(left, right) || needsCalendarDateInCast(right, left);
 }
 
@@ -3361,12 +3377,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (scope.context->getSettingsRef()[Setting::in_null_as_unknown]
             && in_second_argument->as<ConstantNode>())
         {
-            const auto * left_array = typeid_cast<const DataTypeArray *>(
-                removeNullable(removeLowCardinality(in_first_argument->getResultType())).get());
-            const auto * right_array = typeid_cast<const DataTypeArray *>(
-                removeNullable(removeLowCardinality(in_second_argument->getResultType())).get());
-            if (left_array && right_array
-                && left_array->getNumberOfDimensions() == right_array->getNumberOfDimensions()
+            const auto left_bare = removeNullable(removeLowCardinality(in_first_argument->getResultType()));
+            if ((isArray(left_bare) || isTuple(left_bare) || isMap(left_bare))
                 && hasNestedCalendarDateInComparison(in_first_argument->getResultType(), in_second_argument->getResultType()))
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
@@ -3570,10 +3582,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         && non_const_set_candidate->isResolved())
                     {
                         const auto * rhs_array = typeid_cast<const DataTypeArray *>(non_const_set_candidate->getResultType().get());
-                        const auto * lhs_array = typeid_cast<const DataTypeArray *>(in_first_argument->getResultType().get());
-                        if (rhs_array && lhs_array
-                            && rhs_array->getNumberOfDimensions() == lhs_array->getNumberOfDimensions()
-                            && hasNestedCalendarDateInComparison(in_first_argument->getResultType(), non_const_set_candidate->getResultType()))
+                        const auto left_bare = removeNullable(removeLowCardinality(in_first_argument->getResultType()));
+                        const auto * lhs_array = typeid_cast<const DataTypeArray *>(left_bare.get());
+                        if (rhs_array && (isArray(left_bare) || isTuple(left_bare) || isMap(left_bare))
+                            && (hasNestedCalendarDateInComparison(in_first_argument->getResultType(), non_const_set_candidate->getResultType())
+                                || hasNestedCalendarDateInComparison(in_first_argument->getResultType(), rhs_array->getNestedType())))
                             throw Exception(
                                 ErrorCodes::NOT_IMPLEMENTED,
                                 "Setting 'in_null_as_unknown' does not yet support nested calendar comparison between {} and {}",
@@ -4101,6 +4114,34 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     const bool use_standard_null_semantics = scope.context->getSettingsRef()[Setting::in_null_as_unknown];
                     const auto left_bare_type = removeNullable(removeLowCardinality(left_type));
                     const auto right_bare_type = removeNullable(removeLowCardinality(non_const_set_candidate->getResultType()));
+                    if (use_standard_null_semantics
+                        && (isArray(left_bare_type) || isTuple(left_bare_type) || isMap(left_bare_type))
+                        && hasNestedCalendarDateInComparison(left_type, non_const_set_candidate->getResultType()))
+                        throw Exception(
+                            ErrorCodes::NOT_IMPLEMENTED,
+                            "Setting 'in_null_as_unknown' does not yet support nested calendar comparison between {} and {}",
+                            left_type->getName(), non_const_set_candidate->getResultType()->getName());
+                    if (use_standard_null_semantics && isStringOrFixedString(left_bare_type)
+                        && (isDynamic(right_bare_type) || isVariant(right_bare_type)))
+                    {
+                        auto match = std::make_shared<FunctionNode>("__scalarCarrierValueEqualsForIn");
+                        match->getArguments().getNodes() = {fn_args[0], fn_args[1]};
+                        auto left_is_null = std::make_shared<FunctionNode>("isNull");
+                        left_is_null->getArguments().getNodes().push_back(fn_args[0]);
+                        auto result = std::make_shared<FunctionNode>("if");
+                        result->getArguments().getNodes() = {
+                            std::move(left_is_null),
+                            std::make_shared<ConstantNode>(Field{}, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())),
+                            std::move(match)};
+                        node = std::move(result);
+                        resolveFunction(node, scope);
+                        if (is_not_in)
+                        {
+                            node = createNotWrapper(std::move(node));
+                            resolveFunction(node, scope);
+                        }
+                        return ProjectionNames{proj};
+                    }
                     if (use_standard_null_semantics && isCompoundCarrierForIn(left_type, non_const_set_candidate->getResultType()))
                     {
                         auto match = buildCompoundCarrierInComparison(

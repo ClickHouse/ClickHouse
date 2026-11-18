@@ -48,6 +48,50 @@ namespace Setting
 namespace
 {
 
+[[nodiscard]] bool hasCompoundDecimalFloatPair(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    const auto left = removeNullable(removeLowCardinality(left_type));
+    const auto right = removeNullable(removeLowCardinality(right_type));
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
+    {
+        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
+            return hasCompoundDecimalFloatPair(left_array->getNestedType(), right_array->getNestedType());
+    }
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
+    {
+        if (const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+            right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        {
+            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+                if (hasCompoundDecimalFloatPair(left_tuple->getElements()[i], right_tuple->getElements()[i]))
+                    return true;
+        }
+    }
+    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
+    {
+        if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
+            return hasCompoundDecimalFloatPair(left_map->getKeyType(), right_map->getKeyType())
+                || hasCompoundDecimalFloatPair(left_map->getValueType(), right_map->getValueType());
+    }
+    return (isFloat(left) && isDecimal(right)) || (isDecimal(left) && isFloat(right));
+}
+
+[[nodiscard]] bool accurateEqualsCompoundFields(const Field & left, const Field & right)
+{
+    const auto compare_elements = [](const auto & left_elements, const auto & right_elements)
+    {
+        return left_elements.size() == right_elements.size()
+            && std::equal(left_elements.begin(), left_elements.end(), right_elements.begin(), accurateEqualsCompoundFields);
+    };
+    if (left.getType() == Field::Types::Array && right.getType() == Field::Types::Array)
+        return compare_elements(left.safeGet<Array>(), right.safeGet<Array>());
+    if (left.getType() == Field::Types::Tuple && right.getType() == Field::Types::Tuple)
+        return compare_elements(left.safeGet<Tuple>(), right.safeGet<Tuple>());
+    if (left.getType() == Field::Types::Map && right.getType() == Field::Types::Map)
+        return compare_elements(left.safeGet<Map>(), right.safeGet<Map>());
+    return accurateEquals(left, right);
+}
+
 class FunctionScalarCarrierValueEqualsForIn final : public IFunction
 {
 public:
@@ -103,8 +147,27 @@ public:
             }
             if (left_values->isNullAt(row))
                 continue;
+            if (isFloat(left_type) && std::isnan(left->getFloat64(row)))
+                continue;
 
             auto source_row = carrier->cut(row, 1);
+            DataTypePtr active_type;
+            if (const auto * dynamic = checkAndGetColumn<ColumnDynamic>(carrier))
+                active_type = dynamic->getTypeAt(row);
+            else if (const auto * variant = checkAndGetColumn<ColumnVariant>(carrier))
+            {
+                const auto discriminator = variant->globalDiscriminatorAt(row);
+                const auto & variant_type = assert_cast<const DataTypeVariant &>(*source_type);
+                if (discriminator < variant_type.getVariants().size())
+                    active_type = variant_type.getVariant(discriminator);
+            }
+            if (active_type && isDecimal(active_type) && isNumber(left_type))
+            {
+                auto extracted = tryConvertColumnToTypeOrNull(
+                    *source_row, source_type, active_type, {}, /*strict=*/true);
+                values[row] = extracted && accurateEquals((*left)[row], (*extracted)[0]);
+                continue;
+            }
             auto converted = tryConvertColumnToTypeOrNull(
                 *source_row, source_type, left_type, {}, /*strict=*/true);
             values[row] = converted && left->compareAt(row, 0, *converted, 1) == 0;
@@ -252,15 +315,14 @@ public:
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with an array carrier of {}",
                     left_type->getName(), active_type->getName());
-            if (isFloat(left_element_type) && isDecimal(source_element_type))
+            if (hasCompoundDecimalFloatPair(left_element_type, source_element_type))
             {
-                /// Compare in the decimal domain so a decimal member is not rounded to float.
-                auto converted_left = tryConvertColumnToTypeOrNull(
-                    *left_row, arguments[0].type, active_type, {}, /*strict=*/true);
+                /// Compare the extracted value in its source type so nested decimals
+                /// retain their scale instead of being cast to floating point.
                 auto extracted_source = tryConvertColumnToTypeOrNull(
                     *source_row, source_type, active_type, {}, /*strict=*/true);
-                values[row] = converted_left && extracted_source
-                    && converted_left->compareAt(0, 0, *extracted_source, 1) == 0;
+                values[row] = extracted_source
+                    && accurateEqualsCompoundFields((*left_row)[0], (*extracted_source)[0]);
             }
             else
             {
@@ -623,9 +685,14 @@ public:
                     *probe, left_arg.type, key_type, {}, /*strict=*/true);
                 if (!converted)
                     continue;
-                auto restored = tryConvertColumnToTypeOrNull(
-                    *converted, key_type, left_type, {}, /*strict=*/true);
-                exact_data[row] = restored && accurateEquals((*probe)[0], (*restored)[0]);
+                if (isDecimal(key_type) && isNumber(left_type))
+                    exact_data[row] = accurateEquals((*probe)[0], (*converted)[0]);
+                else
+                {
+                    auto restored = tryConvertColumnToTypeOrNull(
+                        *converted, key_type, left_type, {}, /*strict=*/true);
+                    exact_data[row] = restored && accurateEquals((*probe)[0], (*restored)[0]);
+                }
             }
             res = std::move(exact_matches);
         }

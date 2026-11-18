@@ -508,7 +508,8 @@ ASTPtr makeNumericNonConstantInReplacement(
             auto exact = makeASTFunction("equals", candidate->clone(), std::move(round_trip));
             candidate = makeASTFunction("if", std::move(exact), std::move(cast_value), make_intrusive<ASTLiteral>(Field{}));
         }
-        else if (isStringOrFixedString(element_bare_type) || isDynamic(element_bare_type) || isVariant(element_bare_type))
+        else if (isStringOrFixedString(element_bare_type) || isDynamic(element_bare_type) || isVariant(element_bare_type)
+            || (isStringOrFixedString(left_bare_type) && isNumber(element_bare_type)))
             candidate = makeASTFunction(
                 "accurateCastOrNull", std::move(candidate),
                 make_intrusive<ASTLiteral>(left_bare_type->getName()));
@@ -540,6 +541,22 @@ bool hasNestedCalendarDateInComparison(const DataTypePtr & left_type, const Data
     {
         if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
             return hasNestedCalendarDateInComparison(left_array->getNestedType(), right_array->getNestedType());
+    }
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
+    {
+        if (const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+            right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        {
+            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+                if (hasNestedCalendarDateInComparison(left_tuple->getElements()[i], right_tuple->getElements()[i]))
+                    return true;
+        }
+    }
+    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
+    {
+        if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
+            return hasNestedCalendarDateInComparison(left_map->getKeyType(), right_map->getKeyType())
+                || hasNestedCalendarDateInComparison(left_map->getValueType(), right_map->getValueType());
     }
     return ((isDate(left) || isDate32(left)) && (isDateTime(right) || isDateTime64(right)))
         || ((isDate(right) || isDate32(right)) && (isDateTime(left) || isDateTime64(left)));
@@ -1788,6 +1805,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         && left_argument_type
                         && (isNumber(removeNullable(removeLowCardinality(left_argument_type)))
                             || isBool(removeNullable(removeLowCardinality(left_argument_type)))
+                            || isStringOrFixedString(removeNullable(removeLowCardinality(left_argument_type)))
                             || left_is_temporal)
                         && element_types_known
                         && !element_types.empty()
@@ -1799,7 +1817,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                                 || (left_is_temporal && (isDateTime(bare_type) || isDateTime64(bare_type)));
                         });
                     const bool compare_numeric_array_sources = use_standard_null_semantics && right_argument_is_array
-                        && left_bare_type && (isNumber(left_bare_type) || isBool(left_bare_type) || left_is_temporal) && right_array_type
+                        && left_bare_type && (isNumber(left_bare_type) || isBool(left_bare_type)
+                            || isStringOrFixedString(left_bare_type) || left_is_temporal) && right_array_type
                         && [&]
                         {
                             const auto & element_type = right_array_type->getNestedType();
