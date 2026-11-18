@@ -1,0 +1,56 @@
+documentation example
+1	a
+42	b
+3	c
+without a DEFAULT expression, the default of the type
+0	b		4
+5	a		\N
+0	a	z	6
+DEFAULT and NULL in a Nullable column
+42
+\N
+7
+DEFAULT expressions of other columns
+1	10
+2	5
+3	30
+5	50
+2	20
+every row takes the default
+1	lc	[1,2]
+1	lc	[1,2]
+composite types
+[]	lc	(2,'u')	{'z':9}
+[7]	p	(3,'v')	{'k':1}
+[1,2]	q	(1,'t')	{'k':1}
+several blocks
+42
+8
+42
+9
+10
+columns missing from the block
+1	2	z
+2	3	z
+conversion of the values that are present
+42	a
+5	b
+42	b
+NULL as default
+42
+42
+7
+input_format_defaults_for_omitted_fields = 0
+1	0
+2	5
+3	0
+unknown column
+1
+42
+schema inference
+x	UInt32
+y	String
+1	a
+0	b
+3	c
+malformed data
