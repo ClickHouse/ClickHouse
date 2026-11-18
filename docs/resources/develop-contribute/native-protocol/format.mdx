@@ -309,6 +309,32 @@ Through `FORMAT Native` (revision `0`), the same result block has no `BlockInfo`
 
 (A zero-row result, such as a header-only block, produces no bytes at all over `FORMAT Native`: the output format does not emit empty blocks.)
 
+### `NativeWithDefaults` column layout {#native-with-defaults}
+
+The `NativeWithDefaults` input format reads the same blocks as `FORMAT Native` input (revision `0`), with two fields added to every column between the type and the data. They let a writer mark individual rows as taking the default of the target column — its `DEFAULT` expression, or the default value of its type — instead of sending a value. The format is input only: ClickHouse never writes it, and it does not appear on the native TCP protocol.
+
+| # | Field             | Type    | Condition              | Description |
+|---|-------------------|---------|------------------------|-------------|
+| 1 | name              | String  | always                 | As in the [column wire layout](#column-wire-layout) |
+| 2 | type              | String *or* binary type encoding | always | As in the [column wire layout](#column-wire-layout) |
+| 3 | has_defaults_mask | UInt8   | always                 | `0` = every row has a value, `1` = a defaults mask follows. Other values are rejected with `INCORRECT_DATA`. |
+| 4 | defaults_mask     | UInt8 × `num_rows` | when field 3 = `1` | One byte per row. A non-zero byte means that the row takes the default. |
+| 5 | data              | bytes   | always                 | The values of the rows whose mask byte is zero, in row order, laid out like the `data` of a column with that many rows. |
+
+Unlike the null map of [`Nullable`](#nullable), the defaults mask has no placeholder value behind it: a column whose mask has `K` non-zero bytes carries `num_rows − K` values. When no row has a value, `data` is empty, without the state prefix of a [versioned type](#versioned-types). A column with `has_defaults_mask = 0` is a revision-`0` `Native` column with one extra `0x00` byte after the type.
+
+A `Nullable(UInt32)` column named `x` with the three rows `DEFAULT`, `NULL` and `7`:
+
+```text
+01 "x"                  Column.name = "x"
+10 "Nullable(UInt32)"   Column.type = "Nullable(UInt32)"
+01                      Column.has_defaults_mask = 1
+01 00 00                Column.defaults_mask: row 0 takes the default
+01 00                   Column.data: null map of the 2 values
+00 00 00 00             Column.data: first value, NULL
+07 00 00 00             Column.data: second value = 7
+```
+
 ## Protocol revision and the Native format {#protocol-revision}
 
 A Native byte stream is shaped above all by the **protocol revision** its writer and reader run at. The revision is nowhere in the bytes themselves — there is no revision field on the wire — but it still decides whether several features show up at all. Because of that, a decoder has to know which revision a payload was written at before it can parse it. Since the revision is not in the stream, the reader and writer must settle on it some other way.
