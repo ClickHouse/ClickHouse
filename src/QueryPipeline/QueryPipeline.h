@@ -9,7 +9,7 @@
 
 #include <functional>
 
-#include <Common/ListWithMemoryTracking.h>
+#include <list>
 #include <memory>
 
 namespace DB
@@ -20,7 +20,7 @@ class OutputPort;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = ListWithMemoryTracking<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 class QueryStatus;
 class StepProfiler;

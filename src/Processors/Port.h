@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/ListWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <atomic>
 #include <cstdint>
@@ -497,8 +496,8 @@ public:
 };
 
 
-using InputPorts = ListWithMemoryTracking<InputPort>;
-using OutputPorts = ListWithMemoryTracking<OutputPort>;
+using InputPorts = std::list<InputPort>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- connections are made before the list grows, so it must not throw at the memory limit
+using OutputPorts = std::list<OutputPort>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- connections are made before the list grows, so it must not throw at the memory limit
 
 
 void connect(OutputPort & output, InputPort & input, bool reconnect = false);

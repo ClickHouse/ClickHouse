@@ -23,7 +23,7 @@
 #include <expected>
 #include <functional>
 #include <optional>
-#include <Common/ListWithMemoryTracking.h>
+#include <list>
 
 
 namespace DB
@@ -52,7 +52,7 @@ using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = ListWithMemoryTracking<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>;
 
 class Pipe;
 class QueryPlan;

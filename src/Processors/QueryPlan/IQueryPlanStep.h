@@ -12,6 +12,7 @@
 #include <span>
 #include <string_view>
 #include <variant>
+#include <list>
 
 namespace DB
 {
@@ -24,7 +25,7 @@ using QueryPipelineBuilders = VectorWithMemoryTracking<QueryPipelineBuilderPtr>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = ListWithMemoryTracking<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- must match `Processors` in `IProcessor_fwd.h`
 
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
