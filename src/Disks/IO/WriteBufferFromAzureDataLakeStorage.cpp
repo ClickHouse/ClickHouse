@@ -8,6 +8,7 @@
 
 #include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <IO/AzureBlobStorage/PocoHTTPClient.h>
 #include <IO/AzureBlobStorage/isRetryableAzureException.h>
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
@@ -235,12 +236,39 @@ void WriteBufferFromAzureDataLakeStorage::ensureCreated()
         create_options.AccessConditions.IfMatch = Azure::ETag(write_settings.object_storage_write_if_match);
 
     LOG_TRACE(log, "Entering Create for ADLS Gen2 file `{}`", blob_path);
-    runWithRetries(
-        [&]() { file_client.Create(create_options); },
-        "Create",
-        BlobStorageLogElement::EventType::MultiPartUploadCreate,
-        /*data_size=*/ 0);
+    bool condition_failed = false;
+    try
+    {
+        /// The transport records every attempt, also the retries of the SDK.
+        PocoAzureHTTPClient::WriteAttemptsScope scope(attempts_record);
+        runWithRetries(
+            [&]()
+            {
+                try
+                {
+                    file_client.Create(create_options);
+                }
+                catch (const Azure::Core::RequestFailedException & e)
+                {
+                    /// 409 `PathAlreadyExists` answers `If-None-Match: *`, and 412 `ConditionNotMet` answers `If-Match`.
+                    condition_failed = e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
+                        || e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed;
+                    throw;
+                }
+            },
+            "Create",
+            BlobStorageLogElement::EventType::MultiPartUploadCreate,
+            /*data_size=*/ 0);
+    }
+    catch (...)
+    {
+        /// After an attempt that may have been applied, the refusal can be the answer to a replay of this `Create`.
+        if (condition_failed && !attempts_record.may_have_been_applied)
+            attempts_record.proof = AttemptsRecord::Proof::ConditionFailed;
+        throw;
+    }
     file_created = true;
+    attempts_record.may_have_been_applied = true;
     LOG_DEBUG(log, "Created ADLS Gen2 file `{}`", blob_path);
 }
 
@@ -299,6 +327,7 @@ void WriteBufferFromAzureDataLakeStorage::preFinalize()
         "Flush",
         BlobStorageLogElement::EventType::MultiPartUploadComplete,
         /*data_size=*/ 0);
+    attempts_record.proof = AttemptsRecord::Proof::Applied;
     LOG_DEBUG(log, "Flushed ADLS Gen2 file `{}` ({} bytes)", blob_path, bytes_appended);
 }
 
