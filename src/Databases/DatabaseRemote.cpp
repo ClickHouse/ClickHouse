@@ -70,14 +70,14 @@ DatabaseRemote::DatabaseRemote(
     const String & database_name_,
     const String & remote_database_,
     const String & username_,
-    const String & password_,
+    std::string_view password_,
     ClusterPtr cluster_,
     ClusterPtr remote_only_cluster_,
     bool secure_,
     UUID uuid)
     : DatabaseWithAltersOnDiskBase(database_name_)
     , WithContext(context_->getGlobalContext())
-    , database_engine_define(database_engine_define_->clone())
+    , database_engine_define(database_engine_define_->formatWithSecretsOneLine<SecretString>())
     , remote_database(remote_database_)
     , log(getLogger("DatabaseRemote(" + database_name_ + ")"))
     , metadata_path(metadata_path_)
@@ -940,7 +940,7 @@ ASTPtr DatabaseRemote::getCreateDatabaseQueryImpl() const
 {
     const auto & create_query = make_intrusive<ASTCreateQuery>();
     create_query->setDatabase(database_name);
-    create_query->set(create_query->storage, database_engine_define->clone());
+    create_query->set(create_query->storage, parseDatabaseEngineDefinition(database_engine_define));
     create_query->uuid = db_uuid;
 
     if (!comment.empty())
@@ -998,7 +998,7 @@ ASTPtr DatabaseRemote::getCreateTableQueryImpl(const String & table_name, Contex
     /// counterpart of the `remote`/`remoteSecure` table functions. Turn the database engine
     /// definition (`Remote('addresses', 'remote_db'[, 'user'[, 'password']])`) into a table engine by
     /// inserting the remote table name right after the remote database name.
-    auto table_storage_define = database_engine_define->clone();
+    auto table_storage_define = parseDatabaseEngineDefinition(database_engine_define);
     {
         ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
         ast_storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
@@ -1020,7 +1020,7 @@ ASTPtr DatabaseRemote::getCreateTableQueryImpl(const String & table_name, Contex
                     make_intrusive<ASTLiteral>(remote_database),
                     make_intrusive<ASTLiteral>(table_name),
                     make_intrusive<ASTLiteral>(username),
-                    make_intrusive<ASTLiteral>(password)};
+                    make_intrusive<ASTLiteral>(String(password))};
                 if (has_implicit_sharding_key)
                     engine_arguments.push_back(makeASTFunction("rand"));
             }
@@ -1123,7 +1123,7 @@ struct DatabaseRemoteClusters
 /// self-connection; this matches the well-tested behavior of the `remote` table function and the
 /// `Remote` storage engine and, as for them, means the stored credentials are honored only for
 /// genuinely remote shards.
-static DatabaseRemoteClusters buildClusters(const String & cluster_description, const String & username, const String & password, bool secure, ContextPtr context)
+static DatabaseRemoteClusters buildClusters(const String & cluster_description, const String & username, std::string_view password, bool secure, ContextPtr context)
 {
     size_t max_addresses = context->getSettingsRef()[Setting::table_function_remote_max_addresses];
     Strings shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
@@ -1204,7 +1204,7 @@ void registerDatabaseRemote(DatabaseFactory & factory)
         String addresses_expr;
         String remote_database;
         String username = "default";
-        String password;
+        SecretString password;
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
@@ -1226,7 +1226,7 @@ void registerDatabaseRemote(DatabaseFactory & factory)
             }
             remote_database = named_collection->getAnyOrDefault<String>({"database", "db"}, "default");
             username = named_collection->getAnyOrDefault<String>({"username", "user"}, "default");
-            password = named_collection->getOrDefault<String>("password", "");
+            password = named_collection->getOrDefault<SecretString>("password");
         }
         else
         {
@@ -1288,7 +1288,7 @@ The list of tables and their structure are fetched from the remote server on dem
 
 This is handy for federating several ClickHouse clusters or for plugging a larger ClickHouse cluster into `clickhouse-local` or a smaller cluster.
 
-To access a cluster defined in the server configuration by its name instead of by explicit addresses, use the [`Cluster`](/engines/database-engines/cluster) database engine.
+To access a cluster defined in the server configuration by its name instead of by explicit addresses, use the [`Cluster`](/reference/engines/database-engines/cluster) database engine.
 
 ## Creating a database {#creating-a-database}
 
@@ -1340,7 +1340,7 @@ ENGINE = Remote(my_named_collection, database = 'default');
 - A table of a local shard that the user is not allowed to see is reported as missing rather than as forbidden, so a `Remote` database cannot be used to probe the table names of a local database the user has no privileges on. This applies to listing (`SHOW TABLES`, `EXISTS TABLE`) as well as to resolution (`DESCRIBE TABLE`, `SHOW CREATE TABLE`, `SELECT`), and such a table is not served through the remote replicas of its shard either: the fallback described above engages only when the local replica genuinely does not have the table.
 - Listing the tables of a database that exists on the local replica of a shard also includes the tables that only the remote replicas of that shard have, so that `SHOW TABLES` and `system.tables` agree with `EXISTS TABLE`, `DESCRIBE TABLE` and `SELECT`, which fall back to those replicas. When none of the remote replicas answers, the list of the local replica is returned as it is, because it is already the answer of an available replica.
 - If the remote server is unavailable, listing its tables (`SHOW TABLES`, `system.tables`) reports the connection error instead of an empty list of tables, as `EXISTS TABLE` and `SELECT` on the same database do. Note that a `SELECT` from `system.tables` covering all databases fails as well while such a database is unreachable.
-- A `Remote` database may point to another `Remote` database on the same server. Listing and describing the tables of such a chain needs no privileges on the intermediate database — it holds neither data nor metadata of its own, and every hop already checks the caller's rights on the objects that it proxies in turn. Reading and writing the data, in contrast, needs `SELECT` / `INSERT` on every hop of the chain, because the query is really executed against the table of the intermediate database, exactly like for a `Distributed` table over another `Distributed` table. The visibility rule described above survives the chain: a table that the intermediate database hides from the caller is not served through the remote replicas of the outer database either. If the intermediate database on the local replica cannot reach its own target, the local replica of the outer shard cannot answer at all — exactly as if the replica itself were down — and the outer database falls back to the remote replicas of the shard. A chain on the same server that refers back to itself (including a database that points to itself) is rejected with the `INFINITE_LOOP` error when the database completing it is created; a cycle that nevertheless comes into existence later (e.g. a configuration reload turns a shard of a [`Cluster`](/engines/database-engines/cluster) database into a local one) does not affect other databases — whole-server listings such as `system.tables` skip the cyclic chain, which lists no tables, and resolving a table against it reports `INFINITE_LOOP`.
+- A `Remote` database may point to another `Remote` database on the same server. Listing and describing the tables of such a chain needs no privileges on the intermediate database — it holds neither data nor metadata of its own, and every hop already checks the caller's rights on the objects that it proxies in turn. Reading and writing the data, in contrast, needs `SELECT` / `INSERT` on every hop of the chain, because the query is really executed against the table of the intermediate database, exactly like for a `Distributed` table over another `Distributed` table. The visibility rule described above survives the chain: a table that the intermediate database hides from the caller is not served through the remote replicas of the outer database either. If the intermediate database on the local replica cannot reach its own target, the local replica of the outer shard cannot answer at all — exactly as if the replica itself were down — and the outer database falls back to the remote replicas of the shard. A chain on the same server that refers back to itself (including a database that points to itself) is rejected with the `INFINITE_LOOP` error when the database completing it is created; a cycle that nevertheless comes into existence later (e.g. a configuration reload turns a shard of a [`Cluster`](/reference/engines/database-engines/cluster) database into a local one) does not affect other databases — whole-server listings such as `system.tables` skip the cyclic chain, which lists no tables, and resolving a table against it reports `INFINITE_LOOP`.
 
 ## Example {#example}
 

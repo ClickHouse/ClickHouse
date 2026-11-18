@@ -226,7 +226,7 @@ ClickHouse ignores spaces between elements and commas after the objects. You can
 
 #### Omitted values processing {#omitted-values-processing}
 
-ClickHouse substitutes omitted values with the default values for the corresponding [data types](/reference/data-types).
+ClickHouse substitutes omitted values with the default values for the corresponding [data types](/reference/data-types/index).
 
 If `DEFAULT expr` is specified, ClickHouse uses different substitution rules depending on the [input_format_defaults_for_omitted_fields](/reference/settings/formats/input-format#input_format_defaults_for_omitted_fields) setting.
 
