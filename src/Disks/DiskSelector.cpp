@@ -87,12 +87,30 @@ String normalizeDiskPath(const String & path, bool is_local, bool is_broken)
     return normalized.string();
 }
 
+/// The root under which a disk keeps its files.
+///
+/// For an object storage disk with `plain` or `plain_rewritable` metadata, `getPath` is made of `key_compatibility_prefix`,
+/// while the files are listed and addressed under the common key prefix of the object storage (see `getKeyForPath` and
+/// `PlainRewritableLayout`). So two such disks with one common key prefix and different compatibility prefixes keep
+/// their files in one place, although their `getPath` differ. The bucket or container is compared separately, as a part
+/// of the description and of the objects namespace, so the root prefix of the object storage is not added here: a
+/// `cache` layer does not forward it, and the root of a disk must not depend on whether it is cached.
+String getDiskRoot(const DiskPtr & disk)
+{
+    const auto data_source = disk->getDataSourceDescription();
+    if (data_source.type == DataSourceType::ObjectStorage
+        && data_source.object_storage_type != ObjectStorageType::None
+        && (data_source.metadata_type == MetadataStorageType::Plain || data_source.metadata_type == MetadataStorageType::PlainRewritable))
+        return disk->getObjectStorage()->getCommonKeyPrefix();
+    return disk->getPath();
+}
+
 /// The path of `relative_path` on `disk`: the root of the disk followed by `relative_path`.
 String joinDiskPath(const DiskPtr & disk, const String & relative_path)
 {
     if (relative_path.empty())
-        return disk->getPath();
-    return (std::filesystem::path(disk->getPath()) / relative_path).string();
+        return getDiskRoot(disk);
+    return (std::filesystem::path(getDiskRoot(disk)) / relative_path).string();
 }
 
 /// Returns the storage namespace of `relative_path` on a disk, or nothing when the disk has no persistent one.
