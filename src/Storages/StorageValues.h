@@ -51,6 +51,9 @@ public:
     /// Unknown for a prepared pipe: its rows are not materialized until it is read.
     std::optional<UInt64> totalRows(ContextPtr) const override;
 
+    /// The rows of the storage, known before it is read. Null for a prepared pipe.
+    [[nodiscard]] const Block * tryGetBlock() const { return has_prepared_pipe ? nullptr : &res_block; }
+
     /// Returns the prepared pipe if it was not read.
     std::optional<Pipe> extractPreparedPipe();
 

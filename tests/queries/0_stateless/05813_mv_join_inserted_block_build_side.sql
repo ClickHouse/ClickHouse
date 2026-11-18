@@ -5,6 +5,8 @@ SET query_plan_join_swap_table = 'auto';
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_randomize = 0;
 SET enable_parallel_replicas = 0;
+-- With `dim` filtered by the keys of the block, the sides would be chosen by the row count of the filtered `dim`.
+SET query_plan_max_rows_in_block_to_filter_join_by_keys = 0;
 
 DROP TABLE IF EXISTS mv;
 DROP TABLE IF EXISTS src;

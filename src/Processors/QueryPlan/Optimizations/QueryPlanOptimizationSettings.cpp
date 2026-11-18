@@ -172,6 +172,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_for_lazy_final;
     extern const SettingsUInt64 query_plan_max_limit_for_lazy_materialization;
     extern const SettingsUInt64 query_plan_max_limit_for_join_lazy_indexing;
+    extern const SettingsUInt64 query_plan_max_rows_in_block_to_filter_join_by_keys;
     extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
     extern const SettingsUInt64 query_plan_optimize_join_order_limit;
@@ -271,6 +272,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     /// Without `use_primary_key` the copy would just be a full scan filter
     propagate_predicate_across_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_propagate_predicate_across_join]
         && from[Setting::use_primary_key];
+    max_rows_in_block_to_filter_join_by_keys = from[Setting::query_plan_enable_optimizations] && from[Setting::use_primary_key]
+        ? from[Setting::query_plan_max_rows_in_block_to_filter_join_by_keys] : 0;
     fuse_filter_into_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_fuse_filter_into_array_join];
     lower_array_join_function = from[Setting::query_plan_lower_array_join_function];
     legacy_array_join_function_nondeterministic_evaluation = from[Setting::legacy_array_join_function_nondeterministic_evaluation];

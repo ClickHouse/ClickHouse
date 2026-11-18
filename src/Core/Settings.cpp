@@ -8166,6 +8166,28 @@ other side, so copying it would only add work.
 Only takes effect if `query_plan_enable_optimizations` is 1.
 )", 0, \
         {"26.9", false, true, "New setting that lifts filter conjuncts across equi-join keys so primary-key pruning fires on both sides."}) \
+    DECLARE(UInt64, query_plan_max_rows_in_block_to_filter_join_by_keys, 100000, R"(
+The maximum number of rows in a block of data that is in memory while the query is planned, for which
+the join keys of the block are used to filter the table it is joined with.
+
+Such a block is the block inserted into the source table of a materialized view, which the query of the
+view reads instead of the table, or the data of the `values` table function. When the block is joined by
+equality with a column of the primary key of a `MergeTree` table, the condition `key IN (keys of the block)`
+is added to the table, as if the keys were written in the query as a list of literals. The table is then
+read using its primary key instead of in full, also with `FINAL`.
+
+The filter is added for an `INNER` join, and for a `LEFT` or `RIGHT` join to the side whose rows are
+not kept without a match. A join key is used if it is a column on both sides, not an expression, and
+has the same type on both sides apart from `Nullable` and `LowCardinality`. Floating-point keys are not used.
+
+Possible values:
+
+- 0 — Disable.
+- Any positive integer.
+
+Only takes effect if `query_plan_enable_optimizations` is 1.
+)", 0, \
+        {"26.11", 0, 100000, "New setting to filter a `MergeTree` table by the join keys of the block inserted into the source table of a materialized view."}) \
     DECLARE(Bool, query_plan_push_down_volume_reducing_functions, true, R"(
 Toggles a query-plan-level optimization which moves volume-reducing functions (`length`, `lengthUTF8`, `empty`, `notEmpty`)
 down in the execution plan, below `Sorting` and `Filter` steps. The fixed-size result replaces the

@@ -93,6 +93,7 @@ struct QueryPlanOptimizationSettings
     bool filter_push_down;
     bool filter_push_down_below_limit_by;
     bool propagate_predicate_across_join;
+    size_t max_rows_in_block_to_filter_join_by_keys;
     bool fuse_filter_into_array_join;
     bool lower_array_join_function;
     bool legacy_array_join_function_nondeterministic_evaluation;

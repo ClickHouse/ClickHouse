@@ -634,6 +634,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_lift_up_union", trueOrFalseSetting},
        {"query_plan_lower_array_join_function", trueOrFalseSetting},
        {"query_plan_max_limit_for_join_lazy_indexing", CHSetting(highRange, {}, false)},
+       {"query_plan_max_rows_in_block_to_filter_join_by_keys", CHSetting(highRange, {}, false)},
        {"query_plan_max_set_size_for_projection_match",
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 0, 10000)); },

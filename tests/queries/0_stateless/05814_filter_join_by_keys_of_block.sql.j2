@@ -1,0 +1,169 @@
+-- A table joined with a block that is in memory while the query is planned (here the `values` table function,
+-- which is read the same way as the block inserted into the source table of a materialized view)
+-- is filtered by `IN` with the join keys of the block, see `query_plan_max_rows_in_block_to_filter_join_by_keys`.
+-- Every case prints the primary key conditions of the tables, and the result with the filter and without it.
+
+SET enable_analyzer = 1;
+-- Under parallel replicas the tables are read remotely.
+SET enable_parallel_replicas = 0;
+SET query_plan_max_rows_in_block_to_filter_join_by_keys = 1000;
+
+DROP TABLE IF EXISTS dim;
+DROP TABLE IF EXISTS dim2;
+DROP TABLE IF EXISTS dim_string;
+DROP TABLE IF EXISTS dim_float;
+DROP TABLE IF EXISTS dim_final;
+
+CREATE TABLE dim (id UInt64, sub UInt64, ref UInt64, name String) ENGINE = MergeTree ORDER BY (id, sub)
+SETTINGS index_granularity = 10, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
+INSERT INTO dim SELECT number, number % 3, 999 - number, 'name' || toString(number) FROM numbers(1000);
+
+CREATE TABLE dim2 (id2 UInt64, title String) ENGINE = MergeTree ORDER BY id2
+SETTINGS index_granularity = 10, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
+INSERT INTO dim2 SELECT number, 'title' || toString(number) FROM numbers(1000);
+
+CREATE TABLE dim_string (s String, value UInt64) ENGINE = MergeTree ORDER BY s
+SETTINGS index_granularity = 10, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
+INSERT INTO dim_string SELECT toString(number), number FROM numbers(1000);
+
+CREATE TABLE dim_float (f Float64, value UInt64) ENGINE = MergeTree ORDER BY f
+SETTINGS index_granularity = 10, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
+INSERT INTO dim_float SELECT number, number FROM numbers(1000);
+
+-- Every fifth row has a newer version, which is deleted for odd keys.
+CREATE TABLE dim_final (id UInt64, name String, is_deleted UInt8, version UInt64) ENGINE = ReplacingMergeTree(version) ORDER BY id
+SETTINGS index_granularity = 10, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
+SYSTEM STOP MERGES dim_final;
+INSERT INTO dim_final SELECT number, 'old' || toString(number), 0, 1 FROM numbers(1000);
+INSERT INTO dim_final SELECT number * 5, 'new' || toString(number * 5), number % 2, 2 FROM numbers(200);
+
+SELECT '-- granules';
+SELECT extract(explain, 'Condition: .*|Granules: \\d+/\\d+') AS line FROM
+(
+    EXPLAIN indexes = 1
+    SELECT * FROM values('id UInt64', 15, 255, 507) AS e JOIN dim AS d ON e.id = d.id
+)
+WHERE line != '';
+
+{# Keys 15, 255 and 507 match `dim` by `id` and by `(id, sub)`, 16 matches by `id` only, 2000 has no match. -#}
+{% set block = "values('id UInt64, sub UInt64, v UInt64', (15, 0, 1), (255, 0, 2), (507, 0, 3), (16, 0, 4), (2000, 0, 5))" -%}
+{% set block2 = "values('v UInt64, sub2 UInt64', (1, 0), (2, 0), (9, 1))" -%}
+{% set nullable_block = "values('id Nullable(UInt64), v UInt64', (15, 1), (NULL, 2), (507, 3), (NULL, 4))" -%}
+{% set final_block = "values('id UInt64', 10, 15, 507, 2000)" -%}
+{% set cases = [
+    {'name': 'inner, block on the left',
+     'query': "SELECT * FROM " ~ block ~ " AS e JOIN dim AS d ON e.id = d.id"},
+    {'name': 'inner, block on the right',
+     'query': "SELECT * FROM dim AS d JOIN " ~ block ~ " AS e ON e.id = d.id"},
+    {'name': 'left, block on the left',
+     'query': "SELECT * FROM " ~ block ~ " AS e LEFT JOIN dim AS d ON e.id = d.id"},
+    {'name': 'left, block on the right: the rows of the table are kept',
+     'query': "SELECT * FROM dim AS d LEFT JOIN " ~ block ~ " AS e ON e.id = d.id"},
+    {'name': 'right, block on the right',
+     'query': "SELECT * FROM dim AS d RIGHT JOIN " ~ block ~ " AS e ON e.id = d.id"},
+    {'name': 'right, block on the left: the rows of the table are kept',
+     'query': "SELECT * FROM " ~ block ~ " AS e RIGHT JOIN dim AS d ON e.id = d.id"},
+    {'name': 'full: the rows of the table are kept',
+     'query': "SELECT * FROM " ~ block ~ " AS e FULL JOIN dim AS d ON e.id = d.id"},
+    {'name': 'left semi',
+     'query': "SELECT * FROM " ~ block ~ " AS e LEFT SEMI JOIN dim AS d ON e.id = d.id"},
+    {'name': 'left any',
+     'query': "SELECT * FROM " ~ block ~ " AS e LEFT ANY JOIN dim AS d ON e.id = d.id"},
+    {'name': 'inner any',
+     'query': "SELECT * FROM " ~ block ~ " AS e INNER ANY JOIN dim AS d ON e.id = d.id"},
+    {'name': 'left anti: not filtered',
+     'query': "SELECT * FROM " ~ block ~ " AS e LEFT ANTI JOIN dim AS d ON e.id = d.id"},
+    {'name': 'asof: not filtered',
+     'query': "SELECT * FROM " ~ block ~ " AS e ASOF JOIN dim AS d ON e.id = d.id AND e.v >= d.sub"},
+    {'name': 'comma join with the condition in WHERE',
+     'query': "SELECT * FROM " ~ block ~ " AS e, dim AS d WHERE e.id = d.id"},
+    {'name': 'using',
+     'query': "SELECT * FROM " ~ block ~ " AS e JOIN dim AS d USING (id)"},
+    {'name': 'two key columns',
+     'query': "SELECT * FROM " ~ block ~ " AS e JOIN dim AS d ON e.id = d.id AND e.sub = d.sub"},
+    {'name': 'second key column only',
+     'query': "SELECT * FROM " ~ block ~ " AS e JOIN dim AS d ON e.sub = d.sub"},
+    {'name': 'key column and another column',
+     'query': "SELECT * FROM values('id UInt64, ref UInt64', (15, 984), (255, 0), (507, 492)) AS e JOIN dim AS d ON e.id = d.id AND e.ref = d.ref"},
+    {'name': 'not a key column: not filtered',
+     'query': "SELECT * FROM " ~ block ~ " AS e JOIN dim AS d ON e.v = d.ref"},
+    {'name': 'one key column compared with two columns of the block',
+     'query': "SELECT * FROM values('id UInt64, id_again UInt64', (15, 15), (255, 1), (507, 507)) AS e JOIN dim AS d ON e.id = d.id AND e.id_again = d.id"},
+    {'name': 'more conditions on the table',
+     'query': "SELECT * FROM " ~ block ~ " AS e LEFT JOIN dim AS d ON e.id = d.id AND d.name != 'name255'"},
+    {'name': 'more conditions on both sides',
+     'query': "SELECT * FROM " ~ block ~ " AS e LEFT JOIN dim AS d ON e.id = d.id AND e.v > d.sub"},
+    {'name': 'disjunction: not filtered',
+     'query': "SELECT * FROM " ~ block ~ " AS e JOIN dim AS d ON e.id = d.id OR e.v = d.id"},
+    {'name': 'expression of the block: not filtered',
+     'query': "SELECT * FROM " ~ block ~ " AS e JOIN dim AS d ON e.id + 1 = d.id"},
+    {'name': 'expression of the table: not filtered',
+     'query': "SELECT * FROM " ~ block ~ " AS e JOIN dim AS d ON e.id = d.id + 1"},
+    {'name': 'filter on the block: its keys are a superset',
+     'query': "SELECT * FROM (SELECT * FROM " ~ block ~ " WHERE v != 2) AS e JOIN dim AS d ON e.id = d.id"},
+    {'name': 'renamed key of the block',
+     'query': "SELECT * FROM (SELECT id AS key, v FROM " ~ block ~ ") AS e JOIN dim AS d ON e.key = d.id"},
+    {'name': 'aggregation over the block: not filtered',
+     'query': "SELECT * FROM (SELECT id, count() AS c FROM " ~ block ~ " GROUP BY id) AS e JOIN dim AS d ON e.id = d.id"},
+    {'name': 'subquery with a filter over the table',
+     'query': "SELECT * FROM " ~ block ~ " AS e LEFT JOIN (SELECT id AS key, name FROM dim WHERE sub != 1) AS d ON e.id = d.key"},
+    {'name': 'aggregation over the table: not filtered',
+     'query': "SELECT * FROM " ~ block ~ " AS e LEFT JOIN (SELECT id, count() AS c FROM dim GROUP BY id) AS d ON e.id = d.id"},
+    {'name': 'NULL keys in the block',
+     'query': "SELECT * FROM " ~ nullable_block ~ " AS e LEFT JOIN dim AS d ON e.id = d.id"},
+    {'name': 'NULL-safe comparison: not filtered',
+     'query': "SELECT * FROM " ~ nullable_block ~ " AS e LEFT JOIN dim AS d ON e.id <=> d.id"},
+    {'name': 'join_use_nulls',
+     'query': "SELECT * FROM " ~ block ~ " AS e LEFT JOIN dim AS d ON e.id = d.id",
+     'settings': "join_use_nulls = 1"},
+    {'name': 'join_use_nulls, NULL keys in the block',
+     'query': "SELECT * FROM " ~ nullable_block ~ " AS e LEFT JOIN dim AS d ON e.id = d.id",
+     'settings': "join_use_nulls = 1"},
+    {'name': 'key of another type: not filtered',
+     'query': "SELECT * FROM values('id Int32, v UInt64', (15, 1), (-1, 2), (507, 3)) AS e LEFT JOIN dim AS d ON e.id = d.id"},
+    {'name': 'LowCardinality key in the block',
+     'query': "SELECT * FROM values('s LowCardinality(String), v UInt64', ('15', 1), ('255', 2), ('x', 3)) AS e LEFT JOIN dim_string AS d ON e.s = d.s"},
+    {'name': 'LowCardinality(Nullable) key in the block',
+     'query': "SELECT * FROM values('s LowCardinality(Nullable(String)), v UInt64', ('15', 1), (NULL, 2), ('x', 3)) AS e LEFT JOIN dim_string AS d ON e.s = d.s"},
+    {'name': 'floating-point key: not filtered',
+     'query': "SELECT * FROM values('f Float64, v UInt64', (15, 1), (-0., 2), (nan, 3)) AS e LEFT JOIN dim_float AS d ON e.f = d.f"},
+    {'name': 'block of the maximum size',
+     'query': "SELECT * FROM " ~ block ~ " AS e JOIN dim AS d ON e.id = d.id",
+     'limit': 5},
+    {'name': 'block above the maximum size: not filtered',
+     'query': "SELECT * FROM " ~ block ~ " AS e JOIN dim AS d ON e.id = d.id",
+     'limit': 4},
+    {'name': 'disabled: not filtered',
+     'query': "SELECT * FROM " ~ block ~ " AS e JOIN dim AS d ON e.id = d.id",
+     'limit': 0},
+    {'name': 'two tables joined by keys of the block',
+     'query': "SELECT * FROM " ~ block ~ " AS e LEFT JOIN dim AS d ON e.id = d.id LEFT JOIN dim2 AS d2 ON e.v = d2.id2"},
+    {'name': 'two tables joined by keys of the block, block on the right',
+     'query': "SELECT * FROM dim2 AS d2 JOIN " ~ block ~ " AS e ON e.v = d2.id2 JOIN dim AS d ON e.id = d.id"},
+    {'name': 'second-level join by a key of another table: only the first table is filtered',
+     'query': "SELECT * FROM " ~ block ~ " AS e LEFT JOIN dim AS d ON e.id = d.id LEFT JOIN dim2 AS d2 ON d.ref = d2.id2"},
+    {'name': 'key of the block after an outer join that fills it with defaults: not filtered',
+     'query': "SELECT * FROM dim2 AS d2 LEFT JOIN " ~ block ~ " AS e ON e.v = d2.id2 JOIN dim AS d ON e.id = d.id"},
+    {'name': 'keys of two blocks: one block is used',
+     'query': "SELECT * FROM " ~ block ~ " AS e JOIN " ~ block2 ~ " AS f ON e.v = f.v JOIN dim AS d ON e.id = d.id AND f.sub2 = d.sub"},
+    {'name': 'final',
+     'query': "SELECT * FROM " ~ final_block ~ " AS e LEFT JOIN (SELECT id, name FROM dim_final FINAL WHERE is_deleted = 0) AS d ON e.id = d.id"},
+] -%}
+
+{% for case in cases -%}
+{% set limit = "query_plan_max_rows_in_block_to_filter_join_by_keys = " ~ case.limit if case.limit is defined else "" -%}
+{% set settings = [limit, case.settings | default("")] | select | join(", ") -%}
+SELECT '-- {{ case.name }}';
+SELECT arraySort(groupArray(extract(explain, 'Condition: (.*)'))) FROM (EXPLAIN indexes = 1 {{ case.query }}{{ " SETTINGS " ~ settings if settings }}) WHERE explain LIKE '%Condition:%';
+SELECT count(), sum(sipHash64(*)) FROM ({{ case.query }}){{ " SETTINGS " ~ settings if settings }};
+SELECT count(), sum(sipHash64(*)) FROM ({{ case.query }}) SETTINGS query_plan_max_rows_in_block_to_filter_join_by_keys = 0{{ ", " ~ case.settings if case.settings is defined }};
+{% endfor %}
+
+SELECT '-- final, rows';
+SELECT e.id, d.name FROM {{ final_block }} AS e LEFT JOIN (SELECT id, name FROM dim_final FINAL WHERE is_deleted = 0) AS d ON e.id = d.id ORDER BY e.id;
+
+DROP TABLE dim;
+DROP TABLE dim2;
+DROP TABLE dim_string;
+DROP TABLE dim_float;
+DROP TABLE dim_final;

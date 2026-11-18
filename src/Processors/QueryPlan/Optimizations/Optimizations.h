@@ -246,6 +246,11 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 /// so that index pruning (MergeTree primary key) on the other side picks them up
 size_t tryPropagatePredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
+/// For an equi-join of a block that is in memory at planning time (e.g. the block inserted into the source table
+/// of a materialized view) with a MergeTree table, filter the table by `IN` with the join keys of the block,
+/// so that index pruning (MergeTree primary key) picks it up
+bool tryFilterJoinByKeysOfBlock(QueryPlan::Node & node, QueryPlan::Nodes & nodes, size_t max_rows_in_block);
+
 /// Optimize ORDER BY ... LIMIT n query by using skip index or Prewhere threshold filtering
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 

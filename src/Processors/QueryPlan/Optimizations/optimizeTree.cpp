@@ -314,6 +314,15 @@ void optimizeTreeSecondPass(
         });
     }
 
+    if (optimization_settings.max_rows_in_block_to_filter_join_by_keys && optimization_settings.query_plan_optimize_primary_key)
+    {
+        traverseQueryPlan(stack, root, NoOp{}, [&](auto & frame_node)
+        {
+            predicates_were_propagated |= tryFilterJoinByKeysOfBlock(
+                frame_node, nodes, optimization_settings.max_rows_in_block_to_filter_join_by_keys);
+        });
+    }
+
     stack.push_back({.node = &root});
 
     while (!stack.empty())

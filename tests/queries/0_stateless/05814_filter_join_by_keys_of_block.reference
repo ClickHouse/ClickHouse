@@ -1,0 +1,192 @@
+-- granules
+Condition: (id in 3-element set)
+Granules: 3/100
+-- inner, block on the left
+['(id in 5-element set)']
+4	12898136570186424076
+4	12898136570186424076
+-- inner, block on the right
+['(id in 5-element set)']
+4	760406638357266979
+4	760406638357266979
+-- left, block on the left
+['(id in 5-element set)']
+5	2982056355360586228
+5	2982056355360586228
+-- left, block on the right: the rows of the table are kept
+['true']
+1000	4519400897053065114
+1000	4519400897053065114
+-- right, block on the right
+['(id in 5-element set)']
+5	5887499685578477734
+5	5887499685578477734
+-- right, block on the left: the rows of the table are kept
+['true']
+1000	15031170696296468476
+1000	15031170696296468476
+-- full: the rows of the table are kept
+['true']
+1001	5115090481470630628
+1001	5115090481470630628
+-- left semi
+['(id in 5-element set)']
+4	12898136570186424076
+4	12898136570186424076
+-- left any
+['(id in 5-element set)']
+5	2982056355360586228
+5	2982056355360586228
+-- inner any
+['(id in 5-element set)']
+4	12898136570186424076
+4	12898136570186424076
+-- left anti: not filtered
+['true']
+1	8530663858883713768
+1	8530663858883713768
+-- asof: not filtered
+['true']
+4	12898136570186424076
+4	12898136570186424076
+-- comma join with the condition in WHERE
+['(id in 5-element set)']
+4	12898136570186424076
+4	12898136570186424076
+-- using
+['(id in 5-element set)']
+4	16534779749440241134
+4	16534779749440241134
+-- two key columns
+['((id, sub) in 5-element set)']
+3	7924432591608485441
+3	7924432591608485441
+-- second key column only
+['(sub in 1-element set)']
+1670	2529565354669543807
+1670	2529565354669543807
+-- key column and another column
+['(id in 3-element set)']
+2	3944839155992394865
+2	3944839155992394865
+-- not a key column: not filtered
+['true']
+5	11551252869452111719
+5	11551252869452111719
+-- one key column compared with two columns of the block
+['(id in 3-element set)']
+2	8350778473627564241
+2	8350778473627564241
+-- more conditions on the table
+['(id in 5-element set)']
+5	11320174469764154532
+5	11320174469764154532
+-- more conditions on both sides
+['(id in 5-element set)']
+5	2982056355360586228
+5	2982056355360586228
+-- disjunction: not filtered
+['true']
+9	14516760897572202964
+9	14516760897572202964
+-- expression of the block: not filtered
+['true']
+4	13586390533842722880
+4	13586390533842722880
+-- expression of the table: not filtered
+['true']
+4	5666054523036368304
+4	5666054523036368304
+-- filter on the block: its keys are a superset
+['(id in 5-element set)']
+3	5886032125203763933
+3	5886032125203763933
+-- renamed key of the block
+['(id in 5-element set)']
+4	15147418028674856103
+4	15147418028674856103
+-- aggregation over the block: not filtered
+['true']
+4	14399573137592672973
+4	14399573137592672973
+-- subquery with a filter over the table
+['and((sub not in [1, 1]), (id in 5-element set))']
+5	10638068036180072492
+5	10638068036180072492
+-- aggregation over the table: not filtered
+['true']
+5	12832665012431919364
+5	12832665012431919364
+-- NULL keys in the block
+['(id in 2-element set)']
+4	6087671416120095735
+4	6087671416120095735
+-- NULL-safe comparison: not filtered
+['true']
+4	6087671416120095735
+4	6087671416120095735
+-- join_use_nulls
+['(id in 5-element set)']
+5	12898136570186424076
+5	12898136570186424076
+-- join_use_nulls, NULL keys in the block
+['(id in 2-element set)']
+4	6087671416120095735
+4	6087671416120095735
+-- key of another type: not filtered
+['true']
+3	15771241004810546452
+3	15771241004810546452
+-- LowCardinality key in the block
+['(s in 3-element set)']
+3	2219368699740127063
+3	2219368699740127063
+-- LowCardinality(Nullable) key in the block
+['(s in 2-element set)']
+3	4873533075018853246
+3	4873533075018853246
+-- floating-point key: not filtered
+['true']
+3	13362593431292637037
+3	13362593431292637037
+-- block of the maximum size
+['(id in 5-element set)']
+4	12898136570186424076
+4	12898136570186424076
+-- block above the maximum size: not filtered
+['true']
+4	12898136570186424076
+4	12898136570186424076
+-- disabled: not filtered
+['true']
+4	12898136570186424076
+4	12898136570186424076
+-- two tables joined by keys of the block
+['(id in 5-element set)','(id2 in 5-element set)']
+5	5910167894495064167
+5	5910167894495064167
+-- two tables joined by keys of the block, block on the right
+['(id in 5-element set)','(id2 in 5-element set)']
+4	14941263988924335070
+4	14941263988924335070
+-- second-level join by a key of another table: only the first table is filtered
+['(id in 5-element set)','true']
+5	17768597013369733161
+5	17768597013369733161
+-- key of the block after an outer join that fills it with defaults: not filtered
+['true','true']
+999	10286402302337215188
+999	10286402302337215188
+-- keys of two blocks: one block is used
+['(id in 5-element set)']
+2	3672838806421643534
+2	3672838806421643534
+-- final
+['(id in 4-element set)']
+4	15628227606595943221
+4	15628227606595943221
+-- final, rows
+10	new10
+15	
+507	old507
+2000	
