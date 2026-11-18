@@ -21,7 +21,7 @@ INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.is_float
     FROM format(RowBinary, 'is_float Array(Bool)', unhex('0102')); -- { serverError INCORRECT_DATA }
 
 SELECT '-- counter_reset_hint is a value of its Enum8 type: text input is rejected while parsing, binary input by the validation';
-INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.counter_reset_hint) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [4]); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.counter_reset_hint) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [4]); -- { error UNKNOWN_ELEMENT_OF_ENUM }
 -- A binary format doesn't check the values of an Enum: the arrays [4] and [-1] in RowBinary.
 INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.counter_reset_hint)
     SELECT 'm', map('job', 'api'), [toDateTime64(100, 3)], hints
