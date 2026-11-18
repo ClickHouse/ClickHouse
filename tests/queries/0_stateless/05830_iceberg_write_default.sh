@@ -29,7 +29,8 @@ cp -rp impala/iceberg_v3_default_value impala/malformed
 cp -rp "${CUR_DIR}/data_iceberg/duckdb/data/persistent/add_columns_with_defaults/default.db" duckdb/data/persistent/add_columns_with_defaults/
 
 # For each pair of a table and a mode in $@, adds the next metadata version with a new current schema, and binds every snapshot
-# to it: `evolved` drops the `initial-default` of `j` and adds a struct with defaults, `malformed` adds an invalid `write-default`.
+# to it: `evolved` drops the `initial-default` of `j` and adds a struct with defaults, `timestamps` adds timestamps with defaults
+# before 1973, `malformed` adds an invalid `write-default`.
 evolve()
 {
     python3 - "$@" <<'PY'
@@ -48,6 +49,12 @@ for table, mode in zip(sys.argv[1::2], sys.argv[2::2]):
         fields.append({"id": last_id + 2, "name": "s", "required": False, "write-default": {}, "type": {"type": "struct", "fields": [
             {"id": last_id + 1, "name": "x", "required": False, "type": "int", "initial-default": 6, "write-default": 5}]}})
         last_id += 2
+    elif mode == "timestamps":
+        for name, required, type_name, value in (("ts", False, "timestamp", "1970-01-01T00:00:00.012345"),
+                ("tr", True, "timestamp", "1970-01-01T00:00:00.012345"), ("tz", False, "timestamptz", "1960-01-01T00:00:00+00:00")):
+            last_id += 1
+            fields.append({"id": last_id, "name": name, "required": required, "type": type_name,
+                "initial-default": value, "write-default": value})
     else:
         last_id += 1
         fields.append({"id": last_id, "name": "d", "required": False, "type": "long", "write-default": "abc"})
@@ -98,6 +105,23 @@ ${LOCAL} -q "
     FROM icebergLocal('data/persistent/add_columns_with_defaults/default.db/add_columns_with_defaults') WHERE col1 = 'w';
 "
 cd .. || exit 1
+
+# A table definition that holds these DEFAULTs keeps their values when it is parsed back: ALTER validates the definition that
+# DESCRIBE loaded, CREATE TABLE ... AS copies it, and a restart reads the copy.
+LOCAL_PERSISTENT="${LOCAL} --path chdata"
+${LOCAL_PERSISTENT} -q "CREATE TABLE src (k Int32) ENGINE = IcebergLocal('timestamps'); INSERT INTO src VALUES (1)"
+evolve timestamps timestamps
+${LOCAL_PERSISTENT} -q "
+    DESCRIBE src FORMAT Null;
+    ALTER TABLE src ADD COLUMN z Nullable(Int32);
+    INSERT INTO src (k) VALUES (2);
+    SELECT 'alter', k, ts, tr, tz, z FROM src WHERE k = 2;
+    CREATE TABLE cp AS src ENGINE = Memory;
+"
+${LOCAL_PERSISTENT} -q "
+    INSERT INTO cp (k) VALUES (3);
+    SELECT 'restart', k, ts, tr, tz FROM cp;
+"
 
 # A data file without `j` reads NULL when `j` has a `write-default` but no `initial-default`, also in PREWHERE. The members of a
 # struct whose `write-default` is `{}` take their own `write-default`.

@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <Analyzer/Utils.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/UUID.h>
@@ -2023,7 +2024,8 @@ std::unique_ptr<StorageInMemoryMetadata> IcebergMetadata::buildStorageMetadataFr
                 columns.modify(field_name, [&](ColumnDescription & description)
                 {
                     description.default_desc.kind = ColumnDefaultKind::Default;
-                    description.default_desc.expression = make_intrusive<ASTLiteral>(std::move(*write_default));
+                    description.default_desc.expression = columnConstantToExactLiteralAST(
+                        column->type->createColumnConst(1, *write_default), 0, column->type, /*date_time_as_numbers=*/true);
                 });
         }
     }
