@@ -32,7 +32,6 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
@@ -5285,30 +5284,13 @@ bool MutateTask::prepare()
             return command.command_identifier.has_value();
         });
 
-        /// The counts below evaluate the conditions again, separately from the check above that all rows are deleted. A nondeterministic
-        /// condition (e.g. `rand()` or a subquery) may match other rows in each evaluation, so the counts could disagree with the rows
-        /// that are deleted. In this case the part is mutated as usual, and the rows are counted in the one evaluation that deletes them.
-        const bool has_nondeterministic_condition = has_only_delete_commands && count_affected_rows
-            && std::ranges::any_of(ctx->commands_for_part, [&](const auto & command)
-            {
-                const auto nondeterministic = findFirstNonDeterministicFunction(command, ctx->context);
-                return nondeterministic.nondeterministic_function_name.has_value() || nondeterministic.subquery;
-            });
-
-        if (has_only_delete_commands && !has_nondeterministic_condition)
+        if (has_only_delete_commands)
         {
             /// There will be no interpreter call, so the rows deleted by each command are counted separately.
             if (count_affected_rows)
             {
                 const bool has_lightweight_delete = ctx->source_part->hasLightweightDelete() || alter_conversions->hasLightweightDelete();
-                const auto deleted_rows_by_command = countDeletedRowsByCommands(
-                    ctx->source_part,
-                    mutations_snapshot,
-                    *commands_for_execution,
-                    has_lightweight_delete,
-                    context_for_reading,
-                    [&my_ctx = *ctx](const Progress &) { my_ctx.checkOperationIsNotCanceled(); },
-                    [&my_ctx = *ctx] { (*my_ctx.mutate_entry)->is_cancelled.store(true, std::memory_order_relaxed); });
+                const auto deleted_rows_by_command = countDeletedRowsByCommands(ctx->source_part, *commands_for_execution, has_lightweight_delete);
 
                 for (size_t i = 0; i < deleted_rows_by_command.size(); ++i)
                 {

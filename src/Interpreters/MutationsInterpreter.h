@@ -52,18 +52,12 @@ IsStorageTouched isStorageTouchedByMutations(
     std::function<void()> on_exception
 );
 
-/// Returns the number of rows of the part deleted by each `DELETE` command, attributed to the first command that deletes the row.
-/// It is called only when the commands delete all rows of the part. If the part has no lightweight delete, the part is not read: the
-/// rows are counted for one command, or for the first true one of several constant conditions, and are not counted (all 0) otherwise.
-/// `on_exception` is the same as for `isStorageTouchedByMutations`.
+/// Returns the number of rows of the part deleted by each `DELETE` command. It is called only when the commands delete all rows of the
+/// part, which is then replaced by an empty one without being read. So the rows are counted only when that needs no read and cannot fail:
+/// one command on a part without a lightweight delete, or several commands whose conditions are literals, where the first true one deletes
+/// all rows. Otherwise the rows are not counted, and all counts are 0.
 std::vector<UInt64> countDeletedRowsByCommands(
-    MergeTreeData::DataPartPtr source_part,
-    MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
-    const std::vector<MutationCommand> & commands,
-    bool has_lightweight_delete,
-    ContextPtr context,
-    std::function<void(const Progress & value)> check_operation_is_not_cancelled,
-    std::function<void()> on_exception);
+    const MergeTreeData::DataPartPtr & source_part, const std::vector<MutationCommand> & commands, bool has_lightweight_delete);
 
 /// Build the WHERE-style filter for a mutation command. The parsed
 /// `ASTAlterCommand` is passed in so the caller can reuse the same parse for

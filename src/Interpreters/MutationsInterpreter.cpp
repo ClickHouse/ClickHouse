@@ -1,6 +1,4 @@
 #include <Core/Settings.h>
-#include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -224,37 +222,9 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
 namespace
 {
 
-/// Returns `sumMap([multiIf(NOT isZeroOrNull(condition_1), 1, NOT isZeroOrNull(condition_2), 2, ..., 0)], [_row_exists])` that
-/// counts the rows deleted by each `DELETE` command the same way as `MutationsInterpreter`: a row is attributed to the first
-/// command that deletes it. The result maps the 1-based index of a command to its count, and the commands that delete no rows are omitted.
-ASTPtr makeDeletedRowsByCommandsExpression(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
-{
-    auto multi_if = makeASTFunction("multiIf");
-    for (size_t i = 0; i < commands.size(); ++i)
-    {
-        auto alter = commands[i].ast();
-        auto condition = getPartitionAndPredicateExpressionForMutationCommand(alter.get(), storage, context);
-        if (!condition)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "A DELETE mutation command has no condition");
-
-        multi_if->arguments->children.push_back(makeASTFunction("not", makeASTFunction("isZeroOrNull", std::move(condition))));
-        multi_if->arguments->children.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(i + 1)));
-    }
-    multi_if->arguments->children.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(0)));
-
-    auto keys = makeASTFunction("array", std::move(multi_if));
-    auto values = makeASTFunction("array", make_intrusive<ASTIdentifier>(RowExistsColumn::name));
-    return makeASTFunction("sumMap", std::move(keys), std::move(values));
-}
-
-/// Builds `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...`, or with `count_deleted_rows_by_commands`,
-/// the same query that selects only the expression of `makeDeletedRowsByCommandsExpression` instead of `count()`.
-QueryTreeNodePtr prepareQueryAffectedQueryTree(
-    const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context, bool count_deleted_rows_by_commands = false)
+QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
 {
     auto ast = prepareQueryAffectedAST(commands, storage, context);
-    if (count_deleted_rows_by_commands)
-        ast->as<ASTSelectQuery &>().select()->children = {makeDeletedRowsByCommandsExpression(commands, storage, context)};
     auto query_tree = buildQueryTree(ast, context);
 
     auto & query_node = query_tree->as<QueryNode &>();
@@ -265,53 +235,6 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(
     query_tree_pass_manager.run(query_tree);
 
     return query_tree;
-}
-
-/// Executes a query built by `prepareQueryAffectedQueryTree` and returns its block of one row, or an empty block if the query
-/// returned no rows. `expression_name` is the selected expression, for the error message.
-Block executeQueryAffected(
-    const QueryTreeNodePtr & select_query_tree,
-    ContextPtr context,
-    const std::function<void(const Progress & value)> & check_operation_is_not_cancelled,
-    const std::function<void()> & on_exception,
-    std::string_view expression_name)
-{
-    InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits());
-    BlockIO io = interpreter.execute();
-
-    PullingAsyncPipelineExecutor executor(io.pipeline);
-    io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
-    /// It's actually not a progress callback, but a cancellation check.
-    io.pipeline.setProgressCallback(check_operation_is_not_cancelled);
-    executor.setExceptionCallback(on_exception);
-    /// Read progress is reported only by sources, so also poll the check while the pipeline works without reading.
-    executor.setCancelCallback(
-        [&executor, &check_operation_is_not_cancelled]
-        {
-            try
-            {
-                check_operation_is_not_cancelled(Progress{});
-            }
-            catch (...)
-            {
-                /// Stop and join the pipeline here: `cancel` rethrows the pipeline's pending exception, which the destructor would log.
-                executor.cancel();
-                throw;
-            }
-            return false;
-        },
-        std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
-
-    Block block;
-    while (block.rows() == 0 && executor.pull(block));
-
-    if (block.rows() && block.rows() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} expression returned {} rows, not 1", expression_name, block.rows());
-
-    Block tmp_block;
-    while (executor.pull(tmp_block));
-
-    return block;
 }
 
 NameSet getColumnsRequiredToRecalculateTTL(const StorageInMemoryMetadata & metadata)
@@ -438,9 +361,42 @@ IsStorageTouched isStorageTouchedByMutations(
         return no_rows;
 
     auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage_from_part, context);
-    Block block = executeQueryAffected(select_query_tree, context, check_operation_is_not_cancelled, on_exception, "count()");
+    InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits());
+    BlockIO io = interpreter.execute();
+
+    PullingAsyncPipelineExecutor executor(io.pipeline);
+    io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
+    /// It's actually not a progress callback, but a cancellation check.
+    io.pipeline.setProgressCallback(check_operation_is_not_cancelled);
+    executor.setExceptionCallback(std::move(on_exception));
+    /// Read progress is reported only by sources, so also poll the check while the pipeline works without reading.
+    executor.setCancelCallback(
+        [&executor, &check_operation_is_not_cancelled]
+        {
+            try
+            {
+                check_operation_is_not_cancelled(Progress{});
+            }
+            catch (...)
+            {
+                /// Stop and join the pipeline here: `cancel` rethrows the pipeline's pending exception, which the destructor would log.
+                executor.cancel();
+                throw;
+            }
+            return false;
+        },
+        std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
+
+    Block block;
+    while (block.rows() == 0 && executor.pull(block));
+
     if (!block.rows())
         return no_rows;
+    if (block.rows() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "count() expression returned {} rows, not 1", block.rows());
+
+    Block tmp_block;
+    while (executor.pull(tmp_block));
 
     auto count = (*block.getByName("count()").column)[0].safeGet<UInt64>();
     ProfileEvents::increment(ProfileEvents::MutationAffectedRowsUpperBound, count);
@@ -452,66 +408,48 @@ IsStorageTouched isStorageTouchedByMutations(
 }
 
 std::vector<UInt64> countDeletedRowsByCommands(
-    MergeTreeData::DataPartPtr source_part,
-    MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
-    const std::vector<MutationCommand> & commands,
-    bool has_lightweight_delete,
-    ContextPtr context,
-    std::function<void(const Progress & value)> check_operation_is_not_cancelled,
-    std::function<void()> on_exception)
+    const MergeTreeData::DataPartPtr & source_part, const std::vector<MutationCommand> & commands, bool has_lightweight_delete)
 {
     chassert(std::ranges::all_of(commands, [](const auto & command) { return command.type == MutationCommand::DELETE; }), "Only DELETE commands can be counted");
 
+    /// The rows already deleted by a lightweight delete are not known without reading the part, so they are not counted.
     std::vector<UInt64> deleted_rows_by_command(commands.size(), 0);
-    if (commands.empty())
+    if (commands.empty() || has_lightweight_delete)
         return deleted_rows_by_command;
 
-    auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part, mutations_snapshot);
-
-    /// Without a lightweight delete, all rows of the part exist, so the rows are counted without reading the part: one command deletes
-    /// all of them, and so does the first of several commands whose conditions are all constant. Otherwise counting would need to read
-    /// the part, so the rows of the part are not counted, and all counts are 0.
-    if (!has_lightweight_delete)
+    if (commands.size() == 1)
     {
-        if (commands.size() == 1)
-        {
-            deleted_rows_by_command[0] = source_part->rows_count;
-            return deleted_rows_by_command;
-        }
-
-        std::optional<size_t> first_deleting_command;
-        for (size_t i = 0; i < commands.size(); ++i)
-        {
-            auto condition = getPartitionAndPredicateExpressionForMutationCommand(commands[i].ast().get(), storage_from_part, context);
-            if (!condition || !IdentifiersCollector::collect(condition).empty())
-                return std::vector<UInt64>(commands.size(), 0);
-
-            auto deletes_rows = makeASTFunction("not", makeASTFunction("isZeroOrNull", std::move(condition)));
-            if (!first_deleting_command && evaluateConstantExpressionAsColumn(deletes_rows, context).getUInt())
-                first_deleting_command = i;
-        }
-
-        if (first_deleting_command)
-            deleted_rows_by_command[*first_deleting_command] = source_part->rows_count;
+        deleted_rows_by_command[0] = source_part->rows_count;
         return deleted_rows_by_command;
     }
 
-    /// With a lightweight delete, the rows already deleted must not be counted, so the rows of the part are read with the
-    /// lightweight delete mask, and the rows deleted by each command are counted in one query.
-    auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage_from_part, context, /*count_deleted_rows_by_commands=*/ true);
-    Block block = executeQueryAffected(select_query_tree, context, check_operation_is_not_cancelled, on_exception, "sumMap");
-    if (!block.rows())
-        return deleted_rows_by_command;
-
-    const auto deleted_rows_map = (*block.getByPosition(0).column)[0].safeGet<Tuple>();
-    const auto & command_indices = deleted_rows_map[0].safeGet<Array>();
-    const auto & deleted_rows = deleted_rows_map[1].safeGet<Array>();
-    for (size_t i = 0; i < command_indices.size(); ++i)
+    /// With several commands, the rows are counted only if every condition is a literal, e.g. `WHERE 1` or `WHERE 0`: the first true
+    /// one deletes all rows. The conditions are not evaluated, so that counting cannot fail the mutation.
+    std::optional<size_t> first_deleting_command;
+    for (size_t i = 0; i < commands.size(); ++i)
     {
-        const auto command_index = command_indices[i].safeGet<UInt64>();
-        if (command_index == 0 || command_index > commands.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected index {} of a DELETE command, there are {} commands", command_index, commands.size());
-        deleted_rows_by_command[command_index - 1] = deleted_rows[i].safeGet<UInt64>();
+        const auto alter = commands[i].ast();
+        const auto * literal = (alter->partition || alter->partitions) ? nullptr : typeid_cast<const ASTLiteral *>(alter->predicate);
+        if (!literal)
+            return deleted_rows_by_command;
+
+        /// These are the types a literal condition of `DELETE` can have: an integer literal is `UInt64` (`Int64` if negative),
+        /// `true` and `false` are `Bool`, `NULL` is `Null`, and a fractional literal, `nan`, `inf` or an integer out of the 64-bit range is
+        /// `Float64`. A row is deleted where `isZeroOrNull` of the condition is 0, so `NULL` deletes no row and `nan` deletes all rows.
+        /// Any other type is not a valid condition, and the mutation fails before it gets here; it is not counted, to be safe.
+        const Field & value = literal->value;
+        switch (value.getType())
+        {
+            case Field::Types::Null: break;
+            case Field::Types::UInt64: if (value.safeGet<UInt64>() != 0) first_deleting_command = i; break;
+            case Field::Types::Int64: if (value.safeGet<Int64>() != 0) first_deleting_command = i; break;
+            case Field::Types::Float64: if (value.safeGet<Float64>() != 0) first_deleting_command = i; break;
+            case Field::Types::Bool: if (value.safeGet<bool>()) first_deleting_command = i; break;
+            default: return deleted_rows_by_command;
+        }
+    }
+    if (first_deleting_command) {
+        deleted_rows_by_command[*first_deleting_command] = source_part->rows_count;
     }
     return deleted_rows_by_command;
 }

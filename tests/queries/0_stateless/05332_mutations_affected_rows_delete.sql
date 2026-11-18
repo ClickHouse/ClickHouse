@@ -190,9 +190,9 @@ SYSTEM FLUSH LOGS part_log;
 SELECT 'empty part', sum(ProfileEvents['MutationCreatedEmptyParts']) FROM system.part_log WHERE event_date >= yesterday() AND database = currentDatabase() AND table = 't_all_rows_lightweight' AND event_type = 'MutatePart';
 DROP TABLE t_all_rows_lightweight;
 
--- 17. All rows of a part with a lightweight delete are deleted by several commands whose conditions cover the whole part by the
--- primary key: the part is replaced by an empty one, the rows are counted for the first command that deletes them, and the rows
--- deleted by the lightweight delete are not counted again
+-- 17. All rows of a part with a lightweight delete are deleted by several commands: the part is replaced by an empty one without
+-- reading it. A known limitation: the rows left by the lightweight delete are not known without reading the part, so the rows of the
+-- part are not counted, and the commands report 0
 SELECT '-- lightweight by key';
 DROP TABLE IF EXISTS t_all_rows_lightweight_key;
 CREATE TABLE t_all_rows_lightweight_key (id UInt64) ENGINE = MergeTree ORDER BY id;
@@ -218,8 +218,8 @@ ALTER TABLE t_same_condition DELETE WHERE 0 SETTINGS mutations_sync = 1;
 SELECT command, affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_same_condition' ORDER BY toUInt64(extract(mutation_id, '\\d+'));
 DROP TABLE t_same_condition;
 
--- 19. Nondeterministic conditions that delete all rows of the part: the rows are counted in the evaluation that deletes them,
--- so the counts add up to the rows of the part and none exceeds them
+-- 19. Nondeterministic conditions that delete all rows of the part together: the part is replaced by an empty one, and the conditions
+-- are not literals, so the rows are not counted (a known limitation), and no count exceeds the rows of the part
 SELECT '-- nondeterministic';
 DROP TABLE IF EXISTS t_nondeterministic;
 CREATE TABLE t_nondeterministic (id UInt64) ENGINE = MergeTree ORDER BY id;
@@ -228,7 +228,8 @@ ALTER TABLE t_nondeterministic DELETE WHERE rand() % 2 = 0, DELETE WHERE rand() 
 SELECT sum(affected_rows), max(affected_rows) <= 2 FROM system.mutations WHERE database = currentDatabase() AND table = 't_nondeterministic';
 DROP TABLE t_nondeterministic;
 
--- 20. A condition with `exists` is a subquery, so it is treated as nondeterministic: the rows are counted in the evaluation that deletes them
+-- 20. A condition with `exists` and another condition delete all rows of the part together: the mutations complete, and the conditions
+-- are not literals, so the rows are not counted (a known limitation)
 SELECT '-- subquery exists';
 DROP TABLE IF EXISTS t_exists;
 CREATE TABLE t_exists (id UInt64) ENGINE = MergeTree ORDER BY id;

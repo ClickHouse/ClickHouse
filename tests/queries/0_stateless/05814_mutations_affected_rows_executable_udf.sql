@@ -27,7 +27,8 @@ SELECT count() FROM t_udf;
 SELECT command, affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_udf';
 DROP TABLE t_udf;
 
--- The UDF is nondeterministic, so the counts come from the one evaluation that deletes the rows.
+-- Several commands that delete all rows together: the part is replaced by an empty one, and the conditions are not literals,
+-- so the rows are not counted (a known limitation), but the mutations complete.
 SELECT '-- delete all rows together';
 CREATE TABLE t_udf (id UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_udf SELECT number FROM numbers(10);

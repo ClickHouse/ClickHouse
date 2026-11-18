@@ -53,8 +53,8 @@ empty part	1
 empty part	0
 -- lightweight by key
 (UPDATE _row_exists = 0 WHERE id < 5)	5
-(DELETE WHERE id < 7)	2
-(DELETE WHERE id >= 0)	3
+(DELETE WHERE id < 7)	0
+(DELETE WHERE id >= 0)	0
 empty part	1
 -- same condition
 (DELETE WHERE id < 3)	3
@@ -62,10 +62,10 @@ empty part	1
 (DELETE WHERE id = 5)	1
 (DELETE WHERE 0)	0
 -- nondeterministic
-2	1
+0	1
 -- subquery exists
-(DELETE WHERE id < 3)	3
-(DELETE WHERE exists((SELECT * FROM system.one)))	7
+(DELETE WHERE id < 3)	0
+(DELETE WHERE exists((SELECT * FROM system.one)))	0
 (DELETE WHERE 0)	0
 0
 -- non-key conditions

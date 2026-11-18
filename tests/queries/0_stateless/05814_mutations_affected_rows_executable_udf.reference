@@ -6,8 +6,8 @@
 (DELETE WHERE test_function(id, 1) > 0)	10
 -- delete all rows together
 0
-(DELETE WHERE id < 3)	3
-(DELETE WHERE test_function(id, 1) > 0)	7
+(DELETE WHERE id < 3)	0
+(DELETE WHERE test_function(id, 1) > 0)	0
 (DELETE WHERE 0)	0
 -- update some rows
 48
