@@ -1423,6 +1423,36 @@ UInt64 countRowsMissingColumn(const MergeTreeDataPartsVector & parts, const Stri
     return missing_rows;
 }
 
+/// The bytes the merge writes for `column_name` beyond what the source parts store for it, when a part stores
+/// the column under a different type than `output_type` (a metadata-only `ALTER`, such as adding an element to a
+/// named `Tuple` with `allow_metadata_only_named_tuple_alter`, or widening a scalar type). The reader converts
+/// such a part's rows to the output type (`IMergeTreeReader::performRequiredConversions`), and the conversion
+/// can synthesize data no source part stores - the type default of a new `Tuple` element - so the stored bytes of
+/// the part do not bound what the writer emits for its rows. For a fixed-size output type the growth is exactly
+/// bounded: every row becomes one value of the output type, and the part already accounts for its own value size
+/// when its type is fixed-size as well. A variable-size output type is not priced here: the bytes of its
+/// synthesized defaults depend on the type (an empty `String` element is one length byte), and its streams stay
+/// priced at their eager write buffers with the growth left to the reactive tracker, as for the variable-size
+/// defaults of missing columns.
+UInt64 countBytesGrownByTypeChange(const MergeTreeDataPartsVector & parts, const String & column_name, const IDataType & output_type)
+{
+    if (!output_type.haveMaximumSizeOfValue())
+        return 0;
+    const UInt64 output_value_size = output_type.getMaximumSizeOfValueInMemory();
+    UInt64 grown_bytes = 0;
+    for (const auto & part : parts)
+    {
+        const auto part_column = part->tryGetColumn(column_name);
+        if (!part_column || part_column->type->equals(output_type))
+            continue;
+        const UInt64 part_value_size
+            = part_column->type->haveMaximumSizeOfValue() ? part_column->type->getMaximumSizeOfValueInMemory() : 0;
+        if (output_value_size > part_value_size)
+            grown_bytes = saturatingAdd(grown_bytes, saturatingStreamsTimesBuffer(part->rows_count, output_value_size - part_value_size));
+    }
+    return grown_bytes;
+}
+
 /// The rows of the source parts that store `column_name` with sparse serialization, when the merged part
 /// will store it densely. A sparse column stores only the offsets and the non-default values, so its
 /// on-disk uncompressed size (which feeds the input-volume bounds) does not bound what a dense writer emits
@@ -2212,6 +2242,12 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 += countRowsMissingColumn(future_part.parts, part_source_name(column.name)) * column.type->getMaximumSizeOfValueInMemory();
     }
 
+    /// The same holds for the data a type conversion synthesizes for the rows of parts that store a column under
+    /// an older type: a named `Tuple` that gained an element through a metadata-only `ALTER` writes the new
+    /// element's defaults for every such row, while the part stores none of them (see countBytesGrownByTypeChange).
+    for (const auto & column : output_columns)
+        default_filled_value_bytes = saturatingAdd(
+            default_filled_value_bytes, countBytesGrownByTypeChange(future_part.parts, part_source_name(column.name), *column.type));
 
     /// A column stored sparsely by a source part but densely by the merged part (for example, after
     /// `ratio_of_defaults_for_sparse_serialization` was raised) writes a full value for every default row,
@@ -3372,6 +3408,21 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                         projection_uncompressed_bytes += missing_rows * column->type->getMaximumSizeOfValueInMemory();
                 }
 
+                /// A required column that a source part stores under an older type is converted by the reader
+                /// before the projection is calculated, and the conversion can synthesize data the part does not
+                /// store, the same way as for the base part (see countBytesGrownByTypeChange).
+                for (const auto & required_column : required_columns)
+                {
+                    auto column = columns_description.tryGetColumn(
+                        GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), required_column);
+                    if (!column)
+                        column = output_columns.tryGetByName(required_column);
+                    if (!column)
+                        continue;
+                    projection_uncompressed_bytes = saturatingAdd(
+                        projection_uncompressed_bytes,
+                        countBytesGrownByTypeChange(future_part.parts, part_source_name(required_column), *column->type));
+                }
 
                 /// A required column stored sparsely by a source part can be written densely by the rebuilt
                 /// projection: `writeProjectionPartImpl` chooses the serialization kind with the projection's own
