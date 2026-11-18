@@ -619,6 +619,10 @@ TEST(AIQueryValidation, RejectsExternalAccess)
     EXPECT_FALSE(isAllowed("EXPLAIN SELECT * FROM file('x', 'CSV')"));
     /// Schema inference of DESCRIBE opens the resource.
     EXPECT_FALSE(isAllowed("DESCRIBE file('x', 'CSV')"));
+    /// `DESCRIBE` resolves a parameterized view before a table function of the same name.
+    EXPECT_FALSE(isAllowed("DESCRIBE numbers(p = 'x')"));
+    EXPECT_FALSE(isAllowed("DESCRIBE TABLE numbers(10)"));
+    EXPECT_TRUE(isAllowed("DESCRIBE (SELECT * FROM numbers(10))"));
 
     /// The scalar functions reading external resources.
     EXPECT_FALSE(isAllowed("SELECT file('/etc/passwd')"));

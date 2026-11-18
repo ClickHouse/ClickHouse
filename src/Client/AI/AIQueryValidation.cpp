@@ -1112,6 +1112,21 @@ void validateReadOnlyQueryForAIAgent(const IAST & ast, bool allow_schema_access)
                 "Use the run_query tool for this query");
     }
 
+    /// `DESCRIBE f(...)` resolves `f` differently from a `SELECT`: a parameterized view of the
+    /// current database named like an allowed table function (`CREATE VIEW numbers AS SELECT
+    /// file({p:String})`) takes precedence over the function, see `InterpreterDescribeQuery`. The
+    /// name cannot be told to be the builtin before execution, and the view it may resolve to is not
+    /// collected for the engine check, so every table function in `DESCRIBE` needs confirmation.
+    /// `DESCRIBE (SELECT ... FROM f(...))` analyzes the subquery like a `SELECT`, and stays allowed.
+    if (const auto * describe = ast.as<ASTDescribeQuery>(); describe && describe->table_expression)
+    {
+        if (const auto * table_expression = describe->table_expression->as<ASTTableExpression>(); table_expression && table_expression->table_function)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "DESCRIBE of a table function may resolve its name to a parameterized view of the same name, "
+                "so it is not allowed for the read-only tool. Use SELECT ... LIMIT 0, or the run_query tool for this query");
+    }
+
     if (const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(&ast); with_output && with_output->out_file)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
