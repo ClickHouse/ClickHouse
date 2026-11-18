@@ -17,6 +17,8 @@ SELECT CAST(tuple(arrayElementOrNull([tuple(materialize('5'))], number % 2 + 1))
 SELECT CAST([arrayElementOrNull([tuple(materialize('5'))], number % 2 + 1)], 'Array(Nullable(Tuple(Int32)))') FROM numbers(3);
 SELECT CAST(arrayElementOrNull([tuple(materialize(CAST('a', 'Enum8(\'a\' = 1)')))], number % 2 + 1), 'Nullable(String)') FROM numbers(3);
 SELECT accurateCastOrNull(CAST(arrayElementOrNull([tuple(materialize('a'::Enum8('a' = 1)))], 2) AS Nullable(Tuple(Nullable(Enum8('a' = 1))))), 'Nullable(Tuple(LowCardinality(String)))');
+SELECT accurateCastOrNull(arrayElementOrNull([tuple(materialize('a'::Enum8('a' = 1)))], number % 2 + 1), 'Nullable(String)') FROM numbers(3);
+SELECT accurateCastOrNull(arrayElementOrNull([tuple(materialize('5')), tuple(materialize('x'))], number % 3 + 1), 'Nullable(Tuple(Int32))') FROM numbers(3);
 
 CREATE TABLE dst (k UInt8, x Nullable(Tuple(s Int32))) ENGINE = Memory;
 INSERT INTO dst SELECT k, x FROM src;
