@@ -14,7 +14,7 @@
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/StorageFactory.h>
@@ -104,14 +104,26 @@ bool loadsSettingsFromNamedCollection(std::string_view engine_name)
         || engine_name == "PostgreSQL" || engine_name == "YTsaurus";
 }
 
-/// The named collection a table's engine arguments start with, and the overrides the arguments give as
-/// `key = literal`. Nothing is evaluated: an override that is an expression is left out.
+/// The named collection a table's engine arguments start with, and the overrides the arguments give.
 struct NamedCollectionOfTable
 {
     String name;
     NamedCollectionPtr collection;
     SettingsChanges overrides;
 };
+
+/// A key or a value of an override in the stored definition, as the creator reads it: an identifier stands for its name,
+/// and a literal for its value as text, which the creator puts into the collection. The creator stores an expression
+/// there as the literal of its value, so nothing is evaluated; an expression is left out, which a key can still be when
+/// it is not spelled as a setting's name, or when the definition was written before keys were stored that way.
+std::optional<String> overrideKeyOrValue(const ASTPtr & ast)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+        return identifier->name();
+    if (const auto * literal = ast->as<ASTLiteral>())
+        return fieldToString(literal->value);
+    return {};
+}
 
 std::optional<NamedCollectionOfTable> namedCollectionOf(const ASTFunction & engine)
 {
@@ -134,10 +146,14 @@ std::optional<NamedCollectionOfTable> namedCollectionOf(const ASTFunction & engi
         const auto * function = arguments[i]->as<ASTFunction>();
         if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2)
             continue;
-        const auto key = tryGetIdentifierName(function->arguments->children[0]);
-        const auto * literal = function->arguments->children[1]->as<ASTLiteral>();
-        if (key && literal)
-            result.overrides.emplace_back(*key, literal->value);
+        /// The creator requires a key that is a string.
+        const auto * key_literal = function->arguments->children[0]->as<ASTLiteral>();
+        if (key_literal && key_literal->value.getType() != Field::Types::String)
+            continue;
+        const auto key = overrideKeyOrValue(function->arguments->children[0]);
+        const auto value = overrideKeyOrValue(function->arguments->children[1]);
+        if (key && value)
+            result.overrides.emplace_back(*key, Field(*value));
     }
     return result;
 }
@@ -224,7 +240,7 @@ void StorageSystemTableSettings::fillData(
         const String table_name{filtered_table_names->getDataAt(i)};
 
         /// A view, a dictionary and a table created `AS` a table function have no engine definition of their own.
-        const auto create_ast = databases.at(database_name)->tryGetCreateTableQuery(table_name, context);
+        auto create_ast = databases.at(database_name)->tryGetCreateTableQuery(table_name, context);
         const auto * create = create_ast ? create_ast->as<ASTCreateQuery>() : nullptr;
         if (!create || !create->storage || !create->storage->engine)
             continue;
@@ -232,6 +248,17 @@ void StorageSystemTableSettings::fillData(
         const auto engine = storages.find(create->storage->engine->name);
         if (engine == storages.end() || !engine->second.features.enumerate_engine_settings_fn)
             continue;
+
+        /// The definition as the creator reads it when the table is attached.
+        if (const auto & normalize = engine->second.features.normalize_stored_definition_fn)
+        {
+            create_ast = create_ast->clone();
+            auto & normalized = create_ast->as<ASTCreateQuery &>();
+            normalize(normalized, context);
+            create = &normalized;
+            if (!create->storage || !create->storage->engine)
+                continue;
+        }
 
         /// The creator's order: the named collection and its overrides in the engine arguments, or else the settings
         /// the engine arguments give, such as those of `Kafka`; then the `SETTINGS` clause.

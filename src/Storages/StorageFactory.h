@@ -54,6 +54,10 @@ public:
     /// The settings a table's engine arguments give, for an engine whose creator takes settings from them: the
     /// changes the stored arguments make, which apply before the `SETTINGS` clause.
     using SettingsFromEngineArgumentsFn = SettingsChanges(const ASTs & engine_args);
+    /// Normalizes the stored definition of an existing table as the engine's creator does when the table is attached, for an
+    /// engine that converts definitions of older versions then, so that `system.table_settings` reads the settings the table
+    /// uses. It reads nothing outside the definition.
+    using NormalizeStoredDefinitionFn = void(ASTCreateQuery & create, const ContextPtr & context);
     /// The grants needed by settings that make a table send its data to another place, e.g. the move destination of a queue.
     /// Returns nothing if `changes` set no such place. It reads only the changes, so the table need not exist on this host.
     using GetExportAccessFn = AccessRightsElements(const SettingsChanges & changes);
@@ -114,6 +118,7 @@ public:
         EnumerateEngineSettingsFn * enumerate_engine_settings_fn = nullptr;
         IsInheritedSettingFn * is_inherited_setting_fn = nullptr;
         SettingsFromEngineArgumentsFn * settings_from_engine_arguments_fn = nullptr;
+        NormalizeStoredDefinitionFn * normalize_stored_definition_fn = nullptr;
         GetExportAccessFn * get_export_access_fn = nullptr;
 
         /// Static over-approximation of IStorage::storesDataOnDisk(): set if the engine can ever store data locally.
@@ -166,6 +171,7 @@ public:
         .enumerate_engine_settings_fn = nullptr,
         .is_inherited_setting_fn = nullptr,
         .settings_from_engine_arguments_fn = nullptr,
+        .normalize_stored_definition_fn = nullptr,
         .get_export_access_fn = nullptr,
         .stores_data_on_disk = false,
         .supports_temporary = false,
