@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeString.h>
@@ -579,14 +580,13 @@ bool functionIgnoresFixedStringPadding(const String & function_name)
 /// A key the row does not have reads as the default of the map value type, for an `Enum` its first value.
 /// Only (in)equality is checked against that value: any other predicate, e.g. `LIKE`, may hold on it.
 bool missingKeyEnumValueBreaksIndex(
-    const String & function_name, const RPNBuilderTreeNode & map_element, const Field & constant, const DataTypePtr & constant_type)
+    const String & function_name, const DataTypePtr & map_value_type, const Field & constant, const DataTypePtr & constant_type)
 {
-    const DataTypePtr & element_type = map_element.getDAGNode()->result_type;
-    if (!isEnum(element_type))
+    if (!isEnum(map_value_type))
         return false;
     if (function_name != "equals" && function_name != "notEquals")
         return true;
-    return tryConvertFieldToType(constant, *element_type, constant_type.get(), {}, /*strict=*/ true) == element_type->getDefault();
+    return tryConvertFieldToType(constant, *map_value_type, constant_type.get(), {}, /*strict=*/ true) == map_value_type->getDefault();
 }
 
 }
@@ -657,10 +657,12 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
               * We cannot skip keys that does not exist in map if comparison is with default type value because
               * that way we skip necessary granules where map key does not exist.
               */
-            if (const_value == value_type->getDefault() || missingKeyEnumValueBreaksIndex(function_name, key_node, const_value, value_type))
+            auto first_argument = key_function_node.getArgumentAt(0);
+            const auto * map_type = typeid_cast<const DataTypeMap *>(first_argument.getDAGNode()->result_type.get());
+            if (const_value == value_type->getDefault()
+                || (map_type && missingKeyEnumValueBreaksIndex(function_name, map_type->getValueType(), const_value, value_type)))
                 return false;
 
-            auto first_argument = key_function_node.getArgumentAt(0);
             const auto map_column_name = first_argument.getColumnName();
             if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))
             {
@@ -703,7 +705,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
             /// Same as arrayElement: skip when comparing with default value because
             /// the subcolumn returns default for keys that don't exist in the map.
-            if (const_value == value_type->getDefault() || missingKeyEnumValueBreaksIndex(function_name, key_node, const_value, value_type))
+            if (const_value == value_type->getDefault()
+                || missingKeyEnumValueBreaksIndex(function_name, key_node.getDAGNode()->result_type, const_value, value_type))
                 return false;
 
             if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))

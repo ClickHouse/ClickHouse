@@ -118,6 +118,8 @@ SELECT groupArray(id) FROM t_enum_elem_idx WHERE mt['k'] = tuple('x') SETTINGS o
 SELECT groupArray(id) FROM t_enum_elem_idx WHERE mt['k'] = tuple('x') SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0;
 SELECT groupArray(id) FROM t_enum_elem_idx WHERE m['k'] LIKE 'x%' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0;
 SELECT groupArray(id) FROM t_enum_elem_idx WHERE m['k'] LIKE 'x%' SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0;
+SELECT groupArray(id) FROM t_enum_elem_idx WHERE m[toNullable('k')] = 'x' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0;
+SELECT groupArray(id) FROM t_enum_elem_idx WHERE m[toNullable('k')] LIKE 'x%' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0;
 SELECT groupArray(id) FROM t_enum_elem_idx WHERE m['k'] = 'y' SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, force_data_skipping_indices = 'i_tbf';
 SELECT groupArray(id) FROM t_enum_elem_idx WHERE m['k'] = 'y' SETTINGS optimize_functions_to_subcolumns = 1, use_query_condition_cache = 0, force_data_skipping_indices = 'i_tbf';
 SELECT groupArray(id) FROM t_enum_elem_idx WHERE mt['k'] = tuple('y') SETTINGS optimize_functions_to_subcolumns = 0, use_query_condition_cache = 0, force_data_skipping_indices = 'i_bf';
