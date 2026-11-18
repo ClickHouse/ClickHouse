@@ -104,8 +104,8 @@ steps_throwing=$(read_steps "$query_id_throwing" "
 # a step per condition that read its own key would deserialize the whole Map four times.
 steps_read_ahead=$(read_steps "$query_id_read_ahead" "
   SELECT count() FROM t_steps_group
-  PREWHERE NOT startsWith(tags['k0'], 'z') AND NOT startsWith(tags['k1'], 'z')
-       AND NOT startsWith(tags['k2'], 'z') AND NOT startsWith(tags['k3'], 'z')
+  PREWHERE toUInt64(tags['k0']) < 1000000 AND toUInt64(tags['k1']) < 1000000
+       AND toUInt64(tags['k2']) < 1000000 AND toUInt64(tags['k3']) < 1000000
   FORMAT Null
 ")
 

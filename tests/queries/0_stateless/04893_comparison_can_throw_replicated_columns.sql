@@ -1,7 +1,8 @@
 -- Comparisons over lazily replicated columns.
 -- Whether the rows that the query does not reference are removed from a replicated column before a
 -- function is executed depends on `canThrow` of that function, and for comparisons it depends on the
--- argument types: comparing equal decimal scales cannot throw, comparing different ones can.
+-- argument types: comparing decimals cannot throw, whatever their scales, comparing `DateTime64` of different
+-- scales can.
 -- The results must be the same either way.
 
 SET enable_lazy_columns_replication = 1;
@@ -36,8 +37,8 @@ SELECT dec20 = dec20, s = 'a', s = 'b', d = d, dt64_3 = dt64_3, u = u
 FROM t_cmp_probe JOIN t_cmp_build USING (k)
 ORDER BY ALL;
 
--- Comparisons that can throw: different decimal scales, different `DateTime64` scales,
--- a date compared to a string.
+-- Different decimal scales, compared exactly when the rescale overflows, and comparisons that can throw:
+-- different `DateTime64` scales, a date compared to a string.
 SELECT dec20 = dec30, dec20 = toDecimal128(2, 30), dt64_3 = dt64_6, d = '2020-01-01', d = '2021-01-01'
 FROM t_cmp_probe JOIN t_cmp_build USING (k)
 ORDER BY ALL;
@@ -52,6 +53,19 @@ SELECT isNotDistinctFrom(dec20, dec20), isNotDistinctFrom(dec20, dec30)
 FROM t_cmp_probe JOIN t_cmp_build USING (k)
 ORDER BY ALL;
 
+-- A `Decimal128` compared with a `UInt128` can throw: on the unreferenced row, the `UInt128` does not fit into `Int128`.
+-- The row with `k = 1` is joined twice, so that its 16-byte values are replicated lazily. The join is pinned so that
+-- both rows reach it on the probe side.
+DROP TABLE IF EXISTS t_cmp_probe_u128;
+CREATE TABLE t_cmp_probe_u128 (k UInt32, dec Decimal128(2), u UInt128) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_cmp_probe_u128 VALUES (1, 1, 1), (2, 1, 200000000000000000000000000000000000000);
+
+SELECT dec = u, dec < u
+FROM t_cmp_probe_u128 JOIN (SELECT toUInt32(1) AS k FROM numbers(2)) AS b USING (k)
+ORDER BY ALL
+SETTINGS decimal_check_overflow = 1, join_algorithm = 'hash', enable_join_runtime_filters = 0, query_plan_join_swap_table = 0,
+    query_plan_optimize_join_order_limit = 0;
+
 -- Both rows joined and replicated twice each, so the comparisons run on repeated values.
 INSERT INTO t_cmp_build VALUES (1), (2), (2);
 
@@ -61,3 +75,4 @@ ORDER BY ALL;
 
 DROP TABLE t_cmp_probe;
 DROP TABLE t_cmp_build;
+DROP TABLE t_cmp_probe_u128;
