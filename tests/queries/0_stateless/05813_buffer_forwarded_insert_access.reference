@@ -11,6 +11,10 @@ insert accepted:            OK
 buffered:                   1
 local shard selected:       OK
 written once allowed:       ['remote']
+## The local shard of a table created from a table function
+insert denied:              OK
+nothing buffered:           0
+written once allowed:       ['proxy']
 ## A materialized view on the destination writes with the rights of its definer
 written by the view:        ['mv']
 direct insert denied:       OK

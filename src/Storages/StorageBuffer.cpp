@@ -333,7 +333,8 @@ constexpr size_t max_forwarded_insert_depth = 16;
 /// Checks, without writing, the `INSERT` privileges of the user of `context` that a write into `table` checks as it
 /// writes: on the targets of the materialized views that depend on `table`, and hop by hop on every table the write is
 /// forwarded to (the target of an `Alias`, the destination of a `Buffer`, the target of a materialized view, the table of
-/// a local shard of a `Distributed`), and so on from each of them. A materialized view and what is behind it are checked
+/// a local shard of a `Distributed`, the storage behind a proxy such as a table created from a table function), and so
+/// on from each of them. A materialized view and what is behind it are checked
 /// with the rights of its SQL security, as its write is. A remote shard authorizes its part of the write itself. The
 /// caller checks `INSERT` on `table`.
 void checkForwardedInsertAccess(const StoragePtr & table, const ContextPtr & context, size_t depth = 0)
@@ -402,6 +403,10 @@ void checkForwardedInsertAccess(const StoragePtr & table, const ContextPtr & con
                 next = catalog.tryGetTable(
                     context->resolveStorageID(StorageID(distributed->getRemoteDatabaseName(), remote_table)), context);
         }
+    }
+    else if (const auto * proxy = dynamic_cast<const StorageProxy *>(table.get()))
+    {
+        next = proxy->getNested();
     }
 
     if (next)

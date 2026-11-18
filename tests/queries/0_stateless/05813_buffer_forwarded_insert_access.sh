@@ -86,6 +86,21 @@ ${CLICKHOUSE_CLIENT} --query "GRANT INSERT ON ${protected_db}.t TO ${shard_user}
 ${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE ${db}.dist_remote_buf"
 echo -n "written once allowed:       "; ${CLICKHOUSE_CLIENT} --query "SELECT groupArray(s) FROM ${protected_db}.t WHERE s IN ('remote', 'local')"
 
+echo "## The local shard of a table created from a table function"
+${CLICKHOUSE_CLIENT} --multiquery <<EOF
+CREATE TABLE ${db}.remote_t AS remote('127.0.0.1', ${protected_db}, t);
+CREATE TABLE ${db}.remote_buf (s String) ENGINE = Buffer(${db}, remote_t, 1, 3600, 3600, 1000000, 1000000, 1000000000, 1000000000);
+EOF
+echo -n "insert denied:              "
+denied run_user --query "INSERT INTO ${db}.remote_buf SETTINGS async_insert = 0 VALUES ('proxy')"
+echo -n "nothing buffered:           "
+${CLICKHOUSE_CLIENT} --query "SELECT total_rows FROM system.tables WHERE database = '${db}' AND name = 'remote_buf'"
+${CLICKHOUSE_CLIENT} --query "GRANT INSERT ON ${protected_db}.t TO ${user}"
+run_user --query "INSERT INTO ${db}.remote_buf SETTINGS async_insert = 0 VALUES ('proxy')"
+${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE ${db}.remote_buf"
+echo -n "written once allowed:       "; ${CLICKHOUSE_CLIENT} --query "SELECT groupArray(s) FROM ${protected_db}.t WHERE s = 'proxy'"
+${CLICKHOUSE_CLIENT} --query "REVOKE INSERT ON ${protected_db}.t FROM ${user}"
+
 echo "## A materialized view on the destination writes with the rights of its definer"
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
 CREATE TABLE ${db}.src_ok (s String) ENGINE = MergeTree ORDER BY s;
