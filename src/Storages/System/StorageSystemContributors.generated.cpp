@@ -1297,6 +1297,7 @@ const char * auto_contributors[] {
     "Sami Kerola",
     "Samuel Chou",
     "Samuel Colvin",
+    "Samuel Krempaský",
     "Samuel Warfield",
     "Samuele Guerrini",
     "San",

@@ -40,6 +40,7 @@ class ReadBuffer;
 
 /// Prepares a read buffer, that allows to read inlined data
 /// from ASTInsertQuert directly, and from tail buffer, if it exists.
-std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast);
+/// Throws for `INSERT ... FROM INFILE` in the server: the client reads the file, the server must not open the path.
+std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast, const ContextPtr & context);
 
 }
