@@ -3,6 +3,7 @@
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <Interpreters/ActionsDAGTraversal.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 
@@ -43,13 +44,12 @@ struct NodeInfo
 
 /// Returns the argument types of a function node, as expected by
 /// IFunctionBase::isSuitableForShortCircuitArgumentsExecution.
-/// Mirrors getDataTypesWithConstInfoFromNodes in ExpressionActions.cpp, which is file local there.
 DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawConstPtrs & nodes)
 {
     DataTypesWithConstInfo types;
     types.reserve(nodes.size());
     for (const auto & child : nodes)
-        types.push_back({child->result_type, child->column != nullptr});
+        types.push_back({child->result_type, child->column != nullptr, child->column.get()});
     return types;
 }
 
@@ -105,8 +105,8 @@ void fillRequiredColumns(
     /// delegates to it as well, through FunctionToExecutableFunctionAdaptor. It is imprecise in
     /// both directions: it reports true for merely expensive functions, and false for some
     /// functions that do throw while parsing row values (for example addDays(String, ...) via
-    /// FunctionDateOrDateTimeAddInterval). Use it to reproduce the existing step boundaries.
-    /// Splitting an alias needs the stricter IFunctionBase::canThrow contract below.
+    /// FunctionDateOrDateTimeAddInterval). Step 4 of `tryBuildPrewhereSteps` clears the flag with `prewhereConditionCannotThrow`.
+    /// Splitting an alias also checks the stricter `IFunctionBase::canThrow` contract below.
     if (!node_info.may_throw && node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
         && (node->function_base->isSuitableForShortCircuitArgumentsExecution(getArgumentTypesWithConstInfo(node->children))
             || node->function_base->isExpensive()))
@@ -158,10 +158,12 @@ void appendGroups(
         const bool crosses_dynamic_filter_boundary = i != 0
             && isDynamicRuntimePrewhereFilter(node) != isDynamicRuntimePrewhereFilter(groups.back().nodes.front());
 
-        if (same_columns && i != cache_prefix && !current.may_throw && !crosses_dynamic_filter_boundary)
+        const bool may_throw = current.may_throw && !prewhereConditionCannotThrow(node);
+
+        if (same_columns && i != cache_prefix && !may_throw && !crosses_dynamic_filter_boundary)
             groups.back().nodes.push_back(node);
         else
-            groups.push_back({{node}, current.may_throw});
+            groups.push_back({{node}, may_throw});
         if (i + 1 == cache_prefix)
             groups.back().ends_cache_prefix = true;
     }
@@ -492,6 +494,22 @@ bool isDynamicRuntimePrewhereFilter(const ActionsDAG::Node * node)
         return std::ranges::any_of(node->children, [](const auto * child) { return isDynamicRuntimePrewhereFilter(child); });
 
     return false;
+}
+
+bool prewhereConditionCannotThrow(const ActionsDAG::Node * condition)
+{
+    return allReachableNodes({condition}, [](const ActionsDAG::Node * node)
+    {
+        if (node->type == ActionsDAG::ActionType::ARRAY_JOIN || node->type == ActionsDAG::ActionType::PLACEHOLDER)
+            return false;
+
+        /// A function with a known constant result is not executed.
+        if (node->type != ActionsDAG::ActionType::FUNCTION || node->column)
+            return true;
+
+        return node->function_base && !node->function_base->isExpensive()
+            && !node->function_base->canThrow(getArgumentTypesWithConstInfo(node->children));
+    });
 }
 
 bool prewhereIsEntirelyQueryPredicate(const ActionsDAG & prewhere_actions, const String & filter_column_name)
