@@ -332,6 +332,27 @@ void ColumnNullable::insertManyFromNotNullable(const IColumn & src, size_t posit
         insertFromNotNullable(src, position);
 }
 
+void ColumnNullable::insertManyDefaults(size_t length)
+{
+    if (length == 0)
+        return;
+
+    /// Reserved first, so that filling the null map cannot throw.
+    reserve(size() + length);
+    auto & null_map_data = getNullMapData();
+    try
+    {
+        getNestedColumn().insertManyDefaults(length);
+    }
+    catch (...)
+    {
+        /// Keep the null map in sync with the rows the nested column appended before throwing.
+        null_map_data.resize_fill(getNestedColumn().size(), 1);
+        throw;
+    }
+    null_map_data.resize_fill(null_map_data.size() + length, 1);
+}
+
 void ColumnNullable::popBack(size_t n)
 {
     getNestedColumn().popBack(n);
@@ -1089,9 +1110,9 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
-void ColumnNullable::fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> *)
+void ColumnNullable::gatherFromRows(const RowPointers & rows, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> *)
 {
-    getNestedColumn().fillFromRowStorePtrs(removeNullable(type), row_store_ptrs, field_offset, field_size, begin, count, &getNullMapData());
+    getNestedColumn().gatherFromRows(rows, field_offset, field_size, begin, count, &getNullMapData());
 }
 
 void ColumnNullable::gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 *) const

@@ -97,6 +97,7 @@ public:
     bool isDefaultAt(size_t index) const override;
 
     bool hasOnlyTypeDefaults() const override;
+    ColumnPtr createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
 
     void insert(const Field & x) override;
 

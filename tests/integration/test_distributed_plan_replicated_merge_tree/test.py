@@ -26,7 +26,7 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, wait_condition
 
 pytestmark = pytest.mark.timeout(300)
 
@@ -839,3 +839,65 @@ def test_read_in_order_stops_early(started_cluster):
         f"read-in-order did not reduce the rows read in a distributed plan "
         f"(in order {in_order_rows}, scanning {scan_rows})"
     )
+
+
+def test_stopped_replica_is_not_a_worker(started_cluster):
+    """The cluster of a `Replicated` database knows which of its replicas are active. When it is the
+    worker cluster, a replica that is stopped but still registered must not get tasks: the query runs
+    on the other replicas. After its restart the replica gets tasks again."""
+    for node in NODES:
+        node.query(
+            "CREATE DATABASE workers_db "
+            "ENGINE = Replicated('/clickhouse/databases/workers_db', '{shard}', '{replica}')"
+        )
+
+    query = "SELECT count(), sum(id), sum(group_key) FROM big"
+    settings = f"{DISTRIBUTED_SETTINGS}, distributed_plan_worker_cluster = 'replicated_database'"
+    expected = INITIATOR.query(f"{query} SETTINGS make_distributed_plan = 0")
+    try:
+        assert INITIATOR.query(f"{query} SETTINGS {settings}") == expected
+
+        # The shutdown of `node3` waits for the idle keep-alive connections from the other nodes
+        # (up to `keep_alive_timeout`), so close them first.
+        for node in (node1, node2):
+            node.query("SYSTEM DROP CONNECTIONS CACHE")
+        node3.stop_clickhouse()
+        assert_eq_with_retry(
+            INITIATOR,
+            "SELECT count() FROM system.clusters WHERE cluster = 'workers_db' AND is_active = 0",
+            "1",
+        )
+
+        # A task sent to the stopped replica would fail the query. The initiator can use the
+        # liveness that it read before for a short time, so retry.
+        assert_eq_with_retry(
+            INITIATOR,
+            f"{query} SETTINGS {settings}",
+            expected,
+            retry_count=10,
+            ignore_error=True,
+        )
+
+        # The replica gets tasks again when it is active again.
+        node3.start_clickhouse()
+        assert_eq_with_retry(
+            INITIATOR,
+            "SELECT count() FROM system.clusters WHERE cluster = 'workers_db' AND is_active = 0",
+            "0",
+        )
+
+        def count_tasks_on_restarted_replica():
+            query_id = f"workers_after_restart_{uuid.uuid4().hex}"
+            assert INITIATOR.query(f"{query} SETTINGS {settings}", query_id=query_id) == expected
+            node3.query("SYSTEM FLUSH LOGS query_log")
+            return int(
+                node3.query(
+                    f"SELECT count() FROM system.query_log WHERE initial_query_id = '{query_id}' AND type = 'QueryFinish'"
+                )
+            )
+
+        wait_condition(count_tasks_on_restarted_replica, lambda count: count > 0, max_attempts=10, delay=0.5)
+    finally:
+        node3.start_clickhouse()
+        for node in NODES:
+            node.query("DROP DATABASE IF EXISTS workers_db SYNC")

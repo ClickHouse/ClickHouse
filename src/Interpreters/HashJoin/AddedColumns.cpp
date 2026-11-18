@@ -5,8 +5,7 @@ namespace DB
 {
 
 JoinOnKeyColumns::JoinOnKeyColumns(
-    const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_,
-    bool keep_lowcardinality)
+    const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, bool keep_lowcardinality)
     : key_names(key_names_)
     /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
     /// Exception: single-LowCardinality-column joins keep the dictionary so the key getter can use it.
@@ -17,7 +16,6 @@ JoinOnKeyColumns::JoinOnKeyColumns(
     , null_map(nullptr)
     , null_map_holder(extractNestedColumnsAndNullMap(key_columns, null_map))
     , join_mask_column(JoinCommon::getColumnAsMask(block.getSourceBlock(), cond_column_name))
-    , key_sizes(key_sizes_)
 {
 }
 
