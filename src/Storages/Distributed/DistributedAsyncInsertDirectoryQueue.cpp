@@ -18,6 +18,7 @@
 #include <Disks/IDisk.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/StringUtils.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
@@ -68,6 +69,11 @@ namespace DistributedSetting
     extern const DistributedSettingsMilliseconds background_insert_sleep_time_ms;
     extern const DistributedSettingsUInt64 background_insert_split_batch_on_failure;
     extern const DistributedSettingsBool fsync_directories;
+}
+
+namespace FailPoints
+{
+    extern const char distributed_async_insert_queue_pause_before_pool_cluster_lookup[];
 }
 
 namespace ErrorCodes
@@ -302,6 +308,9 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
 {
     const auto pool_factory = [&storage] (const Cluster::Address & address) -> ConnectionPoolPtr
     {
+        /// `getCluster` throws once the cluster has been dropped. A caller that has already published
+        /// the new addresses would then keep the old pool while believing the destination changed.
+        FailPointInjection::pauseFailPoint(FailPoints::distributed_async_insert_queue_pause_before_pool_cluster_lookup);
         const auto & cluster = storage.getCluster();
         const auto & shards_info = cluster->getShardsInfo();
         const auto & shards_addresses = cluster->getShardsAddresses();
