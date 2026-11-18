@@ -1,0 +1,57 @@
+-- Tags: no-debug, no-distributed-cache, no-azure-blob-storage, no-fasttest
+-- - no-fasttest - part_log is not flushed in the fast test
+-- - others - buffer sizes vary on those backends/builds (see 03770)
+-- Random settings limits: max_compress_block_size=(1048576,1048576); adaptive_write_buffer_initial_size=(16384,16384); min_columns_to_activate_adaptive_write_buffer=(1,1); min_bytes_for_wide_part=(0,0)
+
+-- Text index streams are per-file: with the setting off four text indexes allocate
+-- > 8 MiB of IO buffers for a tiny part; with the setting on (the default) - well under 1 MiB.
+-- Parts must stay consistent in both modes.
+
+{% for v in [0, 1] %}
+DROP TABLE IF EXISTS skip_indexes_adaptive_wb_{{ v }};
+
+CREATE TABLE skip_indexes_adaptive_wb_{{ v }}
+(
+    s1 Array(String),
+    s2 Array(String),
+    s3 Array(String),
+    s4 Array(String),
+    INDEX t1 s1 TYPE text(tokenizer = 'array') GRANULARITY 1000,
+    INDEX t2 s2 TYPE text(tokenizer = 'array') GRANULARITY 1000,
+    INDEX t3 s3 TYPE text(tokenizer = 'array') GRANULARITY 1000,
+    INDEX t4 s4 TYPE text(tokenizer = 'array') GRANULARITY 1000
+)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS use_adaptive_write_buffer_for_skip_indexes = {{ v }}, min_columns_to_activate_adaptive_write_buffer = 1, min_bytes_for_wide_part = 0;
+
+INSERT INTO skip_indexes_adaptive_wb_{{ v }}
+SELECT
+    [concat('token', toString(number % 3))],
+    [concat('other', toString(number % 3))],
+    [concat('third', toString(number % 3))],
+    [concat('fourth', toString(number % 4))]
+FROM numbers(1000);
+
+SELECT count(), countIf(has(s1, 'token1')), countIf(has(s4, 'fourth1')) FROM skip_indexes_adaptive_wb_{{ v }};
+
+CHECK TABLE skip_indexes_adaptive_wb_{{ v }};
+{% endfor %}
+
+SYSTEM FLUSH LOGS;
+
+-- Compare allocations relatively to stay independent of the environment.
+WITH per_table AS
+(
+    SELECT table,
+        ProfileEvents.Values[indexOf(ProfileEvents.Names, 'IOBufferAllocBytes')] AS alloc_bytes
+    FROM system.part_log
+    WHERE (database = currentDatabase()) AND (table LIKE 'skip_indexes_adaptive_wb_%') AND (event_type = 'NewPart')
+)
+SELECT
+    (SELECT sum(alloc_bytes) FROM per_table WHERE table = 'skip_indexes_adaptive_wb_0')
+        > 3 * (SELECT sum(alloc_bytes) FROM per_table WHERE table = 'skip_indexes_adaptive_wb_1')
+        AS eager_allocates_much_more;
+
+{% for v in [0, 1] %}
+DROP TABLE IF EXISTS skip_indexes_adaptive_wb_{{ v }};
+{% endfor %}
