@@ -46,7 +46,7 @@ public:
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
     [[nodiscard]] RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
     [[nodiscard]] RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
-    [[nodiscard]] RelationProfile estimateRelationProfile() const;
+    [[nodiscard]] RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata = {}) const;
 
     struct RPNElement
     {
@@ -165,7 +165,10 @@ bool isAlwaysTrueEquality(const ActionsDAG::Node & node);
 class ConditionSelectivityEstimatorBuilder
 {
 public:
-    explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
+    /// `metadata_` is the structure of the table the statistics are used with. With it, the builder skips the
+    /// statistics that do not describe the values of the column types and prefers those of the column types, see
+    /// `addStatistics`.
+    explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_, StorageMetadataPtr metadata_ = nullptr);
     void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
     void incrementRowCount(UInt64 rows);
     /// See `ColumnStatistics::setCardinality`; the column must have statistics.
@@ -175,6 +178,7 @@ public:
 private:
     bool has_data = false;
     ConditionSelectivityEstimatorPtr estimator;
+    StorageMetadataPtr metadata;
 };
 
 }

@@ -293,7 +293,7 @@ SET param__internal_join_table_stat_hints = '{
     "supplier": { "cardinality": 1000000,   "avg_row_bytes": 8,  "distinct_keys": { "s_suppkey": 1000000,   "s_nationkey": 25 } },
     "lineitem": { "cardinality": 600037902, "avg_row_bytes": 36, "distinct_keys": { "l_orderkey": 150000000, "l_partkey": 20000000, "l_suppkey": 1000000 } },
     "partsupp": { "cardinality": 80000000,  "avg_row_bytes": 13, "distinct_keys": { "ps_partkey": 20000000,  "ps_suppkey": 1000000 } },
-    "orders":   { "cardinality": 150000000, "avg_row_bytes": 6,  "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000 } },
+    "orders":   { "cardinality": 150000000, "avg_row_bytes": 6,  "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000, "o_orderdate": 2406 } },
     "nation":   { "cardinality": 25,        "avg_row_bytes": 68, "distinct_keys": { "n_nationkey": 25,        "n_name": 25 } }
 }';
 SELECT '-- Q09';

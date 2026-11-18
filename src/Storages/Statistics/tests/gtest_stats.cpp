@@ -33,6 +33,7 @@
 #include <Storages/Statistics/StatisticsMinMax.h>
 #include <Storages/StatisticsDescription.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Parsers/parseQuery.h>
@@ -51,10 +52,11 @@ extern const int LOGICAL_ERROR;
 namespace
 {
 
-/// Estimates the row count of a boolean `expression` over `columns` the way the planner feeds the
+/// Estimates the relation profile under a boolean `expression` over `columns` the way the planner feeds the
 /// estimator: the expression is built into an `ActionsDAG` and its output node is analysed.
 template <class Estimator>
-UInt64 estimateRowsFor(const Estimator & estimator, const String & expression, const NamesAndTypesList & columns)
+RelationProfile estimateProfileFor(
+    const Estimator & estimator, const String & expression, const NamesAndTypesList & columns, const StorageMetadataPtr & metadata)
 {
     ContextPtr context = getContext().context;
     ParserExpressionWithOptionalAlias parser(false);
@@ -62,7 +64,14 @@ UInt64 estimateRowsFor(const Estimator & estimator, const String & expression, c
     auto syntax_result = TreeRewriter(context).analyze(ast, columns);
     ActionsDAG dag = ExpressionAnalyzer(ast, syntax_result, context).getActionsDAG(/*add_aliases=*/ false, /*remove_unused_result=*/ false);
     const auto * node = &dag.findInOutputs(ast->getColumnName());
-    return estimator->estimateRelationProfile(nullptr, node).rows;
+    return estimator->estimateRelationProfile(metadata, node);
+}
+
+/// Estimates the row count of a boolean `expression` over `columns`, see `estimateProfileFor`.
+template <class Estimator>
+UInt64 estimateRowsFor(const Estimator & estimator, const String & expression, const NamesAndTypesList & columns)
+{
+    return estimateProfileFor(estimator, expression, columns, nullptr).rows;
 }
 
 }
@@ -1045,7 +1054,7 @@ TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
 
     auto data_type = std::make_shared<DataTypeInt32>();
 
-    auto lengthPrefixed = [](WriteBuffer & out, const String & stat_payload)
+    auto length_prefixed = [](WriteBuffer & out, const String & stat_payload)
     {
         writeIntBinary(static_cast<UInt64>(stat_payload.size()), out);
         out.write(stat_payload.data(), stat_payload.size());
@@ -1076,8 +1085,8 @@ TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
         /// bit 3 = `MinMax`, bit 4 = the reverted `NullCount`, which is today's `Basic` slot
         writeIntBinary(static_cast<UInt64>((1ULL << 3) | (1ULL << 4)), buf);
         writeIntBinary(static_cast<UInt64>(100), buf); /// rows
-        lengthPrefixed(buf, minmax_payload);
-        lengthPrefixed(buf, null_count_payload);
+        length_prefixed(buf, minmax_payload);
+        length_prefixed(buf, null_count_payload);
         buf.finalize();
     }
 
@@ -1098,6 +1107,236 @@ TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
     /// ...and the reverted `NullCount` payload was skipped, not misread as a `Basic` payload.
     EXPECT_FALSE(restored->getStats().contains(StatisticsType::Basic));
     EXPECT_FALSE(restored->hasNullCount());
+}
+
+namespace
+{
+
+/// `uniq` statistics over `rows` values of `data_type` with `num_distinct` distinct values, starting from `first_value`.
+ColumnStatisticsPtr buildUniqStats(
+    const std::vector<StatisticsType> & types, const DataTypePtr & data_type, size_t rows, size_t num_distinct, Int64 first_value = 0)
+{
+    MutableColumnPtr col = data_type->createColumn();
+    for (size_t i = 0; i < rows; ++i)
+        col->insert(first_value + static_cast<Int64>(i % num_distinct));
+    auto stats = createTestStats(types, data_type);
+    stats->build(std::move(col));
+    return stats;
+}
+
+}
+
+/// After `ALTER TABLE ... MODIFY COLUMN` a part keeps statistics of the old type until a mutation rewrites it, and
+/// a part attached after the `ALTER` keeps them for good. Statistics of different types cannot be merged. The
+/// builder used to keep the type of the first part and skip the others: with the new type first, the column
+/// got the NDV of the rewritten parts, and with the old type first, it got none. It now prefers the statistics
+/// of the column type, whatever the part order.
+TEST(Statistics, EstimatorPrefersStatisticsOfColumnType)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    const DataTypePtr old_type = std::make_shared<DataTypeInt32>();
+    const DataTypePtr new_type = std::make_shared<DataTypeInt64>();
+    const std::vector<StatisticsType> types{StatisticsType::Basic, StatisticsType::Uniq};
+
+    auto metadata = std::make_shared<StorageInMemoryMetadata>();
+    metadata->setColumns(ColumnsDescription(NamesAndTypesList{{"a", new_type}, {"b", new_type}}));
+    const NamesAndTypesList columns{{"a", new_type}, {"b", new_type}};
+
+    /// An old-type part with 1000 distinct values and a part already rewritten to the new type with 10.
+    /// `b` was not altered and keeps the same type in both parts.
+    struct Part
+    {
+        UInt64 rows;
+        ColumnStatisticsPtr a;
+        ColumnStatisticsPtr b;
+    };
+    auto old_part = [&] { return Part{1000, buildUniqStats(types, old_type, 1000, 1000), buildUniqStats(types, new_type, 1000, 100)}; };
+    auto new_part = [&] { return Part{100, buildUniqStats(types, new_type, 100, 10), buildUniqStats(types, new_type, 100, 100)}; };
+
+    auto build = [&](std::vector<Part> parts, const StorageMetadataPtr & builder_metadata)
+    {
+        ConditionSelectivityEstimatorBuilder builder(getContext().context, builder_metadata);
+        for (const auto & part : parts)
+        {
+            builder.incrementRowCount(part.rows);
+            builder.addStatistics("a", part.a);
+            builder.addStatistics("b", part.b);
+        }
+        return builder.getEstimator();
+    };
+
+    for (const auto & estimator : {build({new_part(), old_part()}, metadata), build({old_part(), new_part()}, metadata)})
+    {
+        ASSERT_NE(estimator, nullptr);
+
+        /// Only the statistics of the column type are left, so the estimates do not depend on the metadata.
+        for (const auto & estimate_metadata : {StorageMetadataPtr(metadata), StorageMetadataPtr()})
+        {
+            auto unfiltered = estimator->estimateRelationProfile(estimate_metadata);
+            EXPECT_EQ(unfiltered.rows, 1100u);
+            ASSERT_TRUE(unfiltered.column_stats.contains("a"));
+            EXPECT_EQ(unfiltered.column_stats.at("a").num_distinct_values, 10u);
+            ASSERT_TRUE(unfiltered.column_stats.contains("b"));
+            EXPECT_EQ(unfiltered.column_stats.at("b").num_distinct_values, 100u);
+        }
+
+        /// One of the 10 values of the rewritten part.
+        auto filtered = estimateProfileFor(estimator, "a = 5", columns, metadata);
+        EXPECT_EQ(filtered.rows, 110u);
+        ASSERT_TRUE(filtered.column_stats.contains("a"));
+        EXPECT_EQ(filtered.column_stats.at("a").num_distinct_values, 10u);
+    }
+
+    /// Without the metadata the builder cannot tell the column type, so it keeps the statistics of the first part:
+    /// best effort. The estimates with the metadata still reject the statistics of the old type.
+    auto new_first = build({new_part(), old_part()}, nullptr);
+    ASSERT_NE(new_first, nullptr);
+    auto new_first_profile = new_first->estimateRelationProfile(metadata);
+    ASSERT_TRUE(new_first_profile.column_stats.contains("a"));
+    EXPECT_EQ(new_first_profile.column_stats.at("a").num_distinct_values, 10u);
+    EXPECT_TRUE(new_first_profile.column_stats.contains("b"));
+
+    auto old_first = build({old_part(), new_part()}, nullptr);
+    ASSERT_NE(old_first, nullptr);
+    auto old_first_profile = old_first->estimateRelationProfile(metadata);
+    EXPECT_FALSE(old_first_profile.column_stats.contains("a"));
+    EXPECT_TRUE(old_first_profile.column_stats.contains("b"));
+
+    /// Only old-type parts: their statistics do not describe the column type.
+    auto old_only = build({old_part(), old_part()}, metadata);
+    ASSERT_NE(old_only, nullptr);
+    EXPECT_FALSE(old_only->estimateRelationProfile(metadata).column_stats.contains("a"));
+    EXPECT_FALSE(old_only->estimateRelationProfile().column_stats.contains("a"));
+}
+
+/// After a metadata-only `ALTER TABLE ... MODIFY COLUMN`, here `Enum8` -> `Int8`, the old parts keep `Enum8`
+/// statistics, which still describe the values, and the parts inserted later get `Int8` statistics. Both are
+/// usable but cannot be merged: the column type is preferred. Of two other types, the first one is kept: best effort.
+TEST(Statistics, EstimatorPrefersStatisticsOfColumnTypeAfterMetadataOnlyConversion)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    const DataTypePtr enum_type = std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{{"a", 1}, {"b", 2}, {"c", 3}, {"d", 4}});
+    const DataTypePtr extended_enum_type = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values{{"a", 1}, {"b", 2}, {"c", 3}, {"d", 4}, {"e", 5}});
+    const DataTypePtr int8_type = std::make_shared<DataTypeInt8>();
+    const std::vector<StatisticsType> types{StatisticsType::Basic, StatisticsType::Uniq};
+
+    auto metadata = std::make_shared<StorageInMemoryMetadata>();
+    metadata->setColumns(ColumnsDescription(NamesAndTypesList{{"e", int8_type}}));
+
+    /// 4 distinct values in the `Enum8` part, 5 in the part of the extended `Enum8`, 2 in the `Int8` part.
+    auto enum_part = [&] { return buildUniqStats(types, enum_type, 1000, 4, /*first_value=*/ 1); };
+    auto extended_enum_part = [&] { return buildUniqStats(types, extended_enum_type, 1000, 5, /*first_value=*/ 1); };
+    auto int8_part = [&] { return buildUniqStats(types, int8_type, 1000, 2, /*first_value=*/ 1); };
+
+    auto distinct_values = [&](std::vector<ColumnStatisticsPtr> parts) -> std::optional<UInt64>
+    {
+        ConditionSelectivityEstimatorBuilder builder(getContext().context, metadata);
+        for (const auto & part : parts)
+        {
+            builder.incrementRowCount(1000);
+            builder.addStatistics("e", part);
+        }
+        auto profile = builder.getEstimator()->estimateRelationProfile(metadata);
+        if (!profile.column_stats.contains("e"))
+            return {};
+        return profile.column_stats.at("e").num_distinct_values;
+    };
+
+    EXPECT_EQ(distinct_values({enum_part(), enum_part()}), 4u);
+    EXPECT_EQ(distinct_values({enum_part(), int8_part()}), 2u);
+    EXPECT_EQ(distinct_values({int8_part(), enum_part()}), 2u);
+
+    EXPECT_EQ(distinct_values({enum_part(), extended_enum_part()}), 4u);
+    EXPECT_EQ(distinct_values({extended_enum_part(), enum_part(), enum_part()}), 5u);
+    EXPECT_EQ(distinct_values({int8_part(), enum_part(), extended_enum_part()}), 2u);
+    EXPECT_EQ(distinct_values({enum_part(), int8_part(), extended_enum_part()}), 2u);
+    EXPECT_EQ(distinct_values({enum_part(), extended_enum_part(), int8_part()}), 2u);
+}
+
+/// Parts with the same column type but a different set of statistics (e.g. a `MODIFY STATISTICS` not
+/// materialized in all parts yet) cannot be merged either, but they describe the column type, so the column
+/// keeps the statistics of the parts matching the first one.
+TEST(Statistics, EstimatorKeepsColumnWithMixedStatisticsTypes)
+{
+    tryRegisterAggregateFunctions();
+
+    const DataTypePtr data_type = std::make_shared<DataTypeInt64>();
+    auto metadata = std::make_shared<StorageInMemoryMetadata>();
+    metadata->setColumns(ColumnsDescription(NamesAndTypesList{{"a", data_type}}));
+
+    auto with_uniq = buildUniqStats({StatisticsType::Basic, StatisticsType::Uniq}, data_type, 1000, 10);
+    auto without_uniq = buildUniqStats({StatisticsType::Basic}, data_type, 1000, 10);
+    ASSERT_FALSE(with_uniq->structureEquals(*without_uniq));
+
+    ConditionSelectivityEstimatorBuilder builder(getContext().context, metadata);
+    builder.incrementRowCount(2000);
+    builder.addStatistics("a", with_uniq);
+    builder.addStatistics("a", without_uniq);
+    auto estimator = builder.getEstimator();
+    ASSERT_NE(estimator, nullptr);
+
+    auto profile = estimator->estimateRelationProfile(metadata);
+    ASSERT_TRUE(profile.column_stats.contains("a"));
+    EXPECT_EQ(profile.column_stats.at("a").num_distinct_values, 10u);
+}
+
+/// A part keeps the statistics of the type it stores. After a metadata-only `ALTER TABLE ... MODIFY COLUMN`, here
+/// `Enum8` -> `Int8`, they still describe the values a read returns, so both the unfiltered and the filtered
+/// profiles use them. After a conversion that a read applies to the values, here `Int32` -> `Int64`, they do not.
+TEST(Statistics, EstimatorUsesStatisticsOfRepresentationPreservingType)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    const DataTypePtr enum_type = std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{{"a", 1}, {"b", 2}, {"c", 3}, {"d", 4}});
+    const DataTypePtr int8_type = std::make_shared<DataTypeInt8>();
+    const DataTypePtr int32_type = std::make_shared<DataTypeInt32>();
+    const DataTypePtr int64_type = std::make_shared<DataTypeInt64>();
+    const std::vector<StatisticsType> types{StatisticsType::Basic, StatisticsType::Uniq};
+
+    auto metadata = std::make_shared<StorageInMemoryMetadata>();
+    metadata->setColumns(ColumnsDescription(NamesAndTypesList{{"e", int8_type}, {"v", int64_type}}));
+    const NamesAndTypesList columns{{"e", int8_type}, {"v", int64_type}};
+
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.incrementRowCount(1000);
+    builder.addStatistics("e", buildUniqStats(types, enum_type, 1000, 4, /*first_value=*/ 1));
+    builder.addStatistics("v", buildUniqStats(types, int32_type, 1000, 100));
+    auto estimator = builder.getEstimator();
+    ASSERT_NE(estimator, nullptr);
+
+    auto unfiltered = estimator->estimateRelationProfile(metadata);
+    EXPECT_EQ(unfiltered.rows, 1000u);
+    ASSERT_TRUE(unfiltered.column_stats.contains("e"));
+    EXPECT_EQ(unfiltered.column_stats.at("e").num_distinct_values, 4u);
+    ASSERT_TRUE(unfiltered.column_stats.at("e").min_value && unfiltered.column_stats.at("e").max_value);
+    EXPECT_EQ(*unfiltered.column_stats.at("e").min_value, Field(Int64(1)));
+    EXPECT_EQ(*unfiltered.column_stats.at("e").max_value, Field(Int64(4)));
+    EXPECT_FALSE(unfiltered.column_stats.contains("v"));
+
+    /// One of the 4 values of `e`, estimated from its statistics.
+    auto filtered_by_e = estimateProfileFor(estimator, "e = 1", columns, metadata);
+    EXPECT_EQ(filtered_by_e.rows, 250u);
+    EXPECT_TRUE(filtered_by_e.column_stats.contains("e"));
+    EXPECT_FALSE(filtered_by_e.column_stats.contains("v"));
+
+    /// Without usable statistics for `v` the equality gets the default factor (0.01).
+    auto filtered_by_v = estimateProfileFor(estimator, "v = 5", columns, metadata);
+    EXPECT_EQ(filtered_by_v.rows, 10u);
+    EXPECT_FALSE(filtered_by_v.column_stats.contains("v"));
+
+    /// The reverse conversion is not metadata-only: a part may hold an `Int8` that names no element of the `Enum8`.
+    auto enum_metadata = std::make_shared<StorageInMemoryMetadata>();
+    enum_metadata->setColumns(ColumnsDescription(NamesAndTypesList{{"e", enum_type}}));
+    ConditionSelectivityEstimatorBuilder int8_builder(getContext().context);
+    int8_builder.incrementRowCount(1000);
+    int8_builder.addStatistics("e", buildUniqStats(types, int8_type, 1000, 4, /*first_value=*/ 1));
+    EXPECT_FALSE(int8_builder.getEstimator()->estimateRelationProfile(enum_metadata).column_stats.contains("e"));
 }
 
 #if USE_DATASKETCHES

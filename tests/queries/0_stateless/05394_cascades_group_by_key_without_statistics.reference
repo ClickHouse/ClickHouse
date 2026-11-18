@@ -1,0 +1,8 @@
+group by, no statistics:	1
+distinct, no statistics:	1
+intersect, width-only first:	1
+intersect, width-only second:	1
+intersect, absent first:	1
+intersect, absent second:	1
+group by assumeNotNull, no statistics:	1
+group by joined key, other side without statistics:	1

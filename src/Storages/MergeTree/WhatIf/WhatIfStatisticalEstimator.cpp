@@ -39,7 +39,7 @@ bool tryEstimateWithStatistics(
         if (!index_columns_set.contains(col))
             return false;
 
-    ConditionSelectivityEstimatorBuilder builder(context);
+    ConditionSelectivityEstimatorBuilder builder(context, metadata);
     bool has_any_stats = false;
 
     auto statistics_cache = context->getStatisticsCache();

@@ -7124,7 +7124,7 @@ ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstim
 {
     if (!getStorageMetadata()->hasStatistics() || !getContext()->getSettingsRef()[Setting::use_statistics])
         return nullptr;
-    return data.getConditionSelectivityEstimator(parts, required_columns, getContext());
+    return data.getConditionSelectivityEstimator(parts, required_columns, getStorageMetadata(), getContext());
 }
 
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimatorForPrewhere(
@@ -7155,7 +7155,7 @@ ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstim
             return nullptr;
     }
 
-    return data.getConditionSelectivityEstimator(parts, required_columns, getContext());
+    return data.getConditionSelectivityEstimator(parts, required_columns, getStorageMetadata(), getContext());
 }
 
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator(const Names & required_columns) const
@@ -7181,10 +7181,10 @@ ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstim
             parts, indexes->partition_pruner, indexes->minmax_idx_condition,
             indexes->part_values, getStorageMetadata(), data, getContext(),
             max_block_numbers_to_read.get(), getLogger("ReadFromMergeTree"), unused_stats);
-        return data.getConditionSelectivityEstimator(pruned_parts, required_columns, getContext());
+        return data.getConditionSelectivityEstimator(pruned_parts, required_columns, getStorageMetadata(), getContext());
     }
 
-    return data.getConditionSelectivityEstimator(parts, required_columns, getContext());
+    return data.getConditionSelectivityEstimator(parts, required_columns, getStorageMetadata(), getContext());
 }
 
 bool ReadFromMergeTree::canRemoveUnusedColumns() const
