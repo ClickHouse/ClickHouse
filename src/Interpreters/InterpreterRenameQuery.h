@@ -22,7 +22,7 @@ struct UniqueTableName
     UniqueTableName(const String & database_name_, const String & table_name_)
             : database_name(database_name_), table_name(table_name_) {}
 
-    /// Inner tables go after all other tables, so the DDL guard of a table precedes those of its inner tables.
+    /// Tables are ordered by their depth in a chain of inner tables, so the DDL guard of a table precedes those of its inner tables.
     bool operator< (const UniqueTableName & rhs) const;
 };
 
