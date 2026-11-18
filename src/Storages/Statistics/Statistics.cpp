@@ -26,6 +26,8 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
+
 #include "config.h" /// USE_DATASKETCHES
 
 namespace DB
@@ -451,8 +453,10 @@ UInt64 ColumnStatistics::estimateCardinality() const
     {
         return uniq_stats->estimateCardinality();
     }
-    /// if we don't have uniq statistics, we use a mock one, assuming there are 90% different unique values.
-    return UInt64(static_cast<Float64>(rows) * ConditionSelectivityEstimator::default_cardinality_ratio);
+    /// Without uniq statistics, guess that 10% of the values are distinct, and at least one in a column with rows.
+    if (rows == 0)
+        return 0;
+    return std::max<UInt64>(1, static_cast<UInt64>(static_cast<Float64>(rows) * ConditionSelectivityEstimator::default_cardinality_ratio));
 }
 
 bool ColumnStatistics::hasNullCount() const
